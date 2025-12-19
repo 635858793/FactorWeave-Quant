@@ -4,7 +4,10 @@
 [![License](https://img.shields.io/badge/license-AGPL%203.0-blue.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/status-Active%20Development-brightgreen.svg)]()
 
-一个功能强大的Python量化交易系统，集成了多数据源支持、智能插件系统、实时数据处理、AI预测分析等核心功能。专为量化投资者和金融技术研究者设计。
+### 一个功能强大的Python量化交易系统，集成了多数据源支持、智能插件系统、实时数据处理、AI预测分析等核心功能。专为量化投资者和金融技术研究者设计。
+
+### ⭐ 如果您觉得这个项目有帮助，请给个Star支持！  注意：学习使用请加微信，研究使用请加星球
+
 
 ## 🌟 系统重要UI
 
@@ -1092,56 +1095,6 @@ await data_manager.switch_data_source('akshare')  # 或 'tongdaxin', 'eastmoney'
 - 确认防火墙设置
 - 尝试使用代理
 
-##### 5. UI界面异常
-**问题**: PyQt5界面显示异常或崩溃
-
-**解决方案**:
-```bash
-# 重新初始化UI主题
-python -c "from gui.themes.theme_manager import ThemeManager; ThemeManager.reset_to_default()"
-
-# 检查依赖库版本
-pip list | grep -E "(PyQt5|pyqtgraph|matplotlib)"
-```
-
-**UI性能优化**:
-- 关闭不必要的图表更新
-- 调整数据刷新频率
-- 清理缓存数据
-
-##### 6. 内存使用过高
-**问题**: 系统内存占用过高或内存泄漏
-
-**解决方案**:
-```python
-# 启用内存监控
-from core.performance.memory_monitor import MemoryMonitor
-monitor = MemoryMonitor()
-monitor.enable_auto_cleanup()
-
-# 手动清理内存
-import gc
-gc.collect()
-```
-
-**内存优化建议**:
-- 定期重启应用程序
-- 限制历史数据缓存大小
-- 使用数据分页加载
-
-##### 7. 性能监控告警
-**问题**: 系统性能下降或响应缓慢
-
-**解决方案**:
-```python
-# 启用性能监控
-from core.performance.unified_monitor import UnifiedMonitor
-monitor = UnifiedMonitor()
-await monitor.start_real_time_monitoring()
-
-# 查看性能报告
-await monitor.generate_performance_report()
-```
 
 **性能优化策略**:
 - 启用GPU加速（如果可用）
@@ -1149,7 +1102,7 @@ await monitor.generate_performance_report()
 - 优化数据库查询
 - 并行处理数据
 
-##### 8. AI模型问题
+##### 5. AI模型问题
 **问题**: AI预测失败或模型加载错误
 
 **解决方案**:
@@ -1164,39 +1117,6 @@ print(f"AI模型状态: {status}")
 await ai_service.retrain_models()
 ```
 
-**模型问题排查**:
-- 确认训练数据完整性
-- 检查模型配置文件
-- 验证GPU环境配置
-
-#### 🔧 高级故障排除
-
-##### 日志分析
-```bash
-# 查看详细日志
-tail -f logs/app.log | grep ERROR
-
-# 分析性能日志
-python -c "from core.performance.performance_analyzer import PerformanceAnalyzer; PerformanceAnalyzer.analyze_logs()"
-```
-
-##### 系统健康检查
-```python
-# 运行完整系统检查
-from analysis.system_health_checker import SystemHealthChecker
-checker = SystemHealthChecker()
-report = await checker.run_full_diagnostic()
-print(report)
-```
-
-##### 数据库维护
-```python
-# 数据库优化和维护
-from core.database_maintenance_engine import DatabaseMaintenanceEngine
-engine = DatabaseMaintenanceEngine()
-await engine.optimize_database()
-await engine.cleanup_old_data()
-```
 
 #### 📞 获取帮助
 
@@ -1206,14 +1126,6 @@ await engine.cleanup_old_data()
 4. **社区支持**: 查看项目文档和FAQ
 5. **GitHub Issues**: 提交问题报告和功能请求
 
-#### 🛠️ 开发环境调试
-
-##### 启用调试模式
-```python
-# 在main.py中启用调试
-import os
-os.environ['FACTORWEAVE_DEBUG'] = '1'
-```
 
 ##### 代码覆盖率分析
 ```bash
@@ -1226,20 +1138,6 @@ pytest --cov=. --cov-report=html --cov-report=term
 # 启用性能分析
 import cProfile
 cProfile.run('your_function()', 'performance_profile.prof')
-```
-
-#### 🔄 版本升级问题
-
-##### 从旧版本升级
-```bash
-# 备份数据
-python scripts/backup_data.py
-
-# 运行迁移脚本
-python scripts/migrate_database.py
-
-# 更新依赖
-pip install -r requirements.txt --upgrade
 ```
 
 ##### 配置文件迁移
@@ -1260,7 +1158,7 @@ cd FactorWeave-Quant
 pip install -r requirements-dev.txt
 
 # 运行开发模式
-python main.py --dev-mode
+python main.py
 ```
 
 ### 代码规范
@@ -1292,6 +1190,14 @@ git commit -m "test: 添加回测引擎单元测试"
 4. 推送分支: `git push origin feature/amazing-feature`
 5. 创建Pull Request
 
+## ⚠️ 免责声明
+
+本项目仅供学习和研究使用，不构成任何投资建议或交易指导。
+
+- **法律风险提示**：量化交易涉及金融风险，使用本项目进行实盘交易需自行承担全部法律责任
+- **侵权风险提示**：本项目所使用的数据和模型均来自公开渠道，若涉及侵权请联系删除
+- **免责声明**：项目开发团队不对因使用本项目造成的任何损失承担责任
+
 ## 📄 许可证
 
 本项目基于AGPL 3.0许可证开源 - 详见 [LICENSE](LICENSE) 文件。
@@ -1309,13 +1215,6 @@ git commit -m "test: 添加回测引擎单元测试"
 
 ### 社区贡献
 感谢所有为FactorWeave-Quant项目做出贡献的开发者和用户！
-
-## 📞 联系我们
-
-- **GitHub**: [项目地址](https://github.com/yourusername/FactorWeave-Quant)
-- **问题反馈**: [GitHub Issues](https://github.com/yourusername/FactorWeave-Quant/issues)
-- **功能建议**: [GitHub Discussions](https://github.com/yourusername/FactorWeave-Quant/discussions)
-- **技术交流**: 加入我们的QQ群或微信群
 
 ## 📊 项目发展路线图
 
@@ -1351,25 +1250,13 @@ FactorWeave-Quant 2.0是一个功能强大的Python量化交易系统，集成�
 - **AI能力**: 5+种预测模型和智能选择机制
 - **性能**: 支持100+并发请求，亚秒级数据查询
 
-### 🎯 应用场景
+### 🎯 应用场景-学习研究使用
 - **个人投资者**: 智能选股和投资决策支持
 - **量化基金**: 专业级策略开发和回测
 - **研究机构**: 金融数据分析和模型验证
 - **技术开发者**: 量化交易系统开发框架
 
 ---
-
-**立即开始您的量化交易之旅！** 🚀
-
-```bash
-# 快速启动
-git clone https://github.com/635858793/FactorWeave.git
-cd FactorWeave-Quant
-pip install -r requirements.txt
-python main.py
-```
-
-**祝您投资顺利，量化致胜！** 💰📈
 
 #### 添加新模型
 1. 创建新模型类实现标准接口
@@ -1382,5 +1269,3 @@ python main.py
 3. 注册到融合引擎配置
 
 详细技术文档请参考 `docs/智能模型选择机制实施指导文档.md`
-
-⭐ 如果您觉得这个项目有帮助，请给个Star支持！
