@@ -12,6 +12,7 @@
 ## 🌟 系统重要UI
 
 ![系统主界面](docs/images/系统主界面.png)
+![多屏数据页](docs/images/多屏数据.png)
 ![形态识别指标](docs/images/形态识别指标.png)
 ![系统运行监控](docs/images/系统运行监控.png)
 ![策略性能监控](docs/images/策略性能监控.png)
