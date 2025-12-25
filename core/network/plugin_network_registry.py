@@ -179,7 +179,8 @@ class PluginNetworkRegistry:
             plugin_directories = [
                 "plugins/examples",
                 "plugins/sentiment_data_sources",
-                "plugins/data_sources"
+                "plugins/data_sources",
+                "plugins/indicators"
             ]
         
         registration_results = {}

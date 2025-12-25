@@ -1114,8 +1114,12 @@ class LeftPanel(BasePanel):
             # 获取主窗口作为父窗口
             main_window = self.coordinator.get_main_window() if self.coordinator else None
 
-            # 创建策略管理对话框
-            dialog = StrategyManagerDialog(main_window, stock_code=stock_code)
+            # 创建策略管理对话框，传递必要的服务参数
+            dialog = StrategyManagerDialog(
+                main_window, 
+                asset_service=self.asset_service, 
+                data_manager=self.data_manager
+            )
 
             # 居中显示
             if self.coordinator:

@@ -377,14 +377,17 @@ class DatabaseService(BaseService):
 
             # 6. 初始化AI选股相关数据表
             self._initialize_ai_tables()
+            
+            # 7. 初始化策略配置相关数据表
+            self._initialize_strategy_tables()
 
-            # 7. 初始化性能优化器
+            # 8. 初始化性能优化器
             self._initialize_performance_optimizers()
 
-            # 8. 启动后台任务
+            # 9. 启动后台任务
             self._start_background_tasks()
 
-            # 9. 验证数据库连接
+            # 10. 验证数据库连接
             self._validate_database_connections()
 
             logger.info("✅ DatabaseService initialized successfully with full database management capabilities")
@@ -1165,6 +1168,48 @@ class DatabaseService(BaseService):
         except Exception as e:
             logger.error(f"Failed to initialize AI selection tables: {e}")
             raise
+            
+    def _initialize_strategy_tables(self) -> None:
+        """初始化策略配置相关数据表"""
+        try:
+            logger.info("Initializing strategy configuration database tables...")
+            
+            # 创建策略配置表
+            self._create_strategy_config_table()
+            
+            logger.info("✓ Strategy configuration database tables initialized")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize strategy configuration tables: {e}")
+            raise
+            
+    def _create_strategy_config_table(self) -> None:
+        """创建策略配置表"""
+        sql = """
+        CREATE TABLE IF NOT EXISTS strategy_configs (
+            strategy_id VARCHAR(36) PRIMARY KEY,
+            plugin_type VARCHAR(50) NOT NULL,
+            parameters JSON NOT NULL,
+            enabled BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            metadata JSON DEFAULT '{}'
+        )
+        """
+        
+        with self.get_connection("strategy_sqlite") as conn:
+            conn.execute(sql)
+            
+        # 创建索引
+        indices = [
+            "CREATE INDEX IF NOT EXISTS idx_strategy_configs_plugin_type ON strategy_configs(plugin_type)",
+            "CREATE INDEX IF NOT EXISTS idx_strategy_configs_enabled ON strategy_configs(enabled)",
+            "CREATE INDEX IF NOT EXISTS idx_strategy_configs_created ON strategy_configs(created_at)"
+        ]
+        
+        with self.get_connection("strategy_sqlite") as conn:
+            for index_sql in indices:
+                conn.execute(index_sql)
 
     def _create_ai_strategy_table(self) -> None:
         """创建AI选股策略表"""

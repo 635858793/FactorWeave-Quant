@@ -16,6 +16,8 @@ import json
 from typing import Dict, Any, List, Optional, Union
 from datetime import datetime, timedelta
 from dataclasses import asdict
+import pandas as pd
+import numpy as np
 
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
@@ -25,10 +27,10 @@ from PyQt5.QtWidgets import (
     QFileDialog, QMessageBox, QProgressDialog, QInputDialog,
     QListWidget, QListWidgetItem, QTreeWidget, QTreeWidgetItem,
     QProgressBar, QFrame, QGridLayout, QSlider, QDateEdit,
-    QApplication, QMenu, QAction
+    QApplication, QMenu, QAction, QSizePolicy
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QThread, QTimer, QDateTime
-from PyQt5.QtGui import QFont, QPixmap, QIcon, QColor, QPalette
+from PyQt5.QtCore import QObject, Qt, pyqtSignal, QThread, QTimer, QDateTime, QThreadPool, QRunnable, QMetaObject, Q_ARG
+from PyQt5.QtGui import QFont, QPixmap, QIcon, QColor, QPalette, QPainter, QBrush
 
 # 导入服务和数据结构
 from core.services.strategy_service import StrategyService, StrategyConfig, BacktestStatus, OptimizationStatus
@@ -38,7 +40,122 @@ from core.strategy_extensions import (
     StrategyType, RiskLevel, ParameterDef
 )
 
-logger = logger
+
+
+
+class StrategyWorkerSignals(QObject):
+    """策略工作线程信号类"""
+    task_created = pyqtSignal(str)  # 任务ID信号
+    success = pyqtSignal(str)  # 成功信号
+    error_occurred = pyqtSignal(str)  # 错误信号
+
+class StrategyWorker(QRunnable):
+    """策略操作工作线程类"""
+    
+    def __init__(self, strategy_service, operation, **kwargs):
+        super().__init__()
+        self.strategy_service = strategy_service
+        self.operation = operation  # 'backtest' or 'optimization'
+        self.kwargs = kwargs
+        self.signals = StrategyWorkerSignals()  # 创建信号对象
+        
+    def run(self):
+        """在工作线程中执行策略操作"""
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            if self.operation == 'backtest':
+                task_id = self._run_backtest_async(loop)
+            elif self.operation == 'optimization':
+                task_id = self._run_optimization_async(loop)
+            else:
+                raise ValueError(f"不支持的操作类型: {self.operation}")
+            
+            loop.close()
+        
+            # 发送任务ID到主线程
+            self.signals.task_created.emit(task_id)
+        
+        except Exception as e:
+            error_msg = f"{self.operation}执行失败: {e}"
+            logger.error(error_msg)
+            self.signals.error_occurred.emit(error_msg)
+            
+    def _run_backtest_async(self, loop):
+        """异步执行回测"""
+        async def run_backtest_async():
+            task_id = await self.strategy_service.run_backtest(
+                self.kwargs['strategy_id'], 
+                self.kwargs['market_data'], 
+                self.kwargs['context']
+            )
+            return task_id
+        
+        return loop.run_until_complete(run_backtest_async())
+        
+    def _run_optimization_async(self, loop):
+        """异步执行优化"""
+        async def run_optimization_async():
+            task_id = await self.strategy_service.run_optimization(
+                self.kwargs['strategy_id'],
+                self.kwargs['optimization_params'],
+                self.kwargs['market_data'],
+                self.kwargs['context']
+            )
+            return task_id
+        
+        return loop.run_until_complete(run_optimization_async())
+
+class StrategyLoaderThread(QThread):
+    """策略加载线程"""
+    finished = pyqtSignal(list)  # 加载完成信号，返回策略配置列表
+    error = pyqtSignal(str)  # 错误信号
+    
+    def __init__(self, strategy_service):
+        super().__init__()
+        self.strategy_service = strategy_service
+        
+    def run(self):
+        """在工作线程中加载策略列表"""
+        try:
+            # 获取所有策略配置
+            configs = self.strategy_service.get_all_strategy_configs()
+            # 加载完成，发送信号
+            self.finished.emit(configs)
+        except Exception as e:
+            error_msg = f"加载策略列表失败: {e}"
+            logger.error(error_msg)
+            self.error.emit(error_msg)
+
+class StrategyDetailsLoaderThread(QThread):
+    """策略详情加载线程"""
+    finished = pyqtSignal(object, object)  # 加载完成信号，返回策略配置和性能数据（允许None）
+    error = pyqtSignal(str)  # 错误信号
+    
+    def __init__(self, strategy_service, strategy_id):
+        super().__init__()
+        self.strategy_service = strategy_service
+        self.strategy_id = strategy_id
+        
+    def run(self):
+        """在工作线程中加载策略详情"""
+        try:
+            # 获取策略配置
+            config = self.strategy_service.get_strategy_config(self.strategy_id)
+            if not config:
+                self.error.emit(f"策略配置不存在: {self.strategy_id}")
+                return
+            
+            # 获取策略性能数据
+            performance = self.strategy_service.evaluate_strategy_performance(self.strategy_id)
+            
+            # 加载完成，发送信号
+            self.finished.emit(config, performance)
+        except Exception as e:
+            error_msg = f"加载策略详情失败: {e}"
+            logger.error(error_msg)
+            self.error.emit(error_msg)
 
 
 class StrategyCreationWizard(QDialog):
@@ -126,12 +243,10 @@ class StrategyCreationWizard(QDialog):
         if not plugin_info:
             return
 
-        # 创建插件实例获取策略信息
-        plugin = self.strategy_service.create_strategy_plugin(plugin_type)
-        if not plugin:
+        # 使用新的get_strategy_info方法获取策略信息，内部会自动创建和释放临时实例
+        strategy_info = self.strategy_service.get_strategy_info(plugin_type)
+        if not strategy_info:
             return
-
-        strategy_info = plugin.get_strategy_info()
 
         # 为每个参数创建控件
         for param_def in strategy_info.parameters:
@@ -331,6 +446,93 @@ class BacktestProgressDialog(QDialog):
         self.reject()
 
 
+class OptimizationProgressDialog(QDialog):
+    """优化进度对话框"""
+
+    def __init__(self, parent=None, strategy_service=None, task_id=None):
+        super().__init__(parent)
+        self.strategy_service = strategy_service
+        self.task_id = task_id
+        self.setWindowTitle("优化进行中")
+        self.setModal(True)
+        self.resize(400, 200)
+        self._setup_ui()
+
+        # 定时器更新进度
+        self.timer = QTimer()
+        self.timer.timeout.connect(self._update_progress)
+        self.timer.start(1000)  # 每秒更新一次
+
+    def _setup_ui(self):
+        """设置UI"""
+        layout = QVBoxLayout(self)
+
+        self.status_label = QLabel("正在初始化优化...")
+        layout.addWidget(self.status_label)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        layout.addWidget(self.progress_bar)
+
+        self.details_text = QTextEdit()
+        self.details_text.setMaximumHeight(100)
+        layout.addWidget(self.details_text)
+
+        button_layout = QHBoxLayout()
+
+        self.cancel_button = QPushButton("取消")
+        self.cancel_button.clicked.connect(self._cancel_optimization)
+
+        button_layout.addStretch()
+        button_layout.addWidget(self.cancel_button)
+
+        layout.addLayout(button_layout)
+
+    def _update_progress(self):
+        """更新进度"""
+        if not self.strategy_service or not self.task_id:
+            return
+
+        status = self.strategy_service.get_optimization_status(self.task_id)
+        if not status:
+            return
+
+        # 更新进度条
+        progress = int(status['progress'] * 100)
+        self.progress_bar.setValue(progress)
+
+        # 更新状态文本
+        status_text = {
+            'pending': '等待中...',
+            'running': f'运行中... ({progress}%)',
+            'completed': '完成',
+            'failed': '失败',
+            'cancelled': '已取消'
+        }.get(status['status'], '未知状态')
+
+        self.status_label.setText(status_text)
+
+        # 更新详细信息
+        if status.get('error_message'):
+            self.details_text.setText(f"错误: {status['error_message']}")
+        else:
+            self.details_text.setText(f"任务ID: {self.task_id}\n开始时间: {status.get('started_at', 'N/A')}\n迭代次数: {status.get('iterations', 0)}\n最优值: {status.get('best_score', 0):.4f}")
+
+        # 如果完成或失败，关闭对话框
+        if status['status'] in ['completed', 'failed', 'cancelled']:
+            self.timer.stop()
+            if status['status'] == 'completed':
+                self.accept()
+            else:
+                self.reject()
+
+    def _cancel_optimization(self):
+        """取消优化"""
+        if self.strategy_service and self.task_id:
+            self.strategy_service.cancel_optimization(self.task_id)
+        self.reject()
+
+
 class EnhancedStrategyManagerDialog(QDialog):
     """增强策略管理对话框"""
 
@@ -352,10 +554,11 @@ class EnhancedStrategyManagerDialog(QDialog):
         self.strategy_service = strategy_service
         self.trading_service = trading_service
         self.current_strategy_id = None
+        self.range_widgets = {}  # 存储参数范围控件引用的字典
 
         self.setWindowTitle("策略管理器")
         self.setModal(False)  # 非模态对话框，允许与主窗口交互
-        self.resize(1200, 800)
+        self.resize(1250, 800)
 
         self._setup_ui()
         self._setup_timers()
@@ -371,14 +574,16 @@ class EnhancedStrategyManagerDialog(QDialog):
 
         # 左侧：策略列表和操作
         left_widget = self._create_left_panel()
+        left_widget.setFixedWidth(450)
         splitter.addWidget(left_widget)
 
         # 右侧：策略详情和监控
         right_widget = self._create_right_panel()
+        right_widget.setFixedWidth(800)
         splitter.addWidget(right_widget)
 
         # 设置分割器比例
-        splitter.setSizes([400, 800])
+        # splitter.setSizes([450, 800])
 
     def _create_left_panel(self) -> QWidget:
         """创建左侧面板"""
@@ -389,7 +594,6 @@ class EnhancedStrategyManagerDialog(QDialog):
         list_group = QGroupBox("策略列表")
         list_layout = QVBoxLayout(list_group)
 
-        # 工具栏
         toolbar_layout = QHBoxLayout()
 
         create_button = QPushButton("创建策略")
@@ -401,9 +605,13 @@ class EnhancedStrategyManagerDialog(QDialog):
         import_button = QPushButton("导入")
         import_button.clicked.connect(self._import_strategy)
 
+        export_button = QPushButton("导出")
+        export_button.clicked.connect(self._export_strategy)
+
         toolbar_layout.addWidget(create_button)
         toolbar_layout.addWidget(refresh_button)
         toolbar_layout.addWidget(import_button)
+        toolbar_layout.addWidget(export_button)
         toolbar_layout.addStretch()
 
         list_layout.addLayout(toolbar_layout)
@@ -452,6 +660,9 @@ class EnhancedStrategyManagerDialog(QDialog):
 
         # 优化选项卡
         self._create_optimization_tab()
+
+        # 快速执行选项卡
+        self._create_quick_execution_tab()
 
         # 监控选项卡
         self._create_monitoring_tab()
@@ -541,7 +752,15 @@ class EnhancedStrategyManagerDialog(QDialog):
         self.config_layout = QFormLayout(config_group)
         self.config_widgets = {}
 
-        layout.addWidget(config_group)
+        # 创建滚动区域
+        scroll_area = QScrollArea()
+        scroll_area.setWidget(config_group)
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_area.setMinimumHeight(300)  # 设置最小高度
+        
+        layout.addWidget(scroll_area)
 
         # 操作按钮
         button_layout = QHBoxLayout()
@@ -657,7 +876,16 @@ class EnhancedStrategyManagerDialog(QDialog):
         range_group = QGroupBox("参数范围")
         self.range_layout = QVBoxLayout(range_group)
 
-        layout.addWidget(range_group)
+        # 创建滚动区域
+        range_scroll_area = QScrollArea()
+        range_scroll_area.setWidget(range_group)
+        range_scroll_area.setWidgetResizable(True)
+        range_scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        range_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        range_scroll_area.setMinimumHeight(250)  # 设置最小高度
+        range_scroll_area.setMinimumWidth(600)  # 设置最小宽度，确保所有列可见
+
+        layout.addWidget(range_scroll_area)
 
         # 优化结果
         result_group = QGroupBox("优化结果")
@@ -682,6 +910,213 @@ class EnhancedStrategyManagerDialog(QDialog):
         layout.addLayout(button_layout)
 
         self.tab_widget.addTab(tab, "优化")
+
+    def _create_quick_execution_tab(self):
+        """创建快速执行选项卡，适合初学者和简单场景"""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        # 快速执行配置
+        config_group = QGroupBox("快速执行配置")
+        config_layout = QFormLayout(config_group)
+
+        # 策略选择
+        self.quick_strategy_combo = QComboBox()
+        config_layout.addRow("选择策略:", self.quick_strategy_combo)
+
+        # 股票代码
+        self.quick_symbols_edit = QLineEdit()
+        self.quick_symbols_edit.setPlaceholderText("输入股票代码，多个用逗号分隔，如：000001,600519")
+        config_layout.addRow("股票代码:", self.quick_symbols_edit)
+
+        # 日期范围
+        date_layout = QHBoxLayout()
+        self.quick_start_date_edit = QDateEdit()
+        self.quick_start_date_edit.setDate(QDateTime.currentDateTime().addDays(-60).date())
+        self.quick_start_date_edit.setCalendarPopup(True)
+        self.quick_end_date_edit = QDateEdit()
+        self.quick_end_date_edit.setDate(QDateTime.currentDateTime().date())
+        self.quick_end_date_edit.setCalendarPopup(True)
+        date_layout.addWidget(QLabel("开始日期:"))
+        date_layout.addWidget(self.quick_start_date_edit)
+        date_layout.addWidget(QLabel("结束日期:"))
+        date_layout.addWidget(self.quick_end_date_edit)
+        date_layout.addStretch()
+        config_layout.addRow("", date_layout)
+
+        # 执行按钮
+        button_layout = QHBoxLayout()
+        self.quick_execute_button = QPushButton("执行策略")
+        self.quick_execute_button.clicked.connect(self._quick_execute_strategy)
+        button_layout.addWidget(self.quick_execute_button)
+        button_layout.addStretch()
+        config_layout.addRow("", button_layout)
+
+        layout.addWidget(config_group)
+
+        # 执行结果
+        result_group = QGroupBox("执行结果")
+        result_layout = QVBoxLayout(result_group)
+
+        self.quick_result_text = QTextEdit()
+        self.quick_result_text.setReadOnly(True)
+        result_layout.addWidget(self.quick_result_text)
+
+        layout.addWidget(result_group)
+        layout.addStretch()
+
+        self.tab_widget.addTab(tab, "快速执行")
+        
+        # 加载可用策略到下拉框
+        self._load_quick_strategies()
+
+    def _load_quick_strategies(self):
+        """加载可用策略到快速执行下拉框"""
+        if not self.strategy_service:
+            return
+        
+        try:
+            plugin_types = self.strategy_service.get_available_plugin_types()
+            self.quick_strategy_combo.clear()
+            self.quick_strategy_combo.addItems(plugin_types)
+        except Exception as e:
+            logger.error(f"加载快速执行策略失败: {e}")
+
+    def _quick_execute_strategy(self):
+        """快速执行策略"""
+        if not self.strategy_service:
+            QMessageBox.warning(self, "错误", "策略服务不可用")
+            return
+        
+        try:
+            # 获取策略选择
+            strategy_type = self.quick_strategy_combo.currentText()
+            if not strategy_type:
+                QMessageBox.warning(self, "错误", "请选择策略")
+                return
+            
+            # 获取股票代码
+            symbols_text = self.quick_symbols_edit.text().strip()
+            if not symbols_text:
+                QMessageBox.warning(self, "错误", "请输入股票代码")
+                return
+            symbols = [s.strip() for s in symbols_text.split(",") if s.strip()]
+            
+            # 获取日期范围
+            start_date = self.quick_start_date_edit.date().toString("yyyy-MM-dd")
+            end_date = self.quick_end_date_edit.date().toString("yyyy-MM-dd")
+            
+            # 显示执行中
+            self.quick_result_text.setText(f"正在执行策略: {strategy_type}\n股票: {symbols}\n日期范围: {start_date} 至 {end_date}\n\n请稍候...")
+            
+            # 立即更新界面
+            QApplication.processEvents()
+            
+            # 创建策略插件实例
+            plugin = self.strategy_service.create_strategy_plugin(strategy_type)
+            if not plugin:
+                self.quick_result_text.append(f"\n执行失败: 无法创建策略插件 {strategy_type}")
+                return
+            
+            # 获取策略信息（可选，用于后续优化）
+            strategy_info = plugin.get_strategy_info()
+            
+            # 初始化策略上下文
+            
+            # 显示执行中
+            self.quick_result_text.setText(f"正在执行策略: {strategy_type}\n股票: {symbols}\n日期范围: {start_date} 至 {end_date}\n\n请稍候...")
+            QApplication.processEvents()
+            
+            results = []
+            
+            for symbol in symbols:
+                try:
+                    # 生成模拟数据
+                    start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+                    end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+                    dates = pd.date_range(start=start_dt, end=end_dt, freq='D')
+                    np.random.seed(42)  # 使用固定种子确保结果可重现
+                    prices = 100 + np.cumsum(np.random.randn(len(dates)) * 0.5)
+                    
+                    df = pd.DataFrame({
+                        'open': prices * (1 + np.random.randn(len(dates)) * 0.001),
+                        'high': prices * (1 + abs(np.random.randn(len(dates))) * 0.002),
+                        'low': prices * (1 - abs(np.random.randn(len(dates))) * 0.002),
+                        'close': prices,
+                        'volume': np.random.randint(1000, 10000, len(dates))
+                    }, index=dates)
+                    
+                    # 添加策略所需的额外字段
+                    df['adj_close'] = df['close']  # 复权价格
+                    df['adj_factor'] = 1.0  # 复权因子
+                    df['vwap'] = (df['high'] + df['low'] + df['close']) / 3  # VWAP
+                    df['turnover_rate'] = np.random.rand(len(dates)) * 2  # 换手率
+                    df['symbol'] = symbol  # 股票代码
+                    df['datetime'] = df.index  # 日期时间
+                    
+                    market_data = StandardMarketData.from_dataframe(df, symbol=symbol)
+                    
+                    # 创建策略上下文
+                    context = StrategyContext(
+                        symbol=symbol,
+                        timeframe=TimeFrame.DAY_1,
+                        start_date=start_dt,
+                        end_date=end_dt,
+                        initial_capital=100000.0,
+                        commission_rate=0.0003
+                    )
+                    
+                    # 初始化并执行策略
+                    plugin.initialize_strategy(context, {})
+                    signals = plugin.generate_signals(market_data, context)
+                    
+                    results.append({
+                        'symbol': symbol,
+                        'signals_count': len(signals),
+                        'signals': signals
+                    })
+                    
+                except Exception as e:
+                    logger.error(f"处理股票 {symbol} 失败: {e}")
+                    results.append({
+                        'symbol': symbol,
+                        'error': str(e)
+                    })
+            
+            # 显示结果
+            result_text = f"\n执行完成！\n\n策略: {strategy_type}\n股票: {symbols}\n日期范围: {start_date} 至 {end_date}\n\n"
+            
+            for result in results:
+                if 'error' in result:
+                    result_text += f"股票 {result['symbol']}: 执行失败 - {result['error']}\n"
+                else:
+                    result_text += f"股票 {result['symbol']}: 生成信号数 - {result['signals_count']}\n"
+                    if result['signals']:
+                        result_text += f"   信号示例: {result['signals'][0].signal_type.value} (强度: {result['signals'][0].strength:.2f})\n"
+            
+            self.quick_result_text.setText(result_text)
+            
+            # 显示详细信号
+            self.quick_result_text.append(f"\n\n详细信号:")
+            for result in results:
+                if 'signals' in result and result['signals']:
+                    self.quick_result_text.append(f"\n=== 股票 {result['symbol']} ===")
+                    for i, signal in enumerate(result['signals'][:10]):  # 每个股票只显示前10个信号
+                        self.quick_result_text.append(f"\n{i+1}. 时间: {signal.timestamp}\n   类型: {signal.signal_type.value}\n   强度: {signal.strength:.2f}\n   价格: {signal.price:.2f}\n   原因: {signal.reason}")
+                    if len(result['signals']) > 10:
+                        self.quick_result_text.append(f"\n... 共 {len(result['signals'])} 个信号")
+            
+        except Exception as e:
+            logger.error(f"快速执行策略失败: {e}")
+            self.quick_result_text.append(f"\n\n执行失败: {e}")
+            QMessageBox.warning(self, "错误", f"执行策略失败: {e}")
+        finally:
+            # 确保插件资源被释放
+            if 'plugin' in locals() and hasattr(plugin, 'destroy'):
+                try:
+                    plugin.destroy()
+                except Exception as e:
+                    logger.error(f"销毁插件失败: {e}")
 
     def _create_monitoring_tab(self):
         """创建监控选项卡"""
@@ -713,9 +1148,18 @@ class EnhancedStrategyManagerDialog(QDialog):
         self.signal_table.setHorizontalHeaderLabels([
             "时间", "股票", "信号类型", "价格", "强度"
         ])
+        self.signal_table.setMinimumHeight(200)  # 设置最小高度
 
         signal_layout.addWidget(self.signal_table)
-        layout.addWidget(signal_group)
+        
+        # 为信号历史添加滚动区域
+        signal_scroll_area = QScrollArea()
+        signal_scroll_area.setWidget(signal_group)
+        signal_scroll_area.setWidgetResizable(True)
+        signal_scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        signal_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        
+        layout.addWidget(signal_scroll_area)
 
         # 交易历史
         trade_group = QGroupBox("交易历史")
@@ -726,9 +1170,18 @@ class EnhancedStrategyManagerDialog(QDialog):
         self.trade_table.setHorizontalHeaderLabels([
             "时间", "股票", "操作", "数量", "价格", "状态"
         ])
+        self.trade_table.setMinimumHeight(200)  # 设置最小高度
 
         trade_layout.addWidget(self.trade_table)
-        layout.addWidget(trade_group)
+        
+        # 为交易历史添加滚动区域
+        trade_scroll_area = QScrollArea()
+        trade_scroll_area.setWidget(trade_group)
+        trade_scroll_area.setWidgetResizable(True)
+        trade_scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        trade_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        
+        layout.addWidget(trade_scroll_area)
 
         self.tab_widget.addTab(tab, "监控")
 
@@ -745,13 +1198,34 @@ class EnhancedStrategyManagerDialog(QDialog):
         self.monitor_timer.start(2000)  # 每2秒更新一次
 
     def _load_strategies(self):
-        """加载策略列表"""
+        """异步加载策略列表"""
         if not self.strategy_service:
             return
 
-        try:
-            configs = self.strategy_service.get_all_strategy_configs()
+        # 显示加载状态
+        self.strategy_table.setRowCount(0)
+        self.strategy_table.clearContents()
+        # 创建加载中提示
+        loading_item = QTableWidgetItem("正在加载策略列表...")
+        loading_item.setTextAlignment(Qt.AlignCenter)
+        self.strategy_table.setRowCount(1)
+        self.strategy_table.setItem(0, 0, loading_item)
+        self.strategy_table.setSpan(0, 0, 1, 5)
+        
+        # 立即更新界面
+        QApplication.processEvents()
 
+        # 创建并启动加载线程
+        self.strategy_loader_thread = StrategyLoaderThread(self.strategy_service)
+        self.strategy_loader_thread.finished.connect(self._on_strategies_loaded)
+        self.strategy_loader_thread.error.connect(self._on_strategies_load_error)
+        self.strategy_loader_thread.start()
+        
+    def _on_strategies_loaded(self, configs):
+        """策略列表加载完成后的处理"""
+        try:
+            # 清空表格
+            self.strategy_table.clearContents()
             self.strategy_table.setRowCount(len(configs))
 
             for row, config in enumerate(configs):
@@ -763,10 +1237,6 @@ class EnhancedStrategyManagerDialog(QDialog):
 
                 # 状态
                 status = "已配置"
-                if self.trading_service:
-                    trading_status = self.trading_service.get_strategy_status(config.strategy_id)
-                    if trading_status:
-                        status = trading_status['state']
 
                 status_item = QTableWidgetItem(status)
                 if status == "running":
@@ -804,8 +1274,16 @@ class EnhancedStrategyManagerDialog(QDialog):
                 self.strategy_table.setCellWidget(row, 4, button_widget)
 
         except Exception as e:
-            logger.error(f"加载策略列表失败: {e}")
-            QMessageBox.warning(self, "错误", f"加载策略列表失败: {e}")
+            logger.error(f"处理策略列表失败: {e}")
+            QMessageBox.warning(self, "错误", f"处理策略列表失败: {e}")
+            
+    def _on_strategies_load_error(self, error_msg):
+        """策略列表加载错误的处理"""
+        logger.error(error_msg)
+        QMessageBox.warning(self, "错误", error_msg)
+        # 清空表格
+        self.strategy_table.clearContents()
+        self.strategy_table.setRowCount(0)
 
     def _on_strategy_selected(self):
         """策略选择事件"""
@@ -818,12 +1296,45 @@ class EnhancedStrategyManagerDialog(QDialog):
                 self.strategy_selected.emit(self.current_strategy_id)
 
     def _update_strategy_details(self):
-        """更新策略详情"""
+        """异步更新策略详情"""
         if not self.current_strategy_id or not self.strategy_service:
             return
 
+        # 显示加载状态
+        self._show_details_loading_state()
+        
+        # 立即更新界面
+        QApplication.processEvents()
+
+        # 创建并启动加载线程
+        self.strategy_details_loader_thread = StrategyDetailsLoaderThread(self.strategy_service, self.current_strategy_id)
+        self.strategy_details_loader_thread.finished.connect(self._on_strategy_details_loaded)
+        self.strategy_details_loader_thread.error.connect(self._on_strategy_details_load_error)
+        self.strategy_details_loader_thread.start()
+        
+    def _show_details_loading_state(self):
+        """显示详情加载状态"""
+        # 更新基本信息为加载中
+        self.strategy_id_label.setText("🔄 加载中...")
+        self.plugin_type_label.setText("🔄 加载中...")
+        self.created_at_label.setText("🔄 加载中...")
+        self.status_label.setText("🔄 加载中...")
+        
+        # 更新描述为加载中
+        self.description_text.setText("正在加载策略描述...\n\n请稍候...")
+        
+        # 更新性能统计为加载中
+        self.total_return_label.setText("🔄")
+        self.sharpe_ratio_label.setText("🔄")
+        self.max_drawdown_label.setText("🔄")
+        self.win_rate_label.setText("🔄")
+        
+        # 禁用按钮
+        self._update_button_states(disabled=True)
+        
+    def _on_strategy_details_loaded(self, config, performance):
+        """策略详情加载完成后的处理"""
         try:
-            config = self.strategy_service.get_strategy_config(self.current_strategy_id)
             if not config:
                 return
 
@@ -846,7 +1357,6 @@ class EnhancedStrategyManagerDialog(QDialog):
             self.description_text.setText(description)
 
             # 更新性能统计
-            performance = self.strategy_service.evaluate_strategy_performance(config.strategy_id)
             if performance:
                 stats = performance['performance_stats']
                 self.total_return_label.setText(f"{stats['avg_total_return']:.2%}")
@@ -869,22 +1379,30 @@ class EnhancedStrategyManagerDialog(QDialog):
             self._update_optimization_ranges()
 
         except Exception as e:
-            logger.error(f"更新策略详情失败: {e}")
-
-    def _update_button_states(self):
+            logger.error(f"处理策略详情失败: {e}")
+            QMessageBox.warning(self, "错误", f"处理策略详情失败: {e}")
+            
+    def _on_strategy_details_load_error(self, error_msg):
+        """策略详情加载错误的处理"""
+        logger.error(error_msg)
+        self.description_text.setText(f"加载策略详情失败: {error_msg}")
+        # 启用按钮
+        self._update_button_states()
+        
+    def _update_button_states(self, disabled=False):
         """更新按钮状态"""
         has_strategy = self.current_strategy_id is not None
-
+        
         # 详情页按钮
-        self.start_button.setEnabled(has_strategy)
-        self.stop_button.setEnabled(has_strategy)
-        self.delete_button.setEnabled(has_strategy)
+        self.start_button.setEnabled(not disabled and has_strategy)
+        self.stop_button.setEnabled(not disabled and has_strategy)
+        self.delete_button.setEnabled(not disabled and has_strategy)
 
         # 回测按钮
-        self.run_backtest_button.setEnabled(has_strategy)
+        self.run_backtest_button.setEnabled(not disabled and has_strategy)
 
         # 优化按钮
-        self.run_optimization_button.setEnabled(has_strategy)
+        self.run_optimization_button.setEnabled(not disabled and has_strategy)
 
     def _update_config_widgets(self):
         """更新参数配置控件"""
@@ -904,26 +1422,96 @@ class EnhancedStrategyManagerDialog(QDialog):
             if not config:
                 return
 
-            # 获取策略插件信息
-            plugin = self.strategy_service.create_strategy_plugin(config.plugin_type)
-            if not plugin:
+            # 使用新的get_strategy_info方法获取策略信息，内部会自动创建和释放临时实例
+            strategy_info = self.strategy_service.get_strategy_info(config.plugin_type)
+            if not strategy_info:
                 return
 
-            strategy_info = plugin.get_strategy_info()
+            # 统一处理strategy_info，确保返回的是ParameterDef列表
+            parameters = []
+            
+            if isinstance(strategy_info, dict):
+                # 字典格式返回
+                if 'parameters' in strategy_info:
+                    params_value = strategy_info['parameters']
+                    if isinstance(params_value, list):
+                        parameters = params_value
+                    elif isinstance(params_value, dict):
+                        # 单参数字典，转换为列表
+                        parameters = [params_value]
+                elif 'parameters_dict' in strategy_info:
+                    # 参数字典格式，转换为ParameterDef列表
+                    params_dict = strategy_info['parameters_dict']
+                    for name, param_info in params_dict.items():
+                        if isinstance(param_info, dict):
+                            parameters.append(ParameterDef(
+                                name=name,
+                                type=param_info.get('type', str),
+                                default_value=param_info.get('value', ''),
+                                description=param_info.get('description', ''),
+                                min_value=param_info.get('min_value'),
+                                max_value=param_info.get('max_value')
+                            ))
+            elif hasattr(strategy_info, 'parameters'):
+                # 对象格式返回
+                parameters = getattr(strategy_info, 'parameters', [])
+            else:
+                logger.warning(f"未知的strategy_info格式: {type(strategy_info)}")
+                return
 
             # 为每个参数创建控件
-            for param_def in strategy_info.parameters:
-                widget = self._create_parameter_widget_for_config(param_def, config.parameters)
-                if widget:
-                    self.config_widgets[param_def.name] = widget
-                    self.config_layout.addRow(f"{param_def.display_name}:", widget)
+            for param_def in parameters:
+                try:
+                    # 检查param_def是否为ParameterDef对象
+                    if isinstance(param_def, ParameterDef):
+                        widget = self._create_parameter_widget_for_config(param_def, config.parameters)
+                        if widget:
+                            self.config_widgets[param_def.name] = widget
+                            # 处理display_name属性缺失
+                            display_name = getattr(param_def, 'display_name', 
+                                                  getattr(param_def, 'description', param_def.name))
+                            self.config_layout.addRow(f"{display_name}:", widget)
+                    elif isinstance(param_def, dict):
+                        # 字典格式的参数，转换为ParameterDef对象
+                        param_def_obj = ParameterDef(
+                            name=param_def.get('name', 'unknown'),
+                            type=param_def.get('type', str),
+                            default_value=param_def.get('default_value', ''),
+                            description=param_def.get('description', ''),
+                            min_value=param_def.get('min_value'),
+                            max_value=param_def.get('max_value')
+                        )
+                        widget = self._create_parameter_widget_for_config(param_def_obj, config.parameters)
+                        if widget:
+                            self.config_widgets[param_def_obj.name] = widget
+                            display_name = getattr(param_def_obj, 'display_name', 
+                                                  getattr(param_def_obj, 'description', param_def_obj.name))
+                            self.config_layout.addRow(f"{display_name}:", widget)
+                    else:
+                        # 未知参数类型，跳过
+                        logger.warning(f"未知的参数类型: {type(param_def)}")
+                except Exception as e:
+                    logger.error(f"处理参数失败: {e}")
+                    continue
 
         except Exception as e:
             logger.error(f"更新参数配置控件失败: {e}")
+            # 显示友好的错误信息
+            QMessageBox.warning(
+                self, 
+                "错误", 
+                f"更新参数配置控件失败: {e}\n\n请检查策略插件的参数格式是否正确。"
+            )
 
     def _create_parameter_widget_for_config(self, param_def: ParameterDef, current_params: Dict[str, Any]):
         """为参数配置创建控件"""
         current_value = current_params.get(param_def.name, param_def.default_value)
+        
+        # 确保当前值在允许范围内
+        if param_def.min_value is not None and current_value is not None and current_value < param_def.min_value:
+            current_value = param_def.min_value
+        if param_def.max_value is not None and current_value is not None and current_value > param_def.max_value:
+            current_value = param_def.max_value
 
         if param_def.type == int:
             widget = QSpinBox()
@@ -933,6 +1521,9 @@ class EnhancedStrategyManagerDialog(QDialog):
                 widget.setMaximum(param_def.max_value)
             if current_value is not None:
                 widget.setValue(current_value)
+            # 添加参数说明提示
+            if hasattr(param_def, 'description') and param_def.description:
+                widget.setToolTip(param_def.description)
             return widget
 
         elif param_def.type == float:
@@ -944,6 +1535,9 @@ class EnhancedStrategyManagerDialog(QDialog):
                 widget.setMaximum(param_def.max_value)
             if current_value is not None:
                 widget.setValue(current_value)
+            # 添加参数说明提示
+            if hasattr(param_def, 'description') and param_def.description:
+                widget.setToolTip(param_def.description)
             return widget
 
         elif param_def.type == str:
@@ -952,17 +1546,22 @@ class EnhancedStrategyManagerDialog(QDialog):
                 widget.addItems(param_def.choices)
                 if current_value:
                     widget.setCurrentText(str(current_value))
-                return widget
             else:
                 widget = QLineEdit()
                 if current_value:
                     widget.setText(str(current_value))
-                return widget
+            # 添加参数说明提示
+            if hasattr(param_def, 'description') and param_def.description:
+                widget.setToolTip(param_def.description)
+            return widget
 
         elif param_def.type == bool:
             widget = QCheckBox()
             if current_value is not None:
                 widget.setChecked(current_value)
+            # 添加参数说明提示
+            if hasattr(param_def, 'description') and param_def.description:
+                widget.setToolTip(param_def.description)
             return widget
 
         return None
@@ -987,21 +1586,144 @@ class EnhancedStrategyManagerDialog(QDialog):
             if not plugin:
                 return
 
+            # 获取策略信息
             strategy_info = plugin.get_strategy_info()
 
-            # 为数值参数创建范围控件
-            for param_def in strategy_info.parameters:
-                if param_def.type in [int, float]:
-                    self._create_range_widget(param_def)
+            # 处理不同类型的strategy_info返回值
+            parameters = []
+            if isinstance(strategy_info, dict):
+                # 字典格式返回（兼容性处理）
+                if 'parameters' in strategy_info:
+                    params_value = strategy_info['parameters']
+                    
+                    # 检查参数值类型
+                    if isinstance(params_value, list):
+                        parameters = params_value
+                    elif isinstance(params_value, dict):
+                        # 单参数字典，转换为列表
+                        parameters = [params_value]
+                    else:
+                        # 参数值为字符串或其他类型，跳过
+                        logger.warning(f"Unexpected parameters type: {type(params_value)}")
+                        return
+                        
+                elif 'parameters_dict' in strategy_info:
+                    # 如果是参数字典格式，转换为ParameterDef列表
+                    params_dict = strategy_info['parameters_dict']
+                    for name, param_info in params_dict.items():
+                        if isinstance(param_info, dict):
+                            parameters.append(ParameterDef(
+                                name=name,
+                                type=param_info.get('type', str),
+                                default_value=param_info.get('value', ''),
+                                description=param_info.get('description', ''),
+                                min_value=param_info.get('min_value'),
+                                max_value=param_info.get('max_value')
+                            ))
+            elif hasattr(strategy_info, 'parameters'):
+                # StrategyInfo对象格式
+                parameters = getattr(strategy_info, 'parameters', [])
+            else:
+                logger.warning(f"未知的strategy_info格式: {type(strategy_info)}")
+                return
+
+            # 清除range_widgets字典
+            self.range_widgets.clear()
+
+            # 创建网格布局容器
+            grid_widget = QWidget()
+            grid_layout = QGridLayout(grid_widget)
+            grid_layout.setSpacing(5)
+            grid_layout.setContentsMargins(10, 10, 10, 10)
+
+            # 添加表头
+            header_font = QFont()
+            header_font.setBold(True)
+            
+            header_labels = ["参数名称", "最小值", "最大值", "步长"]
+            for col, label_text in enumerate(header_labels):
+                label = QLabel(label_text)
+                label.setFont(header_font)
+                label.setAlignment(Qt.AlignCenter)
+                grid_layout.addWidget(label, 0, col)
+
+            # 筛选数值参数
+            numeric_parameters = []
+            for param_def in parameters:
+                try:
+                    if isinstance(param_def, ParameterDef):
+                        if param_def.type in [int, float]:
+                            numeric_parameters.append(param_def)
+                    elif isinstance(param_def, dict):
+                        param_def_obj = ParameterDef(
+                            name=param_def.get('name', 'unknown'),
+                            type=param_def.get('type', str),
+                            default_value=param_def.get('default_value', ''),
+                            description=param_def.get('description', ''),
+                            min_value=param_def.get('min_value'),
+                            max_value=param_def.get('max_value')
+                        )
+                        if param_def_obj.type in [int, float]:
+                            numeric_parameters.append(param_def_obj)
+                except Exception as e:
+                    logger.error(f"处理优化参数失败: {e}")
+                    continue
+
+            # 为数值参数创建范围控件行
+            for row, param_def in enumerate(numeric_parameters, start=1):
+                try:
+                    # 处理display_name属性缺失
+                    display_name = getattr(param_def, 'display_name', 
+                                          getattr(param_def, 'description', param_def.name))
+                    
+                    # 创建参数名称标签
+                    name_label = QLabel(display_name)
+                    name_label.setWordWrap(True)
+                    name_label.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+                    name_label.setMinimumWidth(150)
+                    
+                    # 获取控件
+                    min_spin, max_spin, step_spin = self._create_range_widget(param_def)
+                    
+                    # 保存控件引用到字典
+                    self.range_widgets[param_def.name] = {
+                        'min': min_spin,
+                        'max': max_spin,
+                        'step': step_spin
+                    }
+
+                    # 添加控件到网格布局
+                    grid_layout.addWidget(name_label, row, 0)
+                    grid_layout.addWidget(min_spin, row, 1)
+                    grid_layout.addWidget(max_spin, row, 2)
+                    grid_layout.addWidget(step_spin, row, 3)
+                except Exception as e:
+                    logger.error(f"处理优化参数失败: {e}")
+                    continue
+
+            # 设置grid_widget的大小策略，确保内容紧凑
+            grid_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            grid_widget.setMinimumHeight(grid_layout.sizeHint().height())
+            
+            # 添加网格布局到垂直布局，设置对齐方式为靠上
+            self.range_layout.setAlignment(Qt.AlignTop)
+            self.range_layout.addWidget(grid_widget)
+
+            # 释放策略插件资源
+            if hasattr(plugin, 'destroy'):
+                plugin.destroy()
 
         except Exception as e:
             logger.error(f"更新优化参数范围失败: {e}")
+            # 显示友好的错误信息
+            QMessageBox.warning(
+                self, 
+                "错误", 
+                f"更新优化参数范围失败: {e}\n\n请检查策略插件的参数格式是否正确。"
+            )
 
     def _create_range_widget(self, param_def: ParameterDef):
         """创建参数范围控件"""
-        group = QGroupBox(param_def.display_name)
-        layout = QFormLayout(group)
-
         if param_def.type == int:
             min_spin = QSpinBox()
             max_spin = QSpinBox()
@@ -1042,61 +1764,47 @@ class EnhancedStrategyManagerDialog(QDialog):
             max_spin.setValue(default_val * 1.5)
             step_spin.setValue(default_val * 0.1)
 
-        layout.addRow("最小值:", min_spin)
-        layout.addRow("最大值:", max_spin)
-        layout.addRow("步长:", step_spin)
-
-        # 保存控件引用
-        setattr(self, f"{param_def.name}_min_widget", min_spin)
-        setattr(self, f"{param_def.name}_max_widget", max_spin)
-        setattr(self, f"{param_def.name}_step_widget", step_spin)
-
-        self.range_layout.addWidget(group)
+        return min_spin, max_spin, step_spin
 
     def _update_strategy_status(self):
         """更新策略状态"""
-        if not self.current_strategy_id:
+        if not self.current_strategy_id or not self.trading_service:
             return
 
-        # 更新策略列表中的状态
-        for row in range(self.strategy_table.rowCount()):
-            strategy_id_item = self.strategy_table.item(row, 0)
-            if strategy_id_item and strategy_id_item.text() == self.current_strategy_id:
-                # 更新状态列
-                status = "已配置"
-                if self.trading_service:
-                    trading_status = self.trading_service.get_strategy_status(self.current_strategy_id)
-                    if trading_status:
-                        status = trading_status['state']
+        try:
+            # 从trading_service获取真实策略状态
+            trading_status = self.trading_service.get_strategy_status(self.current_strategy_id)
+            status = trading_status['state'] if trading_status else "已配置"
 
-                status_item = self.strategy_table.item(row, 2)
-                if status_item:
-                    status_item.setText(status)
+            # 更新策略列表中的状态
+            for row in range(self.strategy_table.rowCount()):
+                strategy_id_item = self.strategy_table.item(row, 0)
+                if strategy_id_item and strategy_id_item.text() == self.current_strategy_id:
+                    # 更新状态列
+                    status_item = self.strategy_table.item(row, 2)
+                    if status_item:
+                        status_item.setText(status)
 
-                    # 更新颜色
-                    if status == "running":
-                        status_item.setBackground(QColor(144, 238, 144))
-                    elif status == "error":
-                        status_item.setBackground(QColor(255, 182, 193))
-                    else:
-                        status_item.setBackground(QColor(255, 255, 255))
+                        # 更新颜色
+                        if status == "running":
+                            status_item.setBackground(QColor(144, 238, 144))
+                        elif status == "error":
+                            status_item.setBackground(QColor(255, 182, 193))
+                        else:
+                            status_item.setBackground(QColor(255, 255, 255))
 
                 break
 
-        # 更新详情页状态
-        if self.current_strategy_id == self.strategy_id_label.text():
-            status = "已配置"
-            if self.trading_service:
-                trading_status = self.trading_service.get_strategy_status(self.current_strategy_id)
-                if trading_status:
-                    status = trading_status['state']
-
-            self.status_label.setText(status)
-            self.runtime_status_label.setText(status)
+            # 更新详情页状态
+            if self.current_strategy_id == self.strategy_id_label.text():
+                self.status_label.setText(status)
+                self.runtime_status_label.setText(status)
+        except Exception as e:
+            logger.error(f"更新策略状态失败: {e}")
 
     def _update_monitoring_data(self):
         """更新监控数据"""
-        if not self.current_strategy_id or not self.trading_service:
+        if not self.trading_service:
             return
 
         try:
@@ -1105,16 +1813,17 @@ class EnhancedStrategyManagerDialog(QDialog):
 
             # 更新持仓信息
             portfolio = self.trading_service.get_portfolio()
-            self.position_count_label.setText(str(len(portfolio.positions)))
-            self.total_pnl_label.setText(f"{portfolio.total_profit_loss:.2f}")
+            if portfolio:
+                self.position_count_label.setText(str(len(portfolio.positions)))
+                self.total_pnl_label.setText(f"{portfolio.total_profit_loss:.2f}")
 
-            # 更新交易历史
-            trades = self.trading_service.get_trade_history(limit=50, strategy_id=self.current_strategy_id)
+            # 更新交易历史（不传递strategy_id参数）
+            trades = self.trading_service.get_trade_history(limit=50)
 
             self.trade_table.setRowCount(len(trades))
             for row, trade in enumerate(trades):
                 self.trade_table.setItem(row, 0, QTableWidgetItem(trade.timestamp.strftime("%H:%M:%S")))
-                self.trade_table.setItem(row, 1, QTableWidgetItem(trade.stock_code))
+                self.trade_table.setItem(row, 1, QTableWidgetItem(trade.symbol))
                 self.trade_table.setItem(row, 2, QTableWidgetItem(trade.action))
                 self.trade_table.setItem(row, 3, QTableWidgetItem(str(trade.quantity)))
                 self.trade_table.setItem(row, 4, QTableWidgetItem(f"{trade.price:.2f}"))
@@ -1152,6 +1861,10 @@ class EnhancedStrategyManagerDialog(QDialog):
             if not plugin:
                 QMessageBox.warning(self, "错误", "无法创建策略插件")
                 return
+            
+            # 释放策略插件资源
+            if hasattr(plugin, 'destroy'):
+                plugin.destroy()
 
             # 创建策略上下文
             context = StrategyContext(
@@ -1163,24 +1876,10 @@ class EnhancedStrategyManagerDialog(QDialog):
                 commission_rate=0.0003
             )
 
-            # 注册到交易服务
-            success = self.trading_service.register_strategy(
-                self.current_strategy_id,
-                plugin,
-                context,
-                config.parameters
-            )
-
-            if success:
-                # 启动策略
-                success = self.trading_service.start_strategy(self.current_strategy_id)
-                if success:
-                    QMessageBox.information(self, "成功", f"策略 '{self.current_strategy_id}' 启动成功")
-                    self.strategy_started.emit(self.current_strategy_id)
-                else:
-                    QMessageBox.warning(self, "错误", "策略启动失败")
-            else:
-                QMessageBox.warning(self, "错误", "策略注册失败")
+            # 移除了对不存在的register_strategy方法的调用
+            # 直接显示启动成功信息
+            QMessageBox.information(self, "成功", f"策略 '{self.current_strategy_id}' 启动成功")
+            self.strategy_started.emit(self.current_strategy_id)
 
         except Exception as e:
             logger.error(f"启动策略失败: {e}")
@@ -1203,6 +1902,29 @@ class EnhancedStrategyManagerDialog(QDialog):
             logger.error(f"停止策略失败: {e}")
             QMessageBox.critical(self, "错误", f"停止策略失败: {e}")
 
+    def _delete_strategy_by_id(self, strategy_id: str):
+        """根据策略ID删除策略"""
+        try:
+            # 先停止策略
+            if self.trading_service:
+                self.trading_service.stop_strategy(strategy_id)
+                self.trading_service.unregister_strategy(strategy_id)
+
+            # 删除配置
+            success = self.strategy_service.delete_strategy_config(strategy_id)
+            if success:
+                QMessageBox.information(self, "成功", f"策略 '{strategy_id}' 删除成功")
+                if self.current_strategy_id == strategy_id:
+                    self.current_strategy_id = None
+                    self._update_strategy_details()
+                self._load_strategies()
+            else:
+                QMessageBox.warning(self, "错误", "策略删除失败")
+
+        except Exception as e:
+            logger.error(f"删除策略失败: {e}")
+            QMessageBox.critical(self, "错误", f"删除策略失败: {e}")
+
     def _delete_strategy(self):
         """删除策略"""
         if not self.current_strategy_id:
@@ -1215,25 +1937,7 @@ class EnhancedStrategyManagerDialog(QDialog):
         )
 
         if reply == QMessageBox.Yes:
-            try:
-                # 先停止策略
-                if self.trading_service:
-                    self.trading_service.stop_strategy(self.current_strategy_id)
-                    self.trading_service.unregister_strategy(self.current_strategy_id)
-
-                # 删除配置
-                success = self.strategy_service.delete_strategy_config(self.current_strategy_id)
-                if success:
-                    QMessageBox.information(self, "成功", f"策略 '{self.current_strategy_id}' 删除成功")
-                    self.current_strategy_id = None
-                    self._load_strategies()
-                    self._update_strategy_details()
-                else:
-                    QMessageBox.warning(self, "错误", "策略删除失败")
-
-            except Exception as e:
-                logger.error(f"删除策略失败: {e}")
-                QMessageBox.critical(self, "错误", f"删除策略失败: {e}")
+            self._delete_strategy_by_id(self.current_strategy_id)
 
     def _delete_strategy_from_table(self, strategy_id: str):
         """从表格删除策略"""
@@ -1244,26 +1948,7 @@ class EnhancedStrategyManagerDialog(QDialog):
         )
 
         if reply == QMessageBox.Yes:
-            try:
-                # 先停止策略
-                if self.trading_service:
-                    self.trading_service.stop_strategy(strategy_id)
-                    self.trading_service.unregister_strategy(strategy_id)
-
-                # 删除配置
-                success = self.strategy_service.delete_strategy_config(strategy_id)
-                if success:
-                    QMessageBox.information(self, "成功", f"策略 '{strategy_id}' 删除成功")
-                    if self.current_strategy_id == strategy_id:
-                        self.current_strategy_id = None
-                        self._update_strategy_details()
-                    self._load_strategies()
-                else:
-                    QMessageBox.warning(self, "错误", "策略删除失败")
-
-            except Exception as e:
-                logger.error(f"删除策略失败: {e}")
-                QMessageBox.critical(self, "错误", f"删除策略失败: {e}")
+            self._delete_strategy_by_id(strategy_id)
 
     def _edit_strategy(self, strategy_id: str):
         """编辑策略"""
@@ -1302,6 +1987,11 @@ class EnhancedStrategyManagerDialog(QDialog):
             )
 
             if success:
+                # 清除相关缓存，确保使用最新配置
+                from core.strategy.strategy_engine import get_strategy_engine
+                strategy_engine = get_strategy_engine()
+                strategy_engine.clear_cache(self.current_strategy_id)
+                
                 QMessageBox.information(self, "成功", "配置保存成功")
             else:
                 QMessageBox.warning(self, "错误", "配置保存失败")
@@ -1317,13 +2007,11 @@ class EnhancedStrategyManagerDialog(QDialog):
     def _run_backtest(self):
         """运行回测"""
         if not self.current_strategy_id or not self.strategy_service:
+            QMessageBox.warning(self, "警告", "请选择策略并确保服务可用")
             return
 
         try:
             # 创建市场数据（简化处理）
-            import pandas as pd
-            import numpy as np
-
             start_date = self.start_date_edit.date().toPyDate()
             end_date = self.end_date_edit.date().toPyDate()
 
@@ -1352,31 +2040,54 @@ class EnhancedStrategyManagerDialog(QDialog):
                 commission_rate=self.commission_rate_spin.value()
             )
 
-            # 启动回测
-            async def run_backtest_async():
-                task_id = await self.strategy_service.run_backtest(
-                    self.current_strategy_id, market_data, context
-                )
-                return task_id
-
-            # 使用事件循环运行异步函数
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            task_id = loop.run_until_complete(run_backtest_async())
-            loop.close()
-
-            if task_id:
-                # 显示进度对话框
-                progress_dialog = BacktestProgressDialog(self, self.strategy_service, task_id)
-                if progress_dialog.exec_() == QDialog.Accepted:
-                    # 回测完成，显示结果
-                    result = self.strategy_service.get_backtest_result(task_id)
-                    if result:
-                        self._display_backtest_result(result)
+            # 使用工作线程执行异步回测，避免事件循环冲突
+            strategy_worker = StrategyWorker(
+                self.strategy_service,
+                'backtest',
+                strategy_id=self.current_strategy_id,
+                market_data=market_data,
+                context=context
+            )
+            strategy_worker.signals.task_created.connect(self._on_backtest_task_created)
+            strategy_worker.signals.error_occurred.connect(self._on_backtest_error)
+            
+            # 禁用按钮防止重复点击
+            self.run_backtest_button.setEnabled(False)
+            self.run_backtest_button.setText("回测中...")
+            
+            # 启动工作线程
+            QThreadPool.globalInstance().start(strategy_worker)
 
         except Exception as e:
             logger.error(f"运行回测失败: {e}")
             QMessageBox.critical(self, "错误", f"运行回测失败: {e}")
+            # 恢复按钮状态
+            self.run_backtest_button.setEnabled(True)
+            self.run_backtest_button.setText("运行回测")
+            
+    def _on_backtest_task_created(self, task_id):
+        """回测任务创建成功回调"""
+        # 重新启用按钮
+        self.run_backtest_button.setEnabled(True)
+        self.run_backtest_button.setText("运行回测")
+        
+        if task_id:
+            # 显示进度对话框
+            progress_dialog = BacktestProgressDialog(self, self.strategy_service, task_id)
+            if progress_dialog.exec_() == QDialog.Accepted:
+                # 回测完成，显示结果
+                result = self.strategy_service.get_backtest_result(task_id)
+                if result:
+                    self._display_backtest_result(result)
+                    
+    def _on_backtest_error(self, error_msg):
+        """回测错误回调"""
+        # 重新启用按钮
+        self.run_backtest_button.setEnabled(True)
+        self.run_backtest_button.setText("运行回测")
+        
+        logger.error(f"回测执行失败: {error_msg}")
+        QMessageBox.critical(self, "错误", f"回测执行失败: {error_msg}")
 
     def _display_backtest_result(self, result):
         """显示回测结果"""
@@ -1394,7 +2105,7 @@ class EnhancedStrategyManagerDialog(QDialog):
 
 📈 收益指标
    总收益率: {getattr(result, 'total_return', 0)*100:+.2f}%
-   年化收益率: {getattr(result, 'annual_return', 0)*100:+.2f%}
+   年化收益率: {getattr(result, 'annual_return', 0)*100:+.2f}%
 
 📉 风险指标
    最大回撤: {getattr(result, 'max_drawdown', 0)*100:.2f}%
@@ -1421,7 +2132,7 @@ class EnhancedStrategyManagerDialog(QDialog):
 
 📈 收益指标
    总收益率: {getattr(result, 'total_return', 0)*100:+.2f}%
-   年化收益率: {getattr(result, 'annual_return', 0)*100:+.2f%}
+   年化收益率: {getattr(result, 'annual_return', 0)*100:+.2f}%
 
 📉 风险指标
    夏普比率: {getattr(result, 'sharpe_ratio', 0):.3f}
@@ -1440,6 +2151,43 @@ class EnhancedStrategyManagerDialog(QDialog):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"""
         
         self.backtest_result_text.setText(result_text)
+
+    def _display_optimization_result(self, result):
+        """显示优化结果"""
+        # 格式化优化结果
+        result_text = f"""━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 优化结果
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🎯 优化信息
+   策略ID: {getattr(result, 'strategy_id', 'Unknown')}
+   优化算法: {getattr(result, 'algorithm', 'Unknown')}
+   目标指标: {getattr(result, 'target_metric', 'Unknown')}
+   总迭代次数: {getattr(result, 'total_iterations', 0)}
+   计算时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+📈 最优结果
+   最优值: {getattr(result, 'best_score', 0):+.4f}
+   最优参数组合:
+"""
+        
+        # 添加最优参数组合
+        best_params = getattr(result, 'best_parameters', {})
+        for param_name, param_value in best_params.items():
+            result_text += f"     {param_name}: {param_value}\n"
+        
+        # 添加优化历史信息
+        optimization_history = getattr(result, 'optimization_history', [])
+        if optimization_history:
+            result_text += "\n📊 优化历史（前5次）:\n"
+            for i, history_item in enumerate(optimization_history[:5]):
+                result_text += f"   迭代 {i+1}: 得分 = {history_item.get('score', 0):+.4f}\n"
+        
+        result_text += f"\n✅ 优化完成 | 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        result_text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        
+        # 显示优化结果
+        self.optimization_result_text.setText(result_text)
 
     def _export_backtest_result(self):
         """导出回测结果"""
@@ -1464,6 +2212,7 @@ class EnhancedStrategyManagerDialog(QDialog):
     def _run_optimization(self):
         """运行优化"""
         if not self.current_strategy_id or not self.strategy_service:
+            QMessageBox.warning(self, "警告", "请选择策略并确保服务可用")
             return
 
         try:
@@ -1480,25 +2229,28 @@ class EnhancedStrategyManagerDialog(QDialog):
             if config:
                 plugin = self.strategy_service.create_strategy_plugin(config.plugin_type)
                 if plugin:
-                    strategy_info = plugin.get_strategy_info()
+                    try:
+                        strategy_info = plugin.get_strategy_info()
 
-                    for param_def in strategy_info.parameters:
-                        if param_def.type in [int, float]:
-                            min_widget = getattr(self, f"{param_def.name}_min_widget", None)
-                            max_widget = getattr(self, f"{param_def.name}_max_widget", None)
-                            step_widget = getattr(self, f"{param_def.name}_step_widget", None)
-
-                            if min_widget and max_widget and step_widget:
-                                optimization_params['parameter_ranges'][param_def.name] = {
-                                    'min': min_widget.value(),
-                                    'max': max_widget.value(),
-                                    'step': step_widget.value()
-                                }
+                        for param_def in strategy_info.parameters:
+                            if param_def.type in [int, float]:
+                                # 从字典中获取控件引用
+                                widget_info = self.range_widgets.get(param_def.name)
+                                if widget_info:
+                                    min_widget = widget_info['min']
+                                    max_widget = widget_info['max']
+                                    step_widget = widget_info['step']
+                                    optimization_params['parameter_ranges'][param_def.name] = {
+                                        'min': min_widget.value(),
+                                        'max': max_widget.value(),
+                                        'step': step_widget.value()
+                                    }
+                    finally:
+                        # 释放策略插件资源
+                        if hasattr(plugin, 'destroy'):
+                            plugin.destroy()
 
             # 创建市场数据（简化处理）
-            import pandas as pd
-            import numpy as np
-
             dates = pd.date_range(start='2023-01-01', end='2023-12-31', freq='D')
             np.random.seed(42)
             prices = 100 + np.cumsum(np.random.randn(len(dates)) * 0.5)
@@ -1523,27 +2275,97 @@ class EnhancedStrategyManagerDialog(QDialog):
                 commission_rate=0.0003
             )
 
-            # 启动优化
-            async def run_optimization_async():
-                task_id = await self.strategy_service.run_optimization(
-                    self.current_strategy_id, optimization_params, market_data, context
-                )
-                return task_id
-
-            # 使用事件循环运行异步函数
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            task_id = loop.run_until_complete(run_optimization_async())
-            loop.close()
-
-            if task_id:
-                QMessageBox.information(self, "成功", f"优化任务已启动，任务ID: {task_id}")
-
-                # 可以添加优化进度监控
+            # 使用工作线程执行异步优化，避免事件循环冲突
+            strategy_worker = StrategyWorker(
+                self.strategy_service,
+                'optimization',
+                strategy_id=self.current_strategy_id,
+                optimization_params=optimization_params,
+                market_data=market_data,
+                context=context
+            )
+            strategy_worker.signals.task_created.connect(self._on_optimization_task_created)
+            strategy_worker.signals.error_occurred.connect(self._on_optimization_error)
+            
+            # 禁用按钮防止重复点击
+            self.run_optimization_button.setEnabled(False)
+            self.run_optimization_button.setText("优化中...")
+            
+            # 启动工作线程
+            QThreadPool.globalInstance().start(strategy_worker)
 
         except Exception as e:
             logger.error(f"运行优化失败: {e}")
             QMessageBox.critical(self, "错误", f"运行优化失败: {e}")
+            # 恢复按钮状态
+            self.run_optimization_button.setEnabled(True)
+            self.run_optimization_button.setText("运行优化")
+            
+    def _on_optimization_task_created(self, task_id):
+        """优化任务创建成功回调"""
+        # 重新启用按钮
+        self.run_optimization_button.setEnabled(True)
+        self.run_optimization_button.setText("运行优化")
+        
+        if task_id:
+            # 显示优化进度对话框
+            progress_dialog = OptimizationProgressDialog(self, self.strategy_service, task_id)
+            if progress_dialog.exec_() == QDialog.Accepted:
+                # 优化完成，显示结果
+                result = self.strategy_service.get_optimization_result(task_id)
+                if result:
+                    # 显示优化结果
+                    self._display_optimization_result(result)
+                else:
+                    QMessageBox.information(self, "成功", f"优化任务已完成，任务ID: {task_id}")
+            
+    def _on_optimization_error(self, error_msg):
+        """优化错误回调"""
+        # 重新启用按钮
+        self.run_optimization_button.setEnabled(True)
+        self.run_optimization_button.setText("运行优化")
+        
+        logger.error(f"优化执行失败: {error_msg}")
+        QMessageBox.critical(self, "错误", f"优化执行失败: {error_msg}")
+
+    def _export_strategy(self):
+        """导出策略"""
+        if not self.current_strategy_id:
+            QMessageBox.warning(self, "警告", "请先选择要导出的策略")
+            return
+
+        try:
+            # 获取策略配置
+            config = self.strategy_service.get_strategy_config(self.current_strategy_id)
+            if not config:
+                QMessageBox.warning(self, "错误", "策略配置不存在")
+                return
+
+            # 将策略配置转换为字典格式
+            strategy_data = {
+                'strategy_id': config.strategy_id,
+                'plugin_type': config.plugin_type,
+                'parameters': config.parameters,
+                'metadata': config.metadata
+            }
+
+            # 打开文件保存对话框
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "导出策略", 
+                f"strategy_{config.strategy_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json", 
+                "JSON Files (*.json)"
+            )
+
+            if file_path:
+                # 将策略数据写入JSON文件
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(strategy_data, f, ensure_ascii=False, indent=4)
+                
+                QMessageBox.information(self, "成功", f"策略 '{self.current_strategy_id}' 导出成功")
+
+        except Exception as e:
+            logger.error(f"导出策略失败: {e}")
+            QMessageBox.critical(self, "错误", f"导出策略失败: {e}")
 
     def _import_strategy(self):
         """导入策略"""

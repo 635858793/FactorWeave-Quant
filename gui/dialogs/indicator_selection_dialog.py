@@ -311,6 +311,7 @@ class IndicatorSelectionDialog(QDialog):
         try:
             # 获取所有注册的插件
             registered_plugins = self.service.get_registered_plugins()
+            print(f"已注册插件: {registered_plugins}")
 
             # 按类别组织指标
             category_items = {}
@@ -319,6 +320,7 @@ class IndicatorSelectionDialog(QDialog):
                 try:
                     plugin_adapter = self.service._indicator_plugins[plugin_id]
                     supported_indicators = plugin_adapter.get_supported_indicators()
+                    print(f"插件 {plugin_id} 支持的指标数量: {len(supported_indicators)}")
 
                     for indicator_name in supported_indicators:
                         try:
@@ -345,6 +347,30 @@ class IndicatorSelectionDialog(QDialog):
                                     'metadata': metadata
                                 })
                                 category_items[category_name].addChild(indicator_item)
+                            else:
+                                # 当metadata为None时，创建一个基本的指标节点
+                                print(f"指标 {indicator_name} 元数据缺失，创建基本节点")
+                                # 使用默认类别
+                                default_category = "其他"
+                                if default_category not in category_items:
+                                    category_item = QTreeWidgetItem([default_category])
+                                    category_item.setFont(0, QFont("", -1, QFont.Bold))
+                                    self.indicator_tree.addTopLevelItem(category_item)
+                                    category_items[default_category] = category_item
+
+                                # 创建基本指标节点
+                                indicator_item = QTreeWidgetItem([
+                                    indicator_name,
+                                    default_category,
+                                    plugin_id,
+                                    "无描述"
+                                ])
+                                indicator_item.setData(0, Qt.UserRole, {
+                                    'name': indicator_name,
+                                    'plugin_id': plugin_id,
+                                    'metadata': None
+                                })
+                                category_items[default_category].addChild(indicator_item)
 
                         except Exception as e:
                             print(f"加载指标元数据失败 {indicator_name}: {e}")

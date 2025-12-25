@@ -578,83 +578,9 @@ class ChartService(CacheableService, ConfigurableService):
             self.active_requests.clear()
             logger.info("所有活动的图表任务均已取消。")
 
-    async def _preload_related_stocks(self, stock_code: str, freq: str):
-        """预加载相关股票数据 - 增强降级方案"""
-        try:
-            industry_service = self._get_industry_service()
-            if not industry_service:
-                # 行业服务不可用时的降级方案
-                await self._fallback_preload_related_stocks(stock_code, freq)
-                return
 
-            # 尝试获取相关股票
-            try:
-                related_stocks = await industry_service.get_related_stocks(stock_code)
-            except Exception as e:
-                logger.warning(f"行业服务获取相关股票失败: {e}, 使用降级方案")
-                await self._fallback_preload_related_stocks(stock_code, freq)
-                return
-                
-            if not related_stocks:
-                logger.debug(f"股票 {stock_code} 没有相关股票数据")
-                return
 
-            logger.info(f"为 {stock_code} 预加载 {len(related_stocks)} 个相关股票的数据...")
-            preload_tasks = []
-            for related_code, related_name in related_stocks[:5]:  # 最多预加载5个
-                task = asyncio.create_task(
-                    self.data_standardizer.get_stock_data_async(
-                        stock_code=related_code,
-                        frequency=freq,
-                        count=365
-                    )
-                )
-                preload_tasks.append(task)
 
-            if preload_tasks:
-                await asyncio.gather(*preload_tasks)
-                logger.info("相关股票数据预加载完成。")
-
-        except Exception as e:
-            logger.error(f"预加载 {stock_code} 的相关股票时出错: {e}", exc_info=True)
-            # 即使预加载失败，也不影响主功能
-
-    async def _fallback_preload_related_stocks(self, stock_code: str, freq: str):
-        """降级方案：预加载相关股票数据"""
-        try:
-            # 降级策略：基于股票代码模式预加载相似股票
-            if stock_code.startswith('6'):  # 上海A股
-                fallback_codes = ['600036', '600519', '601318']  # 银行、白酒、保险龙头
-            elif stock_code.startswith('0') or stock_code.startswith('3'):  # 深圳A股
-                fallback_codes = ['000001', '000002', '300059']  # 银行、地产、券商
-            else:
-                # 其他市场，使用默认配置
-                fallback_codes = []
-                
-            if not fallback_codes:
-                logger.debug(f"股票 {stock_code} 暂无预加载策略")
-                return
-                
-            logger.info(f"使用降级方案为 {stock_code} 预加载 {len(fallback_codes)} 个参考股票的数据...")
-            
-            preload_tasks = []
-            for fallback_code in fallback_codes[:3]:  # 降级方案最多预加载3个
-                if fallback_code != stock_code:  # 不预加载自己
-                    task = asyncio.create_task(
-                        self.data_standardizer.get_stock_data_async(
-                            stock_code=fallback_code,
-                            frequency=freq,
-                            count=30  # 降级方案只预加载少量数据
-                        )
-                    )
-                    preload_tasks.append(task)
-
-            if preload_tasks:
-                await asyncio.gather(*preload_tasks, return_exceptions=True)  # 降级方案忽略错误
-                logger.info(f"股票 {stock_code} 降级预加载完成")
-
-        except Exception as e:
-            logger.debug(f"降级预加载失败（不影响主功能）: {e}")
 
     def _get_data_manager(self):
         """获取数据管理器（已弃用）"""

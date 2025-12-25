@@ -10,6 +10,12 @@ from ..containers import ServiceContainer
 from ..events import EventBus
 from .base_service import BaseService
 from loguru import logger
+import traceback
+import os
+import psutil
+import enum
+import time
+from datetime import datetime
 """
 策略服务
 
@@ -29,6 +35,7 @@ from enum import Enum
 import uuid
 import numpy as np
 import pandas as pd
+import threading
 
 # ✅ 修复：确保项目根目录在 Python 路径中，以便导入 strategies 模块
 _project_root = Path(__file__).parent.parent.parent
@@ -52,6 +59,31 @@ class OptimizationStatus(Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+
+
+class PluginStatus(Enum):
+    """插件状态枚举"""
+    CREATED = "created"        # 已创建
+    INITIALIZED = "initialized"  # 已初始化
+    RUNNING = "running"        # 运行中
+    IDLE = "idle"            # 空闲
+    ERROR = "error"          # 错误
+    DESTROYED = "destroyed"      # 已销毁
+
+
+class PluginInfo:
+    """插件信息类，用于管理插件生命周期"""
+    def __init__(self, plugin_id: str, plugin: IStrategyPlugin, plugin_type: str):
+        self.plugin_id = plugin_id
+        self.plugin = plugin
+        self.plugin_type = plugin_type
+        self.status = PluginStatus.CREATED
+        self.created_at = datetime.now()
+        self.initialized_at = None
+        self.last_used_at = None
+        self.usage_count = 0
+        self.error_count = 0
+        self.last_error = None
 
 
 @dataclass
@@ -123,8 +155,16 @@ class StrategyService(BaseService):
         self._config = config or {}
 
         # 策略插件管理
-        self._strategy_plugins: Dict[str, IStrategyPlugin] = {}
-        self._plugin_factories: Dict[str, Callable[[], IStrategyPlugin]] = {}
+        self._strategy_plugins: Dict[str, PluginInfo] = {}  # 使用PluginInfo管理插件生命周期
+        self._plugin_factories: Dict[str, Callable[[], IStrategyPlugin]] = {}  # 插件工厂映射
+        self._plugin_info_cache: Dict[str, Dict[str, Any]] = {}  # 插件信息缓存，避免重复创建实例
+        
+        # 插件实例池管理
+        self._plugin_instance_pool: Dict[str, List[IStrategyPlugin]] = {}  # 插件实例池，按插件类型分组
+        self._instance_pool_max_size: int = 5  # 每种插件类型的最大实例数
+        self._instance_pool_timeout: int = 300  # 实例在池中的最大空闲时间（秒）
+        self._instance_last_used: Dict[str, float] = {}  # 实例最后使用时间映射
+        self._instance_mutex = threading.RLock()  # 实例池操作的线程锁
 
         # 策略配置管理
         self._strategy_configs: Dict[str, StrategyConfig] = {}
@@ -139,18 +179,74 @@ class StrategyService(BaseService):
 
         # 性能缓存
         self._performance_cache: Dict[str, PerformanceMetrics] = {}
+        
+        # 插件生命周期管理
+        self._plugin_cleanup_interval = 300  # 插件清理间隔（秒）
+        self._plugin_idle_timeout = 3600  # 插件空闲超时（秒）
+        self._cleanup_timer = None  # 清理定时器
 
-        # 服务状态
+        # 服务状态 - 基于系统资源的动态并发控制
         self._max_concurrent_backtests = 3
         self._max_concurrent_optimizations = 1
+        # 初始更新并发限制
+        self._update_concurrent_limits()
 
         # 初始化
         self._load_strategy_plugins()
         self._load_strategy_configs()
+        
+    def _update_concurrent_limits(self):
+        """根据系统资源动态调整并发限制"""
+        try:
+            # 获取CPU核心数
+            cpu_count = os.cpu_count() or 4
+            # 获取可用内存（GB）
+            available_mem_gb = psutil.virtual_memory().available / (1024 ** 3)
+            # 获取CPU使用率
+            cpu_usage = psutil.cpu_percent(interval=0.1)
+            # 获取内存使用率
+            mem_usage = psutil.virtual_memory().percent
+            
+            # 基于资源使用情况动态调整并发数
+            # CPU核心数是主要参考因素
+            base_backtests = max(1, cpu_count // 2)
+            base_optimizations = max(1, cpu_count // 4)
+            
+            # 根据系统负载调整
+            load_factor = 1.0
+            if cpu_usage > 70 or mem_usage > 80:
+                # 高负载时降低并发
+                load_factor = 0.5
+            elif cpu_usage > 50 or mem_usage > 60:
+                # 中等负载时保持默认
+                load_factor = 0.8
+            # 低负载时可以提高并发
+            elif cpu_usage < 30 and mem_usage < 40:
+                load_factor = 1.5
+            
+            # 计算最终并发限制
+            self._max_concurrent_backtests = max(1, int(base_backtests * load_factor))
+            self._max_concurrent_optimizations = max(1, int(base_optimizations * load_factor))
+            
+            logger.debug(f"动态调整并发限制: 回测={self._max_concurrent_backtests}, 优化={self._max_concurrent_optimizations}, CPU={cpu_usage:.1f}%, 内存={mem_usage:.1f}%, 可用内存={available_mem_gb:.1f}GB")
+            
+        except Exception as e:
+            logger.error(f"更新并发限制失败: {e}")
+            # 发生错误时使用保守的默认值
+            self._max_concurrent_backtests = 3
+            self._max_concurrent_optimizations = 1
 
     def _do_initialize(self) -> None:
         """初始化策略服务"""
         try:
+            # 加载策略插件
+            self._load_strategy_plugins()
+            # 加载策略配置
+            self._load_strategy_configs()
+            
+            # 启动插件清理定时器
+            self._start_plugin_cleanup_timer()
+            
             logger.info("Strategy service initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize strategy service: {e}")
@@ -186,30 +282,25 @@ class StrategyService(BaseService):
                 logger.warning("Backtrader策略插件不可用")
 
             # 20字段标准策略插件 (New)
-            # ✅ 修复：确保路径正确，然后尝试导入策略插件
+            # 20字段标准复权价格动量策略插件
             try:
-                # 确保项目根目录在路径中
-                project_root = Path(__file__).parent.parent.parent
-                if str(project_root) not in sys.path:
-                    sys.path.insert(0, str(project_root))
-
-                from strategies.adj_vwap_strategies import AdjMomentumPlugin, VWAPReversionPlugin
-                self._plugin_factories['adj_momentum_v2'] = lambda: AdjMomentumPlugin()
-                self._plugin_factories['vwap_reversion_v2'] = lambda: VWAPReversionPlugin()
-                logger.info(">> 已注册20字段标准策略: adj_momentum_v2, vwap_reversion_v2")
-            except ImportError as e:
-                # ✅ 修复：详细记录导入错误，帮助诊断问题
-                error_msg = str(e)
-                import traceback
-                logger.warning(
-                    f"20字段标准策略插件导入失败: {e}\n"
-                    f"项目根目录: {Path(__file__).parent.parent.parent}\n"
-                    f"Python路径: {sys.path[:3]}\n"
-                    f"详细错误: {traceback.format_exc()}"
-                )
+                from plugins.strategies.adj_momentum_plugin import AdjMomentumPlugin
+                self._plugin_factories['adj_momentum'] = lambda: AdjMomentumPlugin()
+                logger.info("复权价格动量策略插件已注册")
+            except ImportError:
+                logger.warning("复权价格动量策略插件不可用")
             except Exception as e:
-                # 其他类型的错误（非导入错误）
-                logger.error(f"20字段标准策略插件初始化失败: {e}", exc_info=True)
+                logger.error(f"注册复权价格动量策略插件失败: {e}")
+            
+            # 20字段标准VWAP均值回归策略插件
+            try:
+                from plugins.strategies.vwap_reversion_plugin import VWAPReversionPlugin
+                self._plugin_factories['vwap_reversion'] = lambda: VWAPReversionPlugin()
+                logger.info("VWAP均值回归策略插件已注册")
+            except ImportError:
+                logger.warning("VWAP均值回归策略插件不可用")
+            except Exception as e:
+                logger.error(f"注册VWAP均值回归策略插件失败: {e}")
 
             # 自定义策略插件
             try:
@@ -217,20 +308,230 @@ class StrategyService(BaseService):
                 self._plugin_factories['custom'] = lambda: CustomStrategyPlugin()
             except ImportError:
                 logger.warning("自定义策略插件不可用")
+            
+            # 复权价格动量策略插件
+            try:
+                from plugins.strategies.adj_momentum_plugin import AdjMomentumPlugin
+                self._plugin_factories['adj_momentum'] = lambda: AdjMomentumPlugin()
+                logger.info("复权价格动量策略插件已注册")
+            except ImportError:
+                logger.warning("复权价格动量策略插件不可用")
+            
+            # VWAP均值回归策略插件
+            try:
+                from plugins.strategies.vwap_reversion_plugin import VWAPReversionPlugin
+                self._plugin_factories['vwap_reversion'] = lambda: VWAPReversionPlugin()
+                logger.info("VWAP均值回归策略插件已注册")
+            except ImportError:
+                logger.warning("VWAP均值回归策略插件不可用")
 
         except Exception as e:
             logger.error(f"注册内置策略插件工厂失败: {e}")
 
     def _load_strategy_configs(self) -> None:
-        """加载策略配置"""
+        """从数据库加载策略配置，发布策略配置加载完成事件"""
         try:
-            # 这里应该从数据库或文件加载策略配置
-            # 暂时使用示例数据
-            self._strategy_configs = {}
-            logger.info(f"已加载 {len(self._strategy_configs)} 个策略配置")
+            # 尝试从服务容器获取数据库服务
+            from ..containers.service_container import get_service_container
+            container = get_service_container()
+            database_service = None
+            
+            try:
+                from .database_service import DatabaseService
+                database_service = container.resolve(DatabaseService)
+                logger.info("成功获取数据库服务")
+                
+                # 从数据库加载策略配置
+                logger.info("尝试从数据库加载策略配置")
+                
+                # 查询 strategy_configs 表
+                sql = "SELECT * FROM strategy_configs"
+                with database_service.get_connection("strategy_sqlite") as conn:
+                    db_configs = conn.execute(sql)
+                
+                logger.info(f"从 strategy_configs 表查询到 {len(db_configs)} 个策略配置")
+                
+                if db_configs:
+                    # 转换数据库配置为 StrategyConfig 对象
+                    for config in db_configs:
+                        # 将数据库记录转换为 StrategyConfig 对象
+                        # SQLite 返回的是元组，需要按顺序解析
+                        strategy_id = config[0]
+                        plugin_type = config[1]
+                        parameters = json.loads(config[2])
+                        enabled = config[3]
+                        created_at = datetime.fromisoformat(config[4])
+                        updated_at = datetime.fromisoformat(config[5])
+                        metadata = json.loads(config[6])
+                        
+                        # 创建 StrategyConfig 对象
+                        strategy_config = StrategyConfig(
+                            strategy_id=strategy_id,
+                            plugin_type=plugin_type,
+                            parameters=parameters,
+                            enabled=enabled,
+                            created_at=created_at,
+                            updated_at=updated_at,
+                            metadata=metadata
+                        )
+                        
+                        self._strategy_configs[strategy_id] = strategy_config
+                    
+                    logger.info(f"从 strategy_configs 表加载到 {len(self._strategy_configs)} 个策略配置")
+                
+                # 额外步骤：从 strategies 表加载已注册策略并生成配置
+                logger.info("尝试从 strategies 表加载已注册策略")
+                sql = "SELECT * FROM strategies WHERE is_active = 1"
+                with database_service.get_connection("strategy_sqlite") as conn:
+                    registered_strategies = conn.execute(sql)
+                
+                logger.info(f"从 strategies 表查询到 {len(registered_strategies)} 个已注册策略")
+                
+                # 为每个已注册策略创建配置
+                for strategy in registered_strategies:
+                    # strategies 表字段顺序：id, name, strategy_type, version, author, description, params, created_at, updated_at, is_active
+                    strategy_id = str(strategy[0])  # id (转换为字符串)
+                    strategy_name = strategy[1]  # name
+                    strategy_type = strategy[2]  # strategy_type
+                    author = strategy[4]  # author
+                    description = strategy[5]  # description
+                    params_json = strategy[6]  # params (JSON字符串)
+                    
+                    # 跳过已存在的策略
+                    if strategy_id in self._strategy_configs:
+                        logger.info(f"策略 {strategy_name} (ID: {strategy_id}) 已存在配置，跳过")
+                        continue
+                    
+                    try:
+                        parameters = json.loads(params_json) if params_json and params_json != '{}' else {}
+                    except json.JSONDecodeError:
+                        logger.warning(f"解析策略 {strategy_name} 的参数失败，使用空参数")
+                        parameters = {}
+                    
+                    # 根据策略类型确定plugin_type
+                    plugin_type = "custom"
+                    if strategy_type.lower() in ["momentum", "trend"]:
+                        plugin_type = "factorweave"
+                    elif strategy_type.lower() in ["reversion", "volatility"]:
+                        plugin_type = "vwap_reversion"
+                    
+                    # 创建策略配置
+                    strategy_config = StrategyConfig(
+                        strategy_id=strategy_id,
+                        plugin_type=plugin_type,
+                        parameters=parameters,
+                        enabled=True,
+                        created_at=datetime.now(),
+                        updated_at=datetime.now(),
+                        metadata={
+                            "description": description,
+                            "author": author,
+                            "name": strategy_name,
+                            "plugin_type": plugin_type,
+                            "strategy_type": strategy_type
+                        }
+                    )
+                    
+                    self._strategy_configs[strategy_id] = strategy_config
+                    logger.info(f"为已注册策略 {strategy_name} (ID: {strategy_id}) 创建配置")
+                
+                # 如果仍然没有策略配置，生成默认策略
+                if not self._strategy_configs:
+                    logger.info("没有找到任何策略配置，生成默认策略")
+                    self._generate_default_strategies()
+                    
+            except Exception as e_db:
+                logger.warning(f"从数据库加载策略配置失败，生成默认策略: {e_db}")
+                self._generate_default_strategies()
+        except Exception as e_container:
+            logger.warning(f"获取服务容器失败，生成默认策略: {e_container}")
+            self._generate_default_strategies()
+            
+        logger.info(f"已加载 {len(self._strategy_configs)} 个策略配置")
+        
+        # 发布策略配置加载完成事件
+        from ..events import StrategyConfigsLoadedEvent
+        from ..events.event_bus import get_event_bus
+        event_bus = get_event_bus()
+        event_bus.publish(StrategyConfigsLoadedEvent(
+            config_count=len(self._strategy_configs)
+        ))
 
-        except Exception as e:
-            logger.error(f"加载策略配置失败: {e}")
+    def _generate_default_strategies(self) -> None:
+        """从注册的插件自动生成默认策略，完善插件集成"""
+        logger.info("开始自动生成默认策略")
+        
+        # 获取所有已注册的插件类型
+        plugin_types = self.get_available_plugin_types()
+        logger.info(f"已注册的插件类型: {plugin_types}")
+        
+        # 为每个插件类型生成一个默认策略
+        generated_count = 0
+        for plugin_type in plugin_types:
+            strategy_id = f"default_{plugin_type}"
+            
+            # 如果策略已存在，跳过
+            if strategy_id in self._strategy_configs:
+                logger.info(f"策略 {strategy_id} 已存在，跳过")
+                continue
+            
+            # 基于插件类型生成默认参数，不依赖插件信息
+            default_params = {}
+            
+            # 为不同插件类型设置特定的默认参数
+            if plugin_type == 'adj_momentum':
+                default_params = {
+                    'lookback_period': 20,
+                    'top_n': 10,
+                    'signal_strength_threshold': 0.01
+                }
+            elif plugin_type == 'vwap_reversion':
+                default_params = {
+                    'deviation_threshold': 0.02,
+                    'hold_period': 3,
+                    'min_turnover_rate': 0.5
+                }
+            elif plugin_type == 'factorweave':
+                default_params = {
+                    'strategy_type': 'momentum',
+                    'lookback_period': 20
+                }
+            elif plugin_type == 'backtrader':
+                default_params = {
+                    'strategy_class': 'SimpleMovingAverageStrategy',
+                    'fast_period': 5,
+                    'slow_period': 20
+                }
+            elif plugin_type == 'custom':
+                default_params = {
+                    'custom_params': {}
+                }
+            
+            logger.info(f"为插件 {plugin_type} 设置默认参数: {default_params}")
+            
+            # 创建默认策略配置
+            metadata = {
+                'description': f"默认 {plugin_type} 策略",
+                'author': 'system',
+                'created_at': datetime.now().isoformat(),
+                'generated_from_plugin': plugin_type
+            }
+            
+            # 直接创建策略配置
+            default_config = self.create_strategy_config(
+                strategy_id=strategy_id,
+                plugin_type=plugin_type,
+                parameters=default_params,
+                metadata=metadata
+            )
+            
+            if default_config:
+                logger.info(f"生成默认策略: {strategy_id}")
+                generated_count += 1
+            else:
+                logger.warning(f"生成默认策略 {strategy_id} 失败")
+
+        logger.info(f"自动生成了 {generated_count} 个默认策略，当前共有 {len(self._strategy_configs)} 个策略配置")
 
     # 策略插件管理
     def register_strategy_plugin(self, plugin_type: str, plugin_factory: Callable[[], IStrategyPlugin]) -> bool:
@@ -277,9 +578,26 @@ class StrategyService(BaseService):
                 logger.error(f"策略插件类型不存在: {plugin_type}")
                 return None
 
-            plugin = self._plugin_factories[plugin_type]()
+            # 生成插件ID
             plugin_id = f"{plugin_type}_{uuid.uuid4().hex[:8]}"
-            self._strategy_plugins[plugin_id] = plugin
+            
+            # 从实例池获取插件实例
+            plugin = self._get_from_instance_pool(plugin_type)
+            
+            # 如果实例池没有可用实例，则创建新实例
+            if not plugin:
+                plugin = self._plugin_factories[plugin_type]()
+                logger.debug(f"创建新策略插件实例: {plugin_id}")
+            else:
+                logger.debug(f"使用实例池中的策略插件实例: {plugin_id}")
+            
+            # 创建PluginInfo对象管理插件生命周期
+            plugin_info = PluginInfo(plugin_id, plugin, plugin_type)
+            plugin_info.status = PluginStatus.INITIALIZED
+            plugin_info.initialized_at = datetime.now()
+            plugin_info.last_used_at = datetime.now()
+            
+            self._strategy_plugins[plugin_id] = plugin_info
 
             logger.info(f"策略插件实例已创建: {plugin_id}")
             return plugin
@@ -291,13 +609,134 @@ class StrategyService(BaseService):
     def get_strategy_plugin_info(self, plugin_type: str) -> Optional[Dict[str, Any]]:
         """获取策略插件信息"""
         try:
-            plugin = self.create_strategy_plugin(plugin_type)
-            if plugin:
-                return plugin.plugin_info
-            return None
+            # 先从缓存获取，避免重复创建实例
+            if plugin_type in self._plugin_info_cache:
+                return self._plugin_info_cache[plugin_type]
+
+            if plugin_type not in self._plugin_factories:
+                logger.error(f"策略插件类型不存在: {plugin_type}")
+                return None
+
+            # 创建临时插件实例获取信息
+            plugin = None
+            try:
+                plugin = self._plugin_factories[plugin_type]()
+                plugin_info = plugin.plugin_info
+                # 缓存插件信息
+                self._plugin_info_cache[plugin_type] = plugin_info
+                return plugin_info
+            finally:
+                # 释放临时插件资源
+                if plugin and hasattr(plugin, 'destroy'):
+                    plugin.destroy()
 
         except Exception as e:
             logger.error(f"获取策略插件信息失败: {e}")
+            return None
+    
+    def _get_from_instance_pool(self, plugin_type: str) -> Optional[IStrategyPlugin]:
+        """从实例池获取插件实例"""
+        with self._instance_mutex:
+            # 检查插件类型是否在实例池中
+            if plugin_type not in self._plugin_instance_pool or not self._plugin_instance_pool[plugin_type]:
+                return None
+            
+            # 获取最近使用的实例
+            instance = self._plugin_instance_pool[plugin_type].pop()
+            instance_id = id(instance)
+            
+            # 更新最后使用时间
+            self._instance_last_used[instance_id] = time.time()
+            
+            logger.debug(f"从实例池获取插件实例: {plugin_type}_{instance_id}")
+            return instance
+    
+    def _return_to_instance_pool(self, plugin_type: str, instance: IStrategyPlugin) -> None:
+        """将插件实例归还到实例池"""
+        with self._instance_mutex:
+            # 检查实例是否有效
+            if instance is None:
+                return
+            
+            instance_id = id(instance)
+            current_time = time.time()
+            
+            # 检查实例是否超过最大空闲时间
+            if instance_id in self._instance_last_used:
+                idle_time = current_time - self._instance_last_used[instance_id]
+                if idle_time > self._instance_pool_timeout:
+                    # 实例已过期，销毁
+                    if hasattr(instance, 'destroy'):
+                        instance.destroy()
+                    if instance_id in self._instance_last_used:
+                        del self._instance_last_used[instance_id]
+                    logger.debug(f"插件实例已过期，销毁: {plugin_type}_{instance_id}")
+                    return
+            
+            # 初始化实例池列表
+            if plugin_type not in self._plugin_instance_pool:
+                self._plugin_instance_pool[plugin_type] = []
+            
+            # 检查实例池是否已满
+            if len(self._plugin_instance_pool[plugin_type]) >= self._instance_pool_max_size:
+                # 实例池已满，销毁实例
+                if hasattr(instance, 'destroy'):
+                    instance.destroy()
+                if instance_id in self._instance_last_used:
+                    del self._instance_last_used[instance_id]
+                logger.debug(f"实例池已满，销毁插件实例: {plugin_type}_{instance_id}")
+                return
+            
+            # 将实例添加到实例池
+            self._plugin_instance_pool[plugin_type].append(instance)
+            # 更新最后使用时间
+            self._instance_last_used[instance_id] = current_time
+            
+            logger.debug(f"插件实例已归还到实例池: {plugin_type}_{instance_id}")
+    
+    def _cleanup_instance_pool(self) -> None:
+        """清理实例池中的过期实例"""
+        with self._instance_mutex:
+            current_time = time.time()
+            for plugin_type, instances in list(self._plugin_instance_pool.items()):
+                # 检查每个实例
+                for instance in list(instances):
+                    instance_id = id(instance)
+                    if instance_id in self._instance_last_used:
+                        idle_time = current_time - self._instance_last_used[instance_id]
+                        if idle_time > self._instance_pool_timeout:
+                            # 实例已过期，销毁
+                            instances.remove(instance)
+                            if hasattr(instance, 'destroy'):
+                                instance.destroy()
+                            del self._instance_last_used[instance_id]
+                            logger.debug(f"清理实例池中的过期实例: {plugin_type}_{instance_id}")
+            
+            # 清理空的实例池
+            for plugin_type in list(self._plugin_instance_pool.keys()):
+                if not self._plugin_instance_pool[plugin_type]:
+                    del self._plugin_instance_pool[plugin_type]
+    
+    def get_strategy_info(self, plugin_type: str) -> Optional[Any]:
+        """获取策略信息，内部创建临时插件实例，使用后自动释放资源"""
+        try:
+            if plugin_type not in self._plugin_factories:
+                logger.error(f"策略插件类型不存在: {plugin_type}")
+                return None
+
+            # 从实例池获取或创建临时插件实例
+            plugin = self._get_from_instance_pool(plugin_type)
+            if not plugin:
+                plugin = self._plugin_factories[plugin_type]()
+            
+            try:
+                return plugin.get_strategy_info()
+            finally:
+                # 将实例归还到实例池
+                self._return_to_instance_pool(plugin_type, plugin)
+
+        except Exception as e:
+            logger.error(f"获取策略信息失败: {e}")
             return None
 
     # 策略配置管理
@@ -306,7 +745,7 @@ class StrategyService(BaseService):
                                plugin_type: str,
                                parameters: Dict[str, Any],
                                metadata: Optional[Dict[str, Any]] = None) -> bool:
-        """创建策略配置"""
+        """创建策略配置并保存到数据库，发布策略配置创建事件"""
         try:
             if strategy_id in self._strategy_configs:
                 logger.error(f"策略配置已存在: {strategy_id}")
@@ -323,7 +762,57 @@ class StrategyService(BaseService):
                 metadata=metadata or {}
             )
 
+            # 添加到内存中的策略配置
             self._strategy_configs[strategy_id] = config
+            logger.info(f"策略配置已添加到内存: {strategy_id}")
+            
+            # 保存到数据库（可选，失败不影响内存配置）
+            try:
+                from ..containers.service_container import get_service_container
+                from .database_service import DatabaseService
+                container = get_service_container()
+                database_service = container.resolve(DatabaseService)
+                
+                sql = """
+                INSERT INTO strategy_configs (
+                    strategy_id, plugin_type, parameters, enabled, created_at, updated_at, metadata
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """
+                
+                with database_service.get_connection("strategy_sqlite") as conn:
+                    conn.execute(sql, (
+                        strategy_id,
+                        plugin_type,
+                        json.dumps(parameters),
+                        config.enabled,
+                        config.created_at.isoformat(),
+                        config.updated_at.isoformat(),
+                        json.dumps(config.metadata)
+                    ))
+                    conn.commit()
+                
+                logger.info(f"策略配置已保存到数据库: {strategy_id}")
+            except Exception as e:
+                logger.warning(f"保存策略配置到数据库失败，但策略已添加到内存: {e}")
+                # 数据库保存失败不影响内存配置的创建
+                pass
+            except Exception as e_db:
+                logger.error(f"保存策略配置到数据库失败: {e_db}")
+                return False
+
+            # 添加到内存中
+            self._strategy_configs[strategy_id] = config
+            
+            # 发布策略配置创建事件
+            from ..events import StrategyConfigCreatedEvent
+            from ..events.event_bus import get_event_bus
+            event_bus = get_event_bus()
+            event_bus.publish(StrategyConfigCreatedEvent(
+                strategy_id=strategy_id,
+                plugin_type=plugin_type,
+                parameters=parameters
+            ))
+            
             logger.info(f"策略配置已创建: {strategy_id}")
             return True
 
@@ -336,7 +825,7 @@ class StrategyService(BaseService):
                                parameters: Optional[Dict[str, Any]] = None,
                                enabled: Optional[bool] = None,
                                metadata: Optional[Dict[str, Any]] = None) -> bool:
-        """更新策略配置"""
+        """更新策略配置并保存到数据库，发布策略配置更新事件"""
         try:
             if strategy_id not in self._strategy_configs:
                 logger.error(f"策略配置不存在: {strategy_id}")
@@ -344,16 +833,54 @@ class StrategyService(BaseService):
 
             config = self._strategy_configs[strategy_id]
 
+            updated_at = datetime.now()
+
+            # 先更新内存中的配置
             if parameters is not None:
                 config.parameters.update(parameters)
-
             if enabled is not None:
                 config.enabled = enabled
-
             if metadata is not None:
                 config.metadata.update(metadata)
+            config.updated_at = updated_at
 
-            config.updated_at = datetime.now()
+            # 更新到数据库（可选，失败不影响内存配置）
+            try:
+                from ..containers.service_container import get_service_container
+                from .database_service import DatabaseService
+                container = get_service_container()
+                database_service = container.resolve(DatabaseService)
+                
+                sql = """
+                UPDATE strategy_configs 
+                SET parameters = ?, enabled = ?, updated_at = ?, metadata = ?
+                WHERE strategy_id = ?
+                """
+                
+                with database_service.get_connection("strategy_sqlite") as conn:
+                    conn.execute(sql, (
+                        json.dumps(config.parameters),
+                        config.enabled,
+                        config.updated_at.isoformat(),
+                        json.dumps(config.metadata),
+                        strategy_id
+                    ))
+                    conn.commit()
+                
+                logger.info(f"策略配置已更新到数据库: {strategy_id}")
+            except Exception as e_db:
+                logger.warning(f"更新策略配置到数据库失败，但内存配置已更新: {e_db}")
+            
+            # 发布策略配置更新事件
+            from ..events import StrategyConfigUpdatedEvent
+            from ..events.event_bus import get_event_bus
+            event_bus = get_event_bus()
+            event_bus.publish(StrategyConfigUpdatedEvent(
+                strategy_id=strategy_id,
+                parameters=config.parameters,
+                enabled=config.enabled,
+                metadata=config.metadata
+            ))
 
             logger.info(f"策略配置已更新: {strategy_id}")
             return True
@@ -363,16 +890,43 @@ class StrategyService(BaseService):
             return False
 
     def delete_strategy_config(self, strategy_id: str) -> bool:
-        """删除策略配置"""
+        """删除策略配置并从数据库中删除，发布策略配置删除事件"""
         try:
             if strategy_id not in self._strategy_configs:
                 logger.error(f"策略配置不存在: {strategy_id}")
                 return False
 
+            # 从数据库中删除
+            try:
+                from ..containers.service_container import get_service_container
+                from .database_service import DatabaseService
+                container = get_service_container()
+                database_service = container.resolve(DatabaseService)
+                
+                sql = "DELETE FROM strategy_configs WHERE strategy_id = ?"
+                
+                with database_service.get_connection("strategy_sqlite") as conn:
+                    conn.execute(sql, (strategy_id,))
+                    conn.commit()
+                
+                logger.info(f"策略配置已从数据库中删除: {strategy_id}")
+            except Exception as e_db:
+                logger.error(f"从数据库中删除策略配置失败: {e_db}")
+                return False
+
+            # 从内存中删除
             del self._strategy_configs[strategy_id]
 
             # 清理相关的回测和优化任务
             self._cleanup_strategy_tasks(strategy_id)
+            
+            # 发布策略配置删除事件
+            from ..events import StrategyConfigDeletedEvent
+            from ..events.event_bus import get_event_bus
+            event_bus = get_event_bus()
+            event_bus.publish(StrategyConfigDeletedEvent(
+                strategy_id=strategy_id
+            ))
 
             logger.info(f"策略配置已删除: {strategy_id}")
             return True
@@ -428,9 +982,13 @@ class StrategyService(BaseService):
             if strategy_id not in self._strategy_configs:
                 raise ValueError(f"策略配置不存在: {strategy_id}")
 
+            # 动态更新并发限制
+            self._update_concurrent_limits()
+            
             # 检查并发限制
-            if len(self._running_backtests) >= self._max_concurrent_backtests:
-                raise ValueError(f"回测任务数量超限，最大允许 {self._max_concurrent_backtests} 个")
+            current_backtests = len(self._running_backtests)
+            if current_backtests >= self._max_concurrent_backtests:
+                raise ValueError(f"回测任务数量超限，最大允许 {self._max_concurrent_backtests} 个，当前运行中: {current_backtests} 个。请等待当前任务完成后再提交新任务。")
 
             # 创建回测任务
             task_id = f"backtest_{strategy_id}_{uuid.uuid4().hex[:8]}"
@@ -448,60 +1006,107 @@ class StrategyService(BaseService):
             async_task = asyncio.create_task(self._execute_backtest(task_id))
             self._running_backtests[task_id] = async_task
 
-            logger.info(f"回测任务已启动: {task_id}")
+            logger.info(f"回测任务已启动: {task_id}, 策略: {strategy_id}, 市场数据: {market_data.symbol}, 时间范围: {context.start_date} 至 {context.end_date}")
             return task_id
 
         except Exception as e:
-            logger.error(f"启动回测失败: {e}")
+            logger.error(f"启动回测失败: {e}, 策略ID: {strategy_id}, 错误类型: {type(e).__name__}")
+            logger.error(f"回测请求上下文: market_data={market_data.symbol}, context={context.symbol} - {context.start_date} 至 {context.end_date}")
             raise
 
     async def _execute_backtest(self, task_id: str) -> None:
         """执行回测"""
         backtest_task = self._backtest_tasks[task_id]
+        strategy_id = backtest_task.strategy_config.strategy_id
+        plugin_type = backtest_task.strategy_config.plugin_type
 
         try:
             backtest_task.status = BacktestStatus.RUNNING
             backtest_task.started_at = datetime.now()
+            logger.info(f"开始执行回测任务: {task_id}, 策略: {strategy_id}, 插件类型: {plugin_type}")
 
             # 创建策略插件实例
-            plugin = self.create_strategy_plugin(backtest_task.strategy_config.plugin_type)
+            plugin = self.create_strategy_plugin(plugin_type)
             if not plugin:
-                raise ValueError(f"无法创建策略插件: {backtest_task.strategy_config.plugin_type}")
+                error_msg = f"无法创建策略插件: {plugin_type}"
+                logger.error(f"回测任务 {task_id} 失败: {error_msg}")
+                raise ValueError(error_msg)
 
+            # 更新插件使用时间
+            self._update_plugin_last_used(plugin)
+            # 更新插件状态为RUNNING
+            for plugin_id, plugin_info in self._strategy_plugins.items():
+                if plugin_info.plugin is plugin:
+                    plugin_info.status = PluginStatus.RUNNING
+                    break
+            
+            # 补全缺失的必填参数
+            strategy_info = plugin.get_strategy_info()
+            updated_parameters = dict(backtest_task.strategy_config.parameters)
+            
+            for param_def in strategy_info.parameters:
+                param_name = param_def.name
+                if param_def.required and param_name not in updated_parameters:
+                    updated_parameters[param_name] = param_def.default_value
+                    logger.debug(f"为策略 {strategy_id} 补全必填参数: {param_name} = {param_def.default_value}")
+            
             # 初始化策略
-            if not plugin.initialize_strategy(backtest_task.context, backtest_task.strategy_config.parameters):
-                raise ValueError("策略初始化失败")
+            logger.debug(f"初始化策略: {strategy_id}, 参数: {updated_parameters}")
+            if not plugin.initialize_strategy(backtest_task.context, updated_parameters):
+                error_msg = f"策略初始化失败: {strategy_id}, 插件: {plugin_type}"
+                logger.error(f"回测任务 {task_id} 失败: {error_msg}")
+                raise ValueError(error_msg)
 
-            # 执行回测
+            # 更新插件使用时间
+            self._update_plugin_last_used(plugin)
+            
+            # 执行回测 - 生成信号
+            logger.debug(f"生成交易信号: {strategy_id}, 市场数据大小: {len(backtest_task.market_data.datetime)}")
             signals = plugin.generate_signals(backtest_task.market_data, backtest_task.context)
             backtest_task.progress = 0.5
+            logger.debug(f"信号生成完成: {strategy_id}, 信号数量: {len(signals)}")
 
+            # 更新插件使用时间
+            self._update_plugin_last_used(plugin)
+            
             # 模拟交易执行和性能计算
+            logger.debug(f"计算策略性能: {strategy_id}")
             performance = plugin.calculate_performance(backtest_task.context)
             backtest_task.progress = 1.0
+            logger.debug(f"性能计算完成: {strategy_id}, 性能指标: {performance}")
+            
+            # 更新插件状态为IDLE
+            self._update_plugin_last_used(plugin)
 
             # 保存结果
             backtest_task.result = performance
             backtest_task.status = BacktestStatus.COMPLETED
             backtest_task.completed_at = datetime.now()
 
+            # 计算执行时间
+            execution_time = (backtest_task.completed_at - backtest_task.started_at).total_seconds()
+            
             # 缓存性能结果
-            cache_key = f"{backtest_task.strategy_config.strategy_id}_{hash(str(backtest_task.strategy_config.parameters))}"
+            cache_key = f"{strategy_id}_{hash(str(backtest_task.strategy_config.parameters))}"
             self._performance_cache[cache_key] = performance
 
-            logger.info(f"回测任务完成: {task_id}")
+            logger.info(f"回测任务完成: {task_id}, 策略: {strategy_id}, 执行时间: {execution_time:.2f}秒, 信号数量: {len(signals)}")
 
         except Exception as e:
             backtest_task.status = BacktestStatus.FAILED
             backtest_task.error_message = str(e)
             backtest_task.completed_at = datetime.now()
-
-            logger.error(f"回测任务失败: {task_id}, 错误: {e}")
+            
+            # 记录详细错误信息
+            logger.error(f"回测任务失败: {task_id}, 策略: {strategy_id}, 插件: {plugin_type}, 错误类型: {type(e).__name__}, 错误信息: {e}")
+            logger.error(f"错误堆栈: {traceback.format_exc()}")
+            logger.error(f"回测上下文: {backtest_task.context}")
 
         finally:
             # 清理运行中的任务
             if task_id in self._running_backtests:
                 del self._running_backtests[task_id]
+                logger.debug(f"清理运行中的回测任务: {task_id}")
 
     def get_backtest_status(self, task_id: str) -> Optional[Dict[str, Any]]:
         """获取回测状态"""
@@ -555,9 +1160,13 @@ class StrategyService(BaseService):
             if strategy_id not in self._strategy_configs:
                 raise ValueError(f"策略配置不存在: {strategy_id}")
 
+            # 动态更新并发限制
+            self._update_concurrent_limits()
+            
             # 检查并发限制
-            if len(self._running_optimizations) >= self._max_concurrent_optimizations:
-                raise ValueError(f"优化任务数量超限，最大允许 {self._max_concurrent_optimizations} 个")
+            current_optimizations = len(self._running_optimizations)
+            if current_optimizations >= self._max_concurrent_optimizations:
+                raise ValueError(f"优化任务数量超限，最大允许 {self._max_concurrent_optimizations} 个，当前运行中: {current_optimizations} 个。优化任务资源消耗较大，请等待当前任务完成后再提交新任务。")
 
             # 创建优化任务
             task_id = f"optimization_{strategy_id}_{uuid.uuid4().hex[:8]}"
@@ -765,7 +1374,16 @@ class StrategyService(BaseService):
                 min_val = param_range.get('min', 1)
                 max_val = param_range.get('max', 10)
                 step = param_range.get('step', 1)
-                param_values[param_name] = list(range(min_val, max_val + 1, step))
+                
+                # 修复：处理浮点数参数
+                if isinstance(min_val, float) or isinstance(max_val, float) or isinstance(step, float):
+                    # 使用numpy.arange处理浮点数
+                    import numpy as np
+                    # 生成浮点数序列，然后转换为列表
+                    param_values[param_name] = np.arange(min_val, max_val + step / 2, step).tolist()
+                else:
+                    # 整数参数使用range
+                    param_values[param_name] = list(range(min_val, max_val + 1, step))
             elif isinstance(param_range, list):
                 param_values[param_name] = param_range
 
@@ -989,7 +1607,19 @@ class StrategyService(BaseService):
             for task_id in list(self._running_optimizations.keys()):
                 self.cancel_optimization(task_id)
 
+            # 停止插件清理定时器
+            self._stop_plugin_cleanup_timer()
+
             # 清理插件实例
+            for plugin_id, plugin_info in self._strategy_plugins.items():
+                # 调用插件的销毁方法（如果有）
+                if hasattr(plugin_info.plugin, 'destroy'):
+                    try:
+                        plugin_info.plugin.destroy()
+                    except Exception as e:
+                        logger.error(f"调用插件销毁方法失败 {plugin_id}: {e}")
+                # 更新插件状态
+                plugin_info.status = PluginStatus.DESTROYED
             self._strategy_plugins.clear()
 
             super()._do_dispose()
@@ -997,3 +1627,90 @@ class StrategyService(BaseService):
 
         except Exception as e:
             logger.error(f"Failed to dispose strategy service: {e}")
+
+    def _start_plugin_cleanup_timer(self) -> None:
+        """启动插件清理定时器"""
+        def cleanup_timer_func():
+            while True:
+                try:
+                    self._cleanup_idle_plugins()
+                except Exception as e:
+                    logger.error(f"插件清理定时器执行失败: {e}")
+                finally:
+                    # 等待指定的清理间隔
+                    import time
+                    time.sleep(self._plugin_cleanup_interval)
+        
+        # 创建并启动后台线程
+        self._cleanup_timer = threading.Thread(target=cleanup_timer_func, daemon=True)
+        self._cleanup_timer.start()
+        logger.info(f"插件清理定时器已启动，清理间隔: {self._plugin_cleanup_interval}秒")
+
+    def _stop_plugin_cleanup_timer(self) -> None:
+        """停止插件清理定时器"""
+        if self._cleanup_timer:
+            # 守护线程会自动退出，无需手动停止
+            logger.info("插件清理定时器已停止")
+
+    def _update_plugin_last_used(self, plugin: IStrategyPlugin) -> None:
+        """更新插件的最后使用时间"""
+        try:
+            current_time = datetime.now()
+            # 遍历查找对应的PluginInfo对象
+            for plugin_id, plugin_info in self._strategy_plugins.items():
+                if plugin_info.plugin is plugin:
+                    plugin_info.last_used_at = current_time
+                    plugin_info.usage_count += 1
+                    # 更新插件状态为IDLE
+                    if plugin_info.status != PluginStatus.RUNNING:
+                        plugin_info.status = PluginStatus.IDLE
+                    break
+        except Exception as e:
+            logger.error(f"更新插件最后使用时间失败: {e}")
+    
+    def _cleanup_idle_plugins(self) -> None:
+        """清理空闲的插件实例"""
+        try:
+            current_time = datetime.now()
+            plugins_to_remove = []
+            
+            logger.debug(f"开始清理空闲插件，当前插件数量: {len(self._strategy_plugins)}")
+            
+            # 遍历所有插件，检查是否需要清理
+            for plugin_id, plugin_info in self._strategy_plugins.items():
+                if plugin_info.status == PluginStatus.RUNNING:
+                    continue
+                    
+                # 检查是否超过空闲超时
+                if plugin_info.last_used_at:
+                    idle_time = current_time - plugin_info.last_used_at
+                    if idle_time.total_seconds() > self._plugin_idle_timeout:
+                        plugins_to_remove.append(plugin_id)
+                        logger.debug(f"插件 {plugin_id} 已空闲 {idle_time.total_seconds():.2f}秒，超过阈值 {self._plugin_idle_timeout}秒，将被清理")
+            
+            # 清理超时的插件
+            for plugin_id in plugins_to_remove:
+                plugin_info = self._strategy_plugins[plugin_id]
+                logger.info(f"清理空闲插件: {plugin_id}，状态: {plugin_info.status.value}，创建时间: {plugin_info.created_at}，最后使用时间: {plugin_info.last_used_at}")
+                
+                # 调用插件的销毁方法（如果有）
+                if hasattr(plugin_info.plugin, 'destroy'):
+                    try:
+                        plugin_info.plugin.destroy()
+                    except Exception as e:
+                        logger.error(f"调用插件销毁方法失败 {plugin_id}: {e}")
+                
+                # 更新插件状态并从字典中移除
+                plugin_info.status = PluginStatus.DESTROYED
+                del self._strategy_plugins[plugin_id]
+            
+            if plugins_to_remove:
+                logger.info(f"已清理 {len(plugins_to_remove)} 个空闲插件，剩余插件数量: {len(self._strategy_plugins)}")
+            else:
+                logger.debug("没有需要清理的空闲插件")
+            
+            # 同时清理实例池中的过期实例
+            self._cleanup_instance_pool()
+                
+        except Exception as e:
+            logger.error(f"清理空闲插件失败: {e}")

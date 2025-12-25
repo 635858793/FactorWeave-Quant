@@ -10,7 +10,7 @@ FactorWeave-Quant  2.0 系统快速启动器
 
 from analysis.pattern_manager import PatternManager
 from optimization.version_manager import VersionManager
-from optimization.auto_tuner import AutoTuner
+from optimization.auto_tuner import AlgorithmAutoTuner
 from optimization.main_controller import OptimizationController
 from core.services import (
     ConfigService, StockService,
@@ -76,7 +76,7 @@ class FactorWeaveQuantLauncher:
 
             # 初始化优化系统组件
             self.optimization_controller = OptimizationController(debug_mode=False)
-            self.auto_tuner = AutoTuner(debug_mode=False)
+            self.auto_tuner = AlgorithmAutoTuner(debug_mode=False)
             self.pattern_manager = PatternManager()
             self.version_manager = VersionManager()
             self.performance_evaluator = PerformanceEvaluator(debug_mode=False)

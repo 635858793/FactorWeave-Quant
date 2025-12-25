@@ -23,7 +23,7 @@ from PyQt5.QtCore import QThread, Qt, pyqtSignal
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import pyqtSlot
 
-from core.performance.unified_monitor import AutoTuner
+from core.performance.unified_monitor import PerformanceAutoTuner
 from core.plugin_manager import PluginManager
 from gui.dialogs.converter_dialog import ConverterDialog
 from gui.dialogs.data_quality_dialog import DataQualityDialog
@@ -2005,7 +2005,7 @@ FactorWeave-Quant  2.0 (重构版本)
         """一键优化"""
         try:
             from PyQt5.QtWidgets import QProgressDialog
-            from optimization.auto_tuner import AutoTuner
+            from optimization.auto_tuner import AlgorithmAutoTuner
             from PyQt5.QtCore import QThread, pyqtSignal
 
             # 创建进度对话框
@@ -2023,7 +2023,7 @@ FactorWeave-Quant  2.0 (重构版本)
 
                 def run(self):
                     try:
-                        auto_tuner = AutoTuner(debug_mode=True)
+                        auto_tuner = AlgorithmAutoTuner(debug_mode=True)
 
                         # 模拟优化过程
                         for i in range(101):
@@ -2122,7 +2122,7 @@ FactorWeave-Quant  2.0 (重构版本)
                             self.msleep(80)
 
                         # 执行实际智能优化
-                        auto_tuner = AutoTuner(debug_mode=True)
+                        auto_tuner = PerformanceAutoTuner(debug_mode=True)
                         result = auto_tuner.smart_optimize(
                             performance_threshold=self.performance_threshold,
                             improvement_target=self.improvement_target

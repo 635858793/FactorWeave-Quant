@@ -8,7 +8,7 @@ UI集成组件
 
 from analysis.pattern_manager import PatternManager
 from optimization.version_manager import VersionManager
-from optimization.auto_tuner import AutoTuner, TuningTask, OptimizationConfig
+from optimization.auto_tuner import AlgorithmAutoTuner, TuningTask, OptimizationConfig
 import sys
 import os
 from typing import Dict, List, Any, Optional, Callable
@@ -56,7 +56,7 @@ class OptimizationWorker(QThread if GUI_AVAILABLE else QObject):
         # pattern_name, error_message
         error_occurred = pyqtSignal(str, str)
 
-    def __init__(self, auto_tuner: AutoTuner):
+    def __init__(self, auto_tuner: AlgorithmAutoTuner):
         super().__init__()
         self.auto_tuner = auto_tuner
         self.current_task = None
@@ -373,7 +373,7 @@ class UIIntegration:
         self.config = UIConfig()
 
         # 核心组件
-        self.auto_tuner = AutoTuner(debug_mode=debug_mode)
+        self.auto_tuner = AlgorithmAutoTuner(debug_mode=debug_mode)
         self.version_manager = VersionManager()
         self.evaluator = PerformanceEvaluator(debug_mode)
         self.pattern_manager = PatternManager()

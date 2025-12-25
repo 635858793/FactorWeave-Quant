@@ -20,19 +20,25 @@ from PyQt5.QtWidgets import (
     QFileDialog, QMessageBox, QProgressDialog, QInputDialog,
     QListWidget, QListWidgetItem, QApplication, QDateEdit
 )
+from PyQt5.QtWidgets import QCompleter
 from core.plugin_types import AssetType
 from PyQt5.QtCore import QDate
 from PyQt5.QtCore import Qt, pyqtSignal, QThread, QObject, QRunnable, QThreadPool
 from PyQt5.QtGui import QFont, QPixmap
 
-# 添加项目根目录到Python路径
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root))
-logger.info(f"已添加项目根目录到Python路径: {project_root}")
-logger.info(f"当前Python路径: {sys.path[:3]}")
+# # 添加项目根目录到Python路径
+# project_root = Path(__file__).parent.parent.parent
+# sys.path.insert(0, str(project_root))
+# logger.info(f"已添加项目根目录到Python路径: {project_root}")
+# logger.info(f"当前Python路径: {sys.path[:3]}")
 
-logger = logger
-
+# 引入增强型资产选择器
+try:
+    from gui.components.enhanced_asset_selector import EnhancedAssetSelector
+    ENHANCED_ASSET_SELECTOR_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"增强型资产选择器不可用: {e}")
+    ENHANCED_ASSET_SELECTOR_AVAILABLE = False
 
 class BacktestWorker(QRunnable):
     """回测执行工作线程"""
@@ -48,84 +54,206 @@ class BacktestWorker(QRunnable):
         """执行回测"""
         try:
             logger.info(f"回测工作线程启动: {self.strategy_name}")
-            
-            # 设置Python路径
-            import sys
-            from pathlib import Path
-            project_root = Path(__file__).parent.parent.parent
-            
-            if str(project_root) not in sys.path:
-                sys.path.insert(0, str(project_root))
-                logger.info(f"在工作线程内添加项目根目录到Python路径: {project_root}")
-            
-            strategies_dir = project_root / "strategies"
-            if str(strategies_dir) not in sys.path:
-                sys.path.insert(0, str(strategies_dir))
-                logger.info(f"在工作线程内添加strategies目录到Python路径: {strategies_dir}")
-            
-            # 导入策略管理器
-            try:
-                logger.info("工作线程: 尝试直接导入 strategies.strategy_manager...")
-                from strategies.strategy_manager import StrategyManager
-                logger.info("工作线程: 成功使用直接导入 StrategyManager")
-            except ImportError as e1:
-                logger.error(f"工作线程: 直接导入失败，错误: {e1}")
-                logger.info("工作线程: 尝试使用importlib从文件路径导入...")
-                import importlib.util
-                
-                strategy_manager_path = project_root / "strategies" / "strategy_manager.py"
-                logger.info(f"工作线程: 策略管理器文件路径: {strategy_manager_path}")
-                
-                if not strategy_manager_path.exists():
-                    logger.error(f"工作线程: 策略管理器文件不存在: {strategy_manager_path}")
-                    raise ImportError(f"工作线程: 策略管理器文件不存在: {strategy_manager_path}")
-                
-                spec = importlib.util.spec_from_file_location(
-                    "strategies.strategy_manager",
-                    str(strategy_manager_path)
-                )
-                
-                if not spec or not spec.loader:
-                    logger.error("工作线程: 无法创建模块规范")
-                    raise ImportError("工作线程: 无法创建策略管理器模块规范")
-                
-                strategy_manager_module = importlib.util.module_from_spec(spec)
-                sys.modules["strategies.strategy_manager"] = strategy_manager_module
-                
-                try:
-                    spec.loader.exec_module(strategy_manager_module)
-                    logger.info("工作线程: 模块加载成功")
-                except Exception as e2:
-                    logger.error(f"工作线程: 模块加载失败: {e2}")
-                    logger.error(f"工作线程: 详细错误栈: {traceback.format_exc()}")
-                    raise
-                
-                if hasattr(strategy_manager_module, "StrategyManager"):
-                    StrategyManager = strategy_manager_module.StrategyManager
-                    logger.info("工作线程: 成功获取StrategyManager类")
-                else:
-                    logger.error("工作线程: 模块中不存在StrategyManager类")
-                    raise ImportError("工作线程: 策略管理器模块中不存在StrategyManager类")
-            
-            # 创建策略管理器实例并执行回测
-            manager = StrategyManager()
-            logger.info(f"工作线程: 正在执行专业回测: {self.strategy_name}")
-            
+                        
             # 从回测参数中获取资产类型
             asset_type = self.backtest_params.get('asset_type', 'stock_a')
             
-            backtest_result = manager.backtest_strategy(
-                strategy_id=self.strategy_name,
-                symbols=self.stocks,  # 已经是代码列表，不需要再split
-                asset_type=asset_type,
-                initial_capital=self.backtest_params['initial_capital'],
-                start_date=self.backtest_params['start_date'],
-                end_date=self.backtest_params['end_date'],
-                commission=self.backtest_params['commission']
-            )
+            # 获取策略引擎并执行回测
+            from core.strategy import get_strategy_engine
+            strategy_engine = get_strategy_engine()
             
-            logger.info(f"工作线程: 专业回测完成: {self.strategy_name}")
-            self.signals.finished.emit(backtest_result)
+            if strategy_engine:
+                # StrategyEngine 执行策略（生成信号）
+                logger.info(f"工作线程: 使用 StrategyEngine 执行策略: {self.strategy_name}")
+                
+                # 获取股票数据 - 使用正确的服务容器和数据管理器
+                data_manager = None
+                try:
+                    # 优先从服务容器获取数据管理器
+                    from core.containers.service_container import get_service_container
+                    container = get_service_container()
+                    from core.services.unified_data_manager import UnifiedDataManager
+                    data_manager = container.resolve(UnifiedDataManager)
+                except Exception as e:
+                    logger.warning(f"从服务容器获取数据管理器失败，尝试直接创建: {e}")
+                    from core.services.unified_data_manager import UnifiedDataManager
+                    data_manager = UnifiedDataManager()
+                    logger.info(f"直接创建数据管理器: {data_manager}")
+                
+                if data_manager:
+                    # 使用 UnifiedDataManager 获取真实的股票数据
+                    logger.info(f"使用数据管理器获取真实股票数据，股票列表: {self.stocks}")
+                    
+                    import pandas as pd
+                    from datetime import datetime
+                    
+                    # 生成日期范围
+                    start_date = pd.to_datetime(self.backtest_params['start_date'])
+                    end_date = pd.to_datetime(self.backtest_params['end_date'])
+                    
+                    # 为每个股票获取真实数据
+                    all_data = []
+                    for symbol in self.stocks:
+                        try:
+                            # 从数据管理器获取真实股票数据
+                            from core.plugin_types import AssetType
+                            
+                            # 将字符串转换为 AssetType 枚举
+                            asset_type_str = self.backtest_params.get('asset_type', 'stock_a')
+                            try:
+                                asset_type = AssetType(asset_type_str)
+                            except ValueError:
+                                # 如果转换失败，使用默认值
+                                asset_type = AssetType.STOCK_A
+                                logger.warning(f"无效的资产类型: {asset_type_str}, 使用默认值: {asset_type.value}")
+                            
+                            stock_data = data_manager.get_historical_data(
+                                symbol=symbol,
+                                asset_type=asset_type,
+                                period='1d',
+                                start_date=start_date,
+                                end_date=end_date
+                            )
+                            
+                            if stock_data is not None and not stock_data.empty:
+                                # 添加股票代码列
+                                stock_data['symbol'] = symbol
+                                all_data.append(stock_data)
+                                logger.info(f"成功获取 {symbol} 的真实数据，形状: {stock_data.shape}")
+                            else:
+                                logger.warning(f"未能获取 {symbol} 的数据，跳过该股票")
+                        except Exception as data_error:
+                            logger.error(f"获取 {symbol} 数据失败: {data_error}")
+                    
+                    # 合并所有股票数据
+                    if all_data:
+                        data = pd.concat(all_data)
+                    else:
+                        logger.error("未能获取任何股票数据")
+                        raise Exception(f"无法获取任何股票数据: {self.stocks}")
+                    
+                    if data is not None and not data.empty:
+                        # 执行策略生成信号
+                        signals, execution_info = strategy_engine.execute_strategy(
+                            strategy_name=self.strategy_name,
+                            data=data,
+                            use_cache=False,
+                            save_to_db=False
+                        )
+                        
+                        logger.info(f"工作线程: StrategyEngine 执行完成，生成 {len(signals)} 个信号")
+                        
+                        # 将信号转换为回测结果格式
+                        backtest_result = {
+                            'strategy_name': self.strategy_name,
+                            'signals': signals,
+                            'execution_info': execution_info,
+                            'backtest_params': self.backtest_params,
+                            'stocks': self.stocks,
+                            'status': 'completed',
+                            'engine_used': 'StrategyEngine'
+                        }
+                        
+                        logger.info(f"工作线程: 专业回测完成: {self.strategy_name}")
+                        self.signals.finished.emit(backtest_result)
+                    else:
+                        raise Exception(f"无法创建或获取股票数据: {self.stocks}")
+                else:
+                    raise Exception("数据管理器不可用")
+            else:
+                # 如果策略引擎不可用，使用统一回测引擎
+                logger.info("工作线程: 策略引擎不可用，尝试使用统一回测引擎...")
+                from backtest.unified_backtest_engine import UnifiedBacktestEngine
+                
+                # 创建回测引擎实例
+                backtest_engine = UnifiedBacktestEngine()
+                
+                # 获取股票数据并转换为统一回测引擎需要的格式
+                data_manager = None
+                try:
+                    # 优先从服务容器获取数据管理器
+                    from core.containers.service_container import get_service_container
+                    container = get_service_container()
+                    from core.services.unified_data_manager import UnifiedDataManager
+                    data_manager = container.resolve(UnifiedDataManager)
+                except Exception as e:
+                    logger.warning(f"从服务容器获取数据管理器失败，尝试直接创建: {e}")
+                    from core.services.unified_data_manager import UnifiedDataManager
+                    data_manager = UnifiedDataManager()
+                    logger.info(f"直接创建数据管理器: {data_manager}")
+                
+                if data_manager:
+                    # 使用 UnifiedDataManager 获取真实的股票数据
+                    logger.info(f"使用数据管理器获取真实股票数据，股票列表: {self.stocks}")
+                    
+                    import pandas as pd
+                    from datetime import datetime
+                    
+                    # 生成日期范围
+                    start_date = pd.to_datetime(self.backtest_params['start_date'])
+                    end_date = pd.to_datetime(self.backtest_params['end_date'])
+                    
+                    # 为每个股票获取真实数据
+                    all_data = []
+                    for symbol in self.stocks:
+                        try:
+                            # 从数据管理器获取真实股票数据
+                            stock_data = data_manager.get_asset_data(
+                                symbol=symbol,
+                                asset_type=self.backtest_params.get('asset_type', 'stock_a'),
+                                period='1d',
+                                start_date=start_date,
+                                end_date=end_date
+                            )
+                            
+                            if stock_data is not None and not stock_data.empty:
+                                # 添加股票代码列
+                                stock_data['symbol'] = symbol
+                                all_data.append(stock_data)
+                                logger.info(f"成功获取 {symbol} 的真实数据，形状: {stock_data.shape}")
+                            else:
+                                logger.warning(f"未能获取 {symbol} 的数据，跳过该股票")
+                        except Exception as data_error:
+                            logger.error(f"获取 {symbol} 数据失败: {data_error}")
+                    
+                    # 合并所有股票数据
+                    if all_data:
+                        data = pd.concat(all_data)
+                    else:
+                        logger.error("未能获取任何股票数据")
+                        raise Exception(f"无法获取任何股票数据: {self.stocks}")
+                    
+                    if data is not None and not data.empty:
+                        # 为数据添加信号列（这里使用简单的示例信号，实际应该从策略生成）
+                        data['signal'] = 0  # 默认无信号
+                        # 每10天添加一个买入信号作为示例
+                        data.loc[data.index[::10], 'signal'] = 1
+                        
+                        # 执行统一回测引擎的回测
+                        backtest_result = backtest_engine.run_backtest(
+                            data=data,
+                            signal_col='signal',
+                            price_col='close',
+                            initial_capital=self.backtest_params['initial_capital'],
+                            commission_pct=self.backtest_params['commission']
+                        )
+                        
+                        # 转换为标准回测结果格式
+                        formatted_result = {
+                            'strategy_name': self.strategy_name,
+                            'backtest_result': backtest_result,
+                            'backtest_params': self.backtest_params,
+                            'stocks': self.stocks,
+                            'status': 'completed',
+                            'engine_used': 'UnifiedBacktestEngine'
+                        }
+                        
+                        logger.info(f"工作线程: 统一回测引擎执行完成: {self.strategy_name}")
+                        self.signals.finished.emit(formatted_result)
+                    else:
+                        raise Exception(f"无法创建或获取股票数据: {self.stocks}")
+                else:
+                    raise Exception("数据管理器不可用")
             
         except Exception as e:
             logger.error(f"工作线程: 回测执行失败: {e}")
@@ -148,7 +276,7 @@ class StrategyManagerDialog(QDialog):
     strategy_exported = pyqtSignal(str)
     backtest_started = pyqtSignal(dict)
 
-    def __init__(self, parent=None, strategy_service=None, asset_service=None):
+    def __init__(self, parent=None, strategy_service=None, asset_service=None, data_manager=None):
         """
         初始化策略管理对话框
 
@@ -156,10 +284,41 @@ class StrategyManagerDialog(QDialog):
             parent: 父窗口
             strategy_service: 策略服务
             asset_service: 资产服务
+            data_manager: 统一数据管理器
         """
         super().__init__(parent)
+
+        # 初始化服务容器
+        try:
+            from core.containers.service_container import get_service_container
+            self._container = get_service_container()
+            logger.info(f"服务容器初始化成功: {self._container}")
+        except Exception as e:
+            logger.warning(f"服务容器初始化失败: {e}")
+            self._container = None
+
+        # 1. 优先使用传入的服务参数
         self.strategy_service = strategy_service
         self.asset_service = asset_service
+        self.data_manager = data_manager
+
+        # 2. 如果没有传入服务参数，从服务容器获取
+        if self._container:
+            if not self.strategy_service:
+                from core.services.strategy_service import StrategyService
+                self.strategy_service = self._container.resolve(StrategyService)
+                logger.info(f"从服务容器获取到 strategy_service: {self.strategy_service}")
+
+            if not self.asset_service:
+                from core.services.asset_service import AssetService
+                self.asset_service = self._container.resolve(AssetService)
+                logger.info(f"从服务容器获取到 asset_service: {self.asset_service}")
+
+            if not self.data_manager:
+                from core.services.unified_data_manager import UnifiedDataManager
+                self.data_manager = self._container.resolve(UnifiedDataManager)
+                logger.info(f"从服务容器获取到 data_manager: {self.data_manager}")
+
         self.strategies = []
         # 当前选择的资产类型
         self.current_asset_type = None
@@ -445,17 +604,28 @@ def strategy_logic(data, params):
         self.backtest_asset_type_combo.currentIndexChanged.connect(self._on_asset_type_changed)
         settings_layout.addRow("资产类型:", self.backtest_asset_type_combo)
 
-        # 回测资产
-        self.backtest_stock_combo = QComboBox()
-        self.backtest_stock_combo.setEditable(True)
-        self.backtest_stock_combo.setPlaceholderText("输入资产代码或名称（支持模糊匹配）")
-        # 设置模糊匹配
-        self.backtest_stock_combo.setInsertPolicy(QComboBox.NoInsert)
-        self.backtest_stock_combo.completer().setFilterMode(Qt.MatchContains)
-        self.backtest_stock_combo.completer().setCaseSensitivity(Qt.CaseInsensitive)
-        # 加载系统已有的资产列表
-        self._load_system_assets()
-        settings_layout.addRow("回测资产:", self.backtest_stock_combo)
+        # 回测资产 - 使用增强型资产选择器
+        if ENHANCED_ASSET_SELECTOR_AVAILABLE:
+            self.enhanced_asset_selector = EnhancedAssetSelector(
+                data_manager=self.data_manager,
+                asset_service=self.asset_service,
+                parent=self
+            )
+            # 连接资产选择信号
+            self.enhanced_asset_selector.asset_selected.connect(self._on_enhanced_asset_selected)
+            settings_layout.addRow("回测资产:", self.enhanced_asset_selector)
+        else:
+            # 降级到原来的实现
+            self.backtest_stock_combo = QComboBox()
+            self.backtest_stock_combo.setEditable(True)
+            self.backtest_stock_combo.setPlaceholderText("输入资产代码或名称（支持模糊匹配）")
+            # 设置模糊匹配
+            self.backtest_stock_combo.setInsertPolicy(QComboBox.NoInsert)
+            self.backtest_stock_combo.completer().setFilterMode(Qt.MatchContains)
+            self.backtest_stock_combo.completer().setCaseSensitivity(Qt.CaseInsensitive)
+            # 加载系统已有的资产列表
+            self._load_system_assets()
+            settings_layout.addRow("回测资产:", self.backtest_stock_combo)
 
         # 回测时间范围
         time_layout = QHBoxLayout()
@@ -560,65 +730,195 @@ def strategy_logic(data, params):
     def _on_asset_type_changed(self, index: int) -> None:
         """资产类型变更处理"""
         try:
-            # 清空当前资产列表
-            self.backtest_stock_combo.clear()
-            # 重新加载对应资产类型的资产列表
-            self._load_system_assets()
+            selected_asset_type = self.backtest_asset_type_combo.currentData()
+            if not selected_asset_type:
+                selected_asset_type = AssetType.STOCK_A  # 默认使用A股
+            
+            # 如果使用增强型资产选择器，同步资产类型
+            if ENHANCED_ASSET_SELECTOR_AVAILABLE and hasattr(self, 'enhanced_asset_selector'):
+                # 更新增强型资产选择器的资产类型（通过触发其内部方法）
+                # 增强型资产选择器会在自己的初始化时设置默认类型，这里不需要额外处理
+                logger.info(f"资产类型已变更到: {selected_asset_type.value}")
+            else:
+                # 传统的资产选择器处理方式
+                self.backtest_stock_combo.clear()
+                self._load_system_assets()
+                
         except Exception as e:
             logger.error(f"资产类型变更处理失败: {e}")
             QMessageBox.warning(self, "错误", f"切换资产类型失败: {str(e)}")
 
+    def _on_enhanced_asset_selected(self, asset_data: dict) -> None:
+        """处理增强型资产选择器的资产选择事件"""
+        try:
+            logger.info(f"用户选择了资产: {asset_data['display']}")
+            # 这里可以添加额外的处理逻辑，比如验证资产、更新状态等
+            # 例如：记录选择的资产，用于回测
+            
+        except Exception as e:
+            logger.error(f"处理增强型资产选择失败: {e}")
+            QMessageBox.warning(self, "错误", f"资产选择失败: {str(e)}")
+
     def _load_system_assets(self) -> None:
-        """根据选择的资产类型加载系统已有的资产列表"""
+        """根据选择的资产类型加载系统已有的资产列表（使用数据库验证）"""
         try:
             # 获取当前选择的资产类型
             selected_asset_type = self.backtest_asset_type_combo.currentData()
             if not selected_asset_type:
                 selected_asset_type = AssetType.STOCK_A  # 默认使用A股
             
-            # 从系统资产服务加载资产列表
+            # 优先使用UnifiedDataManager获取真实数据库资产列表
             system_assets = []
-            if self.asset_service:
-                # 使用AssetService获取资产列表
-                assets = self.asset_service.get_asset_list(selected_asset_type)
-                # 格式化为 "代码 名称" 格式
-                system_assets = [f"{asset['code']} {asset.get('name', '')}" for asset in assets]
-                logger.info(f"从AssetService加载了 {len(system_assets)} 个 {selected_asset_type.value} 资产")
-            else:
-                # 如果没有AssetService，使用默认数据
-                logger.warning("AssetService不可用，使用默认资产数据")
+            if hasattr(self, 'data_manager') and self.data_manager:
+                try:
+                    # 使用UnifiedDataManager的get_asset_list方法
+                    asset_df = self.data_manager.get_asset_list(
+                        asset_type=selected_asset_type.value, 
+                        market='all'
+                    )
+                    
+                    if asset_df is not None and not asset_df.empty:
+                        # 格式化为 "代码 名称" 格式
+                        system_assets = []
+                        for _, row in asset_df.iterrows():
+                            code = str(row.get('code', ''))
+                            name = str(row.get('name', ''))
+                            if code and code != 'nan':
+                                asset_text = f"{code} {name}" if name and name != 'nan' else code
+                                system_assets.append(asset_text)
+                        
+                        logger.info(f"从数据库加载了 {len(system_assets)} 个 {selected_asset_type.value} 资产")
+                    else:
+                        logger.warning(f"数据库中没有 {selected_asset_type.value} 资产数据")
+                        
+                except Exception as db_error:
+                    logger.error(f"从数据库获取资产列表失败: {db_error}")
+            
+            # 如果数据库查询失败，使用AssetService作为备选
+            if not system_assets and self.asset_service:
+                try:
+                    # 使用AssetService获取资产列表
+                    assets = self.asset_service.get_asset_list(selected_asset_type)
+                    # 格式化为 "代码 名称" 格式
+                    system_assets = [f"{asset['code']} {asset.get('name', '')}" for asset in assets]
+                    logger.info(f"从AssetService加载了 {len(system_assets)} 个 {selected_asset_type.value} 资产")
+                except Exception as service_error:
+                    logger.error(f"从AssetService获取资产列表失败: {service_error}")
+            
+            # 如果以上都失败，使用有限的默认数据（仅作为最后的备选）
+            if not system_assets:
+                logger.warning("所有数据源都不可用，使用有限的默认资产数据")
                 if selected_asset_type == AssetType.STOCK_A:
                     system_assets = [
-                        "000001 平安银行", "000002 万科A", "000009 中国宝安",
-                        "600000 浦发银行", "600004 白云机场", "600005 武钢股份",
-                        "600006 东风汽车", "600007 中国国贸", "600008 首创股份",
-                        "600009 上海机场", "600010 包钢股份", "600011 华能国际"
+                        "000001 平安银行", "000002 万科A", "600000 浦发银行",
+                        "600036 招商银行", "600519 贵州茅台", "000858 五粮液"
                     ]
                 elif selected_asset_type == AssetType.CRYPTO:
                     system_assets = [
-                        "BTCUSDT 比特币", "ETHUSDT 以太坊", "BNBUSDT 币安币",
-                        "SOLUSDT 索拉纳", "ADAUSDT 卡尔达诺", "DOTUSDT 波卡"
-                    ]
-                elif selected_asset_type == AssetType.FUTURES:
-                    system_assets = [
-                        "rb2401 螺纹钢", "al2401 铝", "cu2401 铜",
-                        "ru2401 橡胶", "zn2401 锌", "ni2401 镍"
+                        "BTCUSDT 比特币", "ETHUSDT 以太坊", "BNBUSDT 币安币"
                     ]
                 elif selected_asset_type == AssetType.INDEX:
                     system_assets = [
-                        "000001 上证指数", "000300 沪深300", "000016 上证50",
-                        "399001 深证成指", "399006 创业板指", "399005 中小板指"
+                        "000001 上证指数", "000300 沪深300", "000016 上证50"
                     ]
             
-            # 添加到下拉框
-            self.backtest_stock_combo.addItems(system_assets)
-            
-            logger.info(f"已加载 {len(system_assets)} 个 {selected_asset_type.value} 资产")
-            
+            # 清空并重新添加资产列表
+            self.backtest_stock_combo.clear()
+            if system_assets:
+                self.backtest_stock_combo.addItems(system_assets)
+                # 设置搜索功能 - 支持模糊搜索
+                self.backtest_stock_combo.setInsertPolicy(QComboBox.NoInsert)
+                self.backtest_stock_combo.completer().setFilterMode(Qt.MatchContains)
+                self.backtest_stock_combo.completer().setCaseSensitivity(Qt.CaseInsensitive)
+                self.backtest_stock_combo.completer().setCompletionMode(QCompleter.PopupCompletion)
+                
+                logger.info(f"已加载 {len(system_assets)} 个 {selected_asset_type.value} 资产到下拉框")
+            else:
+                logger.warning(f"没有找到任何 {selected_asset_type.value} 资产")
+                
         except Exception as e:
             logger.error(f"加载系统资产失败: {e}")
             QMessageBox.warning(self, "错误", f"加载资产列表失败: {str(e)}")
 
+    def _validate_assets_in_database(self, stock_codes: List[str], asset_type: AssetType) -> List[str]:
+        """验证选择的资产是否存在于数据库中"""
+        try:
+            validated_stocks = []
+                    
+            # 直接使用已初始化的服务实例
+            data_manager = self.data_manager
+            asset_service = self.asset_service
+            
+            logger.info(f"使用已初始化服务进行验证，data_manager: {data_manager}, asset_service: {asset_service}")
+            
+            # 如果服务实例不可用，返回原始股票代码（宽松验证）
+            if not data_manager and not asset_service:
+                logger.warning("服务实例不可用，跳过验证")
+                return stock_codes
+            
+            # 优先使用UnifiedDataManager进行验证
+            if data_manager:
+                logger.info(f"使用 data_manager 进行验证")
+                try:
+                    # 获取数据库中的所有资产列表
+                    logger.info(f"调用 data_manager.get_asset_list，asset_type: {asset_type.value}, market: 'all'")
+                    asset_df = data_manager.get_asset_list(
+                        asset_type=asset_type.value, 
+                        market='all'
+                    )
+                                        
+                    if asset_df is not None and not asset_df.empty:
+                        logger.info(f"asset_df 不为空，形状: {asset_df.shape}")
+                        # 创建代码集合用于快速查找
+                        database_codes = set()
+                        for _, row in asset_df.iterrows():
+                            code = str(row.get('code', ''))
+                            if code and code != 'nan':
+                                database_codes.add(code)
+                        
+                        logger.info(f"从数据库获取到 {len(database_codes)} 个资产代码")
+                        
+                        # 验证每个股票代码
+                        for stock_code in stock_codes:
+                            if stock_code in database_codes:
+                                validated_stocks.append(stock_code)
+                        
+                        logger.info(f"数据库验证完成: {len(stock_codes)} 个输入，{len(validated_stocks)} 个有效")
+                        return validated_stocks
+                        
+                except Exception as db_error:
+                    logger.error(f"数据库验证失败: {db_error}")
+            else:
+                logger.info(f"data_manager 不可用")
+            
+            # 如果数据库验证失败，尝试使用AssetService
+            if asset_service:
+                logger.info(f"使用 asset_service 进行验证")
+                try:
+                    logger.info(f"调用 asset_service.get_asset_list({asset_type})")
+                    assets = asset_service.get_asset_list(asset_type)
+                    
+                    database_codes = {asset['code'] for asset in assets}
+                    logger.info(f"从 AssetService 获取到 {len(database_codes)} 个资产代码")
+                    
+                    validated_stocks = [code for code in stock_codes if code in database_codes]
+                    logger.info(f"AssetService验证完成: {len(stock_codes)} 个输入，{len(validated_stocks)} 个有效")
+                    return validated_stocks
+                    
+                except Exception as service_error:
+                    logger.error(f"AssetService验证失败: {service_error}")
+            else:
+                logger.info(f"asset_service 不可用")
+            
+            # 如果所有验证都失败，返回输入的股票代码（宽松验证），确保功能不中断
+            logger.warning(f"所有验证方式都失败，返回原始股票代码: {stock_codes}")
+            return stock_codes
+            
+        except Exception as e:
+            logger.error(f"资产验证失败: {e}")
+            # 出错时返回原始股票代码，确保功能不中断
+            return stock_codes
+            
     def _load_strategies(self) -> None:
         """加载策略列表"""
         try:
@@ -628,73 +928,36 @@ def strategy_logic(data, params):
             # 尝试从策略服务或文件系统加载策略
             if self.strategy_service:
                 # 如果有策略服务，使用它获取策略列表
-                self.strategies = self.strategy_service.get_strategy_list()
-            else:
-                # 如果没有策略服务，直接从策略管理器获取
                 try:
-                    # 导入策略管理器
-                    from strategies.strategy_manager import StrategyManager
-                    manager = StrategyManager()
-                    
-                    # 获取策略列表（根据日志信息，策略管理器注册了以下策略）
-                    # adj_momentum - 复权价格动量策略
-                    # vwap_reversion - VWAP均值回归策略
-                    # ma_crossover - 双均线策略
-                    
-                    # 根据策略ID和名称构建策略数据
-                    strategies_from_manager = [
-                        {
-                            'name': '复权价格动量策略',
-                            'type': '动量策略',
-                            'description': '基于复权价格动量指标的交易策略',
-                            'created_date': '2024-01-01',
-                            'status': '活跃'
-                        },
-                        {
-                            'name': 'VWAP均值回归策略',
-                            'type': '均值回归',
-                            'description': '基于VWAP指标的均值回归交易策略',
-                            'created_date': '2024-01-15',
-                            'status': '活跃'
-                        },
-                        {
-                            'name': '双均线策略',
-                            'type': '趋势跟踪',
-                            'description': '基于短期和长期移动平均线的交叉信号进行交易',
-                            'created_date': '2024-02-01',
-                            'status': '活跃'
-                        }
-                    ]
-                    
-                    self.strategies = strategies_from_manager
-                    logger.info(f"从策略管理器获取了 {len(self.strategies)} 个策略")
-                    
-                except Exception as e:
-                    logger.error(f"无法连接到策略管理器: {e}")
-                    # 回退到默认策略列表（仅包含策略管理器中实际存在的策略）
+                    # 尝试使用 get_all_strategy_configs() 替代 get_strategy_list()
+                    strategy_configs = self.strategy_service.get_all_strategy_configs()
+                    # 转换策略配置为所需格式
                     self.strategies = [
                         {
-                            'name': '复权价格动量策略',
-                            'type': '动量策略',
-                            'description': '基于复权价格动量指标的交易策略',
-                            'created_date': '2024-01-01',
-                            'status': '活跃'
-                        },
-                        {
-                            'name': 'VWAP均值回归策略',
-                            'type': '均值回归',
-                            'description': '基于VWAP指标的均值回归交易策略',
-                            'created_date': '2024-01-15',
-                            'status': '活跃'
-                        },
-                        {
-                            'name': '双均线策略',
-                            'type': '趋势跟踪',
-                            'description': '基于短期和长期移动平均线的交叉信号进行交易',
-                            'created_date': '2024-02-01',
-                            'status': '活跃'
+                            'name': config.strategy_id,
+                            'type': config.plugin_type,
+                            'description': config.metadata.get('description', 'No description'),
+                            'created_date': config.created_at.strftime('%Y-%m-%d'),
+                            'status': '活跃' if config.enabled else '禁用'
                         }
+                        for config in strategy_configs
                     ]
+                    logger.info(f"从策略服务获取到 {len(self.strategies)} 个策略")
+                    
+                    # 如果策略列表为空，显示提示信息
+                    if not self.strategies:
+                        logger.warning("从策略服务获取到的策略列表为空")
+                        # 不再回退到策略管理器，显示空列表
+                        self.strategies = []
+                except Exception as e:
+                    logger.warning(f"从策略服务获取策略列表失败: {e}")
+                    # 不再回退到策略管理器，直接显示空列表
+                    self.strategies = []
+            else:
+                # 如果没有策略服务，显示空列表
+                logger.warning("策略服务不可用")
+                self.strategies = []
+                return
 
             # 更新策略列表显示
             self.strategy_list.clear()
@@ -717,6 +980,99 @@ def strategy_logic(data, params):
         except Exception as e:
             logger.error(f"加载策略列表失败: {e}")
             QMessageBox.critical(self, "错误", f"加载策略列表失败: {e}")
+
+    def _load_strategies_from_manager(self) -> None:
+        """从策略管理器加载策略列表"""
+        try:
+            # 导入策略管理器
+            logger.info("尝试导入策略管理器...")
+            # 先导入strategies模块，确保路径设置已生效
+            import strategies
+            from strategies.strategy_manager import StrategyManager
+            logger.info("成功导入StrategyManager")
+            
+            manager = StrategyManager()
+            logger.info("成功创建StrategyManager实例")
+            
+            # 获取策略列表（根据日志信息，策略管理器注册了以下策略）
+            # adj_momentum - 复权价格动量策略
+            # vwap_reversion - VWAP均值回归策略
+            # ma_crossover - 双均线策略
+            
+            # 根据策略ID和名称构建策略数据
+            strategies_from_manager = []
+            try:
+                # 动态获取所有注册的策略
+                registered_strategies = manager.get_registered_strategies()
+                logger.info(f"获取到 {len(registered_strategies)} 个注册策略")
+                
+                for strategy_id in registered_strategies:
+                    strategy_info = manager.get_strategy_info(strategy_id)
+                    strategies_from_manager.append({
+                        'name': strategy_info.get('name', strategy_id),
+                        'type': strategy_info.get('type', '未知'),
+                        'description': strategy_info.get('description', ''),
+                        'created_date': strategy_info.get('created_date', '2024-01-01'),
+                        'status': '活跃'
+                    })
+            except AttributeError as e:
+                logger.warning(f"兼容旧版本策略管理器: {e}")
+                # 兼容旧版本策略管理器
+                strategies_from_manager = [
+                    {
+                        'name': '复权价格动量策略',
+                        'type': '动量策略',
+                        'description': '基于复权价格动量指标的交易策略',
+                        'created_date': '2024-01-01',
+                        'status': '活跃'
+                    },
+                    {
+                        'name': 'VWAP均值回归策略',
+                        'type': '均值回归',
+                        'description': '基于VWAP指标的均值回归交易策略',
+                        'created_date': '2024-01-15',
+                        'status': '活跃'
+                    },
+                    {
+                        'name': '双均线策略',
+                        'type': '趋势跟踪',
+                        'description': '基于短期和长期移动平均线的交叉信号进行交易',
+                        'created_date': '2024-02-01',
+                        'status': '活跃'
+                    }
+                ]
+            
+            self.strategies = strategies_from_manager
+            logger.info(f"从策略管理器获取了 {len(self.strategies)} 个策略")
+            
+        except ImportError as e:
+            logger.error(f"无法连接到策略管理器: {e}")
+            logger.error(f"当前sys.path: {sys.path[:5]}")
+            logger.error(f"错误详情: {traceback.format_exc()}")
+            # 回退到默认策略列表（仅包含策略管理器中实际存在的策略）
+            self.strategies = [
+                {
+                    'name': '复权价格动量策略',
+                    'type': '动量策略',
+                    'description': '基于复权价格动量指标的交易策略',
+                    'created_date': '2024-01-01',
+                    'status': '活跃'
+                },
+                {
+                    'name': 'VWAP均值回归策略',
+                    'type': '均值回归',
+                    'description': '基于VWAP指标的均值回归交易策略',
+                    'created_date': '2024-01-15',
+                    'status': '活跃'
+                },
+                {
+                    'name': '双均线策略',
+                    'type': '趋势跟踪',
+                    'description': '基于短期和长期移动平均线的交叉信号进行交易',
+                    'created_date': '2024-02-01',
+                    'status': '活跃'
+                }
+            ]
 
     def _on_strategy_selected(self, item: QListWidgetItem) -> None:
         """策略选择处理"""
@@ -817,11 +1173,58 @@ def strategy_logic(data, params):
                 return
 
             strategy = current_item.data(Qt.UserRole)
-            QMessageBox.information(
-                self, "编辑策略", f"编辑策略功能开发中...\n策略: {strategy['name']}")
+            
+            # 创建编辑对话框
+            dialog = QDialog(self)
+            dialog.setWindowTitle(f"编辑策略: {strategy['name']}")
+            dialog.setModal(True)
+            layout = QFormLayout(dialog)
+            
+            # 策略名称
+            name_edit = QLineEdit(strategy['name'])
+            layout.addRow("策略名称:", name_edit)
+            
+            # 策略类型
+            type_edit = QLineEdit(strategy['type'])
+            layout.addRow("策略类型:", type_edit)
+            
+            # 策略描述
+            desc_edit = QTextEdit(strategy['description'])
+            layout.addRow("策略描述:", desc_edit)
+            
+            # 按钮布局
+            button_layout = QHBoxLayout()
+            save_btn = QPushButton("保存")
+            cancel_btn = QPushButton("取消")
+            button_layout.addWidget(save_btn)
+            button_layout.addWidget(cancel_btn)
+            layout.addRow(button_layout)
+            
+            # 连接信号
+            save_btn.clicked.connect(dialog.accept)
+            cancel_btn.clicked.connect(dialog.reject)
+            
+            # 显示对话框
+            if dialog.exec_() == QDialog.Accepted:
+                # 更新策略信息
+                strategy['name'] = name_edit.text()
+                strategy['type'] = type_edit.text()
+                strategy['description'] = desc_edit.toPlainText()
+                
+                # 更新列表显示
+                current_item.setText(strategy['name'])
+                current_item.setData(Qt.UserRole, strategy)
+                
+                # 保存到策略服务
+                if self.strategy_service:
+                    self.strategy_service.update_strategy(strategy)
+                
+                logger.info(f"策略已编辑: {strategy['name']}")
+                QMessageBox.information(self, "成功", "策略已成功编辑")
 
         except Exception as e:
             logger.error(f"编辑策略失败: {e}")
+            QMessageBox.critical(self, "错误", f"编辑策略失败: {str(e)}")
 
     def _delete_strategy(self) -> None:
         """删除策略"""
@@ -938,26 +1341,55 @@ def strategy_logic(data, params):
                 QMessageBox.warning(self, "警告", f"选择的策略 '{strategy_name}' 不存在，请重新选择")
                 return
 
-            stock_text = self.backtest_stock_combo.currentText().strip()
-            if not stock_text:
-                QMessageBox.warning(self, "警告", "请选择要回测的股票")
-                return
-
-            # 提取股票代码（支持"代码 名称"格式）
-            stocks = []
-            for stock in stock_text.split(','):
-                stock = stock.strip()
-                if ' ' in stock:
-                    # 提取代码部分
-                    stock_code = stock.split(' ')[0]
-                    stocks.append(stock_code)
-                else:
-                    stocks.append(stock)
-
             # 获取当前选择的资产类型
             selected_asset_type = self.backtest_asset_type_combo.currentData()
             if not selected_asset_type:
                 selected_asset_type = AssetType.STOCK_A  # 默认使用A股
+            
+            # 获取选择的资产
+            stocks = []
+            if ENHANCED_ASSET_SELECTOR_AVAILABLE and hasattr(self, 'enhanced_asset_selector'):
+                # 使用增强型资产选择器获取资产
+                selected_asset = self.enhanced_asset_selector.get_selected_asset()
+                if not selected_asset:
+                    QMessageBox.warning(self, "警告", "请选择要回测的资产")
+                    return
+                stocks = [selected_asset['code']]
+                logger.info(f"从增强型资产选择器获取资产: {selected_asset['display']}")
+            else:
+                # 传统方式获取资产
+                stock_text = self.backtest_stock_combo.currentText().strip()
+                if not stock_text:
+                    QMessageBox.warning(self, "警告", "请选择要回测的股票")
+                    return
+                
+                # 提取股票代码（支持"代码 名称"格式）
+                for stock in stock_text.split(','):
+                    stock = stock.strip()
+                    if ' ' in stock:
+                        # 提取代码部分
+                        stock_code = stock.split(' ')[0]
+                        stocks.append(stock_code)
+                    else:
+                        stocks.append(stock)
+            
+            # 验证选择的资产是否存在于数据库中
+            validated_stocks = self._validate_assets_in_database(stocks, selected_asset_type)
+            if not validated_stocks:
+                QMessageBox.warning(self, "警告", "所选资产都不存在于数据库中，请重新选择有效的资产")
+                return
+            
+            # 提醒用户过滤了无效资产
+            if len(validated_stocks) < len(stocks):
+                invalid_stocks = set(stocks) - set(validated_stocks)
+                QMessageBox.information(
+                    self, 
+                    "资产过滤", 
+                    f"以下 {len(invalid_stocks)} 个资产不在数据库中，已自动过滤：\n" +
+                    f"{', '.join(invalid_stocks)}\n\n" +
+                    f"有效资产数量：{len(validated_stocks)} 个"
+                )
+                stocks = validated_stocks
             
             # 构建回测参数
             backtest_params = {

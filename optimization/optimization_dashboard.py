@@ -9,7 +9,7 @@ from loguru import logger
 from analysis.pattern_manager import PatternManager
 from optimization.database_schema import OptimizationDatabaseManager
 from optimization.version_manager import VersionManager
-from optimization.auto_tuner import AutoTuner
+from optimization.auto_tuner import AlgorithmAutoTuner
 import sys
 import os
 import sqlite3
@@ -356,7 +356,7 @@ class OptimizationDashboard(QMainWindow if GUI_AVAILABLE else object):
         super().__init__()
 
         # 核心组件
-        self.auto_tuner = AutoTuner(debug_mode=True)
+        self.auto_tuner = AlgorithmAutoTuner(debug_mode=True)
         self.version_manager = VersionManager()
         self.evaluator = PerformanceEvaluator(debug_mode=True)
         self.pattern_manager = PatternManager()

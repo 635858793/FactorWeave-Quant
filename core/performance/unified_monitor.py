@@ -587,7 +587,7 @@ class SmartUpdater:
             return str(time.time())
 
 
-class AutoTuner:
+class PerformanceAutoTuner:
     """自动调优系统"""
 
     def __init__(self):
@@ -791,7 +791,7 @@ class UnifiedPerformanceMonitor:
         self.cache = PerformanceCache()
         self.system_monitor = SystemMonitor()
         self.ui_optimizer = UIOptimizer()
-        self.auto_tuner = AutoTuner()
+        self.auto_tuner = PerformanceAutoTuner()
 
         # 监控状态
         self.is_running = False

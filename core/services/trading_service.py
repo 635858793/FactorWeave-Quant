@@ -451,13 +451,19 @@ class TradingService(BaseService):
                 active_strategies = len(self._active_orders) + len([p for p in self._positions.values() if p.quantity > 0])
                 total_strategies = len(self._orders)
 
+                # 计算成功率（如果有filled_orders）
+                success_rate = 0.0
+                if metrics.filled_orders > 0:
+                    # 使用filled_orders与total_orders的比率作为成功率
+                    success_rate = metrics.filled_orders / max(metrics.total_orders, 1) * 100
+
                 return {
                     'active_strategies': active_strategies,
                     'total_strategies': max(total_strategies, 1),  # 至少为1避免除零
                     'total_orders': metrics.total_orders,
                     'filled_orders': metrics.filled_orders,
                     'cancelled_orders': metrics.cancelled_orders,
-                    'success_rate': metrics.success_rate,
+                    'success_rate': success_rate,
                     'total_profit_loss': float(portfolio.total_profit_loss) if portfolio else 0.0,
                     'total_profit_loss_pct': portfolio.total_profit_loss_pct if portfolio else 0.0,
                     'win_rate': 0.0,  # 需要基于历史交易记录计算
@@ -636,3 +642,60 @@ class TradingService(BaseService):
         except Exception as e:
             logger.error(f"获取所有投资组合失败: {e}")
             return {}
+
+    def get_strategy_status(self, strategy_id: str) -> Optional[Dict[str, Any]]:
+        """获取策略状态信息
+        
+        Args:
+            strategy_id: 策略ID
+            
+        Returns:
+            包含策略状态信息的字典，如果策略不存在则返回None
+        """
+        try:
+            # 检查策略是否在策略配置中存在
+            from ..containers import get_service_container
+            container = get_service_container()
+            
+            try:
+                from .strategy_service import StrategyService
+                strategy_service = container.resolve(StrategyService)
+                
+                if strategy_service and strategy_id in strategy_service._strategy_configs:
+                    config = strategy_service._strategy_configs[strategy_id]
+                    
+                    # 返回策略状态信息
+                    return {
+                        'state': 'configured' if config.enabled else 'disabled',
+                        'strategy_id': strategy_id,
+                        'plugin_type': config.plugin_type,
+                        'enabled': config.enabled,
+                        'created_at': config.created_at.isoformat(),
+                        'updated_at': config.updated_at.isoformat(),
+                        'last_run': None,  # 可以后续扩展为实际的上次运行时间
+                        'performance': None  # 可以后续扩展为实际性能数据
+                    }
+                else:
+                    logger.warning(f"策略配置不存在: {strategy_id}")
+                    return {
+                        'state': 'not_found',
+                        'strategy_id': strategy_id,
+                        'error': 'Strategy configuration not found'
+                    }
+                    
+            except Exception as e:
+                logger.error(f"获取策略服务失败: {e}")
+                # 如果无法获取策略服务，返回基本状态
+                return {
+                    'state': 'unknown',
+                    'strategy_id': strategy_id,
+                    'error': f'Strategy service unavailable: {str(e)}'
+                }
+                
+        except Exception as e:
+            logger.error(f"获取策略状态失败: {e}")
+            return {
+                'state': 'error',
+                'strategy_id': strategy_id,
+                'error': str(e)
+            }

@@ -100,6 +100,30 @@ class TALibIndicatorsPlugin(IIndicatorPlugin):
         """获取指标元数据"""
         return self._metadata_cache.get(indicator_name.upper())
 
+    def get_network_config(self) -> 'PluginNetworkConfig':
+        """获取网络配置"""
+        from core.network.universal_network_config import PluginNetworkConfig, NetworkEndpoint
+        return PluginNetworkConfig(
+            plugin_id=self.plugin_info['id'],
+            endpoints=[
+                NetworkEndpoint(
+                    name='talib_local',
+                    url='local://talib',
+                    description='TA-Lib本地计算端点'
+                )
+            ]
+        )
+
+    def update_network_config(self, config: 'PluginNetworkConfig') -> bool:
+        """更新网络配置"""
+        # TA-Lib是本地库，不需要网络配置
+        return True
+
+    def test_network_connectivity(self) -> bool:
+        """测试网络连通性"""
+        # TA-Lib是本地库，直接返回True
+        return TALIB_AVAILABLE
+
     def calculate_indicator(self, indicator_name: str, kline_data: StandardKlineData,
                             params: Dict[str, Any], context: IndicatorCalculationContext) -> StandardIndicatorResult:
         """计算单个指标"""
@@ -338,10 +362,212 @@ class TALibIndicatorsPlugin(IIndicatorPlugin):
             source='TA-Lib'
         )
 
+        self._metadata_cache['EMA'] = IndicatorMetadata(
+            name='EMA',
+            display_name='指数移动平均线',
+            description='指数移动平均线，对近期价格赋予更高权重',
+            category=IndicatorCategory.TREND,
+            parameters=[
+                ParameterDef('timeperiod', ParameterType.INTEGER, 30, '时间周期', 2, 100000)
+            ],
+            output_columns=['value'],
+            tags=['trend', 'moving_average', 'exponential'],
+            source='TA-Lib'
+        )
+
+        self._metadata_cache['WMA'] = IndicatorMetadata(
+            name='WMA',
+            display_name='加权移动平均线',
+            description='加权移动平均线，对近期价格赋予更高权重',
+            category=IndicatorCategory.TREND,
+            parameters=[
+                ParameterDef('timeperiod', ParameterType.INTEGER, 30, '时间周期', 2, 100000)
+            ],
+            output_columns=['value'],
+            tags=['trend', 'moving_average', 'weighted'],
+            source='TA-Lib'
+        )
+
+        self._metadata_cache['MACD'] = IndicatorMetadata(
+            name='MACD',
+            display_name='指数平滑异同移动平均线',
+            description='MACD指标，显示短期和长期移动平均线之间的差异',
+            category=IndicatorCategory.TREND,
+            parameters=[
+                ParameterDef('fastperiod', ParameterType.INTEGER, 12, '快速周期', 2, 100000),
+                ParameterDef('slowperiod', ParameterType.INTEGER, 26, '慢速周期', 2, 100000),
+                ParameterDef('signalperiod', ParameterType.INTEGER, 9, '信号线周期', 2, 100000)
+            ],
+            output_columns=['macd', 'signal', 'histogram'],
+            tags=['trend', 'momentum', 'oscillator'],
+            source='TA-Lib'
+        )
+
+        self._metadata_cache['BBANDS'] = IndicatorMetadata(
+            name='BBANDS',
+            display_name='布林带',
+            description='布林带指标，显示价格的波动范围',
+            category=IndicatorCategory.VOLATILITY,
+            parameters=[
+                ParameterDef('timeperiod', ParameterType.INTEGER, 20, '时间周期', 2, 100000),
+                ParameterDef('nbdevup', ParameterType.FLOAT, 2.0, '上轨标准差倍数', 0.1, 10.0),
+                ParameterDef('nbdevdn', ParameterType.FLOAT, 2.0, '下轨标准差倍数', 0.1, 10.0),
+                ParameterDef('matype', ParameterType.INTEGER, 0, '移动平均线类型', 0, 8)
+            ],
+            output_columns=['upper', 'middle', 'lower'],
+            tags=['volatility', 'bands', 'support_resistance'],
+            source='TA-Lib'
+        )
+
+        self._metadata_cache['ATR'] = IndicatorMetadata(
+            name='ATR',
+            display_name='平均真实波动范围',
+            description='ATR指标，衡量价格的波动性',
+            category=IndicatorCategory.VOLATILITY,
+            parameters=[
+                ParameterDef('timeperiod', ParameterType.INTEGER, 14, '时间周期', 2, 100000)
+            ],
+            output_columns=['value'],
+            tags=['volatility', 'range', 'risk_management'],
+            source='TA-Lib'
+        )
+
         self._metadata_cache['RSI'] = IndicatorMetadata(
             name='RSI',
             display_name='相对强弱指数',
             description='RSI指标，衡量价格变动的速度和变化，识别超买超卖',
+            category=IndicatorCategory.MOMENTUM,
+            parameters=[
+                ParameterDef('timeperiod', ParameterType.INTEGER, 14, '时间周期', 2, 100000)
+            ],
+            output_columns=['value'],
+            tags=['momentum', 'oscillator', 'overbought_oversold'],
+            source='TA-Lib'
+        )
+
+        self._metadata_cache['STOCH'] = IndicatorMetadata(
+            name='STOCH',
+            display_name='随机指标',
+            description='随机指标，衡量价格在近期价格区间内的相对位置',
+            category=IndicatorCategory.MOMENTUM,
+            parameters=[
+                ParameterDef('fastk_period', ParameterType.INTEGER, 5, '快速K周期', 2, 100000),
+                ParameterDef('slowk_period', ParameterType.INTEGER, 3, '慢速K周期', 2, 100000),
+                ParameterDef('slowk_matype', ParameterType.INTEGER, 0, '慢速K移动平均线类型', 0, 8),
+                ParameterDef('slowd_period', ParameterType.INTEGER, 3, '慢速D周期', 2, 100000),
+                ParameterDef('slowd_matype', ParameterType.INTEGER, 0, '慢速D移动平均线类型', 0, 8)
+            ],
+            output_columns=['slowk', 'slowd'],
+            tags=['momentum', 'oscillator', 'overbought_oversold'],
+            source='TA-Lib'
+        )
+
+        self._metadata_cache['ADX'] = IndicatorMetadata(
+            name='ADX',
+            display_name='平均趋向指数',
+            description='ADX指标，衡量趋势的强度',
+            category=IndicatorCategory.TREND,
+            parameters=[
+                ParameterDef('timeperiod', ParameterType.INTEGER, 14, '时间周期', 2, 100000)
+            ],
+            output_columns=['value'],
+            tags=['trend', 'strength', 'momentum'],
+            source='TA-Lib'
+        )
+
+        self._metadata_cache['CCI'] = IndicatorMetadata(
+            name='CCI',
+            display_name='商品通道指数',
+            description='CCI指标，衡量价格与平均价格之间的偏差',
+            category=IndicatorCategory.MOMENTUM,
+            parameters=[
+                ParameterDef('timeperiod', ParameterType.INTEGER, 20, '时间周期', 2, 100000)
+            ],
+            output_columns=['value'],
+            tags=['momentum', 'oscillator', 'overbought_oversold'],
+            source='TA-Lib'
+        )
+
+        self._metadata_cache['OBV'] = IndicatorMetadata(
+            name='OBV',
+            display_name='能量潮',
+            description='OBV指标，将成交量与价格变动联系起来',
+            category=IndicatorCategory.VOLUME,
+            parameters=[],
+            output_columns=['value'],
+            tags=['volume', 'momentum', 'flow'],
+            source='TA-Lib'
+        )
+
+        self._metadata_cache['AD'] = IndicatorMetadata(
+            name='AD',
+            display_name='累积/派发线',
+            description='AD指标，将价格变动与成交量结合起来',
+            category=IndicatorCategory.VOLUME,
+            parameters=[],
+            output_columns=['value'],
+            tags=['volume', 'accumulation', 'distribution'],
+            source='TA-Lib'
+        )
+
+        self._metadata_cache['ROC'] = IndicatorMetadata(
+            name='ROC',
+            display_name='变动率指标',
+            description='ROC指标，衡量价格变动的速度',
+            category=IndicatorCategory.MOMENTUM,
+            parameters=[
+                ParameterDef('timeperiod', ParameterType.INTEGER, 10, '时间周期', 2, 100000)
+            ],
+            output_columns=['value'],
+            tags=['momentum', 'rate_of_change', 'oscillator'],
+            source='TA-Lib'
+        )
+
+        self._metadata_cache['CMO'] = IndicatorMetadata(
+            name='CMO',
+            display_name='钱德动量摆动指标',
+            description='CMO指标，衡量价格变动的动量',
+            category=IndicatorCategory.MOMENTUM,
+            parameters=[
+                ParameterDef('timeperiod', ParameterType.INTEGER, 14, '时间周期', 2, 100000)
+            ],
+            output_columns=['value'],
+            tags=['momentum', 'oscillator', 'strength'],
+            source='TA-Lib'
+        )
+
+        self._metadata_cache['MFI'] = IndicatorMetadata(
+            name='MFI',
+            display_name='资金流量指标',
+            description='MFI指标，将成交量纳入RSI计算',
+            category=IndicatorCategory.MOMENTUM,
+            parameters=[
+                ParameterDef('timeperiod', ParameterType.INTEGER, 14, '时间周期', 2, 100000)
+            ],
+            output_columns=['value'],
+            tags=['momentum', 'volume', 'oscillator'],
+            source='TA-Lib'
+        )
+
+        self._metadata_cache['ULTOSC'] = IndicatorMetadata(
+            name='ULTOSC',
+            display_name='终极震荡指标',
+            description='ULTOSC指标，衡量价格的震荡',
+            category=IndicatorCategory.MOMENTUM,
+            parameters=[
+                ParameterDef('timeperiod1', ParameterType.INTEGER, 7, '短期周期', 2, 100000),
+                ParameterDef('timeperiod2', ParameterType.INTEGER, 14, '中期周期', 2, 100000),
+                ParameterDef('timeperiod3', ParameterType.INTEGER, 28, '长期周期', 2, 100000)
+            ],
+            output_columns=['value'],
+            tags=['momentum', 'oscillator', 'multiple_timeframes'],
+            source='TA-Lib'
+        )
+
+        self._metadata_cache['WILLR'] = IndicatorMetadata(
+            name='WILLR',
+            display_name='威廉指标',
+            description='威廉指标，衡量价格在近期价格区间内的相对位置',
             category=IndicatorCategory.MOMENTUM,
             parameters=[
                 ParameterDef('timeperiod', ParameterType.INTEGER, 14, '时间周期', 2, 100000)
