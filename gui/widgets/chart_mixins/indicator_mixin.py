@@ -97,7 +97,6 @@ class IndicatorMixin:
                 
                 # 验证参数是否为字典
                 if not isinstance(params, dict):
-                    logger.warning(f"指标 {name} 参数格式错误，应为字典，实际为: {type(params)}")
                     params = {}
                 
                 style = self._get_indicator_style(name, i)

@@ -890,11 +890,7 @@ class MainWindowCoordinator(BaseCoordinator):
 
             self.show_message(f"{event.stock_name} 数据加载完成", level='success')
 
-            # 5. 启动相关股票的预加载
-            asyncio.create_task(self._chart_service._preload_related_stocks(
-                event.stock_code, period
-            ))
-            logger.info(f"已启动相关股票预加载: {event.stock_code}")
+            # 5. 相关股票预加载功能已移除，不再需要
 
         except Exception as e:
             logger.error(f"加载股票 {event.stock_code} 数据时出错: {e}", exc_info=True)

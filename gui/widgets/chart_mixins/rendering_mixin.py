@@ -834,7 +834,6 @@ class RenderingMixin:
             
             # 验证precomputed是否为字典
             if not isinstance(precomputed, dict):
-                logger.warning(f"precomputed格式错误，应为字典，实际为: {type(precomputed)}")
                 precomputed = {}
             
             render_time = (time.time() - start_time) * 1000
@@ -862,7 +861,6 @@ class RenderingMixin:
                 
                 # 验证参数是否为字典
                 if not isinstance(params, dict):
-                    logger.warning(f"指标 {name} 参数格式错误，应为字典，实际为: {type(params)}")
                     params = {}
                 
                 # 🔥 关键优化3: 使用缓存的样式
@@ -881,7 +879,6 @@ class RenderingMixin:
                     
                     # 验证ind_params是否为字典
                     if not isinstance(ind_params, dict):
-                        logger.warning(f"ind_params格式错误，应为字典，实际为: {type(ind_params)}")
                         ind_params = {}
                     
                     if ind_type == 'MA':

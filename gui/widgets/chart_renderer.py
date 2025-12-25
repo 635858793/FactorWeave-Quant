@@ -1,12 +1,8 @@
-from math import log
 from PyQt5.QtCore import QObject, pyqtSignal
 import numpy as np
 import pandas as pd
 from matplotlib.collections import LineCollection, PolyCollection
-from matplotlib.colors import to_rgba
-import mplfinance as mpf
-from typing import List, Dict, Any, Tuple, Optional
-import matplotlib.pyplot as plt
+from typing import List, Dict, Any, Tuple
 import matplotlib.dates as mdates
 from matplotlib.figure import Figure
 from matplotlib.gridspec import GridSpec
@@ -19,6 +15,22 @@ try:
     configure_matplotlib_chinese_font()
 except ImportError:
     logger.info("无法导入字体配置工具，使用默认配置")
+
+# 导入虚拟滚动渲染器相关模块
+try:
+    from core.advanced_optimization.performance.virtualization import (
+        VirtualRenderManager
+    )
+    from core.optimization.volume_virtual_renderer import VolumeVirtualRenderer
+    from core.optimization.candle_virtual_renderer import CandleVirtualRenderer
+    from core.optimization.line_virtual_renderer import LineVirtualRenderer
+    from core.optimization.bar_virtual_renderer import BarVirtualRenderer
+
+    VIRTUAL_SCROLL_ENABLED = True
+    logger.info("✅ 成功导入虚拟滚动渲染器模块")
+except ImportError as e:
+    VIRTUAL_SCROLL_ENABLED = False
+    logger.warning(f"⚠️ 无法导入虚拟滚动渲染器模块: {e}")
 
 
 class ChartRenderer(QObject):
@@ -33,6 +45,36 @@ class ChartRenderer(QObject):
         self._view_range = None  # 当前视图范围
         self._downsampling_threshold = 5000  # 降采样阈值
         self._last_layout = None  # 缓存上一次布局参数
+
+        # 虚拟滚动渲染支持
+        self.virtual_render_manager = None
+        self._virtual_scroll_enabled = False
+        self._virtual_scroll_threshold = 10000  # 启用虚拟滚动的数据量阈值
+
+        # 初始化虚拟滚动渲染管理器
+        if VIRTUAL_SCROLL_ENABLED:
+            try:
+                self._initialize_virtual_renderer()
+                logger.info("✅ 虚拟滚动渲染器初始化完成")
+            except Exception as e:
+                logger.error(f"⚠️ 虚拟滚动渲染器初始化失败: {e}")
+                self._virtual_scroll_enabled = False
+
+    def _initialize_virtual_renderer(self):
+        """初始化虚拟滚动渲染管理器和注册渲染器"""
+        # 创建虚拟渲染管理器
+        self.virtual_render_manager = VirtualRenderManager()
+
+        # 注册不同类型的虚拟渲染器
+        self.virtual_render_manager.register_renderer('candle', CandleVirtualRenderer())
+        self.virtual_render_manager.register_renderer('volume', VolumeVirtualRenderer())
+        self.virtual_render_manager.register_renderer('line', LineVirtualRenderer())
+        self.virtual_render_manager.register_renderer('bar', BarVirtualRenderer())
+
+        # 启用虚拟滚动
+        self._virtual_scroll_enabled = True
+
+        logger.info(f"✅ 虚拟滚动渲染管理器已初始化，注册了 {len(self.virtual_render_manager._renderers)} 种渲染器")
 
     def setup_figure(self, figure: Figure) -> Tuple[GridSpec, List]:
         """设置图表布局，避免tight_layout警告
@@ -78,38 +120,38 @@ class ChartRenderer(QObject):
             use_datetime_axis: 是否使用datetime X轴（如果数据包含datetime列）
         """
         try:
-            view_data = self._get_view_data(data)
-            plot_data = self._downsample_data(view_data)
+            # 检查是否启用虚拟滚动且数据量超过阈值
+            use_virtual_scroll = self._virtual_scroll_enabled and len(data) > self._virtual_scroll_threshold
 
-            # ✅ 修复：支持datetime X轴
-            if use_datetime_axis and x is None and 'datetime' in plot_data.columns:
-                try:
-                    # 使用datetime作为X轴
-                    datetime_series = pd.to_datetime(plot_data['datetime'])
-                    x = mdates.date2num(datetime_series)
+            start_time = time.time()
 
-                    # 设置智能日期格式化
-                    formatter, locator = self._get_smart_date_formatter(plot_data, 'datetime')
-                    if formatter and locator:
-                        ax.xaxis.set_major_formatter(formatter)
-                        ax.xaxis.set_major_locator(locator)
-                        # 旋转标签以避免重叠
-                        plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
-                        logger.debug(f"✅ 使用datetime X轴，时间范围: {datetime_series.min()} ~ {datetime_series.max()}")
-                except Exception as e:
-                    logger.warning(f"⚠️ datetime X轴设置失败，回退到数字索引: {e}")
-                    use_datetime_axis = False
-                    x = None
+            if use_virtual_scroll:
+                # 使用虚拟滚动渲染K线
+                logger.info(f"📊 使用虚拟滚动渲染K线图，数据量: {len(data)} 个数据点")
 
-            # 如果use_datetime_axis为False或x为None，使用数字索引
-            if x is None:
-                x = np.arange(len(plot_data))
-                logger.debug(f"使用数字索引X轴，数据长度: {len(plot_data)}")
+                # 准备与传统渲染一致的样式
+                virtual_style = {
+                    'up_color': style.get('up_color', '#ff0000'),
+                    'down_color': style.get('down_color', '#00ff00'),
+                    'alpha': style.get('alpha', 1.0)
+                }
 
-            self._render_candlesticks_efficient(ax, plot_data, style or {}, x, use_datetime_axis)
-            # ✅ 性能优化P1: 移除_optimize_display()调用，由调用方统一设置样式
-            # 避免在每次渲染时重复设置样式，减少开销
-            # self._optimize_display(ax, use_datetime_axis)  # 已移除，在rendering_mixin中统一设置
+                success = self.virtual_render_manager.render('candle', ax, data, virtual_style, x, use_datetime_axis)
+                if success:
+                    logger.info(f"✅ 虚拟滚动渲染K线成功，耗时: {(time.time() - start_time) * 1000:.2f}ms")
+                else:
+                    logger.warning("⚠️ 虚拟滚动渲染K线失败，降级到传统渲染")
+                    # 降级到传统渲染
+                    view_data = self._get_view_data(data)
+                    plot_data = self._downsample_data(view_data)
+                    self._render_candlesticks_efficient(ax, plot_data, style or {}, x, use_datetime_axis)
+            else:
+                # 使用传统渲染
+                logger.info(f"📊 使用传统渲染K线图，数据量: {len(data)} 个数据点")
+                view_data = self._get_view_data(data)
+                plot_data = self._downsample_data(view_data)
+                self._render_candlesticks_efficient(ax, plot_data, style or {}, x, use_datetime_axis)
+                logger.info(f"✅ 传统渲染K线成功，耗时: {(time.time() - start_time) * 1000:.2f}ms")
         except Exception as e:
             self.render_error.emit(f"绘制K线失败: {str(e)}")
             logger.error(f"绘制K线失败: {e}", exc_info=True)
@@ -153,7 +195,6 @@ class ChartRenderer(QObject):
         closes = data['close'].values
         highs = data['high'].values
         lows = data['low'].values
-        n = len(data)
 
         # 向量化计算left和right
         lefts = xvals - candle_width / 2
@@ -200,23 +241,23 @@ class ChartRenderer(QObject):
         segments_up = build_shadow_segments(up_indices)
         segments_down = build_shadow_segments(down_indices)
 
-        # 修改：空心蜡烛图样式，只有边框无填充
         # ✅ 性能优化：检查数组长度而不是转换为bool（避免numpy警告）
+        # 修改为空心蜡烛图样式：facecolor透明，只有边框
         if len(verts_up) > 0:
             collection_up = PolyCollection(
-                verts_up, facecolor=up_color, edgecolor=up_color, linewidth=0.5, alpha=alpha)
+                verts_up, facecolor='none', edgecolor=up_color, linewidth=0.4, alpha=alpha)
             ax.add_collection(collection_up)
         if len(verts_down) > 0:
             collection_down = PolyCollection(
-                verts_down, facecolor=down_color, edgecolor=down_color, linewidth=0.5, alpha=alpha)
+                verts_down, facecolor='none', edgecolor=down_color, linewidth=0.4, alpha=alpha)
             ax.add_collection(collection_down)
         if len(segments_up) > 0:  # 影线
             collection_shadow_up = LineCollection(
-                segments_up, colors=up_color, linewidth=0.5, alpha=alpha)
+                segments_up, colors=up_color, linewidth=0.4, alpha=alpha)
             ax.add_collection(collection_shadow_up)
         if len(segments_down) > 0:
             collection_shadow_down = LineCollection(
-                segments_down, colors=down_color, linewidth=0.5, alpha=alpha)
+                segments_down, colors=down_color, linewidth=0.4, alpha=alpha)
             ax.add_collection(collection_shadow_down)
         # ✅ 性能优化：移除autoscale_view()调用，由调用方统一处理
         # ax.autoscale_view()  # 已移除，在rendering_mixin中统一调用
@@ -231,29 +272,38 @@ class ChartRenderer(QObject):
             use_datetime_axis: 是否使用datetime X轴（如果数据包含datetime列）
         """
         try:
-            view_data = self._get_view_data(data)
-            plot_data = self._downsample_data(view_data)
+            # 检查是否启用虚拟滚动且数据量超过阈值
+            use_virtual_scroll = self._virtual_scroll_enabled and len(data) > self._virtual_scroll_threshold
 
-            # ✅ 修复：支持datetime X轴（与K线图保持一致）
-            if use_datetime_axis and x is None and 'datetime' in plot_data.columns:
-                try:
-                    datetime_series = pd.to_datetime(plot_data['datetime'])
-                    x = mdates.date2num(datetime_series)
-                except Exception as e:
-                    logger.warning(f"⚠️ 成交量datetime X轴设置失败，回退到数字索引: {e}")
-                    use_datetime_axis = False
-                    x = None
-
-            if x is None:
-                x = np.arange(len(plot_data))
             start_time = time.time()
-            self._render_volume_efficient(ax, plot_data, style or {}, x, use_datetime_axis)
-            render_time = (time.time() - start_time) * 1000  # 转换为毫秒
-            logger.info(f"✅ _render_volume_efficient，耗时: {render_time:.2f}ms")
 
-            # ✅ 性能优化P1: 移除_optimize_display()调用，由调用方统一设置样式
-            # 避免在每次渲染时重复设置样式，减少开销
-            # self._optimize_display(ax, use_datetime_axis)  # 已移除，在rendering_mixin中统一设置
+            if use_virtual_scroll:
+                # 使用虚拟滚动渲染成交量
+                logger.info(f"📊 使用虚拟滚动渲染成交量，数据量: {len(data)} 个数据点")
+
+                # 准备与传统渲染一致的样式
+                virtual_style = {
+                    'up_color': style.get('up_color', '#ff0000'),
+                    'down_color': style.get('down_color', '#00ff00'),
+                    'volume_alpha': style.get('volume_alpha', 0.4)
+                }
+
+                success = self.virtual_render_manager.render('volume', ax, data, virtual_style, x, use_datetime_axis)
+                if success:
+                    logger.info(f"✅ 虚拟滚动渲染成交量成功，耗时: {(time.time() - start_time) * 1000:.2f}ms")
+                else:
+                    logger.warning("⚠️ 虚拟滚动渲染成交量失败，降级到传统渲染")
+                    # 降级到传统渲染
+                    view_data = self._get_view_data(data)
+                    plot_data = self._downsample_data(view_data)
+                    self._render_volume_efficient(ax, plot_data, style or {}, x, use_datetime_axis)
+            else:
+                # 使用传统渲染
+                logger.info(f"📊 使用传统渲染成交量，数据量: {len(data)} 个数据点")
+                view_data = self._get_view_data(data)
+                plot_data = self._downsample_data(view_data)
+                self._render_volume_efficient(ax, plot_data, style or {}, x, use_datetime_axis)
+                logger.info(f"✅ 传统渲染成交量成功，耗时: {(time.time() - start_time) * 1000:.2f}ms")
         except Exception as e:
             self.render_error.emit(f"绘制成交量失败: {str(e)}")
             logger.error(f"绘制成交量失败: {e}", exc_info=True)
@@ -262,7 +312,7 @@ class ChartRenderer(QObject):
         """使用collections高效渲染成交量，支持datetime X轴和等距序号X轴"""
         up_color = style.get('up_color', '#ff0000')
         down_color = style.get('down_color', '#00ff00')
-        alpha = style.get('volume_alpha', 0.5)
+        alpha = style.get('volume_alpha', 0.4)
 
         # 横坐标（与K线图保持一致）
         if x is not None:
@@ -291,7 +341,6 @@ class ChartRenderer(QObject):
         volumes = data['volume'].values
         closes = data['close'].values
         opens = data['open'].values
-        n = len(data)
 
         # 向量化计算left和right
         lefts = xvals - bar_width / 2
@@ -333,29 +382,123 @@ class ChartRenderer(QObject):
         # ✅ 性能优化：移除autoscale_view()调用，由调用方统一处理
         # ax.autoscale_view()  # 已移除，在rendering_mixin中统一调用
 
-    def render_line(self, ax, data: pd.Series, style: Dict[str, Any] = None):
-        """高性能线图绘制
+    def render_bar(self, ax, data: pd.DataFrame, style: Dict[str, Any] = None, x: np.ndarray = None, use_datetime_axis: bool = True):
+        """高性能柱状图绘制，支持虚拟滚动
+
+        Args:
+            ax: matplotlib轴对象
+            data: 柱状图数据
+            style: 样式字典
+            x: 可选，X轴数据（可以是datetime数组或数字索引）
+            use_datetime_axis: 是否使用datetime X轴（如果数据包含datetime列）
+        """
+        try:
+            # 检查是否启用虚拟滚动且数据量超过阈值
+            use_virtual_scroll = self._virtual_scroll_enabled and len(data) > self._virtual_scroll_threshold
+
+            start_time = time.time()
+
+            if use_virtual_scroll:
+                # 使用虚拟滚动渲染柱状图
+                logger.info(f"📊 使用虚拟滚动渲染柱状图，数据量: {len(data)} 个数据点")
+
+                # 准备与传统渲染一致的样式
+                virtual_style = {
+                    'color': style.get('color', '#0000ff'),
+                    'alpha': style.get('alpha', 0.8),
+                    'linewidth': style.get('linewidth', 0.5)
+                }
+
+                success = self.virtual_render_manager.render('bar', ax, data, virtual_style, x, use_datetime_axis)
+                if success:
+                    logger.info(f"✅ 虚拟滚动渲染柱状图成功，耗时: {(time.time() - start_time) * 1000:.2f}ms")
+                else:
+                    logger.warning("⚠️ 虚拟滚动渲染柱状图失败，降级到传统渲染")
+                    # 降级到传统渲染 - 这里简化处理，使用线图渲染作为 fallback
+                    self.render_line(ax, data.iloc[:, 0], style, x, use_datetime_axis)
+            else:
+                # 使用传统渲染 - 这里简化处理，使用线图渲染作为 fallback
+                logger.info(f"📊 使用传统渲染柱状图，数据量: {len(data)} 个数据点")
+                self.render_line(ax, data.iloc[:, 0], style, x, use_datetime_axis)
+                logger.info(f"✅ 传统渲染柱状图成功，耗时: {(time.time() - start_time) * 1000:.2f}ms")
+
+        except Exception as e:
+            self.render_error.emit(f"绘制柱状图失败: {str(e)}")
+            logger.error(f"绘制柱状图失败: {e}", exc_info=True)
+
+    def set_virtual_scroll_enabled(self, enabled: bool):
+        """启用或禁用虚拟滚动
+
+        Args:
+            enabled: 是否启用虚拟滚动
+        """
+        self._virtual_scroll_enabled = enabled
+        logger.info(f"⚙️ 虚拟滚动已{'启用' if enabled else '禁用'}")
+
+    def set_virtual_scroll_threshold(self, threshold: int):
+        """设置虚拟滚动的阈值
+
+        Args:
+            threshold: 启用虚拟滚动的数据量阈值
+        """
+        self._virtual_scroll_threshold = threshold
+        logger.info(f"⚙️ 虚拟滚动阈值已设置为: {threshold} 个数据点")
+
+    def is_virtual_scroll_enabled(self) -> bool:
+        """检查是否启用虚拟滚动
+
+        Returns:
+            bool: 是否启用虚拟滚动
+        """
+        return self._virtual_scroll_enabled
+
+    def render_line(self, ax, data: pd.Series, style: Dict[str, Any] = None, x: np.ndarray = None, use_datetime_axis: bool = True):
+        """高性能线图绘制，支持虚拟滚动
 
         Args:
             ax: matplotlib轴对象
             data: 线图数据
             style: 样式字典
+            x: 可选，X轴数据（可以是datetime数组或数字索引）
+            use_datetime_axis: 是否使用datetime X轴（如果数据包含datetime列）
         """
         try:
-            # 获取当前视图范围内的数据
-            view_data = self._get_view_data(data)
+            # 检查是否启用虚拟滚动且数据量超过阈值
+            use_virtual_scroll = self._virtual_scroll_enabled and len(data) > self._virtual_scroll_threshold
 
-            # 降采样
-            plot_data = self._downsample_data(view_data)
+            start_time = time.time()
 
-            # 使用LineCollection批量渲染
-            self._render_line_efficient(ax, plot_data, style or {})
+            if use_virtual_scroll:
+                # 使用虚拟滚动渲染线图
+                logger.info(f"📊 使用虚拟滚动渲染线图，数据量: {len(data)} 个数据点")
 
-            # 优化显示
-            self._optimize_display(ax)
+                # 准备与传统渲染一致的样式
+                virtual_style = {
+                    'color': style.get('color', 'blue'),
+                    'linewidth': style.get('linewidth', 0.5),
+                    'alpha': style.get('alpha', 0.8),
+                    'label': style.get('label', '')
+                }
 
+                success = self.virtual_render_manager.render('line', ax, data, virtual_style, x, use_datetime_axis)
+                if success:
+                    logger.info(f"✅ 虚拟滚动渲染线图成功，耗时: {(time.time() - start_time) * 1000:.2f}ms")
+                else:
+                    logger.warning("⚠️ 虚拟滚动渲染线图失败，降级到传统渲染")
+                    # 降级到传统渲染
+                    view_data = self._get_view_data(data.to_frame()).iloc[:, 0] if isinstance(data, pd.Series) else pd.Series(data)
+                    plot_data = self._downsample_data(view_data.to_frame()).iloc[:, 0]
+                    self._render_line_efficient(ax, plot_data, style or {})
+            else:
+                # 使用传统渲染
+                logger.info(f"📊 使用传统渲染线图，数据量: {len(data)} 个数据点")
+                view_data = self._get_view_data(data.to_frame()).iloc[:, 0] if isinstance(data, pd.Series) else pd.Series(data)
+                plot_data = self._downsample_data(view_data.to_frame()).iloc[:, 0]
+                self._render_line_efficient(ax, plot_data, style or {})
+                logger.info(f"✅ 传统渲染线图成功，耗时: {(time.time() - start_time) * 1000:.2f}ms")
         except Exception as e:
             self.render_error.emit(f"绘制线图失败: {str(e)}")
+            logger.error(f"绘制线图失败: {e}", exc_info=True)
 
     def _render_line_efficient(self, ax, data: pd.Series, style: Dict[str, Any]):
         """使用LineCollection高效渲染线图

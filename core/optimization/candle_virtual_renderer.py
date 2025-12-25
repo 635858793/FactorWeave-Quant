@@ -2,21 +2,19 @@
 # -*- coding: utf-8 -*-
 
 """
-成交量虚拟滚动渲染器
+K线图虚拟滚动渲染器
 
-专门优化的成交量图表虚拟滚动渲染器，基于VirtualScrollRenderer实现高效的成交量数据可视化
+专门优化的K线图虚拟滚动渲染器，基于VirtualScrollRenderer实现高效的K线数据可视化
 实现IVirtualRenderer通用接口，支持统一管理和扩展
 
 作者: FactorWeave-Quant团队
-版本: 2.0
+版本: 1.0
 """
 
 import numpy as np
 import pandas as pd
 from typing import Dict, Any, List, Optional, Tuple, Union, Callable
-from dataclasses import dataclass
 from PyQt5.QtCore import QObject, pyqtSignal, QRectF, QPointF, QTimer
-from PyQt5.QtWidgets import QWidget
 from loguru import logger
 import time
 from collections import deque
@@ -35,8 +33,8 @@ from core.advanced_optimization.performance.virtualization import (
     VirtualRenderStyle
 )
 
-class VolumeVirtualRenderer(QObject):
-    """成交量虚拟滚动渲染器，实现IVirtualRenderer接口"""
+class CandleVirtualRenderer(QObject):
+    """K线图虚拟滚动渲染器，实现IVirtualRenderer接口"""
     
     # 信号定义
     data_rendered = pyqtSignal(int, object)  # chunk_id, RenderChunk
@@ -58,9 +56,9 @@ class VolumeVirtualRenderer(QObject):
         self.virtual_renderer.data_rendered.connect(self.data_rendered.emit)
         self.virtual_renderer.performance_warning.connect(self.performance_warning.emit)
         
-        # 成交量数据缓存
-        self.volume_data = None
-        self.volume_axis = None
+        # K线数据缓存
+        self.candle_data = None
+        self.candle_axis = None
         
         # 渲染状态
         self._is_enabled = True
@@ -75,7 +73,7 @@ class VolumeVirtualRenderer(QObject):
             'memory_usage_estimate_mb': 0.0
         }
         
-        logger.info("成交量虚拟滚动渲染器初始化完成，配置: {}".format({
+        logger.info("K线图虚拟滚动渲染器初始化完成，配置: {}".format({
             'chunk_size': self.config.chunk_size,
             'adaptive_quality': self.config.adaptive_quality,
             'cache_size': self.config.cache_size
@@ -84,10 +82,10 @@ class VolumeVirtualRenderer(QObject):
     def _create_optimized_config(self) -> VirtualizationConfig:
         """创建优化的虚拟滚动配置"""
         return VirtualizationConfig(
-            # 针对成交量数据优化的配置
-            chunk_size=2000,  # 更大的块大小适合成交量数据
-            overlap_size=200,  # 适中的重叠区域
-            max_visible_chunks=3,  # 只显示3个块
+            # 针对K线数据优化的配置
+            chunk_size=1000,  # K线图块大小适中
+            overlap_size=100,  # 适中的重叠区域
+            max_visible_chunks=4,  # 显示4个块
             
             # 性能配置
             max_render_time_ms=8.33,  # 120fps目标
@@ -118,42 +116,52 @@ class VolumeVirtualRenderer(QObject):
             # 禁用时清理所有缓存
             self.cleanup()
         
-        logger.info(f"成交量虚拟滚动{'启用' if enabled else '禁用'}")
+        logger.info(f"K线图虚拟滚动{'启用' if enabled else '禁用'}")
     
     def set_data_source(self, data: Union[np.ndarray, pd.DataFrame, pd.Series]):
         """设置数据源，实现IVirtualRenderer接口"""
-        self.volume_data = data
+        self.candle_data = data
         
         if isinstance(data, pd.DataFrame) and len(data) > 0:
             self._total_data_points = len(data)
-            volumes = data['volume'].values
-            self.virtual_renderer.set_data_source(volumes)
             
-            logger.info(f"成交量虚拟滚动数据源已设置: {self._total_data_points}个数据点")
+            # 验证K线数据是否包含必要的列
+            required_columns = ['open', 'high', 'low', 'close']
+            missing_columns = [col for col in required_columns if col not in data.columns]
+            if missing_columns:
+                logger.warning(f"K线数据缺少必要列: {missing_columns}")
+                self._total_data_points = 0
+                return
+            
+            # 将K线数据转换为适合虚拟滚动的格式
+            # 这里简化处理，实际项目中可以根据需要进行数据转换
+            self.virtual_renderer.set_data_source(data)
+            
+            logger.info(f"K线图虚拟滚动数据源已设置: {self._total_data_points}个数据点")
         else:
             self._total_data_points = 0
-            logger.warning(f"无效的成交量数据源，数据点数量: {self._total_data_points}")
+            logger.warning(f"无效的K线图数据源，数据点数量: {self._total_data_points}")
     
-    def set_volume_data(self, volume_data: pd.DataFrame, volume_axis):
-        """兼容旧接口，设置成交量数据和轴"""
-        self.volume_data = volume_data
-        self.volume_axis = volume_axis
-        self.set_data_source(volume_data)
+    def set_candle_data(self, candle_data: pd.DataFrame, candle_axis):
+        """兼容接口，设置K线数据和轴"""
+        self.candle_data = candle_data
+        self.candle_axis = candle_axis
+        self.set_data_source(candle_data)
     
     def render_with_virtual_scroll(self, ax, data: pd.DataFrame, 
                                         style: Dict[str, Any] = None,
                                         x: np.ndarray = None, 
                                         use_datetime_axis: bool = True) -> bool:
-        """使用虚拟滚动渲染成交量，实现IVirtualRenderer接口"""
-        if not self._is_enabled or self.volume_data is None:
+        """使用虚拟滚动渲染K线图，实现IVirtualRenderer接口"""
+        if not self._is_enabled or self.candle_data is None:
             # 降级到常规渲染
-            logger.info(f"成交量虚拟滚动未启用或数据源为空，降级到常规渲染")
-            return self._render_volume_regular(ax, data, style, x, use_datetime_axis)
+            logger.info(f"K线图虚拟滚动未启用或数据源为空，降级到常规渲染")
+            return self._render_candle_regular(ax, data, style, x, use_datetime_axis)
         
         try:
             start_time = time.time()
             
-            logger.info(f"开始使用虚拟滚动渲染成交量: {len(data)}个数据点")
+            logger.info(f"开始使用虚拟滚动渲染K线图: {len(data)}个数据点")
             
             # 更新视口信息
             visible_rect = self._get_visible_rect(ax)
@@ -162,25 +170,25 @@ class VolumeVirtualRenderer(QObject):
             # 检查数据量是否需要虚拟滚动
             if self._total_data_points < self.config.chunk_size * 2:
                 # 数据量不大，使用常规渲染
-                logger.info(f"成交量数据量较小({self._total_data_points} < {self.config.chunk_size * 2})，使用常规渲染")
-                return self._render_volume_regular(ax, data, style, x, use_datetime_axis)
+                logger.info(f"K线图数据量较小({self._total_data_points} < {self.config.chunk_size * 2})，使用常规渲染")
+                return self._render_candle_regular(ax, data, style, x, use_datetime_axis)
             
             # 使用虚拟滚动渲染
-            success = self._render_volume_virtual(ax, data, style, x, use_datetime_axis)
+            success = self._render_candle_virtual(ax, data, style, x, use_datetime_axis)
             
             render_time = time.time() - start_time
             self.render_stats['total_render_time_ms'] += render_time * 1000
             self.render_stats['data_points_processed'] += len(data)
             
-            logger.info(f"✅ 成交量虚拟滚动渲染完成: {render_time*1000:.2f}ms, 渲染块数量: {len(self.rendered_chunks)}")
+            logger.info(f"✅ K线图虚拟滚动渲染完成: {render_time*1000:.2f}ms, 渲染块数量: {len(self.rendered_chunks)}")
             return success
             
         except Exception as e:
-            logger.error(f"虚拟滚动成交量渲染失败: {e}")
+            logger.error(f"虚拟滚动K线图渲染失败: {e}")
             # 降级到常规渲染
-            return self._render_volume_regular(ax, data, style, x, use_datetime_axis)
+            return self._render_candle_regular(ax, data, style, x, use_datetime_axis)
     
-    def _render_volume_regular(self, ax, data: pd.DataFrame, 
+    def _render_candle_regular(self, ax, data: pd.DataFrame, 
                               style: Dict[str, Any] = None,
                               x: np.ndarray = None, 
                               use_datetime_axis: bool = True) -> bool:
@@ -189,11 +197,22 @@ class VolumeVirtualRenderer(QObject):
             start_time = time.time()
             
             if ax and len(data) > 0:
-                from matplotlib.collections import PolyCollection
+                from matplotlib.collections import PolyCollection, LineCollection
                 
                 # 获取数据
                 x_values = x if x is not None else np.arange(len(data))
-                volumes = data['volume'].values
+                
+                # 验证必要的列是否存在
+                required_columns = ['open', 'high', 'low', 'close']
+                missing_columns = [col for col in required_columns if col not in data.columns]
+                if missing_columns:
+                    logger.warning(f"K线数据缺少必要列: {missing_columns}")
+                    return False
+                
+                opens = data['open'].values
+                highs = data['high'].values
+                lows = data['low'].values
+                closes = data['close'].values
                 
                 # 样式处理
                 current_style = self.style
@@ -203,57 +222,88 @@ class VolumeVirtualRenderer(QObject):
                         if hasattr(current_style, key):
                             setattr(current_style, key, value)
                 
-                # 创建柱子顶点
-                verts = []
-                colors = []
+                # 准备K线数据
+                verts_up = []  # 阳线（上涨）
+                verts_down = []  # 阴线（下跌）
+                segments_up = []  # 上涨影线
+                segments_down = []  # 下跌影线
                 
-                for x_val, volume in zip(x_values, volumes):
-                    if volume > current_style.min_visible_value:
-                        left = x_val - current_style.width / 2
-                        right = x_val + current_style.width / 2
-                        
-                        verts.append([
-                            (left, 0), (left, volume), (right, volume), (right, 0)
+                for i, (x_val, open_price, high, low, close) in enumerate(zip(x_values, opens, highs, lows, closes)):
+                    left = x_val - 0.3
+                    right = x_val + 0.3
+                    
+                    if close >= open_price:
+                        # 阳线
+                        verts_up.append([
+                            (left, open_price), (left, close), (right, close), (right, open_price)
                         ])
-                        
-                        # 处理颜色
-                        if callable(current_style.color):
-                            normalized_volume = volume / max(volumes) if max(volumes) > 0 else 0
-                            colors.append(current_style.color(normalized_volume))
-                        else:
-                            colors.append(current_style.color)
+                        segments_up.append([(x_val, low), (x_val, high)])
+                    else:
+                        # 阴线
+                        verts_down.append([
+                            (left, open_price), (left, close), (right, close), (right, open_price)
+                        ])
+                        segments_down.append([(x_val, low), (x_val, high)])
                 
-                if verts:
-                    # 创建PolyCollection
-                    collection = PolyCollection(
-                        verts, 
-                        facecolors=colors if colors else current_style.color,
-                        edgecolors=current_style.edge_color,
-                        linewidths=current_style.edge_width,
+                # 绘制K线
+                if verts_up:
+                    collection_up = PolyCollection(
+                        verts_up, 
+                        facecolor='none',  # 阳线空心
+                        edgecolor=current_style.candle_up_color,
+                        linewidth=1,
                         alpha=current_style.alpha
                     )
-                    
-                    ax.add_collection(collection)
-                    
-                    if current_style.show_chunks:
-                        self._render_chunk_boundaries(ax)
-                    
-                    ax.autoscale_view()
-                    
-                    render_time = time.time() - start_time
-                    logger.debug(f"✅ 常规成交量渲染完成: {len(verts)}个柱子，耗时 {render_time*1000:.2f}ms")
+                    ax.add_collection(collection_up)
+                
+                if verts_down:
+                    collection_down = PolyCollection(
+                        verts_down, 
+                        facecolor=current_style.candle_down_color,  # 阴线实心
+                        edgecolor=current_style.candle_down_color,
+                        linewidth=0.5,
+                        alpha=current_style.alpha
+                    )
+                    ax.add_collection(collection_down)
+                
+                # 绘制影线
+                if segments_up:
+                    line_collection_up = LineCollection(
+                        segments_up, 
+                        colors=current_style.candle_up_color,
+                        linewidth=0.5,
+                        alpha=current_style.alpha
+                    )
+                    ax.add_collection(line_collection_up)
+                
+                if segments_down:
+                    line_collection_down = LineCollection(
+                        segments_down, 
+                        colors=current_style.candle_down_color,
+                        linewidth=0.5,
+                        alpha=current_style.alpha
+                    )
+                    ax.add_collection(line_collection_down)
+                
+                if current_style.show_chunks:
+                    self._render_chunk_boundaries(ax)
+                
+                ax.autoscale_view()
+                
+                render_time = time.time() - start_time
+                logger.debug(f"✅ 常规K线图渲染完成: {len(data)}个K线，耗时 {render_time*1000:.2f}ms")
             
             return True
             
         except Exception as e:
-            logger.error(f"常规成交量渲染失败: {e}")
+            logger.error(f"常规K线图渲染失败: {e}")
             return False
     
-    def _render_volume_virtual(self, ax, data: pd.DataFrame, 
+    def _render_candle_virtual(self, ax, data: pd.DataFrame, 
                               style: Dict[str, Any] = None,
                               x: np.ndarray = None, 
                               use_datetime_axis: bool = True) -> bool:
-        """虚拟滚动渲染"""
+        """虚拟滚动渲染K线图"""
         try:
             # 更新样式
             current_style = self.style
@@ -304,29 +354,30 @@ class VolumeVirtualRenderer(QObject):
             return rendered_any
             
         except Exception as e:
-            logger.error(f"虚拟滚动成交量渲染失败: {e}")
+            logger.error(f"虚拟滚动K线图渲染失败: {e}")
             return False
     
-    def _get_chunk_data(self, chunk_id: int) -> Optional[np.ndarray]:
-        """获取指定块的成交量数据"""
-        if self.volume_data is None:
+    def _get_chunk_data(self, chunk_id: int) -> Optional[pd.DataFrame]:
+        """获取指定块的K线数据"""
+        if self.candle_data is None:
             return None
         
         chunk_size = self.config.chunk_size
         start_idx = max(0, chunk_id * chunk_size)
-        end_idx = min(len(self.volume_data), start_idx + chunk_size)
+        end_idx = min(len(self.candle_data), start_idx + chunk_size)
         
         if start_idx >= end_idx:
             return None
         
-        chunk_data = self.volume_data.iloc[start_idx:end_idx]['volume'].values
+        chunk_data = self.candle_data.iloc[start_idx:end_idx]
         
         # 创建RenderChunk并添加到缓存
+        # 注意：这里简化处理，实际项目中可以根据需要创建更完整的RenderChunk
         chunk = RenderChunk(
             start_index=start_idx,
             end_index=end_idx,
             data_points=chunk_data,
-            bounding_rect=QRectF(start_idx, 0, len(chunk_data), max(chunk_data) if len(chunk_data) > 0 else 0),
+            bounding_rect=QRectF(start_idx, 0, len(chunk_data), 100),  # 简化的边界矩形
             render_time=0.0,
             quality_level=self.virtual_renderer.quality_level
         )
@@ -335,20 +386,17 @@ class VolumeVirtualRenderer(QObject):
         
         return chunk_data
     
-    def _render_chunk(self, ax, chunk_data: np.ndarray, 
+    def _render_chunk(self, ax, chunk_data: pd.DataFrame, 
                      style: VirtualRenderStyle, chunk_id: int, 
                      x: np.ndarray = None, use_datetime_axis: bool = True) -> bool:
-        """渲染单个数据块"""
+        """渲染单个K线图块"""
         try:
-            from matplotlib.collections import PolyCollection
+            from matplotlib.collections import PolyCollection, LineCollection
             
             if len(chunk_data) == 0:
-                logger.debug(f"跳过空数据块渲染: {chunk_id}")
                 return False
             
-            render_start = time.time()
-            
-            # 创建该块的柱子
+            # 创建该块的K线
             chunk_size = self.config.chunk_size
             base_index = chunk_id * chunk_size
             
@@ -360,52 +408,91 @@ class VolumeVirtualRenderer(QObject):
                 # 使用默认的X轴数据
                 chunk_x = np.arange(base_index, base_index + len(chunk_data))
             
-            verts = []
-            colors = []
+            # 验证必要的列是否存在
+            required_columns = ['open', 'high', 'low', 'close']
+            missing_columns = [col for col in required_columns if col not in chunk_data.columns]
+            if missing_columns:
+                logger.warning(f"K线数据块缺少必要列: {missing_columns}")
+                return False
             
-            for i, (x_val, volume) in enumerate(zip(chunk_x, chunk_data)):
-                if volume > style.min_visible_value:
-                    left = x_val - style.width / 2
-                    right = x_val + style.width / 2
-                    
-                    verts.append([
-                        (left, 0), (left, volume), (right, volume), (right, 0)
+            opens = chunk_data['open'].values
+            highs = chunk_data['high'].values
+            lows = chunk_data['low'].values
+            closes = chunk_data['close'].values
+            
+            # 准备K线数据
+            verts_up = []  # 阳线（上涨）
+            verts_down = []  # 阴线（下跌）
+            segments_up = []  # 上涨影线
+            segments_down = []  # 下跌影线
+            
+            for i, (x_val, open_price, high, low, close) in enumerate(zip(chunk_x, opens, highs, lows, closes)):
+                left = x_val - 0.3
+                right = x_val + 0.3
+                
+                if close >= open_price:
+                    # 阳线
+                    verts_up.append([
+                        (left, open_price), (left, close), (right, close), (right, open_price)
                     ])
-                    
-                    # 处理颜色
-                    if callable(style.color):
-                        normalized_volume = volume / max(chunk_data) if max(chunk_data) > 0 else 0
-                        colors.append(style.color(normalized_volume))
-                    else:
-                        colors.append(style.color)
+                    segments_up.append([(x_val, low), (x_val, high)])
+                else:
+                    # 阴线
+                    verts_down.append([
+                        (left, open_price), (left, close), (right, close), (right, open_price)
+                    ])
+                    segments_down.append([(x_val, low), (x_val, high)])
             
-            if verts:
-                collection = PolyCollection(
-                    verts, 
-                    facecolors=colors if colors else style.color,
-                    edgecolors=style.edge_color,
-                    linewidths=style.edge_width,
+            # 绘制K线
+            if verts_up:
+                collection_up = PolyCollection(
+                    verts_up, 
+                    facecolor='none',  # 阳线空心
+                    edgecolor=style.candle_up_color,
+                    linewidth=0.8,
                     alpha=style.alpha
                 )
-                
-                ax.add_collection(collection)
-                
-                # 调试模式下显示块边界
-                if style.show_chunks:
-                    self._draw_chunk_boundary(ax, base_index, len(chunk_data), 
-                                            style.chunk_border_color, 
-                                            style.chunk_border_width)
-                
-                render_time = (time.time() - render_start) * 1000
-                logger.debug(f"块渲染完成: ID={chunk_id}, 数据点={len(chunk_data)}, 柱子数={len(verts)}, 耗时={render_time:.2f}ms")
-                
-                return True
+                ax.add_collection(collection_up)
             
-            logger.debug(f"块渲染无可见元素: ID={chunk_id}, 数据点={len(chunk_data)}")
-            return False
+            if verts_down:
+                collection_down = PolyCollection(
+                    verts_down, 
+                    facecolor='none',  # 阴线空心
+                    edgecolor=style.candle_down_color,
+                    linewidth=0.8,
+                    alpha=style.alpha
+                )
+                ax.add_collection(collection_down)
+            
+            # 绘制影线
+            if segments_up:
+                line_collection_up = LineCollection(
+                    segments_up, 
+                    colors=style.candle_up_color,
+                    linewidth=0.8,
+                    alpha=style.alpha
+                )
+                ax.add_collection(line_collection_up)
+            
+            if segments_down:
+                line_collection_down = LineCollection(
+                    segments_down, 
+                    colors=style.candle_down_color,
+                    linewidth=0.8,
+                    alpha=style.alpha
+                )
+                ax.add_collection(line_collection_down)
+            
+            # 调试模式下显示块边界
+            if style.show_chunks:
+                self._draw_chunk_boundary(ax, base_index, len(chunk_data), 
+                                        style.chunk_border_color, 
+                                        style.chunk_border_width)
+            
+            return True
             
         except Exception as e:
-            logger.error(f"渲染块 {chunk_id} 失败: {e}")
+            logger.error(f"渲染K线图块 {chunk_id} 失败: {e}")
             return False
     
     def _get_visible_rect(self, ax) -> QRectF:
@@ -431,9 +518,9 @@ class VolumeVirtualRenderer(QObject):
             import matplotlib.patches as patches
             
             rect = patches.Rectangle(
-                (start_index - 0.5, 0),
+                (start_index - 0.5, ax.get_ylim()[0]),
                 length + 1,
-                max(ax.get_ylim()) if ax.get_ylim()[1] > 0 else 100,
+                ax.get_ylim()[1] - ax.get_ylim()[0],
                 linewidth=width,
                 edgecolor=color,
                 facecolor='none',
@@ -465,16 +552,16 @@ class VolumeVirtualRenderer(QObject):
     
     def cleanup(self):
         """清理资源，实现IVirtualRenderer接口"""
-        logger.info("清理成交量虚拟滚动渲染器资源")
+        logger.info("清理K线图虚拟滚动渲染器资源")
         
         if self._is_enabled and hasattr(self.virtual_renderer, 'cleanup'):
             self.virtual_renderer.cleanup()
         
         self.rendered_chunks.clear()
-        self.volume_data = None
-        self.volume_axis = None
+        self.candle_data = None
+        self.candle_axis = None
         
-        logger.info("成交量虚拟滚动渲染器资源清理完成")
+        logger.info("K线图虚拟滚动渲染器资源清理完成")
     
     def update_viewport(self, visible_rect: QRectF):
         """更新视口，实现IVirtualRenderer接口"""
@@ -490,113 +577,44 @@ class VolumeVirtualRenderer(QObject):
         """总数据点数量，实现IVirtualRenderer接口"""
         return self._total_data_points
     
-    def _render_volume_regular(self, ax, data: pd.DataFrame, 
-                              style: Dict[str, Any] = None,
-                              x: np.ndarray = None, 
-                              use_datetime_axis: bool = True) -> bool:
-        """常规渲染（降级方案）"""
-        try:
-            start_time = time.time()
-            
-            if ax and len(data) > 0:
-                from matplotlib.collections import PolyCollection
-                
-                # 获取数据
-                x_values = x if x is not None else np.arange(len(data))
-                volumes = data['volume'].values
-                
-                # 样式处理
-                current_style = self.style
-                if style:
-                    # 使用字典更新样式
-                    for key, value in style.items():
-                        if hasattr(current_style, key):
-                            setattr(current_style, key, value)
-                
-                # 创建柱子顶点
-                verts = []
-                colors = []
-                
-                for x_val, volume in zip(x_values, volumes):
-                    if volume > current_style.min_visible_value:
-                        left = x_val - current_style.width / 2
-                        right = x_val + current_style.width / 2
-                        
-                        verts.append([
-                            (left, 0), (left, volume), (right, volume), (right, 0)
-                        ])
-                        
-                        # 处理颜色
-                        if callable(current_style.color):
-                            normalized_volume = volume / max(volumes) if max(volumes) > 0 else 0
-                            colors.append(current_style.color(normalized_volume))
-                        else:
-                            colors.append(current_style.color)
-                
-                if verts:
-                    # 创建PolyCollection
-                    collection = PolyCollection(
-                        verts, 
-                        facecolors=colors if colors else current_style.color,
-                        edgecolors=current_style.edge_color,
-                        linewidths=current_style.edge_width,
-                        alpha=current_style.alpha
-                    )
-                    
-                    ax.add_collection(collection)
-                    
-                    if current_style.show_chunks:
-                        self._render_chunk_boundaries(ax)
-                    
-                    ax.autoscale_view()
-                    
-                    render_time = time.time() - start_time
-                    logger.debug(f"✅ 常规成交量渲染完成: {len(verts)}个柱子，耗时 {render_time*1000:.2f}ms")
-            
-            return True
-            
-        except Exception as e:
-            logger.error(f"常规成交量渲染失败: {e}")
-            return False
-    
     def _render_chunk_boundaries(self, ax):
         """渲染所有块边界（调试用）"""
         # 简化实现，实际项目中可以根据需要实现
         pass
 
 # 便捷函数
-def create_volume_virtual_renderer(data: pd.DataFrame, 
+def create_candle_virtual_renderer(data: pd.DataFrame, 
                                  ax,
                                  config: Optional[VirtualizationConfig] = None,
-                                 style: Optional[VirtualRenderStyle] = None) -> VolumeVirtualRenderer:
-    """创建成交量虚拟滚动渲染器"""
-    renderer = VolumeVirtualRenderer(config, style)
-    renderer.set_volume_data(data, ax)
+                                 style: Optional[VirtualRenderStyle] = None) -> CandleVirtualRenderer:
+    """创建K线图虚拟滚动渲染器"""
+    renderer = CandleVirtualRenderer(config, style)
+    renderer.set_candle_data(data, ax)
     return renderer
 
-def optimize_volume_config_for_data_size(data_size: int) -> VirtualizationConfig:
-    """根据数据大小优化成交量虚拟滚动配置"""
+def optimize_candle_config_for_data_size(data_size: int) -> VirtualizationConfig:
+    """根据数据大小优化K线图虚拟滚动配置"""
     if data_size > 1_000_000:  # 100万数据点
         return VirtualizationConfig(
-            chunk_size=1000,
-            overlap_size=100,
-            max_visible_chunks=2,
+            chunk_size=1500,
+            overlap_size=150,
+            max_visible_chunks=3,
             quality_levels=[1, 4, 8, 16, 32],
             cache_size=100
         )
     elif data_size > 100_000:  # 10万数据点
         return VirtualizationConfig(
-            chunk_size=2000,
-            overlap_size=200,
-            max_visible_chunks=3,
+            chunk_size=1000,
+            overlap_size=100,
+            max_visible_chunks=4,
             quality_levels=[1, 2, 4, 8, 16],
             cache_size=50
         )
     else:  # 小于10万数据点
         return VirtualizationConfig(
-            chunk_size=5000,
-            overlap_size=500,
-            max_visible_chunks=2,
+            chunk_size=2000,
+            overlap_size=200,
+            max_visible_chunks=3,
             quality_levels=[1, 2, 4, 8],
             cache_size=20
         )
