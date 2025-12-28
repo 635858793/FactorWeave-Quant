@@ -1,155 +1,11 @@
 {
   "industry_data": {
-    "920121": {
-      "code": "920121",
-      "name": "N江天",
-      "csrc_industry": "造纸印刷",
-      "exchange_industry": "融资融券",
-      "market": "OTHER",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
     "920680": {
       "code": "920680",
       "name": "广道退",
       "csrc_industry": "软件开发",
-      "exchange_industry": "军工,智慧城市,大数据,人工智能,昨日涨停,华为概念,职业教育,昨日涨停_含一字,低价股,数据要素",
+      "exchange_industry": "军工,智慧城市,大数据,人工智能,昨日涨停,昨日连板,华为概念,职业教育,昨日涨停_含一字,昨日连板_含一字,低价股,数据要素",
       "market": "OTHER",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "300503": {
-      "code": "300503",
-      "name": "昊志机电",
-      "csrc_industry": "通用设备",
-      "exchange_industry": "机构重仓,燃料电池,创业板综,深股通,富士康,3D玻璃,商业航天,工业母机,专精特新,机器人概念,减速器,机器人执行器,人形机器人",
-      "market": "SZ",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "301005": {
-      "code": "301005",
-      "name": "超捷股份",
-      "csrc_industry": "汽车零部件",
-      "exchange_industry": "军工,融资融券,特斯拉,创业板综,深股通,昨日涨停,新能源车,商业航天,华为汽车,换电概念,专精特新,昨日涨停_含一字,百元股,机器人概念,小米汽车,PEEK材料概念,人形机器人",
-      "market": "OTHER",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "301469": {
-      "code": "301469",
-      "name": "恒达新材",
-      "csrc_industry": "造纸印刷",
-      "exchange_industry": "融资融券,创业板综,微盘股",
-      "market": "OTHER",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "301043": {
-      "code": "301043",
-      "name": "绿岛风",
-      "csrc_industry": "专用设备",
-      "exchange_industry": "QFII重仓,融资融券,创业板综,建筑节能",
-      "market": "OTHER",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "300900": {
-      "code": "300900",
-      "name": "广联航空",
-      "csrc_industry": "航天航空",
-      "exchange_industry": "军工,转债标的,融资融券,无人机,创业板综,深股通,军民融合,大飞机,商业航天,专精特新,飞行汽车(eVTOL),低空经济,人形机器人",
-      "market": "SZ",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "300668": {
-      "code": "300668",
-      "name": "杰恩设计",
-      "csrc_industry": "工程咨询服务",
-      "exchange_industry": "深圳特区,虚拟现实,创业板综,股权转让,华为概念,ERP概念,微盘股",
-      "market": "SZ",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "688539": {
-      "code": "688539",
-      "name": "高华科技",
-      "csrc_industry": "电子元件",
-      "exchange_industry": "军工,融资融券,沪股通,养老金,工业互联,国产芯片,传感器,商业航天,专精特新,新型工业化",
-      "market": "SH",
       "sectors": {
         "concept": [
           "-"
@@ -180,12 +36,12 @@
         ]
       }
     },
-    "688270": {
-      "code": "688270",
-      "name": "臻镭科技",
-      "csrc_industry": "半导体",
-      "exchange_industry": "军工,融资融券,无人机,沪股通,国产芯片,半导体概念,卫星互联网,专精特新,百元股",
-      "market": "SH",
+    "300291": {
+      "code": "300291",
+      "name": "百纳千成",
+      "csrc_industry": "文化传媒",
+      "exchange_industry": "创投,旅游概念,虚拟现实,创业板综,人工智能,深股通,百度概念,影视概念,华为概念,网红经济,虚拟数字人,ChatGPT概念,短剧互动游戏,谷子经济",
+      "market": "SZ",
       "sectors": {
         "concept": [
           "-"
@@ -198,12 +54,12 @@
         ]
       }
     },
-    "688385": {
-      "code": "688385",
-      "name": "复旦微电",
-      "csrc_industry": "半导体",
-      "exchange_industry": "AH股,智能电网,融资融券,中证500,上证380,沪股通,MSCI中国,国产芯片,半导体概念,AI芯片",
-      "market": "SH",
+    "301181": {
+      "code": "301181",
+      "name": "标榜股份",
+      "csrc_industry": "汽车零部件",
+      "exchange_industry": "机构重仓,融资融券,燃料电池,创业板综,新能源车,汽车热管理,飞行汽车(eVTOL),低空经济",
+      "market": "OTHER",
       "sectors": {
         "concept": [
           "-"
@@ -216,65 +72,11 @@
         ]
       }
     },
-    "688387": {
-      "code": "688387",
-      "name": "信科移动-U",
-      "csrc_industry": "通信设备",
-      "exchange_industry": "融资融券,央国企改革,中证500,沪股通,一带一路,5G概念,人工智能,边缘计算,商业航天,6G概念",
-      "market": "SH",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "688108": {
-      "code": "688108",
-      "name": "赛诺医疗",
-      "csrc_industry": "医疗器械",
-      "exchange_industry": "QFII重仓,融资融券,医疗器械概念,沪股通,专精特新,2025中报预增",
-      "market": "SH",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "688165": {
-      "code": "688165",
-      "name": "埃夫特-U",
-      "csrc_industry": "通用设备",
-      "exchange_industry": "融资融券,央国企改革,沪股通,人工智能,工业互联,新能源车,机器视觉,专精特新,机器人概念,减速器,人形机器人",
-      "market": "SH",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "301208": {
-      "code": "301208",
-      "name": "中亦科技",
+    "301117": {
+      "code": "301117",
+      "name": "佳缘科技",
       "csrc_industry": "软件开发",
-      "exchange_industry": "融资融券,阿里概念,创业板综,人工智能,深股通,华为概念,鸿蒙概念,跨境支付,信创",
+      "exchange_industry": "军工,QFII重仓,西部大开发,融资融券,网络安全,国产软件,创业板综,人工智能,互联医疗,华为概念,智慧政务,国产芯片,商业航天,数据安全,DRG/DIP",
       "market": "OTHER",
       "sectors": {
         "concept": [
@@ -288,119 +90,11 @@
         ]
       }
     },
-    "300136": {
-      "code": "300136",
-      "name": "信维通信",
-      "csrc_industry": "消费电子",
-      "exchange_industry": "深圳特区,深成500,融资融券,央视50_,创业成份,智能穿戴,特斯拉,苹果概念,中证500,5G概念,创业板综,深股通,昨日触板,MSCI中国,华为概念,电子烟,富时罗素,UWB概念,MLCC,无线耳机,WiFi,车联网(车路云),卫星互联网,无线充电,商业航天,6G概念,被动元件,毫米波概念,混合现实,柔性屏(折叠屏)",
-      "market": "SZ",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "688416": {
-      "code": "688416",
-      "name": "恒烁股份",
-      "csrc_industry": "半导体",
-      "exchange_industry": "融资融券,人工智能,国产芯片,半导体概念,专精特新,AI芯片,存储芯片",
-      "market": "SH",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "688048": {
-      "code": "688048",
-      "name": "长光华芯",
-      "csrc_industry": "半导体",
-      "exchange_industry": "融资融券,沪股通,医疗美容,国产芯片,半导体概念,专精特新,百元股,可控核聚变",
-      "market": "SH",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "301128": {
-      "code": "301128",
-      "name": "强瑞技术",
-      "csrc_industry": "专用设备",
-      "exchange_industry": "融资融券,苹果概念,创业板综,深股通,华为概念,半导体概念,数据中心,专精特新,液冷概念,柔性屏(折叠屏),荣耀概念,人形机器人",
-      "market": "OTHER",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "300607": {
-      "code": "300607",
-      "name": "拓斯达",
-      "csrc_industry": "通用设备",
-      "exchange_industry": "物联网,融资融券,创业板综,深股通,工业互联,华为概念,富时罗素,机器视觉,工业母机,机器人概念,飞行汽车(eVTOL),低空经济,人形机器人",
-      "market": "SZ",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "300225": {
-      "code": "300225",
-      "name": "*ST金泰",
+    "301292": {
+      "code": "301292",
+      "name": "海科新源",
       "csrc_industry": "化学制品",
-      "exchange_industry": "节能环保,创投,ST股,股权激励,昨日触板",
-      "market": "SZ",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "920925": {
-      "code": "920925",
-      "name": "锦好医疗",
-      "csrc_industry": "医疗器械",
-      "exchange_industry": "融资融券,医疗器械概念,专精特新,跨境电商,2025三季报扭亏",
+      "exchange_industry": "化工原料,QFII重仓,锂电池,融资融券,特斯拉,创业板综,深股通,新能源车,固态电池,化妆品概念,专精特新",
       "market": "OTHER",
       "sectors": {
         "concept": [
@@ -414,155 +108,11 @@
         ]
       }
     },
-    "688709": {
-      "code": "688709",
-      "name": "成都华微",
-      "csrc_industry": "半导体",
-      "exchange_industry": "军工,机构重仓,西部大开发,融资融券,央国企改革,中证500,人脑工程,沪股通,人工智能,半导体概念,机器人概念,AI芯片,存储芯片",
-      "market": "SH",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "300421": {
-      "code": "300421",
-      "name": "力星股份",
-      "csrc_industry": "通用设备",
-      "exchange_industry": "QFII重仓,机构重仓,风能,创业板综,深股通,新能源车,机器人概念,人形机器人",
-      "market": "SZ",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "688273": {
-      "code": "688273",
-      "name": "麦澜德",
-      "csrc_industry": "医疗器械",
-      "exchange_industry": "融资融券,养老概念,婴童概念,人脑工程,人工智能,辅助生殖,专精特新,机器人概念,AI制药（医疗）",
-      "market": "SH",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "688033": {
-      "code": "688033",
-      "name": "天宜新材",
-      "csrc_industry": "光伏设备",
-      "exchange_industry": "军工,太阳能,铁路基建,融资融券,商业航天,飞行汽车(eVTOL),低空经济",
-      "market": "SH",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "688456": {
-      "code": "688456",
-      "name": "有研粉材",
-      "csrc_industry": "有色金属",
-      "exchange_industry": "军工,新材料,稀土永磁,太阳能,融资融券,3D打印,央国企改革,小金属概念,昨日涨停,半导体概念,商业航天,昨日涨停_含一字",
-      "market": "SH",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "688651": {
-      "code": "688651",
-      "name": "盛邦安全",
-      "csrc_industry": "软件开发",
-      "exchange_industry": "融资融券,海洋经济,网络安全,量子科技,华为概念,国产芯片,卫星互联网,专精特新,数据安全,电子身份证,时空大数据,数据要素,低空经济",
-      "market": "SH",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "688013": {
-      "code": "688013",
-      "name": "天臣医疗",
-      "csrc_industry": "医疗器械",
-      "exchange_industry": "融资融券,医疗器械概念,专精特新",
-      "market": "SH",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "300129": {
-      "code": "300129",
-      "name": "泰胜风能",
-      "csrc_industry": "风电设备",
-      "exchange_industry": "新能源,机构重仓,风能,融资融券,海工装备,海洋经济,央国企改革,创业板综,深股通,商业航天",
-      "market": "SZ",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "301225": {
-      "code": "301225",
-      "name": "恒勃股份",
-      "csrc_industry": "汽车零部件",
-      "exchange_industry": "融资融券,医疗器械概念,创业板综,深股通,氢能源,新能源车,车联网(车路云),汽车芯片,华为汽车,专精特新,汽车热管理,PEEK材料概念",
+    "301246": {
+      "code": "301246",
+      "name": "宏源药业",
+      "csrc_industry": "化学制药",
+      "exchange_industry": "锂电池,融资融券,创业板综,深股通,合成生物",
       "market": "OTHER",
       "sectors": {
         "concept": [
@@ -576,101 +126,11 @@
         ]
       }
     },
-    "688562": {
-      "code": "688562",
-      "name": "航天软件",
-      "csrc_industry": "互联网服务",
-      "exchange_industry": "军工,融资融券,大数据,央国企改革,国产软件,沪股通,大飞机,商业航天",
-      "market": "SH",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "300455": {
-      "code": "300455",
-      "name": "航天智装",
-      "csrc_industry": "计算机设备",
-      "exchange_industry": "军工,核能核电,铁路基建,融资融券,北斗导航,央国企改革,创业板综,深股通,富时罗素,国产芯片,卫星互联网,商业航天,空间站概念,机器人概念,存储芯片",
-      "market": "SZ",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "300141": {
-      "code": "300141",
-      "name": "和顺电气",
-      "csrc_industry": "电网设备",
-      "exchange_industry": "QFII重仓,智能电网,太阳能,燃料电池,充电桩,创业板综,氢能源,储能,绿色电力,高压快充",
-      "market": "SZ",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "002652": {
-      "code": "002652",
-      "name": "扬子新材",
-      "csrc_industry": "装修建材",
-      "exchange_industry": "新材料,养老概念,雄安新区,纳米银,微盘股",
-      "market": "SZ",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "002228": {
-      "code": "002228",
-      "name": "合兴包装",
-      "csrc_industry": "包装材料",
-      "exchange_industry": "昨日涨停,昨日连板,小米概念,昨日涨停_含一字,昨日连板_含一字,数字水印,娃哈哈概念",
-      "market": "SZ",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "002763": {
-      "code": "002763",
-      "name": "汇洁股份",
+    "300819": {
+      "code": "300819",
+      "name": "聚杰微纤",
       "csrc_industry": "纺织服装",
-      "exchange_industry": "深圳特区,机构重仓,婴童概念,电商概念,网红经济,化妆品概念,跨境电商",
+      "exchange_industry": "体育产业,创业板综,贬值受益,固态电池",
       "market": "SZ",
       "sectors": {
         "concept": [
@@ -684,11 +144,11 @@
         ]
       }
     },
-    "600376": {
-      "code": "600376",
-      "name": "首开股份",
-      "csrc_industry": "房地产开发",
-      "exchange_industry": "融资融券,央国企改革,京津冀,沪股通,证金持股,雄安新区,富时罗素,标准普尔",
+    "688158": {
+      "code": "688158",
+      "name": "优刻得-W",
+      "csrc_industry": "互联网服务",
+      "exchange_industry": "股权激励,云计算,融资融券,智慧城市,人脑工程,人工智能,边缘计算,VPN,数据中心,商业航天,东数西算,信创,算力概念,液冷概念,智谱AI,DeepSeek概念",
       "market": "SH",
       "sectors": {
         "concept": [
@@ -702,12 +162,12 @@
         ]
       }
     },
-    "002297": {
-      "code": "002297",
-      "name": "博云新材",
-      "csrc_industry": "航天航空",
-      "exchange_industry": "军工,新材料,融资融券,通用航空,央国企改革,小金属概念,无人机,军民融合,大飞机,昨日涨停,商业航天,昨日涨停_含一字,碳纤维",
-      "market": "SZ",
+    "920160": {
+      "code": "920160",
+      "name": "北矿检测",
+      "csrc_industry": "专业服务",
+      "exchange_industry": "次新股,融资融券,央国企改革,专精特新",
+      "market": "OTHER",
       "sectors": {
         "concept": [
           "-"
@@ -720,12 +180,12 @@
         ]
       }
     },
-    "002800": {
-      "code": "002800",
-      "name": "天顺股份",
-      "csrc_industry": "物流行业",
-      "exchange_industry": "西部大开发,一带一路,冷链物流,快递概念,中俄贸易概念,统一大市场,跨境电商,微盘股,海南自贸",
-      "market": "SZ",
+    "688519": {
+      "code": "688519",
+      "name": "南亚新材",
+      "csrc_industry": "电子元件",
+      "exchange_industry": "融资融券,智能穿戴,沪股通,虚拟现实,增强现实,华为概念,专精特新,2025中报预增",
+      "market": "SH",
       "sectors": {
         "concept": [
           "-"
@@ -738,12 +198,12 @@
         ]
       }
     },
-    "002363": {
-      "code": "002363",
-      "name": "隆基机械",
-      "csrc_industry": "汽车零部件",
-      "exchange_industry": "军工,特斯拉,昨日涨停,新能源车,华为汽车,昨日涨停_含一字",
-      "market": "SZ",
+    "688511": {
+      "code": "688511",
+      "name": "*ST天微",
+      "csrc_industry": "电子元件",
+      "exchange_industry": "军工,ST股,西部大开发,军民融合,传感器,专精特新,2025中报预增",
+      "market": "SH",
       "sectors": {
         "concept": [
           "-"
@@ -756,29 +216,11 @@
         ]
       }
     },
-    "002446": {
-      "code": "002446",
-      "name": "盛路通信",
-      "csrc_industry": "通信设备",
-      "exchange_industry": "军工,物联网,融资融券,北斗导航,5G概念,无人驾驶,深股通,军民融合,华为概念,富时罗素,标准普尔,国产芯片,车联网(车路云),卫星互联网,商业航天,6G概念,毫米波概念",
-      "market": "SZ",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "002115": {
-      "code": "002115",
-      "name": "三维通信",
+    "300846": {
+      "code": "300846",
+      "name": "首都在线",
       "csrc_industry": "互联网服务",
-      "exchange_industry": "创投,机构重仓,长江三角,融资融券,海洋经济,阿里概念,5G概念,人工智能,深股通,区块链,标准普尔,卫星互联网,抖音概念(字节概念),商业航天,6G概念,快手概念,专精特新,虚拟数字人,小红书概念",
+      "exchange_industry": "网络游戏,机构重仓,云计算,融资融券,在线教育,一带一路,5G概念,创业板综,深股通,AI智能体,华为概念,车联网(车路云),数据中心,网红经济,商业航天,快手概念,专精特新,元宇宙概念,数据安全,虚拟数字人,东数西算,信创,Web3.0,AIGC概念,算力概念,智谱AI,DeepSeek概念",
       "market": "SZ",
       "sectors": {
         "concept": [
@@ -792,12 +234,282 @@
         ]
       }
     },
-    "000551": {
-      "code": "000551",
-      "name": "创元科技",
-      "csrc_industry": "环保行业",
-      "exchange_industry": "新能源,节能环保,参股期货,参股银行,长江三角,融资融券,特斯拉,央国企改革,深股通,氢能源,特高压,北交所概念,商业航天,工业气体,昨日涨停_含一字,昨日连板_含一字,机器人概念,减速器,空气能热泵",
+    "688311": {
+      "code": "688311",
+      "name": "盟升电子",
+      "csrc_industry": "通信设备",
+      "exchange_industry": "军工,转债标的,西部大开发,融资融券,北斗导航,国家安防,沪股通,军民融合,卫星互联网,商业航天,专精特新",
+      "market": "SH",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "301505": {
+      "code": "301505",
+      "name": "苏州规划",
+      "csrc_industry": "工程咨询服务",
+      "exchange_industry": "融资融券,智慧城市,创业板综,车联网(车路云),新型城镇化,微盘股,低空经济",
+      "market": "OTHER",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "688295": {
+      "code": "688295",
+      "name": "中复神鹰",
+      "csrc_industry": "化纤行业",
+      "exchange_industry": "融资融券,央国企改革,中证500,上证380,沪股通,氢能源,商业航天,专精特新,PEEK材料概念,飞行汽车(eVTOL),低空经济,碳纤维",
+      "market": "SH",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "300900": {
+      "code": "300900",
+      "name": "广联航空",
+      "csrc_industry": "航天航空",
+      "exchange_industry": "军工,转债标的,融资融券,无人机,创业板综,深股通,军民融合,大飞机,昨日涨停,商业航天,专精特新,昨日涨停_含一字,飞行汽车(eVTOL),低空经济,人形机器人",
       "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "688353": {
+      "code": "688353",
+      "name": "华盛锂电",
+      "csrc_industry": "化学制品",
+      "exchange_industry": "锂电池,融资融券,沪股通,有机硅,固态电池,专精特新,百元股",
+      "market": "SH",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "300774": {
+      "code": "300774",
+      "name": "倍杰特",
+      "csrc_industry": "环保行业",
+      "exchange_industry": "节能环保,融资融券,京津冀,PPP模式,创业板综,专精特新",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "301306": {
+      "code": "301306",
+      "name": "西测测试",
+      "csrc_industry": "专业服务",
+      "exchange_industry": "军工,社保重仓,西部大开发,融资融券,创业板综,大飞机,商业航天,专精特新,百元股,存储芯片,低空经济",
+      "market": "OTHER",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "688386": {
+      "code": "688386",
+      "name": "泛亚微透",
+      "csrc_industry": "塑料制品",
+      "exchange_industry": "军工,新材料,融资融券,燃料电池,氟化工,沪股通,氢能源,新能源车,商业航天,6G概念,专精特新,可控核聚变,铜缆高速连接,人形机器人",
+      "market": "SH",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "300139": {
+      "code": "300139",
+      "name": "晓程科技",
+      "csrc_industry": "贵金属",
+      "exchange_industry": "QFII重仓,黄金概念,机构重仓,智能电网,太阳能,融资融券,一带一路,PPP模式,创业板综,深股通,国产芯片,半导体概念,绿色电力,民爆概念",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "688480": {
+      "code": "688480",
+      "name": "赛恩斯",
+      "csrc_industry": "环保行业",
+      "exchange_industry": "节能环保,机构重仓,融资融券,一带一路,专精特新,土壤修复,2025中报预减",
+      "market": "SH",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "301232": {
+      "code": "301232",
+      "name": "飞沃科技",
+      "csrc_industry": "风电设备",
+      "exchange_industry": "风能,融资融券,海洋经济,创业板综,大飞机,商业航天,专精特新,百元股,新型工业化,低空经济",
+      "market": "OTHER",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "300816": {
+      "code": "300816",
+      "name": "艾可蓝",
+      "csrc_industry": "汽车零部件",
+      "exchange_industry": "节能环保,云计算,创业板综,氢能源,尾气治理,专精特新",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "600708": {
+      "code": "600708",
+      "name": "光明地产",
+      "csrc_industry": "房地产开发",
+      "exchange_industry": "长江三角,融资融券,土地流转,上海自贸,电商概念,央国企改革,沪股通,冷链物流,富时罗素,标准普尔,破净股",
+      "market": "SH",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "002506": {
+      "code": "002506",
+      "name": "协鑫集成",
+      "csrc_industry": "光伏设备",
+      "exchange_industry": "新能源,深成500,太阳能,融资融券,深股通,华为概念,富时罗素,标准普尔,HIT电池,半导体概念,蚂蚁概念,储能,低价股,钒电池,TOPCon电池,BC电池",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "600759": {
+      "code": "600759",
+      "name": "洲际油气",
+      "csrc_industry": "石油行业",
+      "exchange_industry": "融资融券,土地流转,沪股通,天然气,氦气概念,低价股,海南自贸",
+      "market": "SH",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "600179": {
+      "code": "600179",
+      "name": "安通控股",
+      "csrc_industry": "物流行业",
+      "exchange_industry": "融资融券,沪股通,昨日涨停,昨日连板,区块链,昨日涨停_含一字,昨日连板_含一字,统一大市场,海南自贸,2025中报预增",
+      "market": "SH",
       "sectors": {
         "concept": [
           "-"
@@ -814,7 +526,7 @@
       "code": "002347",
       "name": "泰尔股份",
       "csrc_industry": "通用设备",
-      "exchange_industry": "军工,锂电池,3D打印,工业互联,机器视觉,动力电池回收,机器人概念,新型工业化",
+      "exchange_industry": "军工,锂电池,3D打印,昨日涨停,工业互联,机器视觉,昨日涨停_含一字,动力电池回收,机器人概念,新型工业化",
       "market": "SZ",
       "sectors": {
         "concept": [
@@ -828,11 +540,11 @@
         ]
       }
     },
-    "001208": {
-      "code": "001208",
-      "name": "华菱线缆",
-      "csrc_industry": "电网设备",
-      "exchange_industry": "军工,海工装备,央国企改革,充电桩,深股通,特高压,商业航天,空间站概念,专精特新,机器人概念,可控核聚变,人形机器人,雅下水电概念",
+    "000523": {
+      "code": "000523",
+      "name": "红棉股份",
+      "csrc_industry": "食品饮料",
+      "exchange_industry": "机构重仓,土地流转,粤港自贸,央国企改革,深股通,新零售,代糖概念,啤酒概念",
       "market": "SZ",
       "sectors": {
         "concept": [
@@ -846,11 +558,11 @@
         ]
       }
     },
-    "603809": {
-      "code": "603809",
-      "name": "豪能股份",
-      "csrc_industry": "汽车零部件",
-      "exchange_industry": "军工,股权激励,西部大开发,铁路基建,融资融券,沪股通,大飞机,新能源车,商业航天,专精特新,机器人概念,减速器,小米汽车,人形机器人",
+    "603660": {
+      "code": "603660",
+      "name": "苏州科达",
+      "csrc_industry": "计算机设备",
+      "exchange_industry": "物联网,云计算,融资融券,智慧城市,大数据,在线教育,国家安防,国产软件,全息技术,无人机,量子科技,虚拟现实,人工智能,互联医疗,华为概念,超清视频,标准普尔,远程办公,车联网(车路云),生物识别,电子车牌,元宇宙概念,信创,多模态AI",
       "market": "SH",
       "sectors": {
         "concept": [
@@ -864,65 +576,65 @@
         ]
       }
     },
-    "600824": {
-      "code": "600824",
-      "name": "益民集团",
+    "002591": {
+      "code": "002591",
+      "name": "恒大高新",
+      "csrc_industry": "互联网服务",
+      "exchange_industry": "军工,节能环保,创投,锂电池,3D打印,军民融合,百度概念,华为概念,氢能源,垃圾分类,抖音概念(字节概念),拼多多概念,钠离子电池,绿色电力,噪声防治,微盘股",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "002136": {
+      "code": "002136",
+      "name": "安 纳 达",
+      "csrc_industry": "化学原料",
+      "exchange_industry": "锂电池,央国企改革,钛白粉,磷化工,微盘股",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "002081": {
+      "code": "002081",
+      "name": "金 螳 螂",
+      "csrc_industry": "装修装饰",
+      "exchange_industry": "长江三角,融资融券,电商概念,体育产业,PPP模式,深股通,富时罗素,标准普尔,半导体概念,装配建筑,第三代半导体,破净股",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "600858": {
+      "code": "600858",
+      "name": "银座股份",
       "csrc_industry": "商业百货",
-      "exchange_industry": "黄金概念,长江三角,养老概念,沪企改革,央国企改革,旅游概念,新零售,内贸流通,首发经济",
-      "market": "SH",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "600592": {
-      "code": "600592",
-      "name": "龙溪股份",
-      "csrc_industry": "通用设备",
-      "exchange_industry": "军工,参股券商,铁路基建,融资融券,央国企改革,沪股通,军民融合,大飞机,新能源车,商业航天,人形机器人",
-      "market": "SH",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "603278": {
-      "code": "603278",
-      "name": "大业股份",
-      "csrc_industry": "通用设备",
-      "exchange_industry": "新能源,太阳能,风能,昨日涨停,商业航天,昨日涨停_含一字,2025中报扭亏",
-      "market": "SH",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "600279": {
-      "code": "600279",
-      "name": "重庆港",
-      "csrc_industry": "航运港口",
-      "exchange_industry": "成渝特区,西部大开发,央国企改革,沪股通,一带一路,破净股,2025中报预减",
+      "exchange_industry": "机构重仓,股权激励,央国企改革,新零售,内贸流通",
       "market": "SH",
       "sectors": {
         "concept": [
@@ -954,101 +666,11 @@
         ]
       }
     },
-    "600345": {
-      "code": "600345",
-      "name": "长江通信",
-      "csrc_industry": "通信设备",
-      "exchange_industry": "融资融券,北斗导航,央国企改革,沪股通,人工智能,标准普尔,商业航天",
-      "market": "SH",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "600966": {
-      "code": "600966",
-      "name": "博汇纸业",
-      "csrc_industry": "造纸印刷",
-      "exchange_industry": "融资融券,沪股通",
-      "market": "SH",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "603305": {
-      "code": "603305",
-      "name": "旭升集团",
-      "csrc_industry": "汽车零部件",
-      "exchange_industry": "融资融券,特斯拉,上证380,沪股通,标准普尔,新能源车,机器人概念,小米汽车,人形机器人",
-      "market": "SH",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "001300": {
-      "code": "001300",
-      "name": "三柏硕",
-      "csrc_industry": "家用轻工",
-      "exchange_industry": "QFII重仓,体育产业,跨境电商,2025中报预减",
-      "market": "SZ",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "002969": {
-      "code": "002969",
-      "name": "嘉美包装",
-      "csrc_industry": "包装材料",
-      "exchange_industry": "转债标的,机构重仓,电商概念,昨日涨停_含一字,昨日连板_含一字,啤酒概念,娃哈哈概念,2025中报预减",
-      "market": "SZ",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "003007": {
-      "code": "003007",
-      "name": "直真科技",
-      "csrc_industry": "软件开发",
-      "exchange_industry": "物联网,国产软件,5G概念,人工智能,昨日涨停,华为概念,数字孪生,智慧政务,远程办公,车联网(车路云),卫星互联网,数据中心,华为昇腾,专精特新,昨日涨停_含一字,数字经济,东数西算,信创,算力概念",
+    "002805": {
+      "code": "002805",
+      "name": "丰元股份",
+      "csrc_industry": "电池",
+      "exchange_industry": "化工原料,机构重仓,锂电池,融资融券,新能源车,固态电池",
       "market": "SZ",
       "sectors": {
         "concept": [
@@ -1066,7 +688,7 @@
       "code": "002931",
       "name": "锋龙股份",
       "csrc_industry": "通用设备",
-      "exchange_industry": "新能源车,专精特新,机器人概念,2025中报预增",
+      "exchange_industry": "新能源车,专精特新,昨日涨停_含一字,机器人概念,2025中报预增",
       "market": "SZ",
       "sectors": {
         "concept": [
@@ -1080,65 +702,11 @@
         ]
       }
     },
-    "002935": {
-      "code": "002935",
-      "name": "天奥电子",
-      "csrc_industry": "通信设备",
-      "exchange_industry": "军工,西部大开发,融资融券,北斗导航,医疗器械概念,央国企改革,量子科技,5G概念,深股通,军民融合,华为概念,国产芯片,商业航天,空间站概念,存储芯片,2025中报预减",
-      "market": "SZ",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "002197": {
-      "code": "002197",
-      "name": "证通电子",
-      "csrc_industry": "计算机设备",
-      "exchange_industry": "深圳特区,移动支付,云计算,智慧城市,互联金融,彩票概念,粤港自贸,阿里概念,国产软件,充电桩,人工智能,昨日触板,区块链,百度概念,华为概念,边缘计算,垃圾分类,数字货币,国产芯片,数据中心,抖音概念(字节概念),鸿蒙概念,NFT概念,职业教育,数据安全,数字经济,东数西算,智慧灯杆,机器人概念,信创,数字水印,算力概念,数据要素,DeepSeek概念",
-      "market": "SZ",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "002201": {
-      "code": "002201",
-      "name": "九鼎新材",
-      "csrc_industry": "玻璃玻纤",
-      "exchange_industry": "新能源,创投,新材料,参股银行,长江三角,风能,融资融券,深股通,昨日涨停,昨日连板,商业航天,昨日涨停_含一字,昨日连板_含一字,2025中报预增",
-      "market": "SZ",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "600793": {
-      "code": "600793",
-      "name": "宜宾纸业",
-      "csrc_industry": "造纸印刷",
-      "exchange_industry": "化工原料,成渝特区,机构重仓,西部大开发,央国企改革,2025中报扭亏",
+    "601969": {
+      "code": "601969",
+      "name": "海南矿业",
+      "csrc_industry": "钢铁行业",
+      "exchange_industry": "黄金概念,机构重仓,锂电池,融资融券,电商概念,沪股通,天然气,锂矿概念,海南自贸,反内卷概念",
       "market": "SH",
       "sectors": {
         "concept": [
@@ -1152,11 +720,11 @@
         ]
       }
     },
-    "002951": {
-      "code": "002951",
-      "name": "金时科技",
-      "csrc_industry": "电源设备",
-      "exchange_industry": "超级电容,深股通,昨日涨停,蚂蚁概念,储能,昨日涨停_含一字",
+    "002471": {
+      "code": "002471",
+      "name": "中超控股",
+      "csrc_industry": "电网设备",
+      "exchange_industry": "军工,创投,QFII重仓,核能核电,智能电网,融资融券,参股新三板,石墨烯,充电桩,无人机,深股通,军民融合,大飞机,商业航天,机器人概念,低空经济,2025中报扭亏",
       "market": "SZ",
       "sectors": {
         "concept": [
@@ -1170,83 +738,155 @@
         ]
       }
     },
-    "603130": {
-      "code": "603130",
-      "name": "云中马",
-      "csrc_industry": "纺织服装",
-      "exchange_industry": "沪股通",
-      "market": "SH",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "002870": {
-      "code": "002870",
-      "name": "香山股份",
-      "csrc_industry": "汽车零部件",
-      "exchange_industry": "QFII重仓,机构重仓,智能穿戴,特斯拉,充电桩,人工智能,新能源车,华为汽车,高压快充,飞行汽车(eVTOL),低空经济,人形机器人",
-      "market": "SZ",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "600779": {
-      "code": "600779",
-      "name": "水井坊",
-      "csrc_industry": "酿酒行业",
-      "exchange_industry": "创投,成渝特区,西部大开发,融资融券,沪股通,富时罗素,标准普尔,白酒,社区团购,2025中报预减",
-      "market": "SH",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "605598": {
-      "code": "605598",
-      "name": "上海港湾",
-      "csrc_industry": "工程建设",
-      "exchange_industry": "沪股通,一带一路,昨日涨停,商业航天,昨日涨停_含一字,钙钛矿电池",
-      "market": "SH",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "001400": {
-      "code": "001400",
-      "name": "江顺科技",
+    "000777": {
+      "code": "000777",
+      "name": "中核科技",
       "csrc_industry": "通用设备",
-      "exchange_industry": "次新股,铁路基建,风能,融资融券,大飞机,新能源车,商业航天,注册制次新股,工程机械概念,专精特新,汽车热管理,减速器",
+      "exchange_industry": "新能源,中字头,核能核电,长江三角,融资融券,央国企改革,一带一路,深股通,昨日涨停,氢能源,北交所概念,核污染防治,昨日涨停_含一字,并购重组概念",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "600021": {
+      "code": "600021",
+      "name": "上海电力",
+      "csrc_industry": "电力行业",
+      "exchange_industry": "新能源,核能核电,太阳能,长江三角,风能,融资融券,央国企改革,中证500,上证380,沪股通,证金持股,MSCI中国,天然气,氢能源,富时罗素,标准普尔,碳交易,储能,绿色电力,2025中报预增",
+      "market": "SH",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "002903": {
+      "code": "002903",
+      "name": "宇环数控",
+      "csrc_industry": "通用设备",
+      "exchange_industry": "QFII重仓,机构重仓,股权激励,融资融券,苹果概念,小米概念,独角兽,富士康,半导体概念,工业母机,专精特新,机器人概念,减速器,2025中报预减",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "002763": {
+      "code": "002763",
+      "name": "汇洁股份",
+      "csrc_industry": "纺织服装",
+      "exchange_industry": "深圳特区,机构重仓,婴童概念,电商概念,网红经济,化妆品概念,昨日涨停_含一字,跨境电商",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "603686": {
+      "code": "603686",
+      "name": "福龙马",
+      "csrc_industry": "环保行业",
+      "exchange_industry": "节能环保,融资融券,沪股通,PPP模式,人工智能,无人驾驶,华为概念,富时罗素,垃圾分类,标准普尔,新能源车,中俄贸易概念,机器人概念,海南自贸",
+      "market": "SH",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "002268": {
+      "code": "002268",
+      "name": "电科网安",
+      "csrc_industry": "软件开发",
+      "exchange_industry": "移动支付,股权激励,深成500,云计算,西部大开发,融资融券,大数据,网络安全,央国企改革,国产软件,量子科技,5G概念,人工智能,深股通,区块链,华为概念,富时罗素,标准普尔,数字货币,VPN,智慧政务,国产芯片,IPv6,车联网(车路云),卫星互联网,鸿蒙概念,汽车芯片,数据安全,数字经济,跨境支付,信创,数据要素",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "600783": {
+      "code": "600783",
+      "name": "鲁信创投",
+      "csrc_industry": "非金属材料",
+      "exchange_industry": "创投,参股券商,机构重仓,融资融券,参股新三板,央国企改革,沪股通,军民融合,昨日涨停,昨日连板,代糖概念,昨日涨停_含一字,昨日连板_含一字",
+      "market": "SH",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "002163": {
+      "code": "002163",
+      "name": "海南发展",
+      "csrc_industry": "玻璃玻纤",
+      "exchange_industry": "新能源,新材料,深圳特区,太阳能,融资融券,电商概念,央国企改革,深股通,富时罗素,免税概念,海南自贸",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "002756": {
+      "code": "002756",
+      "name": "永兴材料",
+      "csrc_industry": "钢铁行业",
+      "exchange_industry": "股权激励,深成500,锂电池,核能核电,融资融券,中证500,深股通,养老金,富时罗素,锂矿概念,反内卷概念",
       "market": "SZ",
       "sectors": {
         "concept": [
@@ -1278,30 +918,12 @@
         ]
       }
     },
-    "605255": {
-      "code": "605255",
-      "name": "天普股份",
-      "csrc_industry": "汽车零部件",
-      "exchange_industry": "机构重仓,燃料电池,沪股通,新能源车,百元股",
-      "market": "SH",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "605123": {
-      "code": "605123",
-      "name": "派克新材",
-      "csrc_industry": "通用设备",
-      "exchange_industry": "军工,核能核电,风能,融资融券,沪股通,大飞机,商业航天,专精特新,可控核聚变",
-      "market": "SH",
+    "000688": {
+      "code": "000688",
+      "name": "国城矿业",
+      "csrc_industry": "有色金属",
+      "exchange_industry": "稀缺资源,黄金概念,深成500,西部大开发,融资融券,小金属概念,深股通,钛白粉,富时罗素,标准普尔,锂矿概念,2025中报预增",
+      "market": "SZ",
       "sectors": {
         "concept": [
           "-"
@@ -1318,205 +940,7 @@
       "code": "605007",
       "name": "五洲特纸",
       "csrc_industry": "造纸印刷",
-      "exchange_industry": "转债标的,沪股通,昨日涨停,昨日涨停_含一字",
-      "market": "SH",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "600577": {
-      "code": "600577",
-      "name": "精达股份",
-      "csrc_industry": "电网设备",
-      "exchange_industry": "转债标的,融资融券,参股新三板,特斯拉,电商概念,超导概念,上证380,沪股通,工业互联,小米概念,独角兽,标准普尔,新能源车,可控核聚变,铜缆高速连接",
-      "market": "SH",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "600391": {
-      "code": "600391",
-      "name": "航发科技",
-      "csrc_industry": "航天航空",
-      "exchange_industry": "军工,成渝特区,QFII重仓,机构重仓,西部大开发,融资融券,央国企改革,沪股通,航母概念,大飞机",
-      "market": "SH",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "003003": {
-      "code": "003003",
-      "name": "天元股份",
-      "csrc_industry": "包装材料",
-      "exchange_industry": "小米概念,降解塑料,快递概念,跨境电商,微盘股",
-      "market": "SZ",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "002560": {
-      "code": "002560",
-      "name": "通达股份",
-      "csrc_industry": "电网设备",
-      "exchange_industry": "军工,机构重仓,智能电网,融资融券,医疗器械概念,小金属概念,充电桩,无人机,一带一路,军民融合,大飞机,新能源车,特高压,商业航天,储能,专精特新,2025中报预增,2025三季报预增",
-      "market": "SZ",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "002196": {
-      "code": "002196",
-      "name": "方正电机",
-      "csrc_industry": "电机",
-      "exchange_industry": "长江三角,特斯拉,央国企改革,无人机,一带一路,新能源车,机器人概念",
-      "market": "SZ",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "002149": {
-      "code": "002149",
-      "name": "西部材料",
-      "csrc_industry": "小金属",
-      "exchange_industry": "军工,节能环保,核能核电,西部大开发,融资融券,水利建设,参股新三板,通用航空,超导概念,燃料电池,央国企改革,小金属概念,5G概念,航母概念,深股通,纳米银,尾气治理,商业航天",
-      "market": "SZ",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "002082": {
-      "code": "002082",
-      "name": "万邦德",
-      "csrc_industry": "化学制药",
-      "exchange_industry": "长江三角,中药概念,医疗器械概念,一带一路,深股通,阿兹海默,流感,肝炎概念,创新药,2025中报预减",
-      "market": "SZ",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "002009": {
-      "code": "002009",
-      "name": "天奇股份",
-      "csrc_industry": "专用设备",
-      "exchange_industry": "节能环保,锂电池,太阳能,长江三角,风能,融资融券,特斯拉,小金属概念,深股通,垃圾分类,新能源车,车联网(车路云),汽车拆解,华为汽车,动力电池回收,机器人概念,人形机器人,2025中报扭亏",
-      "market": "SZ",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "001360": {
-      "code": "001360",
-      "name": "南矿集团",
-      "csrc_industry": "专用设备",
-      "exchange_industry": "黄金概念,融资融券,一带一路,专精特新,中俄贸易概念",
-      "market": "SZ",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "001212": {
-      "code": "001212",
-      "name": "中旗新材",
-      "csrc_industry": "装修装饰",
-      "exchange_industry": "新材料,QFII重仓,机构重仓,太阳能,粤港自贸,股权转让,深股通,半导体概念,2025中报预减",
-      "market": "SZ",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "603163": {
-      "code": "603163",
-      "name": "圣晖集成",
-      "csrc_industry": "工程建设",
-      "exchange_industry": "昨日涨停,昨日连板,养老金,半导体概念,昨日涨停_含一字,昨日连板_含一字",
+      "exchange_industry": "转债标的,沪股通,昨日涨停,昨日连板,昨日涨停_含一字,昨日连板_含一字",
       "market": "SH",
       "sectors": {
         "concept": [
@@ -1534,7 +958,259 @@
       "code": "002792",
       "name": "通宇通讯",
       "csrc_industry": "通信设备",
-      "exchange_industry": "融资融券,一带一路,5G概念,深股通,华为概念,富时罗素,标准普尔,UWB概念,WiFi,卫星互联网,商业航天,6G概念,换电概念,储能,中俄贸易概念,F5G概念,毫米波概念,光通信模块,低空经济",
+      "exchange_industry": "融资融券,一带一路,5G概念,深股通,昨日涨停,华为概念,富时罗素,标准普尔,UWB概念,WiFi,卫星互联网,商业航天,6G概念,换电概念,储能,昨日涨停_含一字,中俄贸易概念,F5G概念,毫米波概念,光通信模块,低空经济",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "002919": {
+      "code": "002919",
+      "name": "名臣健康",
+      "csrc_industry": "游戏",
+      "exchange_industry": "网络游戏,虚拟现实,增强现实,抖音概念(字节概念),化妆品概念,元宇宙概念",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "002865": {
+      "code": "002865",
+      "name": "钧达股份",
+      "csrc_industry": "光伏设备",
+      "exchange_industry": "AH股,太阳能,融资融券,深股通,TOPCon电池,BC电池,海南自贸",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "001309": {
+      "code": "001309",
+      "name": "德明利",
+      "csrc_industry": "半导体",
+      "exchange_industry": "QFII重仓,深成500,融资融券,5G概念,深股通,国产芯片,半导体概念,专精特新,百元股,信创,存储芯片,AIPC",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "605598": {
+      "code": "605598",
+      "name": "上海港湾",
+      "csrc_industry": "工程建设",
+      "exchange_industry": "沪股通,一带一路,昨日涨停,昨日连板,商业航天,昨日涨停_含一字,昨日连板_含一字,钙钛矿电池",
+      "market": "SH",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "600576": {
+      "code": "600576",
+      "name": "祥源文旅",
+      "csrc_industry": "旅游酒店",
+      "exchange_industry": "长江三角,旅游概念,沪股通,影视概念,网红经济,元宇宙概念,飞行汽车(eVTOL),低空经济,谷子经济,冰雪经济,2025中报预增",
+      "market": "SH",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "600330": {
+      "code": "600330",
+      "name": "天通股份",
+      "csrc_industry": "非金属材料",
+      "exchange_industry": "新材料,锂电池,LED,太阳能,长江三角,融资融券,特斯拉,蓝宝石,小金属概念,充电桩,沪股通,5G概念,OLED,超清视频,PCB,国产芯片,新能源车,半导体概念,MicroLED,无线充电,储能,CPO概念,光通信模块",
+      "market": "SH",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "002969": {
+      "code": "002969",
+      "name": "嘉美包装",
+      "csrc_industry": "包装材料",
+      "exchange_industry": "转债标的,机构重仓,电商概念,昨日涨停_含一字,昨日连板_含一字,啤酒概念,娃哈哈概念,2025中报预减",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "002769": {
+      "code": "002769",
+      "name": "普路通",
+      "csrc_industry": "物流行业",
+      "exchange_industry": "深圳特区,机构重仓,央国企改革,贬值受益,区块链,独角兽,固态电池,钠离子电池,储能,跨境电商,2025中报扭亏",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "002759": {
+      "code": "002759",
+      "name": "天际股份",
+      "csrc_industry": "电池",
+      "exchange_industry": "QFII重仓,机构重仓,锂电池,融资融券,氟化工,深股通,昨日触板,钠离子电池,磷化工",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "002571": {
+      "code": "002571",
+      "name": "德力股份",
+      "csrc_industry": "家用轻工",
+      "exchange_industry": "创投,网络游戏,参股银行,QFII重仓,机构重仓,太阳能,医疗器械概念,影视概念,拼多多概念",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "002326": {
+      "code": "002326",
+      "name": "永太科技",
+      "csrc_industry": "化学制品",
+      "exchange_industry": "QFII重仓,机构重仓,锂电池,长江三角,融资融券,中药概念,氟化工,深股通,富时罗素,标准普尔,农业种植,钠离子电池,液冷概念,2025中报预增",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "002009": {
+      "code": "002009",
+      "name": "天奇股份",
+      "csrc_industry": "专用设备",
+      "exchange_industry": "节能环保,锂电池,太阳能,长江三角,风能,融资融券,特斯拉,小金属概念,深股通,垃圾分类,新能源车,车联网(车路云),汽车拆解,华为汽车,昨日涨停_含一字,动力电池回收,机器人概念,人形机器人,2025中报扭亏",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "000547": {
+      "code": "000547",
+      "name": "航天发展",
+      "csrc_industry": "通信设备",
+      "exchange_industry": "军工,机构重仓,深成500,融资融券,海工装备,大数据,网络安全,央国企改革,无人机,5G概念,虚拟现实,深股通,军民融合,富时罗素,标准普尔,国产芯片,卫星互联网,第三代半导体,商业航天,数据安全,信创,毫米波概念,低空经济",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "000036": {
+      "code": "000036",
+      "name": "华联控股",
+      "csrc_industry": "房地产开发",
+      "exchange_industry": "深圳特区,机构重仓,融资融券,深股通,富时罗素,标准普尔",
       "market": "SZ",
       "sectors": {
         "concept": [
@@ -1552,7 +1228,7 @@
       "code": "600118",
       "name": "中国卫星",
       "csrc_industry": "航天航空",
-      "exchange_industry": "军工,中字头,融资融券,北斗导航,央国企改革,中证500,无人机,上证380,沪股通,一带一路,军民融合,大飞机,昨日涨停,MSCI中国,富时罗素,标准普尔,国产芯片,卫星互联网,商业航天,空间站概念,昨日涨停_含一字,时空大数据,中特估,低空经济",
+      "exchange_industry": "军工,中字头,融资融券,北斗导航,央国企改革,中证500,无人机,上证380,沪股通,一带一路,军民融合,大飞机,昨日涨停,昨日连板,MSCI中国,富时罗素,标准普尔,国产芯片,卫星互联网,商业航天,空间站概念,昨日涨停_含一字,昨日连板_含一字,时空大数据,中特估,低空经济",
       "market": "SH",
       "sectors": {
         "concept": [
@@ -1566,11 +1242,11 @@
         ]
       }
     },
-    "603119": {
-      "code": "603119",
-      "name": "浙江荣泰",
-      "csrc_industry": "非金属材料",
-      "exchange_industry": "基金重仓,融资融券,沪股通,新能源车,专精特新,机器人概念,人形机器人",
+    "600362": {
+      "code": "600362",
+      "name": "江西铜业",
+      "csrc_industry": "有色金属",
+      "exchange_industry": "AH股,HS300_,参股券商,稀缺资源,新材料,参股银行,黄金概念,机构重仓,锂电池,融资融券,上证180_,央国企改革,小金属概念,沪股通,一带一路,证金持股,MSCI中国,富时罗素,标准普尔",
       "market": "SH",
       "sectors": {
         "concept": [
@@ -1584,11 +1260,11 @@
         ]
       }
     },
-    "603698": {
-      "code": "603698",
-      "name": "航天工程",
-      "csrc_industry": "专业服务",
-      "exchange_industry": "煤化工,节能环保,融资融券,央国企改革,沪股通,军民融合,昨日涨停,昨日连板,养老金,氢能源,碳交易,工业气体,昨日涨停_含一字,昨日连板_含一字",
+    "603680": {
+      "code": "603680",
+      "name": "今创集团",
+      "csrc_industry": "交运设备",
+      "exchange_industry": "新能源,沪股通,标准普尔,储能,2025中报预增",
       "market": "SH",
       "sectors": {
         "concept": [
@@ -1602,29 +1278,11 @@
         ]
       }
     },
-    "003009": {
-      "code": "003009",
-      "name": "中天火箭",
-      "csrc_industry": "航天航空",
-      "exchange_industry": "军工,转债标的,太阳能,西部大开发,央国企改革,无人机,深股通,军民融合,半导体概念,第三代半导体,商业航天,专精特新,碳基材料,低空经济,2025中报预减",
-      "market": "SZ",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "603095": {
-      "code": "603095",
-      "name": "越剑智能",
-      "csrc_industry": "专用设备",
-      "exchange_industry": "参股银行,专精特新",
+    "603069": {
+      "code": "603069",
+      "name": "海汽集团",
+      "csrc_industry": "铁路公路",
+      "exchange_industry": "融资融券,央国企改革,沪股通,免税概念,换电概念,跨境电商,海南自贸",
       "market": "SH",
       "sectors": {
         "concept": [
@@ -1638,66 +1296,390 @@
         ]
       }
     },
-    "002583": {
-      "code": "002583",
-      "name": "海能达",
+    "600345": {
+      "code": "600345",
+      "name": "长江通信",
       "csrc_industry": "通信设备",
-      "exchange_industry": "深圳特区,机构重仓,物联网,深成500,铁路基建,融资融券,水利建设,智慧城市,北斗导航,互联金融,网络安全,电商概念,国家安防,粤港自贸,中证500,无人机,量子科技,一带一路,5G概念,人工智能,深股通,区块链,富时罗素,标准普尔,国产芯片,卫星互联网,6G概念,数字经济,中俄贸易概念,信创,星闪概念,低空经济,DeepSeek概念,2025中报预减",
-      "market": "SZ",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "000859": {
-      "code": "000859",
-      "name": "国风新材",
-      "csrc_industry": "塑料制品",
-      "exchange_industry": "新材料,融资融券,央国企改革,深股通,OLED,光刻机(胶),新能源车,并购重组概念",
-      "market": "SZ",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "002264": {
-      "code": "002264",
-      "name": "新 华 都",
-      "csrc_industry": "互联网服务",
-      "exchange_industry": "电商概念,阿里概念,人工智能,深股通,新零售,独角兽,抖音概念(字节概念),抖音小店,网红经济,拼多多概念,快手概念,内贸流通,跨境电商,小红书概念,海南自贸",
-      "market": "SZ",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "600879": {
-      "code": "600879",
-      "name": "航天电子",
-      "csrc_industry": "航天航空",
-      "exchange_industry": "军工,基金重仓,融资融券,北斗导航,央国企改革,中证500,无人机,上证380,沪股通,量子科技,军民融合,MSCI中国,富时罗素,标准普尔,国产芯片,传感器,特高压,卫星互联网,商业航天,空间站概念,低空经济",
+      "exchange_industry": "融资融券,北斗导航,央国企改革,沪股通,人工智能,昨日涨停,标准普尔,商业航天,昨日涨停_含一字",
       "market": "SH",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "002703": {
+      "code": "002703",
+      "name": "浙江世宝",
+      "csrc_industry": "汽车零部件",
+      "exchange_industry": "AH股,机构重仓,融资融券,无人驾驶,深股通,小米概念,标准普尔,新能源车,小米汽车",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "001326": {
+      "code": "001326",
+      "name": "联域股份",
+      "csrc_industry": "光学光电子",
+      "exchange_industry": "节能环保,QFII重仓,深圳特区,物联网,LED,融资融券,智能家居,一带一路,贬值受益,植物照明,2025中报预减",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "002363": {
+      "code": "002363",
+      "name": "隆基机械",
+      "csrc_industry": "汽车零部件",
+      "exchange_industry": "军工,特斯拉,新能源车,华为汽车,昨日涨停_含一字,昨日连板_含一字",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "603978": {
+      "code": "603978",
+      "name": "深圳新星",
+      "csrc_industry": "有色金属",
+      "exchange_industry": "新材料,QFII重仓,深圳特区,股权激励,锂电池,融资融券,氟化工,军民融合,PVDF概念,汽车一体化压铸",
+      "market": "SH",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "002151": {
+      "code": "002151",
+      "name": "北斗星通",
+      "csrc_industry": "通信设备",
+      "exchange_industry": "军工,物联网,深成500,融资融券,水利建设,北斗导航,无人机,5G概念,航母概念,无人驾驶,深股通,军民融合,华为概念,富时罗素,标准普尔,车联网(车路云),商业航天,汽车芯片,英伟达概念,低空经济,2025中报扭亏",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "000505": {
+      "code": "000505",
+      "name": "京粮控股",
+      "csrc_industry": "农牧饲渔",
+      "exchange_industry": "AB股,融资融券,生态农业,央国企改革,京津冀,一带一路,新零售,网红经济,调味品概念,海南自贸",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "002752": {
+      "code": "002752",
+      "name": "昇兴股份",
+      "csrc_industry": "包装材料",
+      "exchange_industry": "深股通,抖音概念(字节概念)",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "600105": {
+      "code": "600105",
+      "name": "永鼎股份",
+      "csrc_industry": "通信设备",
+      "exchange_industry": "长江三角,风能,融资融券,大数据,网络安全,超导概念,沪股通,量子科技,一带一路,5G概念,华为概念,富时罗素,标准普尔,国产芯片,新能源车,数据中心,磁悬浮概念,专精特新,CPO概念,光通信模块,可控核聚变,2025中报预增",
+      "market": "SH",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "605566": {
+      "code": "605566",
+      "name": "福莱蒽特",
+      "csrc_industry": "化学制品",
+      "exchange_industry": "太阳能",
+      "market": "SH",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "601698": {
+      "code": "601698",
+      "name": "中国卫通",
+      "csrc_industry": "通信服务",
+      "exchange_industry": "HS300_,中字头,融资融券,上证180_,北斗导航,央国企改革,沪股通,一带一路,MSCI中国,富时罗素,卫星互联网,商业航天,中特估,低空经济,2025中报预减",
+      "market": "SH",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "600736": {
+      "code": "600736",
+      "name": "苏州高新",
+      "csrc_industry": "房地产开发",
+      "exchange_industry": "军工,新能源,节能环保,创投,机构重仓,太阳能,长江三角,融资融券,水利建设,参股新三板,互联金融,央国企改革,沪股通,证金持股,人工智能,军民融合,乡村振兴,富时罗素,国产芯片,新型城镇化,破净股,低空经济",
+      "market": "SH",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "002201": {
+      "code": "002201",
+      "name": "九鼎新材",
+      "csrc_industry": "玻璃玻纤",
+      "exchange_industry": "新能源,创投,新材料,参股银行,长江三角,风能,融资融券,深股通,商业航天,昨日涨停_含一字,昨日连板_含一字,2025中报预增",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "001376": {
+      "code": "001376",
+      "name": "百通能源",
+      "csrc_industry": "公用事业",
+      "exchange_industry": "节能环保,深股通",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "603626": {
+      "code": "603626",
+      "name": "科森科技",
+      "csrc_industry": "消费电子",
+      "exchange_industry": "QFII重仓,机构重仓,融资融券,特斯拉,苹果概念,医疗器械概念,沪股通,虚拟现实,富士康,华为概念,电子烟,富时罗素,标准普尔,无线耳机,储能,机器人概念,柔性屏(折叠屏)",
+      "market": "SH",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "002853": {
+      "code": "002853",
+      "name": "皮阿诺",
+      "csrc_industry": "装修建材",
+      "exchange_industry": "电商概念,智能家居,网红经济,C2M概念,小红书概念",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "000973": {
+      "code": "000973",
+      "name": "佛塑科技",
+      "csrc_industry": "塑料制品",
+      "exchange_industry": "新材料,参股银行,锂电池,太阳能,融资融券,参股新三板,石墨烯,央国企改革,证金持股,深股通,OLED,特高压,快递概念,抗菌面料",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "603601": {
+      "code": "603601",
+      "name": "再升科技",
+      "csrc_industry": "玻璃玻纤",
+      "exchange_industry": "军工,节能环保,新材料,转债标的,机构重仓,西部大开发,融资融券,大飞机,昨日涨停,昨日连板,富时罗素,新能源车,核污染防治,昨日涨停_含一字,昨日连板_含一字,建筑节能,低空经济",
+      "market": "SH",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "002856": {
+      "code": "002856",
+      "name": "美芝股份",
+      "csrc_industry": "装修装饰",
+      "exchange_industry": "深圳特区,央国企改革,微盘股",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "000659": {
+      "code": "000659",
+      "name": "珠海中富",
+      "csrc_industry": "包装材料",
+      "exchange_industry": "机构重仓,粤港自贸",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "603278": {
+      "code": "603278",
+      "name": "大业股份",
+      "csrc_industry": "通用设备",
+      "exchange_industry": "新能源,太阳能,风能,昨日涨停,昨日连板,商业航天,昨日涨停_含一字,昨日连板_含一字,2025中报扭亏",
+      "market": "SH",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "000510": {
+      "code": "000510",
+      "name": "新金路",
+      "csrc_industry": "化学原料",
+      "exchange_industry": "成渝特区,QFII重仓,西部大开发",
+      "market": "SZ",
       "sectors": {
         "concept": [
           "-"
@@ -1714,7 +1696,7 @@
       "code": "600755",
       "name": "厦门国贸",
       "csrc_industry": "贸易行业",
-      "exchange_industry": "参股券商,参股期货,参股银行,机构重仓,股权激励,融资融券,央国企改革,上证380,沪股通,一带一路,昨日涨停,京东金融,富时罗素,标准普尔,内贸流通,昨日涨停_含一字,统一大市场,破净股,DeepSeek概念",
+      "exchange_industry": "参股券商,参股期货,参股银行,机构重仓,股权激励,融资融券,央国企改革,上证380,沪股通,一带一路,昨日涨停,昨日连板,京东金融,富时罗素,标准普尔,内贸流通,昨日涨停_含一字,昨日连板_含一字,统一大市场,破净股,DeepSeek概念",
       "market": "SH",
       "sectors": {
         "concept": [
@@ -1728,11 +1710,11 @@
         ]
       }
     },
-    "000777": {
-      "code": "000777",
-      "name": "中核科技",
-      "csrc_industry": "通用设备",
-      "exchange_industry": "新能源,中字头,核能核电,长江三角,融资融券,央国企改革,一带一路,深股通,氢能源,北交所概念,核污染防治,并购重组概念",
+    "000863": {
+      "code": "000863",
+      "name": "三湘印象",
+      "csrc_industry": "房地产开发",
+      "exchange_industry": "创投,融资融券,虚拟现实,深股通,租售同权,元宇宙概念,数字经济",
       "market": "SZ",
       "sectors": {
         "concept": [
@@ -1746,11 +1728,47 @@
         ]
       }
     },
-    "600865": {
-      "code": "600865",
-      "name": "百大集团",
-      "csrc_industry": "商业百货",
-      "exchange_industry": "长江三角,退税商店,内贸流通",
+    "002691": {
+      "code": "002691",
+      "name": "冀凯股份",
+      "csrc_industry": "专用设备",
+      "exchange_industry": "3D打印,机器人概念,微盘股",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "002652": {
+      "code": "002652",
+      "name": "扬子新材",
+      "csrc_industry": "装修建材",
+      "exchange_industry": "新材料,养老概念,雄安新区,昨日涨停,纳米银,昨日涨停_含一字,微盘股",
+      "market": "SZ",
+      "sectors": {
+        "concept": [
+          "-"
+        ],
+        "region": [
+          "-"
+        ],
+        "theme": [
+          "-"
+        ]
+      }
+    },
+    "600537": {
+      "code": "600537",
+      "name": "亿晶光电",
+      "csrc_industry": "光伏设备",
+      "exchange_industry": "太阳能,长江三角,融资融券,TOPCon电池",
       "market": "SH",
       "sectors": {
         "concept": [
@@ -1764,30 +1782,12 @@
         ]
       }
     },
-    "000559": {
-      "code": "000559",
-      "name": "万向钱潮",
-      "csrc_industry": "汽车零部件",
-      "exchange_industry": "新材料,深成500,锂电池,长江三角,融资融券,中证500,深股通,工业互联,富时罗素,标准普尔,新能源车,固态电池,机器人概念,小米汽车,低空经济,并购重组概念",
-      "market": "SZ",
-      "sectors": {
-        "concept": [
-          "-"
-        ],
-        "region": [
-          "-"
-        ],
-        "theme": [
-          "-"
-        ]
-      }
-    },
-    "002202": {
-      "code": "002202",
-      "name": "金风科技",
-      "csrc_industry": "风电设备",
-      "exchange_industry": "新能源,AH股,深成500,稀土永磁,西部大开发,风能,融资融券,中证500,一带一路,深股通,MSCI中国,氢能源,富时罗素,标准普尔,储能,抽水蓄能,绿色电力",
-      "market": "SZ",
+    "301319": {
+      "code": "301319",
+      "name": "唯特偶",
+      "csrc_industry": "电子元件",
+      "exchange_industry": "QFII重仓,深圳特区,机构重仓,融资融券,创业板综,华为概念,专精特新",
+      "market": "OTHER",
       "sectors": {
         "concept": [
           "-"
@@ -1812,27 +1812,15 @@
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK0994": {
-      "code": "BK0994",
-      "name": "空间站概念",
+    "BK1173": {
+      "code": "BK1173",
+      "name": "锂矿概念",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK1145": {
-      "code": "BK1145",
-      "name": "机器人执行器",
-      "type": "concept",
-      "market": "CONCEPT"
-    },
-    "BK0921": {
-      "code": "BK0921",
-      "name": "卫星互联网",
-      "type": "concept",
-      "market": "CONCEPT"
-    },
-    "BK0963": {
-      "code": "BK0963",
-      "name": "商业航天",
+    "BK0805": {
+      "code": "BK0805",
+      "name": "钛白粉",
       "type": "concept",
       "market": "CONCEPT"
     },
@@ -1842,255 +1830,111 @@
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK0815": {
-      "code": "BK0815",
-      "name": "昨日涨停",
-      "type": "concept",
-      "market": "CONCEPT"
-    },
-    "BK0855": {
-      "code": "BK0855",
-      "name": "纳米银",
-      "type": "concept",
-      "market": "CONCEPT"
-    },
-    "BK1100": {
-      "code": "BK1100",
-      "name": "减速器",
-      "type": "concept",
-      "market": "CONCEPT"
-    },
-    "BK0814": {
-      "code": "BK0814",
-      "name": "大飞机",
-      "type": "concept",
-      "market": "CONCEPT"
-    },
     "BK1131": {
       "code": "BK1131",
       "name": "同步磁阻电机",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK1184": {
-      "code": "BK1184",
-      "name": "人形机器人",
+    "BK0815": {
+      "code": "BK0815",
+      "name": "昨日涨停",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK0629": {
-      "code": "BK0629",
-      "name": "北斗导航",
+    "BK0695": {
+      "code": "BK0695",
+      "name": "小金属概念",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK0964": {
-      "code": "BK0964",
-      "name": "6G概念",
+    "BK0951": {
+      "code": "BK0951",
+      "name": "刀片电池",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK0880": {
-      "code": "BK0880",
-      "name": "UWB概念",
+    "BK1010": {
+      "code": "BK1010",
+      "name": "磷化工",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK0808": {
-      "code": "BK0808",
-      "name": "军民融合",
+    "BK0519": {
+      "code": "BK0519",
+      "name": "稀缺资源",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK0715": {
-      "code": "BK0715",
-      "name": "航母概念",
+    "BK0547": {
+      "code": "BK0547",
+      "name": "黄金概念",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK1628": {
-      "code": "BK1628",
-      "name": "2025三季报扭亏",
+    "BK0921": {
+      "code": "BK0921",
+      "name": "卫星互联网",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK1119": {
-      "code": "BK1119",
-      "name": "PLC概念",
+    "BK0988": {
+      "code": "BK0988",
+      "name": "钠离子电池",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK0490": {
-      "code": "BK0490",
-      "name": "军工",
+    "BK0690": {
+      "code": "BK0690",
+      "name": "氟化工",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK0625": {
-      "code": "BK0625",
-      "name": "通用航空",
+    "BK1193": {
+      "code": "BK1193",
+      "name": "海南自贸",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK1004": {
-      "code": "BK1004",
-      "name": "工业母机",
+    "BK0927": {
+      "code": "BK0927",
+      "name": "免税概念",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK1130": {
-      "code": "BK1130",
-      "name": "时空大数据",
+    "BK0885": {
+      "code": "BK0885",
+      "name": "VPN",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK1116": {
-      "code": "BK1116",
-      "name": "抗菌面料",
+    "BK0963": {
+      "code": "BK0963",
+      "name": "商业航天",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK1156": {
-      "code": "BK1156",
-      "name": "PEEK材料概念",
+    "BK0849": {
+      "code": "BK0849",
+      "name": "京东金融",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK1165": {
-      "code": "BK1165",
-      "name": "娃哈哈概念",
+    "BK0897": {
+      "code": "BK0897",
+      "name": "IPv6",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK1124": {
-      "code": "BK1124",
-      "name": "毫米波概念",
+    "BK1052": {
+      "code": "BK1052",
+      "name": "动力电池回收",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK1089": {
-      "code": "BK1089",
-      "name": "汽车热管理",
-      "type": "concept",
-      "market": "CONCEPT"
-    },
-    "BK1157": {
-      "code": "BK1157",
-      "name": "飞行汽车(eVTOL)",
-      "type": "concept",
-      "market": "CONCEPT"
-    },
-    "BK1150": {
-      "code": "BK1150",
-      "name": "新型工业化",
-      "type": "concept",
-      "market": "CONCEPT"
-    },
-    "BK0679": {
-      "code": "BK0679",
-      "name": "超导概念",
-      "type": "concept",
-      "market": "CONCEPT"
-    },
-    "BK1166": {
-      "code": "BK1166",
-      "name": "低空经济",
-      "type": "concept",
-      "market": "CONCEPT"
-    },
-    "BK0710": {
-      "code": "BK0710",
-      "name": "量子科技",
-      "type": "concept",
-      "market": "CONCEPT"
-    },
-    "BK0704": {
-      "code": "BK0704",
-      "name": "无人机",
-      "type": "concept",
-      "market": "CONCEPT"
-    },
-    "BK0706": {
-      "code": "BK0706",
-      "name": "人脑工程",
-      "type": "concept",
-      "market": "CONCEPT"
-    },
-    "BK1127": {
-      "code": "BK1127",
-      "name": "AI芯片",
-      "type": "concept",
-      "market": "CONCEPT"
-    },
-    "BK0998": {
-      "code": "BK0998",
-      "name": "机器视觉",
-      "type": "concept",
-      "market": "CONCEPT"
-    },
-    "BK1099": {
-      "code": "BK1099",
-      "name": "轮毂电机",
-      "type": "concept",
-      "market": "CONCEPT"
-    },
-    "BK1090": {
-      "code": "BK1090",
-      "name": "机器人概念",
-      "type": "concept",
-      "market": "CONCEPT"
-    },
-    "BK1155": {
-      "code": "BK1155",
-      "name": "小米汽车",
-      "type": "concept",
-      "market": "CONCEPT"
-    },
-    "BK0619": {
-      "code": "BK0619",
-      "name": "3D打印",
-      "type": "concept",
-      "market": "CONCEPT"
-    },
-    "BK1163": {
-      "code": "BK1163",
-      "name": "可控核聚变",
-      "type": "concept",
-      "market": "CONCEPT"
-    },
-    "BK1133": {
-      "code": "BK1133",
-      "name": "ERP概念",
-      "type": "concept",
-      "market": "CONCEPT"
-    },
-    "BK1129": {
-      "code": "BK1129",
-      "name": "数字水印",
-      "type": "concept",
-      "market": "CONCEPT"
-    },
-    "BK1092": {
-      "code": "BK1092",
-      "name": "麒麟电池",
-      "type": "concept",
-      "market": "CONCEPT"
-    },
-    "BK0644": {
-      "code": "BK0644",
-      "name": "特斯拉",
-      "type": "concept",
-      "market": "CONCEPT"
-    },
-    "BK0984": {
-      "code": "BK0984",
-      "name": "华为汽车",
-      "type": "concept",
-      "market": "CONCEPT"
-    },
-    "BK0817": {
-      "code": "BK0817",
-      "name": "昨日触板",
+    "BK1095": {
+      "code": "BK1095",
+      "name": "钒电池",
       "type": "concept",
       "market": "CONCEPT"
     },
@@ -2100,51 +1944,81 @@
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK1075": {
-      "code": "BK1075",
-      "name": "电子身份证",
+    "BK0629": {
+      "code": "BK0629",
+      "name": "北斗导航",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK0915": {
-      "code": "BK0915",
-      "name": "WiFi",
+    "BK1000": {
+      "code": "BK1000",
+      "name": "宁组合",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK1077": {
-      "code": "BK1077",
-      "name": "统一大市场",
+    "BK1197": {
+      "code": "BK1197",
+      "name": "反内卷概念",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK0883": {
-      "code": "BK0883",
-      "name": "数字货币",
+    "BK0632": {
+      "code": "BK0632",
+      "name": "土地流转",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK1006": {
-      "code": "BK1006",
-      "name": "碳基材料",
+    "BK1097": {
+      "code": "BK1097",
+      "name": "TOPCon电池",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK0925": {
-      "code": "BK0925",
-      "name": "北交所概念",
+    "BK0855": {
+      "code": "BK0855",
+      "name": "纳米银",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK0682": {
-      "code": "BK0682",
-      "name": "燃料电池",
+    "BK0961": {
+      "code": "BK0961",
+      "name": "有机硅",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK0990": {
-      "code": "BK0990",
-      "name": "快递概念",
+    "BK0574": {
+      "code": "BK0574",
+      "name": "锂电池",
+      "type": "concept",
+      "market": "CONCEPT"
+    },
+    "BK0808": {
+      "code": "BK0808",
+      "name": "军民融合",
+      "type": "concept",
+      "market": "CONCEPT"
+    },
+    "BK0982": {
+      "code": "BK0982",
+      "name": "电子车牌",
+      "type": "concept",
+      "market": "CONCEPT"
+    },
+    "BK0968": {
+      "code": "BK0968",
+      "name": "固态电池",
+      "type": "concept",
+      "market": "CONCEPT"
+    },
+    "BK0964": {
+      "code": "BK0964",
+      "name": "6G概念",
+      "type": "concept",
+      "market": "CONCEPT"
+    },
+    "BK1182": {
+      "code": "BK1182",
+      "name": "智谱AI",
       "type": "concept",
       "market": "CONCEPT"
     },
@@ -2154,87 +2028,33 @@
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK1084": {
-      "code": "BK1084",
-      "name": "数字哨兵",
+    "BK0994": {
+      "code": "BK0994",
+      "name": "空间站概念",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK1168": {
-      "code": "BK1168",
-      "name": "铜缆高速连接",
+    "BK0622": {
+      "code": "BK0622",
+      "name": "地热能",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK0905": {
-      "code": "BK0905",
-      "name": "传感器",
+    "BK1116": {
+      "code": "BK1116",
+      "name": "抗菌面料",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK0985": {
-      "code": "BK0985",
-      "name": "换电概念",
+    "BK0814": {
+      "code": "BK0814",
+      "name": "大飞机",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK1118": {
-      "code": "BK1118",
-      "name": "数据确权",
-      "type": "concept",
-      "market": "CONCEPT"
-    },
-    "BK0703": {
-      "code": "BK0703",
-      "name": "超级电容",
-      "type": "concept",
-      "market": "CONCEPT"
-    },
-    "BK1076": {
-      "code": "BK1076",
-      "name": "建筑节能",
-      "type": "concept",
-      "market": "CONCEPT"
-    },
-    "BK1071": {
-      "code": "BK1071",
-      "name": "跨境支付",
-      "type": "concept",
-      "market": "CONCEPT"
-    },
-    "BK1007": {
-      "code": "BK1007",
-      "name": "植物照明",
-      "type": "concept",
-      "market": "CONCEPT"
-    },
-    "BK0556": {
-      "code": "BK0556",
-      "name": "移动支付",
-      "type": "concept",
-      "market": "CONCEPT"
-    },
-    "BK1069": {
-      "code": "BK1069",
-      "name": "智慧灯杆",
-      "type": "concept",
-      "market": "CONCEPT"
-    },
-    "BK0972": {
-      "code": "BK0972",
-      "name": "快手概念",
-      "type": "concept",
-      "market": "CONCEPT"
-    },
-    "BK0991": {
-      "code": "BK0991",
-      "name": "工程机械概念",
-      "type": "concept",
-      "market": "CONCEPT"
-    },
-    "BK1013": {
-      "code": "BK1013",
-      "name": "华为欧拉",
+    "BK0692": {
+      "code": "BK0692",
+      "name": "旅游概念",
       "type": "concept",
       "market": "CONCEPT"
     },
@@ -2244,123 +2064,249 @@
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK1072": {
-      "code": "BK1072",
-      "name": "中俄贸易概念",
+    "BK0490": {
+      "code": "BK0490",
+      "name": "军工",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK0900": {
-      "code": "BK0900",
-      "name": "新能源车",
+    "BK0578": {
+      "code": "BK0578",
+      "name": "稀土永磁",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK0881": {
-      "code": "BK0881",
-      "name": "3D玻璃",
+    "BK0524": {
+      "code": "BK0524",
+      "name": "参股期货",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK1022": {
-      "code": "BK1022",
-      "name": "职业教育",
+    "BK0908": {
+      "code": "BK0908",
+      "name": "HIT电池",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK1005": {
-      "code": "BK1005",
-      "name": "专精特新",
+    "BK1151": {
+      "code": "BK1151",
+      "name": "短剧互动游戏",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK0995": {
-      "code": "BK0995",
-      "name": "华为昇腾",
+    "BK1012": {
+      "code": "BK1012",
+      "name": "PVDF概念",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK1110": {
-      "code": "BK1110",
-      "name": "Web3.0",
+    "BK0943": {
+      "code": "BK0943",
+      "name": "汽车拆解",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK1093": {
-      "code": "BK1093",
-      "name": "汽车一体化压铸",
+    "BK0907": {
+      "code": "BK0907",
+      "name": "转基因",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK1199": {
-      "code": "BK1199",
-      "name": "2025三季报预减",
+    "BK0512": {
+      "code": "BK0512",
+      "name": "化工原料",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK1014": {
-      "code": "BK1014",
-      "name": "发电机概念",
+    "BK1166": {
+      "code": "BK1166",
+      "name": "低空经济",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK1170": {
-      "code": "BK1170",
-      "name": "AI制药（医疗）",
+    "BK0847": {
+      "code": "BK0847",
+      "name": "影视概念",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK0832": {
-      "code": "BK0832",
-      "name": "工业互联",
+    "BK0979": {
+      "code": "BK0979",
+      "name": "低碳冶金",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK0601": {
-      "code": "BK0601",
-      "name": "海工装备",
+    "BK1086": {
+      "code": "BK1086",
+      "name": "粮食概念",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK0861": {
-      "code": "BK0861",
-      "name": "数字孪生",
+    "BK0710": {
+      "code": "BK0710",
+      "name": "量子科技",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK0981": {
-      "code": "BK0981",
-      "name": "工业气体",
+    "BK1066": {
+      "code": "BK1066",
+      "name": "民爆概念",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK0872": {
-      "code": "BK0872",
-      "name": "青蒿素",
+    "BK0655": {
+      "code": "BK0655",
+      "name": "网络安全",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK0983": {
-      "code": "BK0983",
-      "name": "核污染防治",
+    "BK0999": {
+      "code": "BK0999",
+      "name": "茅指数",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK0603": {
-      "code": "BK0603",
-      "name": "页岩气",
+    "BK0684": {
+      "code": "BK0684",
+      "name": "京津冀",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK0535": {
-      "code": "BK0535",
-      "name": "QFII重仓",
+    "BK1006": {
+      "code": "BK1006",
+      "name": "碳基材料",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK0534": {
-      "code": "BK0534",
-      "name": "成渝特区",
+    "BK1107": {
+      "code": "BK1107",
+      "name": "科创板做市商",
+      "type": "concept",
+      "market": "CONCEPT"
+    },
+    "BK0493": {
+      "code": "BK0493",
+      "name": "新能源",
+      "type": "concept",
+      "market": "CONCEPT"
+    },
+    "BK0492": {
+      "code": "BK0492",
+      "name": "煤化工",
+      "type": "concept",
+      "market": "CONCEPT"
+    },
+    "BK1628": {
+      "code": "BK1628",
+      "name": "2025三季报扭亏",
+      "type": "concept",
+      "market": "CONCEPT"
+    },
+    "BK1192": {
+      "code": "BK1192",
+      "name": "雅下水电概念",
+      "type": "concept",
+      "market": "CONCEPT"
+    },
+    "BK1148": {
+      "code": "BK1148",
+      "name": "BC电池",
+      "type": "concept",
+      "market": "CONCEPT"
+    },
+    "BK1139": {
+      "code": "BK1139",
+      "name": "中特估",
+      "type": "concept",
+      "market": "CONCEPT"
+    },
+    "BK0888": {
+      "code": "BK0888",
+      "name": "农业种植",
+      "type": "concept",
+      "market": "CONCEPT"
+    },
+    "BK1157": {
+      "code": "BK1157",
+      "name": "飞行汽车(eVTOL)",
+      "type": "concept",
+      "market": "CONCEPT"
+    },
+    "BK0711": {
+      "code": "BK0711",
+      "name": "券商概念",
+      "type": "concept",
+      "market": "CONCEPT"
+    },
+    "BK0868": {
+      "code": "BK0868",
+      "name": "GDR",
+      "type": "concept",
+      "market": "CONCEPT"
+    },
+    "BK1119": {
+      "code": "BK1119",
+      "name": "PLC概念",
+      "type": "concept",
+      "market": "CONCEPT"
+    },
+    "BK0701": {
+      "code": "BK0701",
+      "name": "中证500",
+      "type": "concept",
+      "market": "CONCEPT"
+    },
+    "BK1076": {
+      "code": "BK1076",
+      "name": "建筑节能",
+      "type": "concept",
+      "market": "CONCEPT"
+    },
+    "BK0568": {
+      "code": "BK0568",
+      "name": "深成500",
+      "type": "concept",
+      "market": "CONCEPT"
+    },
+    "BK0821": {
+      "code": "BK0821",
+      "name": "MSCI中国",
+      "type": "concept",
+      "market": "CONCEPT"
+    },
+    "BK0679": {
+      "code": "BK0679",
+      "name": "超导概念",
+      "type": "concept",
+      "market": "CONCEPT"
+    },
+    "BK1103": {
+      "code": "BK1103",
+      "name": "熔盐储能",
+      "type": "concept",
+      "market": "CONCEPT"
+    },
+    "BK0705": {
+      "code": "BK0705",
+      "name": "上证380",
+      "type": "concept",
+      "market": "CONCEPT"
+    },
+    "BK0505": {
+      "code": "BK0505",
+      "name": "中字头",
+      "type": "concept",
+      "market": "CONCEPT"
+    },
+    "BK0920": {
+      "code": "BK0920",
+      "name": "车联网(车路云)",
+      "type": "concept",
+      "market": "CONCEPT"
+    },
+    "BK0697": {
+      "code": "BK0697",
+      "name": "IPO受益",
       "type": "concept",
       "market": "CONCEPT"
     },
@@ -2370,147 +2316,93 @@
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK0950": {
-      "code": "BK0950",
-      "name": "草甘膦",
+    "BK0983": {
+      "code": "BK0983",
+      "name": "核污染防治",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK1186": {
-      "code": "BK1186",
-      "name": "首发经济",
+    "BK0595": {
+      "code": "BK0595",
+      "name": "风能",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK0577": {
-      "code": "BK0577",
-      "name": "核能核电",
+    "BK0879": {
+      "code": "BK0879",
+      "name": "标准普尔",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK0891": {
-      "code": "BK0891",
-      "name": "国产芯片",
+    "BK1073": {
+      "code": "BK1073",
+      "name": "啤酒概念",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK0653": {
-      "code": "BK0653",
-      "name": "养老概念",
+    "BK0715": {
+      "code": "BK0715",
+      "name": "航母概念",
       "type": "concept",
       "market": "CONCEPT"
     },
-    "BK0165": {
-      "code": "BK0165",
-      "name": "陕西板块",
-      "type": "region",
-      "market": "REGION"
+    "BK1049": {
+      "code": "BK1049",
+      "name": "EDR概念",
+      "type": "concept",
+      "market": "CONCEPT"
     },
-    "BK0169": {
-      "code": "BK0169",
-      "name": "四川板块",
-      "type": "region",
-      "market": "REGION"
+    "BK0523": {
+      "code": "BK0523",
+      "name": "新材料",
+      "type": "concept",
+      "market": "CONCEPT"
     },
-    "BK0159": {
-      "code": "BK0159",
-      "name": "江苏板块",
-      "type": "region",
-      "market": "REGION"
+    "BK0699": {
+      "code": "BK0699",
+      "name": "全息技术",
+      "type": "concept",
+      "market": "CONCEPT"
     },
-    "BK0172": {
-      "code": "BK0172",
-      "name": "浙江板块",
-      "type": "region",
-      "market": "REGION"
+    "BK1185": {
+      "code": "BK1185",
+      "name": "冰雪经济",
+      "type": "concept",
+      "market": "CONCEPT"
     },
-    "BK0146": {
-      "code": "BK0146",
-      "name": "黑龙江",
-      "type": "region",
-      "market": "REGION"
+    "BK0588": {
+      "code": "BK0588",
+      "name": "太阳能",
+      "type": "concept",
+      "market": "CONCEPT"
     },
-    "BK0145": {
-      "code": "BK0145",
-      "name": "上海板块",
-      "type": "region",
-      "market": "REGION"
+    "BK0509": {
+      "code": "BK0509",
+      "name": "网络游戏",
+      "type": "concept",
+      "market": "CONCEPT"
     },
-    "BK0149": {
-      "code": "BK0149",
-      "name": "安徽板块",
-      "type": "region",
-      "market": "REGION"
+    "BK0949": {
+      "code": "BK0949",
+      "name": "氦气概念",
+      "type": "concept",
+      "market": "CONCEPT"
     },
-    "BK0150": {
-      "code": "BK0150",
-      "name": "北京板块",
-      "type": "region",
-      "market": "REGION"
+    "BK0499": {
+      "code": "BK0499",
+      "name": "AH股",
+      "type": "concept",
+      "market": "CONCEPT"
     },
-    "BK0170": {
-      "code": "BK0170",
-      "name": "重庆板块",
-      "type": "region",
-      "market": "REGION"
+    "BK0683": {
+      "code": "BK0683",
+      "name": "央国企改革",
+      "type": "concept",
+      "market": "CONCEPT"
     },
-    "BK0153": {
-      "code": "BK0153",
-      "name": "广东板块",
-      "type": "region",
-      "market": "REGION"
-    },
-    "BK0166": {
-      "code": "BK0166",
-      "name": "天津板块",
-      "type": "region",
-      "market": "REGION"
-    },
-    "BK0164": {
-      "code": "BK0164",
-      "name": "山东板块",
-      "type": "region",
-      "market": "REGION"
-    },
-    "BK0155": {
-      "code": "BK0155",
-      "name": "河北板块",
-      "type": "region",
-      "market": "REGION"
-    },
-    "BK0151": {
-      "code": "BK0151",
-      "name": "福建板块",
-      "type": "region",
-      "market": "REGION"
-    },
-    "BK0156": {
-      "code": "BK0156",
-      "name": "河南板块",
-      "type": "region",
-      "market": "REGION"
-    },
-    "BK0157": {
-      "code": "BK0157",
-      "name": "湖北板块",
-      "type": "region",
-      "market": "REGION"
-    },
-    "BK0160": {
-      "code": "BK0160",
-      "name": "江西板块",
-      "type": "region",
-      "market": "REGION"
-    },
-    "BK0147": {
-      "code": "BK0147",
-      "name": "新疆板块",
-      "type": "region",
-      "market": "REGION"
-    },
-    "BK0158": {
-      "code": "BK0158",
-      "name": "湖南板块",
+    "BK0176": {
+      "code": "BK0176",
+      "name": "海南板块",
       "type": "region",
       "market": "REGION"
     },
@@ -2520,15 +2412,15 @@
       "type": "region",
       "market": "REGION"
     },
-    "BK0152": {
-      "code": "BK0152",
-      "name": "甘肃板块",
+    "BK0171": {
+      "code": "BK0171",
+      "name": "云南板块",
       "type": "region",
       "market": "REGION"
     },
-    "BK0161": {
-      "code": "BK0161",
-      "name": "辽宁板块",
+    "BK0146": {
+      "code": "BK0146",
+      "name": "黑龙江",
       "type": "region",
       "market": "REGION"
     },
@@ -2538,9 +2430,21 @@
       "type": "region",
       "market": "REGION"
     },
-    "BK0173": {
-      "code": "BK0173",
-      "name": "贵州板块",
+    "BK0175": {
+      "code": "BK0175",
+      "name": "内蒙古",
+      "type": "region",
+      "market": "REGION"
+    },
+    "BK0160": {
+      "code": "BK0160",
+      "name": "江西板块",
+      "type": "region",
+      "market": "REGION"
+    },
+    "BK0158": {
+      "code": "BK0158",
+      "name": "湖南板块",
       "type": "region",
       "market": "REGION"
     },
@@ -2550,9 +2454,33 @@
       "type": "region",
       "market": "REGION"
     },
-    "BK0167": {
-      "code": "BK0167",
-      "name": "山西板块",
+    "BK0169": {
+      "code": "BK0169",
+      "name": "四川板块",
+      "type": "region",
+      "market": "REGION"
+    },
+    "BK0155": {
+      "code": "BK0155",
+      "name": "河北板块",
+      "type": "region",
+      "market": "REGION"
+    },
+    "BK0150": {
+      "code": "BK0150",
+      "name": "北京板块",
+      "type": "region",
+      "market": "REGION"
+    },
+    "BK0147": {
+      "code": "BK0147",
+      "name": "新疆板块",
+      "type": "region",
+      "market": "REGION"
+    },
+    "BK0152": {
+      "code": "BK0152",
+      "name": "甘肃板块",
       "type": "region",
       "market": "REGION"
     },
@@ -2562,9 +2490,39 @@
       "type": "region",
       "market": "REGION"
     },
-    "BK0171": {
-      "code": "BK0171",
-      "name": "云南板块",
+    "BK0170": {
+      "code": "BK0170",
+      "name": "重庆板块",
+      "type": "region",
+      "market": "REGION"
+    },
+    "BK0157": {
+      "code": "BK0157",
+      "name": "湖北板块",
+      "type": "region",
+      "market": "REGION"
+    },
+    "BK0173": {
+      "code": "BK0173",
+      "name": "贵州板块",
+      "type": "region",
+      "market": "REGION"
+    },
+    "BK0165": {
+      "code": "BK0165",
+      "name": "陕西板块",
+      "type": "region",
+      "market": "REGION"
+    },
+    "BK0156": {
+      "code": "BK0156",
+      "name": "河南板块",
+      "type": "region",
+      "market": "REGION"
+    },
+    "BK0145": {
+      "code": "BK0145",
+      "name": "上海板块",
       "type": "region",
       "market": "REGION"
     },
@@ -2574,521 +2532,59 @@
       "type": "region",
       "market": "REGION"
     },
-    "BK0175": {
-      "code": "BK0175",
-      "name": "内蒙古",
+    "BK0149": {
+      "code": "BK0149",
+      "name": "安徽板块",
       "type": "region",
       "market": "REGION"
     },
-    "BK0176": {
-      "code": "BK0176",
-      "name": "海南板块",
+    "BK0167": {
+      "code": "BK0167",
+      "name": "山西板块",
       "type": "region",
       "market": "REGION"
     },
-    "BK0480": {
-      "code": "BK0480",
-      "name": "航天航空",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK1030": {
-      "code": "BK1030",
-      "name": "电机",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0470": {
-      "code": "BK0470",
-      "name": "造纸印刷",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0733": {
-      "code": "BK0733",
-      "name": "包装材料",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0545": {
-      "code": "BK0545",
-      "name": "通用设备",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0481": {
-      "code": "BK0481",
-      "name": "汽车零部件",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0474": {
-      "code": "BK0474",
-      "name": "保险",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0729": {
-      "code": "BK0729",
-      "name": "船舶制造",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0910": {
-      "code": "BK0910",
-      "name": "专用设备",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0471": {
-      "code": "BK0471",
-      "name": "化纤行业",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0448": {
-      "code": "BK0448",
-      "name": "通信设备",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0422": {
-      "code": "BK0422",
-      "name": "物流行业",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0484": {
-      "code": "BK0484",
-      "name": "贸易行业",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0546": {
-      "code": "BK0546",
-      "name": "玻璃玻纤",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK1041": {
-      "code": "BK1041",
-      "name": "医疗器械",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0436": {
-      "code": "BK0436",
-      "name": "纺织服装",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK1032": {
-      "code": "BK1032",
-      "name": "风电设备",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0726": {
-      "code": "BK0726",
-      "name": "工程咨询服务",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0458": {
-      "code": "BK0458",
-      "name": "仪器仪表",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0737": {
-      "code": "BK0737",
-      "name": "软件开发",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0447": {
-      "code": "BK0447",
-      "name": "互联网服务",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK1036": {
-      "code": "BK1036",
-      "name": "半导体",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK1031": {
-      "code": "BK1031",
-      "name": "光伏设备",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0735": {
-      "code": "BK0735",
-      "name": "计算机设备",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK1043": {
-      "code": "BK1043",
-      "name": "专业服务",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0477": {
-      "code": "BK0477",
-      "name": "酿酒行业",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0739": {
-      "code": "BK0739",
-      "name": "工程机械",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0457": {
-      "code": "BK0457",
-      "name": "电网设备",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0727": {
-      "code": "BK0727",
-      "name": "医疗服务",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK1028": {
-      "code": "BK1028",
-      "name": "燃气",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0725": {
-      "code": "BK0725",
-      "name": "装修装饰",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0454": {
-      "code": "BK0454",
-      "name": "塑料制品",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0730": {
-      "code": "BK0730",
-      "name": "农药兽药",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK1037": {
-      "code": "BK1037",
-      "name": "消费电子",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0476": {
-      "code": "BK0476",
-      "name": "装修建材",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0425": {
-      "code": "BK0425",
-      "name": "工程建设",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0451": {
-      "code": "BK0451",
-      "name": "房地产开发",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0450": {
-      "code": "BK0450",
-      "name": "航运港口",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK1038": {
-      "code": "BK1038",
-      "name": "光学光电子",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0427": {
-      "code": "BK0427",
-      "name": "公用事业",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0429": {
-      "code": "BK0429",
-      "name": "交运设备",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK1020": {
-      "code": "BK1020",
-      "name": "非金属材料",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK1018": {
-      "code": "BK1018",
-      "name": "橡胶制品",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0728": {
-      "code": "BK0728",
-      "name": "环保行业",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK1046": {
-      "code": "BK1046",
-      "name": "游戏",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0456": {
-      "code": "BK0456",
-      "name": "家电行业",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0736": {
-      "code": "BK0736",
-      "name": "通信服务",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0539": {
-      "code": "BK0539",
-      "name": "综合行业",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0538": {
-      "code": "BK0538",
-      "name": "化学制品",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0738": {
-      "code": "BK0738",
-      "name": "多元金融",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0459": {
-      "code": "BK0459",
-      "name": "电子元件",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0479": {
-      "code": "BK0479",
-      "name": "钢铁行业",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0486": {
-      "code": "BK0486",
-      "name": "文化传媒",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0473": {
-      "code": "BK0473",
-      "name": "证券",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0740": {
-      "code": "BK0740",
-      "name": "教育",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0465": {
-      "code": "BK0465",
-      "name": "化学制药",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK1033": {
-      "code": "BK1033",
-      "name": "电池",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0424": {
-      "code": "BK0424",
-      "name": "水泥建材",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0478": {
-      "code": "BK0478",
-      "name": "有色金属",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0433": {
-      "code": "BK0433",
-      "name": "农牧饲渔",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0731": {
-      "code": "BK0731",
-      "name": "化肥行业",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK1016": {
-      "code": "BK1016",
-      "name": "汽车服务",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0421": {
-      "code": "BK0421",
-      "name": "铁路公路",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK1040": {
-      "code": "BK1040",
-      "name": "中药",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK1019": {
-      "code": "BK1019",
-      "name": "化学原料",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK1017": {
-      "code": "BK1017",
-      "name": "采掘行业",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK1042": {
-      "code": "BK1042",
-      "name": "医药商业",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0485": {
-      "code": "BK0485",
-      "name": "旅游酒店",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK1035": {
-      "code": "BK1035",
-      "name": "美容护理",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0428": {
-      "code": "BK0428",
-      "name": "电力行业",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK1044": {
-      "code": "BK1044",
-      "name": "生物制品",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0440": {
-      "code": "BK0440",
-      "name": "家用轻工",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK1027": {
-      "code": "BK1027",
-      "name": "小金属",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0475": {
-      "code": "BK0475",
-      "name": "银行",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0734": {
-      "code": "BK0734",
-      "name": "珠宝首饰",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK1039": {
-      "code": "BK1039",
-      "name": "电子化学品",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK1034": {
-      "code": "BK1034",
-      "name": "电源设备",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0437": {
-      "code": "BK0437",
-      "name": "煤炭行业",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0438": {
-      "code": "BK0438",
-      "name": "食品饮料",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0420": {
-      "code": "BK0420",
-      "name": "航空机场",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK1045": {
-      "code": "BK1045",
-      "name": "房地产服务",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0464": {
-      "code": "BK0464",
-      "name": "石油行业",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK1029": {
-      "code": "BK1029",
-      "name": "汽车整车",
-      "type": "theme",
-      "market": "THEME"
-    },
-    "BK0482": {
-      "code": "BK0482",
-      "name": "商业百货",
-      "type": "theme",
-      "market": "THEME"
+    "BK0164": {
+      "code": "BK0164",
+      "name": "山东板块",
+      "type": "region",
+      "market": "REGION"
+    },
+    "BK0161": {
+      "code": "BK0161",
+      "name": "辽宁板块",
+      "type": "region",
+      "market": "REGION"
+    },
+    "BK0153": {
+      "code": "BK0153",
+      "name": "广东板块",
+      "type": "region",
+      "market": "REGION"
+    },
+    "BK0151": {
+      "code": "BK0151",
+      "name": "福建板块",
+      "type": "region",
+      "market": "REGION"
+    },
+    "BK0159": {
+      "code": "BK0159",
+      "name": "江苏板块",
+      "type": "region",
+      "market": "REGION"
+    },
+    "BK0166": {
+      "code": "BK0166",
+      "name": "天津板块",
+      "type": "region",
+      "market": "REGION"
+    },
+    "BK0172": {
+      "code": "BK0172",
+      "name": "浙江板块",
+      "type": "region",
+      "market": "REGION"
     },
     "BK1015": {
       "code": "BK1015",
@@ -3102,15 +2598,711 @@
       "type": "theme",
       "market": "THEME"
     },
-    "400120": {
-      "code": "400120",
-      "name": "绿庭A5",
+    "BK0478": {
+      "code": "BK0478",
+      "name": "有色金属",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0546": {
+      "code": "BK0546",
+      "name": "玻璃玻纤",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK1031": {
+      "code": "BK1031",
+      "name": "光伏设备",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK1033": {
+      "code": "BK1033",
+      "name": "电池",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK1020": {
+      "code": "BK1020",
+      "name": "非金属材料",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0479": {
+      "code": "BK0479",
+      "name": "钢铁行业",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0731": {
+      "code": "BK0731",
+      "name": "化肥行业",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0471": {
+      "code": "BK0471",
+      "name": "化纤行业",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK1027": {
+      "code": "BK1027",
+      "name": "小金属",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK1017": {
+      "code": "BK1017",
+      "name": "采掘行业",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK1043": {
+      "code": "BK1043",
+      "name": "专业服务",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK1019": {
+      "code": "BK1019",
+      "name": "化学原料",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0480": {
+      "code": "BK0480",
+      "name": "航天航空",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0473": {
+      "code": "BK0473",
+      "name": "证券",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0421": {
+      "code": "BK0421",
+      "name": "铁路公路",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0735": {
+      "code": "BK0735",
+      "name": "计算机设备",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0725": {
+      "code": "BK0725",
+      "name": "装修装饰",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0437": {
+      "code": "BK0437",
+      "name": "煤炭行业",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0448": {
+      "code": "BK0448",
+      "name": "通信设备",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0433": {
+      "code": "BK0433",
+      "name": "农牧饲渔",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0739": {
+      "code": "BK0739",
+      "name": "工程机械",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0428": {
+      "code": "BK0428",
+      "name": "电力行业",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0738": {
+      "code": "BK0738",
+      "name": "多元金融",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0447": {
+      "code": "BK0447",
+      "name": "互联网服务",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0485": {
+      "code": "BK0485",
+      "name": "旅游酒店",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK1029": {
+      "code": "BK1029",
+      "name": "汽车整车",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0464": {
+      "code": "BK0464",
+      "name": "石油行业",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK1042": {
+      "code": "BK1042",
+      "name": "医药商业",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0420": {
+      "code": "BK0420",
+      "name": "航空机场",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0737": {
+      "code": "BK0737",
+      "name": "软件开发",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0451": {
+      "code": "BK0451",
+      "name": "房地产开发",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0486": {
+      "code": "BK0486",
+      "name": "文化传媒",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0484": {
+      "code": "BK0484",
+      "name": "贸易行业",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0734": {
+      "code": "BK0734",
+      "name": "珠宝首饰",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK1032": {
+      "code": "BK1032",
+      "name": "风电设备",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0476": {
+      "code": "BK0476",
+      "name": "装修建材",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0726": {
+      "code": "BK0726",
+      "name": "工程咨询服务",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK1046": {
+      "code": "BK1046",
+      "name": "游戏",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0733": {
+      "code": "BK0733",
+      "name": "包装材料",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0422": {
+      "code": "BK0422",
+      "name": "物流行业",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0459": {
+      "code": "BK0459",
+      "name": "电子元件",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK1045": {
+      "code": "BK1045",
+      "name": "房地产服务",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0538": {
+      "code": "BK0538",
+      "name": "化学制品",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK1016": {
+      "code": "BK1016",
+      "name": "汽车服务",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0427": {
+      "code": "BK0427",
+      "name": "公用事业",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0545": {
+      "code": "BK0545",
+      "name": "通用设备",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0436": {
+      "code": "BK0436",
+      "name": "纺织服装",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0450": {
+      "code": "BK0450",
+      "name": "航运港口",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0736": {
+      "code": "BK0736",
+      "name": "通信服务",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0728": {
+      "code": "BK0728",
+      "name": "环保行业",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0729": {
+      "code": "BK0729",
+      "name": "船舶制造",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0454": {
+      "code": "BK0454",
+      "name": "塑料制品",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0425": {
+      "code": "BK0425",
+      "name": "工程建设",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0482": {
+      "code": "BK0482",
+      "name": "商业百货",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK1044": {
+      "code": "BK1044",
+      "name": "生物制品",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0457": {
+      "code": "BK0457",
+      "name": "电网设备",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0465": {
+      "code": "BK0465",
+      "name": "化学制药",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK1028": {
+      "code": "BK1028",
+      "name": "燃气",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0438": {
+      "code": "BK0438",
+      "name": "食品饮料",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0474": {
+      "code": "BK0474",
+      "name": "保险",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0910": {
+      "code": "BK0910",
+      "name": "专用设备",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0740": {
+      "code": "BK0740",
+      "name": "教育",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0475": {
+      "code": "BK0475",
+      "name": "银行",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0429": {
+      "code": "BK0429",
+      "name": "交运设备",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK1030": {
+      "code": "BK1030",
+      "name": "电机",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK1035": {
+      "code": "BK1035",
+      "name": "美容护理",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0730": {
+      "code": "BK0730",
+      "name": "农药兽药",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0481": {
+      "code": "BK0481",
+      "name": "汽车零部件",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK1038": {
+      "code": "BK1038",
+      "name": "光学光电子",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0458": {
+      "code": "BK0458",
+      "name": "仪器仪表",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0424": {
+      "code": "BK0424",
+      "name": "水泥建材",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0456": {
+      "code": "BK0456",
+      "name": "家电行业",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0539": {
+      "code": "BK0539",
+      "name": "综合行业",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK1040": {
+      "code": "BK1040",
+      "name": "中药",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK1037": {
+      "code": "BK1037",
+      "name": "消费电子",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0727": {
+      "code": "BK0727",
+      "name": "医疗服务",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0440": {
+      "code": "BK0440",
+      "name": "家用轻工",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK1018": {
+      "code": "BK1018",
+      "name": "橡胶制品",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK1034": {
+      "code": "BK1034",
+      "name": "电源设备",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK1036": {
+      "code": "BK1036",
+      "name": "半导体",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0477": {
+      "code": "BK0477",
+      "name": "酿酒行业",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK1041": {
+      "code": "BK1041",
+      "name": "医疗器械",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK0470": {
+      "code": "BK0470",
+      "name": "造纸印刷",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "BK1039": {
+      "code": "BK1039",
+      "name": "电子化学品",
+      "type": "theme",
+      "market": "THEME"
+    },
+    "404004": {
+      "code": "404004",
+      "name": "汇车退债",
       "type": "index",
       "market": "INDEX"
     },
-    "400128": {
-      "code": "400128",
-      "name": "罗顿5",
+    "400245": {
+      "code": "400245",
+      "name": "R汇车1",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "400199": {
+      "code": "400199",
+      "name": "阳光城3",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "400233": {
+      "code": "400233",
+      "name": "美吉姆3",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "400206": {
+      "code": "400206",
+      "name": "R爱迪1",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "400180": {
+      "code": "400180",
+      "name": "R新文化1",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "400078": {
+      "code": "400078",
+      "name": "R明瑞1",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "400076": {
+      "code": "400076",
+      "name": "R华信控1",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "400117": {
+      "code": "400117",
+      "name": "R中新1",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "400118": {
+      "code": "400118",
+      "name": "R艾格 1",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "400241": {
+      "code": "400241",
+      "name": "洪涛3",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "400217": {
+      "code": "400217",
+      "name": "正源5",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "400171": {
+      "code": "400171",
+      "name": "R庞大1",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "400237": {
+      "code": "400237",
+      "name": "天通5",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "400175": {
+      "code": "400175",
+      "name": "R和佳1",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "400236": {
+      "code": "400236",
+      "name": "中银5",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "400176": {
+      "code": "400176",
+      "name": "奇信3",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "400071": {
+      "code": "400071",
+      "name": "中弘3",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "400065": {
+      "code": "400065",
+      "name": "亚美3",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "400239": {
+      "code": "400239",
+      "name": "联络3",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "400268": {
+      "code": "400268",
+      "name": "R产融1",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "400271": {
+      "code": "400271",
+      "name": "龙宇3",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "400155": {
+      "code": "400155",
+      "name": "R海医1",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "400173": {
+      "code": "400173",
+      "name": "银河3",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "400075": {
+      "code": "400075",
+      "name": "R华泽1",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "400130": {
+      "code": "400130",
+      "name": "新光3",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "400097": {
+      "code": "400097",
+      "name": "R刚泰1",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "400016": {
+      "code": "400016",
+      "name": "金田Ａ3",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "400008": {
+      "code": "400008",
+      "name": "水仙Ａ 3",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "400125": {
+      "code": "400125",
+      "name": "明科5",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "400214": {
+      "code": "400214",
+      "name": "世茂3",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "400146": {
+      "code": "400146",
+      "name": "聚龙5",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "400005": {
+      "code": "400005",
+      "name": "R海国实1",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000909": {
+      "code": "000909",
+      "name": "300材料",
       "type": "index",
       "market": "INDEX"
     },
@@ -3120,333 +3312,99 @@
       "type": "index",
       "market": "INDEX"
     },
-    "400220": {
-      "code": "400220",
-      "name": "同达5",
+    "400184": {
+      "code": "400184",
+      "name": "R必康1",
       "type": "index",
       "market": "INDEX"
     },
-    "899002": {
-      "code": "899002",
-      "name": "三板做市",
+    "000961": {
+      "code": "000961",
+      "name": "中证上游",
       "type": "index",
       "market": "INDEX"
     },
-    "899302": {
-      "code": "899302",
-      "name": "三板制造",
+    "400258": {
+      "code": "400258",
+      "name": "博信3",
       "type": "index",
       "market": "INDEX"
     },
-    "000106": {
-      "code": "000106",
-      "name": "380工业",
+    "400041": {
+      "code": "400041",
+      "name": "R数码1",
       "type": "index",
       "market": "INDEX"
     },
-    "000131": {
-      "code": "000131",
-      "name": "上证高新",
+    "000944": {
+      "code": "000944",
+      "name": "内地资源",
       "type": "index",
       "market": "INDEX"
     },
-    "400082": {
-      "code": "400082",
-      "name": "华锐5",
+    "000929": {
+      "code": "000929",
+      "name": "800材料",
       "type": "index",
       "market": "INDEX"
     },
-    "400210": {
-      "code": "400210",
-      "name": "博天5",
+    "400275": {
+      "code": "400275",
+      "name": "工智3",
       "type": "index",
       "market": "INDEX"
     },
-    "400021": {
-      "code": "400021",
-      "name": "华夏 5",
+    "400246": {
+      "code": "400246",
+      "name": "新纶3",
       "type": "index",
       "market": "INDEX"
     },
-    "400212": {
-      "code": "400212",
-      "name": "民生5",
+    "000987": {
+      "code": "000987",
+      "name": "全指材料",
       "type": "index",
       "market": "INDEX"
     },
-    "000107": {
-      "code": "000107",
-      "name": "380可选",
+    "400025": {
+      "code": "400025",
+      "name": "宏  业 3",
       "type": "index",
       "market": "INDEX"
     },
-    "000074": {
-      "code": "000074",
-      "name": "消费等权",
+    "000026": {
+      "code": "000026",
+      "name": "180资源",
       "type": "index",
       "market": "INDEX"
     },
-    "899301": {
-      "code": "899301",
-      "name": "三板龙头",
+    "000033": {
+      "code": "000033",
+      "name": "上证材料",
       "type": "index",
       "market": "INDEX"
     },
-    "000988": {
-      "code": "000988",
-      "name": "全指工业",
+    "000071": {
+      "code": "000071",
+      "name": "材料等权",
       "type": "index",
       "market": "INDEX"
     },
-    "000020": {
-      "code": "000020",
-      "name": "中型综指",
+    "400153": {
+      "code": "400153",
+      "name": "海创A5",
       "type": "index",
       "market": "INDEX"
     },
-    "000133": {
-      "code": "000133",
-      "name": "上证150",
+    "000068": {
+      "code": "000068",
+      "name": "上证资源",
       "type": "index",
       "market": "INDEX"
     },
-    "000073": {
-      "code": "000073",
-      "name": "可选等权",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000119": {
-      "code": "000119",
-      "name": "380R成长",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000989": {
-      "code": "000989",
-      "name": "全指可选",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000912": {
-      "code": "000912",
-      "name": "300消费",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000990": {
-      "code": "000990",
-      "name": "全指消费",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000905": {
-      "code": "000905",
-      "name": "中证500",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000931": {
-      "code": "000931",
-      "name": "800可选",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000982": {
-      "code": "000982",
-      "name": "500等权",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000115": {
-      "code": "000115",
-      "name": "380等权",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000072": {
-      "code": "000072",
-      "name": "工业等权",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "400002": {
-      "code": "400002",
-      "name": "长  白 5",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000128": {
-      "code": "000128",
-      "name": "380基本",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000009": {
-      "code": "000009",
-      "name": "上证380",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000117": {
-      "code": "000117",
-      "name": "380成长",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000932": {
-      "code": "000932",
-      "name": "中证消费",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000003": {
-      "code": "000003",
-      "name": "Ｂ股指数",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000036": {
-      "code": "000036",
-      "name": "上证消费",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000045": {
-      "code": "000045",
-      "name": "上证小盘",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000913": {
-      "code": "000913",
-      "name": "300医药",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000930": {
-      "code": "000930",
-      "name": "800工业",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000078": {
-      "code": "000078",
-      "name": "电信等权",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000126": {
-      "code": "000126",
-      "name": "消费50",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000004": {
-      "code": "000004",
-      "name": "工业指数",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000034": {
-      "code": "000034",
-      "name": "上证工业",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000120": {
-      "code": "000120",
-      "name": "380R价值",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "400068": {
-      "code": "400068",
-      "name": "昆机5",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000069": {
-      "code": "000069",
-      "name": "消费80",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000902": {
-      "code": "000902",
-      "name": "中证流通",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000985": {
-      "code": "000985",
-      "name": "中证全指",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000942": {
-      "code": "000942",
-      "name": "内地消费",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000132": {
-      "code": "000132",
-      "name": "上证100",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000933": {
-      "code": "000933",
-      "name": "中证医药",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000090": {
-      "code": "000090",
-      "name": "上证流通",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000006": {
-      "code": "000006",
-      "name": "地产指数",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000035": {
-      "code": "000035",
-      "name": "上证可选",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000110": {
-      "code": "000110",
-      "name": "380金融",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000076": {
-      "code": "000076",
-      "name": "金融等权",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000114": {
-      "code": "000114",
-      "name": "持续产业",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000991": {
-      "code": "000991",
-      "name": "全指医药",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000977": {
-      "code": "000977",
-      "name": "内地低碳",
+    "000113": {
+      "code": "000113",
+      "name": "380公用",
       "type": "index",
       "market": "INDEX"
     },
@@ -3456,237 +3414,51 @@
       "type": "index",
       "market": "INDEX"
     },
-    "000046": {
-      "code": "000046",
-      "name": "上证中小",
+    "000977": {
+      "code": "000977",
+      "name": "内地低碳",
       "type": "index",
       "market": "INDEX"
     },
-    "000002": {
-      "code": "000002",
-      "name": "Ａ股指数",
+    "400068": {
+      "code": "400068",
+      "name": "昆机5",
       "type": "index",
       "market": "INDEX"
     },
-    "000001": {
-      "code": "000001",
-      "name": "上证指数",
+    "000979": {
+      "code": "000979",
+      "name": "大宗商品",
       "type": "index",
       "market": "INDEX"
     },
-    "000017": {
-      "code": "000017",
-      "name": "新综指",
+    "000102": {
+      "code": "000102",
+      "name": "沪投资品",
       "type": "index",
       "market": "INDEX"
     },
-    "000038": {
-      "code": "000038",
-      "name": "上证金融",
+    "000066": {
+      "code": "000066",
+      "name": "上证商品",
       "type": "index",
       "market": "INDEX"
     },
-    "000992": {
-      "code": "000992",
-      "name": "全指金融",
+    "000078": {
+      "code": "000078",
+      "name": "电信等权",
       "type": "index",
       "market": "INDEX"
     },
-    "000123": {
-      "code": "000123",
-      "name": "180动态",
+    "400119": {
+      "code": "400119",
+      "name": "西创5",
       "type": "index",
       "market": "INDEX"
     },
-    "000018": {
-      "code": "000018",
-      "name": "180金融",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000111": {
-      "code": "000111",
-      "name": "380信息",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000907": {
-      "code": "000907",
-      "name": "中证700",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000974": {
-      "code": "000974",
-      "name": "800金融",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000059": {
-      "code": "000059",
-      "name": "全R成长",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "899003": {
-      "code": "899003",
-      "name": "创新成指",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000108": {
-      "code": "000108",
-      "name": "380消费",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000118": {
-      "code": "000118",
-      "name": "380价值",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000934": {
-      "code": "000934",
-      "name": "中证金融",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000914": {
-      "code": "000914",
-      "name": "300金融",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000949": {
-      "code": "000949",
-      "name": "中证农业",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000926": {
-      "code": "000926",
-      "name": "中证央企",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000027": {
-      "code": "000027",
-      "name": "180运输",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "899001": {
-      "code": "899001",
-      "name": "三板成指",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000037": {
-      "code": "000037",
-      "name": "上证医药",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000978": {
-      "code": "000978",
-      "name": "医药100",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000047": {
-      "code": "000047",
-      "name": "上证全指",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000109": {
-      "code": "000109",
-      "name": "380医药",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "899307": {
-      "code": "899307",
-      "name": "三板活跃",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000945": {
-      "code": "000945",
-      "name": "内地运输",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000910": {
-      "code": "000910",
-      "name": "300工业",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000100": {
-      "code": "000100",
-      "name": "上证F500",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000048": {
-      "code": "000048",
-      "name": "责任指数",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000906": {
-      "code": "000906",
-      "name": "中证800",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000966": {
-      "code": "000966",
-      "name": "基本400",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000019": {
-      "code": "000019",
-      "name": "治理指数",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "899305": {
-      "code": "899305",
-      "name": "三板消费",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000121": {
-      "code": "000121",
-      "name": "医药主题",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000007": {
-      "code": "000007",
-      "name": "公用指数",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000060": {
-      "code": "000060",
-      "name": "全R价值",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000057": {
-      "code": "000057",
-      "name": "全指成长",
-      "type": "index",
-      "market": "INDEX"
-    },
-    "000911": {
-      "code": "000911",
-      "name": "300可选",
+    "400040": {
+      "code": "400040",
+      "name": "中  川 3",
       "type": "index",
       "market": "INDEX"
     },
@@ -3696,12 +3468,240 @@
       "type": "index",
       "market": "INDEX"
     },
-    "000064": {
-      "code": "000064",
-      "name": "非周期",
+    "000106": {
+      "code": "000106",
+      "name": "380工业",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000911": {
+      "code": "000911",
+      "name": "300可选",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000970": {
+      "code": "000970",
+      "name": "ESG 40",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000930": {
+      "code": "000930",
+      "name": "800工业",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000910": {
+      "code": "000910",
+      "name": "300工业",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000988": {
+      "code": "000988",
+      "name": "全指工业",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000120": {
+      "code": "000120",
+      "name": "380R价值",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000118": {
+      "code": "000118",
+      "name": "380价值",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000952": {
+      "code": "000952",
+      "name": "300地产",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000128": {
+      "code": "000128",
+      "name": "380基本",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000079": {
+      "code": "000079",
+      "name": "公用等权",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000114": {
+      "code": "000114",
+      "name": "持续产业",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000966": {
+      "code": "000966",
+      "name": "基本400",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000049": {
+      "code": "000049",
+      "name": "上证民企",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000055": {
+      "code": "000055",
+      "name": "上证地企",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000054": {
+      "code": "000054",
+      "name": "上证海外",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000949": {
+      "code": "000949",
+      "name": "中证农业",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000931": {
+      "code": "000931",
+      "name": "800可选",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000104": {
+      "code": "000104",
+      "name": "380能源",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000123": {
+      "code": "000123",
+      "name": "180动态",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000070": {
+      "code": "000070",
+      "name": "能源等权",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000063": {
+      "code": "000063",
+      "name": "上证周期",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000905": {
+      "code": "000905",
+      "name": "中证500",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000948": {
+      "code": "000948",
+      "name": "内地地产",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "400163": {
+      "code": "400163",
+      "name": "计通5",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000009": {
+      "code": "000009",
+      "name": "上证380",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000035": {
+      "code": "000035",
+      "name": "上证可选",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "899307": {
+      "code": "899307",
+      "name": "三板活跃",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "899303": {
+      "code": "899303",
+      "name": "三板服务",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000907": {
+      "code": "000907",
+      "name": "中证700",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000989": {
+      "code": "000989",
+      "name": "全指可选",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000103": {
+      "code": "000103",
+      "name": "沪消费品",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000045": {
+      "code": "000045",
+      "name": "上证小盘",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000067": {
+      "code": "000067",
+      "name": "上证新兴",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000021": {
+      "code": "000021",
+      "name": "180治理",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000904": {
+      "code": "000904",
+      "name": "中证200",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000967": {
+      "code": "000967",
+      "name": "基本600",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000903": {
+      "code": "000903",
+      "name": "中证A100",
+      "type": "index",
+      "market": "INDEX"
+    },
+    "000028": {
+      "code": "000028",
+      "name": "180成长",
       "type": "index",
       "market": "INDEX"
     }
   },
-  "last_update": "2025-12-25T23:34:22.873842"
+  "last_update": "2025-12-27T19:05:43.218213"
 }

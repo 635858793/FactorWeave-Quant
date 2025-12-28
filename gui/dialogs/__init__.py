@@ -12,7 +12,6 @@ from .converter_dialog import ConverterDialog
 from .data_quality_dialog import DataQualityDialog
 from .data_usage_terms_dialog import DataUsageTermsDialog, DataUsageManager
 from .history_data_dialog import HistoryDataDialog
-from .strategy_manager_dialog import StrategyManagerDialog
 from .technical_analysis_dialog import TechnicalAnalysisDialog
 from .database_admin_dialog import DatabaseAdminDialog
 from .interval_stat_dialog import IntervalStatDialog
@@ -30,7 +29,7 @@ __all__ = [
     'DataUsageTermsDialog',
     'DataUsageManager',
     'HistoryDataDialog',
-    'StrategyManagerDialog',
+
     'TechnicalAnalysisDialog',
     'DatabaseAdminDialog',
     'IntervalStatDialog',

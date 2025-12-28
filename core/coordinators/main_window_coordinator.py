@@ -1887,7 +1887,6 @@ FactorWeave-Quant  2.0 (重构版本)
 
     def _on_strategy_management(self) -> None:
         """策略管理"""
-        # 防止重复打开 - 检查是否已有策略管理对话框实例
         if hasattr(self, '_strategy_manager_dialog') and self._strategy_manager_dialog is not None:
             if self._strategy_manager_dialog.isVisible():
                 self._strategy_manager_dialog.raise_()
@@ -1898,22 +1897,25 @@ FactorWeave-Quant  2.0 (重构版本)
                 self._strategy_manager_dialog = None
 
         try:
-            from gui.dialogs.strategy_manager_dialog import StrategyManagerDialog
+            from gui.dialogs.enhanced_strategy_manager_dialog import EnhancedStrategyManagerDialog
 
-            # 创建策略管理对话框实例并保存引用
-            self._strategy_manager_dialog = StrategyManagerDialog(self._main_window)
+            self._strategy_manager_dialog = EnhancedStrategyManagerDialog(self._main_window)
 
-            # 连接对话框的关闭信号
             self._strategy_manager_dialog.finished.connect(self._on_strategy_manager_dialog_closed)
 
             self.center_dialog(self._strategy_manager_dialog)
             self._strategy_manager_dialog.show()
 
+        except ImportError as e:
+            logger.error(f"EnhancedStrategyManagerDialog不可用: {e}")
+            QMessageBox.critical(self._main_window, "错误",
+                                 f"策略管理功能不可用: {str(e)}")
+            if hasattr(self, '_strategy_manager_dialog'):
+                self._strategy_manager_dialog = None
         except Exception as e:
             logger.error(f"策略管理失败: {e}")
             QMessageBox.critical(self._main_window, "错误",
                                  f"打开策略管理对话框失败: {str(e)}")
-            # 清理可能的无效引用
             if hasattr(self, '_strategy_manager_dialog'):
                 self._strategy_manager_dialog = None
 
@@ -2799,18 +2801,9 @@ FactorWeave-Quant  2.0 (重构版本)
                             break
                 dialog.exec_()
                 logger.info("启动增强版策略回测对话框")
-            except ImportError:
-                # 降级到基础策略管理对话框
-                from gui.dialogs.strategy_manager_dialog import StrategyManagerDialog
-                dialog = StrategyManagerDialog(self._main_window)
-                # 切换到策略回测标签页
-                if hasattr(dialog, 'tab_widget'):
-                    for i in range(dialog.tab_widget.count()):
-                        if '回测' in dialog.tab_widget.tabText(i):
-                            dialog.tab_widget.setCurrentIndex(i)
-                            break
-                dialog.exec_()
-                logger.info("启动基础策略回测对话框")
+            except ImportError as e:
+                logger.error(f"增强版策略回测不可用: {e}")
+                QMessageBox.warning(self._main_window, "错误", f"策略回测功能不可用: {e}")
         except Exception as e:
             logger.error(f"策略回测失败: {e}")
             QMessageBox.warning(self._main_window, "错误", f"无法启动策略回测: {e}")
@@ -2818,9 +2811,19 @@ FactorWeave-Quant  2.0 (重构版本)
     def _on_strategy_optimize(self) -> None:
         """策略优化"""
         try:
-            # TODO: 实现策略优化功能
-            QMessageBox.information(self._main_window, "提示", "策略优化功能正在开发中")
-            logger.info("启动策略优化")
+            try:
+                from gui.dialogs.enhanced_strategy_manager_dialog import EnhancedStrategyManagerDialog
+                dialog = EnhancedStrategyManagerDialog(self._main_window)
+                if hasattr(dialog, 'tab_widget'):
+                    for i in range(dialog.tab_widget.count()):
+                        if '优化' in dialog.tab_widget.tabText(i):
+                            dialog.tab_widget.setCurrentIndex(i)
+                            break
+                dialog.exec_()
+                logger.info("启动增强版策略优化对话框")
+            except ImportError as e:
+                logger.error(f"增强版策略优化不可用: {e}")
+                QMessageBox.warning(self._main_window, "错误", f"策略优化功能不可用: {e}")
         except Exception as e:
             logger.error(f"策略优化失败: {e}")
             QMessageBox.warning(self._main_window, "错误", f"无法启动策略优化: {e}")

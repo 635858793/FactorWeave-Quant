@@ -702,6 +702,7 @@ class RenderingMixin:
             self._optimize_display()
         except Exception as e:
             logger.error(f"更新图表失败: {str(e)}")
+            logger.error(f"错误详情: {type(e).__name__}: {str(e)}")
             self.show_no_data("渲染失败")
 
     def _render_indicator_data(self, indicators_data, kdata, x=None):
@@ -1181,19 +1182,38 @@ class RenderingMixin:
         """获取图表样式，所有颜色从theme_manager.get_theme_colors获取"""
         try:
             colors = self.theme_manager.get_theme_colors()
+            
+            # 处理颜色格式，确保rgba格式被正确解析
+            processed_colors = {}
+            for key, value in colors.items():
+                if isinstance(value, str) and value.startswith('rgba('):
+                    # 解析rgba格式
+                    try:
+                        rgba_content = value[5:-1]  # 去掉 "rgba(" 和 ")"
+                        parts = [part.strip() for part in rgba_content.split(',')]
+                        if len(parts) >= 4:
+                            r, g, b = int(parts[0].strip()), int(parts[1].strip()), int(parts[2].strip())
+                            processed_colors[key] = (r, g, b)
+                        else:
+                            processed_colors[key] = value
+                    except (ValueError, IndexError):
+                        processed_colors[key] = value
+                else:
+                    processed_colors[key] = value
+                    
             return {
-                'up_color': colors.get('k_up', '#e74c3c'),
-                'down_color': colors.get('k_down', '#27ae60'),
-                'edge_color': colors.get('k_edge', '#2c3140'),
-                'volume_up_color': colors.get('volume_up', '#e74c3c'),
-                'volume_down_color': colors.get('volume_down', '#27ae60'),
-                'volume_alpha': colors.get('volume_alpha', 0.5),
-                'grid_color': colors.get('chart_grid', '#e0e0e0'),
-                'background_color': colors.get('chart_background', '#ffffff'),
-                'text_color': colors.get('chart_text', '#222b45'),
-                'axis_color': colors.get('chart_grid', '#e0e0e0'),
-                'label_color': colors.get('chart_text', '#222b45'),
-                'border_color': colors.get('chart_grid', '#e0e0e0'),
+                'up_color': processed_colors.get('k_up', '#e74c3c'),
+                'down_color': processed_colors.get('k_down', '#27ae60'),
+                'edge_color': processed_colors.get('k_edge', '#2c3140'),
+                'volume_up_color': processed_colors.get('volume_up', '#e74c3c'),
+                'volume_down_color': processed_colors.get('volume_down', '#27ae60'),
+                'volume_alpha': processed_colors.get('volume_alpha', 0.5),
+                'grid_color': processed_colors.get('chart_grid', '#e0e0e0'),
+                'background_color': processed_colors.get('chart_background', '#ffffff'),
+                'text_color': processed_colors.get('chart_text', '#222b45'),
+                'axis_color': processed_colors.get('chart_grid', '#e0e0e0'),
+                'label_color': processed_colors.get('chart_text', '#222b45'),
+                'border_color': processed_colors.get('chart_grid', '#e0e0e0'),
             }
         except Exception as e:
             logger.error(f"获取图表样式失败: {str(e)}")
@@ -1316,7 +1336,30 @@ class RenderingMixin:
                 return
 
             colors = self.theme_manager.get_theme_colors()
-            bg_color = colors.get('chart_background', '#ffffff')
+            
+            # 处理颜色格式，确保rgba格式被正确解析
+            processed_colors = {}
+            for key, value in colors.items():
+                if isinstance(value, str) and value.startswith('rgba('):
+                    # 解析rgba格式
+                    try:
+                        rgba_content = value[5:-1]  # 去掉 "rgba(" 和 ")"
+                        parts = [part.strip() for part in rgba_content.split(',')]
+                        if len(parts) >= 4:
+                            r, g, b = int(parts[0].strip()), int(parts[1].strip()), int(parts[2].strip())
+                            processed_colors[key] = (r, g, b)
+                        else:
+                            processed_colors[key] = value
+                    except (ValueError, IndexError):
+                        processed_colors[key] = value
+                else:
+                    processed_colors[key] = value
+            
+            bg_color = processed_colors.get('chart_background', '#ffffff')
+            
+            # 处理背景色格式
+            if isinstance(bg_color, tuple) and len(bg_color) >= 3:
+                bg_color = bg_color[:3]  # 使用RGB部分
 
             # 设置图表背景色
             self.figure.patch.set_facecolor(bg_color)
@@ -1326,11 +1369,11 @@ class RenderingMixin:
                 ax.set_facecolor(bg_color)
 
                 # 设置网格样式
-                grid_color = colors.get('chart_grid', '#e0e0e0')
+                grid_color = processed_colors.get('chart_grid', '#e0e0e0')
                 ax.grid(True, color=grid_color, alpha=0.3, linewidth=0.5)
 
                 # 设置刻度和标签颜色
-                text_color = colors.get('chart_text', '#222b45')
+                text_color = processed_colors.get('chart_text', '#222b45')
                 ax.tick_params(colors=text_color)
                 ax.xaxis.label.set_color(text_color)
                 ax.yaxis.label.set_color(text_color)
@@ -1340,6 +1383,9 @@ class RenderingMixin:
 
         except Exception as e:
             logger.error(f"应用主题失败: {str(e)}")
+            logger.error(f"错误详情: {type(e).__name__}: {str(e)}")
+            import traceback
+            logger.error(f"错误详情: {traceback.format_exc()}")
 
     def _init_figure_layout(self):
         """初始化图表布局"""

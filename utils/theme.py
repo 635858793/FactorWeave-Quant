@@ -29,6 +29,39 @@ from PyQt5.QtGui import *
 # Global theme manager instance
 _theme_manager_instance: Optional['ThemeManager'] = None
 
+
+def parse_color(color_str: str) -> Union[str, tuple]:
+    """解析颜色字符串，支持rgba()格式
+    
+    Args:
+        color_str: 颜色字符串，支持 #hex, rgb(), rgba()
+        
+    Returns:
+        Union[str, tuple]: 如果是rgba格式返回(r,g,b,a)元组，否则返回原字符串
+    """
+    if not color_str or not isinstance(color_str, str):
+        return color_str
+        
+    # 处理rgba()格式
+    if color_str.startswith('rgba(') and color_str.endswith(')'):
+        try:
+            # 提取rgba参数
+            rgba_content = color_str[5:-1]  # 去掉 "rgba(" 和 ")"
+            parts = [part.strip() for part in rgba_content.split(',')]
+            
+            if len(parts) >= 4:
+                r = int(parts[0].strip())
+                g = int(parts[1].strip()) 
+                b = int(parts[2].strip())
+                a = float(parts[3].strip())
+                
+                # 返回Qt可识别的格式
+                return (r, g, b, a)
+        except (ValueError, IndexError) as e:
+            logger.warning(f"解析rgba颜色失败: {color_str}, 错误: {e}")
+            
+    return color_str
+
 DB_PATH = os.path.join(os.path.dirname(
     os.path.dirname(__file__)), 'data', 'factorweave_system.sqlite')
 
@@ -406,40 +439,62 @@ class ThemeManager(QObject):
 
         try:
             colors = self.get_theme_colors(theme)
+            
+            # 处理颜色格式，确保rgba格式被正确解析
+            processed_colors = {}
+            for key, value in colors.items():
+                if isinstance(value, str) and value.startswith('rgba('):
+                    processed_colors[key] = parse_color(value)
+                else:
+                    processed_colors[key] = value
 
-            # Set figure facecolor
-            figure.set_facecolor(colors.get('chart_background', '#ffffff'))
+            # Set figure facecolor (处理rgba格式)
+            chart_bg = processed_colors.get('chart_background', '#ffffff')
+            if isinstance(chart_bg, tuple) and len(chart_bg) >= 4:
+                figure.set_facecolor(chart_bg[:3])  # 使用RGB部分，忽略alpha
+            else:
+                figure.set_facecolor(chart_bg)
 
             # Set axes colors
             for ax in figure.get_axes():
-                ax.set_facecolor(colors.get('chart_background', '#ffffff'))
-                ax.tick_params(colors=colors.get('chart_text', '#222b45'))
-                ax.spines['bottom'].set_color(
-                    colors.get('chart_grid', '#e0e0e0'))
-                ax.spines['top'].set_color(colors.get('chart_grid', '#e0e0e0'))
-                ax.spines['right'].set_color(
-                    colors.get('chart_grid', '#e0e0e0'))
-                ax.spines['left'].set_color(
-                    colors.get('chart_grid', '#e0e0e0'))
-                ax.title.set_color(colors.get('chart_text', '#222b45'))
-                ax.xaxis.label.set_color(colors.get('chart_text', '#222b45'))
-                ax.yaxis.label.set_color(colors.get('chart_text', '#222b45'))
+                # 设置背景色
+                chart_bg = processed_colors.get('chart_background', '#ffffff')
+                if isinstance(chart_bg, tuple) and len(chart_bg) >= 4:
+                    ax.set_facecolor(chart_bg[:3])
+                else:
+                    ax.set_facecolor(chart_bg)
+                    
+                # 设置文字颜色
+                text_color = processed_colors.get('chart_text', '#222b45')
+                ax.tick_params(colors=text_color)
+                ax.title.set_color(text_color)
+                ax.xaxis.label.set_color(text_color)
+                ax.yaxis.label.set_color(text_color)
+                
+                # 设置边框颜色
+                grid_color = processed_colors.get('chart_grid', '#e0e0e0')
+                ax.spines['bottom'].set_color(grid_color)
+                ax.spines['top'].set_color(grid_color)
+                ax.spines['right'].set_color(grid_color)
+                ax.spines['left'].set_color(grid_color)
 
                 # Set grid color
-                ax.grid(True, color=colors.get(
-                    'chart_grid', '#e0e0e0'), alpha=0.3)
+                ax.grid(True, color=grid_color, alpha=0.3)
 
                 # Set tick colors
                 for tick in ax.get_xticklabels():
-                    tick.set_color(colors.get('chart_text', '#222b45'))
+                    tick.set_color(text_color)
                 for tick in ax.get_yticklabels():
-                    tick.set_color(colors.get('chart_text', '#222b45'))
+                    tick.set_color(text_color)
 
             # Draw figure
             figure.canvas.draw()
 
         except Exception as e:
-            logger.info(f"应用图表主题失败: {str(e)}")
+            logger.error(f"应用图表主题失败: {str(e)}")
+            logger.error(f"错误类型: {type(e).__name__}")
+            import traceback
+            logger.error(f"错误详情: {traceback.format_exc()}")
 
     def is_dark_theme(self) -> bool:
         """Check if current theme is dark
@@ -448,6 +503,147 @@ class ThemeManager(QObject):
             True if current theme is dark
         """
         return self.current_theme.is_dark
+
+    def apply_theme(self, widget):
+        """应用主题到指定控件
+
+        Args:
+            widget: 要应用主题的控件
+        """
+        colors = self.get_theme_colors()
+        # 处理颜色格式，确保rgba格式被正确解析
+        processed_colors = {}
+        for key, value in colors.items():
+            if isinstance(value, str) and value.startswith('rgba('):
+                processed_colors[key] = parse_color(value)
+            else:
+                processed_colors[key] = value
+        
+        stylesheet = self._build_stylesheet(processed_colors)
+        widget.setStyleSheet(stylesheet)
+        for child in widget.findChildren(QWidget):
+            if not child.styleSheet():
+                child.setStyleSheet(stylesheet)
+
+    def _build_stylesheet(self, colors: Dict[str, Any]) -> str:
+        """构建样式表
+
+        Args:
+            colors: 主题颜色字典
+
+        Returns:
+            QSS样式表字符串
+        """
+        return f"""
+        QWidget {{
+            background-color: {colors.get('background', '#FFFFFF')};
+            color: {colors.get('text', '#222b45')};
+            font-family: 'Microsoft YaHei UI', 'Segoe UI', sans-serif;
+            font-size: 9pt;
+        }}
+
+        QPushButton {{
+            background-color: {colors.get('button_bg', '#e3f2fd')};
+            color: {colors.get('button_text', '#1565c0')};
+            border: 1px solid {colors.get('button_border', '#90caf9')};
+            border-radius: 4px;
+            padding: 6px 12px;
+            min-height: 28px;
+        }}
+
+        QPushButton:hover {{
+            background-color: {colors.get('button_hover', '#90caf9')};
+        }}
+
+        QPushButton:pressed {{
+            background-color: {colors.get('button_pressed', '#64b5f6')};
+        }}
+
+        QGroupBox {{
+            border: 2px solid {colors.get('border', '#e0e0e0')};
+            border-radius: 6px;
+            margin-top: 12px;
+            padding-top: 12px;
+        }}
+
+        QGroupBox::title {{
+            subcontrol-origin: margin;
+            left: 8px;
+            padding: 0 4px;
+            color: {colors.get('highlight', '#1976d2')};
+        }}
+
+        QTableWidget {{
+            background-color: {colors.get('card', '#FFFFFF')};
+            border: 1px solid {colors.get('border', '#e0e0e0')};
+            gridline-color: {colors.get('chart_grid', '#e0e0e0')};
+        }}
+
+        QLineEdit, QTextEdit, QComboBox {{
+            background-color: {colors.get('card', '#FFFFFF')};
+            border: 1px solid {colors.get('border', '#e0e0e0')};
+            border-radius: 4px;
+            padding: 6px;
+            min-height: 28px;
+        }}
+
+        QTabWidget::pane {{
+            border: 1px solid {colors.get('border', '#e0e0e0')};
+            background-color: {colors.get('card', '#FFFFFF')};
+        }}
+
+        QTabBar::tab {{
+            background-color: {colors.get('sidebar_bg', '#f3f6fa')};
+            color: {colors.get('text', '#222b45')};
+            padding: 8px 16px;
+            border-top-left-radius: 4px;
+            border-top-right-radius: 4px;
+        }}
+
+        QTabBar::tab:selected {{
+            background-color: {colors.get('highlight', '#1976d2')};
+            color: #FFFFFF;
+        }}
+
+        QProgressBar {{
+            background-color: {colors.get('hover', '#F5F5F5')};
+            border: none;
+            border-radius: 4px;
+            text-align: center;
+        }}
+
+        QProgressBar::chunk {{
+            background-color: {colors.get('progress_chunk', '#4CAF50')};
+            border-radius: 4px;
+        }}
+
+        QScrollBar:vertical {{
+            background-color: {colors.get('hover', '#F5F5F5')};
+            width: 10px;
+            border-radius: 5px;
+        }}
+
+        QScrollBar::handle:vertical {{
+            background-color: {colors.get('secondary', '#6B7280')};
+            border-radius: 5px;
+            min-height: 20px;
+        }}
+
+        QMenu {{
+            background-color: {colors.get('card', '#FFFFFF')};
+            border: 1px solid {colors.get('border', '#e0e0e0')};
+            border-radius: 4px;
+        }}
+
+        QMenu::item:selected {{
+            background-color: {colors.get('highlight', '#1976d2')};
+            color: #FFFFFF;
+        }}
+
+        QDialog {{
+            background-color: {colors.get('dialog_bg', '#FFFFFF')};
+        }}
+        """
 
     def _scan_qss_themes(self):
         themes = {}

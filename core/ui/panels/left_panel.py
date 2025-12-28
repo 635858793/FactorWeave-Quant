@@ -1049,14 +1049,19 @@ class LeftPanel(BasePanel):
         """策略回测"""
         try:
             # 简化导入路径
-            from gui.dialogs.strategy_manager_dialog import StrategyManagerDialog
+            from gui.dialogs.enhanced_strategy_manager_dialog import EnhancedStrategyManagerDialog
 
             # 获取主窗口作为父窗口
             main_window = self.coordinator.get_main_window() if self.coordinator else None
 
             # 创建策略管理对话框，并切换到回测选项卡
-            dialog = StrategyManagerDialog(main_window, stock_code=stock_code)
-            dialog.tab_widget.setCurrentIndex(2)  # 切换到回测选项卡
+            dialog = EnhancedStrategyManagerDialog(main_window)
+            # 切换到回测选项卡
+            if hasattr(dialog, 'tab_widget'):
+                for i in range(dialog.tab_widget.count()):
+                    if '回测' in dialog.tab_widget.tabText(i):
+                        dialog.tab_widget.setCurrentIndex(i)
+                        break
 
             # 居中显示
             if self.coordinator:
@@ -1109,17 +1114,13 @@ class LeftPanel(BasePanel):
         """策略管理"""
         try:
             # 简化导入路径
-            from gui.dialogs.strategy_manager_dialog import StrategyManagerDialog
+            from gui.dialogs.enhanced_strategy_manager_dialog import EnhancedStrategyManagerDialog
 
             # 获取主窗口作为父窗口
             main_window = self.coordinator.get_main_window() if self.coordinator else None
 
-            # 创建策略管理对话框，传递必要的服务参数
-            dialog = StrategyManagerDialog(
-                main_window, 
-                asset_service=self.asset_service, 
-                data_manager=self.data_manager
-            )
+            # 创建策略管理对话框
+            dialog = EnhancedStrategyManagerDialog(main_window)
 
             # 居中显示
             if self.coordinator:

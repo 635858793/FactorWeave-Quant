@@ -96,6 +96,43 @@ class StrategyConfig:
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    # 分组和标签（从metadata中提取的便捷字段）
+    @property
+    def group(self) -> str:
+        return self.metadata.get('group', 'default')
+    
+    @property
+    def tags(self) -> List[str]:
+        return self.metadata.get('tags', [])
+
+
+@dataclass
+class StrategyGroup:
+    """策略分组"""
+    group_id: str
+    name: str
+    description: str = ""
+    color: str = "#3B82F6"  # 默认蓝色
+    icon: Optional[str] = None
+    created_at: datetime = field(default_factory=datetime.now)
+    is_builtin: bool = False
+
+
+@dataclass
+class StrategyTemplate:
+    """策略模板"""
+    template_id: str
+    name: str
+    description: str
+    plugin_type: str
+    default_parameters: Dict[str, Any]
+    parameter_descriptions: Dict[str, str] = field(default_factory=dict)
+    tags: List[str] = field(default_factory=list)
+    category: str = "general"
+    created_at: datetime = field(default_factory=datetime.now)
+    updated_at: datetime = field(default_factory=datetime.now)
+    is_builtin: bool = False
+    icon: Optional[str] = None
 
 
 @dataclass
@@ -180,6 +217,12 @@ class StrategyService(BaseService):
         # 性能缓存
         self._performance_cache: Dict[str, PerformanceMetrics] = {}
         
+        # 策略模板管理
+        self._strategy_templates: Dict[str, StrategyTemplate] = {}
+        
+        # 策略分组管理
+        self._strategy_groups: Dict[str, StrategyGroup] = {}
+        
         # 插件生命周期管理
         self._plugin_cleanup_interval = 300  # 插件清理间隔（秒）
         self._plugin_idle_timeout = 3600  # 插件空闲超时（秒）
@@ -194,6 +237,8 @@ class StrategyService(BaseService):
         # 初始化
         self._load_strategy_plugins()
         self._load_strategy_configs()
+        self._load_builtin_templates()
+        self._load_builtin_groups()
         
     def _update_concurrent_limits(self):
         """根据系统资源动态调整并发限制"""
@@ -1596,6 +1641,966 @@ class StrategyService(BaseService):
             'performance_cache_size': len(self._performance_cache),
             'last_update': datetime.now().isoformat()
         }
+
+    def get_performance_metrics(self) -> Dict[str, Any]:
+        """获取性能监控指标"""
+        try:
+            # 系统资源指标
+            cpu_usage = psutil.cpu_percent(interval=0.1)
+            mem_usage = psutil.virtual_memory().percent
+            available_mem_gb = psutil.virtual_memory().available / (1024 ** 3)
+            
+            # 任务执行统计
+            backtest_stats = self._calculate_task_statistics(self._backtest_tasks, BacktestStatus)
+            optimization_stats = self._calculate_task_statistics(self._optimization_tasks, OptimizationStatus)
+            
+            # 插件使用统计
+            plugin_stats = self._calculate_plugin_statistics()
+            
+            # 性能阈值检查
+            threshold_checks = self._check_performance_thresholds(cpu_usage, mem_usage, available_mem_gb)
+            
+            return {
+                'system_metrics': {
+                    'cpu_usage': cpu_usage,
+                    'memory_usage': mem_usage,
+                    'available_memory_gb': available_mem_gb,
+                    'cpu_count': os.cpu_count() or 4,
+                    'load_average': os.getloadavg() if hasattr(os, 'getloadavg') else None
+                },
+                'task_metrics': {
+                    'backtest': backtest_stats,
+                    'optimization': optimization_stats
+                },
+                'plugin_metrics': plugin_stats,
+                'concurrency_metrics': {
+                    'max_concurrent_backtests': self._max_concurrent_backtests,
+                    'max_concurrent_optimizations': self._max_concurrent_optimizations,
+                    'current_backtests': len(self._running_backtests),
+                    'current_optimizations': len(self._running_optimizations)
+                },
+                'cache_metrics': {
+                    'performance_cache_size': len(self._performance_cache),
+                    'plugin_info_cache_size': len(self._plugin_info_cache),
+                    'instance_pool_size': sum(len(pool) for pool in self._plugin_instance_pool.values())
+                },
+                'threshold_checks': threshold_checks,
+                'timestamp': datetime.now().isoformat()
+            }
+        except Exception as e:
+            logger.error(f"获取性能指标失败: {e}")
+            return {
+                'error': str(e),
+                'timestamp': datetime.now().isoformat()
+            }
+
+    def _calculate_task_statistics(self, tasks: Dict, status_enum) -> Dict[str, Any]:
+        """计算任务统计信息"""
+        try:
+            total = len(tasks)
+            if total == 0:
+                return {
+                    'total': 0,
+                    'by_status': {},
+                    'avg_duration_seconds': 0,
+                    'success_rate': 0
+                }
+            
+            # 按状态统计
+            by_status = {}
+            for status in status_enum:
+                count = sum(1 for task in tasks.values() if task.status == status)
+                if count > 0:
+                    by_status[status.value] = count
+            
+            # 计算平均执行时间
+            completed_tasks = [task for task in tasks.values() 
+                              if task.status == status_enum.COMPLETED 
+                              and task.started_at 
+                              and task.completed_at]
+            
+            avg_duration = 0
+            if completed_tasks:
+                durations = [(task.completed_at - task.started_at).total_seconds() 
+                           for task in completed_tasks]
+                avg_duration = sum(durations) / len(durations)
+            
+            # 计算成功率
+            success_count = len(completed_tasks)
+            failed_count = sum(1 for task in tasks.values() 
+                             if task.status == status_enum.FAILED)
+            success_rate = success_count / (success_count + failed_count) if (success_count + failed_count) > 0 else 0
+            
+            return {
+                'total': total,
+                'by_status': by_status,
+                'avg_duration_seconds': round(avg_duration, 2),
+                'success_rate': round(success_rate, 4)
+            }
+        except Exception as e:
+            logger.error(f"计算任务统计失败: {e}")
+            return {'error': str(e)}
+
+    def _calculate_plugin_statistics(self) -> Dict[str, Any]:
+        """计算插件统计信息"""
+        try:
+            plugin_stats = {
+                'total_plugins': len(self._strategy_plugins),
+                'by_status': {},
+                'by_type': {},
+                'total_usage_count': 0,
+                'total_error_count': 0,
+                'instance_pool_stats': {}
+            }
+            
+            # 按状态统计
+            for status in PluginStatus:
+                count = sum(1 for plugin in self._strategy_plugins.values() 
+                          if plugin.status == status)
+                if count > 0:
+                    plugin_stats['by_status'][status.value] = count
+            
+            # 按类型统计
+            for plugin_info in self._strategy_plugins.values():
+                plugin_type = plugin_info.plugin_type
+                if plugin_type not in plugin_stats['by_type']:
+                    plugin_stats['by_type'][plugin_type] = 0
+                plugin_stats['by_type'][plugin_type] += 1
+                plugin_stats['total_usage_count'] += plugin_info.usage_count
+                plugin_stats['total_error_count'] += plugin_info.error_count
+            
+            # 实例池统计
+            for plugin_type, pool in self._plugin_instance_pool.items():
+                plugin_stats['instance_pool_stats'][plugin_type] = {
+                    'pool_size': len(pool),
+                    'max_size': self._instance_pool_max_size
+                }
+            
+            return plugin_stats
+        except Exception as e:
+            logger.error(f"计算插件统计失败: {e}")
+            return {'error': str(e)}
+
+    def _check_performance_thresholds(self, cpu_usage: float, mem_usage: float, available_mem_gb: float) -> Dict[str, Any]:
+        """检查性能阈值"""
+        try:
+            warnings = []
+            alerts = []
+            
+            # CPU使用率检查
+            if cpu_usage > 90:
+                alerts.append({
+                    'type': 'cpu_usage',
+                    'severity': 'critical',
+                    'current_value': cpu_usage,
+                    'threshold': 90,
+                    'message': f'CPU使用率过高: {cpu_usage:.1f}%'
+                })
+            elif cpu_usage > 75:
+                warnings.append({
+                    'type': 'cpu_usage',
+                    'severity': 'warning',
+                    'current_value': cpu_usage,
+                    'threshold': 75,
+                    'message': f'CPU使用率较高: {cpu_usage:.1f}%'
+                })
+            
+            # 内存使用率检查
+            if mem_usage > 90:
+                alerts.append({
+                    'type': 'memory_usage',
+                    'severity': 'critical',
+                    'current_value': mem_usage,
+                    'threshold': 90,
+                    'message': f'内存使用率过高: {mem_usage:.1f}%'
+                })
+            elif mem_usage > 80:
+                warnings.append({
+                    'type': 'memory_usage',
+                    'severity': 'warning',
+                    'current_value': mem_usage,
+                    'threshold': 80,
+                    'message': f'内存使用率较高: {mem_usage:.1f}%'
+                })
+            
+            # 可用内存检查
+            if available_mem_gb < 1.0:
+                alerts.append({
+                    'type': 'available_memory',
+                    'severity': 'critical',
+                    'current_value': available_mem_gb,
+                    'threshold': 1.0,
+                    'message': f'可用内存不足: {available_mem_gb:.2f}GB'
+                })
+            elif available_mem_gb < 2.0:
+                warnings.append({
+                    'type': 'available_memory',
+                    'severity': 'warning',
+                    'current_value': available_mem_gb,
+                    'threshold': 2.0,
+                    'message': f'可用内存较低: {available_mem_gb:.2f}GB'
+                })
+            
+            # 任务队列检查
+            pending_backtests = sum(1 for task in self._backtest_tasks.values() 
+                                 if task.status == BacktestStatus.PENDING)
+            if pending_backtests > 10:
+                warnings.append({
+                    'type': 'pending_tasks',
+                    'severity': 'warning',
+                    'current_value': pending_backtests,
+                    'threshold': 10,
+                    'message': f'待处理回测任务过多: {pending_backtests}'
+                })
+            
+            # 插件错误率检查
+            total_usage = sum(plugin.usage_count for plugin in self._strategy_plugins.values())
+            total_errors = sum(plugin.error_count for plugin in self._strategy_plugins.values())
+            if total_usage > 0:
+                error_rate = total_errors / total_usage
+                if error_rate > 0.1:  # 错误率超过10%
+                    alerts.append({
+                        'type': 'plugin_error_rate',
+                        'severity': 'critical',
+                        'current_value': error_rate,
+                        'threshold': 0.1,
+                        'message': f'插件错误率过高: {error_rate*100:.1f}%'
+                    })
+                elif error_rate > 0.05:  # 错误率超过5%
+                    warnings.append({
+                        'type': 'plugin_error_rate',
+                        'severity': 'warning',
+                        'current_value': error_rate,
+                        'threshold': 0.05,
+                        'message': f'插件错误率较高: {error_rate*100:.1f}%'
+                    })
+            
+            return {
+                'status': 'healthy' if not alerts and not warnings else 'warning' if not alerts else 'critical',
+                'warnings_count': len(warnings),
+                'alerts_count': len(alerts),
+                'warnings': warnings,
+                'alerts': alerts
+            }
+        except Exception as e:
+            logger.error(f"检查性能阈值失败: {e}")
+            return {
+                'status': 'error',
+                'error': str(e)
+            }
+
+    def get_performance_report(self) -> Dict[str, Any]:
+        """获取性能报告"""
+        try:
+            metrics = self.get_performance_metrics()
+            
+            # 生成性能评分
+            system_score = self._calculate_system_score(metrics)
+            task_score = self._calculate_task_score(metrics)
+            plugin_score = self._calculate_plugin_score(metrics)
+            
+            overall_score = (system_score + task_score + plugin_score) / 3
+            
+            # 生成建议
+            recommendations = self._generate_performance_recommendations(metrics)
+            
+            return {
+                'overall_score': round(overall_score, 2),
+                'component_scores': {
+                    'system': round(system_score, 2),
+                    'tasks': round(task_score, 2),
+                    'plugins': round(plugin_score, 2)
+                },
+                'performance_grade': self._get_performance_grade(overall_score),
+                'metrics': metrics,
+                'recommendations': recommendations,
+                'report_time': datetime.now().isoformat()
+            }
+        except Exception as e:
+            logger.error(f"生成性能报告失败: {e}")
+            return {
+                'error': str(e),
+                'report_time': datetime.now().isoformat()
+            }
+
+    def _calculate_system_score(self, metrics: Dict[str, Any]) -> float:
+        """计算系统资源评分"""
+        try:
+            system_metrics = metrics.get('system_metrics', {})
+            cpu_usage = system_metrics.get('cpu_usage', 50)
+            mem_usage = system_metrics.get('memory_usage', 50)
+            available_mem = system_metrics.get('available_memory_gb', 8)
+            
+            # CPU评分（使用率越低越好）
+            cpu_score = max(0, 100 - cpu_usage)
+            
+            # 内存评分（使用率越低越好）
+            mem_score = max(0, 100 - mem_usage)
+            
+            # 可用内存评分（越多越好，8GB为满分）
+            mem_available_score = min(100, available_mem * 12.5)
+            
+            return (cpu_score + mem_score + mem_available_score) / 3
+        except Exception as e:
+            logger.error(f"计算系统评分失败: {e}")
+            return 50.0
+
+    def _calculate_task_score(self, metrics: Dict[str, Any]) -> float:
+        """计算任务执行评分"""
+        try:
+            task_metrics = metrics.get('task_metrics', {})
+            backtest_stats = task_metrics.get('backtest', {})
+            optimization_stats = task_metrics.get('optimization', {})
+            
+            # 成功率评分
+            backtest_success_rate = backtest_stats.get('success_rate', 0.9)
+            optimization_success_rate = optimization_stats.get('success_rate', 0.9)
+            success_score = (backtest_success_rate + optimization_success_rate) / 2 * 100
+            
+            # 待处理任务评分（越少越好）
+            pending_backtests = backtest_stats.get('by_status', {}).get('pending', 0)
+            pending_optimizations = optimization_stats.get('by_status', {}).get('pending', 0)
+            pending_penalty = min(30, (pending_backtests + pending_optimizations) * 3)
+            
+            return max(0, success_score - pending_penalty)
+        except Exception as e:
+            logger.error(f"计算任务评分失败: {e}")
+            return 50.0
+
+    def _calculate_plugin_score(self, metrics: Dict[str, Any]) -> float:
+        """计算插件健康度评分"""
+        try:
+            plugin_metrics = metrics.get('plugin_metrics', {})
+            total_errors = plugin_metrics.get('total_error_count', 0)
+            total_usage = plugin_metrics.get('total_usage_count', 1)
+            
+            # 错误率评分（错误率越低越好）
+            error_rate = total_errors / total_usage if total_usage > 0 else 0
+            error_score = max(0, 100 - error_rate * 1000)
+            
+            return error_score
+        except Exception as e:
+            logger.error(f"计算插件评分失败: {e}")
+            return 50.0
+
+    def _get_performance_grade(self, score: float) -> str:
+        """获取性能等级"""
+        if score >= 90:
+            return 'A+ (优秀)'
+        elif score >= 80:
+            return 'A (良好)'
+        elif score >= 70:
+            return 'B (中等)'
+        elif score >= 60:
+            return 'C (一般)'
+        else:
+            return 'D (需改进)'
+
+    def _generate_performance_recommendations(self, metrics: Dict[str, Any]) -> List[str]:
+        """生成性能优化建议"""
+        recommendations = []
+        
+        try:
+            threshold_checks = metrics.get('threshold_checks', {})
+            alerts = threshold_checks.get('alerts', [])
+            warnings = threshold_checks.get('warnings', [])
+            
+            # 处理告警
+            for alert in alerts:
+                alert_type = alert.get('type')
+                if alert_type == 'cpu_usage':
+                    recommendations.append("建议：减少并发回测任务数量，或升级CPU资源")
+                elif alert_type == 'memory_usage' or alert_type == 'available_memory':
+                    recommendations.append("建议：清理缓存，减少数据加载量，或增加内存")
+                elif alert_type == 'plugin_error_rate':
+                    recommendations.append("建议：检查插件实现，修复错误，或更换插件")
+            
+            # 处理警告
+            for warning in warnings:
+                warning_type = warning.get('type')
+                if warning_type == 'cpu_usage':
+                    recommendations.append("建议：监控CPU使用率，避免长时间高负载")
+                elif warning_type == 'memory_usage' or warning_type == 'available_memory':
+                    recommendations.append("建议：优化内存使用，定期清理无用数据")
+                elif warning_type == 'pending_tasks':
+                    recommendations.append("建议：增加并发处理能力，或优化任务调度")
+                elif warning_type == 'plugin_error_rate':
+                    recommendations.append("建议：检查插件日志，优化插件性能")
+            
+            # 系统资源建议
+            system_metrics = metrics.get('system_metrics', {})
+            cpu_usage = system_metrics.get('cpu_usage', 0)
+            mem_usage = system_metrics.get('memory_usage', 0)
+            
+            if cpu_usage < 30 and mem_usage < 40:
+                recommendations.append("系统资源充足，可以考虑增加并发任务数量")
+            
+            # 缓存建议
+            cache_metrics = metrics.get('cache_metrics', {})
+            if cache_metrics.get('performance_cache_size', 0) > 1000:
+                recommendations.append("建议：定期清理性能缓存，避免占用过多内存")
+            
+            if not recommendations:
+                recommendations.append("系统运行状态良好，无需特殊优化")
+            
+        except Exception as e:
+            logger.error(f"生成性能建议失败: {e}")
+            recommendations.append("无法生成性能建议")
+        
+        return recommendations
+
+    # ===========================================
+    # 策略模板管理
+    # ===========================================
+    
+    def _load_builtin_templates(self) -> None:
+        """加载内置策略模板"""
+        try:
+            # 定义内置模板
+            builtin_templates = [
+                StrategyTemplate(
+                    template_id="ma_crossover",
+                    name="MA交叉策略",
+                    description="基于移动平均线的经典交叉策略，适合趋势明显的市场",
+                    plugin_type="factorweave",
+                    default_parameters={
+                        "fast_period": 10,
+                        "slow_period": 20,
+                        "signal_period": 5
+                    },
+                    parameter_descriptions={
+                        "fast_period": "快速移动平均线周期",
+                        "slow_period": "慢速移动平均线周期",
+                        "signal_period": "信号平滑周期"
+                    },
+                    tags=["趋势", "经典", "适合新手"],
+                    category="trend",
+                    is_builtin=True
+                ),
+                StrategyTemplate(
+                    template_id="macd_strategy",
+                    name="MACD策略",
+                    description="基于MACD指标的动量策略，捕捉趋势转折点",
+                    plugin_type="factorweave",
+                    default_parameters={
+                        "fast_period": 12,
+                        "slow_period": 26,
+                        "signal_period": 9
+                    },
+                    parameter_descriptions={
+                        "fast_period": "快速EMA周期",
+                        "slow_period": "慢速EMA周期",
+                        "signal_period": "信号线周期"
+                    },
+                    tags=["动量", "经典", "趋势跟踪"],
+                    category="momentum",
+                    is_builtin=True
+                ),
+                StrategyTemplate(
+                    template_id="rsi_strategy",
+                    name="RSI策略",
+                    description="基于RSI指标的超买超卖策略，适合震荡市场",
+                    plugin_type="factorweave",
+                    default_parameters={
+                        "rsi_period": 14,
+                        "overbought": 70,
+                        "oversold": 30
+                    },
+                    parameter_descriptions={
+                        "rsi_period": "RSI计算周期",
+                        "overbought": "超买阈值",
+                        "oversold": "超卖阈值"
+                    },
+                    tags=["震荡", "反转", "风险控制"],
+                    category="reversion",
+                    is_builtin=True
+                ),
+                StrategyTemplate(
+                    template_id="vwap_reversion",
+                    name="VWAP均值回归策略",
+                    description="基于VWAP的均值回归策略，适合日内交易",
+                    plugin_type="vwap_reversion",
+                    default_parameters={
+                        "lookback_period": 20,
+                        "entry_threshold": 0.02,
+                        "exit_threshold": 0.01
+                    },
+                    parameter_descriptions={
+                        "lookback_period": "回望周期",
+                        "entry_threshold": "入场阈值（相对于VWAP的偏差）",
+                        "exit_threshold": "出场阈值"
+                    },
+                    tags=["日内", "均值回归", "高频"],
+                    category="intraday",
+                    is_builtin=True
+                ),
+                StrategyTemplate(
+                    template_id="adj_momentum",
+                    name="复权价格动量策略",
+                    description="基于复权价格的动量策略，捕捉强势股票",
+                    plugin_type="adj_momentum",
+                    default_parameters={
+                        "lookback_period": 20,
+                        "momentum_threshold": 0.05,
+                        "top_n": 10
+                    },
+                    parameter_descriptions={
+                        "lookback_period": "动量计算周期",
+                        "momentum_threshold": "动量阈值",
+                        "top_n": "选股数量"
+                    },
+                    tags=["动量", "选股", "趋势"],
+                    category="momentum",
+                    is_builtin=True
+                )
+            ]
+            
+            # 加载内置模板
+            for template in builtin_templates:
+                self._strategy_templates[template.template_id] = template
+            
+            logger.info(f"已加载 {len(builtin_templates)} 个内置策略模板")
+            
+        except Exception as e:
+            logger.error(f"加载内置策略模板失败: {e}")
+    
+    def get_all_templates(self) -> List[StrategyTemplate]:
+        """获取所有策略模板"""
+        return list(self._strategy_templates.values())
+    
+    def get_template(self, template_id: str) -> Optional[StrategyTemplate]:
+        """获取指定模板"""
+        return self._strategy_templates.get(template_id)
+    
+    def get_templates_by_category(self, category: str) -> List[StrategyTemplate]:
+        """按分类获取模板"""
+        return [t for t in self._strategy_templates.values() if t.category == category]
+    
+    def get_templates_by_tags(self, tags: List[str]) -> List[StrategyTemplate]:
+        """按标签获取模板"""
+        return [t for t in self._strategy_templates.values() 
+                if any(tag in t.tags for tag in tags)]
+    
+    def create_template(self, template: StrategyTemplate) -> bool:
+        """创建新模板"""
+        try:
+            if template.template_id in self._strategy_templates:
+                logger.warning(f"模板 {template.template_id} 已存在")
+                return False
+            
+            self._strategy_templates[template.template_id] = template
+            logger.info(f"创建策略模板: {template.name}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"创建策略模板失败: {e}")
+            return False
+    
+    def update_template(self, template_id: str, template: StrategyTemplate) -> bool:
+        """更新模板"""
+        try:
+            if template_id not in self._strategy_templates:
+                logger.warning(f"模板 {template_id} 不存在")
+                return False
+            
+            # 更新时间戳
+            template.updated_at = datetime.now()
+            self._strategy_templates[template_id] = template
+            logger.info(f"更新策略模板: {template.name}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"更新策略模板失败: {e}")
+            return False
+    
+    def delete_template(self, template_id: str) -> bool:
+        """删除模板"""
+        try:
+            if template_id not in self._strategy_templates:
+                logger.warning(f"模板 {template_id} 不存在")
+                return False
+            
+            template = self._strategy_templates[template_id]
+            if template.is_builtin:
+                logger.warning(f"不能删除内置模板: {template_id}")
+                return False
+            
+            del self._strategy_templates[template_id]
+            logger.info(f"删除策略模板: {template_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"删除策略模板失败: {e}")
+            return False
+    
+    def apply_template(self, template_id: str, strategy_id: str = None) -> Optional[StrategyConfig]:
+        """应用模板创建策略配置"""
+        try:
+            template = self.get_template(template_id)
+            if not template:
+                logger.warning(f"模板 {template_id} 不存在")
+                return None
+            
+            # 生成策略ID
+            if not strategy_id:
+                strategy_id = f"{template.template_id}_{int(datetime.now().timestamp())}"
+            
+            # 创建策略配置
+            config = StrategyConfig(
+                strategy_id=strategy_id,
+                plugin_type=template.plugin_type,
+                parameters=template.default_parameters.copy(),
+                enabled=True,
+                created_at=datetime.now(),
+                updated_at=datetime.now(),
+                metadata={
+                    "template_id": template.template_id,
+                    "template_name": template.name,
+                    "description": template.description,
+                    "category": template.category,
+                    "tags": template.tags
+                }
+            )
+            
+            logger.info(f"应用模板 {template.name} 创建策略: {strategy_id}")
+            return config
+            
+        except Exception as e:
+            logger.error(f"应用模板失败: {e}")
+            return None
+    
+    def export_template(self, template_id: str, file_path: str) -> bool:
+        """导出模板到文件"""
+        try:
+            template = self.get_template(template_id)
+            if not template:
+                logger.warning(f"模板 {template_id} 不存在")
+                return False
+            
+            # 转换为字典
+            template_dict = {
+                'template_id': template.template_id,
+                'name': template.name,
+                'description': template.description,
+                'plugin_type': template.plugin_type,
+                'default_parameters': template.default_parameters,
+                'parameter_descriptions': template.parameter_descriptions,
+                'tags': template.tags,
+                'category': template.category,
+                'is_builtin': template.is_builtin,
+                'exported_at': datetime.now().isoformat()
+            }
+            
+            # 保存到文件
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(template_dict, f, ensure_ascii=False, indent=2)
+            
+            logger.info(f"导出模板 {template.name} 到 {file_path}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"导出模板失败: {e}")
+            return False
+    
+    def import_template(self, file_path: str) -> Optional[StrategyTemplate]:
+        """从文件导入模板"""
+        try:
+            # 读取文件
+            with open(file_path, 'r', encoding='utf-8') as f:
+                template_dict = json.load(f)
+            
+            # 创建模板对象
+            template = StrategyTemplate(
+                template_id=template_dict.get('template_id', f"imported_{int(datetime.now().timestamp())}"),
+                name=template_dict.get('name', '未命名模板'),
+                description=template_dict.get('description', ''),
+                plugin_type=template_dict.get('plugin_type', 'factorweave'),
+                default_parameters=template_dict.get('default_parameters', {}),
+                parameter_descriptions=template_dict.get('parameter_descriptions', {}),
+                tags=template_dict.get('tags', []),
+                category=template_dict.get('category', 'general'),
+                is_builtin=False
+            )
+            
+            # 保存模板
+            if self.create_template(template):
+                logger.info(f"从 {file_path} 导入模板: {template.name}")
+                return template
+            else:
+                return None
+            
+        except Exception as e:
+            logger.error(f"导入模板失败: {e}")
+            return None
+
+    # ===========================================
+    # 策略分组和标签管理
+    # ===========================================
+    
+    def _load_builtin_groups(self) -> None:
+        """加载内置策略分组"""
+        try:
+            # 定义内置分组
+            builtin_groups = [
+                StrategyGroup(
+                    group_id="trend",
+                    name="趋势策略",
+                    description="基于趋势跟踪的策略",
+                    color="#3B82F6",  # 蓝色
+                    icon="📈",
+                    is_builtin=True
+                ),
+                StrategyGroup(
+                    group_id="momentum",
+                    name="动量策略",
+                    description="基于价格动量的策略",
+                    color="#8B5CF6",  # 紫色
+                    icon="🚀",
+                    is_builtin=True
+                ),
+                StrategyGroup(
+                    group_id="reversion",
+                    name="均值回归策略",
+                    description="基于均值回归的策略",
+                    color="#10B981",  # 绿色
+                    icon="🔄",
+                    is_builtin=True
+                ),
+                StrategyGroup(
+                    group_id="intraday",
+                    name="日内策略",
+                    description="适合日内交易的策略",
+                    color="#F59E0B",  # 橙色
+                    icon="⏱️",
+                    is_builtin=True
+                ),
+                StrategyGroup(
+                    group_id="custom",
+                    name="自定义策略",
+                    description="用户自定义的策略",
+                    color="#6B7280",  # 灰色
+                    icon="⚙️",
+                    is_builtin=True
+                ),
+                StrategyGroup(
+                    group_id="favorite",
+                    name="收藏策略",
+                    description="用户收藏的策略",
+                    color="#EF4444",  # 红色
+                    icon="⭐",
+                    is_builtin=True
+                )
+            ]
+            
+            # 加载内置分组
+            for group in builtin_groups:
+                self._strategy_groups[group.group_id] = group
+            
+            logger.info(f"已加载 {len(builtin_groups)} 个内置策略分组")
+            
+        except Exception as e:
+            logger.error(f"加载内置策略分组失败: {e}")
+    
+    def get_all_groups(self) -> List[StrategyGroup]:
+        """获取所有策略分组"""
+        return list(self._strategy_groups.values())
+    
+    def get_group(self, group_id: str) -> Optional[StrategyGroup]:
+        """获取指定分组"""
+        return self._strategy_groups.get(group_id)
+    
+    def create_group(self, group: StrategyGroup) -> bool:
+        """创建新分组"""
+        try:
+            if group.group_id in self._strategy_groups:
+                logger.warning(f"分组 {group.group_id} 已存在")
+                return False
+            
+            self._strategy_groups[group.group_id] = group
+            logger.info(f"创建策略分组: {group.name}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"创建策略分组失败: {e}")
+            return False
+    
+    def update_group(self, group_id: str, group: StrategyGroup) -> bool:
+        """更新分组"""
+        try:
+            if group_id not in self._strategy_groups:
+                logger.warning(f"分组 {group_id} 不存在")
+                return False
+            
+            existing_group = self._strategy_groups[group_id]
+            if existing_group.is_builtin:
+                logger.warning(f"不能修改内置分组: {group_id}")
+                return False
+            
+            self._strategy_groups[group_id] = group
+            logger.info(f"更新策略分组: {group.name}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"更新策略分组失败: {e}")
+            return False
+    
+    def delete_group(self, group_id: str) -> bool:
+        """删除分组"""
+        try:
+            if group_id not in self._strategy_groups:
+                logger.warning(f"分组 {group_id} 不存在")
+                return False
+            
+            group = self._strategy_groups[group_id]
+            if group.is_builtin:
+                logger.warning(f"不能删除内置分组: {group_id}")
+                return False
+            
+            # 将该分组下的策略移到默认分组
+            for strategy_id, config in self._strategy_configs.items():
+                if config.group == group_id:
+                    config.metadata['group'] = 'default'
+            
+            del self._strategy_groups[group_id]
+            logger.info(f"删除策略分组: {group_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"删除策略分组失败: {e}")
+            return False
+    
+    def assign_strategy_to_group(self, strategy_id: str, group_id: str) -> bool:
+        """将策略分配到分组"""
+        try:
+            if strategy_id not in self._strategy_configs:
+                logger.warning(f"策略 {strategy_id} 不存在")
+                return False
+            
+            if group_id not in self._strategy_groups:
+                logger.warning(f"分组 {group_id} 不存在")
+                return False
+            
+            self._strategy_configs[strategy_id].metadata['group'] = group_id
+            logger.info(f"将策略 {strategy_id} 分配到分组 {group_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"分配策略到分组失败: {e}")
+            return False
+    
+    def get_strategies_by_group(self, group_id: str) -> List[StrategyConfig]:
+        """获取指定分组下的所有策略"""
+        return [config for config in self._strategy_configs.values() 
+                if config.group == group_id]
+    
+    def add_strategy_tags(self, strategy_id: str, tags: List[str]) -> bool:
+        """为策略添加标签"""
+        try:
+            if strategy_id not in self._strategy_configs:
+                logger.warning(f"策略 {strategy_id} 不存在")
+                return False
+            
+            current_tags = self._strategy_configs[strategy_id].tags
+            # 合并标签，去重
+            new_tags = list(set(current_tags + tags))
+            self._strategy_configs[strategy_id].metadata['tags'] = new_tags
+            
+            logger.info(f"为策略 {strategy_id} 添加标签: {tags}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"添加策略标签失败: {e}")
+            return False
+    
+    def remove_strategy_tags(self, strategy_id: str, tags: List[str]) -> bool:
+        """从策略移除标签"""
+        try:
+            if strategy_id not in self._strategy_configs:
+                logger.warning(f"策略 {strategy_id} 不存在")
+                return False
+            
+            current_tags = self._strategy_configs[strategy_id].tags
+            # 移除指定标签
+            new_tags = [tag for tag in current_tags if tag not in tags]
+            self._strategy_configs[strategy_id].metadata['tags'] = new_tags
+            
+            logger.info(f"从策略 {strategy_id} 移除标签: {tags}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"移除策略标签失败: {e}")
+            return False
+    
+    def get_strategies_by_tags(self, tags: List[str], match_all: bool = False) -> List[StrategyConfig]:
+        """按标签获取策略
+        
+        Args:
+            tags: 标签列表
+            match_all: True表示匹配所有标签，False表示匹配任一标签
+        """
+        if match_all:
+            # 匹配所有标签
+            return [config for config in self._strategy_configs.values()
+                    if all(tag in config.tags for tag in tags)]
+        else:
+            # 匹配任一标签
+            return [config for config in self._strategy_configs.values()
+                    if any(tag in config.tags for tag in tags)]
+    
+    def get_all_tags(self) -> List[str]:
+        """获取所有使用过的标签"""
+        all_tags = set()
+        for config in self._strategy_configs.values():
+            all_tags.update(config.tags)
+        return sorted(list(all_tags))
+    
+    def get_tag_statistics(self) -> Dict[str, int]:
+        """获取标签使用统计"""
+        tag_stats = {}
+        for config in self._strategy_configs.values():
+            for tag in config.tags:
+                if tag not in tag_stats:
+                    tag_stats[tag] = 0
+                tag_stats[tag] += 1
+        return tag_stats
+    
+    def batch_update_strategy_group(self, strategy_ids: List[str], group_id: str) -> int:
+        """批量更新策略分组"""
+        try:
+            if group_id not in self._strategy_groups:
+                logger.warning(f"分组 {group_id} 不存在")
+                return 0
+            
+            updated_count = 0
+            for strategy_id in strategy_ids:
+                if strategy_id in self._strategy_configs:
+                    self._strategy_configs[strategy_id].metadata['group'] = group_id
+                    updated_count += 1
+            
+            logger.info(f"批量更新 {updated_count} 个策略的分组为 {group_id}")
+            return updated_count
+            
+        except Exception as e:
+            logger.error(f"批量更新策略分组失败: {e}")
+            return 0
+    
+    def batch_add_strategy_tags(self, strategy_ids: List[str], tags: List[str]) -> int:
+        """批量为策略添加标签"""
+        try:
+            updated_count = 0
+            for strategy_id in strategy_ids:
+                if strategy_id in self._strategy_configs:
+                    current_tags = self._strategy_configs[strategy_id].tags
+                    new_tags = list(set(current_tags + tags))
+                    self._strategy_configs[strategy_id].metadata['tags'] = new_tags
+                    updated_count += 1
+            
+            logger.info(f"批量为 {updated_count} 个策略添加标签: {tags}")
+            return updated_count
+            
+        except Exception as e:
+            logger.error(f"批量添加策略标签失败: {e}")
+            return 0
 
     def _do_dispose(self) -> None:
         """清理资源"""
