@@ -1,0 +1,629 @@
+QFrame {
+  background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0.960396, y2:0.949, stop:0 rgba(88, 245, 227, 255), stop:0.0940594 rgba(132, 246, 239, 255), stop:0.143564 rgba(130, 246, 233, 255), stop:0.222772 rgba(158, 249, 234, 255), stop:0.25 rgba(144, 248, 248, 255), stop:0.292079 rgba(173, 251, 252, 255), stop:0.326733 rgba(156, 248, 241, 255), stop:0.475248 rgba(158, 230, 226, 255), stop:0.554455 rgba(135, 251, 242, 255), stop:0.628713 rgba(139, 226, 226, 255), stop:0.805 rgba(150, 245, 242, 255), stop:0.866337 rgba(186, 254, 243, 255), stop:0.915842 rgba(188, 254, 250, 255), stop:1 rgba(190, 255, 248, 255));
+   color: rgb(0, 0, 0);
+   font: 75 11pt "Bitstream Charter";
+
+}
+
+QMainWindow{
+    background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0.960396, y2:0.949, stop:0 rgba(88, 245, 227, 255), stop:0.0940594 rgba(132, 246, 239, 255), stop:0.143564 rgba(130, 246, 233, 255), stop:0.222772 rgba(158, 249, 234, 255), stop:0.25 rgba(144, 248, 248, 255), stop:0.292079 rgba(173, 251, 252, 255), stop:0.326733 rgba(156, 248, 241, 255), stop:0.475248 rgba(158, 230, 226, 255), stop:0.554455 rgba(135, 251, 242, 255), stop:0.628713 rgba(139, 226, 226, 255), stop:0.805 rgba(150, 245, 242, 255), stop:0.866337 rgba(186, 254, 243, 255), stop:0.915842 rgba(188, 254, 250, 255), stop:1 rgba(190, 255, 248, 255));
+   color: rgb(0, 0, 0);
+   font: 75 11pt "Bitstream Charter";
+   
+}
+
+QWidget{
+    background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0.960396, y2:0.949, stop:0 rgba(88, 245, 227, 255), stop:0.0940594 rgba(132, 246, 239, 255), stop:0.143564 rgba(130, 246, 233, 255), stop:0.222772 rgba(158, 249, 234, 255), stop:0.25 rgba(144, 248, 248, 255), stop:0.292079 rgba(173, 251, 252, 255), stop:0.326733 rgba(156, 248, 241, 255), stop:0.475248 rgba(158, 230, 226, 255), stop:0.554455 rgba(135, 251, 242, 255), stop:0.628713 rgba(139, 226, 226, 255), stop:0.805 rgba(150, 245, 242, 255), stop:0.866337 rgba(186, 254, 243, 255), stop:0.915842 rgba(188, 254, 250, 255), stop:1 rgba(190, 255, 248, 255));
+   color: rgb(0, 0, 0);
+   font: 75 11pt "Bitstream Charter";
+}
+
+QMenu{
+    color: rgb(0, 0, 0);
+    font: 75 11pt "Bitstream Charter";
+background-color: qconicalgradient(cx:0.5, cy:0.5, angle:0, stop:0 rgba(35, 40, 3, 255), stop:0.16 rgba(136, 106, 22, 255), stop:0.225 rgba(166, 140, 41, 255), stop:0.285 rgba(204, 181, 74, 255), stop:0.345 rgba(235, 219, 102, 255), stop:0.415 rgba(245, 236, 112, 255), stop:0.52 rgba(209, 190, 76, 255), stop:0.57 rgba(187, 156, 51, 255), stop:0.635 rgba(168, 142, 42, 255), stop:0.695 rgba(202, 174, 68, 255), stop:0.75 rgba(218, 202, 86, 255), stop:0.815 rgba(208, 187, 73, 255), stop:0.88 rgba(187, 156, 51, 255), stop:0.935 rgba(137, 108, 26, 255), stop:1 rgba(35, 40, 3, 255));
+    border-width: 2px;
+    border-color: rgb(255, 255, 255);
+    border-style: solid;
+    border-radius: 8;
+    padding: 5px;
+    
+}
+
+
+QTreeView{
+    background-color: rgb(255, 252, 144);
+    border-width: 2px;
+    border-color: rgb(255, 255, 255);
+    border-style: solid;
+    border-radius: 10;
+   color: rgb(0, 0, 0);
+   font: 75 11pt "Bitstream Charter";
+}
+
+
+QPushButton {
+    color: rgb(0, 0, 0);
+    font: 75 11pt "Bitstream Charter";
+    border-width: 2px;
+    background-color: rgb(170, 170, 0);
+    border-style: solid;
+    border-radius: 10;
+    padding: 3px;
+    min-width: 9ex;
+    min-height: 25px;
+}
+
+QPushButton:hover {
+
+    padding-left: 5px;
+    padding-top: 5px;
+}
+
+QPushButton:pressed {
+    color:white;
+
+}
+
+/**********对话框按钮组**********/
+QDialogButtonBox {
+    background: rgb(170, 170, 0);
+    border: none;
+}
+QDialogButtonBox QPushButton {
+    color: rgb(0, 0, 0);
+    font: 75 11pt "Bitstream Charter";
+    border-width: 2px;
+    background-color: rgb(170, 170, 0);
+    border-style: solid;
+    border-radius: 10;
+    padding: 3px;
+    min-width: 9ex;
+    min-height: 25px;
+}
+QDialogButtonBox QPushButton:hover {
+    color: rgb(0, 0, 0);
+    font: 75 11pt "Bitstream Charter";
+    border-width: 2px;
+    background-color: rgb(190, 190, 0);
+    border-style: solid;
+    border-radius: 10;
+    padding: 3px;
+}
+QDialogButtonBox QPushButton:pressed {
+    color: rgb(0, 0, 0);
+    font: 75 11pt "Bitstream Charter";
+    border-width: 2px;
+    background-color: rgb(150, 150, 0);
+    border-style: solid;
+    border-radius: 10;
+    padding: 3px;
+}
+QDialogButtonBox QPushButton:disabled {
+    color: rgb(0, 0, 0);
+    font: 75 11pt "Bitstream Charter";
+    border-width: 2px;
+    background-color: rgb(130, 130, 0);
+    border-style: solid;
+    border-radius: 10;
+    padding: 3px;
+}
+QDialogButtonBox QPushButton:default {
+    color: rgb(0, 0, 0);
+    font: 75 11pt "Bitstream Charter";
+    border-width: 2px;
+    background-color: rgb(170, 170, 0);
+    border-style: solid;
+    border-radius: 10;
+    padding: 3px;
+    border-color: rgb(100, 100, 0);
+}
+
+
+QLabel {
+   color: rgb(0, 0, 0);
+   font: 75 11pt "Bitstream Charter";
+}
+
+QLineEdit{
+   color: rgb(0, 0, 0);
+   font: 75 11pt "Bitstream Charter";   
+   background-color: rgb(255, 252, 144);
+    border-width: 2px;
+    border-color: rgb(255, 255, 255);
+    border-style: solid;
+    border-radius: 5;
+    padding: 3px;
+}
+
+
+QComboBox{
+    color: rgb(0, 0, 0);
+    font: 75 11pt "Bitstream Charter";
+    border-width: 2px;
+    background-color: rgb(170, 170, 0);
+    border-color: rgb(255, 255, 255);
+    border-style: solid;
+    border-radius: 5;
+}
+QComboBox:hover{
+
+}
+
+QDoubleSpinBox {
+    color: rgb(0, 0, 0);
+    font: 75 11pt "Bitstream Charter";
+    border-width: 2px;
+    background-color: rgb(170, 170, 0);
+    border-color: rgb(255, 255, 255);
+    border-style: solid;
+    border-radius: 5;
+
+}
+
+
+QCheckBox{
+    color: rgb(0, 0, 0);
+    font: 75 11pt "Bitstream Charter";
+    border-width: 2px;
+    background-color: rgb(170, 170, 0);
+    border-color: rgb(255, 255, 255);
+    border-style: solid;
+    border-radius: 5;
+}
+QCheckBox:hover{
+    color:white;
+}
+QCheckBox:checked{
+
+}
+
+
+
+QRadioButton{
+    color: rgb(0, 0, 0);
+    font: 75 11pt "Bitstream Charter";
+    border-width: 2px;
+    background-color: rgb(170, 170, 0);
+    border-color: rgb(255, 255, 255);
+    border-style: solid;
+    border-radius: 5;
+}
+QRadioButton:checked {
+
+}
+QRadioButton:hover {
+    color:white;
+}
+
+/**********菜单栏**********/
+QMenuBar {
+        background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1, stop:0 rgba(200, 180, 50, 255), stop:1 rgba(170, 150, 0, 255));
+        color: rgb(0, 0, 0);
+        font: 75 11pt "Bitstream Charter";
+        padding: 5px;
+}
+QMenuBar::item {
+        padding: 5px 10px;
+        background: transparent;
+        border-radius: 4px;
+}
+QMenuBar::item:selected {
+        background-color: rgb(200, 180, 50);
+        color: rgb(0, 0, 0);
+}
+QMenuBar::item:pressed {
+        background-color: rgb(180, 160, 30);
+}
+
+/**********状态栏**********/
+QStatusBar {
+        background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1, stop:0 rgba(200, 180, 50, 255), stop:1 rgba(170, 150, 0, 255));
+        color: rgb(0, 0, 0);
+}
+QStatusBar::item {
+        border: none;
+        border-right: 1px solid rgb(150, 130, 30);
+}
+
+/**********滑块-水平**********/
+QSlider::groove:horizontal {
+        height: 10px;
+        background: rgb(200, 190, 100);
+        border-radius: 5px;
+}
+QSlider::handle:horizontal {
+        width: 22px;
+        height: 22px;
+        background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 rgb(255, 220, 50), stop: 1 rgb(200, 170, 0));
+        border-radius: 11px;
+        margin: -6px 0;
+}
+QSlider::handle:horizontal:hover {
+        background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 rgb(255, 235, 80), stop: 1 rgb(220, 190, 20));
+}
+QSlider::add-page:horizontal {
+        background: rgb(200, 180, 50);
+        border-radius: 5px;
+}
+QSlider::sub-page:horizontal {
+        background: rgb(180, 160, 40);
+        border-radius: 5px;
+}
+
+/**********滑块-垂直**********/
+QSlider::groove:vertical {
+        width: 10px;
+        background: rgb(200, 190, 100);
+        border-radius: 5px;
+}
+QSlider::handle:vertical {
+        width: 22px;
+        height: 22px;
+        background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 rgb(255, 220, 50), stop: 1 rgb(200, 170, 0));
+        border-radius: 11px;
+        margin: 0 -6px;
+}
+QSlider::handle:vertical:hover {
+        background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 rgb(255, 235, 80), stop: 1 rgb(220, 190, 20));
+}
+QSlider::add-page:vertical {
+        background: rgb(200, 180, 50);
+        border-radius: 5px;
+}
+QSlider::sub-page:vertical {
+        background: rgb(180, 160, 40);
+        border-radius: 5px;
+}
+
+/**********进度条**********/
+QProgressBar {
+        border: 2px solid rgb(150, 130, 30);
+        border-radius: 5px;
+        text-align: center;
+        color: rgb(0, 0, 0);
+        background-color: rgb(255, 252, 144);
+}
+QProgressBar::chunk {
+        background-color: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 0, stop: 0 rgb(255, 220, 50), stop: 1 rgb(200, 170, 0));
+        border-radius: 3px;
+}
+
+/**********标签页**********/
+QTabWidget::pane {
+        border: 2px solid rgb(150, 130, 30);
+        background: rgb(255, 252, 144);
+        border-top: 3px solid rgb(200, 170, 0);
+}
+QTabBar::tab {
+        background: rgb(200, 190, 100);
+        color: rgb(0, 0, 0);
+        padding: 8px 15px;
+        border-top-left-radius: 4px;
+        border-top-right-radius: 4px;
+        font: 75 11pt "Bitstream Charter";
+}
+QTabBar::tab:selected {
+        background: rgb(255, 252, 144);
+        color: rgb(0, 0, 0);
+        border-top: 3px solid rgb(200, 170, 0);
+}
+QTabBar::tab:hover:!selected {
+        background: rgb(220, 210, 120);
+}
+
+/**********表头**********/
+QHeaderView {
+        background-color: rgb(200, 180, 50);
+        border: 1px solid rgb(150, 130, 30);
+}
+QHeaderView::section {
+        background: rgb(200, 180, 50);
+        color: rgb(0, 0, 0);
+        padding: 5px;
+        border: 1px solid rgb(150, 130, 30);
+        font: 75 11pt "Bitstream Charter";
+}
+QHeaderView::section:hover {
+        background: rgb(220, 200, 70);
+}
+
+/**********表格视图**********/
+QTableView {
+        gridline-color: rgb(150, 130, 30);
+        background: rgb(255, 252, 144);
+}
+QTableView::item {
+        color: rgb(0, 0, 0);
+        background: rgb(255, 250, 160);
+        border: 1px solid rgb(180, 160, 40);
+}
+QTableView::item:selected {
+        background: rgb(200, 180, 50);
+}
+
+/**********列表控件**********/
+QListWidget {
+        background: rgb(255, 252, 144);
+        border: 2px solid rgb(150, 130, 30);
+        border-radius: 5px;
+}
+QListWidget::item {
+        color: rgb(0, 0, 0);
+        background: rgb(255, 250, 160);
+        padding: 5px;
+        border: 1px solid rgb(180, 160, 40);
+}
+QListWidget::item:selected {
+        background: rgb(200, 180, 50);
+        color: rgb(0, 0, 0);
+}
+
+/**********滚动条**********/
+QScrollBar:horizontal {
+        height: 14px;
+        background: rgb(200, 190, 100);
+}
+QScrollBar::handle:horizontal {
+        background: rgb(170, 150, 0);
+        border-radius: 6px;
+        min-width: 30px;
+}
+QScrollBar::handle:horizontal:hover {
+        background: rgb(200, 180, 50);
+}
+QScrollBar:vertical {
+        width: 14px;
+        background: rgb(200, 190, 100);
+}
+QScrollBar::handle:vertical {
+        background: rgb(170, 150, 0);
+        border-radius: 6px;
+        min-height: 30px;
+}
+QScrollBar::handle:vertical:hover {
+        background: rgb(200, 180, 50);
+}
+
+/**********微调框**********/
+QSpinBox {
+        border: 2px solid rgb(150, 130, 30);
+        border-radius: 5px;
+        padding: 3px 5px;
+        background: rgb(255, 252, 144);
+        color: rgb(0, 0, 0);
+        font: 75 11pt "Bitstream Charter";
+}
+QSpinBox::up-button {
+        width: 18px;
+        height: 12px;
+        border-top-right-radius: 3px;
+        border-left: 1px solid rgb(150, 130, 30);
+        background: rgb(200, 180, 50);
+}
+QSpinBox::down-button {
+        width: 18px;
+        height: 12px;
+        border-bottom-right-radius: 3px;
+        border-left: 1px solid rgb(150, 130, 30);
+        background: rgb(200, 180, 50);
+}
+
+/**********文本编辑框**********/
+QTextEdit {
+        border: 2px solid rgb(150, 130, 30);
+        border-radius: 5px;
+        color: rgb(0, 0, 0);
+        background: rgb(255, 252, 144);
+        font: 75 11pt "Bitstream Charter";
+}
+
+QPlainTextEdit {
+        border: 2px solid rgb(150, 130, 30);
+        border-radius: 5px;
+        color: rgb(0, 0, 0);
+        background: rgb(255, 252, 144);
+        font: 75 11pt "Bitstream Charter";
+}
+
+/**********文本浏览器**********/
+QTextBrowser {
+        border: 2px solid rgb(150, 130, 30);
+        border-radius: 5px;
+        color: rgb(0, 0, 0);
+        background: rgb(255, 252, 144);
+        font: 75 11pt "Bitstream Charter";
+}
+
+/**********分组框**********/
+QGroupBox {
+        border: 2px solid rgb(150, 130, 30);
+        border-radius: 5px;
+        margin-top: 15px;
+        padding-top: 10px;
+        color: rgb(0, 0, 0);
+        font: 75 bold 12pt "Bitstream Charter";
+}
+QGroupBox::title {
+        subcontrol-origin: margin;
+        left: 10px;
+        color: rgb(100, 90, 20);
+}
+
+/**********工具栏**********/
+QToolBar {
+        background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 rgb(220, 200, 60), stop: 1 rgb(170, 150, 0));
+        border: 1px solid rgb(150, 130, 30);
+        spacing: 5px;
+        padding: 3px;
+}
+QToolBar::separator {
+        width: 1px;
+        background: rgb(150, 130, 30);
+}
+QToolBar::handle {
+        background: rgb(150, 130, 30);
+}
+
+/**********停靠窗口**********/
+QDockWidget {
+        border: 2px solid rgb(150, 130, 30);
+        background: rgb(255, 252, 144);
+}
+QDockWidget::title {
+        background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 rgb(220, 200, 60), stop: 1 rgb(170, 150, 0));
+        padding: 5px 10px;
+        color: rgb(0, 0, 0);
+}
+QDockWidget::close-button, QDockWidget::float-button {
+        background: transparent;
+        border: none;
+}
+QDockWidget::separator {
+        background: rgb(150, 130, 30);
+}
+
+/**********堆叠窗口**********/
+QStackedWidget {
+        background: rgb(255, 252, 144);
+}
+
+/**********拨盘**********/
+QDial {
+        background: rgb(200, 190, 100);
+}
+QDial::groove {
+        background: rgb(170, 150, 0);
+        border-radius: 45px;
+}
+QDial::handle {
+        width: 24px;
+        height: 24px;
+        background: rgb(255, 220, 50);
+        border-radius: 12px;
+}
+
+/**********LCD数字显示**********/
+QLCDNumber {
+        background: rgb(100, 90, 20);
+        color: rgb(255, 220, 50);
+        border: 2px solid rgb(150, 130, 30);
+}
+
+/**********字体选择框**********/
+QFontComboBox {
+        border: 2px solid rgb(150, 130, 30);
+        border-radius: 5px;
+        padding: 3px;
+        background: rgb(200, 180, 50);
+        color: rgb(0, 0, 0);
+        font: 75 11pt "Bitstream Charter";
+}
+QFontComboBox::drop-down {
+        width: 20px;
+        background: transparent;
+}
+QFontComboBox QAbstractItemView {
+        background: rgb(255, 252, 144);
+        color: rgb(0, 0, 0);
+}
+QFontComboBox QAbstractItemView::item:selected {
+        background: rgb(200, 180, 50);
+}
+
+/**********日期时间编辑框**********/
+QDateEdit, QTimeEdit {
+        border: 2px solid rgb(150, 130, 30);
+        border-radius: 5px;
+        padding: 3px 5px;
+        background: rgb(255, 252, 144);
+        color: rgb(0, 0, 0);
+        font: 75 11pt "Bitstream Charter";
+}
+QDateEdit::drop-down, QTimeEdit::drop-down {
+        width: 20px;
+        background: transparent;
+}
+
+/**********日历控件**********/
+QCalendarWidget QAbstractItemView {
+        background: rgb(255, 252, 144);
+        color: rgb(0, 0, 0);
+        selection-background-color: rgb(200, 180, 50);
+        selection-color: rgb(0, 0, 0);
+        border: 2px solid rgb(150, 130, 30);
+}
+
+/**********工具提示**********/
+QToolTip {
+        border: 2px solid rgb(150, 130, 30);
+        background: rgb(255, 252, 144);
+        color: rgb(0, 0, 0);
+        padding: 5px;
+        border-radius: 4px;
+}
+
+/**********框架扩展**********/
+QFrame#infoFrame {
+        border: 2px solid rgb(150, 130, 30);
+        background: rgb(255, 250, 160);
+        border-radius: 5px;
+}
+QFrame[frameShape="4"] {
+        background: rgb(150, 130, 30);
+        max-height: 2px;
+}
+QFrame[frameShape="5"] {
+        background: rgb(150, 130, 30);
+        max-width: 2px;
+}
+
+/**********分割器**********/
+QSplitter::handle {
+        background: rgb(150, 130, 30);
+}
+QSplitter::handle:horizontal {
+        width: 6px;
+}
+QSplitter::handle:vertical {
+        height: 6px;
+}
+QSplitter::handle:hover {
+        background: rgb(200, 180, 50);
+}
+
+/**********进度指示器**********/
+QProgressIndicator {
+        qproperty-color: rgb(200, 170, 0);
+}
+
+/**********分页控件**********/
+QPushButton#pageButton {
+        min-width: 30px;
+        padding: 5px 10px;
+}
+QPushButton#pageButton:checked {
+        background: rgb(200, 170, 0);
+        color: rgb(0, 0, 0);
+}
+
+/**********滚动区域**********/
+QScrollArea {
+        border: 2px solid rgb(150, 130, 30);
+        background: rgb(255, 252, 144);
+}
+
+/**********主窗口扩展**********/
+QMainWindow::separator {
+        background: rgb(150, 130, 30);
+        width: 4px;
+        height: 4px;
+}
+QMainWindow::separator:hover {
+        background: rgb(200, 180, 50);
+}
+
+
+
+
+

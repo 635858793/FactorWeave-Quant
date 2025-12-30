@@ -33,7 +33,7 @@ from ..real_data_provider import RealDataProvider
 # AI和智能优化
 from ..services.ai_prediction_service import AIPredictionService, PredictionType
 from ..services.deep_analysis_service import DeepAnalysisService, PerformanceMetric, AnomalyInfo
-from optimization.auto_tuner import AutoTuner, TuningTask, OptimizationConfig
+from optimization.auto_tuner import AlgorithmAutoTuner, TuningTask, OptimizationConfig
 
 # 性能和监控
 from ..performance.factorweave_performance_integration import FactorWeavePerformanceIntegrator
@@ -362,7 +362,7 @@ class UnifiedDataImportEngine(QObject):
                 self._ai_service_initialized = True
 
                 # 自动调优系统
-                self.auto_tuner = AutoTuner()
+                self.auto_tuner = AlgorithmAutoTuner()
 
                 # AI优化统计
                 self._ai_stats = {

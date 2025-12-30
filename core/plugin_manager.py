@@ -326,6 +326,32 @@ class PluginManager(QObject):
                 self.plugin_instances[plugin_name] = virtual_instance
                 logger.debug(f" 创建虚拟插件实例: {plugin_name}")
                 return True
+            
+            # 对于指标插件，创建虚拟实例（如果加载真实实例失败）
+            if 'indicators' in plugin_name:
+                # 创建一个简单的指标插件实例对象
+                class VirtualIndicatorPlugin:
+                    def __init__(self, name, info):
+                        self.name = name
+                        self.info = info
+                        self.enabled = True
+
+                    def get_name(self):
+                        return self.name
+
+                    def get_info(self):
+                        return self.info
+
+                    def get_supported_indicators(self):
+                        return []
+
+                    def calculate_indicator(self, *args, **kwargs):
+                        return None
+
+                virtual_instance = VirtualIndicatorPlugin(plugin_name, plugin_info)
+                self.plugin_instances[plugin_name] = virtual_instance
+                logger.debug(f" 创建虚拟指标插件实例: {plugin_name}")
+                return True
 
             # 对于其他插件类型，可以添加更多的加载逻辑
             # 这里暂时创建一个基本的插件实例
@@ -338,15 +364,16 @@ class PluginManager(QObject):
 
     def _should_load_real_plugin_instance(self, plugin_name: str) -> bool:
         """判断是否应该加载真实的插件实例"""
-        # 数据源插件需要加载真实实例
+        # 数据源插件和指标插件需要加载真实实例
         data_source_keywords = [
             'akshare', 'wind', 'tushare', 'yahoo', 'bond', 'forex',
             'mysteel', 'wenhua', 'tongdaxin', 'custom_data', 'factorweave_data',
             'eastmoney', 'sina'  # 添加eastmoney和sina关键字
         ]
+        indicator_keywords = ['talib', 'indicator', 'indicators']
 
         plugin_name_lower = plugin_name.lower()
-        return any(keyword in plugin_name_lower for keyword in data_source_keywords)
+        return any(keyword in plugin_name_lower for keyword in data_source_keywords) or any(keyword in plugin_name_lower for keyword in indicator_keywords)
 
     def _load_real_plugin_instance(self, plugin_name: str):
         """加载真实的插件实例"""
@@ -445,6 +472,10 @@ class PluginManager(QObject):
                 possible_class_names.extend(['CustomDataPlugin', 'CustomPlugin'])
             elif 'factorweave_data' in plugin_name.lower():
                 possible_class_names.extend(['FactorWeaveDataPlugin', 'FactorWeavePlugin'])
+            elif 'talib' in plugin_name.lower():
+                possible_class_names.extend(['TALibIndicatorsPlugin', 'TalibIndicatorsPlugin', 'TalibPlugin'])
+            elif 'indicator' in plugin_name.lower() or 'indicators' in plugin_name.lower():
+                possible_class_names.extend(['IndicatorPlugin', 'IndicatorsPlugin', 'CustomIndicatorPlugin'])
 
             # 通用模式
             possible_class_names.extend(['Plugin', 'DataPlugin', 'DataSource'])
@@ -453,7 +484,7 @@ class PluginManager(QObject):
             for class_name in possible_class_names:
                 if hasattr(module, class_name):
                     plugin_class = getattr(module, class_name)
-                    logger.debug(f" 找到插件类: {class_name}")
+                    logger.info(f" 找到插件类: {class_name}")
                     return plugin_class
 
             # 如果没有找到，尝试查找所有类
@@ -462,8 +493,27 @@ class PluginManager(QObject):
                 if (isinstance(attr, type) and
                     attr.__module__ == module.__name__ and
                         'Plugin' in attr.__name__):
-                    logger.debug(f" 找到插件类（通用搜索）: {attr.__name__}")
+                    logger.info(f" 找到插件类（通用搜索）: {attr.__name__}")
                     return attr
+
+            # 尝试查找实现IIndicatorPlugin接口的类
+            try:
+                from core.indicator_extensions import IIndicatorPlugin
+                for attr_name in dir(module):
+                    attr = getattr(module, attr_name)
+                    if (isinstance(attr, type) and
+                        attr.__module__ == module.__name__):
+                        # 检查是否是IIndicatorPlugin的子类
+                        try:
+                            if issubclass(attr, IIndicatorPlugin):
+                                logger.info(f" 找到指标插件类: {attr.__name__}")
+                                return attr
+                        except TypeError:
+                            # 如果attr不是类，issubclass会抛出TypeError
+                            continue
+                logger.info(f" 未找到实现IIndicatorPlugin接口的类")
+            except ImportError as e:
+                logger.error(f"IIndicatorPlugin 导入失败: {e}")
 
             logger.warning(f" 未找到插件类，模块属性: {[name for name in dir(module) if not name.startswith('_')]}")
             return None

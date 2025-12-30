@@ -37,8 +37,8 @@ class TuningTask:
     error_message: Optional[str] = None
 
 
-class AutoTuner:
-    """自动调优器"""
+class AlgorithmAutoTuner:
+    """策略自动调优器"""
 
     def __init__(self, max_workers: int = os.cpu_count() * 2, debug_mode: bool = False):
         self.max_workers = max_workers
@@ -578,9 +578,9 @@ class AutoTuner:
             return False
 
 
-def create_auto_tuner(max_workers: int = 4, debug_mode: bool = False) -> AutoTuner:
+def create_auto_tuner(max_workers: int = 4, debug_mode: bool = False) -> AlgorithmAutoTuner:
     """创建自动调优器实例"""
-    return AutoTuner(max_workers=max_workers, debug_mode=debug_mode)
+    return AlgorithmAutoTuner(max_workers=max_workers, debug_mode=debug_mode)
 
 
 if __name__ == "__main__":

@@ -20,10 +20,11 @@ from core.adapters import get_config, get_performance_monitor
 from .base_strategy import BaseStrategy, StrategySignal
 from .strategy_registry import get_strategy_registry
 from .strategy_database import get_strategy_database_manager
+from .strategy_factory import get_strategy_factory
 from core.performance import measure_performance
 
 class StrategyCache:
-    """策略缓存管理器"""
+    """策略缓存管理器 - 支持细粒度缓存控制"""
 
     def __init__(self, max_size: int = 1000, ttl_seconds: int = 3600):
         """
@@ -31,47 +32,62 @@ class StrategyCache:
 
         Args:
             max_size: 最大缓存条目数
-            ttl_seconds: 缓存过期时间（秒）
+            ttl_seconds: 默认缓存过期时间（秒）
         """
         self.logger = logger.bind(module=__name__)
         self.max_size = max_size
-        self.ttl_seconds = ttl_seconds
+        self.default_ttl = ttl_seconds
 
-        # 缓存存储
-        self._cache: Dict[str, Dict[str, Any]] = {}
-        self._access_times: Dict[str, float] = {}
+        # 缓存存储 - 支持按策略分组
+        self._cache: Dict[str, Dict[str, Any]] = {}  # key -> {value, timestamp, ttl, strategy_name, priority}
+        self._access_times: Dict[str, float] = {}  # key -> last access time
+        self._strategy_groups: Dict[str, List[str]] = {}  # strategy_name -> [keys]
         self._lock = threading.RLock()
 
         # 统计信息
         self._hits = 0
         self._misses = 0
+        self._evictions = 0
+        self._strategy_stats: Dict[str, Dict[str, int]] = {}  # strategy_name -> {hits, misses, size}
 
-        self.logger.debug(f"策略缓存初始化: max_size={max_size}, ttl={ttl_seconds}s")
+        self.logger.debug(f"策略缓存初始化: max_size={max_size}, default_ttl={ttl_seconds}s")
 
     def get(self, key: str) -> Optional[Any]:
         """获取缓存值"""
         with self._lock:
             if key not in self._cache:
                 self._misses += 1
+                self._update_strategy_stat(key, 'misses')
                 return None
 
             # 检查是否过期
             cache_entry = self._cache[key]
-            if time.time() - cache_entry['timestamp'] > self.ttl_seconds:
+            if time.time() - cache_entry['timestamp'] > cache_entry['ttl']:
                 self._remove_key(key)
                 self._misses += 1
+                self._update_strategy_stat(key, 'misses')
                 return None
 
             # 更新访问时间
             self._access_times[key] = time.time()
             self._hits += 1
+            self._update_strategy_stat(key, 'hits')
 
             return cache_entry['value']
 
-    def put(self, key: str, value: Any):
-        """存储缓存值"""
+    def put(self, key: str, value: Any, strategy_name: str = None, ttl: int = None, priority: int = 0):
+        """存储缓存值
+        
+        Args:
+            key: 缓存键
+            value: 缓存值
+            strategy_name: 策略名称（用于分组管理）
+            ttl: 缓存过期时间（秒），None使用默认值
+            priority: 缓存优先级（0-10，值越大优先级越高）
+        """
         with self._lock:
             current_time = time.time()
+            cache_ttl = ttl or self.default_ttl
 
             # 检查缓存大小限制
             if len(self._cache) >= self.max_size and key not in self._cache:
@@ -80,52 +96,172 @@ class StrategyCache:
             # 存储缓存
             self._cache[key] = {
                 'value': value,
-                'timestamp': current_time
+                'timestamp': current_time,
+                'ttl': cache_ttl,
+                'strategy_name': strategy_name,
+                'priority': priority
             }
             self._access_times[key] = current_time
+            
+            # 更新策略分组
+            if strategy_name:
+                if strategy_name not in self._strategy_groups:
+                    self._strategy_groups[strategy_name] = []
+                if key not in self._strategy_groups[strategy_name]:
+                    self._strategy_groups[strategy_name].append(key)
+            
+            # 更新策略统计
+            self._update_strategy_stat(key, 'size')
 
     def invalidate(self, key: str):
-        """使缓存失效"""
+        """使单个缓存键失效"""
         with self._lock:
             self._remove_key(key)
 
+    def invalidate_by_strategy(self, strategy_name: str):
+        """使指定策略的所有缓存失效"""
+        with self._lock:
+            if strategy_name in self._strategy_groups:
+                keys_to_remove = self._strategy_groups[strategy_name].copy()
+                for key in keys_to_remove:
+                    self._remove_key(key)
+                del self._strategy_groups[strategy_name]
+                self.logger.debug(f"已清理策略缓存: {strategy_name} ({len(keys_to_remove)}项)")
+
     def clear(self):
-        """清空缓存"""
+        """清空所有缓存"""
         with self._lock:
             self._cache.clear()
             self._access_times.clear()
+            self._strategy_groups.clear()
+            self._reset_stats()
             self.logger.debug("策略缓存已清空")
 
     def get_stats(self) -> Dict[str, Any]:
-        """获取缓存统计信息"""
+        """获取详细缓存统计信息"""
         with self._lock:
             total_requests = self._hits + self._misses
             hit_rate = self._hits / total_requests if total_requests > 0 else 0
+            
+            # 计算策略级别的统计
+            strategy_stats = {}
+            for strategy_name, stats in self._strategy_stats.items():
+                strategy_total = stats.get('hits', 0) + stats.get('misses', 0)
+                strategy_hit_rate = stats['hits'] / strategy_total if strategy_total > 0 else 0
+                strategy_stats[strategy_name] = {
+                    'hits': stats.get('hits', 0),
+                    'misses': stats.get('misses', 0),
+                    'total_requests': strategy_total,
+                    'hit_rate': strategy_hit_rate,
+                    'size': stats.get('size', 0)
+                }
 
             return {
-                'size': len(self._cache),
-                'max_size': self.max_size,
-                'hits': self._hits,
-                'misses': self._misses,
-                'hit_rate': hit_rate,
-                'ttl_seconds': self.ttl_seconds
+                'global': {
+                    'size': len(self._cache),
+                    'max_size': self.max_size,
+                    'hits': self._hits,
+                    'misses': self._misses,
+                    'total_requests': total_requests,
+                    'hit_rate': hit_rate,
+                    'evictions': self._evictions,
+                    'default_ttl': self.default_ttl
+                },
+                'by_strategy': strategy_stats,
+                'strategy_groups': {k: len(v) for k, v in self._strategy_groups.items()}
             }
 
     def _remove_key(self, key: str):
-        """移除缓存键"""
-        self._cache.pop(key, None)
-        self._access_times.pop(key, None)
+        """移除缓存键并更新相关数据结构"""
+        if key in self._cache:
+            # 从策略分组中移除
+            cache_entry = self._cache[key]
+            strategy_name = cache_entry.get('strategy_name')
+            if strategy_name and strategy_name in self._strategy_groups:
+                if key in self._strategy_groups[strategy_name]:
+                    self._strategy_groups[strategy_name].remove(key)
+                # 如果分组为空，删除分组
+                if not self._strategy_groups[strategy_name]:
+                    del self._strategy_groups[strategy_name]
+            
+            # 移除缓存和访问时间
+            del self._cache[key]
+            self._access_times.pop(key, None)
+            
+            # 更新策略统计
+            self._update_strategy_stat(key, 'remove')
 
     def _evict_lru(self):
-        """移除最近最少使用的缓存项"""
+        """移除最近最少使用的缓存项，考虑优先级"""
         if not self._access_times:
             return
 
-        # 找到最久未访问的键
-        lru_key = min(self._access_times.keys(),
-                      key=lambda k: self._access_times[k])
-        self._remove_key(lru_key)
-        self.logger.debug(f"LRU淘汰缓存项: {lru_key}")
+        # 按优先级和访问时间排序，优先保留高优先级和最近访问的项
+        sorted_keys = sorted(
+            self._access_times.keys(),
+            key=lambda k: (self._cache[k]['priority'], self._access_times[k]),
+            reverse=True
+        )
+        
+        # 移除优先级最低且最久未访问的项
+        if sorted_keys:
+            lru_key = sorted_keys[-1]
+            self._remove_key(lru_key)
+            self._evictions += 1
+            self.logger.debug(f"LRU淘汰缓存项: {lru_key}, 优先级: {self._cache.get(lru_key, {}).get('priority', 0)}")
+
+    def _update_strategy_stat(self, key: str, stat_type: str):
+        """更新策略统计信息"""
+        if key in self._cache:
+            strategy_name = self._cache[key].get('strategy_name')
+            if strategy_name:
+                if strategy_name not in self._strategy_stats:
+                    self._strategy_stats[strategy_name] = {'hits': 0, 'misses': 0, 'size': 0}
+                
+                if stat_type == 'hits':
+                    self._strategy_stats[strategy_name]['hits'] += 1
+                elif stat_type == 'misses':
+                    self._strategy_stats[strategy_name]['misses'] += 1
+                elif stat_type == 'size':
+                    self._strategy_stats[strategy_name]['size'] += 1
+                elif stat_type == 'remove':
+                    self._strategy_stats[strategy_name]['size'] = max(0, self._strategy_stats[strategy_name]['size'] - 1)
+
+    def _reset_stats(self):
+        """重置统计信息"""
+        self._hits = 0
+        self._misses = 0
+        self._evictions = 0
+        self._strategy_stats.clear()
+
+    def get_strategy_cache_size(self, strategy_name: str) -> int:
+        """获取指定策略的缓存大小"""
+        with self._lock:
+            return len(self._strategy_groups.get(strategy_name, []))
+
+    def warmup_cache(self, keys_values: Dict[str, Any], strategy_name: str = None, ttl: int = None):
+        """缓存预热 - 批量添加缓存项
+        
+        Args:
+            keys_values: 键值对字典
+            strategy_name: 策略名称
+            ttl: 缓存过期时间
+        """
+        with self._lock:
+            for key, value in keys_values.items():
+                self.put(key, value, strategy_name, ttl)
+            self.logger.debug(f"缓存预热完成: 添加 {len(keys_values)} 项")
+
+    def preload_strategy_cache(self, strategy_name: str, data: Dict[str, Any], ttl: int = None):
+        """预加载指定策略的缓存
+        
+        Args:
+            strategy_name: 策略名称
+            data: 要预加载的数据
+            ttl: 缓存过期时间
+        """
+        self.warmup_cache(data, strategy_name, ttl)
+        self.logger.debug(f"策略缓存预加载完成: {strategy_name}, 添加 {len(data)} 项")
 
 class StrategyEngine:
     """策略执行引擎"""
@@ -209,13 +345,11 @@ class StrategyEngine:
                     self.logger.debug(f"缓存命中: {strategy_name}")
                     return cached_result, execution_info
 
-            # 获取策略类
-            strategy_class = self.registry.get_strategy_class(strategy_name)
-            if strategy_class is None:
-                raise ValueError(f"策略不存在: {strategy_name}")
-
-            # 创建策略实例
-            strategy_instance = strategy_class(strategy_name)
+            # 使用策略工厂创建策略实例 - 转移职责到StrategyFactory
+            factory = get_strategy_factory()
+            strategy_instance = factory.create_strategy(strategy_name)
+            if strategy_instance is None:
+                raise ValueError(f"策略不存在或创建失败: {strategy_name}")
 
             # 验证数据
             required_columns = strategy_instance.get_required_columns()
@@ -232,9 +366,14 @@ class StrategyEngine:
             if not isinstance(signals, list):
                 raise ValueError("策略必须返回信号列表")
 
-            # 缓存结果
+            # 缓存结果 - 传递策略名称用于分组管理
             if use_cache:
-                self.cache.put(cache_key, signals)
+                # 根据策略重要性设置优先级（可根据实际情况调整）
+                priority = 5  # 默认优先级
+                if strategy_name in ['default_momentum', 'default_reversion']:
+                    priority = 8  # 内置策略优先级更高
+                
+                self.cache.put(cache_key, signals, strategy_name=strategy_name, priority=priority)
 
             # 更新执行信息
             execution_info['success'] = True
@@ -413,17 +552,9 @@ class StrategyEngine:
             self.cache.clear()
             self.logger.info("已清理所有策略缓存")
         else:
-            # 清理特定策略的缓存
-            keys_to_remove = []
-            for key in self.cache._cache.keys():
-                if key.startswith(f"{strategy_name}:"):
-                    keys_to_remove.append(key)
-
-            for key in keys_to_remove:
-                self.cache.invalidate(key)
-
-            self.logger.info(
-                f"已清理策略缓存: {strategy_name} ({len(keys_to_remove)}项)")
+            # 使用改进后的方法清理特定策略的缓存
+            self.cache.invalidate_by_strategy(strategy_name)
+            self.logger.info(f"已清理策略缓存: {strategy_name}")
 
     def get_engine_stats(self) -> Dict[str, Any]:
         """获取引擎统计信息"""

@@ -1,3 +1,5 @@
+import csv
+import json
 from loguru import logger
 """
 分析标签页基类 - 增强版
@@ -871,14 +873,6 @@ class BaseAnalysisTab(QWidget):
         """
         card = QFrame()
         card.setFrameStyle(QFrame.StyledPanel)
-        card.setStyleSheet(f"""
-            QFrame {{ 
-                background-color: white; 
-                border: 1px solid #dee2e6; 
-                border-radius: 8px; 
-                padding: 10px;
-            }}
-        """)
 
         layout = QVBoxLayout(card)
 
@@ -1531,9 +1525,6 @@ class BaseDataUpdateThread(QThread):
         self.max_retries = max_retries
         self.retry_interval = retry_interval
 
-        # 使用统一的管理器工厂
-        # log_manager已迁移到Loguru
-
         self._stop_requested = False
 
     @measure_performance("BaseDataUpdateThread.run")
@@ -1641,9 +1632,6 @@ class BaseExportThread(QThread):
         self.export_func = export_func
         self.file_path = file_path
         self.data = data
-
-        # 使用统一的管理器工厂
-        # log_manager已迁移到Loguru
 
     @measure_performance("BaseExportThread.run")
     def run(self):

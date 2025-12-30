@@ -276,7 +276,11 @@ class StrategyParameterManager:
                                      parameters: Dict[str, Any]) -> Tuple[bool, Dict[str, str]]:
         """验证策略参数"""
         self._stats['parameters_validated'] += 1
-        return self.validator.validate_parameters_batch(strategy.parameters, parameters)
+        # 添加防御性编程，检查strategy是否有parameters属性
+        if hasattr(strategy, 'parameters'):
+            return self.validator.validate_parameters_batch(strategy.parameters, parameters)
+        # 如果strategy是字典类型，直接使用parameters参数
+        return self.validator.validate_parameters_batch({}, parameters)
 
     def optimize_parameters(self, strategy: BaseStrategy,
                             data: pd.DataFrame,

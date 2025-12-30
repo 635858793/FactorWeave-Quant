@@ -5,7 +5,7 @@ from loguru import logger
 借鉴OpenBB的Provider模式，适配FactorWeave-Quant现有服务架构
 """
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 import pandas as pd
 
 from ..plugin_types import AssetType, DataType
@@ -52,7 +52,7 @@ class AssetService:
 
         logger.info("AssetService初始化完成")
 
-    def get_historical_data(self, symbol: str, asset_type: AssetType,
+    def get_historical_data(self, symbol: str, asset_type: Union[AssetType, str],
                             start_date: str = None, end_date: str = None,
                             period: str = "D", provider: str = None, **kwargs) -> pd.DataFrame:
         """
@@ -62,7 +62,7 @@ class AssetService:
 
         Args:
             symbol: 交易代码
-            asset_type: 资产类型
+            asset_type: 资产类型（支持AssetType枚举或字符串）
             start_date: 开始日期
             end_date: 结束日期  
             period: 数据周期
@@ -80,6 +80,14 @@ class AssetService:
             crypto_data = asset_service.get_historical_data("BTCUSDT", AssetType.CRYPTO)
         """
         try:
+            # 确保asset_type是AssetType枚举
+            if isinstance(asset_type, str):
+                try:
+                    asset_type = AssetType(asset_type)
+                except ValueError:
+                    logger.warning(f"无效的资产类型字符串: {asset_type}, 使用默认值: {AssetType.STOCK_A.value}")
+                    asset_type = AssetType.STOCK_A
+            
             logger.info(f" AssetService获取历史数据: {symbol} ({asset_type.value})")
 
             # 优先使用TET管道
@@ -116,7 +124,7 @@ class AssetService:
             logger.error(f"获取历史数据失败 {symbol}: {e}")
             return pd.DataFrame()
 
-    def get_asset_list(self, asset_type: AssetType,
+    def get_asset_list(self, asset_type: Union[AssetType, str],
                        market: str = None, **filters) -> List[Dict[str, Any]]:
         """
         获取资产列表（OpenBB风格API）
@@ -124,7 +132,7 @@ class AssetService:
         类似于：obb.equity.search()
 
         Args:
-            asset_type: 资产类型
+            asset_type: 资产类型（支持AssetType枚举或字符串）
             market: 市场过滤
             **filters: 其他过滤条件
 
@@ -134,10 +142,20 @@ class AssetService:
         Examples:
             # 获取股票列表
             stocks = asset_service.get_asset_list(AssetType.STOCK_A, market="上海")
+            # 或使用字符串形式
+            stocks = asset_service.get_asset_list("stock_a", market="上海")
 
             # 获取加密货币列表
             cryptos = asset_service.get_asset_list(AssetType.CRYPTO)
         """
+        # 确保asset_type是AssetType枚举
+        if isinstance(asset_type, str):
+            try:
+                asset_type = AssetType(asset_type)
+            except ValueError:
+                logger.warning(f"无效的资产类型字符串: {asset_type}, 使用默认值: {AssetType.STOCK_A.value}")
+                asset_type = AssetType.STOCK_A
+        
         try:
             logger.info(f"获取资产列表: {asset_type.value}")
 

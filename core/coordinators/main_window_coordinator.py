@@ -23,7 +23,7 @@ from PyQt5.QtCore import QThread, Qt, pyqtSignal
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import pyqtSlot
 
-from core.performance.unified_monitor import AutoTuner
+from core.performance.unified_monitor import PerformanceAutoTuner
 from core.plugin_manager import PluginManager
 from gui.dialogs.converter_dialog import ConverterDialog
 from gui.dialogs.data_quality_dialog import DataQualityDialog
@@ -86,7 +86,7 @@ class MainWindowCoordinator(BaseCoordinator):
 
         # 窗口状态
         self._window_state = {
-            'title': 'FactorWeave-Quant  2.0 多资产分析系统',
+            'title': 'FactorWeave-Quant 2.0 多资产分析系统',
             'geometry': (100, 100, 1400, 900),
             'min_size': (1200, 800),
             'is_maximized': False
@@ -97,7 +97,7 @@ class MainWindowCoordinator(BaseCoordinator):
             'left_panel_width': 300,
             'right_panel_width': 350,
             'bottom_panel_height': 200,
-            'panel_padding': 5
+            # 'panel_padding': 5
         }
 
         # 中央数据状态（支持多资产类型）
@@ -138,7 +138,7 @@ class MainWindowCoordinator(BaseCoordinator):
 
         # 创建主窗口
         self._main_window = QMainWindow(parent)
-        self._main_window.setWindowTitle("FactorWeave-Quant  2.0 多资产分析系统")
+        self._main_window.setWindowTitle("FactorWeave-Quant 2.0 多资产分析系统")
         self._main_window.setGeometry(100, 100, 1400, 900)
         self._main_window.setMinimumSize(1200, 800)
 
@@ -148,7 +148,7 @@ class MainWindowCoordinator(BaseCoordinator):
 
         # 窗口状态
         self._window_state = {
-            'title': 'FactorWeave-Quant  2.0 多资产分析系统',
+            'title': 'FactorWeave-Quant 2.0 多资产分析系统',
             'geometry': (100, 100, 1400, 900),
             'min_size': (1200, 800),
             'is_maximized': False
@@ -890,11 +890,7 @@ class MainWindowCoordinator(BaseCoordinator):
 
             self.show_message(f"{event.stock_name} 数据加载完成", level='success')
 
-            # 5. 启动相关股票的预加载
-            asyncio.create_task(self._chart_service._preload_related_stocks(
-                event.stock_code, period
-            ))
-            logger.info(f"已启动相关股票预加载: {event.stock_code}")
+            # 5. 相关股票预加载功能已移除，不再需要
 
         except Exception as e:
             logger.error(f"加载股票 {event.stock_code} 数据时出错: {e}", exc_info=True)
@@ -1891,7 +1887,6 @@ FactorWeave-Quant  2.0 (重构版本)
 
     def _on_strategy_management(self) -> None:
         """策略管理"""
-        # 防止重复打开 - 检查是否已有策略管理对话框实例
         if hasattr(self, '_strategy_manager_dialog') and self._strategy_manager_dialog is not None:
             if self._strategy_manager_dialog.isVisible():
                 self._strategy_manager_dialog.raise_()
@@ -1902,22 +1897,25 @@ FactorWeave-Quant  2.0 (重构版本)
                 self._strategy_manager_dialog = None
 
         try:
-            from gui.dialogs.strategy_manager_dialog import StrategyManagerDialog
+            from gui.dialogs.enhanced_strategy_manager_dialog import EnhancedStrategyManagerDialog
 
-            # 创建策略管理对话框实例并保存引用
-            self._strategy_manager_dialog = StrategyManagerDialog(self._main_window)
+            self._strategy_manager_dialog = EnhancedStrategyManagerDialog(self._main_window)
 
-            # 连接对话框的关闭信号
             self._strategy_manager_dialog.finished.connect(self._on_strategy_manager_dialog_closed)
 
             self.center_dialog(self._strategy_manager_dialog)
             self._strategy_manager_dialog.show()
 
+        except ImportError as e:
+            logger.error(f"EnhancedStrategyManagerDialog不可用: {e}")
+            QMessageBox.critical(self._main_window, "错误",
+                                 f"策略管理功能不可用: {str(e)}")
+            if hasattr(self, '_strategy_manager_dialog'):
+                self._strategy_manager_dialog = None
         except Exception as e:
             logger.error(f"策略管理失败: {e}")
             QMessageBox.critical(self._main_window, "错误",
                                  f"打开策略管理对话框失败: {str(e)}")
-            # 清理可能的无效引用
             if hasattr(self, '_strategy_manager_dialog'):
                 self._strategy_manager_dialog = None
 
@@ -2005,7 +2003,7 @@ FactorWeave-Quant  2.0 (重构版本)
         """一键优化"""
         try:
             from PyQt5.QtWidgets import QProgressDialog
-            from optimization.auto_tuner import AutoTuner
+            from optimization.auto_tuner import AlgorithmAutoTuner
             from PyQt5.QtCore import QThread, pyqtSignal
 
             # 创建进度对话框
@@ -2023,7 +2021,7 @@ FactorWeave-Quant  2.0 (重构版本)
 
                 def run(self):
                     try:
-                        auto_tuner = AutoTuner(debug_mode=True)
+                        auto_tuner = AlgorithmAutoTuner(debug_mode=True)
 
                         # 模拟优化过程
                         for i in range(101):
@@ -2122,7 +2120,7 @@ FactorWeave-Quant  2.0 (重构版本)
                             self.msleep(80)
 
                         # 执行实际智能优化
-                        auto_tuner = AutoTuner(debug_mode=True)
+                        auto_tuner = PerformanceAutoTuner(debug_mode=True)
                         result = auto_tuner.smart_optimize(
                             performance_threshold=self.performance_threshold,
                             improvement_target=self.improvement_target
@@ -2410,38 +2408,14 @@ FactorWeave-Quant  2.0 (重构版本)
 
             # 通用单位转换器按钮
             unit_btn = QPushButton("通用单位转换器")
-            unit_btn.setStyleSheet("""
-                QPushButton {
-                    padding: 15px;
-                    font-size: 14px;
-                    background-color: #e3f2fd;
-                    border: 2px solid #2196f3;
-                    border-radius: 8px;
-                    text-align: left;
-                }
-                QPushButton:hover {
-                    background-color: #bbdefb;
-                }
-            """)
+
             unit_btn.setToolTip("长度、重量、温度、面积等物理单位转换")
             unit_btn.clicked.connect(lambda: self._open_unit_converter(choice_dialog))
             layout.addWidget(unit_btn)
 
             # 汇率转换器按钮
             currency_btn = QPushButton("汇率转换器")
-            currency_btn.setStyleSheet("""
-                QPushButton {
-                    padding: 15px;
-                    font-size: 14px;
-                    background-color: #e8f5e8;
-                    border: 2px solid #4caf50;
-                    border-radius: 8px;
-                    text-align: left;
-                }
-                QPushButton:hover {
-                    background-color: #c8e6c9;
-                }
-            """)
+
             currency_btn.setToolTip("主要货币之间的汇率转换")
             currency_btn.clicked.connect(lambda: self._open_currency_converter(choice_dialog))
             layout.addWidget(currency_btn)
@@ -2803,18 +2777,9 @@ FactorWeave-Quant  2.0 (重构版本)
                             break
                 dialog.exec_()
                 logger.info("启动增强版策略回测对话框")
-            except ImportError:
-                # 降级到基础策略管理对话框
-                from gui.dialogs.strategy_manager_dialog import StrategyManagerDialog
-                dialog = StrategyManagerDialog(self._main_window)
-                # 切换到策略回测标签页
-                if hasattr(dialog, 'tab_widget'):
-                    for i in range(dialog.tab_widget.count()):
-                        if '回测' in dialog.tab_widget.tabText(i):
-                            dialog.tab_widget.setCurrentIndex(i)
-                            break
-                dialog.exec_()
-                logger.info("启动基础策略回测对话框")
+            except ImportError as e:
+                logger.error(f"增强版策略回测不可用: {e}")
+                QMessageBox.warning(self._main_window, "错误", f"策略回测功能不可用: {e}")
         except Exception as e:
             logger.error(f"策略回测失败: {e}")
             QMessageBox.warning(self._main_window, "错误", f"无法启动策略回测: {e}")
@@ -2822,9 +2787,19 @@ FactorWeave-Quant  2.0 (重构版本)
     def _on_strategy_optimize(self) -> None:
         """策略优化"""
         try:
-            # TODO: 实现策略优化功能
-            QMessageBox.information(self._main_window, "提示", "策略优化功能正在开发中")
-            logger.info("启动策略优化")
+            try:
+                from gui.dialogs.enhanced_strategy_manager_dialog import EnhancedStrategyManagerDialog
+                dialog = EnhancedStrategyManagerDialog(self._main_window)
+                if hasattr(dialog, 'tab_widget'):
+                    for i in range(dialog.tab_widget.count()):
+                        if '优化' in dialog.tab_widget.tabText(i):
+                            dialog.tab_widget.setCurrentIndex(i)
+                            break
+                dialog.exec_()
+                logger.info("启动增强版策略优化对话框")
+            except ImportError as e:
+                logger.error(f"增强版策略优化不可用: {e}")
+                QMessageBox.warning(self._main_window, "错误", f"策略优化功能不可用: {e}")
         except Exception as e:
             logger.error(f"策略优化失败: {e}")
             QMessageBox.warning(self._main_window, "错误", f"无法启动策略优化: {e}")

@@ -43,6 +43,26 @@ class AdaptivePandasStrategy(BaseStrategy):
         self._init_default_parameters()
         self._ta_lib_available = TALIB_AVAILABLE
         self._calculation_history = []
+        
+        # 添加plugin_info属性以实现IStrategyPlugin接口
+        self._plugin_info = {
+            "name": "AdaptivePandasStrategy",
+            "display_name": "自适应止损止盈策略",
+            "description": "基于pandas的自适应交易策略，支持止损止盈、趋势识别、波动率调整等功能",
+            "version": "3.0.0",
+            "author": "FactorWeave-Quant 团队",
+            "strategy_type": "adaptive",
+            "supported_assets": ["stock"],
+            "risk_level": "medium",
+            "tags": ["adaptive", "stop_loss", "take_profit", "pandas"],
+            "dependencies": ["pandas", "numpy"],
+            "hikyuu_free": True
+        }
+
+    @property
+    def plugin_info(self) -> Dict[str, Any]:
+        """获取插件基本信息"""
+        return self._plugin_info
 
     def _init_default_parameters(self):
         """初始化默认参数"""

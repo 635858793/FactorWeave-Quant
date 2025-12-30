@@ -9,25 +9,25 @@ from loguru import logger
 """
 
 import traceback
-from typing import Dict, Any, Optional, List, TYPE_CHECKING
-from datetime import datetime, timedelta
-import json
-import asyncio
+from typing import Dict, Any, List
+from datetime import datetime
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
-    QPushButton, QTabWidget, QTextEdit, QTreeWidget, QTreeWidgetItem,
-    QProgressBar, QMessageBox, QFrame, QScrollArea, QGroupBox,
-    QTableWidget, QTableWidgetItem, QHeaderView, QSpinBox,
-    QCheckBox, QSlider, QSplitter
+    QPushButton, QTabWidget, QTextEdit,
+    QProgressBar, QMessageBox, QFrame, QGroupBox,
+    QTableWidget, QTableWidgetItem, QSpinBox,
+    QAbstractItemView, QLineEdit,
+    QGridLayout
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QThread, pyqtSlot
-from PyQt5.QtGui import QFont, QIcon, QColor, QPalette
+from PyQt5.QtCore import Qt, pyqtSignal, QTimer, pyqtSlot
+from PyQt5.QtGui import QFont, QColor
 
 from .base_panel import BasePanel
 from core.performance import get_performance_monitor
-from core.events import StockSelectedEvent, AnalysisCompleteEvent, ChartUpdateEvent, UIDataReadyEvent
+from core.events import AnalysisCompleteEvent, UIDataReadyEvent
 from core.services.analysis_service import AnalysisService
+from core.services.backtest_result_manager import BacktestResultManager, BacktestResult
 
 # 导入完整的技术分析标签页
 try:
@@ -92,8 +92,7 @@ except ImportError as e:
     logger.warning(f"无法导入TradingPanel: {e}")
     TRADING_PANEL_AVAILABLE = False
 
-if TYPE_CHECKING:
-    from core.services import AnalysisService
+
 
 
 
@@ -153,78 +152,440 @@ class RightPanel(BasePanel):
 
         # 性能优化管理器
         self._performance_manager = None
+        
+        # 回测结果管理器
+        self._backtest_result_manager = BacktestResultManager()
 
         super().__init__(parent, coordinator, **kwargs)
+        
+        # 订阅回测完成事件
+        self.coordinator.event_bus.subscribe(AnalysisCompleteEvent, self._on_analysis_complete)
+    
+    def _init_ui_events(self) -> None:
+        """初始化UI事件连接"""
+        try:
+            # 过滤按钮点击事件
+            filter_button = self.get_widget('filter_button')
+            if filter_button:
+                filter_button.clicked.connect(self._on_filter_button_clicked)
+            
+            # 单条删除按钮点击事件
+            delete_button = self.get_widget('delete_button')
+            if delete_button:
+                delete_button.clicked.connect(self._on_delete_button_clicked)
+            
+            # 清空当前股票按钮点击事件
+            clear_stock_button = self.get_widget('clear_stock_button')
+            if clear_stock_button:
+                clear_stock_button.clicked.connect(self._on_clear_stock_button_clicked)
+            
+            # 清空全部按钮点击事件
+            clear_all_button = self.get_widget('clear_all_button')
+            if clear_all_button:
+                clear_all_button.clicked.connect(self._on_clear_all_button_clicked)
+            
+            # 导出按钮点击事件
+            export_button = self.get_widget('export_button')
+            if export_button:
+                export_button.clicked.connect(self._on_export_button_clicked)
+            
+            # 回测结果列表点击事件
+            results_table = self.get_widget('results_table')
+            if results_table:
+                results_table.cellClicked.connect(self._on_results_table_cell_clicked)
+            
+            # 分页控件事件
+            page_spinbox = self.get_widget('page_spinbox')
+            if page_spinbox:
+                page_spinbox.valueChanged.connect(self._on_page_changed)
+            
+            # 每页大小变化事件
+            page_size_combo = self.get_widget('page_size_combo')
+            if page_size_combo:
+                page_size_combo.currentTextChanged.connect(self._on_page_size_changed)
+            
+            # 上一页按钮
+            prev_button = self.get_widget('prev_button')
+            if prev_button:
+                prev_button.clicked.connect(self._on_prev_page)
+            
+            # 下一页按钮
+            next_button = self.get_widget('next_button')
+            if next_button:
+                next_button.clicked.connect(self._on_next_page)
+            
+            logger.info("UI事件连接初始化完成")
+        except Exception as e:
+            logger.error(f"初始化UI事件连接失败: {e}")
+            logger.error(traceback.format_exc())
+    
+    def _on_filter_button_clicked(self) -> None:
+        """处理过滤按钮点击事件"""
+        try:
+            logger.info("过滤按钮被点击")
+            
+            # 重置页码到第一页
+            self._current_page = 1
+            self._page_spinbox.setValue(1)
+            
+            # 刷新结果列表（会自动应用过滤条件和分页）
+            self._refresh_results_table()
+            
+        except Exception as e:
+            logger.error(f"处理过滤按钮点击事件失败: {e}")
+            logger.error(traceback.format_exc())
+    
+    def _on_delete_button_clicked(self) -> None:
+        """处理单条删除按钮点击事件"""
+        try:
+            logger.info("删除按钮被点击")
+            
+            # 获取选中的行
+            results_table = self.get_widget('results_table')
+            if not results_table:
+                return
+            
+            selected_rows = results_table.selectedItems()
+            if not selected_rows:
+                QMessageBox.warning(self, "警告", "请先选择要删除的回测结果")
+                return
+            
+            # 获取选中行的索引
+            selected_row = selected_rows[0].row()
+            
+            # 获取股票代码
+            stock_code_item = results_table.item(selected_row, 0)
+            stock_code = stock_code_item.text() if stock_code_item else self._current_stock_code
+            
+            # 删除回测结果
+            success = self._backtest_result_manager.delete_result(stock_code, selected_row)
+            if success:
+                # 更新回测结果列表
+                self._refresh_results_table()
+                QMessageBox.information(self, "成功", "回测结果删除成功")
+            else:
+                QMessageBox.warning(self, "失败", "回测结果删除失败")
+            
+        except Exception as e:
+            logger.error(f"处理删除按钮点击事件失败: {e}")
+            logger.error(traceback.format_exc())
+    
+    def _on_clear_stock_button_clicked(self) -> None:
+        """处理清空当前股票按钮点击事件"""
+        try:
+            logger.info("清空当前股票按钮被点击")
+            
+            # 确认对话框
+            reply = QMessageBox.question(
+                self,
+                "确认清空",
+                f"确定要清空{self._current_stock_name}({self._current_stock_code})的所有回测结果吗？",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if reply == QMessageBox.Yes:
+                # 清空当前股票的回测结果
+                self._backtest_result_manager.clear_results(self._current_stock_code)
+                # 更新回测结果列表
+                self._refresh_results_table()
+                # 清空回测结果显示
+                self._clear_backtest_results()
+                QMessageBox.information(self, "成功", "当前股票的回测结果已清空")
+            
+        except Exception as e:
+            logger.error(f"处理清空当前股票按钮点击事件失败: {e}")
+            logger.error(traceback.format_exc())
+    
+    def _on_clear_all_button_clicked(self) -> None:
+        """处理清空全部按钮点击事件"""
+        try:
+            logger.info("清空全部按钮被点击")
+            
+            # 确认对话框
+            reply = QMessageBox.question(
+                self,
+                "确认清空",
+                "确定要清空所有回测结果吗？此操作不可恢复！",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if reply == QMessageBox.Yes:
+                # 清空所有回测结果
+                self._backtest_result_manager.clear_results()
+                # 更新回测结果列表
+                self._refresh_results_table()
+                # 清空回测结果显示
+                self._clear_backtest_results()
+                QMessageBox.information(self, "成功", "所有回测结果已清空")
+            
+        except Exception as e:
+            logger.error(f"处理清空全部按钮点击事件失败: {e}")
+            logger.error(traceback.format_exc())
+    
+    def _on_export_button_clicked(self) -> None:
+        """处理导出按钮点击事件"""
+        try:
+            logger.info("导出按钮被点击")
+            
+            # 获取保存文件名
+            from PyQt5.QtWidgets import QFileDialog
+            options = QFileDialog.Options()
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "导出回测结果",
+                f"回测结果_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                "Excel文件 (*.xlsx);;CSV文件 (*.csv);;JSON文件 (*.json)",
+                options=options
+            )
+            
+            if not file_path:
+                return
+            
+            # 确定导出格式
+            file_format = 'excel'
+            if file_path.endswith('.csv'):
+                file_format = 'csv'
+            elif file_path.endswith('.json'):
+                file_format = 'json'
+            
+            # 获取过滤条件
+            strategy_filter = self.get_widget('strategy_filter')
+            min_return_filter = self.get_widget('min_return_filter')
+            max_return_filter = self.get_widget('max_return_filter')
+            min_success_filter = self.get_widget('min_success_filter')
+            max_success_filter = self.get_widget('max_success_filter')
+            
+            # 提取过滤条件
+            strategy_name = strategy_filter.text() if strategy_filter else None
+            
+            # 转换数值过滤条件
+            min_return = float(min_return_filter.text()) if min_return_filter and min_return_filter.text() else None
+            max_return = float(max_return_filter.text()) if max_return_filter and max_return_filter.text() else None
+            min_success_rate = float(min_success_filter.text()) if min_success_filter and min_success_filter.text() else None
+            max_success_rate = float(max_success_filter.text()) if max_success_filter and max_success_filter.text() else None
+            
+            # 导出回测结果
+            success = self._backtest_result_manager.export_results(
+                file_path=file_path,
+                file_format=file_format,
+                stock_code=self._current_stock_code,
+                strategy_name=strategy_name,
+                min_return=min_return,
+                max_return=max_return,
+                min_success_rate=min_success_rate,
+                max_success_rate=max_success_rate
+            )
+            
+            if success:
+                QMessageBox.information(self, "成功", f"回测结果已导出到{file_path}")
+            else:
+                QMessageBox.warning(self, "失败", "回测结果导出失败")
+            
+        except Exception as e:
+            logger.error(f"处理导出按钮点击事件失败: {e}")
+            logger.error(traceback.format_exc())
+    
+    def _on_results_table_cell_clicked(self, row: int, column: int) -> None:
+        """处理回测结果列表点击事件"""
+        try:
+            logger.info(f"回测结果列表单元格被点击: 行{row}, 列{column}")
+            
+            # 获取过滤条件，保持与当前显示一致
+            strategy_filter = self.get_widget('strategy_filter')
+            min_return_filter = self.get_widget('min_return_filter')
+            max_return_filter = self.get_widget('max_return_filter')
+            min_success_filter = self.get_widget('min_success_filter')
+            max_success_filter = self.get_widget('max_success_filter')
+            
+            # 提取过滤条件
+            strategy_name = strategy_filter.text() if strategy_filter else None
+            min_return = float(min_return_filter.text()) if min_return_filter and min_return_filter.text() else None
+            max_return = float(max_return_filter.text()) if max_return_filter and max_return_filter.text() else None
+            min_success_rate = float(min_success_filter.text()) if min_success_filter and min_success_filter.text() else None
+            max_success_rate = float(max_success_filter.text()) if max_success_filter and max_success_filter.text() else None
+            
+            # 获取当前页的回测结果
+            current_page_results, _ = self._backtest_result_manager.get_filtered_results(
+                stock_code=self._current_stock_code,
+                strategy_name=strategy_name,
+                min_return=min_return,
+                max_return=max_return,
+                min_success_rate=min_success_rate,
+                max_success_rate=max_success_rate,
+                page=self._current_page,
+                page_size=self._page_size
+            )
+            
+            if row < len(current_page_results):
+                # 获取选中的回测结果
+                selected_result = current_page_results[row]
+                
+                # 更新回测结果显示
+                backtest_data = {
+                    "is_professional": selected_result.is_professional,
+                    "results": selected_result.backtest_results,
+                    "trades": selected_result.trades
+                }
+                self._update_backtest_results_safe(backtest_data)
+            
+        except Exception as e:
+            logger.error(f"处理回测结果列表点击事件失败: {e}")
+            logger.error(traceback.format_exc())
+    
+    def _update_results_table(self, results: List[BacktestResult]) -> None:
+        """更新回测结果列表"""
+        try:
+            results_table = self.get_widget('results_table')
+            if not results_table:
+                return
+            
+            # 清空表格
+            results_table.setRowCount(0)
+            
+            # 添加回测结果
+            for i, result in enumerate(results):
+                # 计算收益率和成功率
+                return_value = 0.0
+                success_rate = 0.0
+                
+                if isinstance(result.backtest_results, dict):
+                    return_value = result.backtest_results.get('avg_return', 0)
+                    if return_value == 0 and 'risk_metrics' in result.backtest_results:
+                        return_value = result.backtest_results['risk_metrics'].get('总收益率', 0)
+                    elif return_value == 0 and 'performance' in result.backtest_results:
+                        return_value = result.backtest_results['performance'].get('total_return', 0)
+                    
+                    success_rate = result.backtest_results.get('success_rate', 0)
+                    if success_rate == 0 and 'performance' in result.backtest_results:
+                        success_rate = result.backtest_results['performance'].get('win_rate', 0)
+                
+                # 添加行
+                results_table.insertRow(i)
+                
+                # 股票代码
+                results_table.setItem(i, 0, QTableWidgetItem(result.stock_code))
+                
+                # 策略名称
+                results_table.setItem(i, 1, QTableWidgetItem(result.strategy_name))
+                
+                # 回测时间
+                backtest_time = datetime.fromtimestamp(result.backtest_time).strftime('%Y-%m-%d %H:%M:%S')
+                results_table.setItem(i, 2, QTableWidgetItem(backtest_time))
+                
+                # 收益率
+                return_item = QTableWidgetItem(f"{return_value:+.2%}")
+                if return_value > 0:
+                    return_item.setBackground(QColor('#d4edda'))
+                elif return_value < 0:
+                    return_item.setBackground(QColor('#f8d7da'))
+                results_table.setItem(i, 3, return_item)
+                
+                # 成功率
+                success_item = QTableWidgetItem(f"{success_rate:.2%}")
+                results_table.setItem(i, 4, success_item)
+            
+            logger.info(f"回测结果列表已更新，共{len(results)}条记录")
+            
+        except Exception as e:
+            logger.error(f"更新回测结果列表失败: {e}")
+            logger.error(traceback.format_exc())
+    
+    def _refresh_results_table(self) -> None:
+        """刷新回测结果列表"""
+        try:
+            logger.info(f"刷新回测结果列表，当前页码: {self._current_page}, 每页大小: {self._page_size}")
+            
+            # 获取过滤条件
+            strategy_filter = self.get_widget('strategy_filter')
+            min_return_filter = self.get_widget('min_return_filter')
+            max_return_filter = self.get_widget('max_return_filter')
+            min_success_filter = self.get_widget('min_success_filter')
+            max_success_filter = self.get_widget('max_success_filter')
+            
+            # 提取过滤条件
+            strategy_name = strategy_filter.text() if strategy_filter else None
+            min_return = float(min_return_filter.text()) if min_return_filter and min_return_filter.text() else None
+            max_return = float(max_return_filter.text()) if max_return_filter and max_return_filter.text() else None
+            min_success_rate = float(min_success_filter.text()) if min_success_filter and min_success_filter.text() else None
+            max_success_rate = float(max_success_filter.text()) if max_success_filter and max_success_filter.text() else None
+            
+            # 获取过滤后的回测结果（带分页）
+            results, total = self._backtest_result_manager.get_filtered_results(
+                stock_code=self._current_stock_code,
+                strategy_name=strategy_name,
+                min_return=min_return,
+                max_return=max_return,
+                min_success_rate=min_success_rate,
+                max_success_rate=max_success_rate,
+                page=self._current_page,
+                page_size=self._page_size
+            )
+            
+            # 更新回测结果列表
+            self._update_results_table(results)
+            
+            # 更新分页控件
+            self._total_pages = (total + self._page_size - 1) // self._page_size
+            self._page_spinbox.setMaximum(self._total_pages)
+            self._total_pages_label.setText(f"/ {self._total_pages}")
+            
+            logger.info(f"回测结果列表刷新完成，共{total}条记录，分{self._total_pages}页，当前第{self._current_page}页")
+            
+        except Exception as e:
+            logger.error(f"刷新回测结果列表失败: {e}")
+            logger.error(traceback.format_exc())
+    
+    def _on_page_changed(self, page: int) -> None:
+        """处理页码变化事件"""
+        try:
+            logger.info(f"页码变化: {self._current_page} -> {page}")
+            self._current_page = page
+            self._refresh_results_table()
+        except Exception as e:
+            logger.error(f"处理页码变化事件失败: {e}")
+            logger.error(traceback.format_exc())
+    
+    def _on_page_size_changed(self, page_size: str) -> None:
+        """处理每页大小变化事件"""
+        try:
+            new_page_size = int(page_size)
+            logger.info(f"每页大小变化: {self._page_size} -> {new_page_size}")
+            self._page_size = new_page_size
+            self._current_page = 1  # 重置到第一页
+            self._refresh_results_table()
+        except Exception as e:
+            logger.error(f"处理每页大小变化事件失败: {e}")
+            logger.error(traceback.format_exc())
+    
+    def _on_prev_page(self) -> None:
+        """处理上一页按钮点击事件"""
+        try:
+            if self._current_page > 1:
+                logger.info(f"上一页: {self._current_page} -> {self._current_page - 1}")
+                self._current_page -= 1
+                self._page_spinbox.setValue(self._current_page)
+                self._refresh_results_table()
+        except Exception as e:
+            logger.error(f"处理上一页按钮点击事件失败: {e}")
+            logger.error(traceback.format_exc())
+    
+    def _on_next_page(self) -> None:
+        """处理下一页按钮点击事件"""
+        try:
+            if self._current_page < self._total_pages:
+                logger.info(f"下一页: {self._current_page} -> {self._current_page + 1}")
+                self._current_page += 1
+                self._page_spinbox.setValue(self._current_page)
+                self._refresh_results_table()
+        except Exception as e:
+            logger.error(f"处理下一页按钮点击事件失败: {e}")
+            logger.error(traceback.format_exc())
 
     def _create_widgets(self) -> None:
         """创建UI组件"""
-        # 设置面板样式
-        self._root_frame.setStyleSheet("""
-            QWidget {
-                background-color: #f8f9fa;
-                border: 1px solid #dee2e6;
-                border-radius: 4px;
-            }
-            QLabel {
-                border: none;
-                background-color: transparent;
-            }
-            QTabWidget::pane {
-                border: 1px solid #dee2e6;
-                border-radius: 4px;
-                background-color: white;
-            }
-            QTabBar::tab {
-                background-color: #e9ecef;
-                border: 1px solid #dee2e6;
-                padding: 8px 12px;
-                margin-right: 2px;
-            }
-            QTabBar::tab:selected {
-                background-color: white;
-                border-bottom: 1px solid white;
-            }
-            QGroupBox {
-                font-weight: bold;
-                border: 2px solid #dee2e6;
-                border-radius: 4px;
-                margin-top: 10px;
-                padding-top: 10px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px 0 5px;
-            }
-            QPushButton {
-                border: 1px solid #007bff;
-                border-radius: 4px;
-                padding: 6px 12px;
-                background-color: #007bff;
-                color: white;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #0056b3;
-            }
-            QPushButton:pressed {
-                background-color: #004085;
-            }
-            QTableWidget {
-                border: 1px solid #dee2e6;
-                border-radius: 4px;
-                background-color: white;
-                alternate-background-color: #f8f9fa;
-                gridline-color: #dee2e6;
-            }
-            QTextEdit {
-                border: 1px solid #dee2e6;
-                border-radius: 4px;
-                background-color: white;
-                padding: 5px;
-            }
-        """)
-
+    
         # 创建主布局
         main_layout = QVBoxLayout(self._root_frame)
         main_layout.setContentsMargins(10, 10, 10, 10)
@@ -245,8 +606,6 @@ class RightPanel(BasePanel):
         # 股票信息框
         stock_info_frame = QFrame()
         stock_info_frame.setFrameStyle(QFrame.StyledPanel)
-        stock_info_frame.setStyleSheet(
-            "background-color: white; border: 1px solid #dee2e6; border-radius: 4px;")
         main_layout.addWidget(stock_info_frame)
         self.add_widget('stock_info_frame', stock_info_frame)
 
@@ -341,36 +700,37 @@ class RightPanel(BasePanel):
             logger.info("情绪分析标签页已优化移除，可使用热点分析等功能")
             import time
             # K线技术分析 - 使用服务容器
-            if KLINE_TECHNICAL_AVAILABLE:
-                try:
-                    logger.info("开始创建K线技术分析标签页...")
-
-                    start_time = time.time()
-
-                    logger.info("导入K线技术分析标签页模块...")
-                    logger.info("K线技术分析标签页模块导入成功")
-
-                    logger.info("创建K线技术分析标签页实例...")
-                    self._kline_technical_tab = EnhancedKLineTechnicalTab(
-                        config_manager=config_manager
-                    )
-
-                    create_time = time.time()
-                    logger.info(f"⏱ K线技术分析标签页实例创建耗时: {(create_time - start_time):.2f}秒")
-
-                    logger.info("添加K线技术分析标签页到UI...")
-                    tab_widget.addTab(self._kline_technical_tab, "K线技术")
-
-                    # 注册到组件管理
-                    logger.info("注册K线技术分析标签页到组件管理...")
-                    self.add_widget('kline_technical_tab', self._kline_technical_tab)
-                    self._professional_tabs.append(self._kline_technical_tab)
-
-                    end_time = time.time()
-                    logger.info(f" K线技术分析标签页创建完成，总耗时: {(end_time - start_time):.2f}秒")
-                except Exception as kline_error:
-                    logger.error(f" K线技术分析标签页创建失败: {kline_error}")
-                    logger.error(traceback.format_exc())
+            # 注释掉整个K线技术分析标签页创建代码，因为enhanced_kline_technical_tab模块暂未实现
+            # if KLINE_TECHNICAL_AVAILABLE:
+            #     try:
+            #         logger.info("开始创建K线技术分析标签页...")
+            #
+            #         start_time = time.time()
+            #
+            #         logger.info("导入K线技术分析标签页模块...")
+            #         logger.info("K线技术分析标签页模块导入成功")
+            #
+            #         logger.info("创建K线技术分析标签页实例...")
+            #         self._kline_technical_tab = EnhancedKLineTechnicalTab(
+            #             config_manager=config_manager
+            #         )
+            #
+            #         create_time = time.time()
+            #         logger.info(f"⏱ K线技术分析标签页实例创建耗时: {(create_time - start_time):.2f}秒")
+            #
+            #         logger.info("添加K线技术分析标签页到UI...")
+            #         tab_widget.addTab(self._kline_technical_tab, "K线技术")
+            #
+            #         # 注册到组件管理
+            #         logger.info("注册K线技术分析标签页到组件管理...")
+            #         self.add_widget('kline_technical_tab', self._kline_technical_tab)
+            #         self._professional_tabs.append(self._kline_technical_tab)
+            #
+            #         end_time = time.time()
+            #         logger.info(f" K线技术分析标签页创建完成，总耗时: {(end_time - start_time):.2f}秒")
+            #     except Exception as kline_error:
+            #         logger.error(f" K线技术分析标签页创建失败: {kline_error}")
+            #         logger.error(traceback.format_exc())
 
             # ✅ 修复：板块资金流 - 使用服务容器（缩进修复，应在 if PROFESSIONAL_TABS_AVAILABLE 块内）
             try:
@@ -428,6 +788,9 @@ class RightPanel(BasePanel):
         self._create_ai_stock_tab(tab_widget)
         self._create_industry_tab(tab_widget)
         self._has_basic_tabs = True
+        
+        # 初始化UI事件连接 - 移到组件创建之后
+        self._init_ui_events()
 
         # 如果有专业标签页，隐藏基础标签页
         if PROFESSIONAL_TABS_AVAILABLE:
@@ -623,6 +986,142 @@ class RightPanel(BasePanel):
         layout = QVBoxLayout(backtest_widget)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(10)
+
+        # 回测结果管理组
+        backtest_manager_group = QGroupBox("回测结果管理")
+        layout.addWidget(backtest_manager_group)
+        self.add_widget('backtest_manager_group', backtest_manager_group)
+
+        backtest_manager_layout = QVBoxLayout(backtest_manager_group)
+
+        # 过滤条件区域
+        filter_layout = QGridLayout()
+        backtest_manager_layout.addLayout(filter_layout)
+
+        # 策略名称过滤
+        filter_layout.addWidget(QLabel("策略名称:"), 0, 0)
+        strategy_filter = QLineEdit()
+        strategy_filter.setPlaceholderText("输入策略名称进行过滤")
+        filter_layout.addWidget(strategy_filter, 0, 1)
+        self.add_widget('strategy_filter', strategy_filter)
+
+        # 收益率范围过滤
+        filter_layout.addWidget(QLabel("收益率范围:"), 1, 0)
+        return_layout = QHBoxLayout()
+        min_return_filter = QLineEdit()
+        min_return_filter.setPlaceholderText("最小")
+        min_return_filter.setMaximumWidth(80)
+        return_layout.addWidget(min_return_filter)
+        return_layout.addWidget(QLabel("到"))
+        max_return_filter = QLineEdit()
+        max_return_filter.setPlaceholderText("最大")
+        max_return_filter.setMaximumWidth(80)
+        return_layout.addWidget(max_return_filter)
+        filter_layout.addLayout(return_layout, 1, 1)
+        self.add_widget('min_return_filter', min_return_filter)
+        self.add_widget('max_return_filter', max_return_filter)
+
+        # 成功率范围过滤
+        filter_layout.addWidget(QLabel("成功率范围:"), 2, 0)
+        success_layout = QHBoxLayout()
+        min_success_filter = QLineEdit()
+        min_success_filter.setPlaceholderText("最小")
+        min_success_filter.setMaximumWidth(80)
+        success_layout.addWidget(min_success_filter)
+        success_layout.addWidget(QLabel("到"))
+        max_success_filter = QLineEdit()
+        max_success_filter.setPlaceholderText("最大")
+        max_success_filter.setMaximumWidth(80)
+        success_layout.addWidget(max_success_filter)
+        filter_layout.addLayout(success_layout, 2, 1)
+        self.add_widget('min_success_filter', min_success_filter)
+        self.add_widget('max_success_filter', max_success_filter)
+
+        # 过滤按钮
+        filter_button = QPushButton("应用过滤")
+        filter_layout.addWidget(filter_button, 3, 0, 1, 2)
+        self.add_widget('filter_button', filter_button)
+
+        # 回测结果列表
+        results_list_group = QGroupBox("回测结果列表")
+        backtest_manager_layout.addWidget(results_list_group)
+        self.add_widget('results_list_group', results_list_group)
+
+        results_list_layout = QVBoxLayout(results_list_group)
+
+        # 回测结果列表
+        results_table = QTableWidget(0, 5)
+        results_table.setHorizontalHeaderLabels(['股票代码', '策略名称', '回测时间', '收益率', '成功率'])
+        results_table.horizontalHeader().setStretchLastSection(True)
+        results_table.setAlternatingRowColors(True)
+        results_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        results_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        results_list_layout.addWidget(results_table)
+        self.add_widget('results_table', results_table)
+        
+        # 分页控件
+        pagination_layout = QHBoxLayout()
+        results_list_layout.addLayout(pagination_layout)
+        
+        # 当前页码
+        pagination_layout.addWidget(QLabel("页码:"))
+        self._current_page = 1
+        self._page_size = 10
+        self._total_pages = 1
+        
+        # 页码输入
+        self._page_spinbox = QSpinBox()
+        self._page_spinbox.setMinimum(1)
+        self._page_spinbox.setMaximum(1)
+        self._page_spinbox.setValue(1)
+        pagination_layout.addWidget(self._page_spinbox)
+        self.add_widget('page_spinbox', self._page_spinbox)
+        
+        # 总页数
+        self._total_pages_label = QLabel("/ 1")
+        pagination_layout.addWidget(self._total_pages_label)
+        self.add_widget('total_pages_label', self._total_pages_label)
+        
+        # 每页大小
+        pagination_layout.addWidget(QLabel("每页:"))
+        self._page_size_combo = QComboBox()
+        self._page_size_combo.addItems(['10', '20', '50', '100'])
+        self._page_size_combo.setCurrentText('10')
+        pagination_layout.addWidget(self._page_size_combo)
+        self.add_widget('page_size_combo', self._page_size_combo)
+        
+        # 翻页按钮
+        prev_button = QPushButton("上一页")
+        pagination_layout.addWidget(prev_button)
+        self.add_widget('prev_button', prev_button)
+        
+        next_button = QPushButton("下一页")
+        pagination_layout.addWidget(next_button)
+        self.add_widget('next_button', next_button)
+
+        # 按钮组
+        buttons_layout = QHBoxLayout()
+        backtest_manager_layout.addLayout(buttons_layout)
+
+        # 单条删除按钮
+        delete_button = QPushButton("删除选中")
+        buttons_layout.addWidget(delete_button)
+        self.add_widget('delete_button', delete_button)
+
+        # 按股票清空按钮
+        clear_stock_button = QPushButton("清空当前股票")
+        buttons_layout.addWidget(clear_stock_button)
+        self.add_widget('clear_stock_button', clear_stock_button)
+
+        # 全部清空按钮
+        clear_all_button = QPushButton("清空全部")
+        buttons_layout.addWidget(clear_all_button)
+        self.add_widget('clear_all_button', clear_all_button)
+
+        # 导出按钮
+        export_button = QPushButton("导出结果")
+        buttons_layout.addWidget(export_button)
+        self.add_widget('export_button', export_button)
 
         # 回测结果组
         backtest_results_group = QGroupBox("回测结果")
@@ -878,9 +1377,13 @@ class RightPanel(BasePanel):
             self.get_widget('stock_label').setText(
                 f"{self._current_stock_name} ({self._current_stock_code})")
 
-            # 如果是新股票，重置性能管理器状态
-            if is_new_stock and self._performance_manager:
-                self._performance_manager.reset_for_new_stock(event.stock_code)
+            # 如果是新股票，重置性能管理器状态和清空旧回测结果
+            if is_new_stock:
+                logger.info(f"切换到新股票，清空旧回测结果: {event.stock_code}")
+                # 清空旧股票的回测结果显示
+                self._clear_backtest_results()
+                if self._performance_manager:
+                    self._performance_manager.reset_for_new_stock(event.stock_code)
 
             # 从事件中直接获取分析数据和K线数据
             analysis_data = event.ui_data.get('analysis')
@@ -895,9 +1398,9 @@ class RightPanel(BasePanel):
                 logger.warning("性能管理器不可用，使用原有更新机制")
                 self._async_update_professional_tabs(kline_data)
 
-            # 如果有分析数据，更新基础功能标签页（只有在组件存在时）
-            if analysis_data and self._has_basic_tabs:
-                self._update_analysis_display(analysis_data)
+            # 更新基础功能标签页（只有在组件存在时）
+            if self._has_basic_tabs:
+                self._update_analysis_display(analysis_data or {})
 
             # 更新状态为数据加载完成
             self._update_status(f"已加载 {self._current_stock_name} 数据，分析完成")
@@ -1006,7 +1509,6 @@ class RightPanel(BasePanel):
         try:
             from PyQt5.QtCore import QTimer
             from concurrent.futures import ThreadPoolExecutor
-            import os
 
             # ✅ 性能优化：使用线程池并行更新标签页
             if not hasattr(self, '_tab_update_executor'):
@@ -1105,6 +1607,21 @@ class RightPanel(BasePanel):
         except Exception as e:
             logger.error(f"同步更新专业标签页失败: {e}")
 
+    def _on_analysis_complete(self, event: AnalysisCompleteEvent) -> None:
+        """处理分析完成事件，特别是回测结果"""
+        try:
+            logger.info(f"收到分析完成事件: {event.stock_code}, 类型: {event.analysis_type}")
+            
+            # 如果是回测结果，更新回测显示
+            if event.analysis_type == "backtest" and event.results and "backtest" in event.results:
+                self._update_backtest_results_safe(event.results["backtest"])
+                # 刷新回测结果列表
+                self._refresh_results_table()
+            
+        except Exception as e:
+            logger.error(f"处理分析完成事件失败: {e}")
+            logger.error(traceback.format_exc())
+    
     def _update_analysis_display(self, analysis_data: Dict[str, Any]) -> None:
         """更新分析数据显示"""
         try:
@@ -1119,9 +1636,20 @@ class RightPanel(BasePanel):
             # 更新回测结果（安全检查）
             if 'backtest' in analysis_data:
                 self._update_backtest_results_safe(analysis_data['backtest'])
+            else:
+                # 从回测结果管理器获取最新回测结果
+                latest_result = self._backtest_result_manager.get_latest_result(self._current_stock_code)
+                if latest_result:
+                    backtest_data = {
+                        "is_professional": latest_result.is_professional,
+                        "results": latest_result.backtest_results,
+                        "trades": latest_result.trades
+                    }
+                    self._update_backtest_results_safe(backtest_data)
 
         except Exception as e:
             logger.error(f"更新分析数据显示失败: {e}")
+            logger.error(traceback.format_exc())
 
     def _update_signal_analysis_safe(self, signal_data: Dict[str, Any]) -> None:
         """安全更新信号分析"""
@@ -1228,6 +1756,25 @@ class RightPanel(BasePanel):
         except Exception as e:
             logger.error(f"Failed to update risk analysis: {e}")
 
+    def _clear_backtest_results(self) -> None:
+        """清空回测结果显示"""
+        try:
+            logger.info("清空回测结果显示")
+            
+            # 清空回测结果表格
+            backtest_table = self.get_widget('backtest_table')
+            if backtest_table:
+                backtest_table.setRowCount(0)
+            
+            # 清空交易记录表格
+            trade_table = self.get_widget('trade_table')
+            if trade_table:
+                trade_table.setRowCount(0)
+            
+        except Exception as e:
+            logger.error(f"清空回测结果失败: {e}")
+            logger.error(traceback.format_exc())
+    
     def _update_backtest_results_safe(self, backtest_data: Dict[str, Any]) -> None:
         """安全更新回测结果"""
         try:
@@ -1468,7 +2015,11 @@ class RightPanel(BasePanel):
 
             # 更新active_indicators（将计算结果转换为指标列表，并根据名称智能判断group）
             active_indicators = []
-            for indicator_name in indicator_results.keys():
+            for i, indicator_name in enumerate(indicator_results.keys()):
+                if not indicator_name:
+                    logger.warning(f"跳过无效指标名称: {indicator_name}")
+                    continue
+                
                 # 根据指标名称判断group：builtin或talib
                 # 判断指标分组：内置、talib 或自定义（中文名）
                 if indicator_name in builtin_indicators:
@@ -1477,13 +2028,28 @@ class RightPanel(BasePanel):
                     group = 'custom'
                 else:
                     group = 'talib'
-                active_indicators.append({
+                
+                indicator_entry = {
                     "name": indicator_name,
                     "params": {},  # 参数已包含在计算结果中
                     "group": group
-                })
+                }
+                
+                # 验证指标条目
+                if isinstance(indicator_entry, dict) and indicator_entry.get('name'):
+                    active_indicators.append(indicator_entry)
+                else:
+                    logger.warning(f"移除无效指标 #{i}: {indicator_entry}")
 
-            chart_widget.active_indicators = active_indicators
+            # 验证active_indicators列表
+            validated_indicators = []
+            for i, ind in enumerate(active_indicators):
+                if ind is not None and isinstance(ind, dict) and ind.get('name'):
+                    validated_indicators.append(ind)
+                else:
+                    logger.warning(f"移除无效指标 #{i}: {ind}")
+            
+            chart_widget.active_indicators = validated_indicators
             logger.info(f"✅ 设置active_indicators: {[ind['name'] for ind in active_indicators]}")
             logger.info(f"指标分组信息: {[(ind['name'], ind['group']) for ind in active_indicators]}")
 

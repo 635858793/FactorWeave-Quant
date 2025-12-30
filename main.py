@@ -50,10 +50,6 @@ except ImportError as e:
     logger.info("请安装PyQt5: pip install PyQt5")
     QEventLoop = None
 
-# WebGPU硬件加速渲染初始化将在QApplication创建后进行
-# 这样可以避免QObject::startTimer: Timers can only be used with threads started with QThread错误
-
-
 class FactorWeaveQuantApplication:
     """
     FactorWeave-Quant  应用程序主类
@@ -141,9 +137,6 @@ class FactorWeaveQuantApplication:
         # 注册Qt元类型
         self._register_qt_meta_types()
 
-        # 设置全局样式
-        self._setup_global_styles()
-
         logger.info("Qt应用程序创建完成")
 
     def _register_qt_meta_types(self) -> None:
@@ -157,82 +150,6 @@ class FactorWeaveQuantApplication:
         except Exception as e:
             logger.warning(f"Qt元类型注册失败: {e}")
             logger.warning(traceback.format_exc())
-
-    def _setup_global_styles(self) -> None:
-        """设置全局样式"""
-        global_style = '''
-            QScrollBar:vertical {
-                width: 8px;
-                background: #f0f0f0;
-                margin: 0px;
-                border-radius: 4px;
-            }
-            QScrollBar:horizontal {
-                height: 8px;
-                background: #f0f0f0;
-                margin: 0px;
-                border-radius: 4px;
-            }
-            QScrollBar::handle:vertical, QScrollBar::handle:horizontal {
-                background: #c0c0c0;
-                min-height: 20px;
-                min-width: 20px;
-                border-radius: 4px;
-            }
-            QScrollBar::handle:hover {
-                background: #a0a0a0;
-            }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
-            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
-                height: 0px;
-                width: 0px;
-                background: none;
-                border: none;
-            }
-            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical,
-            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
-                background: none;
-            }
-            
-            /* 表格样式 */
-            QTableWidget {
-                gridline-color: #e0e0e0;
-                background-color: white;
-                alternate-background-color: #f8f9fa;
-                selection-background-color: #007bff;
-                selection-color: white;
-                border: 1px solid #dee2e6;
-            }
-            QHeaderView::section {
-                background-color: #495057;
-                color: white;
-                padding: 8px;
-                border: none;
-                font-weight: bold;
-                height: 14px
-            }
-            
-            /* 选项卡样式 */
-            QTabWidget::pane {
-                border: 1px solid #c0c0c0;
-                background-color: white;
-            }
-            QTabBar::tab {
-                background-color: #f0f0f0;
-                padding: 8px 16px;
-                margin-right: 2px;
-                border-top-left-radius: 4px;
-                border-top-right-radius: 4px;
-            }
-            QTabBar::tab:selected {
-                background-color: white;
-                border-bottom: 2px solid #007bff;
-            }
-            QTabBar::tab:hover {
-                background-color: #e9ecef;
-            }
-        '''
-        self.app.setStyleSheet(global_style)
 
     def _setup_qt_logging(self) -> None:
         """设置Qt日志处理器"""

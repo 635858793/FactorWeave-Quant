@@ -60,7 +60,7 @@ from .unified_monitor import (
     # 组件类
     SystemMonitor,
     UIOptimizer,
-    AutoTuner,
+    PerformanceAutoTuner,
 
     # 全局函数
     get_performance_monitor,
@@ -93,7 +93,7 @@ __all__ = [
     # 组件
     'SystemMonitor',
     'UIOptimizer',
-    'AutoTuner',
+    'PerformanceAutoTuner',
 
     # 全局函数
     'get_performance_monitor',

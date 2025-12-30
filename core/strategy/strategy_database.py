@@ -140,13 +140,38 @@ class StrategyDatabaseManager:
             conn.commit()
 
     @contextmanager
-    def _get_connection(self):
-        """获取数据库连接的上下文管理器"""
+    def _get_connection(self, auto_commit=True):
+        """获取数据库连接的上下文管理器
+        
+        Args:
+            auto_commit: 是否自动提交事务
+        """
         with self._lock:
             conn = sqlite3.connect(str(self.db_path), timeout=30.0)
             conn.row_factory = sqlite3.Row
             try:
                 yield conn
+                if auto_commit:
+                    conn.commit()
+            except Exception as e:
+                conn.rollback()
+                raise
+            finally:
+                conn.close()
+                
+    @contextmanager
+    def transaction(self):
+        """事务上下文管理器，用于执行多个相关的数据库操作"""
+        with self._lock:
+            conn = sqlite3.connect(str(self.db_path), timeout=30.0)
+            conn.row_factory = sqlite3.Row
+            try:
+                yield conn
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                logger.error(f"事务执行失败，已回滚: {e}")
+                raise
             finally:
                 conn.close()
 
@@ -217,7 +242,6 @@ class StrategyDatabaseManager:
                     self.logger.info(
                         f"注册新策略: {strategy_name} (ID: {strategy_id})")
 
-                conn.commit()
                 return strategy_id
 
         except Exception as e:

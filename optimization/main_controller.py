@@ -11,7 +11,7 @@ from optimization.ui_integration import UIIntegration, create_ui_integration
 from optimization.database_schema import OptimizationDatabaseManager
 from optimization.algorithm_optimizer import AlgorithmOptimizer
 from optimization.version_manager import VersionManager
-from optimization.auto_tuner import AutoTuner, OptimizationConfig
+from optimization.auto_tuner import AlgorithmAutoTuner, OptimizationConfig
 import sys
 import os
 import argparse
@@ -31,7 +31,7 @@ class OptimizationController:
         self.debug_mode = debug_mode
 
         # 初始化核心组件
-        self.auto_tuner = AutoTuner(debug_mode=debug_mode)
+        self.auto_tuner = AlgorithmAutoTuner(debug_mode=debug_mode)
         self.version_manager = VersionManager()
         self.evaluator = PerformanceEvaluator(debug_mode)
         self.optimizer = AlgorithmOptimizer(debug_mode)

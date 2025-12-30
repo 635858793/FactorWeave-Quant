@@ -43,7 +43,7 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
     def create_ui(self):
         """创建用户界面 - 修复版，解决UI重叠问题"""
         layout = QVBoxLayout(self)
-        layout.setSpacing(8)  # 设置合适的间距
+        layout.setSpacing(2)  # 设置合适的间距
 
         # 指标选择和控制区域 - 使用更灵活的高度设置
         control_group = QGroupBox("指标控制")
@@ -55,8 +55,6 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
         # 左侧：指标选择 - 更紧凑的布局
         indicator_card = QFrame()
         indicator_card.setFrameStyle(QFrame.StyledPanel)
-        indicator_card.setStyleSheet(
-            "QFrame { background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; padding: 6px; }")
         indicator_layout = QVBoxLayout(indicator_card)
         indicator_layout.setSpacing(4)
         indicator_layout.setContentsMargins(6, 6, 6, 6)
@@ -108,14 +106,14 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
         self.calc_btn = QPushButton("计算指标")
         self.calc_btn.setMaximumHeight(30)  # 限制按钮高度
         self.calc_btn.setStyleSheet(
-            "QPushButton { background-color: #007bff; color: white; font-weight: bold; padding: 4px 8px; }")
+            "QPushButton { background-color: #007bff; color: white; font-weight: bold; padding: 4px 8px; height: 20px; }")
         self.calc_btn.clicked.connect(self.calculate_indicators)
         self.calc_btn.setToolTip("根据当前设置计算选定的技术指标\n快捷键：Ctrl+Enter")
 
         clear_indicators_btn = QPushButton("清除")
         clear_indicators_btn.setMaximumHeight(30)
         clear_indicators_btn.setStyleSheet(
-            "QPushButton { background-color: #6c757d; color: white; font-weight: bold; padding: 4px 8px; }")
+            "QPushButton { background-color: #6c757d; color: white; font-weight: bold; padding: 4px 8px; height: 20px; }")
         clear_indicators_btn.clicked.connect(self.clear_indicators)
         clear_indicators_btn.setToolTip("清除所有已计算的技术指标")
 
@@ -123,7 +121,7 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
         cache_btn = QPushButton("清缓存")
         cache_btn.setMaximumHeight(30)
         cache_btn.setStyleSheet(
-            "QPushButton { background-color: #ffc107; color: black; font-weight: bold; padding: 4px 8px; }")
+            "QPushButton { background-color: #ffc107; color: black; font-weight: bold; padding: 4px 8px; height: 20px; }")
         cache_btn.clicked.connect(self.clear_cache)
         cache_btn.setToolTip("清除指标计算缓存")
 
@@ -137,8 +135,6 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
         # 右侧：动态参数设置 - 优化布局以防止重叠
         params_card = QFrame()
         params_card.setFrameStyle(QFrame.StyledPanel)
-        params_card.setStyleSheet(
-            "QFrame { background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 6px; }")
         params_card.setMinimumHeight(180)  # 设置最小高度
         params_card.setMaximumHeight(250)  # 设置最大高度以防重叠
 
@@ -243,34 +239,14 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
 
         # 高级筛选按钮
         self.advanced_filter_btn = QPushButton("筛选")
-        self.advanced_filter_btn.setMaximumHeight(28)
-        self.advanced_filter_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #007bff;
-                color: white;
-                border: none;
-                padding: 4px 8px;
-                border-radius: 4px;
-                font-size: 11px;
-            }
-            QPushButton:hover { background-color: #0056b3; }
-        """)
+        self.advanced_filter_btn.setMaximumHeight(25)
+
         self.advanced_filter_btn.clicked.connect(self.show_advanced_filter_dialog)
 
         # 清除筛选按钮
         self.clear_filter_btn = QPushButton("清除")
-        self.clear_filter_btn.setMaximumHeight(28)
-        self.clear_filter_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #6c757d;
-                color: white;
-                border: none;
-                padding: 4px 8px;
-                border-radius: 4px;
-                font-size: 11px;
-            }
-            QPushButton:hover { background-color: #545b62; }
-        """)
+        self.clear_filter_btn.setMaximumHeight(25)
+
         self.clear_filter_btn.clicked.connect(self.clear_table_filters)
         self.clear_filter_btn.setEnabled(False)
 
@@ -294,37 +270,6 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
         self.technical_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.technical_table.setAlternatingRowColors(True)
         self.technical_table.setSortingEnabled(True)
-
-        # 设置专业的表格样式
-        self.technical_table.setStyleSheet("""
-            QTableWidget {
-                gridline-color: #d0d0d0;
-                background-color: white;
-                alternate-background-color: #f8f9fa;
-                selection-background-color: #e3f2fd;
-                font-family: 'Microsoft YaHei', Arial, sans-serif;
-                font-size: 11px;
-            }
-            QTableWidget::item {
-                padding: 6px;
-                border-bottom: 1px solid #e0e0e0;
-            }
-            QTableWidget::item:selected {
-                background-color: #bbdefb;
-                color: #1976d2;
-            }
-            QHeaderView::section {
-                background-color: #37474f;
-                color: white;
-                padding: 8px;
-                border: none;
-                font-weight: bold;
-                font-size: 11px;
-            }
-            QHeaderView::section:hover {
-                background-color: #455a64;
-            }
-        """)
 
         # 设置列宽
         header = self.technical_table.horizontalHeader()

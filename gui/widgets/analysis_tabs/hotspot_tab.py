@@ -212,8 +212,6 @@ class HotspotAnalysisTab(BaseAnalysisTab):
         # 热点板块数
         hotspot_card = QFrame()
         hotspot_card.setFrameStyle(QFrame.StyledPanel)
-        hotspot_card.setStyleSheet(
-            "QFrame { background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; }")
         hotspot_layout = QVBoxLayout(hotspot_card)
         hotspot_layout.addWidget(QLabel("热点板块"))
 
@@ -228,8 +226,6 @@ class HotspotAnalysisTab(BaseAnalysisTab):
         # 龙头股数
         leading_card = QFrame()
         leading_card.setFrameStyle(QFrame.StyledPanel)
-        leading_card.setStyleSheet(
-            "QFrame { background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; }")
         leading_layout = QVBoxLayout(leading_card)
         leading_layout.addWidget(QLabel("龙头股"))
 
@@ -244,8 +240,6 @@ class HotspotAnalysisTab(BaseAnalysisTab):
         # 主题机会
         theme_card = QFrame()
         theme_card.setFrameStyle(QFrame.StyledPanel)
-        theme_card.setStyleSheet(
-            "QFrame { background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; }")
         theme_layout = QVBoxLayout(theme_card)
         theme_layout.addWidget(QLabel("主题机会"))
 
@@ -260,8 +254,6 @@ class HotspotAnalysisTab(BaseAnalysisTab):
         # 市场热度
         heat_card = QFrame()
         heat_card.setFrameStyle(QFrame.StyledPanel)
-        heat_card.setStyleSheet(
-            "QFrame { background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; }")
         heat_layout = QVBoxLayout(heat_card)
         heat_layout.addWidget(QLabel("市场热度"))
 

@@ -117,9 +117,23 @@ class RenderingMixin:
         required_custom_indicators = []
         
         for indicator in indicators:
+            # 空值检查
+            if indicator is None:
+                logger.warning(f"跳过空指标")
+                continue
+                
             name = indicator.get('name', '')
+            if not name:
+                logger.warning(f"跳过缺少名称的指标")
+                continue
+                
             group = indicator.get('group', '')
             params = indicator.get('params', {})
+            
+            # 验证参数是否为字典
+            if not isinstance(params, dict):
+                logger.warning(f"指标 {name} 参数格式错误，应为字典")
+                params = {}
             
             if group == 'builtin':
                 if name == 'MACD':
@@ -314,8 +328,8 @@ class RenderingMixin:
             return ('MACD', None)
         elif name == 'RSI':
             return ('RSI', None)
-        elif name == 'BOLL':
-            return ('BOLL', None)
+        elif name == 'BOLL' or name == 'BBANDS':
+                return ('BOLL', None)
         elif self._ma_pattern.match(name):
             ma_match = self._ma_pattern.match(name)
             if ma_match and ma_match.group(1):
@@ -505,13 +519,41 @@ class RenderingMixin:
                     ]
                     logger.info(f"✅ active_indicators为None，使用硬编码默认指标: MA20, MA60")
             else:
-                logger.info(f"✅ active_indicators已被设置，保持现有值不变: {[ind.get('name', 'unknown') for ind in self.active_indicators] if self.active_indicators else 'None'}")
+                # 验证active_indicators是否为列表
+                if not isinstance(self.active_indicators, list):
+                    logger.warning(f"active_indicators格式错误，应为列表，实际为: {type(self.active_indicators)}")
+                    # 重置为默认指标
+                    self.active_indicators = [
+                        {"name": "MA20", "params": {"period": 20}, "group": "builtin"},
+                        {"name": "MA60", "params": {"period": 60}, "group": "builtin"}
+                    ]
+                    logger.info(f"✅ active_indicators格式错误，已重置为默认指标: MA20, MA60")
+                else:
+                    # 记录active_indicators状态
+                    indicator_names = []
+                    for ind in self.active_indicators:
+                        if ind is not None and isinstance(ind, dict):
+                            indicator_names.append(ind.get('name', 'unknown'))
+                        else:
+                            indicator_names.append('invalid')
+                    logger.info(f"✅ active_indicators已被设置，保持现有值不变: {indicator_names}")
 
             # 记录active_indicators状态
             active_inds = getattr(self, 'active_indicators', None)
             # 如果active_indicators为None，使用空列表
             if active_inds is None:
                 active_inds = []
+            else:
+                # 验证active_indicators中的每个指标
+                validated_inds = []
+                for i, ind in enumerate(active_inds):
+                    if ind is not None and isinstance(ind, dict) and ind.get('name'):
+                        validated_inds.append(ind)
+                    else:
+                        logger.warning(f"移除无效指标 #{i}: {ind}")
+                active_inds = validated_inds
+                self.active_indicators = active_inds  # 更新为验证后的列表
+            
             logger.info(f"📊 准备调用_render_indicators，active_indicators状态: {len(active_inds) if active_inds else 0}个指标")
             # if active_inds:
             #     logger.info(f"📊 active_indicators内容: {[ind.get('name', 'unknown') for ind in active_inds]}")
@@ -660,6 +702,7 @@ class RenderingMixin:
             self._optimize_display()
         except Exception as e:
             logger.error(f"更新图表失败: {str(e)}")
+            logger.error(f"错误详情: {type(e).__name__}: {str(e)}")
             self.show_no_data("渲染失败")
 
     def _render_indicator_data(self, indicators_data, kdata, x=None):
@@ -790,6 +833,10 @@ class RenderingMixin:
             kdata_hash = self._get_kdata_hash(kdata)
             precomputed = self._batch_precompute_indicators(kdata, indicators)
             
+            # 验证precomputed是否为字典
+            if not isinstance(precomputed, dict):
+                precomputed = {}
+            
             render_time = (time.time() - start_time) * 1000
             logger.info(f"🚀 批量预计算完成，耗时: {render_time:.2f}ms")
             
@@ -799,10 +846,23 @@ class RenderingMixin:
             plot_commands = []  # 收集绘图命令，减少matplotlib调用次数
             
             for i, indicator in enumerate(indicators):
+                # 全面空值检查
+                if indicator is None:
+                    logger.warning(f"指标 #{i} 为空，跳过渲染")
+                    continue
+                
                 name = indicator.get('name', '')
+                if not name:
+                    logger.warning(f"指标 #{i} 缺少名称，跳过渲染")
+                    continue
+                
                 group = indicator.get('group', '')
                 params = indicator.get('params', {})
                 formula = indicator.get('formula', None)
+                
+                # 验证参数是否为字典
+                if not isinstance(params, dict):
+                    params = {}
                 
                 # 🔥 关键优化3: 使用缓存的样式
                 style = self._get_optimized_indicator_style(name, i)
@@ -811,7 +871,16 @@ class RenderingMixin:
                 indicator_type = self._fast_indicator_match(name, group)
                 
                 if indicator_type and group == 'builtin':
+                    # 验证indicator_type是否为元组
+                    if not isinstance(indicator_type, tuple) or len(indicator_type) != 2:
+                        logger.warning(f"indicator_type格式错误，应为(ind_type, ind_params)元组，实际为: {indicator_type}")
+                        continue
+                    
                     ind_type, ind_params = indicator_type
+                    
+                    # 验证ind_params是否为字典
+                    if not isinstance(ind_params, dict):
+                        ind_params = {}
                     
                     if ind_type == 'MA':
                         # 🚀 优化的MA指标渲染
@@ -819,7 +888,7 @@ class RenderingMixin:
                         cache_key = f'MA_{period}'
                         if cache_key in precomputed:
                             ma = precomputed[cache_key]
-                            if not ma.empty:
+                            if ma is not None and hasattr(ma, 'empty') and not ma.empty:
                                 plot_commands.append(('plot', self.price_ax, x[-len(ma):], ma.values, 
                                                      style['color'], style['linewidth'], style['alpha'], name))                    
                     elif ind_type == 'MACD':
@@ -827,23 +896,26 @@ class RenderingMixin:
                         cache_key = 'MACD'
                         if cache_key in precomputed:
                             macd_data = precomputed[cache_key]
-                            macd = macd_data['macd']
-                            sig = macd_data['signal']
-                            hist = macd_data['hist']
-                            
-                            if not macd.empty:
-                                macd_style = self._get_optimized_indicator_style('MACD', i)
-                                signal_style = self._get_optimized_indicator_style('MACD-Signal', i+1)
+                            if macd_data is not None and isinstance(macd_data, dict):
+                                macd = macd_data.get('macd')
+                                sig = macd_data.get('signal')
+                                hist = macd_data.get('hist')
                                 
-                                plot_commands.append(('plot', self.indicator_ax, x[-len(macd):], macd.values,
-                                                     macd_style['color'], 0.7, 0.85, 'MACD'))
-                                plot_commands.append(('plot', self.indicator_ax, x[-len(sig):], sig.values,
-                                                     signal_style['color'], 0.7, 0.85, 'Signal'))
-                                
-                                if not hist.empty:
-                                    hist_colors = ['red' if h >= 0 else 'green' for h in hist.values]
-                                    plot_commands.append(('bar', self.indicator_ax, x[-len(hist):], hist.values,
-                                                         hist_colors, 0.5))
+                                if macd is not None and hasattr(macd, 'empty') and not macd.empty:
+                                    macd_style = self._get_optimized_indicator_style('MACD', i)
+                                    signal_style = self._get_optimized_indicator_style('MACD-Signal', i+1)
+                                    
+                                    # 验证sig和hist
+                                    if sig is not None and hasattr(sig, 'empty') and not sig.empty:
+                                        plot_commands.append(('plot', self.indicator_ax, x[-len(macd):], macd.values,
+                                                             macd_style['color'], 0.7, 0.85, 'MACD'))
+                                        plot_commands.append(('plot', self.indicator_ax, x[-len(sig):], sig.values,
+                                                             signal_style['color'], 0.7, 0.85, 'Signal'))
+                                        
+                                        if hist is not None and hasattr(hist, 'empty') and not hist.empty:
+                                            hist_colors = ['red' if h >= 0 else 'green' for h in hist.values]
+                                            plot_commands.append(('bar', self.indicator_ax, x[-len(hist):], hist.values,
+                                                                 hist_colors, 0.5, None, None))
                     
                     elif ind_type == 'RSI':
                         # 🚀 优化的RSI指标渲染
@@ -851,32 +923,43 @@ class RenderingMixin:
                         cache_key = f'RSI_{period}'
                         if cache_key in precomputed:
                             rsi = precomputed[cache_key]
-                            if not rsi.empty:
+                            if rsi is not None and hasattr(rsi, 'empty') and not rsi.empty:
                                 plot_commands.append(('plot', self.indicator_ax, x[-len(rsi):], rsi.values,
                                                      style['color'], style['linewidth'], style['alpha'], 'RSI'))
                     
                     elif ind_type == 'BOLL':
                         # 🚀 优化的BOLL指标渲染
-                        n = params.get('n', 20)
-                        p = params.get('p', 2)
+                        # 修复1: 确保参数类型一致，使用整数和浮点数
+                        n = int(params.get('n', 20))
+                        p = float(params.get('p', 2))
                         cache_key = f'BOLL_{n}_{p}'
+                        # 移除不必要的BBANDS缓存键检查
                         if cache_key in precomputed:
                             boll_data = precomputed[cache_key]
-                            mid = boll_data['mid']
-                            upper = boll_data['upper']
-                            lower = boll_data['lower']
-                            
-                            mid_style = self._get_optimized_indicator_style('BOLL-Mid', i)
-                            upper_style = self._get_optimized_indicator_style('BOLL-Upper', i+1)
-                            lower_style = self._get_optimized_indicator_style('BOLL-Lower', i+2)
-                            
-                            if not mid.empty:
-                                plot_commands.append(('plot', self.price_ax, x[-len(mid):], mid.values,
-                                                     mid_style['color'], 0.5, 0.85, 'BOLL-Mid'))
-                                plot_commands.append(('plot', self.price_ax, x[-len(upper):], upper.values,
-                                                     upper_style['color'], 0.7, 0.85, 'BOLL-Upper'))
-                                plot_commands.append(('plot', self.price_ax, x[-len(lower):], lower.values,
-                                                     lower_style['color'], 0.5, 0.85, 'BOLL-Lower'))
+                            if boll_data is not None and isinstance(boll_data, dict):
+                                mid = boll_data.get('mid')
+                                upper = boll_data.get('upper')
+                                lower = boll_data.get('lower')
+                                
+                                mid_style = self._get_optimized_indicator_style('BOLL-Mid', i)
+                                upper_style = self._get_optimized_indicator_style('BOLL-Upper', i+1)
+                                lower_style = self._get_optimized_indicator_style('BOLL-Lower', i+2)
+                                
+                                # 修复3: 优化数据验证条件，允许部分数据缺失时的渲染
+                                if mid is not None and hasattr(mid, 'empty') and not mid.empty:
+                                    # 渲染中轨（始终显示，因为它是BOLL的核心）
+                                    plot_commands.append(('plot', self.price_ax, x[-len(mid):], mid.values,
+                                                         mid_style['color'], 0.5, 0.85, 'BOLL-Mid'))
+                                    
+                                    # 条件性渲染上轨（如果有数据）
+                                    if upper is not None and hasattr(upper, 'empty') and not upper.empty:
+                                        plot_commands.append(('plot', self.price_ax, x[-len(upper):], upper.values,
+                                                             upper_style['color'], 0.7, 0.85, 'BOLL-Upper'))
+                                    
+                                    # 条件性渲染下轨（如果有数据）
+                                    if lower is not None and hasattr(lower, 'empty') and not lower.empty:
+                                        plot_commands.append(('plot', self.price_ax, x[-len(lower):], lower.values,
+                                                             lower_style['color'], 0.5, 0.85, 'BOLL-Lower'))
                 
                 elif group == 'talib':
                     try:
@@ -968,7 +1051,7 @@ class RenderingMixin:
                         cache_key = f'CUSTOM_{name}'
                         if cache_key in precomputed:
                             arr = precomputed[cache_key]
-                            if not arr.empty:
+                            if arr is not None and hasattr(arr, 'empty') and not arr.empty:
                                 plot_commands.append(('plot', self.price_ax, x[-len(arr):], arr.values,
                                                      style['color'], style['linewidth'], style['alpha'], name))
                         else:
@@ -980,43 +1063,104 @@ class RenderingMixin:
                             plot_commands.append(('plot', self.price_ax, x[-len(arr):], arr.values,
                                                  style['color'], style['linewidth'], style['alpha'], name))
                     except Exception as e:
+                        logger.error(f"自定义公式渲染失败: {str(e)}")
                         self.error_occurred.emit(f"自定义公式渲染失败: {str(e)}")
             
             # 🔥 关键优化5: 批量执行所有绘图命令
             if plot_commands:
-                self._execute_batch_plots(plot_commands)
+                # 验证所有绘图命令
+                validated_commands = []
+                for cmd in plot_commands:
+                    if cmd and isinstance(cmd, (list, tuple)) and len(cmd) >= 2:
+                        validated_commands.append(cmd)
+                    else:
+                        logger.warning(f"无效绘图命令: {cmd}")
+                
+                if validated_commands:
+                    self._execute_batch_plots(validated_commands)
+                else:
+                    logger.warning("没有有效的绘图命令可以执行")
+            else:
+                logger.debug("没有绘图命令需要执行")
                 
             render_time = (time.time() - start_time) * 1000
             logger.info(f"🚀 指标渲染完成，总耗时: {render_time:.2f}ms")
             
         except Exception as e:
-            self.error_occurred.emit(f"渲染指标失败: {str(e)}")
-            logger.error(f"🚀 指标渲染失败: {e}")
+            error_msg = f"渲染指标失败: {str(e)}"
+            self.error_occurred.emit(error_msg)
+            logger.error(f"🚀 {error_msg}")
+            # 记录详细错误信息
+            import traceback
+            logger.error(f"🚀 指标渲染失败详细信息: {traceback.format_exc()}")
     
     def _execute_batch_plots(self, plot_commands: List[Tuple]):
         """🚀 批量执行绘图命令，减少matplotlib调用次数"""
         try:
             for cmd in plot_commands:
+                # 验证命令格式
+                if not cmd or not isinstance(cmd, (list, tuple)) or len(cmd) < 2:
+                    logger.warning(f"无效绘图命令格式: {cmd}")
+                    continue
+                    
                 plot_type = cmd[0]
                 if plot_type == 'plot':
-                    ax, x, y, color, linewidth, alpha, label = cmd[1:]
-                    ax.plot(x, y, color=color, linewidth=linewidth, alpha=alpha, label=label)
+                    # 验证plot命令参数
+                    if len(cmd) < 8:
+                        logger.warning(f"plot命令参数不足，需要8个，实际: {len(cmd)}")
+                        continue
+                    
+                    try:
+                        ax, x, y, color, linewidth, alpha, label = cmd[1:]
+                        # 验证数据有效性
+                        if x is not None and y is not None and len(x) == len(y):
+                            ax.plot(x, y, color=color, linewidth=linewidth, alpha=alpha, label=label)
+                        else:
+                            logger.warning(f"plot命令数据无效: x={x}, y={y}")
+                    except Exception as e:
+                        logger.error(f"解析plot命令失败: {e}")
+                        
                 elif plot_type == 'bar':
-                    ax, x, y, colors, alpha, _, _ = cmd[1:]
-                    ax.bar(x, y, color=colors, alpha=alpha)
+                    # 验证bar命令参数
+                    if len(cmd) < 7:
+                        logger.warning(f"bar命令参数不足，需要7个，实际: {len(cmd)}")
+                        continue
+                    
+                    try:
+                        ax, x, y, colors, alpha, _, _ = cmd[1:]
+                        # 验证数据有效性
+                        if x is not None and y is not None and len(x) == len(y):
+                            ax.bar(x, y, color=colors, alpha=alpha)
+                        else:
+                            logger.warning(f"bar命令数据无效: x={x}, y={y}")
+                    except Exception as e:
+                        logger.error(f"解析bar命令失败: {e}")
+                        
+                else:
+                    logger.warning(f"未知绘图命令类型: {plot_type}")
+                    
             logger.debug(f"🚀 批量执行了 {len(plot_commands)} 个绘图命令")
         except Exception as e:
             logger.error(f"批量绘图执行失败: {e}")
             # 回退到逐个执行
             for cmd in plot_commands:
                 try:
+                    # 验证命令格式
+                    if not cmd or not isinstance(cmd, (list, tuple)) or len(cmd) < 2:
+                        logger.warning(f"无效绘图命令格式: {cmd}")
+                        continue
+                        
                     plot_type = cmd[0]
                     if plot_type == 'plot':
-                        ax, x, y, color, linewidth, alpha, label = cmd[1:]
-                        ax.plot(x, y, color=color, linewidth=linewidth, alpha=alpha, label=label)
+                        if len(cmd) >= 8:
+                            ax, x, y, color, linewidth, alpha, label = cmd[1:]
+                            if x is not None and y is not None and len(x) == len(y):
+                                ax.plot(x, y, color=color, linewidth=linewidth, alpha=alpha, label=label)
                     elif plot_type == 'bar':
-                        ax, x, y, colors, alpha, _, _ = cmd[1:]
-                        ax.bar(x, y, color=colors, alpha=alpha)
+                        if len(cmd) >= 7:
+                            ax, x, y, colors, alpha, _, _ = cmd[1:]
+                            if x is not None and y is not None and len(x) == len(y):
+                                ax.bar(x, y, color=colors, alpha=alpha)
                 except Exception as e2:
                     logger.error(f"单个绘图命令失败: {e2}")
     
@@ -1038,19 +1182,38 @@ class RenderingMixin:
         """获取图表样式，所有颜色从theme_manager.get_theme_colors获取"""
         try:
             colors = self.theme_manager.get_theme_colors()
+            
+            # 处理颜色格式，确保rgba格式被正确解析
+            processed_colors = {}
+            for key, value in colors.items():
+                if isinstance(value, str) and value.startswith('rgba('):
+                    # 解析rgba格式
+                    try:
+                        rgba_content = value[5:-1]  # 去掉 "rgba(" 和 ")"
+                        parts = [part.strip() for part in rgba_content.split(',')]
+                        if len(parts) >= 4:
+                            r, g, b = int(parts[0].strip()), int(parts[1].strip()), int(parts[2].strip())
+                            processed_colors[key] = (r, g, b)
+                        else:
+                            processed_colors[key] = value
+                    except (ValueError, IndexError):
+                        processed_colors[key] = value
+                else:
+                    processed_colors[key] = value
+                    
             return {
-                'up_color': colors.get('k_up', '#e74c3c'),
-                'down_color': colors.get('k_down', '#27ae60'),
-                'edge_color': colors.get('k_edge', '#2c3140'),
-                'volume_up_color': colors.get('volume_up', '#e74c3c'),
-                'volume_down_color': colors.get('volume_down', '#27ae60'),
-                'volume_alpha': colors.get('volume_alpha', 0.5),
-                'grid_color': colors.get('chart_grid', '#e0e0e0'),
-                'background_color': colors.get('chart_background', '#ffffff'),
-                'text_color': colors.get('chart_text', '#222b45'),
-                'axis_color': colors.get('chart_grid', '#e0e0e0'),
-                'label_color': colors.get('chart_text', '#222b45'),
-                'border_color': colors.get('chart_grid', '#e0e0e0'),
+                'up_color': processed_colors.get('k_up', '#e74c3c'),
+                'down_color': processed_colors.get('k_down', '#27ae60'),
+                'edge_color': processed_colors.get('k_edge', '#2c3140'),
+                'volume_up_color': processed_colors.get('volume_up', '#e74c3c'),
+                'volume_down_color': processed_colors.get('volume_down', '#27ae60'),
+                'volume_alpha': processed_colors.get('volume_alpha', 0.5),
+                'grid_color': processed_colors.get('chart_grid', '#e0e0e0'),
+                'background_color': processed_colors.get('chart_background', '#ffffff'),
+                'text_color': processed_colors.get('chart_text', '#222b45'),
+                'axis_color': processed_colors.get('chart_grid', '#e0e0e0'),
+                'label_color': processed_colors.get('chart_text', '#222b45'),
+                'border_color': processed_colors.get('chart_grid', '#e0e0e0'),
             }
         except Exception as e:
             logger.error(f"获取图表样式失败: {str(e)}")
@@ -1173,7 +1336,30 @@ class RenderingMixin:
                 return
 
             colors = self.theme_manager.get_theme_colors()
-            bg_color = colors.get('chart_background', '#ffffff')
+            
+            # 处理颜色格式，确保rgba格式被正确解析
+            processed_colors = {}
+            for key, value in colors.items():
+                if isinstance(value, str) and value.startswith('rgba('):
+                    # 解析rgba格式
+                    try:
+                        rgba_content = value[5:-1]  # 去掉 "rgba(" 和 ")"
+                        parts = [part.strip() for part in rgba_content.split(',')]
+                        if len(parts) >= 4:
+                            r, g, b = int(parts[0].strip()), int(parts[1].strip()), int(parts[2].strip())
+                            processed_colors[key] = (r, g, b)
+                        else:
+                            processed_colors[key] = value
+                    except (ValueError, IndexError):
+                        processed_colors[key] = value
+                else:
+                    processed_colors[key] = value
+            
+            bg_color = processed_colors.get('chart_background', '#ffffff')
+            
+            # 处理背景色格式
+            if isinstance(bg_color, tuple) and len(bg_color) >= 3:
+                bg_color = bg_color[:3]  # 使用RGB部分
 
             # 设置图表背景色
             self.figure.patch.set_facecolor(bg_color)
@@ -1183,11 +1369,11 @@ class RenderingMixin:
                 ax.set_facecolor(bg_color)
 
                 # 设置网格样式
-                grid_color = colors.get('chart_grid', '#e0e0e0')
+                grid_color = processed_colors.get('chart_grid', '#e0e0e0')
                 ax.grid(True, color=grid_color, alpha=0.3, linewidth=0.5)
 
                 # 设置刻度和标签颜色
-                text_color = colors.get('chart_text', '#222b45')
+                text_color = processed_colors.get('chart_text', '#222b45')
                 ax.tick_params(colors=text_color)
                 ax.xaxis.label.set_color(text_color)
                 ax.yaxis.label.set_color(text_color)
@@ -1197,6 +1383,9 @@ class RenderingMixin:
 
         except Exception as e:
             logger.error(f"应用主题失败: {str(e)}")
+            logger.error(f"错误详情: {type(e).__name__}: {str(e)}")
+            import traceback
+            logger.error(f"错误详情: {traceback.format_exc()}")
 
     def _init_figure_layout(self):
         """初始化图表布局"""

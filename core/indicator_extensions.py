@@ -7,6 +7,7 @@ from loguru import logger
 import pandas as pd
 import numpy as np
 from abc import ABC, abstractmethod
+from core.network.universal_network_config import INetworkConfigurable
 from typing import Dict, Any, List, Optional, Union, Tuple
 from dataclasses import dataclass
 from enum import Enum
@@ -220,7 +221,7 @@ class IndicatorCalculationContext:
         if self.extra_params is None:
             self.extra_params = {}
 
-class IIndicatorPlugin(ABC):
+class IIndicatorPlugin(ABC, INetworkConfigurable):
     """
     指标插件接口
 

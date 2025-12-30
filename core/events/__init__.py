@@ -26,6 +26,10 @@ from .events import (
     AlertLevel,
     ResourceAlert,
     ApplicationAlert,
+    StrategyConfigCreatedEvent,
+    StrategyConfigUpdatedEvent,
+    StrategyConfigDeletedEvent,
+    StrategyConfigsLoadedEvent,
 )
 from .event_handler import EventHandler, AsyncEventHandler
 
@@ -54,4 +58,8 @@ __all__ = [
     'AlertLevel',
     'ResourceAlert',
     'ApplicationAlert',
+    'StrategyConfigCreatedEvent',
+    'StrategyConfigUpdatedEvent',
+    'StrategyConfigDeletedEvent',
+    'StrategyConfigsLoadedEvent',
 ]

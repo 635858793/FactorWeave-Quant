@@ -180,7 +180,7 @@ class PerformanceMetrics:
 
 @dataclass
 class StandardMarketData:
-    """标准化市场数据格式"""
+    """标准化市场数据格式，支持20字段标准"""
     symbol: str
     datetime: pd.Series
     open: pd.Series
@@ -189,10 +189,28 @@ class StandardMarketData:
     close: pd.Series
     volume: pd.Series
     amount: Optional[pd.Series] = None
+    # 20字段标准扩展字段
+    adj_close: Optional[pd.Series] = None        # 复权收盘价（回测必需）
+    adj_factor: Optional[pd.Series] = None       # 复权因子
+    vwap: Optional[pd.Series] = None            # 成交量加权均价
+    turnover_rate: Optional[pd.Series] = None    # 换手率
+    data_source: Optional[str] = None           # 数据来源
+    # 其他20字段标准字段
+    open_interest: Optional[pd.Series] = None    # 持仓量（期货）
+    pre_close: Optional[pd.Series] = None        # 前收盘价
+    change: Optional[pd.Series] = None          # 涨跌额
+    pct_change: Optional[pd.Series] = None       # 涨跌幅
+    avg_price: Optional[pd.Series] = None        # 平均价格
+    total_value: Optional[pd.Series] = None      # 总市值
+    circ_value: Optional[pd.Series] = None       # 流通市值
+    total_share: Optional[pd.Series] = None      # 总股本
+    circ_share: Optional[pd.Series] = None       # 流通股本
+    trade_date: Optional[pd.Series] = None       # 交易日期
+    list_date: Optional[str] = None             # 上市日期
 
     @classmethod
     def from_dataframe(cls, df: pd.DataFrame, symbol: str = "unknown") -> 'StandardMarketData':
-        """从DataFrame创建StandardMarketData"""
+        """从DataFrame创建StandardMarketData，支持20字段标准"""
         if not isinstance(df.index, pd.DatetimeIndex):
             raise ValueError("DataFrame index must be DatetimeIndex")
 
@@ -208,11 +226,28 @@ class StandardMarketData:
             low=df['low'],
             close=df['close'],
             volume=df['volume'],
-            amount=df.get('amount')
+            amount=df.get('amount'),
+            # 20字段标准扩展字段
+            adj_close=df.get('adj_close'),
+            adj_factor=df.get('adj_factor'),
+            vwap=df.get('vwap'),
+            turnover_rate=df.get('turnover_rate'),
+            data_source=df.get('data_source'),
+            open_interest=df.get('open_interest'),
+            pre_close=df.get('pre_close'),
+            change=df.get('change'),
+            pct_change=df.get('pct_change'),
+            avg_price=df.get('avg_price'),
+            total_value=df.get('total_value'),
+            circ_value=df.get('circ_value'),
+            total_share=df.get('total_share'),
+            circ_share=df.get('circ_share'),
+            trade_date=df.get('trade_date'),
+            list_date=df.get('list_date')
         )
 
     def to_dataframe(self) -> pd.DataFrame:
-        """转换为DataFrame"""
+        """转换为DataFrame，包含20字段标准"""
         data = {
             'open': self.open,
             'high': self.high,
@@ -220,10 +255,28 @@ class StandardMarketData:
             'close': self.close,
             'volume': self.volume
         }
-        if self.amount is not None:
-            data['amount'] = self.amount
-
+        
+        # 添加可选字段
+        optional_fields = [
+            'amount', 'adj_close', 'adj_factor', 'vwap', 'turnover_rate',
+            'open_interest', 'pre_close', 'change', 'pct_change', 'avg_price',
+            'total_value', 'circ_value', 'total_share', 'circ_share', 'trade_date'
+        ]
+        
+        for field in optional_fields:
+            value = getattr(self, field)
+            if value is not None:
+                data[field] = value
+        
         df = pd.DataFrame(data, index=self.datetime)
+        
+        # 如果有data_source，添加到DataFrame的属性中
+        if self.data_source:
+            df.attrs['data_source'] = self.data_source
+        if self.list_date:
+            df.attrs['list_date'] = self.list_date
+            df.attrs['symbol'] = self.symbol
+        
         return df
 
 @dataclass

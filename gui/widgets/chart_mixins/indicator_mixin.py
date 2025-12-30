@@ -81,10 +81,24 @@ class IndicatorMixin:
                 x = np.arange(len(kdata))
 
             for i, indicator in enumerate(indicators):
+                # 全面空值检查
+                if indicator is None:
+                    logger.warning(f"指标 #{i} 为空，跳过渲染")
+                    continue
+                
                 name = indicator.get('name', '')
+                if not name:
+                    logger.warning(f"指标 #{i} 缺少名称，跳过渲染")
+                    continue
+                
                 group = indicator.get('group', '')
                 params = indicator.get('params', {})
                 formula = indicator.get('formula', None)
+                
+                # 验证参数是否为字典
+                if not isinstance(params, dict):
+                    params = {}
+                
                 style = self._get_indicator_style(name, i)
 
                 try:
@@ -154,7 +168,7 @@ class IndicatorMixin:
                                 self.indicator_ax.plot(valid_x, valid_values, color=style['color'],
                                                        linewidth=style['linewidth'], alpha=style['alpha'], label='RSI')
 
-                    elif name == 'BOLL' and group == 'builtin':
+                    elif (name == 'BOLL' or name == 'BBANDS') and group == 'builtin':
                         # 处理布林带指标
                         n = int(params.get('n', 20))
                         p = float(params.get('p', 2))

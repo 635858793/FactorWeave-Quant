@@ -866,5 +866,80 @@ class PredictionAccuracyUpdatedEvent(BaseEvent):
         })
 
 
+# 策略配置相关事件
+@dataclass
+class StrategyConfigCreatedEvent(BaseEvent):
+    """
+    策略配置创建事件
+    
+    当创建新的策略配置时触发
+    """
+    strategy_id: str = ""
+    plugin_type: str = ""
+    parameters: Dict[str, Any] = field(default_factory=dict)
+    
+    def __post_init__(self):
+        super().__post_init__()
+        self.data.update({
+            'strategy_id': self.strategy_id,
+            'plugin_type': self.plugin_type,
+            'parameters': self.parameters
+        })
+
+
+@dataclass
+class StrategyConfigUpdatedEvent(BaseEvent):
+    """
+    策略配置更新事件
+    
+    当更新策略配置时触发
+    """
+    strategy_id: str = ""
+    parameters: Dict[str, Any] = field(default_factory=dict)
+    enabled: bool = True
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    
+    def __post_init__(self):
+        super().__post_init__()
+        self.data.update({
+            'strategy_id': self.strategy_id,
+            'parameters': self.parameters,
+            'enabled': self.enabled,
+            'metadata': self.metadata
+        })
+
+
+@dataclass
+class StrategyConfigDeletedEvent(BaseEvent):
+    """
+    策略配置删除事件
+    
+    当删除策略配置时触发
+    """
+    strategy_id: str = ""
+    
+    def __post_init__(self):
+        super().__post_init__()
+        self.data.update({
+            'strategy_id': self.strategy_id
+        })
+
+
+@dataclass
+class StrategyConfigsLoadedEvent(BaseEvent):
+    """
+    策略配置加载完成事件
+    
+    当从数据库加载完所有策略配置时触发
+    """
+    config_count: int = 0
+    
+    def __post_init__(self):
+        super().__post_init__()
+        self.data.update({
+            'config_count': self.config_count
+        })
+
+
 # 为兼容性提供Event别名
 Event = BaseEvent

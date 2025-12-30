@@ -316,7 +316,6 @@ class DataUsageTermsDialog(QDialog):
     def get_default_terms(self) -> str:
         """获取默认使用条款"""
         return """
-        <h1>FactorWeave-Quant  数据使用条款</h1>
         
         <h2>数据使用声明</h2>
         

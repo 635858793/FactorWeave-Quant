@@ -17,13 +17,14 @@ import pandas as pd
 
 # 导入虚拟滚动渲染器和数据采样优化器
 try:
-    from core.optimization.volume_virtual_renderer import VolumeVirtualRenderer, VolumeRenderStyle
+    from core.optimization.volume_virtual_renderer import VolumeVirtualRenderer
+    from core.advanced_optimization.performance.virtualization import VirtualRenderStyle
     VIRTUAL_SCROLL_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"虚拟滚动渲染器不可用: {e}")
     VIRTUAL_SCROLL_AVAILABLE = False
     VolumeVirtualRenderer = None
-    VolumeRenderStyle = None
+    VirtualRenderStyle = None
 
 try:
     from core.optimization.data_sampling_optimizer import AdaptiveDataOptimizer, SamplingConfig, SamplingStrategy

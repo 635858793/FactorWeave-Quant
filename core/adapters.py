@@ -28,11 +28,11 @@ def get_config() -> Dict[str, Any]:
             },
             'database': {
                 'path': 'data/factorweave_system.sqlite',
-                'connection_pool_size': 5
+                'connection_pool_size': 50
             },
             'import': {
                 'batch_size': 100,
-                'max_workers': 4
+                'max_workers': 10
             }
         }
 

@@ -710,6 +710,8 @@ class ChartRenderer(QObject):
 
         try:
             for indicator in indicators_data:
+                if indicator is None:
+                    continue
                 name = indicator.get('name', 'Unknown')
                 values = indicator.get('values', [])
                 color = indicator.get('color', 'blue')

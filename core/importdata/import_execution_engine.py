@@ -36,7 +36,7 @@ from ..performance.unified_monitor import get_performance_monitor
 from ..services.enhanced_performance_bridge import EnhancedPerformanceBridge, get_enhanced_performance_bridge
 from ..risk_monitoring.enhanced_risk_monitor import EnhancedRiskMonitor, get_enhanced_risk_monitor
 from ..services.distributed_service import DistributedService, NodeDiscovery, NodeInfo
-from optimization.auto_tuner import AutoTuner, TuningTask, OptimizationConfig
+from optimization.auto_tuner import AlgorithmAutoTuner, TuningTask, OptimizationConfig
 from optimization.algorithm_optimizer import PerformanceEvaluator
 from ..services.enhanced_data_manager import DataQualityMonitor
 from ..data.enhanced_models import DataQualityMetrics, DataQuality
@@ -1588,7 +1588,7 @@ class DataImportExecutionEngine(QObject):
                 'ip_stats': []
             }
 
-    def _init_auto_tuner(self) -> Optional[AutoTuner]:
+    def _init_auto_tuner(self) -> Optional[AlgorithmAutoTuner]:
         """初始化自动调优器"""
         try:
             # 确保PerformanceEvaluator可用
@@ -1602,7 +1602,7 @@ class DataImportExecutionEngine(QObject):
 
             # 配置自动调优器
             max_workers = min(4, self.executor._max_workers)  # 使用较少的工作线程
-            auto_tuner = AutoTuner(max_workers=max_workers, debug_mode=False)
+            auto_tuner = AlgorithmAutoTuner(max_workers=max_workers, debug_mode=False)
 
             logger.info("自动调优器初始化成功")
             return auto_tuner

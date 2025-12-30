@@ -1,3 +1,4 @@
+from pathlib import Path
 from loguru import logger
 """
 Theme Management Module
@@ -25,9 +26,45 @@ from utils.theme_utils import load_theme_json_with_comments
 import sqlite3
 from datetime import datetime
 from PyQt5.QtGui import *
+from PyQt5.QtCore import *
+from core.events.event_bus import get_event_bus
+from core.events.events import ThemeChangedEvent
 
 # Global theme manager instance
 _theme_manager_instance: Optional['ThemeManager'] = None
+
+
+def parse_color(color_str: str) -> Union[str, tuple]:
+    """解析颜色字符串，支持rgba()格式
+    
+    Args:
+        color_str: 颜色字符串，支持 #hex, rgb(), rgba()
+        
+    Returns:
+        Union[str, tuple]: 如果是rgba格式返回(r,g,b,a)元组，否则返回原字符串
+    """
+    if not color_str or not isinstance(color_str, str):
+        return color_str
+        
+    # 处理rgba()格式
+    if color_str.startswith('rgba(') and color_str.endswith(')'):
+        try:
+            # 提取rgba参数
+            rgba_content = color_str[5:-1]  # 去掉 "rgba(" 和 ")"
+            parts = [part.strip() for part in rgba_content.split(',')]
+            
+            if len(parts) >= 4:
+                r = int(parts[0].strip())
+                g = int(parts[1].strip()) 
+                b = int(parts[2].strip())
+                a = float(parts[3].strip())
+                
+                # 返回Qt可识别的格式
+                return (r, g, b, a)
+        except (ValueError, IndexError) as e:
+            logger.warning(f"解析rgba颜色失败: {color_str}, 错误: {e}")
+            
+    return color_str
 
 DB_PATH = os.path.join(os.path.dirname(
     os.path.dirname(__file__)), 'data', 'factorweave_system.sqlite')
@@ -100,6 +137,12 @@ class ThemeManager(QObject):
 
         # 从配置中恢复上次保存的主题
         self._restore_last_theme()
+        
+        # 初始化EventBus（支持容器+Event模式）
+        self._event_bus = get_event_bus()
+        
+        # 初始化组件跟踪列表（用于QSS主题的样式表清理）
+        self._tracked_widgets = set()
 
     def _init_db(self):
         self.conn = sqlite3.connect(DB_PATH)
@@ -166,8 +209,7 @@ class ThemeManager(QObject):
     def _import_themes_to_db(self):
         # 导入QSS主题
         for qss_file in glob.glob(os.path.join(self.qss_theme_dir, '*.qss')):
-            name = self._extract_qss_theme_name(
-                qss_file) or os.path.splitext(os.path.basename(qss_file))[0]
+            name = os.path.splitext(os.path.basename(qss_file))[0]
             content = safe_read_file(qss_file)
             # 跳过已存在的主题
             cur = self.conn.cursor()
@@ -339,28 +381,54 @@ class ThemeManager(QObject):
         except Exception as e:
             logger.warning(f"保存主题配置失败: {e}")
 
+        # 清除所有旧样式（样式优先级：QSS主题 > JSON主题 > 全局样式）
+        self.clear_qss_theme()
+        self._clear_widget_stylesheets()
+
         if type_ == 'qss':
             self._current_theme_type = ThemeType.QSS
-            self.apply_qss_theme_content(content)
+            # 清除主题缓存（QSS主题不需要缓存）
+            self._theme_cache.clear()
+            
+            # 立即发送主题变化信号，让监听的组件快速响应
             self.theme_changed.emit(self._current_theme)
-            logger.info(f"QSS主题切换: {theme_name} (base_type={base_type})")
+            
+            # 发布主题变化事件（EventBus模式）
+            event = ThemeChangedEvent(
+                theme_name=theme_name,
+                theme_config=self.get_theme_colors()
+            )
+            self._event_bus.publish(event)
+            
+            # 使用异步方式应用QSS主题，避免阻塞UI
+            QTimer.singleShot(0, lambda: self._apply_qss_theme_async(theme_name, content, base_type))
+            
+            logger.info(f"QSS主题切换: {theme_name} (base_type={base_type}, 异步应用...)")
         else:
             self._current_theme_type = ThemeType.JSON
             theme_dict = json.loads(content)
+            
+            # 更新主题缓存（在发送信号之前）
             self._theme_cache[theme_name.lower()] = theme_dict
-
-            # JSON主题：清除QSS并发送信号让组件自行更新
-            # 先清除之前的QSS样式（立即生效）
+            
+            # 清除QSS样式
             self.clear_qss_theme()
 
             # 立即发送主题变化信号，让监听的组件快速响应
             self.theme_changed.emit(self._current_theme)
+            
+            # 发布主题变化事件（EventBus模式）
+            event = ThemeChangedEvent(
+                theme_name=theme_name,
+                theme_config=self.get_theme_colors()
+            )
+            self._event_bus.publish(event)
 
             # 异步刷新所有窗口组件（避免阻塞UI）
             # 使用QTimer.singleShot确保在事件循环中执行
             QTimer.singleShot(50, self._refresh_all_widgets)
 
-            logger.info(f"JSON主题切换: {theme_name} (base_type={base_type}, 异步刷新中...)")
+            logger.info(f"JSON主题切换: {theme_name} (base_type={base_type}, 异步刷新...)")
 
     def get_theme_colors(self, theme: Optional[Theme] = None) -> Dict[str, Any]:
         """获取主题颜色
@@ -406,40 +474,62 @@ class ThemeManager(QObject):
 
         try:
             colors = self.get_theme_colors(theme)
+            
+            # 处理颜色格式，确保rgba格式被正确解析
+            processed_colors = {}
+            for key, value in colors.items():
+                if isinstance(value, str) and value.startswith('rgba('):
+                    processed_colors[key] = parse_color(value)
+                else:
+                    processed_colors[key] = value
 
-            # Set figure facecolor
-            figure.set_facecolor(colors.get('chart_background', '#ffffff'))
+            # Set figure facecolor (处理rgba格式)
+            chart_bg = processed_colors.get('chart_background', '#ffffff')
+            if isinstance(chart_bg, tuple) and len(chart_bg) >= 4:
+                figure.set_facecolor(chart_bg[:3])  # 使用RGB部分，忽略alpha
+            else:
+                figure.set_facecolor(chart_bg)
 
             # Set axes colors
             for ax in figure.get_axes():
-                ax.set_facecolor(colors.get('chart_background', '#ffffff'))
-                ax.tick_params(colors=colors.get('chart_text', '#222b45'))
-                ax.spines['bottom'].set_color(
-                    colors.get('chart_grid', '#e0e0e0'))
-                ax.spines['top'].set_color(colors.get('chart_grid', '#e0e0e0'))
-                ax.spines['right'].set_color(
-                    colors.get('chart_grid', '#e0e0e0'))
-                ax.spines['left'].set_color(
-                    colors.get('chart_grid', '#e0e0e0'))
-                ax.title.set_color(colors.get('chart_text', '#222b45'))
-                ax.xaxis.label.set_color(colors.get('chart_text', '#222b45'))
-                ax.yaxis.label.set_color(colors.get('chart_text', '#222b45'))
+                # 设置背景色
+                chart_bg = processed_colors.get('chart_background', '#ffffff')
+                if isinstance(chart_bg, tuple) and len(chart_bg) >= 4:
+                    ax.set_facecolor(chart_bg[:3])
+                else:
+                    ax.set_facecolor(chart_bg)
+                    
+                # 设置文字颜色
+                text_color = processed_colors.get('chart_text', '#222b45')
+                ax.tick_params(colors=text_color)
+                ax.title.set_color(text_color)
+                ax.xaxis.label.set_color(text_color)
+                ax.yaxis.label.set_color(text_color)
+                
+                # 设置边框颜色
+                grid_color = processed_colors.get('chart_grid', '#e0e0e0')
+                ax.spines['bottom'].set_color(grid_color)
+                ax.spines['top'].set_color(grid_color)
+                ax.spines['right'].set_color(grid_color)
+                ax.spines['left'].set_color(grid_color)
 
                 # Set grid color
-                ax.grid(True, color=colors.get(
-                    'chart_grid', '#e0e0e0'), alpha=0.3)
+                ax.grid(True, color=grid_color, alpha=0.3)
 
                 # Set tick colors
                 for tick in ax.get_xticklabels():
-                    tick.set_color(colors.get('chart_text', '#222b45'))
+                    tick.set_color(text_color)
                 for tick in ax.get_yticklabels():
-                    tick.set_color(colors.get('chart_text', '#222b45'))
+                    tick.set_color(text_color)
 
             # Draw figure
             figure.canvas.draw()
 
         except Exception as e:
-            logger.info(f"应用图表主题失败: {str(e)}")
+            logger.error(f"应用图表主题失败: {str(e)}")
+            logger.error(f"错误类型: {type(e).__name__}")
+            import traceback
+            logger.error(f"错误详情: {traceback.format_exc()}")
 
     def is_dark_theme(self) -> bool:
         """Check if current theme is dark
@@ -449,25 +539,198 @@ class ThemeManager(QObject):
         """
         return self.current_theme.is_dark
 
+    def apply_theme(self, widget):
+        """应用主题到指定控件
+
+        Args:
+            widget: 要应用主题的控件
+        """
+        # 检查当前主题类型，如果是QSS主题则跳过，因为QSS主题已经全局应用
+        if self.is_qss_theme():
+            logger.debug(f"当前为QSS主题，跳过apply_theme调用")
+            return
+        
+        colors = self.get_theme_colors()
+        # 处理颜色格式，确保rgba格式被正确解析
+        processed_colors = {}
+        for key, value in colors.items():
+            if isinstance(value, str) and value.startswith('rgba('):
+                processed_colors[key] = parse_color(value)
+            else:
+                processed_colors[key] = value
+        
+        stylesheet = self._build_stylesheet(processed_colors)
+        
+        # 修复CSS属性中可能存在的't'前缀问题，比如'tmin-height'应该改为'min-height'
+        # 这是一个防御性修复，防止生成错误的CSS属性
+        stylesheet = re.sub(r'\bt(min-height|min-width|max-height|max-width|padding|margin|border-radius|border-width|border-style|border-color|font-size|font-family|font-weight|font-style|text-align|text-color|background-color|color|width|height|left|top|right|bottom|opacity|z-index)\b', r'\1', stylesheet)
+        
+        # 添加主题应用状态跟踪，避免重复应用
+        if not hasattr(self, '_applied_widgets'):
+            self._applied_widgets = set()
+        
+        widget_id = id(widget)
+        if widget_id not in self._applied_widgets:
+            # 应用样式表到目标控件
+            widget.setStyleSheet(stylesheet)
+            
+            # 优化：只应用到直接子控件，利用Qt的样式表继承机制
+            # 避免过度递归和性能问题
+            for child in widget.children():
+                if isinstance(child, QWidget) and child != widget:
+                    child.setStyleSheet(stylesheet)
+            self._applied_widgets.add(widget_id)
+
+    def _build_stylesheet(self, colors: Dict[str, Any]) -> str:
+        """构建样式表
+
+        Args:
+            colors: 主题颜色字典
+
+        Returns:
+            QSS样式表字符串
+        """
+        return f"""
+        QWidget {{
+            background-color: {colors.get('background', '#FFFFFF')};
+            color: {colors.get('text', '#222b45')};
+            font-family: 'Microsoft YaHei UI', 'Segoe UI', sans-serif;
+            font-size: 9pt;
+        }}
+
+        QPushButton {{
+            background-color: {colors.get('button_bg', '#e3f2fd')};
+            color: {colors.get('button_text', '#1565c0')};
+            border: 1px solid {colors.get('button_border', '#90caf9')};
+            border-radius: 4px;
+            padding: 6px 12px;
+            min-height: 20px;
+        }}
+
+        QPushButton:hover {{
+            background-color: {colors.get('button_hover', '#90caf9')};
+        }}
+
+        QPushButton:pressed {{
+            background-color: {colors.get('button_pressed', '#64b5f6')};
+        }}
+
+        QGroupBox {{
+            border: 2px solid {colors.get('border', '#e0e0e0')};
+            border-radius: 6px;
+            margin-top: 12px;
+            padding-top: 12px;
+        }}
+
+        QGroupBox::title {{
+            subcontrol-origin: margin;
+            left: 8px;
+            padding: 0 4px;
+            color: {colors.get('highlight', '#1976d2')};
+        }}
+
+        QTableWidget {{
+            background-color: {colors.get('card', '#FFFFFF')};
+            border: 1px solid {colors.get('border', '#e0e0e0')};
+            gridline-color: {colors.get('chart_grid', '#e0e0e0')};
+        }}
+
+        QTableWidget::item {{
+            padding: 4px;
+        }}
+
+        QTableWidget::item[data-status="running"] {{
+            background-color: {colors.get('success', '#4CAF50')};
+            color: #FFFFFF;
+        }}
+
+        QTableWidget::item[data-status="error"] {{
+            background-color: {colors.get('error', '#FF5252')};
+            color: #FFFFFF;
+        }}
+
+        QTableWidget::item[data-status="configured"] {{
+            background-color: {colors.get('info', '#2196F3')};
+            color: #FFFFFF;
+        }}
+
+        QTableWidget::item[data-status="stopped"] {{
+            background-color: {colors.get('background', '#FFFFFF')};
+            color: {colors.get('text', '#222b45')};
+        }}
+
+        QLineEdit, QTextEdit, QComboBox {{
+            background-color: {colors.get('card', '#FFFFFF')};
+            border: 1px solid {colors.get('border', '#e0e0e0')};
+            border-radius: 4px;
+            padding: 6px;
+            min-height: 28px;
+        }}
+
+        QTabWidget::pane {{
+            border: 1px solid {colors.get('border', '#e0e0e0')};
+            background-color: {colors.get('card', '#FFFFFF')};
+        }}
+
+        QTabBar::tab {{
+            background-color: {colors.get('sidebar_bg', '#f3f6fa')};
+            color: {colors.get('text', '#222b45')};
+            padding: 8px 16px;
+            border-top-left-radius: 4px;
+            border-top-right-radius: 4px;
+        }}
+
+        QTabBar::tab:selected {{
+            background-color: {colors.get('highlight', '#1976d2')};
+            color: #FFFFFF;
+        }}
+
+        QProgressBar {{
+            background-color: {colors.get('hover', '#F5F5F5')};
+            border: none;
+            border-radius: 4px;
+            text-align: center;
+        }}
+
+        QProgressBar::chunk {{
+            background-color: {colors.get('progress_chunk', '#4CAF50')};
+            border-radius: 4px;
+        }}
+
+        QScrollBar:vertical {{
+            background-color: {colors.get('hover', '#F5F5F5')};
+            width: 10px;
+            border-radius: 5px;
+        }}
+
+        QScrollBar::handle:vertical {{
+            background-color: {colors.get('secondary', '#6B7280')};
+            border-radius: 5px;
+            min-height: 20px;
+        }}
+
+        QMenu {{
+            background-color: {colors.get('card', '#FFFFFF')};
+            border: 1px solid {colors.get('border', '#e0e0e0')};
+            border-radius: 4px;
+        }}
+
+        QMenu::item:selected {{
+            background-color: {colors.get('highlight', '#1976d2')};
+            color: #FFFFFF;
+        }}
+
+        QDialog {{
+            background-color: {colors.get('dialog_bg', '#FFFFFF')};
+        }}
+        """
+
     def _scan_qss_themes(self):
         themes = {}
         for qss_file in glob.glob(os.path.join(self.qss_theme_dir, '*.qss')):
-            name = self._extract_qss_theme_name(qss_file)
-            if not name:
-                name = os.path.splitext(os.path.basename(qss_file))[0]
+            name = os.path.splitext(os.path.basename(qss_file))[0]
             themes[name] = qss_file
         return themes
-
-    def _extract_qss_theme_name(self, qss_file):
-        try:
-            with open(qss_file, 'r', encoding='utf-8') as f:
-                for _ in range(10):
-                    line = f.readline()
-                    if 'Style Sheet' in line or 'StyleSheet' in line:
-                        return line.strip('/*').strip().replace('Style Sheet for QT Applications', '').replace('StyleSheet for QT Applications', '').replace('Style Sheet', '').replace('for QT Applications', '').strip()
-        except Exception:
-            pass
-        return None
 
     def get_all_themes(self):
         # 返回所有主题名称（数据库）
@@ -499,6 +762,24 @@ class ThemeManager(QObject):
             logger.error(f"获取主题列表失败: {e}")
             return {}  # 返回空字典，UI会显示"暂无主题"
 
+    def _apply_qss_theme_async(self, theme_name, qss_content, base_type):
+        """异步应用QSS主题内容
+        
+        Args:
+            theme_name: 主题名称
+            qss_content: QSS主题内容
+            base_type: 基础主题类型
+        """
+        try:
+            logger.debug(f"开始异步应用QSS主题: {theme_name}")
+            
+            # 应用QSS主题内容
+            self.apply_qss_theme_content(qss_content)
+            
+            logger.info(f"✅ QSS主题异步应用完成: {theme_name} (base_type={base_type})")
+        except Exception as e:
+            logger.error(f"❌ 异步应用QSS主题失败: {e}")
+    
     def apply_qss_theme_content(self, qss):
         # 全局滚动条样式
         scrollbar_qss = '''
@@ -539,9 +820,51 @@ class ThemeManager(QObject):
         app.setStyleSheet(qss + '\n' + scrollbar_qss)
 
     def clear_qss_theme(self):
+        """清除QSS主题样式表"""
         app = QApplication.instance()
         if app:
+            # 直接清除全局样式表，这是一个轻量级操作，不需要异步
             app.setStyleSheet('')
+            logger.debug("已清除全局QSS样式表")
+
+    def _clear_widget_stylesheets(self):
+        """清除所有已跟踪组件的样式表"""
+        try:
+            # 优化：如果没有跟踪的组件，直接返回
+            if not hasattr(self, '_tracked_widgets') or not self._tracked_widgets:
+                logger.debug("没有需要清除的跟踪组件，跳过样式表清除")
+                return
+            
+            # 异步批量清除组件样式表，避免阻塞UI
+            QTimer.singleShot(0, self._clear_widget_stylesheets_async)
+        except Exception as e:
+            logger.warning(f"清除组件样式表失败: {e}")
+    
+    def _clear_widget_stylesheets_async(self):
+        """异步批量清除组件样式表"""
+        try:
+            # 批量处理组件样式表清除
+            batch_size = 50  # 每批处理50个组件
+            widgets = list(self._tracked_widgets.copy())  # 转换为列表以便批量处理
+            
+            # 分批清除组件样式表
+            for i in range(0, len(widgets), batch_size):
+                batch = widgets[i:i + batch_size]
+                # 使用定时器延迟处理每批，避免阻塞UI
+                QTimer.singleShot(i // batch_size * 5, lambda b=batch: self._clear_batch_stylesheets(b))
+                
+            logger.debug(f"异步清除样式表：共 {len(widgets)} 个组件，分为 {len(widgets) // batch_size + 1} 批处理")
+        except Exception as e:
+            logger.warning(f"异步清除组件样式表失败: {e}")
+    
+    def _clear_batch_stylesheets(self, widgets):
+        """清除一批组件的样式表"""
+        for widget in widgets:
+            try:
+                if widget and not widget.isVisible():
+                    widget.setStyleSheet('')
+            except Exception as e:
+                logger.warning(f"清除组件 {widget.__class__.__name__ if widget else 'Unknown'} 样式表失败: {e}")
 
     def is_qss_theme(self):
         return self._current_theme_type == ThemeType.QSS
@@ -559,21 +882,38 @@ class ThemeManager(QObject):
                 return
 
             # 收集所有需要刷新的顶层窗口
-            top_widgets = [w for w in app.topLevelWidgets() if w.isVisible()]
+            # 过滤已销毁窗口（检查widget是否有效）
+            top_widgets = []
+            for w in app.topLevelWidgets():
+                try:
+                    # 检查窗口是否有效（未被销毁）
+                    if w and not w.isHidden():
+                        # 尝试访问窗口属性，如果窗口已销毁会抛出异常
+                        _ = w.windowTitle()
+                        top_widgets.append(w)
+                except (RuntimeError, AttributeError):
+                    # 窗口已销毁，跳过
+                    continue
 
             if not top_widgets:
                 return
 
             logger.info(f"JSON主题：开始异步刷新 {len(top_widgets)} 个顶层窗口")
 
-            # 使用定时器分批刷新，避免阻塞UI
-            self._refresh_widgets_batch(top_widgets, 0)
+            # 使用定时器分批刷新，避免阻塞UI（增加延迟到100ms）
+            self._refresh_widgets_batch(top_widgets, 0, delay=100)
 
         except Exception as e:
             logger.error(f"刷新窗口组件失败: {e}")
 
-    def _refresh_widgets_batch(self, widgets, index):
-        """分批刷新组件（避免UI卡顿）"""
+    def _refresh_widgets_batch(self, widgets, index, delay=10):
+        """分批刷新组件（避免UI卡顿）
+
+        Args:
+            widgets: 要刷新的组件列表
+            index: 当前索引
+            delay: 延迟时间（毫秒）
+        """
         try:
             if index >= len(widgets):
                 logger.info("JSON主题：所有窗口组件刷新完成")
@@ -595,7 +935,7 @@ class ThemeManager(QObject):
                 logger.debug(f"刷新widget失败: {e}")
 
             # 继续下一个widget（使用定时器避免阻塞）
-            QTimer.singleShot(10, lambda: self._refresh_widgets_batch(widgets, index + 1))
+            QTimer.singleShot(delay, lambda: self._refresh_widgets_batch(widgets, index + 1, delay))
 
         except Exception as e:
             logger.error(f"批量刷新失败: {e}")

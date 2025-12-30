@@ -1,4 +1,7 @@
 from loguru import logger
+from analysis.pattern_manager import PatternManager
+from core.performance.unified_monitor import PerformanceAutoTuner
+from gui.dialogs.quality_report_dialog import show_quality_report_dialog
 """
 主窗口协调器模块
 
@@ -6,7 +9,9 @@ from loguru import logger
 """
 from datetime import datetime
 from typing import Optional, Dict, Any
-from PyQt5.QtCore import QObject, pyqtSignal
+from PyQt5.QtCore import QObject, Qt
+from PyQt5.QtWidgets import QInputDialog, QProgressDialog, QMessageBox
+import threading
 
 from core.containers.service_container import ServiceContainer
 
@@ -26,7 +31,6 @@ class MainWindowCoordinator(QObject):
             dialog.exec_()
         except Exception as e:
             self.logger.error(f"显示设置对话框失败: {e}")
-            from PyQt5.QtWidgets import QMessageBox
             QMessageBox.critical(self.main_window, "错误",
                                  f"无法打开设置对话框: {str(e)}")
 
@@ -71,19 +75,6 @@ class MainWindowCoordinator(QObject):
             self.logger.error(f"显示指标市场对话框失败: {e}")
             QMessageBox.critical(self.main_window, "错误",
                                  f"无法打开指标市场对话框: {str(e)}")
-
-    def show_batch_analysis_dialog(self):
-        """显示批量分析对话框"""
-        try:
-            # from gui.dialogs.batch_analysis_dialog import BatchAnalysisDialog  # 已移除
-            logger.warning("批量分析对话框已移除，请使用主界面右侧面板的批量分析功能")
-            return
-            dialog = BatchAnalysisDialog(self.main_window)
-            dialog.exec_()
-        except Exception as e:
-            self.logger.error(f"显示批量分析对话框失败: {e}")
-            QMessageBox.critical(self.main_window, "错误",
-                                 f"无法打开批量分析对话框: {str(e)}")
 
     def show_optimization_dashboard(self):
         """显示优化仪表板"""
@@ -131,7 +122,7 @@ class MainWindowCoordinator(QObject):
         """运行一键优化"""
         try:
             # 延迟导入，避免启动时阻塞
-            from optimization.auto_tuner import AutoTuner
+            from optimization.auto_tuner import AlgorithmAutoTuner
             from PyQt5.QtWidgets import QProgressDialog, QMessageBox
             from PyQt5.QtCore import QThread, pyqtSignal, Qt
 
@@ -158,7 +149,7 @@ class MainWindowCoordinator(QObject):
 
                 def run(self):
                     try:
-                        tuner = AutoTuner(max_workers=2, debug_mode=True)
+                        tuner = AlgorithmAutoTuner(max_workers=2, debug_mode=True)
                         result = tuner.one_click_optimize(
                             optimization_method="genetic",
                             max_iterations=20
@@ -206,9 +197,6 @@ class MainWindowCoordinator(QObject):
     def run_smart_optimization(self):
         """运行智能优化"""
         try:
-            from PyQt5.QtWidgets import QInputDialog, QProgressDialog, QMessageBox
-            from PyQt5.QtCore import Qt
-            import threading
 
             # 获取性能阈值
             threshold, ok = QInputDialog.getDouble(
@@ -239,7 +227,7 @@ class MainWindowCoordinator(QObject):
             # 在后台线程中执行优化
             def run_optimization():
                 try:
-                    tuner = AutoTuner(max_workers=2, debug_mode=True)
+                    tuner = PerformanceAutoTuner(max_workers=2, debug_mode=True)
                     result = tuner.smart_optimize(
                         performance_threshold=threshold,
                         improvement_target=target
@@ -365,9 +353,10 @@ class MainWindowCoordinator(QObject):
             # 在后台线程中执行评估
             def run_evaluation():
                 try:
+                    from optimization.algorithm_optimizer import PerformanceEvaluator
                     evaluator = PerformanceEvaluator(debug_mode=True)
 
-                    # 创建测试数据集
+                    # 创建测试数据集（使用真实数据）
                     test_datasets = evaluator.create_test_datasets(
                         pattern_name, count=5)
 
@@ -416,7 +405,7 @@ class MainWindowCoordinator(QObject):
             from optimization.database_schema import OptimizationDatabaseManager
 
             # 获取系统状态
-            tuner = AutoTuner(debug_mode=True)
+            tuner = PerformanceAutoTuner(debug_mode=True)
             status = tuner.get_optimization_status()
 
             db_manager = OptimizationDatabaseManager()
@@ -509,9 +498,6 @@ class MainWindowCoordinator(QObject):
     def check_all_stocks_quality(self):
         """检查所有股票数据质量"""
         try:
-            from PyQt5.QtWidgets import QMessageBox, QProgressDialog
-            from PyQt5.QtCore import Qt, QTimer
-
             # 确认对话框
             reply = QMessageBox.question(
                 self.main_window, "确认检查",

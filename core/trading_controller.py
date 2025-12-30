@@ -1,10 +1,22 @@
 import sys
 import numpy as np
 import pandas as pd
-from PyQt5.QtCore import QObject, pyqtSignal
 from typing import Optional, Dict, Any
 from .containers import ServiceContainer
 from loguru import logger
+from .services.backtest_result_manager import BacktestResultManager, BacktestResult
+import time
+
+# 修复PyQt5导入
+try:
+    from PyQt5.QtCore import QObject, pyqtSignal
+except ImportError:
+    # 兼容处理，避免在非GUI环境下导入失败
+    class QObject:
+        pass
+    
+    def pyqtSignal(*args, **kwargs):
+        return lambda x: x
 
 # 重构后的交易控制器 - 使用服务架构
 
@@ -30,6 +42,7 @@ class TradingController(QObject):
         self._trading_service = None
         self._trading_engine = None
         self._unified_data_manager = None
+        self._backtest_result_manager = BacktestResultManager()
 
         self.current_strategy = None
         self.order_queue = []
@@ -225,6 +238,27 @@ class TradingController(QObject):
             except Exception as e:
                 self.log_updated.emit(f"计算风险指标失败: {str(e)}")
                 results['risk_metrics'] = {}
+
+            # 将回测结果添加到回测结果管理器
+            if results and isinstance(results, dict):
+                # 构建回测结果对象
+                stock_code = params.get('stock', '')
+                stock_name = params.get('stock_name', '')
+                strategy_name = params.get('strategy_name', '未知策略')
+                
+                backtest_result = BacktestResult(
+                    stock_code=stock_code,
+                    stock_name=stock_name,
+                    strategy_name=strategy_name,
+                    backtest_time=time.time(),
+                    backtest_results=results,
+                    trades=results.get('trades', []),
+                    duration=results.get('duration', 0),
+                    is_professional=True
+                )
+                
+                # 添加到回测结果管理器
+                self._backtest_result_manager.add_result(backtest_result)
 
             # 发送信号更新UI
             self.backtest_updated.emit(results)

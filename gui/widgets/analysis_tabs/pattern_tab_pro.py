@@ -16,6 +16,7 @@ from PyQt5.QtGui import *
 from .base_tab import BaseAnalysisTab
 from core.events.events import PatternSignalsDisplayEvent
 from analysis.pattern_manager import PatternManager
+from core.services.backtest_result_manager import BacktestResultManager, BacktestResult
 
 logger = logger
 
@@ -746,6 +747,9 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
         # 初始化 PatternManager
         self.pattern_manager = PatternManager()
 
+        # 初始化回测结果管理器
+        self.backtest_result_manager = BacktestResultManager()
+
         # 初始化专业级形态数据结构
         self._initialize_professional_patterns()
 
@@ -908,16 +912,7 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
         toolbar = QFrame()
         toolbar.setFixedHeight(160)  # 减少固定高度以防重叠
         toolbar.setFrameStyle(QFrame.StyledPanel)
-        toolbar.setStyleSheet("""
-            QFrame {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #f8f9fa, stop:1 #e9ecef);
-                border: 1px solid #dee2e6;
-                border-radius: 4px;
-                padding: 2px;
-                margin: 2px;
-            }
-        """)
+
         toolbar_layout = QVBoxLayout(toolbar)
         toolbar_layout.setSpacing(4)
         toolbar_layout.setContentsMargins(4, 4, 4, 4)
@@ -1195,15 +1190,7 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
         # 预测结果展示
         self.prediction_text = QTextEdit()
         self.prediction_text.setReadOnly(True)
-        self.prediction_text.setStyleSheet("""
-            QTextEdit {
-                background-color: #f8f9fa;
-                border: 1px solid #dee2e6;
-                border-radius: 6px;
-                padding: 10px;
-                font-family: 'Consolas', 'Monaco', monospace;
-            }
-        """)
+
         layout.addWidget(self.prediction_text)
 
         # 预测配置
@@ -3979,6 +3966,26 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
 
             # 显示回测结果
             self._display_backtest_results(backtest_results)
+
+            # 将回测结果添加到回测结果管理器
+            if backtest_results and isinstance(backtest_results, dict):
+                from core.services.backtest_result_manager import BacktestResult
+                import time
+                
+                # 构建回测结果对象
+                backtest_result = BacktestResult(
+                    stock_code="",  # 需要从上下文中获取股票代码
+                    stock_name="",  # 需要从上下文中获取股票名称
+                    strategy_name="形态识别策略",
+                    backtest_time=time.time(),
+                    backtest_results=backtest_results,
+                    trades=backtest_results.get('trades', []),
+                    duration=backtest_results.get('duration', 0),
+                    is_professional=True
+                )
+                
+                # 添加到回测结果管理器
+                self.backtest_result_manager.add_result(backtest_result)
 
             # 完成
             if hasattr(self, 'progress_bar'):

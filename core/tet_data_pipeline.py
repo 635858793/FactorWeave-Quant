@@ -87,6 +87,7 @@ class TETDataPipeline:
 
     def __init__(self, data_source_router: DataSourceRouter):
         self.router = data_source_router
+        self.logger = logger  # 添加logger属性初始化
         
         # 插件管理
         self._plugins: Dict[str, IDataSourcePlugin] = {}

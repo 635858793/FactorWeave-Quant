@@ -5,9 +5,10 @@
 成交量虚拟滚动渲染器
 
 专门优化的成交量图表虚拟滚动渲染器，基于VirtualScrollRenderer实现高效的成交量数据可视化
+实现IVirtualRenderer通用接口，支持统一管理和扩展
 
 作者: FactorWeave-Quant团队
-版本: 1.0
+版本: 2.0
 """
 
 import numpy as np
@@ -20,7 +21,6 @@ from loguru import logger
 import time
 from collections import deque
 import threading
-
 # 导入虚拟滚动模块
 import sys
 import os
@@ -30,49 +30,32 @@ from core.advanced_optimization.performance.virtualization import (
     VirtualScrollRenderer, 
     VirtualizationConfig, 
     RenderChunk,
-    ViewportState
+    ViewportState,
+    IVirtualRenderer,
+    VirtualRenderStyle
 )
 
-@dataclass
-class VolumeRenderStyle:
-    """成交量渲染样式配置"""
-    # 基础样式
-    color: Union[str, Callable] = '#1f77b4'
-    alpha: float = 0.7
-    edge_color: str = '#000000'
-    edge_width: float = 0.5
-    width: float = 0.8
-    
-    # 虚拟滚动样式
-    show_chunks: bool = False  # 是否显示渲染块边界（调试用）
-    chunk_border_color: str = '#ff0000'
-    chunk_border_width: float = 1.0
-    
-    # 性能优化
-    enable_gradient_colors: bool = True  # 启用渐变色
-    min_visible_volume: float = 0.0  # 最小可见成交量
-
 class VolumeVirtualRenderer(QObject):
-    """成交量虚拟滚动渲染器"""
+    """成交量虚拟滚动渲染器，实现IVirtualRenderer接口"""
     
     # 信号定义
-    volume_rendered = pyqtSignal(object, object)  # ax, RenderChunk
+    data_rendered = pyqtSignal(int, object)  # chunk_id, RenderChunk
     rendering_progress = pyqtSignal(float)  # 进度百分比
     performance_warning = pyqtSignal(str, float)  # 警告信息, 数值
     virtual_scroll_enabled = pyqtSignal(bool)  # 虚拟滚动状态变化
     
     def __init__(self, 
                  config: Optional[VirtualizationConfig] = None,
-                 style: Optional[VolumeRenderStyle] = None):
+                 style: Optional[VirtualRenderStyle] = None):
         super().__init__()
         
         # 配置和样式
         self.config = config or self._create_optimized_config()
-        self.style = style or VolumeRenderStyle()
+        self.style = style or VirtualRenderStyle()
         
         # 虚拟滚动渲染器
         self.virtual_renderer = VirtualScrollRenderer(self.config)
-        self.virtual_renderer.data_rendered.connect(self._on_chunk_rendered)
+        self.virtual_renderer.data_rendered.connect(self.data_rendered.emit)
         self.virtual_renderer.performance_warning.connect(self.performance_warning.emit)
         
         # 成交量数据缓存
@@ -80,8 +63,8 @@ class VolumeVirtualRenderer(QObject):
         self.volume_axis = None
         
         # 渲染状态
-        self.is_enabled = True
-        self.total_data_points = 0
+        self._is_enabled = True
+        self._total_data_points = 0
         self.rendered_chunks = {}
         
         # 性能统计
@@ -92,7 +75,11 @@ class VolumeVirtualRenderer(QObject):
             'memory_usage_estimate_mb': 0.0
         }
         
-        logger.info("成交量虚拟滚动渲染器初始化完成")
+        logger.info("成交量虚拟滚动渲染器初始化完成，配置: {}".format({
+            'chunk_size': self.config.chunk_size,
+            'adaptive_quality': self.config.adaptive_quality,
+            'cache_size': self.config.cache_size
+        }))
     
     def _create_optimized_config(self) -> VirtualizationConfig:
         """创建优化的虚拟滚动配置"""
@@ -114,59 +101,68 @@ class VolumeVirtualRenderer(QObject):
             
             # 交互配置
             scroll_threshold=30,
-            preload_distance=500
+            preload_distance=500,
+            
+            # 缓存配置
+            cache_size=50,  # 缓存50个块
+            cache_policy="lru"  # LRU缓存策略
         )
     
     def enable_virtual_scrolling(self, enabled: bool):
         """启用/禁用虚拟滚动"""
-        self.is_enabled = enabled
+        self._is_enabled = enabled
         self.virtual_scroll_enabled.emit(enabled)
+        self.virtual_renderer.enable_virtual_scrolling(enabled)
         
         if not enabled:
             # 禁用时清理所有缓存
-            self.virtual_renderer.cleanup()
-            self.rendered_chunks.clear()
+            self.cleanup()
         
         logger.info(f"成交量虚拟滚动{'启用' if enabled else '禁用'}")
     
+    def set_data_source(self, data: Union[np.ndarray, pd.DataFrame, pd.Series]):
+        """设置数据源，实现IVirtualRenderer接口"""
+        self.volume_data = data
+        
+        if isinstance(data, pd.DataFrame) and len(data) > 0:
+            self._total_data_points = len(data)
+            volumes = data['volume'].values
+            self.virtual_renderer.set_data_source(volumes)
+            
+            logger.info(f"成交量虚拟滚动数据源已设置: {self._total_data_points}个数据点")
+        else:
+            self._total_data_points = 0
+            logger.warning(f"无效的成交量数据源，数据点数量: {self._total_data_points}")
+    
     def set_volume_data(self, volume_data: pd.DataFrame, volume_axis):
-        """设置成交量数据和轴"""
+        """兼容旧接口，设置成交量数据和轴"""
         self.volume_data = volume_data
         self.volume_axis = volume_axis
-        
-        if volume_data is not None and len(volume_data) > 0:
-            self.total_data_points = len(volume_data)
-            
-            # 为虚拟滚动设置数据源
-            if self.is_enabled:
-                volumes = volume_data['volume'].values
-                self.virtual_renderer.set_data_source(volumes)
-                
-                logger.info(f"成交量虚拟滚动数据已设置: {self.total_data_points}个数据点")
-            else:
-                logger.info(f"成交量数据已设置: {self.total_data_points}个数据点 (虚拟滚动已禁用)")
+        self.set_data_source(volume_data)
     
-    def render_volume_with_virtual_scroll(self, ax, data: pd.DataFrame, 
+    def render_with_virtual_scroll(self, ax, data: pd.DataFrame, 
                                         style: Dict[str, Any] = None,
                                         x: np.ndarray = None, 
                                         use_datetime_axis: bool = True) -> bool:
-        """使用虚拟滚动渲染成交量"""
-        if not self.is_enabled or self.volume_data is None:
+        """使用虚拟滚动渲染成交量，实现IVirtualRenderer接口"""
+        if not self._is_enabled or self.volume_data is None:
             # 降级到常规渲染
+            logger.info(f"成交量虚拟滚动未启用或数据源为空，降级到常规渲染")
             return self._render_volume_regular(ax, data, style, x, use_datetime_axis)
         
         try:
             start_time = time.time()
             
-            logger.debug(f"使用虚拟滚动渲染成交量: {len(data)}个数据点")
+            logger.info(f"开始使用虚拟滚动渲染成交量: {len(data)}个数据点")
             
             # 更新视口信息
             visible_rect = self._get_visible_rect(ax)
             self.virtual_renderer.update_viewport(visible_rect)
             
             # 检查数据量是否需要虚拟滚动
-            if self.total_data_points < self.config.chunk_size * 2:
+            if self._total_data_points < self.config.chunk_size * 2:
                 # 数据量不大，使用常规渲染
+                logger.info(f"成交量数据量较小({self._total_data_points} < {self.config.chunk_size * 2})，使用常规渲染")
                 return self._render_volume_regular(ax, data, style, x, use_datetime_axis)
             
             # 使用虚拟滚动渲染
@@ -176,7 +172,7 @@ class VolumeVirtualRenderer(QObject):
             self.render_stats['total_render_time_ms'] += render_time * 1000
             self.render_stats['data_points_processed'] += len(data)
             
-            logger.debug(f"✅ 虚拟滚动成交量渲染完成: {render_time*1000:.2f}ms")
+            logger.info(f"✅ 成交量虚拟滚动渲染完成: {render_time*1000:.2f}ms, 渲染块数量: {len(self.rendered_chunks)}")
             return success
             
         except Exception as e:
@@ -202,14 +198,17 @@ class VolumeVirtualRenderer(QObject):
                 # 样式处理
                 current_style = self.style
                 if style:
-                    current_style = VolumeRenderStyle(**{**current_style.__dict__, **style})
+                    # 使用字典更新样式
+                    for key, value in style.items():
+                        if hasattr(current_style, key):
+                            setattr(current_style, key, value)
                 
                 # 创建柱子顶点
                 verts = []
                 colors = []
                 
                 for x_val, volume in zip(x_values, volumes):
-                    if volume > current_style.min_visible_volume:
+                    if volume > current_style.min_visible_value:
                         left = x_val - current_style.width / 2
                         right = x_val + current_style.width / 2
                         
@@ -259,7 +258,10 @@ class VolumeVirtualRenderer(QObject):
             # 更新样式
             current_style = self.style
             if style:
-                current_style = VolumeRenderStyle(**{**current_style.__dict__, **style})
+                # 使用字典更新样式
+                for key, value in style.items():
+                    if hasattr(current_style, key):
+                        setattr(current_style, key, value)
             
             # 获取当前可见的渲染块
             visible_rect = self._get_visible_rect(ax)
@@ -270,12 +272,18 @@ class VolumeVirtualRenderer(QObject):
             
             # 渲染可见的块
             for chunk_id in range(chunk_start, chunk_end + 1):
-                # 这里需要从虚拟渲染器获取块数据
-                # 由于虚拟渲染器的复杂性，这里提供一个简化的实现
-                
-                chunk_data = self._get_chunk_data(chunk_id)
+                # 尝试从缓存获取块数据
+                cached_chunk = self.virtual_renderer._get_chunk_from_cache(chunk_id)
+                if cached_chunk:
+                    # 使用缓存的块数据
+                    chunk_data = cached_chunk.data_points
+                    logger.debug(f"使用缓存的块数据，块ID: {chunk_id}")
+                else:
+                    # 从数据源获取块数据
+                    chunk_data = self._get_chunk_data(chunk_id)
+                    
                 if chunk_data is not None:
-                    success = self._render_chunk(ax, chunk_data, current_style, chunk_id)
+                    success = self._render_chunk(ax, chunk_data, current_style, chunk_id, x, use_datetime_axis)
                     if success:
                         rendered_any = True
                         self.rendered_chunks[chunk_id] = chunk_data
@@ -291,6 +299,7 @@ class VolumeVirtualRenderer(QObject):
             
             for chunk_id in chunks_to_remove:
                 del self.rendered_chunks[chunk_id]
+                logger.debug(f"清理不可见的块: {chunk_id}")
             
             return rendered_any
             
@@ -310,27 +319,52 @@ class VolumeVirtualRenderer(QObject):
         if start_idx >= end_idx:
             return None
         
-        return self.volume_data.iloc[start_idx:end_idx]['volume'].values
+        chunk_data = self.volume_data.iloc[start_idx:end_idx]['volume'].values
+        
+        # 创建RenderChunk并添加到缓存
+        chunk = RenderChunk(
+            start_index=start_idx,
+            end_index=end_idx,
+            data_points=chunk_data,
+            bounding_rect=QRectF(start_idx, 0, len(chunk_data), max(chunk_data) if len(chunk_data) > 0 else 0),
+            render_time=0.0,
+            quality_level=self.virtual_renderer.quality_level
+        )
+        
+        self.virtual_renderer._add_chunk_to_cache(chunk_id, chunk)
+        
+        return chunk_data
     
     def _render_chunk(self, ax, chunk_data: np.ndarray, 
-                     style: VolumeRenderStyle, chunk_id: int) -> bool:
+                     style: VirtualRenderStyle, chunk_id: int, 
+                     x: np.ndarray = None, use_datetime_axis: bool = True) -> bool:
         """渲染单个数据块"""
         try:
             from matplotlib.collections import PolyCollection
             
             if len(chunk_data) == 0:
+                logger.debug(f"跳过空数据块渲染: {chunk_id}")
                 return False
+            
+            render_start = time.time()
             
             # 创建该块的柱子
             chunk_size = self.config.chunk_size
             base_index = chunk_id * chunk_size
             
+            # 准备X轴数据
+            if x is not None and len(x) > base_index + len(chunk_data):
+                # 使用提供的X轴数据
+                chunk_x = x[base_index:base_index + len(chunk_data)]
+            else:
+                # 使用默认的X轴数据
+                chunk_x = np.arange(base_index, base_index + len(chunk_data))
+            
             verts = []
             colors = []
             
-            for i, volume in enumerate(chunk_data):
-                if volume > style.min_visible_volume:
-                    x_val = base_index + i
+            for i, (x_val, volume) in enumerate(zip(chunk_x, chunk_data)):
+                if volume > style.min_visible_value:
                     left = x_val - style.width / 2
                     right = x_val + style.width / 2
                     
@@ -338,7 +372,7 @@ class VolumeVirtualRenderer(QObject):
                         (left, 0), (left, volume), (right, volume), (right, 0)
                     ])
                     
-                    # 颜色处理
+                    # 处理颜色
                     if callable(style.color):
                         normalized_volume = volume / max(chunk_data) if max(chunk_data) > 0 else 0
                         colors.append(style.color(normalized_volume))
@@ -362,8 +396,12 @@ class VolumeVirtualRenderer(QObject):
                                             style.chunk_border_color, 
                                             style.chunk_border_width)
                 
+                render_time = (time.time() - render_start) * 1000
+                logger.debug(f"块渲染完成: ID={chunk_id}, 数据点={len(chunk_data)}, 柱子数={len(verts)}, 耗时={render_time:.2f}ms")
+                
                 return True
             
+            logger.debug(f"块渲染无可见元素: ID={chunk_id}, 数据点={len(chunk_data)}")
             return False
             
         except Exception as e:
@@ -406,12 +444,8 @@ class VolumeVirtualRenderer(QObject):
         except Exception as e:
             logger.warning(f"绘制块边界失败: {e}")
     
-    def _on_chunk_rendered(self, chunk_id: int, chunk: RenderChunk):
-        """处理虚拟滚动块渲染完成事件"""
-        logger.debug(f"虚拟滚动块 {chunk_id} 渲染完成，包含 {len(chunk.data_points)} 个数据点")
-    
     def get_performance_stats(self) -> Dict[str, Any]:
-        """获取性能统计信息"""
+        """获取性能统计信息，实现IVirtualRenderer接口"""
         stats = self.render_stats.copy()
         
         # 添加虚拟滚动统计
@@ -421,8 +455,8 @@ class VolumeVirtualRenderer(QObject):
         
         # 添加总体统计
         stats.update({
-            'total_data_points': self.total_data_points,
-            'virtual_scrolling_enabled': self.is_enabled,
+            'total_data_points': self._total_data_points,
+            'virtual_scrolling_enabled': self._is_enabled,
             'rendered_chunks_count': len(self.rendered_chunks),
             'memory_estimate_mb': len(self.rendered_chunks) * 0.1  # 估算
         })
@@ -430,21 +464,111 @@ class VolumeVirtualRenderer(QObject):
         return stats
     
     def cleanup(self):
-        """清理资源"""
-        if self.is_enabled and hasattr(self.virtual_renderer, 'cleanup'):
+        """清理资源，实现IVirtualRenderer接口"""
+        logger.info("清理成交量虚拟滚动渲染器资源")
+        
+        if self._is_enabled and hasattr(self.virtual_renderer, 'cleanup'):
             self.virtual_renderer.cleanup()
         
         self.rendered_chunks.clear()
         self.volume_data = None
         self.volume_axis = None
         
-        logger.info("成交量虚拟滚动渲染器资源已清理")
+        logger.info("成交量虚拟滚动渲染器资源清理完成")
+    
+    def update_viewport(self, visible_rect: QRectF):
+        """更新视口，实现IVirtualRenderer接口"""
+        self.virtual_renderer.update_viewport(visible_rect)
+    
+    @property
+    def is_enabled(self) -> bool:
+        """虚拟滚动是否启用，实现IVirtualRenderer接口"""
+        return self._is_enabled
+    
+    @property
+    def total_data_points(self) -> int:
+        """总数据点数量，实现IVirtualRenderer接口"""
+        return self._total_data_points
+    
+    def _render_volume_regular(self, ax, data: pd.DataFrame, 
+                              style: Dict[str, Any] = None,
+                              x: np.ndarray = None, 
+                              use_datetime_axis: bool = True) -> bool:
+        """常规渲染（降级方案）"""
+        try:
+            start_time = time.time()
+            
+            if ax and len(data) > 0:
+                from matplotlib.collections import PolyCollection
+                
+                # 获取数据
+                x_values = x if x is not None else np.arange(len(data))
+                volumes = data['volume'].values
+                
+                # 样式处理
+                current_style = self.style
+                if style:
+                    # 使用字典更新样式
+                    for key, value in style.items():
+                        if hasattr(current_style, key):
+                            setattr(current_style, key, value)
+                
+                # 创建柱子顶点
+                verts = []
+                colors = []
+                
+                for x_val, volume in zip(x_values, volumes):
+                    if volume > current_style.min_visible_value:
+                        left = x_val - current_style.width / 2
+                        right = x_val + current_style.width / 2
+                        
+                        verts.append([
+                            (left, 0), (left, volume), (right, volume), (right, 0)
+                        ])
+                        
+                        # 处理颜色
+                        if callable(current_style.color):
+                            normalized_volume = volume / max(volumes) if max(volumes) > 0 else 0
+                            colors.append(current_style.color(normalized_volume))
+                        else:
+                            colors.append(current_style.color)
+                
+                if verts:
+                    # 创建PolyCollection
+                    collection = PolyCollection(
+                        verts, 
+                        facecolors=colors if colors else current_style.color,
+                        edgecolors=current_style.edge_color,
+                        linewidths=current_style.edge_width,
+                        alpha=current_style.alpha
+                    )
+                    
+                    ax.add_collection(collection)
+                    
+                    if current_style.show_chunks:
+                        self._render_chunk_boundaries(ax)
+                    
+                    ax.autoscale_view()
+                    
+                    render_time = time.time() - start_time
+                    logger.debug(f"✅ 常规成交量渲染完成: {len(verts)}个柱子，耗时 {render_time*1000:.2f}ms")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"常规成交量渲染失败: {e}")
+            return False
+    
+    def _render_chunk_boundaries(self, ax):
+        """渲染所有块边界（调试用）"""
+        # 简化实现，实际项目中可以根据需要实现
+        pass
 
 # 便捷函数
 def create_volume_virtual_renderer(data: pd.DataFrame, 
                                  ax,
                                  config: Optional[VirtualizationConfig] = None,
-                                 style: Optional[VolumeRenderStyle] = None) -> VolumeVirtualRenderer:
+                                 style: Optional[VirtualRenderStyle] = None) -> VolumeVirtualRenderer:
     """创建成交量虚拟滚动渲染器"""
     renderer = VolumeVirtualRenderer(config, style)
     renderer.set_volume_data(data, ax)
@@ -457,19 +581,22 @@ def optimize_volume_config_for_data_size(data_size: int) -> VirtualizationConfig
             chunk_size=1000,
             overlap_size=100,
             max_visible_chunks=2,
-            quality_levels=[1, 4, 8, 16, 32]
+            quality_levels=[1, 4, 8, 16, 32],
+            cache_size=100
         )
     elif data_size > 100_000:  # 10万数据点
         return VirtualizationConfig(
             chunk_size=2000,
             overlap_size=200,
             max_visible_chunks=3,
-            quality_levels=[1, 2, 4, 8, 16]
+            quality_levels=[1, 2, 4, 8, 16],
+            cache_size=50
         )
     else:  # 小于10万数据点
         return VirtualizationConfig(
             chunk_size=5000,
             overlap_size=500,
             max_visible_chunks=2,
-            quality_levels=[1, 2, 4, 8]
+            quality_levels=[1, 2, 4, 8],
+            cache_size=20
         )

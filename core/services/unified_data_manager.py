@@ -8,7 +8,7 @@ from loguru import logger
 
 import threading
 import time
-from typing import Dict, Any, Optional, List, Callable, Set
+from typing import Dict, Any, Optional, List, Callable, Set, Union
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, Future
 from dataclasses import dataclass
@@ -851,29 +851,56 @@ class UnifiedDataManager:
         try:
             cache_key = f"asset_list_{asset_type}_{market}"
 
+            # 处理资产类型参数，确保兼容字符串和枚举类型
+            from core.plugin_types import AssetType as AssetTypeEnum
+            asset_type_str = str(asset_type).lower()
+            
             # 1. 优先从DuckDB数据库获取资产列表
             if self.duckdb_available and self.duckdb_operations:
-                logger.debug(f"🗄️ 从DuckDB数据库获取{asset_type}资产列表")  # 优化：改为debug级别减少日志噪音
+                logger.debug(f"🗄️ 从DuckDB数据库获取{asset_type_str}资产列表")
                 try:
-                    asset_list_df = self._get_asset_list_from_duckdb(asset_type, market)
+                    asset_list_df = self._get_asset_list_from_duckdb(asset_type_str, market)
                     if asset_list_df is not None and not asset_list_df.empty:
-                        logger.debug(f"✅ DuckDB数据库获取{asset_type}资产列表成功: {len(asset_list_df)} 个资产")  # 优化：改为debug级别
+                        logger.debug(f"✅ DuckDB数据库获取{asset_type_str}资产列表成功: {len(asset_list_df)} 个资产")
                         # 缓存结果
                         if self.cache_enabled:
                             self._cache_data(cache_key, asset_list_df)
                         return asset_list_df
                     else:
-                        logger.info(f"📥 DuckDB中没有{asset_type}资产数据")
+                        logger.info(f"📥 DuckDB中没有{asset_type_str}资产数据")
                 except Exception as e:
-                    logger.warning(f"⚠️ DuckDB{asset_type}资产列表获取失败: {e}")
+                    logger.warning(f"⚠️ DuckDB{asset_type_str}资产列表获取失败: {e}")
 
-            # 2. 如果DuckDB没有数据，记录警告但不再使用插件系统
-            logger.warning(f"⚠️ DuckDB中没有{asset_type}资产数据，请检查数据库是否已正确初始化")
-            logger.info("💡 提示：系统现在完全依赖DuckDB数据库，不再使用数据源插件")
-            logger.info("💡 建议：请运行数据导入脚本来初始化DuckDB数据库")
-
-            # 返回空DataFrame，但保持正确的列结构
+            # 2. 修复：如果DuckDB没有数据，尝试从传统数据源获取
+            logger.info(f"📥 DuckDB中没有{asset_type_str}资产数据，尝试从传统数据源获取")
+            
+            # 转换资产类型为枚举
+            asset_type_mapping = {
+                'stock': AssetTypeEnum.STOCK_A,
+                'stock_a': AssetTypeEnum.STOCK_A,
+                'crypto': AssetTypeEnum.CRYPTO,
+                'futures': AssetTypeEnum.FUTURES,
+                'forex': AssetTypeEnum.FOREX,
+                'index': AssetTypeEnum.INDEX,
+                'fund': AssetTypeEnum.FUND
+            }
+            
+            asset_type_enum = asset_type_mapping.get(asset_type_str, AssetTypeEnum.STOCK_A)
+            
+            # 3. 尝试调用_legacy_get_asset_list方法获取资产列表
+            try:
+                legacy_assets = self._legacy_get_asset_list(asset_type_enum, market)
+                if not legacy_assets.empty:
+                    logger.info(f"✅ 从传统数据源获取{asset_type_str}资产列表成功: {len(legacy_assets)} 个资产")
+                    if self.cache_enabled:
+                        self._cache_data(cache_key, legacy_assets)
+                    return legacy_assets
+            except Exception as e:
+                logger.warning(f"⚠️ 从传统数据源获取{asset_type_str}资产列表失败: {e}")
+            
+            # 4. 返回空DataFrame，但保持正确的列结构
             import pandas as pd
+            logger.warning(f"⚠️ 无法获取{asset_type_str}资产列表，返回空DataFrame")
             return pd.DataFrame(columns=['code', 'name', 'market', 'industry', 'sector', 'list_date', 'status', 'asset_type'])
 
         except Exception as e:
@@ -894,6 +921,7 @@ class UnifiedDataManager:
             from ..plugin_types import AssetType
             asset_type_enum_mapping = {
                 'stock': AssetType.STOCK_A,  # 默认使用STOCK_A（A股）面向中国用户
+                'stock_a': AssetType.STOCK_A,  # 支持直接传入stock_a
                 'crypto': AssetType.CRYPTO,
                 'fund': AssetType.FUND,
                 'bond': AssetType.BOND,
@@ -908,6 +936,7 @@ class UnifiedDataManager:
             # 资产类型映射（用于WHERE条件）
             asset_type_value_mapping = {
                 'stock': 'stock_a',     # 默认A股
+                'stock_a': 'stock_a',   # 支持直接传入stock_a
                 'crypto': 'crypto',
                 'fund': 'fund',
                 'bond': 'bond',
@@ -1020,25 +1049,69 @@ class UnifiedDataManager:
             frequency = period_to_frequency_map.get(period, '1d')
             logger.debug(f"📊 周期映射: {period} -> {frequency}")
 
-            # 🔧 修复：先尝试直接查询基础表，不依赖视图
-            # 基础表查询（更可靠）
-            base_query = f"""
+            # ✅ 优先查询质量优选视图（获取最优质量数据）
+            view_query = f"""
                 SELECT 
                     symbol as code, 
                     timestamp as datetime, 
-                    open, high, low, close, volume, amount,
-                    data_source
-                FROM historical_kline_data
+                    open, high, low, close, volume, amount
+                FROM unified_best_quality_kline
                 WHERE symbol = ? 
                   AND frequency = ?
                 ORDER BY timestamp DESC 
                 LIMIT ?
             """
 
-            logger.info(f"📊 [基础表查询] database={database_path}, symbol={stock_code}, frequency={frequency}, limit={count}")
+            logger.debug(f"📊 [视图查询] database={database_path}, symbol={stock_code}, frequency={frequency}, limit={count}")
 
             try:
-                # 先尝试基础表
+                # 先尝试质量优选视图
+                result = self.duckdb_operations.execute_query(
+                    database_path=database_path,
+                    query=view_query,
+                    params=[stock_code, frequency, count]
+                )
+
+                if result.success and result.data is not None:
+                    if isinstance(result.data, pd.DataFrame):
+                        df = result.data
+                    else:
+                        df = pd.DataFrame(result.data)
+
+                    if not df.empty:
+                        logger.info(f"✅ [视图查询成功（质量优选）]: {stock_code}, frequency={frequency}, {len(df)} 条记录")
+                        # ✅ 为视图结果添加data_source列，默认值为'best_quality'
+                        df['data_source'] = 'best_quality'
+                        # ✅ 修复：对从DuckDB获取的数据进行标准化和排序
+                        df = self._standardize_kdata_format(df, stock_code)
+                        return df
+                    else:
+                        logger.warning(f"⚠️  [视图查询结果为空]: {stock_code}, frequency={frequency}")
+                else:
+                    logger.warning(f"⚠️  [视图查询失败或无数据]: {stock_code}, success={result.success if result else None}")
+
+            except Exception as view_error:
+                logger.error(f"❌ [视图查询异常]: {stock_code}, error={view_error}")
+                import traceback
+                logger.error(f"详细错误:\n{traceback.format_exc()}")
+
+            # 如果视图查询失败或无数据，尝试查询基础表
+            try:
+                base_query = f"""
+                    SELECT 
+                        symbol as code, 
+                        timestamp as datetime, 
+                        open, high, low, close, volume, amount,
+                        data_source
+                    FROM historical_kline_data
+                    WHERE symbol = ? 
+                      AND frequency = ?
+                    ORDER BY timestamp DESC 
+                    LIMIT ?
+                """
+
+                logger.info(f"📊 [基础表查询] 尝试使用基础表获取数据...")
+
                 result = self.duckdb_operations.execute_query(
                     database_path=database_path,
                     query=base_query,
@@ -1066,40 +1139,7 @@ class UnifiedDataManager:
                 import traceback
                 logger.error(f"详细错误:\n{traceback.format_exc()}")
 
-            # 如果基础表也没数据，尝试视图查询（可选）
-            try:
-                view_query = f"""
-                    SELECT 
-                        symbol as code, 
-                        timestamp as datetime, 
-                        open, high, low, close, volume, amount
-                    FROM unified_best_quality_kline
-                    WHERE symbol = ? 
-                      AND frequency = ?
-                    ORDER BY timestamp DESC 
-                    LIMIT ?
-                """
-
-                logger.debug(f"📊 [视图查询] 尝试使用质量优选视图...")
-
-                result = self.duckdb_operations.execute_query(
-                    database_path=database_path,
-                    query=view_query,
-                    params=[stock_code, frequency, count]
-                )
-
-                if result.success and result.data is not None:
-                    df = result.data if isinstance(result.data, pd.DataFrame) else pd.DataFrame(result.data)
-                    if not df.empty:
-                        logger.info(f"✅ [视图查询成功（质量优选）]: {stock_code}, {len(df)} 条记录")
-                        # ✅ 修复：对从视图获取的数据进行标准化和排序
-                        df = self._standardize_kdata_format(df, stock_code)
-                        return df
-
-            except Exception as view_error:
-                logger.warning(f"⚠️  [视图查询失败]: {view_error}")
-
-            logger.warning(f"❌ [DuckDB无数据]: {stock_code} (基础表和视图都无数据)")
+            logger.warning(f"❌ [DuckDB无数据]: {stock_code} (视图和基础表都无数据)")
             return pd.DataFrame()
 
         except Exception as e:
@@ -1483,13 +1523,7 @@ class UnifiedDataManager:
                 'market_flow': {}
             }
 
-            # 返回空的资金流数据结构
-            logger.info("资金流数据需要通过真实数据源获取")
-            return {
-                'sector_flow_rank': pd.DataFrame(),
-                'individual_flow': pd.DataFrame(),
-                'market_flow': {}
-            }
+
 
         except Exception as e:
             logger.error(f"生成模拟资金流数据失败: {e}")
@@ -1625,7 +1659,7 @@ class UnifiedDataManager:
             logger.error(f"获取历史数据失败 {symbol}: {e}")
             return None
 
-    def get_asset_data(self, symbol: str, asset_type: AssetType = AssetType.STOCK_A,
+    def get_asset_data(self, symbol: str, asset_type: Union[AssetType, str] = AssetType.STOCK_A,
                        data_type: DataType = DataType.HISTORICAL_KLINE,
                        period: str = "D", **kwargs) -> Optional[pd.DataFrame]:
         """
@@ -1633,7 +1667,7 @@ class UnifiedDataManager:
 
         Args:
             symbol: 交易代码
-            asset_type: 资产类型
+            asset_type: 资产类型（支持AssetType枚举或字符串）
             data_type: 数据类型
             period: 周期
             **kwargs: 其他参数
@@ -1641,16 +1675,30 @@ class UnifiedDataManager:
         Returns:
             Optional[pd.DataFrame]: 标准化数据
         """
+        # 确保asset_type是AssetType枚举
+        if isinstance(asset_type, str):
+            try:
+                asset_type = AssetType(asset_type)
+            except ValueError:
+                logger.warning(f"无效的资产类型字符串: {asset_type}, 使用默认值: {AssetType.STOCK_A.value}")
+                asset_type = AssetType.STOCK_A
+        
         if self.tet_enabled and self.tet_pipeline:
             try:
                 logger.info(f" 使用TET模式获取数据: {symbol} ({asset_type.value})")
 
+                # 将count参数移到extra_params中，因为StandardQuery没有count参数
+                extra_params = kwargs.copy()
+                count = extra_params.pop('count', None)
+                if count is not None:
+                    extra_params['count'] = count
+                
                 query = StandardQuery(
                     symbol=symbol,
                     asset_type=asset_type,
                     data_type=data_type,
                     period=period,
-                    **kwargs
+                    extra_params=extra_params
                 )
 
                 result = self.tet_pipeline.process(query)
@@ -2747,7 +2795,6 @@ class UnifiedDataManager:
             # self._data_cache[cache_key] = data  # 已统一使用MultiLevelCacheManager
             if self.multi_cache:
                 self.multi_cache.set(cache_key, data, ttl=self._cache_ttl)
-            # self._cache_timestamps[cache_key] = time.time()  # 已统一使用MultiLevelCacheManager
 
     def dispose(self) -> None:
         """清理资源"""
@@ -2985,391 +3032,6 @@ class UnifiedDataManager:
             import traceback
             logger.error(traceback.format_exc())
             return registered_count
-
-    # ==================================================================================
-    # 🗑️ 已废弃：_manual_register_core_plugins - 硬编码插件注册方法
-    # 替代方案：使用 _register_plugins_from_plugin_manager() 动态加载插件
-    # 保留此代码用于参考，待完全验证后删除
-    # ==================================================================================
-    def _manual_register_core_plugins_DEPRECATED(self) -> None:
-        """
-        【已废弃】手动注册核心数据源插件
-
-        ⚠️ 此方法已被 _register_plugins_from_plugin_manager() 替代
-        原因：硬编码导入18个examples插件，难以维护
-
-        请勿使用此方法！
-        """
-        logger.warning("⚠️ 调用了已废弃的 _manual_register_core_plugins 方法")
-        logger.warning("⚠️ 请使用 _register_plugins_from_plugin_manager 替代")
-        return  # 直接返回，不执行任何操作
-
-        # 以下代码已废弃，保留用于参考
-        """
-        registered_count = 0
-
-        # 插件注册开始
-
-        # 2. 注册AkShare插件（支持sector_fund_flow）
-        try:
-            # 注意：akshare_stock_plugin已迁移到TET+Plugin架构
-            # 通过插件中心自动发现和注册
-            logger.info("AkShare插件通过TET+Plugin架构自动管理")
-
-            # AkShare插件现在通过TET+Plugin架构管理
-            # 不再需要手动注册和扩展
-            logger.info("AkShare插件将通过插件中心自动发现和注册")
-            # 假设成功，因为通过插件中心管理
-            registered_count += 1
-
-        except Exception as e:
-            logger.warning(f" AkShare插件注册失败: {e}")
-
-        # 3. 注册Wind插件（如果可用）
-        try:
-            from plugins.examples.wind_data_plugin import WindDataPlugin
-            wind_plugin = WindDataPlugin()
-
-            success = self.register_data_source_plugin(
-                "wind_data_source",
-                wind_plugin,
-                priority=5,  # 较高优先级，专业数据源
-                weight=1.8
-            )
-
-            if success:
-                registered_count += 1
-                logger.info("手动注册Wind数据源插件成功")
-            else:
-                logger.warning("Wind数据源插件注册失败")
-
-        except Exception as e:
-            logger.warning(f" Wind插件注册失败: {e}")
-
-        # 4. 注册东方财富插件
-        try:
-            from plugins.data_sources.eastmoney_plugin import EastMoneyStockPlugin
-            eastmoney_plugin = EastMoneyStockPlugin()
-
-            success = self.register_data_source_plugin(
-                "eastmoney_stock",
-                eastmoney_plugin,
-                priority=20,
-                weight=1.0
-            )
-
-            if success:
-                registered_count += 1
-                logger.info("手动注册东方财富数据源插件成功")
-            else:
-                logger.warning("东方财富数据源插件注册失败")
-
-        except Exception as e:
-            logger.warning(f" 东方财富插件注册失败: {e}")
-
-        # 5. 注册通达信插件
-        try:
-            from plugins.examples.tongdaxin_stock_plugin import TongdaxinStockPlugin
-            tongdaxin_plugin = TongdaxinStockPlugin()
-
-            success = self.register_data_source_plugin(
-                "tongdaxin_stock",
-                tongdaxin_plugin,
-                priority=15,
-                weight=1.3
-            )
-
-            if success:
-                registered_count += 1
-                logger.info("手动注册通达信数据源插件成功")
-            else:
-                logger.warning("通达信数据源插件注册失败")
-
-        except Exception as e:
-            logger.warning(f" 通达信插件注册失败: {e}")
-
-        # 6. 注册Yahoo Finance插件
-        try:
-            from plugins.examples.yahoo_finance_datasource import YahooFinanceDataSourcePlugin
-            yahoo_plugin = YahooFinanceDataSourcePlugin()
-
-            success = self.register_data_source_plugin(
-                "yahoo_finance",
-                yahoo_plugin,
-                priority=25,
-                weight=1.2
-            )
-
-            if success:
-                registered_count += 1
-                logger.info("手动注册Yahoo Finance数据源插件成功")
-            else:
-                logger.warning("Yahoo Finance数据源插件注册失败")
-
-        except Exception as e:
-            logger.warning(f" Yahoo Finance插件注册失败: {e}")
-
-        # 7. 注册期货数据插件
-        try:
-            from plugins.examples.futures_data_plugin import FuturesDataPlugin
-            futures_plugin = FuturesDataPlugin()
-
-            success = self.register_data_source_plugin(
-                "futures_data_source",
-                futures_plugin,
-                priority=30,
-                weight=1.2
-            )
-
-            if success:
-                registered_count += 1
-                logger.info("手动注册期货数据源插件成功")
-            else:
-                logger.warning("期货数据源插件注册失败")
-
-        except Exception as e:
-            logger.warning(f" 期货插件注册失败: {e}")
-
-        # 8. 注册CTP期货插件
-        try:
-            from plugins.examples.ctp_futures_plugin import CTPFuturesPlugin
-            ctp_plugin = CTPFuturesPlugin()
-
-            success = self.register_data_source_plugin(
-                "ctp_futures",
-                ctp_plugin,
-                priority=12,  # 较高优先级的期货数据源
-                weight=1.6
-            )
-
-            if success:
-                registered_count += 1
-                logger.info("手动注册CTP期货数据源插件成功")
-            else:
-                logger.warning("CTP期货数据源插件注册失败")
-
-        except Exception as e:
-            logger.warning(f" CTP期货插件注册失败: {e}")
-
-        # 9. 注册文华财经插件
-        try:
-            from plugins.examples.wenhua_data_plugin import WenhuaDataPlugin
-            wenhua_plugin = WenhuaDataPlugin()
-
-            success = self.register_data_source_plugin(
-                "wenhua_data",
-                wenhua_plugin,
-                priority=18,
-                weight=1.4
-            )
-
-            if success:
-                registered_count += 1
-                logger.info("手动注册文华财经数据源插件成功")
-            else:
-                logger.warning("文华财经数据源插件注册失败")
-
-        except Exception as e:
-            logger.warning(f" 文华财经插件注册失败: {e}")
-
-        # 10. 注册外汇数据插件
-        try:
-            from plugins.examples.forex_data_plugin import ForexDataPlugin
-            forex_plugin = ForexDataPlugin()
-
-            success = self.register_data_source_plugin(
-                "forex_data_source",
-                forex_plugin,
-                priority=35,
-                weight=1.0
-            )
-
-            if success:
-                registered_count += 1
-                logger.info("手动注册外汇数据源插件成功")
-            else:
-                logger.warning("外汇数据源插件注册失败")
-
-        except Exception as e:
-            logger.warning(f" 外汇插件注册失败: {e}")
-
-        # 11. 注册债券数据插件
-        try:
-            from plugins.examples.bond_data_plugin import BondDataPlugin
-            bond_plugin = BondDataPlugin()
-
-            success = self.register_data_source_plugin(
-                "bond_data_source",
-                bond_plugin,
-                priority=40,
-                weight=1.0
-            )
-
-            if success:
-                registered_count += 1
-                logger.info("手动注册债券数据源插件成功")
-            else:
-                logger.warning("债券数据源插件注册失败")
-
-        except Exception as e:
-            logger.warning(f" 债券插件注册失败: {e}")
-
-        # 12. 注册加密货币数据插件
-        try:
-            from plugins.examples.crypto_data_plugin import CryptoDataPlugin
-            crypto_plugin = CryptoDataPlugin()
-
-            success = self.register_data_source_plugin(
-                "crypto_data_source",
-                crypto_plugin,
-                priority=45,
-                weight=1.1
-            )
-
-            if success:
-                registered_count += 1
-                logger.info("手动注册加密货币数据源插件成功")
-            else:
-                logger.warning("加密货币数据源插件注册失败")
-
-        except Exception as e:
-            logger.warning(f" 加密货币插件注册失败: {e}")
-
-        # 13. 注册币安加密货币插件
-        try:
-            from plugins.examples.binance_crypto_plugin import BinanceCryptoPlugin
-            binance_plugin = BinanceCryptoPlugin()
-
-            success = self.register_data_source_plugin(
-                "binance_crypto",
-                binance_plugin,
-                priority=22,  # 较高优先级的加密货币数据源
-                weight=1.4
-            )
-
-            if success:
-                registered_count += 1
-                logger.info("手动注册币安加密货币数据源插件成功")
-            else:
-                logger.warning("币安加密货币数据源插件注册失败")
-
-        except Exception as e:
-            logger.warning(f" 币安加密货币插件注册失败: {e}")
-
-        # 14. 注册火币加密货币插件
-        try:
-            from plugins.examples.huobi_crypto_plugin import HuobiCryptoPlugin
-            huobi_plugin = HuobiCryptoPlugin()
-
-            success = self.register_data_source_plugin(
-                "huobi_crypto",
-                huobi_plugin,
-                priority=24,
-                weight=1.3
-            )
-
-            if success:
-                registered_count += 1
-                logger.info("手动注册火币加密货币数据源插件成功")
-            else:
-                logger.warning("火币加密货币数据源插件注册失败")
-
-        except Exception as e:
-            logger.warning(f" 火币加密货币插件注册失败: {e}")
-
-        # 15. 注册OKX加密货币插件
-        try:
-            from plugins.examples.okx_crypto_plugin import OKXCryptoPlugin
-            okx_plugin = OKXCryptoPlugin()
-
-            success = self.register_data_source_plugin(
-                "okx_crypto",
-                okx_plugin,
-                priority=26,
-                weight=1.3
-            )
-
-            if success:
-                registered_count += 1
-                logger.info("手动注册OKX加密货币数据源插件成功")
-            else:
-                logger.warning("OKX加密货币数据源插件注册失败")
-
-        except Exception as e:
-            logger.warning(f" OKX加密货币插件注册失败: {e}")
-
-        # 16. 注册Coinbase加密货币插件
-        try:
-            from plugins.examples.coinbase_crypto_plugin import CoinbaseCryptoPlugin
-            coinbase_plugin = CoinbaseCryptoPlugin()
-
-            success = self.register_data_source_plugin(
-                "coinbase_crypto",
-                coinbase_plugin,
-                priority=28,
-                weight=1.2
-            )
-
-            if success:
-                registered_count += 1
-                logger.info("手动注册Coinbase加密货币数据源插件成功")
-            else:
-                logger.warning("Coinbase加密货币数据源插件注册失败")
-
-        except Exception as e:
-            logger.warning(f" Coinbase加密货币插件注册失败: {e}")
-
-        # 17. 注册我的钢铁网数据插件
-        try:
-            from plugins.examples.mysteel_data_plugin import MySteelDataPlugin
-            mysteel_plugin = MySteelDataPlugin()
-
-            success = self.register_data_source_plugin(
-                "mysteel_data",
-                mysteel_plugin,
-                priority=50,
-                weight=0.8
-            )
-
-            if success:
-                registered_count += 1
-                logger.info("手动注册我的钢铁网数据源插件成功")
-            else:
-                logger.warning("我的钢铁网数据源插件注册失败")
-
-        except Exception as e:
-            logger.warning(f" 我的钢铁网插件注册失败: {e}")
-
-        # 18. 注册自定义数据插件
-        try:
-            from plugins.examples.custom_data_plugin import CustomDataPlugin
-            custom_plugin = CustomDataPlugin()
-
-            success = self.register_data_source_plugin(
-                "custom_data_source",
-                custom_plugin,
-                priority=99,  # 最低优先级
-                weight=0.5
-            )
-
-            if success:
-                registered_count += 1
-                logger.info("手动注册自定义数据源插件成功")
-            else:
-                logger.warning("自定义数据源插件注册失败")
-
-        except Exception as e:
-            logger.warning(f" 自定义插件注册失败: {e}")
-
-        if registered_count > 0:
-            logger.info(f" 手动注册了 {registered_count} 个核心数据源插件")
-            self._plugins_discovered = True
-        else:
-            logger.warning("未能注册任何数据源插件，创建基本回退数据源")
-            # 创建基本回退数据源，避免TET管道完全无法工作
-            self._create_fallback_data_source()
-            self._plugins_discovered = True
-        """  # 废弃代码结束
 
     def _create_fallback_data_source_DEPRECATED(self) -> None:
         """创建基本回退数据源，确保TET管道有可用的数据源"""
@@ -3623,5 +3285,3 @@ class UnifiedDataManager:
         except Exception as e:
             logger.error(f"导入板块历史数据失败: {e}")
             return {"success": False, "error": str(e)}
-
-# 数据策略类
