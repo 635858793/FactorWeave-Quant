@@ -38,18 +38,6 @@ class AdaptivePoolConfigDialog(QDialog):
         main_layout.setContentsMargins(15, 15, 15, 15)
         main_layout.setSpacing(15)
 
-        # 标题
-        title_label = QLabel("⚙️ 自适应连接池配置")
-        title_label.setStyleSheet("""
-            QLabel {
-                font-size: 16px;
-                font-weight: bold;
-                color: #2c3e50;
-                padding: 10px;
-            }
-        """)
-        main_layout.addWidget(title_label)
-
         # 启用/禁用
         self.enabled_checkbox = QCheckBox("启用自适应连接池管理")
         self.enabled_checkbox.setChecked(True)
@@ -70,55 +58,6 @@ class AdaptivePoolConfigDialog(QDialog):
 
         # 按钮
         self._create_buttons(main_layout)
-
-        # 应用样式
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #f5f6fa;
-            }
-            QGroupBox {
-                font-weight: bold;
-                border: 2px solid #dcdde1;
-                border-radius: 5px;
-                margin-top: 1ex;
-                padding-top: 10px;
-                background-color: white;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px 0 5px;
-            }
-            QLabel {
-                color: #2c3e50;
-            }
-            QSpinBox, QDoubleSpinBox {
-                border: 1px solid #dcdde1;
-                border-radius: 4px;
-                padding: 5px;
-                background-color: white;
-            }
-            QPushButton {
-                border: none;
-                border-radius: 4px;
-                padding: 8px 15px;
-                font-weight: bold;
-            }
-            QPushButton#save_button {
-                background-color: #27ae60;
-                color: white;
-            }
-            QPushButton#save_button:hover {
-                background-color: #2ecc71;
-            }
-            QPushButton#cancel_button {
-                background-color: #95a5a6;
-                color: white;
-            }
-            QPushButton#cancel_button:hover {
-                background-color: #7f8c8d;
-            }
-        """)
 
     def _create_boundary_group(self, parent_layout):
         """创建边界配置组"""

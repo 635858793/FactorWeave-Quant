@@ -912,16 +912,7 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
         toolbar = QFrame()
         toolbar.setFixedHeight(160)  # 减少固定高度以防重叠
         toolbar.setFrameStyle(QFrame.StyledPanel)
-        toolbar.setStyleSheet("""
-            QFrame {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #f8f9fa, stop:1 #e9ecef);
-                border: 1px solid #dee2e6;
-                border-radius: 4px;
-                padding: 2px;
-                margin: 2px;
-            }
-        """)
+
         toolbar_layout = QVBoxLayout(toolbar)
         toolbar_layout.setSpacing(4)
         toolbar_layout.setContentsMargins(4, 4, 4, 4)
@@ -1199,15 +1190,7 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
         # 预测结果展示
         self.prediction_text = QTextEdit()
         self.prediction_text.setReadOnly(True)
-        self.prediction_text.setStyleSheet("""
-            QTextEdit {
-                background-color: #f8f9fa;
-                border: 1px solid #dee2e6;
-                border-radius: 6px;
-                padding: 10px;
-                font-family: 'Consolas', 'Monaco', monospace;
-            }
-        """)
+
         layout.addWidget(self.prediction_text)
 
         # 预测配置

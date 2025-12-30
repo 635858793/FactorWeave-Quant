@@ -113,15 +113,6 @@ class WaveAnalysisTabPro(BaseAnalysisTab):
         toolbar = QFrame()
         toolbar.setMaximumHeight(200)
         toolbar.setFrameStyle(QFrame.StyledPanel)
-        toolbar.setStyleSheet("""
-            QFrame { 
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
-                    stop:0 #f8f9fa, stop:1 #e9ecef);
-                border: 1px solid #dee2e6;
-                border-radius: 4px;
-                padding: 4px;
-            }
-        """)
         toolbar_layout = QVBoxLayout(toolbar)
 
         # 快速分析组

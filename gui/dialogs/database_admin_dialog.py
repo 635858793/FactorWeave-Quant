@@ -299,7 +299,7 @@ class DatabaseAdminDialog(QDialog):
         super().__init__(parent)
         self.field_permissions = {}  # 提前初始化，防止AttributeError
         self.setWindowTitle("数据库管理后台")
-        self.resize(1000, 650)
+        self.resize(1300, 800)
         self.db_path = db_path
         self.mode = mode  # 'readonly', 'write', 'admin'
         self.current_table = None
@@ -554,41 +554,10 @@ class DatabaseAdminDialog(QDialog):
         """创建功能按钮面板 - 优化UI并移到顶部"""
         # 创建按钮面板容器
         buttons_container = QWidget()
-        buttons_container.setStyleSheet("""
-            QWidget {
-                background-color: #f8f9fa;
-                border: 1px solid #dee2e6;
-                border-radius: 2px;
-                margin: 2px;
-            }
-        """)
+
         container_layout = QVBoxLayout(buttons_container)
         container_layout.setContentsMargins(8, 8, 8, 8)
         container_layout.setSpacing(6)
-
-        # 按钮样式
-        button_style = """
-            QPushButton {
-                background-color: #ffffff;
-                border: 1px solid #ced4da;
-                border-radius: 2px;
-                padding: 2px 2px;
-                color: #495057;
-                min-height: 20px;
-            }
-            QPushButton:hover {
-                background-color: #e9ecef;
-                border-color: #adb5bd;
-            }
-            QPushButton:pressed {
-                background-color: #dee2e6;
-            }
-            QPushButton:disabled {
-                background-color: #f8f9fa;
-                color: #6c757d;
-                border-color: #e9ecef;
-            }
-        """
 
         # 第一行：基础操作
         row1_layout = QHBoxLayout()
@@ -601,15 +570,10 @@ class DatabaseAdminDialog(QDialog):
         self.refresh_btn = QPushButton("刷新")
 
         for btn in [self.add_btn, self.del_btn, self.edit_btn, self.save_btn, self.refresh_btn]:
-            btn.setStyleSheet(button_style)
             row1_layout.addWidget(btn)
 
         row1_layout.addStretch()
         container_layout.addLayout(row1_layout)
-
-        # # 第二行：数据操作
-        # row2_layout = QHBoxLayout()
-        # row2_layout.setSpacing(4)
 
         self.import_btn = QPushButton("导入CSV")
         self.export_btn = QPushButton("导出CSV")
@@ -618,15 +582,7 @@ class DatabaseAdminDialog(QDialog):
         self.log_btn = QPushButton("查看权限变更日志")
 
         for btn in [self.import_btn, self.export_btn, self.batch_btn, self.perm_btn, self.log_btn]:
-            btn.setStyleSheet(button_style)
             row1_layout.addWidget(btn)
-
-        # row2_layout.addStretch()
-        # container_layout.addLayout(row2_layout)
-
-        # # 第三行：高级功能
-        # row3_layout = QHBoxLayout()
-        # row3_layout.setSpacing(4)
 
         self.upload_btn = QPushButton("上传权限到云端")
         self.download_btn = QPushButton("从云端拉取权限")
@@ -635,38 +591,9 @@ class DatabaseAdminDialog(QDialog):
         self.slow_sql_btn = QPushButton("慢SQL记录")
 
         for btn in [self.upload_btn, self.download_btn, self.schema_btn, self.stats_btn, self.slow_sql_btn]:
-            btn.setStyleSheet(button_style)
             row1_layout.addWidget(btn)
 
-        # 语言切换
-        # self.lang_combo = QComboBox()
-        # self.lang_combo.addItems(["中文", "English"])
-        # self.lang_combo.currentTextChanged.connect(self.switch_language)
-        # self.lang_combo.setStyleSheet("""
-        #     QComboBox {
-        #         background-color: #ffffff;
-        #         border: 1px solid #ced4da;
-        #         border-radius: 2px;
-        #         padding: 2px 2px;
-        #         min-height: 20px;
-        #     }
-        #     QComboBox:hover {
-        #         border-color: #adb5bd;
-        #     }
-        #     QComboBox::drop-down {
-        #         border: none;
-        #     }
-        #     QComboBox::down-arrow {
-        #         width: 12px;
-        #         height: 12px;
-        #     }
-        # """)
-
-        # row3_layout.addStretch()
-        # row3_layout.addWidget(QLabel("语言:"))
-        # row3_layout.addWidget(self.lang_combo)
-        # container_layout.addLayout(row3_layout)
-
+    
         main_layout.addWidget(buttons_container)
 
         # 绑定事件
@@ -2160,16 +2087,7 @@ class DatabaseAdminDialog(QDialog):
         db_layout.addWidget(status_label, 0, 2)
 
         self.current_db_label = QLabel(os.path.basename(self.selected_db_path) if self.selected_db_path else "未连接")
-        self.current_db_label.setStyleSheet("""
-            QLabel {
-                color: #2196F3;
-                font-weight: bold;
-                padding: 2px 6px;
-                border: 1px solid #2196F3;
-                border-radius: 3px;
-                background-color: #E3F2FD;
-            }
-        """)
+
         self.current_db_label.setFixedWidth(180)
         db_layout.addWidget(self.current_db_label, 0, 3)
 
@@ -2193,23 +2111,7 @@ class DatabaseAdminDialog(QDialog):
         self.connect_btn = QPushButton("连接")
         self.connect_btn.setFixedWidth(150)
         self.connect_btn.clicked.connect(self._connect_to_selected_database)
-        self.connect_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #4CAF50;
-                color: white;
-                font-weight: bold;
-                padding: 6px 12px;
-                border: none;
-                border-radius: 4px;
-                min-width: 60px;
-            }
-            QPushButton:hover {
-                background-color: #45a049;
-            }
-            QPushButton:pressed {
-                background-color: #3d8b40;
-            }
-        """)
+
         db_layout.addWidget(self.connect_btn, 0, 6)
 
         # 第三行：操作按钮（紧凑排列）
@@ -2221,18 +2123,7 @@ class DatabaseAdminDialog(QDialog):
         # 扫描按钮
         self.scan_btn = QPushButton("扫描")
         self.scan_btn.clicked.connect(self._scan_databases_async)
-        self.scan_btn.setStyleSheet("""
-            QPushButton {
-                padding: 4px 8px;
-                border: 1px solid #ddd;
-                border-radius: 3px;
-                background-color: #f8f9fa;
-                min-width: 50px;
-            }
-            QPushButton:hover {
-                background-color: #e9ecef;
-            }
-        """)
+
         btn_layout.addWidget(self.scan_btn)
 
         # 浏览按钮

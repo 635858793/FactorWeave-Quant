@@ -585,73 +585,7 @@ class RightPanel(BasePanel):
 
     def _create_widgets(self) -> None:
         """创建UI组件"""
-        # 设置面板样式
-        self._root_frame.setStyleSheet("""
-            QWidget {
-                background-color: #f8f9fa;
-                border: 1px solid #dee2e6;
-                border-radius: 4px;
-            }
-            QLabel {
-                border: none;
-                background-color: transparent;
-            }
-            QTabWidget::pane {
-                border: 1px solid #dee2e6;
-                border-radius: 4px;
-                background-color: white;
-            }
-            QTabBar::tab {
-                background-color: #e9ecef;
-                border: 1px solid #dee2e6;
-                padding: 8px 12px;
-                margin-right: 2px;
-            }
-            QTabBar::tab:selected {
-                background-color: white;
-                border-bottom: 1px solid white;
-            }
-            QGroupBox {
-                font-weight: bold;
-                border: 2px solid #dee2e6;
-                border-radius: 4px;
-                margin-top: 10px;
-                padding-top: 10px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px 0 5px;
-            }
-            QPushButton {
-                border: 1px solid #007bff;
-                border-radius: 4px;
-                padding: 6px 12px;
-                background-color: #007bff;
-                color: white;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #0056b3;
-            }
-            QPushButton:pressed {
-                background-color: #004085;
-            }
-            QTableWidget {
-                border: 1px solid #dee2e6;
-                border-radius: 4px;
-                background-color: white;
-                alternate-background-color: #f8f9fa;
-                gridline-color: #dee2e6;
-            }
-            QTextEdit {
-                border: 1px solid #dee2e6;
-                border-radius: 4px;
-                background-color: white;
-                padding: 5px;
-            }
-        """)
-
+    
         # 创建主布局
         main_layout = QVBoxLayout(self._root_frame)
         main_layout.setContentsMargins(10, 10, 10, 10)
@@ -672,8 +606,6 @@ class RightPanel(BasePanel):
         # 股票信息框
         stock_info_frame = QFrame()
         stock_info_frame.setFrameStyle(QFrame.StyledPanel)
-        stock_info_frame.setStyleSheet(
-            "background-color: white; border: 1px solid #dee2e6; border-radius: 4px;")
         main_layout.addWidget(stock_info_frame)
         self.add_widget('stock_info_frame', stock_info_frame)
 

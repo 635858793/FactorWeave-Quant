@@ -46,9 +46,6 @@ class SettingsDialog(QDialog):
         self.setMinimumSize(800, 600)
         self.setModal(True)
 
-        # 设置样式
-        self._setup_styles()
-
         # 创建UI
         self._create_widgets()
 
@@ -57,65 +54,6 @@ class SettingsDialog(QDialog):
 
         # 连接信号
         self._connect_signals()
-
-    def _setup_styles(self) -> None:
-        """设置样式"""
-        self.setStyleSheet("""
-            QDialog {
-                font-family: 'Microsoft YaHei', 'SimHei', sans-serif;
-                background-color: #f8f9fa;
-            }
-            QTabWidget::pane {
-                border: 1px solid #dee2e6;
-                background-color: white;
-                border-radius: 4px;
-            }
-            QTabBar::tab {
-                background-color: #e9ecef;
-                padding: 8px 16px;
-                margin-right: 2px;
-                border-top-left-radius: 4px;
-                border-top-right-radius: 4px;
-                border: 1px solid #dee2e6;
-                border-bottom: none;
-            }
-            QTabBar::tab:selected {
-                background-color: white;
-                border-bottom: 1px solid white;
-            }
-            QTabBar::tab:hover {
-                background-color: #f8f9fa;
-            }
-            QGroupBox {
-                font-weight: bold;
-                border: 2px solid #dee2e6;
-                border-radius: 5px;
-                margin-top: 10px;
-                padding-top: 10px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px 0 5px;
-            }
-            QPushButton {
-                background-color: #007bff;
-                color: white;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #0056b3;
-            }
-            QPushButton:pressed {
-                background-color: #004085;
-            }
-            QPushButton:disabled {
-                background-color: #6c757d;
-            }
-        """)
 
     def _create_widgets(self) -> None:
         """创建UI组件"""
@@ -322,53 +260,19 @@ class SettingsDialog(QDialog):
 
         # 打开高级配置按钮
         self.advanced_config_btn = QPushButton("高级配置管理")
-        self.advanced_config_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #007bff;
-                color: white;
-                border: none;
-                padding: 10px;
-                border-radius: 5px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #0056b3;
-            }
-        """)
+
         self.advanced_config_btn.clicked.connect(self._open_advanced_duckdb_config)
         button_layout.addWidget(self.advanced_config_btn)
 
         # 应用快速配置按钮
         self.apply_quick_config_btn = QPushButton("应用快速配置")
-        self.apply_quick_config_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #28a745;
-                color: white;
-                border: none;
-                padding: 8px;
-                border-radius: 5px;
-            }
-            QPushButton:hover {
-                background-color: #1e7e34;
-            }
-        """)
+
         self.apply_quick_config_btn.clicked.connect(self._apply_quick_duckdb_config)
         button_layout.addWidget(self.apply_quick_config_btn)
 
         # 重置为默认按钮
         self.reset_duckdb_btn = QPushButton("重置为默认")
-        self.reset_duckdb_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #6c757d;
-                color: white;
-                border: none;
-                padding: 8px;
-                border-radius: 5px;
-            }
-            QPushButton:hover {
-                background-color: #545b62;
-            }
-        """)
+
         self.reset_duckdb_btn.clicked.connect(self._reset_duckdb_config)
         button_layout.addWidget(self.reset_duckdb_btn)
 
@@ -702,8 +606,6 @@ class SettingsDialog(QDialog):
             try:
                 self.theme_service.set_theme(theme_name)
                 self.theme_changed.emit(theme_name)
-                QMessageBox.information(self, "预览", f"已预览主题: {theme_name}")
-
                 # 同步更新下拉框
                 self.theme_combo.setCurrentText(theme_name)
 

@@ -140,27 +140,7 @@ class ChartCanvas(QWidget):
         """创建加载骨架屏"""
         # 骨架屏容器
         self.skeleton_frame = QFrame(self)
-        self.skeleton_frame.setStyleSheet("""
-            QFrame {
-                background-color: rgba(245, 245, 245, 0.8);
-                border-radius: 5px;
-            }
-            QLabel {
-                color: #666;
-                font-size: 14px;
-            }
-            QProgressBar {
-                border: 1px solid #ddd;
-                border-radius: 3px;
-                background-color: #f5f5f5;
-                text-align: center;
-            }
-            QProgressBar::chunk {
-                background-color: #007bff;
-                width: 10px;
-                margin: 0.5px;
-            }
-        """)
+
         self.skeleton_frame.setVisible(False)
 
         # 骨架屏布局
@@ -289,7 +269,6 @@ class ChartCanvas(QWidget):
 
     def _setup_chart(self):
         """设置图表布局 - 使用统一图表服务"""
-        # 图表布局由ChartWidget自动管理
         pass
 
     @monitor_performance("chart_update")
@@ -649,37 +628,6 @@ class ChartCanvas(QWidget):
         """处理图表错误"""
         self._show_error_message(error_msg)
 
-    # 移除由ChartCanvas接管的鼠标事件，让底层的matplotlib canvas自行处理
-    # def mousePressEvent(self, event):
-    #     if event.button() == Qt.LeftButton and self.chart_widget:
-    #         self.selecting = True
-    #         self.selection_start = event.pos()
-    #         self.chart_widget.start_selection(self.selection_start)
-    #     super().mousePressEvent(event)
-
-    # def mouseMoveEvent(self, event):
-    #     if self.selecting and self.chart_widget:
-    #         # 将事件坐标转换为chart_widget的局部坐标
-    #         local_pos = self.chart_widget.mapFrom(self, event.pos())
-    #
-    #         # 这里需要创建一个新的QMouseEvent，因为原始事件的坐标是相对于ChartCanvas的
-    #         from PyQt5.QtGui import QMouseEvent
-    #         new_event = QMouseEvent(event.type(), local_pos, event.button(), event.buttons(), event.modifiers())
-    #
-    #         # 直接调用chart_widget的事件处理函数
-    #         if hasattr(self.chart_widget, 'mouseMoveEvent'):
-    #             self.chart_widget.mouseMoveEvent(new_event)
-    #
-    # super().mouseMoveEvent(event)
-
-    # def mouseReleaseEvent(self, event):
-    #     if event.button() == Qt.LeftButton and self.selecting and self.chart_widget:
-    #         self.selecting = False
-    #         self.selection_end = event.pos()
-    #         # ... (省略)
-    #     super().mouseReleaseEvent(event)
-
-
 class MiddlePanel(BasePanel):
     """
     中间面板
@@ -751,46 +699,7 @@ class MiddlePanel(BasePanel):
 
     def _create_widgets(self) -> None:
         """创建UI组件"""
-        # 设置面板样式
-        self._root_frame.setStyleSheet("""
-            QWidget {
-                background-color: white;
-                border: 1px solid #dee2e6;
-                border-radius: 4px;
-            }
-            QLabel {
-                border: none;
-                background-color: transparent;
-            }
-            QComboBox, QSpinBox {
-                border: 1px solid #ced4da;
-                border-radius: 4px;
-                padding: 5px;
-                background-color: white;
-            }
-            QPushButton {
-                border: 1px solid #007bff;
-                border-radius: 4px;
-                padding: 6px 12px;
-                background-color: #007bff;
-                color: white;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #0056b3;
-            }
-            QPushButton:pressed {
-                background-color: #004085;
-            }
-            QToolBar {
-                border: 1px solid #dee2e6;
-                border-radius: 4px;
-                background-color: #f8f9fa;
-                spacing: 5px;
-            }
-        """)
-
-        # 创建主布局
+             # 创建主布局
         main_layout = QVBoxLayout(self._root_frame)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
@@ -800,15 +709,6 @@ class MiddlePanel(BasePanel):
         toolbar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         main_layout.addWidget(toolbar)
         self.add_widget('toolbar', toolbar)
-
-        # 股票信息标签
-        # stock_info_label = QLabel("请选择股票")
-        # stock_info_label.setStyleSheet(
-        #     "font-size: 12px; font-weight: bold; color: #495057;")
-        # toolbar.addWidget(stock_info_label)
-        # self.add_widget('stock_info_label', stock_info_label)
-
-        # toolbar.addSeparator()
 
         # 周期选择
         toolbar.addWidget(QLabel("周期:"))

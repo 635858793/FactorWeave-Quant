@@ -233,15 +233,6 @@ class SectorFlowTabPro(BaseAnalysisTab):
         toolbar = QFrame()
         toolbar.setMaximumHeight(200)
         toolbar.setFrameStyle(QFrame.StyledPanel)
-        toolbar.setStyleSheet("""
-            QFrame { 
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
-                    stop:0 #f8f9fa, stop:1 #e9ecef);
-                border: 1px solid #dee2e6;
-                border-radius: 4px;
-                padding: 4px;
-            }
-        """)
         toolbar_layout = QVBoxLayout(toolbar)
 
         # 快速分析组
@@ -2188,41 +2179,7 @@ class SectorFlowTabPro(BaseAnalysisTab):
             dialog = QDialog(self)
             dialog.setWindowTitle("板块资金流历史数据下载")
             dialog.setFixedSize(500, 600)
-            dialog.setStyleSheet("""
-                QDialog {
-                    background-color: #f0f0f0;
-                }
-                QGroupBox {
-                    font-weight: bold;
-                    border: 2px solid #cccccc;
-                    border-radius: 5px;
-                    margin-top: 1ex;
-                }
-                QGroupBox::title {
-                    subcontrol-origin: margin;
-                    left: 10px;
-                    padding: 0 10px 0 10px;
-                }
-                QPushButton {
-                    background-color: #0078d4;
-                    color: white;
-                    border: none;
-                    padding: 8px 16px;
-                    border-radius: 4px;
-                    font-weight: bold;
-                }
-                QPushButton:hover {
-                    background-color: #106ebe;
-                }
-                QPushButton:pressed {
-                    background-color: #005a9e;
-                }
-                QPushButton:disabled {
-                    background-color: #cccccc;
-                    color: #666666;
-                }
-            """)
-
+            
             layout = QVBoxLayout(dialog)
 
             # 标题

@@ -86,7 +86,7 @@ class MainWindowCoordinator(BaseCoordinator):
 
         # 窗口状态
         self._window_state = {
-            'title': 'FactorWeave-Quant  2.0 多资产分析系统',
+            'title': 'FactorWeave-Quant 2.0 多资产分析系统',
             'geometry': (100, 100, 1400, 900),
             'min_size': (1200, 800),
             'is_maximized': False
@@ -97,7 +97,7 @@ class MainWindowCoordinator(BaseCoordinator):
             'left_panel_width': 300,
             'right_panel_width': 350,
             'bottom_panel_height': 200,
-            'panel_padding': 5
+            # 'panel_padding': 5
         }
 
         # 中央数据状态（支持多资产类型）
@@ -138,7 +138,7 @@ class MainWindowCoordinator(BaseCoordinator):
 
         # 创建主窗口
         self._main_window = QMainWindow(parent)
-        self._main_window.setWindowTitle("FactorWeave-Quant  2.0 多资产分析系统")
+        self._main_window.setWindowTitle("FactorWeave-Quant 2.0 多资产分析系统")
         self._main_window.setGeometry(100, 100, 1400, 900)
         self._main_window.setMinimumSize(1200, 800)
 
@@ -148,7 +148,7 @@ class MainWindowCoordinator(BaseCoordinator):
 
         # 窗口状态
         self._window_state = {
-            'title': 'FactorWeave-Quant  2.0 多资产分析系统',
+            'title': 'FactorWeave-Quant 2.0 多资产分析系统',
             'geometry': (100, 100, 1400, 900),
             'min_size': (1200, 800),
             'is_maximized': False
@@ -2408,38 +2408,14 @@ FactorWeave-Quant  2.0 (重构版本)
 
             # 通用单位转换器按钮
             unit_btn = QPushButton("通用单位转换器")
-            unit_btn.setStyleSheet("""
-                QPushButton {
-                    padding: 15px;
-                    font-size: 14px;
-                    background-color: #e3f2fd;
-                    border: 2px solid #2196f3;
-                    border-radius: 8px;
-                    text-align: left;
-                }
-                QPushButton:hover {
-                    background-color: #bbdefb;
-                }
-            """)
+
             unit_btn.setToolTip("长度、重量、温度、面积等物理单位转换")
             unit_btn.clicked.connect(lambda: self._open_unit_converter(choice_dialog))
             layout.addWidget(unit_btn)
 
             # 汇率转换器按钮
             currency_btn = QPushButton("汇率转换器")
-            currency_btn.setStyleSheet("""
-                QPushButton {
-                    padding: 15px;
-                    font-size: 14px;
-                    background-color: #e8f5e8;
-                    border: 2px solid #4caf50;
-                    border-radius: 8px;
-                    text-align: left;
-                }
-                QPushButton:hover {
-                    background-color: #c8e6c9;
-                }
-            """)
+
             currency_btn.setToolTip("主要货币之间的汇率转换")
             currency_btn.clicked.connect(lambda: self._open_currency_converter(choice_dialog))
             layout.addWidget(currency_btn)

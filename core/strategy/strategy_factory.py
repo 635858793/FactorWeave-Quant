@@ -295,8 +295,9 @@ class StrategyFactory:
 
             # 保存参数
             parameters = {}
-            for param_name, param in strategy.parameters.items():
-                parameters[param_name] = param
+            if hasattr(strategy, 'parameters'):
+                for param_name, param in strategy.parameters.items():
+                    parameters[param_name] = param
 
             self.db_manager.save_strategy_parameters(strategy.name, parameters)
 

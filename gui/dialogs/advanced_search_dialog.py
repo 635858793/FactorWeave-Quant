@@ -152,21 +152,6 @@ class AdvancedSearchDialog(QDialog):
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(10)
 
-        # # 标题
-        # title_label = QLabel("高级股票搜索")
-        # title_label.setAlignment(Qt.AlignCenter)
-        # title_label.setStyleSheet("""
-        #     QLabel {
-        #         font-size: 18px;
-        #         font-weight: bold;
-        #         color: #2c3e50;
-        #         padding: 10px;
-        #         background-color: #ecf0f1;
-        #         border-radius: 5px;
-        #     }
-        # """)
-        # layout.addWidget(title_label)
-
         # 创建分割器
         splitter = QSplitter(Qt.Horizontal)
         layout.addWidget(splitter)

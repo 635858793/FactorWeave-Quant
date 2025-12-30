@@ -277,7 +277,7 @@ QTableView::indicator:enabled:indeterminate:pressed {
 
 /**********滚动条-水平**********/
 QScrollBar:horizontal {
-        height: 20px;
+        height: 14px;
         background: transparent;
         margin-top: 3px;
         margin-bottom: 3px;
@@ -316,7 +316,7 @@ QScrollBar::add-page:horizontal,QScrollBar::sub-page:horizontal {
 
 /**********滚动条-垂直**********/
 QScrollBar:vertical {
-        width: 20px;
+        width: 14px;
         background: transparent;
         margin-left: 3px;
         margin-right: 3px;
@@ -473,6 +473,38 @@ QCheckBox::indicator:indeterminate:pressed {
         image: url(:/Black/checkBoxIndeterminatePressed);
 }
 
+/**********滑块**********/
+QSlider::groove:horizontal {
+	height: 8px;
+	background: rgb(68, 69, 73);
+	border-radius: 4px;
+}
+QSlider::handle:horizontal {
+	width: 20px;
+	height: 20px;
+	background: rgb(0, 160, 230);
+	border-radius: 10px;
+	margin: -6px 0;
+}
+QSlider::handle:horizontal:hover {
+	background: rgb(0, 180, 255);
+}
+QSlider::groove:vertical {
+	width: 8px;
+	background: rgb(68, 69, 73);
+	border-radius: 4px;
+}
+QSlider::handle:vertical {
+	width: 20px;
+	height: 20px;
+	background: rgb(0, 160, 230);
+	border-radius: 10px;
+	margin: 0 -6px;
+}
+QSlider::handle:vertical:hover {
+	background: rgb(0, 180, 255);
+}
+
 /**********单选框**********/
 QRadioButton{
         spacing: 5px;
@@ -524,6 +556,19 @@ QLineEdit:enabled:hover, QLineEdit:enabled:focus {
 }
 QLineEdit:!enabled {
         color: rgb(155, 155, 155);
+}
+
+QDateEdit, QTimeEdit {
+        border-radius: 4px;
+        height: 25px;
+        border: 1px solid rgb(100, 100, 100);
+        background: rgb(72, 72, 73);
+}
+QDateTimeEdit {
+        border-radius: 4px;
+        height: 25px;
+        border: 1px solid rgb(100, 100, 100);
+        background: rgb(72, 72, 73);
 }
 
 /**********文本编辑框**********/
@@ -718,6 +763,38 @@ QPushButton:!enabled {
         background: rgb(100, 100, 100);
         color: rgb(200, 200, 200);
 }
+
+/**********对话框按钮组**********/
+QDialogButtonBox {
+        background: rgb(68, 69, 73);
+        border: none;
+}
+QDialogButtonBox QPushButton {
+        border-radius: 4px;
+        border: none;
+        width: 75px;
+        min-height: 25px;
+        background: rgb(68, 69, 73);
+        color: white;
+}
+QDialogButtonBox QPushButton:enabled:hover {
+        background: rgb(85, 85, 85);
+        color: white;
+}
+QDialogButtonBox QPushButton:enabled:pressed {
+        background: rgb(50, 50, 50);
+        color: white;
+}
+QDialogButtonBox QPushButton:!enabled {
+        background: rgb(100, 100, 100);
+        color: rgb(200, 200, 200);
+}
+QDialogButtonBox QPushButton:default {
+        background: rgb(68, 69, 73);
+        color: white;
+        border: 1px solid rgb(100, 100, 100);
+}
+
 QPushButton:enabled:hover{
         background: rgb(85, 85, 85);
 }
@@ -951,4 +1028,654 @@ QPushButton#menuButton::menu-indicator{
         subcontrol-origin: padding;
         image: url(:/Black/arrowBottom);
         padding-right: 3px;
+}
+
+/**********滑块-水平**********/
+QSlider::groove:horizontal {
+        height: 6px;
+        background: rgb(60, 60, 60);
+        border-radius: 3px;
+}
+QSlider::handle:horizontal {
+        width: 18px;
+        height: 18px;
+        background: rgb(0, 160, 230);
+        border-radius: 9px;
+        margin: -6px 0;
+}
+QSlider::handle:horizontal:hover {
+        background: rgb(20, 180, 255);
+}
+QSlider::handle:horizontal:disabled {
+        background: rgb(100, 100, 100);
+}
+QSlider::add-page:horizontal {
+        background: rgb(0, 160, 230);
+        border-radius: 3px;
+}
+QSlider::sub-page:horizontal {
+        background: rgb(80, 80, 80);
+        border-radius: 3px;
+}
+
+/**********滑块-垂直**********/
+QSlider::groove:vertical {
+        width: 6px;
+        background: rgb(60, 60, 60);
+        border-radius: 3px;
+}
+QSlider::handle:vertical {
+        width: 18px;
+        height: 18px;
+        background: rgb(0, 160, 230);
+        border-radius: 9px;
+        margin: 0 -6px;
+}
+QSlider::handle:vertical:hover {
+        background: rgb(20, 180, 255);
+}
+QSlider::handle:vertical:disabled {
+        background: rgb(100, 100, 100);
+}
+QSlider::add-page:vertical {
+        background: rgb(0, 160, 230);
+        border-radius: 3px;
+}
+QSlider::sub-page:vertical {
+        background: rgb(80, 80, 80);
+        border-radius: 3px;
+}
+
+/**********树形视图**********/
+QTreeView {
+        border: 1px solid rgb(45, 45, 45);
+        background: rgb(57, 58, 60);
+        alternate-background-color: rgb(50, 50, 50);
+}
+QTreeView::item {
+        padding: 3px 5px;
+        color: rgb(175, 175, 175);
+        background: transparent;
+        border: none;
+}
+QTreeView::item:selected {
+        background: rgba(0, 160, 230, 100);
+        color: white;
+}
+QTreeView::item:hover {
+        background: rgba(255, 255, 255, 20);
+}
+QTreeView::branch:has-siblings:!adjoins-item {
+        border-image: url(:/Black/treeLine) 0;
+}
+QTreeView::branch:has-siblings:adjoins-item {
+        border-image: url(:/Black/treeLine) 0;
+}
+QTreeView::branch:!has-children:has-siblings:adjoins-item {
+        border-image: url(:/Black/treeLine) 0;
+}
+QTreeView::branch:has-children:!has-siblings:closed {
+        image: url(:/Black/treeBranchClosed);
+}
+QTreeView::branch:closed:has-children:has-siblings {
+        image: url(:/Black/treeBranchClosed);
+}
+QTreeView::branch:open:has-children:has-siblings {
+        image: url(:/Black/treeBranchOpen);
+}
+QTreeView::branch:open:has-children:!has-siblings {
+        image: url(:/Black/treeBranchOpen);
+}
+QTreeView::indicator {
+        width: 18px;
+        height: 18px;
+}
+QTreeView::indicator:unchecked {
+        image: url(:/Black/checkBox);
+}
+QTreeView::indicator:unchecked:hover {
+        image: url(:/Black/checkBoxHover);
+}
+QTreeView::indicator:unchecked:pressed {
+        image: url(:/Black/checkBoxPressed);
+}
+QTreeView::indicator:checked {
+        image: url(:/Black/checkBoxChecked);
+}
+QTreeView::indicator:checked:hover {
+        image: url(:/Black/checkBoxCheckedHover);
+}
+QTreeView::indicator:checked:pressed {
+        image: url(:/Black/checkBoxCheckedPressed);
+}
+QTreeView::indicator:indeterminate {
+        image: url(:/Black/checkBoxIndeterminate);
+}
+QTreeView::indicator:indeterminate:hover {
+        image: url(:/Black/checkBoxIndeterminateHover);
+}
+QTreeView::indicator:indeterminate:pressed {
+        image: url(:/Black/checkBoxIndeterminatePressed);
+}
+
+/**********列表控件**********/
+QListWidget {
+        border: 1px solid rgb(45, 45, 45);
+        background: rgb(57, 58, 60);
+}
+QListWidget::item {
+        padding: 5px 10px;
+        color: rgb(175, 175, 175);
+        background: transparent;
+        border: none;
+}
+QListWidget::item:selected {
+        background: rgba(0, 160, 230, 100);
+        color: white;
+}
+QListWidget::item:hover {
+        background: rgba(255, 255, 255, 20);
+}
+
+/**********分割器**********/
+QSplitter::handle {
+        background: rgb(60, 60, 60);
+        border: 1px solid rgb(50, 50, 50);
+}
+QSplitter::handle:horizontal {
+        width: 6px;
+        height: 20px;
+}
+QSplitter::handle:vertical {
+        width: 20px;
+        height: 6px;
+}
+QSplitter::handle:horizontal:hover {
+        background: rgb(0, 160, 230);
+}
+QSplitter::handle:vertical:hover {
+        background: rgb(0, 160, 230);
+}
+QSplitterHandle {
+        background: rgb(60, 60, 60);
+}
+
+/**********工具栏**********/
+QToolBar {
+        background: rgb(57, 58, 60);
+        border-bottom: 1px solid rgb(45, 45, 45);
+        padding: 3px;
+        spacing: 3px;
+}
+QToolBar QToolButton {
+        background: transparent;
+        border: none;
+        padding: 5px;
+        color: rgb(175, 175, 175);
+}
+QToolBar QToolButton:hover {
+        background: rgba(255, 255, 255, 20);
+}
+QToolBar QToolButton:pressed {
+        background: rgba(0, 160, 230, 100);
+}
+QToolBar QToolButton:checked {
+        background: rgba(0, 160, 230, 100);
+        color: white;
+}
+QToolBar::separator {
+        width: 1px;
+        background: rgb(80, 80, 80);
+        margin: 3px;
+}
+QToolBar::handle {
+        background: rgb(80, 80, 80);
+}
+QToolBar::handle:horizontal {
+        width: 10px;
+        height: 20px;
+}
+QToolBar::handle:vertical {
+        width: 20px;
+        height: 10px;
+}
+
+/**********停靠窗口**********/
+QDockWidget {
+        border: 1px solid rgb(45, 45, 45);
+        background: rgb(50, 50, 50);
+        titlebar-close-icon: url(:/Black/close);
+        titlebar-normal-icon: url(:/Black/restore);
+}
+QDockWidget::title {
+        background: rgb(57, 58, 60);
+        padding: 5px 10px;
+        color: rgb(175, 175, 175);
+}
+QDockWidget::close-button {
+        background: transparent;
+        border: none;
+        image: url(:/Black/close);
+}
+QDockWidget::close-button:hover {
+        background: rgba(255, 255, 255, 30);
+}
+QDockWidget::float-button {
+        background: transparent;
+        border: none;
+        image: url(:/Black/maximize);
+}
+QDockWidget::float-button:hover {
+        background: rgba(255, 255, 255, 30);
+}
+QDockWidget::separator {
+        background: rgb(60, 60, 60);
+}
+QDockWidget QWidget {
+        background: rgb(50, 50, 50);
+}
+
+/**********堆叠窗口**********/
+QStackedWidget {
+        background: rgb(50, 50, 50);
+}
+
+/**********日历控件**********/
+QCalendarWidget QWidget {
+        background: rgb(57, 58, 60);
+}
+QCalendarWidget QAbstractItemView {
+        background: rgb(57, 58, 60);
+        color: rgb(175, 175, 175);
+        selection-background-color: rgb(0, 160, 230);
+        selection-color: white;
+        border: 1px solid rgb(45, 45, 45);
+}
+QCalendarWidget QAbstractItemView:enabled {
+        color: rgb(175, 175, 175);
+}
+QCalendarWidget QAbstractItemView:disabled {
+        color: rgb(100, 100, 100);
+}
+QCalendarWidget QToolButton {
+        background: transparent;
+        border: none;
+        color: rgb(175, 175, 175);
+}
+QCalendarWidget QToolButton:hover {
+        background: rgba(255, 255, 255, 30);
+}
+QCalendarWidget QToolButton::menu-indicator {
+        image: none;
+}
+QCalendarWidget #qt_calendar_navigationbar {
+        background: rgb(57, 58, 60);
+}
+
+/**********拨盘**********/
+QDial {
+        background: rgb(57, 58, 60);
+}
+QDial::groove {
+        background: rgb(60, 60, 60);
+        border-radius: 40px;
+}
+QDial::handle {
+        width: 20px;
+        height: 20px;
+        background: rgb(0, 160, 230);
+        border-radius: 10px;
+}
+QDial::handle:hover {
+        background: rgb(20, 180, 255);
+}
+
+/**********LCD数字显示**********/
+QLCDNumber {
+        background: rgb(50, 50, 50);
+        color: rgb(0, 160, 230);
+        border: 1px solid rgb(45, 45, 45);
+}
+
+/**********字体选择框**********/
+QFontComboBox {
+        border-radius: 4px;
+        border: 1px solid rgb(100, 100, 100);
+        background: rgb(72, 72, 73);
+}
+QFontComboBox:enabled {
+        color: rgb(175, 175, 175);
+}
+QFontComboBox:!enabled {
+        color: rgb(155, 155, 155);
+}
+QFontComboBox:enabled:hover {
+        background: rgb(68, 69, 73);
+}
+QFontComboBox::drop-down {
+        width: 20px;
+        border: none;
+        background: transparent;
+}
+QFontComboBox::down-arrow {
+        image: url(:/Black/arrowBottom);
+}
+QFontComboBox QAbstractItemView {
+        border: 1px solid rgb(100, 100, 100);
+        background: rgb(68, 69, 73);
+        outline: none;
+}
+QFontComboBox QAbstractItemView::item {
+        height: 25px;
+        color: rgb(175, 175, 175);
+}
+QFontComboBox QAbstractItemView::item:selected {
+        background: rgba(0, 160, 230, 100);
+        color: white;
+}
+
+/**********双精度微调框**********/
+QDoubleSpinBox {
+        border-radius: 4px;
+        height: 24px;
+        min-width: 40px;
+        border: 1px solid rgb(100, 100, 100);
+        background: rgb(68, 69, 73);
+}
+QDoubleSpinBox:enabled {
+        color: rgb(220, 220, 220);
+}
+QDoubleSpinBox:enabled:hover {
+        color: rgb(230, 230, 230);
+}
+QDoubleSpinBox:!enabled {
+        color: rgb(65, 65, 65);
+        background: transparent;
+}
+QDoubleSpinBox::up-button {
+        width: 18px;
+        height: 12px;
+        border-top-right-radius: 4px;
+        border-left: 1px solid rgb(100, 100, 100);
+        image: url(:/Black/upButton);
+        background: rgb(50, 50, 50);
+}
+QDoubleSpinBox::up-button:!enabled {
+        border-left: 1px solid gray;
+        background: transparent;
+}
+QDoubleSpinBox::up-button:enabled:hover {
+        background: rgb(255, 255, 255, 30);
+}
+QDoubleSpinBox::down-button {
+        width: 18px;
+        height: 12px;
+        border-bottom-right-radius: 4px;
+        border-left: 1px solid rgb(100, 100, 100);
+        image: url(:/Black/downButton);
+        background: rgb(50, 50, 50);
+}
+QDoubleSpinBox::down-button:!enabled {
+        border-left: 1px solid gray;
+        background: transparent;
+}
+QDoubleSpinBox::down-button:enabled:hover {
+        background: rgb(255, 255, 255, 30);
+}
+
+/**********日期编辑框**********/
+QDateEdit {
+        border-radius: 4px;
+        height: 24px;
+        min-width: 100px;
+        border: 1px solid rgb(100, 100, 100);
+        background: rgb(68, 69, 73);
+}
+QDateEdit:enabled {
+        color: rgb(220, 220, 220);
+}
+QDateEdit:enabled:hover {
+        color: rgb(230, 230, 230);
+}
+QDateEdit:!enabled {
+        color: rgb(65, 65, 65);
+        background: transparent;
+}
+QDateEdit::drop-down {
+        width: 20px;
+        border: none;
+        background: transparent;
+}
+QDateEdit::down-arrow {
+        image: url(:/Black/arrowBottom);
+}
+QDateEdit QCalendarWidget {
+        background: rgb(57, 58, 60);
+}
+
+/**********时间编辑框**********/
+QTimeEdit {
+        border-radius: 4px;
+        height: 24px;
+        min-width: 80px;
+        border: 1px solid rgb(100, 100, 100);
+        background: rgb(68, 69, 73);
+}
+QTimeEdit:enabled {
+        color: rgb(220, 220, 220);
+}
+QTimeEdit:enabled:hover {
+        color: rgb(230, 230, 230);
+}
+QTimeEdit:!enabled {
+        color: rgb(65, 65, 65);
+        background: transparent;
+}
+QTimeEdit::up-button {
+        width: 18px;
+        height: 12px;
+        border-top-right-radius: 4px;
+        border-left: 1px solid rgb(100, 100, 100);
+        image: url(:/Black/upButton);
+        background: rgb(50, 50, 50);
+}
+QTimeEdit::up-button:!enabled {
+        border-left: 1px solid gray;
+        background: transparent;
+}
+QTimeEdit::up-button:enabled:hover {
+        background: rgb(255, 255, 255, 30);
+}
+QTimeEdit::down-button {
+        width: 18px;
+        height: 12px;
+        border-bottom-right-radius: 4px;
+        border-left: 1px solid rgb(100, 100, 100);
+        image: url(:/Black/downButton);
+        background: rgb(50, 50, 50);
+}
+QTimeEdit::down-button:!enabled {
+        border-left: 1px solid gray;
+        background: transparent;
+}
+QTimeEdit::down-button:enabled:hover {
+        background: rgb(255, 255, 255, 30);
+}
+
+/**********文本浏览器**********/
+QTextBrowser {
+        border: 1px solid rgb(45, 45, 45);
+        color: rgb(175, 175, 175);
+        background: rgb(57, 58, 60);
+}
+QTextBrowser:disabled {
+        color: rgb(100, 100, 100);
+        background: rgb(50, 50, 50);
+}
+QTextBrowser QScrollBar:vertical {
+        width: 20px;
+        background: transparent;
+}
+QTextBrowser QScrollBar::handle:vertical {
+        width: 20px;
+        min-height: 30px;
+        background: rgb(68, 69, 73);
+        margin: 15px;
+}
+QTextBrowser QScrollBar::handle:vertical:hover {
+        background: rgb(80, 80, 80);
+}
+QTextBrowser QScrollBar::add-line:vertical {
+        height: 15px;
+        background: transparent;
+        image: url(:/Black/arrowBottom);
+        subcontrol-position: bottom;
+}
+QTextBrowser QScrollBar::sub-line:vertical {
+        height: 15px;
+        background: transparent;
+        image: url(:/Black/arrowTop);
+        subcontrol-position: top;
+}
+
+/**********框架扩展**********/
+QFrame#infoFrame {
+        border: 1px solid rgb(45, 45, 45);
+        background: rgb(57, 58, 60);
+        border-radius: 4px;
+}
+QFrame#contentFrame {
+        border: 1px solid rgb(45, 45, 45);
+        background: rgb(50, 50, 50);
+}
+QFrame#titleFrame {
+        border: none;
+        background: rgb(57, 58, 60);
+}
+QFrame#separatorFrame {
+        background: rgb(80, 80, 80);
+}
+QFrame#bottomFrame {
+        border: none;
+        background: rgb(57, 58, 60);
+}
+QFrame#logoFrame {
+        border: none;
+        background: rgb(50, 50, 50);
+}
+
+/**********水平线**********/
+QFrame[frameShape="4"] {
+        border: none;
+        background: rgb(80, 80, 80);
+        max-height: 1px;
+}
+
+/**********垂直线**********/
+QFrame[frameShape="5"] {
+        border: none;
+        background: rgb(80, 80, 80);
+        max-width: 1px;
+}
+
+/**********分页控件**********/
+QPushButton#pageButton {
+        min-width: 30px;
+        height: 25px;
+}
+QPushButton#pageButton:checked {
+        background: rgb(0, 160, 230);
+        color: white;
+}
+QPushButton#pageButton:enabled:hover {
+        background: rgb(0, 180, 255);
+}
+
+/**********表格控件扩展**********/
+QTableWidget {
+        border: 1px solid rgb(45, 45, 45);
+        background: rgb(57, 58, 60);
+        gridline-color: rgb(60, 60, 60);
+}
+QTableWidget::item {
+        padding: 3px 5px;
+        border: none;
+        background: rgb(72, 72, 74);
+        border-right: 1px solid rgb(45, 45, 45);
+        border-bottom: 1px solid rgb(45, 45, 45);
+}
+QTableWidget::item:selected {
+        background: rgba(0, 160, 230, 100);
+}
+QTableWidget::item:selected:!active {
+        color: white;
+}
+QTableWidget QTableCornerButton::section {
+        background: rgb(57, 58, 60);
+        border: 1px solid rgb(45, 45, 45);
+}
+
+/**********分组框指示器**********/
+QGroupBox::indicator {
+        width: 18px;
+        height: 18px;
+}
+QGroupBox::indicator:unchecked {
+        image: url(:/Black/checkBox);
+}
+QGroupBox::indicator:unchecked:hover {
+        image: url(:/Black/checkBoxHover);
+}
+QGroupBox::indicator:unchecked:pressed {
+        image: url(:/Black/checkBoxPressed);
+}
+QGroupBox::indicator:checked {
+        image: url(:/Black/checkBoxChecked);
+}
+QGroupBox::indicator:checked:hover {
+        image: url(:/Black/checkBoxCheckedHover);
+}
+QGroupBox::indicator:checked:pressed {
+        image: url(:/Black/checkBoxCheckedPressed);
+}
+QGroupBox::indicator:indeterminate {
+        image: url(:/Black/checkBoxIndeterminate);
+}
+QGroupBox::indicator:indeterminate:hover {
+        image: url(:/Black/checkBoxIndeterminateHover);
+}
+QGroupBox::indicator:indeterminate:pressed {
+        image: url(:/Black/checkBoxIndeterminatePressed);
+}
+
+/**********大小调整手柄**********/
+QSizeGrip {
+        width: 16px;
+        height: 16px;
+        image: url(:/Black/sizeGrip);
+}
+
+/**********文本光标**********/
+QTextEdit.cursorWidth {
+        width: 2px;
+}
+QTextEdit.cursorFlashTime {
+        color: rgb(0, 160, 230);
+}
+
+/**********工具提示扩展**********/
+QToolTip {
+        border: 1px solid rgb(45, 45, 45);
+        background: rgb(50, 50, 50);
+        color: rgb(175, 175, 175);
+        padding: 5px;
+}
+
+/**********进度条扩展**********/
+QProgressBar#verticalProgressBar {
+        width: 30px;
+        text-align: center;
+}
+QProgressBar#verticalProgressBar::chunk {
+        background: rgb(0, 160, 230);
 }

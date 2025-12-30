@@ -2063,7 +2063,7 @@ class LeftPanel(BasePanel):
 
             # 尝试获取ta-lib指标
             try:
-                from indicators_algo import get_talib_indicator_list
+                from core.indicator_adapter import get_talib_indicator_list
                 talib_names = get_talib_indicator_list()
                 self.talib_indicators = [
                     {"name": name, "type": "ta-lib"} for name in talib_names]

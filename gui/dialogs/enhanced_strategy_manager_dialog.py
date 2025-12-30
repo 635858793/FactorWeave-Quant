@@ -67,6 +67,8 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Tuple
 
 from utils.theme import get_theme_manager, Theme
+from core.events.event_bus import get_event_bus
+from core.events.events import ThemeChangedEvent
 
 
 class UnifiedTaskSignals(QObject):
@@ -370,12 +372,15 @@ class EnhancedStrategyTable(QTableWidget):
                     item = self.item(row, col)
                     if item and col == 3:  # 状态列
                         status = item.text()
+                        # 使用setData设置data属性，让QSS样式表控制颜色
                         if status == "运行中":
-                            item.setBackground(QColor(colors.get('success', '#4CAF50')))
+                            item.setData(Qt.UserRole, "running")
                         elif status == "错误":
-                            item.setBackground(QColor(colors.get('error', '#FF5252')))
+                            item.setData(Qt.UserRole, "error")
                         elif status == "已配置":
-                            item.setBackground(QColor(colors.get('info', '#2196F3')))
+                            item.setData(Qt.UserRole, "configured")
+                        else:
+                            item.setData(Qt.UserRole, "stopped")
             
             # 强制重绘表格
             self.viewport().update()
@@ -430,15 +435,15 @@ class EnhancedStrategyTable(QTableWidget):
             status = strategy.get('status', '已配置')
             status_item = QTableWidgetItem(status)
             
-            # 根据状态设置背景色
-            theme_mgr = get_theme_manager()
-            colors = theme_mgr.get_theme_colors()
+            # 使用setData设置data属性，让QSS样式表控制颜色
             if status == "运行中":
-                status_item.setBackground(QColor(colors.get('success', '#4CAF50')))
+                status_item.setData(Qt.UserRole, "running")
             elif status == "错误":
-                status_item.setBackground(QColor(colors.get('error', '#FF5252')))
+                status_item.setData(Qt.UserRole, "error")
             elif status == "已配置":
-                status_item.setBackground(QColor(colors.get('info', '#2196F3')))
+                status_item.setData(Qt.UserRole, "configured")
+            else:
+                status_item.setData(Qt.UserRole, "stopped")
             
             self.setItem(row, 3, status_item)
             
@@ -1552,7 +1557,7 @@ class EnhancedStrategyManagerDialog(QDialog):
     strategy_started = pyqtSignal(str)   # 策略ID
     strategy_stopped = pyqtSignal(str)   # 策略ID
 
-    def __init__(self, parent=None, strategy_service=None, trading_service=None):
+    def __init__(self, parent=None, strategy_service=None, trading_service=None, theme_manager=None):
         """
         初始化增强策略管理对话框
 
@@ -1560,9 +1565,13 @@ class EnhancedStrategyManagerDialog(QDialog):
             parent: 父窗口
             strategy_service: 策略服务（已弃用，建议使用服务容器）
             trading_service: 交易服务（已弃用，建议使用服务容器）
+            theme_manager: 主题管理器实例（可选，默认使用全局实例）
             service_container: 服务容器实例（可选）
         """
         super().__init__(parent)
+        
+        # 初始化主题管理器（支持依赖注入）
+        self.theme_manager = theme_manager or get_theme_manager()
         
         # 初始化统一资源管理器
         self.resource_manager = ResourceManager()
@@ -1576,13 +1585,29 @@ class EnhancedStrategyManagerDialog(QDialog):
         # 初始化统一异步任务管理器
         self.task_manager = AsyncTaskManager(self.resource_manager)
         self.active_task_ids = set()  # 跟踪活跃任务ID
+        
+        # 信号连接状态跟踪
+        self._theme_connection_connected = False
+        self._themed_dialogs = []  # 跟踪所有主题对话框
+        
+        # 初始化EventBus（容器+Event模式）
+        self._event_bus = get_event_bus()
+        self._event_subscription = None  # 存储订阅ID
 
         self.setWindowTitle("策略管理器")
         self.setModal(False)  # 非模态对话框，允许与主窗口交互
         self.resize(1250, 800)
 
-        # 监听主题变化信号
-        theme_manager.theme_changed.connect(self._on_theme_changed)
+        # 监听主题变化信号（防止重复连接）
+        if not self._theme_connection_connected:
+            self.theme_manager.theme_changed.connect(self._on_theme_changed)
+            self._theme_connection_connected = True
+        
+        # 订阅EventBus主题变化事件（容器+Event模式）
+        self._event_subscription = self._event_bus.subscribe(
+            ThemeChangedEvent,
+            self._on_theme_changed_eventbus
+        )
         
         # 先创建UI组件
         self._setup_ui()
@@ -1780,10 +1805,7 @@ class EnhancedStrategyManagerDialog(QDialog):
     
     def _create_template_dialog(self):
         """创建模板对话框"""
-        dialog = QDialog(self)
-        dialog.setWindowTitle("创建策略模板")
-        theme_manager = get_theme_manager()
-        theme_manager.apply_theme(dialog)
+        dialog = self._create_themed_dialog("创建策略模板")
         layout = QFormLayout(dialog)
         
         name_edit = QLineEdit()
@@ -1876,10 +1898,7 @@ class EnhancedStrategyManagerDialog(QDialog):
     
     def _create_group_dialog(self):
         """创建分组对话框"""
-        dialog = QDialog(self)
-        dialog.setWindowTitle("创建策略分组")
-        theme_manager = get_theme_manager()
-        theme_manager.apply_theme(dialog)
+        dialog = self._create_themed_dialog("创建策略分组")
         layout = QFormLayout(dialog)
         
         name_edit = QLineEdit()
@@ -2004,10 +2023,7 @@ class EnhancedStrategyManagerDialog(QDialog):
             QMessageBox.warning(self, "提示", "请先选择策略")
             return
         
-        dialog = QDialog(self)
-        dialog.setWindowTitle("批量分配分组")
-        theme_manager = get_theme_manager()
-        theme_manager.apply_theme(dialog)
+        dialog = self._create_themed_dialog("批量分配分组")
         layout = QFormLayout(dialog)
         
         group_combo = QComboBox()
@@ -2038,10 +2054,7 @@ class EnhancedStrategyManagerDialog(QDialog):
             QMessageBox.warning(self, "提示", "请先选择策略")
             return
         
-        dialog = QDialog(self)
-        dialog.setWindowTitle("批量分配标签")
-        theme_manager = get_theme_manager()
-        theme_manager.apply_theme(dialog)
+        dialog = self._create_themed_dialog("批量分配标签")
         layout = QFormLayout(dialog)
         
         tags_edit = QLineEdit()
@@ -2775,6 +2788,61 @@ class EnhancedStrategyManagerDialog(QDialog):
 
         self.tab_widget.addTab(tab, "监控")
 
+    def _create_themed_dialog(self, title: str, parent=None) -> QDialog:
+        """创建带有主题监听的对话框
+        
+        Args:
+            title: 对话框标题
+            parent: 父窗口（默认为self）
+            
+        Returns:
+            配置好主题监听的对话框实例
+        """
+        dialog = QDialog(parent or self)
+        dialog.setWindowTitle(title)
+        
+        # 应用主题
+        self.theme_manager.apply_theme(dialog)
+        
+        # 创建主题变化回调（弱引用，避免内存泄漏）
+        def on_theme_changed(theme):
+            if dialog.isVisible():
+                self.theme_manager.apply_theme(dialog)
+        
+        # 监听主题变化
+        self.theme_manager.theme_changed.connect(on_theme_changed)
+        
+        # 跟踪对话框和回调
+        self._themed_dialogs.append((dialog, on_theme_changed))
+        
+        # 对话框关闭时断开连接
+        dialog.finished.connect(
+            lambda: self._cleanup_themed_dialog(dialog, on_theme_changed)
+        )
+        
+        return dialog
+    
+    def _cleanup_themed_dialog(self, dialog: QDialog, callback):
+        """清理主题对话框的信号连接
+        
+        Args:
+            dialog: 要清理的对话框
+            callback: 主题变化回调函数
+        """
+        try:
+            # 断开主题变化信号连接
+            self.theme_manager.theme_changed.disconnect(callback)
+            
+            # 从跟踪列表中移除
+            self._themed_dialogs = [
+                (d, cb) for d, cb in self._themed_dialogs 
+                if d != dialog
+            ]
+            
+            logger.debug(f"已清理主题对话框信号连接: {dialog.windowTitle()}")
+        except Exception as e:
+            logger.warning(f"清理主题对话框信号连接失败: {e}")
+
     def _setup_timers(self):
         """设置定时器"""
         # 策略状态更新定时器
@@ -3249,7 +3317,9 @@ class EnhancedStrategyManagerDialog(QDialog):
                 try:
                     # 检查param_def是否为ParameterDef对象
                     if isinstance(param_def, ParameterDef):
-                        widget = self._create_parameter_widget_for_config(param_def, config.parameters)
+                        # 修复：检查config是对象还是字典
+                        config_params = config.parameters if hasattr(config, 'parameters') else config.get('parameters', {})
+                        widget = self._create_parameter_widget_for_config(param_def, config_params)
                         if widget:
                             self.config_widgets[param_def.name] = widget
                             # 处理display_name属性缺失
@@ -3266,7 +3336,9 @@ class EnhancedStrategyManagerDialog(QDialog):
                             min_value=param_def.get('min_value'),
                             max_value=param_def.get('max_value')
                         )
-                        widget = self._create_parameter_widget_for_config(param_def_obj, config.parameters)
+                        # 修复：检查config是对象还是字典
+                        config_params = config.parameters if hasattr(config, 'parameters') else config.get('parameters', {})
+                        widget = self._create_parameter_widget_for_config(param_def_obj, config_params)
                         if widget:
                             self.config_widgets[param_def_obj.name] = widget
                             display_name = getattr(param_def_obj, 'display_name', 
@@ -3570,15 +3642,13 @@ class EnhancedStrategyManagerDialog(QDialog):
                     if status_item:
                         status_item.setText(status)
 
-                        # 更新颜色
-                        theme_mgr = get_theme_manager()
-                        colors = theme_mgr.get_theme_colors()
+                        # 使用setData设置data属性，让QSS样式表控制颜色
                         if status == "running":
-                            status_item.setBackground(QColor(colors.get('success', '#4CAF50')))
+                            status_item.setData(Qt.UserRole, "running")
                         elif status == "error":
-                            status_item.setBackground(QColor(colors.get('error', '#FF5252')))
+                            status_item.setData(Qt.UserRole, "error")
                         else:
-                            status_item.setBackground(QColor(colors.get('background', '#FFFFFF')))
+                            status_item.setData(Qt.UserRole, "stopped")
 
                 break
 
@@ -3765,12 +3835,9 @@ class EnhancedStrategyManagerDialog(QDialog):
             new_strategy_id = self._generate_unique_strategy_id(strategy_id)
             
             # 创建复制对话框
-            dialog = QDialog(self)
-            dialog.setWindowTitle(f"复制策略: {strategy_id}")
+            dialog = self._create_themed_dialog(f"复制策略: {strategy_id}")
             dialog.setModal(True)
             dialog.resize(400, 200)
-            theme_manager = get_theme_manager()
-            theme_manager.apply_theme(dialog)
 
             layout = QVBoxLayout(dialog)
             
@@ -4545,7 +4612,7 @@ class EnhancedStrategyManagerDialog(QDialog):
             logger.warning(f"处理问题组件时出错: {e}")
 
     def _on_theme_changed(self, new_theme):
-        """主题变化时的处理"""
+        """主题变化时的处理（PyQt信号模式）"""
         try:
             # 重新应用主题到自身
             theme_manager.apply_theme(self)
@@ -4556,6 +4623,19 @@ class EnhancedStrategyManagerDialog(QDialog):
             logger.info(f"策略管理器主题已更新: {new_theme.name if hasattr(new_theme, 'name') else 'Unknown'}")
         except Exception as e:
             logger.error(f"处理主题变化失败: {e}")
+    
+    def _on_theme_changed_eventbus(self, event: ThemeChangedEvent):
+        """主题变化时的处理（EventBus模式）"""
+        try:
+            # 重新应用主题到自身
+            theme_manager.apply_theme(self)
+            
+            # 通知所有子组件更新主题
+            self._update_child_themes(event.theme_name)
+            
+            logger.info(f"策略管理器主题已更新（EventBus）: {event.theme_name}")
+        except Exception as e:
+            logger.error(f"处理主题变化失败（EventBus）: {e}")
     
     def _update_child_themes(self, theme):
         """更新子组件主题"""
@@ -4638,7 +4718,7 @@ class EnhancedStrategyManagerDialog(QDialog):
             logger.warning(f"更新TabWidget主题失败: {e}")
 
     def _deep_apply_theme_to_widget(self, widget, theme, visited=None):
-        """深度应用主题到组件及其所有子组件"""
+        """深度应用主题到组件及其所有子组件（优化版）"""
         if visited is None:
             visited = set()
             
@@ -4650,23 +4730,105 @@ class EnhancedStrategyManagerDialog(QDialog):
             visited.add(widget_id)
             
             # 1. 应用主题到当前组件
-            theme_manager.apply_theme(widget)
+            self.theme_manager.apply_theme(widget)
             
-            # 2. 特殊处理QScrollArea - 确保其内容也应用主题
-            if hasattr(widget, 'widget') and widget.widget():
-                scroll_content = widget.widget()
-                self._deep_apply_theme_to_widget(scroll_content, theme, visited)
+            # 2. 特殊处理各种容器组件
+            self._apply_theme_to_container_content(widget, theme, visited)
             
-            # 3. 递归处理所有直接子组件
-            for child in widget.findChildren(QWidget):
-                if child != widget and id(child) not in visited:
-                    self._deep_apply_theme_to_widget(child, theme, visited)
+            # 3. 扁平化遍历所有子组件（避免重复处理）
+            self._apply_theme_to_children(widget, theme, visited)
             
             # 4. 强制重绘
             widget.update()
             
         except Exception as e:
-            logger.warning(f"深度应用主题到 {widget.__class__.__name__} 失败: {e}")
+            logger.debug(f"深度应用主题到 {widget.__class__.__name__} 跳过: {e}")
+    
+    def _apply_theme_to_container_content(self, widget, theme, visited):
+        """应用主题到容器内容"""
+        try:
+            # QScrollArea - 不需要参数的widget()方法
+            if isinstance(widget, QScrollArea) and hasattr(widget, 'widget') and callable(widget.widget):
+                content_widget = widget.widget()
+                if content_widget:
+                    self._deep_apply_theme_to_widget(content_widget, theme, visited)
+            
+            # QTabWidget - 需要索引参数的widget(index)方法
+            elif isinstance(widget, QTabWidget):
+                for i in range(widget.count()):
+                    tab_content = widget.widget(i)
+                    if tab_content:
+                        self._deep_apply_theme_to_widget(tab_content, theme, visited)
+            
+            # 其他类型的容器根据具体情况处理
+            # 例如QSplitter、QGroupBox等可能也有widget()方法
+            elif hasattr(widget, 'widget') and callable(widget.widget):
+                try:
+                    # 尝试无参数调用
+                    content_widget = widget.widget()
+                    if content_widget and content_widget != widget:
+                        self._deep_apply_theme_to_widget(content_widget, theme, visited)
+                except TypeError:
+                    # 如果需要参数，忽略（比如QTabWidget）
+                    pass
+                except Exception:
+                    # 其他错误也忽略
+                    pass
+        except Exception as e:
+            logger.debug(f"应用容器内容主题失败 {widget.__class__.__name__}: {e}")
+    
+    def _apply_theme_to_children(self, widget, theme, visited):
+        """应用主题到子组件"""
+        try:
+            for child in widget.children():
+                # 严格过滤QTabWidget的内部子组件
+                if self._is_internal_qtabwidget_child(widget, child):
+                    continue
+                
+                # 只处理QWidget子类
+                if isinstance(child, QWidget) and id(child) not in visited:
+                    try:
+                        self._deep_apply_theme_to_widget(child, theme, visited)
+                    except Exception as child_e:
+                        logger.debug(f"跳过子组件 {child.__class__.__name__}: {child_e}")
+                        continue
+        except Exception as e:
+            logger.debug(f"应用子组件主题失败 {widget.__class__.__name__}: {e}")
+    
+    def _is_internal_qtabwidget_child(self, parent_widget, child):
+        """检查是否为QTabWidget的内部子组件"""
+        if not isinstance(parent_widget, QTabWidget):
+            return False
+        
+        try:
+            # 方法1：通过objectName检查
+            if hasattr(child, 'objectName'):
+                object_name = child.objectName()
+                if object_name in ['qt_tabwidget_stackedwidget', 'qt_tabwidget_tabbar', 'qt_tabwidget_pane']:
+                    return True
+            
+            # 方法2：通过类名和父组件检查
+            if hasattr(child, '__class__') and hasattr(child, 'parent'):
+                class_name = child.__class__.__name__
+                parent = child.parent()
+                
+                # 如果是QTabWidget的内部类且父组件是QTabWidget，则跳过
+                if class_name in ['QStackedWidget', 'QTabBar'] and isinstance(parent, QTabWidget):
+                    return True
+                # 如果是QWidget但父组件是QTabWidget，也可能是内部组件
+                elif class_name == 'QWidget' and isinstance(parent, QTabWidget):
+                    # 进一步检查是否有有效的objectName
+                    if hasattr(child, 'objectName') and child.objectName():
+                        # 如果有objectName，可能不是内部组件
+                        return False
+                    else:
+                        # 没有objectName的QWidget子组件通常是内部组件
+                        return True
+        except Exception:
+            # 任何错误都假设不是内部组件
+            pass
+        
+        return False
 
     def _update_container_widget_themes(self):
         """专门更新容器组件的主题"""
@@ -4712,17 +4874,17 @@ class EnhancedStrategyManagerDialog(QDialog):
                 for row in range(table.rowCount()):
                     for col in range(table.columnCount()):
                         item = table.item(row, col)
-                        if item and hasattr(item, 'background') and item.background().color().isValid():
-                            # 重新应用主题颜色到状态项
-                            if col == 3:  # 状态列
-                                status = item.text()
-                                colors = theme_manager.get_theme_colors()
-                                if status == "运行中":
-                                    item.setBackground(QColor(colors.get('success', '#4CAF50')))
-                                elif status == "错误":
-                                    item.setBackground(QColor(colors.get('error', '#FF5252')))
-                                elif status == "已配置":
-                                    item.setBackground(QColor(colors.get('info', '#2196F3')))
+                        if item and col == 3:  # 状态列
+                            # 使用setData设置data属性，让QSS样式表控制颜色
+                            status = item.text()
+                            if status == "运行中":
+                                item.setData(Qt.UserRole, "running")
+                            elif status == "错误":
+                                item.setData(Qt.UserRole, "error")
+                            elif status == "已配置":
+                                item.setData(Qt.UserRole, "configured")
+                            else:
+                                item.setData(Qt.UserRole, "stopped")
             
             # 更新所有QListWidget
             for list_widget in self.findChildren(QListWidget):
@@ -4738,8 +4900,21 @@ class EnhancedStrategyManagerDialog(QDialog):
         
         try:
             # 断开主题信号连接
-            theme_manager.theme_changed.disconnect(self._on_theme_changed)
-            logger.info("已断开主题信号连接")
+            if self._theme_connection_connected:
+                self.theme_manager.theme_changed.disconnect(self._on_theme_changed)
+                self._theme_connection_connected = False
+                logger.info("已断开主题信号连接")
+            
+            # 取消EventBus订阅（容器+Event模式）
+            if self._event_subscription:
+                self._event_bus.unsubscribe(self._event_subscription)
+                self._event_subscription = None
+                logger.info("已取消EventBus订阅")
+            
+            # 清理所有主题对话框的信号连接
+            for dialog, callback in self._themed_dialogs[:]:
+                self._cleanup_themed_dialog(dialog, callback)
+            
             # 取消所有异步任务
             if hasattr(self, 'task_manager'):
                 self.task_manager.cancel_all_tasks()

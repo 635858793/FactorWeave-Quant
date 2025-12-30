@@ -1,3 +1,4 @@
+from pathlib import Path
 from loguru import logger
 """
 Theme Management Module
@@ -25,6 +26,9 @@ from utils.theme_utils import load_theme_json_with_comments
 import sqlite3
 from datetime import datetime
 from PyQt5.QtGui import *
+from PyQt5.QtCore import *
+from core.events.event_bus import get_event_bus
+from core.events.events import ThemeChangedEvent
 
 # Global theme manager instance
 _theme_manager_instance: Optional['ThemeManager'] = None
@@ -133,6 +137,12 @@ class ThemeManager(QObject):
 
         # 从配置中恢复上次保存的主题
         self._restore_last_theme()
+        
+        # 初始化EventBus（支持容器+Event模式）
+        self._event_bus = get_event_bus()
+        
+        # 初始化组件跟踪列表（用于QSS主题的样式表清理）
+        self._tracked_widgets = set()
 
     def _init_db(self):
         self.conn = sqlite3.connect(DB_PATH)
@@ -199,8 +209,7 @@ class ThemeManager(QObject):
     def _import_themes_to_db(self):
         # 导入QSS主题
         for qss_file in glob.glob(os.path.join(self.qss_theme_dir, '*.qss')):
-            name = self._extract_qss_theme_name(
-                qss_file) or os.path.splitext(os.path.basename(qss_file))[0]
+            name = os.path.splitext(os.path.basename(qss_file))[0]
             content = safe_read_file(qss_file)
             # 跳过已存在的主题
             cur = self.conn.cursor()
@@ -372,28 +381,54 @@ class ThemeManager(QObject):
         except Exception as e:
             logger.warning(f"保存主题配置失败: {e}")
 
+        # 清除所有旧样式（样式优先级：QSS主题 > JSON主题 > 全局样式）
+        self.clear_qss_theme()
+        self._clear_widget_stylesheets()
+
         if type_ == 'qss':
             self._current_theme_type = ThemeType.QSS
-            self.apply_qss_theme_content(content)
+            # 清除主题缓存（QSS主题不需要缓存）
+            self._theme_cache.clear()
+            
+            # 立即发送主题变化信号，让监听的组件快速响应
             self.theme_changed.emit(self._current_theme)
-            logger.info(f"QSS主题切换: {theme_name} (base_type={base_type})")
+            
+            # 发布主题变化事件（EventBus模式）
+            event = ThemeChangedEvent(
+                theme_name=theme_name,
+                theme_config=self.get_theme_colors()
+            )
+            self._event_bus.publish(event)
+            
+            # 使用异步方式应用QSS主题，避免阻塞UI
+            QTimer.singleShot(0, lambda: self._apply_qss_theme_async(theme_name, content, base_type))
+            
+            logger.info(f"QSS主题切换: {theme_name} (base_type={base_type}, 异步应用...)")
         else:
             self._current_theme_type = ThemeType.JSON
             theme_dict = json.loads(content)
+            
+            # 更新主题缓存（在发送信号之前）
             self._theme_cache[theme_name.lower()] = theme_dict
-
-            # JSON主题：清除QSS并发送信号让组件自行更新
-            # 先清除之前的QSS样式（立即生效）
+            
+            # 清除QSS样式
             self.clear_qss_theme()
 
             # 立即发送主题变化信号，让监听的组件快速响应
             self.theme_changed.emit(self._current_theme)
+            
+            # 发布主题变化事件（EventBus模式）
+            event = ThemeChangedEvent(
+                theme_name=theme_name,
+                theme_config=self.get_theme_colors()
+            )
+            self._event_bus.publish(event)
 
             # 异步刷新所有窗口组件（避免阻塞UI）
             # 使用QTimer.singleShot确保在事件循环中执行
             QTimer.singleShot(50, self._refresh_all_widgets)
 
-            logger.info(f"JSON主题切换: {theme_name} (base_type={base_type}, 异步刷新中...)")
+            logger.info(f"JSON主题切换: {theme_name} (base_type={base_type}, 异步刷新...)")
 
     def get_theme_colors(self, theme: Optional[Theme] = None) -> Dict[str, Any]:
         """获取主题颜色
@@ -510,6 +545,11 @@ class ThemeManager(QObject):
         Args:
             widget: 要应用主题的控件
         """
+        # 检查当前主题类型，如果是QSS主题则跳过，因为QSS主题已经全局应用
+        if self.is_qss_theme():
+            logger.debug(f"当前为QSS主题，跳过apply_theme调用")
+            return
+        
         colors = self.get_theme_colors()
         # 处理颜色格式，确保rgba格式被正确解析
         processed_colors = {}
@@ -520,10 +560,26 @@ class ThemeManager(QObject):
                 processed_colors[key] = value
         
         stylesheet = self._build_stylesheet(processed_colors)
-        widget.setStyleSheet(stylesheet)
-        for child in widget.findChildren(QWidget):
-            if not child.styleSheet():
-                child.setStyleSheet(stylesheet)
+        
+        # 修复CSS属性中可能存在的't'前缀问题，比如'tmin-height'应该改为'min-height'
+        # 这是一个防御性修复，防止生成错误的CSS属性
+        stylesheet = re.sub(r'\bt(min-height|min-width|max-height|max-width|padding|margin|border-radius|border-width|border-style|border-color|font-size|font-family|font-weight|font-style|text-align|text-color|background-color|color|width|height|left|top|right|bottom|opacity|z-index)\b', r'\1', stylesheet)
+        
+        # 添加主题应用状态跟踪，避免重复应用
+        if not hasattr(self, '_applied_widgets'):
+            self._applied_widgets = set()
+        
+        widget_id = id(widget)
+        if widget_id not in self._applied_widgets:
+            # 应用样式表到目标控件
+            widget.setStyleSheet(stylesheet)
+            
+            # 优化：只应用到直接子控件，利用Qt的样式表继承机制
+            # 避免过度递归和性能问题
+            for child in widget.children():
+                if isinstance(child, QWidget) and child != widget:
+                    child.setStyleSheet(stylesheet)
+            self._applied_widgets.add(widget_id)
 
     def _build_stylesheet(self, colors: Dict[str, Any]) -> str:
         """构建样式表
@@ -548,7 +604,7 @@ class ThemeManager(QObject):
             border: 1px solid {colors.get('button_border', '#90caf9')};
             border-radius: 4px;
             padding: 6px 12px;
-            min-height: 28px;
+            min-height: 20px;
         }}
 
         QPushButton:hover {{
@@ -577,6 +633,30 @@ class ThemeManager(QObject):
             background-color: {colors.get('card', '#FFFFFF')};
             border: 1px solid {colors.get('border', '#e0e0e0')};
             gridline-color: {colors.get('chart_grid', '#e0e0e0')};
+        }}
+
+        QTableWidget::item {{
+            padding: 4px;
+        }}
+
+        QTableWidget::item[data-status="running"] {{
+            background-color: {colors.get('success', '#4CAF50')};
+            color: #FFFFFF;
+        }}
+
+        QTableWidget::item[data-status="error"] {{
+            background-color: {colors.get('error', '#FF5252')};
+            color: #FFFFFF;
+        }}
+
+        QTableWidget::item[data-status="configured"] {{
+            background-color: {colors.get('info', '#2196F3')};
+            color: #FFFFFF;
+        }}
+
+        QTableWidget::item[data-status="stopped"] {{
+            background-color: {colors.get('background', '#FFFFFF')};
+            color: {colors.get('text', '#222b45')};
         }}
 
         QLineEdit, QTextEdit, QComboBox {{
@@ -648,22 +728,9 @@ class ThemeManager(QObject):
     def _scan_qss_themes(self):
         themes = {}
         for qss_file in glob.glob(os.path.join(self.qss_theme_dir, '*.qss')):
-            name = self._extract_qss_theme_name(qss_file)
-            if not name:
-                name = os.path.splitext(os.path.basename(qss_file))[0]
+            name = os.path.splitext(os.path.basename(qss_file))[0]
             themes[name] = qss_file
         return themes
-
-    def _extract_qss_theme_name(self, qss_file):
-        try:
-            with open(qss_file, 'r', encoding='utf-8') as f:
-                for _ in range(10):
-                    line = f.readline()
-                    if 'Style Sheet' in line or 'StyleSheet' in line:
-                        return line.strip('/*').strip().replace('Style Sheet for QT Applications', '').replace('StyleSheet for QT Applications', '').replace('Style Sheet', '').replace('for QT Applications', '').strip()
-        except Exception:
-            pass
-        return None
 
     def get_all_themes(self):
         # 返回所有主题名称（数据库）
@@ -695,6 +762,24 @@ class ThemeManager(QObject):
             logger.error(f"获取主题列表失败: {e}")
             return {}  # 返回空字典，UI会显示"暂无主题"
 
+    def _apply_qss_theme_async(self, theme_name, qss_content, base_type):
+        """异步应用QSS主题内容
+        
+        Args:
+            theme_name: 主题名称
+            qss_content: QSS主题内容
+            base_type: 基础主题类型
+        """
+        try:
+            logger.debug(f"开始异步应用QSS主题: {theme_name}")
+            
+            # 应用QSS主题内容
+            self.apply_qss_theme_content(qss_content)
+            
+            logger.info(f"✅ QSS主题异步应用完成: {theme_name} (base_type={base_type})")
+        except Exception as e:
+            logger.error(f"❌ 异步应用QSS主题失败: {e}")
+    
     def apply_qss_theme_content(self, qss):
         # 全局滚动条样式
         scrollbar_qss = '''
@@ -735,9 +820,51 @@ class ThemeManager(QObject):
         app.setStyleSheet(qss + '\n' + scrollbar_qss)
 
     def clear_qss_theme(self):
+        """清除QSS主题样式表"""
         app = QApplication.instance()
         if app:
+            # 直接清除全局样式表，这是一个轻量级操作，不需要异步
             app.setStyleSheet('')
+            logger.debug("已清除全局QSS样式表")
+
+    def _clear_widget_stylesheets(self):
+        """清除所有已跟踪组件的样式表"""
+        try:
+            # 优化：如果没有跟踪的组件，直接返回
+            if not hasattr(self, '_tracked_widgets') or not self._tracked_widgets:
+                logger.debug("没有需要清除的跟踪组件，跳过样式表清除")
+                return
+            
+            # 异步批量清除组件样式表，避免阻塞UI
+            QTimer.singleShot(0, self._clear_widget_stylesheets_async)
+        except Exception as e:
+            logger.warning(f"清除组件样式表失败: {e}")
+    
+    def _clear_widget_stylesheets_async(self):
+        """异步批量清除组件样式表"""
+        try:
+            # 批量处理组件样式表清除
+            batch_size = 50  # 每批处理50个组件
+            widgets = list(self._tracked_widgets.copy())  # 转换为列表以便批量处理
+            
+            # 分批清除组件样式表
+            for i in range(0, len(widgets), batch_size):
+                batch = widgets[i:i + batch_size]
+                # 使用定时器延迟处理每批，避免阻塞UI
+                QTimer.singleShot(i // batch_size * 5, lambda b=batch: self._clear_batch_stylesheets(b))
+                
+            logger.debug(f"异步清除样式表：共 {len(widgets)} 个组件，分为 {len(widgets) // batch_size + 1} 批处理")
+        except Exception as e:
+            logger.warning(f"异步清除组件样式表失败: {e}")
+    
+    def _clear_batch_stylesheets(self, widgets):
+        """清除一批组件的样式表"""
+        for widget in widgets:
+            try:
+                if widget and not widget.isVisible():
+                    widget.setStyleSheet('')
+            except Exception as e:
+                logger.warning(f"清除组件 {widget.__class__.__name__ if widget else 'Unknown'} 样式表失败: {e}")
 
     def is_qss_theme(self):
         return self._current_theme_type == ThemeType.QSS
@@ -755,21 +882,38 @@ class ThemeManager(QObject):
                 return
 
             # 收集所有需要刷新的顶层窗口
-            top_widgets = [w for w in app.topLevelWidgets() if w.isVisible()]
+            # 过滤已销毁窗口（检查widget是否有效）
+            top_widgets = []
+            for w in app.topLevelWidgets():
+                try:
+                    # 检查窗口是否有效（未被销毁）
+                    if w and not w.isHidden():
+                        # 尝试访问窗口属性，如果窗口已销毁会抛出异常
+                        _ = w.windowTitle()
+                        top_widgets.append(w)
+                except (RuntimeError, AttributeError):
+                    # 窗口已销毁，跳过
+                    continue
 
             if not top_widgets:
                 return
 
             logger.info(f"JSON主题：开始异步刷新 {len(top_widgets)} 个顶层窗口")
 
-            # 使用定时器分批刷新，避免阻塞UI
-            self._refresh_widgets_batch(top_widgets, 0)
+            # 使用定时器分批刷新，避免阻塞UI（增加延迟到100ms）
+            self._refresh_widgets_batch(top_widgets, 0, delay=100)
 
         except Exception as e:
             logger.error(f"刷新窗口组件失败: {e}")
 
-    def _refresh_widgets_batch(self, widgets, index):
-        """分批刷新组件（避免UI卡顿）"""
+    def _refresh_widgets_batch(self, widgets, index, delay=10):
+        """分批刷新组件（避免UI卡顿）
+
+        Args:
+            widgets: 要刷新的组件列表
+            index: 当前索引
+            delay: 延迟时间（毫秒）
+        """
         try:
             if index >= len(widgets):
                 logger.info("JSON主题：所有窗口组件刷新完成")
@@ -791,7 +935,7 @@ class ThemeManager(QObject):
                 logger.debug(f"刷新widget失败: {e}")
 
             # 继续下一个widget（使用定时器避免阻塞）
-            QTimer.singleShot(10, lambda: self._refresh_widgets_batch(widgets, index + 1))
+            QTimer.singleShot(delay, lambda: self._refresh_widgets_batch(widgets, index + 1, delay))
 
         except Exception as e:
             logger.error(f"批量刷新失败: {e}")

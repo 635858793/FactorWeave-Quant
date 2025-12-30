@@ -427,6 +427,11 @@ class MainMenuBar(QMenuBar):
             self.settings_action.setShortcut("Ctrl+,")
             self.settings_action.setStatusTip("打开设置")
             self.tools_menu.addAction(self.settings_action)
+            
+            # 自适应连接池配置
+            self.adaptive_pool_config_action = QAction("自适应连接池配置", self)
+            self.adaptive_pool_config_action.setStatusTip("配置自适应连接池参数")
+            self.tools_menu.addAction(self.adaptive_pool_config_action)
 
             # 注意：信号连接已在connect_signals方法中统一处理，这里不再重复连接
 
@@ -1007,6 +1012,7 @@ class MainMenuBar(QMenuBar):
                 ('webgpu_status_action', 'show_webgpu_status'),
                 ('advanced_search_action', '_on_advanced_search'),
                 ('settings_action', '_on_settings'),
+                ('adaptive_pool_config_action', 'show_adaptive_pool_config'),
 
                 # 性能监控菜单
                 ('performance_center_action', '_on_performance_center'),
@@ -1141,6 +1147,22 @@ class MainMenuBar(QMenuBar):
             )
             if True:  # 使用Loguru日志
                 logger.error(f"打开预测准确性跟踪对话框失败: {str(e)}")
+    
+    def show_adaptive_pool_config(self):
+        """显示自适应连接池配置对话框"""
+        try:
+            from gui.dialogs.adaptive_pool_config_dialog import AdaptivePoolConfigDialog
+            
+            dialog = AdaptivePoolConfigDialog(self.parent())
+            dialog.exec_()
+        except Exception as e:
+            QMessageBox.critical(
+                self.parent(),
+                "错误",
+                f"打开自适应连接池配置对话框失败:\n{str(e)}"
+            )
+            if True:  # 使用Loguru日志
+                logger.error(f"打开自适应连接池配置对话框失败: {str(e)}")
 
     def show_distributed_monitor(self):
         """显示分布式节点监控对话框"""
