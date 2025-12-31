@@ -1244,8 +1244,6 @@ QToolBar::handle:vertical {
 QDockWidget {
         border: 1px solid rgb(45, 45, 45);
         background: rgb(50, 50, 50);
-        titlebar-close-icon: url(:/Black/close);
-        titlebar-normal-icon: url(:/Black/restore);
 }
 QDockWidget::title {
         background: rgb(57, 58, 60);

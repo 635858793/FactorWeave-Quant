@@ -89,7 +89,7 @@ class LogWidget(QTextEdit):
         # 日志级别颜色
         self.level_colors = {
             'DEBUG': '#888888',
-            'INFO': '#000000',
+            # 'INFO': '#000000',
             'WARNING': '#FF8C00',
             'ERROR': '#FF0000',
             'CRITICAL': '#8B0000'
@@ -100,7 +100,7 @@ class LogWidget(QTextEdit):
 
     def append_log(self, message: str, level: str = 'INFO'):
         """添加日志消息 - 线程安全版本，通过信号/槽机制确保在主线程中执行"""
-        color = self.level_colors.get(level, '#000000')
+        color = self.level_colors.get(level, self.palette().text().color().name())
         formatted_msg = f'<span style="color: {color};">[{level}] {message}</span>'
         # 发射信号而不是直接操作UI
         self.log_appended.emit(formatted_msg, level)

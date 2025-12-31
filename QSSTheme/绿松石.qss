@@ -765,8 +765,6 @@ QToolBar::handle {
 QDockWidget {
         border: 1px solid #32435E;
         background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 #113845, stop: 1.0 #15A8FF);
-        titlebar-close-icon: url(qss/close.png);
-        titlebar-normal-icon: url(qss/restore.png);
 }
 QDockWidget::title {
         background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 #15A8FF, stop: 1.0 #113845);
@@ -779,7 +777,6 @@ QDockWidget::close-button {
 }
 QDockWidget::float-button {
         background: transparent;
-        border: none;
 }
 QDockWidget::separator {
         background: #32435E;

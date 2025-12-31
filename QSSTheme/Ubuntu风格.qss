@@ -821,8 +821,6 @@ QToolBar QToolButton:pressed {
 QDockWidget {
 	color: rgb(81, 72, 65);
 	background-color: #f0f0f0;
-	titlebar-close-icon: url(./icons/close.png);
-	titlebar-normal-icon: url(./icons/float.png);
 }
 
 QDockWidget::title {
