@@ -17,6 +17,7 @@
 
 import asyncio
 import json
+import os
 import sqlite3
 import threading
 import time
@@ -278,7 +279,7 @@ class ResourceManager:
 class TaskPersistence:
     """任务持久化管理器"""
 
-    def __init__(self, db_path: str = "async_tasks.db"):
+    def __init__(self, db_path: str = "data/enhanced_async_tasks.sqlite"):
         self.db_path = Path(db_path)
         self._init_database()
 
@@ -424,10 +425,10 @@ class EnhancedAsyncManager:
     """增强版异步任务管理器"""
 
     def __init__(self,
-                 max_workers: int = 8,
+                 max_workers: int = os.cpu_count() * 2,
                  enable_persistence: bool = True,
                  enable_monitoring: bool = True,
-                 db_path: str = "enhanced_async_tasks.db"):
+                 db_path: str = "data/enhanced_async_tasks.sqlite"):
         """
         初始化增强版异步任务管理器
 
@@ -887,7 +888,7 @@ def initialize_enhanced_async_manager(
     max_workers: int = 8,
     enable_persistence: bool = True,
     enable_monitoring: bool = True,
-    db_path: str = "enhanced_async_tasks.db"
+    db_path: str = "data/enhanced_async_tasks.sqlite"
 ) -> EnhancedAsyncManager:
     """初始化增强版异步任务管理器"""
     global _enhanced_async_manager

@@ -19,6 +19,8 @@ import duckdb
 from pathlib import Path
 from loguru import logger
 
+from db.models.plugin_models import PluginDatabaseManager
+
 
 def ensure_directory_exists(file_path: str):
     """确保目录存在"""
@@ -31,11 +33,12 @@ def ensure_directory_exists(file_path: str):
 def init_sqlite_databases():
     """初始化SQLite数据库"""
     sqlite_databases = [
-        "db/factorweave_system.sqlite",
-        "db/alert_config.db",
-        "db/backtest_monitor.db",
-        "db/deep_analysis.db",
-        "db/metrics.sqlite"
+        "data/factorweave_system.sqlite",
+        "data/enhanced_async_tasks.sqlite",
+        "data/alert_config.sqlite",
+        "data/backtest_monitor.sqlite",
+        "data/deep_analysis.sqlite",
+        "data/metrics.sqlite"
     ]
 
     for db_path in sqlite_databases:
@@ -56,8 +59,8 @@ def init_sqlite_databases():
 def init_duckdb_databases():
     """初始化DuckDB数据库"""
     duckdb_databases = [
-        "db/factorweave_analytics.duckdb",
-        "db/kline_stock.duckdb"
+        "data/factorweave_analytics.duckdb",
+        "data/kline_stock.duckdb"
     ]
 
     for db_path in duckdb_databases:
@@ -80,7 +83,7 @@ def init_plugin_tables():
     try:
 
         # 初始化插件数据库管理器
-        plugin_db_manager = PluginDatabaseManager("db/factorweave_system.sqlite")
+        plugin_db_manager = PluginDatabaseManager("data/factorweave_system.sqlite")
         logger.info("插件数据库表结构初始化完成")
 
         # 初始化数据源插件配置管理器
@@ -98,7 +101,7 @@ def init_kline_tables():
         from core.database.table_manager import get_table_manager, TableType
 
         table_manager = get_table_manager()
-        db_path = "db/kline_stock.duckdb"
+        db_path = "data/kline_stock.duckdb"
 
         # 确保数据库文件存在
         ensure_directory_exists(db_path)
@@ -129,7 +132,7 @@ def create_indexes():
     """创建必要的索引"""
     try:
         # SQLite索引
-        sqlite_conn = sqlite3.connect("db/factorweave_system.sqlite")
+        sqlite_conn = sqlite3.connect("data/factorweave_system.sqlite")
         cursor = sqlite_conn.cursor()
 
         # 数据源插件配置表索引
@@ -154,7 +157,7 @@ def create_indexes():
         logger.info("SQLite索引创建完成")
 
         # DuckDB索引
-        duckdb_conn = duckdb.connect("db/kline_stock.duckdb")
+        duckdb_conn = duckdb.connect("data/kline_stock.duckdb")
 
         # K线数据表索引
         frequencies = ['1m', '5m', '15m', '30m', '1h', '1d', '1w', '1M']
