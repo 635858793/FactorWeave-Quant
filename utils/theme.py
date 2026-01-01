@@ -28,7 +28,7 @@ from datetime import datetime
 from PyQt5.QtGui import *
 from PyQt5.QtCore import *
 from core.events.event_bus import get_event_bus
-from core.events.events import ThemeChangedEvent
+from core.events.types import ThemeChangedEvent
 
 # Global theme manager instance
 _theme_manager_instance: Optional['ThemeManager'] = None

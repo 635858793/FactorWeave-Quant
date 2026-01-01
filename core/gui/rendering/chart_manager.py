@@ -23,7 +23,7 @@ from .pyqtgraph_engine import (
 )
 from ...containers.service_container import get_service_container
 from ...events.event_bus import EventBus
-from ...events.events import Event, EventType
+from ...events.types import Event, EventType
 
 
 @dataclass

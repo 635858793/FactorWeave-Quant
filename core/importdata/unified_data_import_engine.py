@@ -43,7 +43,7 @@ from ..risk_monitoring.enhanced_risk_monitor import EnhancedRiskMonitor, get_enh
 # 分布式和并发
 from ..services.distributed_service import DistributedService, NodeDiscovery, NodeInfo
 # from ..services.enhanced_distributed_service import EnhancedDistributedService, get_enhanced_distributed_service  # Module doesn't exist
-from ..events.enhanced_event_bus import get_enhanced_event_bus, EventPriority, EnhancedEventBus
+from ..events import get_event_bus, EventPriority
 from ..async_management.enhanced_async_manager import get_enhanced_async_manager, TaskPriority, ResourceRequirement
 
 # 数据质量
@@ -439,8 +439,7 @@ class UnifiedDataImportEngine(QObject):
                 self.distributed_service = None
                 self.node_discovery = None
 
-            # 增强事件总线
-            self.enhanced_event_bus = get_enhanced_event_bus()
+            self.event_bus = get_event_bus()
 
             # 增强异步管理器
             self.enhanced_async_manager = get_enhanced_async_manager()

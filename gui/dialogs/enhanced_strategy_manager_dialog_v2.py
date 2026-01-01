@@ -46,7 +46,12 @@ from core.strategy_extensions import (
 # 导入系统主题管理器
 from utils.theme import get_theme_manager, Theme
 from core.events.event_bus import get_event_bus
-from core.events.events import ThemeChangedEvent
+from core.events.types import ThemeChangedEvent
+from core.events import (
+    StrategyStartedEvent, StrategyStoppedEvent, StrategyErrorEvent,
+    SignalGeneratedEvent, EventType, EventPriority, EventFilter,
+    get_event_bus
+)
 
 # 导入图表库（带错误处理）
 try:
@@ -172,6 +177,89 @@ class EnhancedStrategyManagerDialogV2(QDialog):
 
         logger.info(f"策略服务初始化完成: {self.strategy_service is not None}")
         logger.info(f"交易服务初始化完成: {self.trading_service is not None}")
+        
+        # 初始化策略事件处理器
+        self._strategy_event_handler = None
+        self._subscribe_strategy_events()
+
+    def _subscribe_strategy_events(self):
+        """订阅策略事件"""
+        try:
+            from core.events.event_bus import EventBus
+            event_bus = get_event_bus()
+            def strategy_event_handler(event):
+                try:
+                    if hasattr(self, '_on_strategy_event'):
+                        self._on_strategy_event(event)
+                except Exception as e:
+                    logger.error(f"处理策略事件失败: {e}")
+
+            event_bus.subscribe(StrategyStartedEvent, strategy_event_handler, priority=0)
+            event_bus.subscribe(StrategyStoppedEvent, strategy_event_handler, priority=0)
+            event_bus.subscribe(SignalGeneratedEvent, strategy_event_handler, priority=0)
+            event_bus.subscribe(StrategyErrorEvent, strategy_event_handler, priority=0)
+            logger.info("策略事件订阅已注册")
+        except Exception as e:
+            logger.warning(f"注册策略事件订阅失败: {e}")
+    
+    def _on_strategy_event(self, event):
+        """处理策略事件"""
+        try:
+            
+            if isinstance(event, StrategyStartedEvent):
+                self.logger.info(f"策略启动事件: {event.strategy_id}")
+                self._update_strategy_status(event.strategy_id, "running")
+                
+            elif isinstance(event, StrategyStoppedEvent):
+                self.logger.info(f"策略停止事件: {event.strategy_id}, 原因: {event.reason}")
+                self._update_strategy_status(event.strategy_id, "stopped")
+                if event.performance:
+                    self._show_performance_notification(event.performance)
+                    
+            elif isinstance(event, SignalGeneratedEvent):
+                if hasattr(event, 'signals') and event.signals:
+                    signal_count = len(event.signals)
+                    self.logger.info(f"信号生成事件: {event.strategy_id}, 信号数: {signal_count}")
+                    self._update_signal_counter(signal_count)
+                    
+            elif isinstance(event, StrategyErrorEvent):
+                self.logger.error(f"策略错误事件: {event.strategy_id}, 错误: {event.error_message}")
+                self._show_error_notification(event.strategy_id, event.error_message)
+                
+        except Exception as e:
+            self.logger.error(f"处理策略事件失败: {e}")
+    
+    def _update_strategy_status(self, strategy_id: str, status: str):
+        """更新策略状态显示"""
+        if status == "running":
+            self.backtest_status_label.setText(f"回测运行中: {strategy_id}")
+            self.backtest_progress_bar.setRange(0, 0)
+        elif status == "stopped":
+            self.backtest_status_label.setText(f"回测完成: {strategy_id}")
+            self.backtest_progress_bar.setRange(0, 100)
+            self.backtest_progress_bar.setValue(100)
+            self._reset_backtest_ui()
+    
+    def _show_performance_notification(self, performance):
+        """显示性能通知"""
+        try:
+            if performance:
+                self.total_return_card.findChild(QLabel, "value").setText(f"{performance.total_return*100:.2f}%")
+                self.sharpe_ratio_card.findChild(QLabel, "value").setText(f"{performance.sharpe_ratio:.2f}")
+                self.max_drawdown_card.findChild(QLabel, "value").setText(f"{performance.max_drawdown*100:.2f}%")
+                self.win_rate_card.findChild(QLabel, "value").setText(f"{performance.win_rate*100:.1f}%")
+        except Exception as e:
+            self.logger.warning(f"更新性能指标失败: {e}")
+    
+    def _update_signal_counter(self, count: int):
+        """更新信号计数器"""
+        self.backtest_status_label.setText(f"已生成 {count} 个交易信号")
+    
+    def _show_error_notification(self, strategy_id: str, error: str):
+        """显示错误通知"""
+        self.backtest_status_label.setText(f"错误: {error}")
+        self.backtest_progress_bar.setRange(0, 100)
+        self._reset_backtest_ui()
 
     def _setup_ui(self):
         """设置UI"""

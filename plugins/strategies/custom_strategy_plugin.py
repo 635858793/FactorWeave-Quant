@@ -426,6 +426,31 @@ class CustomStrategyPlugin(IStrategyPlugin):
             # 调用策略实例的信号生成方法
             signals = self.strategy_instance.on_bar(market_data, context)
 
+            # 发布信号生成事件
+            if signals:
+                try:
+                    from core.events import SignalGeneratedEvent, get_event_bus
+                    event = SignalGeneratedEvent(
+                        strategy_id=self.get_strategy_info().name,
+                        strategy_name=self.get_strategy_info().display_name,
+                        signals=[{
+                            'signal_type': s.signal_type.value,
+                            'symbol': s.symbol,
+                            'strength': s.strength,
+                            'timestamp': s.timestamp.isoformat() if hasattr(s.timestamp, 'isoformat') else str(s.timestamp),
+                            'price': s.price,
+                            'reason': s.reason
+                        } for s in signals],
+                        symbol=market_data.symbol,
+                        priority=1,
+                        timestamp=datetime.now(),
+                        source="custom_strategy",
+                        data={'plugin_type': 'custom', 'template': self.strategy_type}
+                    )
+                    get_event_bus().publish(event)
+                except Exception as event_error:
+                    logger.warning(f"发布自定义策略信号事件失败: {event_error}")
+
             return signals
 
         except Exception as e:

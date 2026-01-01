@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
+    QAbstractItemView, QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
     QGroupBox, QFormLayout, QSpinBox, QDoubleSpinBox, QCheckBox,
     QComboBox, QLineEdit, QTextEdit, QPushButton, QLabel,
     QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox,
@@ -78,7 +78,7 @@ class AIPredictionConfigDialog(QDialog):
         splitter.addWidget(history_widget)
 
         # 设置分割器比例
-        splitter.setSizes([600, 450])
+        splitter.setSizes([500, 550])
 
         # 底部按钮
         button_layout = self.create_button_layout()
@@ -356,6 +356,9 @@ class AIPredictionConfigDialog(QDialog):
         self.history_table = QTableWidget()
         self.history_table.setColumnCount(4)
         self.history_table.setHorizontalHeaderLabels(["配置项", "修改者", "修改时间", "操作"])
+        self.history_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        # 历史记录表格列宽自适应
+        self.history_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.history_table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.history_table)
 

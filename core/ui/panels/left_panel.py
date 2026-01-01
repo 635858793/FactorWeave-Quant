@@ -21,7 +21,7 @@ from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, pyqtSlot
 from PyQt5.QtGui import QIcon, QFont
 
 from .base_panel import BasePanel
-from core.events.events import StockSelectedEvent, AssetSelectedEvent
+from core.events.types import StockSelectedEvent, AssetSelectedEvent
 from core.performance import measure_performance
 # 引入服务和类型
 from core.services import StockService
@@ -118,7 +118,7 @@ class LeftPanel(BasePanel):
         super()._register_event_handlers()
 
         # 注册多屏模式切换事件处理
-        from core.events.events import MultiScreenToggleEvent
+        from core.events.types import MultiScreenToggleEvent
         self.event_bus.subscribe(MultiScreenToggleEvent, self.on_multi_screen_toggled)
 
     def _create_widgets(self) -> None:

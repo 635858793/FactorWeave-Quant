@@ -174,16 +174,42 @@ class IIndicatorPlugin(IPlugin):
 
 
 class IStrategyPlugin(IPlugin):
-    """策略插件接口"""
+    """
+    策略插件接口（数据源级别）
+    
+    这是数据源插件的策略接口，用于轻量级的信号生成场景。
+    与 core/strategy_extensions.py 中的 IStrategyPlugin 不同：
+    - 此接口：用于数据源插件，简单信号生成
+    - core 中的：完整的策略插件接口，支持完整的生命周期管理
+    
+    推荐使用场景:
+    - 数据源内置的简单策略
+    - 快速原型验证
+    - 轻量级信号生成
+    
+    完整策略开发推荐使用:
+    - core.strategy_extensions.IStrategyPlugin
+    - 配合 StrategyService 使用
+    """
 
     @abstractmethod
     def get_strategy_name(self) -> str:
-        """获取策略名称"""
+        """
+        获取策略名称
+        
+        Returns:
+            str: 策略名称
+        """
         pass
 
     @abstractmethod
     def get_strategy_parameters(self) -> Dict[str, Any]:
-        """获取策略参数定义"""
+        """
+        获取策略参数定义
+        
+        Returns:
+            Dict[str, Any]: 参数名到默认值/描述的映射
+        """
         pass
 
     @abstractmethod
@@ -192,11 +218,15 @@ class IStrategyPlugin(IPlugin):
         生成交易信号
 
         Args:
-            data: 市场数据
+            data: 市场数据（通常是 pandas DataFrame）
             **params: 策略参数
 
         Returns:
-            交易信号
+            交易信号，可以是多种格式
+        
+        Note:
+            如需完整的事件支持和生命周期管理，
+            请实现 core.strategy_extensions.IStrategyPlugin 接口
         """
         pass
 
@@ -209,7 +239,11 @@ class IStrategyPlugin(IPlugin):
             **params: 策略参数
 
         Returns:
-            回测结果
+            Dict[str, Any]: 回测结果，包含收益、信号列表等
+        
+        Note:
+            此方法是可选实现，如需完整的回测功能，
+            请使用 StrategyService.run_backtest()
         """
         return {}
 

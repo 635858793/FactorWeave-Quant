@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch, MagicMock
 from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget
 from PyQt5.QtCore import Qt
 from core.events.event_bus import EventBus, set_event_bus
-from core.events.events import ThemeChangedEvent
+from core.events.types import ThemeChangedEvent
 from utils.theme import ThemeManager, Theme
 
 

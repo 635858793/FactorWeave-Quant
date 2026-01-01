@@ -7,7 +7,7 @@ import pytest
 import time
 from unittest.mock import Mock, patch
 from core.events.event_bus import EventBus, set_event_bus
-from core.events.events import ThemeChangedEvent
+from core.events.types import ThemeChangedEvent
 from utils.theme import ThemeManager
 
 

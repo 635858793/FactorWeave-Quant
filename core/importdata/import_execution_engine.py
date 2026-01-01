@@ -41,8 +41,8 @@ from optimization.algorithm_optimizer import PerformanceEvaluator
 from ..services.enhanced_data_manager import DataQualityMonitor
 from ..data.enhanced_models import DataQualityMetrics, DataQuality
 from ..data_validator import ValidationLevel, ValidationResult
-from ..events.enhanced_event_bus import get_enhanced_event_bus, EventPriority, EnhancedEventBus
-from ..async_management.enhanced_async_manager import get_enhanced_async_manager, TaskPriority, ResourceRequirement
+from ..events import EventBus, get_event_bus, EventPriority
+from ..async_management.enhanced_async_manager import TaskPriority, ResourceRequirement
 from ..performance.cache_manager import MultiLevelCacheManager, CacheLevel
 
 
@@ -533,10 +533,8 @@ class DataImportExecutionEngine(QObject):
         self._quality_score_cache = {}  # key: f"{data_source}_{date}", value: score
         self._quality_cache_ttl = 3600  # 缓存1小时
 
-        # 增强版事件总线系统
-        self.enhanced_event_bus = self._init_enhanced_event_bus()
+        self.event_bus = self._init_event_bus()
 
-        # 增强版异步任务管理器
         self.enhanced_async_manager = self._init_enhanced_async_manager()
 
         # 任务管理
@@ -1172,36 +1170,13 @@ class DataImportExecutionEngine(QObject):
 
         return status
 
-    def _register_import_event_handlers(self, event_bus: EnhancedEventBus):
+    def _register_import_event_handlers(self, event_bus: EventBus):
         """注册数据导入相关的事件处理器"""
         try:
-            # 任务开始事件处理器
-            event_bus.subscribe_enhanced(
-                "import_task_started",
-                self._handle_import_task_started_event,
-                priority=3
-            )
-
-            # 任务进度更新事件处理器
-            event_bus.subscribe_enhanced(
-                "import_task_progress",
-                self._handle_import_task_progress_event,
-                priority=4
-            )
-
-            # 任务完成事件处理器
-            event_bus.subscribe_enhanced(
-                "import_task_completed",
-                self._handle_import_task_completed_event,
-                priority=2
-            )
-
-            # 任务失败事件处理器
-            event_bus.subscribe_enhanced(
-                "import_task_failed",
-                self._handle_import_task_failed_event,
-                priority=1
-            )
+            event_bus.subscribe("import_task_started", self._handle_import_task_started_event)
+            event_bus.subscribe("import_task_progress", self._handle_import_task_progress_event)
+            event_bus.subscribe("import_task_completed", self._handle_import_task_completed_event)
+            event_bus.subscribe("import_task_failed", self._handle_import_task_failed_event)
 
             logger.info("数据导入事件处理器注册完成")
 
@@ -1211,12 +1186,11 @@ class DataImportExecutionEngine(QObject):
     def _handle_import_task_started_event(self, event):
         """处理导入任务开始事件"""
         try:
-            task_id = event.data.get('task_id')
-            task_name = event.data.get('task_name', 'Unknown')
+            task_id = getattr(event, 'task_id', None) or (event.data.get('task_id') if hasattr(event, 'data') else None)
+            task_name = getattr(event, 'task_name', 'Unknown') or (event.data.get('task_name') if hasattr(event, 'data') else 'Unknown')
 
             logger.info(f"事件处理 - 导入任务开始: {task_name} ({task_id})")
 
-            # 发送Qt信号
             self.task_started.emit(task_id, task_name)
 
         except Exception as e:
@@ -1225,11 +1199,10 @@ class DataImportExecutionEngine(QObject):
     def _handle_import_task_progress_event(self, event):
         """处理导入任务进度事件"""
         try:
-            task_id = event.data.get('task_id')
-            progress = event.data.get('progress', 0)
-            status = event.data.get('status', 'unknown')
+            task_id = getattr(event, 'task_id', None) or (event.data.get('task_id') if hasattr(event, 'data') else None)
+            progress = getattr(event, 'progress', 0) or (event.data.get('progress') if hasattr(event, 'data') else 0)
+            status = getattr(event, 'status', 'unknown') or (event.data.get('status') if hasattr(event, 'data') else 'unknown')
 
-            # 发送Qt信号
             self.progress_updated.emit(task_id, progress, status)
 
         except Exception as e:
@@ -1238,14 +1211,13 @@ class DataImportExecutionEngine(QObject):
     def _handle_import_task_completed_event(self, event):
         """处理导入任务完成事件"""
         try:
-            task_id = event.data.get('task_id')
-            task_name = event.data.get('task_name', 'Unknown')
-            execution_time = event.data.get('execution_time', 0)
-            result = event.data.get('result')
+            task_id = getattr(event, 'task_id', None) or (event.data.get('task_id') if hasattr(event, 'data') else None)
+            task_name = getattr(event, 'task_name', 'Unknown') or (event.data.get('task_name') if hasattr(event, 'data') else 'Unknown')
+            execution_time = getattr(event, 'execution_time', 0) or (event.data.get('execution_time') if hasattr(event, 'data') else 0)
+            result = getattr(event, 'result', None) or (event.data.get('result') if hasattr(event, 'data') else None)
 
             logger.info(f"事件处理 - 导入任务完成: {task_name} ({execution_time:.2f}s)")
 
-            # 发送Qt信号
             self.task_completed.emit(task_id, result)
 
         except Exception as e:
@@ -1254,13 +1226,12 @@ class DataImportExecutionEngine(QObject):
     def _handle_import_task_failed_event(self, event):
         """处理导入任务失败事件"""
         try:
-            task_id = event.data.get('task_id')
-            task_name = event.data.get('task_name', 'Unknown')
-            error = event.data.get('error', 'Unknown error')
+            task_id = getattr(event, 'task_id', None) or (event.data.get('task_id') if hasattr(event, 'data') else None)
+            task_name = getattr(event, 'task_name', 'Unknown') or (event.data.get('task_name') if hasattr(event, 'data') else 'Unknown')
+            error = getattr(event, 'error', 'Unknown error') or (event.data.get('error') if hasattr(event, 'data') else 'Unknown error')
 
             logger.error(f"事件处理 - 导入任务失败: {task_name} - {error}")
 
-            # 发送Qt信号
             self.task_failed.emit(task_id, error)
 
         except Exception as e:
@@ -1302,17 +1273,14 @@ class DataImportExecutionEngine(QObject):
                              priority: EventPriority = EventPriority.NORMAL,
                              correlation_id: str = None):
         """发布导入相关事件"""
-        if not self.enable_enhanced_event_processing or not self.enhanced_event_bus:
+        if not self.enable_enhanced_event_processing or not self.event_bus:
             return
 
         try:
-            self.enhanced_event_bus.publish_enhanced(
-                event_name=event_name,
-                event_data=event_data,
-                priority=priority,
-                source="import_engine",
-                correlation_id=correlation_id,
-                tags={"module": "data_import"}
+            self.event_bus.publish(
+                event_name,
+                **event_data,
+                priority=priority
             )
         except Exception as e:
             logger.error(f"发布导入事件失败: {e}")
@@ -1321,11 +1289,9 @@ class DataImportExecutionEngine(QObject):
         """获取增强版处理统计信息"""
         stats = {}
 
-        # 事件总线统计
-        if self.enhanced_event_bus:
-            stats['event_bus'] = self.enhanced_event_bus.get_enhanced_stats()
+        if self.event_bus:
+            stats['event_bus'] = self.event_bus.get_stats()
 
-        # 异步管理器统计
         if self.enhanced_async_manager:
             stats['async_manager'] = self.enhanced_async_manager.get_stats()
 
@@ -4527,26 +4493,25 @@ class DataImportExecutionEngine(QObject):
             logger.error(f"初始化增强版风险监控系统失败: {e}")
             self.enhanced_risk_monitor = None
 
-    def _init_enhanced_event_bus(self) -> Optional[EnhancedEventBus]:
-        """初始化增强版事件总线"""
+    def _init_event_bus(self) -> Optional[EventBus]:
+        """初始化事件总线"""
         try:
-            enhanced_event_bus = get_enhanced_event_bus()
+            event_bus = get_event_bus()
 
-            # 注册数据导入相关的事件处理器
-            self._register_import_event_handlers(enhanced_event_bus)
+            self._register_import_event_handlers(event_bus)
 
-            logger.info("增强版事件总线初始化完成")
-            return enhanced_event_bus
+            logger.info("事件总线初始化完成")
+            return event_bus
         except Exception as e:
-            logger.error(f"增强版事件总线初始化失败: {e}")
+            logger.error(f"事件总线初始化失败: {e}")
             return None
 
     def _init_enhanced_async_manager(self):
         """初始化增强版异步任务管理器"""
         try:
+            from ..async_management.enhanced_async_manager import get_enhanced_async_manager
             enhanced_async_manager = get_enhanced_async_manager()
 
-            # 配置任务管理器
             enhanced_async_manager.max_workers = self.executor._max_workers
 
             logger.info("增强版异步任务管理器初始化完成")

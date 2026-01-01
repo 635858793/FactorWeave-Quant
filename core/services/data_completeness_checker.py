@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from ..data.models import KlineData, QueryParams
 from ..database.duckdb_manager import DuckDBConnectionManager
 from ..events.event_bus import EventBus
-from ..events.events import DataIntegrityEvent
+from ..events.types import DataIntegrityEvent
 
 logger = logging.getLogger(__name__)
 

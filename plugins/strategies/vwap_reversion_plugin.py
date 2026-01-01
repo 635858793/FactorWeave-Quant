@@ -197,6 +197,32 @@ class VWAPReversionPlugin(IStrategyPlugin):
                     signals.append(signal)
             
             logger.info(f"生成了 {len(signals)} 个信号: {market_data.symbol}")
+            
+            # 发布信号生成事件
+            if signals:
+                try:
+                    from core.events import SignalGeneratedEvent, get_event_bus
+                    event = SignalGeneratedEvent(
+                        strategy_id=self._strategy_info.name,
+                        strategy_name=self._strategy_info.display_name,
+                        signals=[{
+                            'signal_type': s.signal_type.value,
+                            'symbol': s.symbol,
+                            'strength': s.strength,
+                            'timestamp': s.timestamp.isoformat() if hasattr(s.timestamp, 'isoformat') else str(s.timestamp),
+                            'price': s.price,
+                            'reason': s.reason
+                        } for s in signals],
+                        symbol=market_data.symbol,
+                        priority=1,
+                        timestamp=datetime.now(),
+                        source="vwap_reversion_strategy",
+                        data={'plugin_type': 'vwap_reversion'}
+                    )
+                    get_event_bus().publish(event)
+                except Exception as event_error:
+                    logger.warning(f"发布VWAP策略信号事件失败: {event_error}")
+            
             return signals
         except Exception as e:
             logger.error(f"生成信号失败: {e}")

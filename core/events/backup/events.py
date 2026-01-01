@@ -155,11 +155,16 @@ class AssetDataReadyEvent(BaseEvent):
     name: str = ""
     asset_type: AssetType = AssetType.STOCK_A
     market: str = ""
-    data_type: str = "kline"  # kline, realtime, analysis等
+    data_type: str = "kline"
     data: Any = None
 
     def __post_init__(self):
-        super().__post_init__()
+        if self.data is None:
+            self.data = {}
+        if not isinstance(self.data, dict):
+            self.data = {'raw_data': self.data}
+        
+        BaseEvent.__post_init__(self)
         self.data.update({
             'symbol': self.symbol,
             'name': self.name,
@@ -176,34 +181,41 @@ class UIDataReadyEvent(AssetDataReadyEvent):
 
     继承自AssetDataReadyEvent，保持与现有UI代码的兼容性。
     """
-    stock_code: str = ""  # 向后兼容
-    stock_name: str = ""  # 向后兼容
-    kline_data: Any = None  # 向后兼容
+    stock_code: str = ""
+    stock_name: str = ""
+    kline_data: Any = None
+    ui_data: Dict[str, Any] = field(default_factory=dict)
 
     def __init__(self, stock_code: str = "", stock_name: str = "",
-                 kline_data: Any = None, market: str = "", **kwargs):
-        super().__init__(
+                 kline_data: Any = None, market: str = "", ui_data: Dict[str, Any] = None, **kwargs):
+        self.stock_code = stock_code
+        self.stock_name = stock_name
+        self.kline_data = kline_data
+        self.ui_data = ui_data or {}
+        
+        _data = kline_data
+        if _data is None or not isinstance(_data, dict):
+            _data = {'raw_data': _data} if _data is not None else {}
+        
+        AssetDataReadyEvent.__init__(
+            self,
             symbol=stock_code,
             name=stock_name,
             asset_type=AssetType.STOCK_A,
             market=market,
             data_type="kline",
-            data=kline_data,
+            data=_data,
             **kwargs
         )
 
-        # 向后兼容属性
-        self.stock_code = stock_code
-        self.stock_name = stock_name
-        self.kline_data = kline_data
-
     def __post_init__(self):
-        super().__post_init__()
-        # 向后兼容的数据字段
+        if self.data is None:
+            self.data = {}
         self.data.update({
             'stock_code': self.stock_code,
             'stock_name': self.stock_name,
-            'kline_data': self.kline_data
+            'kline_data': self.kline_data,
+            'ui_data': self.ui_data
         })
 
 
@@ -362,27 +374,6 @@ class IndicatorChangedEvent(BaseEvent):
         self.data.update({
             'selected_indicators': self.selected_indicators,
             'indicator_params': self.indicator_params
-        })
-
-
-@dataclass
-class UIDataReadyEvent(BaseEvent):
-    """
-    UI数据准备就绪事件
-
-    当Coordinator准备好所有UI所需的数据时触发。
-    这个事件携带了用于更新UI的完整数据包，避免了各个面板的重复加载。
-    """
-    ui_data: Dict[str, Any] = field(default_factory=dict)
-    stock_code: str = ""
-    stock_name: str = ""
-
-    def __post_init__(self):
-        super().__post_init__()
-        self.data.update({
-            'ui_data': self.ui_data,
-            'stock_code': self.stock_code,
-            'stock_name': self.stock_name
         })
 
 

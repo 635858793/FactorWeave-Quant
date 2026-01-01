@@ -31,7 +31,7 @@ from typing import Any, Callable, Dict, List, Optional, Set, Type, Union, Tuple,
 import weakref
 from loguru import logger
 
-from ..events.enhanced_event_bus import get_enhanced_event_bus, EventPriority
+from ..events import get_event_bus, EventPriority
 
 
 class TaskStatus(Enum):
@@ -445,7 +445,7 @@ class EnhancedAsyncManager:
         self.scheduler = TaskScheduler()
         self.resource_manager = ResourceManager()
         self.persistence = TaskPersistence(db_path) if enable_persistence else None
-        self.event_bus = get_enhanced_event_bus() if enable_monitoring else None
+        self.event_bus = get_event_bus() if enable_monitoring else None
 
         # 执行器
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
@@ -554,11 +554,11 @@ class EnhancedAsyncManager:
 
             # 发布任务开始事件
             if self.event_bus:
-                self.event_bus.publish_enhanced(
+                self.event_bus.publish(
                     "task_started",
-                    {"task_id": task.metadata.task_id, "task_name": task.metadata.name},
-                    priority=EventPriority.NORMAL,
-                    source="async_manager"
+                    task_id=task.metadata.task_id,
+                    task_name=task.metadata.name,
+                    priority=EventPriority.NORMAL
                 )
 
             # 提交到线程池执行
@@ -624,16 +624,13 @@ class EnhancedAsyncManager:
 
         # 发布任务完成事件
         if self.event_bus:
-            self.event_bus.publish_enhanced(
+            self.event_bus.publish(
                 "task_completed",
-                {
-                    "task_id": task.metadata.task_id,
-                    "task_name": task.metadata.name,
-                    "execution_time": execution_time,
-                    "result": result
-                },
-                priority=EventPriority.NORMAL,
-                source="async_manager"
+                task_id=task.metadata.task_id,
+                task_name=task.metadata.name,
+                execution_time=execution_time,
+                result=str(result)[:100],
+                priority=EventPriority.NORMAL
             )
 
         # 标记依赖任务可以调度
@@ -677,16 +674,14 @@ class EnhancedAsyncManager:
 
         # 发布任务错误事件
         if self.event_bus:
-            self.event_bus.publish_enhanced(
-                "task_failed" if task.status == TaskStatus.FAILED else "task_retrying",
-                {
-                    "task_id": task.metadata.task_id,
-                    "task_name": task.metadata.name,
-                    "error": str(error),
-                    "retry_count": task.metadata.retry_count
-                },
-                priority=EventPriority.HIGH,
-                source="async_manager"
+            event_name = "task_failed" if task.status == TaskStatus.FAILED else "task_retrying"
+            self.event_bus.publish(
+                event_name,
+                task_id=task.metadata.task_id,
+                task_name=task.metadata.name,
+                error=str(error),
+                retry_count=task.metadata.retry_count,
+                priority=EventPriority.HIGH
             )
 
     async def _handle_task_timeout(self, task: AsyncTask):
@@ -776,15 +771,12 @@ class EnhancedAsyncManager:
 
         # 发布任务提交事件
         if self.event_bus:
-            self.event_bus.publish_enhanced(
+            self.event_bus.publish(
                 "task_submitted",
-                {
-                    "task_id": task.metadata.task_id,
-                    "task_name": task.metadata.name,
-                    "priority": priority.name
-                },
-                priority=EventPriority.LOW,
-                source="async_manager"
+                task_id=task.metadata.task_id,
+                task_name=task.metadata.name,
+                priority=priority.name,
+                priority_level=EventPriority.LOW
             )
 
         logger.info(f"任务已提交: {task.metadata.name} ({task.metadata.task_id})")
@@ -813,11 +805,11 @@ class EnhancedAsyncManager:
 
                 # 发布取消事件
                 if self.event_bus:
-                    self.event_bus.publish_enhanced(
+                    self.event_bus.publish(
                         "task_cancelled",
-                        {"task_id": task_id, "task_name": task.metadata.name},
-                        priority=EventPriority.NORMAL,
-                        source="async_manager"
+                        task_id=task_id,
+                        task_name=task.metadata.name,
+                        priority=EventPriority.NORMAL
                     )
 
                 self.stats['tasks_cancelled'] += 1

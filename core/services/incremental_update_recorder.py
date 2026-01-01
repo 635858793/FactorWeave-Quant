@@ -14,7 +14,7 @@ from enum import Enum
 
 from ..database.duckdb_manager import DuckDBConnectionManager
 from ..events.event_bus import EventBus
-from ..events.events import UpdateHistoryEvent
+from ..events.types import UpdateHistoryEvent
 
 logger = logging.getLogger(__name__)
 

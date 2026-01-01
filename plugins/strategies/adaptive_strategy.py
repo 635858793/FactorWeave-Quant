@@ -164,6 +164,10 @@ class AdaptivePandasStrategy(BaseStrategy):
                 'ta_lib_used': self._ta_lib_available
             })
             
+            # 发布信号生成事件
+            if signals:
+                self._trigger_signal_generated_event(signals)
+            
         except Exception as e:
             logger.error(f"pandas自适应策略信号生成失败: {e}")
             

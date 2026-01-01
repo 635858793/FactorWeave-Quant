@@ -15,7 +15,7 @@ from enum import Enum
 from ..data.models import QueryParams
 from ..database.duckdb_manager import DuckDBConnectionManager
 from ..events.event_bus import EventBus
-from ..events.events import DataAnalysisEvent
+from ..events.types import DataAnalysisEvent
 from .data_completeness_checker import DataCompletenessChecker
 
 logger = logging.getLogger(__name__)

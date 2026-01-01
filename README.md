@@ -296,9 +296,9 @@ FactorWeave-Quant/                     # 项目根目录
 │   │   ├── real_time_metrics_collector.py   # 实时指标收集
 │   │   └── [其他性能监控文件...]
 │   ├── events/                      # 事件系统
-│   │   ├── enhanced_event_bus.py            # 增强事件总线
-│   │   ├── event_bus.py                    # 基础事件总线
-│   │   └── events.py                       # 事件定义
+│   │   ├── event_bus.py                    # 事件总线
+│   │   ├── types.py                        # 事件类型定义
+│   │   └── event_handler.py                # 事件处理器
 │   ├── plugin_manager.py            # 插件管理器
 │   ├── asset_database_manager.py    # 资产数据库管理器
 │   └── [其他核心模块文件...]

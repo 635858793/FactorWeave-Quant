@@ -23,7 +23,7 @@ from loguru import logger
 
 from .pyqtgraph_engine import PyQtGraphEngine, PyQtGraphChartWidget
 from ...events.event_bus import EventBus
-from ...events.events import Event, EventType
+from ...events.types import Event, EventType
 
 
 class OptimizationStrategy(Enum):

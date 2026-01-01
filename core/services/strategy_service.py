@@ -1,5 +1,7 @@
-from ..strategy_events import (
-    StrategyStartedEvent, StrategyStoppedEvent, StrategyErrorEvent
+from ..strategy.events import (
+    StrategyStartedEvent, StrategyStoppedEvent, StrategyErrorEvent,
+    SignalGeneratedEvent, publish_strategy_event,
+    EventType
 )
 from ..strategy_extensions import (
     IStrategyPlugin, StrategyInfo, StrategyContext, PerformanceMetrics,
@@ -369,6 +371,16 @@ class StrategyService(BaseService):
                 logger.info("VWAP均值回归策略插件已注册")
             except ImportError:
                 logger.warning("VWAP均值回归策略插件不可用")
+
+            # 均值回归策略插件
+            try:
+                from plugins.strategies.mean_reversion_strategy import MeanReversionStrategyPlugin
+                self._plugin_factories['mean_reversion'] = lambda: MeanReversionStrategyPlugin()
+                logger.info("均值回归策略插件已注册")
+            except ImportError:
+                logger.warning("均值回归策略插件不可用")
+            except Exception as e:
+                logger.error(f"注册均值回归策略插件失败: {e}")
 
         except Exception as e:
             logger.error(f"注册内置策略插件工厂失败: {e}")
@@ -1070,6 +1082,18 @@ class StrategyService(BaseService):
             backtest_task.status = BacktestStatus.RUNNING
             backtest_task.started_at = datetime.now()
             logger.info(f"开始执行回测任务: {task_id}, 策略: {strategy_id}, 插件类型: {plugin_type}")
+            
+            # 发布策略启动事件
+            try:
+                start_event = StrategyStartedEvent(
+                    timestamp=datetime.now(),
+                    strategy_id=strategy_id,
+                    context=backtest_task.context,
+                    parameters=backtest_task.strategy_config.parameters
+                )
+                publish_strategy_event(start_event)
+            except Exception as e:
+                logger.warning(f"发布策略启动事件失败: {e}")
 
             # 创建策略插件实例
             plugin = self.create_strategy_plugin(plugin_type)
@@ -1111,6 +1135,22 @@ class StrategyService(BaseService):
             signals = plugin.generate_signals(backtest_task.market_data, backtest_task.context)
             backtest_task.progress = 0.5
             logger.debug(f"信号生成完成: {strategy_id}, 信号数量: {len(signals)}")
+            
+            # 发布信号生成事件
+            if signals:
+                try:
+                    signal_event = SignalGeneratedEvent(
+                        timestamp=datetime.now(),
+                        strategy_id=strategy_id,
+                        signals=signals,
+                        metadata={
+                            'plugin_type': plugin_type,
+                            'market_data_symbol': backtest_task.market_data.symbol
+                        }
+                    )
+                    publish_strategy_event(signal_event)
+                except Exception as e:
+                    logger.warning(f"发布信号生成事件失败: {e}")
 
             # 更新插件使用时间
             self._update_plugin_last_used(plugin)
@@ -1146,6 +1186,18 @@ class StrategyService(BaseService):
             self._performance_cache[cache_key] = performance
 
             logger.info(f"回测任务完成: {task_id}, 策略: {strategy_id}, 执行时间: {execution_time:.2f}秒, 信号数量: {len(signals)}")
+            
+            # 发布策略停止事件（成功完成）
+            try:
+                stop_event = StrategyStoppedEvent(
+                    timestamp=datetime.now(),
+                    strategy_id=strategy_id,
+                    reason="completed",
+                    performance=performance
+                )
+                publish_strategy_event(stop_event)
+            except Exception as e:
+                logger.warning(f"发布策略停止事件失败: {e}")
 
         except Exception as e:
             backtest_task.status = BacktestStatus.FAILED
@@ -1156,6 +1208,19 @@ class StrategyService(BaseService):
             logger.error(f"回测任务失败: {task_id}, 策略: {strategy_id}, 插件: {plugin_type}, 错误类型: {type(e).__name__}, 错误信息: {e}")
             logger.error(f"错误堆栈: {traceback.format_exc()}")
             logger.error(f"回测上下文: {backtest_task.context}")
+            
+            # 发布策略错误事件
+            try:
+                error_event = StrategyErrorEvent(
+                    timestamp=datetime.now(),
+                    strategy_id=strategy_id,
+                    error_message=str(e),
+                    error=e,
+                    stack_trace=traceback.format_exc()
+                )
+                publish_strategy_event(error_event)
+            except Exception as event_error:
+                logger.warning(f"发布策略错误事件失败: {event_error}")
 
         finally:
             # 清理运行中的任务
@@ -1344,10 +1409,23 @@ class StrategyService(BaseService):
     async def _execute_optimization(self, task_id: str) -> None:
         """执行优化"""
         optimization_task = self._optimization_tasks[task_id]
+        strategy_id = optimization_task.strategy_config.strategy_id
 
         try:
             optimization_task.status = OptimizationStatus.RUNNING
             optimization_task.started_at = datetime.now()
+
+            # 发布优化启动事件
+            try:
+                start_event = StrategyStartedEvent(
+                    timestamp=datetime.now(),
+                    strategy_id=strategy_id,
+                    context=optimization_task.context,
+                    parameters=optimization_task.optimization_params
+                )
+                publish_strategy_event(start_event)
+            except Exception as e:
+                logger.warning(f"发布优化启动事件失败: {e}")
 
             # 获取优化参数
             opt_params = optimization_task.optimization_params
@@ -1369,6 +1447,18 @@ class StrategyService(BaseService):
             optimization_task.completed_at = datetime.now()
 
             logger.info(f"优化任务完成: {task_id}")
+            
+            # 发布优化停止事件
+            try:
+                stop_event = StrategyStoppedEvent(
+                    timestamp=datetime.now(),
+                    strategy_id=strategy_id,
+                    reason="optimization_completed",
+                    performance=optimization_task.best_performance
+                )
+                publish_strategy_event(stop_event)
+            except Exception as e:
+                logger.warning(f"发布优化停止事件失败: {e}")
 
         except Exception as e:
             optimization_task.status = OptimizationStatus.FAILED
@@ -1376,6 +1466,19 @@ class StrategyService(BaseService):
             optimization_task.completed_at = datetime.now()
 
             logger.error(f"优化任务失败: {task_id}, 错误: {e}")
+            
+            # 发布优化错误事件
+            try:
+                error_event = StrategyErrorEvent(
+                    timestamp=datetime.now(),
+                    strategy_id=strategy_id,
+                    error_message=str(e),
+                    error=e,
+                    stack_trace=traceback.format_exc()
+                )
+                publish_strategy_event(error_event)
+            except Exception as event_error:
+                logger.warning(f"发布优化错误事件失败: {event_error}")
 
         finally:
             # 清理运行中的任务
