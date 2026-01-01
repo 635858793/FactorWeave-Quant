@@ -176,6 +176,8 @@ class PerformanceMetrics:
     avg_loss: float
     start_date: datetime
     end_date: datetime
+    equity_curve: Optional[pd.Series] = None
+    drawdown_curve: Optional[pd.Series] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 @dataclass

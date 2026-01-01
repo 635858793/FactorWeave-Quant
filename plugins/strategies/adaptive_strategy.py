@@ -381,30 +381,88 @@ class AdaptivePandasStrategy(BaseStrategy):
             return 0.5
 
     def get_required_columns(self) -> List[str]:
-        """获取所需的数据列"""
         return ['open', 'high', 'low', 'close', 'volume']
 
-    def get_strategy_info(self) -> Dict[str, Any]:
+    def initialize_strategy(self, context, parameters=None):
+
+        try:
+            if parameters:
+                for param_name, param_value in parameters.items():
+                    if param_name in self.parameters:
+                        self.set_parameter(param_name, param_value)
+            
+            logger.info(f"策略初始化成功: {self.name}")
+            return True
+        except Exception as e:
+            logger.error(f"策略初始化失败: {e}")
+            return False
+
+    def get_strategy_info(self):
         """获取策略信息"""
-        info = super().get_strategy_info()
-        info.update({
-            "ta_lib_available": self._ta_lib_available,
-            "technical_indicators": [
-                "MA", "EMA", "RSI", "MACD", "ATR", "Bollinger Bands"
-            ],
-            "signal_components": {
-                "trend_analysis": "MA Trend",
-                "momentum_analysis": "MACD Cross",
-                "oscillator_analysis": "RSI Levels",
-                "volatility_analysis": "Bollinger Bands"
-            },
-            "adaptive_features": {
-                "stop_loss": "ATR-based adaptive",
-                "take_profit": "RSI+MACD adaptive",
-                "signal_confidence": "Multi-indicator scoring"
-            }
-        })
-        return info
+        from core.strategy_extensions import StrategyInfo, ParameterDef
+        
+        # 调用父类方法获取 StrategyInfo 对象
+        strategy_info = super().get_strategy_info()
+        
+        # 如果返回的是 StrategyInfo 对象，则创建新的对象并添加额外信息
+        if isinstance(strategy_info, StrategyInfo):
+            # 创建新的参数定义列表，添加额外的元数据
+            parameter_defs = list(strategy_info.parameters)
+            
+            # 添加技术指标相关的参数
+            parameter_defs.append(
+                ParameterDef(
+                    name="ta_lib_available",
+                    type=bool,
+                    default_value=self._ta_lib_available,
+                    description="TA-Lib 是否可用",
+                    required=False
+                )
+            )
+            
+            # 扩展标签列表
+            extended_tags = list(strategy_info.tags) if strategy_info.tags else []
+            extended_tags.extend(["technical_indicators", "adaptive_features"])
+            
+            # 创建新的 StrategyInfo 对象
+            new_strategy_info = StrategyInfo(
+                name=strategy_info.name,
+                display_name=strategy_info.display_name,
+                description=strategy_info.description,
+                version=strategy_info.version,
+                author=strategy_info.author,
+                strategy_type=strategy_info.strategy_type,
+                parameters=parameter_defs,
+                supported_assets=strategy_info.supported_assets,
+                time_frames=strategy_info.time_frames,
+                risk_level=strategy_info.risk_level,
+                tags=extended_tags,
+                created_at=strategy_info.created_at,
+                updated_at=strategy_info.updated_at
+            )
+            
+            # 将额外信息存储在 metadata 字段中（通过 tags 传递）
+            return new_strategy_info
+        else:
+            # 如果返回的是字典（向后兼容），则更新字典
+            strategy_info.update({
+                "ta_lib_available": self._ta_lib_available,
+                "technical_indicators": [
+                    "MA", "EMA", "RSI", "MACD", "ATR", "Bollinger Bands"
+                ],
+                "signal_components": {
+                    "trend_analysis": "MA Trend",
+                    "momentum_analysis": "MACD Cross",
+                    "oscillator_analysis": "RSI Levels",
+                    "volatility_analysis": "Bollinger Bands"
+                },
+                "adaptive_features": {
+                    "stop_loss": "ATR-based adaptive",
+                    "take_profit": "RSI+MACD adaptive",
+                    "signal_confidence": "Multi-indicator scoring"
+                }
+            })
+            return strategy_info
 
 
 def create_adaptive_strategy():

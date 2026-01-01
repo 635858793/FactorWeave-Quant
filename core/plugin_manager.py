@@ -71,8 +71,8 @@ except ImportError:
 
             # 如果仍然失败，尝试最后的方法
             try:
-                # 直接导入
-                import plugin_interface
+                # 直接导入插件接口模块
+                import plugins.plugin_interface as plugin_interface
                 IPlugin = plugin_interface.IPlugin
                 PluginType = plugin_interface.PluginType
                 PluginCategory = plugin_interface.PluginCategory

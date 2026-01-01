@@ -231,18 +231,56 @@ class BaseStrategy(ABC):
 
         return len(errors) == 0, errors
 
-    def get_strategy_info(self) -> Dict[str, Any]:
+    def get_strategy_info(self):
         """获取策略信息"""
-        return {
-            'name': self.name,
-            'type': self.strategy_type.value,
-            'status': self.status.value,
-            'parameters': {name: param.value for name, param in self.parameters.items()},
-            'metadata': self.metadata,
-            'performance_metrics': self.performance_metrics,
-            'created_at': self.created_at.isoformat(),
-            'last_updated': self.last_updated.isoformat()
+        from core.strategy_extensions import StrategyInfo, ParameterDef, StrategyType as ExtStrategyType
+        
+        # 将 BaseStrategy 的参数转换为 ParameterDef 列表
+        parameter_defs = []
+        for name, param in self.parameters.items():
+            parameter_defs.append(ParameterDef(
+                name=name,
+                type=param.param_type,
+                default_value=param.value,
+                description=param.description,
+                min_value=param.min_value,
+                max_value=param.max_value,
+                choices=param.choices,
+                required=param.required
+            ))
+        
+        # 映射策略类型
+        strategy_type_map = {
+            StrategyType.TREND_FOLLOWING: ExtStrategyType.TREND_FOLLOWING,
+            StrategyType.MEAN_REVERSION: ExtStrategyType.MEAN_REVERSION,
+            StrategyType.MOMENTUM: ExtStrategyType.MOMENTUM,
+            StrategyType.ARBITRAGE: ExtStrategyType.ARBITRAGE,
+            StrategyType.TECHNICAL: ExtStrategyType.TECHNICAL,
+            StrategyType.FUNDAMENTAL: ExtStrategyType.FUNDAMENTAL,
+            StrategyType.QUANTITATIVE: ExtStrategyType.QUANTITATIVE,
+            StrategyType.MACHINE_LEARNING: ExtStrategyType.MACHINE_LEARNING,
+            StrategyType.CUSTOM: ExtStrategyType.CUSTOM,
         }
+        
+        ext_strategy_type = strategy_type_map.get(self.strategy_type, ExtStrategyType.CUSTOM)
+        
+        # 创建 StrategyInfo 对象
+        strategy_info = StrategyInfo(
+            name=self.name,
+            display_name=self.name,
+            description=self.metadata.get('description', ''),
+            version=self.metadata.get('version', '1.0.0'),
+            author=self.metadata.get('author', 'Unknown'),
+            strategy_type=ext_strategy_type,
+            parameters=parameter_defs,
+            supported_assets=[],
+            time_frames=[],
+            tags=self.metadata.get('tags', []),
+            created_at=self.created_at,
+            updated_at=self.last_updated
+        )
+        
+        return strategy_info
 
     def save_config(self, filepath: Union[str, Path]) -> bool:
         """保存策略配置"""

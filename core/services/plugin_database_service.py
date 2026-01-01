@@ -1,4 +1,3 @@
-from loguru import logger
 """
 插件数据库服务
 
@@ -9,10 +8,26 @@ from loguru import logger
 - 远程管理API支持
 """
 
+from loguru import logger
 import os
 from typing import Dict, List, Optional, Any
-from PyQt5.QtCore import QObject, pyqtSignal
 from datetime import datetime
+
+# 延迟导入 Qt 相关模块，避免在没有 QApplication 时导入失败
+_QtObject = None
+_pyqtSignal = None
+
+def _get_qt_classes():
+    """延迟获取 Qt 类"""
+    global _QtObject, _pyqtSignal
+    if _QtObject is None:
+        try:
+            from PyQt5.QtCore import QObject, pyqtSignal
+            _QtObject = QObject
+            _pyqtSignal = pyqtSignal
+        except ImportError:
+            raise ImportError("PyQt5 未安装")
+    return _QtObject, _pyqtSignal
 
 # 导入插件数据库模型
 from db.models.plugin_models import (
@@ -20,16 +35,25 @@ from db.models.plugin_models import (
 )
 
 
-class PluginDatabaseService(QObject):
-    """插件数据库服务"""
-
-    # 信号定义
-    plugin_status_changed = pyqtSignal(str, str, str)  # 插件名, 旧状态, 新状态
-    plugin_registered = pyqtSignal(str, dict)  # 插件名, 插件信息
-    database_updated = pyqtSignal()  # 数据库更新
+class PluginDatabaseService:
+    """插件数据库服务 - 延迟初始化 Qt 相关组件"""
 
     def __init__(self, db_path: str = None):
-        super().__init__()
+        """初始化插件数据库服务"""
+        # 延迟初始化 Qt 相关组件
+        try:
+            QObject, pyqtSignal = _get_qt_classes()
+            
+            # 动态添加信号
+            self.plugin_status_changed = pyqtSignal(str, str, str)  # 插件名, 旧状态, 新状态
+            self.plugin_registered = pyqtSignal(str, dict)  # 插件名, 插件信息
+            self.database_updated = pyqtSignal()  # 数据库更新
+        except Exception as e:
+            logger.warning(f"无法初始化 Qt 信号: {e}")
+            # 创建占位符
+            self.plugin_status_changed = None
+            self.plugin_registered = None
+            self.database_updated = None
 
         # 设置数据库路径
         if db_path is None:
