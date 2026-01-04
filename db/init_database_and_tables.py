@@ -19,6 +19,8 @@ import duckdb
 from pathlib import Path
 from loguru import logger
 
+from db.models.plugin_models import PluginDatabaseManager
+
 
 def ensure_directory_exists(file_path: str):
     """确保目录存在"""
@@ -31,11 +33,11 @@ def ensure_directory_exists(file_path: str):
 def init_sqlite_databases():
     """初始化SQLite数据库"""
     sqlite_databases = [
-        "db/factorweave_system.sqlite",
-        "db/alert_config.db",
-        "db/backtest_monitor.db",
-        "db/deep_analysis.db",
-        "db/metrics.sqlite"
+        "data/factorweave_system.sqlite",
+        "data/enhanced_async_tasks.sqlite",
+        "data/alert_config.sqlite",
+        "data/backtest_monitor.sqlite",
+        "data/metrics.sqlite"
     ]
 
     for db_path in sqlite_databases:
@@ -55,9 +57,14 @@ def init_sqlite_databases():
 
 def init_duckdb_databases():
     """初始化DuckDB数据库"""
+    from core.asset_database_manager import AssetSeparatedDatabaseManager
+    from plugin_types import AssetType
+
+    asset_db_manager = AssetSeparatedDatabaseManager.get_instance()
+
     duckdb_databases = [
-        "db/factorweave_analytics.duckdb",
-        "db/kline_stock.duckdb"
+        "data/factorweave_analytics.duckdb",
+        asset_db_manager.get_database_path(AssetType.STOCK_A)
     ]
 
     for db_path in duckdb_databases:
@@ -80,7 +87,7 @@ def init_plugin_tables():
     try:
 
         # 初始化插件数据库管理器
-        plugin_db_manager = PluginDatabaseManager("db/factorweave_system.sqlite")
+        plugin_db_manager = PluginDatabaseManager("data/factorweave_system.sqlite")
         logger.info("插件数据库表结构初始化完成")
 
         # 初始化数据源插件配置管理器
@@ -94,19 +101,19 @@ def init_plugin_tables():
 
 def init_kline_tables():
     """初始化K线数据表结构"""
+    from core.database.table_manager import get_table_manager, TableType
+    from core.asset_database_manager import AssetSeparatedDatabaseManager
+    from plugin_types import AssetType
+
     try:
-        from core.database.table_manager import get_table_manager, TableType
-
         table_manager = get_table_manager()
-        db_path = "db/kline_stock.duckdb"
+        db_path = AssetSeparatedDatabaseManager.get_instance().get_database_path(AssetType.STOCK_A)
 
-        # 确保数据库文件存在
         ensure_directory_exists(db_path)
         if not os.path.exists(db_path):
             conn = duckdb.connect(db_path)
             conn.close()
 
-        # 创建不同频率的K线数据表
         frequencies = ['1m', '5m', '15m', '30m', '1h', '1d', '1w', '1M']
 
         for freq in frequencies:
@@ -129,7 +136,7 @@ def create_indexes():
     """创建必要的索引"""
     try:
         # SQLite索引
-        sqlite_conn = sqlite3.connect("db/factorweave_system.sqlite")
+        sqlite_conn = sqlite3.connect("data/factorweave_system.sqlite")
         cursor = sqlite_conn.cursor()
 
         # 数据源插件配置表索引
@@ -152,33 +159,6 @@ def create_indexes():
         sqlite_conn.close()
 
         logger.info("SQLite索引创建完成")
-
-        # DuckDB索引
-        duckdb_conn = duckdb.connect("db/kline_stock.duckdb")
-
-        # K线数据表索引
-        frequencies = ['1m', '5m', '15m', '30m', '1h', '1d', '1w', '1M']
-        for freq in frequencies:
-            table_name = f"kline_data_{freq.lower()}"
-            try:
-                # 检查表是否存在
-                result = duckdb_conn.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'").fetchone()
-                if result:
-                    duckdb_conn.execute(f'''
-                    CREATE INDEX IF NOT EXISTS idx_{table_name}_symbol_datetime 
-                    ON {table_name}(symbol, datetime)
-                    ''')
-
-                    duckdb_conn.execute(f'''
-                    CREATE INDEX IF NOT EXISTS idx_{table_name}_datetime 
-                    ON {table_name}(datetime)
-                    ''')
-
-                    logger.info(f"DuckDB索引创建完成: {table_name}")
-            except Exception as e:
-                logger.warning(f"创建DuckDB索引失败 {table_name}: {e}")
-
-        duckdb_conn.close()
 
     except Exception as e:
         logger.error(f"创建索引失败: {e}")

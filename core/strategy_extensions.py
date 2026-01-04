@@ -3,6 +3,101 @@ from loguru import logger
 策略插件扩展模块
 
 定义统一的策略插件接口和相关数据结构，支持多种策略框架的插件化。
+
+================================================================================
+IStrategyPlugin 接口使用指南
+================================================================================
+
+一、接口概述
+-----------
+IStrategyPlugin 是系统统一的策略插件接口，提供完整的策略生命周期管理、
+事件驱动支持、性能监控等功能。
+
+二、与 plugins/plugin_interface.py 中 IStrategyPlugin 的区别
+------------------------------------------------------------
+- 此处 IStrategyPlugin: 完整的策略接口，支持生命周期管理、事件系统
+- plugins.plugin_interface.IStrategyPlugin: 数据源级别的轻量级接口
+
+推荐:
+- 新策略开发: 使用 core.strategy_extensions.IStrategyPlugin
+- 数据源内置简单策略: 使用 plugins.plugin_interface.IStrategyPlugin
+
+三、快速开始
+------------
+1. 创建策略类继承 IStrategyPlugin
+2. 实现所有抽象方法
+3. 在 StrategyService 中注册插件工厂
+4. 调用 run_backtest() 执行回测
+
+四、事件系统集成
+----------------
+策略运行过程中会自动发布以下事件:
+- StrategyStartedEvent: 策略启动时
+- StrategyStoppedEvent: 策略停止时
+- SignalGeneratedEvent: 生成交易信号时
+- StrategyErrorEvent: 发生错误时
+
+也可以在策略中手动发布事件:
+    from core.strategy.events import publish_strategy_event, SignalGeneratedEvent
+    event = SignalGeneratedEvent(timestamp=..., strategy_id=..., signals=...)
+    publish_strategy_event(event)
+
+五、示例代码
+------------
+    from core.strategy_extensions import IStrategyPlugin, StrategyInfo, StrategyContext, Signal
+    
+    class MyStrategyPlugin(IStrategyPlugin):
+        def __init__(self):
+            self._initialized = False
+        
+        @property
+        def plugin_info(self) -> Dict[str, Any]:
+            return {
+                "name": "my_strategy",
+                "version": "1.0.0",
+                "author": "Developer",
+                "description": "我的策略"
+            }
+        
+        def get_strategy_info(self) -> StrategyInfo:
+            return StrategyInfo(
+                name="my_strategy",
+                display_name="我的策略",
+                description="简单的均线交叉策略",
+                version="1.0.0",
+                author="Developer",
+                strategy_type=StrategyType.TREND_FOLLOWING,
+                parameters=[...]
+            )
+        
+        def initialize_strategy(self, context, parameters) -> bool:
+            self._initialized = True
+            return True
+        
+        def generate_signals(self, market_data, context) -> List[Signal]:
+            signals = []
+            # 实现信号生成逻辑
+            return signals
+        
+        def execute_trade(self, signal, context) -> TradeResult:
+            pass
+        
+        def update_position(self, trade_result, context) -> Position:
+            pass
+        
+        def calculate_performance(self, context) -> PerformanceMetrics:
+            pass
+        
+        def cleanup(self) -> None:
+            self._initialized = False
+
+六、最佳实践
+------------
+1. 参数验证: 使用 validate_parameters() 方法验证参数
+2. 错误处理: 在各方法中添加 try-except 捕获异常
+3. 资源清理: 在 cleanup() 方法中释放资源
+4. 事件发布: 生成信号后发布 SignalGeneratedEvent
+5. 日志记录: 使用 loguru 记录关键操作日志
 """
 
 import pandas as pd
@@ -176,6 +271,8 @@ class PerformanceMetrics:
     avg_loss: float
     start_date: datetime
     end_date: datetime
+    equity_curve: Optional[pd.Series] = None
+    drawdown_curve: Optional[pd.Series] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 @dataclass
@@ -293,51 +390,153 @@ class StrategyContext:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 class IStrategyPlugin(ABC):
-    """策略插件接口"""
+    """
+    策略插件接口
+    
+    定义策略插件的标准化接口，支持多种策略框架的插件化管理。
+    所有策略插件必须实现此接口以与系统集成。
+    
+    事件集成:
+    - 策略启动时: 触发 StrategyStartedEvent
+    - 策略停止时: 触发 StrategyStoppedEvent
+    - 信号生成时: 触发 SignalGeneratedEvent
+    - 策略错误时: 触发 StrategyErrorEvent
+    
+    生命周期方法调用顺序:
+    1. get_plugin_info() - 获取插件基本信息
+    2. get_strategy_info() - 获取策略详细信息
+    3. get_parameters() / get_config_schema() - 获取参数定义
+    4. validate_parameters() - 验证参数有效性
+    5. initialize_strategy() - 初始化策略
+    6. generate_signals() - 生成交易信号
+    7. execute_trade() - 执行交易
+    8. update_position() - 更新持仓
+    9. calculate_performance() - 计算性能
+    10. cleanup() - 清理资源
+    """
 
     @property
     @abstractmethod
     def plugin_info(self) -> Dict[str, Any]:
-        """获取插件基本信息"""
+        """
+        获取插件基本信息
+        
+        Returns:
+            Dict[str, Any]: 包含以下字段的字典:
+                - name: 插件名称
+                - version: 版本号
+                - author: 作者
+                - description: 描述
+                - strategy_type: 策略类型
+        """
         pass
 
     @abstractmethod
     def get_strategy_info(self) -> StrategyInfo:
-        """获取策略信息"""
+        """
+        获取策略详细信息
+        
+        Returns:
+            StrategyInfo: 包含策略完整信息的对象，包括参数定义
+        """
         pass
 
     @abstractmethod
     def initialize_strategy(self, context: StrategyContext, parameters: Dict[str, Any]) -> bool:
-        """初始化策略"""
+        """
+        初始化策略
+        
+        Args:
+            context: 策略执行上下文，包含交易标的、时间范围、初始资金等信息
+            parameters: 策略参数字典，应与 get_strategy_info().parameters 定义一致
+        
+        Returns:
+            bool: 初始化是否成功
+        
+        Events:
+            成功时发布 StrategyStartedEvent
+            失败时发布 StrategyErrorEvent
+        """
         pass
 
     @abstractmethod
     def generate_signals(self, market_data: StandardMarketData, context: StrategyContext) -> List[Signal]:
-        """生成交易信号"""
+        """
+        生成交易信号
+        
+        Args:
+            market_data: 标准市场数据对象，包含20字段标准数据
+            context: 策略执行上下文
+        
+        Returns:
+            List[Signal]: 交易信号列表
+        
+        Events:
+            生成信号后发布 SignalGeneratedEvent
+        """
         pass
 
     @abstractmethod
     def execute_trade(self, signal: Signal, context: StrategyContext) -> TradeResult:
-        """执行交易"""
+        """
+        执行交易
+        
+        Args:
+            signal: 待执行的交易信号
+            context: 策略执行上下文
+        
+        Returns:
+            TradeResult: 交易执行结果
+        """
         pass
 
     @abstractmethod
     def update_position(self, trade_result: TradeResult, context: StrategyContext) -> Position:
-        """更新持仓"""
+        """
+        更新持仓
+        
+        Args:
+            trade_result: 交易结果
+            context: 策略执行上下文
+        
+        Returns:
+            Position: 更新后的持仓信息
+        """
         pass
 
     @abstractmethod
     def calculate_performance(self, context: StrategyContext) -> PerformanceMetrics:
-        """计算策略性能"""
+        """
+        计算策略性能指标
+        
+        Args:
+            context: 策略执行上下文
+        
+        Returns:
+            PerformanceMetrics: 性能指标对象，包含收益率、夏普比率等
+        """
         pass
 
     @abstractmethod
     def cleanup(self) -> None:
-        """清理资源"""
+        """
+        清理资源
+        
+        在策略生命周期结束时调用，用于释放资源、关闭连接等。
+        建议在此方法中发布 StrategyStoppedEvent。
+        """
         pass
 
     def validate_parameters(self, parameters: Dict[str, Any]) -> Tuple[bool, str]:
-        """验证策略参数"""
+        """
+        验证策略参数
+        
+        Args:
+            parameters: 待验证的参数字典
+        
+        Returns:
+            Tuple[bool, str]: (验证是否通过, 错误信息)
+        """
         strategy_info = self.get_strategy_info()
 
         for param_def in strategy_info.parameters:

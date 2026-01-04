@@ -21,7 +21,7 @@ from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, pyqtSlot
 from PyQt5.QtGui import QIcon, QFont
 
 from .base_panel import BasePanel
-from core.events.events import StockSelectedEvent, AssetSelectedEvent
+from core.events.types import StockSelectedEvent, AssetSelectedEvent
 from core.performance import measure_performance
 # 引入服务和类型
 from core.services import StockService
@@ -118,7 +118,7 @@ class LeftPanel(BasePanel):
         super()._register_event_handlers()
 
         # 注册多屏模式切换事件处理
-        from core.events.events import MultiScreenToggleEvent
+        from core.events.types import MultiScreenToggleEvent
         self.event_bus.subscribe(MultiScreenToggleEvent, self.on_multi_screen_toggled)
 
     def _create_widgets(self) -> None:
@@ -148,36 +148,45 @@ class LeftPanel(BasePanel):
         self._create_status_bar(main_layout)
 
     def _create_asset_type_selector(self, layout: QVBoxLayout) -> None:
-        """创建资产类型选择器"""
+        """创建资产类型选择器（支持20+种资产类型）"""
         try:
-            # 创建分组框
             asset_type_group = QGroupBox("资产类型")
             asset_type_layout = QVBoxLayout(asset_type_group)
 
-            # 创建资产类型下拉框
             self.asset_type_combo = QComboBox()
-            # self.asset_type_combo.setMinimumHeight(20)
 
-            # 添加支持的资产类型
             asset_types = [
-                ("股票 (Stock)", AssetType.STOCK_A),
-                ("加密货币 (Crypto)", AssetType.CRYPTO),
-                ("期货 (Futures)", AssetType.FUTURES),
-                ("外汇 (Forex)", AssetType.FOREX),
-                ("指数 (Index)", AssetType.INDEX),
-                ("基金 (Fund)", AssetType.FUND)
+                ("📈 A股", AssetType.STOCK_A),
+                ("📈 B股", AssetType.STOCK_B),
+                ("📈 H股", AssetType.STOCK_H),
+                ("📈 美股", AssetType.STOCK_US),
+                ("📈 港股", AssetType.STOCK_HK),
+                ("📊 指数", AssetType.INDEX),
+                ("📊 基金", AssetType.FUND),
+                ("📊 债券", AssetType.BOND),
+                ("📊 期货", AssetType.FUTURES),
+                ("📊 期权", AssetType.OPTION),
+                ("📊 权证", AssetType.WARRANT),
+                ("📊 商品", AssetType.COMMODITY),
+                ("🪙 加密货币", AssetType.CRYPTO),
+                ("💱 外汇", AssetType.FOREX),
+                ("🏛️ 板块", AssetType.SECTOR),
+                ("🏭 行业板块", AssetType.INDUSTRY_SECTOR),
+                ("💡 概念板块", AssetType.CONCEPT_SECTOR),
+                ("🎨 风格板块", AssetType.STYLE_SECTOR),
+                ("🎯 主题板块", AssetType.THEME_SECTOR),
+                ("📈 宏观经济", AssetType.MACRO),
             ]
 
             for display_name, asset_type in asset_types:
                 self.asset_type_combo.addItem(display_name, asset_type)
 
-            # 连接信号
             self.asset_type_combo.currentTextChanged.connect(self._on_asset_type_changed)
 
             asset_type_layout.addWidget(self.asset_type_combo)
             layout.addWidget(asset_type_group)
 
-            logger.info("资产类型选择器创建完成")
+            logger.info("资产类型选择器创建完成，支持20+种资产类型")
 
         except Exception as e:
             logger.error(f"创建资产类型选择器失败: {e}")
@@ -358,8 +367,9 @@ class LeftPanel(BasePanel):
                     if market_text != "全部":
                         market = market_text.lower()
 
-                # 使用新的资产列表方法
-                stock_df = data_manager.get_asset_list(asset_type='stock', market=market)
+                # 使用新的资产列表方法 - 修复：使用当前选中的资产类型而非硬编码的 'stock_a'
+                current_asset_type = self.current_asset_type.value.lower()
+                stock_df = data_manager.get_asset_list(asset_type=current_asset_type, market=market)
 
                 if not stock_df.empty:
                     # 转换为统一格式
@@ -368,14 +378,14 @@ class LeftPanel(BasePanel):
                         assets.append({
                             'symbol': stock.get('code', ''),
                             'name': stock.get('name', ''),
-                            'asset_type': 'STOCK',
+                            'asset_type': self.current_asset_type.value,
                             'market': stock.get('market', ''),
                             'industry': stock.get('industry', ''),
                             'sector': stock.get('sector', ''),
                             'status': stock.get('status', 'active')
                         })
                     self._populate_asset_table(assets)
-                    self._update_status(f"已加载 {len(assets)} 只股票（来自DuckDB）")
+                    self._update_status(f"已加载 {len(assets)} 个{self.current_asset_type.value}资产（来自DuckDB）")
                 else:
                     self._clear_asset_list()
                     self._update_status("DuckDB中暂无股票数据，请运行数据导入脚本")
@@ -1567,6 +1577,15 @@ class LeftPanel(BasePanel):
         """
         处理股票选择，启动一个异步任务来验证数据并发布事件
         """
+        # 添加股票代码验证
+        if not stock_code or not str(stock_code).strip():
+            logger.error(f"无效的股票代码: {stock_code}")
+            self.show_message(f"'{stock_name}' 股票代码无效。", 'error')
+            return
+
+        # 清理股票代码
+        stock_code = str(stock_code).strip()
+
         logger.info(f"开始处理股票选择: {stock_code} - {stock_name}")
 
         # 检查是否在无数据缓存中
@@ -2063,8 +2082,8 @@ class LeftPanel(BasePanel):
 
             # 尝试获取ta-lib指标
             try:
-                from core.indicator_adapter import get_talib_indicator_list
-                talib_names = get_talib_indicator_list()
+                from core.indicators.indicators_algorithm import get_talib_real_indicator_list
+                talib_names = get_talib_real_indicator_list()
                 self.talib_indicators = [
                     {"name": name, "type": "ta-lib"} for name in talib_names]
             except ImportError:

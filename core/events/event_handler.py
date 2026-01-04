@@ -8,7 +8,7 @@ from loguru import logger
 import asyncio
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, List, Optional, Union
-from .events import BaseEvent
+from .types import BaseEvent
 
 
 class EventHandler(ABC):

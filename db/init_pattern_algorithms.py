@@ -9,7 +9,7 @@ import os
 from typing import Dict, Any
 import pandas as pd
 
-DB_PATH = os.path.join(os.path.dirname(__file__), 'factorweave_system.sqlite')
+DB_PATH = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'factorweave_system.sqlite')
 
 def init_pattern_algorithms():
     """初始化形态算法到数据库"""

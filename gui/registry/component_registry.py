@@ -15,33 +15,14 @@ import threading
 import gc
 import inspect
 
+import sys
+from pathlib import Path
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
+from core.enums import ComponentState, ComponentType
+
 logger = logging.getLogger(__name__)
-
-class ComponentState(Enum):
-    """组件状态枚举"""
-    UNREGISTERED = "unregistered"
-    REGISTERED = "registered"
-    INITIALIZING = "initializing"
-    INITIALIZED = "initialized"
-    LOADING = "loading"
-    LOADED = "loaded"
-    ACTIVE = "active"
-    INACTIVE = "inactive"
-    UNLOADING = "unloading"
-    DESTROYED = "destroyed"
-    ERROR = "error"
-
-class ComponentType(Enum):
-    """组件类型枚举"""
-    WIDGET = "widget"
-    DIALOG = "dialog"
-    WINDOW = "window"
-    TAB = "tab"
-    PANEL = "panel"
-    TOOLBAR = "toolbar"
-    STATUSBAR = "statusbar"
-    MENU = "menu"
-    CUSTOM = "custom"
 
 class LoadingStrategy(Enum):
     """加载策略枚举"""

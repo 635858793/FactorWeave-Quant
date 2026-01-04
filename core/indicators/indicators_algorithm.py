@@ -22,7 +22,7 @@ except ImportError:
     logger.warning("Ta-lib 库不可用，使用自定义实现")
 
 
-def get_talib_indicator_list():
+def get_talib_real_indicator_list():
     """获取Ta-lib指标列表"""
     if TALIB_AVAILABLE and talib:
         try:
@@ -181,7 +181,7 @@ def calc_kdj(high: pd.Series, low: pd.Series, close: pd.Series, n: int = 9, m1: 
 
 # 导出函数列表
 __all__ = [
-    'get_talib_indicator_list',
+    'get_talib_real_indicator_list',
     'get_talib_category',
     'calc_ma',
     'calc_macd',

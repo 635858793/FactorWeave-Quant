@@ -2,16 +2,31 @@
 事件定义模块
 
 定义系统中使用的各种事件类型，所有事件都继承自BaseEvent。
+
+功能增强:
+- 事件优先级: 支持 HIGH, NORMAL, LOW 优先级
+- 事件过滤: 支持按策略ID、事件类型过滤
+- 事件历史: 记录最近的事件历史
+- 策略事件: 完整的策略生命周期事件支持
+
+此模块已从 events.py 重命名而来，保持完全向后兼容。
 """
 
 from enum import Enum
 from abc import ABC
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Callable
 import uuid
 
 from ..plugin_types import AssetType
+
+
+class EventPriority(Enum):
+    """事件优先级"""
+    HIGH = 0      # 高优先级
+    NORMAL = 1    # 普通优先级
+    LOW = 2       # 低优先级
 
 
 class EventType(Enum):
@@ -53,25 +68,196 @@ class EventType(Enum):
     SYSTEM_ERROR = "system_error"
     SYSTEM_WARNING = "system_warning"
     SYSTEM_INFO = "system_info"
+    
+    # 策略生命周期事件
+    STRATEGY_STARTED = "strategy_started"
+    STRATEGY_STOPPED = "strategy_stopped"
+    STRATEGY_PAUSED = "strategy_paused"
+    STRATEGY_RESUMED = "strategy_resumed"
+    STRATEGY_ERROR = "strategy_error"
+    
+    # 策略信号事件
+    SIGNAL_GENERATED = "signal_generated"
+    
+    # 策略性能事件
+    PERFORMANCE_UPDATED = "performance_updated"
+
+
+class EventFilter:
+    """事件过滤器"""
+    
+    def __init__(
+        self,
+        strategy_ids: Optional[Union[str, List[str]]] = None,
+        event_types: Optional[Union[EventType, List[EventType]]] = None,
+        priority_min: Optional[EventPriority] = None,
+        priority_max: Optional[EventPriority] = None
+    ):
+        self.strategy_ids = self._normalize_list(strategy_ids) if strategy_ids else None
+        self.event_types = self._normalize_list(event_types) if event_types else None
+        self.priority_min = priority_min
+        self.priority_max = priority_max
+    
+    def _normalize_list(self, value):
+        if isinstance(value, list):
+            return set(value)
+        return {value}
+    
+    def matches(self, event: 'BaseEvent') -> bool:
+        if self.strategy_ids and hasattr(event, 'strategy_id'):
+            if event.strategy_id not in self.strategy_ids:
+                return False
+        if self.event_types and hasattr(event, 'event_type'):
+            if event.event_type not in self.event_types:
+                return False
+        if hasattr(event, 'priority') and event.priority:
+            if self.priority_min and event.priority.value < self.priority_min.value:
+                return False
+            if self.priority_max and event.priority.value > self.priority_max.value:
+                return False
+        return True
 
 
 @dataclass
 class BaseEvent(ABC):
     """
     事件基类
-
+    
     所有系统事件都应该继承此类。
     """
     event_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     timestamp: datetime = field(default_factory=datetime.now)
     source: Optional[str] = None
     data: Dict[str, Any] = field(default_factory=dict)
-
+    priority: Optional[EventPriority] = EventPriority.NORMAL
+    
     def __post_init__(self):
         """事件创建后的初始化处理"""
         if not self.source:
             self.source = self.__class__.__name__
 
+
+# ==================== 策略事件定义 ====================
+
+@dataclass
+class StrategyStartedEvent(BaseEvent):
+    """策略启动事件"""
+    strategy_id: str = ""
+    strategy_name: str = ""
+    context: Optional[Any] = None
+    parameters: Dict[str, Any] = field(default_factory=dict)
+    event_type: EventType = EventType.STRATEGY_STARTED
+    
+    def __post_init__(self):
+        super().__post_init__()
+        self.data.update({
+            'strategy_id': self.strategy_id,
+            'strategy_name': self.strategy_name,
+            'context': self.context,
+            'parameters': self.parameters
+        })
+
+
+@dataclass
+class StrategyStoppedEvent(BaseEvent):
+    """策略停止事件"""
+    strategy_id: str = ""
+    reason: str = ""
+    performance: Optional[Dict[str, Any]] = None
+    event_type: EventType = EventType.STRATEGY_STOPPED
+    
+    def __post_init__(self):
+        super().__post_init__()
+        self.data.update({
+            'strategy_id': self.strategy_id,
+            'reason': self.reason,
+            'performance': self.performance
+        })
+
+
+@dataclass
+class StrategyPausedEvent(BaseEvent):
+    """策略暂停事件"""
+    strategy_id: str = ""
+    reason: str = ""
+    event_type: EventType = EventType.STRATEGY_PAUSED
+    
+    def __post_init__(self):
+        super().__post_init__()
+        self.data.update({
+            'strategy_id': self.strategy_id,
+            'reason': self.reason
+        })
+
+
+@dataclass
+class StrategyResumedEvent(BaseEvent):
+    """策略恢复事件"""
+    strategy_id: str = ""
+    event_type: EventType = EventType.STRATEGY_RESUMED
+    
+    def __post_init__(self):
+        super().__post_init__()
+        self.data.update({
+            'strategy_id': self.strategy_id
+        })
+
+
+@dataclass
+class StrategyErrorEvent(BaseEvent):
+    """策略错误事件"""
+    strategy_id: str = ""
+    error_message: str = ""
+    error: Optional[Exception] = None
+    stack_trace: Optional[str] = None
+    event_type: EventType = EventType.STRATEGY_ERROR
+    
+    def __post_init__(self):
+        super().__post_init__()
+        self.data.update({
+            'strategy_id': self.strategy_id,
+            'error_message': self.error_message,
+            'error': str(self.error) if self.error else None,
+            'stack_trace': self.stack_trace
+        })
+
+
+@dataclass
+class SignalGeneratedEvent(BaseEvent):
+    """信号生成事件"""
+    strategy_id: str = ""
+    strategy_name: str = ""
+    signals: List[Dict[str, Any]] = field(default_factory=list)
+    symbol: str = ""
+    event_type: EventType = EventType.SIGNAL_GENERATED
+    
+    def __post_init__(self):
+        super().__post_init__()
+        self.data.update({
+            'strategy_id': self.strategy_id,
+            'strategy_name': self.strategy_name,
+            'signals': self.signals,
+            'symbol': self.symbol,
+            'signal_count': len(self.signals)
+        })
+
+
+@dataclass
+class PerformanceUpdatedEvent(BaseEvent):
+    """性能更新事件"""
+    strategy_id: str = ""
+    metrics: Dict[str, Any] = field(default_factory=dict)
+    event_type: EventType = EventType.PERFORMANCE_UPDATED
+    
+    def __post_init__(self):
+        super().__post_init__()
+        self.data.update({
+            'strategy_id': self.strategy_id,
+            'metrics': self.metrics
+        })
+
+
+# ==================== 原有事件定义 (保持向后兼容) ====================
 
 @dataclass
 class AssetSelectedEvent(BaseEvent):
@@ -80,14 +266,14 @@ class AssetSelectedEvent(BaseEvent):
 
     当用户选择任意类型资产时触发，支持股票、加密货币、期货等。
     """
-    symbol: str = ""                        # 交易代码
-    name: str = ""                          # 资产名称
-    asset_type: AssetType = AssetType.STOCK_A  # 资产类型（默认A股）
-    market: str = ""                        # 市场
-    period: str = ""                        # 周期：日线、周线、月线等
-    time_range: str = ""                    # 时间范围：最近7天、最近30天等
-    chart_type: str = ""                    # 图表类型：K线图、分时图等
-    kline_data: Optional[Any] = None        # ✅ 优化：可选的K线数据（避免重复查询）
+    symbol: str = ""
+    name: str = ""
+    asset_type: AssetType = AssetType.STOCK_A
+    market: str = ""
+    period: str = ""
+    time_range: str = ""
+    chart_type: str = ""
+    kline_data: Optional[Any] = None
 
     def __post_init__(self):
         super().__post_init__()
@@ -99,7 +285,6 @@ class AssetSelectedEvent(BaseEvent):
             'period': self.period,
             'time_range': self.time_range,
             'chart_type': self.chart_type,
-            # 注意：kline_data不序列化到data字典，避免内存问题
             'has_kline_data': self.kline_data is not None
         })
 
@@ -111,14 +296,12 @@ class StockSelectedEvent(AssetSelectedEvent):
 
     继承自AssetSelectedEvent，保持与现有代码的兼容性。
     """
-    stock_code: str = ""  # 向后兼容属性
-    stock_name: str = ""  # 向后兼容属性
+    stock_code: str = ""
+    stock_name: str = ""
 
     def __init__(self, stock_code: str = "", stock_name: str = "",
                  market: str = "", period: str = "", time_range: str = "",
                  chart_type: str = "", kline_data: Optional[Any] = None, **kwargs):
-        # ✅ 优化：接受kline_data参数，避免重复查询
-        # 使用父类构造函数，映射股票特定字段到通用字段
         super().__init__(
             symbol=stock_code,
             name=stock_name,
@@ -130,14 +313,11 @@ class StockSelectedEvent(AssetSelectedEvent):
             kline_data=kline_data,
             **kwargs
         )
-
-        # 保持向后兼容的属性
         self.stock_code = stock_code
         self.stock_name = stock_name
 
     def __post_init__(self):
         super().__post_init__()
-        # 确保向后兼容的数据字段
         self.data.update({
             'stock_code': self.stock_code,
             'stock_name': self.stock_name
@@ -155,11 +335,16 @@ class AssetDataReadyEvent(BaseEvent):
     name: str = ""
     asset_type: AssetType = AssetType.STOCK_A
     market: str = ""
-    data_type: str = "kline"  # kline, realtime, analysis等
+    data_type: str = "kline"
     data: Any = None
 
     def __post_init__(self):
-        super().__post_init__()
+        if self.data is None:
+            self.data = {}
+        if not isinstance(self.data, dict):
+            self.data = {'raw_data': self.data}
+        
+        BaseEvent.__post_init__(self)
         self.data.update({
             'symbol': self.symbol,
             'name': self.name,
@@ -176,34 +361,41 @@ class UIDataReadyEvent(AssetDataReadyEvent):
 
     继承自AssetDataReadyEvent，保持与现有UI代码的兼容性。
     """
-    stock_code: str = ""  # 向后兼容
-    stock_name: str = ""  # 向后兼容
-    kline_data: Any = None  # 向后兼容
+    stock_code: str = ""
+    stock_name: str = ""
+    kline_data: Any = None
+    ui_data: Dict[str, Any] = field(default_factory=dict)
 
     def __init__(self, stock_code: str = "", stock_name: str = "",
-                 kline_data: Any = None, market: str = "", **kwargs):
-        super().__init__(
+                 kline_data: Any = None, market: str = "", ui_data: Dict[str, Any] = None, **kwargs):
+        self.stock_code = stock_code
+        self.stock_name = stock_name
+        self.kline_data = kline_data
+        self.ui_data = ui_data or {}
+        
+        _data = kline_data
+        if _data is None or not isinstance(_data, dict):
+            _data = {'raw_data': _data} if _data is not None else {}
+        
+        AssetDataReadyEvent.__init__(
+            self,
             symbol=stock_code,
             name=stock_name,
             asset_type=AssetType.STOCK_A,
             market=market,
             data_type="kline",
-            data=kline_data,
+            data=_data,
             **kwargs
         )
 
-        # 向后兼容属性
-        self.stock_code = stock_code
-        self.stock_name = stock_name
-        self.kline_data = kline_data
-
     def __post_init__(self):
-        super().__post_init__()
-        # 向后兼容的数据字段
+        if self.data is None:
+            self.data = {}
         self.data.update({
             'stock_code': self.stock_code,
             'stock_name': self.stock_name,
-            'kline_data': self.kline_data
+            'kline_data': self.kline_data,
+            'ui_data': self.ui_data
         })
 
 
@@ -281,7 +473,7 @@ class ErrorEvent(BaseEvent):
     error_type: str = ""
     error_message: str = ""
     error_traceback: str = ""
-    severity: str = "error"  # error, warning, info
+    severity: str = "error"
 
     def __post_init__(self):
         super().__post_init__()
@@ -366,27 +558,6 @@ class IndicatorChangedEvent(BaseEvent):
 
 
 @dataclass
-class UIDataReadyEvent(BaseEvent):
-    """
-    UI数据准备就绪事件
-
-    当Coordinator准备好所有UI所需的数据时触发。
-    这个事件携带了用于更新UI的完整数据包，避免了各个面板的重复加载。
-    """
-    ui_data: Dict[str, Any] = field(default_factory=dict)
-    stock_code: str = ""
-    stock_name: str = ""
-
-    def __post_init__(self):
-        super().__post_init__()
-        self.data.update({
-            'ui_data': self.ui_data,
-            'stock_code': self.stock_code,
-            'stock_name': self.stock_name
-        })
-
-
-@dataclass
 class MultiScreenToggleEvent(BaseEvent):
     """
     多屏模式切换事件
@@ -409,7 +580,7 @@ class TradeExecutedEvent(BaseEvent):
 
     当交易（买入/卖出）执行完成时触发。
     """
-    trade_record: Any = None  # TradeRecord object
+    trade_record: Any = None
 
     def __post_init__(self):
         super().__post_init__()
@@ -425,7 +596,7 @@ class PositionUpdatedEvent(BaseEvent):
 
     当持仓信息发生变化时触发。
     """
-    portfolio: Any = None  # Portfolio object
+    portfolio: Any = None
     updated_positions: list = field(default_factory=list)
 
     def __post_init__(self):
@@ -454,8 +625,6 @@ class PatternSignalsDisplayEvent(BaseEvent):
             'all_signal_indices': self.all_signal_indices,
             'highlighted_signal_index': self.highlighted_signal_index
         })
-
-# 告警相关事件
 
 
 class AlertLevel(Enum):
@@ -522,8 +691,6 @@ class ApplicationAlert(BaseEvent):
             'threshold': self.threshold,
             'unit': self.unit
         })
-
-# 实时数据相关事件
 
 
 @dataclass
@@ -600,7 +767,7 @@ class ComputedIndicatorEvent(BaseEvent):
         })
 
 
-# ==================== 增量下载相关事件 ====================
+# ==================== 数据完整性事件 ====================
 
 @dataclass
 class DataIntegrityEvent(BaseEvent):
@@ -662,7 +829,7 @@ class UpdateHistoryEvent(BaseEvent):
     task_id: str = ""
     task_name: str = ""
     update_type: str = ""
-    action: str = ""  # created, started, progress, completed, failed
+    action: str = ""
     progress: float = 0.0
     success_count: int = 0
     failed_count: int = 0
@@ -687,6 +854,8 @@ class UpdateHistoryEvent(BaseEvent):
             'error_message': self.error_message
         })
 
+
+# ==================== AI/ML训练事件 ====================
 
 @dataclass
 class TrainingTaskCreatedEvent(BaseEvent):
@@ -866,7 +1035,8 @@ class PredictionAccuracyUpdatedEvent(BaseEvent):
         })
 
 
-# 策略配置相关事件
+# ==================== 策略配置事件 ====================
+
 @dataclass
 class StrategyConfigCreatedEvent(BaseEvent):
     """

@@ -13,7 +13,7 @@ VWAP均值回归策略插件
 from loguru import logger
 import pandas as pd
 import numpy as np
-from typing import List,Tuple
+from typing import List,Tuple, Union
 from datetime import datetime
 from typing import Dict, Any
 
@@ -134,19 +134,24 @@ class VWAPReversionPlugin(IStrategyPlugin):
             logger.error(f"策略初始化失败: {e}")
             return False
     
-    def generate_signals(self, market_data: StandardMarketData, context: StrategyContext) -> List[Signal]:
+    def generate_signals(self, market_data: Union[StandardMarketData, pd.DataFrame], context: StrategyContext) -> List[Signal]:
         """生成交易信号"""
         try:
             signals = []
             
-            # 将市场数据转换为DataFrame
-            df = market_data.to_dataframe()
+            # 处理不同类型的输入
+            if isinstance(market_data, pd.DataFrame):
+                df = market_data
+                symbol = context.symbol if hasattr(context, 'symbol') else "unknown"
+            else:
+                df = market_data.to_dataframe()
+                symbol = market_data.symbol
             
             # 检查数据是否包含必需的列
             required_cols = ['vwap', 'close', 'turnover_rate']
             missing_cols = [col for col in required_cols if col not in df.columns]
             if missing_cols:
-                logger.error(f"数据缺少必需列: {missing_cols}, 股票: {market_data.symbol}")
+                logger.error(f"数据缺少必需列: {missing_cols}, 股票: {symbol}")
                 return signals
             
             # 获取参数
@@ -182,7 +187,7 @@ class VWAPReversionPlugin(IStrategyPlugin):
                 
                 if signal_type != SignalType.HOLD:
                     signal = Signal(
-                        symbol=market_data.symbol,
+                        symbol=symbol,
                         signal_type=signal_type,
                         strength=strength,
                         timestamp=current_date,
@@ -196,7 +201,33 @@ class VWAPReversionPlugin(IStrategyPlugin):
                     )
                     signals.append(signal)
             
-            logger.info(f"生成了 {len(signals)} 个信号: {market_data.symbol}")
+            logger.info(f"生成了 {len(signals)} 个信号: {symbol}")
+            
+            # 发布信号生成事件
+            if signals:
+                try:
+                    from core.events import SignalGeneratedEvent, get_event_bus
+                    event = SignalGeneratedEvent(
+                        strategy_id=self._strategy_info.name,
+                        strategy_name=self._strategy_info.display_name,
+                        signals=[{
+                            'signal_type': s.signal_type.value,
+                            'symbol': s.symbol,
+                            'strength': s.strength,
+                            'timestamp': s.timestamp.isoformat() if hasattr(s.timestamp, 'isoformat') else str(s.timestamp),
+                            'price': s.price,
+                            'reason': s.reason
+                        } for s in signals],
+                        symbol=symbol,
+                        priority=1,
+                        timestamp=datetime.now(),
+                        source="vwap_reversion_strategy",
+                        data={'plugin_type': 'vwap_reversion'}
+                    )
+                    get_event_bus().publish(event)
+                except Exception as event_error:
+                    logger.warning(f"发布VWAP策略信号事件失败: {event_error}")
+            
             return signals
         except Exception as e:
             logger.error(f"生成信号失败: {e}")

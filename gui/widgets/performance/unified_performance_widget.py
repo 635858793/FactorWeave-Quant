@@ -928,7 +928,7 @@ class ModernUnifiedPerformanceWidget(QWidget):
     def on_tab_changed(self, index):
         """tab切换时的处理 - 优化性能"""
         self.current_tab_index = index
-        logger.info(f"切换到tab: {index}")
+        logger.debug(f"切换到tab: {index}")
 
         # 立即异步更新当前tab的数据
         QTimer.singleShot(100, lambda: self.update_current_tab_data_async())

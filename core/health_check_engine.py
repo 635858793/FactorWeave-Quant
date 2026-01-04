@@ -19,14 +19,7 @@ import socket
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 
 from loguru import logger
-
-
-class HealthStatus(Enum):
-    """健康状态枚举"""
-    HEALTHY = "healthy"
-    DEGRADED = "degraded"
-    UNHEALTHY = "unhealthy"
-    UNKNOWN = "unknown"
+from core.enums import HealthStatus
 
 
 class CheckType(Enum):

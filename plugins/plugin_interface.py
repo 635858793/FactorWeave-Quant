@@ -14,35 +14,13 @@ from PyQt5.QtCore import QObject, pyqtSignal
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime
 
+import sys
+from pathlib import Path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
-class PluginState(Enum):
-    """插件状态枚举"""
-    CREATED = "created"           # 插件对象已创建
-    INITIALIZING = "initializing"  # 正在同步初始化
-    INITIALIZED = "initialized"   # 同步初始化完成
-    CONNECTING = "connecting"     # 正在异步连接
-    CONNECTED = "connected"       # 连接成功，可用
-    FAILED = "failed"             # 连接失败
-
-
-class PluginType(Enum):
-    """插件类型枚举"""
-    INDICATOR = "indicator"          # 技术指标插件
-    STRATEGY = "strategy"            # 策略插件
-    DATA_SOURCE = "data_source"      # 数据源插件
-    ANALYSIS = "analysis"            # 分析工具插件
-    UI_COMPONENT = "ui_component"    # UI组件插件
-    EXPORT = "export"                # 导出插件
-    NOTIFICATION = "notification"    # 通知插件
-    CHART_TOOL = "chart_tool"        # 图表工具插件
-
-
-class PluginCategory(Enum):
-    """插件分类"""
-    CORE = "core"                    # 核心插件
-    COMMUNITY = "community"          # 社区插件
-    COMMERCIAL = "commercial"        # 商业插件
-    EXPERIMENTAL = "experimental"    # 实验性插件
+from core.enums import PluginLifecycle
+from core.plugin_types import PluginType, PluginCategory, AssetType, DataType
 
 
 @dataclass
@@ -174,16 +152,42 @@ class IIndicatorPlugin(IPlugin):
 
 
 class IStrategyPlugin(IPlugin):
-    """策略插件接口"""
+    """
+    策略插件接口（数据源级别）
+    
+    这是数据源插件的策略接口，用于轻量级的信号生成场景。
+    与 core/strategy_extensions.py 中的 IStrategyPlugin 不同：
+    - 此接口：用于数据源插件，简单信号生成
+    - core 中的：完整的策略插件接口，支持完整的生命周期管理
+    
+    推荐使用场景:
+    - 数据源内置的简单策略
+    - 快速原型验证
+    - 轻量级信号生成
+    
+    完整策略开发推荐使用:
+    - core.strategy_extensions.IStrategyPlugin
+    - 配合 StrategyService 使用
+    """
 
     @abstractmethod
     def get_strategy_name(self) -> str:
-        """获取策略名称"""
+        """
+        获取策略名称
+        
+        Returns:
+            str: 策略名称
+        """
         pass
 
     @abstractmethod
     def get_strategy_parameters(self) -> Dict[str, Any]:
-        """获取策略参数定义"""
+        """
+        获取策略参数定义
+        
+        Returns:
+            Dict[str, Any]: 参数名到默认值/描述的映射
+        """
         pass
 
     @abstractmethod
@@ -192,11 +196,15 @@ class IStrategyPlugin(IPlugin):
         生成交易信号
 
         Args:
-            data: 市场数据
+            data: 市场数据（通常是 pandas DataFrame）
             **params: 策略参数
 
         Returns:
-            交易信号
+            交易信号，可以是多种格式
+        
+        Note:
+            如需完整的事件支持和生命周期管理，
+            请实现 core.strategy_extensions.IStrategyPlugin 接口
         """
         pass
 
@@ -209,7 +217,11 @@ class IStrategyPlugin(IPlugin):
             **params: 策略参数
 
         Returns:
-            回测结果
+            Dict[str, Any]: 回测结果，包含收益、信号列表等
+        
+        Note:
+            此方法是可选实现，如需完整的回测功能，
+            请使用 StrategyService.run_backtest()
         """
         return {}
 
@@ -220,7 +232,7 @@ class IDataSourcePlugin(IPlugin):
     def __init__(self):
         """初始化插件基类属性"""
         super().__init__() if hasattr(super(), '__init__') else None
-        self.plugin_state = PluginState.CREATED
+        self.plugin_state = PluginLifecycle.CREATED
         self._connection_future = None
         self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix=f"Plugin-{self.__class__.__name__}")
         self.last_error = None
@@ -271,7 +283,7 @@ class IDataSourcePlugin(IPlugin):
         Returns:
             Future: 连接任务的Future对象，可以查询连接状态
         """
-        if self.plugin_state == PluginState.CONNECTED:
+        if self.plugin_state == PluginLifecycle.CONNECTED:
             # 已连接，直接返回成功的 Future
             future = Future()
             future.set_result(True)
@@ -282,7 +294,7 @@ class IDataSourcePlugin(IPlugin):
             return self._connection_future
 
         # 启动新的连接任务
-        self.plugin_state = PluginState.CONNECTING
+        self.plugin_state = PluginLifecycle.CONNECTING
         logger.info(f"[{self.__class__.__name__}] 启动异步连接...")
         self._connection_future = self._executor.submit(self._do_connect)
         return self._connection_future
@@ -300,15 +312,15 @@ class IDataSourcePlugin(IPlugin):
             # 默认实现：调用test_connection
             result = self.test_connection()
             if result:
-                self.plugin_state = PluginState.CONNECTED
+                self.plugin_state = PluginLifecycle.CONNECTED
                 logger.info(f"[{self.__class__.__name__}] 连接成功")
             else:
-                self.plugin_state = PluginState.FAILED
+                self.plugin_state = PluginLifecycle.FAILED
                 self.last_error = "Connection test failed"
                 logger.warning(f"[{self.__class__.__name__}] 连接失败")
             return result
         except Exception as e:
-            self.plugin_state = PluginState.FAILED
+            self.plugin_state = PluginLifecycle.FAILED
             self.last_error = str(e)
             logger.error(f"[{self.__class__.__name__}] 连接异常: {e}")
             return False
@@ -320,7 +332,7 @@ class IDataSourcePlugin(IPlugin):
         Returns:
             bool: 插件是否可用
         """
-        return self.plugin_state == PluginState.CONNECTED
+        return self.plugin_state == PluginLifecycle.CONNECTED
 
     def wait_until_ready(self, timeout: float = 30.0) -> bool:
         """

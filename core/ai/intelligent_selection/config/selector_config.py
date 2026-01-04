@@ -64,7 +64,7 @@ class PerformanceEvaluationConfig:
         if self.database is None:
             self.database = {
                 'type': 'sqlite',
-                'path': 'data/performance.db'
+                'path': 'data/performance.sqlite'
             }
 
 

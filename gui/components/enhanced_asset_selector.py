@@ -19,6 +19,7 @@ from PyQt5.QtGui import QFont, QPixmap, QIcon
 from core.plugin_types import AssetType
 from core.services.unified_data_manager import UnifiedDataManager
 from core.services.asset_service import AssetService
+from core.ui_asset_type_utils import UIAssetTypeUtils
 
 
 class AssetSearchWorker(QObject):
@@ -300,8 +301,9 @@ class AssetSearchWorker(QObject):
     
     
     def _get_default_assets(self, asset_type: AssetType) -> List[Dict[str, Any]]:
-        """获取默认资产列表"""
+        """获取默认资产列表（扩展支持所有资产类型）"""
         defaults = {
+            # 股票类
             AssetType.STOCK_A: [
                 {'code': '000001', 'name': '平安银行', 'market': 'sz'},
                 {'code': '000002', 'name': '万科A', 'market': 'sz'},
@@ -310,22 +312,101 @@ class AssetSearchWorker(QObject):
                 {'code': '600519', 'name': '贵州茅台', 'market': 'sh'},
                 {'code': '000858', 'name': '五粮液', 'market': 'sz'}
             ],
-            AssetType.CRYPTO: [
-                {'code': 'BTCUSDT', 'name': '比特币', 'market': 'binance'},
-                {'code': 'ETHUSDT', 'name': '以太坊', 'market': 'binance'},
-                {'code': 'BNBUSDT', 'name': '币安币', 'market': 'binance'}
+            AssetType.STOCK_US: [
+                {'code': 'AAPL', 'name': '苹果公司', 'market': 'us'},
+                {'code': 'MSFT', 'name': '微软', 'market': 'us'},
+                {'code': 'GOOGL', 'name': '谷歌', 'market': 'us'},
+                {'code': 'AMZN', 'name': '亚马逊', 'market': 'us'},
+                {'code': 'TSLA', 'name': '特斯拉', 'market': 'us'}
             ],
+            AssetType.STOCK_HK: [
+                {'code': '0700', 'name': '腾讯控股', 'market': 'hk'},
+                {'code': '9988', 'name': '阿里巴巴', 'market': 'hk'},
+                {'code': '3690', 'name': '美团', 'market': 'hk'},
+                {'code': '0939', 'name': '建设银行', 'market': 'hk'},
+                {'code': '939', 'name': '建设银行', 'market': 'hk'}
+            ],
+            AssetType.STOCK_B: [
+                {'code': '900901', 'name': '大秦铁路B', 'market': 'sh'},
+                {'code': '900902', 'name': '国药股份B', 'market': 'sh'}
+            ],
+            AssetType.STOCK_H: [
+                {'code': '000001', 'name': '中国平安', 'market': 'hk'},
+                {'code': '600036', 'name': '招商银行', 'market': 'hk'}
+            ],
+            # 衍生品
+            AssetType.FUTURES: [
+                {'code': 'IF2401', 'name': '沪深300期货2401', 'market': 'cffex'},
+                {'code': 'IC2401', 'name': '中证500期货2401', 'market': 'cffex'},
+                {'code': 'IH2401', 'name': '上证50期货2401', 'market': 'cffex'},
+                {'code': 'CU2401', 'name': '沪铜2401', 'market': 'shfe'},
+                {'code': 'AL2401', 'name': '沪铝2401', 'market': 'shfe'}
+            ],
+            AssetType.OPTION: [
+                {'code': 'IO2401C5500', 'name': '中证500看涨期权', 'market': 'cffex'},
+                {'code': 'IO2401P4500', 'name': '中证500看跌期权', 'market': 'cffex'}
+            ],
+            AssetType.WARRANT: [
+                {'code': '580030', 'name': '华宝油气认购', 'market': 'sh'},
+                {'code': '500011', 'name': '深证成指认购', 'market': 'sz'}
+            ],
+            # 基金债券
+            AssetType.FUND: [
+                {'code': '161039', 'name': '富国中证500ETF联接', 'market': 'sz'},
+                {'code': '161032', 'name': '富国中证煤炭指数', 'market': 'sz'},
+                {'code': '000001', 'name': '华夏上证50ETF', 'market': 'sh'}
+            ],
+            AssetType.BOND: [
+                {'code': '204001', 'name': '国债逆回购1天', 'market': 'sh'},
+                {'code': '019002', 'name': '国债1902', 'market': 'sh'},
+                {'code': '113011', 'name': '石化转债', 'market': 'sh'}
+            ],
+            # 指数
             AssetType.INDEX: [
                 {'code': '000001', 'name': '上证指数', 'market': 'sh'},
                 {'code': '000300', 'name': '沪深300', 'market': 'sh'},
-                {'code': '000016', 'name': '上证50', 'market': 'sh'}
+                {'code': '000016', 'name': '上证50', 'market': 'sh'},
+                {'code': '399001', 'name': '深证成指', 'market': 'sz'},
+                {'code': '399006', 'name': '创业板指', 'market': 'sz'}
+            ],
+            # 板块
+            AssetType.INDUSTRY_SECTOR: [
+                {'code': 'BK0451', 'name': '证券板块', 'market': 'concept'},
+                {'code': 'BK0437', 'name': '银行板块', 'market': 'concept'}
+            ],
+            AssetType.CONCEPT_SECTOR: [
+                {'code': 'BK0501', 'name': '新能源概念', 'market': 'concept'},
+                {'code': 'BK0801', 'name': '人工智能概念', 'market': 'concept'}
+            ],
+            # 其他
+            AssetType.CRYPTO: [
+                {'code': 'BTCUSDT', 'name': '比特币/泰达币', 'market': 'binance'},
+                {'code': 'ETHUSDT', 'name': '以太坊/泰达币', 'market': 'binance'},
+                {'code': 'BNBUSDT', 'name': '币安币/泰达币', 'market': 'binance'},
+                {'code': 'XRPUSDT', 'name': '瑞波币/泰达币', 'market': 'binance'},
+                {'code': 'SOLUSDT', 'name': '索拉纳/泰达币', 'market': 'binance'}
+            ],
+            AssetType.FOREX: [
+                {'code': 'USDCNY', 'name': '美元/人民币', 'market': 'oanda'},
+                {'code': 'EURUSD', 'name': '欧元/美元', 'market': 'oanda'},
+                {'code': 'GBPUSD', 'name': '英镑/美元', 'market': 'oanda'}
+            ],
+            AssetType.COMMODITY: [
+                {'code': 'C2401', 'name': '玉米2401', 'market': 'cbot'},
+                {'code': 'CL2401', 'name': '原油2401', 'market': 'nymex'},
+                {'code': 'GC2402', 'name': '黄金2402', 'market': 'comex'}
+            ],
+            AssetType.MACRO: [
+                {'code': 'GDP_CN', 'name': '中国GDP', 'market': 'macro'},
+                {'code': 'CPI_CN', 'name': '中国CPI', 'market': 'macro'},
+                {'code': 'M2_CN', 'name': '中国M2', 'market': 'macro'}
             ]
         }
-        
+
         default_list = defaults.get(asset_type, [])
         for asset in default_list:
             asset['display'] = f"{asset['code']} {asset['name']}"
-        
+
         return default_list
 
 
@@ -338,6 +419,7 @@ class EnhancedAssetSelector(QWidget):
     def __init__(self, 
                  data_manager: Optional[UnifiedDataManager] = None,
                  asset_service: Optional[AssetService] = None,
+                 default_asset_type: AssetType = AssetType.STOCK_A,
                  parent=None):
         """
         初始化增强型资产选择器
@@ -345,14 +427,15 @@ class EnhancedAssetSelector(QWidget):
         Args:
             data_manager: 统一数据管理器
             asset_service: 资产服务
+            default_asset_type: 默认资产类型
             parent: 父组件
         """
         super().__init__(parent)
         self.data_manager = data_manager
         self.asset_service = asset_service
         
-        # 当前状态（只支持股票A股）
-        self.current_asset_type = AssetType.STOCK_A
+        # 当前状态（支持多资产类型，默认股票A股）
+        self.current_asset_type = default_asset_type
         self.current_search_text = ""
         self.search_timer = QTimer()
         self.search_timer.setSingleShot(True)
@@ -384,8 +467,9 @@ class EnhancedAssetSelector(QWidget):
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setMinimumHeight(250)  # 设置最小高度
         
-        # 标题区域
-        title_label = QLabel("股票选择")
+        # 标题区域（使用UIAssetTypeUtils动态获取显示名称）
+        display_name = UIAssetTypeUtils.get_display_name(self.current_asset_type)
+        title_label = QLabel(f"{display_name}选择")
         title_label.setStyleSheet("""
             QLabel {
                 font-size: 12px;
@@ -395,6 +479,7 @@ class EnhancedAssetSelector(QWidget):
             }
         """)
         layout.addWidget(title_label)
+        self.title_label = title_label  # 保存引用以便后续更新
         
         # 搜索区域
         search_frame = QFrame()
@@ -405,7 +490,8 @@ class EnhancedAssetSelector(QWidget):
         search_label.setFixedWidth(40)
         
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("输入股票代码或名称（支持模糊匹配）...")
+        asset_display_name = UIAssetTypeUtils.get_display_name(self.current_asset_type)
+        self.search_input.setPlaceholderText(f"输入{asset_display_name}代码或名称（支持模糊匹配）...")
         self.search_input.setClearButtonEnabled(True)
         
         search_layout.addWidget(search_label)
@@ -442,7 +528,7 @@ class EnhancedAssetSelector(QWidget):
             }
         """)
         
-        results_layout.addWidget(QLabel("搜索结果:"))
+        results_layout.addWidget(QLabel(f"搜索结果 ({asset_display_name}):"))
         results_layout.addWidget(self.results_list, 1)  # 添加伸缩因子，确保列表框能自适应大小
         
         layout.addWidget(results_frame)
@@ -452,7 +538,7 @@ class EnhancedAssetSelector(QWidget):
         selected_layout = QVBoxLayout(selected_frame)
         selected_layout.setContentsMargins(0, 0, 0, 0)
         
-        selected_layout.addWidget(QLabel("已选择股票:"))
+        selected_layout.addWidget(QLabel(f"已选择{asset_display_name}:"))
         
         self.selected_label = QLabel("未选择")
         self.selected_label.setStyleSheet("""

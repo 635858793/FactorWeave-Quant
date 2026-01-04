@@ -2,8 +2,9 @@
 风险管理模块
 """
 from loguru import logger
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 from core.performance import measure_performance as monitor_performance
+from core.config import ConfigManager, config_manager
 
 class RiskManager:
     """风险管理类"""
@@ -41,11 +42,76 @@ class RiskManager:
     def _load_risk_params(self):
         """加载风险控制参数"""
         try:
-            # TODO: 从配置文件加载风险控制参数
-            pass
+            risk_config = config_manager.get('risk', {})
+
+            self.max_position_size = risk_config.get(
+                'max_position_size',
+                self.max_position_size
+            )
+            self.max_single_position = risk_config.get(
+                'max_single_position',
+                self.max_single_position
+            )
+            self.stop_loss = risk_config.get(
+                'stop_loss',
+                self.stop_loss
+            )
+            self.max_drawdown = risk_config.get(
+                'max_drawdown',
+                self.max_drawdown
+            )
+
+            logger.info(
+                f"风险控制参数加载成功: "
+                f"最大持仓比例={self.max_position_size}, "
+                f"单股最大持仓={self.max_single_position}, "
+                f"止损比例={self.stop_loss}, "
+                f"最大回撤={self.max_drawdown}"
+            )
 
         except Exception as e:
             logger.error(f"加载风险控制参数失败: {str(e)}")
+            logger.warning("使用默认风险控制参数")
+
+    def get_risk_params(self) -> Dict[str, Any]:
+        """获取当前风险控制参数"""
+        return {
+            'max_position_size': self.max_position_size,
+            'max_single_position': self.max_single_position,
+            'stop_loss': self.stop_loss,
+            'max_drawdown': self.max_drawdown
+        }
+
+    def update_risk_params(self, **kwargs) -> bool:
+        """更新风险控制参数"""
+        try:
+            valid_params = {
+                'max_position_size': float,
+                'max_single_position': float,
+                'stop_loss': float,
+                'max_drawdown': float
+            }
+
+            for param, expected_type in valid_params.items():
+                if param in kwargs:
+                    value = kwargs[param]
+                    if not isinstance(value, (int, float)):
+                        raise TypeError(f"{param} 必须是数字类型")
+                    if param in ['max_position_size', 'max_single_position', 'max_drawdown']:
+                        if not 0 < value <= 1:
+                            raise ValueError(f"{param} 必须在 (0, 1] 范围内")
+                    if param == 'stop_loss':
+                        if not 0 < value <= 1:
+                            raise ValueError(f"{param} 必须在 (0, 1] 范围内")
+
+                    setattr(self, param, float(value))
+
+            logger.info(f"风险控制参数已更新: {kwargs}")
+            return True
+
+        except Exception as e:
+            logger.error(f"更新风险控制参数失败: {str(e)}")
+            return False
 
     @monitor_performance("check_risk")
     def check_risk(self, signal: Dict) -> bool:
@@ -248,9 +314,66 @@ class RiskManager:
     def get_current_price(self, stock_code: str) -> float:
         """获取当前价格"""
         try:
-            # TODO: 实现获取当前价格的逻辑
+            price = self._fetch_price_from_service(stock_code)
+            if price is not None and price > 0:
+                return price
+
+            last_price = self._get_last_transaction_price(stock_code)
+            if last_price > 0:
+                return last_price
+
+            logger.warning(f"无法获取 {stock_code} 的当前价格，使用默认价格 0.0")
             return 0.0
 
         except Exception as e:
             logger.error(f"获取当前价格失败: {str(e)}")
             return 0.0
+
+    def _fetch_price_from_service(self, stock_code: str) -> Optional[float]:
+        """从服务获取实时价格"""
+        try:
+            from core.services.stock_service import StockService
+            stock_service = StockService()
+
+            if not stock_service._initialized:
+                stock_service._do_initialize()
+
+            kdata = stock_service.get_kdata(stock_code, period='D', count=1)
+            if kdata is not None and not kdata.empty:
+                if 'close' in kdata.columns:
+                    return float(kdata['close'].iloc[-1])
+                elif '收盘' in kdata.columns:
+                    return float(kdata['收盘'].iloc[-1])
+
+            return None
+
+        except Exception as e:
+            logger.debug(f"从服务获取价格失败: {str(e)}")
+            return None
+
+    def _get_last_transaction_price(self, stock_code: str) -> float:
+        """获取最后交易价格（基于本地持仓数据估算）"""
+        try:
+            if stock_code in self.current_positions:
+                return float(self.current_positions[stock_code].get('avg_cost', 0))
+            return 0.0
+
+        except Exception as e:
+            logger.debug(f"获取最后交易价格失败: {str(e)}")
+            return 0.0
+
+    def refresh_all_positions_price(self) -> Dict[str, float]:
+        """刷新所有持仓的当前价格"""
+        try:
+            refreshed_prices = {}
+            for stock_code in list(self.current_positions.keys()):
+                price = self.get_current_price(stock_code)
+                if price > 0:
+                    refreshed_prices[stock_code] = price
+
+            logger.info(f"成功刷新 {len(refreshed_prices)} 个持仓的当前价格")
+            return refreshed_prices
+
+        except Exception as e:
+            logger.error(f"刷新持仓价格失败: {str(e)}")
+            return {}

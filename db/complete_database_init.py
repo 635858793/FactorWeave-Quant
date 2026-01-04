@@ -24,16 +24,12 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
-# 配置日志
-# Loguru配置在core.loguru_config中统一管理s - %(levelname)s - %(message)s')
-logger = logger
-
 
 class CompleteDatabaseInitializer:
     """完整数据库初始化器"""
 
     def __init__(self):
-        self.db_dir = Path(__file__).parent
+        self.db_dir = Path(__file__).parent.parent / "data"
         self.sqlite_db_path = self.db_dir / "factorweave_system.sqlite"
         self.factorweave_db_path = self.db_dir / "factorweave_system.sqlite"
         self.duckdb_analytics_path = self.db_dir / "factorweave_analytics.duckdb"

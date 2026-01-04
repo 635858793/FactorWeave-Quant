@@ -1,4 +1,3 @@
-from loguru import logger
 """
 插件数据库服务
 
@@ -9,10 +8,11 @@ from loguru import logger
 - 远程管理API支持
 """
 
+from loguru import logger
 import os
 from typing import Dict, List, Optional, Any
-from PyQt5.QtCore import QObject, pyqtSignal
 from datetime import datetime
+from PyQt5.QtCore import QObject, pyqtSignal
 
 # 导入插件数据库模型
 from db.models.plugin_models import (
@@ -21,14 +21,14 @@ from db.models.plugin_models import (
 
 
 class PluginDatabaseService(QObject):
-    """插件数据库服务"""
+    """插件数据库服务 - 继承 QObject 以支持信号"""
 
-    # 信号定义
     plugin_status_changed = pyqtSignal(str, str, str)  # 插件名, 旧状态, 新状态
     plugin_registered = pyqtSignal(str, dict)  # 插件名, 插件信息
     database_updated = pyqtSignal()  # 数据库更新
 
     def __init__(self, db_path: str = None):
+        """初始化插件数据库服务"""
         super().__init__()
 
         # 设置数据库路径
@@ -86,7 +86,8 @@ class PluginDatabaseService(QObject):
             self._invalidate_cache()
 
             # 发射信号
-            self.plugin_registered.emit(plugin_name, metadata)
+            if self.plugin_registered:
+                self.plugin_registered.emit(plugin_name, metadata)
 
             logger.info(f"插件注册成功: {plugin_name} (ID: {plugin_id})")
             return True
@@ -392,7 +393,8 @@ class PluginDatabaseService(QObject):
                 self._status_cache.pop(plugin_name, None)
                 self._invalidate_cache()
                 logger.info(f"插件记录已删除: {plugin_name}")
-                self.database_updated.emit()
+                if self.database_updated:
+                    self.database_updated.emit()
             return success
         except Exception as e:
             logger.error(f"删除插件记录失败: {plugin_name}, 错误: {e}")
@@ -453,7 +455,8 @@ class PluginDatabaseService(QObject):
         try:
             ok = self.db_manager.save_unified_plugin_config(plugin_name, config, config_type=config_type)
             if ok:
-                self.database_updated.emit()
+                if self.database_updated:
+                    self.database_updated.emit()
             return ok
         except Exception as e:
             logger.error(f"保存插件配置失败: {plugin_name}, 错误: {e}")

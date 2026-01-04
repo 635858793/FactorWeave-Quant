@@ -30,20 +30,8 @@ from ..events import EventBus, get_event_bus
 from ..containers import ServiceContainer, get_service_container
 from ..plugin_types import PluginType, AssetType, DataType
 from ..data_source_extensions import IDataSourcePlugin, PluginInfo, HealthCheckResult
+from ..enums import PluginLifecycle
 from .metrics_base import add_dict_interface
-
-
-class PluginState(Enum):
-    """插件状态"""
-    UNKNOWN = "unknown"
-    DISCOVERED = "discovered"
-    VALIDATED = "validated"
-    LOADED = "loaded"
-    INITIALIZED = "initialized"
-    ACTIVATED = "activated"
-    DEACTIVATED = "deactivated"
-    FAILED = "failed"
-    REMOVED = "removed"
 
 
 class PluginLifecycleStage(Enum):
@@ -83,7 +71,7 @@ class PluginMetadata:
     description: str
     author: str
     plugin_type: PluginType
-    state: PluginState
+    state: PluginLifecycle
     priority: PluginPriority = PluginPriority.NORMAL
 
     # 时间信息
@@ -195,7 +183,7 @@ class PluginService(BaseService):
 
         # 插件分类索引
         self._plugins_by_type: Dict[PluginType, List[str]] = defaultdict(list)
-        self._plugins_by_state: Dict[PluginState, List[str]] = defaultdict(list)
+        self._plugins_by_state: Dict[PluginLifecycle, List[str]] = defaultdict(list)
         self._plugins_by_priority: Dict[PluginPriority, List[str]] = defaultdict(list)
 
         # 依赖管理
@@ -395,7 +383,7 @@ class PluginService(BaseService):
                 description=plugin_info.get('description', ''),
                 author=plugin_info.get('author', 'Unknown'),
                 plugin_type=self._parse_plugin_type(plugin_info.get('type', 'UNKNOWN')),
-                state=PluginState.DISCOVERED,
+                state=PluginLifecycle.DISCOVERED,
                 priority=self._parse_priority(plugin_info.get('priority', 'NORMAL')),
                 plugin_path=str(plugin_path),
                 config=plugin_info.get('config', {})
@@ -662,7 +650,7 @@ class PluginService(BaseService):
         try:
             metadata = self._plugins[plugin_id]
 
-            if metadata.state != PluginState.DISCOVERED:
+            if metadata.state != PluginLifecycle.DISCOVERED:
                 return True  # 已经加载或失败
 
             # 检查依赖
@@ -670,25 +658,25 @@ class PluginService(BaseService):
                 dep_plugin = self._plugins.get(dependency.name)
                 if dep_plugin is None:
                     if not dependency.optional:
-                        self._set_plugin_state(plugin_id, PluginState.FAILED,
+                        self._set_plugin_state(plugin_id, PluginLifecycle.FAILED,
                                                f"Missing dependency: {dependency.name}")
                         return False
-                elif dep_plugin.state not in [PluginState.LOADED, PluginState.INITIALIZED, PluginState.ACTIVATED]:
+                elif dep_plugin.state not in [PluginLifecycle.LOADED, PluginLifecycle.INITIALIZED, PluginLifecycle.ACTIVATED]:
                     if not dependency.optional:
-                        self._set_plugin_state(plugin_id, PluginState.FAILED,
+                        self._set_plugin_state(plugin_id, PluginLifecycle.FAILED,
                                                f"Dependency not loaded: {dependency.name}")
                         return False
 
             # 导入插件模块
             plugin_module = self._import_plugin_module(metadata)
             if plugin_module is None:
-                self._set_plugin_state(plugin_id, PluginState.FAILED, "Failed to import module")
+                self._set_plugin_state(plugin_id, PluginLifecycle.FAILED, "Failed to import module")
                 return False
 
             # 查找插件类
             plugin_class = self._find_plugin_class(plugin_module, metadata)
             if plugin_class is None:
-                self._set_plugin_state(plugin_id, PluginState.FAILED, "Plugin class not found")
+                self._set_plugin_state(plugin_id, PluginLifecycle.FAILED, "Plugin class not found")
                 return False
 
             # 保存模块和类
@@ -699,7 +687,7 @@ class PluginService(BaseService):
             metadata.load_time = datetime.now()
 
             # 更新状态
-            self._set_plugin_state(plugin_id, PluginState.LOADED)
+            self._set_plugin_state(plugin_id, PluginLifecycle.LOADED)
             self._record_event(plugin_id, PluginLifecycleStage.LOAD, True)
 
             logger.debug(f"✓ Loaded plugin: {plugin_id}")
@@ -708,7 +696,7 @@ class PluginService(BaseService):
         except Exception as e:
             error_msg = f"Failed to load plugin {plugin_id}: {e}"
             logger.error(error_msg)
-            self._set_plugin_state(plugin_id, PluginState.FAILED, str(e))
+            self._set_plugin_state(plugin_id, PluginLifecycle.FAILED, str(e))
             self._record_event(plugin_id, PluginLifecycleStage.LOAD, False, error_message=str(e))
             return False
 
@@ -802,7 +790,7 @@ class PluginService(BaseService):
             initialized_count = 0
 
             for plugin_id, metadata in self._plugins.items():
-                if metadata.state == PluginState.LOADED:
+                if metadata.state == PluginLifecycle.LOADED:
                     if self._initialize_plugin(plugin_id):
                         initialized_count += 1
 
@@ -830,7 +818,7 @@ class PluginService(BaseService):
             metadata.initialization_time = datetime.now()
 
             # 更新状态
-            self._set_plugin_state(plugin_id, PluginState.INITIALIZED)
+            self._set_plugin_state(plugin_id, PluginLifecycle.INITIALIZED)
             self._record_event(plugin_id, PluginLifecycleStage.INITIALIZE, True)
 
             logger.debug(f"✓ Initialized plugin: {plugin_id}")
@@ -839,7 +827,7 @@ class PluginService(BaseService):
         except Exception as e:
             error_msg = f"Failed to initialize plugin {plugin_id}: {e}"
             logger.error(error_msg)
-            self._set_plugin_state(plugin_id, PluginState.FAILED, str(e))
+            self._set_plugin_state(plugin_id, PluginLifecycle.FAILED, str(e))
             self._record_event(plugin_id, PluginLifecycleStage.INITIALIZE, False, error_message=str(e))
             return False
 
@@ -849,7 +837,7 @@ class PluginService(BaseService):
             activated_count = 0
 
             for plugin_id, metadata in self._plugins.items():
-                if metadata.state == PluginState.INITIALIZED:
+                if metadata.state == PluginLifecycle.INITIALIZED:
                     if self._activate_plugin(plugin_id):
                         activated_count += 1
 
@@ -872,7 +860,7 @@ class PluginService(BaseService):
             metadata.activation_time = datetime.now()
 
             # 更新状态
-            self._set_plugin_state(plugin_id, PluginState.ACTIVATED)
+            self._set_plugin_state(plugin_id, PluginLifecycle.ACTIVATED)
             self._record_event(plugin_id, PluginLifecycleStage.ACTIVATE, True)
 
             logger.debug(f"✓ Activated plugin: {plugin_id}")
@@ -881,7 +869,7 @@ class PluginService(BaseService):
         except Exception as e:
             error_msg = f"Failed to activate plugin {plugin_id}: {e}"
             logger.error(error_msg)
-            self._set_plugin_state(plugin_id, PluginState.FAILED, str(e))
+            self._set_plugin_state(plugin_id, PluginLifecycle.FAILED, str(e))
             self._record_event(plugin_id, PluginLifecycleStage.ACTIVATE, False, error_message=str(e))
             return False
 
@@ -914,7 +902,7 @@ class PluginService(BaseService):
         except Exception as e:
             logger.error(f"Plugin functionality validation failed: {e}")
 
-    def _set_plugin_state(self, plugin_id: str, state: PluginState, error_message: Optional[str] = None) -> None:
+    def _set_plugin_state(self, plugin_id: str, state: PluginLifecycle, error_message: Optional[str] = None) -> None:
         """设置插件状态"""
         with self._plugin_lock:
             if plugin_id in self._plugins:
@@ -934,7 +922,7 @@ class PluginService(BaseService):
                     self._plugins_by_state[state].append(plugin_id)
 
                 # 更新指标
-                if state == PluginState.FAILED:
+                if state == PluginLifecycle.FAILED:
                     self._metrics.failed_plugins += 1
 
     def _record_event(self, plugin_id: str, stage: PluginLifecycleStage, success: bool,
@@ -982,7 +970,7 @@ class PluginService(BaseService):
         try:
             metadata = self._plugins[plugin_id]
 
-            if metadata.state not in [PluginState.ACTIVATED, PluginState.INITIALIZED]:
+            if metadata.state not in [PluginLifecycle.ACTIVATED, PluginLifecycle.INITIALIZED]:
                 return False
 
             plugin_instance = self._plugin_instances.get(plugin_id)
@@ -1021,7 +1009,7 @@ class PluginService(BaseService):
         """按类型获取插件"""
         return self._plugins_by_type.get(plugin_type, [])
 
-    def get_plugins_by_state(self, state: PluginState) -> List[str]:
+    def get_plugins_by_state(self, state: PluginLifecycle) -> List[str]:
         """按状态获取插件"""
         return self._plugins_by_state.get(state, [])
 
@@ -1035,7 +1023,7 @@ class PluginService(BaseService):
             return False
 
         metadata = self._plugins[plugin_id]
-        if metadata.state == PluginState.INITIALIZED:
+        if metadata.state == PluginLifecycle.INITIALIZED:
             return self._activate_plugin(plugin_id)
 
         return False
@@ -1047,14 +1035,14 @@ class PluginService(BaseService):
                 return False
 
             metadata = self._plugins[plugin_id]
-            if metadata.state != PluginState.ACTIVATED:
+            if metadata.state != PluginLifecycle.ACTIVATED:
                 return False
 
             plugin_instance = self._plugin_instances.get(plugin_id)
             if plugin_instance and hasattr(plugin_instance, 'deactivate'):
                 plugin_instance.deactivate()
 
-            self._set_plugin_state(plugin_id, PluginState.DEACTIVATED)
+            self._set_plugin_state(plugin_id, PluginLifecycle.DEACTIVATED)
             self._record_event(plugin_id, PluginLifecycleStage.DEACTIVATE, True)
 
             return True
@@ -1080,8 +1068,8 @@ class PluginService(BaseService):
         try:
             with self._plugin_lock:
                 total_plugins = len(self._plugins)
-                active_plugins = len(self._plugins_by_state.get(PluginState.ACTIVATED, []))
-                failed_plugins = len(self._plugins_by_state.get(PluginState.FAILED, []))
+                active_plugins = len(self._plugins_by_state.get(PluginLifecycle.ACTIVATED, []))
+                failed_plugins = len(self._plugins_by_state.get(PluginLifecycle.FAILED, []))
 
                 health_rate = active_plugins / total_plugins if total_plugins > 0 else 0
 
@@ -1105,7 +1093,7 @@ class PluginService(BaseService):
             logger.info("Disposing PluginService resources...")
 
             # 停用所有激活的插件
-            for plugin_id in list(self._plugins_by_state.get(PluginState.ACTIVATED, [])):
+            for plugin_id in list(self._plugins_by_state.get(PluginLifecycle.ACTIVATED, [])):
                 self.deactivate_plugin(plugin_id)
 
             # 关闭线程池

@@ -6,6 +6,7 @@ FactorWeave-Quant  增强插件管理器
 """
 
 from .plugin_types import PluginType, PluginCategory
+from .enums import PluginStatus
 import os
 import sys
 import json
@@ -71,8 +72,8 @@ except ImportError:
 
             # 如果仍然失败，尝试最后的方法
             try:
-                # 直接导入
-                import plugin_interface
+                # 直接导入插件接口模块
+                import plugins.plugin_interface as plugin_interface
                 IPlugin = plugin_interface.IPlugin
                 PluginType = plugin_interface.PluginType
                 PluginCategory = plugin_interface.PluginCategory
@@ -119,15 +120,6 @@ class PluginMetadata:
 class PluginMarket:
     """插件市场占位类"""
     pass
-
-
-class PluginStatus(Enum):
-    """插件状态"""
-    UNLOADED = "unloaded"
-    LOADED = "loaded"
-    ENABLED = "enabled"
-    DISABLED = "disabled"
-    ERROR = "error"
 
 
 @dataclass

@@ -230,14 +230,20 @@ class LoguruQtSignalBridge:
         """获取底层处理器"""
         return self.handler
 
-# 全局Qt处理器实例
-qt_handler = LoguruQtHandler()
-qt_bridge = LoguruQtSignalBridge()
+# 全局Qt处理器实例 - 使用延迟初始化避免Qt事件循环问题
+qt_handler = None
+qt_bridge = None
 
 def get_qt_handler() -> LoguruQtHandler:
-    """获取全局Qt处理器"""
+    """获取全局Qt处理器，延迟初始化"""
+    global qt_handler
+    if qt_handler is None:
+        qt_handler = LoguruQtHandler()
     return qt_handler
 
 def get_qt_bridge() -> LoguruQtSignalBridge:
-    """获取全局Qt信号桥接器"""
+    """获取全局Qt信号桥接器，延迟初始化"""
+    global qt_bridge
+    if qt_bridge is None:
+        qt_bridge = LoguruQtSignalBridge()
     return qt_bridge

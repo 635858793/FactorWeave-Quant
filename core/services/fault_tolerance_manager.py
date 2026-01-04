@@ -14,15 +14,9 @@ from typing import Dict, List, Optional, Callable, Any, Set
 from threading import Lock, Event
 import threading
 
-logger = logging.getLogger(__name__)
+from core.enums import HealthStatus
 
-class HealthStatus(Enum):
-    """健康状态枚举"""
-    HEALTHY = "healthy"
-    WARNING = "warning"
-    CRITICAL = "critical"
-    FAILED = "failed"
-    UNKNOWN = "unknown"
+logger = logging.getLogger(__name__)
 
 class RecoveryAction(Enum):
     """恢复动作枚举"""

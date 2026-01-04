@@ -19,32 +19,15 @@ from enum import Enum
 from dataclasses import dataclass
 from pathlib import Path
 
+import sys
+from pathlib import Path as PathLib
+project_root = PathLib(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
+from core.enums import PluginStatus
+from core.plugin_types import PluginType
+
 logger = logger
-
-
-class PluginStatus(Enum):
-    """插件状态枚举"""
-    UNLOADED = "unloaded"
-    LOADED = "loaded"
-    ENABLED = "enabled"
-    DISABLED = "disabled"
-    ERROR = "error"
-    INSTALLING = "installing"
-    UPDATING = "updating"
-    UNINSTALLING = "uninstalling"
-
-
-class PluginType(Enum):
-    """插件类型枚举"""
-    INDICATOR = "indicator"
-    STRATEGY = "strategy"
-    DATA_SOURCE = "data_source"
-    SENTIMENT = "sentiment"  # 新增情绪分析插件类型
-    ANALYSIS = "analysis"
-    UI_COMPONENT = "ui_component"
-    EXPORT = "export"
-    NOTIFICATION = "notification"
-    CHART_TOOL = "chart_tool"
 
 
 @dataclass

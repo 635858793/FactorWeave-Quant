@@ -1,4 +1,6 @@
 from loguru import logger
+
+from core.plugin_types import AssetType
 """
 图表服务模块
 
@@ -579,9 +581,6 @@ class ChartService(CacheableService, ConfigurableService):
             logger.info("所有活动的图表任务均已取消。")
 
 
-
-
-
     def _get_data_manager(self):
         """获取数据管理器（已弃用）"""
         # 返回data_standardizer而不是data_manager
@@ -638,7 +637,7 @@ class ChartService(CacheableService, ConfigurableService):
     def _get_default_theme(self) -> Dict[str, Any]:
         """获取默认主题"""
         return {
-            'background_color': '#ffffff',
+            # 'background_color': '#ffffff',
             'grid_color': '#e0e0e0',
             'text_color': '#333333',
             'up_color': '#ff4444',
@@ -681,7 +680,7 @@ class ChartService(CacheableService, ConfigurableService):
         self._chart_themes = {
             'default': self._get_default_theme(),
             'dark': {
-                'background_color': '#1e1e1e',
+                # 'background_color': '#1e1e1e',
                 'grid_color': '#404040',
                 'text_color': '#ffffff',
                 'up_color': '#ff4444',

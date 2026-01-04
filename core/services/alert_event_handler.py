@@ -38,7 +38,7 @@ class AlertEventHandler:
         """处理资源告警事件"""
         try:
             #  修复：支持新的ResourceAlert事件对象
-            from core.events.events import ResourceAlert
+            from core.events.types import ResourceAlert
 
             if isinstance(event_data, ResourceAlert):
                 # 新的事件对象格式
@@ -100,7 +100,7 @@ class AlertEventHandler:
         """处理应用告警事件"""
         try:
             #  修复：支持新的ApplicationAlert事件对象
-            from core.events.events import ApplicationAlert
+            from core.events.types import ApplicationAlert
 
             if isinstance(event_data, ApplicationAlert):
                 # 新的事件对象格式

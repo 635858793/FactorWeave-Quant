@@ -17,7 +17,7 @@ from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QLineEdit, QFormLayout
 from core.data_source_data_models import StockInfo, KlineData, MarketData, QueryParams
 from core.data_source_extensions import IDataSourcePlugin, PluginInfo, HealthCheckResult, ConnectionInfo
 from core.plugin_types import AssetType, DataType, PluginType
-from plugins.plugin_interface import PluginState  # 添加PluginState导入
+from plugins.plugin_interface import PluginLifecycle  # 添加PluginLifecycle导入
 
 
 class YahooFinanceDataSourcePlugin(IDataSourcePlugin):
@@ -29,7 +29,7 @@ class YahooFinanceDataSourcePlugin(IDataSourcePlugin):
         # 必须显式初始化这些属性（IDataSourcePlugin是抽象基类，不提供默认实现）
         self.initialized = False
         self.last_error = None
-        self.plugin_state = PluginState.CREATED  # 初始状态（插件对象已创建）
+        self.plugin_state = PluginLifecycle.CREATED  # 初始状态（插件对象已创建）
 
         # 默认配置
         default_config = {

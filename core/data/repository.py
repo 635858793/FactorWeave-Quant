@@ -390,7 +390,9 @@ class KlineRepository(BaseRepository):
         try:
             # 验证参数
             if not params.validate():
-                self.logger.error(f"Invalid query params: {params}")
+                errors = params.get_validation_errors()
+                error_detail = '; '.join(errors) if errors else '未知错误'
+                self.logger.error(f"Invalid query params: {params} | 错误详情: {error_detail}")
                 return None
 
             # ✅ 确定资产类型（默认为股票）

@@ -11,7 +11,7 @@ import pandas as pd
 from dataclasses import dataclass, asdict
 from enum import Enum
 
-from .events import EventBus
+from .events import EventBus, TradeExecutedEvent, PositionUpdatedEvent
 from .containers import ServiceContainer
 
 class SignalType(Enum):
@@ -254,6 +254,9 @@ class TradingEngine:
                     current_price=price
                 )
 
+            # 发布交易执行事件
+            self._publish_trade_executed_event(signal, "buy", volume, price)
+
             logger.info(f"执行买入: {symbol} {volume}@{price}")
             return True
 
@@ -289,6 +292,9 @@ class TradingEngine:
             position.quantity -= volume
             if position.quantity == 0:
                 position.position_type = PositionType.EMPTY
+
+            # 发布交易执行事件
+            self._publish_trade_executed_event(signal, "sell", volume, price, realized_pnl)
 
             logger.info(f"执行卖出: {symbol} {volume}@{price} 盈亏:{realized_pnl:.2f}")
             return True
@@ -339,6 +345,43 @@ class TradingEngine:
                 return False
 
         return True
+
+    def _publish_trade_executed_event(self, signal: TradingSignal, action: str, 
+                                       volume: int, price: float, realized_pnl: float = 0.0):
+        """发布交易执行事件"""
+        try:
+            event = TradeExecutedEvent(
+                symbol=signal.symbol,
+                action=action,
+                quantity=volume,
+                price=price,
+                commission=self._calculate_cost(price, volume, is_buy=(action == "buy")),
+                realized_pnl=realized_pnl,
+                timestamp=datetime.now(),
+                signal_id=str(signal.timestamp.timestamp()) if signal.timestamp else None
+            )
+            self.event_bus.publish(event)
+            logger.debug(f"发布交易执行事件: {signal.symbol} {action} {volume}@{price}")
+        except Exception as e:
+            logger.warning(f"发布交易执行事件失败: {e}")
+
+    def _publish_position_updated_event(self, symbol: str, position: Position):
+        """发布仓位更新事件"""
+        try:
+            event = PositionUpdatedEvent(
+                symbol=symbol,
+                position_type=position.position_type.name,
+                quantity=position.quantity,
+                avg_price=position.avg_price,
+                current_price=position.current_price,
+                unrealized_pnl=position.unrealized_pnl,
+                realized_pnl=position.realized_pnl,
+                timestamp=position.timestamp
+            )
+            self.event_bus.publish(event)
+            logger.debug(f"发布仓位更新事件: {symbol} {position.position_type.name} {position.quantity}")
+        except Exception as e:
+            logger.warning(f"发布仓位更新事件失败: {e}")
 
     def update_positions(self, prices: Dict[str, float]):
         """

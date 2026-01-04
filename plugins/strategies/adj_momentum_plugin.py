@@ -135,18 +135,17 @@ class AdjMomentumPlugin(IStrategyPlugin):
             logger.error(f"策略初始化失败: {e}")
             return False
     
-    def generate_signals(self, market_data: StandardMarketData, context: StrategyContext) -> List[Signal]:
+    def generate_signals(self, data: pd.DataFrame) -> List[Signal]:
         """生成交易信号"""
         try:
             signals = []
             
-            # 将市场数据转换为DataFrame
-            df = market_data.to_dataframe()
+            symbol = getattr(self, '_current_symbol', getattr(data, 'symbol', 'UNKNOWN') if hasattr(data, 'symbol') else 'UNKNOWN')
             
             # 检查数据是否包含复权价格列，如果没有，使用close列作为替代
             price_column = 'adj_close'
-            if price_column not in df.columns or df[price_column].isnull().all():
-                logger.warning(f"数据缺少adj_close列，使用close列作为替代: {market_data.symbol}")
+            if price_column not in data.columns or data[price_column].isnull().all():
+                logger.warning(f"数据缺少adj_close列，使用close列作为替代: {symbol}")
                 price_column = 'close'
             
             # 获取参数
@@ -154,16 +153,16 @@ class AdjMomentumPlugin(IStrategyPlugin):
             threshold = self._parameters.get('signal_strength_threshold', 0.01)
             
             # 计算动量
-            df['momentum'] = df[price_column].pct_change(lookback)
+            data['momentum'] = data[price_column].pct_change(lookback)
             
             # 生成信号
-            for i in range(len(df)):
+            for i in range(len(data)):
                 if i < lookback:  # 跳过初始数据
                     continue
                 
-                current_date = df.index[i]
-                current_close = df.iloc[i]['close']
-                momentum = df.iloc[i]['momentum']
+                current_date = data.index[i]
+                current_close = data.iloc[i]['close']
+                momentum = data.iloc[i]['momentum']
                 
                 signal_type = SignalType.HOLD
                 strength = 0.0
@@ -180,7 +179,7 @@ class AdjMomentumPlugin(IStrategyPlugin):
                 
                 if signal_type != SignalType.HOLD:
                     signal = Signal(
-                        symbol=market_data.symbol,
+                        symbol=symbol,
                         signal_type=signal_type,
                         strength=strength,
                         timestamp=current_date,
@@ -189,12 +188,38 @@ class AdjMomentumPlugin(IStrategyPlugin):
                         metadata={
                             'momentum': momentum,
                             'lookback_period': lookback,
-                            'price_column': price_column  # 添加使用的价格列信息
+                            'price_column': price_column
                         }
                     )
                     signals.append(signal)
             
-            logger.info(f"生成了 {len(signals)} 个信号: {market_data.symbol}")
+            logger.info(f"生成了 {len(signals)} 个信号: {symbol}")
+            
+            # 发布信号生成事件
+            if signals:
+                try:
+                    from core.events import SignalGeneratedEvent, get_event_bus
+                    event = SignalGeneratedEvent(
+                        strategy_id=self._strategy_info.name,
+                        strategy_name=self._strategy_info.display_name,
+                        signals=[{
+                            'signal_type': s.signal_type.value,
+                            'symbol': s.symbol,
+                            'strength': s.strength,
+                            'timestamp': s.timestamp.isoformat() if hasattr(s.timestamp, 'isoformat') else str(s.timestamp),
+                            'price': s.price,
+                            'reason': s.reason
+                        } for s in signals],
+                        symbol=symbol,
+                        priority=1,
+                        timestamp=datetime.now(),
+                        source="adj_momentum_strategy",
+                        data={'plugin_type': 'adj_momentum'}
+                    )
+                    get_event_bus().publish(event)
+                except Exception as event_error:
+                    logger.warning(f"发布动量策略信号事件失败: {event_error}")
+            
             return signals
         except Exception as e:
             logger.error(f"生成信号失败: {e}")

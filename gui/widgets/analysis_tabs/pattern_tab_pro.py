@@ -13,8 +13,11 @@ from datetime import datetime, timedelta
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
+
+from analysis.pattern_recognition import EnhancedPatternRecognizer
+from db.models.ai_config_models import get_ai_config_manager
 from .base_tab import BaseAnalysisTab
-from core.events.events import PatternSignalsDisplayEvent
+from core.events.types import PatternSignalsDisplayEvent
 from analysis.pattern_manager import PatternManager
 from core.services.backtest_result_manager import BacktestResultManager, BacktestResult
 

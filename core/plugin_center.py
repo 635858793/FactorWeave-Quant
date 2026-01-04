@@ -18,6 +18,7 @@ from enum import Enum
 from loguru import logger
 from core.plugin_types import AssetType, DataType, PluginType
 from core.data_source_extensions import PluginInfo, HealthCheckResult
+from core.enums import PluginStatus
 from plugins.plugin_interface import IDataSourcePlugin
 
 logger = logger.bind(module=__name__)
@@ -49,15 +50,6 @@ class PluginCapability:
     priority: int = 50
     quality_rating: float = 1.0
     reliability_rating: float = 1.0
-
-
-class PluginStatus(Enum):
-    """插件状态枚举"""
-    UNKNOWN = "unknown"
-    ACTIVE = "active"
-    INACTIVE = "inactive"
-    ERROR = "error"
-    DISABLED = "disabled"
 
 
 class PluginCenter:

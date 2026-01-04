@@ -8,13 +8,21 @@ from loguru import logger
 import pandas as pd
 import numpy as np
 from abc import ABC, abstractmethod
-from typing import Dict, List, Any, Optional, Union, Tuple
+from typing import Dict, List, Any, Optional, Union, Tuple, Callable
 from datetime import datetime
 from enum import Enum
 from dataclasses import dataclass, field
 import json
 import hashlib
+import uuid
 from pathlib import Path
+
+try:
+    from core.events import EventBus, get_event_bus
+    EVENT_BUS_AVAILABLE = True
+except ImportError:
+    EVENT_BUS_AVAILABLE = False
+
 
 class StrategyType(Enum):
     """策略类型枚举"""
@@ -111,8 +119,9 @@ class StrategyParameter:
         except:
             return False
 
+
 class BaseStrategy(ABC):
-    """策略基类 - 所有策略的统一接口"""
+    """策略基类 - 集成事件系统的统一策略接口"""
 
     def __init__(self, name: str, strategy_type: StrategyType = StrategyType.CUSTOM):
         """初始化策略
@@ -131,8 +140,109 @@ class BaseStrategy(ABC):
         self.last_updated = datetime.now()
         self._cache = {}
 
+        # 事件系统相关
+        self._event_bus: Optional[EventBus] = None
+        self._event_handlers: Dict[str, List[Tuple[str, Callable]]] = {}
+
         # 初始化默认参数
         self._init_default_parameters()
+
+    def _get_event_bus(self) -> Optional[EventBus]:
+        """获取事件总线实例"""
+        if self._event_bus is None and EVENT_BUS_AVAILABLE:
+            try:
+                self._event_bus = get_event_bus()
+            except Exception:
+                pass
+        return self._event_bus
+
+    def publish_event(self, event_type: str, data: Dict[str, Any]) -> None:
+        """发布事件
+
+        Args:
+            event_type: 事件类型
+            data: 事件数据
+        """
+        if not EVENT_BUS_AVAILABLE:
+            return
+
+        bus = self._get_event_bus()
+        if bus is None:
+            return
+
+        try:
+            event = {
+                'type': event_type,
+                'timestamp': datetime.now().isoformat(),
+                'strategy_name': self.name,
+                'strategy_type': self.strategy_type.value,
+                'data': data
+            }
+            bus.publish(f"strategy.{event_type}", event)
+        except Exception:
+            pass
+
+    def subscribe_event(self, event_type: str, handler: Callable) -> str:
+        """订阅事件
+
+        Args:
+            event_type: 事件类型
+            handler: 事件处理函数
+
+        Returns:
+            订阅ID
+        """
+        subscription_id = str(uuid.uuid4())
+
+        if event_type not in self._event_handlers:
+            self._event_handlers[event_type] = []
+        self._event_handlers[event_type].append((subscription_id, handler))
+
+        return subscription_id
+
+    def unsubscribe_event(self, subscription_id: str) -> bool:
+        """取消订阅事件
+
+        Args:
+            subscription_id: 订阅ID
+
+        Returns:
+            是否成功取消
+        """
+        for event_type, handlers in self._event_handlers.items():
+            for i, (sub_id, _) in enumerate(handlers):
+                if sub_id == subscription_id:
+                    handlers.pop(i)
+                    return True
+        return False
+
+    def _trigger_signal_generated_event(self, signals: List[StrategySignal]) -> None:
+        """触发信号生成事件"""
+        self.publish_event('signal_generated', {
+            'signal_count': len(signals),
+            'signals': [s.to_dict() for s in signals]
+        })
+
+    def _trigger_strategy_started_event(self) -> None:
+        """触发策略启动事件"""
+        self.publish_event('started', {
+            'status': self.status.value,
+            'parameters': self.get_parameters_dict()
+        })
+
+    def _trigger_strategy_stopped_event(self) -> None:
+        """触发策略停止事件"""
+        self.publish_event('stopped', {
+            'status': self.status.value,
+            'performance_metrics': self.performance_metrics
+        })
+
+    def _trigger_strategy_error_event(self, error: str) -> None:
+        """触发策略错误事件"""
+        self.publish_event('error', {
+            'error': error,
+            'status': self.status.value
+        })
 
     @abstractmethod
     def _init_default_parameters(self):
@@ -150,6 +260,29 @@ class BaseStrategy(ABC):
             交易信号列表
         """
         pass
+
+    def _generate_signals_with_event(self, data: pd.DataFrame) -> List[StrategySignal]:
+        """生成交易信号（带事件触发）"""
+        signals = self.generate_signals(data)
+        self._trigger_signal_generated_event(signals)
+        return signals
+
+    def _start_with_event(self) -> bool:
+        """启动策略（带事件触发）"""
+        valid, errors = self.validate_parameters()
+        if not valid:
+            self._trigger_strategy_error_event(f"参数验证失败: {errors}")
+            return False
+
+        self.status = StrategyStatus.RUNNING
+        self._trigger_strategy_started_event()
+        return True
+
+    def _stop_with_event(self) -> bool:
+        """停止策略（带事件触发）"""
+        self.status = StrategyStatus.STOPPED
+        self._trigger_strategy_stopped_event()
+        return True
 
     def add_parameter(self, name: str, value: Any, param_type: type,
                       description: str = "", min_value=None, max_value=None,
@@ -231,18 +364,56 @@ class BaseStrategy(ABC):
 
         return len(errors) == 0, errors
 
-    def get_strategy_info(self) -> Dict[str, Any]:
+    def get_strategy_info(self):
         """获取策略信息"""
-        return {
-            'name': self.name,
-            'type': self.strategy_type.value,
-            'status': self.status.value,
-            'parameters': {name: param.value for name, param in self.parameters.items()},
-            'metadata': self.metadata,
-            'performance_metrics': self.performance_metrics,
-            'created_at': self.created_at.isoformat(),
-            'last_updated': self.last_updated.isoformat()
+        from core.strategy_extensions import StrategyInfo, ParameterDef, StrategyType as ExtStrategyType
+
+        # 将 BaseStrategy 的参数转换为 ParameterDef 列表
+        parameter_defs = []
+        for name, param in self.parameters.items():
+            parameter_defs.append(ParameterDef(
+                name=name,
+                type=param.param_type,
+                default_value=param.value,
+                description=param.description,
+                min_value=param.min_value,
+                max_value=param.max_value,
+                choices=param.choices,
+                required=param.required
+            ))
+
+        # 映射策略类型
+        strategy_type_map = {
+            StrategyType.TREND_FOLLOWING: ExtStrategyType.TREND_FOLLOWING,
+            StrategyType.MEAN_REVERSION: ExtStrategyType.MEAN_REVERSION,
+            StrategyType.MOMENTUM: ExtStrategyType.MOMENTUM,
+            StrategyType.ARBITRAGE: ExtStrategyType.ARBITRAGE,
+            StrategyType.TECHNICAL: ExtStrategyType.TECHNICAL,
+            StrategyType.FUNDAMENTAL: ExtStrategyType.FUNDAMENTAL,
+            StrategyType.QUANTITATIVE: ExtStrategyType.QUANTITATIVE,
+            StrategyType.MACHINE_LEARNING: ExtStrategyType.MACHINE_LEARNING,
+            StrategyType.CUSTOM: ExtStrategyType.CUSTOM,
         }
+
+        ext_strategy_type = strategy_type_map.get(self.strategy_type, ExtStrategyType.CUSTOM)
+
+        # 创建 StrategyInfo 对象
+        strategy_info = StrategyInfo(
+            name=self.name,
+            display_name=self.name,
+            description=self.metadata.get('description', ''),
+            version=self.metadata.get('version', '1.0.0'),
+            author=self.metadata.get('author', 'Unknown'),
+            strategy_type=ext_strategy_type,
+            parameters=parameter_defs,
+            supported_assets=[],
+            time_frames=[],
+            tags=self.metadata.get('tags', []),
+            created_at=self.created_at,
+            updated_at=self.last_updated
+        )
+
+        return strategy_info
 
     def save_config(self, filepath: Union[str, Path]) -> bool:
         """保存策略配置"""

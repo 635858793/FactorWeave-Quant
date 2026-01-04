@@ -22,7 +22,7 @@ from PyQt5.QtGui import QColor, QPen, QBrush
 from loguru import logger
 
 from ...events.event_bus import EventBus
-from ...events.events import Event, EventType
+from ...events.types import Event, EventType
 
 
 class ChartType(Enum):

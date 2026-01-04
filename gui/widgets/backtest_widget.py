@@ -1337,59 +1337,92 @@ class ProfessionalBacktestWidget(QWidget):
         try:
             logger.info("开始启动回测")
 
-            # 创建回测引擎（如果可用）
-            try:
-                backtest_level = getattr(
-                    BacktestLevel, params['professional_level'])
+            stock_code = params.get('stock_code', '000001')
+            period = params.get('period', '1y')
 
-                # 使用新的引擎参数
-                use_vectorized = params.get('use_vectorized_engine', True)
-                auto_select = params.get('auto_select_engine', True)
+            stock_data = self._get_stock_data(stock_code, period)
 
-                self.backtest_engine = UnifiedBacktestEngine(
-                    backtest_level=backtest_level,
-                    use_vectorized_engine=use_vectorized,
-                    auto_select_engine=auto_select
-                )
+            from backtest.unified_backtest_engine import BacktestLevel
 
-                engine_info = f"向量化: {use_vectorized}, 自动选择: {auto_select}"
-                logger.info(f"回测引擎创建成功 - {engine_info}")
+            use_vectorized = params.get('use_vectorized_engine', True)
+            auto_select = params.get('auto_select_engine', True)
 
-            except Exception as e:
-                logger.error(f'start_backtest执行失败: {e}')
-                self.backtest_engine = None
+            self.backtest_engine = UnifiedBacktestEngine(
+                backtest_level=BacktestLevel.PROFESSIONAL,
+                use_vectorized_engine=use_vectorized,
+                auto_select_engine=auto_select
+            )
 
-            # 创建监控器（如果可用）
+            engine_info = f"向量化: {use_vectorized}, 自动选择: {auto_select}"
+            logger.info(f"回测引擎创建成功 - {engine_info}")
+
             try:
                 self.monitor = RealTimeBacktestMonitor(
                     monitoring_level=MonitoringLevel.REAL_TIME
                 )
             except Exception as e:
-                logger.error(f'start_backtest执行失败: {e}')
+                logger.error(f'创建监控器失败: {e}')
                 self.monitor = None
 
-            # 生成模拟数据进行演示
-            demo_data = self._generate_demo_data()
+            self.current_data = stock_data
 
-            # 更新监控面板信息
             engine_type = "向量化引擎" if params.get('use_vectorized_engine', True) else "标准引擎"
             if params.get('auto_select_engine', True):
                 engine_type += " (自动选择)"
 
             self.alerts_panel.update_performance_metrics(
                 engine_type=engine_type,
-                data_size=len(demo_data)
+                data_size=len(stock_data)
             )
 
-            # 启动监控线程
-            self.start_monitoring(demo_data, params)
+            self.start_monitoring(stock_data, params)
 
-            self.alerts_panel.add_alert('info', f'回测已启动，使用{engine_type}，正在实时监控中...')
+            self.alerts_panel.add_alert('info', f'回测已启动，使用{engine_type}，数据: {stock_code}')
 
         except Exception as e:
             logger.error(f"启动回测失败: {e}")
             self.error_occurred.emit(f"启动回测失败: {str(e)}")
             self.control_panel.on_stop_backtest()
+
+    def _get_stock_data(self, stock_code: str, period: str) -> pd.DataFrame:
+        """从系统框架获取真实股票数据"""
+        try:
+            from core.services.stock_service import StockService
+            stock_service = StockService()
+            
+            if not stock_service._initialized:
+                raise RuntimeError("StockService未初始化")
+            
+            period_map = {
+                "1w": 7, "2w": 14, "1m": 30, "3m": 90,
+                "6m": 180, "1y": 365, "2y": 730, "5y": 1825
+            }
+            days = period_map.get(period, 365)
+            
+            kdata = stock_service.get_kdata(stock_code, period='D', count=days)
+            
+            if kdata is None or kdata.empty:
+                raise RuntimeError(f"无法获取股票 {stock_code} 的K线数据，数据为空")
+            
+            close_col = 'close' if 'close' in kdata.columns else ('收盘' if '收盘' in kdata.columns else None)
+            if close_col is None:
+                raise RuntimeError(f"股票数据缺少价格列")
+            
+            price_data = kdata[close_col].copy()
+            if hasattr(price_data, 'fillna'):
+                price_data = price_data.fillna(method='ffill').fillna(method='bfill')
+            
+            kdata = kdata.copy()
+            kdata['close'] = price_data
+            kdata['signal'] = 0
+            
+            logger.info(f"成功获取股票数据: {stock_code}, {len(kdata)}条记录")
+            return kdata
+            
+        except ImportError as e:
+            raise RuntimeError(f"StockService模块导入失败: {e}")
+        except Exception as e:
+            raise RuntimeError(f"获取股票数据失败: {str(e)}")
 
     def stop_backtest(self):
         """停止回测"""
@@ -1441,8 +1474,7 @@ class ProfessionalBacktestWidget(QWidget):
                 if hasattr(self, 'current_data') and self.current_data is not None:
                     data = self.current_data
                 else:
-                    # 如果没有当前数据，生成基本测试数据用于演示
-                    data = self._generate_demo_data()
+                    raise RuntimeError("无法获取回测数据，请先启动回测")
                 
                 # 创建真实回测引擎
                 from backtest.unified_backtest_engine import BacktestLevel
@@ -1546,62 +1578,30 @@ class ProfessionalBacktestWidget(QWidget):
 
         logger.info(f"监控线程已启动 - 线程ID: {self.monitoring_thread.ident}")
 
-    def _generate_demo_data(self) -> pd.DataFrame:
-        """生成演示数据"""
+    def _get_monitoring_data(self, monitor, iteration: int) -> Dict:
+        """从真实监控系统获取监控数据"""
         try:
-            # 生成模拟K线数据
-            dates = pd.date_range(start='2023-01-01',
-                                  end='2023-12-31', freq='D')
-            n_days = len(dates)
-
-            np.random.seed(42)
-            returns = np.random.normal(0.0005, 0.02, n_days)
-            prices = 100 * np.cumprod(1 + returns)
-
-            # 生成交易信号
-            signals = np.random.choice([-1, 0, 1], n_days, p=[0.1, 0.8, 0.1])
-
-            demo_data = pd.DataFrame({
-                'close': prices,
-                'signal': signals,
-                'returns': returns,
-                'volume': np.random.uniform(1000000, 10000000, n_days)
-            }, index=dates)
-
-            return demo_data
-
+            if hasattr(monitor, 'get_latest_metrics') and monitor.get_latest_metrics() is not None:
+                latest_metrics = monitor.get_latest_metrics()
+                return {
+                    'timestamp': latest_metrics.timestamp,
+                    'current_return': latest_metrics.current_return,
+                    'cumulative_return': latest_metrics.cumulative_return,
+                    'current_drawdown': latest_metrics.current_drawdown,
+                    'max_drawdown': latest_metrics.max_drawdown,
+                    'sharpe_ratio': latest_metrics.sharpe_ratio,
+                    'volatility': latest_metrics.volatility,
+                    'var_95': latest_metrics.var_95,
+                    'total_return': latest_metrics.cumulative_return,
+                    'annualized_return': latest_metrics.cumulative_return * 252,
+                    'win_rate': latest_metrics.win_rate,
+                    'profit_factor': latest_metrics.profit_factor,
+                    'execution_time': latest_metrics.execution_time
+                }
+            else:
+                raise RuntimeError("监控器尚未产生有效指标数据")
         except Exception as e:
-            logger.error(f"生成演示数据失败: {e}")
-            return pd.DataFrame()
-
-    def _generate_monitoring_data(self, iteration: int) -> Dict:
-        """生成监控数据"""
-        try:
-            # 模拟实时指标
-            base_return = 0.001 * iteration
-            noise = np.random.normal(0, 0.02)
-
-            monitoring_data = {
-                'timestamp': datetime.now(),
-                'current_return': noise,
-                'cumulative_return': base_return + noise * 0.1,
-                'current_drawdown': max(0, -noise * 0.5),
-                'max_drawdown': np.random.uniform(0.05, 0.2),
-                'sharpe_ratio': np.random.uniform(-0.5, 2.5),
-                'volatility': np.random.uniform(0.1, 0.4),
-                'var_95': np.random.uniform(-0.05, -0.01),
-                'total_return': base_return + noise * 0.1,
-                'annualized_return': (base_return + noise * 0.1) * 252,
-                'win_rate': np.random.uniform(0.4, 0.7),
-                'profit_factor': np.random.uniform(0.8, 2.5),
-                'execution_time': np.random.uniform(0.1, 1.0)
-            }
-
-            return monitoring_data
-
-        except Exception as e:
-            logger.error(f"生成监控数据失败: {e}")
-            return {}
+            raise RuntimeError(f"获取监控数据失败: {str(e)}")
 
     def _check_alerts(self, data: Dict):
         """检查预警"""

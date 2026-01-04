@@ -30,6 +30,7 @@ from ..database.table_manager import DynamicTableManager
 from ..plugin_types import AssetType, DataType
 from ..tet_data_pipeline import StandardQuery, TETDataPipeline
 from ..data_source_router import DataSourceRouter
+from ..asset_database_manager import AssetSeparatedDatabaseManager
 from .uni_plugin_data_manager import UniPluginDataManager
 from .incremental_data_analyzer import IncrementalDataAnalyzer, DownloadStrategy
 from .data_completeness_checker import DataCompletenessChecker
@@ -63,16 +64,13 @@ class EnhancedDuckDBDataDownloader:
         self.duckdb_operations = get_duckdb_operations()
         self.table_manager = DynamicTableManager()
 
-        # 数据库路径配置
-        self.db_paths = {
-            'kline': 'data/kline_stock.duckdb',
-            'fundamental': 'data/fundamental_data.duckdb',
-            'realtime': 'data/realtime_data.duckdb',
-            'macro': 'data/macro_economic.duckdb'
-        }
+        # 资产分离数据库管理器
+        self.asset_db_manager = AssetSeparatedDatabaseManager.get_instance()
 
         # 确保数据库目录存在
-        for db_path in self.db_paths.values():
+        base_path = Path("data/databases")
+        for asset_type in AssetType:
+            db_path = self.asset_db_manager.get_database_path(asset_type)
             Path(db_path).parent.mkdir(parents=True, exist_ok=True)
 
         # 配置参数
@@ -128,7 +126,7 @@ class EnhancedDuckDBDataDownloader:
             try:
                 # 检查是否需要更新
                 if not force_update:
-                    latest_date = await self._get_latest_data_date(symbol, period, 'kline')
+                    latest_date = await self._get_latest_data_date(symbol, period, asset_type)
                     if latest_date and (end_date - latest_date).days < 1:
                         logger.debug(f"股票 {symbol} 数据已是最新，跳过下载")
                         continue
@@ -152,7 +150,7 @@ class EnhancedDuckDBDataDownloader:
 
                     if not cleaned_data.empty:
                         # 存储到DuckDB
-                        await self._store_kline_data_to_duckdb(cleaned_data, symbol, period)
+                        await self._store_kline_data_to_duckdb(cleaned_data, symbol, period, asset_type)
                         results[symbol] = cleaned_data
                         logger.info(f"成功下载并存储 {symbol} K线数据: {len(cleaned_data)} 条")
                     else:
@@ -741,10 +739,10 @@ class EnhancedDuckDBDataDownloader:
 
         return data if data is not None else pd.DataFrame()
 
-    async def _get_symbols_from_database(self) -> pd.DataFrame:
+    async def _get_symbols_from_database(self, asset_type: AssetType = AssetType.STOCK_A) -> pd.DataFrame:
         """从数据库获取股票列表"""
         try:
-            db_path = self.db_paths['kline']
+            db_path = self.asset_db_manager.get_database_path(asset_type)
             query = "SELECT DISTINCT code FROM stock_list WHERE market_filter IS NULL OR market_filter = 'all'"
 
             result = self.duckdb_operations.execute_query(db_path, query)
@@ -813,7 +811,7 @@ class EnhancedDuckDBDataDownloader:
                         volume = excluded.volume,
                         amount = excluded.amount
                     """
-                    self.duckdb_operations.execute_query(self.db_paths['kline'], query, record)
+                    self.duckdb_operations.execute_query(self.asset_db_manager.get_database_path(AssetType.STOCK_A), query, record)
 
                 total_stored += len(records)
 
@@ -834,7 +832,7 @@ class EnhancedDuckDBDataDownloader:
                             volume = excluded.volume,
                             amount = excluded.amount
                         """
-                        self.duckdb_operations.execute_query(self.db_paths['kline'], query, record)
+                        self.duckdb_operations.execute_query(self.asset_db_manager.get_database_path(AssetType.STOCK_A), query, record)
                         total_stored += 1
                     except Exception as inner_e:
                         logger.warning(f"存储 {symbol} 单条记录失败: {str(inner_e)}")
@@ -906,10 +904,10 @@ class EnhancedDuckDBDataDownloader:
             logger.error(f"股票列表数据验证失败: {e}")
             return pd.DataFrame()
 
-    async def _get_latest_data_date(self, symbol: str, period: str, data_category: str) -> Optional[datetime]:
+    async def _get_latest_data_date(self, symbol: str, period: str, data_category: str, asset_type: AssetType = AssetType.STOCK_A) -> Optional[datetime]:
         """获取最新数据日期"""
         try:
-            db_path = self.db_paths.get(data_category)
+            db_path = self.asset_db_manager.get_database_path(asset_type)
             if not db_path:
                 return None
 
@@ -928,10 +926,10 @@ class EnhancedDuckDBDataDownloader:
 
         return None
 
-    async def _store_kline_data_to_duckdb(self, data: pd.DataFrame, symbol: str, period: str):
+    async def _store_kline_data_to_duckdb(self, data: pd.DataFrame, symbol: str, period: str, asset_type: AssetType = AssetType.STOCK_A):
         """存储K线数据到DuckDB"""
         try:
-            db_path = self.db_paths['kline']
+            db_path = self.asset_db_manager.get_database_path(asset_type)
             table_name = f"kline_data_{period.lower()}"
 
             # 确保表存在
@@ -955,10 +953,10 @@ class EnhancedDuckDBDataDownloader:
         except Exception as e:
             logger.error(f"存储K线数据失败 {symbol}: {e}")
 
-    async def _store_fundamental_data_to_duckdb(self, data: Any, symbol: str, data_type: str):
+    async def _store_fundamental_data_to_duckdb(self, data: Any, symbol: str, data_type: str, asset_type: AssetType = AssetType.STOCK_A):
         """存储基本面数据到DuckDB"""
         try:
-            db_path = self.db_paths['fundamental']
+            db_path = self.asset_db_manager.get_database_path(asset_type)
 
             if data_type == 'financial_statement':
                 table_name = "financial_statements"
@@ -999,10 +997,10 @@ class EnhancedDuckDBDataDownloader:
         except Exception as e:
             logger.error(f"存储基本面数据失败 {symbol} {data_type}: {e}")
 
-    async def _store_stock_list_to_duckdb(self, data: pd.DataFrame, market: str):
+    async def _store_stock_list_to_duckdb(self, data: pd.DataFrame, market: str, asset_type: AssetType = AssetType.STOCK_A):
         """存储股票列表到DuckDB"""
         try:
-            db_path = self.db_paths['kline']
+            db_path = self.asset_db_manager.get_database_path(asset_type)
             table_name = "stock_list"
 
             # 确保表存在
@@ -1033,21 +1031,19 @@ class EnhancedDuckDBDataDownloader:
         stats = {}
 
         try:
-            for category, db_path in self.db_paths.items():
+            for asset_type in AssetType:
+                db_path = self.asset_db_manager.get_database_path(asset_type)
                 if Path(db_path).exists():
-                    # 获取数据库大小
                     db_size = Path(db_path).stat().st_size / (1024 * 1024)  # MB
-
-                    # 获取表统计
                     tables_query = "SELECT table_name, estimated_size FROM duckdb_tables()"
                     tables_result = self.duckdb_operations.execute_query(db_path, tables_query)
 
-                    stats[category] = {
+                    stats[asset_type.value] = {
                         'db_size_mb': round(db_size, 2),
                         'tables': tables_result.to_dict('records') if not tables_result.empty else []
                     }
                 else:
-                    stats[category] = {'db_size_mb': 0, 'tables': []}
+                    stats[asset_type.value] = {'db_size_mb': 0, 'tables': []}
 
         except Exception as e:
             logger.error(f"获取数据统计失败: {e}")

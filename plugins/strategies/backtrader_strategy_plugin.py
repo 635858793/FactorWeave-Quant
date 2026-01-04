@@ -64,52 +64,47 @@ if BACKTRADER_AVAILABLE:
             ('period', 20),
             ('position_size', 100),
         )
-else:
-    # 如果Backtrader不可用，创建占位符类
-    class BaseBacktraderStrategy:
-        """基础Backtrader策略类占位符"""
-        pass
 
-    def __init__(self):
-        self.signals = []
-        self.trades = []
+        def __init__(self):
+            super().__init__()
+            self.signals = []
+            self.trades = []
 
-    def log(self, txt, dt=None):
-        """日志记录"""
-        dt = dt or self.datas[0].datetime.date(0)
-        logger.debug(f'{dt.isoformat()}: {txt}')
+        def log(self, txt, dt=None):
+            """日志记录"""
+            dt = dt or self.datas[0].datetime.date(0)
+            logger.debug(f'{dt.isoformat()}: {txt}')
 
-    def notify_order(self, order):
-        """订单状态通知"""
-        if order.status in [order.Submitted, order.Accepted]:
-            return
+        def notify_order(self, order):
+            """订单状态通知"""
+            if order.status in [order.Submitted, order.Accepted]:
+                return
 
-        if order.status in [order.Completed]:
-            if order.isbuy():
-                self.log(f'BUY EXECUTED, Price: {order.executed.price:.2f}')
-            elif order.issell():
-                self.log(f'SELL EXECUTED, Price: {order.executed.price:.2f}')
-        elif order.status in [order.Canceled, order.Margin, order.Rejected]:
-            self.log('Order Canceled/Margin/Rejected')
+            if order.status in [order.Completed]:
+                if order.isbuy():
+                    self.log(f'BUY EXECUTED, Price: {order.executed.price:.2f}')
+                elif order.issell():
+                    self.log(f'SELL EXECUTED, Price: {order.executed.price:.2f}')
+            elif order.status in [order.Canceled, order.Margin, order.Rejected]:
+                self.log('Order Canceled/Margin/Rejected')
 
-    def notify_trade(self, trade):
-        """交易状态通知"""
-        if not trade.isclosed:
-            return
+        def notify_trade(self, trade):
+            """交易状态通知"""
+            if not trade.isclosed:
+                return
 
-        self.log(f'OPERATION PROFIT, GROSS {trade.pnl:.2f}, NET {trade.pnlcomm:.2f}')
+            self.log(f'OPERATION PROFIT, GROSS {trade.pnl:.2f}, NET {trade.pnlcomm:.2f}')
 
-        # 记录交易
-        trade_info = {
-            'entry_date': trade.dtopen,
-            'exit_date': trade.dtclose,
-            'entry_price': trade.price,
-            'exit_price': trade.price,
-            'size': trade.size,
-            'pnl': trade.pnl,
-            'pnlcomm': trade.pnlcomm
-        }
-        self.trades.append(trade_info)
+            trade_info = {
+                'entry_date': trade.dtopen,
+                'exit_date': trade.dtclose,
+                'entry_price': trade.price,
+                'exit_price': trade.price,
+                'size': trade.size,
+                'pnl': trade.pnl,
+                'pnlcomm': trade.pnlcomm
+            }
+            self.trades.append(trade_info)
 
 
 class SMAStrategy(BaseBacktraderStrategy):
@@ -368,17 +363,16 @@ class BacktraderStrategyPlugin(IStrategyPlugin):
             logger.error(f"Backtrader策略初始化失败: {e}")
             return False
 
-    def generate_signals(self, market_data: StandardMarketData, context: StrategyContext) -> List[Signal]:
+    def generate_signals(self, data: pd.DataFrame) -> List[Signal]:
         """生成交易信号"""
         try:
             if not BACKTRADER_AVAILABLE or not self.cerebro:
                 return []
 
-            # 转换数据格式
-            df = market_data.to_dataframe()
+            symbol = getattr(self, '_current_symbol', 'UNKNOWN')
 
             # 创建数据源
-            data_feed = BacktraderDataFeed(dataname=df)
+            data_feed = BacktraderDataFeed(dataname=data)
             self.cerebro.adddata(data_feed)
 
             # 运行回测
@@ -394,7 +388,7 @@ class BacktraderStrategyPlugin(IStrategyPlugin):
                     signal_type = SignalType.BUY if signal_info['type'] == 'BUY' else SignalType.SELL
 
                     signal = Signal(
-                        symbol=market_data.symbol,
+                        symbol=symbol,
                         signal_type=signal_type,
                         strength=1.0,
                         timestamp=datetime.combine(signal_info['date'], datetime.min.time()),
@@ -403,6 +397,31 @@ class BacktraderStrategyPlugin(IStrategyPlugin):
                         metadata={'backtrader_strategy': True}
                     )
                     signals.append(signal)
+
+            # 发布信号生成事件
+            if signals:
+                try:
+                    from core.events import SignalGeneratedEvent, get_event_bus
+                    event = SignalGeneratedEvent(
+                        strategy_id=self.get_strategy_info().name,
+                        strategy_name=self.get_strategy_info().display_name,
+                        signals=[{
+                            'signal_type': s.signal_type.value,
+                            'symbol': s.symbol,
+                            'strength': s.strength,
+                            'timestamp': s.timestamp.isoformat() if hasattr(s.timestamp, 'isoformat') else str(s.timestamp),
+                            'price': s.price,
+                            'reason': s.reason
+                        } for s in signals],
+                        symbol=symbol,
+                        priority=1,
+                        timestamp=datetime.now(),
+                        source="backtrader_strategy",
+                        data={'plugin_type': 'backtrader'}
+                    )
+                    get_event_bus().publish(event)
+                except Exception as event_error:
+                    logger.warning(f"发布Backtrader信号事件失败: {event_error}")
 
             return signals
 
@@ -547,7 +566,11 @@ class BacktraderStrategyPlugin(IStrategyPlugin):
 
             if hasattr(strategy_result.analyzers, 'returns'):
                 returns_analysis = strategy_result.analyzers.returns.get_analysis()
-                total_return = returns_analysis.get('rtot', 0.0) or 0.0
+                raw_total_return = returns_analysis.get('rtot', 0.0) or 0.0
+                if hasattr(raw_total_return, 'iloc'):
+                    total_return = float(raw_total_return.iloc[0]) if len(raw_total_return) > 0 else 0.0
+                else:
+                    total_return = float(raw_total_return) if raw_total_return is not None else 0.0
 
             # 交易分析
             total_trades = 0

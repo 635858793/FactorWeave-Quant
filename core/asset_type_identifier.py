@@ -378,15 +378,14 @@ class AssetTypeIdentifier:
             str: 数据库文件名
         """
         database_mapping = {
-            # 股票相关资产类型 -> 股票数据库
-            AssetType.STOCK_A: "stock_data.duckdb",
-            AssetType.STOCK_A: "stock_data.duckdb",
-            AssetType.STOCK_B: "stock_data.duckdb",
-            AssetType.STOCK_H: "stock_data.duckdb",
-            AssetType.STOCK_US: "stock_data.duckdb",
-            AssetType.STOCK_HK: "stock_data.duckdb",
+            # ✅ 股票相关资产类型 -> 对应的独立数据库 (与 AssetDatabaseManager 动态路径保持一致)
+            AssetType.STOCK_A: "stock_a_data.duckdb",
+            AssetType.STOCK_B: "stock_b_data.duckdb",
+            AssetType.STOCK_HK: "stock_hk_data.duckdb",
+            AssetType.STOCK_US: "stock_us_data.duckdb",
+            AssetType.STOCK_H: "stock_h_data.duckdb",
 
-            # 其他资产类型 -> 专用数据库
+            # ✅ 其他资产类型 -> 专用数据库 (与 AssetDatabaseManager 动态路径保持一致)
             AssetType.FUTURES: "futures_data.duckdb",
             AssetType.CRYPTO: "crypto_data.duckdb",
             AssetType.FOREX: "forex_data.duckdb",
@@ -395,15 +394,15 @@ class AssetTypeIdentifier:
             AssetType.INDEX: "index_data.duckdb",
             AssetType.COMMODITY: "commodity_data.duckdb",
             AssetType.MACRO: "macro_data.duckdb",
-            AssetType.OPTION: "derivatives_data.duckdb",
-            AssetType.WARRANT: "derivatives_data.duckdb",
+            AssetType.OPTION: "option_data.duckdb",
+            AssetType.WARRANT: "warrant_data.duckdb",
 
-            # 板块数据 -> 股票数据库(与股票相关)
-            AssetType.SECTOR: "stock_data.duckdb",
-            AssetType.INDUSTRY_SECTOR: "stock_data.duckdb",
-            AssetType.CONCEPT_SECTOR: "stock_data.duckdb",
-            AssetType.STYLE_SECTOR: "stock_data.duckdb",
-            AssetType.THEME_SECTOR: "stock_data.duckdb",
+            # ✅ 板块数据 -> 对应的独立数据库
+            AssetType.SECTOR: "sector_data.duckdb",
+            AssetType.INDUSTRY_SECTOR: "industry_sector_data.duckdb",
+            AssetType.CONCEPT_SECTOR: "concept_sector_data.duckdb",
+            AssetType.STYLE_SECTOR: "style_sector_data.duckdb",
+            AssetType.THEME_SECTOR: "theme_sector_data.duckdb",
         }
 
         return database_mapping.get(asset_type, "unknown_data.duckdb")

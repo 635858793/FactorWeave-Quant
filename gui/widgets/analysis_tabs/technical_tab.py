@@ -50,7 +50,7 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
         control_group.setMinimumHeight(180)  # 设置最小高度而不是最大高度
         control_group.setMaximumHeight(250)  # 适当增加最大高度
         control_layout = QHBoxLayout(control_group)
-        control_layout.setSpacing(8)
+        control_layout.setSpacing(2)
 
         # 左侧：指标选择 - 更紧凑的布局
         indicator_card = QFrame()
@@ -180,8 +180,6 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
 
         self.param_info_label = QLabel("选择指标后显示参数说明")
         self.param_info_label.setWordWrap(True)
-        self.param_info_label.setStyleSheet(
-            "QLabel { font-size: 10px; color: #6c757d; padding: 2px; background-color: #f8f9fa; border-radius: 4px; }")
         info_layout.addWidget(self.param_info_label)
 
         self.params_layout.addWidget(info_group)
@@ -218,7 +216,7 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
 
         # 统计信息和控制按钮 - 顶部工具栏
         toolbar_layout = QHBoxLayout()
-        toolbar_layout.setSpacing(8)
+        toolbar_layout.setSpacing(4)
 
         # 统计信息
         self.stats_label = QLabel("统计信息: 无数据")
@@ -255,7 +253,7 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
 
         # 筛选状态标签
         self.filter_status_label = QLabel("")
-        self.filter_status_label.setStyleSheet("QLabel { color: #28a745; font-weight: bold; font-size: 11px; }")
+        # self.filter_status_label.setStyleSheet("QLabel { color: #28a745; font-weight: bold; font-size: 11px; }")
         filter_layout.addWidget(self.filter_status_label)
 
         toolbar_layout.addWidget(filter_group)
@@ -492,8 +490,8 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
                 param_label = QLabel(f"{param_config.get('desc', param_name)}:")
                 param_label.setMinimumWidth(80)
                 param_label.setMaximumWidth(120)
-                param_label.setStyleSheet(
-                    "QLabel { font-size: 11px; color: #212529; }")
+                # param_label.setStyleSheet(
+                #     "QLabel { font-size: 11px; color: #212529; }")
                 param_layout.addWidget(param_label)
 
                 # 参数控件 - 紧凑
@@ -516,8 +514,7 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
                     control.setValue(param_config.get("default", 1.0))
                     control.setSingleStep(0.01)
                     control.setDecimals(3)
-                    control.setStyleSheet(
-                        "QDoubleSpinBox { font-size: 11px; padding: 2px; }")
+
                 else:
                     # 整数参数
                     control = QSpinBox()
@@ -525,8 +522,7 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
                     control.setRange(param_config.get("min", 1),
                                      param_config.get("max", 1000))
                     control.setValue(param_config.get("default", 14))
-                    control.setStyleSheet(
-                        "QSpinBox { font-size: 11px; padding: 2px; }")
+
 
                 # 添加工具提示
                 tooltip = param_config.get("desc", param_name)
@@ -587,7 +583,7 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
                         # 参数标签
                         param_label = QLabel(f"{param_name}:")
                         param_label.setMinimumWidth(80)
-                        param_label.setStyleSheet("QLabel { font-size: 11px; color: #212529; }")
+                        # param_label.setStyleSheet("QLabel { font-size: 11px; color: #212529; }")
                         param_layout.addWidget(param_label)
 
                         # 参数控件
@@ -638,7 +634,7 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
             # 参数标签
             param_label = QLabel(f"{param_name}:")
             param_label.setMinimumWidth(80)
-            param_label.setStyleSheet("QLabel { font-size: 11px; color: #212529; }")
+            # param_label.setStyleSheet("QLabel { font-size: 11px; color: #212529; }")
             param_layout.addWidget(param_label)
 
             # 参数控件

@@ -98,8 +98,8 @@ class AlertConfigDatabase:
         """初始化数据库连接"""
         if db_path is None:
             # 默认数据库路径
-            db_dir = Path(__file__).parent.parent
-            db_path = db_dir / "data" / "alert_config.sqlite"
+            db_dir = Path(__file__).parent.parent.parent
+            db_path = db_dir / "data/alert_config.sqlite"
 
         self.db_path = str(db_path)
         self.init_database()

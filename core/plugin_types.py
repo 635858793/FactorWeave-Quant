@@ -264,7 +264,11 @@ PLUGIN_TYPE_CONFIGS = {
         ],
         optional_interfaces=["get_config_schema", "validate_config"],
         default_priority=PluginPriority.HIGH,
-        supported_asset_types=[AssetType.STOCK_A, AssetType.INDEX, AssetType.FUND]
+        supported_asset_types=[
+            AssetType.STOCK_A, AssetType.STOCK_B, AssetType.STOCK_H,
+            AssetType.STOCK_US, AssetType.STOCK_HK,
+            AssetType.INDEX, AssetType.FUND
+        ]
     ),
 
     PluginType.DATA_SOURCE_FUTURES: PluginTypeInfo(
@@ -330,6 +334,36 @@ PLUGIN_TYPE_CONFIGS = {
         optional_interfaces=["get_config_schema", "validate_config"],
         default_priority=PluginPriority.NORMAL,
         supported_asset_types=[AssetType.COMMODITY, AssetType.FUTURES]
+    ),
+
+    PluginType.DATA_SOURCE_CUSTOM: PluginTypeInfo(
+        plugin_type=PluginType.DATA_SOURCE_CUSTOM,
+        category=PluginCategory.DATA,
+        description="自定义数据源插件",
+        required_interfaces=[
+            "get_plugin_info", "initialize", "fetch_data",
+            "get_real_time_data", "health_check"
+        ],
+        optional_interfaces=["get_config_schema", "validate_config"],
+        default_priority=PluginPriority.NORMAL,
+        supported_asset_types=list(AssetType)
+    ),
+
+    PluginType.DATA_SOURCE_WIND: PluginTypeInfo(
+        plugin_type=PluginType.DATA_SOURCE_WIND,
+        category=PluginCategory.DATA,
+        description="Wind万得数据源插件",
+        required_interfaces=[
+            "get_plugin_info", "initialize", "fetch_data",
+            "get_real_time_data", "health_check"
+        ],
+        optional_interfaces=["get_config_schema", "validate_config"],
+        default_priority=PluginPriority.HIGH,
+        supported_asset_types=[
+            AssetType.STOCK_A, AssetType.STOCK_B, AssetType.STOCK_H,
+            AssetType.INDEX, AssetType.FUND, AssetType.BOND,
+            AssetType.FUTURES, AssetType.OPTION
+        ]
     )
 }
 
@@ -359,7 +393,9 @@ def get_data_source_plugin_types() -> List[PluginType]:
         PluginType.DATA_SOURCE_CRYPTO,
         PluginType.DATA_SOURCE_FOREX,
         PluginType.DATA_SOURCE_BOND,
-        PluginType.DATA_SOURCE_COMMODITY
+        PluginType.DATA_SOURCE_COMMODITY,
+        PluginType.DATA_SOURCE_CUSTOM,
+        PluginType.DATA_SOURCE_WIND
     ]
 
 def is_data_source_plugin(plugin_type: PluginType) -> bool:
@@ -422,7 +458,11 @@ def get_default_provider_for_asset_type(asset_type: AssetType) -> DataSourceProv
         DataSourceProvider: 默认数据源提供商
     """
     provider_mapping = {
-        AssetType.STOCK_A: DataSourceProvider.FACTORWEAVE,  # ✅ 使用FACTORWEAVE替代已废弃的HIKYUU
+        AssetType.STOCK_A: DataSourceProvider.FACTORWEAVE,
+        AssetType.STOCK_B: DataSourceProvider.EASTMONEY,
+        AssetType.STOCK_H: DataSourceProvider.EASTMONEY,
+        AssetType.STOCK_US: DataSourceProvider.CUSTOM,
+        AssetType.STOCK_HK: DataSourceProvider.EASTMONEY,
         AssetType.INDEX: DataSourceProvider.FACTORWEAVE,
         AssetType.FUND: DataSourceProvider.AKSHARE,
         AssetType.FUTURES: DataSourceProvider.CTP,
@@ -431,7 +471,13 @@ def get_default_provider_for_asset_type(asset_type: AssetType) -> DataSourceProv
         AssetType.FOREX: DataSourceProvider.OANDA,
         AssetType.BOND: DataSourceProvider.WIND,
         AssetType.OPTION: DataSourceProvider.CTP,
-        AssetType.WARRANT: DataSourceProvider.EASTMONEY
+        AssetType.WARRANT: DataSourceProvider.EASTMONEY,
+        AssetType.SECTOR: DataSourceProvider.EASTMONEY,
+        AssetType.INDUSTRY_SECTOR: DataSourceProvider.EASTMONEY,
+        AssetType.CONCEPT_SECTOR: DataSourceProvider.EASTMONEY,
+        AssetType.STYLE_SECTOR: DataSourceProvider.FACTORWEAVE,
+        AssetType.THEME_SECTOR: DataSourceProvider.EASTMONEY,
+        AssetType.MACRO: DataSourceProvider.WIND
     }
 
     return provider_mapping.get(asset_type, DataSourceProvider.CUSTOM)
