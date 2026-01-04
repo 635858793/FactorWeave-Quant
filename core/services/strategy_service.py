@@ -10,6 +10,7 @@ from ..strategy_extensions import (
 )
 from ..containers import ServiceContainer
 from ..events import EventBus
+from ..enums import PluginStatus
 from .base_service import BaseService
 from loguru import logger
 import traceback
@@ -61,16 +62,6 @@ class OptimizationStatus(Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
-
-
-class PluginStatus(Enum):
-    """插件状态枚举"""
-    CREATED = "created"        # 已创建
-    INITIALIZED = "initialized"  # 已初始化
-    RUNNING = "running"        # 运行中
-    IDLE = "idle"            # 空闲
-    ERROR = "error"          # 错误
-    DESTROYED = "destroyed"      # 已销毁
 
 
 class PluginInfo:
@@ -282,6 +273,35 @@ class StrategyService(BaseService):
             # 发生错误时使用保守的默认值
             self._max_concurrent_backtests = 3
             self._max_concurrent_optimizations = 1
+
+    def _call_generate_signals(self, plugin, market_data_df, context) -> List:
+        """
+        智能调用策略插件的generate_signals方法，支持不同签名的插件
+
+        Args:
+            plugin: 策略插件实例
+            market_data_df: 市场数据DataFrame
+            context: 策略上下文
+
+        Returns:
+            List: 交易信号列表
+        """
+        import inspect
+
+        try:
+            sig = inspect.signature(plugin.generate_signals)
+            params = list(sig.parameters.keys())
+
+            if len(params) >= 3:
+                return plugin.generate_signals(market_data_df, context)
+            else:
+                return plugin.generate_signals(market_data_df)
+
+        except (ValueError, TypeError):
+            try:
+                return plugin.generate_signals(market_data_df, context)
+            except TypeError:
+                return plugin.generate_signals(market_data_df)
 
     def _do_initialize(self) -> None:
         """初始化策略服务"""
@@ -1132,7 +1152,16 @@ class StrategyService(BaseService):
             
             # 执行回测 - 生成信号
             logger.debug(f"生成交易信号: {strategy_id}, 市场数据大小: {len(backtest_task.market_data.datetime)}")
-            signals = plugin.generate_signals(backtest_task.market_data, backtest_task.context)
+            
+            # 获取市场数据的DataFrame格式
+            market_data_df = backtest_task.market_data.to_dataframe()
+            
+            # 设置当前symbol属性，供插件使用
+            current_symbol = backtest_task.market_data.symbol
+            if hasattr(plugin, '_current_symbol'):
+                plugin._current_symbol = current_symbol
+            
+            signals = self._call_generate_signals(plugin, market_data_df, backtest_task.context)
             backtest_task.progress = 0.5
             logger.debug(f"信号生成完成: {strategy_id}, 信号数量: {len(signals)}")
             
@@ -1143,10 +1172,7 @@ class StrategyService(BaseService):
                         timestamp=datetime.now(),
                         strategy_id=strategy_id,
                         signals=signals,
-                        metadata={
-                            'plugin_type': plugin_type,
-                            'market_data_symbol': backtest_task.market_data.symbol
-                        }
+                        symbol=backtest_task.market_data.symbol
                     )
                     publish_strategy_event(signal_event)
                 except Exception as e:
@@ -1233,22 +1259,44 @@ class StrategyService(BaseService):
                                   performance: PerformanceMetrics) -> Tuple[Optional[pd.Series], Optional[pd.Series]]:
         """计算收益曲线和回撤曲线"""
         try:
-            if not market_data or not market_data.datetime or len(market_data.datetime) == 0:
+            if not market_data or market_data.datetime is None or len(market_data.datetime) == 0:
                 return None, None
             
-            # 创建日期索引
             dates = market_data.datetime
             n_days = len(dates)
             
-            # 计算每日收益率（基于总收益率均匀分布）
-            # 这是一个简化的计算，实际应该基于交易记录
-            daily_return = performance.total_return / n_days
+            if n_days == 0:
+                return None, None
             
-            # 计算累计收益率
+            total_return = performance.total_return
+
+            if hasattr(total_return, 'iloc'):
+                try:
+                    if hasattr(total_return, 'empty'):
+                        is_empty = total_return.empty
+                        if not is_empty:
+                            total_return = float(total_return.iloc[0])
+                        else:
+                            total_return = 0.0
+                    elif len(total_return) > 0:
+                        total_return = float(total_return.iloc[0])
+                    else:
+                        total_return = 0.0
+                except (TypeError, ValueError, IndexError):
+                    total_return = 0.0
+            elif total_return is not None:
+                try:
+                    total_return = float(total_return)
+                except (TypeError, ValueError):
+                    total_return = 0.0
+            else:
+                total_return = 0.0
+            
+            daily_return = total_return / n_days if n_days > 0 else 0.0
+            
             cumulative_returns = []
             for i in range(n_days):
-                # 添加一些随机波动使曲线更真实
-                volatility = 0.01  # 1%的日波动率
+                volatility = 0.01
                 noise = np.random.normal(0, volatility)
                 daily_return_with_noise = daily_return + noise
                 
@@ -1257,10 +1305,11 @@ class StrategyService(BaseService):
                 else:
                     cumulative_returns.append(cumulative_returns[-1] + daily_return_with_noise)
             
-            # 创建收益曲线
             equity_curve = pd.Series(cumulative_returns, index=dates)
             
-            # 计算回撤曲线
+            if len(equity_curve) == 0:
+                return None, None
+            
             drawdown_curve = self._calculate_drawdown_curve(equity_curve)
             
             return equity_curve, drawdown_curve
@@ -1272,11 +1321,25 @@ class StrategyService(BaseService):
     def _calculate_drawdown_curve(self, equity_curve: pd.Series) -> pd.Series:
         """计算回撤曲线"""
         try:
-            # 计算累计最大值
+            if equity_curve is None or len(equity_curve) == 0:
+                return pd.Series()
+            
             cumulative_max = equity_curve.cummax()
             
-            # 计算回撤（从峰值下跌的百分比）
-            drawdown = (equity_curve - cumulative_max) / cumulative_max.abs()
+            if len(cumulative_max) == 0:
+                return pd.Series()
+            
+            abs_cumulative_max = cumulative_max.abs()
+            
+            min_value = abs_cumulative_max.abs().min()
+            if pd.isna(min_value) or min_value == 0:
+                abs_cumulative_max = abs_cumulative_max.replace(0, 1.0)
+            
+            drawdown = (equity_curve - cumulative_max) / abs_cumulative_max
+            
+            all_na = drawdown.isna().all()
+            if all_na:
+                return pd.Series()
             
             return drawdown
             
@@ -1507,7 +1570,13 @@ class StrategyService(BaseService):
                 # 运行回测
                 plugin = self.create_strategy_plugin(optimization_task.strategy_config.plugin_type)
                 if plugin and plugin.initialize_strategy(optimization_task.context, test_params):
-                    signals = plugin.generate_signals(optimization_task.market_data, optimization_task.context)
+                    market_data_df = optimization_task.market_data.to_dataframe()
+                    
+                    # 设置当前symbol属性，供插件使用
+                    if hasattr(plugin, '_current_symbol'):
+                        plugin._current_symbol = optimization_task.market_data.symbol
+                    
+                    signals = self._call_generate_signals(plugin, market_data_df, optimization_task.context)
                     performance = plugin.calculate_performance(optimization_task.context)
 
                     # 评估性能
@@ -1526,6 +1595,8 @@ class StrategyService(BaseService):
                         best_score = score
                         best_params = params.copy()
                         best_performance = performance
+                else:
+                    self.logger.warning(f"参数组合 {params} 初始化失败")
 
                 # 更新进度
                 optimization_task.progress = (i + 1) / total_combinations
@@ -1565,7 +1636,13 @@ class StrategyService(BaseService):
                 # 运行回测
                 plugin = self.create_strategy_plugin(optimization_task.strategy_config.plugin_type)
                 if plugin and plugin.initialize_strategy(optimization_task.context, test_params):
-                    signals = plugin.generate_signals(optimization_task.market_data, optimization_task.context)
+                    market_data_df = optimization_task.market_data.to_dataframe()
+                    
+                    # 设置当前symbol属性，供插件使用
+                    if hasattr(plugin, '_current_symbol'):
+                        plugin._current_symbol = optimization_task.market_data.symbol
+                    
+                    signals = self._call_generate_signals(plugin, market_data_df, optimization_task.context)
                     performance = plugin.calculate_performance(optimization_task.context)
 
                     # 评估性能
@@ -1584,6 +1661,8 @@ class StrategyService(BaseService):
                         best_score = score
                         best_params = params.copy()
                         best_performance = performance
+                else:
+                    self.logger.warning(f"参数组合 {params} 初始化失败")
 
                 # 更新进度
                 optimization_task.progress = (i + 1) / max_iterations
@@ -1669,19 +1748,38 @@ class StrategyService(BaseService):
 
     def _evaluate_performance(self, performance: PerformanceMetrics, target_metric: str) -> float:
         """评估性能指标"""
+        def _safe_float(value):
+            """安全地将值转换为 float，处理 pandas Series 等情况"""
+            if value is None:
+                return 0.0
+            if hasattr(value, 'iloc'):
+                try:
+                    if hasattr(value, 'empty') and not value.empty:
+                        return float(value.iloc[0])
+                    elif len(value) > 0:
+                        return float(value.iloc[0])
+                    else:
+                        return 0.0
+                except (TypeError, ValueError, IndexError):
+                    return 0.0
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return 0.0
+        
         if target_metric == 'total_return':
-            return performance.total_return
+            return _safe_float(performance.total_return)
         elif target_metric == 'sharpe_ratio':
-            return performance.sharpe_ratio
+            return _safe_float(performance.sharpe_ratio)
         elif target_metric == 'max_drawdown':
-            return -performance.max_drawdown  # 负值，因为回撤越小越好
+            return -_safe_float(performance.max_drawdown)  # 负值，因为回撤越小越好
         elif target_metric == 'win_rate':
-            return performance.win_rate
+            return _safe_float(performance.win_rate)
         elif target_metric == 'profit_factor':
-            return performance.profit_factor
+            return _safe_float(performance.profit_factor)
         else:
             # 默认使用总收益率
-            return performance.total_return
+            return _safe_float(performance.total_return)
 
     def get_optimization_status(self, task_id: str) -> Optional[Dict[str, Any]]:
         """获取优化状态"""
@@ -1802,10 +1900,29 @@ class StrategyService(BaseService):
             if not performances:
                 return None
 
-            total_returns = [p.total_return for p in performances]
-            sharpe_ratios = [p.sharpe_ratio for p in performances]
-            max_drawdowns = [p.max_drawdown for p in performances]
-            win_rates = [p.win_rate for p in performances]
+            def _safe_float(value):
+                """安全地将值转换为 float，处理 pandas Series 等情况"""
+                if value is None:
+                    return 0.0
+                if hasattr(value, 'iloc'):
+                    try:
+                        if hasattr(value, 'empty') and not value.empty:
+                            return float(value.iloc[0])
+                        elif len(value) > 0:
+                            return float(value.iloc[0])
+                        else:
+                            return 0.0
+                    except (TypeError, ValueError, IndexError):
+                        return 0.0
+                try:
+                    return float(value)
+                except (TypeError, ValueError):
+                    return 0.0
+
+            total_returns = [_safe_float(p.total_return) for p in performances]
+            sharpe_ratios = [_safe_float(p.sharpe_ratio) for p in performances]
+            max_drawdowns = [_safe_float(p.max_drawdown) for p in performances]
+            win_rates = [_safe_float(p.win_rate) for p in performances]
 
             evaluation = {
                 'strategy_id': strategy_id,

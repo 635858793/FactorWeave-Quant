@@ -40,6 +40,7 @@ try:
     from core.services.uni_plugin_data_manager import UniPluginDataManager
     from core.data_standardization_engine import DataStandardizationEngine
     from core.asset_database_manager import AssetSeparatedDatabaseManager
+    from core.enums import HealthStatus
 except ImportError as e:
     # 备用日志记录
     import logging
@@ -53,13 +54,6 @@ except ImportError as e:
         def __init__t__(self):
             pass
             pass
-class HealthStatus(Enum):
-    """健康状态枚举"""
-    HEALTHY = "healthy"
-    WARNING = "warning"
-    CRITICAL = "critical"
-    UNKNOWN = "unknown"
-
 
 class CheckCategory(Enum):
     """检查类别枚举"""

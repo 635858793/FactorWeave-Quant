@@ -14,6 +14,13 @@ from PyQt5.QtCore import QObject, pyqtSignal, QTimer, QThread
 from PyQt5.QtGui import QFont, QPalette, QColor
 import threading
 
+import sys
+from pathlib import Path
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
+from core.enums import ComponentState, ComponentType
+
 logger = logging.getLogger(__name__)
 
 class UIStyle(Enum):
@@ -21,22 +28,6 @@ class UIStyle(Enum):
     ENHANCED = "enhanced"
     MODERN = "modern"
     UNIFIED = "unified"
-
-class ComponentType(Enum):
-    """组件类型枚举"""
-    TAB = "tab"
-    WIDGET = "widget"
-    DIALOG = "dialog"
-    WINDOW = "window"
-    PANEL = "panel"
-
-class ComponentState(Enum):
-    """组件状态枚举"""
-    ACTIVE = "active"
-    INACTIVE = "inactive"
-    LOADING = "loading"
-    ERROR = "error"
-    HIDDEN = "hidden"
 
 @dataclass
 class ComponentInfo:

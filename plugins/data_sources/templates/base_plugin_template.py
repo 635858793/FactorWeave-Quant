@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor, Future
 
 from core.data_source_extensions import IDataSourcePlugin, PluginInfo, HealthCheckResult
 from core.plugin_types import PluginType, AssetType, DataType
-from plugins.plugin_interface import PluginState
+from plugins.plugin_interface import PluginLifecycle
 
 
 class BasePluginTemplate(IDataSourcePlugin, ABC):
@@ -40,8 +40,8 @@ class BasePluginTemplate(IDataSourcePlugin, ABC):
 
         # 确保plugin_state和initialized属性已设置（防御性检查）
         if not hasattr(self, 'plugin_state'):
-            from plugins.plugin_interface import PluginState
-            self.plugin_state = PluginState.CREATED
+            from plugins.plugin_interface import PluginLifecycle
+            self.plugin_state = PluginLifecycle.CREATED
         if not hasattr(self, 'initialized'):
             self.initialized = False
         if not hasattr(self, 'last_error'):
@@ -112,7 +112,7 @@ class BasePluginTemplate(IDataSourcePlugin, ABC):
             bool: 初始化是否成功
         """
         try:
-            self.plugin_state = PluginState.INITIALIZING
+            self.plugin_state = PluginLifecycle.INITIALIZING
 
             # 合并配置
             merged = self.DEFAULT_CONFIG.copy()
@@ -129,7 +129,7 @@ class BasePluginTemplate(IDataSourcePlugin, ABC):
 
             # 标记初始化完成
             self.initialized = True
-            self.plugin_state = PluginState.INITIALIZED
+            self.plugin_state = PluginLifecycle.INITIALIZED
             self.logger.info(f"{self.name} 初始化成功")
 
             return True
@@ -137,7 +137,7 @@ class BasePluginTemplate(IDataSourcePlugin, ABC):
         except Exception as e:
             self.initialized = False
             self.last_error = str(e)
-            self.plugin_state = PluginState.FAILED
+            self.plugin_state = PluginLifecycle.FAILED
             self.logger.error(f"{self.name} 初始化失败: {e}")
             return False
 
@@ -183,21 +183,21 @@ class BasePluginTemplate(IDataSourcePlugin, ABC):
             bool: 连接是否成功
         """
         try:
-            self.plugin_state = PluginState.CONNECTING
+            self.plugin_state = PluginLifecycle.CONNECTING
             self.logger.info(f"{self.name} 开始连接...")
 
             # 子类实现具体连接逻辑
             if self._establish_connection():
-                self.plugin_state = PluginState.CONNECTED
+                self.plugin_state = PluginLifecycle.CONNECTED
                 self.logger.info(f"{self.name} 连接成功")
                 return True
             else:
-                self.plugin_state = PluginState.FAILED
+                self.plugin_state = PluginLifecycle.FAILED
                 self.logger.error(f"{self.name} 连接失败")
                 return False
 
         except Exception as e:
-            self.plugin_state = PluginState.FAILED
+            self.plugin_state = PluginLifecycle.FAILED
             self.last_error = str(e)
             self.logger.error(f"{self.name} 连接异常: {e}")
             return False
@@ -221,7 +221,7 @@ class BasePluginTemplate(IDataSourcePlugin, ABC):
         Returns:
             bool: 是否已连接
         """
-        return self.initialized and self.plugin_state == PluginState.CONNECTED
+        return self.initialized and self.plugin_state == PluginLifecycle.CONNECTED
 
     def health_check(self) -> HealthCheckResult:
         """
@@ -292,7 +292,7 @@ class BasePluginTemplate(IDataSourcePlugin, ABC):
         try:
             self._cleanup()
             self.initialized = False
-            self.plugin_state = PluginState.CREATED
+            self.plugin_state = PluginLifecycle.CREATED
             self.logger.info(f"{self.name} 已断开连接")
         except Exception as e:
             self.logger.error(f"断开连接失败: {e}")
@@ -387,18 +387,18 @@ class BasePluginTemplate(IDataSourcePlugin, ABC):
             bool: 连接是否成功
         """
         try:
-            if self.plugin_state == PluginState.CONNECTED:
+            if self.plugin_state == PluginLifecycle.CONNECTED:
                 return True
 
             # 触发异步连接（如果尚未连接）
-            if self.plugin_state == PluginState.CREATED:
-                self.plugin_state = PluginState.INITIALIZING
+            if self.plugin_state == PluginLifecycle.CREATED:
+                self.plugin_state = PluginLifecycle.INITIALIZING
                 # 调用_do_connect建立连接
                 result = self._do_connect()
                 return result
 
             # 如果正在连接中，等待连接完成
-            if self.plugin_state == PluginState.CONNECTING:
+            if self.plugin_state == PluginLifecycle.CONNECTING:
                 return self.wait_until_ready(timeout=30.0)
 
             return self.is_ready()

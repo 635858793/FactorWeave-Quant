@@ -5,7 +5,7 @@ FactorWeave-Quant 统一接口模块
 """
 
 from .data_source import IDataSource, ConnectionConfig, DataRequest, DataResponse
-from .plugin import IPlugin, PluginInfo, PluginState
+from .plugin import IPlugin, PluginInfo, PluginLifecycle
 from .cache import ICache, CacheConfig
 from .circuit_breaker import ICircuitBreaker, CircuitBreakerConfig
 
@@ -19,7 +19,7 @@ __all__ = [
     # 插件接口
     'IPlugin',
     'PluginInfo',
-    'PluginState',
+    'PluginLifecycle',
 
     # 缓存接口
     'ICache',

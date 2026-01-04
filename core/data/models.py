@@ -116,26 +116,49 @@ class QueryParams:
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
     count: Optional[int] = None
-    asset_type: Optional['AssetType'] = None  # ✅ 新增：资产类型（默认None表示股票）
+    asset_type: Optional['AssetType'] = None
+    _validation_errors: list = None
+
+    def __post_init__(self):
+        self._validation_errors = []
 
     def validate(self) -> bool:
-        """验证参数"""
-        if not self.stock_code:
+        """验证参数并提供详细错误信息"""
+        self._validation_errors = []
+
+        if not self.stock_code or not str(self.stock_code).strip():
+            self._validation_errors.append(f"股票代码不能为空: {self.stock_code}")
             return False
 
-        # 转换中文期间参数到英文
+        stock_code = str(self.stock_code).strip()
+        if not stock_code:
+            self._validation_errors.append(f"股票代码清理后为空: '{self.stock_code}'")
+            return False
+
+        original_period = self.period
         self.period = self._normalize_period(self.period)
 
         if self.period not in ['1m', '5m', '15m', '30m', '1H', 'D', 'W', 'M']:
+            self._validation_errors.append(f"无效的周期参数: '{original_period}' -> '{self.period}'")
             return False
-        
-        # ✅ 验证asset_type（如果提供）
+
         if self.asset_type is not None:
             from core.plugin_types import AssetType
             if not isinstance(self.asset_type, AssetType):
+                self._validation_errors.append(f"无效的资产类型: {self.asset_type}")
                 return False
-        
+
         return True
+
+    def get_validation_errors(self) -> list:
+        """获取验证错误信息"""
+        return self._validation_errors.copy() if self._validation_errors else []
+
+    def __str__(self) -> str:
+        """友好字符串表示"""
+        return (f"QueryParams(stock_code='{self.stock_code}', "
+                f"period='{self.period}', "
+                f"asset_type={self.asset_type})")
 
     def _normalize_period(self, period: str) -> str:
         """标准化期间参数"""

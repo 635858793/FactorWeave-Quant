@@ -35,7 +35,7 @@ from contextlib import contextmanager
 
 from core.data_source_extensions import IDataSourcePlugin, PluginInfo, HealthCheckResult
 from core.plugin_types import PluginType, AssetType, DataType
-from plugins.plugin_interface import PluginState
+from plugins.plugin_interface import PluginLifecycle
 
 logger = logger.bind(module=__name__)
 
@@ -889,7 +889,7 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
         网络测试和连接池初始化已移至 _do_connect() 方法，在后台线程中执行
         """
         try:
-            self.plugin_state = PluginState.INITIALIZING
+            self.plugin_state = PluginLifecycle.INITIALIZING
 
             if not PYTDX_AVAILABLE:
                 raise ImportError("pytdx库未安装")
@@ -918,13 +918,13 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
 
             # 标记初始化完成（不做网络测试和连接池初始化）
             self.initialized = True
-            self.plugin_state = PluginState.INITIALIZED
+            self.plugin_state = PluginLifecycle.INITIALIZED
             logger.info("通达信插件同步初始化完成（<100ms，连接池初始化将在后台进行）")
             return True
 
         except Exception as e:
             self.last_error = str(e)
-            self.plugin_state = PluginState.FAILED
+            self.plugin_state = PluginLifecycle.FAILED
             logger.error(f"通达信股票数据源插件初始化失败: {e}")
             logger.error(traceback.format_exc())
             return False
@@ -949,7 +949,7 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
 
                 # 设置成功状态
                 self.last_success_time = datetime.now()
-                self.plugin_state = PluginState.CONNECTED
+                self.plugin_state = PluginLifecycle.CONNECTED
                 logger.info("✅ 通达信插件(连接池模式)连接成功")
                 return True
             else:
@@ -973,16 +973,16 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
                 if self._test_connection():
                     logger.info(f"✅ 通达信插件连接成功，服务器: {self.current_server}")
                     self.last_success_time = datetime.now()
-                    self.plugin_state = PluginState.CONNECTED
+                    self.plugin_state = PluginLifecycle.CONNECTED
                     return True
                 else:
                     logger.warning("⚠️ 通达信插件连接测试失败，但仍可尝试后续操作")
-                    self.plugin_state = PluginState.CONNECTED  # 仍然认为连接成功
+                    self.plugin_state = PluginLifecycle.CONNECTED  # 仍然认为连接成功
                     return True
 
         except Exception as e:
             self.last_error = str(e)
-            self.plugin_state = PluginState.FAILED
+            self.plugin_state = PluginLifecycle.FAILED
             logger.error(f"❌ 通达信插件连接失败: {e}")
             logger.error(traceback.format_exc())
             return False

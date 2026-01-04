@@ -27,7 +27,7 @@ from typing import List, Dict, Any, Optional, Union
 import pandas as pd
 from loguru import logger
 
-from plugins.plugin_interface import IDataSourcePlugin
+from plugins.plugin_interface import IDataSourcePlugin, PluginLifecycle
 from core.data_source_extensions import PluginInfo, HealthCheckResult
 from core.plugin_types import AssetType, DataType, PluginType
 from core.tet_data_pipeline import StandardQuery, StandardData
@@ -48,7 +48,7 @@ class EastmoneyUnifiedPlugin(IDataSourcePlugin):
         # 必须显式初始化这些属性（IDataSourcePlugin是抽象基类，不提供默认实现）
         self.initialized = False
         self.last_error = None
-        self.plugin_state = PluginState.CREATED  # 初始状态（插件对象已创建）
+        self.plugin_state = PluginLifecycle.CREATED  # 初始状态（插件对象已创建）
 
         self._is_connected = False
         self.session = requests.Session()

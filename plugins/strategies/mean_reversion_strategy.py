@@ -154,7 +154,12 @@ class MeanReversionStrategyPlugin(IStrategyPlugin):
             return []
         
         try:
-            df = market_data.to_dataframe()
+            # 处理不同类型的输入
+            if isinstance(market_data, pd.DataFrame):
+                df = market_data
+            else:
+                df = market_data.to_dataframe()
+            
             if len(df) < self._config.min_periods:
                 self.logger.warning(f"数据不足，需要至少 {self._config.min_periods} 个周期")
                 return []
@@ -339,17 +344,25 @@ class MeanReversionStrategyPlugin(IStrategyPlugin):
         if not self._trade_history:
             return PerformanceMetrics(
                 total_return=0,
+                annual_return=0,
                 sharpe_ratio=0,
                 max_drawdown=0,
                 win_rate=0,
+                profit_factor=0,
                 total_trades=0,
-                profitable_trades=0,
-                losing_trades=0
+                winning_trades=0,
+                losing_trades=0,
+                avg_win=0,
+                avg_loss=0,
+                start_date=datetime.now(),
+                end_date=datetime.now()
             )
         
         returns = []
         win_count = 0
         total_trades = len(self._trade_history)
+        wins = []
+        losses = []
         
         for i in range(1, len(self._trade_history)):
             curr = self._trade_history[i]
@@ -360,27 +373,47 @@ class MeanReversionStrategyPlugin(IStrategyPlugin):
                 returns.append(pnl)
                 if pnl > 0:
                     win_count += 1
+                    wins.append(pnl)
+                else:
+                    losses.append(pnl)
         
         if returns:
             avg_return = sum(returns) / len(returns)
             std_return = np.std(returns) if len(returns) > 1 else 0.01
             sharpe = (avg_return / std_return * np.sqrt(252)) if std_return > 0 else 0
             max_dd = min(returns) if returns else 0
+            annual_return = avg_return * 252
+            avg_win = sum(wins) / len(wins) if wins else 0
+            avg_loss = sum(losses) / len(losses) if losses else 0
+            profit_factor = abs(sum(wins) / sum(losses)) if losses and sum(losses) != 0 else 0
         else:
             avg_return = 0
             sharpe = 0
             max_dd = 0
+            annual_return = 0
+            avg_win = 0
+            avg_loss = 0
+            profit_factor = 0
         
         win_rate = win_count / total_trades if total_trades > 0 else 0
         
+        start_date = self._trade_history[0].timestamp if self._trade_history else datetime.now()
+        end_date = self._trade_history[-1].timestamp if self._trade_history else datetime.now()
+        
         return PerformanceMetrics(
             total_return=sum(returns) if returns else 0,
+            annual_return=annual_return,
             sharpe_ratio=sharpe,
             max_drawdown=max_dd,
             win_rate=win_rate,
+            profit_factor=profit_factor,
             total_trades=total_trades,
-            profitable_trades=win_count,
-            losing_trades=total_trades - win_count
+            winning_trades=win_count,
+            losing_trades=total_trades - win_count,
+            avg_win=avg_win,
+            avg_loss=avg_loss,
+            start_date=start_date,
+            end_date=end_date
         )
     
     def cleanup(self) -> None:

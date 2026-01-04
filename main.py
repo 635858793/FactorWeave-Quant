@@ -84,6 +84,9 @@ class FactorWeaveQuantApplication:
             # 1. 创建Qt应用程序
             self._create_qt_application()
 
+            # 1.5. 设置Qt日志处理器
+            self._setup_qt_logging()
+
             # 2. 抑制警告
             suppress_warnings()
 
@@ -134,28 +137,14 @@ class FactorWeaveQuantApplication:
         if icon_path.exists():
             self.app.setWindowIcon(QIcon(str(icon_path)))
 
-        # 注册Qt元类型
-        self._register_qt_meta_types()
-
         logger.info("Qt应用程序创建完成")
 
-    def _register_qt_meta_types(self) -> None:
-        """注册Qt元类型"""
-        try:
-            # 注册Qt类型以解决信号槽问题
-            # 由于core/qt_types.py已在导入时调用init_qt_types()，这里不需要再次调用
-            # 避免重复注册导致的问题
-            logger.info("Qt元类型注册完成")
-
-        except Exception as e:
-            logger.warning(f"Qt元类型注册失败: {e}")
-            logger.warning(traceback.format_exc())
 
     def _setup_qt_logging(self) -> None:
         """设置Qt日志处理器"""
         try:
             # 导入Qt日志处理器
-            from gui.loguru_qt_handler import get_qt_handler, get_qt_bridge
+            from gui.loguru_qt_handler import get_qt_handler
 
             # 获取Qt日志处理器实例
             self.qt_handler = get_qt_handler()
@@ -254,6 +243,11 @@ class FactorWeaveQuantApplication:
                 # 清理所有服务
                 self.service_container.dispose()
                 logger.info("服务容器已清理")
+
+            # 关闭Qt日志处理器
+            if self.qt_handler:
+                self.qt_handler.shutdown()
+                logger.info("Qt日志处理器已关闭")
 
             # 停止事件循环
             loop = asyncio.get_event_loop()

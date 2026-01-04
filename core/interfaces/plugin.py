@@ -12,27 +12,8 @@ from datetime import datetime
 from enum import Enum
 import asyncio
 
-
-class PluginState(Enum):
-    """插件状态枚举"""
-    UNLOADED = "unloaded"
-    LOADING = "loading"
-    LOADED = "loaded"
-    INITIALIZING = "initializing"
-    ACTIVE = "active"
-    PAUSED = "paused"
-    ERROR = "error"
-    UNLOADING = "unloading"
-
-
-class PluginType(Enum):
-    """插件类型枚举"""
-    DATA_SOURCE = "data_source"
-    STRATEGY = "strategy"
-    INDICATOR = "indicator"
-    VISUALIZATION = "visualization"
-    NOTIFICATION = "notification"
-    UTILITY = "utility"
+from ..enums import PluginLifecycle
+from ..plugin_types import PluginType
 
 
 @dataclass
@@ -45,7 +26,7 @@ class PluginInfo:
     description: str = ""
 
     # 插件类型和分类
-    plugin_type: PluginType = PluginType.UTILITY
+    plugin_type: PluginType = PluginType.ANALYSIS
     category: str = "general"
 
     # 作者和许可信息
@@ -72,7 +53,7 @@ class PluginInfo:
     default_config: Dict[str, Any] = field(default_factory=dict)
 
     # 运行时信息
-    state: PluginState = PluginState.UNLOADED
+    state: PluginLifecycle = PluginLifecycle.UNLOADED
     instance: Optional['IPlugin'] = None
     load_time: Optional[datetime] = None
     error_message: Optional[str] = None

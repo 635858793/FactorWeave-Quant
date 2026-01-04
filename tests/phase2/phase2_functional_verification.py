@@ -17,7 +17,7 @@ Phase 2 功能验证测试 - 数据与插件服务域
 
 from core.services.base_service import BaseService
 from core.plugin_types import DataType, AssetType
-from core.services.plugin_service import PluginService, PluginState
+from core.services.plugin_service import PluginService, PluginLifecycle
 from core.services.cache_service import CacheService, CacheLevel
 from core.services.database_service import DatabaseService, DatabaseConfig, DatabaseType, TransactionIsolationLevel
 from core.services.data_service import DataService, DataRequest, create_data_request
@@ -350,9 +350,9 @@ class Phase2FunctionalVerification:
             plugin_service = self.container.resolve_with_lifecycle(PluginService)
 
             # 测试插件发现
-            discovered_plugins = plugin_service.get_plugins_by_state(PluginState.DISCOVERED)
-            loaded_plugins = plugin_service.get_plugins_by_state(PluginState.LOADED)
-            active_plugins = plugin_service.get_plugins_by_state(PluginState.ACTIVATED)
+            discovered_plugins = plugin_service.get_plugins_by_state(PluginLifecycle.DISCOVERED)
+            loaded_plugins = plugin_service.get_plugins_by_state(PluginLifecycle.LOADED)
+            active_plugins = plugin_service.get_plugins_by_state(PluginLifecycle.ACTIVATED)
 
             logger.info(f"✓ 插件状态统计: 已发现={len(discovered_plugins)}, 已加载={len(loaded_plugins)}, 已激活={len(active_plugins)}")
 

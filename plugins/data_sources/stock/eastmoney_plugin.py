@@ -30,7 +30,7 @@ from core.data_source_extensions import IDataSourcePlugin, PluginInfo, HealthChe
 from core.data_source_data_models import QueryParams
 from core.plugin_types import PluginType, AssetType, DataType
 from core.network.universal_network_config import INetworkConfigurable, NetworkEndpoint, PluginNetworkConfig
-from plugins.plugin_interface import PluginState
+from plugins.plugin_interface import PluginLifecycle
 
 logger = logger.bind(module=__name__)
 
@@ -60,7 +60,7 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
         # 必须显式初始化这些属性（IDataSourcePlugin是抽象基类，不提供默认实现）
         self.initialized = False
         self.last_error = None
-        self.plugin_state = PluginState.CREATED  # 初始状态（插件对象已创建）
+        self.plugin_state = PluginLifecycle.CREATED  # 初始状态（插件对象已创建）
 
         self.config = DEFAULT_CONFIG.copy()
         self.session = None
@@ -261,7 +261,7 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
         网络测试已移至 _do_connect() 方法，在后台线程中执行
         """
         try:
-            self.plugin_state = PluginState.INITIALIZING
+            self.plugin_state = PluginLifecycle.INITIALIZING
 
             # 合并配置
             merged = DEFAULT_CONFIG.copy()
@@ -282,13 +282,13 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
 
             # 标记初始化完成（不做网络测试）
             self.initialized = True
-            self.plugin_state = PluginState.INITIALIZED
+            self.plugin_state = PluginLifecycle.INITIALIZED
             logger.info("东方财富插件同步初始化完成（<100ms，网络连接将在后台进行）")
             return True
 
         except Exception as e:
             self.last_error = str(e)
-            self.plugin_state = PluginState.FAILED
+            self.plugin_state = PluginLifecycle.FAILED
             logger.error(f"东方财富股票数据源插件初始化失败: {e}")
             return False
 
@@ -322,18 +322,18 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
                 data = response.json()
                 if data and 'data' in data and data['data']:
                     logger.info("✅ 东方财富插件连接成功，网络正常")
-                    self.plugin_state = PluginState.CONNECTED
+                    self.plugin_state = PluginLifecycle.CONNECTED
                     return True
                 else:
                     logger.warning("⚠️ 东方财富插件连接成功，但测试数据异常")
-                    self.plugin_state = PluginState.CONNECTED  # 仍然认为连接成功
+                    self.plugin_state = PluginLifecycle.CONNECTED  # 仍然认为连接成功
                     return True
             else:
                 raise Exception(f"API返回状态码: {response.status_code}")
 
         except Exception as e:
             self.last_error = str(e)
-            self.plugin_state = PluginState.FAILED
+            self.plugin_state = PluginLifecycle.FAILED
             logger.error(f"❌ 东方财富插件连接失败: {e}")
             return False
 

@@ -786,54 +786,128 @@ class TaskScheduler:
         stock_code = task.task_data.get("stock_code", "000001")
         strategy = task.task_data.get("strategy", "ma_cross")
         period = task.task_data.get("period", "1y")
+        initial_capital = task.task_data.get("initial_capital", 100000)
 
         try:
-            # ✅ 调用真实回测引擎
             logger.info(f"执行真实回测: {stock_code}, 策略: {strategy}, 周期: {period}")
 
-            # 使用UnifiedBacktestEngine
             try:
-                from backtest import UnifiedBacktestEngine
+                from backtest.unified_backtest_engine import UnifiedBacktestEngine
+                from backtest.strategy.signal_generator import SignalGenerator
+                import pandas as pd
 
-                # 创建回测引擎实例
+                stock_service = None
+                try:
+                    from core.services.stock_service import StockService
+                    stock_service = StockService()
+                    if not stock_service._initialized:
+                        stock_service._do_initialize()
+                except Exception as service_error:
+                    logger.warning(f"StockService初始化失败: {service_error}")
+
+                if stock_service is None or not stock_service._initialized:
+                    return {
+                        "task_type": "backtest",
+                        "stock_code": stock_code,
+                        "strategy": strategy,
+                        "status": "service_unavailable",
+                        "message": "股票服务不可用",
+                        "processed_by": node.node_id,
+                        "is_mock": False
+                    }
+
+                period_map = {
+                    "1w": 7, "2w": 14, "1m": 30, "3m": 90,
+                    "6m": 180, "1y": 365, "2y": 730, "5y": 1825
+                }
+                days = period_map.get(period, 365)
+                kdata = stock_service.get_kdata(stock_code, period='D', count=days)
+
+                if kdata is None or kdata.empty:
+                    return {
+                        "task_type": "backtest",
+                        "stock_code": stock_code,
+                        "strategy": strategy,
+                        "status": "no_data",
+                        "message": "无法获取股票数据",
+                        "processed_by": node.node_id,
+                        "is_mock": False
+                    }
+
+                close_col = 'close' if 'close' in kdata.columns else ('收盘' if '收盘' in kdata.columns else None)
+                if close_col is None:
+                    return {
+                        "task_type": "backtest",
+                        "stock_code": stock_code,
+                        "strategy": strategy,
+                        "status": "invalid_data",
+                        "message": "数据中缺少价格列",
+                        "processed_by": node.node_id,
+                        "is_mock": False
+                    }
+
+                price_data = kdata[close_col].copy()
+                if hasattr(price_data, 'fillna'):
+                    price_data = price_data.fillna(method='ffill').fillna(method='bfill')
+
+                kdata = kdata.copy()
+                kdata['close'] = price_data
+                kdata['signal'] = 0
+
+                strategy_params = task.task_data.get("strategy_params", {})
+                signal_generator = SignalGenerator()
+                kdata = signal_generator.generate_signals(kdata, strategy, strategy_params)
+
                 engine = UnifiedBacktestEngine()
+                backtest_result = engine.run_backtest(
+                    data=kdata,
+                    signal_col='signal',
+                    price_col='close',
+                    initial_capital=initial_capital
+                )
 
-                # 这里需要根据实际的UnifiedBacktestEngine API调用
-                # 注意：实际实现可能需要更多参数
-                logger.info(f"使用UnifiedBacktestEngine执行回测任务")
+                metrics_summary = engine.get_metrics_summary() if hasattr(engine, 'get_metrics_summary') else {}
 
-                # TODO: 根据UnifiedBacktestEngine的实际API调整
-                # backtest_result = engine.run_backtest(stock_code, strategy, period)
-
-                # 暂时返回pending状态，等待完整的回测引擎集成
-                logger.warning("回测引擎集成待完成，任务pending")
-                return {
+                result = {
                     "task_type": "backtest",
                     "stock_code": stock_code,
                     "strategy": strategy,
-                    "status": "pending_integration",
-                    "message": "回测引擎API集成中",
+                    "period": period,
+                    "status": "completed",
                     "processed_by": node.node_id,
-                    "is_mock": False
+                    "is_mock": False,
+                    "result": {
+                        "backtest_data": kdata.to_dict('records') if isinstance(kdata, pd.DataFrame) else kdata,
+                        "risk_metrics": metrics_summary,
+                        "performance_summary": engine.get_metrics_summary() if hasattr(engine, 'get_metrics_summary') else {}
+                    }
                 }
 
+                if isinstance(backtest_result, pd.DataFrame):
+                    result["result"]["trades"] = backtest_result.to_dict('records')
+
+                logger.info(f"回测完成: {stock_code}, 策略: {strategy}")
+                return result
+
             except ImportError as import_err:
-                logger.warning(f"UnifiedBacktestEngine不可用: {import_err}")
+                logger.error(f"导入回测引擎失败: {import_err}")
                 return {
                     "task_type": "backtest",
                     "stock_code": stock_code,
                     "strategy": strategy,
-                    "status": "service_unavailable",
-                    "message": "回测引擎未安装",
+                    "status": "import_error",
+                    "message": f"导入失败: {str(import_err)}",
                     "processed_by": node.node_id,
                     "is_mock": False
                 }
 
         except Exception as e:
-            logger.error(f"回测任务失败: {e}")
+            import traceback
+            logger.error(f"回测任务失败: {e}\n{traceback.format_exc()}")
             return {
                 "task_type": "backtest",
                 "stock_code": stock_code,
+                "strategy": strategy,
                 "error": str(e),
                 "processed_by": node.node_id,
                 "is_mock": False
@@ -1060,6 +1134,163 @@ class DistributedService:
                 return task
 
         return None
+
+    def get_task_stats(self) -> Dict[str, Any]:
+        """获取任务统计信息（与UI监控对话框兼容）"""
+        running_tasks = []
+        for task_id, task in self.task_scheduler.running_tasks.items():
+            task_dict = task.to_dict()
+            task_dict['task_id'] = task_id
+            running_tasks.append(task_dict)
+
+        completed_tasks = []
+        for task in self.task_scheduler.completed_tasks:
+            task_dict = task.to_dict()
+            task_dict['task_id'] = task.task_id
+            completed_tasks.append(task_dict)
+
+        return {
+            'running_tasks': running_tasks,
+            'completed_tasks': completed_tasks,
+            'total_running': len(running_tasks),
+            'total_completed': len(completed_tasks),
+            'pending_count': len(self.task_scheduler.task_queue)
+        }
+
+    def get_queue_status(self) -> Dict[str, Any]:
+        """获取任务队列状态（与UI监控对话框兼容）"""
+        queue_tasks = []
+        for task in self.task_scheduler.task_queue:
+            task_dict = {
+                'task_id': task.task_id,
+                'task_name': getattr(task, 'task_name', task.task_type),
+                'task_type': task.task_type,
+                'priority': task.priority,
+                'status': task.status,
+                'created_time': task.created_time.isoformat() if task.created_time else None,
+                'wait_time': (datetime.now() - task.created_time).total_seconds() if task.created_time else 0
+            }
+            queue_tasks.append(task_dict)
+
+        return {
+            'queue_tasks': queue_tasks,
+            'queue_count': len(queue_tasks),
+            'waiting_count': len(queue_tasks),
+            'queued_tasks': queue_tasks
+        }
+
+    def clear_task_queue(self) -> bool:
+        """清空任务队列（与UI监控对话框兼容）"""
+        try:
+            count = len(self.task_scheduler.task_queue)
+            self.task_scheduler.task_queue.clear()
+            logger.info(f"任务队列已清空，移除了 {count} 个任务")
+            return True
+        except Exception as e:
+            logger.error(f"清空任务队列失败: {e}")
+            return False
+
+    def find_task_by_partial_id(self, partial_id: str) -> Optional[DistributedTask]:
+        """根据部分任务ID查找完整任务（用于UI交互）"""
+        # 在运行中任务中查找
+        for task_id, task in self.task_scheduler.running_tasks.items():
+            if task_id.startswith(partial_id):
+                return task
+
+        # 在已完成任务中查找
+        for task in self.task_scheduler.completed_tasks:
+            if task.task_id.startswith(partial_id):
+                return task
+
+        # 在队列任务中查找
+        for task in self.task_scheduler.task_queue:
+            if task.task_id.startswith(partial_id):
+                return task
+
+        return None
+
+    def cancel_task(self, task_id: str) -> bool:
+        """取消任务（支持部分ID匹配）"""
+        try:
+            # 如果任务ID不完整，尝试查找完整ID
+            full_task_id = task_id
+            if len(task_id) < 36:
+                found_task = self.find_task_by_partial_id(task_id)
+                if found_task:
+                    full_task_id = found_task.task_id
+                else:
+                    logger.warning(f"未找到任务 {task_id}")
+                    return False
+
+            # 检查是否在运行中
+            if full_task_id in self.task_scheduler.running_tasks:
+                task = self.task_scheduler.running_tasks[full_task_id]
+                task.status = 'cancelled'
+                task.end_time = datetime.now()
+                del self.task_scheduler.running_tasks[full_task_id]
+                self.task_scheduler.completed_tasks.append(task)
+                logger.info(f"任务 {full_task_id} 已取消")
+                return True
+
+            # 检查是否在队列中
+            for i, task in enumerate(self.task_scheduler.task_queue):
+                if task.task_id == full_task_id:
+                    self.task_scheduler.task_queue.pop(i)
+                    logger.info(f"任务 {full_task_id} 已从队列中移除")
+                    return True
+
+            logger.warning(f"任务 {full_task_id} 未找到")
+            return False
+
+        except Exception as e:
+            logger.error(f"取消任务失败: {e}")
+            return False
+
+    def retry_task(self, task_id: str) -> str:
+        """重试任务（支持部分ID匹配）"""
+        try:
+            # 如果任务ID不完整，尝试查找完整ID
+            full_task_id = task_id
+            if len(task_id) < 36:
+                found_task = self.find_task_by_partial_id(task_id)
+                if found_task:
+                    original_task = found_task
+                else:
+                    logger.warning(f"未找到任务 {task_id}")
+                    return ""
+            else:
+                # 找到原始任务
+                original_task = None
+                for task in self.task_scheduler.completed_tasks:
+                    if task.task_id == task_id:
+                        original_task = task
+                        break
+
+                if original_task is None:
+                    logger.warning(f"未找到任务 {task_id}")
+                    return ""
+
+            # 创建新任务（复制原始任务数据）
+            new_task = DistributedTask(
+                task_id=str(uuid.uuid4()),
+                task_type=original_task.task_type,
+                task_data=original_task.task_data.copy(),
+                priority=original_task.priority
+            )
+            new_task.task_name = getattr(original_task, 'task_name', original_task.task_type) + " (重试)"
+
+            # 提交新任务
+            new_task_id = self.task_scheduler.submit_task(new_task)
+            logger.info(f"任务 {task_id} 已重新提交，新任务ID: {new_task_id}")
+            return new_task_id
+
+        except Exception as e:
+            logger.error(f"重试任务失败: {e}")
+            return ""
+
+    def submit_task(self, task: DistributedTask) -> str:
+        """提交任务（通用方法，与UI监控对话框兼容）"""
+        return self.task_scheduler.submit_task(task)
 
     def get_nodes_info(self) -> List[NodeInfo]:
         """获取所有节点信息"""

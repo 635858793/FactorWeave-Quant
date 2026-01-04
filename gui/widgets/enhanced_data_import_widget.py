@@ -472,7 +472,7 @@ class BatchSelectionDialog(QDialog):
                 logger.info("尝试通过UnifiedDataManager获取股票数据...") if logger else None
 
                 # 获取资产列表（从DuckDB或数据源）
-                asset_df = data_manager.get_asset_list(asset_type='stock', market='all')
+                asset_df = data_manager.get_asset_list(asset_type='stock_a', market='all')
 
                 if not asset_df.empty:
                     stock_list = []
@@ -2590,18 +2590,31 @@ class EnhancedDataImportWidget(QWidget):
             所有符号的列表，如果获取失败则返回空列表
         """
         try:
-            # 资产类型映射
+            # 资产类型映射 - UI显示中文，数据库使用标准字符串
             asset_type_mapping = {
-                "股票": "stock",
+                "股票": "stock_a",
                 "指数": "index",
                 "期货": "futures",
                 "基金": "fund",
                 "债券": "bond",
                 "加密货币": "crypto",
-                "外汇": "forex"
+                "外汇": "forex",
+                "B股": "stock_b",
+                "H股": "stock_h",
+                "美股": "stock_us",
+                "港股": "stock_hk",
+                "板块": "sector",
+                "期权": "option",
+                "权证": "warrant",
+                "商品": "commodity",
+                "行业板块": "industry_sector",
+                "概念板块": "concept_sector",
+                "风格板块": "style_sector",
+                "主题板块": "theme_sector",
+                "宏观经济": "macro"
             }
 
-            asset_type_value = asset_type_mapping.get(asset_type, "stock")
+            asset_type_value = asset_type_mapping.get(asset_type, "stock_a")
 
             # 方案1: 优先从UnifiedDataManager获取
             from core.services.unified_data_manager import get_unified_data_manager

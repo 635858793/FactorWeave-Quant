@@ -7,7 +7,7 @@
 
 import numpy as np
 import pandas as pd
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional, Tuple, Union
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -159,12 +159,19 @@ class MovingAverageStrategyPlugin(IStrategyPlugin):
         except Exception:
             return False
 
-    def generate_signals(self, market_data: StandardMarketData, 
+    def generate_signals(self, market_data: Union[StandardMarketData, pd.DataFrame], 
                         context: StrategyContext) -> List[Signal]:
         if not self._initialized:
             raise RuntimeError("双均线策略未初始化")
         
-        data = market_data.to_dataframe()
+        # 处理不同类型的输入
+        if isinstance(market_data, pd.DataFrame):
+            data = market_data
+            symbol = context.symbol if hasattr(context, 'symbol') else "unknown"
+        else:
+            data = market_data.to_dataframe()
+            symbol = market_data.symbol
+        
         if len(data) < self._config.slow_period:
             raise ValueError(f"数据长度不足，需要至少{self._config.slow_period}个数据点")
 
@@ -209,7 +216,7 @@ class MovingAverageStrategyPlugin(IStrategyPlugin):
                 confidence = min(abs(fast_ma_val - slow_ma_val) / slow_ma_val * 10 + 0.5, 1.0)
                 
                 signal = Signal(
-                    symbol=market_data.symbol,
+                    symbol=symbol,
                     signal_type=signal_type,
                     strength=1.0,
                     timestamp=timestamp,
@@ -236,7 +243,7 @@ class MovingAverageStrategyPlugin(IStrategyPlugin):
                         'price': s.price,
                         'reason': s.reason
                     } for s in signals],
-                    symbol=market_data.symbol,
+                    symbol=symbol,
                     priority=1,
                     timestamp=datetime.now(),
                     source="moving_average_strategy",

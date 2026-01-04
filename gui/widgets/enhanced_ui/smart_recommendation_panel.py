@@ -2258,7 +2258,7 @@ class SmartRecommendationPanel(QWidget):
                 data_manager = UnifiedDataManager()
 
             # 获取股票列表
-            stock_list = data_manager.get_asset_list('stock')
+            stock_list = data_manager.get_asset_list('stock_a')
 
             if stock_list.empty:
                 logger.warning("股票列表为空")

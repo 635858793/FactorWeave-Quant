@@ -6,6 +6,7 @@ FactorWeave-Quant  增强插件管理器
 """
 
 from .plugin_types import PluginType, PluginCategory
+from .enums import PluginStatus
 import os
 import sys
 import json
@@ -119,15 +120,6 @@ class PluginMetadata:
 class PluginMarket:
     """插件市场占位类"""
     pass
-
-
-class PluginStatus(Enum):
-    """插件状态"""
-    UNLOADED = "unloaded"
-    LOADED = "loaded"
-    ENABLED = "enabled"
-    DISABLED = "disabled"
-    ERROR = "error"
 
 
 @dataclass

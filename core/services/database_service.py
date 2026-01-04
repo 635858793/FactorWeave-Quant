@@ -342,7 +342,7 @@ class DatabaseService(BaseService):
             ),
             "strategy_sqlite": DatabaseConfig(
                 db_type=DatabaseType.SQLITE,
-                db_path="data/strategy.db",
+                db_path="data/strategy.sqlite",
                 pool_size=10,      # 从5增加到10
                 max_pool_size=30   # 从15增加到30
             )
@@ -1173,12 +1173,15 @@ class DatabaseService(BaseService):
         """初始化策略配置相关数据表"""
         try:
             logger.info("Initializing strategy configuration database tables...")
-            
+
             # 创建策略配置表
             self._create_strategy_config_table()
-            
+
+            # 创建策略表
+            self._create_strategies_table()
+
             logger.info("✓ Strategy configuration database tables initialized")
-            
+
         except Exception as e:
             logger.error(f"Failed to initialize strategy configuration tables: {e}")
             raise
@@ -1207,6 +1210,38 @@ class DatabaseService(BaseService):
             "CREATE INDEX IF NOT EXISTS idx_strategy_configs_created ON strategy_configs(created_at)"
         ]
         
+        with self.get_connection("strategy_sqlite") as conn:
+            for index_sql in indices:
+                conn.execute(index_sql)
+
+    def _create_strategies_table(self) -> None:
+        """创建策略表"""
+        sql = """
+        CREATE TABLE IF NOT EXISTS strategies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            strategy_type TEXT NOT NULL,
+            version TEXT NOT NULL DEFAULT '1.0.0',
+            author TEXT DEFAULT '',
+            description TEXT DEFAULT '',
+            category TEXT DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            is_active BOOLEAN DEFAULT 1,
+            metadata TEXT DEFAULT '{}',
+            class_path TEXT NOT NULL
+        )
+        """
+
+        with self.get_connection("strategy_sqlite") as conn:
+            conn.execute(sql)
+
+        indices = [
+            "CREATE INDEX IF NOT EXISTS idx_strategies_type ON strategies(strategy_type)",
+            "CREATE INDEX IF NOT EXISTS idx_strategies_active ON strategies(is_active)",
+            "CREATE INDEX IF NOT EXISTS idx_strategies_category ON strategies(category)"
+        ]
+
         with self.get_connection("strategy_sqlite") as conn:
             for index_sql in indices:
                 conn.execute(index_sql)

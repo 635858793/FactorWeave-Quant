@@ -18,7 +18,7 @@ class TdxServerDatabaseManager:
     def __init__(self, db_path: str = None):
         if db_path is None:
             # 默认数据库路径
-            db_path = Path.cwd() / "data" / "tdx_servers.db"
+            db_path = Path.cwd() / "data" / "tdx_servers.sqlite"
 
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)

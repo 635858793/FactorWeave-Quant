@@ -261,7 +261,7 @@ class PerformanceDatabase:
     
     def __init__(self, config: Dict[str, Any]):
         self.config = config
-        self.db_path = config.get('path', 'data/performance.db') if isinstance(config, dict) else 'data/performance.db'
+        self.db_path = config.get('path', 'data/performance.sqlite') if isinstance(config, dict) else 'data/performance.sqlite'
         self._init_database()
     
     def _init_database(self):

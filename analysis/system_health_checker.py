@@ -294,11 +294,17 @@ class SystemHealthChecker:
     def _check_database_connectivity(self) -> Dict[str, Any]:
         """检查数据库连接"""
         try:
-            # 检查数据库文件是否存在
             db_paths = [
-                'data/pattern_algorithms.sqlite',
-                'data/hikyuu.sqlite',
-                'data/stock_data.duckdb'
+                'data/factorweave_system.sqlite',
+                'data/factorweave_analytics.duckdb',
+                'data/databases/stock_a/stock_a_data.duckdb',
+                'data/enhanced_risk_monitor.sqlite',
+                'data/strategy.sqlite',
+                'data/tdx_servers.sqlite',
+                'data/alert_config.sqlite',
+                'data/backtest_monitor.sqlite',
+                'data/metrics.sqlite',
+                'data/unified_quality_monitor.sqlite'
             ]
 
             db_status = {}

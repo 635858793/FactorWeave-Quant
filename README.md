@@ -568,6 +568,61 @@ class MyStrategyPlugin(IStrategyPlugin):
 - **📝 智能报告**: AI生成的投研报告
 - **核心文件**: `components/enhanced_ai_stock_selection.py`
 
+### 11. 🎯 枚举统一系统 (Enum Unification System)
+- **📊 统一枚举定义**: 所有枚举类型统一到 `core.enums` 模块
+- **🔄 PluginLifecycle**: 插件生命周期状态枚举（21个状态）
+- **📋 PluginStatus**: 插件启用/禁用状态枚举（17个状态）
+- **🏥 HealthStatus**: 健康状态枚举（7个状态）
+- **🧩 ComponentState/Type**: 组件状态和类型枚举
+- **🔌 PluginType/Category**: 插件类型和分类枚举
+- **💼 AssetType**: 资产类型枚举（20个类型）
+- **📈 DataType**: 数据类型枚举（36个类型）
+- **✅ 状态转换验证**: 完整的状态转换合法性检查
+- **🛡️ 类型安全保障**: 消除枚举定义重复，提升代码一致性
+- **核心文件**: `core/enums/`, `core/plugin_types.py`
+
+**枚举统一工作详情**:
+- ✅ 将 `PluginState` 重命名为 `PluginLifecycle`，提升语义准确性
+- ✅ 统一所有枚举定义到 `core.enums` 和 `core.plugin_types` 模块
+- ✅ 消除枚举定义重复，提升代码可维护性
+- ✅ 提供丰富的枚举辅助方法，改善开发体验
+- ✅ 完成全面的验证测试，确保系统稳定性
+- ✅ 9个统一枚举类型，覆盖系统所有状态和类型定义
+
+**使用示例**:
+```python
+# 导入核心枚举
+from core.enums import (
+    HealthStatus,
+    PluginLifecycle,
+    PluginStatus,
+    ComponentState,
+    ComponentType
+)
+
+# 导入插件类型相关枚举
+from core.plugin_types import (
+    PluginType,
+    PluginCategory,
+    AssetType,
+    DataType
+)
+
+# 使用枚举
+if plugin.plugin_state == PluginLifecycle.CONNECTED:
+    print("插件已连接")
+
+# 使用枚举方法
+if PluginLifecycle.CONNECTED.is_loaded():
+    print("插件已加载")
+
+# 检查状态转换
+if current_state.can_transition_to(target_state):
+    plugin.plugin_state = target_state
+```
+
+详见 [枚举统一和重构工作记录](.claude/memories/enum_unification_and_refactoring.md)
+
 ## 🧪 测试
 
 ### 运行测试

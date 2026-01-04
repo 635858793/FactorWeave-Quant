@@ -26,6 +26,12 @@ from ..containers import ServiceContainer, get_service_container
 from ..plugin_types import AssetType, DataType
 from ..tet_data_pipeline import TETDataPipeline, StandardQuery, StandardData
 
+try:
+    from .asset_fallback_loader import AssetFallbackLoader
+except ImportError as e:
+    logger.warning(f"AssetFallbackLoader导入失败: {e}")
+    AssetFallbackLoader = None
+
 # 导入UniPluginDataManager
 try:
     from .uni_plugin_data_manager import UniPluginDataManager
@@ -294,6 +300,9 @@ class UnifiedDataManager:
             'cache_misses': 0
         }
 
+        # 初始化 AssetFallbackLoader
+        self._init_fallback_loader()
+
         # DuckDB集成支持 - 直接集成到现有管理器
         self._init_duckdb_integration()
 
@@ -311,6 +320,77 @@ class UnifiedDataManager:
         except Exception as e:
             self.cache_enabled = True  # 出错时默认启用缓存
             logger.warning(f"读取缓存配置失败，使用默认值: {e}")
+
+    def _init_fallback_loader(self):
+        """初始化 AssetFallbackLoader"""
+        try:
+            if AssetFallbackLoader is None:
+                logger.warning("⚠️ AssetFallbackLoader 不可用，跳过初始化")
+                self.fallback_loader = None
+                return
+
+            # 从服务容器解析各服务
+            stock_service = None
+            index_service = None
+            fund_service = None
+            bond_service = None
+
+            if self.service_container:
+                try:
+                    from .stock_service import StockService
+                    if self.service_container.is_registered(StockService):
+                        stock_service = self.service_container.resolve(StockService)
+                        logger.info("✅ StockService 解析成功")
+                except Exception as e:
+                    logger.warning(f"⚠️ StockService 解析失败: {e}")
+
+                try:
+                    from .index_service import IndexService
+                    if self.service_container.is_registered(IndexService):
+                        index_service = self.service_container.resolve(IndexService)
+                        logger.info("✅ IndexService 解析成功")
+                except Exception as e:
+                    logger.warning(f"⚠️ IndexService 解析失败: {e}")
+
+                try:
+                    from .fund_service import FundService
+                    if self.service_container.is_registered(FundService):
+                        fund_service = self.service_container.resolve(FundService)
+                        logger.info("✅ FundService 解析成功")
+                except Exception as e:
+                    logger.warning(f"⚠️ FundService 解析失败: {e}")
+
+                try:
+                    from .bond_service import BondService
+                    if self.service_container.is_registered(BondService):
+                        bond_service = self.service_container.resolve(BondService)
+                        logger.info("✅ BondService 解析成功")
+                except Exception as e:
+                    logger.warning(f"⚠️ BondService 解析失败: {e}")
+
+            # 加密货币 API 配置
+            crypto_api_config = {
+                'provider': 'binance',
+                'enabled': False,
+                'api_key': None,
+                'api_secret': None
+            }
+
+            # 创建 AssetFallbackLoader 实例
+            self.fallback_loader = AssetFallbackLoader(
+                duckdb_manager=self.duckdb_manager if hasattr(self, 'duckdb_manager') else None,
+                stock_service=stock_service,
+                index_service=index_service,
+                fund_service=fund_service,
+                bond_service=bond_service,
+                crypto_api_config=crypto_api_config
+            )
+
+            logger.info("✅ AssetFallbackLoader 初始化成功")
+
+        except Exception as e:
+            logger.warning(f"⚠️ AssetFallbackLoader 初始化失败: {e}")
+            self.fallback_loader = None
 
     def initialize(self):
         """延迟初始化，由服务容器控制时机"""
@@ -335,6 +415,9 @@ class UnifiedDataManager:
 
         # 增强DuckDB数据下载器 - 在UniPluginDataManager可用后初始化
         self._init_enhanced_duckdb_downloader()
+
+        # 初始化StockService用于后备机制获取股票列表
+        self._init_stock_service()
 
         self._is_initialized = True
         logger.info("UnifiedDataManager初始化完成")
@@ -417,6 +500,22 @@ class UnifiedDataManager:
         except Exception as e:
             logger.warning(f" 增强DuckDB数据下载器初始化失败: {e}")
             self.enhanced_duckdb_downloader = None
+
+    def _init_stock_service(self):
+        """初始化StockService用于后备机制获取股票列表"""
+        try:
+            from .stock_service import StockService
+
+            if self.service_container and self.service_container.is_registered(StockService):
+                self._stock_service = self.service_container.resolve(StockService)
+                logger.info("✅ StockService从服务容器初始化成功")
+            else:
+                self._stock_service = None
+                logger.debug("StockService未在服务容器中注册，后备机制将无法获取股票列表")
+
+        except Exception as e:
+            self._stock_service = None
+            logger.warning(f"⚠️ StockService初始化失败: {e}")
 
     def _create_uni_plugin_manager_if_needed(self):
         """初始化UniPluginDataManager"""
@@ -544,7 +643,7 @@ class UnifiedDataManager:
         Returns:
             股票列表DataFrame
         """
-        return self.get_asset_list(asset_type='stock', market=market)
+        return self.get_asset_list(asset_type='stock_a', market=market)
 
     def _get_industry_info(self, stock_code: str) -> str:
         """获取股票行业信息"""
@@ -837,7 +936,7 @@ class UnifiedDataManager:
         except Exception as e:
             logger.warning(f"缓存存储失败: {e}")
 
-    def get_asset_list(self, asset_type: str = 'stock', market: str = 'all') -> pd.DataFrame:
+    def get_asset_list(self, asset_type: str = 'stock_a', market: str = 'all') -> pd.DataFrame:
         """
         获取资产列表（DuckDB优先架构）- 支持所有资产类型
 
@@ -874,15 +973,29 @@ class UnifiedDataManager:
             # 2. 修复：如果DuckDB没有数据，尝试从传统数据源获取
             logger.info(f"📥 DuckDB中没有{asset_type_str}资产数据，尝试从传统数据源获取")
             
-            # 转换资产类型为枚举
+            # 转换资产类型为枚举 - 统一使用完整的资产类型映射
             asset_type_mapping = {
                 'stock': AssetTypeEnum.STOCK_A,
                 'stock_a': AssetTypeEnum.STOCK_A,
+                'stock_b': AssetTypeEnum.STOCK_B,
+                'stock_h': AssetTypeEnum.STOCK_H,
+                'stock_us': AssetTypeEnum.STOCK_US,
+                'stock_hk': AssetTypeEnum.STOCK_HK,
                 'crypto': AssetTypeEnum.CRYPTO,
+                'fund': AssetTypeEnum.FUND,
+                'bond': AssetTypeEnum.BOND,
+                'index': AssetTypeEnum.INDEX,
+                'sector': AssetTypeEnum.SECTOR,
                 'futures': AssetTypeEnum.FUTURES,
                 'forex': AssetTypeEnum.FOREX,
-                'index': AssetTypeEnum.INDEX,
-                'fund': AssetTypeEnum.FUND
+                'option': AssetTypeEnum.OPTION,
+                'warrant': AssetTypeEnum.WARRANT,
+                'commodity': AssetTypeEnum.COMMODITY,
+                'industry_sector': AssetTypeEnum.INDUSTRY_SECTOR,
+                'concept_sector': AssetTypeEnum.CONCEPT_SECTOR,
+                'style_sector': AssetTypeEnum.STYLE_SECTOR,
+                'theme_sector': AssetTypeEnum.THEME_SECTOR,
+                'macro': AssetTypeEnum.MACRO
             }
             
             asset_type_enum = asset_type_mapping.get(asset_type_str, AssetTypeEnum.STOCK_A)
@@ -920,28 +1033,56 @@ class UnifiedDataManager:
             # 将字符串转换为AssetType枚举
             from ..plugin_types import AssetType
             asset_type_enum_mapping = {
-                'stock': AssetType.STOCK_A,  # 默认使用STOCK_A（A股）面向中国用户
-                'stock_a': AssetType.STOCK_A,  # 支持直接传入stock_a
+                'stock': AssetType.STOCK_A,
+                'stock_a': AssetType.STOCK_A,
+                'stock_b': AssetType.STOCK_B,
+                'stock_h': AssetType.STOCK_H,
+                'stock_us': AssetType.STOCK_US,
+                'stock_hk': AssetType.STOCK_HK,
                 'crypto': AssetType.CRYPTO,
                 'fund': AssetType.FUND,
                 'bond': AssetType.BOND,
                 'index': AssetType.INDEX,
-                'sector': AssetType.SECTOR
+                'sector': AssetType.SECTOR,
+                'futures': AssetType.FUTURES,
+                'forex': AssetType.FOREX,
+                'option': AssetType.OPTION,
+                'warrant': AssetType.WARRANT,
+                'commodity': AssetType.COMMODITY,
+                'industry_sector': AssetType.INDUSTRY_SECTOR,
+                'concept_sector': AssetType.CONCEPT_SECTOR,
+                'style_sector': AssetType.STYLE_SECTOR,
+                'theme_sector': AssetType.THEME_SECTOR,
+                'macro': AssetType.MACRO
             }
             asset_type_enum = asset_type_enum_mapping.get(asset_type, AssetType.STOCK_A)
 
             # ✅ 新架构：所有资产类型统一使用asset_metadata表
             table_name = 'asset_metadata'
 
-            # 资产类型映射（用于WHERE条件）
+            # 资产类型映射（用于WHERE条件）- 完整支持20+资产类型
             asset_type_value_mapping = {
-                'stock': 'stock_a',     # 默认A股
-                'stock_a': 'stock_a',   # 支持直接传入stock_a
+                'stock': 'stock_a',
+                'stock_a': 'stock_a',
+                'stock_b': 'stock_b',
+                'stock_h': 'stock_h',
+                'stock_us': 'stock_us',
+                'stock_hk': 'stock_hk',
                 'crypto': 'crypto',
                 'fund': 'fund',
                 'bond': 'bond',
                 'index': 'index',
-                'sector': 'sector'
+                'sector': 'sector',
+                'futures': 'futures',
+                'forex': 'forex',
+                'option': 'option',
+                'warrant': 'warrant',
+                'commodity': 'commodity',
+                'industry_sector': 'industry_sector',
+                'concept_sector': 'concept_sector',
+                'style_sector': 'style_sector',
+                'theme_sector': 'theme_sector',
+                'macro': 'macro'
             }
             asset_type_value = asset_type_value_mapping.get(asset_type, 'stock_a')
 
@@ -1182,6 +1323,70 @@ class UnifiedDataManager:
 
         except Exception as e:
             logger.warning(f"DuckDB数据存储失败: {e}")
+
+    async def _store_asset_list_to_duckdb(self, data: pd.DataFrame, asset_type: AssetType, market: str = None):
+        """存储资产列表到DuckDB（异步后备机制数据持久化）"""
+        try:
+            if data.empty or not self.duckdb_operations:
+                return
+
+            db_path = self.asset_manager.get_database_path(asset_type)
+            table_name = "asset_metadata"
+
+            logger.debug(f"📦 开始存储{asset_type.value}资产列表到DuckDB: {len(data)} 条记录")
+
+            asset_type_value = asset_type.value if hasattr(asset_type, 'value') else str(asset_type)
+
+            prepared_data = data.copy()
+
+            if 'code' in prepared_data.columns:
+                prepared_data['symbol'] = prepared_data['code']
+            if 'list_date' in prepared_data.columns:
+                prepared_data['listing_date'] = prepared_data['list_date']
+            if 'status' in prepared_data.columns:
+                prepared_data['listing_status'] = prepared_data['status']
+
+            prepared_data['asset_type'] = asset_type_value
+            prepared_data['update_time'] = datetime.now()
+
+            if market and 'market' not in prepared_data.columns:
+                prepared_data['market'] = market.upper()
+
+            field_mapping = {
+                'code': 'symbol',
+                'name': 'name',
+                'market': 'market',
+                'industry': 'industry',
+                'sector': 'sector',
+                'list_date': 'listing_date',
+                'status': 'listing_status'
+            }
+
+            final_columns = []
+            for col in ['symbol', 'name', 'market', 'industry', 'sector', 'listing_date', 'listing_status', 'asset_type', 'update_time']:
+                if col in prepared_data.columns:
+                    final_columns.append(col)
+
+            if not final_columns:
+                logger.warning(f"⚠️ 资产列表数据缺少必要字段，无法存储到DuckDB")
+                return
+
+            prepared_data = prepared_data[final_columns]
+
+            result = self.duckdb_operations.insert_dataframe(
+                database_path=db_path,
+                table_name=table_name,
+                dataframe=prepared_data,
+                upsert=True
+            )
+
+            if result.success:
+                logger.info(f"✅ 资产列表持久化成功: {asset_type_value}, {len(prepared_data)} 条记录")
+            else:
+                logger.warning(f"⚠️ 资产列表持久化失败: {asset_type_value}")
+
+        except Exception as e:
+            logger.warning(f"⚠️ 资产列表存储到DuckDB失败: {e}")
 
     # K线数据获取统一使用DuckDB优先架构
 
@@ -1577,6 +1782,270 @@ class UnifiedDataManager:
 
         except Exception as e:
             logger.error(f"清理资源失败: {e}")
+
+    def _legacy_get_asset_list(self, asset_type: AssetType, market: str = None) -> pd.DataFrame:
+        """
+        从传统数据源获取资产列表（后备方法）
+
+        当DuckDB没有数据时，尝试从传统数据源获取资产列表。
+        支持所有资产类型的统一获取。
+
+        Args:
+            asset_type: 资产类型枚举
+            market: 市场过滤条件
+
+        Returns:
+            pd.DataFrame: 资产列表数据，包含列：['code', 'name', 'market', 'industry', 'sector', 'list_date', 'status', 'asset_type']
+        """
+        import pandas as pd
+        from ..plugin_types import AssetType
+
+        try:
+            asset_type_value = asset_type.value if hasattr(asset_type, 'value') else str(asset_type)
+            logger.debug(f"🔄 从传统数据源获取{asset_type_value}资产列表")
+
+            if asset_type in [AssetType.SECTOR, AssetType.INDUSTRY_SECTOR,
+                              AssetType.CONCEPT_SECTOR, AssetType.STYLE_SECTOR,
+                              AssetType.THEME_SECTOR]:
+                return self._get_sector_asset_list(asset_type, market)
+            elif asset_type in [AssetType.STOCK_A, AssetType.STOCK_B, AssetType.STOCK_H,
+                                AssetType.STOCK_US, AssetType.STOCK_HK]:
+                return self._get_stock_asset_list(asset_type, market)
+            elif asset_type == AssetType.INDEX:
+                return self._get_index_asset_list(asset_type, market)
+            elif asset_type == AssetType.FUND:
+                return self._get_fund_asset_list(asset_type, market)
+            elif asset_type == AssetType.BOND:
+                return self._get_bond_asset_list(asset_type, market)
+            elif asset_type == AssetType.CRYPTO:
+                return self._get_crypto_asset_list(asset_type, market)
+            elif asset_type == AssetType.FUTURES:
+                return self._get_futures_asset_list(asset_type, market)
+            elif asset_type == AssetType.FOREX:
+                return self._get_forex_asset_list(asset_type, market)
+            elif asset_type == AssetType.OPTION:
+                return self._get_option_asset_list(asset_type, market)
+            elif asset_type == AssetType.WARRANT:
+                return self._get_warrant_asset_list(asset_type, market)
+            else:
+                logger.warning(f"⚠️ 不支持的资产类型: {asset_type_value}")
+                return pd.DataFrame(columns=['code', 'name', 'market', 'industry', 'sector', 'list_date', 'status', 'asset_type'])
+
+        except Exception as e:
+            logger.error(f"从传统数据源获取{asset_type}资产列表失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return pd.DataFrame(columns=['code', 'name', 'market', 'industry', 'sector', 'list_date', 'status', 'asset_type'])
+
+    def _get_sector_asset_list(self, asset_type: AssetType, market: str = None) -> pd.DataFrame:
+        """获取板块资产列表"""
+        import pandas as pd
+        try:
+            asset_type_value = asset_type.value if hasattr(asset_type, 'value') else str(asset_type)
+            logger.debug(f"获取板块资产列表: {asset_type_value}")
+
+            if self._sector_data_service is not None:
+                try:
+                    if hasattr(self._sector_data_service, 'get_all_sectors'):
+                        sectors = self._sector_data_service.get_all_sectors()
+                        if sectors is not None and not sectors.empty:
+                            df = pd.DataFrame({
+                                'code': sectors.get('code', sectors.get('sector_code', [])),
+                                'name': sectors.get('name', sectors.get('sector_name', [])),
+                                'market': 'all',
+                                'industry': sectors.get('industry', []),
+                                'sector': asset_type_value,
+                                'list_date': sectors.get('list_date', []),
+                                'status': 'active',
+                                'asset_type': asset_type_value
+                            })
+                            logger.info(f"✅ 从SectorDataService获取{asset_type_value}资产列表成功: {len(df)} 个")
+                            return df
+                except Exception as e:
+                    logger.warning(f"⚠️ SectorDataService获取板块列表失败: {e}")
+
+            logger.info(f"📭 SectorDataService未初始化或无数据，返回空{asset_type_value}列表")
+            return pd.DataFrame(columns=['code', 'name', 'market', 'industry', 'sector', 'list_date', 'status', 'asset_type'])
+        except Exception as e:
+            logger.error(f"获取板块资产列表失败: {e}")
+            return pd.DataFrame(columns=['code', 'name', 'market', 'industry', 'sector', 'list_date', 'status', 'asset_type'])
+
+    def _get_stock_asset_list(self, asset_type: AssetType, market: str = None) -> pd.DataFrame:
+        """获取股票资产列表"""
+        import pandas as pd
+        try:
+            if hasattr(self, '_stock_service') and self._stock_service is not None:
+                if hasattr(self._stock_service, 'get_stock_list'):
+                    stock_list = self._stock_service.get_stock_list()
+
+                    if stock_list is None:
+                        logger.debug(f"StockService返回None，无法获取{asset_type}列表")
+                        return pd.DataFrame(columns=['code', 'name', 'market', 'industry', 'sector', 'list_date', 'status', 'asset_type'])
+
+                    if isinstance(stock_list, pd.DataFrame):
+                        is_empty = stock_list.empty
+                    elif isinstance(stock_list, (list, tuple)):
+                        is_empty = len(stock_list) == 0
+                    else:
+                        logger.warning(f"StockService返回了未知类型: {type(stock_list)}")
+                        return pd.DataFrame(columns=['code', 'name', 'market', 'industry', 'sector', 'list_date', 'status', 'asset_type'])
+
+                    if is_empty:
+                        logger.debug(f"StockService返回空数据，无法获取{asset_type}列表")
+                        return pd.DataFrame(columns=['code', 'name', 'market', 'industry', 'sector', 'list_date', 'status', 'asset_type'])
+
+                    if isinstance(stock_list, pd.DataFrame):
+                        df = stock_list.copy()
+                    else:
+                        df = pd.DataFrame(stock_list)
+
+                    if 'code' not in df.columns and 'symbol' in df.columns:
+                        df['code'] = df['symbol']
+
+                    df['asset_type'] = asset_type.value
+
+                    df = self._filter_stocks_by_asset_type(df, asset_type)
+
+                    if len(df) == 0:
+                        logger.debug(f"过滤后无{asset_type.value}数据")
+                        return pd.DataFrame(columns=['code', 'name', 'market', 'industry', 'sector', 'list_date', 'status', 'asset_type'])
+
+                    if self.duckdb_available and hasattr(self, '_persist_fallback_data') and self._persist_fallback_data:
+                        try:
+                            asyncio.create_task(self._store_asset_list_to_duckdb(df, asset_type, market))
+                        except Exception as persist_error:
+                            logger.warning(f"⚠️ 触发资产列表持久化任务失败: {persist_error}")
+
+                    return df
+
+            logger.debug(f"StockService不可用，无法获取{asset_type}列表")
+            return pd.DataFrame(columns=['code', 'name', 'market', 'industry', 'sector', 'list_date', 'status', 'asset_type'])
+        except Exception as e:
+            logger.error(f"获取股票资产列表失败: {e}")
+            return pd.DataFrame(columns=['code', 'name', 'market', 'industry', 'sector', 'list_date', 'status', 'asset_type'])
+
+    def _filter_stocks_by_asset_type(self, df: pd.DataFrame, asset_type: AssetType) -> pd.DataFrame:
+        """
+        根据资产类型过滤股票数据
+
+        Args:
+            df: 股票数据DataFrame
+            asset_type: 资产类型枚举
+
+        Returns:
+            过滤后的DataFrame
+        """
+        try:
+            if df.empty:
+                return df
+
+            market_col = df['market'].astype(str).str.upper().str.strip()
+
+            stock_type_market_mapping = {
+                AssetType.STOCK_A: ['SH', 'SZ', 'CSI', 'A'],
+                AssetType.STOCK_B: ['B'],
+                AssetType.STOCK_H: ['HK', 'HKEX', 'H股'],
+                AssetType.STOCK_US: ['US', 'NASDAQ', 'NYSE', 'AMEX', '美股'],
+                AssetType.STOCK_HK: ['HK', 'HKEX', '港股'],
+            }
+
+            if asset_type in stock_type_market_mapping:
+                valid_markets = stock_type_market_mapping[asset_type]
+                mask = market_col.isin(valid_markets)
+                filtered_df = df[mask].copy()
+
+                if len(filtered_df) > 0:
+                    logger.debug(f"资产类型过滤: {asset_type.value} → {len(filtered_df)} 条 (市场匹配: {valid_markets})")
+                    return filtered_df
+                else:
+                    logger.debug(f"资产类型过滤: {asset_type.value} → 0 条 (无匹配市场: {valid_markets})")
+                    return df
+
+            return df
+
+        except Exception as e:
+            logger.warning(f"资产类型过滤失败: {e}")
+            return df
+
+    def _get_index_asset_list(self, asset_type: AssetType, market: str = None) -> pd.DataFrame:
+        """获取指数资产列表 - 使用fallback加载器"""
+        import pandas as pd
+        logger.debug(f"获取指数资产列表: {asset_type.value}")
+
+        if self.fallback_loader is not None:
+            return self.fallback_loader.get_asset_list(asset_type, market)
+
+        return pd.DataFrame(columns=['code', 'name', 'market', 'industry', 'sector', 'list_date', 'status', 'asset_type'])
+
+    def _get_fund_asset_list(self, asset_type: AssetType, market: str = None) -> pd.DataFrame:
+        """获取基金资产列表 - 使用fallback加载器"""
+        import pandas as pd
+        logger.debug(f"获取基金资产列表: {asset_type.value}")
+
+        if self.fallback_loader is not None:
+            return self.fallback_loader.get_asset_list(asset_type, market)
+
+        return pd.DataFrame(columns=['code', 'name', 'market', 'industry', 'sector', 'list_date', 'status', 'asset_type'])
+
+    def _get_bond_asset_list(self, asset_type: AssetType, market: str = None) -> pd.DataFrame:
+        """获取债券资产列表 - 使用fallback加载器"""
+        import pandas as pd
+        logger.debug(f"获取债券资产列表: {asset_type.value}")
+
+        if self.fallback_loader is not None:
+            return self.fallback_loader.get_asset_list(asset_type, market)
+
+        return pd.DataFrame(columns=['code', 'name', 'market', 'industry', 'sector', 'list_date', 'status', 'asset_type'])
+
+    def _get_crypto_asset_list(self, asset_type: AssetType, market: str = None) -> pd.DataFrame:
+        """获取加密货币资产列表 - 使用fallback加载器"""
+        import pandas as pd
+        logger.debug(f"获取加密货币资产列表: {asset_type.value}")
+
+        if self.fallback_loader is not None:
+            return self.fallback_loader.get_asset_list(asset_type, market)
+
+        return pd.DataFrame(columns=['code', 'name', 'market', 'industry', 'sector', 'list_date', 'status', 'asset_type'])
+
+    def _get_futures_asset_list(self, asset_type: AssetType, market: str = None) -> pd.DataFrame:
+        """获取期货资产列表 - 使用fallback加载器"""
+        import pandas as pd
+        logger.debug(f"获取期货资产列表: {asset_type.value}")
+
+        if self.fallback_loader is not None:
+            return self.fallback_loader.get_asset_list(asset_type, market)
+
+        return pd.DataFrame(columns=['code', 'name', 'market', 'industry', 'sector', 'list_date', 'status', 'asset_type'])
+
+    def _get_forex_asset_list(self, asset_type: AssetType, market: str = None) -> pd.DataFrame:
+        """获取外汇资产列表 - 使用fallback加载器"""
+        import pandas as pd
+        logger.debug(f"获取外汇资产列表: {asset_type.value}")
+
+        if self.fallback_loader is not None:
+            return self.fallback_loader.get_asset_list(asset_type, market)
+
+        return pd.DataFrame(columns=['code', 'name', 'market', 'industry', 'sector', 'list_date', 'status', 'asset_type'])
+
+    def _get_option_asset_list(self, asset_type: AssetType, market: str = None) -> pd.DataFrame:
+        """获取期权资产列表 - 使用fallback加载器"""
+        import pandas as pd
+        logger.debug(f"获取期权资产列表: {asset_type.value}")
+
+        if self.fallback_loader is not None:
+            return self.fallback_loader.get_asset_list(asset_type, market)
+
+        return pd.DataFrame(columns=['code', 'name', 'market', 'industry', 'sector', 'list_date', 'status', 'asset_type'])
+
+    def _get_warrant_asset_list(self, asset_type: AssetType, market: str = None) -> pd.DataFrame:
+        """获取涡轮资产列表 - 使用fallback加载器"""
+        import pandas as pd
+        logger.debug(f"获取涡轮资产列表: {asset_type.value}")
+
+        if self.fallback_loader is not None:
+            return self.fallback_loader.get_asset_list(asset_type, market)
+
+        return pd.DataFrame(columns=['code', 'name', 'market', 'industry', 'sector', 'list_date', 'status', 'asset_type'])
 
     def get_asset_list_legacy_tet(self, asset_type: AssetType, market: str = None) -> List[Dict[str, Any]]:
         """
@@ -2045,6 +2514,14 @@ class UnifiedDataManager:
             请求的数据
         """
         try:
+            # 参数验证
+            if not stock_code or not str(stock_code).strip():
+                logger.error(f"无效的股票代码: {stock_code}")
+                return None
+
+            # 清理股票代码
+            stock_code = str(stock_code).strip()
+
             # 处理周期映射
             period_map = {
                 '分时': 'min',

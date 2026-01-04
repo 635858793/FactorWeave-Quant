@@ -417,14 +417,24 @@ class CustomStrategyPlugin(IStrategyPlugin):
             logger.error(f"自定义策略初始化失败: {e}")
             return False
 
-    def generate_signals(self, market_data: StandardMarketData, context: StrategyContext) -> List[Signal]:
+    def generate_signals(self, market_data: Union[StandardMarketData, pd.DataFrame], context: StrategyContext) -> List[Signal]:
         """生成交易信号"""
         try:
             if not self.strategy_instance:
                 return []
 
+            # 处理不同类型的输入
+            if isinstance(market_data, pd.DataFrame):
+                # 如果输入是DataFrame，转换为StandardMarketData
+                standard_market_data = StandardMarketData.from_dataframe(
+                    market_data, 
+                    symbol=context.symbol if hasattr(context, 'symbol') else "unknown"
+                )
+            else:
+                standard_market_data = market_data
+
             # 调用策略实例的信号生成方法
-            signals = self.strategy_instance.on_bar(market_data, context)
+            signals = self.strategy_instance.on_bar(standard_market_data, context)
 
             # 发布信号生成事件
             if signals:
@@ -441,7 +451,7 @@ class CustomStrategyPlugin(IStrategyPlugin):
                             'price': s.price,
                             'reason': s.reason
                         } for s in signals],
-                        symbol=market_data.symbol,
+                        symbol=standard_market_data.symbol,
                         priority=1,
                         timestamp=datetime.now(),
                         source="custom_strategy",

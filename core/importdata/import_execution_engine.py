@@ -1411,8 +1411,8 @@ class DataImportExecutionEngine(QObject):
             # ✅ 修复：如果连接池未初始化，尝试触发异步连接（如果插件状态允许）
             if use_connection_pool and not connection_pool:
                 # 检查插件状态
-                from plugins.plugin_interface import PluginState
-                if plugin_state == PluginState.INITIALIZED:
+                from plugins.plugin_interface import PluginLifecycle
+                if plugin_state == PluginLifecycle.INITIALIZED:
                     # 插件已初始化但未连接，尝试触发异步连接
                     logger.debug("IP监控: 连接池未初始化，尝试触发异步连接...")
                     try:
@@ -1433,7 +1433,7 @@ class DataImportExecutionEngine(QObject):
                         logger.debug(f"IP监控: 触发异步连接失败: {e}")
 
                 # 如果正在连接中，显示连接中状态
-                if plugin_state == PluginState.CONNECTING:
+                if plugin_state == PluginLifecycle.CONNECTING:
                     logger.debug("IP监控: 连接池正在初始化中...")
                     return {
                         'total_connections': 0,

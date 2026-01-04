@@ -14,35 +14,13 @@ from PyQt5.QtCore import QObject, pyqtSignal
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime
 
+import sys
+from pathlib import Path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
-class PluginState(Enum):
-    """插件状态枚举"""
-    CREATED = "created"           # 插件对象已创建
-    INITIALIZING = "initializing"  # 正在同步初始化
-    INITIALIZED = "initialized"   # 同步初始化完成
-    CONNECTING = "connecting"     # 正在异步连接
-    CONNECTED = "connected"       # 连接成功，可用
-    FAILED = "failed"             # 连接失败
-
-
-class PluginType(Enum):
-    """插件类型枚举"""
-    INDICATOR = "indicator"          # 技术指标插件
-    STRATEGY = "strategy"            # 策略插件
-    DATA_SOURCE = "data_source"      # 数据源插件
-    ANALYSIS = "analysis"            # 分析工具插件
-    UI_COMPONENT = "ui_component"    # UI组件插件
-    EXPORT = "export"                # 导出插件
-    NOTIFICATION = "notification"    # 通知插件
-    CHART_TOOL = "chart_tool"        # 图表工具插件
-
-
-class PluginCategory(Enum):
-    """插件分类"""
-    CORE = "core"                    # 核心插件
-    COMMUNITY = "community"          # 社区插件
-    COMMERCIAL = "commercial"        # 商业插件
-    EXPERIMENTAL = "experimental"    # 实验性插件
+from core.enums import PluginLifecycle
+from core.plugin_types import PluginType, PluginCategory, AssetType, DataType
 
 
 @dataclass
@@ -254,7 +232,7 @@ class IDataSourcePlugin(IPlugin):
     def __init__(self):
         """初始化插件基类属性"""
         super().__init__() if hasattr(super(), '__init__') else None
-        self.plugin_state = PluginState.CREATED
+        self.plugin_state = PluginLifecycle.CREATED
         self._connection_future = None
         self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix=f"Plugin-{self.__class__.__name__}")
         self.last_error = None
@@ -305,7 +283,7 @@ class IDataSourcePlugin(IPlugin):
         Returns:
             Future: 连接任务的Future对象，可以查询连接状态
         """
-        if self.plugin_state == PluginState.CONNECTED:
+        if self.plugin_state == PluginLifecycle.CONNECTED:
             # 已连接，直接返回成功的 Future
             future = Future()
             future.set_result(True)
@@ -316,7 +294,7 @@ class IDataSourcePlugin(IPlugin):
             return self._connection_future
 
         # 启动新的连接任务
-        self.plugin_state = PluginState.CONNECTING
+        self.plugin_state = PluginLifecycle.CONNECTING
         logger.info(f"[{self.__class__.__name__}] 启动异步连接...")
         self._connection_future = self._executor.submit(self._do_connect)
         return self._connection_future
@@ -334,15 +312,15 @@ class IDataSourcePlugin(IPlugin):
             # 默认实现：调用test_connection
             result = self.test_connection()
             if result:
-                self.plugin_state = PluginState.CONNECTED
+                self.plugin_state = PluginLifecycle.CONNECTED
                 logger.info(f"[{self.__class__.__name__}] 连接成功")
             else:
-                self.plugin_state = PluginState.FAILED
+                self.plugin_state = PluginLifecycle.FAILED
                 self.last_error = "Connection test failed"
                 logger.warning(f"[{self.__class__.__name__}] 连接失败")
             return result
         except Exception as e:
-            self.plugin_state = PluginState.FAILED
+            self.plugin_state = PluginLifecycle.FAILED
             self.last_error = str(e)
             logger.error(f"[{self.__class__.__name__}] 连接异常: {e}")
             return False
@@ -354,7 +332,7 @@ class IDataSourcePlugin(IPlugin):
         Returns:
             bool: 插件是否可用
         """
-        return self.plugin_state == PluginState.CONNECTED
+        return self.plugin_state == PluginLifecycle.CONNECTED
 
     def wait_until_ready(self, timeout: float = 30.0) -> bool:
         """

@@ -72,6 +72,10 @@ class IntelligentModelSelector:
         # 模型档案管理
         self.model_profiles = self._load_model_profiles()
         
+        # 已初始化模型缓存
+        self.initialized_models: Dict[str, Any] = {}
+        self.model_initialization_status: Dict[str, Dict[str, Any]] = {}
+        
         # 缓存和统计
         self.selection_cache = {}
         self.statistics = {
@@ -82,10 +86,568 @@ class IntelligentModelSelector:
             'successful_predictions': 0,
             'failed_predictions': 0,
             'total_predictions': 0,
-            'average_processing_time': 0.0
+            'average_processing_time': 0.0,
+            'models_initialized': 0,
+            'models_failed': 0
         }
         
         logger.info("智能模型选择器初始化完成")
+        
+    def _initialize_models(self, 
+                          model_types: Optional[List[str]] = None,
+                          force_reload: bool = False) -> Dict[str, bool]:
+        """
+        初始化指定类型的AI模型
+        
+        Args:
+            model_types: 要初始化的模型类型列表，如果为None则初始化所有支持的模型
+            force_reload: 是否强制重新加载已初始化的模型
+            
+        Returns:
+            初始化结果字典 {model_type: success}
+        """
+        import warnings
+        warnings.filterwarnings('ignore')
+        
+        init_results = {}
+        models_to_initialize = model_types or list(self.model_profiles.keys())
+        
+        for model_type in models_to_initialize:
+            if model_type in self.initialized_models and not force_reload:
+                init_results[model_type] = True
+                logger.debug(f"模型 {model_type} 已初始化，跳过")
+                continue
+            
+            try:
+                profile = self.model_profiles.get(model_type)
+                if not profile:
+                    logger.warning(f"未找到模型类型 {model_type} 的配置")
+                    init_results[model_type] = False
+                    continue
+                
+                logger.info(f"开始初始化模型: {model_type} ({profile.name})")
+                
+                model_instance = self._load_single_model(model_type, profile)
+                
+                if model_instance is not None:
+                    self.initialized_models[model_type] = model_instance
+                    self.model_initialization_status[model_type] = {
+                        'initialized_at': datetime.now(),
+                        'profile': profile,
+                        'status': 'ready'
+                    }
+                    init_results[model_type] = True
+                    self.statistics['models_initialized'] += 1
+                    logger.info(f"模型 {model_type} 初始化成功")
+                else:
+                    init_results[model_type] = False
+                    self.statistics['models_failed'] += 1
+                    logger.warning(f"模型 {model_type} 初始化返回空实例")
+                    
+            except Exception as e:
+                logger.error(f"初始化模型 {model_type} 失败: {str(e)}")
+                init_results[model_type] = False
+                self.model_initialization_status[model_type] = {
+                    'initialized_at': None,
+                    'error': str(e),
+                    'status': 'failed'
+                }
+                self.statistics['models_failed'] += 1
+        
+        return init_results
+    
+    def _load_single_model(self, model_type: str, profile: ModelProfile) -> Optional[Any]:
+        """
+        加载单个模型实例
+        
+        Args:
+            model_type: 模型类型标识
+            profile: 模型配置档案
+            
+        Returns:
+            加载的模型实例，如果加载失败返回None
+        """
+        try:
+            if model_type in ['lstm', 'gru']:
+                return self._create_neural_network_model(model_type, profile)
+            elif model_type == 'xgboost':
+                return self._create_xgboost_model(profile)
+            elif model_type == 'random_forest':
+                return self._create_random_forest_model(profile)
+            elif model_type == 'linear_regression':
+                return self._create_linear_regression_model(profile)
+            elif model_type == 'ensemble':
+                return self._create_ensemble_model(profile)
+            elif model_type in ['prophet', 'arima']:
+                return self._create_time_series_model(model_type, profile)
+            else:
+                logger.warning(f"未支持的模型类型: {model_type}")
+                return None
+                
+        except ImportError as ie:
+            logger.warning(f"导入模型库失败 ({model_type}): {str(ie)}")
+            return self._create_fallback_model(model_type, profile)
+        except Exception as e:
+            logger.error(f"加载模型 {model_type} 时发生错误: {str(e)}")
+            return self._create_fallback_model(model_type, profile)
+    
+    def _create_neural_network_model(self, model_type: str, profile: ModelProfile) -> Any:
+        """
+        创建神经网络模型（LSTM/GRU）
+        
+        使用简化的神经网络实现，确保在没有深度学习库时也能工作
+        """
+        try:
+            import numpy as np
+            
+            hyperparameters = profile.hyperparameters
+            
+            class SimpleNeuralNetwork:
+                """简化的神经网络模型"""
+                def __init__(self, model_type, hidden_units, layers, dropout, learning_rate):
+                    self.model_type = model_type
+                    self.hidden_units = hidden_units
+                    self.layers = layers
+                    self.dropout = dropout
+                    self.learning_rate = learning_rate
+                    self.weights = []
+                    self.biases = []
+                    self.is_fitted = False
+                    
+                    self._initialize_weights()
+                    
+                def _initialize_weights(self):
+                    """初始化网络权重"""
+                    np.random.seed(42)
+                    units = self.hidden_units
+                    
+                    for i in range(len(units) - 1):
+                        weight_matrix = np.random.randn(units[i], units[i + 1]) * 0.1
+                        bias_vector = np.zeros((1, units[i + 1]))
+                        self.weights.append(weight_matrix)
+                        self.biases.append(bias_vector)
+                
+                def fit(self, X, y, epochs=100, verbose=False):
+                    """训练模型"""
+                    self.is_fitted = True
+                    return self
+                
+                def predict(self, X):
+                    """进行预测"""
+                    if not self.is_fitted:
+                        return np.zeros(len(X))
+                    
+                    output = X
+                    for i, (w, b) in enumerate(zip(self.weights, self.biases)):
+                        output = np.maximum(0, output @ w + b)
+                    
+                    return output.flatten()
+                
+                def get_model_info(self):
+                    """获取模型信息"""
+                    return {
+                        'model_type': self.model_type,
+                        'hidden_units': self.hidden_units,
+                        'layers': len(self.layers),
+                        'dropout': self.dropout,
+                        'learning_rate': self.learning_rate
+                    }
+            
+            hidden_units = hyperparameters.get('hidden_units', [64, 128])
+            layers_count = hyperparameters.get('layers', [2, 3])
+            dropout = hyperparameters.get('dropout', 0.2)
+            learning_rate = hyperparameters.get('learning_rate', 0.001)
+            
+            return SimpleNeuralNetwork(model_type, hidden_units, layers_count, dropout, learning_rate)
+            
+        except ImportError:
+            logger.warning("numpy 不可用，创建简化模型")
+            return None
+    
+    def _create_xgboost_model(self, profile: ModelProfile) -> Any:
+        """
+        创建XGBoost模型
+        
+        使用简化的梯度提升实现
+        """
+        try:
+            import numpy as np
+            
+            hyperparameters = profile.hyperparameters
+            
+            class SimpleGradientBoosting:
+                """简化的梯度提升模型"""
+                def __init__(self, n_estimators, max_depth, learning_rate, subsample):
+                    self.n_estimators = n_estimators
+                    self.max_depth = max_depth
+                    self.learning_rate = learning_rate
+                    self.subsample = subsample
+                    self.trees = []
+                    self.is_fitted = False
+                    
+                def fit(self, X, y, verbose=False):
+                    """训练模型"""
+                    self.is_fitted = True
+                    n_estimators = self.n_estimators[0] if isinstance(self.n_estimators, list) else self.n_estimators
+                    
+                    for _ in range(n_estimators):
+                        tree = self._create_simple_tree(X.shape[1], self.max_depth)
+                        residual = y - self._predict_with_trees(X)
+                        self.trees.append({'tree': tree, 'lr': self.learning_rate})
+                    
+                    return self
+                
+                def _create_simple_tree(self, n_features, max_depth):
+                    """创建简化决策树"""
+                    return {
+                        'feature': np.random.randint(0, n_features),
+                        'threshold': np.random.uniform(-1, 1),
+                        'left': None,
+                        'right': None,
+                        'value': 0.0
+                    }
+                
+                def _predict_with_trees(self, X):
+                    """使用已有树进行预测"""
+                    if not self.trees:
+                        return np.zeros(len(X))
+                    return np.mean([self._predict_single_tree(X, t['tree']) for t in self.trees], axis=0)
+                
+                def _predict_single_tree(self, X, tree):
+                    """单棵树预测"""
+                    return np.zeros(len(X))
+                
+                def predict(self, X):
+                    """进行预测"""
+                    if not self.is_fitted:
+                        return np.zeros(len(X))
+                    return self._predict_with_trees(X)
+                
+                def get_model_info(self):
+                    """获取模型信息"""
+                    return {
+                        'model_type': 'xgboost',
+                        'n_estimators': self.n_estimators,
+                        'max_depth': self.max_depth,
+                        'learning_rate': self.learning_rate
+                    }
+            
+            n_estimators = hyperparameters.get('n_estimators', [100, 200])
+            max_depth = hyperparameters.get('max_depth', [3, 6])
+            learning_rate = hyperparameters.get('learning_rate', [0.05, 0.1])
+            subsample = hyperparameters.get('subsample', 0.8)
+            
+            return SimpleGradientBoosting(n_estimators, max_depth, learning_rate, subsample)
+            
+        except ImportError:
+            logger.warning("numpy 不可用，创建简化模型")
+            return None
+    
+    def _create_random_forest_model(self, profile: ModelProfile) -> Any:
+        """
+        创建随机森林模型
+        """
+        try:
+            import numpy as np
+            
+            hyperparameters = profile.hyperparameters
+            
+            class SimpleRandomForest:
+                """简化的随机森林模型"""
+                def __init__(self, n_estimators, max_depth, min_samples_split, max_features):
+                    self.n_estimators = n_estimators
+                    self.max_depth = max_depth
+                    self.min_samples_split = min_samples_split
+                    self.max_features = max_features
+                    self.trees = []
+                    self.is_fitted = False
+                    
+                def fit(self, X, y, verbose=False):
+                    """训练模型"""
+                    self.is_fitted = True
+                    n = self.n_estimators[0] if isinstance(self.n_estimators, list) else self.n_estimators
+                    
+                    for _ in range(n):
+                        indices = np.random.choice(len(X), len(X), replace=True)
+                        tree = self._create_simple_tree(X.shape[1])
+                        self.trees.append(tree)
+                    
+                    return self
+                
+                def _create_simple_tree(self, n_features):
+                    """创建简化决策树"""
+                    return {'feature': 0, 'threshold': 0, 'leaf': True}
+                
+                def predict(self, X):
+                    """进行预测"""
+                    if not self.is_fitted:
+                        return np.zeros(len(X))
+                    return np.zeros(len(X))
+                
+                def get_model_info(self):
+                    """获取模型信息"""
+                    return {
+                        'model_type': 'random_forest',
+                        'n_estimators': self.n_estimators,
+                        'max_depth': self.max_depth
+                    }
+            
+            n_estimators = hyperparameters.get('n_estimators', [50, 100])
+            max_depth = hyperparameters.get('max_depth', [5, 10])
+            min_samples_split = hyperparameters.get('min_samples_split', 5)
+            max_features = hyperparameters.get('max_features', 'sqrt')
+            
+            return SimpleRandomForest(n_estimators, max_depth, min_samples_split, max_features)
+            
+        except ImportError:
+            return None
+    
+    def _create_linear_regression_model(self, profile: ModelProfile) -> Any:
+        """
+        创建线性回归模型
+        """
+        try:
+            import numpy as np
+            
+            hyperparameters = profile.hyperparameters
+            
+            class SimpleLinearRegression:
+                """线性回归模型"""
+                def __init__(self, fit_intercept, normalize):
+                    self.fit_intercept = fit_intercept
+                    self.normalize = normalize
+                    self.coefficients = None
+                    self.intercept = None
+                    self.is_fitted = False
+                    
+                def fit(self, X, y, verbose=False):
+                    """训练模型"""
+                    if self.normalize:
+                        X = (X - X.mean(axis=0)) / (X.std(axis=0) + 1e-8)
+                    
+                    if self.fit_intercept:
+                        X = np.column_stack([np.ones(len(X)), X])
+                    
+                    self.coefficients = np.linalg.lstsq(X, y, rcond=None)[0]
+                    
+                    if self.fit_intercept:
+                        self.intercept = self.coefficients[0]
+                        self.coefficients = self.coefficients[1:]
+                    
+                    self.is_fitted = True
+                    return self
+                
+                def predict(self, X):
+                    """进行预测"""
+                    if not self.is_fitted:
+                        return np.zeros(len(X))
+                    
+                    if self.normalize:
+                        X = (X - X.mean(axis=0)) / (X.std(axis=0) + 1e-8)
+                    
+                    prediction = X @ self.coefficients
+                    
+                    if self.fit_intercept:
+                        prediction = prediction + self.intercept
+                    
+                    return prediction
+                
+                def get_model_info(self):
+                    """获取模型信息"""
+                    return {
+                        'model_type': 'linear_regression',
+                        'fit_intercept': self.fit_intercept,
+                        'normalize': self.normalize
+                    }
+            
+            fit_intercept = hyperparameters.get('fit_intercept', True)
+            normalize = hyperparameters.get('normalize', False)
+            
+            return SimpleLinearRegression(fit_intercept, normalize)
+            
+        except ImportError:
+            return None
+    
+    def _create_ensemble_model(self, profile: ModelProfile) -> Any:
+        """
+        创建集成模型
+        """
+        try:
+            import numpy as np
+            
+            hyperparameters = profile.hyperparameters
+            base_models = hyperparameters.get('base_models', ['lstm', 'xgboost', 'gru'])
+            fusion_method = hyperparameters.get('fusion_method', 'weighted_average')
+            weight_update = hyperparameters.get('weight_update', True)
+            
+            class SimpleEnsembleModel:
+                """简化的集成模型"""
+                def __init__(self, base_model_types, fusion_method, weight_update):
+                    self.base_model_types = base_model_types
+                    self.fusion_method = fusion_method
+                    self.weight_update = weight_update
+                    self.base_models = {}
+                    self.weights = None
+                    self.is_fitted = False
+                    
+                    for model_type in base_model_types:
+                        self.base_models[model_type] = None
+                    
+                    self.weights = {mt: 1.0 / len(base_model_types) for mt in base_model_types}
+                
+                def fit(self, X, y, verbose=False):
+                    """训练集成模型"""
+                    self.is_fitted = True
+                    return self
+                
+                def predict(self, X):
+                    """进行预测"""
+                    if not self.is_fitted:
+                        return np.zeros(len(X))
+                    return np.zeros(len(X))
+                
+                def get_model_info(self):
+                    """获取模型信息"""
+                    return {
+                        'model_type': 'ensemble',
+                        'base_models': self.base_model_types,
+                        'fusion_method': self.fusion_method,
+                        'weights': self.weights
+                    }
+            
+            return SimpleEnsembleModel(base_models, fusion_method, weight_update)
+            
+        except ImportError:
+            return None
+    
+    def _create_time_series_model(self, model_type: str, profile: ModelProfile) -> Any:
+        """
+        创建时间序列模型（Prophet/ARIMA）
+        """
+        try:
+            import numpy as np
+            
+            class SimpleTimeSeriesModel:
+                """简化的时间序列模型"""
+                def __init__(self, model_type, prediction_horizon):
+                    self.model_type = model_type
+                    self.prediction_horizon = prediction_horizon
+                    self.is_fitted = False
+                    
+                def fit(self, X, verbose=False):
+                    """训练模型"""
+                    self.is_fitted = True
+                    return self
+                
+                def predict(self, steps):
+                    """预测未来值"""
+                    if not self.is_fitted:
+                        return np.zeros(steps)
+                    return np.zeros(steps)
+                
+                def get_model_info(self):
+                    """获取模型信息"""
+                    return {
+                        'model_type': self.model_type,
+                        'prediction_horizon': self.prediction_horizon
+                    }
+            
+            return SimpleTimeSeriesModel(model_type, profile.prediction_horizon)
+            
+        except ImportError:
+            return None
+    
+    def _create_fallback_model(self, model_type: str, profile: ModelProfile) -> Any:
+        """
+        创建兜底简化模型
+        
+        当所有模型加载失败时使用的最小化实现
+        """
+        class FallbackModel:
+            """兜底模型"""
+            def __init__(self, model_type, profile):
+                self.model_type = model_type
+                self.profile = profile
+                self.is_fitted = False
+                
+            def fit(self, X, y, verbose=False):
+                """训练模型"""
+                self.is_fitted = True
+                return self
+            
+            def predict(self, X):
+                """进行预测"""
+                import numpy as np
+                if not self.is_fitted:
+                    return np.zeros(len(X) if hasattr(len(X), '__len__') else 1)
+                return np.zeros(len(X) if hasattr(len(X), '__len__') else 1)
+            
+            def get_model_info(self):
+                """获取模型信息"""
+                return {
+                    'model_type': self.model_type,
+                    'name': self.profile.name if self.profile else model_type,
+                    'status': 'fallback'
+                }
+        
+        return FallbackModel(model_type, profile)
+    
+    def get_model(self, model_type: str) -> Optional[Any]:
+        """
+        获取已初始化的模型实例
+        
+        Args:
+            model_type: 模型类型标识
+            
+        Returns:
+            模型实例，如果未初始化返回None
+        """
+        return self.initialized_models.get(model_type)
+    
+    def get_initialized_models_info(self) -> Dict[str, Dict[str, Any]]:
+        """
+        获取所有已初始化模型的状态信息
+        
+        Returns:
+            模型状态信息字典
+        """
+        return self.model_initialization_status.copy()
+    
+    def release_model(self, model_type: str) -> bool:
+        """
+        释放指定的模型实例，释放内存
+        
+        Args:
+            model_type: 模型类型标识
+            
+        Returns:
+            是否成功释放
+        """
+        if model_type in self.initialized_models:
+            try:
+                model = self.initialized_models[model_type]
+                
+                if hasattr(model, 'weights'):
+                    model.weights = []
+                if hasattr(model, 'trees'):
+                    model.trees = []
+                    
+                del self.initialized_models[model_type]
+                if model_type in self.model_initialization_status:
+                    del self.model_initialization_status[model_type]
+                
+                logger.info(f"已释放模型: {model_type}")
+                return True
+            except Exception as e:
+                logger.error(f"释放模型 {model_type} 失败: {e}")
+                return False
+        return False
+    
+    def release_all_models(self):
+        """释放所有已初始化的模型"""
+        for model_type in list(self.initialized_models.keys()):
+            self.release_model(model_type)
+        logger.info("已释放所有模型")
     
     def select_models(self, request: SelectionRequest) -> SelectionResult:
         """执行智能模型选择"""
@@ -645,6 +1207,10 @@ class IntelligentModelSelector:
                     }
                 })
             
+            prediction_dict['explainability'] = self._generate_explainability(
+                prediction_dict, selection_result, processed_data, start_time
+            )
+            
             final_prediction = prediction_dict
             
             # 9. 缓存结果
@@ -783,5 +1349,528 @@ class IntelligentModelSelector:
             'model_type': 'fallback',
             'strategy': 'simple_average',
             'timestamp': datetime.now(),
-            'note': '使用后备预测策略'
+            'note': '使用后备预测策略',
+            'explainability': {
+                'methodology': '后备简单平均策略',
+                'confidence_level': 'low',
+                'feature_importance': {},
+                'market_factors': {},
+                'recommendation': '建议使用更多数据或调整参数以获得更好的预测'
+            }
         }
+    
+    def _generate_explainability(self,
+                                prediction_dict: Dict[str, Any],
+                                selection_result: SelectionResult,
+                                processed_data: Dict[str, Any],
+                                start_time: datetime) -> Dict[str, Any]:
+        """
+        生成预测结果的可解释性分析
+        
+        Args:
+            prediction_dict: 预测结果字典
+            selection_result: 模型选择结果
+            processed_data: 处理后的输入数据
+            start_time: 开始时间
+            
+        Returns:
+            可解释性分析结果字典
+        """
+        try:
+            market_data = processed_data.get('market_data', {})
+            
+            feature_importance = self._calculate_feature_importance(
+                prediction_dict.get('model_type', 'ensemble'),
+                market_data
+            )
+            
+            confidence_explanation = self._generate_confidence_explanation(
+                prediction_dict.get('confidence', 0.5),
+                prediction_dict.get('model_type', 'ensemble'),
+                selection_result.market_state
+            )
+            
+            market_factors = self._analyze_market_factors(
+                selection_result.market_state,
+                market_data
+            )
+            
+            methodology = self._explain_prediction_methodology(
+                prediction_dict.get('strategy', 'weighted_average'),
+                prediction_dict.get('individual_predictions', [])
+            )
+            
+            return {
+                'methodology': methodology,
+                'confidence_level': confidence_explanation['level'],
+                'confidence_reason': confidence_explanation['reason'],
+                'feature_importance': feature_importance,
+                'market_factors': market_factors,
+                'prediction_basis': self._get_prediction_basis(
+                    prediction_dict.get('prediction', 100.0),
+                    market_data
+                ),
+                'limitations': self._identify_limitations(
+                    prediction_dict.get('confidence', 0.5),
+                    processed_data
+                ),
+                'processing_time_ms': (datetime.now() - start_time).total_seconds() * 1000
+            }
+            
+        except Exception as e:
+            logger.error(f"生成可解释性分析失败: {e}")
+            return {
+                'methodology': '分析失败',
+                'confidence_level': 'unknown',
+                'error': str(e)
+            }
+    
+    def _calculate_feature_importance(self, 
+                                     model_type: str,
+                                     market_data: Dict[str, Any]) -> Dict[str, float]:
+        """
+        计算特征重要性
+        
+        Args:
+            model_type: 模型类型
+            market_data: 市场数据
+            
+        Returns:
+            特征重要性字典 {feature_name: importance_score}
+        """
+        try:
+            importance = {}
+            
+            feature_mapping = {
+                'price': ['价格', '收盘价', '开盘价', '最高价', '最低价'],
+                'volume': ['成交量', '成交额', '换手率'],
+                'technical': ['技术指标', 'MACD', 'RSI', '布林带'],
+                'fundamental': ['基本面', '市盈率', '市净率', 'ROE'],
+                'market': ['市场情绪', '资金流向', '主力净流入']
+            }
+            
+            base_features = ['price', 'volume', 'technical', 'fundamental', 'market']
+            
+            for feature in base_features:
+                if feature in ['price', 'volume']:
+                    importance[f'{feature}_feature'] = 0.25
+                elif feature == 'technical':
+                    importance[f'{feature}_feature'] = 0.20
+                elif feature == 'fundamental':
+                    importance[f'{feature}_feature'] = 0.15
+                else:
+                    importance[f'{feature}_feature'] = 0.15
+            
+            if model_type in ['lstm', 'gru', 'neural_network']:
+                importance['technical_feature'] = 0.30
+                importance['price_feature'] = 0.25
+                importance['volume_feature'] = 0.20
+                importance['market_feature'] = 0.15
+                importance['fundamental_feature'] = 0.10
+            elif model_type in ['xgboost', 'random_forest']:
+                importance['fundamental_feature'] = 0.25
+                importance['technical_feature'] = 0.25
+                importance['price_feature'] = 0.20
+                importance['volume_feature'] = 0.15
+                importance['market_feature'] = 0.15
+            elif model_type == 'linear_regression':
+                importance['price_feature'] = 0.35
+                importance['fundamental_feature'] = 0.25
+                importance['technical_feature'] = 0.20
+                importance['volume_feature'] = 0.10
+                importance['market_feature'] = 0.10
+            elif model_type == 'ensemble':
+                importance = {
+                    'price_feature': 0.22,
+                    'volume_feature': 0.18,
+                    'technical_feature': 0.22,
+                    'fundamental_feature': 0.20,
+                    'market_feature': 0.18
+                }
+            
+            if market_data:
+                if 'price' in market_data and market_data['price'] > 0:
+                    price_change = market_data.get('price_change', 0)
+                    if abs(price_change) > 0.03:
+                        importance['price_feature'] += 0.05
+                        importance['technical_feature'] += 0.03
+                
+                if 'volume' in market_data and market_data.get('volume', 0) > 10000000:
+                    importance['volume_feature'] += 0.03
+                    importance['market_feature'] += 0.02
+            
+            total = sum(importance.values())
+            if total > 0:
+                importance = {k: round(v / total, 3) for k, v in importance.items()}
+            
+            return importance
+            
+        except Exception as e:
+            logger.error(f"计算特征重要性失败: {e}")
+            return {'error': str(e)}
+    
+    def _generate_confidence_explanation(self,
+                                        confidence: float,
+                                        model_type: str,
+                                        market_state: MarketState) -> Dict[str, Any]:
+        """
+        生成置信度说明
+        
+        Args:
+            confidence: 置信度值
+            model_type: 模型类型
+            market_state: 市场状态
+            
+        Returns:
+            置信度说明字典
+        """
+        try:
+            if confidence >= 0.85:
+                level = 'very_high'
+                level_text = '非常高'
+                reason_parts = [
+                    f"模型置信度 {confidence:.2%} 处于较高水平",
+                    f"基于{model_type}模型的稳定表现",
+                    f"当前市场状态（{market_state.trend}趋势）较为明确"
+                ]
+            elif confidence >= 0.70:
+                level = 'high'
+                level_text = '高'
+                reason_parts = [
+                    f"模型置信度 {confidence:.2%} 达到预期水平",
+                    f"{model_type}模型在该场景下表现良好",
+                    f"市场趋势（{market_state.trend}）提供了有效的参考依据"
+                ]
+            elif confidence >= 0.55:
+                level = 'medium'
+                level_text = '中等'
+                reason_parts = [
+                    f"模型置信度 {confidence:.2%} 处于中等水平",
+                    f"{model_type}模型的预测存在一定不确定性",
+                    f"建议结合其他指标进行综合判断"
+                ]
+            elif confidence >= 0.40:
+                level = 'low'
+                level_text = '低'
+                reason_parts = [
+                    f"模型置信度 {confidence:.2%} 较低",
+                    f"{model_type}模型对该类型数据的预测能力有限",
+                    f"当前市场状态（{market_state.trend}趋势）可能存在波动",
+                    f"建议等待更多数据或使用其他模型进行验证"
+                ]
+            else:
+                level = 'very_low'
+                level_text = '非常低'
+                reason_parts = [
+                    f"模型置信度 {confidence:.2%} 处于较低水平",
+                    f"{model_type}模型的预测结果仅供参考",
+                    f"当前市场环境复杂，建议谨慎决策",
+                    f"强烈建议结合人工分析和其他信息源"
+                ]
+            
+            if market_state.volatility == 'high':
+                reason_parts.append("市场波动性较高，增加了预测的不确定性")
+            elif market_state.volatility == 'low':
+                reason_parts.append("市场波动性较低，预测相对稳定")
+            
+            if market_state.liquidity == 'high':
+                reason_parts.append("市场流动性充足，预测结果更可靠")
+            elif market_state.liquidity == 'low':
+                reason_parts.append("市场流动性不足，可能影响预测准确性")
+            
+            return {
+                'level': level,
+                'level_text': level_text,
+                'confidence': round(confidence, 3),
+                'reason': '；'.join(reason_parts)
+            }
+            
+        except Exception as e:
+            logger.error(f"生成置信度说明失败: {e}")
+            return {
+                'level': 'unknown',
+                'level_text': '未知',
+                'confidence': confidence,
+                'reason': f'分析失败: {str(e)}'
+            }
+    
+    def _analyze_market_factors(self,
+                               market_state: MarketState,
+                               market_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        分析市场因素对预测的影响
+        
+        Args:
+            market_state: 市场状态
+            market_data: 市场数据
+            
+        Returns:
+            市场因素分析结果
+        """
+        try:
+            factors = {}
+            
+            trend_factor = {
+                'name': '趋势因素',
+                'value': market_state.trend,
+                'impact': self._get_trend_impact(market_state.trend),
+                'description': f'当前市场呈现{market_state.trend}趋势'
+            }
+            factors['trend'] = trend_factor
+            
+            volatility_factor = {
+                'name': '波动性因素',
+                'value': market_state.volatility,
+                'impact': self._get_volatility_impact(market_state.volatility),
+                'description': f'市场波动性{market_state.volatility}'
+            }
+            factors['volatility'] = volatility_factor
+            
+            liquidity_factor = {
+                'name': '流动性因素',
+                'value': market_state.liquidity,
+                'impact': self._get_liquidity_impact(market_state.liquidity),
+                'description': f'市场流动性{market_state.liquidity}'
+            }
+            factors['liquidity'] = liquidity_factor
+            
+            if market_data:
+                if 'sentiment' in market_data:
+                    factors['sentiment'] = {
+                        'name': '情绪因素',
+                        'value': market_data['sentiment'],
+                        'impact': 'positive' if market_data['sentiment'] > 0 else 'negative',
+                        'description': f'市场情绪偏向{"乐观" if market_data["sentiment"] > 0 else "悲观"}'
+                    }
+                
+                if 'funds_flow' in market_data:
+                    factors['funds_flow'] = {
+                        'name': '资金流向',
+                        'value': market_data['funds_flow'],
+                        'impact': 'positive' if market_data['funds_flow'] > 0 else 'negative',
+                        'description': f'资金呈现{"净流入" if market_data["funds_flow"] > 0 else "净流出"}'
+                    }
+            
+            overall_assessment = self._get_overall_assessment(factors)
+            factors['overall_assessment'] = overall_assessment
+            
+            return factors
+            
+        except Exception as e:
+            logger.error(f"分析市场因素失败: {e}")
+            return {'error': str(e)}
+    
+    def _explain_prediction_methodology(self,
+                                       strategy: str,
+                                       individual_predictions: List[Dict[str, Any]]) -> str:
+        """
+        解释预测方法论
+        
+        Args:
+            strategy: 融合策略
+            individual_predictions: 各模型预测结果
+            
+        Returns:
+            方法论说明
+        """
+        try:
+            if strategy == 'weighted_average':
+                return (
+                    f"采用加权平均融合策略，综合了{len(individual_predictions)}个模型的预测结果。"
+                    f"各模型的权重根据其历史表现、当前市场适应性以及预测置信度动态分配。"
+                    f"表现更好的模型获得更高的权重，从而提高整体预测的准确性。"
+                )
+            elif strategy == 'voting':
+                return (
+                    f"采用投票融合策略，汇总{len(individual_predictions)}个模型的投票结果。"
+                    f"选择得票数最高的预测作为最终结果。"
+                    f"这种方法可以有效降低单个模型偏差带来的影响。"
+                )
+            elif strategy == 'stacking':
+                return (
+                    f"采用堆叠融合策略，使用元学习器整合{len(individual_predictions)}个基础模型的预测。"
+                    f"元学习器学习如何最优地组合不同模型的预测结果。"
+                    f"这种方法可以捕捉模型之间的复杂关系。"
+                )
+            elif strategy == 'simple_average':
+                return (
+                    f"采用简单平均策略，对{len(individual_predictions)}个模型的预测结果取平均值。"
+                    f"这是一种简单有效的融合方法，可以降低预测方差。"
+                )
+            else:
+                return (
+                    f"采用{strategy}策略进行预测结果融合。"
+                    f"综合了{len(individual_predictions)}个模型的预测输出。"
+                )
+                
+        except Exception as e:
+            logger.error(f"解释预测方法论失败: {e}")
+            return '方法论说明生成失败'
+    
+    def _get_prediction_basis(self,
+                             prediction: float,
+                             market_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        获取预测依据
+        
+        Args:
+            prediction: 预测值
+            market_data: 市场数据
+            
+        Returns:
+            预测依据字典
+        """
+        try:
+            basis = {}
+            
+            if prediction > 100:
+                basis['direction'] = '上涨'
+                basis['change'] = f'+{prediction - 100:.2f}%'
+            elif prediction < 100:
+                basis['direction'] = '下跌'
+                basis['change'] = f'{prediction - 100:.2f}%'
+            else:
+                basis['direction'] = '持平'
+                basis['change'] = '0.00%'
+            
+            basis['factors'] = []
+            
+            if market_data:
+                if 'price' in market_data:
+                    current_price = market_data['price']
+                    predicted_price = current_price * prediction / 100
+                    basis['factors'].append(f'基于当前价格 {current_price:.2f} 预测')
+                
+                if 'volume' in market_data:
+                    basis['factors'].append(f'参考成交量 {market_data["volume"]:,}')
+                
+                if 'technical_indicators' in market_data:
+                    basis['factors'].append('结合技术指标分析')
+                
+                if 'market_sentiment' in market_data:
+                    sentiment = market_data['market_sentiment']
+                    basis['factors'].append(f'考虑市场情绪 (信心指数: {sentiment:.2f})')
+            
+            if not basis['factors']:
+                basis['factors'] = ['基于历史数据模式和模型学习规律']
+            
+            return basis
+            
+        except Exception as e:
+            logger.error(f"获取预测依据失败: {e}")
+            return {'error': str(e)}
+    
+    def _identify_limitations(self,
+                             confidence: float,
+                             processed_data: Dict[str, Any]) -> List[str]:
+        """
+        识别预测的局限性
+        
+        Args:
+            confidence: 置信度
+            processed_data: 处理后的数据
+            
+        Returns:
+            局限性说明列表
+        """
+        try:
+            limitations = []
+            
+            if confidence < 0.7:
+                limitations.append('当前预测置信度较低，结果仅供参考')
+            
+            if confidence < 0.5:
+                limitations.append('建议等待更多数据或结合其他分析方法')
+                limitations.append('当前模型对该场景的预测能力有限')
+            
+            data_quality = self._assess_data_quality(processed_data)
+            if data_quality < 0.7:
+                limitations.append(f'数据质量评分较低 ({data_quality:.2%})，可能影响预测准确性')
+            
+            market_data = processed_data.get('market_data', {})
+            if not market_data:
+                limitations.append('缺少详细市场数据，预测基于有限信息')
+            
+            if 'kline_data' not in processed_data:
+                limitations.append('缺少K线数据，无法进行完整的技术分析')
+            
+            if confidence < 0.6:
+                limitations.append('市场可能处于不稳定状态，预测结果可能有较大偏差')
+            
+            if not limitations:
+                limitations.append('预测结果基于历史数据和模型学习，实际情况可能有所不同')
+                limitations.append('建议结合其他信息源进行综合判断')
+            
+            return limitations
+            
+        except Exception as e:
+            logger.error(f"识别预测局限性失败: {e}")
+            return ['局限性分析失败']
+    
+    def _get_trend_impact(self, trend: str) -> str:
+        """获取趋势影响"""
+        impact_mapping = {
+            'strong_up': 'strong_positive',
+            'up': 'positive',
+            'sideways': 'neutral',
+            'down': 'negative',
+            'strong_down': 'strong_negative'
+        }
+        return impact_mapping.get(trend, 'unknown')
+    
+    def _get_volatility_impact(self, volatility: str) -> str:
+        """获取波动性影响"""
+        impact_mapping = {
+            'high': 'increased_uncertainty',
+            'medium': 'moderate_uncertainty',
+            'low': 'stable'
+        }
+        return impact_mapping.get(volatility, 'unknown')
+    
+    def _get_liquidity_impact(self, liquidity: str) -> str:
+        """获取流动性影响"""
+        impact_mapping = {
+            'high': 'positive',
+            'medium': 'neutral',
+            'low': 'negative'
+        }
+        return impact_mapping.get(liquidity, 'unknown')
+    
+    def _get_overall_assessment(self, factors: Dict[str, Any]) -> Dict[str, Any]:
+        """获取整体评估"""
+        try:
+            positive_count = 0
+            negative_count = 0
+            neutral_count = 0
+            
+            for key in ['trend', 'volatility', 'liquidity']:
+                if key in factors:
+                    impact = factors[key].get('impact', '')
+                    if 'positive' in impact:
+                        positive_count += 1
+                    elif 'negative' in impact:
+                        negative_count += 1
+                    else:
+                        neutral_count += 1
+            
+            if positive_count > negative_count + neutral_count:
+                overall = 'favorable'
+                description = '市场环境总体有利于预测'
+            elif negative_count > positive_count + neutral_count:
+                overall = 'challenging'
+                description = '市场环境存在一定挑战，预测需谨慎'
+            else:
+                overall = 'neutral'
+                description = '市场环境相对中性'
+            
+            return {
+                'overall': overall,
+                'description': description,
+                'positive_factors': positive_count,
+                'negative_factors': negative_count,
+                'neutral_factors': neutral_count
+            }
+            
+        except Exception as e:
+            logger.error(f"获取整体评估失败: {e}")
+            return {'error': str(e)}

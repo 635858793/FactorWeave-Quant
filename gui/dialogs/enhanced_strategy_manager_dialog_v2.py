@@ -1,7 +1,5 @@
 """
 增强策略管理对话框 V2 - 对标行业软件，集成系统主题管理
-
-对标TradingView、QuantConnect、Backtrader UI等主流量化软件
 提供：
 1. 现代化UI布局（Tab切换）
 2. 系统主题集成
@@ -192,7 +190,7 @@ class EnhancedStrategyManagerDialogV2(QDialog):
                     if hasattr(self, '_on_strategy_event'):
                         self._on_strategy_event(event)
                 except Exception as e:
-                    logger.error(f"处理策略事件失败: {e}")
+                    pass
 
             event_bus.subscribe(StrategyStartedEvent, strategy_event_handler, priority=0)
             event_bus.subscribe(StrategyStoppedEvent, strategy_event_handler, priority=0)
@@ -207,11 +205,11 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         try:
             
             if isinstance(event, StrategyStartedEvent):
-                self.logger.info(f"策略启动事件: {event.strategy_id}")
+                logger.info(f"策略启动事件: {event.strategy_id}")
                 self._update_strategy_status(event.strategy_id, "running")
                 
             elif isinstance(event, StrategyStoppedEvent):
-                self.logger.info(f"策略停止事件: {event.strategy_id}, 原因: {event.reason}")
+                logger.info(f"策略停止事件: {event.strategy_id}, 原因: {event.reason}")
                 self._update_strategy_status(event.strategy_id, "stopped")
                 if event.performance:
                     self._show_performance_notification(event.performance)
@@ -219,15 +217,15 @@ class EnhancedStrategyManagerDialogV2(QDialog):
             elif isinstance(event, SignalGeneratedEvent):
                 if hasattr(event, 'signals') and event.signals:
                     signal_count = len(event.signals)
-                    self.logger.info(f"信号生成事件: {event.strategy_id}, 信号数: {signal_count}")
+                    logger.info(f"信号生成事件: {event.strategy_id}, 信号数: {signal_count}")
                     self._update_signal_counter(signal_count)
                     
             elif isinstance(event, StrategyErrorEvent):
-                self.logger.error(f"策略错误事件: {event.strategy_id}, 错误: {event.error_message}")
+                logger.error(f"策略错误事件: {event.strategy_id}, 错误: {event.error_message}")
                 self._show_error_notification(event.strategy_id, event.error_message)
                 
         except Exception as e:
-            self.logger.error(f"处理策略事件失败: {e}")
+            logger.error(f"处理策略事件失败: {e}")
     
     def _update_strategy_status(self, strategy_id: str, status: str):
         """更新策略状态显示"""
@@ -244,12 +242,51 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         """显示性能通知"""
         try:
             if performance:
-                self.total_return_card.findChild(QLabel, "value").setText(f"{performance.total_return*100:.2f}%")
-                self.sharpe_ratio_card.findChild(QLabel, "value").setText(f"{performance.sharpe_ratio:.2f}")
-                self.max_drawdown_card.findChild(QLabel, "value").setText(f"{performance.max_drawdown*100:.2f}%")
-                self.win_rate_card.findChild(QLabel, "value").setText(f"{performance.win_rate*100:.1f}%")
+                value_label = self.total_return_card.findChild(QLabel, "value_label")
+                if value_label:
+                    total_return = performance.total_return
+                    if hasattr(total_return, 'iloc'):
+                        total_return = float(total_return.iloc[0]) if len(total_return) > 0 else 0.0
+                    elif total_return is not None:
+                        total_return = float(total_return)
+                    else:
+                        total_return = 0.0
+                    value_label.setText(f"{total_return*100:.2f}%")
+
+                value_label = self.sharpe_ratio_card.findChild(QLabel, "value_label")
+                if value_label:
+                    sharpe = performance.sharpe_ratio
+                    if hasattr(sharpe, 'iloc'):
+                        sharpe = float(sharpe.iloc[0]) if len(sharpe) > 0 else 0.0
+                    elif sharpe is not None:
+                        sharpe = float(sharpe)
+                    else:
+                        sharpe = 0.0
+                    value_label.setText(f"{sharpe:.2f}")
+
+                value_label = self.max_drawdown_card.findChild(QLabel, "value_label")
+                if value_label:
+                    drawdown = performance.max_drawdown
+                    if hasattr(drawdown, 'iloc'):
+                        drawdown = float(drawdown.iloc[0]) if len(drawdown) > 0 else 0.0
+                    elif drawdown is not None:
+                        drawdown = float(drawdown)
+                    else:
+                        drawdown = 0.0
+                    value_label.setText(f"{drawdown*100:.2f}%")
+
+                value_label = self.win_rate_card.findChild(QLabel, "value_label")
+                if value_label:
+                    win_rate = performance.win_rate
+                    if hasattr(win_rate, 'iloc'):
+                        win_rate = float(win_rate.iloc[0]) if len(win_rate) > 0 else 0.0
+                    elif win_rate is not None:
+                        win_rate = float(win_rate)
+                    else:
+                        win_rate = 0.0
+                    value_label.setText(f"{win_rate*100:.1f}%")
         except Exception as e:
-            self.logger.warning(f"更新性能指标失败: {e}")
+            logger.warning(f"更新性能指标失败: {e}")
     
     def _update_signal_counter(self, count: int):
         """更新信号计数器"""
@@ -2292,9 +2329,11 @@ class EnhancedStrategyManagerDialogV2(QDialog):
             # 从PerformanceMetrics中提取权益曲线数据
             equity_curve = []
             if hasattr(result, 'equity_curve') and result.equity_curve is not None:
+                base_date = datetime(2024, 1, 1)
                 for i, value in enumerate(result.equity_curve):
+                    current_date = base_date + timedelta(days=i)
                     equity_curve.append({
-                        'date': f'2024-01-{i+1:02d}',  # 示例日期
+                        'date': current_date.strftime('%Y-%m-%d'),
                         'value': value
                     })
             return equity_curve
@@ -2308,9 +2347,11 @@ class EnhancedStrategyManagerDialogV2(QDialog):
             # 从PerformanceMetrics中提取回撤曲线数据
             drawdown_curve = []
             if hasattr(result, 'drawdown_curve') and result.drawdown_curve is not None:
+                base_date = datetime(2024, 1, 1)
                 for i, value in enumerate(result.drawdown_curve):
+                    current_date = base_date + timedelta(days=i)
                     drawdown_curve.append({
-                        'date': f'2024-01-{i+1:02d}',  # 示例日期
+                        'date': current_date.strftime('%Y-%m-%d'),
                         'value': value
                     })
             return drawdown_curve
@@ -2698,7 +2739,7 @@ class EnhancedStrategyManagerDialogV2(QDialog):
                     results = {
                         'best_params': result.get('best_parameters', {}),
                         'current_params': {},  # 当前参数需要从策略配置中获取
-                        'strategy_id': strategy_id  # 需要从上下文中获取
+                        'strategy_id': self.current_optimization_id.split('_')[0]  # 从优化任务ID中提取策略ID
                     }
                     
                     # 更新最佳参数表格

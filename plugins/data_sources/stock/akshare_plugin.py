@@ -26,7 +26,7 @@ import pandas as pd
 
 from core.data_source_extensions import IDataSourcePlugin, PluginInfo, HealthCheckResult
 from core.plugin_types import PluginType, AssetType, DataType
-from plugins.plugin_interface import PluginState
+from plugins.plugin_interface import PluginLifecycle
 from plugins.data_sources.utils.retry_helper import retry_on_connection_error, log_execution_time
 from loguru import logger
 
@@ -62,7 +62,7 @@ class AKSharePlugin(IDataSourcePlugin):
         # ✅ 修复：显式初始化initialized和last_error属性
         self.initialized = False  # 插件初始化状态
         self.last_error = None    # 最后一次错误信息
-        self.plugin_state = PluginState.CREATED  # 插件状态
+        self.plugin_state = PluginLifecycle.CREATED  # 插件状态
 
         # 插件基本信息
         self.plugin_id = "data_sources.stock.akshare_plugin"  # ✅ 修复：添加stock层级
@@ -169,12 +169,12 @@ class AKSharePlugin(IDataSourcePlugin):
     def initialize(self, config: Dict[str, Any] = None) -> bool:
         """同步初始化插件（快速，不做网络连接）"""
         try:
-            self.plugin_state = PluginState.INITIALIZING
+            self.plugin_state = PluginLifecycle.INITIALIZING
 
             # 检查 akshare 库是否可用
             if not AKSHARE_AVAILABLE:
                 self.last_error = "akshare库未安装"
-                self.plugin_state = PluginState.FAILED
+                self.plugin_state = PluginLifecycle.FAILED
                 self.logger.error("AkShare插件初始化失败: akshare库未安装")
                 self.logger.error("请安装: pip install akshare")
                 return False
@@ -185,13 +185,13 @@ class AKSharePlugin(IDataSourcePlugin):
 
             # 标记初始化完成
             self.initialized = True
-            self.plugin_state = PluginState.INITIALIZED
+            self.plugin_state = PluginLifecycle.INITIALIZED
             self.logger.info("AkShare插件同步初始化完成（<10ms）")
             return True
 
         except Exception as e:
             self.last_error = str(e)
-            self.plugin_state = PluginState.FAILED
+            self.plugin_state = PluginLifecycle.FAILED
             self.logger.error(f"AkShare插件初始化失败: {e}")
             return False
 
@@ -199,7 +199,7 @@ class AKSharePlugin(IDataSourcePlugin):
         """实际连接逻辑（在后台线程中执行）"""
         try:
             if not AKSHARE_AVAILABLE:
-                self.plugin_state = PluginState.FAILED
+                self.plugin_state = PluginLifecycle.FAILED
                 self.logger.error("❌ AkShare库不可用")
                 return False
 
@@ -209,20 +209,20 @@ class AKSharePlugin(IDataSourcePlugin):
 
             if test_df is not None and not test_df.empty:
                 self.logger.info("✅ AkShare插件连接测试成功")
-                self.plugin_state = PluginState.CONNECTED
+                self.plugin_state = PluginLifecycle.CONNECTED
                 self.connection_time = datetime.now()
                 self.last_activity = datetime.now()
                 return True
             else:
                 self.logger.warning("⚠️ AkShare插件测试返回空数据，但仍认为可用")
-                self.plugin_state = PluginState.CONNECTED
+                self.plugin_state = PluginLifecycle.CONNECTED
                 self.connection_time = datetime.now()
                 self.last_activity = datetime.now()
                 return True
 
         except Exception as e:
             self.last_error = str(e)
-            self.plugin_state = PluginState.FAILED
+            self.plugin_state = PluginLifecycle.FAILED
             self.logger.error(f"❌ AkShare插件连接失败: {e}")
             import traceback
             self.logger.debug(traceback.format_exc())

@@ -295,7 +295,7 @@ class RealDataQualityProvider:
                     stock_list = self._stock_list_cache
                     logger.debug("使用缓存的股票列表数据")
                 else:
-                    stock_list = self.data_manager.get_asset_list('stock')
+                    stock_list = self.data_manager.get_asset_list('stock_a')
                     # 更新缓存
                     self._stock_list_cache = stock_list
                     self._stock_list_timestamp = current_time

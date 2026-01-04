@@ -33,10 +33,13 @@ class LegacyDataSourceAdapter(IDataSourcePlugin):
         """
         self.legacy_source = legacy_source
         self.source_id = source_id
-        self.
-        # 映射传统数据源类型到新的资产类型
+
+        # 映射传统数据源类型到新的资产类型 - 支持多资产类型
         self._asset_type_mapping = {
-            'eastmoney': [AssetType.STOCK_A],
+            'eastmoney': [
+                AssetType.STOCK_A, AssetType.STOCK_B, AssetType.STOCK_H,
+                AssetType.INDEX, AssetType.FUND, AssetType.BOND
+            ],
             'sina': [AssetType.STOCK_A],
             'tonghuashun': [AssetType.STOCK_A]
         }

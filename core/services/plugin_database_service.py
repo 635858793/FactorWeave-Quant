@@ -12,22 +12,7 @@ from loguru import logger
 import os
 from typing import Dict, List, Optional, Any
 from datetime import datetime
-
-# 延迟导入 Qt 相关模块，避免在没有 QApplication 时导入失败
-_QtObject = None
-_pyqtSignal = None
-
-def _get_qt_classes():
-    """延迟获取 Qt 类"""
-    global _QtObject, _pyqtSignal
-    if _QtObject is None:
-        try:
-            from PyQt5.QtCore import QObject, pyqtSignal
-            _QtObject = QObject
-            _pyqtSignal = pyqtSignal
-        except ImportError:
-            raise ImportError("PyQt5 未安装")
-    return _QtObject, _pyqtSignal
+from PyQt5.QtCore import QObject, pyqtSignal
 
 # 导入插件数据库模型
 from db.models.plugin_models import (
@@ -35,25 +20,16 @@ from db.models.plugin_models import (
 )
 
 
-class PluginDatabaseService:
-    """插件数据库服务 - 延迟初始化 Qt 相关组件"""
+class PluginDatabaseService(QObject):
+    """插件数据库服务 - 继承 QObject 以支持信号"""
+
+    plugin_status_changed = pyqtSignal(str, str, str)  # 插件名, 旧状态, 新状态
+    plugin_registered = pyqtSignal(str, dict)  # 插件名, 插件信息
+    database_updated = pyqtSignal()  # 数据库更新
 
     def __init__(self, db_path: str = None):
         """初始化插件数据库服务"""
-        # 延迟初始化 Qt 相关组件
-        try:
-            QObject, pyqtSignal = _get_qt_classes()
-            
-            # 动态添加信号
-            self.plugin_status_changed = pyqtSignal(str, str, str)  # 插件名, 旧状态, 新状态
-            self.plugin_registered = pyqtSignal(str, dict)  # 插件名, 插件信息
-            self.database_updated = pyqtSignal()  # 数据库更新
-        except Exception as e:
-            logger.warning(f"无法初始化 Qt 信号: {e}")
-            # 创建占位符
-            self.plugin_status_changed = None
-            self.plugin_registered = None
-            self.database_updated = None
+        super().__init__()
 
         # 设置数据库路径
         if db_path is None:
@@ -110,7 +86,8 @@ class PluginDatabaseService:
             self._invalidate_cache()
 
             # 发射信号
-            self.plugin_registered.emit(plugin_name, metadata)
+            if self.plugin_registered:
+                self.plugin_registered.emit(plugin_name, metadata)
 
             logger.info(f"插件注册成功: {plugin_name} (ID: {plugin_id})")
             return True
@@ -416,7 +393,8 @@ class PluginDatabaseService:
                 self._status_cache.pop(plugin_name, None)
                 self._invalidate_cache()
                 logger.info(f"插件记录已删除: {plugin_name}")
-                self.database_updated.emit()
+                if self.database_updated:
+                    self.database_updated.emit()
             return success
         except Exception as e:
             logger.error(f"删除插件记录失败: {plugin_name}, 错误: {e}")
@@ -477,7 +455,8 @@ class PluginDatabaseService:
         try:
             ok = self.db_manager.save_unified_plugin_config(plugin_name, config, config_type=config_type)
             if ok:
-                self.database_updated.emit()
+                if self.database_updated:
+                    self.database_updated.emit()
             return ok
         except Exception as e:
             logger.error(f"保存插件配置失败: {plugin_name}, 错误: {e}")
