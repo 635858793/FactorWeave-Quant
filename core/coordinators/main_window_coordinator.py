@@ -746,8 +746,13 @@ class MainWindowCoordinator(BaseCoordinator):
         """同步包装器：处理股票选择事件"""
         try:
             from PyQt5.QtCore import QTimer
+            
+            def schedule_handler():
+                coro = self._on_stock_selected(event)
+                self._run_async_handler(coro)
+            
             # 使用QTimer.singleShot在主线程中异步执行
-            QTimer.singleShot(0, lambda: self._run_async_handler(self._on_stock_selected(event)))
+            QTimer.singleShot(0, schedule_handler)
         except Exception as e:
             logger.error(f"调度股票选择事件处理失败: {e}")
             import traceback
@@ -1032,9 +1037,9 @@ class MainWindowCoordinator(BaseCoordinator):
                     kline_data=asset_data,
                     market=event.market
                 )
-                self.event_bus.emit(ui_data_ready_event)
+                self.event_bus.publish(ui_data_ready_event)
 
-            self.event_bus.emit(asset_data_ready_event)
+            self.event_bus.publish(asset_data_ready_event)
 
             # 更新状态栏
             self.show_message(
@@ -1073,7 +1078,6 @@ class MainWindowCoordinator(BaseCoordinator):
         }
         return display_names.get(asset_type, "未知资产")
 
-    @pyqtSlot(AssetDataReadyEvent)
     def _on_asset_data_ready(self, event: AssetDataReadyEvent) -> None:
         """处理通用资产数据就绪事件"""
         try:
@@ -1100,7 +1104,6 @@ class MainWindowCoordinator(BaseCoordinator):
         except Exception as e:
             logger.error(f"处理资产数据就绪事件失败: {e}")
 
-    @pyqtSlot(UIDataReadyEvent)
     def _on_ui_data_ready(self, event: UIDataReadyEvent) -> None:
         """处理UI数据就绪事件，更新主窗口状态栏并重新渲染图表"""
         try:
@@ -1210,7 +1213,6 @@ class MainWindowCoordinator(BaseCoordinator):
         except Exception as e:
             logger.error(f"Failed to handle analysis completion: {e}")
 
-    @pyqtSlot(object)
     def _on_error(self, event: Union[ErrorEvent, dict]):
         """
         健壮的错误事件处理器，能同时处理事件对象和字典。
@@ -1968,10 +1970,11 @@ FactorWeave-Quant  2.0 (重构版本)
                 def on_window_closed():
                     self._trading_monitor_window = None
 
-                self._trading_monitor_window.closeEvent = lambda event: (
-                    on_window_closed(),
+                def close_event_handler(event):
+                    on_window_closed()
                     event.accept()
-                )
+
+                self._trading_monitor_window.closeEvent = close_event_handler
 
             # 显示窗口
             self._trading_monitor_window.show()
@@ -1984,6 +1987,88 @@ FactorWeave-Quant  2.0 (重构版本)
             logger.error(f"打开交易监控窗口失败: {e}")
             QMessageBox.critical(self._main_window, "错误",
                                  f"打开交易监控窗口失败: {str(e)}")
+
+    def _on_order_management(self) -> None:
+        """订单管理"""
+        try:
+            from gui.dialogs.order_management_dialog import OrderManagementDialog
+
+            # 检查是否已经创建了订单管理窗口
+            if not hasattr(self, '_order_management_dialog') or self._order_management_dialog is None:
+                # 创建订单管理窗口
+                self._order_management_dialog = OrderManagementDialog(parent=None)
+
+                # 设置窗口属性
+                self._order_management_dialog.setWindowTitle("订单管理")
+                self._order_management_dialog.resize(1400, 900)
+
+                # 设置窗口不置顶
+                self._order_management_dialog.setWindowFlags(
+                    self._order_management_dialog.windowFlags() & ~Qt.WindowStaysOnTopHint
+                )
+
+                # 连接窗口关闭事件
+                def on_window_closed():
+                    self._order_management_dialog = None
+
+                def close_event_handler(event):
+                    on_window_closed()
+                    event.accept()
+
+                self._order_management_dialog.closeEvent = close_event_handler
+
+            # 显示窗口
+            self._order_management_dialog.show()
+            self._order_management_dialog.activateWindow()
+            self._order_management_dialog.raise_()
+
+            logger.info("订单管理窗口已打开")
+
+        except Exception as e:
+            logger.error(f"打开订单管理窗口失败: {e}")
+            QMessageBox.critical(self._main_window, "错误",
+                                 f"打开订单管理窗口失败: {str(e)}")
+
+    def _on_account_management(self) -> None:
+        """账户管理"""
+        try:
+            from gui.dialogs.account_management_dialog import AccountManagementDialog
+
+            # 检查是否已经创建了账户管理窗口
+            if not hasattr(self, '_account_management_dialog') or self._account_management_dialog is None:
+                # 创建账户管理窗口
+                self._account_management_dialog = AccountManagementDialog(parent=None)
+
+                # 设置窗口属性
+                self._account_management_dialog.setWindowTitle("账户管理")
+                self._account_management_dialog.resize(1200, 800)
+
+                # 设置窗口不置顶
+                self._account_management_dialog.setWindowFlags(
+                    self._account_management_dialog.windowFlags() & ~Qt.WindowStaysOnTopHint
+                )
+
+                # 连接窗口关闭事件
+                def on_window_closed():
+                    self._account_management_dialog = None
+
+                def close_event_handler(event):
+                    on_window_closed()
+                    event.accept()
+
+                self._account_management_dialog.closeEvent = close_event_handler
+
+            # 显示窗口
+            self._account_management_dialog.show()
+            self._account_management_dialog.activateWindow()
+            self._account_management_dialog.raise_()
+
+            logger.info("账户管理窗口已打开")
+
+        except Exception as e:
+            logger.error(f"打开账户管理窗口失败: {e}")
+            QMessageBox.critical(self._main_window, "错误",
+                                 f"打开账户管理窗口失败: {str(e)}")
 
     def _on_optimization_dashboard(self) -> None:
         """显示优化仪表板"""
@@ -3571,6 +3656,13 @@ FactorWeave-Quant  2.0 (重构版本)
             from gui.widgets.enhanced_ui import (
                 Level2DataPanel, OrderBookWidget, FundamentalAnalysisTab, SmartRecommendationPanel
             )
+            # 导入增强AI选股面板
+            try:
+                from components.enhanced_ai_stock_selection import EnhancedAIStockSelectionPanel
+                ENHANCED_AI_STOCK_AVAILABLE = True
+            except ImportError as e:
+                logger.warning(f"无法导入EnhancedAIStockSelectionPanel: {e}")
+                ENHANCED_AI_STOCK_AVAILABLE = False
             import_time = time.time() - import_start
             logger.info(f"模块导入耗时: {import_time:.3f}秒")
 
@@ -3610,6 +3702,15 @@ FactorWeave-Quant  2.0 (重构版本)
             )
             recommendation_time = time.time() - recommendation_start
             logger.info(f"SmartRecommendationPanel创建耗时: {recommendation_time:.3f}秒")
+
+            # 创建增强AI选股面板
+            if ENHANCED_AI_STOCK_AVAILABLE:
+                ai_stock_start = time.time()
+                self._enhanced_components['ai_stock_selection'] = EnhancedAIStockSelectionPanel(
+                    parent=self._main_window
+                )
+                ai_stock_time = time.time() - ai_stock_start
+                logger.info(f"EnhancedAIStockSelectionPanel创建耗时: {ai_stock_time:.3f}秒")
 
             # 集成增强组件到UI
             integration_start = time.time()
@@ -3711,6 +3812,23 @@ FactorWeave-Quant  2.0 (重构版本)
                     self._main_window.addDockWidget(Qt.RightDockWidgetArea, recommendation_dock)
                     right_area_docks.append(recommendation_dock)
                     logger.info("智能推荐面板已添加到右侧停靠区域")
+
+            # 添加增强AI选股面板作为停靠窗口（组合到右侧）
+            if 'ai_stock_selection' in self._enhanced_components:
+                ai_stock_dock = QDockWidget("增强AI选股", self._main_window)
+                ai_stock_dock.setWidget(self._enhanced_components['ai_stock_selection'])
+                ai_stock_dock.setAllowedAreas(Qt.RightDockWidgetArea | Qt.LeftDockWidgetArea)
+                # ✅ 修复：组合到右侧（与技术分析面板或其他面板组合）
+                if right_area_docks:
+                    # 已有其他面板在右侧，直接组合
+                    self._main_window.tabifyDockWidget(right_area_docks[0], ai_stock_dock)
+                    right_area_docks.append(ai_stock_dock)
+                    logger.info("增强AI选股面板已与其他面板组合为标签页（右侧）")
+                else:
+                    # 没有其他面板，先添加到右侧
+                    self._main_window.addDockWidget(Qt.RightDockWidgetArea, ai_stock_dock)
+                    right_area_docks.append(ai_stock_dock)
+                    logger.info("增强AI选股面板已添加到右侧停靠区域")
 
             # ✅ 修复：将所有右侧组合的 QDockWidget 的标签页位置设置为顶部
             if right_area_docks:

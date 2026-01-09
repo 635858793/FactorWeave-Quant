@@ -144,12 +144,12 @@ class SentimentAnalysisAgent(BaseService):
             self._update_metrics(response_time, True)
             
             # 发布分析完成事件
-            self.event_bus.publish('bettafish.sentiment.analysis.completed', {
-                'stock_code': stock_code,
-                'sentiment_score': sentiment_score,
-                'confidence': confidence,
-                'response_time': response_time
-            })
+            self.event_bus.publish('bettafish.sentiment.analysis.completed',
+                stock_code=stock_code,
+                sentiment_score=sentiment_score,
+                confidence=confidence,
+                response_time=response_time
+            )
             
             logger.debug(f"舆情分析完成: {stock_code}, 得分: {sentiment_score:.2f}")
             return analysis_result

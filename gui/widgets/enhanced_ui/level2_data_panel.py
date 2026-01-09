@@ -86,8 +86,6 @@ class Level2DataPanel(QWidget):
         status_bar = self._create_status_bar()
         layout.addWidget(status_bar)
 
-        # 应用样式
-        self._apply_styles()
 
     def _create_control_panel(self) -> QWidget:
         """创建控制面板"""
@@ -315,71 +313,7 @@ class Level2DataPanel(QWidget):
         # 数据速率
         self.data_rate_label = QLabel("0 tick/s")
         layout.addWidget(self.data_rate_label)
-
         return panel
-
-    def _apply_styles(self):
-        """应用样式表"""
-        self.setStyleSheet("""
-            QGroupBox {
-                font-weight: bold;
-                border: 2px solid #CCCCCC;
-                border-radius: 5px;
-                margin-top: 1ex;
-                padding-top: 10px;
-            }
-            
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px 0 5px;
-            }
-            
-            QTableWidget {
-                gridline-color: #E0E0E0;
-                background-color: white;
-                alternate-background-color: #F5F5F5;
-            }
-            
-            QTableWidget::item {
-                padding: 5px;
-                border: none;
-            }
-            
-            QTableWidget::item:selected {
-                background-color: #3498DB;
-                color: white;
-            }
-            
-            QFrame {
-                background-color: #FAFAFA;
-                border: 1px solid #E0E0E0;
-                border-radius: 3px;
-            }
-            
-            QPushButton {
-                background-color: #3498DB;
-                color: white;
-                border: none;
-                padding: 5px 15px;
-                border-radius: 3px;
-                font-weight: bold;
-            }
-            
-            QPushButton:hover {
-                background-color: #2980B9;
-            }
-            
-            QPushButton:pressed {
-                background-color: #21618C;
-            }
-            
-            QComboBox, QSpinBox {
-                padding: 3px;
-                border: 1px solid #BDC3C7;
-                border-radius: 3px;
-            }
-        """)
 
     def setup_event_connections(self):
         """设置事件连接"""

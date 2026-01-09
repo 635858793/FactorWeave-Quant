@@ -120,6 +120,12 @@ class FactorWeaveQuantApplication:
         """创建Qt应用程序"""
         logger.info("1. 创建Qt应用程序...")
 
+        # 检查是否已经存在QApplication实例
+        if QApplication.instance() is not None:
+            self.app = QApplication.instance()
+            logger.info("使用已存在的QApplication实例")
+            return
+
         # 设置QtWebEngine缓存目录，避免创建缓存失败
         import os
         cache_dir = os.path.join(os.path.expanduser("~"), ".factorweave", "cache")
@@ -149,6 +155,17 @@ class FactorWeaveQuantApplication:
             # 获取Qt日志处理器实例
             self.qt_handler = get_qt_handler()
 
+            # 延迟设置处理定时器，等待事件循环准备好
+            # 在事件循环启动后再设置定时器
+            def setup_timer_later():
+                if self.qt_handler:
+                    self.qt_handler.setup_processing_timer()
+                    logger.info("Qt日志处理定时器已启动")
+
+            # 使用QTimer.singleShot在事件循环启动后设置定时器
+            from PyQt5.QtCore import QTimer
+            QTimer.singleShot(100, setup_timer_later)
+
             logger.info("Qt日志处理器初始化完成")
         except Exception as e:
             logger.warning(f"Qt日志处理器初始化失败: {e}")
@@ -175,8 +192,13 @@ class FactorWeaveQuantApplication:
         logger.info("3. 注册服务...")
 
         # 使用服务引导器注册所有服务
-        if not bootstrap_services():
-            logger.error("服务注册失败")
+        try:
+            if not bootstrap_services():
+                logger.error("服务注册失败")
+                return False
+        except Exception as e:
+            logger.error(f"服务注册过程中发生错误: {e}")
+            logger.error(traceback.format_exc())
             return False
 
         logger.info("所有服务注册完成")
@@ -287,9 +309,8 @@ def main():
 
         # 创建并运行应用程序
         if QEventLoop is not None:
+            # 创建QApplication实例
             app = QApplication(sys.argv)
-            event_loop = QEventLoop(app)
-            asyncio.set_event_loop(event_loop)
             
             # WebGPU硬件加速渲染初始化（在QApplication创建后进行）
             try:
@@ -309,6 +330,10 @@ def main():
                 logger.error(f"WebGPU初始化失败: {e}")
                 webgpu_renderer = None
 
+            # 创建事件循环
+            event_loop = QEventLoop(app)
+            asyncio.set_event_loop(event_loop)
+            
             factorweave_app = FactorWeaveQuantApplication()
             factorweave_app.app = app  # Pass app instance
 

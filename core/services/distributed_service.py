@@ -247,12 +247,12 @@ class NodeDiscovery:
             logger.error(f"处理节点信息失败: {e}")
 
 
-class TaskScheduler:
-    """任务调度器"""
+class DistributedTaskScheduler:
+    """分布式任务调度器"""
 
     def __init__(self, http_bridge=None):
         """
-        初始化任务调度器
+        初始化分布式任务调度器
 
         Args:
             http_bridge: HTTP Bridge实例，用于分布式任务执行
@@ -1015,8 +1015,8 @@ class DistributedService:
             logger.warning(f"HTTP Bridge initialization failed: {e}, using local execution")
             self.http_bridge = None
 
-        # 初始化TaskScheduler，传入http_bridge
-        self.task_scheduler = TaskScheduler(http_bridge=self.http_bridge)
+        # 初始化DistributedTaskScheduler，传入http_bridge
+        self.task_scheduler = DistributedTaskScheduler(http_bridge=self.http_bridge)
         self.running = False
 
         # 连接节点发现和任务调度
@@ -1101,20 +1101,20 @@ class DistributedService:
     def add_node(self, node_id: str = None, host: str = None, port: int = None,
                  node_type: str = "worker", node: NodeInfo = None) -> bool:
         """
-        添加节点（委托给TaskScheduler）
+        添加节点（委托给DistributedTaskScheduler）
         """
         return self.task_scheduler.add_node(node_id, host, port, node_type, node)
 
     def remove_node(self, node_id: str) -> bool:
-        """移除节点（委托给TaskScheduler）"""
+        """移除节点（委托给DistributedTaskScheduler）"""
         return self.task_scheduler.remove_node(node_id)
 
     def get_all_nodes_status(self) -> List[Dict[str, Any]]:
-        """获取所有节点状态（委托给TaskScheduler）"""
+        """获取所有节点状态（委托给DistributedTaskScheduler）"""
         return self.task_scheduler.get_all_nodes_status()
 
     def test_node_connection(self, node_id: str) -> Optional[Dict[str, Any]]:
-        """测试节点连接（委托给TaskScheduler）"""
+        """测试节点连接（委托给DistributedTaskScheduler）"""
         return self.task_scheduler.test_node_connection(node_id)
 
     def get_task_status(self, task_id: str) -> Optional[DistributedTask]:

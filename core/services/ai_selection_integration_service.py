@@ -27,6 +27,7 @@ from ..plugin_types import AssetType
 from .unified_data_manager import UnifiedDataManager
 from .enhanced_indicator_service import EnhancedIndicatorService
 from .database_service import DatabaseService
+from .cache_service import CacheService
 
 
 class SelectionStrategy(Enum):
@@ -174,15 +175,251 @@ class AISelectionIntegrationService:
         # 线程池用于异步计算
         self._executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="AI_Selection")
         
-        # 缓存
-        self._result_cache: Dict[str, StockSelectionResult] = {}
-        self._cache_ttl = timedelta(hours=1)  # 缓存1小时
+        # 获取缓存服务
+        self._cache_service = self._container.resolve(CacheService)
         
         # 策略注册
         self._strategies: Dict[str, Any] = {}
         self._register_default_strategies()
         
+        # LLM 解析器（用于自然语言解析）
+        self._llm_parser = None
+        self._init_llm_parser()
+        
         logger.info("AI选股集成服务初始化完成")
+    
+    def _init_llm_parser(self):
+        """初始化 LLM 解析器"""
+        try:
+            from openai import OpenAI
+            
+            # 尝试获取 API key
+            api_key = self._get_llm_api_key()
+            if api_key:
+                self._llm_parser = OpenAI(api_key=api_key)
+                logger.info("LLM 解析器初始化成功")
+            else:
+                logger.warning("未配置 OpenAI API key，LLM 解析功能不可用")
+        except ImportError:
+            logger.warning("OpenAI 库未安装，LLM 解析功能不可用")
+        except Exception as e:
+            logger.warning(f"LLM 解析器初始化失败: {e}")
+    
+    def _get_llm_api_key(self) -> Optional[str]:
+        """获取 LLM API key
+        
+        Returns:
+            API key 或 None
+        """
+        try:
+            # 优先从环境变量获取
+            import os
+            api_key = os.environ.get('OPENAI_API_KEY')
+            if api_key:
+                return api_key
+            
+            # 从配置文件获取
+            try:
+                import configparser
+                config = configparser.ConfigParser()
+                config.read('config.ini', encoding='utf-8')
+                if 'AI' in config and 'openai_api_key' in config['AI']:
+                    return config['AI']['openai_api_key']
+            except Exception:
+                pass
+            
+            return None
+        except Exception as e:
+            logger.error(f"获取 LLM API key 失败: {e}")
+            return None
+    
+    async def parse_natural_language(
+        self,
+        user_input: str
+    ) -> Dict[str, Any]:
+        """解析自然语言输入
+        
+        Args:
+            user_input: 用户输入的自然语言选股需求
+            
+        Returns:
+            解析后的选股条件字典
+        """
+        if not self._llm_parser:
+            logger.warning("LLM 解析器不可用，返回空结果")
+            return {}
+        
+        try:
+            # 构建提示词
+            prompt = self._build_llm_prompt(user_input)
+            
+            # 调用 LLM API
+            response = self._llm_parser.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "你是一个专业的股票选股助手，请将用户的自然语言需求转换为结构化的选股条件。"
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                temperature=0.2,
+                response_format={"type": "json_object"}
+            )
+            
+            # 解析响应
+            content = response.choices[0].message.content
+            parsed_result = json.loads(content)
+            
+            logger.info(f"LLM 解析成功: {parsed_result}")
+            return parsed_result
+            
+        except Exception as e:
+            logger.error(f"LLM 解析失败: {e}")
+            return {}
+    
+    def _build_llm_prompt(self, user_input: str) -> str:
+        """构建 LLM 提示词
+        
+        Args:
+            user_input: 用户输入
+            
+        Returns:
+            提示词字符串
+        """
+        prompt = f"""
+请将以下选股需求转换为结构化的选股条件，输出 JSON 格式：
+
+用户需求：{user_input}
+
+请输出以下字段（如果用户没有提到某个条件，则不包含该字段）：
+- market_cap_min: 最小市值（亿元）
+- market_cap_max: 最大市值（亿元）
+- pe_ratio_min: 最小市盈率
+- pe_ratio_max: 最大市盈率
+- pb_ratio_min: 最小市净率
+- pb_ratio_max: 最大市净率
+- roe_min: 最小ROE
+- roe_max: 最大ROE
+- industries: 行业列表（数组）
+- themes: 主题列表（数组）
+- risk_level: 风险等级（conservative/moderate/aggressive）
+- strategy_type: 策略类型（momentum/value/growth/quality/technical/quantitative/hybrid）
+
+示例输出：
+{{
+    "market_cap_min": 100,
+    "pe_ratio_max": 20,
+    "roe_min": 15,
+    "industries": ["科技", "医药"],
+    "risk_level": "moderate",
+    "strategy_type": "growth"
+}}
+"""
+        return prompt
+    
+    async def select_stocks_with_nlp(
+        self,
+        user_input: str,
+        strategy_type: SelectionStrategy = SelectionStrategy.QUANTITATIVE
+    ) -> StockSelectionResult:
+        """使用自然语言输入进行选股
+        
+        Args:
+            user_input: 用户输入的自然语言选股需求
+            strategy_type: 默认策略类型
+            
+        Returns:
+            选股结果
+        """
+        try:
+            # 1. 使用 LLM 解析自然语言
+            logger.info(f"开始解析自然语言: {user_input}")
+            parsed_conditions = await self.parse_natural_language(user_input)
+            
+            if not parsed_conditions:
+                logger.warning("LLM 解析失败，使用默认条件")
+                criteria = StockSelectionCriteria(
+                    strategy_type=strategy_type,
+                    risk_level=RiskLevel.MODERATE
+                )
+            else:
+                # 2. 转换为选股标准
+                criteria = self._convert_parsed_to_criteria(parsed_conditions, strategy_type)
+            
+            # 3. 执行选股
+            result = await self.select_stocks_with_explanation(
+                strategy_id=strategy_type.value,
+                criteria=criteria
+            )
+            
+            # 4. 添加自然语言输入到结果
+            result.overall_explanation = f"基于自然语言需求 '{user_input}' 的选股结果：\n{result.overall_explanation}"
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"自然语言选股失败: {e}")
+            raise
+    
+    def _convert_parsed_to_criteria(
+        self,
+        parsed: Dict[str, Any],
+        default_strategy: SelectionStrategy
+    ) -> StockSelectionCriteria:
+        """将 LLM 解析结果转换为选股标准
+        
+        Args:
+            parsed: LLM 解析结果
+            default_strategy: 默认策略类型
+            
+        Returns:
+            选股标准
+        """
+        # 映射风险等级
+        risk_level_map = {
+            "conservative": RiskLevel.CONSERVATIVE,
+            "moderate": RiskLevel.MODERATE,
+            "aggressive": RiskLevel.AGGRESSIVE
+        }
+        
+        # 映射策略类型
+        strategy_map = {
+            "momentum": SelectionStrategy.MOMENTUM_BASED,
+            "value": SelectionStrategy.VALUE_BASED,
+            "growth": SelectionStrategy.GROWTH_BASED,
+            "quality": SelectionStrategy.QUALITY_BASED,
+            "technical": SelectionStrategy.TECH_ANALYSIS,
+            "quantitative": SelectionStrategy.QUANTITATIVE,
+            "hybrid": SelectionStrategy.HYBRID
+        }
+        
+        # 创建选股标准
+        criteria = StockSelectionCriteria(
+            strategy_type=strategy_map.get(
+                parsed.get('strategy_type'),
+                default_strategy
+            ),
+            risk_level=risk_level_map.get(
+                parsed.get('risk_level'),
+                RiskLevel.MODERATE
+            ),
+            market_cap_min=parsed.get('market_cap_min'),
+            market_cap_max=parsed.get('market_cap_max'),
+            pe_ratio_min=parsed.get('pe_ratio_min'),
+            pe_ratio_max=parsed.get('pe_ratio_max'),
+            pb_ratio_min=parsed.get('pb_ratio_min'),
+            pb_ratio_max=parsed.get('pb_ratio_max'),
+            roe_min=parsed.get('roe_min'),
+            roe_max=parsed.get('roe_max'),
+            industries=parsed.get('industries'),
+            themes=parsed.get('themes')
+        )
+        
+        return criteria
         
     def _register_default_strategies(self):
         """注册默认选股策略"""
@@ -277,10 +514,10 @@ class AISelectionIntegrationService:
                 return cached_result
             
             # 发布事件：开始选股
-            await self._event_bus.publish("ai_selection.started", {
-                "strategy_id": strategy_id,
-                "criteria": asdict(selection_criteria)
-            })
+            await self._event_bus.publish("ai_selection.started",
+                strategy_id=strategy_id,
+                criteria=asdict(selection_criteria)
+            )
             
             # 执行选股
             result = await self._execute_selection(strategy_id, selection_criteria)
@@ -299,11 +536,11 @@ class AISelectionIntegrationService:
             self._cache_result(cache_key, result)
             
             # 发布事件：选股完成
-            await self._event_bus.publish("ai_selection.completed", {
-                "strategy_id": strategy_id,
-                "result_id": result.result_id,
-                "selected_stocks": result.selected_stocks
-            })
+            await self._event_bus.publish("ai_selection.completed",
+                strategy_id=strategy_id,
+                result_id=result.result_id,
+                selected_stocks=result.selected_stocks
+            )
             
             result.computation_time = (datetime.now() - start_time).total_seconds()
             
@@ -313,10 +550,10 @@ class AISelectionIntegrationService:
         except Exception as e:
             logger.error(f"选股失败: {e}")
             # 发布失败事件
-            await self._event_bus.publish("ai_selection.failed", {
-                "strategy_id": strategy_id,
-                "error": str(e)
-            })
+            await self._event_bus.publish("ai_selection.failed",
+                strategy_id=strategy_id,
+                error=str(e)
+            )
             raise
     
     async def _execute_selection(
@@ -847,29 +1084,129 @@ class AISelectionIntegrationService:
             reason = f"符合基本选股条件，综合评分{score:.1f}分"
             strength = "weak"
         
-        # 获取关键指标（这里使用模拟数据，实际应该从技术指标服务获取）
-        key_indicators = {
-            "RSI": 45.2,
-            "MACD": 0.15,
-            "SMA_20": 1.02,
-            "Volume_Ratio": 1.3
-        }
+        # 获取股票数据
+        key_indicators = {}
+        technical_signals = {}
+        fundamental_signals = {}
         
-        # 技术信号
-        technical_signals = {
-            "price_trend": "up",
-            "volume_trend": "increasing",
-            "support_level": "strong",
-            "resistance_level": "moderate"
-        }
+        try:
+            # 使用 EnhancedIndicatorService 获取技术指标
+            data_request = {
+                "symbol": stock_code,
+                "asset_type": AssetType.STOCK_A,
+                "data_type": "kdata",
+                "period": "D",
+                "time_range": 365
+            }
+            
+            price_data = await self._data_manager.get_data_async(**data_request)
+            
+            if price_data is not None and not price_data.empty:
+                # 计算真实的技术指标
+                # RSI
+                rsi = self._calculate_rsi(price_data['close'], 14)
+                if not rsi.empty:
+                    key_indicators["RSI"] = float(rsi.iloc[-1])
+                
+                # MACD
+                macd_signal = self._calculate_macd_signal(price_data['close'])
+                technical_signals["macd_signal"] = macd_signal
+                
+                # SMA
+                sma_20 = price_data['close'].rolling(window=20).mean()
+                if not sma_20.empty:
+                    sma_20_current = float(sma_20.iloc[-1])
+                    current_price = float(price_data['close'].iloc[-1])
+                    key_indicators["SMA_20"] = round(current_price / sma_20_current, 2) if sma_20_current > 0 else 0
+                
+                # 成交量比率
+                if 'volume' in price_data.columns:
+                    avg_volume = price_data['volume'].tail(20).mean()
+                    current_volume = float(price_data['volume'].iloc[-1])
+                    key_indicators["Volume_Ratio"] = round(current_volume / avg_volume, 2) if avg_volume > 0 else 0
+                
+                # 价格趋势
+                if len(price_data) >= 5:
+                    price_change = (price_data['close'].iloc[-1] - price_data['close'].iloc[-5]) / price_data['close'].iloc[-5]
+                    technical_signals["price_trend"] = "up" if price_change > 0 else "down"
+                else:
+                    technical_signals["price_trend"] = "neutral"
+                
+                # 成交量趋势
+                if 'volume' in price_data.columns and len(price_data) >= 5:
+                    volume_change = (price_data['volume'].iloc[-1] - price_data['volume'].iloc[-5]) / price_data['volume'].iloc[-5]
+                    technical_signals["volume_trend"] = "increasing" if volume_change > 0 else "decreasing"
+                else:
+                    technical_signals["volume_trend"] = "neutral"
+                
+                # 支撑位和阻力位
+                if len(price_data) >= 20:
+                    recent_low = price_data['close'].tail(20).min()
+                    recent_high = price_data['close'].tail(20).max()
+                    current_price = float(price_data['close'].iloc[-1])
+                    
+                    distance_to_low = (current_price - recent_low) / recent_low if recent_low > 0 else 0
+                    distance_to_high = (recent_high - current_price) / recent_high if recent_high > 0 else 0
+                    
+                    if distance_to_low < 0.05:
+                        technical_signals["support_level"] = "strong"
+                    elif distance_to_low < 0.10:
+                        technical_signals["support_level"] = "moderate"
+                    else:
+                        technical_signals["support_level"] = "weak"
+                    
+                    if distance_to_high < 0.05:
+                        technical_signals["resistance_level"] = "strong"
+                    elif distance_to_high < 0.10:
+                        technical_signals["resistance_level"] = "moderate"
+                    else:
+                        technical_signals["resistance_level"] = "weak"
+                else:
+                    technical_signals["support_level"] = "unknown"
+                    technical_signals["resistance_level"] = "unknown"
+            
+            # 获取基本面数据
+            try:
+                fundamental_data = await self._data_manager.get_fundamental_data(stock_code)
+                if fundamental_data:
+                    if 'pe_ratio' in fundamental_data:
+                        fundamental_signals["pe_ratio"] = float(fundamental_data['pe_ratio'])
+                    if 'pb_ratio' in fundamental_data:
+                        fundamental_signals["pb_ratio"] = float(fundamental_data['pb_ratio'])
+                    if 'roe' in fundamental_data:
+                        fundamental_signals["roe"] = float(fundamental_data['roe'])
+                    if 'debt_ratio' in fundamental_data:
+                        fundamental_signals["debt_ratio"] = float(fundamental_data['debt_ratio'])
+            except Exception as e:
+                logger.warning(f"获取股票 {stock_code} 基本面数据失败: {e}")
+                
+        except Exception as e:
+            logger.warning(f"获取股票 {stock_code} 技术指标失败: {e}")
         
-        # 基本面信号
-        fundamental_signals = {
-            "pe_ratio": 15.8,
-            "pb_ratio": 2.1,
-            "roe": 12.5,
-            "debt_ratio": 0.35
-        }
+        # 如果没有获取到指标，使用默认值
+        if not key_indicators:
+            key_indicators = {
+                "RSI": 50.0,
+                "MACD": 0.0,
+                "SMA_20": 1.0,
+                "Volume_Ratio": 1.0
+            }
+        
+        if not technical_signals:
+            technical_signals = {
+                "price_trend": "neutral",
+                "volume_trend": "neutral",
+                "support_level": "unknown",
+                "resistance_level": "unknown"
+            }
+        
+        if not fundamental_signals:
+            fundamental_signals = {
+                "pe_ratio": 0.0,
+                "pb_ratio": 0.0,
+                "roe": 0.0,
+                "debt_ratio": 0.0
+            }
         
         # 风险评估
         risk_assessment = {
@@ -878,6 +1215,33 @@ class AISelectionIntegrationService:
             "sector_risk": "low",
             "overall_risk": result.criteria.risk_level.value
         }
+        
+        # 计算波动性
+        try:
+            if price_data is not None and not price_data.empty and len(price_data) >= 20:
+                returns = price_data['close'].pct_change().dropna()
+                volatility = returns.std() * np.sqrt(252)
+                
+                if volatility < 0.15:
+                    risk_assessment["volatility"] = "low"
+                elif volatility < 0.35:
+                    risk_assessment["volatility"] = "moderate"
+                else:
+                    risk_assessment["volatility"] = "high"
+        except Exception:
+            pass
+        
+        # 计算流动性
+        try:
+            if 'volume' in key_indicators and key_indicators["Volume_Ratio"] > 0:
+                if key_indicators["Volume_Ratio"] >= 1.5:
+                    risk_assessment["liquidity"] = "excellent"
+                elif key_indicators["Volume_Ratio"] >= 1.0:
+                    risk_assessment["liquidity"] = "good"
+                else:
+                    risk_assessment["liquidity"] = "moderate"
+        except Exception:
+            pass
         
         return SelectionExplanation(
             stock_code=stock_code,
@@ -943,15 +1307,42 @@ class AISelectionIntegrationService:
     
     async def _save_strategy_to_db(self, strategy_data: Dict[str, Any]):
         """保存策略到数据库"""
-        # 这里应该实现具体的数据库保存逻辑
-        # 使用DatabaseService的save_ai_strategy方法
-        pass
+        try:
+            # 使用DatabaseService的save_ai_strategy方法
+            if hasattr(self._database_service, 'save_ai_strategy'):
+                await self._database_service.save_ai_strategy(strategy_data)
+                logger.info(f"策略保存成功: {strategy_data['strategy_id']}")
+            else:
+                # 如果DatabaseService没有save_ai_strategy方法，使用通用保存方法
+                await self._database_service.save_data(
+                    'ai_strategies',
+                    strategy_data
+                )
+                logger.info(f"策略保存成功（通用方法）: {strategy_data['strategy_id']}")
+        except Exception as e:
+            logger.error(f"保存策略到数据库失败: {e}")
+            raise
     
     async def _get_strategy_by_id(self, strategy_id: str) -> Optional[Dict[str, Any]]:
         """根据ID获取策略"""
-        # 这里应该实现从数据库获取策略的逻辑
-        # 使用DatabaseService的get_ai_strategy方法
-        return None
+        try:
+            # 使用DatabaseService的get_ai_strategy方法
+            if hasattr(self._database_service, 'get_ai_strategy'):
+                strategy = await self._database_service.get_ai_strategy(strategy_id)
+                return strategy
+            else:
+                # 如果DatabaseService没有get_ai_strategy方法，使用通用查询方法
+                query = {"strategy_id": strategy_id}
+                strategies = await self._database_service.query_data(
+                    'ai_strategies',
+                    query
+                )
+                if strategies and len(strategies) > 0:
+                    return strategies[0]
+                return None
+        except Exception as e:
+            logger.error(f"从数据库获取策略失败: {e}")
+            return None
     
     async def _save_selection_result(self, result: StockSelectionResult):
         """保存选股结果"""
@@ -963,44 +1354,414 @@ class AISelectionIntegrationService:
     
     def _get_cached_result(self, cache_key: str) -> Optional[StockSelectionResult]:
         """获取缓存结果"""
-        if cache_key in self._result_cache:
-            cached_result = self._result_cache[cache_key]
-            # 检查是否过期
-            if datetime.now() - cached_result.created_at < self._cache_ttl:
-                return cached_result
-            else:
-                del self._result_cache[cache_key]
-        return None
+        return self._cache_service.get(cache_key)
     
     def _cache_result(self, cache_key: str, result: StockSelectionResult):
         """缓存结果"""
-        self._result_cache[cache_key] = result
-        
-        # 清理过期缓存
-        expired_keys = []
-        for key, cached_result in self._result_cache.items():
-            if datetime.now() - cached_result.created_at >= self._cache_ttl:
-                expired_keys.append(key)
-        
-        for key in expired_keys:
-            del self._result_cache[key]
+        self._cache_service.set(cache_key, result, ttl=timedelta(hours=1))
     
     # 其他策略实现方法
-    def _momentum_strategy(self, stock_data: Dict[str, Dict[str, Any]], criteria: StockSelectionCriteria) -> Tuple[List[str], Dict[str, float]]:
-        """动量策略实现"""
-        return self._quantitative_strategy(stock_data, criteria)
+    def _momentum_strategy(
+        self,
+        stock_data: Dict[str, Dict[str, Any]],
+        criteria: StockSelectionCriteria
+    ) -> Tuple[List[str], Dict[str, float]]:
+        """动量策略实现
+        
+        基于价格动量和趋势的选股策略
+        """
+        stock_scores = {}
+        
+        for stock_code, data in stock_data.items():
+            try:
+                price_data = data["price_data"]
+                if price_data.empty or len(price_data) < 30:
+                    continue
+                
+                score = 0.0
+                
+                # 短期动量 (30%)
+                momentum_5d = price_data['close'].pct_change(5)
+                momentum_10d = price_data['close'].pct_change(10)
+                momentum_20d = price_data['close'].pct_change(20)
+                
+                if not momentum_5d.empty:
+                    score += min(momentum_5d.iloc[-1] * 100, 30) * 0.3
+                if not momentum_10d.empty:
+                    score += min(momentum_10d.iloc[-1] * 100, 30) * 0.15
+                if not momentum_20d.empty:
+                    score += min(momentum_20d.iloc[-1] * 100, 30) * 0.15
+                
+                # 趋势强度 (25%)
+                sma_20 = price_data['close'].rolling(window=20).mean()
+                sma_60 = price_data['close'].rolling(window=60).mean()
+                
+                if not sma_20.empty and not sma_60.empty:
+                    current_price = price_data['close'].iloc[-1]
+                    sma_20_current = sma_20.iloc[-1]
+                    sma_60_current = sma_60.iloc[-1]
+                    
+                    # 价格在均线之上
+                    if current_price > sma_20_current:
+                        score += 10
+                    if current_price > sma_60_current:
+                        score += 10
+                    
+                    # 均线多头排列
+                    if sma_20_current > sma_60_current:
+                        score += 5
+                
+                # 动量一致性 (20%)
+                if not momentum_5d.empty and not momentum_10d.empty:
+                    if momentum_5d.iloc[-1] > 0 and momentum_10d.iloc[-1] > 0:
+                        score += 10
+                    if momentum_5d.iloc[-1] > momentum_10d.iloc[-1]:
+                        score += 10
+                
+                # 成交量动量 (15%)
+                if 'volume' in price_data.columns:
+                    volume_sma_20 = price_data['volume'].rolling(window=20).mean()
+                    if not volume_sma_20.empty:
+                        current_volume = price_data['volume'].iloc[-1]
+                        volume_ratio = current_volume / volume_sma_20.iloc[-1]
+                        score += min(volume_ratio * 5, 15)
+                
+                # 相对强弱 (10%)
+                rsi = self._calculate_rsi(price_data['close'], 14)
+                if not rsi.empty:
+                    rsi_current = rsi.iloc[-1]
+                    # RSI 在 50-70 之间表示强势但不超买
+                    if 50 <= rsi_current <= 70:
+                        score += 10
+                    elif 40 <= rsi_current < 50:
+                        score += 5
+                
+                stock_scores[stock_code] = min(score, 100.0)
+                
+            except Exception as e:
+                logger.warning(f"计算股票 {stock_code} 动量评分失败: {e}")
+                continue
+        
+        # 选择评分最高的股票
+        sorted_stocks = sorted(stock_scores.items(), key=lambda x: x[1], reverse=True)
+        
+        # 根据风险等级确定选择数量
+        if criteria.risk_level == RiskLevel.CONSERVATIVE:
+            top_n = min(10, len(sorted_stocks))
+        elif criteria.risk_level == RiskLevel.MODERATE:
+            top_n = min(20, len(sorted_stocks))
+        else:  # AGGRESSIVE
+            top_n = min(30, len(sorted_stocks))
+        
+        selected_stocks = [stock for stock, _ in sorted_stocks[:top_n]]
+        selected_scores = {stock: stock_scores[stock] for stock in selected_stocks}
+        
+        return selected_stocks, selected_scores
     
-    def _value_strategy(self, stock_data: Dict[str, Dict[str, Any]], criteria: StockSelectionCriteria) -> Tuple[List[str], Dict[str, float]]:
-        """价值策略实现"""
-        return self._quantitative_strategy(stock_data, criteria)
+    def _value_strategy(
+        self,
+        stock_data: Dict[str, Dict[str, Any]],
+        criteria: StockSelectionCriteria
+    ) -> Tuple[List[str], Dict[str, float]]:
+        """价值策略实现
+        
+        基于估值指标的选股策略
+        """
+        stock_scores = {}
+        
+        for stock_code, data in stock_data.items():
+            try:
+                fundamental_data = data.get("fundamental_data", {})
+                
+                score = 0.0
+                
+                # PE 估值 (30%)
+                pe_ratio = fundamental_data.get('pe_ratio', 0)
+                if pe_ratio > 0:
+                    # PE 越低越好，10-20 为合理区间
+                    if pe_ratio < 10:
+                        score += 30
+                    elif pe_ratio < 15:
+                        score += 25
+                    elif pe_ratio < 20:
+                        score += 20
+                    elif pe_ratio < 30:
+                        score += 10
+                    elif pe_ratio < 50:
+                        score += 5
+                
+                # PB 估值 (25%)
+                pb_ratio = fundamental_data.get('pb_ratio', 0)
+                if pb_ratio > 0:
+                    # PB 越低越好，1-3 为合理区间
+                    if pb_ratio < 1:
+                        score += 25
+                    elif pb_ratio < 2:
+                        score += 20
+                    elif pb_ratio < 3:
+                        score += 15
+                    elif pb_ratio < 5:
+                        score += 10
+                    elif pb_ratio < 8:
+                        score += 5
+                
+                # 股息率 (20%)
+                dividend_yield = fundamental_data.get('dividend_yield', 0)
+                if dividend_yield > 0:
+                    # 股息率越高越好
+                    if dividend_yield > 0.05:  # > 5%
+                        score += 20
+                    elif dividend_yield > 0.03:  # > 3%
+                        score += 15
+                    elif dividend_yield > 0.02:  # > 2%
+                        score += 10
+                    elif dividend_yield > 0.01:  # > 1%
+                        score += 5
+                
+                # 市净率相对行业 (15%)
+                industry_pb = fundamental_data.get('industry_pb', 0)
+                if industry_pb > 0 and pb_ratio > 0:
+                    pb_ratio_to_industry = pb_ratio / industry_pb
+                    if pb_ratio_to_industry < 0.8:
+                        score += 15
+                    elif pb_ratio_to_industry < 1.0:
+                        score += 10
+                    elif pb_ratio_to_industry < 1.2:
+                        score += 5
+                
+                # 自由现金流 (10%)
+                fcf_yield = fundamental_data.get('fcf_yield', 0)
+                if fcf_yield > 0:
+                    if fcf_yield > 0.05:  # > 5%
+                        score += 10
+                    elif fcf_yield > 0.03:  # > 3%
+                        score += 7
+                    elif fcf_yield > 0.02:  # > 2%
+                        score += 5
+                
+                stock_scores[stock_code] = min(score, 100.0)
+                
+            except Exception as e:
+                logger.warning(f"计算股票 {stock_code} 价值评分失败: {e}")
+                continue
+        
+        # 选择评分最高的股票
+        sorted_stocks = sorted(stock_scores.items(), key=lambda x: x[1], reverse=True)
+        
+        # 根据风险等级确定选择数量
+        if criteria.risk_level == RiskLevel.CONSERVATIVE:
+            top_n = min(10, len(sorted_stocks))
+        elif criteria.risk_level == RiskLevel.MODERATE:
+            top_n = min(20, len(sorted_stocks))
+        else:  # AGGRESSIVE
+            top_n = min(30, len(sorted_stocks))
+        
+        selected_stocks = [stock for stock, _ in sorted_stocks[:top_n]]
+        selected_scores = {stock: stock_scores[stock] for stock in selected_stocks}
+        
+        return selected_stocks, selected_scores
     
-    def _growth_strategy(self, stock_data: Dict[str, Dict[str, Any]], criteria: StockSelectionCriteria) -> Tuple[List[str], Dict[str, float]]:
-        """成长策略实现"""
-        return self._quantitative_strategy(stock_data, criteria)
+    def _growth_strategy(
+        self,
+        stock_data: Dict[str, Dict[str, Any]],
+        criteria: StockSelectionCriteria
+    ) -> Tuple[List[str], Dict[str, float]]:
+        """成长策略实现
+        
+        基于成长性指标的选股策略
+        """
+        stock_scores = {}
+        
+        for stock_code, data in stock_data.items():
+            try:
+                fundamental_data = data.get("fundamental_data", {})
+                price_data = data.get("price_data")
+                
+                score = 0.0
+                
+                # 营收增长率 (30%)
+                revenue_growth = fundamental_data.get('revenue_growth', 0)
+                if revenue_growth > 0:
+                    if revenue_growth > 0.30:  # > 30%
+                        score += 30
+                    elif revenue_growth > 0.20:  # > 20%
+                        score += 25
+                    elif revenue_growth > 0.15:  # > 15%
+                        score += 20
+                    elif revenue_growth > 0.10:  # > 10%
+                        score += 15
+                    elif revenue_growth > 0.05:  # > 5%
+                        score += 10
+                
+                # 净利润增长率 (30%)
+                profit_growth = fundamental_data.get('profit_growth', 0)
+                if profit_growth > 0:
+                    if profit_growth > 0.30:  # > 30%
+                        score += 30
+                    elif profit_growth > 0.20:  # > 20%
+                        score += 25
+                    elif profit_growth > 0.15:  # > 15%
+                        score += 20
+                    elif profit_growth > 0.10:  # > 10%
+                        score += 15
+                    elif profit_growth > 0.05:  # > 5%
+                        score += 10
+                
+                # ROE (20%)
+                roe = fundamental_data.get('roe', 0)
+                if roe > 0:
+                    if roe > 0.20:  # > 20%
+                        score += 20
+                    elif roe > 0.15:  # > 15%
+                        score += 15
+                    elif roe > 0.10:  # > 10%
+                        score += 10
+                    elif roe > 0.05:  # > 5%
+                        score += 5
+                
+                # 价格动量 (10%)
+                if price_data is not None and not price_data.empty:
+                    momentum_20d = price_data['close'].pct_change(20)
+                    if not momentum_20d.empty and momentum_20d.iloc[-1] > 0:
+                        score += min(momentum_20d.iloc[-1] * 100, 10)
+                
+                # 行业成长性 (10%)
+                industry_growth = fundamental_data.get('industry_growth', 0)
+                if industry_growth > 0:
+                    if industry_growth > 0.20:  # > 20%
+                        score += 10
+                    elif industry_growth > 0.15:  # > 15%
+                        score += 7
+                    elif industry_growth > 0.10:  # > 10%
+                        score += 5
+                
+                stock_scores[stock_code] = min(score, 100.0)
+                
+            except Exception as e:
+                logger.warning(f"计算股票 {stock_code} 成长评分失败: {e}")
+                continue
+        
+        # 选择评分最高的股票
+        sorted_stocks = sorted(stock_scores.items(), key=lambda x: x[1], reverse=True)
+        
+        # 根据风险等级确定选择数量
+        if criteria.risk_level == RiskLevel.CONSERVATIVE:
+            top_n = min(10, len(sorted_stocks))
+        elif criteria.risk_level == RiskLevel.MODERATE:
+            top_n = min(20, len(sorted_stocks))
+        else:  # AGGRESSIVE
+            top_n = min(30, len(sorted_stocks))
+        
+        selected_stocks = [stock for stock, _ in sorted_stocks[:top_n]]
+        selected_scores = {stock: stock_scores[stock] for stock in selected_stocks}
+        
+        return selected_stocks, selected_scores
     
-    def _quality_strategy(self, stock_data: Dict[str, Dict[str, Any]], criteria: StockSelectionCriteria) -> Tuple[List[str], Dict[str, float]]:
-        """质量策略实现"""
-        return self._quantitative_strategy(stock_data, criteria)
+    def _quality_strategy(
+        self,
+        stock_data: Dict[str, Dict[str, Any]],
+        criteria: StockSelectionCriteria
+    ) -> Tuple[List[str], Dict[str, float]]:
+        """质量策略实现
+        
+        基于财务质量的选股策略
+        """
+        stock_scores = {}
+        
+        for stock_code, data in stock_data.items():
+            try:
+                fundamental_data = data.get("fundamental_data", {})
+                
+                score = 0.0
+                
+                # ROE (25%)
+                roe = fundamental_data.get('roe', 0)
+                if roe > 0:
+                    if roe > 0.20:  # > 20%
+                        score += 25
+                    elif roe > 0.15:  # > 15%
+                        score += 20
+                    elif roe > 0.10:  # > 10%
+                        score += 15
+                    elif roe > 0.05:  # > 5%
+                        score += 10
+                
+                # ROA (20%)
+                roa = fundamental_data.get('roa', 0)
+                if roa > 0:
+                    if roa > 0.10:  # > 10%
+                        score += 20
+                    elif roa > 0.08:  # > 8%
+                        score += 15
+                    elif roa > 0.05:  # > 5%
+                        score += 10
+                    elif roa > 0.03:  # > 3%
+                        score += 5
+                
+                # 资产负债率 (20%)
+                debt_ratio = fundamental_data.get('debt_ratio', 1.0)
+                if debt_ratio < 0.3:  # < 30%
+                    score += 20
+                elif debt_ratio < 0.5:  # < 50%
+                    score += 15
+                elif debt_ratio < 0.7:  # < 70%
+                    score += 10
+                elif debt_ratio < 0.8:  # < 80%
+                    score += 5
+                
+                # 现金流 (15%)
+                operating_cash_flow = fundamental_data.get('operating_cash_flow', 0)
+                if operating_cash_flow > 0:
+                    if operating_cash_flow > 1000000000:  # > 10亿
+                        score += 15
+                    elif operating_cash_flow > 500000000:  # > 5亿
+                        score += 10
+                    elif operating_cash_flow > 100000000:  # > 1亿
+                        score += 5
+                
+                # 利润质量 (10%)
+                net_profit = fundamental_data.get('net_profit', 0)
+                gross_profit = fundamental_data.get('gross_profit', 0)
+                if gross_profit > 0:
+                    profit_margin = net_profit / gross_profit
+                    if profit_margin > 0.30:  # > 30%
+                        score += 10
+                    elif profit_margin > 0.20:  # > 20%
+                        score += 7
+                    elif profit_margin > 0.10:  # > 10%
+                        score += 5
+                
+                # 分红稳定性 (10%)
+                dividend_growth = fundamental_data.get('dividend_growth', 0)
+                if dividend_growth > 0:
+                    if dividend_growth > 0.10:  # > 10%
+                        score += 10
+                    elif dividend_growth > 0.05:  # > 5%
+                        score += 7
+                    elif dividend_growth > 0.02:  # > 2%
+                        score += 5
+                
+                stock_scores[stock_code] = min(score, 100.0)
+                
+            except Exception as e:
+                logger.warning(f"计算股票 {stock_code} 质量评分失败: {e}")
+                continue
+        
+        # 选择评分最高的股票
+        sorted_stocks = sorted(stock_scores.items(), key=lambda x: x[1], reverse=True)
+        
+        # 根据风险等级确定选择数量
+        if criteria.risk_level == RiskLevel.CONSERVATIVE:
+            top_n = min(10, len(sorted_stocks))
+        elif criteria.risk_level == RiskLevel.MODERATE:
+            top_n = min(20, len(sorted_stocks))
+        else:  # AGGRESSIVE
+            top_n = min(30, len(sorted_stocks))
+        
+        selected_stocks = [stock for stock, _ in sorted_stocks[:top_n]]
+        selected_scores = {stock: stock_scores[stock] for stock in selected_stocks}
+        
+        return selected_stocks, selected_scores
     
     def _technical_strategy(self, stock_data: Dict[str, Dict[str, Any]], criteria: StockSelectionCriteria) -> Tuple[List[str], Dict[str, float]]:
         """技术分析策略实现"""

@@ -116,10 +116,10 @@ class BettaFishAgent(BaseService):
             self._initialized = True
             
             # 发布初始化完成事件
-            self.event_bus.publish('bettafish.agent.initialized', {
-                'timestamp': datetime.now(),
-                'agents_ready': ['sentiment', 'news', 'technical', 'risk']
-            })
+            self.event_bus.publish('bettafish.agent.initialized',
+                timestamp=datetime.now(),
+                agents_ready=['sentiment', 'news', 'technical', 'risk']
+            )
             
             logger.info("BettaFish Agent初始化完成")
             
@@ -192,13 +192,13 @@ class BettaFishAgent(BaseService):
             self._cache_analysis(cache_key, comprehensive_result)
             
             # 发布分析完成事件
-            self.event_bus.publish('bettafish.analysis.completed', {
-                'timestamp': datetime.now(),
-                'stock_count': len(stock_codes),
-                'successful_count': len(successful_analyses),
-                'failed_count': len(failed_analyses),
-                'response_time': response_time
-            })
+            self.event_bus.publish('bettafish.analysis.completed',
+                timestamp=datetime.now(),
+                stock_count=len(stock_codes),
+                successful_count=len(successful_analyses),
+                failed_count=len(failed_analyses),
+                response_time=response_time
+            )
             
             logger.info(f"综合分析完成，耗时: {response_time:.2f}秒")
             return comprehensive_result

@@ -13,6 +13,7 @@ from dataclasses import dataclass
 
 from .market_detector import MarketStateDetector, MarketState
 from .performance_evaluator import ModelPerformanceEvaluator, ModelPerformance
+from .enhanced_model_evaluator import EnhancedModelEvaluator, EnhancedModelMetrics, EnhancedModelPerformance
 from .selection_strategy import ModelSelectionStrategy, ModelSelection, SelectionCriteria
 from .fusion_engine import (
     PredictionFusionEngine, ModelPrediction, EnsemblePredictionResult,
@@ -66,6 +67,7 @@ class IntelligentModelSelector:
         # 初始化各个组件
         self.market_detector = MarketStateDetector(self.config.market_detection)
         self.performance_evaluator = ModelPerformanceEvaluator(self.config.performance_evaluation)
+        self.enhanced_evaluator = EnhancedModelEvaluator(self.performance_evaluator)
         self.selection_strategy = ModelSelectionStrategy(self.config.selection_strategy)
         self.fusion_engine = PredictionFusionEngine(self.config.fusion)
         
@@ -1874,3 +1876,223 @@ class IntelligentModelSelector:
         except Exception as e:
             logger.error(f"获取整体评估失败: {e}")
             return {'error': str(e)}
+    
+    def evaluate_model_performance_enhanced(
+        self,
+        model_type: str,
+        y_true: np.ndarray,
+        y_pred: np.ndarray,
+        y_pred_proba: Optional[np.ndarray] = None,
+        task_type: str = 'classification'
+    ) -> EnhancedModelPerformance:
+        """
+        使用增强评估器评估模型性能
+        
+        Args:
+            model_type: 模型类型
+            y_true: 真实标签
+            y_pred: 预测标签
+            y_pred_proba: 预测概率（仅用于分类任务）
+            task_type: 任务类型 ('classification' 或 'regression')
+            
+        Returns:
+            增强模型性能数据
+        """
+        try:
+            logger.info(f"开始增强模型性能评估: {model_type}")
+            
+            enhanced_performance = self.enhanced_evaluator.evaluate_model_performance(
+                model_type=model_type,
+                y_true=y_true,
+                y_pred=y_pred,
+                y_pred_proba=y_pred_proba,
+                task_type=task_type
+            )
+            
+            logger.info(f"增强模型性能评估完成: {model_type}")
+            
+            return enhanced_performance
+            
+        except Exception as e:
+            logger.error(f"增强模型性能评估失败: {e}")
+            return self.enhanced_evaluator._get_default_enhanced_performance(model_type)
+    
+    def visualize_model_performance(
+        self,
+        model_type: str,
+        y_true: np.ndarray,
+        y_pred: np.ndarray,
+        y_pred_proba: Optional[np.ndarray] = None,
+        task_type: str = 'classification',
+        save_dir: Optional[str] = None,
+        feature_names: Optional[List[str]] = None,
+        feature_importance: Optional[np.ndarray] = None
+    ) -> Dict[str, Optional[str]]:
+        """
+        可视化模型性能
+        
+        Args:
+            model_type: 模型类型
+            y_true: 真实标签
+            y_pred: 预测标签
+            y_pred_proba: 预测概率（仅用于分类任务）
+            task_type: 任务类型 ('classification' 或 'regression')
+            save_dir: 保存目录，如果为None则显示图表
+            feature_names: 特征名称列表（用于特征重要性图）
+            feature_importance: 特征重要性分数
+            
+        Returns:
+            生成的图表路径字典 {chart_type: file_path}
+        """
+        try:
+            logger.info(f"开始可视化模型性能: {model_type}")
+            
+            chart_paths = {}
+            
+            if task_type == 'classification':
+                # 混淆矩阵
+                confusion_path = None
+                if save_dir:
+                    confusion_path = f"{save_dir}/{model_type}_confusion_matrix.png"
+                result = self.enhanced_evaluator.plot_confusion_matrix(
+                    y_true=y_true,
+                    y_pred=y_pred,
+                    title=f"{model_type} - Confusion Matrix",
+                    save_path=confusion_path
+                )
+                chart_paths['confusion_matrix'] = result
+                
+                # ROC曲线
+                if y_pred_proba is not None:
+                    roc_path = None
+                    if save_dir:
+                        roc_path = f"{save_dir}/{model_type}_roc_curve.png"
+                    result = self.enhanced_evaluator.plot_roc_curve(
+                        y_true=y_true,
+                        y_pred_proba=y_pred_proba,
+                        title=f"{model_type} - ROC Curve",
+                        save_path=roc_path
+                    )
+                    chart_paths['roc_curve'] = result
+                    
+                    # PR曲线
+                    pr_path = None
+                    if save_dir:
+                        pr_path = f"{save_dir}/{model_type}_pr_curve.png"
+                    result = self.enhanced_evaluator.plot_pr_curve(
+                        y_true=y_true,
+                        y_pred_proba=y_pred_proba,
+                        title=f"{model_type} - Precision-Recall Curve",
+                        save_path=pr_path
+                    )
+                    chart_paths['pr_curve'] = result
+                
+                # 特征重要性
+                if feature_names is not None and feature_importance is not None:
+                    importance_path = None
+                    if save_dir:
+                        importance_path = f"{save_dir}/{model_type}_feature_importance.png"
+                    result = self.enhanced_evaluator.plot_feature_importance(
+                        feature_names=feature_names,
+                        importance_scores=feature_importance,
+                        title=f"{model_type} - Feature Importance",
+                        save_path=importance_path
+                    )
+                    chart_paths['feature_importance'] = result
+                    
+            elif task_type == 'regression':
+                # 预测误差图
+                error_path = None
+                if save_dir:
+                    error_path = f"{save_dir}/{model_type}_prediction_error.png"
+                result = self.enhanced_evaluator.plot_prediction_error(
+                    y_true=y_true,
+                    y_pred=y_pred,
+                    title=f"{model_type} - Prediction Error",
+                    save_path=error_path
+                )
+                chart_paths['prediction_error'] = result
+                
+                # 残差图
+                residuals_path = None
+                if save_dir:
+                    residuals_path = f"{save_dir}/{model_type}_residuals.png"
+                result = self.enhanced_evaluator.plot_residuals(
+                    y_true=y_true,
+                    y_pred=y_pred,
+                    title=f"{model_type} - Residual Plot",
+                    save_path=residuals_path
+                )
+                chart_paths['residuals'] = result
+            
+            logger.info(f"模型性能可视化完成: {model_type}, 生成图表: {len(chart_paths)}")
+            
+            return chart_paths
+            
+        except Exception as e:
+            logger.error(f"可视化模型性能失败: {e}")
+            return {}
+    
+    def evaluate_and_visualize_model(
+        self,
+        model_type: str,
+        y_true: np.ndarray,
+        y_pred: np.ndarray,
+        y_pred_proba: Optional[np.ndarray] = None,
+        task_type: str = 'classification',
+        save_dir: Optional[str] = None,
+        feature_names: Optional[List[str]] = None,
+        feature_importance: Optional[np.ndarray] = None
+    ) -> Dict[str, Any]:
+        """
+        评估并可视化模型性能（便捷方法）
+        
+        Args:
+            model_type: 模型类型
+            y_true: 真实标签
+            y_pred: 预测标签
+            y_pred_proba: 预测概率（仅用于分类任务）
+            task_type: 任务类型 ('classification' 或 'regression')
+            save_dir: 保存目录
+            feature_names: 特征名称列表
+            feature_importance: 特征重要性分数
+            
+        Returns:
+            包含评估结果和可视化路径的字典
+        """
+        try:
+            # 评估模型性能
+            performance = self.evaluate_model_performance_enhanced(
+                model_type=model_type,
+                y_true=y_true,
+                y_pred=y_pred,
+                y_pred_proba=y_pred_proba,
+                task_type=task_type
+            )
+            
+            # 可视化模型性能
+            chart_paths = self.visualize_model_performance(
+                model_type=model_type,
+                y_true=y_true,
+                y_pred=y_pred,
+                y_pred_proba=y_pred_proba,
+                task_type=task_type,
+                save_dir=save_dir,
+                feature_names=feature_names,
+                feature_importance=feature_importance
+            )
+            
+            return {
+                'performance': performance,
+                'chart_paths': chart_paths,
+                'model_type': model_type,
+                'task_type': task_type
+            }
+            
+        except Exception as e:
+            logger.error(f"评估并可视化模型失败: {e}")
+            return {
+                'error': str(e),
+                'model_type': model_type,
+                'task_type': task_type
+            }

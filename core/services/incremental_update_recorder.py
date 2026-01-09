@@ -223,7 +223,7 @@ class IncrementalUpdateRecorder:
         self._save_active_task(task)
 
         # Publish event
-        self.event_bus.emit(UpdateHistoryEvent(
+        self.event_bus.publish(UpdateHistoryEvent(
             task_id=task_id,
             task_name=task_name,
             update_type=update_type.value,
@@ -256,7 +256,7 @@ class IncrementalUpdateRecorder:
         self._save_active_task(task)
 
         # Publish event
-        self.event_bus.emit(UpdateHistoryEvent(
+        self.event_bus.publish(UpdateHistoryEvent(
             task_id=task_id,
             task_name=task.task_name,
             update_type=task.update_type.value,
@@ -312,7 +312,7 @@ class IncrementalUpdateRecorder:
         self._save_active_task(task)
 
         # Publish event
-        self.event_bus.emit(UpdateHistoryEvent(
+        self.event_bus.publish(UpdateHistoryEvent(
             task_id=task_id,
             task_name=task.task_name,
             update_type=task.update_type.value,
@@ -355,7 +355,7 @@ class IncrementalUpdateRecorder:
         del self._active_tasks[task_id]
 
         # Publish event
-        self.event_bus.emit(UpdateHistoryEvent(
+        self.event_bus.publish(UpdateHistoryEvent(
             task_id=task_id,
             task_name=task.task_name,
             update_type=task.update_type.value,
@@ -398,7 +398,7 @@ class IncrementalUpdateRecorder:
         del self._active_tasks[task_id]
 
         # Publish event
-        self.event_bus.emit(UpdateHistoryEvent(
+        self.event_bus.publish(UpdateHistoryEvent(
             task_id=task_id,
             task_name=task.task_name,
             update_type=task.update_type.value,
@@ -430,7 +430,7 @@ class IncrementalUpdateRecorder:
         self._save_active_task(task)
 
         # Publish event
-        self.event_bus.emit(UpdateHistoryEvent(
+        self.event_bus.publish(UpdateHistoryEvent(
             task_id=task_id,
             task_name=task.task_name,
             update_type=task.update_type.value,

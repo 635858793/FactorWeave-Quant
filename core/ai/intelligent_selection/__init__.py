@@ -7,6 +7,7 @@
 from .intelligent_selector import IntelligentModelSelector
 from .market_detector import MarketStateDetector, MarketState
 from .performance_evaluator import ModelPerformanceEvaluator, ModelPerformance
+from .enhanced_model_evaluator import EnhancedModelEvaluator, EnhancedModelMetrics, EnhancedModelPerformance
 from .selection_strategy import ModelSelectionStrategy, ModelSelection, SelectionCriteria
 from .fusion_engine import PredictionFusionEngine, EnsemblePredictionResult
 
@@ -16,6 +17,9 @@ __all__ = [
     'MarketState',
     'ModelPerformanceEvaluator',
     'ModelPerformance',
+    'EnhancedModelEvaluator',
+    'EnhancedModelMetrics',
+    'EnhancedModelPerformance',
     'ModelSelectionStrategy',
     'ModelSelection',
     'SelectionCriteria',

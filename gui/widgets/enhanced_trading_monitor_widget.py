@@ -39,6 +39,7 @@ except ImportError:
 
 import pandas as pd
 import numpy as np
+from decimal import Decimal
 
 # 导入服务和数据结构
 from core.services.trading_service import TradingService, TradeRecord, Portfolio, StrategyState
@@ -141,7 +142,7 @@ class RealTimeChart(QWidget):
         self.ax2.clear()
 
         # 绘制收益曲线
-        self.ax1.plot(self.dates, [r * 100 for r in self.returns], 'b-', linewidth=2)
+        self.ax1.plot(self.dates, [r * 100 for r in self.returns], 'b-', linewidth=1)
         self.ax1.set_title('收益率曲线 (%)')
         self.ax1.grid(True, alpha=0.3)
         self.ax1.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
@@ -543,7 +544,7 @@ class RiskMonitorWidget(QWidget):
         """更新风险指标"""
         # 计算风险指标（简化计算）
         total_assets = portfolio.total_assets
-        initial_assets = 100000.0  # 假设初始资金
+        initial_assets = Decimal('100000')  # 假设初始资金
 
         # 最大回撤（简化）
         current_return = (total_assets - initial_assets) / initial_assets
@@ -559,7 +560,7 @@ class RiskMonitorWidget(QWidget):
         self.volatility_label.setText(f"{volatility:.2f}%")
 
         # VaR（简化）
-        var_95 = total_assets * 0.05  # 假设95% VaR为总资产的5%
+        var_95 = total_assets * Decimal('0.05')  # 假设95% VaR为总资产的5%
         self.var_label.setText(f"{var_95:.2f}")
 
         # 检查风险警告
@@ -735,7 +736,7 @@ class PerformanceAnalysisWidget(QWidget):
     def update_performance_data(self, portfolio: Portfolio, trade_history: List[TradeRecord]):
         """更新性能数据"""
         # 更新收益指标
-        initial_capital = 100000.0  # 假设初始资金
+        initial_capital = Decimal('100000')  # 假设初始资金
         total_return = (portfolio.total_assets - initial_capital) / initial_capital * 100
 
         self.total_return_label.setText(f"{total_return:.2f}%")
@@ -931,6 +932,9 @@ class EnhancedTradingMonitorWidget(QWidget):
             # 获取投资组合信息
             portfolio = self.trading_service.get_portfolio()
 
+            if portfolio is None:
+                return
+
             # 更新总览信息
             self.total_assets_label.setText(f"{portfolio.total_assets:,.2f}")
             self.available_cash_label.setText(f"{portfolio.available_cash:,.2f}")
@@ -965,6 +969,8 @@ class EnhancedTradingMonitorWidget(QWidget):
 
         except Exception as e:
             logger.error(f"更新数据失败: {e}")
+            import traceback
+            logger.error(f"详细错误信息: {traceback.format_exc()}")
 
     def _update_active_strategies(self):
         """更新活跃策略列表"""

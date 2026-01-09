@@ -299,7 +299,8 @@ class EventBus:
                 if asyncio.iscoroutinefunction(handler_wrapper.handler):
                     asyncio.create_task(handler_wrapper.handler(event_obj))
                 else:
-                    handler_wrapper.handler(event_obj)
+                    # 忽略返回值，避免 sipBadCatcherResult 错误
+                    _ = handler_wrapper.handler(event_obj)
 
                 self._stats['events_handled'] += 1
 

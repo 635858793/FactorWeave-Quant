@@ -1,4 +1,3 @@
-from loguru import logger
 """
 基础服务模块
 
@@ -11,6 +10,7 @@ import threading
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional, List
 from datetime import datetime
+from loguru import logger
 from ..events import EventBus, get_event_bus
 
 

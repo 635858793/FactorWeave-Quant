@@ -171,14 +171,7 @@ class BaseStrategy(ABC):
             return
 
         try:
-            event = {
-                'type': event_type,
-                'timestamp': datetime.now().isoformat(),
-                'strategy_name': self.name,
-                'strategy_type': self.strategy_type.value,
-                'data': data
-            }
-            bus.publish(f"strategy.{event_type}", event)
+            bus.publish(f"strategy.{event_type}", **data)
         except Exception:
             pass
 

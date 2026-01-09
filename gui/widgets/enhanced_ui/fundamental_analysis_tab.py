@@ -186,11 +186,7 @@ class FundamentalAnalysisTab(QWidget):
         # 综合分析标签页
         analysis_tab = self._create_analysis_tab()
         main_tabs.addTab(analysis_tab, "综合分析")
-
         layout.addWidget(main_tabs)
-
-        # 应用样式
-        self._apply_styles()
 
     def _create_control_panel(self) -> QWidget:
         """创建控制面板"""
@@ -661,82 +657,6 @@ class FundamentalAnalysisTab(QWidget):
         layout.addStretch()
 
         return widget
-
-    def _apply_styles(self):
-        """应用样式表"""
-        self.setStyleSheet("""
-            QGroupBox {
-                font-weight: bold;
-                border: 2px solid #CCCCCC;
-                border-radius: 5px;
-                margin-top: 1ex;
-                padding-top: 10px;
-            }
-            
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px 0 5px;
-            }
-            
-            QTableWidget {
-                gridline-color: #E0E0E0;
-                background-color: white;
-                alternate-background-color: #F5F5F5;
-            }
-            
-            QTableWidget::item {
-                padding: 5px;
-                border: none;
-            }
-            
-            QTableWidget::item:selected {
-                background-color: #3498DB;
-                color: white;
-            }
-            
-            QFrame {
-                background-color: #FAFAFA;
-                border: 1px solid #E0E0E0;
-                border-radius: 3px;
-            }
-            
-            QPushButton {
-                background-color: #3498DB;
-                color: white;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            
-            QPushButton:hover {
-                background-color: #2980B9;
-            }
-            
-            QPushButton:pressed {
-                background-color: #21618C;
-            }
-            
-            QComboBox, QSpinBox, QDateEdit {
-                padding: 5px;
-                border: 1px solid #BDC3C7;
-                border-radius: 3px;
-                min-width: 100px;
-            }
-            
-            QProgressBar {
-                border: 2px solid #BDC3C7;
-                border-radius: 5px;
-                text-align: center;
-                font-weight: bold;
-            }
-            
-            QProgressBar::chunk {
-                background-color: #27AE60;
-                border-radius: 3px;
-            }
-        """)
 
     def _on_symbol_changed(self, symbol: str):
         """股票代码变更处理"""

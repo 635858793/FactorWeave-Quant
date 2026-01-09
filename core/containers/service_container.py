@@ -1,4 +1,3 @@
-from loguru import logger
 """
 服务容器模块
 
@@ -8,6 +7,7 @@ from loguru import logger
 import threading
 from typing import Any, Callable, Dict, List, Optional, Type, TypeVar, Union
 from .service_registry import ServiceRegistry, ServiceInfo, ServiceScope
+from loguru import logger
 
 # WebGPU相关导入
 from core.webgpu import get_webgpu_manager

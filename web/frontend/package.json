@@ -1,0 +1,30 @@
+{
+  "name": "hikyuu-ui-frontend",
+  "version": "1.0.0",
+  "description": "Hikyuu UI Frontend",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs --fix --ignore-path .gitignore",
+    "format": "prettier --write src/"
+  },
+  "dependencies": {
+    "vue": "^3.3.0",
+    "vue-router": "^4.2.0",
+    "pinia": "^2.1.0",
+    "axios": "^1.4.0",
+    "element-plus": "^2.3.0",
+    "plotly.js": "^2.24.0",
+    "dayjs": "^1.11.0",
+    "lodash-es": "^4.17.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^4.2.0",
+    "vite": "^4.3.0",
+    "eslint": "^8.40.0",
+    "eslint-plugin-vue": "^9.13.0",
+    "prettier": "^2.8.0",
+    "@vue/eslint-config-prettier": "^7.1.0"
+  }
+}

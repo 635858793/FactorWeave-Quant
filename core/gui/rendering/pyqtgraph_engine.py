@@ -342,7 +342,7 @@ class PyQtGraphEngine:
                         'render_time': render_time
                     }
                 )
-                self.event_bus.emit(event)
+                self.event_bus.publish(event)
                 
         except Exception as e:
             logger.error(f"更新图表数据失败 {chart_id}: {e}")

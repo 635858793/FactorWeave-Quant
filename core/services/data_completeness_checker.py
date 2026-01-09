@@ -111,7 +111,7 @@ class DataCompletenessChecker:
             )
 
             # Publish event
-            await self.event_bus.emit(DataIntegrityEvent(
+            await self.event_bus.publish(DataIntegrityEvent(
                 symbol=symbol,
                 completeness=completeness_percentage,
                 missing_count=len(missing_dates),

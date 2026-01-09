@@ -257,6 +257,16 @@ class MainMenuBar(QMenuBar):
             self.trading_monitor_action.setStatusTip("打开交易监控窗口")
             self.strategy_menu.addAction(self.trading_monitor_action)
 
+            # 订单管理
+            self.order_management_action = QAction("订单管理", self)
+            self.order_management_action.setStatusTip("打开订单管理窗口")
+            self.strategy_menu.addAction(self.order_management_action)
+
+            # 账户管理
+            self.account_management_action = QAction("账户管理", self)
+            self.account_management_action.setStatusTip("打开账户管理窗口")
+            self.strategy_menu.addAction(self.account_management_action)
+
             # 注意：信号连接已在connect_signals方法中统一处理，这里不再重复连接
 
         except Exception as e:
@@ -993,6 +1003,8 @@ class MainMenuBar(QMenuBar):
                 # ('strategy_backtest_action', '_on_strategy_backtest'),  # 已整合到智能回测
                 ('strategy_optimize_action', '_on_strategy_optimize'),
                 ('trading_monitor_action', '_on_trading_monitor'),
+                ('order_management_action', '_on_order_management'),
+                ('account_management_action', '_on_account_management'),
 
                 # 数据相关
                 ('import_data_action', '_on_import_data'),

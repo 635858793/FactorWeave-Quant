@@ -288,11 +288,11 @@ class FallbackService:
         
         # 发送降级事件
         if self.event_bus:
-            self.event_bus.publish("service_degradation", {
-                "service_name": service_name,
-                "health_result": health_result,
-                "timestamp": time.time()
-            })
+            self.event_bus.publish("service_degradation",
+                service_name=service_name,
+                health_result=health_result,
+                timestamp=time.time()
+            )
     
     async def _update_circuit_breaker(self, service_name: str):
         """更新熔断器状态"""
@@ -438,10 +438,10 @@ class FallbackService:
             self.logger.info(f"Service {service_name} has been reset")
             
             if self.event_bus:
-                self.event_bus.publish("service_reset", {
-                    "service_name": service_name,
-                    "timestamp": time.time()
-                })
+                self.event_bus.publish("service_reset",
+                    service_name=service_name,
+                    timestamp=time.time()
+                )
     
     def is_bettafish_enabled(self) -> bool:
         """检查BettaFish功能是否启用"""

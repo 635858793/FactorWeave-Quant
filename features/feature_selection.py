@@ -473,3 +473,104 @@ def remove_redundant_features(X, y, threshold=0.7, target_col=None):
     logger.info(f"移除的特征: {list(to_drop)}")
 
     return keep_features
+
+def auto_feature_select(factors: dict, method: str = 'auto', n_features: int = 20, 
+                        variance_threshold: float = 0.95, random_state: int = 42):
+    """
+    自动特征选择函数
+
+    参数:
+        factors: 因子字典，包含特征数据和目标变量
+        method: 特征选择方法，'auto'（自动选择）、'pca'（PCA）、'importance'（特征重要性）、
+                'enhanced'（增强型特征选择）、'correlation'（相关性分析）
+        n_features: 要选择的特征数量（适用于importance方法）
+        variance_threshold: 方差阈值（适用于pca方法）
+        random_state: 随机种子
+
+    返回:
+        list: 选中的特征名称列表
+    """
+    try:
+        # 检查输入数据
+        if not isinstance(factors, dict):
+            raise ValueError("factors必须是字典类型")
+
+        # 提取特征和目标变量
+        X = factors.get('features')
+        y = factors.get('target')
+
+        if X is None:
+            raise ValueError("factors字典中必须包含'features'键")
+        if y is None:
+            raise ValueError("factors字典中必须包含'target'键")
+
+        # 确保X是DataFrame
+        if not isinstance(X, pd.DataFrame):
+            if isinstance(X, np.ndarray):
+                X = pd.DataFrame(X, columns=[f'feature_{i}' for i in range(X.shape[1])])
+            else:
+                raise ValueError("features必须是pandas DataFrame或numpy数组")
+
+        # 确保y是Series或数组
+        if not isinstance(y, (pd.Series, np.ndarray, list)):
+            raise ValueError("target必须是pandas Series、numpy数组或列表")
+
+        # 转换y为numpy数组
+        if isinstance(y, pd.Series):
+            y = y.values
+        elif isinstance(y, list):
+            y = np.array(y)
+
+        # 自动选择方法
+        if method == 'auto':
+            # 根据特征数量自动选择方法
+            if X.shape[1] > 100:
+                method = 'pca'
+                logger.info(f"特征数量较多({X.shape[1]})，自动选择PCA方法")
+            elif X.shape[1] > 50:
+                method = 'enhanced'
+                logger.info(f"特征数量中等({X.shape[1]})，自动选择增强型特征选择")
+            else:
+                method = 'importance'
+                logger.info(f"特征数量较少({X.shape[1]})，自动选择特征重要性方法")
+
+        # 根据方法选择特征
+        if method == 'pca':
+            # 使用PCA进行特征选择
+            logger.info("使用PCA进行特征选择...")
+            selected_features = select_features_pca(X, n_components=n_features)
+            
+        elif method == 'importance':
+            # 使用特征重要性进行特征选择
+            logger.info("使用特征重要性进行特征选择...")
+            selected_features = select_features_importance(
+                X, y, n_features=n_features, 
+                model_type='random_forest', 
+                random_state=random_state
+            )
+            
+        elif method == 'enhanced':
+            # 使用增强型特征选择
+            logger.info("使用增强型特征选择...")
+            selected_indices, feature_importance = enhanced_feature_selection(X, y)
+            selected_features = [X.columns[i] for i in selected_indices]
+            
+        elif method == 'correlation':
+            # 使用相关性分析进行特征选择
+            logger.info("使用相关性分析进行特征选择...")
+            keep_features = remove_redundant_features(X, y, threshold=0.7)
+            selected_features = keep_features[:n_features] if len(keep_features) > n_features else keep_features
+            
+        else:
+            raise ValueError(f"未知的特征选择方法: {method}")
+
+        logger.info(f"特征选择完成，选择了{len(selected_features)}个特征")
+        return selected_features
+
+    except Exception as e:
+        logger.error(f"自动特征选择失败: {e}")
+        # 发生错误时返回所有特征
+        if isinstance(X, pd.DataFrame):
+            return X.columns.tolist()
+        else:
+            return [f'feature_{i}' for i in range(X.shape[1])]

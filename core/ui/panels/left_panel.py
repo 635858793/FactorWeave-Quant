@@ -710,7 +710,7 @@ class LeftPanel(BasePanel):
                     stock_name=name,
                     market=market
                 )
-                self.event_bus.emit(stock_event)
+                self.event_bus.publish(stock_event)
 
                 # 同时发送新的通用事件
                 asset_event = AssetSelectedEvent(
@@ -719,7 +719,7 @@ class LeftPanel(BasePanel):
                     asset_type=self.current_asset_type,
                     market=market
                 )
-                self.event_bus.emit(asset_event)
+                self.event_bus.publish(asset_event)
 
             else:
                 # 非股票类型只发送通用事件
@@ -729,7 +729,7 @@ class LeftPanel(BasePanel):
                     asset_type=self.current_asset_type,
                     market=market
                 )
-                self.event_bus.emit(asset_event)
+                self.event_bus.publish(asset_event)
 
             # 更新状态显示
             self._update_status(f"已选择: {symbol} ({name})")
