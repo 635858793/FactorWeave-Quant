@@ -155,7 +155,7 @@ class IncrementalDataAnalyzer:
         )
 
         # Publish analysis event
-        await self.event_bus.emit(DataAnalysisEvent(
+        await self.event_bus.publish(DataAnalysisEvent(
             symbol="batch",
             analysis_type="incremental_requirements",
             total_symbols=len(symbols),

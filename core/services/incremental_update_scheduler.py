@@ -76,13 +76,22 @@ class IncrementalUpdateScheduler(QObject):
         self.running = False
         self.executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="IncrementalScheduler")
 
-        # 定时器检查（每分钟检查一次）
-        self.check_timer = QTimer()
-        self.check_timer.timeout.connect(self._check_scheduled_tasks)
-        self.check_timer.start(60000)  # 1分钟检查一次
+        # 定时器检查（每分钟检查一次）- 延迟初始化
+        self.check_timer = None
 
         # 初始化调度器
         self._init_scheduler()
+
+    def _ensure_check_timer(self):
+        """确保检查定时器已初始化"""
+        if self.check_timer is None:
+            from PyQt5.QtWidgets import QApplication
+            if QApplication.instance() is None:
+                logger.warning("QApplication未初始化，无法创建检查定时器")
+                return
+            self.check_timer = QTimer()
+            self.check_timer.timeout.connect(self._check_scheduled_tasks)
+            self.check_timer.start(60000)  # 1分钟检查一次
 
     def _init_scheduler(self):
         """初始化调度器"""
@@ -416,6 +425,7 @@ class IncrementalUpdateScheduler(QObject):
         try:
             if not self.running:
                 self.running = True
+                self._ensure_check_timer()
                 self.schedule_thread = threading.Thread(target=self._run_scheduler_loop, daemon=True)
                 self.schedule_thread.start()
                 logger.info("增量更新调度器已启动")

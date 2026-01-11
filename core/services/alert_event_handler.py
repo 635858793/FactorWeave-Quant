@@ -15,6 +15,9 @@ from core.services.alert_deduplication_service import (
     get_alert_deduplication_service, AlertMessage, AlertLevel
 )
 
+from core.services.external_alert_channels_service import (
+    get_alert_manager, AlertMessage as ExternalAlertMessage
+)
 
 
 class AlertEventHandler:
@@ -23,6 +26,7 @@ class AlertEventHandler:
     def __init__(self):
         self.alert_service = get_alert_deduplication_service()
         self.alert_history_file = None
+        self.external_alert_manager = get_alert_manager()
         self._init_history_file()
 
     def _init_history_file(self):
@@ -33,6 +37,44 @@ class AlertEventHandler:
             self.alert_history_file = os.path.join(config_dir, 'alert_history.json')
         except Exception as e:
             logger.error(f"初始化告警历史文件失败: {e}")
+
+    async def _send_external_alert(self, alert: AlertMessage):
+        """
+        发送外部告警
+
+        Args:
+            alert: 告警消息
+        """
+        try:
+            # 转换为外部告警消息格式
+            external_alert = ExternalAlertMessage(
+                alert_id=alert.id,
+                component=alert.category,
+                metric_name=alert.metric_name or "unknown",
+                current_value=alert.current_value or 0.0,
+                threshold_value=alert.threshold_value or 0.0,
+                severity=alert.level.value,
+                message=alert.message,
+                timestamp=alert.timestamp,
+                metadata={
+                    "recommendation": alert.recommendation,
+                    "category": alert.category
+                }
+            )
+
+            # 发送到所有外部告警渠道
+            results = await self.external_alert_manager.send_alert(external_alert)
+
+            # 记录发送结果
+            success_count = sum(1 for success in results.values() if success)
+            total_count = len(results)
+            logger.info(f"外部告警发送完成: {success_count}/{total_count} 渠道成功")
+
+            return results
+
+        except Exception as e:
+            logger.error(f"发送外部告警失败: {e}")
+            return {}
 
     def handle_resource_alert(self, event_data):
         """处理资源告警事件"""
@@ -90,6 +132,17 @@ class AlertEventHandler:
                             # 保存到文件
                             self._save_alert_to_file(alert)
                             logger.info(f"处理资源告警: {alert_msg}")
+
+                            # 发送外部告警
+                            try:
+                                import asyncio
+                                loop = asyncio.get_event_loop()
+                                if loop.is_running():
+                                    asyncio.create_task(self._send_external_alert(alert))
+                                else:
+                                    loop.run_until_complete(self._send_external_alert(alert))
+                            except Exception as e:
+                                logger.warning(f"发送外部告警失败: {e}")
 
         except Exception as e:
             logger.error(f"处理资源告警事件失败: {e}")
@@ -153,6 +206,17 @@ class AlertEventHandler:
                             # 保存到文件
                             self._save_alert_to_file(alert)
                             logger.info(f"处理应用告警: {alert_msg}")
+
+                            # 发送外部告警
+                            try:
+                                import asyncio
+                                loop = asyncio.get_event_loop()
+                                if loop.is_running():
+                                    asyncio.create_task(self._send_external_alert(alert))
+                                else:
+                                    loop.run_until_complete(self._send_external_alert(alert))
+                            except Exception as e:
+                                logger.warning(f"发送外部告警失败: {e}")
 
         except Exception as e:
             logger.error(f"处理应用告警事件失败: {e}")

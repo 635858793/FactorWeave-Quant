@@ -36,7 +36,7 @@ from ..asset_database_manager import AssetSeparatedDatabaseManager
 from ..database.factorweave_analytics_db import FactorWeaveAnalyticsDB
 from ..events import EventBus, get_event_bus
 from ..containers import ServiceContainer, get_service_container
-from ..plugin_types import AssetType
+# from ..plugin_types import AssetType  # 延迟导入，避免循环依赖
 from .metrics_base import add_dict_interface
 
 
@@ -146,23 +146,32 @@ class DatabaseConnection:
         self.query_count = 0
         self.is_active = True
 
-    def execute(self, sql: str, parameters: Optional[Dict[str, Any]] = None) -> Any:
+    def execute(self, sql: str, parameters: Optional[Union[Dict[str, Any], List[Any], Tuple[Any, ...]]] = None) -> Any:
         """执行SQL"""
         self.last_used = datetime.now()
         self.query_count += 1
 
         try:
+            sql_upper = sql.strip().upper()
+            is_select = sql_upper.startswith('SELECT') or sql_upper.startswith('PRAGMA') or sql_upper.startswith('EXPLAIN')
+            
             if self.db_type == DatabaseType.DUCKDB:
-                if parameters:
-                    return self.connection.execute(sql, parameters).fetchall()
+                if parameters is not None:
+                    # DuckDB 支持位置参数（列表/元组）和命名参数（字典）
+                    # 如果是列表，转换为元组以确保兼容性
+                    if isinstance(parameters, list):
+                        parameters = tuple(parameters)
+                    result = self.connection.execute(sql, parameters)
                 else:
-                    return self.connection.execute(sql).fetchall()
+                    result = self.connection.execute(sql)
+                return result.fetchall() if is_select else None
             elif self.db_type == DatabaseType.SQLITE:
                 cursor = self.connection.cursor()
                 if parameters:
-                    return cursor.execute(sql, parameters).fetchall()
+                    result = cursor.execute(sql, parameters)
                 else:
-                    return cursor.execute(sql).fetchall()
+                    result = cursor.execute(sql)
+                return result.fetchall() if is_select else None
         except Exception as e:
             logger.error(f"Query execution failed: {e}")
             raise
@@ -345,8 +354,31 @@ class DatabaseService(BaseService):
                 db_path="data/strategy.sqlite",
                 pool_size=10,      # 从5增加到10
                 max_pool_size=30   # 从15增加到30
+            ),
+            "tradeaccount_sqlite": DatabaseConfig(
+                db_type=DatabaseType.SQLITE,
+                db_path="data/tradeaccount.sqlite",
+                pool_size=10,
+                max_pool_size=30
             )
         }
+
+        # 订单数据库配置（多资产支持）
+        self._order_db_configs = {}
+        # 延迟导入AssetType，避免循环依赖
+        try:
+            from core.plugin_types import AssetType
+            for asset_type in AssetType:
+                pool_name = f"{asset_type.value.lower()}_orders"
+                db_path = f"data/databases/{asset_type.value.lower()}/{pool_name}.duckdb"
+                self._order_db_configs[pool_name] = DatabaseConfig(
+                    db_type=DatabaseType.DUCKDB,
+                    db_path=db_path,
+                    pool_size=5,
+                    max_pool_size=15
+                )
+        except Exception as e:
+            logger.warning(f"初始化订单数据库配置失败: {e}")
 
         # 监控和统计
         self._start_time = datetime.now()
@@ -381,13 +413,16 @@ class DatabaseService(BaseService):
             # 7. 初始化策略配置相关数据表
             self._initialize_strategy_tables()
 
-            # 8. 初始化性能优化器
+            # 8. 初始化交易账户相关数据表
+            self._initialize_trade_account_tables()
+
+            # 9. 初始化性能优化器
             self._initialize_performance_optimizers()
 
-            # 9. 启动后台任务
+            # 10. 启动后台任务
             self._start_background_tasks()
 
-            # 10. 验证数据库连接
+            # 11. 验证数据库连接
             self._validate_database_connections()
 
             logger.info("✅ DatabaseService initialized successfully with full database management capabilities")
@@ -459,8 +494,43 @@ class DatabaseService(BaseService):
 
             logger.info(f"✓ Created {len(self._default_db_configs)} default connection pools")
 
+            # 创建订单数据库连接池
+            for pool_name, config in self._order_db_configs.items():
+                try:
+                    self.create_connection_pool(pool_name, config)
+                except Exception as e:
+                    logger.warning(f"Failed to create order database pool {pool_name}: {e}")
+
+            logger.info(f"✓ Created {len(self._order_db_configs)} order database connection pools")
+
+            # 初始化订单数据库表和索引
+            self._initialize_order_databases()
+
         except Exception as e:
             logger.error(f"Failed to create default pools: {e}")
+            raise
+
+    def _initialize_order_databases(self) -> None:
+        """初始化订单数据库表和索引"""
+        try:
+            logger.info("Initializing order database tables and indexes...")
+
+            for pool_name in self._order_db_configs.keys():
+                try:
+                    # 创建订单表
+                    self._create_orders_table(pool_name)
+                    
+                    # 创建订单成交记录表
+                    self._create_order_fills_table(pool_name)
+                    
+                    logger.debug(f"✓ Initialized order database: {pool_name}")
+                except Exception as e:
+                    logger.error(f"Failed to initialize order database {pool_name}: {e}")
+
+            logger.info(f"✓ Order database tables and indexes initialized for {len(self._order_db_configs)} databases")
+
+        except Exception as e:
+            logger.error(f"Failed to initialize order databases: {e}")
             raise
 
     def _initialize_performance_optimizers(self) -> None:
@@ -610,7 +680,8 @@ class DatabaseService(BaseService):
                 connection = sqlite3.connect(
                     str(db_path),
                     timeout=config.timeout,
-                    check_same_thread=False
+                    check_same_thread=False,
+                    autocommit=True
                 )
 
                 # 应用配置
@@ -803,6 +874,57 @@ class DatabaseService(BaseService):
 
             logger.error(f"Query execution failed: {e}")
             raise
+
+    def fetch_all(self, sql: str, parameters: Optional[Dict[str, Any]] = None,
+                  pool_name: str = "analytics_duckdb") -> List[Dict[str, Any]]:
+        """
+        执行查询并返回所有结果
+
+        Args:
+            sql: SQL查询语句
+            parameters: 查询参数
+            pool_name: 连接池名称（默认："analytics_duckdb"）
+
+        Returns:
+            查询结果列表
+        """
+        result = self.execute_query(sql, parameters, pool_name)
+        
+        # 如果结果已经是列表，直接返回
+        if isinstance(result, list):
+            return result
+        
+        # 如果结果是DuckDB的ArrowTable或类似对象，转换为列表
+        try:
+            if hasattr(result, 'to_pydict'):
+                # DuckDB ArrowTable
+                data = result.to_pydict()
+                return [dict(zip(data.keys(), row)) for row in zip(*data.values())]
+            elif hasattr(result, 'fetchall'):
+                # 游标对象
+                return result.fetchall()
+            else:
+                # 其他情况，尝试转换为列表
+                return list(result)
+        except Exception as e:
+            logger.error(f"Failed to convert query result: {e}")
+            return []
+
+    def fetch_one(self, sql: str, parameters: Optional[Dict[str, Any]] = None,
+                  pool_name: str = "analytics_duckdb") -> Optional[Dict[str, Any]]:
+        """
+        执行查询并返回单个结果
+
+        Args:
+            sql: SQL查询语句
+            parameters: 查询参数
+            pool_name: 连接池名称（默认："analytics_duckdb"）
+
+        Returns:
+            查询结果字典，如果没有结果则返回None
+        """
+        results = self.fetch_all(sql, parameters, pool_name)
+        return results[0] if results else None
 
     @contextmanager
     def begin_transaction(self, pool_name: str = "analytics_duckdb",
@@ -1180,11 +1302,94 @@ class DatabaseService(BaseService):
             # 创建策略表
             self._create_strategies_table()
 
+            # 注意：订单表现在由多资产支持系统管理，不再在此处创建
+            # 订单表会根据资产类型路由到对应的数据库中
+            # 请使用 scripts/init_order_databases_auto.py 初始化订单数据库
+
             logger.info("✓ Strategy configuration database tables initialized")
 
         except Exception as e:
             logger.error(f"Failed to initialize strategy configuration tables: {e}")
             raise
+
+    def _initialize_trade_account_tables(self) -> None:
+        """初始化交易账户相关数据表"""
+        try:
+            logger.info("Initializing trade account database tables...")
+
+            # 创建账户表
+            self._create_accounts_table()
+
+            logger.info("✓ Trade account database tables initialized")
+
+        except Exception as e:
+            logger.error(f"Failed to initialize trade account tables: {e}")
+            raise
+
+    def _create_accounts_table(self) -> None:
+        """创建账户表"""
+        sql = """
+        CREATE TABLE IF NOT EXISTS accounts (
+            account_id VARCHAR(36) PRIMARY KEY,
+            account_name VARCHAR(100) NOT NULL,
+            account_type VARCHAR(50) NOT NULL,
+            status VARCHAR(50) DEFAULT 'active',
+            balance DECIMAL(20, 8) DEFAULT 0.0,
+            available_balance DECIMAL(20, 8) DEFAULT 0.0,
+            frozen_balance DECIMAL(20, 8) DEFAULT 0.0,
+            market_value DECIMAL(20, 8) DEFAULT 0.0,
+            total_assets DECIMAL(20, 8) DEFAULT 0.0,
+            profit_loss DECIMAL(20, 8) DEFAULT 0.0,
+            profit_loss_ratio DECIMAL(10, 4) DEFAULT 0.0,
+            create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            user_id VARCHAR(100),
+            trading_day DATE,
+            risk_level VARCHAR(50) DEFAULT 'normal',
+            margin_ratio DECIMAL(10, 4) DEFAULT 0.0,
+            maintenance_margin DECIMAL(20, 8) DEFAULT 0.0,
+            metadata TEXT DEFAULT '{}',
+            
+            -- 机构信息
+            institution_name VARCHAR(128) DEFAULT '',
+            institution_type VARCHAR(32) DEFAULT 'broker',
+            
+            -- 交易接口类型
+            trading_interface_type VARCHAR(32) DEFAULT 'mock',
+            
+            ctp_broker_id VARCHAR(50),
+            ctp_investor_id VARCHAR(50),
+            ctp_password TEXT,
+            ctp_trade_front VARCHAR(200),
+            ctp_quote_front VARCHAR(200),
+            ctp_app_id VARCHAR(50),
+            ctp_auth_code TEXT,
+            ctp_product_info VARCHAR(50),
+            xtp_account_id VARCHAR(50),
+            xtp_password TEXT,
+            xtp_server_address VARCHAR(200),
+            
+            -- 交易接口（已废弃，使用 trading_interface_type 替代）
+            trading_interface VARCHAR(32) DEFAULT ''
+        )
+        """
+
+        with self.get_connection("tradeaccount_sqlite") as conn:
+            conn.execute(sql)
+
+        # 创建索引
+        index_sqls = [
+            "CREATE INDEX IF NOT EXISTS idx_accounts_user_id ON accounts(user_id)",
+            "CREATE INDEX IF NOT EXISTS idx_accounts_account_type ON accounts(account_type)",
+            "CREATE INDEX IF NOT EXISTS idx_accounts_status ON accounts(status)",
+            "CREATE INDEX IF NOT EXISTS idx_accounts_trading_day ON accounts(trading_day)"
+        ]
+
+        for index_sql in index_sqls:
+            with self.get_connection("tradeaccount_sqlite") as conn:
+                conn.execute(index_sql)
+
+        logger.info("✓ Accounts table created")
             
     def _create_strategy_config_table(self) -> None:
         """创建策略配置表"""
@@ -1805,3 +2010,84 @@ class DatabaseService(BaseService):
             连接池列表，如果连接池不存在则返回 None
         """
         return self._connection_pools.get(pool_name)
+
+    def _create_orders_table(self, pool_name: str) -> None:
+        """创建订单表"""
+        sql = """
+        CREATE TABLE IF NOT EXISTS orders (
+            order_id TEXT PRIMARY KEY,
+            strategy_id TEXT NOT NULL,
+            asset_type TEXT NOT NULL,
+            stock_code TEXT NOT NULL,
+            order_type TEXT NOT NULL,
+            order_category TEXT NOT NULL,
+            order_price REAL NOT NULL,
+            order_quantity INTEGER NOT NULL,
+            order_status TEXT NOT NULL,
+            create_time TEXT NOT NULL,
+            update_time TEXT NOT NULL,
+            execute_time TEXT,
+            filled_quantity INTEGER DEFAULT 0,
+            filled_price REAL DEFAULT 0.0,
+            commission REAL DEFAULT 0.0,
+            error_message TEXT,
+            stop_price REAL,
+            user_id TEXT DEFAULT 'system',
+            account_id TEXT DEFAULT 'default',
+            tags TEXT DEFAULT '[]',
+            metadata TEXT DEFAULT '{}',
+            contract_multiplier INTEGER DEFAULT 1,
+            margin_ratio REAL DEFAULT 0.0,
+            strike_price REAL,
+            expiry_date TEXT,
+            option_type TEXT
+        )
+        """
+
+        with self.get_connection(pool_name) as conn:
+            conn.execute(sql)
+
+        indices = [
+            "CREATE INDEX IF NOT EXISTS idx_orders_strategy_id ON orders(strategy_id)",
+            "CREATE INDEX IF NOT EXISTS idx_orders_asset_type ON orders(asset_type)",
+            "CREATE INDEX IF NOT EXISTS idx_orders_stock_code ON orders(stock_code)",
+            "CREATE INDEX IF NOT EXISTS idx_orders_order_type ON orders(order_type)",
+            "CREATE INDEX IF NOT EXISTS idx_orders_order_category ON orders(order_category)",
+            "CREATE INDEX IF NOT EXISTS idx_orders_order_status ON orders(order_status)",
+            "CREATE INDEX IF NOT EXISTS idx_orders_create_time ON orders(create_time)",
+            "CREATE INDEX IF NOT EXISTS idx_orders_update_time ON orders(update_time)",
+            "CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id)",
+            "CREATE INDEX IF NOT EXISTS idx_orders_account_id ON orders(account_id)"
+        ]
+
+        with self.get_connection(pool_name) as conn:
+            for index_sql in indices:
+                conn.execute(index_sql)
+
+    def _create_order_fills_table(self, pool_name: str) -> None:
+        """创建订单成交记录表"""
+        sql = """
+        CREATE TABLE IF NOT EXISTS order_fills (
+            fill_id TEXT PRIMARY KEY,
+            order_id TEXT NOT NULL,
+            stock_code TEXT NOT NULL,
+            fill_price REAL NOT NULL,
+            fill_quantity INTEGER NOT NULL,
+            fill_time TEXT NOT NULL,
+            commission REAL DEFAULT 0.0,
+            FOREIGN KEY (order_id) REFERENCES orders(order_id)
+        )
+        """
+
+        with self.get_connection(pool_name) as conn:
+            conn.execute(sql)
+
+        indices = [
+            "CREATE INDEX IF NOT EXISTS idx_order_fills_order_id ON order_fills(order_id)",
+            "CREATE INDEX IF NOT EXISTS idx_order_fills_stock_code ON order_fills(stock_code)",
+            "CREATE INDEX IF NOT EXISTS idx_order_fills_fill_time ON order_fills(fill_time)"
+        ]
+
+        with self.get_connection(pool_name) as conn:
+            for index_sql in indices:
+                conn.execute(index_sql)

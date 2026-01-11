@@ -468,7 +468,7 @@ class ChartManager:
         try:
             if self.event_bus:
                 event = Event(type=event_type, data=data)
-                self.event_bus.emit(event)
+                self.event_bus.publish(event)
                 
         except Exception as e:
             logger.error(f"发送图表事件失败: {e}")

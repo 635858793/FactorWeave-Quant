@@ -851,13 +851,13 @@ class SecurityService(BaseService):
 
                     # 发送威胁告警
                     if hasattr(self, '_event_bus'):
-                        self._event_bus.publish("security.threat_detected", {
-                            "event_id": event.event_id,
-                            "threat_level": threat_level.name,
-                            "description": description,
-                            "user_id": user_id,
-                            "ip_address": ip_address
-                        })
+                        self._event_bus.publish("security.threat_detected",
+                            event_id=event.event_id,
+                            threat_level=threat_level.name,
+                            description=description,
+                            user_id=user_id,
+                            ip_address=ip_address
+                        )
 
         except Exception as e:
             logger.error(f"Error recording security event: {e}")

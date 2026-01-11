@@ -88,7 +88,7 @@ class CustomIndicatorPlugin(IIndicatorPlugin):
 **示例**: `plugins/examples/moving_average_strategy.py`
 
 ```python
-from plugins.plugin_interface import IStrategyPlugin, PluginType, plugin_metadata, register_plugin
+from plugins.plugin_interface import IDataSourceStrategyPlugin, PluginType, plugin_metadata, register_plugin
 
 @plugin_metadata(
     name="自定义策略",
@@ -96,7 +96,7 @@ from plugins.plugin_interface import IStrategyPlugin, PluginType, plugin_metadat
     # ... 其他元数据
 )
 @register_plugin(PluginType.STRATEGY)
-class CustomStrategyPlugin(IStrategyPlugin):
+class CustomStrategyPlugin(IDataSourceStrategyPlugin):
     def get_strategy_name(self) -> str:
         return "Custom Strategy"
     

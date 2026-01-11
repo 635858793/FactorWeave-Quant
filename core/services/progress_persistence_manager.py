@@ -356,15 +356,31 @@ class ProgressPersistenceManager(QObject):
         self.db = ProgressDatabase(db_path)
         self.active_progress: Dict[str, TaskProgress] = {}
 
-        # 自动保存定时器
-        self.auto_save_timer = QTimer()
-        self.auto_save_timer.timeout.connect(self._auto_save_all)
-        self.auto_save_timer.start(30000)  # 每30秒自动保存
+        # 自动保存定时器 - 延迟初始化
+        self.auto_save_timer = None
 
-        # 清理定时器
-        self.cleanup_timer = QTimer()
-        self.cleanup_timer.timeout.connect(self._cleanup_old_progress)
-        self.cleanup_timer.start(24 * 60 * 60 * 1000)  # 每24小时清理一次
+        # 清理定时器 - 延迟初始化
+        self.cleanup_timer = None
+
+    def _ensure_timers(self):
+        """确保定时器已初始化"""
+        if self.auto_save_timer is None:
+            from PyQt5.QtWidgets import QApplication
+            if QApplication.instance() is None:
+                logger.warning("QApplication未初始化，无法创建自动保存定时器")
+                return
+            self.auto_save_timer = QTimer()
+            self.auto_save_timer.timeout.connect(self._auto_save_all)
+            self.auto_save_timer.start(30000)  # 每30秒自动保存
+
+        if self.cleanup_timer is None:
+            from PyQt5.QtWidgets import QApplication
+            if QApplication.instance() is None:
+                logger.warning("QApplication未初始化，无法创建清理定时器")
+                return
+            self.cleanup_timer = QTimer()
+            self.cleanup_timer.timeout.connect(self._cleanup_old_progress)
+            self.cleanup_timer.start(24 * 60 * 60 * 1000)  # 每24小时清理一次
 
     def create_task_progress(self, task_id: str, task_name: str, task_type: str,
                              total_items: int = 0) -> TaskProgress:
@@ -523,6 +539,9 @@ class ProgressPersistenceManager(QObject):
     def save_progress(self, task_id: str) -> bool:
         """保存任务进度"""
         try:
+            # 确保定时器已初始化
+            self._ensure_timers()
+
             if task_id not in self.active_progress:
                 return False
 

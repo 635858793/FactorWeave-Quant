@@ -101,9 +101,8 @@ class ServiceHealthMonitor(QObject):
         self._monitor_thread: Optional[threading.Thread] = None
         self._monitor_lock = threading.RLock()
 
-        # Qt定时器用于UI更新
-        self._ui_timer = QTimer()
-        self._ui_timer.timeout.connect(self._update_ui)
+        # Qt定时器用于UI更新 - 延迟初始化
+        self._ui_timer = None
 
         # Web仪表板
         self._dashboard_port = 8889
@@ -113,6 +112,16 @@ class ServiceHealthMonitor(QObject):
         self._setup_default_alert_rules()
 
         logger.info(f"Service health monitor initialized with {check_interval}s check interval")
+
+    def _ensure_ui_timer(self):
+        """确保UI定时器已初始化"""
+        if self._ui_timer is None:
+            from PyQt5.QtWidgets import QApplication
+            if QApplication.instance() is None:
+                logger.warning("QApplication未初始化，无法创建UI定时器")
+                return
+            self._ui_timer = QTimer()
+            self._ui_timer.timeout.connect(self._update_ui)
 
     def start_monitoring(self) -> None:
         """开始健康监控"""
@@ -132,7 +141,9 @@ class ServiceHealthMonitor(QObject):
             self._monitor_thread.start()
 
             # 启动UI更新定时器
-            self._ui_timer.start(5000)  # 每5秒更新一次UI
+            self._ensure_ui_timer()
+            if self._ui_timer is not None:
+                self._ui_timer.start(5000)  # 每5秒更新一次UI
 
             # 启动Web仪表板
             self._start_web_dashboard()
@@ -705,6 +716,11 @@ def get_health_monitor() -> ServiceHealthMonitor:
     if _health_monitor is None:
         with _monitor_lock:
             if _health_monitor is None:
+                # 检查QApplication是否存在
+                from PyQt5.QtWidgets import QApplication
+                if QApplication.instance() is None:
+                    logger.warning("QApplication未初始化，无法创建ServiceHealthMonitor")
+                    return None
                 _health_monitor = ServiceHealthMonitor()
     return _health_monitor
 

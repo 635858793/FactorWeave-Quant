@@ -413,11 +413,8 @@ class SmartRecommendationPanel(QWidget):
         # BettaFish仪表板标签页
         bettafish_tab = self._create_bettafish_dashboard_tab()
         main_tabs.addTab(bettafish_tab, "🐠 BettaFish仪表板")
-
         layout.addWidget(main_tabs)
 
-        # 应用样式
-        self._apply_styles()
 
     def _create_control_panel(self) -> QWidget:
         """创建控制面板"""
@@ -1291,87 +1288,6 @@ class SmartRecommendationPanel(QWidget):
             logger.error(f"初始化BettaFish系统失败: {e}")
             QMessageBox.critical(self, "错误", f"初始化失败: {str(e)}")
 
-    def _apply_styles(self):
-        """应用样式表"""
-        self.setStyleSheet("""
-            QGroupBox {
-                font-weight: bold;
-                border: 2px solid #CCCCCC;
-                border-radius: 5px;
-                margin-top: 1ex;
-                padding-top: 10px;
-            }
-            
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px 0 5px;
-            }
-            
-            QTableWidget {
-                gridline-color: #E0E0E0;
-                background-color: white;
-                alternate-background-color: #F5F5F5;
-            }
-            
-            QTableWidget::item {
-                padding: 5px;
-                border: none;
-            }
-            
-            QTableWidget::item:selected {
-                background-color: #3498DB;
-                color: white;
-            }
-            
-            QFrame {
-                background-color: #FAFAFA;
-                border: 1px solid #E0E0E0;
-                border-radius: 3px;
-            }
-            
-            QPushButton {
-                background-color: #3498DB;
-                color: white;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            
-            QPushButton:hover {
-                background-color: #2980B9;
-            }
-            
-            QPushButton:pressed {
-                background-color: #21618C;
-            }
-            
-            QSlider::groove:horizontal {
-                border: 1px solid #BDC3C7;
-                height: 8px;
-                background: #ECF0F1;
-                border-radius: 4px;
-            }
-            
-            QSlider::handle:horizontal {
-                background: #3498DB;
-                border: 1px solid #2980B9;
-                width: 18px;
-                margin: -2px 0;
-                border-radius: 9px;
-            }
-            
-            QSlider::sub-page:horizontal {
-                background: #3498DB;
-                border-radius: 4px;
-            }
-            
-            QScrollArea {
-                border: none;
-                background-color: transparent;
-            }
-        """)
 
     def _load_hybrid_recommendations(self):
         """加载混合推荐"""

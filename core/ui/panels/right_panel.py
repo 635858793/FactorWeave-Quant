@@ -214,6 +214,16 @@ class RightPanel(BasePanel):
             if next_button:
                 next_button.clicked.connect(self._on_next_page)
             
+            # AI选股按钮点击事件
+            ai_run_btn = self.get_widget('ai_run_btn')
+            if ai_run_btn:
+                ai_run_btn.clicked.connect(self._on_ai_select_stocks)
+            
+            # AI选股导出按钮点击事件
+            export_ai_btn = self.get_widget('export_ai_btn')
+            if export_ai_btn:
+                export_ai_btn.clicked.connect(self._on_export_ai_results)
+            
             logger.info("UI事件连接初始化完成")
         except Exception as e:
             logger.error(f"初始化UI事件连接失败: {e}")
@@ -2064,4 +2074,346 @@ class RightPanel(BasePanel):
             logger.error(f"处理指标计算完成信号失败: {e}")
             import traceback
             logger.error(traceback.format_exc())
+    
+    def _on_ai_select_stocks(self) -> None:
+        """处理AI选股按钮点击事件"""
+        try:
+            logger.info("AI选股按钮被点击")
+            
+            # 获取用户输入
+            condition_text = self.get_widget('ai_condition_text')
+            if not condition_text:
+                logger.warning("AI选股条件输入框未找到")
+                QMessageBox.warning(self, "警告", "AI选股条件输入框未找到")
+                return
+            
+            user_input = condition_text.toPlainText().strip()
+            if not user_input:
+                QMessageBox.warning(self, "警告", "请输入选股需求")
+                return
+            
+            type_combo = self.get_widget('ai_type_combo')
+            if not type_combo:
+                logger.warning("AI选股类型选择框未找到")
+                QMessageBox.warning(self, "警告", "AI选股类型选择框未找到")
+                return
+            
+            strategy_type = type_combo.currentText()
+            
+            risk_combo = self.get_widget('ai_risk_combo')
+            if not risk_combo:
+                logger.warning("AI选股风险偏好选择框未找到")
+                QMessageBox.warning(self, "警告", "AI选股风险偏好选择框未找到")
+                return
+            
+            risk_level = risk_combo.currentText()
+            
+            # 获取服务容器
+            from core.containers import get_service_container
+            container = get_service_container()
+            if not container:
+                logger.warning("服务容器不可用")
+                QMessageBox.warning(self, "警告", "服务容器不可用")
+                return
+            
+            # 获取AI选股集成服务
+            try:
+                from core.services.ai_selection_integration_service import (
+                    AISelectionIntegrationService,
+                    StockSelectionCriteria,
+                    SelectionStrategy,
+                    RiskLevel
+                )
+            except ImportError as e:
+                logger.error(f"无法导入AI选股集成服务: {e}")
+                QMessageBox.critical(self, "错误", f"AI选股服务不可用: {str(e)}")
+                return
+            
+            if not container.is_registered(AISelectionIntegrationService):
+                logger.warning("AI选股集成服务未注册")
+                QMessageBox.warning(self, "警告", "AI选股服务未注册")
+                return
+            
+            ai_selection_service = container.resolve(AISelectionIntegrationService)
+            
+            # 显示进度提示
+            result_table = self.get_widget('ai_result_table')
+            if result_table:
+                result_table.setRowCount(0)
+            
+            # 执行选股
+            logger.info(f"开始AI选股: strategy={strategy_type}, risk={risk_level}, input={user_input}")
+            
+            # 使用异步方式执行选股
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            try:
+                # 判断是否使用自然语言解析
+                use_nlp = self._should_use_nlp(user_input)
+                
+                if use_nlp:
+                    # 使用自然语言解析
+                    logger.info("使用自然语言解析模式")
+                    
+                    # 映射策略类型
+                    strategy_map = {
+                        "价值投资": SelectionStrategy.VALUE_BASED,
+                        "成长投资": SelectionStrategy.GROWTH_BASED,
+                        "趋势跟踪": SelectionStrategy.MOMENTUM_BASED,
+                        "均值回归": SelectionStrategy.QUALITY_BASED,
+                        "动量策略": SelectionStrategy.MOMENTUM_BASED,
+                        "技术分析": SelectionStrategy.TECH_ANALYSIS,
+                        "基本面分析": SelectionStrategy.QUALITY_BASED,
+                        "量化选股": SelectionStrategy.QUANTITATIVE
+                    }
+                    
+                    selection_strategy = strategy_map.get(strategy_type, SelectionStrategy.QUANTITATIVE)
+                    
+                    result = loop.run_until_complete(
+                        ai_selection_service.select_stocks_with_nlp(
+                            user_input=user_input,
+                            strategy_type=selection_strategy
+                        )
+                    )
+                else:
+                    # 使用传统选股模式
+                    logger.info("使用传统选股模式")
+                    
+                    # 转换UI输入为选股标准
+                    criteria = self._convert_ui_to_criteria(user_input, strategy_type, risk_level)
+                    
+                    result = loop.run_until_complete(
+                        ai_selection_service.select_stocks_with_explanation(
+                            strategy_id=strategy_type,
+                            criteria=criteria
+                        )
+                    )
+                
+                # 显示结果
+                self._display_ai_selection_results(result)
+                
+                logger.info(f"AI选股完成: 选中{len(result.selected_stocks)}只股票")
+                QMessageBox.information(
+                    self,
+                    "AI选股完成",
+                    f"成功选中 {len(result.selected_stocks)} 只股票"
+                )
+                
+            except Exception as e:
+                logger.error(f"AI选股失败: {e}")
+                logger.error(traceback.format_exc())
+                QMessageBox.critical(self, "错误", f"AI选股失败: {str(e)}")
+            finally:
+                loop.close()
+                
+        except Exception as e:
+            logger.error(f"处理AI选股按钮点击事件失败: {e}")
+            logger.error(traceback.format_exc())
+            QMessageBox.critical(self, "错误", f"AI选股失败: {str(e)}")
+    
+    def _should_use_nlp(self, user_input: str) -> bool:
+        """判断是否应该使用自然语言解析
+        
+        Args:
+            user_input: 用户输入
+            
+        Returns:
+            是否使用自然语言解析
+        """
+        # 如果输入包含自然语言特征，使用 NLP 解析
+        nlp_keywords = [
+            "高", "低", "好", "坏", "强", "弱", "大", "小",
+            "超过", "低于", "大于", "小于", "优于", "差于",
+            "想要", "需要", "希望", "寻找", "推荐",
+            "ROE", "PE", "PB", "估值", "成长", "价值",
+            "资金流", "动量", "趋势", "技术", "基本面"
+        ]
+        
+        # 检查是否包含自然语言关键词
+        for keyword in nlp_keywords:
+            if keyword in user_input:
+                return True
+        
+        # 如果输入长度较长，也使用 NLP 解析
+        if len(user_input) > 20:
+            return True
+        
+        return False
+    
+    def _convert_ui_to_criteria(
+        self,
+        user_input: str,
+        strategy_type: str,
+        risk_level: str
+    ):
+        """将UI输入转换为选股标准
+        
+        Args:
+            user_input: 用户输入的选股需求
+            strategy_type: 选股类型
+            risk_level: 风险偏好
+            
+        Returns:
+            StockSelectionCriteria 对象
+        """
+        from core.services.ai_selection_integration_service import (
+            StockSelectionCriteria,
+            SelectionStrategy,
+            RiskLevel
+        )
+        
+        # 映射策略类型
+        strategy_map = {
+            "价值投资": SelectionStrategy.VALUE_BASED,
+            "成长投资": SelectionStrategy.GROWTH_BASED,
+            "趋势跟踪": SelectionStrategy.MOMENTUM_BASED,
+            "均值回归": SelectionStrategy.QUALITY_BASED,
+            "动量策略": SelectionStrategy.MOMENTUM_BASED,
+            "技术分析": SelectionStrategy.TECH_ANALYSIS,
+            "基本面分析": SelectionStrategy.QUALITY_BASED,
+            "量化选股": SelectionStrategy.QUANTITATIVE
+        }
+        
+        # 映射风险等级
+        risk_map = {
+            "保守": RiskLevel.CONSERVATIVE,
+            "稳健": RiskLevel.MODERATE,
+            "积极": RiskLevel.AGGRESSIVE,
+            "激进": RiskLevel.AGGRESSIVE
+        }
+        
+        return StockSelectionCriteria(
+            strategy_type=strategy_map.get(strategy_type, SelectionStrategy.QUANTITATIVE),
+            risk_level=risk_map.get(risk_level, RiskLevel.MODERATE)
+        )
+    
+    def _display_ai_selection_results(self, result) -> None:
+        """显示AI选股结果
+        
+        Args:
+            result: StockSelectionResult 对象
+        """
+        try:
+            result_table = self.get_widget('ai_result_table')
+            if not result_table:
+                logger.warning("AI选股结果表格未找到")
+                return
+            
+            # 清空表格
+            result_table.setRowCount(0)
+            
+            # 填充结果
+            selected_stocks = result.selected_stocks
+            explanations = result.explanations
+            
+            for i, stock_code in enumerate(selected_stocks):
+                # 查找对应的解释
+                explanation = None
+                for exp in explanations:
+                    if exp.stock_code == stock_code:
+                        explanation = exp
+                        break
+                
+                if explanation:
+                    # 股票代码
+                    result_table.setItem(i, 0, QTableWidgetItem(stock_code))
+                    
+                    # 股票名称（暂时使用代码，后续可以从数据服务获取）
+                    result_table.setItem(i, 1, QTableWidgetItem(stock_code))
+                    
+                    # 推荐理由
+                    reason = explanation.selection_reason if explanation else "无"
+                    result_table.setItem(i, 2, QTableWidgetItem(reason))
+                    
+                    # 评分
+                    score = explanation.score if explanation else 0
+                    result_table.setItem(i, 3, QTableWidgetItem(f"{score:.2f}"))
+                    
+                    # 风险等级
+                    risk_assessment = explanation.risk_assessment if explanation else {}
+                    risk_level = risk_assessment.get('level', '未知')
+                    result_table.setItem(i, 4, QTableWidgetItem(risk_level))
+                    
+                    # 建议仓位
+                    recommendation_strength = explanation.recommendation_strength if explanation else 'moderate'
+                    position_map = {
+                        'strong': '重仓',
+                        'moderate': '中仓',
+                        'weak': '轻仓'
+                    }
+                    position = position_map.get(recommendation_strength, '中仓')
+                    result_table.setItem(i, 5, QTableWidgetItem(position))
+            
+            logger.info(f"AI选股结果已显示: {len(selected_stocks)}只股票")
+            
+        except Exception as e:
+            logger.error(f"显示AI选股结果失败: {e}")
+            logger.error(traceback.format_exc())
+    
+    def _on_export_ai_results(self) -> None:
+        """处理导出AI选股结果按钮点击事件"""
+        try:
+            logger.info("导出AI选股结果按钮被点击")
+            
+            result_table = self.get_widget('ai_result_table')
+            if not result_table:
+                logger.warning("AI选股结果表格未找到")
+                QMessageBox.warning(self, "警告", "AI选股结果表格未找到")
+                return
+            
+            if result_table.rowCount() == 0:
+                QMessageBox.warning(self, "警告", "没有可导出的AI选股结果")
+                return
+            
+            # 获取文件保存路径
+            from PyQt5.QtWidgets import QFileDialog
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "保存AI选股结果",
+                "",
+                "Excel Files (*.xlsx);;CSV Files (*.csv);;All Files (*)"
+            )
+            
+            if not file_path:
+                logger.info("用户取消了文件保存")
+                return
+            
+            # 导出数据
+            import pandas as pd
+            data = []
+            for row in range(result_table.rowCount()):
+                row_data = []
+                for col in range(result_table.columnCount()):
+                    item = result_table.item(row, col)
+                    row_data.append(item.text() if item else "")
+                data.append(row_data)
+            
+            # 创建DataFrame
+            df = pd.DataFrame(
+                data,
+                columns=[
+                    '股票代码', '股票名称', '推荐理由', 
+                    '评分', '风险等级', '建议仓位'
+                ]
+            )
+            
+            # 保存文件
+            if file_path.endswith('.xlsx'):
+                df.to_excel(file_path, index=False)
+            else:
+                df.to_csv(file_path, index=False, encoding='utf-8-sig')
+            
+            logger.info(f"AI选股结果已导出到: {file_path}")
+            QMessageBox.information(
+                self,
+                "导出成功",
+                f"AI选股结果已导出到:\n{file_path}"
+            )
+            
+        except Exception as e:
+            logger.error(f"导出AI选股结果失败: {e}")
+            logger.error(traceback.format_exc())
+            QMessageBox.critical(self, "错误", f"导出失败: {str(e)}")
 

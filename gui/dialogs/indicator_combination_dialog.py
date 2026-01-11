@@ -104,9 +104,6 @@ class IndicatorCombinationDialog(QDialog):
 
         self.setLayout(main_layout)
 
-        # 应用样式
-        self._apply_styles()
-
         # 绑定事件
         self._bind_events()
 
@@ -269,73 +266,6 @@ class IndicatorCombinationDialog(QDialog):
         layout.addWidget(button_box)
 
         return layout
-
-    def _apply_styles(self):
-        """应用样式"""
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #f5f5f5;
-            }
-            QGroupBox {
-                font-weight: bold;
-                border: 2px solid #cccccc;
-                border-radius: 5px;
-                margin-top: 10px;
-                padding-top: 10px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px 0 5px;
-            }
-            QListWidget {
-                background-color: white;
-                border: 1px solid #cccccc;
-                border-radius: 3px;
-                selection-background-color: #2196F3;
-            }
-            QTableWidget {
-                background-color: white;
-                border: 1px solid #cccccc;
-                border-radius: 3px;
-                gridline-color: #e0e0e0;
-            }
-            QTableWidget::item {
-                padding: 5px;
-            }
-            QTableWidget::item:selected {
-                background-color: #2196F3;
-                color: white;
-            }
-            QPushButton {
-                background-color: #2196F3;
-                color: white;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #1976D2;
-            }
-            QPushButton:pressed {
-                background-color: #0D47A1;
-            }
-            QPushButton:disabled {
-                background-color: #cccccc;
-                color: #666666;
-            }
-            QLineEdit {
-                padding: 5px;
-                border: 1px solid #cccccc;
-                border-radius: 3px;
-            }
-            QTextEdit {
-                border: 1px solid #cccccc;
-                border-radius: 3px;
-                background-color: white;
-            }
-        """)
 
     def _bind_events(self):
         """绑定事件"""

@@ -72,14 +72,23 @@ class SectorFundFlowService(QObject):
         # 异步执行器
         self._executor = ThreadPoolExecutor(max_workers=self.config.max_concurrent_requests)
 
-        # 自动刷新定时器
-        self._refresh_timer = QTimer()
-        self._refresh_timer.timeout.connect(self._auto_refresh)
+        # 自动刷新定时器 - 延迟初始化
+        self._refresh_timer = None
 
         self._is_initialized = False
         self._current_source = None
         self._available_sources = {}  # 可用数据源注册表
         self._optimal_sources = []    # 最优数据源列表
+
+    def _ensure_refresh_timer(self):
+        """确保刷新定时器已初始化"""
+        if self._refresh_timer is None:
+            from PyQt5.QtWidgets import QApplication
+            if QApplication.instance() is None:
+                logger.warning("QApplication未初始化，无法创建刷新定时器")
+                return
+            self._refresh_timer = QTimer()
+            self._refresh_timer.timeout.connect(self._auto_refresh)
 
     def initialize(self) -> bool:
         """初始化服务"""
@@ -367,6 +376,10 @@ class SectorFundFlowService(QObject):
 
     def _start_auto_refresh(self) -> None:
         """启动自动刷新"""
+        self._ensure_refresh_timer()
+        if self._refresh_timer is None:
+            logger.warning("刷新定时器未初始化，无法启动自动刷新")
+            return
         if self.config.auto_refresh_interval_minutes > 0:
             interval_ms = self.config.auto_refresh_interval_minutes * 60 * 1000
             self._refresh_timer.start(interval_ms)

@@ -245,18 +245,34 @@ class TaskScheduler(QObject):
         self.task_timers: Dict[str, QTimer] = {}
         self.task_executors: Dict[str, Callable] = {}
 
-        # 主调度定时器
-        self.scheduler_timer = QTimer()
-        self.scheduler_timer.timeout.connect(self._check_scheduled_tasks)
-        self.scheduler_timer.start(60000)  # 每分钟检查一次
+        # 主调度定时器 - 延迟初始化
+        self.scheduler_timer = None
 
-        # 保存定时器
-        self.save_timer = QTimer()
-        self.save_timer.timeout.connect(self._save_tasks)
-        self.save_timer.start(300000)  # 每5分钟保存一次
+        # 保存定时器 - 延迟初始化
+        self.save_timer = None
 
         # 加载持久化任务
         self._load_tasks()
+
+    def _ensure_timers(self):
+        """确保定时器已初始化"""
+        if self.scheduler_timer is None:
+            from PyQt5.QtWidgets import QApplication
+            if QApplication.instance() is None:
+                logger.warning("QApplication未初始化，无法创建调度定时器")
+                return
+            self.scheduler_timer = QTimer()
+            self.scheduler_timer.timeout.connect(self._check_scheduled_tasks)
+            self.scheduler_timer.start(60000)  # 每分钟检查一次
+
+        if self.save_timer is None:
+            from PyQt5.QtWidgets import QApplication
+            if QApplication.instance() is None:
+                logger.warning("QApplication未初始化，无法创建保存定时器")
+                return
+            self.save_timer = QTimer()
+            self.save_timer.timeout.connect(self._save_tasks)
+            self.save_timer.start(300000)  # 每5分钟保存一次
 
     def register_task_executor(self, function_name: str, executor: Callable):
         """注册任务执行器"""
@@ -464,6 +480,9 @@ class TaskScheduler(QObject):
             else:
                 # 延迟执行
                 delay_ms = int((next_time - now).total_seconds() * 1000)
+
+                # 确保定时器已初始化
+                self._ensure_timers()
 
                 timer = QTimer()
                 timer.setSingleShot(True)

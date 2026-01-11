@@ -173,9 +173,6 @@ class OrderBookWidget(QWidget):
         stats_panel = self._create_stats_panel()
         layout.addWidget(stats_panel)
 
-        # 应用样式
-        self._apply_styles()
-
     def _create_control_panel(self) -> QWidget:
         """创建控制面板"""
         panel = QFrame()
@@ -326,77 +323,7 @@ class OrderBookWidget(QWidget):
         layout.addWidget(self.weighted_ask_price)
         layout.addStretch()
         layout.addWidget(self.update_time)
-
         return panel
-
-    def _apply_styles(self):
-        """应用样式表"""
-        self.setStyleSheet("""
-            QGroupBox {
-                font-weight: bold;
-                border: 2px solid #CCCCCC;
-                border-radius: 5px;
-                margin-top: 1ex;
-                padding-top: 10px;
-            }
-            
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px 0 5px;
-            }
-            
-            QTableWidget {
-                gridline-color: #E0E0E0;
-                background-color: white;
-                alternate-background-color: #F5F5F5;
-                font-family: 'Consolas', 'Monaco', monospace;
-            }
-            
-            QTableWidget::item {
-                padding: 3px;
-                border: none;
-            }
-            
-            QTableWidget::item:selected {
-                background-color: #3498DB;
-                color: white;
-            }
-            
-            QFrame {
-                background-color: #FAFAFA;
-                border: 1px solid #E0E0E0;
-                border-radius: 3px;
-            }
-            
-            QPushButton {
-                background-color: #3498DB;
-                color: white;
-                border: none;
-                padding: 5px 15px;
-                border-radius: 3px;
-                font-weight: bold;
-            }
-            
-            QPushButton:hover {
-                background-color: #2980B9;
-            }
-            
-            QPushButton:pressed {
-                background-color: #21618C;
-            }
-            
-            QCheckBox {
-                font-weight: bold;
-            }
-            
-            QSpinBox {
-                padding: 3px;
-                border: 1px solid #BDC3C7;
-                border-radius: 3px;
-                min-width: 60px;
-            }
-        """)
 
     def setup_event_connections(self):
         """设置事件连接"""

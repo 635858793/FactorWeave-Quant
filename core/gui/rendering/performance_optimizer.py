@@ -557,7 +557,7 @@ class ChartPerformanceOptimizer:
                         }
                     }
                 )
-                self.event_bus.emit(event)
+                self.event_bus.publish(event)
                 
         except Exception as e:
             logger.error(f"发送性能事件失败: {e}")

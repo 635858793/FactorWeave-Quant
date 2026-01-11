@@ -227,6 +227,12 @@ class AlertRuleDialog(QDialog):
         self.sms_notify = QCheckBox("短信通知")
         method_layout.addRow("", self.sms_notify)
 
+        self.webhook_notify = QCheckBox("Webhook通知")
+        method_layout.addRow("", self.webhook_notify)
+
+        self.dingtalk_notify = QCheckBox("钉钉通知")
+        method_layout.addRow("", self.dingtalk_notify)
+
         self.desktop_notify = QCheckBox("桌面通知")
         self.desktop_notify.setChecked(True)
         method_layout.addRow("", self.desktop_notify)
@@ -248,6 +254,14 @@ class AlertRuleDialog(QDialog):
         self.sms_recipients = QLineEdit()
         self.sms_recipients.setPlaceholderText("多个手机号用逗号分隔")
         recipients_layout.addRow("短信收件人:", self.sms_recipients)
+
+        self.webhook_url = QLineEdit()
+        self.webhook_url.setPlaceholderText("Webhook URL")
+        recipients_layout.addRow("Webhook URL:", self.webhook_url)
+
+        self.dingtalk_webhook_url = QLineEdit()
+        self.dingtalk_webhook_url.setPlaceholderText("钉钉Webhook URL")
+        recipients_layout.addRow("钉钉Webhook URL:", self.dingtalk_webhook_url)
 
         recipients_group.setLayout(recipients_layout)
         layout.addWidget(recipients_group)
@@ -329,10 +343,14 @@ class AlertRuleDialog(QDialog):
             notifications = self.rule_data.get('notifications', {})
             self.email_notify.setChecked(notifications.get('email_notify', True))
             self.sms_notify.setChecked(notifications.get('sms_notify', False))
+            self.webhook_notify.setChecked(notifications.get('webhook_notify', False))
+            self.dingtalk_notify.setChecked(notifications.get('dingtalk_notify', False))
             self.desktop_notify.setChecked(notifications.get('desktop_notify', True))
             self.sound_notify.setChecked(notifications.get('sound_notify', False))
             self.email_recipients.setText(notifications.get('email_recipients', ''))
             self.sms_recipients.setText(notifications.get('sms_recipients', ''))
+            self.webhook_url.setText(notifications.get('webhook_url', ''))
+            self.dingtalk_webhook_url.setText(notifications.get('dingtalk_webhook_url', ''))
             self.message_template.setText(notifications.get('message_template', ''))
 
         except Exception as e:
@@ -360,10 +378,14 @@ class AlertRuleDialog(QDialog):
             'notifications': {
                 'email_notify': self.email_notify.isChecked(),
                 'sms_notify': self.sms_notify.isChecked(),
+                'webhook_notify': self.webhook_notify.isChecked(),
+                'dingtalk_notify': self.dingtalk_notify.isChecked(),
                 'desktop_notify': self.desktop_notify.isChecked(),
                 'sound_notify': self.sound_notify.isChecked(),
                 'email_recipients': self.email_recipients.text(),
                 'sms_recipients': self.sms_recipients.text(),
+                'webhook_url': self.webhook_url.text(),
+                'dingtalk_webhook_url': self.dingtalk_webhook_url.text(),
                 'message_template': self.message_template.toPlainText()
             }
         }
@@ -392,6 +414,18 @@ class AlertRuleDialog(QDialog):
             QMessageBox.warning(self, "验证失败", "启用短信通知时必须设置收件人")
             self.tab_widget.setCurrentIndex(2)
             self.sms_recipients.setFocus()
+            return False
+
+        if self.webhook_notify.isChecked() and not self.webhook_url.text().strip():
+            QMessageBox.warning(self, "验证失败", "启用Webhook通知时必须设置URL")
+            self.tab_widget.setCurrentIndex(2)
+            self.webhook_url.setFocus()
+            return False
+
+        if self.dingtalk_notify.isChecked() and not self.dingtalk_webhook_url.text().strip():
+            QMessageBox.warning(self, "验证失败", "启用钉钉通知时必须设置Webhook URL")
+            self.tab_widget.setCurrentIndex(2)
+            self.dingtalk_webhook_url.setFocus()
             return False
 
         return True

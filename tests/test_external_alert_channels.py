@@ -5,8 +5,7 @@
 """
 
 import asyncio
-import unittest
-from unittest.mock import Mock
+import pytest
 from datetime import datetime
 from typing import List, Dict, Optional
 import json
@@ -197,12 +196,13 @@ class WebhookAlertChannel(ExternalAlertChannel):
             print(f"Failed to send alert webhook: {e}")
             return False
 
-class TestExternalAlertChannels(unittest.TestCase):
+class TestExternalAlertChannels:
     """外部告警渠道测试"""
-    
-    def setUp(self):
-        """设置测试环境"""
-        self.test_alert = Alert(
+
+    @pytest.fixture
+    def test_alert(self):
+        """测试告警数据"""
+        return Alert(
             alert_id="test_alert_001",
             component="test_bettafish_agent",
             metric_name="response_time",
@@ -212,8 +212,9 @@ class TestExternalAlertChannels(unittest.TestCase):
             message="响应时间超过阈值",
             timestamp=datetime.now()
         )
-    
-    async def test_email_alert_channel(self):
+
+    @pytest.mark.asyncio
+    async def test_email_alert_channel(self, test_alert):
         """测试邮件告警渠道"""
         # 创建邮件渠道
         email_channel = EmailAlertChannel(
@@ -224,14 +225,15 @@ class TestExternalAlertChannels(unittest.TestCase):
             from_email="bettafish@monitoring.com",
             to_emails=["admin@example.com", "ops@example.com"]
         )
-        
+
         # 发送告警
-        result = await email_channel.send_alert(self.test_alert)
-        
+        result = await email_channel.send_alert(test_alert)
+
         # 验证结果
-        self.assertTrue(result, "Email alert should be sent successfully")
-    
-    async def test_sms_alert_channel_tencent(self):
+        assert result, "Email alert should be sent successfully"
+
+    @pytest.mark.asyncio
+    async def test_sms_alert_channel_tencent(self, test_alert):
         """测试腾讯云SMS告警渠道"""
         # 创建SMS渠道（腾讯云）
         sms_channel = SMSAlertChannel(
@@ -241,20 +243,21 @@ class TestExternalAlertChannels(unittest.TestCase):
             to_numbers=["+8613800138001", "+8613800138002"],
             provider="tencent"
         )
-        
+
         # 发送告警
-        result = await sms_channel.send_alert(self.test_alert)
-        
+        result = await sms_channel.send_alert(test_alert)
+
         # 验证结果
-        self.assertTrue(result, "Tencent SMS alert should be sent successfully")
-        
+        assert result, "Tencent SMS alert should be sent successfully"
+
         # 验证消息格式
-        formatted_message = sms_channel._format_message(self.test_alert)
-        self.assertIn("BettaFish系统告警", formatted_message)
-        self.assertIn("test_bettafish_agent", formatted_message)
-        self.assertIn("CRITICAL", formatted_message)
-    
-    async def test_sms_alert_channel_mock(self):
+        formatted_message = sms_channel._format_message(test_alert)
+        assert "BettaFish系统告警" in formatted_message
+        assert "test_bettafish_agent" in formatted_message
+        assert "CRITICAL" in formatted_message
+
+    @pytest.mark.asyncio
+    async def test_sms_alert_channel_mock(self, test_alert):
         """测试模拟SMS告警渠道"""
         # 创建SMS渠道（模拟）
         sms_channel = SMSAlertChannel(
@@ -264,28 +267,30 @@ class TestExternalAlertChannels(unittest.TestCase):
             to_numbers=["+8613800138001"],
             provider="mock_provider"
         )
-        
+
         # 发送告警
-        result = await sms_channel.send_alert(self.test_alert)
-        
+        result = await sms_channel.send_alert(test_alert)
+
         # 验证结果
-        self.assertTrue(result, "Mock SMS alert should be sent successfully")
-    
-    async def test_webhook_alert_channel(self):
+        assert result, "Mock SMS alert should be sent successfully"
+
+    @pytest.mark.asyncio
+    async def test_webhook_alert_channel(self, test_alert):
         """测试Webhook告警渠道"""
         # 创建Webhook渠道
         webhook_channel = WebhookAlertChannel(
             webhook_url="https://hooks.slack.com/services/test/webhook",
             headers={"Authorization": "Bearer test_token", "Content-Type": "application/json"}
         )
-        
+
         # 发送告警
-        result = await webhook_channel.send_alert(self.test_alert)
-        
+        result = await webhook_channel.send_alert(test_alert)
+
         # 验证结果
-        self.assertTrue(result, "Webhook alert should be sent successfully")
-    
-    async def test_multiple_channels(self):
+        assert result, "Webhook alert should be sent successfully"
+
+    @pytest.mark.asyncio
+    async def test_multiple_channels(self, test_alert):
         """测试多渠道并发发送"""
         # 创建多个告警渠道
         channels = [
@@ -310,18 +315,18 @@ class TestExternalAlertChannels(unittest.TestCase):
         ]
         
         # 并发发送告警
-        tasks = [channel.send_alert(self.test_alert) for channel in channels]
+        tasks = [channel.send_alert(test_alert) for channel in channels]
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        
+
         # 验证结果
-        self.assertEqual(len(results), 3, "Should send alerts to all 3 channels")
+        assert len(results) == 3, "Should send alerts to all 3 channels"
         for i, result in enumerate(results):
             if isinstance(result, Exception):
-                self.fail(f"Channel {i} failed with exception: {result}")
+                assert False, f"Channel {i} failed with exception: {result}"
             else:
-                self.assertTrue(result, f"Channel {i} should send alert successfully")
-    
-    def test_alert_formatting(self):
+                assert result, f"Channel {i} should send alert successfully"
+
+    def test_alert_formatting(self, test_alert):
         """测试告警消息格式化"""
         sms_channel = SMSAlertChannel(
             api_key="test_key",
@@ -330,56 +335,18 @@ class TestExternalAlertChannels(unittest.TestCase):
             to_numbers=["+8613800138001"],
             provider="tencent"
         )
-        
-        formatted_message = sms_channel._format_message(self.test_alert)
-        
-        # 验证格式化结果
-        self.assertIn("BettaFish系统告警", formatted_message)
-        self.assertIn("test_bettafish_agent", formatted_message)
-        self.assertIn("CRITICAL", formatted_message)
-        self.assertIn("response_time", formatted_message)
-        self.assertIn("15.0", formatted_message)
-        self.assertIn("10.0", formatted_message)
-        self.assertIn("响应时间超过阈值", formatted_message)
-        
-        # 验证时间格式
-        timestamp_str = self.test_alert.timestamp.strftime("%Y-%m-%d %H:%M:%S")
-        self.assertIn(timestamp_str, formatted_message)
 
-if __name__ == "__main__":
-    # 运行异步测试
-    import asyncio
-    
-    async def run_async_tests():
-        """运行异步测试"""
-        test_instance = TestExternalAlertChannels()
-        test_instance.setUp()
-        
-        print("测试邮件告警渠道...")
-        await test_instance.test_email_alert_channel()
-        print("✓ 邮件告警渠道测试通过")
-        
-        print("测试腾讯云SMS告警渠道...")
-        await test_instance.test_sms_alert_channel_tencent()
-        print("✓ 腾讯云SMS告警渠道测试通过")
-        
-        print("测试模拟SMS告警渠道...")
-        await test_instance.test_sms_alert_channel_mock()
-        print("✓ 模拟SMS告警渠道测试通过")
-        
-        print("测试Webhook告警渠道...")
-        await test_instance.test_webhook_alert_channel()
-        print("✓ Webhook告警渠道测试通过")
-        
-        print("测试多渠道并发发送...")
-        await test_instance.test_multiple_channels()
-        print("✓ 多渠道并发发送测试通过")
-        
-        print("测试告警消息格式化...")
-        test_instance.test_alert_formatting()
-        print("✓ 告警消息格式化测试通过")
-        
-        print("\n所有外部告警渠道测试通过！")
-    
-    # 运行测试
-    asyncio.run(run_async_tests())
+        formatted_message = sms_channel._format_message(test_alert)
+
+        # 验证格式化结果
+        assert "BettaFish系统告警" in formatted_message
+        assert "test_bettafish_agent" in formatted_message
+        assert "CRITICAL" in formatted_message
+        assert "response_time" in formatted_message
+        assert "15.0" in formatted_message
+        assert "10.0" in formatted_message
+        assert "响应时间超过阈值" in formatted_message
+
+        # 验证时间格式
+        timestamp_str = test_alert.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+        assert timestamp_str in formatted_message

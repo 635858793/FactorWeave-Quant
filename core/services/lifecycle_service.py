@@ -173,9 +173,10 @@ class LifecycleService(BaseService):
     def _do_initialize(self) -> None:
         """初始化生命周期服务"""
         try:
-            # 初始化任务调度器
-            self._task_scheduler = TaskScheduler()
-            logger.info("TaskScheduler initialized")
+            # 从服务容器获取任务调度器
+            from ..containers.service_container import get_service_container
+            self._task_scheduler = get_service_container().resolve(TaskScheduler)
+            logger.info("TaskScheduler resolved from service container")
 
             # 初始化策略生命周期管理器
             self._strategy_lifecycle_manager = StrategyLifecycleManager()

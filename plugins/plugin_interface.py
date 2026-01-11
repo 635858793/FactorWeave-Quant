@@ -1,4 +1,3 @@
-from loguru import logger
 """
 FactorWeave-Quant  插件接口定义
 
@@ -9,8 +8,6 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional, Callable
 from enum import Enum
 from dataclasses import dataclass
-from PyQt5.QtWidgets import QWidget, QMenu, QAction
-from PyQt5.QtCore import QObject, pyqtSignal
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime
 
@@ -19,8 +16,36 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from core.enums import PluginLifecycle
+from core.enums.plugin_state import PluginLifecycle
 from core.plugin_types import PluginType, PluginCategory, AssetType, DataType
+
+from loguru import logger
+
+# 延迟导入PyQt5，避免在没有QApplication时初始化失败
+QWidget = None
+QMenu = None
+QAction = None
+QObject = None
+pyqtSignal = None
+
+def _ensure_qt_imports():
+    """确保Qt模块已导入"""
+    global QWidget, QMenu, QAction, QObject, pyqtSignal
+    if QWidget is None:
+        try:
+            # 检查是否有QApplication实例
+            from PyQt5.QtWidgets import QApplication
+            if QApplication.instance() is None:
+                # 没有QApplication实例，不导入Qt模块
+                return
+            from PyQt5.QtWidgets import QWidget, QMenu, QAction
+            from PyQt5.QtCore import QObject, pyqtSignal
+        except ImportError:
+            from PyQt6.QtWidgets import QApplication
+            if QApplication.instance() is None:
+                return
+            from PyQt6.QtWidgets import QWidget, QMenu, QAction
+            from PyQt6.QtCore import QObject, pyqtSignal
 
 
 @dataclass
@@ -151,9 +176,9 @@ class IIndicatorPlugin(IPlugin):
         return {}
 
 
-class IStrategyPlugin(IPlugin):
+class IDataSourceStrategyPlugin(IPlugin):
     """
-    策略插件接口（数据源级别）
+    数据源策略插件接口
     
     这是数据源插件的策略接口，用于轻量级的信号生成场景。
     与 core/strategy_extensions.py 中的 IStrategyPlugin 不同：
@@ -200,30 +225,9 @@ class IStrategyPlugin(IPlugin):
             **params: 策略参数
 
         Returns:
-            交易信号，可以是多种格式
-        
-        Note:
-            如需完整的事件支持和生命周期管理，
-            请实现 core.strategy_extensions.IStrategyPlugin 接口
+            交易信号
         """
         pass
-
-    def backtest(self, data: Any, **params) -> Dict[str, Any]:
-        """
-        回测策略
-
-        Args:
-            data: 历史数据
-            **params: 策略参数
-
-        Returns:
-            Dict[str, Any]: 回测结果，包含收益、信号列表等
-        
-        Note:
-            此方法是可选实现，如需完整的回测功能，
-            请使用 StrategyService.run_backtest()
-        """
-        return {}
 
 
 class IDataSourcePlugin(IPlugin):
@@ -400,7 +404,7 @@ class IUIComponentPlugin(IPlugin):
         pass
 
     @abstractmethod
-    def create_widget(self, parent: Optional[QWidget] = None) -> QWidget:
+    def create_widget(self, parent: Optional['QWidget'] = None) -> 'QWidget':
         """
         创建组件
 
@@ -412,7 +416,7 @@ class IUIComponentPlugin(IPlugin):
         """
         pass
 
-    def get_menu_actions(self) -> List[QAction]:
+    def get_menu_actions(self) -> List['QAction']:
         """
         获取菜单动作
 
@@ -421,7 +425,7 @@ class IUIComponentPlugin(IPlugin):
         """
         return []
 
-    def get_toolbar_actions(self) -> List[QAction]:
+    def get_toolbar_actions(self) -> List['QAction']:
         """
         获取工具栏动作
 

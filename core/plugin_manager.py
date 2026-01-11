@@ -1,9 +1,10 @@
-from loguru import logger
 """
 FactorWeave-Quant  增强插件管理器
 
 提供插件的加载、管理、生命周期控制和生态系统集成功能。
 """
+
+from loguru import logger
 
 from .plugin_types import PluginType, PluginCategory
 from .enums import PluginStatus
@@ -17,9 +18,29 @@ from typing import Dict, List, Any, Optional, Type, Callable
 from pathlib import Path
 from enum import Enum
 from dataclasses import dataclass, asdict, field
-from PyQt5.QtCore import QObject, pyqtSignal
 import traceback
 from datetime import datetime
+
+# 延迟导入PyQt5，避免在没有QApplication时初始化失败
+QObject = None
+pyqtSignal = None
+
+def _ensure_qt_imports():
+    """确保Qt模块已导入"""
+    global QObject, pyqtSignal
+    if QObject is None:
+        try:
+            # 检查是否有QApplication实例
+            from PyQt5.QtWidgets import QApplication
+            if QApplication.instance() is None:
+                # 没有QApplication实例，不导入Qt模块
+                return
+            from PyQt5.QtCore import QObject, pyqtSignal
+        except ImportError:
+            from PyQt6.QtWidgets import QApplication
+            if QApplication.instance() is None:
+                return
+            from PyQt6.QtCore import QObject, pyqtSignal
 
 # 添加项目根目录到Python路径，确保可以导入plugins包
 current_dir = Path(__file__).parent
@@ -166,14 +187,67 @@ class PluginInfo:
         return result
 
 
-class PluginManager(QObject):
+class PluginManager:
     """增强插件管理器"""
 
-    # 信号定义
-    plugin_loaded = pyqtSignal(str)  # 插件加载
-    plugin_enabled = pyqtSignal(str)  # 插件启用
-    plugin_disabled = pyqtSignal(str)  # 插件禁用
-    plugin_error = pyqtSignal(str, str)  # 插件错误
+    # Qt对象基类 - 延迟初始化
+    _QObject = None
+
+    # 信号定义 - 延迟初始化
+    _plugin_loaded = None
+    _plugin_enabled = None
+    _plugin_disabled = None
+    _plugin_error = None
+
+    @staticmethod
+    def _ensure_qt_base():
+        """确保Qt基类已导入"""
+        if PluginManager._QObject is None:
+            _ensure_qt_imports()
+            if QObject is not None:
+                PluginManager._QObject = QObject
+            else:
+                # 如果没有QApplication，使用一个简单的基类
+                class DummyQObject:
+                    def __init__(self):
+                        pass
+                PluginManager._QObject = DummyQObject
+
+    @property
+    def plugin_loaded(self):
+        """插件加载信号"""
+        if self._plugin_loaded is None:
+            _ensure_qt_imports()
+            if pyqtSignal is not None:
+                self._plugin_loaded = pyqtSignal(str)
+        return self._plugin_loaded
+
+    @property
+    def plugin_enabled(self):
+        """插件启用信号"""
+        if self._plugin_enabled is None:
+            _ensure_qt_imports()
+            if pyqtSignal is not None:
+                self._plugin_enabled = pyqtSignal(str)
+        return self._plugin_enabled
+
+    @property
+    def plugin_disabled(self):
+        """插件禁用信号"""
+        if self._plugin_disabled is None:
+            _ensure_qt_imports()
+            if pyqtSignal is not None:
+                self._plugin_disabled = pyqtSignal(str)
+        return self._plugin_disabled
+
+    @property
+    def plugin_error(self):
+        """插件错误信号"""
+        if self._plugin_error is None:
+            _ensure_qt_imports()
+            if pyqtSignal is not None:
+                self._plugin_error = pyqtSignal(str, str)
+        return self._plugin_error
 
     def __init__(self,
                  plugin_dir: str = "plugins",
@@ -190,7 +264,10 @@ class PluginManager(QObject):
             config_manager: 配置管理器
             # log_manager: 已迁移到Loguru日志系统
         """
-        super().__init__()
+        # 确保Qt模块已导入
+        _ensure_qt_imports()
+        PluginManager._ensure_qt_base()
+        super(PluginManager, self).__init__()
 
         self.plugin_dir = Path(plugin_dir)
         self.loaded_plugins = {}
@@ -1042,11 +1119,7 @@ class PluginManager(QObject):
                 # 9. 发送插件卸载事件
                 try:
                     if self.event_bus:
-                        self.event_bus.emit('plugin_unloaded', {
-                            'plugin_id': plugin_id,
-                            'plugin_type': plugin_info.plugin_type.value if hasattr(plugin_info.plugin_type, 'value') else str(plugin_info.plugin_type),
-                            'timestamp': datetime.now().isoformat()
-                        })
+                        self.event_bus.publish('plugin_unloaded', plugin_id=plugin_id, plugin_type=plugin_info.plugin_type.value if hasattr(plugin_info.plugin_type, 'value') else str(plugin_info.plugin_type), timestamp=datetime.now().isoformat())
                 except Exception as e:
                     logger.warning(f"发送插件卸载事件失败 {plugin_id}: {str(e)}")
 
@@ -1145,11 +1218,7 @@ class PluginManager(QObject):
 
                 # 发送切换事件
                 if self.event_bus:
-                    self.event_bus.emit('data_source_switched', {
-                        'from_plugin': from_plugin_id,
-                        'to_plugin': to_plugin_id,
-                        'timestamp': datetime.now().isoformat()
-                    })
+                    self.event_bus.publish('data_source_switched', from_plugin=from_plugin_id, to_plugin=to_plugin_id, timestamp=datetime.now().isoformat())
 
                 return True
 
@@ -1268,10 +1337,7 @@ class PluginManager(QObject):
 
                     # 发送启用事件
                     if self.event_bus:
-                        self.event_bus.emit('plugin_enabled', {
-                            'plugin_id': plugin_id,
-                            'timestamp': datetime.now().isoformat()
-                        })
+                        self.event_bus.publish('plugin_enabled', plugin_id=plugin_id, timestamp=datetime.now().isoformat())
 
                     return True
                 else:
@@ -1309,10 +1375,7 @@ class PluginManager(QObject):
 
                     # 发送禁用事件
                     if self.event_bus:
-                        self.event_bus.emit('plugin_disabled', {
-                            'plugin_id': plugin_id,
-                            'timestamp': datetime.now().isoformat()
-                        })
+                        self.event_bus.publish('plugin_disabled', plugin_id=plugin_id, timestamp=datetime.now().isoformat())
 
                     return True
                 else:

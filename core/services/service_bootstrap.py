@@ -42,6 +42,26 @@ from core.metrics.resource_service import SystemResourceService
 from core.metrics.app_metrics_service import ApplicationMetricsService, initialize_app_metrics_service
 from core.metrics.aggregation_service import MetricsAggregationService
 
+# 策略相关服务
+from core.strategy.strategy_dependency_manager import StrategyDependencyManager
+from core.strategy.strategy_hot_reloader import StrategyHotReloader
+
+# 插件相关服务
+from core.plugin_hot_reloader import PluginHotReloader
+from core.plugin_version_manager import PluginVersionManager
+
+# 交易相关服务
+from core.trading.order_service import OrderService
+from core.trading.order_validator import OrderValidator
+from core.trading.order_executor import OrderExecutor
+from core.trading.order_repository import OrderRepository
+from core.trading.order_monitor import OrderMonitor
+from core.trading.order_analyzer import OrderAnalyzer
+from core.trading.account_manager import AccountManager
+from core.trading.account_repository import AccountRepository
+
+from core.services.task_scheduler import TaskScheduler
+
 
 class ServiceBootstrap:
     """
@@ -173,7 +193,7 @@ class ServiceBootstrap:
             self._register_plugin_services()
 
             # 4. 注册交易服务
-            self._register_trading_service()
+            self._register_trading_services()
 
             # 5. 注册监控服务
             self._register_monitoring_services()
@@ -192,7 +212,7 @@ class ServiceBootstrap:
         except Exception as e:
             logger.error(f"[ERROR] 服务引导失败: {e}")
             logger.error(traceback.format_exc())
-            return False
+            raise  # 重新抛出异常，让调用方知道服务引导失败
 
     def _report_duplicate_attempts(self) -> None:
         """报告重复初始化尝试统计"""
@@ -286,6 +306,7 @@ class ServiceBootstrap:
         except Exception as e:
             logger.error(f"❌ 数据库服务注册失败: {e}")
             logger.error(traceback.format_exc())
+            raise  # 数据库服务是核心服务，必须成功注册
 
         # 然后注册UnifiedDataManager（使用安全注册）
         if not self._safe_register_service(
@@ -613,6 +634,20 @@ class ServiceBootstrap:
             logger.error(f" 板块资金流服务注册失败: {e}")
             logger.error(traceback.format_exc())
 
+        # 外部告警渠道服务
+        try:
+            from .external_alert_channels_service import ExternalAlertManager, get_alert_manager
+            if not self._is_service_registered(ExternalAlertManager):
+                self.service_container.register(
+                    ExternalAlertManager,
+                    scope=ServiceScope.SINGLETON,
+                    factory=get_alert_manager
+                )
+            logger.info("✅ 外部告警渠道服务注册完成")
+        except Exception as e:
+            logger.error(f"❌ 外部告警渠道服务注册失败: {e}")
+            logger.error(traceback.format_exc())
+
         # 在分阶段初始化之前，先注册PluginManager和UniPluginDataManager
         self._register_plugin_manager_early()
         self._register_uni_plugin_data_manager()
@@ -732,87 +767,6 @@ class ServiceBootstrap:
             self.service_container.register_instance(
                 type(minimal_manager), minimal_manager, name='unified_data_manager')
             logger.warning("最小数据管理器注册完成 - 功能受限")
-
-    def _register_trading_service(self) -> None:
-        """注册交易服务"""
-        logger.info("注册交易服务...")
-
-        try:
-            # 注册新的交易引擎
-            from ..trading_engine import TradingEngine, initialize_trading_engine
-
-            trading_engine = initialize_trading_engine(
-                service_container=self.service_container,
-                event_bus=self.event_bus
-            )
-
-            self.service_container.register_instance(TradingEngine, trading_engine)
-            logger.info("交易引擎注册完成")
-
-            # 兼容性：也注册为TradingService
-            try:
-                from .trading_service import TradingService
-
-                if not self._is_service_registered(TradingService):
-                    self.service_container.register(
-                        TradingService,
-                        scope=ServiceScope.SINGLETON,
-                        factory=lambda: TradingService(
-                            service_container=self.service_container
-                        )
-                    )
-
-                # 初始化交易服务
-                trading_service = self.service_container.resolve(TradingService)
-                trading_service.initialize()
-                logger.info("交易服务（兼容性）注册完成")
-
-            except Exception as e:
-                logger.warning(f" 交易服务兼容性注册失败: {e}")
-
-            # 注册TradingController
-            try:
-                from ..trading_controller import TradingController
-                # 移除LogManager依赖，TradingController现在直接使用Loguru
-
-                self.service_container.register_factory(
-                    TradingController,
-                    lambda: TradingController(
-                        service_container=self.service_container
-                        # log_manager=LogManager()  # 已移除，使用纯Loguru
-                    ),
-                    scope=ServiceScope.SINGLETON
-                )
-                logger.info("交易控制器注册完成")
-
-            except Exception as e:
-                logger.warning(f" 交易控制器注册失败: {e}")
-
-            # 注册StrategyService
-            try:
-                from .strategy_service import StrategyService
-
-                if not self._is_service_registered(StrategyService):
-                    self.service_container.register(
-                        StrategyService,
-                        scope=ServiceScope.SINGLETON,
-                        factory=lambda: StrategyService(
-                            event_bus=self.event_bus,
-                            config={}
-                        )
-                    )
-
-                # 初始化策略服务
-                strategy_service = self.service_container.resolve(StrategyService)
-                strategy_service.initialize()
-                logger.info("策略服务注册完成")
-
-            except Exception as e:
-                logger.warning(f" 策略服务注册失败: {e}")
-
-        except Exception as e:
-            logger.error(f" 交易服务注册失败: {e}")
-            logger.error(traceback.format_exc())
 
     def _register_monitoring_services(self) -> None:
         """注册监控服务"""
@@ -1033,11 +987,294 @@ class ServiceBootstrap:
             else:
                 logger.warning("PluginManager未注册，跳过初始化")
 
+            # 注册策略依赖管理器
+            if not self._is_service_registered(StrategyDependencyManager):
+                self.service_container.register(
+                    StrategyDependencyManager,
+                    scope=ServiceScope.SINGLETON
+                )
+                strategy_dependency_manager = self.service_container.resolve(StrategyDependencyManager)
+                logger.info("✅ 策略依赖管理器注册完成")
+            else:
+                logger.warning("StrategyDependencyManager已注册，跳过")
+
+            # 注册策略热重载器
+            if not self._is_service_registered(StrategyHotReloader):
+                self.service_container.register(
+                    StrategyHotReloader,
+                    scope=ServiceScope.SINGLETON
+                )
+                strategy_hot_reloader = self.service_container.resolve(StrategyHotReloader)
+                logger.info("✅ 策略热重载器注册完成")
+            else:
+                logger.warning("StrategyHotReloader已注册，跳过")
+
+            # 注册插件热重载器
+            if not self._is_service_registered(PluginHotReloader):
+                self.service_container.register(
+                    PluginHotReloader,
+                    scope=ServiceScope.SINGLETON,
+                    factory=lambda: PluginHotReloader()
+                )
+                plugin_hot_reloader = self.service_container.resolve(PluginHotReloader)
+                logger.info("✅ 插件热重载器注册完成")
+            else:
+                logger.warning("PluginHotReloader已注册，跳过")
+
+            # 注册插件版本管理器
+            if not self._is_service_registered(PluginVersionManager):
+                self.service_container.register(
+                    PluginVersionManager,
+                    scope=ServiceScope.SINGLETON,
+                    factory=lambda: PluginVersionManager(
+                        storage_dir=None
+                    )
+                )
+                plugin_version_manager = self.service_container.resolve(PluginVersionManager)
+                logger.info("✅ 插件版本管理器注册完成")
+            else:
+                logger.warning("PluginVersionManager已注册，跳过")
+
             # ✅ 情绪数据服务已删除（功能已整合到热点分析）
             logger.debug("情绪数据服务初始化已跳过（服务已移除）")
 
         except Exception as e:
             logger.error(f" 插件管理器服务注册失败: {e}")
+            logger.error(traceback.format_exc())
+
+    def _register_trading_services(self) -> None:
+        """注册交易服务"""
+        logger.info("注册交易服务...")
+
+        try:
+            # 注册账户仓储（必须在OrderService之前）
+            if not self._is_service_registered(AccountRepository):
+                self.service_container.register(
+                    AccountRepository,
+                    scope=ServiceScope.SINGLETON,
+                    factory=lambda: AccountRepository(
+                        service_container=self.service_container,
+                        event_bus=self.event_bus
+                    )
+                )
+                logger.info("✅ 账户仓储注册完成")
+            else:
+                logger.warning("AccountRepository已注册，跳过")
+
+            # 注册账户管理器（必须在OrderService之前）
+            if not self._is_service_registered(AccountManager):
+                self.service_container.register(
+                    AccountManager,
+                    scope=ServiceScope.SINGLETON,
+                    factory=lambda: AccountManager(
+                        service_container=self.service_container,
+                        event_bus=self.event_bus
+                    )
+                )
+                account_manager = self.service_container.resolve(AccountManager)
+                logger.info("✅ 账户管理器注册完成")
+            else:
+                logger.warning("AccountManager已注册，跳过")
+
+            # 注册订单服务
+            if not self._is_service_registered(OrderService):
+                self.service_container.register(
+                    OrderService,
+                    scope=ServiceScope.SINGLETON,
+                    factory=lambda: OrderService(
+                        service_container=self.service_container,
+                        event_bus=self.event_bus
+                    )
+                )
+                order_service = self.service_container.resolve(OrderService)
+                logger.info("✅ 订单服务注册完成")
+            else:
+                logger.warning("OrderService已注册，跳过")
+
+            # 注册任务调度器
+            if not self._is_service_registered(TaskScheduler):
+                self.service_container.register(
+                    TaskScheduler,
+                    scope=ServiceScope.SINGLETON,
+                    factory=lambda: TaskScheduler(
+                        storage_path="cache/scheduled_tasks.json"
+                    )
+                )
+                task_scheduler = self.service_container.resolve(TaskScheduler)
+                logger.info("✅ 任务调度器注册完成")
+            else:
+                logger.warning("TaskScheduler已注册，跳过")
+
+            # 注册订单监控器
+            if not self._is_service_registered(OrderMonitor):
+                self.service_container.register(
+                    OrderMonitor,
+                    scope=ServiceScope.SINGLETON,
+                    factory=lambda: OrderMonitor(
+                        service_container=self.service_container,
+                        event_bus=self.event_bus
+                    )
+                )
+                order_monitor = self.service_container.resolve(OrderMonitor)
+                logger.info("✅ 订单监控器注册完成")
+            else:
+                logger.warning("OrderMonitor已注册，跳过")
+
+            # 注册订单分析器
+            if not self._is_service_registered(OrderAnalyzer):
+                self.service_container.register(
+                    OrderAnalyzer,
+                    scope=ServiceScope.SINGLETON,
+                    factory=lambda: OrderAnalyzer(
+                        service_container=self.service_container,
+                        event_bus=self.event_bus
+                    )
+                )
+                order_analyzer = self.service_container.resolve(OrderAnalyzer)
+                logger.info("✅ 订单分析器注册完成")
+            else:
+                logger.warning("OrderAnalyzer已注册，跳过")
+
+            # 注册TradingService（兼容性）
+            try:
+                from .trading_service import TradingService
+
+                if not self._is_service_registered(TradingService):
+                    self.service_container.register(
+                        TradingService,
+                        scope=ServiceScope.SINGLETON,
+                        factory=lambda: TradingService(
+                            service_container=self.service_container
+                        )
+                    )
+                    logger.info("TradingService 已注册")
+
+                # 初始化交易服务
+                trading_service = self.service_container.resolve(TradingService)
+                if trading_service and hasattr(trading_service, 'initialize'):
+                    try:
+                        trading_service.initialize()
+                        logger.info("TradingService 初始化成功")
+                    except Exception as init_error:
+                        logger.warning(f"TradingService 初始化失败: {init_error}, 使用未初始化状态")
+                logger.info("✅ 交易服务（TradingService）注册完成")
+
+            except ImportError as e:
+                logger.error(f"❌ TradingService 导入失败: {e}")
+                logger.error(traceback.format_exc())
+                raise  # 重新抛出异常，阻止服务启动
+            except Exception as e:
+                logger.error(f"❌ 交易服务（TradingService）注册失败: {e}")
+                logger.error(traceback.format_exc())
+                raise  # 重新抛出异常，阻止服务启动
+
+            # 注册StrategyService
+            try:
+                from .strategy_service import StrategyService
+
+                if not self._is_service_registered(StrategyService):
+                    self.service_container.register(
+                        StrategyService,
+                        scope=ServiceScope.SINGLETON,
+                        factory=lambda: StrategyService(
+                            event_bus=self.event_bus,
+                            config={}
+                        )
+                    )
+
+                # 初始化策略服务
+                strategy_service = self.service_container.resolve(StrategyService)
+                if hasattr(strategy_service, 'initialize'):
+                    strategy_service.initialize()
+                logger.info("✅ 策略服务注册完成")
+
+            except Exception as e:
+                logger.warning(f" 策略服务注册失败: {e}")
+                logger.warning(traceback.format_exc())
+
+            # 注册TradingEngine
+            try:
+                from ..trading_engine import TradingEngine
+
+                if not self._is_service_registered(TradingEngine):
+                    self.service_container.register(
+                        TradingEngine,
+                        scope=ServiceScope.SINGLETON,
+                        factory=lambda: TradingEngine(
+                            service_container=self.service_container,
+                            event_bus=self.event_bus
+                        )
+                    )
+                logger.info("✅ 交易引擎注册完成")
+
+            except Exception as e:
+                logger.warning(f" 交易引擎注册失败: {e}")
+                logger.warning(traceback.format_exc())
+
+            # 注册TradingController
+            try:
+                from ..trading_controller import TradingController
+
+                if not self._is_service_registered(TradingController):
+                    self.service_container.register(
+                        TradingController,
+                        scope=ServiceScope.SINGLETON,
+                        factory=lambda: TradingController(
+                            service_container=self.service_container
+                        )
+                    )
+                logger.info("✅ 交易控制器注册完成")
+
+            except Exception as e:
+                logger.warning(f" 交易控制器注册失败: {e}")
+                logger.warning(traceback.format_exc())
+
+            # 启动订单监控并创建定时任务
+            self._setup_order_monitoring()
+
+            logger.info("交易服务注册完成")
+
+        except Exception as e:
+            logger.error(f" 交易服务注册失败: {e}")
+            logger.error(traceback.format_exc())
+            raise  # 重新抛出异常，让调用方知道服务注册失败
+
+    def _setup_order_monitoring(self) -> None:
+        """设置订单监控定时任务"""
+        try:
+            # 获取订单服务
+            order_service = self.service_container.resolve(OrderService)
+
+            # 启动订单监控
+            order_service.start_monitoring()
+
+            # 检查是否有 TaskScheduler
+            if not self.service_container.is_registered(TaskScheduler):
+                logger.warning("TaskScheduler 未注册，跳过订单监控定时任务")
+                return
+
+            # 获取 TaskScheduler
+            task_scheduler = self.service_container.resolve(TaskScheduler)
+
+            # 注册订单检查任务执行器
+            task_scheduler.register_task_executor(
+                'check_orders',
+                lambda task_data: order_service.check_orders()
+            )
+
+            # 调度重复任务（每5分钟检查一次，用于超时检测）
+            task_scheduler.schedule_recurring_task(
+                task_id='order_monitor_check',
+                name='订单监控检查',
+                function_name='check_orders',
+                task_data={},
+                interval_seconds=300  # 300秒 = 5分钟
+            )
+
+            logger.info("✅ 订单监控定时任务已设置（每5分钟检查超时）")
+
+        except Exception as e:
+            logger.error(f"设置订单监控失败: {e}")
             logger.error(traceback.format_exc())
 
     def _post_initialization_plugin_discovery(self) -> None:

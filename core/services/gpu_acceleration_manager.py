@@ -368,7 +368,7 @@ class GPUAccelerationManager(BaseService):
         """发布事件"""
         try:
             if self._event_bus:
-                self._event_bus.publish(event_name, data)
+                self._event_bus.publish(event_name, **data)
         except Exception as e:
             logger.warning(f"发布事件失败: {e}")
     

@@ -76,10 +76,19 @@ class BreakpointResumeManager(QObject):
         self.storage_path = storage_path
         self.breakpoints: Dict[str, BreakpointState] = {}
         self.running_tasks: Dict[str, asyncio.Task] = {}
-        self.save_timer = QTimer()
-        self.save_timer.timeout.connect(self._auto_save_breakpoints)
-        self.save_timer.start(30000)  # 每30秒自动保存一次
+        self.save_timer = None
         self._ensure_storage_directory()
+
+    def _ensure_save_timer(self):
+        """确保保存定时器已初始化"""
+        if self.save_timer is None:
+            from PyQt5.QtWidgets import QApplication
+            if QApplication.instance() is None:
+                logger.warning("QApplication未初始化，无法创建保存定时器")
+                return
+            self.save_timer = QTimer()
+            self.save_timer.timeout.connect(self._auto_save_breakpoints)
+            self.save_timer.start(30000)  # 每30秒自动保存一次
 
     def _ensure_storage_directory(self):
         """确保存储目录存在"""
@@ -412,6 +421,9 @@ class BreakpointResumeManager(QObject):
     def _save_breakpoint(self, task_id: str):
         """保存断点"""
         try:
+            # 确保定时器已初始化
+            self._ensure_save_timer()
+
             if task_id not in self.breakpoints:
                 return
 

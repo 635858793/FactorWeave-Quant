@@ -34,7 +34,8 @@ class LoguruQtHandler(QObject):
         }
 
         self.setup_loguru_sink()
-        self.setup_processing_timer()
+        # 延迟定时器设置，等待QApplication和事件循环准备好
+        self.timer = None
 
     def setup_loguru_sink(self):
         """设置Loguru sink用于UI显示"""
@@ -107,6 +108,9 @@ class LoguruQtHandler(QObject):
 
     def setup_processing_timer(self):
         """设置定时器处理UI更新队列"""
+        if self.timer is not None:
+            return  # 避免重复创建
+
         self.timer = QTimer()
         self.timer.timeout.connect(self.process_message_queue)
         self.timer.start(33)  # 30fps更新频率，平衡实时性和性能
@@ -234,9 +238,15 @@ class LoguruQtSignalBridge:
 qt_handler = None
 qt_bridge = None
 
-def get_qt_handler() -> LoguruQtHandler:
+def get_qt_handler() -> Optional[LoguruQtHandler]:
     """获取全局Qt处理器，延迟初始化"""
     global qt_handler
+    
+    # 检查QApplication是否存在
+    if QApplication.instance() is None:
+        logger.warning("QApplication未初始化，无法创建Qt日志处理器")
+        return None
+    
     if qt_handler is None:
         qt_handler = LoguruQtHandler()
     return qt_handler

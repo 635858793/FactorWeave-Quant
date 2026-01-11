@@ -5,9 +5,12 @@
 显示聚合交易信号和智能提醒
 """
 
+from loguru import logger
+
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QFrame, QScrollArea, QPushButton, QProgressBar,
-                             QGroupBox, QGridLayout, QTextEdit, QTabWidget)
+                             QGroupBox, QGridLayout, QTextEdit, QTabWidget,
+                             QToolButton, QMenu, QAction, QSizePolicy)
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QPropertyAnimation, QRect
 from PyQt5.QtGui import QFont, QPalette, QColor, QIcon
 from typing import Dict, List, Any, Optional
@@ -402,12 +405,23 @@ class SmartAlertWidget(QWidget):
         super().__init__(parent)
         self.alerts: List[AggregatedAlert] = []
         self.max_alerts = 20  # 最多显示20个警报
+        self.alert_channels_status = {
+            'email': {'enabled': False, 'status': 'unknown', 'name': '邮件'},
+            'sms': {'enabled': False, 'status': 'unknown', 'name': '短信'},
+            'webhook': {'enabled': False, 'status': 'unknown', 'name': 'Webhook'},
+            'dingtalk': {'enabled': False, 'status': 'unknown', 'name': '钉钉'}
+        }
         self.init_ui()
 
         # 自动清理定时器
         self.cleanup_timer = QTimer()
         self.cleanup_timer.timeout.connect(self._cleanup_expired_alerts)
         self.cleanup_timer.start(60000)  # 每分钟检查一次
+
+        # 外部告警渠道状态检查定时器
+        self.channel_status_timer = QTimer()
+        self.channel_status_timer.timeout.connect(self._check_channel_status)
+        self.channel_status_timer.start(30000)  # 每30秒检查一次
 
     def init_ui(self):
         """初始化UI"""
@@ -424,6 +438,27 @@ class SmartAlertWidget(QWidget):
         title_font.setBold(True)
         title_label.setFont(title_font)
         title_label.setStyleSheet("color: #2c3e50;")
+
+        # 外部告警渠道状态按钮
+        self.channel_status_btn = QToolButton()
+        self.channel_status_btn.setText("🔔")
+        self.channel_status_btn.setFixedSize(30, 30)
+        self.channel_status_btn.setToolTip("外部告警渠道状态")
+        self.channel_status_btn.setStyleSheet("""
+            QToolButton {
+                border: none;
+                background: transparent;
+                font-size: 16px;
+            }
+            QToolButton:hover {
+                background: #ecf0f1;
+                border-radius: 15px;
+            }
+        """)
+        self.channel_status_btn.clicked.connect(self._show_channel_status_menu)
+        header_layout.addWidget(title_label)
+        header_layout.addStretch()
+        header_layout.addWidget(self.channel_status_btn)
 
         # 清空按钮
         clear_btn = QPushButton("清空")
@@ -442,8 +477,6 @@ class SmartAlertWidget(QWidget):
         """)
         clear_btn.clicked.connect(self.clear_all_alerts)
 
-        header_layout.addWidget(title_label)
-        header_layout.addStretch()
         header_layout.addWidget(clear_btn)
 
         # 滚动区域
@@ -575,3 +608,123 @@ class SmartAlertWidget(QWidget):
             },
             "avg_confidence": sum(a.overall_confidence for a in recent_alerts) / len(recent_alerts) if recent_alerts else 0
         }
+
+    def _show_channel_status_menu(self):
+        """显示外部告警渠道状态菜单"""
+        menu = QMenu(self)
+
+        menu.setTitle("外部告警渠道状态")
+
+        for channel_id, channel_info in self.alert_channels_status.items():
+            action = QAction(menu)
+            status_text = self._get_channel_status_text(channel_info['status'])
+            action.setText(f"{channel_info['name']}: {status_text}")
+            action.setEnabled(channel_info['enabled'])
+
+            # 设置状态图标
+            if channel_info['status'] == 'ok':
+                action.setIcon(QIcon.fromTheme("dialog-ok"))
+            elif channel_info['status'] == 'error':
+                action.setIcon(QIcon.fromTheme("dialog-error"))
+            elif channel_info['status'] == 'unknown':
+                action.setIcon(QIcon.fromTheme("dialog-question"))
+
+            menu.addAction(action)
+
+        menu.addSeparator()
+
+        config_action = QAction("配置告警渠道", menu)
+        config_action.triggered.connect(self._open_channel_config)
+        menu.addAction(config_action)
+
+        self.channel_status_btn.setMenu(menu)
+        menu.popup(self.channel_status_btn.mapToGlobal(
+            self.channel_status_btn.rect().bottomLeft()
+        ))
+
+    def _get_channel_status_text(self, status: str) -> str:
+        """获取渠道状态文本"""
+        status_map = {
+            'ok': '正常',
+            'error': '异常',
+            'unknown': '未知',
+            'disabled': '未启用'
+        }
+        return status_map.get(status, '未知')
+
+    def _check_channel_status(self):
+        """检查外部告警渠道状态"""
+        try:
+            from core.services.external_alert_channels_service import get_alert_manager
+
+            alert_manager = get_alert_manager()
+
+            # 检查邮件渠道
+            self.alert_channels_status['email']['enabled'] = alert_manager.is_channel_enabled('email')
+            if self.alert_channels_status['email']['enabled']:
+                self.alert_channels_status['email']['status'] = 'ok'
+            else:
+                self.alert_channels_status['email']['status'] = 'disabled'
+
+            # 检查短信渠道
+            self.alert_channels_status['sms']['enabled'] = alert_manager.is_channel_enabled('sms')
+            if self.alert_channels_status['sms']['enabled']:
+                self.alert_channels_status['sms']['status'] = 'ok'
+            else:
+                self.alert_channels_status['sms']['status'] = 'disabled'
+
+            # 检查Webhook渠道
+            self.alert_channels_status['webhook']['enabled'] = alert_manager.is_channel_enabled('webhook')
+            if self.alert_channels_status['webhook']['enabled']:
+                self.alert_channels_status['webhook']['status'] = 'ok'
+            else:
+                self.alert_channels_status['webhook']['status'] = 'disabled'
+
+            # 检查钉钉渠道
+            self.alert_channels_status['dingtalk']['enabled'] = alert_manager.is_channel_enabled('dingtalk')
+            if self.alert_channels_status['dingtalk']['enabled']:
+                self.alert_channels_status['dingtalk']['status'] = 'ok'
+            else:
+                self.alert_channels_status['dingtalk']['status'] = 'disabled'
+
+        except Exception as e:
+            logger.error(f"检查外部告警渠道状态失败: {e}")
+            for channel_id in self.alert_channels_status:
+                self.alert_channels_status[channel_id]['status'] = 'error'
+
+    def _open_channel_config(self):
+        """打开外部告警渠道配置对话框"""
+        try:
+            from gui.dialogs.external_alert_channel_config_dialog import ExternalAlertChannelManagerDialog
+
+            dialog = ExternalAlertChannelManagerDialog(self)
+            dialog.exec_()
+
+            # 重新检查渠道状态
+            self._check_channel_status()
+
+        except Exception as e:
+            logger.error(f"打开外部告警渠道配置对话框失败: {e}")
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self,
+                "错误",
+                f"打开外部告警渠道配置对话框失败: {e}"
+            )
+
+    def update_channel_status(self, channel_id: str, status: str, enabled: bool):
+        """
+        更新外部告警渠道状态
+
+        Args:
+            channel_id: 渠道ID
+            status: 状态 ('ok', 'error', 'unknown', 'disabled')
+            enabled: 是否启用
+        """
+        if channel_id in self.alert_channels_status:
+            self.alert_channels_status[channel_id]['status'] = status
+            self.alert_channels_status[channel_id]['enabled'] = enabled
+
+    def get_channel_status(self) -> Dict[str, Dict[str, Any]]:
+        """获取所有外部告警渠道状态"""
+        return self.alert_channels_status.copy()
