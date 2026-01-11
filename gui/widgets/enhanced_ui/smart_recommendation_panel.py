@@ -80,15 +80,13 @@ class RecommendationCard(QFrame):
 
     def __init__(self, recommendation_data: Dict[str, Any], parent=None):
         super().__init__(parent)
-
+        
         self.recommendation_data = recommendation_data
         self.setFrameStyle(QFrame.StyledPanel)
         # ✅ 修改：增加卡片高度从95到105，确保右下角按钮完整显示
         self.setFixedHeight(105)
         self.setCursor(Qt.PointingHandCursor)
-
         self.init_ui()
-        self.apply_styles()
 
     def init_ui(self):
         """初始化UI（精简版）"""
@@ -189,33 +187,6 @@ class RecommendationCard(QFrame):
         footer_layout.addWidget(self.action_btn)
 
         layout.addLayout(footer_layout)
-
-    def apply_styles(self):
-        """应用样式"""
-        self.setStyleSheet("""
-            RecommendationCard {
-                background-color: white;
-                border: 1px solid #E0E0E0;
-                border-radius: 8px;
-            }
-            
-            RecommendationCard:hover {
-                border: 2px solid #3498DB;
-                background-color: #F8F9FA;
-            }
-            
-            QPushButton {
-                background-color: #3498DB;
-                color: white;
-                border: none;
-                border-radius: 10px;
-                font-weight: bold;
-            }
-            
-            QPushButton:hover {
-                background-color: #2980B9;
-            }
-        """)
 
     def mousePressEvent(self, event):
         """鼠标点击事件"""
@@ -365,7 +336,7 @@ class SmartRecommendationPanel(QWidget):
 
         # 推荐配置
         self.max_recommendations = 10
-        self.recommendation_types = ['stock', 'strategy', 'indicator', 'news', 'analysis']
+        self.recommendation_types = ['stock', 'strategy', 'indicator']
         self.update_interval = 30  # 分钟
 
         # 定时器将在UI初始化后创建，避免QObject::startTimer警告
@@ -489,10 +460,6 @@ class SmartRecommendationPanel(QWidget):
         indicator_tab = self._create_indicator_recommendations_tab()
         rec_tabs.addTab(indicator_tab, "指标推荐")
 
-        # 新闻推荐
-        news_tab = self._create_news_recommendations_tab()
-        rec_tabs.addTab(news_tab, "📰 新闻推荐")
-
         layout.addWidget(rec_tabs)
 
         return widget
@@ -560,44 +527,11 @@ class SmartRecommendationPanel(QWidget):
         """创建API配置面板（水平布局，单行显示）"""
         panel = QFrame()
         panel.setFrameStyle(QFrame.StyledPanel)
-        panel.setStyleSheet("""
-            QFrame {
-                background-color: #f5f5f5;
-                border: 1px solid #ddd;
-                border-radius: 5px;
-                padding: 8px;
-                margin: 2px;
-            }
-            QLabel {
-                font-size: 11px;
-                font-weight: bold;
-                color: #2E86AB;
-            }
-            QTextEdit {
-                border: 1px solid #ccc;
-                border-radius: 3px;
-                padding: 2px;
-                font-size: 11px;
-            }
-            QPushButton {
-                background-color: #4CAF50;
-                color: white;
-                border: none;
-                border-radius: 3px;
-                padding: 4px 8px;
-                font-size: 10px;
-                font-weight: bold;
-            }
-            QPushButton:disabled {
-                background-color: #cccccc;
-                color: #666666;
-            }
-        """)
         
         # 水平布局，所有元素在同一行
         layout = QHBoxLayout(panel)
-        layout.setContentsMargins(10, 5, 10, 5)
-        layout.setSpacing(8)
+        layout.setContentsMargins(5, 10, 5, 10)
+        layout.setSpacing(4)
         
         # 标题
         title_label = QLabel("🔧 API配置:")
@@ -606,8 +540,7 @@ class SmartRecommendationPanel(QWidget):
         # API地址
         layout.addWidget(QLabel("地址:"))
         self.api_address_input = QTextEdit()
-        self.api_address_input.setMaximumHeight(30)
-        self.api_address_input.setMaximumWidth(200)
+        self.api_address_input.setFixedHeight(30)
         self.api_address_input.setPlaceholderText("http://localhost")
         self.api_address_input.textChanged.connect(self._on_api_config_changed)
         layout.addWidget(self.api_address_input)
@@ -615,8 +548,7 @@ class SmartRecommendationPanel(QWidget):
         # 端口
         layout.addWidget(QLabel("端口:"))
         self.api_port_input = QTextEdit()
-        self.api_port_input.setMaximumHeight(30)
-        self.api_port_input.setMaximumWidth(80)
+        self.api_port_input.setFixedHeight(30)
         self.api_port_input.setPlaceholderText("8000")
         self.api_port_input.textChanged.connect(self._on_api_config_changed)
         layout.addWidget(self.api_port_input)
@@ -892,28 +824,6 @@ class SmartRecommendationPanel(QWidget):
         self.indicator_cards_layout.setAlignment(Qt.AlignTop | Qt.AlignLeft)  # 卡片靠上靠左对齐
 
         scroll_area.setWidget(self.indicator_cards_widget)
-        layout.addWidget(scroll_area)
-
-        return widget
-
-    def _create_news_recommendations_tab(self) -> QWidget:
-        """创建新闻推荐标签页"""
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-
-        # 推荐卡片滚动区域
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-
-        # ✅ 修改：新闻推荐也使用网格布局（一行4个，靠上对齐）
-        self.news_cards_widget = QWidget()
-        from PyQt5.QtWidgets import QGridLayout
-        self.news_cards_layout = QGridLayout(self.news_cards_widget)
-        self.news_cards_layout.setSpacing(10)
-        self.news_cards_layout.setContentsMargins(5, 5, 5, 5)
-        self.news_cards_layout.setAlignment(Qt.AlignTop | Qt.AlignLeft)  # 卡片靠上靠左对齐
-
-        scroll_area.setWidget(self.news_cards_widget)
         layout.addWidget(scroll_area)
 
         return widget
@@ -2144,11 +2054,7 @@ class SmartRecommendationPanel(QWidget):
             indicator_items_added = self._load_indicator_content_items()
             logger.info(f"添加了 {indicator_items_added} 个指标内容项")
 
-            # ✅ 新增：4. 添加新闻内容
-            news_items_added = self._load_news_content_items()
-            logger.info(f"添加了 {news_items_added} 个新闻内容项")
-
-            # 5. 创建或更新用户画像
+            # 4. 创建或更新用户画像
             self._create_user_profile()
 
             logger.info("推荐引擎数据初始化完成")
@@ -2297,77 +2203,6 @@ class SmartRecommendationPanel(QWidget):
             logger.error(f"加载指标内容项失败: {e}")
             return 0
 
-    def _load_news_content_items(self) -> int:
-        """加载新闻内容项"""
-        try:
-            from core.services.smart_recommendation_engine import ContentItem, RecommendationType
-            from datetime import datetime, timedelta
-
-            # 模拟新闻内容（实际应从新闻API或数据库获取）
-            news_items = [
-                {
-                    "id": "news_001",
-                    "title": "A股市场今日收涨，沪指涨0.8%",
-                    "desc": "今日A股三大指数集体收涨，沪指涨0.8%，深证成指涨1.2%，创业板指涨1.5%。",
-                    "tags": ["市场动态", "大盘"],
-                    "created": datetime.now() - timedelta(hours=2)
-                },
-                {
-                    "id": "news_002",
-                    "title": "央行宣布降准0.25个百分点",
-                    "desc": "中国人民银行宣布下调存款准备金率0.25个百分点，释放长期流动性约5000亿元。",
-                    "tags": ["政策", "央行", "流动性"],
-                    "created": datetime.now() - timedelta(hours=5)
-                },
-                {
-                    "id": "news_003",
-                    "title": "新能源汽车销量再创新高",
-                    "desc": "最新数据显示，11月新能源汽车销量同比增长38%，市场渗透率突破40%。",
-                    "tags": ["新能源", "汽车", "行业数据"],
-                    "created": datetime.now() - timedelta(hours=8)
-                },
-                {
-                    "id": "news_004",
-                    "title": "科技板块领涨，半导体股集体走强",
-                    "desc": "今日科技板块表现强劲，半导体、芯片概念股集体走强，多只个股涨停。",
-                    "tags": ["科技", "半导体", "板块"],
-                    "created": datetime.now() - timedelta(hours=3)
-                },
-                {
-                    "id": "news_005",
-                    "title": "外资加速流入A股市场",
-                    "desc": "本周外资通过陆股通净买入超过150亿元，连续第五周保持净流入态势。",
-                    "tags": ["外资", "资金流向", "陆股通"],
-                    "created": datetime.now() - timedelta(hours=6)
-                },
-            ]
-
-            count = 0
-            for news in news_items:
-                item = ContentItem(
-                    item_id=f"news_{news['id']}",
-                    item_type=RecommendationType.NEWS,
-                    title=news['title'],
-                    description=news['desc'],
-                    tags=news['tags'],
-                    categories=["财经新闻"],
-                    keywords=news['tags'] + [news['title']],
-                    created_at=news['created'],
-                    # 新闻的热度可以基于发布时间设置
-                    view_count=max(0, 100 - int((datetime.now() - news['created']).total_seconds() / 3600)),
-                    metadata={"source": "模拟数据", "type": "财经"}
-                )
-                self.recommendation_engine.add_content_item(item)
-                count += 1
-
-            return count
-
-        except Exception as e:
-            logger.error(f"加载新闻内容项失败: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-            return 0
-
     def _create_user_profile(self):
         """创建用户画像"""
         try:
@@ -2474,7 +2309,7 @@ class SmartRecommendationPanel(QWidget):
         logger.info(f"显示空状态: {message}")
         # 清空所有推荐卡片
         for layout in [self.stock_cards_layout, self.strategy_cards_layout,
-                       self.indicator_cards_layout, self.news_cards_layout]:
+                       self.indicator_cards_layout]:
             while layout.count():
                 child = layout.takeAt(0)
                 if child.widget():
@@ -2496,35 +2331,45 @@ class SmartRecommendationPanel(QWidget):
 
         # 显示股票推荐
         if 'stock' in recommendations_by_type:
-            logger.info(f"显示 {len(recommendations_by_type['stock'])} 个股票推荐")
-            self._display_recommendation_cards(
-                recommendations_by_type['stock'],
-                self.stock_cards_layout
-            )
+            try:
+                logger.info(f"显示 {len(recommendations_by_type['stock'])} 个股票推荐")
+                self._display_recommendation_cards(
+                    recommendations_by_type['stock'],
+                    self.stock_cards_layout
+                )
+                logger.info("✅ 股票推荐显示成功")
+            except Exception as e:
+                logger.error(f"❌ 显示股票推荐失败: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
 
         # 显示策略推荐
         if 'strategy' in recommendations_by_type:
-            logger.info(f"显示 {len(recommendations_by_type['strategy'])} 个策略推荐")
-            self._display_recommendation_cards(
-                recommendations_by_type['strategy'],
-                self.strategy_cards_layout
-            )
+            try:
+                logger.info(f"显示 {len(recommendations_by_type['strategy'])} 个策略推荐")
+                self._display_recommendation_cards(
+                    recommendations_by_type['strategy'],
+                    self.strategy_cards_layout
+                )
+                logger.info("✅ 策略推荐显示成功")
+            except Exception as e:
+                logger.error(f"❌ 显示策略推荐失败: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
 
         # 显示指标推荐
         if 'indicator' in recommendations_by_type:
-            logger.info(f"显示 {len(recommendations_by_type['indicator'])} 个指标推荐")
-            self._display_recommendation_cards(
-                recommendations_by_type['indicator'],
-                self.indicator_cards_layout
-            )
-
-        # 显示新闻推荐
-        if 'news' in recommendations_by_type:
-            logger.info(f"显示 {len(recommendations_by_type['news'])} 个新闻推荐")
-            self._display_recommendation_cards(
-                recommendations_by_type['news'],
-                self.news_cards_layout
-            )
+            try:
+                logger.info(f"显示 {len(recommendations_by_type['indicator'])} 个指标推荐")
+                self._display_recommendation_cards(
+                    recommendations_by_type['indicator'],
+                    self.indicator_cards_layout
+                )
+                logger.info("✅ 指标推荐显示成功")
+            except Exception as e:
+                logger.error(f"❌ 显示指标推荐失败: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
 
         logger.info("推荐卡片显示完成")
 
@@ -2535,14 +2380,25 @@ class SmartRecommendationPanel(QWidget):
 
             logger.info(f"开始在布局中显示 {len(recommendations)} 个推荐卡片")
 
+            # 检查布局对象的有效性
+            if layout is None:
+                logger.error("❌ 布局对象为 None，无法显示推荐卡片")
+                return
+
             # 清空现有卡片
             cleared_count = 0
-            while layout.count():
-                child = layout.takeAt(0)
-                if child.widget():
-                    child.widget().deleteLater()
-                    cleared_count += 1
-            logger.info(f"清空了 {cleared_count} 个旧卡片")
+            try:
+                while layout.count():
+                    child = layout.takeAt(0)
+                    if child.widget():
+                        child.widget().deleteLater()
+                        cleared_count += 1
+                logger.info(f"清空了 {cleared_count} 个旧卡片")
+            except Exception as clear_error:
+                logger.error(f"❌ 清空布局时出错: {clear_error}")
+                import traceback
+                logger.error(traceback.format_exc())
+                return
 
             # 添加新卡片
             added_count = 0
@@ -2551,6 +2407,8 @@ class SmartRecommendationPanel(QWidget):
 
             for idx, rec in enumerate(recommendations):
                 try:
+                    logger.debug(f"准备创建第 {idx+1}/{len(recommendations)} 个推荐卡片: {rec.get('title', 'Unknown')}")
+                    
                     card = RecommendationCard(rec)
                     card.card_clicked.connect(self._on_recommendation_clicked)
                     card.action_clicked.connect(self._on_recommendation_action)
@@ -2560,13 +2418,18 @@ class SmartRecommendationPanel(QWidget):
                         row = idx // columns
                         col = idx % columns
                         layout.addWidget(card, row, col)
+                        logger.debug(f"卡片 {idx+1} 已添加到网格布局位置 ({row}, {col})")
                     else:
                         layout.addWidget(card)
+                        logger.debug(f"卡片 {idx+1} 已添加到垂直布局")
 
                     added_count += 1
-                    logger.debug(f"添加卡片 {idx+1}: {rec.get('title', 'Unknown')}")
+                    logger.debug(f"✅ 成功添加卡片 {idx+1}: {rec.get('title', 'Unknown')}")
                 except Exception as card_error:
-                    logger.error(f"创建第 {idx} 个推荐卡片失败: {card_error}")
+                    logger.error(f"❌ 创建第 {idx} 个推荐卡片失败: {card_error}")
+                    logger.error(f"推荐数据: {rec}")
+                    import traceback
+                    logger.error(traceback.format_exc())
                     continue
 
             # ✅ 只对VBox布局添加弹性空间
@@ -2576,7 +2439,7 @@ class SmartRecommendationPanel(QWidget):
             logger.info(f"✅ 成功添加 {added_count}/{len(recommendations)} 个推荐卡片到{'网格' if is_grid_layout else '垂直'}布局")
 
         except Exception as e:
-            logger.error(f"显示推荐卡片失败: {e}")
+            logger.error(f"❌ 显示推荐卡片失败: {e}")
             import traceback
             logger.error(traceback.format_exc())
 

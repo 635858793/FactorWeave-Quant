@@ -103,6 +103,7 @@ class TradingWidget(QWidget):
         self._trading_service = None
         self._trading_controller = None
         self._unified_data_manager = None
+        self._trading_confirmation_service = None
 
         # 初始化基本属性
         self.current_stock = None
@@ -157,6 +158,14 @@ class TradingWidget(QWidget):
                 logger.info("统一数据管理器初始化成功")
             else:
                 logger.warning("统一数据管理器初始化失败")
+
+            # 初始化交易确认与风控服务
+            from core.services.trading_confirmation_service import TradingConfirmationService
+            self._trading_confirmation_service = self.service_container.resolve(TradingConfirmationService)
+            if self._trading_confirmation_service:
+                logger.info("交易确认与风控服务初始化成功")
+            else:
+                logger.warning("交易确认与风控服务初始化失败")
 
         except Exception as e:
             logger.error(f"服务初始化失败: {e}")
@@ -334,6 +343,34 @@ class TradingWidget(QWidget):
                 quantity = quantity_spin.value()
                 amount = current_price * quantity
 
+                # 创建订单
+                from core.services.trading_service import TradingOrder, OrderType, OrderSide
+                from decimal import Decimal
+
+                order = TradingOrder(
+                    order_id=f"order_{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                    symbol=self.current_stock,
+                    symbol_name=self.current_stock,
+                    order_type=OrderType.MARKET,
+                    side=OrderSide.BUY,
+                    quantity=quantity,
+                    price=Decimal(str(current_price))
+                )
+
+                # 使用交易确认与风控服务验证订单
+                if self._trading_confirmation_service:
+                    try:
+                        confirmation_result = self._trading_confirmation_service.confirm_order(order)
+                        
+                        if not confirmation_result.get('approved', False):
+                            error_msg = confirmation_result.get('error', '订单验证失败')
+                            QMessageBox.warning(self, "买入失败", f"订单验证失败: {error_msg}")
+                            return
+                    except Exception as e:
+                        logger.error(f"订单验证异常: {e}")
+                        QMessageBox.warning(self, "买入失败", f"订单验证异常: {str(e)}")
+                        return
+
                 # 执行买入逻辑
                 trade_record = {
                     'time': datetime.now(),
@@ -463,6 +500,34 @@ class TradingWidget(QWidget):
             def on_confirm():
                 quantity = quantity_spin.value()
                 amount = current_price * quantity
+
+                # 创建订单
+                from core.services.trading_service import TradingOrder, OrderType, OrderSide
+                from decimal import Decimal
+
+                order = TradingOrder(
+                    order_id=f"order_{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                    symbol=self.current_stock,
+                    symbol_name=self.current_stock,
+                    order_type=OrderType.MARKET,
+                    side=OrderSide.SELL,
+                    quantity=quantity,
+                    price=Decimal(str(current_price))
+                )
+
+                # 使用交易确认与风控服务验证订单
+                if self._trading_confirmation_service:
+                    try:
+                        confirmation_result = self._trading_confirmation_service.confirm_order(order)
+                        
+                        if not confirmation_result.get('approved', False):
+                            error_msg = confirmation_result.get('error', '订单验证失败')
+                            QMessageBox.warning(self, "卖出失败", f"订单验证失败: {error_msg}")
+                            return
+                    except Exception as e:
+                        logger.error(f"订单验证异常: {e}")
+                        QMessageBox.warning(self, "卖出失败", f"订单验证异常: {str(e)}")
+                        return
 
                 # 执行卖出逻辑
                 trade_record = {

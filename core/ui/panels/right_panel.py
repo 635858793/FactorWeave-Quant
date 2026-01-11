@@ -601,18 +601,6 @@ class RightPanel(BasePanel):
         main_layout.setContentsMargins(10, 10, 10, 10)
         main_layout.setSpacing(5)
 
-        # 创建标题
-        title_label = QLabel("技术分析")
-        title_font = QFont()
-        title_font.setPointSize(12)
-        title_font.setBold(True)
-        title_label.setFont(title_font)
-        title_label.setAlignment(Qt.AlignCenter)
-        title_label.setStyleSheet(
-            "color: #495057; font-size: 14px; font-weight: bold;")
-        main_layout.addWidget(title_label)
-        self.add_widget('title', title_label)
-
         # 股票信息框
         stock_info_frame = QFrame()
         stock_info_frame.setFrameStyle(QFrame.StyledPanel)
@@ -626,15 +614,15 @@ class RightPanel(BasePanel):
         # 股票代码和名称
         stock_label = QLabel("请选择股票")
         stock_label.setStyleSheet(
-            "font-size: 14px; font-weight: bold; color: #495057;")
+            "font-size: 14px; font-weight: bold;")
         stock_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         stock_info_layout.addWidget(stock_label)
         self.add_widget('stock_label', stock_label)
 
         # 分隔符
-        separator = QLabel("当前|股票")
+        separator = QLabel("技术分析 - 当前资产")
         separator.setStyleSheet(
-            "font-size: 14px; color: #2ee2e6; margin: 0 5px;")
+            "font-size: 14px; color: #2ee2e6; margin: 0 5px; font-weight: bold;")
         separator.setAlignment(Qt.AlignCenter)
         stock_info_layout.addWidget(separator)
 

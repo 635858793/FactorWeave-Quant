@@ -89,6 +89,8 @@ class OrderRepository:
             ]
 
             pool_name = self._get_database_pool_name(order.asset_type)
+            logger.debug(f"准备保存订单到数据池: {pool_name}")
+            
             db_service.execute_query(sql, params, pool_name=pool_name)
 
             logger.info(f"订单保存成功: {order.order_id} → {pool_name}")
@@ -96,7 +98,16 @@ class OrderRepository:
             return True
 
         except Exception as e:
-            logger.error(f"保存订单失败: {e}")
+            pool_name = self._get_database_pool_name(order.asset_type) if hasattr(order, 'asset_type') else 'unknown'
+            logger.error(f"保存订单失败: {order.order_id} ({order.asset_type.value if hasattr(order, 'asset_type') else 'unknown'}) - {e}")
+            logger.error(f"订单详细信息: stock_code={order.stock_code if hasattr(order, 'stock_code') else 'unknown'}, order_type={order.order_type.value if hasattr(order, 'order_type') else 'unknown'}, order_quantity={order.order_quantity if hasattr(order, 'order_quantity') else 'unknown'}")
+            logger.error(f"数据池: {pool_name}")
+            logger.error(f"可能原因：")
+            logger.error(f"  1. 数据库连接失败")
+            logger.error(f"  2. 数据表不存在")
+            logger.error(f"  3. 数据库事务失败")
+            logger.error(f"  4. 数据类型不匹配")
+            logger.error(f"  5. 约束冲突（如订单ID重复）")
             return False
 
     def update_order(self, order: Order) -> bool:
@@ -317,12 +328,15 @@ class OrderRepository:
 
             if asset_type:
                 pool_name = self._get_database_pool_name(asset_type)
-                result = db_service.execute_query(sql, parameters, pool_name=pool_name)
+                logger.debug(f"从指定数据池查询订单: {order_id} -> {pool_name}")
+                result = db_service.fetch_all(sql, parameters, pool_name=pool_name)
             else:
+                logger.debug(f"从所有数据池查询订单: {order_id}")
                 for asset_type_enum in AssetType:
                     pool_name = self._get_database_pool_name(asset_type_enum)
-                    result = db_service.execute_query(sql, parameters, pool_name=pool_name)
+                    result = db_service.fetch_all(sql, parameters, pool_name=pool_name)
                     if result and len(result) > 0:
+                        logger.debug(f"在数据池 {pool_name} 中找到订单: {order_id}")
                         break
                 else:
                     result = []
@@ -339,10 +353,12 @@ class OrderRepository:
                 return order
             else:
                 logger.warning(f"订单不存在: {order_id}")
+                if not asset_type:
+                    logger.warning(f"已查询所有资产类型的数据池，未找到订单")
                 return None
 
         except Exception as e:
-            logger.error(f"获取订单失败: {e}")
+            logger.error(f"获取订单失败: {order_id} - {e}")
             return None
 
     def query_orders(self, query: OrderQuery) -> List[Order]:
@@ -402,7 +418,7 @@ class OrderRepository:
                 pool_name = self._get_database_pool_name(query.asset_type)
                 sql_with_limit = f"{sql} LIMIT ? OFFSET ?"
                 all_params = parameters + [query.limit, query.offset]
-                results = db_service.execute_query(sql_with_limit, all_params, pool_name=pool_name)
+                results = db_service.fetch_all(sql_with_limit, all_params, pool_name=pool_name)
                 orders = [Order.from_dict(order_data) for order_data in results]
             else:
                 all_orders = []
@@ -410,7 +426,7 @@ class OrderRepository:
                     pool_name = self._get_database_pool_name(asset_type_enum)
                     sql_with_limit = f"{sql} LIMIT ? OFFSET ?"
                     all_params = parameters + [query.limit, query.offset]
-                    results = db_service.execute_query(sql_with_limit, all_params, pool_name=pool_name)
+                    results = db_service.fetch_all(sql_with_limit, all_params, pool_name=pool_name)
                     orders = [Order.from_dict(order_data) for order_data in results]
                     all_orders.extend(orders)
 
@@ -504,7 +520,7 @@ class OrderRepository:
             parameters = [order_id]
             pool_name = self._get_database_pool_name(asset_type)
 
-            results = db_service.execute_query(sql, parameters, pool_name=pool_name)
+            results = db_service.fetch_all(sql, parameters, pool_name=pool_name)
 
             fills = [OrderFill.from_dict(fill_data) for fill_data in results]
 
@@ -515,7 +531,7 @@ class OrderRepository:
             logger.error(f"获取订单成交记录失败: {e}")
             return []
 
-    def delete_order(self, order_id: str) -> bool:
+    def delete_order(self, order_id: str, asset_type: AssetType = None) -> bool:
         """删除订单"""
         try:
             from core.services.database_service import DatabaseService
@@ -524,22 +540,30 @@ class OrderRepository:
             sql = "DELETE FROM orders WHERE order_id = ?"
             parameters = [order_id]
 
-            for asset_type_enum in AssetType:
-                pool_name = self._get_database_pool_name(asset_type_enum)
+            pools_to_try = []
+            if asset_type:
+                pools_to_try.append(self._get_database_pool_name(asset_type))
+            else:
+                for asset_type_enum in AssetType:
+                    pools_to_try.append(self._get_database_pool_name(asset_type_enum))
+
+            deleted = False
+            for pool_name in pools_to_try:
                 try:
                     db_service.execute_query(sql, parameters, pool_name=pool_name)
+                    deleted = True
                     logger.info(f"订单删除成功: {order_id} → {pool_name}")
-                    self.event_bus.publish('order_deleted', order_id=order_id)
-                    return True
+                    break
                 except Exception:
                     continue
 
-            logger.warning(f"订单未找到: {order_id}")
-            return False
-
-            logger.info(f"订单删除成功: {order_id}")
-            self.event_bus.publish('order_deleted', order_id=order_id)
-            return True
+            if deleted:
+                self.cache.delete(order_id)
+                self.event_bus.publish('order_deleted', order_id=order_id)
+                return True
+            else:
+                logger.warning(f"订单未找到: {order_id}")
+                return False
 
         except Exception as e:
             logger.error(f"删除订单失败: {e}")
@@ -593,7 +617,7 @@ class OrderRepository:
             WHERE {where_clause}
             """
 
-            result = db_service.execute_query(sql, parameters, pool_name="strategy_sqlite")
+            result = db_service.fetch_all(sql, parameters, pool_name="strategy_sqlite")
 
             if result and len(result) > 0:
                 row = result[0]

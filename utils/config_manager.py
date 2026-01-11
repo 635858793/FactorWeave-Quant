@@ -43,18 +43,24 @@ class ConfigManager(QObject):
     def __init__(self, config_service=None):
         super().__init__()
         self._config_service = config_service
+        self._container_checked = False
 
-        # 如果没有提供ConfigService，尝试从服务容器获取
-        if self._config_service is None:
+    def _ensure_config_service(self):
+        """确保ConfigService可用，延迟导入避免循环依赖"""
+        if self._config_service is None and not self._container_checked:
+            self._container_checked = True
             try:
                 from core.containers import get_service_container
                 from core.services.config_service import ConfigService
                 container = get_service_container()
                 if container:
                     self._config_service = container.resolve(ConfigService)
+                    if self._config_service:
+                        logger.info("ConfigManager成功获取ConfigService")
+                        return
             except Exception as e:
-                logger.warning(f"无法获取ConfigService，使用SQLite备用模式: {e}")
-                self._init_sqlite_fallback()
+                logger.debug(f"无法获取ConfigService，使用SQLite备用模式: {e}")
+            self._init_sqlite_fallback()
 
     def _init_sqlite_fallback(self):
         """初始化SQLite备用模式"""
@@ -76,6 +82,8 @@ class ConfigManager(QObject):
 
     def get(self, key: str, default=None):
         """获取配置值"""
+        if self._config_service is None:
+            self._ensure_config_service()
         if self._config_service:
             return self._config_service.get(key, default)
         elif self.conn:
@@ -94,6 +102,8 @@ class ConfigManager(QObject):
 
     def set(self, key: str, value):
         """设置配置值"""
+        if self._config_service is None:
+            self._ensure_config_service()
         if self._config_service:
             return self._config_service.set(key, value)
         elif self.conn:
@@ -109,6 +119,8 @@ class ConfigManager(QObject):
 
     def get_all(self):
         """获取所有配置"""
+        if self._config_service is None:
+            self._ensure_config_service()
         if self._config_service:
             return self._config_service.get_all()
         elif self.conn:
@@ -128,6 +140,8 @@ class ConfigManager(QObject):
 
     def delete(self, key: str) -> bool:
         """删除配置项"""
+        if self._config_service is None:
+            self._ensure_config_service()
         if self._config_service:
             return self._config_service.delete(key) if hasattr(self._config_service, 'delete') else False
         elif self.conn:

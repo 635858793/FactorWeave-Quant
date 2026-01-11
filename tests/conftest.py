@@ -1,0 +1,375 @@
+import pytest
+import tempfile
+import shutil
+import os
+from unittest.mock import MagicMock, patch
+from typing import Generator, Dict, Any
+import sqlite3
+import pandas as pd
+from datetime import datetime, timedelta
+
+pytest_plugins = ('pytest_asyncio',)
+
+
+@pytest.fixture(scope='session')
+def temp_dir():
+    """临时目录 fixture"""
+    temp = tempfile.mkdtemp()
+    yield temp
+    shutil.rmtree(temp, ignore_errors=True)
+
+
+@pytest.fixture(scope='session')
+def mock_config(temp_dir) -> Dict[str, Any]:
+    """模拟配置 fixture"""
+    return {
+        'database': {
+            'path': temp_dir,
+            'duckdb_path': os.path.join(temp_dir, 'market_data.duckdb'),
+            'sqlite_path': os.path.join(temp_dir, 'hikyuu.db'),
+        },
+        'trading': {
+            'default_account': 'test_account',
+            'risk_level': 'medium',
+        },
+        'logging': {
+            'level': 'DEBUG',
+            'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        },
+    }
+
+
+@pytest.fixture
+def mock_service_container():
+    """模拟服务容器 fixture"""
+    container = MagicMock()
+    container.resolve = MagicMock(return_value=MagicMock())
+    return container
+
+
+@pytest.fixture
+def mock_event_bus():
+    """模拟事件总线 fixture"""
+    event_bus = MagicMock()
+    event_bus.publish = MagicMock()
+    event_bus.subscribe = MagicMock()
+    event_bus.unsubscribe = MagicMock()
+    return event_bus
+
+
+@pytest.fixture
+def sample_account_data() -> Dict[str, Any]:
+    """示例账户数据 fixture"""
+    return {
+        'account_id': 'test_account_001',
+        'account_name': '测试账户',
+        'account_type': 'simulated',
+        'status': 'active',
+        'balance': 100000.0,
+        'available_balance': 100000.0,
+        'frozen_balance': 0.0,
+        'market_value': 0.0,
+        'total_assets': 100000.0,
+        'profit_loss': 0.0,
+        'profit_loss_ratio': 0.0,
+        'create_time': datetime.now().isoformat(),
+        'update_time': datetime.now().isoformat(),
+        'user_id': 'test_user',
+    }
+
+
+@pytest.fixture
+def sample_stock_data() -> Dict[str, Any]:
+    """示例股票数据 fixture"""
+    return {
+        'code': '600000',
+        'name': '浦发银行',
+        'market': 'SH',
+        'industry': '银行',
+        'list_date': '1999-11-10',
+        'status': 'active',
+    }
+
+
+@pytest.fixture
+def sample_kline_data() -> pd.DataFrame:
+    """示例K线数据 fixture"""
+    dates = pd.date_range(start='2024-01-01', periods=100, freq='D')
+    return pd.DataFrame({
+        'trade_date': dates,
+        'open': [10.0 + i * 0.1 for i in range(100)],
+        'high': [10.5 + i * 0.1 for i in range(100)],
+        'low': [9.5 + i * 0.1 for i in range(100)],
+        'close': [10.2 + i * 0.1 for i in range(100)],
+        'volume': [1000000 + i * 1000 for i in range(100)],
+        'amount': [10000000 + i * 10000 for i in range(100)],
+    })
+
+
+@pytest.fixture
+def sample_market_data() -> Dict[str, Any]:
+    """示例行情数据 fixture"""
+    return {
+        'date': datetime(2024, 1, 15),
+        'index_code': '600000',
+        'index_name': '浦发银行',
+        'open': 10.2,
+        'high': 10.5,
+        'low': 10.0,
+        'close': 10.3,
+        'volume': 1500000,
+        'amount': 15000000,
+        'change': 0.15,
+        'change_pct': 1.5,
+    }
+
+
+@pytest.fixture
+def sample_order_data():
+    """示例订单数据 fixture"""
+    from core.trading.order_models import Order, OrderType, OrderCategory, OrderStatus
+    from core.plugin_types import AssetType
+    
+    now = datetime.now()
+    return Order(
+        order_id='ORDER_20240115_001',
+        strategy_id='STRAT_001',
+        asset_type=AssetType.STOCK_A,
+        stock_code='600000',
+        order_type=OrderType.BUY,
+        order_category=OrderCategory.LIMIT,
+        order_price=10.2,
+        order_quantity=1000,
+        order_status=OrderStatus.PENDING,
+        create_time=now,
+        update_time=now,
+        user_id='test_user',
+        account_id='test_account_001',
+    )
+
+
+@pytest.fixture
+def temp_sqlite_db(temp_dir):
+    """临时 SQLite 数据库 fixture"""
+    db_path = os.path.join(temp_dir, 'test_db.sqlite')
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS accounts (
+            account_id TEXT PRIMARY KEY,
+            name TEXT,
+            account_type TEXT,
+            capital REAL,
+            status TEXT,
+            data TEXT,
+            created_at TEXT,
+            updated_at TEXT
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS stocks (
+            code TEXT PRIMARY KEY,
+            name TEXT,
+            market TEXT,
+            industry TEXT,
+            list_date TEXT,
+            status TEXT
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS kline (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            stock_code TEXT,
+            period TEXT,
+            trade_date TEXT,
+            open REAL,
+            high REAL,
+            low REAL,
+            close REAL,
+            volume INTEGER,
+            amount REAL
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS market (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT,
+            trade_date TEXT,
+            open REAL,
+            high REAL,
+            low REAL,
+            close REAL,
+            volume INTEGER,
+            amount REAL,
+            change_pct REAL
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS metrics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            category TEXT,
+            value REAL,
+            timestamp INTEGER,
+            metadata TEXT
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS orders (
+            order_id TEXT PRIMARY KEY,
+            account_id TEXT,
+            symbol TEXT,
+            side TEXT,
+            order_type TEXT,
+            price REAL,
+            quantity INTEGER,
+            status TEXT,
+            created_at TEXT,
+            updated_at TEXT
+        )
+    ''')
+
+    conn.commit()
+    yield conn
+    conn.close()
+
+
+@pytest.fixture
+def mock_duckdb_operations():
+    """模拟 DuckDB 操作 fixture"""
+    operations = MagicMock()
+    operations.insert_stock_info = MagicMock(return_value=True)
+    operations.update_stock_info = MagicMock(return_value=True)
+    operations.delete_stock_info = MagicMock(return_value=True)
+    operations.insert_kline_data = MagicMock(return_value=True)
+    operations.delete_kline_data = MagicMock(return_value=True)
+    operations.insert_market_data = MagicMock(return_value=True)
+    operations.update_market_data = MagicMock(return_value=True)
+    operations.delete_market_data = MagicMock(return_value=True)
+    return operations
+
+
+@pytest.fixture
+def sample_risk_metrics() -> Dict[str, Any]:
+    """示例风险指标 fixture"""
+    return {
+        'sharpe_ratio': 1.5,
+        'max_drawdown': 0.15,
+        'volatility': 0.2,
+        'beta': 1.1,
+        'alpha': 0.05,
+        'var_95': 0.02,
+        'sortino_ratio': 2.0,
+    }
+
+
+@pytest.fixture
+def mock_logger():
+    """模拟日志记录器 fixture"""
+    logger = MagicMock()
+    logger.debug = MagicMock()
+    logger.info = MagicMock()
+    logger.warning = MagicMock()
+    logger.error = MagicMock()
+    logger.critical = MagicMock()
+    return logger
+
+
+@pytest.fixture
+def app_config():
+    """应用配置 fixture"""
+    return {
+        'app_name': 'Hikyuu UI Test',
+        'version': '1.0.0',
+        'debug': True,
+        'log_level': 'DEBUG',
+    }
+
+
+def pytest_configure(config):
+    """Pytest 配置钩子"""
+    config.addinivalue_line(
+        'markers', 'slow: marks tests as slow (deselect with \'-m "not slow"\')'
+    )
+    config.addinivalue_line(
+        'markers', 'integration: marks tests as integration tests'
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    """测试项目修改钩子"""
+    for item in items:
+        if 'slow' in item.name.lower():
+            item.add_marker(pytest.mark.slow)
+        if 'integration' in item.name.lower():
+            item.add_marker(pytest.mark.integration)
+
+
+@pytest.fixture
+def mock_crypto_utils():
+    """模拟加密工具 fixture"""
+    with patch('core.utils.crypto_utils.CryptoUtils') as mock:
+        mock.encrypt = MagicMock(return_value='encrypted_data')
+        mock.decrypt = MagicMock(return_value='{"key": "value"}')
+        mock.generate_key = MagicMock(return_value='test_key_32_bytes_long_')
+        yield mock
+
+
+@pytest.fixture
+def mock_database_service(temp_sqlite_db):
+    """模拟数据库服务 fixture"""
+    service = MagicMock()
+    service.get_connection = MagicMock(return_value=temp_sqlite_db)
+    service.execute_query = MagicMock(return_value=[])
+    service.execute_update = MagicMock(return_value=1)
+    return service
+
+
+@pytest.fixture
+def cleanup_temp_files(temp_dir):
+    """清理临时文件 fixture"""
+    yield
+    for file in os.listdir(temp_dir):
+        file_path = os.path.join(temp_dir, file)
+        try:
+            if os.path.isfile(file_path):
+                os.remove(file_path)
+        except Exception:
+            pass
+
+
+def pytest_runtest_setup(item):
+    """每个测试前设置"""
+    pass
+
+
+def pytest_runtest_teardown(item, nextitem):
+    """每个测试后清理"""
+    pass
+
+
+@pytest.fixture(scope='module')
+def test_module():
+    """测试模块 fixture"""
+    class TestModule:
+        def __init__(self):
+            self.setup_complete = False
+            self.test_data = {}
+
+        def setup(self):
+            self.setup_complete = True
+
+        def add_test_data(self, key, value):
+            self.test_data[key] = value
+
+        def get_test_data(self, key):
+            return self.test_data.get(key)
+
+    module = TestModule()
+    yield module

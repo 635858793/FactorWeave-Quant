@@ -511,6 +511,7 @@ class BatchSelectionDialog(QDialog):
             logger.error(f"获取股票数据失败: {e}", exc_info=True) if logger else None
             from PyQt5.QtWidgets import QMessageBox
             QMessageBox.critical(self, "错误", f"获取股票数据时发生错误:\n{str(e)}")
+            logger.error(f"Get stock data error: {str(e)}", exc_info=True) if logger else None
             return []
 
     def get_index_data(self):

@@ -164,7 +164,35 @@ class DatabaseConnection:
                     result = self.connection.execute(sql, parameters)
                 else:
                     result = self.connection.execute(sql)
-                return result.fetchall() if is_select else None
+                
+                # 对于 SELECT 查询，将元组列表转换为字典列表
+                if is_select and result is not None:
+                    # 尝试使用 fetchdf 获取 DataFrame 并转换为字典列表
+                    try:
+                        df = result.fetchdf()
+                        return df.to_dict('records')
+                    except Exception as e:
+                        # 如果 fetchdf 失败，尝试其他方法
+                        logger.debug(f"fetchdf failed: {e}, trying alternative method")
+                        try:
+                            # 尝试获取列名并转换
+                            if hasattr(result, 'description'):
+                                columns = [col[0] for col in result.description]
+                            elif hasattr(result, 'columns'):
+                                columns = result.columns
+                            else:
+                                columns = None
+                            
+                            if columns:
+                                rows = result.fetchall()
+                                return [dict(zip(columns, row)) for row in rows]
+                            else:
+                                return result.fetchall()
+                        except Exception as e2:
+                            logger.warning(f"Alternative conversion failed: {e2}, returning raw result")
+                            return result.fetchall()
+                else:
+                    return None
             elif self.db_type == DatabaseType.SQLITE:
                 cursor = self.connection.cursor()
                 if parameters:
@@ -680,9 +708,11 @@ class DatabaseService(BaseService):
                 connection = sqlite3.connect(
                     str(db_path),
                     timeout=config.timeout,
-                    check_same_thread=False,
-                    autocommit=True
+                    check_same_thread=False
                 )
+
+                # 设置自动提交模式（相当于 autocommit=True）
+                connection.isolation_level = None
 
                 # 应用配置
                 if config.enable_wal:
@@ -791,14 +821,14 @@ class DatabaseService(BaseService):
             metrics = self._pool_metrics[pool_name]
             metrics.active_connections = max(0, metrics.active_connections - 1)
 
-    def execute_query(self, sql: str, parameters: Optional[Dict[str, Any]] = None,
+    def execute_query(self, sql: str, parameters: Optional[Union[Dict[str, Any], List[Any]]] = None,
                       pool_name: str = "analytics_duckdb") -> Any:
         """
         执行查询
 
         Args:
             sql: SQL查询语句
-            parameters: 查询参数
+            parameters: 查询参数（支持字典或列表）
             pool_name: 连接池名称（默认："analytics_duckdb"）
 
         Args:
@@ -875,14 +905,14 @@ class DatabaseService(BaseService):
             logger.error(f"Query execution failed: {e}")
             raise
 
-    def fetch_all(self, sql: str, parameters: Optional[Dict[str, Any]] = None,
+    def fetch_all(self, sql: str, parameters: Optional[Union[Dict[str, Any], List[Any]]] = None,
                   pool_name: str = "analytics_duckdb") -> List[Dict[str, Any]]:
         """
         执行查询并返回所有结果
 
         Args:
             sql: SQL查询语句
-            parameters: 查询参数
+            parameters: 查询参数（支持字典或列表）
             pool_name: 连接池名称（默认："analytics_duckdb"）
 
         Returns:
@@ -899,7 +929,30 @@ class DatabaseService(BaseService):
             if hasattr(result, 'to_pydict'):
                 # DuckDB ArrowTable
                 data = result.to_pydict()
-                return [dict(zip(data.keys(), row)) for row in zip(*data.values())]
+                if not data or not isinstance(data, dict):
+                    logger.warning(f"to_pydict returned invalid data: {type(data)}")
+                    return []
+                
+                # 检查数据格式
+                keys = list(data.keys())
+                values = list(data.values())
+                
+                # 确保所有值都是列表
+                if not all(isinstance(v, list) for v in values):
+                    logger.warning(f"to_pydict returned non-list values: {[type(v) for v in values]}")
+                    return []
+                
+                # 转换为字典列表
+                result_list = []
+                for i in range(len(values[0]) if values else 0):
+                    row_dict = {}
+                    for j, key in enumerate(keys):
+                        if j < len(values) and i < len(values[j]):
+                            row_dict[key] = values[j][i]
+                    result_list.append(row_dict)
+                
+                logger.debug(f"Converted DuckDB result: {len(result_list)} rows")
+                return result_list
             elif hasattr(result, 'fetchall'):
                 # 游标对象
                 return result.fetchall()
@@ -907,17 +960,17 @@ class DatabaseService(BaseService):
                 # 其他情况，尝试转换为列表
                 return list(result)
         except Exception as e:
-            logger.error(f"Failed to convert query result: {e}")
+            logger.error(f"Failed to convert query result: {e}, result type: {type(result)}")
             return []
 
-    def fetch_one(self, sql: str, parameters: Optional[Dict[str, Any]] = None,
+    def fetch_one(self, sql: str, parameters: Optional[Union[Dict[str, Any], List[Any]]] = None,
                   pool_name: str = "analytics_duckdb") -> Optional[Dict[str, Any]]:
         """
         执行查询并返回单个结果
 
         Args:
             sql: SQL查询语句
-            parameters: 查询参数
+            parameters: 查询参数（支持字典或列表）
             pool_name: 连接池名称（默认："analytics_duckdb"）
 
         Returns:
@@ -1013,14 +1066,14 @@ class DatabaseService(BaseService):
                 self._metrics.active_transactions = max(0, self._metrics.active_transactions - 1)
 
     def execute_in_transaction(self, transaction_id: str, sql: str,
-                               parameters: Optional[Dict[str, Any]] = None) -> Any:
+                               parameters: Optional[Union[Dict[str, Any], List[Any]]] = None) -> Any:
         """
         在事务中执行查询
 
         Args:
             transaction_id: 事务ID
             sql: SQL语句
-            parameters: 查询参数
+            parameters: 查询参数（支持字典或列表）
 
         Returns:
             查询结果
@@ -1043,13 +1096,16 @@ class DatabaseService(BaseService):
             logger.error(f"Query in transaction {transaction_id} failed: {e}")
             raise
 
-    def _generate_query_cache_key(self, sql: str, parameters: Optional[Dict[str, Any]]) -> str:
+    def _generate_query_cache_key(self, sql: str, parameters: Optional[Union[Dict[str, Any], List[Any]]]) -> str:
         """生成查询缓存键"""
         import hashlib
 
         key_data = sql
         if parameters:
-            param_str = str(sorted(parameters.items()))
+            if isinstance(parameters, dict):
+                param_str = str(sorted(parameters.items()))
+            else:
+                param_str = str(parameters)
             key_data += param_str
 
         return hashlib.md5(key_data.encode()).hexdigest()

@@ -1,0 +1,296 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+      - 'LICENSE'
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: '3.11'
+  MIN_COVERAGE: 80
+
+jobs:
+  lint-and-quality:
+    name: 代码质量检查
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: 安装质量检查工具
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 black mypy ruff
+
+      - name: 运行 flake8 检查
+        run: |
+          flake8 --max-line-length=120 --extend-ignore=E203 core/ tests/ scripts/
+          if [ $? -ne 0 ]; then
+            echo "flake8 检查失败"
+            exit 1
+          fi
+
+      - name: 运行 black 格式化检查
+        run: |
+          black --check --line-length 120 core/ tests/ scripts/
+          if [ $? -ne 0 ]; then
+            echo "black 格式检查失败"
+            exit 1
+          fi
+
+      - name: 运行 mypy 类型检查
+        run: |
+          mypy --ignore-missing-imports --strict-optional core/
+          if [ $? -ne 0 ]; then
+            echo "mypy 类型检查失败"
+            exit 1
+          fi
+
+      - name: 运行 ruff 检查
+        run: |
+          ruff check --line-length 120 core/ tests/ scripts/
+          if [ $? -ne 0 ]; then
+            echo "ruff 检查失败"
+            exit 1
+          fi
+
+  test:
+    name: 自动化测试 (Python ${{ env.PYTHON_VERSION }})
+    runs-on: ubuntu-latest
+    needs: lint-and-quality
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ['3.11']
+      fail-fast: false
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -q -r requirements.txt
+          pip install pytest pytest-cov pytest-html coverage
+
+      - name: 运行测试
+        run: |
+          pytest tests/ -v --tb=short --html=report.html --self-contained-html
+          if [ $? -ne 0 ]; then
+            echo "测试执行失败"
+            exit 1
+          fi
+
+      - name: 生成覆盖率报告
+        run: |
+          pytest tests/ --cov=core --cov-report=xml --cov-report=term-missing --cov-report=html
+          if [ $? -ne 0 ]; then
+            echo "覆盖率报告生成失败"
+            exit 1
+          fi
+
+      - name: 运行质量门禁检查
+        run: |
+          python scripts/coverage_quality_gate.py
+          if [ $? -ne 0 ]; then
+            echo "质量门禁检查失败，覆盖率未达标"
+            exit 1
+          fi
+
+      - name: 检查整体覆盖率阈值
+        run: |
+          coverage xml -o coverage.xml
+          TOTAL_COVERAGE=$(grep -oP '(?<=<coverage .*line-rate=")[^"]*' coverage.xml | head -1)
+          TOTAL_COVERAGE=$(echo "$TOTAL_COVERAGE * 100" | bc | cut -d'.' -f1)
+          echo "当前测试覆盖率: ${TOTAL_COVERAGE}%"
+          if [ "$TOTAL_COVERAGE" -lt "$MIN_COVERAGE" ]; then
+            echo "错误: 测试覆盖率 ${TOTAL_COVERAGE}% 低于最低要求 ${MIN_COVERAGE}%"
+            exit 1
+          fi
+          echo "覆盖率检查通过: ${TOTAL_COVERAGE}% >= ${MIN_COVERAGE}%"
+
+      - name: 上传质量门禁报告
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: quality-gate-report
+          path: |
+            coverage_quality_gate_report.json
+            coverage.json
+
+      - name: 上传测试报告
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-report-${{ matrix.python-version }}
+          path: |
+            report.html
+            coverage.xml
+            htmlcov/
+
+      - name: 上传覆盖率报告
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          file: ./coverage.xml
+          fail_ci_if_error: false
+
+  security-check:
+    name: 安全扫描
+    runs-on: ubuntu-latest
+    needs: lint-and-quality
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 安装安全扫描工具
+        run: |
+          python -m pip install --upgrade pip
+          pip install bandit safety
+
+      - name: 运行 Bandit 安全检查
+        run: |
+          bandit -r core/ -f json -o bandit_report.json
+          if [ $? -ne 0 ]; then
+            echo "Bandit 检查发现问题"
+            cat bandit_report.json
+            exit 1
+          fi
+
+      - name: 运行 Safety 检查
+        run: |
+          safety check -r requirements.txt --json > safety_report.json || true
+          if [ -s safety_report.json ]; then
+            echo "Safety 检查发现问题:"
+            cat safety_report.json
+          fi
+
+      - name: 上传安全报告
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-report
+          path: |
+            bandit_report.json
+            safety_report.json
+
+  build-and-deploy:
+    name: 构建与部署
+    runs-on: ubuntu-latest
+    needs: [test, security-check]
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 安装构建依赖
+        run: |
+          python -m pip install --upgrade pip build twine
+
+      - name: 构建包
+        run: |
+          python -m build
+          if [ $? -ne 0 ]; then
+            echo "构建失败"
+            exit 1
+          fi
+
+      - name: 验证包
+        run: |
+          python -m twine check dist/*
+          if [ $? -ne 0 ]; then
+            echo "包验证失败"
+            exit 1
+          fi
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  performance-test:
+    name: 性能测试
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -q -r requirements.txt
+          pip install pytest-benchmark
+
+      - name: 运行性能测试
+        run: |
+          pytest tests/performance/ -v --benchmark-only
+          if [ $? -ne 0 ]; then
+            echo "性能测试执行失败"
+            exit 1
+          fi
+
+      - name: 上传性能报告
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: performance-report
+          path: |
+            benchmarks.json
+            tests/performance/results/
+
+  notify:
+    name: 通知
+    runs-on: ubuntu-latest
+    needs: [test, security-check, performance-test]
+    if: always()
+    steps:
+      - name: 发送完成通知
+        run: |
+          if [ "${{ needs.test.result }}" == "success" ] && \
+             [ "${{ needs.security-check.result }}" == "success" ] && \
+             [ "${{ needs.performance-test.result }}" == "success" ]; then
+             echo "✅ CI/CD 流水线执行成功"
+          else
+             echo "❌ CI/CD 流水线存在失败的任务"
+             exit 1
+          fi

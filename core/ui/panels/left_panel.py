@@ -475,13 +475,13 @@ class LeftPanel(BasePanel):
         self.stock_tree = QTreeWidget()
         self.stock_tree.setHeaderLabels(["代码", "名称","市场","行业"])
         self.stock_tree.setRootIsDecorated(False)
-        self.stock_tree.setAlternatingRowColors(True)
+        # self.stock_tree.setAlternatingRowColors(True)
         self.stock_tree.setSortingEnabled(True)
 
         # 设置列宽
         self.stock_tree.setColumnWidth(0, 80)   # 代码
         self.stock_tree.setColumnWidth(1, 80)  # 名称
-        self.stock_tree.setColumnWidth(2, 60)   # 市场
+        self.stock_tree.setColumnWidth(2, 40)   # 市场
         self.stock_tree.setColumnWidth(3, 100)  # 行业
         # self.stock_tree.setColumnWidth(4, 60)   # 类型
 
@@ -2365,6 +2365,7 @@ class LeftPanel(BasePanel):
                     f"Saved indicator combination: {name} with {len(indicators)} indicators")
             else:
                 QMessageBox.critical(self._root_frame, "错误", "保存指标组合失败")
+                logger.error(f"Failed to save indicator combination: {name}")
 
         except Exception as e:
             QMessageBox.critical(self._root_frame, "错误",

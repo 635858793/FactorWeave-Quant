@@ -9,6 +9,7 @@
 from typing import Dict, List, Optional
 from datetime import datetime
 from loguru import logger
+import threading
 
 from core.trading.account_models import (
     Account, Position, FundInfo, AccountQuery, PositionQuery,
@@ -39,6 +40,10 @@ class AccountManager:
         self._positions: Dict[str, Position] = {}
         self._fund_infos: Dict[str, FundInfo] = {}
 
+        self._account_lock = threading.RLock()
+        self._position_lock = threading.RLock()
+        self._fund_info_lock = threading.RLock()
+
         self._load_accounts_from_database()
 
         logger.info("账户管理器初始化完成")
@@ -46,18 +51,183 @@ class AccountManager:
     def _load_accounts_from_database(self):
         """
         从数据库加载账户数据
+
+        Returns:
+            bool: 是否加载成功
         """
         try:
             accounts = self.repository.get_accounts()
+            
+            with self._account_lock:
+                self._accounts.clear()
+                for account in accounts:
+                    self._accounts[account.account_id] = account
+
+            if accounts:
+                logger.info(f"✓ 从数据库成功加载了 {len(accounts)} 个账户")
+            else:
+                logger.info("✓ 从数据库加载账户完成，暂无账户数据")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"✗ 从数据库加载账户失败: {e}")
+            logger.error("  账户管理器将使用空账户状态启动，数据库连接可能存在故障")
+            self.event_bus.publish('account_load_failed', error=str(e))
+            return False
+
+    def is_initialized(self) -> bool:
+        """检查账户管理器是否已初始化
+
+        Returns:
+            bool: 是否初始化成功
+        """
+        return len(self._accounts) >= 0
+
+    def refresh_accounts(self) -> bool:
+        """从数据库刷新所有账户数据
+
+        Returns:
+            bool: 是否刷新成功
+        """
+        try:
+            with self._account_lock:
+                old_count = len(self._accounts)
+                accounts = self.repository.get_accounts()
+                self._accounts.clear()
+                for account in accounts:
+                    self._accounts[account.account_id] = account
+
+                new_count = len(accounts)
+                if old_count != new_count:
+                    logger.info(f"✓ 账户数据已刷新: {old_count} -> {new_count} 个账户")
+                else:
+                    logger.debug(f"✓ 账户数据已刷新: {new_count} 个账户")
+
+            self.event_bus.publish('accounts_refreshed', count=new_count)
+            return True
+
+        except Exception as e:
+            logger.error(f"✗ 刷新账户数据失败: {e}")
+            return False
+
+    def refresh_account(self, account_id: str) -> bool:
+        """从数据库刷新单个账户数据
+
+        Args:
+            account_id: 账户ID
+
+        Returns:
+            bool: 是否刷新成功
+        """
+        try:
+            account = self.repository.get_account(account_id)
+            
+            with self._account_lock:
+                if account:
+                    self._accounts[account_id] = account
+                    logger.debug(f"✓ 账户数据已刷新: {account_id}")
+                    return True
+                else:
+                    logger.warning(f"✗ 账户不存在，无法刷新: {account_id}")
+                    if account_id in self._accounts:
+                        del self._accounts[account_id]
+                    return False
+
+        except Exception as e:
+            logger.error(f"✗ 刷新账户数据失败 {account_id}: {e}")
+            return False
+
+    def refresh_positions(self) -> bool:
+        """从数据库刷新所有持仓数据
+
+        Returns:
+            bool: 是否刷新成功
+        """
+        try:
+            positions = self.repository.get_positions()
+            
+            with self._position_lock:
+                self._positions.clear()
+                for position in positions:
+                    self._positions[position.position_id] = position
+
+                count = len(positions)
+                logger.debug(f"✓ 持仓数据已刷新: {count} 条记录")
+
+            self.event_bus.publish('positions_refreshed', count=count)
+            return True
+
+        except Exception as e:
+            logger.error(f"✗ 刷新持仓数据失败: {e}")
+            return False
+
+    def refresh_fund_infos(self) -> bool:
+        """从数据库刷新所有资金信息数据
+
+        Returns:
+            bool: 是否刷新成功
+        """
+        try:
+            fund_infos = self.repository.get_all_fund_infos()
+            
+            with self._fund_info_lock:
+                self._fund_infos.clear()
+                for fund_info in fund_infos:
+                    self._fund_infos[fund_info.account_id] = fund_info
+
+                count = len(fund_infos)
+                logger.debug(f"✓ 资金信息已刷新: {count} 条记录")
+
+            self.event_bus.publish('fund_infos_refreshed', count=count)
+            return True
+
+        except Exception as e:
+            logger.error(f"✗ 刷新资金信息失败: {e}")
+            return False
+
+    def sync_all_from_database(self) -> Dict[str, int]:
+        """从数据库同步所有数据
+
+        Returns:
+            Dict[str, int]: 各类型数据的同步结果统计
+        """
+        results = {
+            'accounts': 0,
+            'positions': 0,
+            'fund_infos': 0
+        }
+
+        try:
+            accounts = self.repository.get_accounts()
+            self._accounts.clear()
             for account in accounts:
                 self._accounts[account.account_id] = account
-            logger.info(f"从数据库加载了 {len(accounts)} 个账户")
+            results['accounts'] = len(accounts)
+
+            positions = self.repository.get_positions()
+            self._positions.clear()
+            for position in positions:
+                self._positions[position.position_id] = position
+            results['positions'] = len(positions)
+
+            fund_infos = self.repository.get_all_fund_infos()
+            self._fund_infos.clear()
+            for fund_info in fund_infos:
+                self._fund_infos[fund_info.account_id] = fund_info
+            results['fund_infos'] = len(fund_infos)
+
+            logger.info(f"✓ 全量数据同步完成: 账户{results['accounts']}个, 持仓{results['positions']}条, 资金{results['fund_infos']}条")
+
+            self.event_bus.publish('all_data_synced', results=results)
+            return results
+
         except Exception as e:
-            logger.error(f"从数据库加载账户失败: {e}")
+            logger.error(f"✗ 全量数据同步失败: {e}")
+            return results
 
     def create_account(self, account: Account) -> bool:
-        """
-        创建账户
+        """创建账户
 
         Args:
             account: 账户对象
@@ -66,36 +236,36 @@ class AccountManager:
             bool: 是否创建成功
         """
         try:
-            if account.account_id in self._accounts:
-                logger.warning(f"账户已存在: {account.account_id}")
-                return False
+            with self._account_lock:
+                if account.account_id in self._accounts:
+                    logger.warning(f"账户已存在: {account.account_id}")
+                    return False
 
-            # 验证账户信息
-            if not account.institution_name:
-                logger.warning(f"账户缺少机构名称: {account.account_id}")
-            
-            if not account.trading_interface_type:
-                logger.warning(f"账户未指定交易接口类型，将使用默认值: {account.account_id}")
-                account.trading_interface_type = TradingInterfaceType.MOCK
+                if not account.institution_name:
+                    logger.warning(f"账户缺少机构名称: {account.account_id}")
+                
+                if not account.trading_interface_type:
+                    logger.warning(f"账户未指定交易接口类型，将使用默认值: {account.account_id}")
+                    account.trading_interface_type = TradingInterfaceType.MOCK
 
-            self._accounts[account.account_id] = account
-            
-            if self.repository.save_account(account):
+                if not self.repository.save_account(account):
+                    logger.error(f"保存账户到数据库失败: {account.account_id}")
+                    return False
+
+                self._accounts[account.account_id] = account
+                
                 logger.info(f"账户创建成功: {account.account_id}, 机构: {account.institution_name}, 交易接口: {account.trading_interface_type.value}")
 
-                self.event_bus.publish('account_created', account_id=account.account_id, account_name=account.account_name, institution_name=account.institution_name, trading_interface_type=account.trading_interface_type.value)
+            self.event_bus.publish('account_created', account_id=account.account_id, account_name=account.account_name, institution_name=account.institution_name, trading_interface_type=account.trading_interface_type.value)
 
-                return True
-            else:
-                return False
+            return True
 
         except Exception as e:
             logger.error(f"创建账户失败: {e}")
             return False
 
     def update_account(self, account: Account) -> bool:
-        """
-        更新账户信息
+        """更新账户信息
 
         Args:
             account: 账户对象
@@ -104,20 +274,22 @@ class AccountManager:
             bool: 是否更新成功
         """
         try:
-            if account.account_id not in self._accounts:
-                logger.warning(f"账户不存在: {account.account_id}")
-                return False
+            with self._account_lock:
+                if account.account_id not in self._accounts:
+                    logger.warning(f"账户不存在: {account.account_id}")
+                    return False
 
-            self._accounts[account.account_id] = account
-            
-            if self.repository.save_account(account):
+                if not self.repository.save_account(account):
+                    logger.error(f"保存账户到数据库失败: {account.account_id}")
+                    return False
+
+                self._accounts[account.account_id] = account
+                
                 logger.debug(f"账户信息更新成功: {account.account_id}")
 
-                self.event_bus.publish('account_updated', account_id=account.account_id, account_name=account.account_name)
+            self.event_bus.publish('account_updated', account_id=account.account_id, account_name=account.account_name)
 
-                return True
-            else:
-                return False
+            return True
 
         except Exception as e:
             logger.error(f"更新账户信息失败: {e}")
@@ -133,7 +305,8 @@ class AccountManager:
         Returns:
             Account: 账户对象，不存在返回None
         """
-        return self._accounts.get(account_id)
+        with self._account_lock:
+            return self._accounts.get(account_id)
 
     def query_accounts(self, query: AccountQuery) -> List[Account]:
         """
@@ -146,39 +319,39 @@ class AccountManager:
             List[Account]: 账户列表
         """
         try:
-            accounts = list(self._accounts.values())
+            with self._account_lock:
+                accounts = list(self._accounts.values())
 
-            if query.account_id:
-                accounts = [a for a in accounts if a.account_id == query.account_id]
+                if query.account_id:
+                    accounts = [a for a in accounts if a.account_id == query.account_id]
 
-            if query.user_id:
-                accounts = [a for a in accounts if a.user_id == query.user_id]
+                if query.user_id:
+                    accounts = [a for a in accounts if a.user_id == query.user_id]
 
-            if query.account_type:
-                accounts = [a for a in accounts if a.account_type == query.account_type]
+                if query.account_type:
+                    accounts = [a for a in accounts if a.account_type == query.account_type]
 
-            if query.status:
-                accounts = [a for a in accounts if a.status == query.status]
+                if query.status:
+                    accounts = [a for a in accounts if a.status == query.status]
 
-            if query.sort_by == "create_time":
-                accounts.sort(key=lambda x: x.create_time, reverse=(query.sort_order == "desc"))
-            elif query.sort_by == "update_time":
-                accounts.sort(key=lambda x: x.update_time, reverse=(query.sort_order == "desc"))
-            elif query.sort_by == "balance":
-                accounts.sort(key=lambda x: x.balance, reverse=(query.sort_order == "desc"))
+                if query.sort_by == "create_time":
+                    accounts.sort(key=lambda x: x.create_time, reverse=(query.sort_order == "desc"))
+                elif query.sort_by == "update_time":
+                    accounts.sort(key=lambda x: x.update_time, reverse=(query.sort_order == "desc"))
+                elif query.sort_by == "balance":
+                    accounts.sort(key=lambda x: x.balance, reverse=(query.sort_order == "desc"))
 
-            if query.limit:
-                accounts = accounts[query.offset:query.offset + query.limit]
+                if query.limit:
+                    accounts = accounts[query.offset:query.offset + query.limit]
 
-            return accounts
+                return accounts
 
         except Exception as e:
             logger.error(f"查询账户列表失败: {e}")
             return []
 
     def delete_account(self, account_id: str) -> bool:
-        """
-        删除账户
+        """删除账户
 
         Args:
             account_id: 账户ID
@@ -187,28 +360,29 @@ class AccountManager:
             bool: 是否删除成功
         """
         try:
-            if account_id not in self._accounts:
-                logger.warning(f"账户不存在: {account_id}")
-                return False
+            with self._account_lock:
+                if account_id not in self._accounts:
+                    logger.warning(f"账户不存在: {account_id}")
+                    return False
 
-            del self._accounts[account_id]
-            
-            if self.repository.delete_account(account_id):
+                if not self.repository.delete_account(account_id):
+                    logger.error(f"从数据库删除账户失败: {account_id}")
+                    return False
+
+                del self._accounts[account_id]
+                
                 logger.info(f"账户删除成功: {account_id}")
 
-                self.event_bus.publish('account_deleted', account_id=account_id)
+            self.event_bus.publish('account_deleted', account_id=account_id)
 
-                return True
-            else:
-                return False
+            return True
 
         except Exception as e:
             logger.error(f"删除账户失败: {e}")
             return False
 
     def create_position(self, position: Position) -> bool:
-        """
-        创建持仓
+        """创建持仓
 
         Args:
             position: 持仓对象
@@ -217,28 +391,29 @@ class AccountManager:
             bool: 是否创建成功
         """
         try:
-            if position.position_id in self._positions:
-                logger.warning(f"持仓已存在: {position.position_id}")
-                return False
+            with self._position_lock:
+                if position.position_id in self._positions:
+                    logger.warning(f"持仓已存在: {position.position_id}")
+                    return False
 
-            self._positions[position.position_id] = position
-            
-            if self.repository.save_position(position):
+                if not self.repository.save_position(position):
+                    logger.error(f"保存持仓到数据库失败: {position.position_id}")
+                    return False
+
+                self._positions[position.position_id] = position
+                
                 logger.info(f"持仓创建成功: {position.position_id}")
 
-                self.event_bus.publish('position_created', position_id=position.position_id, account_id=position.account_id, stock_code=position.stock_code)
+            self.event_bus.publish('position_created', position_id=position.position_id, account_id=position.account_id, stock_code=position.stock_code)
 
-                return True
-            else:
-                return False
+            return True
 
         except Exception as e:
             logger.error(f"创建持仓失败: {e}")
             return False
 
     def update_position(self, position: Position) -> bool:
-        """
-        更新持仓信息
+        """更新持仓信息
 
         Args:
             position: 持仓对象
@@ -247,20 +422,22 @@ class AccountManager:
             bool: 是否更新成功
         """
         try:
-            if position.position_id not in self._positions:
-                logger.warning(f"持仓不存在: {position.position_id}")
-                return False
+            with self._position_lock:
+                if position.position_id not in self._positions:
+                    logger.warning(f"持仓不存在: {position.position_id}")
+                    return False
 
-            self._positions[position.position_id] = position
-            
-            if self.repository.save_position(position):
+                if not self.repository.save_position(position):
+                    logger.error(f"保存持仓到数据库失败: {position.position_id}")
+                    return False
+
+                self._positions[position.position_id] = position
+                
                 logger.debug(f"持仓信息更新成功: {position.position_id}")
 
-                self.event_bus.publish('position_updated', position_id=position.position_id, account_id=position.account_id, stock_code=position.stock_code)
+            self.event_bus.publish('position_updated', position_id=position.position_id, account_id=position.account_id, stock_code=position.stock_code)
 
-                return True
-            else:
-                return False
+            return True
 
         except Exception as e:
             logger.error(f"更新持仓信息失败: {e}")
@@ -276,7 +453,8 @@ class AccountManager:
         Returns:
             Position: 持仓对象，不存在返回None
         """
-        return self._positions.get(position_id)
+        with self._position_lock:
+            return self._positions.get(position_id)
 
     def query_positions(self, query: PositionQuery) -> List[Position]:
         """
@@ -289,39 +467,39 @@ class AccountManager:
             List[Position]: 持仓列表
         """
         try:
-            positions = list(self._positions.values())
+            with self._position_lock:
+                positions = list(self._positions.values())
 
-            if query.account_id:
-                positions = [p for p in positions if p.account_id == query.account_id]
+                if query.account_id:
+                    positions = [p for p in positions if p.account_id == query.account_id]
 
-            if query.asset_type:
-                positions = [p for p in positions if p.asset_type == query.asset_type]
+                if query.asset_type:
+                    positions = [p for p in positions if p.asset_type == query.asset_type]
 
-            if query.stock_code:
-                positions = [p for p in positions if p.stock_code == query.stock_code]
+                if query.stock_code:
+                    positions = [p for p in positions if p.stock_code == query.stock_code]
 
-            if query.side:
-                positions = [p for p in positions if p.side == query.side]
+                if query.side:
+                    positions = [p for p in positions if p.side == query.side]
 
-            if query.sort_by == "open_time":
-                positions.sort(key=lambda x: x.open_time, reverse=(query.sort_order == "desc"))
-            elif query.sort_by == "update_time":
-                positions.sort(key=lambda x: x.update_time, reverse=(query.sort_order == "desc"))
-            elif query.sort_by == "market_value":
-                positions.sort(key=lambda x: x.market_value, reverse=(query.sort_order == "desc"))
+                if query.sort_by == "open_time":
+                    positions.sort(key=lambda x: x.open_time, reverse=(query.sort_order == "desc"))
+                elif query.sort_by == "update_time":
+                    positions.sort(key=lambda x: x.update_time, reverse=(query.sort_order == "desc"))
+                elif query.sort_by == "market_value":
+                    positions.sort(key=lambda x: x.market_value, reverse=(query.sort_order == "desc"))
 
-            if query.limit:
-                positions = positions[query.offset:query.offset + query.limit]
+                if query.limit:
+                    positions = positions[query.offset:query.offset + query.limit]
 
-            return positions
+                return positions
 
         except Exception as e:
             logger.error(f"查询持仓列表失败: {e}")
             return []
 
     def delete_position(self, position_id: str) -> bool:
-        """
-        删除持仓
+        """删除持仓
 
         Args:
             position_id: 持仓ID
@@ -330,28 +508,29 @@ class AccountManager:
             bool: 是否删除成功
         """
         try:
-            if position_id not in self._positions:
-                logger.warning(f"持仓不存在: {position_id}")
-                return False
+            with self._position_lock:
+                if position_id not in self._positions:
+                    logger.warning(f"持仓不存在: {position_id}")
+                    return False
 
-            del self._positions[position_id]
-            
-            if self.repository.delete_position(position_id):
+                if not self.repository.delete_position(position_id):
+                    logger.error(f"从数据库删除持仓失败: {position_id}")
+                    return False
+
+                del self._positions[position_id]
+                
                 logger.info(f"持仓删除成功: {position_id}")
 
-                self.event_bus.publish('position_deleted', position_id=position_id)
+            self.event_bus.publish('position_deleted', position_id=position_id)
 
-                return True
-            else:
-                return False
+            return True
 
         except Exception as e:
             logger.error(f"删除持仓失败: {e}")
             return False
 
     def update_fund_info(self, fund_info: FundInfo) -> bool:
-        """
-        更新资金信息
+        """更新资金信息
 
         Args:
             fund_info: 资金信息对象
@@ -360,16 +539,18 @@ class AccountManager:
             bool: 是否更新成功
         """
         try:
-            self._fund_infos[fund_info.account_id] = fund_info
-            
-            if self.repository.save_fund_info(fund_info):
+            with self._fund_info_lock:
+                if not self.repository.save_fund_info(fund_info):
+                    logger.error(f"保存资金信息到数据库失败: {fund_info.account_id}")
+                    return False
+
+                self._fund_infos[fund_info.account_id] = fund_info
+                
                 logger.debug(f"资金信息更新成功: {fund_info.account_id}")
 
-                self.event_bus.publish('fund_updated', account_id=fund_info.account_id, total_assets=fund_info.total_assets)
+            self.event_bus.publish('fund_updated', account_id=fund_info.account_id, total_assets=fund_info.total_assets)
 
-                return True
-            else:
-                return False
+            return True
 
         except Exception as e:
             logger.error(f"更新资金信息失败: {e}")
@@ -385,7 +566,8 @@ class AccountManager:
         Returns:
             FundInfo: 资金信息对象，不存在返回None
         """
-        return self._fund_infos.get(account_id)
+        with self._fund_info_lock:
+            return self._fund_infos.get(account_id)
 
     def get_all_accounts(self) -> List[Account]:
         """
@@ -394,7 +576,8 @@ class AccountManager:
         Returns:
             List[Account]: 账户列表
         """
-        return list(self._accounts.values())
+        with self._account_lock:
+            return list(self._accounts.values())
 
     def get_all_positions(self) -> List[Position]:
         """
@@ -403,7 +586,8 @@ class AccountManager:
         Returns:
             List[Position]: 持仓列表
         """
-        return list(self._positions.values())
+        with self._position_lock:
+            return list(self._positions.values())
 
     def get_account_positions(self, account_id: str) -> List[Position]:
         """
@@ -415,7 +599,8 @@ class AccountManager:
         Returns:
             List[Position]: 持仓列表
         """
-        return [p for p in self._positions.values() if p.account_id == account_id]
+        with self._position_lock:
+            return [p for p in self._positions.values() if p.account_id == account_id]
 
     def get_account_summary(self, account_id: str) -> Optional[Dict]:
         """
@@ -449,6 +634,79 @@ class AccountManager:
         except Exception as e:
             logger.error(f"获取账户汇总信息失败: {e}")
             return None
+
+    def save_accounts(self, accounts: List[Account]) -> Dict[str, bool]:
+        """
+        批量保存账户
+
+        Args:
+            accounts: 账户列表
+
+        Returns:
+            Dict[str, bool]: 账户ID到保存结果的映射
+        """
+        try:
+            results = {}
+            
+            with self._account_lock:
+                for account in accounts:
+                    if account.account_id in self._accounts:
+                        results[account.account_id] = self._update_account_internal(account)
+                    else:
+                        results[account.account_id] = self._create_account_internal(account)
+
+            success_count = sum(1 for result in results.values() if result)
+            logger.info(f"批量保存账户完成: {success_count}/{len(accounts)} 成功")
+            self.event_bus.publish('accounts_saved', total=len(accounts), success=success_count)
+            
+            return results
+
+        except Exception as e:
+            logger.error(f"批量保存账户失败: {e}")
+            return {account.account_id: False for account in accounts}
+
+    def _create_account_internal(self, account: Account) -> bool:
+        """
+        内部创建账户方法（不加锁）
+
+        Args:
+            account: 账户对象
+
+        Returns:
+            bool: 是否创建成功
+        """
+        if not account.institution_name:
+            logger.warning(f"账户缺少机构名称: {account.account_id}")
+        
+        if not account.trading_interface_type:
+            logger.warning(f"账户未指定交易接口类型，将使用默认值: {account.account_id}")
+            account.trading_interface_type = TradingInterfaceType.MOCK
+
+        if not self.repository.save_account(account):
+            logger.error(f"保存账户到数据库失败: {account.account_id}")
+            return False
+
+        self._accounts[account.account_id] = account
+        logger.info(f"账户创建成功: {account.account_id}, 机构: {account.institution_name}, 交易接口: {account.trading_interface_type.value}")
+        return True
+
+    def _update_account_internal(self, account: Account) -> bool:
+        """
+        内部更新账户方法（不加锁）
+
+        Args:
+            account: 账户对象
+
+        Returns:
+            bool: 是否更新成功
+        """
+        if not self.repository.save_account(account):
+            logger.error(f"保存账户到数据库失败: {account.account_id}")
+            return False
+
+        self._accounts[account.account_id] = account
+        logger.debug(f"账户更新成功: {account.account_id}")
+        return True
 
     def start_account_monitoring(self, account_id: str, interval_seconds: int = 60):
         """

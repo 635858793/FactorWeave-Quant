@@ -9,9 +9,6 @@ from typing import Any, Callable, Dict, List, Optional, Type, TypeVar, Union
 from .service_registry import ServiceRegistry, ServiceInfo, ServiceScope
 from loguru import logger
 
-# WebGPU相关导入
-from core.webgpu import get_webgpu_manager
-
 T = TypeVar('T')
 
 
@@ -365,17 +362,17 @@ class ServiceContainer:
     def _register_webgpu_services(self):
         """注册WebGPU相关服务到业务框架"""
         try:
-            # WebGPU管理器服务 - 包含状态监控功能
+            from core.webgpu import get_webgpu_manager
             from core.webgpu.manager import WebGPUManager
-            
+
             self.register_factory(
                 WebGPUManager,
                 lambda: get_webgpu_manager(),
                 scope=ServiceScope.SINGLETON
             )
-            
+
             logger.info("✅ WebGPU服务注册完成")
-            
+
         except Exception as e:
             logger.error(f"❌ WebGPU服务注册失败: {e}")
 

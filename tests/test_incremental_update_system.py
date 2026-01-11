@@ -19,9 +19,6 @@ import os
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
 from unittest.mock import Mock, patch, MagicMock
-from PyQt5.QtWidgets import QApplication, QWidget
-from PyQt5.QtTest import QTest
-from PyQt5.QtCore import QTimer
 
 # 导入需要测试的核心模块
 try:
@@ -33,12 +30,19 @@ try:
     from core.services.breakpoint_resume_manager import BreakpointResumeManager
     from core.services.service_bootstrap import ServiceBootstrap
     from core.containers import get_service_container
-    from gui.widgets.incremental_update_history_widget import UpdateHistoryWidget
-    from gui.widgets.enhanced_data_import_widget import EnhancedDataImportWidget
     CORE_AVAILABLE = True
 except ImportError as e:
     print(f"导入错误: {e}")
     CORE_AVAILABLE = False
+
+# GUI 模块导入（可选）
+GUI_AVAILABLE = False
+try:
+    from PyQt5.QtWidgets import QApplication
+    GUI_AVAILABLE = True
+except ImportError as e:
+    print(f"GUI 模块导入错误: {e}")
+    GUI_AVAILABLE = False
 
 
 class TestIncrementalUpdateSystem(unittest.TestCase):
@@ -54,10 +58,12 @@ class TestIncrementalUpdateSystem(unittest.TestCase):
         cls.temp_dir = tempfile.mkdtemp()
         cls.db_path = os.path.join(cls.temp_dir, "test_incremental.db")
 
-        # 设置测试环境
-        cls.app = QApplication.instance()
-        if cls.app is None:
-            cls.app = QApplication([])
+        # 设置测试环境（仅在 GUI 可用时）
+        cls.app = None
+        if GUI_AVAILABLE:
+            cls.app = QApplication.instance()
+            if cls.app is None:
+                cls.app = QApplication([])
 
     @classmethod
     def tearDownClass(cls):

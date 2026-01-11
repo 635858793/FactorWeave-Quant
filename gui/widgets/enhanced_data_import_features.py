@@ -614,6 +614,7 @@ class DataQualityWidget(QWidget):
                 QMessageBox.information(self, "成功", f"质量报告已导出到: {file_path}")
             except Exception as e:
                 QMessageBox.critical(self, "错误", f"导出失败: {str(e)}")
+                logger.error(f"Export quality report error: {str(e)}")
 
     def _generate_quality_report(self) -> str:
         """生成质量检查报告"""

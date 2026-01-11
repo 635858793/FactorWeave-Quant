@@ -504,6 +504,7 @@ class TradingPanel(QWidget):
     @pyqtSlot(str)
     def _on_trade_error(self, error_message: str) -> None:
         """处理交易错误"""
+        logger.error(f"Trade error: {error_message}")
         QMessageBox.critical(self, "交易错误", f"交易执行失败: {error_message}")
         self._restore_button_state()
 

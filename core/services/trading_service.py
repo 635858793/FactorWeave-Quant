@@ -6,6 +6,7 @@
 完全重构以符合15个核心服务的架构精简目标。
 """
 
+import asyncio
 import threading
 import time
 import uuid
@@ -309,6 +310,123 @@ class TradingService(BaseService):
         except Exception as e:
             logger.error(f"Failed to create order: {e}")
             return False, f"Order creation failed: {e}"
+
+    async def execute_buy_order(self, stock_code: str, stock_name: str, quantity: int) -> TradeRecord:
+        """
+        执行买入订单
+
+        Args:
+            stock_code: 股票代码
+            stock_name: 股票名称
+            quantity: 买入数量
+
+        Returns:
+            交易记录
+        """
+        try:
+            # 获取当前价格（模拟）
+            current_price = Decimal("100.00")
+
+            # 创建市价买入订单
+            success, order_id = self.create_order(
+                symbol=stock_code,
+                symbol_name=stock_name,
+                order_type=OrderType.MARKET,
+                side=OrderSide.BUY,
+                quantity=quantity,
+                price=current_price
+            )
+
+            if not success:
+                raise Exception(f"Failed to create buy order: {order_id}")
+
+            # 执行订单
+            success, message = self.execute_order(order_id, current_price)
+
+            if not success:
+                raise Exception(f"Failed to execute buy order: {message}")
+
+            # 创建交易记录
+            trade_record = TradeRecord(
+                symbol=stock_code,
+                stock_name=stock_name,
+                action="buy",
+                quantity=quantity,
+                price=float(current_price),
+                status="executed",
+                order_id=order_id
+            )
+
+            # 添加到交易历史
+            self.add_trade_record(trade_record)
+
+            logger.info(f"Buy order executed: {stock_code} {quantity} @ {current_price}")
+            return trade_record
+
+        except Exception as e:
+            logger.error(f"Failed to execute buy order: {e}")
+            raise
+
+    async def execute_sell_order(self, stock_code: str, stock_name: str, quantity: int) -> TradeRecord:
+        """
+        执行卖出订单
+
+        Args:
+            stock_code: 股票代码
+            stock_name: 股票名称
+            quantity: 卖出数量
+
+        Returns:
+            交易记录
+        """
+        try:
+            # 检查持仓
+            position = self.get_position(stock_code)
+            if not position or position.quantity < quantity:
+                raise Exception(f"Insufficient position for {stock_code}")
+
+            # 获取当前价格（模拟）
+            current_price = Decimal("100.00")
+
+            # 创建市价卖出订单
+            success, order_id = self.create_order(
+                symbol=stock_code,
+                symbol_name=stock_name,
+                order_type=OrderType.MARKET,
+                side=OrderSide.SELL,
+                quantity=quantity,
+                price=current_price
+            )
+
+            if not success:
+                raise Exception(f"Failed to create sell order: {order_id}")
+
+            # 执行订单
+            success, message = self.execute_order(order_id, current_price)
+
+            if not success:
+                raise Exception(f"Failed to execute sell order: {message}")
+
+            # 创建交易记录
+            trade_record = TradeRecord(
+                symbol=stock_code,
+                stock_name=stock_name,
+                action="sell",
+                quantity=quantity,
+                price=float(current_price),
+                status="executed",
+                order_id=order_id
+            )
+
+            # 添加到交易历史
+            self.add_trade_record(trade_record)
+
+            logger.info(f"Sell order executed: {stock_code} {quantity} @ {current_price}")
+            return trade_record
+
+        except Exception as e:
+            logger.error(f"Failed to execute sell order: {e}")
+            raise
 
     def execute_order(self, order_id: str, filled_price: Decimal) -> Tuple[bool, str]:
         """执行订单"""

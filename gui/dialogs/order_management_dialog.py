@@ -89,7 +89,7 @@ class OrderManagementDialog(QDialog):
             content_splitter.addWidget(self.detail_widget)
 
             # 设置分割比例
-            content_splitter.setSizes([600, 600])
+            content_splitter.setSizes([900, 500])
             main_layout.addWidget(content_splitter)
 
             # 创建底部状态栏
@@ -107,7 +107,7 @@ class OrderManagementDialog(QDialog):
         try:
             self.toolbar_frame = QFrame()
             self.toolbar_frame.setFrameStyle(QFrame.StyledPanel)
-            self.toolbar_frame.setMaximumHeight(60)
+            self.toolbar_frame.setMaximumHeight(50)
 
             layout = QHBoxLayout(self.toolbar_frame)
             layout.setContentsMargins(10, 5, 10, 5)
@@ -117,7 +117,6 @@ class OrderManagementDialog(QDialog):
             self.create_order_btn.setStyleSheet("""
                 QPushButton {
                     background-color: #3498db;
-                    color: white;
                     border: none;
                     padding: 8px 16px;
                     border-radius: 4px;
@@ -147,7 +146,7 @@ class OrderManagementDialog(QDialog):
             layout.addWidget(filter_label)
 
             self.asset_type_filter_combo = QComboBox()
-            self.asset_type_filter_combo.addItems(["全部", "股票-A股", "股票-B股", "股票-港股", "股票-美股", "股票-北交所",
+            self.asset_type_filter_combo.addItems(["股票-A股", "股票-B股", "股票-港股", "股票-美股", "股票-北交所",
                 "期货", "期权", "加密货币", "外汇", "债券", "商品", "指数", "基金", "权证"])
             self.asset_type_filter_combo.currentTextChanged.connect(self.apply_filter)
             layout.addWidget(self.asset_type_filter_combo)
@@ -171,7 +170,7 @@ class OrderManagementDialog(QDialog):
             layout.addWidget(self.search_edit)
 
             # 验证设置按钮
-            self.validation_settings_btn = QPushButton("验证设置")
+            self.validation_settings_btn = QPushButton("下单验证设置")
             self.validation_settings_btn.clicked.connect(self.show_validation_settings)
             layout.addWidget(self.validation_settings_btn)
 
@@ -200,7 +199,8 @@ class OrderManagementDialog(QDialog):
             self.order_table.setHorizontalHeaderLabels([
                 "订单ID", "资产类型", "股票代码", "方向", "数量", "价格", "状态", "创建时间", "成交数量", "成交价格", "操作"
             ])
-
+            self.order_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+            self.order_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Interactive)
             # 设置表格样式
             header = self.order_table.horizontalHeader()
             header.setStretchLastSection(True)
@@ -210,7 +210,6 @@ class OrderManagementDialog(QDialog):
             self.order_table.setSelectionBehavior(QAbstractItemView.SelectRows)
             self.order_table.setSelectionMode(QAbstractItemView.SingleSelection)
             self.order_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-            self.order_table.setAlternatingRowColors(True)
 
             # 连接信号
             self.order_table.itemSelectionChanged.connect(self.on_order_selected)
@@ -1538,6 +1537,12 @@ class CreateOrderDialog(QDialog):
         self.order_service = order_service
         self.account_manager = account_manager
         self.service_container = get_service_container()
+        
+        # 初始化搜索结果浮窗
+        self.search_results_popup = None
+        self.search_timer = None
+        self.current_search_results = []
+        
         self.init_ui()
         
         # 初始化时加载默认账号列表
@@ -1571,28 +1576,16 @@ class CreateOrderDialog(QDialog):
             self.account_combo.addItem("使用默认账号", "default")
             form_layout.addWidget(self.account_combo, 1, 1)
 
-            # 股票代码（支持模糊搜索）
+            # 股票代码（支持自动筛选）
             form_layout.addWidget(QLabel("股票代码*:"), 2, 0)
             stock_code_layout = QHBoxLayout()
             self.stock_code_input = QLineEdit()
-            self.stock_code_input.setPlaceholderText("输入代码或名称搜索...")
+            self.stock_code_input.setPlaceholderText("输入代码或名称自动筛选...")
             self.stock_code_input.setMinimumWidth(200)
+            self.stock_code_input.textChanged.connect(self.on_stock_code_text_changed)
             stock_code_layout.addWidget(self.stock_code_input)
             
-            self.search_asset_btn = QPushButton("搜索")
-            self.search_asset_btn.setMaximumWidth(60)
-            self.search_asset_btn.clicked.connect(self.search_assets)
-            stock_code_layout.addWidget(self.search_asset_btn)
-            
             form_layout.addLayout(stock_code_layout, 2, 1)
-            
-            # 资产搜索结果列表
-            self.asset_search_results = QListWidget()
-            self.asset_search_results.setMaximumHeight(150)
-            self.asset_search_results.setSelectionMode(QAbstractItemView.SingleSelection)
-            self.asset_search_results.itemDoubleClicked.connect(self.on_asset_selected)
-            self.asset_search_results.setVisible(False)
-            form_layout.addWidget(self.asset_search_results, 3, 0, 1, 2)
 
             # 订单方向
             form_layout.addWidget(QLabel("订单方向*:"), 4, 0)
@@ -1651,38 +1644,38 @@ class CreateOrderDialog(QDialog):
             self.futures_multiplier_spin.setRange(1, 10000)
             self.futures_multiplier_spin.setValue(1)
             self.futures_multiplier_spin.setVisible(False)
-            form_layout.addWidget(self.futures_multiplier_spin, 10, 1)
+            form_layout.addWidget(self.futures_multiplier_spin, 11, 1)
 
-            form_layout.addWidget(QLabel("保证金比例(%):"), 11, 0)
+            form_layout.addWidget(QLabel("保证金比例(%):"), 12, 0)
             self.futures_margin_spin = QDoubleSpinBox()
             self.futures_margin_spin.setRange(0.0, 100.0)
             self.futures_margin_spin.setValue(10.0)
             self.futures_margin_spin.setDecimals(2)
             self.futures_margin_spin.setVisible(False)
-            form_layout.addWidget(self.futures_margin_spin, 11, 1)
+            form_layout.addWidget(self.futures_margin_spin, 12, 1)
 
             # 期权参数（初始隐藏）
-            form_layout.addWidget(QLabel("行权价:"), 12, 0)
+            form_layout.addWidget(QLabel("行权价:"), 13, 0)
             self.option_strike_price_spin = QDoubleSpinBox()
             self.option_strike_price_spin.setRange(0.01, 1000000.0)
             self.option_strike_price_spin.setValue(10.0)
             self.option_strike_price_spin.setDecimals(2)
             self.option_strike_price_spin.setVisible(False)
-            form_layout.addWidget(self.option_strike_price_spin, 12, 1)
+            form_layout.addWidget(self.option_strike_price_spin, 13, 1)
 
-            form_layout.addWidget(QLabel("到期日:"), 13, 0)
+            form_layout.addWidget(QLabel("到期日:"), 14, 0)
             self.option_expiry_date = QDateEdit()
             self.option_expiry_date.setDate(QDate.currentDate().addMonths(3))
             self.option_expiry_date.setCalendarPopup(True)
             self.option_expiry_date.setVisible(False)
-            form_layout.addWidget(self.option_expiry_date, 13, 1)
+            form_layout.addWidget(self.option_expiry_date, 14, 1)
 
-            form_layout.addWidget(QLabel("期权类型:"), 14, 0)
+            form_layout.addWidget(QLabel("期权类型:"), 15, 0)
             self.option_type_combo = QComboBox()
             self.option_type_combo.addItems(["看涨", "看跌"])
             self.option_type_combo.setCurrentIndex(0)
             self.option_type_combo.setVisible(False)
-            form_layout.addWidget(self.option_type_combo, 14, 1)
+            form_layout.addWidget(self.option_type_combo, 15, 1)
 
             layout.addLayout(form_layout)
 
@@ -1756,14 +1749,31 @@ class CreateOrderDialog(QDialog):
         except Exception as e:
             logger.error(f"加载账号列表失败: {e}")
     
-    def search_assets(self):
-        """搜索资产 - 复用左侧面板的搜索逻辑"""
+    def on_stock_code_text_changed(self, text: str):
+        """股票代码输入变化时自动筛选"""
         try:
-            search_text = self.stock_code_input.text().strip()
-            if not search_text:
-                QMessageBox.warning(self, '提示', '请输入搜索关键词')
+            # 清除之前的定时器
+            if self.search_timer:
+                self.search_timer.stop()
+                self.search_timer = None
+            
+            # 如果输入为空，隐藏浮窗
+            if not text.strip():
+                self.hide_search_results_popup()
                 return
             
+            # 创建新的定时器，延迟300ms后执行搜索
+            self.search_timer = QTimer()
+            self.search_timer.setSingleShot(True)
+            self.search_timer.timeout.connect(lambda: self.perform_auto_search(text.strip()))
+            self.search_timer.start(300)
+            
+        except Exception as e:
+            logger.error(f"自动筛选失败: {e}")
+    
+    def perform_auto_search(self, search_text: str):
+        """执行自动搜索"""
+        try:
             asset_type_text = self.asset_type_combo.currentText()
             asset_type_map = {
                 "股票-A股": AssetType.STOCK_A,
@@ -1783,38 +1793,119 @@ class CreateOrderDialog(QDialog):
             }
             asset_type = asset_type_map.get(asset_type_text, AssetType.STOCK_A)
             
-            self.asset_search_results.clear()
-            self.asset_search_results.setVisible(True)
-            self.asset_search_results.addItem("正在搜索...")
-            
             try:
                 data_manager = self.service_container.resolve(UnifiedDataManager)
                 asset_service = self.service_container.resolve(AssetService)
                 
-                # 直接使用同步搜索（参考左侧面板实现）
+                # 执行搜索
                 assets = self._perform_asset_search(data_manager, asset_service, search_text, asset_type)
+                self.current_search_results = assets
                 
-                self.asset_search_results.clear()
-                if not assets or len(assets) == 0:
-                    self.asset_search_results.addItem("未找到匹配的资产")
-                    return
+                # 显示搜索结果浮窗
+                self.show_search_results_popup(assets)
                 
-                for asset in assets[:50]:
-                    display_text = asset.get('display', f"{asset.get('code', '')} {asset.get('name', '')}")
-                    item = QListWidgetItem(display_text)
-                    item.setData(Qt.UserRole, asset)
-                    self.asset_search_results.addItem(item)
-                
-                logger.info(f"搜索完成，找到 {len(assets)} 个资产")
+                logger.info(f"自动搜索完成，找到 {len(assets)} 个资产")
                 
             except Exception as e:
-                logger.error(f"启动资产搜索失败: {e}")
-                self.asset_search_results.clear()
-                self.asset_search_results.addItem(f"搜索失败: {str(e)}")
+                logger.error(f"执行自动搜索失败: {e}")
+                self.hide_search_results_popup()
                 
         except Exception as e:
-            logger.error(f"搜索资产失败: {e}")
-            QMessageBox.critical(self, '错误', f'搜索资产失败: {str(e)}')
+            logger.error(f"自动搜索失败: {e}")
+    
+    def show_search_results_popup(self, assets: List[Dict[str, Any]]):
+        """显示搜索结果浮窗"""
+        try:
+            # 如果浮窗已存在，先隐藏
+            if self.search_results_popup:
+                self.search_results_popup.close()
+                self.search_results_popup = None
+            
+            # 如果没有结果，不显示浮窗
+            if not assets or len(assets) == 0:
+                return
+            
+            # 创建浮窗
+            from PyQt5.QtWidgets import QFrame, QVBoxLayout
+            
+            self.search_results_popup = QFrame(self)
+            self.search_results_popup.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)
+            # self.search_results_popup.setStyleSheet("""
+            #     QFrame {
+            #         background-color: white;
+            #         border: 1px solid #ccc;
+            #         border-radius: 4px;
+            #     }
+            # """)
+            
+            # 创建列表
+            popup_layout = QVBoxLayout(self.search_results_popup)
+            popup_layout.setContentsMargins(5, 5, 5, 5)
+            popup_layout.setSpacing(2)
+            
+            results_list = QListWidget()
+            # results_list.setStyleSheet("""
+            #     QListWidget {
+            #         background-color: white;
+            #         border: none;
+            #     }
+            #     QListWidget::item {
+            #         padding: 5px;
+            #         border-radius: 3px;
+            #     }
+            #     QListWidget::item:hover {
+            #         background-color: #e3f2fd;
+            #     }
+            #     QListWidget::item:selected {
+            #         background-color: #2196f3;
+            #         color: white;
+            #     }
+            # """)
+            results_list.setSelectionMode(QAbstractItemView.SingleSelection)
+            results_list.itemClicked.connect(self.on_search_result_selected)
+            
+            # 添加搜索结果
+            for asset in assets[:20]:
+                display_text = asset.get('display', f"{asset.get('code', '')} {asset.get('name', '')}")
+                item = QListWidgetItem(display_text)
+                item.setData(Qt.UserRole, asset)
+                results_list.addItem(item)
+            
+            popup_layout.addWidget(results_list)
+            
+            # 计算浮窗位置
+            input_rect = self.stock_code_input.geometry()
+            global_pos = self.stock_code_input.mapToGlobal(input_rect.bottomLeft())
+            
+            # 设置浮窗大小和位置
+            self.search_results_popup.resize(input_rect.width(), min(200, 40 + len(assets[:20]) * 30))
+            self.search_results_popup.move(global_pos)
+            self.search_results_popup.show()
+            
+            logger.info(f"显示搜索结果浮窗，位置: {global_pos}")
+            
+        except Exception as e:
+            logger.error(f"显示搜索结果浮窗失败: {e}")
+    
+    def hide_search_results_popup(self):
+        """隐藏搜索结果浮窗"""
+        try:
+            if self.search_results_popup:
+                self.search_results_popup.close()
+                self.search_results_popup = None
+        except Exception as e:
+            logger.error(f"隐藏搜索结果浮窗失败: {e}")
+    
+    def on_search_result_selected(self, item: QListWidgetItem):
+        """选择搜索结果"""
+        try:
+            asset = item.data(Qt.UserRole)
+            if asset:
+                self.stock_code_input.setText(asset.get('code', ''))
+                self.hide_search_results_popup()
+                logger.info(f"选择资产: {asset.get('code', '')} - {asset.get('name', '')}")
+        except Exception as e:
+            logger.error(f"选择搜索结果失败: {e}")
     
     def _perform_asset_search(self, data_manager: UnifiedDataManager, asset_service: AssetService, 
                             search_text: str, asset_type: AssetType) -> List[Dict[str, Any]]:
@@ -2037,17 +2128,6 @@ class CreateOrderDialog(QDialog):
         
         return default_assets.get(asset_type, [])
     
-    def on_asset_selected(self, item: QListWidgetItem):
-        """选择资产"""
-        try:
-            asset = item.data(Qt.UserRole)
-            if asset:
-                self.stock_code_input.setText(asset.get('code', ''))
-                self.asset_search_results.setVisible(False)
-                logger.info(f"选择资产: {asset.get('code', '')} - {asset.get('name', '')}")
-        except Exception as e:
-            logger.error(f"选择资产失败: {e}")
-
     @pyqtSlot(str)
     def on_asset_type_changed(self, asset_type_text: str):
         """资产类型变化处理"""

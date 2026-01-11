@@ -26,27 +26,53 @@ import traceback
 from enum import Enum
 from dataclasses import dataclass
 
-# 尝试导入深度学习模块
-try:
-    from models.deep_learning import build_deep_learning_model, TENSORFLOW_AVAILABLE
-    from models.model_evaluation import evaluate_ml_model
-    DL_AVAILABLE = True
-except ImportError:
-    DL_AVAILABLE = False
-    TENSORFLOW_AVAILABLE = False
+DL_AVAILABLE = False
+TENSORFLOW_AVAILABLE = False
 
-# 尝试导入TensorFlow GPU管理器
-try:
-    from core.services.tensorflow_gpu_manager import TensorFlowGPUManager, auto_configure_gpu, get_device_for_training
-    GPU_MANAGER_AVAILABLE = True
-except ImportError:
-    GPU_MANAGER_AVAILABLE = False
+def _check_dl_availability():
+    """检查深度学习模块是否可用（延迟检查）"""
+    global DL_AVAILABLE, TENSORFLOW_AVAILABLE
+    if DL_AVAILABLE:
+        return True
+    try:
+        from models.deep_learning import build_deep_learning_model, TENSORFLOW_AVAILABLE
+        from models.model_evaluation import evaluate_ml_model
+        DL_AVAILABLE = True
+        return True
+    except ImportError:
+        DL_AVAILABLE = False
+        TENSORFLOW_AVAILABLE = False
+        return False
+
+GPU_MANAGER_AVAILABLE = False
+
+def _check_gpu_manager_availability():
+    """检查GPU管理器是否可用（延迟检查）"""
+    global GPU_MANAGER_AVAILABLE
+    if GPU_MANAGER_AVAILABLE:
+        return True
+    try:
+        from core.services.tensorflow_gpu_manager import TensorFlowGPUManager, auto_configure_gpu, get_device_for_training
+        GPU_MANAGER_AVAILABLE = True
+        return True
+    except ImportError:
+        GPU_MANAGER_AVAILABLE = False
+        return False
 
 from core.services.base_service import BaseService
-try:
-    from core.services.model_training_service import IncrementalTrainingModel
-except ImportError:  # noqa: F401
-    IncrementalTrainingModel = None
+
+IncrementalTrainingModel = None
+
+def _check_model_training_available():
+    """检查增量训练模型是否可用"""
+    global IncrementalTrainingModel
+    if IncrementalTrainingModel is not None:
+        return True
+    try:
+        from core.services.model_training_service import IncrementalTrainingModel
+        return True
+    except ImportError:
+        return False
 
 # 添加模型类型映射字典
 MODEL_TYPE_DISPLAY_NAMES = {
@@ -837,7 +863,7 @@ class AIPredictionService(BaseService):
             model_dir = Path("models/trained")
             model_dir.mkdir(exist_ok=True)
 
-            if DL_AVAILABLE:
+            if _check_dl_availability() and DL_AVAILABLE:
                 logger.info("深度学习模块可用，初始化AI预测模型")
                 logger.info(f"GPU状态: {'启用' if self._gpu_enabled else '禁用'}")
                 self._load_or_create_models()
@@ -861,6 +887,7 @@ class AIPredictionService(BaseService):
             if model_path.exists():
                 try:
                     # 尝试加载TensorFlow模型
+                    _check_dl_availability()
                     if TENSORFLOW_AVAILABLE:
                         import tensorflow as tf
 
@@ -1494,6 +1521,7 @@ class AIPredictionService(BaseService):
             logger.info(f" 特征提取完成，特征数量: {len(features)}")
 
             # 准备特征数据
+            _check_dl_availability()
             if TENSORFLOW_AVAILABLE:
                 import tensorflow as tf
                 # 将特征转换为TensorFlow张量并在指定设备上计算
@@ -1799,6 +1827,7 @@ class AIPredictionService(BaseService):
                 return self._predict_with_simplified_model(model, features, prediction_type)
 
             # 否则使用TensorFlow模型
+            _check_dl_availability()
             if TENSORFLOW_AVAILABLE and hasattr(model, 'predict'):
                 # 获取模型期望的输入形状
                 expected_input_dim = model.input_shape[-1] if hasattr(model, 'input_shape') else len(features)

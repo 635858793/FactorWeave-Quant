@@ -10,6 +10,7 @@ AI选股集成服务
 
 import asyncio
 import json
+import traceback
 import uuid
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Union, Tuple
@@ -28,6 +29,7 @@ from .unified_data_manager import UnifiedDataManager
 from .enhanced_indicator_service import EnhancedIndicatorService
 from .database_service import DatabaseService
 from .cache_service import CacheService
+from ..utils.error_collector import ErrorCollector, ErrorType, ErrorSeverity
 
 
 class SelectionStrategy(Enum):
@@ -65,6 +67,7 @@ class StockSelectionCriteria:
     stock_codes: Optional[List[str]] = None           # 指定股票代码列表
     market_cap_min: Optional[float] = None            # 最小市值（亿元）
     market_cap_max: Optional[float] = None            # 最大市值（亿元）
+    max_stocks: int = 50                              # 最大选股数量
     
     # 技术指标条件
     sma_period: int = 20                              # 移动平均周期
@@ -88,10 +91,16 @@ class StockSelectionCriteria:
     # 时间和频率条件
     selection_date: datetime = field(default_factory=datetime.now)
     rebalance_frequency: str = "monthly"              # 调仓频率
+    time_period: int = 90                             # 时间周期（天）
     
     # 风险和策略条件
     risk_level: RiskLevel = RiskLevel.MODERATE        # 风险等级
+    risk_tolerance: str = "moderate"                  # 风险容忍度（用于UI）
     strategy_type: SelectionStrategy = SelectionStrategy.QUANTITATIVE  # 策略类型
+    
+    # 指标权重
+    technical_indicators: Dict[str, float] = field(default_factory=dict)  # 技术指标权重
+    fundamental_indicators: Dict[str, float] = field(default_factory=dict)  # 基本面指标权重
 
 
 @dataclass
@@ -172,6 +181,15 @@ class AISelectionIntegrationService:
         self._database_service = self._container.resolve(DatabaseService)
         self._event_bus = get_event_bus()
         
+        # 解析可解释性服务
+        self._explainability_service = None
+        try:
+            from .ai_explainability_service import AIExplainabilityService
+            self._explainability_service = self._container.resolve(AIExplainabilityService)
+            logger.info("AI可解释性服务加载成功")
+        except Exception as e:
+            logger.warning(f"AI可解释性服务加载失败: {e}")
+        
         # 线程池用于异步计算
         self._executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="AI_Selection")
         
@@ -191,13 +209,69 @@ class AISelectionIntegrationService:
     def _init_llm_parser(self):
         """初始化 LLM 解析器"""
         try:
+            # 尝试获取 LLM 配置服务
+            try:
+                from .llm_config_service import LLMConfigService, LLMProvider
+                llm_config_service = self._container.resolve(LLMConfigService)
+                
+                # 获取当前配置
+                current_config = llm_config_service.get_current_config()
+                if current_config and current_config.api_key:
+                    # 根据提供商初始化对应的客户端
+                    if current_config.provider == LLMProvider.OPENAI:
+                        from openai import OpenAI
+                        self._llm_parser = OpenAI(
+                            api_key=current_config.api_key,
+                            base_url=current_config.base_url,
+                            timeout=current_config.timeout
+                        )
+                        logger.info(f"LLM 解析器初始化成功 (OpenAI - {current_config.model})")
+                    elif current_config.provider == LLMProvider.ANTHROPIC:
+                        from anthropic import Anthropic
+                        self._llm_parser = Anthropic(
+                            api_key=current_config.api_key,
+                            base_url=current_config.base_url,
+                            timeout=current_config.timeout
+                        )
+                        logger.info(f"LLM 解析器初始化成功 (Anthropic - {current_config.model})")
+                    elif current_config.provider == LLMProvider.GOOGLE:
+                        import google.generativeai as genai
+                        genai.configure(api_key=current_config.api_key)
+                        self._llm_parser = genai.GenerativeModel(current_config.model)
+                        logger.info(f"LLM 解析器初始化成功 (Google - {current_config.model})")
+                    elif current_config.provider == LLMProvider.QIANWEN:
+                        import dashscope
+                        from dashscope import Generation
+                        dashscope.api_key = current_config.api_key
+                        self._llm_parser = Generation
+                        logger.info(f"LLM 解析器初始化成功 (通义千问 - {current_config.model})")
+                    else:
+                        logger.warning(f"暂不支持 {current_config.provider.value} 提供商")
+                        self._llm_parser = None
+                else:
+                    logger.warning("未配置 LLM API key，LLM 解析功能不可用")
+                    self._llm_parser = None
+                    
+            except Exception as config_error:
+                logger.warning(f"LLM 配置服务不可用，尝试传统方式: {config_error}")
+                self._init_llm_parser_legacy()
+                
+        except ImportError:
+            logger.warning("OpenAI 库未安装，LLM 解析功能不可用")
+            self._llm_parser = None
+        except Exception as e:
+            logger.warning(f"LLM 解析器初始化失败: {e}")
+            self._llm_parser = None
+    
+    def _init_llm_parser_legacy(self):
+        """使用传统方式初始化 LLM 解析器（向后兼容）"""
+        try:
             from openai import OpenAI
             
-            # 尝试获取 API key
-            api_key = self._get_llm_api_key()
+            api_key = self._get_llm_api_key_legacy()
             if api_key:
                 self._llm_parser = OpenAI(api_key=api_key)
-                logger.info("LLM 解析器初始化成功")
+                logger.info("LLM 解析器初始化成功（传统方式）")
             else:
                 logger.warning("未配置 OpenAI API key，LLM 解析功能不可用")
         except ImportError:
@@ -205,20 +279,18 @@ class AISelectionIntegrationService:
         except Exception as e:
             logger.warning(f"LLM 解析器初始化失败: {e}")
     
-    def _get_llm_api_key(self) -> Optional[str]:
-        """获取 LLM API key
+    def _get_llm_api_key_legacy(self) -> Optional[str]:
+        """获取 LLM API key（传统方式，向后兼容）
         
         Returns:
             API key 或 None
         """
         try:
-            # 优先从环境变量获取
             import os
             api_key = os.environ.get('OPENAI_API_KEY')
             if api_key:
                 return api_key
             
-            # 从配置文件获取
             try:
                 import configparser
                 config = configparser.ConfigParser()
@@ -484,49 +556,75 @@ class AISelectionIntegrationService:
     async def select_stocks_with_explanation(
         self,
         strategy_id: str,
-        criteria: Optional[StockSelectionCriteria] = None
+        criteria: Optional[StockSelectionCriteria] = None,
+        error_collector: Optional[ErrorCollector] = None,
+        progress_callback: Optional[callable] = None
     ) -> StockSelectionResult:
         """执行选股并生成解释
         
         Args:
             strategy_id: 策略ID
             criteria: 选股标准（可选，如果为None则使用策略中保存的标准）
+            error_collector: 错误收集器
+            progress_callback: 进度回调函数 callback(progress_percent, status_message)
             
         Returns:
             选股结果
         """
         start_time = datetime.now()
         
+        # 初始化错误收集器
+        if error_collector is None:
+            error_collector = ErrorCollector()
+        
         try:
             # 获取策略信息
-            strategy_data = await self._get_strategy_by_id(strategy_id)
-            if not strategy_data:
-                raise ValueError(f"策略 {strategy_id} 不存在")
+            if progress_callback:
+                progress_callback(5, "获取策略信息...")
+            try:
+                strategy_data = await self._get_strategy_by_id(strategy_id)
+                if not strategy_data:
+                    raise ValueError(f"策略 {strategy_id} 不存在")
+            except Exception as e:
+                error_collector.add_error(
+                    error_type=ErrorType.DATABASE,
+                    error_message=f"获取策略信息失败: {str(e)}",
+                    severity=ErrorSeverity.HIGH
+                )
+                raise
                 
             # 准备选股标准
             selection_criteria = criteria or StockSelectionCriteria(**strategy_data["criteria"])
             
             # 检查缓存
+            if progress_callback:
+                progress_callback(8, "检查缓存...")
             cache_key = f"{strategy_id}_{selection_criteria.selection_date.strftime('%Y%m%d')}"
             cached_result = self._get_cached_result(cache_key)
             if cached_result:
                 logger.info("返回缓存的选股结果")
+                if progress_callback:
+                    progress_callback(100, "完成（使用缓存）")
                 return cached_result
             
             # 发布事件：开始选股
-            await self._event_bus.publish("ai_selection.started",
+            self._event_bus.publish("ai_selection.started",
                 strategy_id=strategy_id,
                 criteria=asdict(selection_criteria)
             )
             
             # 执行选股
-            result = await self._execute_selection(strategy_id, selection_criteria)
+            result = await self._execute_selection(strategy_id, selection_criteria, error_collector, progress_callback)
             
             # 生成解释
-            result.explanations = await self._generate_explanations(result)
+            if progress_callback:
+                progress_callback(95, "生成选股解释...")
+            result.explanations = await self._generate_explanations(result, error_collector)
             result.overall_explanation = await self._generate_overall_explanation(result)
             
             # 计算性能指标
+            if progress_callback:
+                progress_callback(98, "计算组合指标...")
             result.portfolio_metrics = await self._calculate_portfolio_metrics(result)
             
             # 保存结果到数据库
@@ -536,7 +634,7 @@ class AISelectionIntegrationService:
             self._cache_result(cache_key, result)
             
             # 发布事件：选股完成
-            await self._event_bus.publish("ai_selection.completed",
+            self._event_bus.publish("ai_selection.completed",
                 strategy_id=strategy_id,
                 result_id=result.result_id,
                 selected_stocks=result.selected_stocks
@@ -544,13 +642,25 @@ class AISelectionIntegrationService:
             
             result.computation_time = (datetime.now() - start_time).total_seconds()
             
+            if progress_callback:
+                progress_callback(100, "选股完成")
+            
             logger.info(f"选股完成: {strategy_id}, 选中 {len(result.selected_stocks)} 只股票")
             return result
             
         except Exception as e:
             logger.error(f"选股失败: {e}")
+            
+            # 记录到错误收集器
+            error_collector.add_error(
+                error_type=ErrorType.STRATEGY,
+                error_message=f"选股失败: {str(e)}",
+                error_detail=traceback.format_exc(),
+                severity=ErrorSeverity.CRITICAL
+            )
+            
             # 发布失败事件
-            await self._event_bus.publish("ai_selection.failed",
+            self._event_bus.publish("ai_selection.failed",
                 strategy_id=strategy_id,
                 error=str(e)
             )
@@ -559,14 +669,24 @@ class AISelectionIntegrationService:
     async def _execute_selection(
         self,
         strategy_id: str,
-        criteria: StockSelectionCriteria
+        criteria: StockSelectionCriteria,
+        error_collector: ErrorCollector,
+        progress_callback: Optional[callable] = None
     ) -> StockSelectionResult:
-        """执行具体的选股逻辑"""
+        """执行具体的选股逻辑
         
+        Args:
+            strategy_id: 策略ID
+            criteria: 选股标准
+            error_collector: 错误收集器
+            progress_callback: 进度回调函数 callback(progress_percent, status_message)
+        """
         result_id = str(uuid.uuid4())
         
         # 获取候选股票列表
-        candidate_stocks = await self._get_candidate_stocks(criteria)
+        if progress_callback:
+            progress_callback(10, "获取候选股票列表...")
+        candidate_stocks = await self._get_candidate_stocks(criteria, error_collector)
         
         if not candidate_stocks:
             return StockSelectionResult(
@@ -583,16 +703,26 @@ class AISelectionIntegrationService:
             )
         
         # 获取股票数据
-        stock_data = await self._get_stock_data_batch(candidate_stocks, criteria)
+        if progress_callback:
+            progress_callback(20, f"获取 {len(candidate_stocks)} 只股票的数据...")
+        stock_data = await self._get_stock_data_batch(candidate_stocks, criteria, error_collector)
         
         # 执行策略计算
+        if progress_callback:
+            progress_callback(50, "执行选股策略...")
         strategy_func = self._strategies.get(criteria.strategy_type, self._quantitative_strategy)
-        selected_stocks, scores = await self._run_strategy(strategy_func, stock_data, criteria)
+        selected_stocks, scores, detailed_scores = await self._run_strategy(strategy_func, stock_data, criteria, error_collector)
         
         # 计算权重
+        if progress_callback:
+            progress_callback(80, "计算权重分配...")
         weights = self._calculate_weights(selected_stocks, scores, criteria)
         
-        return StockSelectionResult(
+        # 保存详细评分到结果
+        if progress_callback:
+            progress_callback(90, "整理选股结果...")
+        
+        result = StockSelectionResult(
             result_id=result_id,
             strategy_id=strategy_id,
             selection_date=criteria.selection_date,
@@ -604,8 +734,16 @@ class AISelectionIntegrationService:
             explanations=[],  # 将在后续步骤中填充
             overall_explanation=""  # 将在后续步骤中填充
         )
+        
+        # 将详细评分存储到 result 的 metadata 中
+        result.portfolio_metrics = {
+            "detailed_scores": detailed_scores,
+            "computation_time": 0.0  # 将在后续更新
+        }
+        
+        return result
     
-    async def _get_candidate_stocks(self, criteria: StockSelectionCriteria) -> List[str]:
+    async def _get_candidate_stocks(self, criteria: StockSelectionCriteria, error_collector: ErrorCollector) -> List[str]:
         """获取候选股票列表"""
         if criteria.stock_codes:
             return criteria.stock_codes
@@ -622,17 +760,22 @@ class AISelectionIntegrationService:
                         industry_stocks = await self._get_industry_stocks(industry)
                         candidate_stocks.extend(industry_stocks)
                     except Exception as e:
-                        logger.warning(f"获取行业 {industry} 股票列表失败: {e}")
+                        error_collector.add_error(
+                            error_type=ErrorType.DATA_FETCH,
+                            error_message=f"获取行业 {industry} 股票列表失败",
+                            error_detail=str(e),
+                            severity=ErrorSeverity.MEDIUM
+                        )
                         continue
             
             # 如果没有指定行业，获取主要股票池
             if not candidate_stocks:
-                candidate_stocks = await self._get_main_stock_pool(criteria)
+                candidate_stocks = await self._get_main_stock_pool(criteria, error_collector)
             
             # 应用市值筛选
             if criteria.market_cap_min or criteria.market_cap_max:
                 candidate_stocks = await self._filter_stocks_by_market_cap(
-                    candidate_stocks, criteria.market_cap_min, criteria.market_cap_max
+                    candidate_stocks, criteria.market_cap_min, criteria.market_cap_max, error_collector
                 )
             
             # 去重
@@ -642,9 +785,14 @@ class AISelectionIntegrationService:
             return candidate_stocks
             
         except Exception as e:
-            logger.error(f"获取候选股票失败: {e}")
+            error_collector.add_error(
+                error_type=ErrorType.DATA_FETCH,
+                error_message="获取候选股票失败",
+                error_detail=str(e),
+                severity=ErrorSeverity.HIGH
+            )
             # 返回基础股票池作为后备
-            return await self._get_main_stock_pool(criteria)
+            return await self._get_main_stock_pool(criteria, error_collector)
     
     async def _get_industry_stocks(self, industry: str) -> List[str]:
         """获取指定行业的股票列表"""
@@ -667,7 +815,7 @@ class AISelectionIntegrationService:
             logger.error(f"获取行业 {industry} 股票列表失败: {e}")
             return []
     
-    async def _get_main_stock_pool(self, criteria: StockSelectionCriteria) -> List[str]:
+    async def _get_main_stock_pool(self, criteria: StockSelectionCriteria, error_collector: ErrorCollector) -> List[str]:
         """获取主要股票池"""
         try:
             # 使用UnifiedDataManager获取主要股票
@@ -686,19 +834,25 @@ class AISelectionIntegrationService:
             return []
             
         except Exception as e:
-            logger.error(f"获取主要股票池失败: {e}")
+            error_collector.add_error(
+                error_type=ErrorType.DATA_FETCH,
+                error_message="获取主要股票池失败",
+                error_detail=str(e),
+                severity=ErrorSeverity.HIGH
+            )
             return []
     
     async def _filter_stocks_by_market_cap(self, stocks: List[str], 
                                          market_cap_min: Optional[float], 
-                                         market_cap_max: Optional[float]) -> List[str]:
+                                         market_cap_max: Optional[float],
+                                         error_collector: ErrorCollector) -> List[str]:
         """根据市值筛选股票"""
         try:
             filtered_stocks = []
             
             # 批量获取股票市值数据
             stock_data_batch = await self._get_stock_data_batch(stocks, 
-                StockSelectionCriteria(selection_date=datetime.now()))
+                StockSelectionCriteria(selection_date=datetime.now()), error_collector)
             
             for stock_code in stocks:
                 if stock_code in stock_data_batch:
@@ -722,72 +876,131 @@ class AISelectionIntegrationService:
             return filtered_stocks
             
         except Exception as e:
-            logger.error(f"市值筛选失败: {e}")
+            error_collector.add_error(
+                error_type=ErrorType.CALCULATION,
+                error_message="市值筛选失败",
+                error_detail=str(e),
+                severity=ErrorSeverity.MEDIUM
+            )
             return stocks  # 筛选失败时返回原列表
     
     async def _get_stock_data_batch(
         self,
         stock_codes: List[str],
-        criteria: StockSelectionCriteria
+        criteria: StockSelectionCriteria,
+        error_collector: ErrorCollector
     ) -> Dict[str, Dict[str, Any]]:
-        """批量获取股票数据"""
-        stock_data = {}
-        
+        """批量获取股票数据（优化版 - 使用asyncio.gather并行获取）"""
         # 设置数据获取参数
         time_range = 365  # 获取一年的数据
         period = "D"
         
+        # 创建获取任务列表
+        tasks = []
         for stock_code in stock_codes:
-            try:
-                # 使用UnifiedDataManager获取数据
-                data_request = {
-                    "symbol": stock_code,
-                    "asset_type": AssetType.STOCK_A,
-                    "data_type": "kdata",
-                    "period": period,
-                    "time_range": time_range
-                }
-                
-                # 异步获取数据
-                data = await self._data_manager.get_data_async(**data_request)
-                if data is not None and not data.empty:
-                    stock_data[stock_code] = {
-                        "price_data": data,
-                        "fetched_at": datetime.now()
-                    }
-                    
-            except Exception as e:
-                logger.warning(f"获取股票 {stock_code} 数据失败: {e}")
+            task = self._get_single_stock_data(stock_code, time_range, period, error_collector)
+            tasks.append((stock_code, task))
+        
+        # 使用asyncio.gather并行执行
+        results = await asyncio.gather(*[task for _, task in tasks], return_exceptions=True)
+        
+        # 处理结果
+        stock_data = {}
+        for (stock_code, _), result in zip(tasks, results):
+            if isinstance(result, Exception):
+                # 错误已经在_get_single_stock_data中记录
                 continue
+            elif result is not None:
+                stock_data[stock_code] = result
                 
         logger.info(f"成功获取 {len(stock_data)} 只股票的数据")
         return stock_data
+    
+    async def _get_single_stock_data(
+        self,
+        stock_code: str,
+        time_range: int,
+        period: str,
+        error_collector: ErrorCollector
+    ) -> Optional[Dict[str, Any]]:
+        """获取单个股票数据"""
+        try:
+            # 使用UnifiedDataManager获取数据
+            data_request = {
+                "symbol": stock_code,
+                "asset_type": AssetType.STOCK_A,
+                "data_type": "kdata",
+                "period": period,
+                "time_range": time_range
+            }
+            
+            # 异步获取数据
+            data = await self._data_manager.get_data_async(**data_request)
+            if data is not None and not data.empty:
+                return {
+                    "price_data": data,
+                    "fetched_at": datetime.now()
+                }
+            return None
+                    
+        except Exception as e:
+            error_collector.add_error(
+                error_type=ErrorType.DATA_FETCH,
+                error_message=f"获取股票 {stock_code} 数据失败",
+                error_detail=str(e),
+                stock_code=stock_code,
+                severity=ErrorSeverity.MEDIUM
+            )
+            return None
     
     async def _run_strategy(
         self,
         strategy_func,
         stock_data: Dict[str, Dict[str, Any]],
-        criteria: StockSelectionCriteria
-    ) -> Tuple[List[str], Dict[str, float]]:
-        """运行选股策略"""
+        criteria: StockSelectionCriteria,
+        error_collector: ErrorCollector
+    ) -> Tuple[List[str], Dict[str, float], Dict[str, Dict[str, float]]]:
+        """运行选股策略
+        
+        Returns:
+            selected_stocks: 选中的股票列表
+            scores: 股票评分
+            detailed_scores: 详细评分（如果策略支持）
+        """
         
         # 在线程池中执行策略计算
         loop = asyncio.get_event_loop()
-        selected_stocks, scores = await loop.run_in_executor(
+        result = await loop.run_in_executor(
             self._executor,
             lambda: strategy_func(stock_data, criteria)
         )
         
-        return selected_stocks, scores
+        # 处理不同的返回值格式
+        if len(result) == 3:
+            # 新格式：返回三个值
+            selected_stocks, scores, detailed_scores = result
+        else:
+            # 旧格式：返回两个值
+            selected_stocks, scores = result
+            detailed_scores = {}
+        
+        return selected_stocks, scores, detailed_scores
     
     def _quantitative_strategy(
         self,
         stock_data: Dict[str, Dict[str, Any]],
         criteria: StockSelectionCriteria
-    ) -> Tuple[List[str], Dict[str, float]]:
-        """量化策略实现"""
+    ) -> Tuple[List[str], Dict[str, float], Dict[str, Dict[str, float]]]:
+        """量化策略实现
+        
+        Returns:
+            selected_stocks: 选中的股票列表
+            stock_scores: 股票综合评分 {股票代码: 综合评分}
+            detailed_scores: 详细评分 {股票代码: {技术评分, 动量评分, 波动性评分, 流动性评分}}
+        """
         
         stock_scores = {}
+        detailed_scores = {}
         
         for stock_code, data in stock_data.items():
             try:
@@ -819,7 +1032,17 @@ class AISelectionIntegrationService:
                 elif criteria.risk_level == RiskLevel.AGGRESSIVE:
                     score *= 1.1  # 激进型提升评分
                 
-                stock_scores[stock_code] = min(score, 100.0)  # 限制在0-100之间
+                final_score = min(score, 100.0)  # 限制在0-100之间
+                stock_scores[stock_code] = final_score
+                
+                # 保存详细评分
+                detailed_scores[stock_code] = {
+                    "technical_score": tech_score,
+                    "momentum_score": momentum_score,
+                    "volatility_score": volatility_score,
+                    "liquidity_score": liquidity_score,
+                    "risk_adjusted_score": final_score
+                }
                 
             except Exception as e:
                 logger.warning(f"计算股票 {stock_code} 评分失败: {e}")
@@ -839,7 +1062,7 @@ class AISelectionIntegrationService:
         selected_stocks = [stock for stock, _ in sorted_stocks[:top_n]]
         selected_scores = {stock: stock_scores[stock] for stock in selected_stocks}
         
-        return selected_stocks, selected_scores
+        return selected_stocks, selected_scores, detailed_scores
     
     def _calculate_technical_score(
         self,
@@ -1049,20 +1272,237 @@ class AISelectionIntegrationService:
     
     async def _generate_explanations(
         self,
-        result: StockSelectionResult
+        result: StockSelectionResult,
+        error_collector: ErrorCollector
     ) -> List[SelectionExplanation]:
         """生成选股解释"""
         explanations = []
         
-        for stock_code in result.selected_stocks:
-            try:
-                explanation = await self._generate_single_explanation(stock_code, result)
-                explanations.append(explanation)
-            except Exception as e:
-                logger.warning(f"生成股票 {stock_code} 解释失败: {e}")
-                continue
+        # 使用AIExplainabilityService生成解释
+        if self._explainability_service:
+            for stock_code in result.selected_stocks:
+                try:
+                    explanation = await self._generate_explanation_with_service(stock_code, result)
+                    explanations.append(explanation)
+                except Exception as e:
+                    error_collector.add_error(
+                        error_type=ErrorType.EXPLANATION,
+                        error_message=f"生成股票 {stock_code} 解释失败",
+                        error_detail=str(e),
+                        stock_code=stock_code,
+                        severity=ErrorSeverity.MEDIUM
+                    )
+                    # 回退到原有实现
+                    try:
+                        explanation = await self._generate_single_explanation(stock_code, result)
+                        explanations.append(explanation)
+                    except Exception as fallback_error:
+                        error_collector.add_error(
+                            error_type=ErrorType.EXPLANATION,
+                            error_message=f"回退解释生成失败: {stock_code}",
+                            error_detail=str(fallback_error),
+                            stock_code=stock_code,
+                            severity=ErrorSeverity.MEDIUM
+                        )
+                        continue
+        else:
+            # 回退到原有实现
+            for stock_code in result.selected_stocks:
+                try:
+                    explanation = await self._generate_single_explanation(stock_code, result)
+                    explanations.append(explanation)
+                except Exception as e:
+                    error_collector.add_error(
+                        error_type=ErrorType.EXPLANATION,
+                        error_message=f"生成股票 {stock_code} 解释失败",
+                        error_detail=str(e),
+                        stock_code=stock_code,
+                        severity=ErrorSeverity.MEDIUM
+                    )
+                    continue
         
         return explanations
+    
+    async def _generate_explanation_with_service(
+        self,
+        stock_code: str,
+        result: StockSelectionResult
+    ) -> SelectionExplanation:
+        """使用AIExplainabilityService生成解释"""
+        try:
+            from .ai_explainability_service import ExplanationLevel
+            
+            # 获取股票数据
+            stock_data = await self._get_stock_data_for_explanation(stock_code)
+            
+            # 构建选股数据
+            selection_data = {
+                'score': result.stock_scores.get(stock_code, 0.0),
+                'criteria': asdict(result.criteria),
+                'strategy': result.strategy_id,
+                'selection_date': result.selection_date
+            }
+            
+            # 确定解释级别
+            explanation_level = ExplanationLevel.DETAILED
+            
+            # 调用AIExplainabilityService
+            explanation_data = self._explainability_service.generate_explanation(
+                stock_code=stock_code,
+                stock_data=stock_data,
+                selection_data=selection_data,
+                explanation_level=explanation_level
+            )
+            
+            # 转换为SelectionExplanation
+            return self._convert_to_selection_explanation(explanation_data)
+            
+        except Exception as e:
+            logger.error(f"使用AIExplainabilityService生成解释失败: {e}")
+            raise
+    
+    async def _get_stock_data_for_explanation(self, stock_code: str) -> Dict[str, Any]:
+        """获取用于解释的股票数据"""
+        try:
+            data_request = {
+                "symbol": stock_code,
+                "asset_type": AssetType.STOCK_A,
+                "data_type": "kdata",
+                "period": "D",
+                "time_range": 365
+            }
+            
+            price_data = await self._data_manager.get_data_async(**data_request)
+            
+            # 计算技术指标
+            indicator_data = {}
+            if price_data is not None and not price_data.empty:
+                # RSI
+                rsi = self._calculate_rsi(price_data['close'], 14)
+                if not rsi.empty:
+                    indicator_data['RSI'] = float(rsi.iloc[-1])
+                
+                # MACD
+                macd_signal = self._calculate_macd_signal(price_data['close'])
+                indicator_data['MACD'] = macd_signal
+                
+                # SMA
+                sma_20 = price_data['close'].rolling(window=20).mean()
+                if not sma_20.empty:
+                    sma_20_current = float(sma_20.iloc[-1])
+                    current_price = float(price_data['close'].iloc[-1])
+                    indicator_data['SMA_20'] = round(current_price / sma_20_current, 2) if sma_20_current > 0 else 0
+                
+                # 成交量比率
+                if 'volume' in price_data.columns:
+                    avg_volume = price_data['volume'].tail(20).mean()
+                    current_volume = float(price_data['volume'].iloc[-1])
+                    indicator_data['Volume_Ratio'] = round(current_volume / avg_volume, 2) if avg_volume > 0 else 0
+                
+                # 价格趋势
+                if len(price_data) >= 5:
+                    price_change = (price_data['close'].iloc[-1] - price_data['close'].iloc[-5]) / price_data['close'].iloc[-5]
+                    indicator_data['price_trend'] = "up" if price_change > 0 else "down"
+                
+                # 成交量趋势
+                if 'volume' in price_data.columns and len(price_data) >= 5:
+                    volume_change = (price_data['volume'].iloc[-1] - price_data['volume'].iloc[-5]) / price_data['volume'].iloc[-5]
+                    indicator_data['volume_trend'] = "increasing" if volume_change > 0 else "decreasing"
+            
+            # 获取基本面数据
+            fundamental_data = {}
+            try:
+                fundamental = await self._data_manager.get_fundamental_data(stock_code)
+                if fundamental:
+                    if 'pe_ratio' in fundamental:
+                        fundamental_data['PE_RATIO'] = float(fundamental['pe_ratio'])
+                    if 'pb_ratio' in fundamental:
+                        fundamental_data['PB_RATIO'] = float(fundamental['pb_ratio'])
+                    if 'roe' in fundamental:
+                        fundamental_data['ROE'] = float(fundamental['roe'])
+                    if 'debt_ratio' in fundamental:
+                        fundamental_data['DEBT_RATIO'] = float(fundamental['debt_ratio'])
+            except Exception as e:
+                logger.warning(f"获取股票 {stock_code} 基本面数据失败: {e}")
+            
+            return {
+                'name': stock_code,
+                'price_data': price_data,
+                'indicators': indicator_data,
+                'fundamentals': fundamental_data
+            }
+            
+        except Exception as e:
+            logger.error(f"获取股票 {stock_code} 数据失败: {e}")
+            return {
+                'name': stock_code,
+                'price_data': None,
+                'indicators': {},
+                'fundamentals': {}
+            }
+    
+    def _convert_to_selection_explanation(
+        self,
+        explanation_data
+    ) -> SelectionExplanation:
+        """转换解释数据为SelectionExplanation"""
+        try:
+            # 提取因子贡献
+            key_indicators = {}
+            technical_signals = {}
+            fundamental_signals = {}
+            
+            for factor in explanation_data.factors:
+                factor_name = factor.factor_name
+                factor_value = factor.value
+                
+                key_indicators[factor_name] = factor_value
+                
+                if factor.category.value == 'technical':
+                    technical_signals[factor_name] = {
+                        'value': factor_value,
+                        'contribution': factor.contribution_score,
+                        'importance_rank': factor.importance_rank,
+                        'weight': factor.weight
+                    }
+                elif factor.category.value == 'fundamental':
+                    fundamental_signals[factor_name] = {
+                        'value': factor_value,
+                        'contribution': factor.contribution_score,
+                        'importance_rank': factor.importance_rank,
+                        'weight': factor.weight
+                    }
+            
+            # 风险评估
+            risk_assessment = {
+                'overall_risk': 'moderate',
+                'volatility': 'moderate',
+                'liquidity': 'good'
+            }
+            
+            # 推荐强度
+            if explanation_data.confidence_score >= 0.8:
+                recommendation_strength = "strong"
+            elif explanation_data.confidence_score >= 0.6:
+                recommendation_strength = "moderate"
+            else:
+                recommendation_strength = "weak"
+            
+            return SelectionExplanation(
+                stock_code=explanation_data.stock_code,
+                selection_reason=explanation_data.summary_text,
+                score=explanation_data.selection_score,
+                key_indicators=key_indicators,
+                technical_signals=technical_signals,
+                fundamental_signals=fundamental_signals,
+                risk_assessment=risk_assessment,
+                recommendation_strength=recommendation_strength
+            )
+            
+        except Exception as e:
+            logger.error(f"转换解释数据失败: {e}")
+            raise
+
     
     async def _generate_single_explanation(
         self,
@@ -1332,14 +1772,9 @@ class AISelectionIntegrationService:
                 return strategy
             else:
                 # 如果DatabaseService没有get_ai_strategy方法，使用通用查询方法
-                query = {"strategy_id": strategy_id}
-                strategies = await self._database_service.query_data(
-                    'ai_strategies',
-                    query
-                )
-                if strategies and len(strategies) > 0:
-                    return strategies[0]
-                return None
+                query = "SELECT * FROM ai_strategies WHERE strategy_id = ?"
+                strategy = self._database_service.fetch_one(query, [strategy_id])
+                return strategy
         except Exception as e:
             logger.error(f"从数据库获取策略失败: {e}")
             return None
@@ -1770,6 +2205,93 @@ class AISelectionIntegrationService:
     def _hybrid_strategy(self, stock_data: Dict[str, Dict[str, Any]], criteria: StockSelectionCriteria) -> Tuple[List[str], Dict[str, float]]:
         """混合策略实现"""
         return self._quantitative_strategy(stock_data, criteria)
+    
+    def select_stocks(
+        self,
+        criteria: StockSelectionCriteria,
+        strategy: SelectionStrategy,
+        error_collector: Optional[ErrorCollector] = None,
+        progress_callback: Optional[callable] = None
+    ) -> Dict[str, Any]:
+        """
+        同步选股方法，用于UI调用
+        
+        Args:
+            criteria: 选股标准
+            strategy: 选股策略
+            error_collector: 错误收集器
+            progress_callback: 进度回调函数 callback(progress_percent, status_message)
+            
+        Returns:
+            选股结果字典
+        """
+        try:
+            import asyncio
+            
+            logger.info(f"开始选股: 策略={strategy.value}, 日期={criteria.selection_date}")
+            
+            result = asyncio.run(
+                self.select_stocks_with_explanation(
+                    strategy_id=strategy.value,
+                    criteria=criteria,
+                    error_collector=error_collector,
+                    progress_callback=progress_callback
+                )
+            )
+            
+            # 获取详细评分数据
+            detailed_scores = {}
+            if result.portfolio_metrics and isinstance(result.portfolio_metrics, dict):
+                detailed_scores = result.portfolio_metrics.get("detailed_scores", {})
+            
+            return {
+                "success": True,
+                "data": {
+                    "result_id": result.result_id,
+                    "strategy_id": result.strategy_id,
+                    "selection_date": result.selection_date,
+                    "status": result.status.value if result.status else "completed",
+                    "selected_stocks": result.selected_stocks,
+                    "stock_scores": result.stock_scores,
+                    "detailed_scores": detailed_scores,
+                    "weights": result.weights,
+                    "explanations": [
+                        {
+                            "stock_code": exp.stock_code,
+                            "selection_reason": exp.selection_reason,
+                            "score": exp.score,
+                            "key_indicators": exp.key_indicators,
+                            "technical_signals": exp.technical_signals,
+                            "fundamental_signals": exp.fundamental_signals,
+                            "risk_assessment": exp.risk_assessment,
+                            "recommendation_strength": exp.recommendation_strength
+                        }
+                        for exp in result.explanations
+                    ],
+                    "overall_explanation": result.overall_explanation,
+                    "portfolio_metrics": result.portfolio_metrics,
+                    "computation_time": result.computation_time,
+                    "error_summary": error_collector.get_summary() if error_collector else None
+                }
+            }
+        except Exception as e:
+            logger.error(f"选股失败: {e}")
+            logger.error(traceback.format_exc())
+            
+            # 记录到错误收集器
+            if error_collector:
+                error_collector.add_error(
+                    error_type=ErrorType.STRATEGY,
+                    error_message=f"选股失败: {str(e)}",
+                    error_detail=traceback.format_exc(),
+                    severity=ErrorSeverity.CRITICAL
+                )
+            
+            return {
+                "success": False,
+                "error": str(e),
+                "error_summary": error_collector.get_summary() if error_collector else None
+            }
     
     def shutdown(self):
         """关闭服务"""

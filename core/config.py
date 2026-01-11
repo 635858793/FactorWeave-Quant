@@ -24,6 +24,8 @@ __all__ = [
     'LoggingConfig',
     'Theme',
     'config_manager',
+    'lazy_config_manager',
+    'get_config_manager',
     'validate_config',
     'migrate_config',
     'backup_config',
@@ -213,25 +215,58 @@ def restore_config(config_manager: ConfigManager, backup_path: str) -> bool:
 # 创建全局配置管理器实例
 config_manager = ConfigManager()
 
-# 验证和迁移配置
-if not validate_config(config_manager.get_all()):
-    logger.warning("配置验证失败，使用默认配置")
-    # 重置为默认配置
-    config_manager._config = {
-        'version': '1.3.0',
-        'theme': ThemeConfig().to_dict(),
-        'trading': TradingConfig().to_dict(),
-        'data': DataConfig().to_dict(),
-        # 移除logging配置，由Loguru直接管理
-        'ui': {'theme': 'default', 'language': 'zh_CN'}
-    }
-    # 保存各个配置项
-    for key, value in config_manager._config.items():
-        config_manager.set(key, value)
-else:
-    migrated_config = migrate_config(
-        config_manager.get_all(), config_manager.get('version', '1.0.0'))
-    config_manager._config = migrated_config
-    # 保存迁移后的配置
-    for key, value in migrated_config.items():
-        config_manager.set(key, value)
+_config_initialized = False
+_config_initialization_lock = None
+
+def _ensure_config_initialized():
+    """确保配置已初始化，延迟执行避免循环依赖"""
+    global _config_initialized, _config_initialization_lock
+    if _config_initialized:
+        return
+    
+    import threading
+    if _config_initialization_lock is None:
+        _config_initialization_lock = threading.Lock()
+    
+    with _config_initialization_lock:
+        if _config_initialized:
+            return
+        
+        # 验证和迁移配置
+        if not validate_config(config_manager.get_all()):
+            logger.warning("配置验证失败，使用默认配置")
+            config_manager._config = {
+                'version': '1.3.0',
+                'theme': ThemeConfig().to_dict(),
+                'trading': TradingConfig().to_dict(),
+                'data': DataConfig().to_dict(),
+                'ui': {'theme': 'default', 'language': 'zh_CN'}
+            }
+            for key, value in config_manager._config.items():
+                config_manager.set(key, value)
+        else:
+            migrated_config = migrate_config(
+                config_manager.get_all(), config_manager.get('version', '1.0.0'))
+            config_manager._config = migrated_config
+            for key, value in migrated_config.items():
+                config_manager.set(key, value)
+        
+        _config_initialized = True
+
+
+def get_config_manager():
+    """获取配置管理器，确保已初始化"""
+    _ensure_config_initialized()
+    return config_manager
+
+
+class LazyConfigManager:
+    """懒加载配置管理器代理"""
+    
+    def __getattr__(self, name):
+        _ensure_config_initialized()
+        return getattr(config_manager, name)
+
+
+# 使用懒加载代理替代全局config_manager
+lazy_config_manager = LazyConfigManager()

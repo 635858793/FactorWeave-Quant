@@ -35,9 +35,6 @@ class RecommendationType(Enum):
     STOCK = "stock"                 # 股票推荐
     INDICATOR = "indicator"         # 指标推荐
     STRATEGY = "strategy"           # 策略推荐
-    NEWS = "news"                   # 新闻推荐
-    RESEARCH = "research"           # 研报推荐
-    PORTFOLIO = "portfolio"         # 组合推荐
 
 
 class RecommendationReason(Enum):

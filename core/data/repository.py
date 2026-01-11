@@ -306,6 +306,122 @@ class StockRepository(BaseRepository):
                 f"Failed to search stocks with keyword '{keyword}': {e}")
             return []
 
+    def update_stock(self, stock_code: str, data: Dict[str, Any]) -> bool:
+        """更新股票信息"""
+        try:
+            if not stock_code:
+                self.logger.error("股票代码不能为空")
+                return False
+
+            if stock_code in self._stock_cache:
+                cached = self._stock_cache[stock_code]
+                for key, value in data.items():
+                    if hasattr(cached, key):
+                        setattr(cached, key, value)
+                self.logger.debug(f"股票信息已更新（缓存）: {stock_code}")
+                return True
+
+            if hasattr(self.data_manager, 'update_stock'):
+                return self.data_manager.update_stock(stock_code, data)
+            else:
+                self.logger.warning("数据管理器不支持update_stock方法")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"更新股票信息失败: {e}")
+            return False
+
+    def delete_stock(self, stock_code: str) -> bool:
+        """删除股票信息"""
+        try:
+            if not stock_code:
+                self.logger.error("股票代码不能为空")
+                return False
+
+            if stock_code in self._stock_cache:
+                del self._stock_cache[stock_code]
+                self.logger.debug(f"股票已从缓存删除: {stock_code}")
+
+            if hasattr(self.data_manager, 'delete_stock'):
+                return self.data_manager.delete_stock(stock_code)
+            else:
+                self.logger.warning("数据管理器不支持delete_stock方法")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"删除股票信息失败: {e}")
+            return False
+
+    def add_stock(self, stock_data: Dict[str, Any]) -> bool:
+        """添加股票信息"""
+        try:
+            if not stock_data or 'code' not in stock_data:
+                self.logger.error("股票数据无效，缺少code字段")
+                return False
+
+            stock_code = stock_data['code']
+
+            if hasattr(self.data_manager, 'add_stock'):
+                result = self.data_manager.add_stock(stock_data)
+                if result:
+                    self._stock_cache.clear()
+                return result
+            else:
+                self.logger.warning("数据管理器不支持add_stock方法")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"添加股票信息失败: {e}")
+            return False
+
+    def batch_update_stocks(self, updates: List[Dict[str, Any]]) -> Tuple[int, int]:
+        """批量更新股票信息"""
+        success = 0
+        failed = 0
+        for update in updates:
+            stock_code = update.get('code')
+            if stock_code:
+                if self.update_stock(stock_code, update):
+                    success += 1
+                else:
+                    failed += 1
+            else:
+                failed += 1
+        self.logger.info(f"批量更新完成: 成功={success}, 失败={failed}")
+        return success, failed
+
+    def batch_delete_stocks(self, stock_codes: List[str]) -> Tuple[int, int]:
+        """批量删除股票"""
+        success = 0
+        failed = 0
+        for stock_code in stock_codes:
+            if self.delete_stock(stock_code):
+                success += 1
+            else:
+                failed += 1
+        self.logger.info(f"批量删除完成: 成功={success}, 失败={failed}")
+        return success, failed
+
+    def get_stocks_by_industry(self, industry: str) -> List[StockInfo]:
+        """根据行业获取股票列表"""
+        try:
+            all_stocks = self.get_stock_list()
+            if not industry:
+                return all_stocks
+            return [s for s in all_stocks if s.industry and industry.lower() in s.industry.lower()]
+        except Exception as e:
+            self.logger.error(f"按行业获取股票失败: {e}")
+            return []
+
+    def get_stocks_by_market(self, market: str) -> List[StockInfo]:
+        """根据市场获取股票列表"""
+        return self.get_stock_list(market)
+
+    def clear_cache(self) -> None:
+        """清除缓存"""
+        self._stock_cache.clear()
+        self.logger.debug("股票缓存已清除")
+
 
 class KlineRepository(BaseRepository):
     """K线数据仓库（现代化TET模式）"""
@@ -530,6 +646,123 @@ class KlineRepository(BaseRepository):
                 f"Failed to get latest price for {stock_code}: {e}")
             return None
 
+    def update_kline(self, stock_code: str, period: str, data: pd.DataFrame) -> bool:
+        """更新K线数据"""
+        try:
+            if not stock_code or not period:
+                self.logger.error("股票代码和周期不能为空")
+                return False
+
+            cache_key = f"default_{stock_code}_{period}_None_None_None"
+            existing = self._cache.get(cache_key)
+            if existing:
+                existing.data = data
+                self.logger.debug(f"K线数据已更新（缓存）: {stock_code} {period}")
+                return True
+
+            if hasattr(self.data_manager, 'update_kline'):
+                return self.data_manager.update_kline(stock_code, period, data)
+            else:
+                self.logger.warning("数据管理器不支持update_kline方法")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"更新K线数据失败: {e}")
+            return False
+
+    def delete_kline(self, stock_code: str, period: str = None, start_date: str = None, end_date: str = None) -> bool:
+        """删除K线数据"""
+        try:
+            if not stock_code:
+                self.logger.error("股票代码不能为空")
+                return False
+
+            if period:
+                keys_to_delete = [k for k in self._cache.keys() if f"_{stock_code}_{period}_" in k]
+                for key in keys_to_delete:
+                    del self._cache[key]
+                self.logger.debug(f"K线数据已从缓存删除: {stock_code} {period}")
+
+            if hasattr(self.data_manager, 'delete_kline'):
+                return self.data_manager.delete_kline(stock_code, period, start_date, end_date)
+            else:
+                self.logger.warning("数据管理器不支持delete_kline方法")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"删除K线数据失败: {e}")
+            return False
+
+    def add_kline(self, stock_code: str, period: str, data: pd.DataFrame) -> bool:
+        """添加K线数据"""
+        try:
+            if not stock_code or not period or data.empty:
+                self.logger.error("参数无效")
+                return False
+
+            if hasattr(self.data_manager, 'add_kline'):
+                result = self.data_manager.add_kline(stock_code, period, data)
+                if result:
+                    self._cache.clear()
+                return result
+            else:
+                self.logger.warning("数据管理器不支持add_kline方法")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"添加K线数据失败: {e}")
+            return False
+
+    def batch_update_klines(self, updates: List[Dict[str, Any]]) -> Tuple[int, int]:
+        """批量更新K线数据"""
+        success = 0
+        failed = 0
+        for update in updates:
+            stock_code = update.get('stock_code')
+            period = update.get('period')
+            data = update.get('data')
+            if stock_code and period and data is not None:
+                if self.update_kline(stock_code, period, data):
+                    success += 1
+                else:
+                    failed += 1
+            else:
+                failed += 1
+        self.logger.info(f"批量更新K线完成: 成功={success}, 失败={failed}")
+        return success, failed
+
+    def clear_cache(self) -> None:
+        """清除缓存"""
+        self._cache.clear()
+        self.logger.debug("K线缓存已清除")
+
+    def get_cached_symbols(self) -> List[str]:
+        """获取已缓存的股票代码"""
+        symbols = set()
+        for key in self._cache.keys():
+            parts = key.split('_')
+            if len(parts) >= 2:
+                symbols.add(parts[1])
+        return list(symbols)
+
+    def refresh_data(self, stock_code: str = None, period: str = None) -> int:
+        """刷新数据"""
+        if stock_code:
+            keys_to_delete = [k for k in self._cache.keys() if f"_{stock_code}_" in k]
+            for key in keys_to_delete:
+                del self._cache[key]
+            count = len(keys_to_delete)
+        elif period:
+            keys_to_delete = [k for k in self._cache.keys() if f"_{period}_" in k]
+            for key in keys_to_delete:
+                del self._cache[key]
+            count = len(keys_to_delete)
+        else:
+            count = len(self._cache)
+            self._cache.clear()
+        self.logger.info(f"缓存已刷新: 清除{count}条记录")
+        return count
+
 
 class MarketRepository(BaseRepository):
     """市场数据仓库"""
@@ -615,6 +848,144 @@ class MarketRepository(BaseRepository):
 
         except Exception as e:
             self.logger.error(f"Failed to get market indices: {e}")
+            return []
+
+    def update_market_data(self, index_code: str, data: Dict[str, Any]) -> bool:
+        """更新市场数据"""
+        try:
+            if not index_code:
+                self.logger.error("指数代码不能为空")
+                return False
+
+            cache_key = index_code
+            if cache_key in self._market_cache:
+                cached = self._market_cache[cache_key]
+                for key, value in data.items():
+                    if hasattr(cached, key):
+                        setattr(cached, key, value)
+                self.logger.debug(f"市场数据已更新（缓存）: {index_code}")
+                return True
+
+            if hasattr(self.data_manager, 'update_market_data'):
+                return self.data_manager.update_market_data(index_code, data)
+            else:
+                self.logger.warning("数据管理器不支持update_market_data方法")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"更新市场数据失败: {e}")
+            return False
+
+    def delete_market_data(self, index_code: str, date: datetime = None) -> bool:
+        """删除市场数据"""
+        try:
+            if not index_code:
+                self.logger.error("指数代码不能为空")
+                return False
+
+            if date:
+                cache_key = f"{index_code}_{date.strftime('%Y%m%d')}"
+            else:
+                cache_key = index_code
+
+            if cache_key in self._market_cache:
+                del self._market_cache[cache_key]
+                self.logger.debug(f"市场数据已从缓存删除: {cache_key}")
+
+            if hasattr(self.data_manager, 'delete_market_data'):
+                return self.data_manager.delete_market_data(index_code, date)
+            else:
+                self.logger.warning("数据管理器不支持delete_market_data方法")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"删除市场数据失败: {e}")
+            return False
+
+    def add_market_data(self, market_data: Dict[str, Any]) -> bool:
+        """添加市场数据"""
+        try:
+            if not market_data or 'index_code' not in market_data:
+                self.logger.error("市场数据无效，缺少index_code字段")
+                return False
+
+            index_code = market_data['index_code']
+
+            if hasattr(self.data_manager, 'add_market_data'):
+                result = self.data_manager.add_market_data(market_data)
+                if result:
+                    self._market_cache.clear()
+                return result
+            else:
+                self.logger.warning("数据管理器不支持add_market_data方法")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"添加市场数据失败: {e}")
+            return False
+
+    def batch_update_market_data(self, updates: List[Dict[str, Any]]) -> Tuple[int, int]:
+        """批量更新市场数据"""
+        success = 0
+        failed = 0
+        for update in updates:
+            index_code = update.get('index_code')
+            if index_code:
+                if self.update_market_data(index_code, update):
+                    success += 1
+                else:
+                    failed += 1
+            else:
+                failed += 1
+        self.logger.info(f"批量更新市场数据完成: 成功={success}, 失败={failed}")
+        return success, failed
+
+    def get_market_data_range(self, index_code: str, start_date: datetime, end_date: datetime) -> List[MarketData]:
+        """获取指定时间段的市场数据"""
+        try:
+            if hasattr(self.data_manager, 'get_market_data_range'):
+                raw_data = self.data_manager.get_market_data_range(index_code, start_date, end_date)
+            else:
+                self.logger.warning("数据管理器不支持get_market_data_range方法")
+                return []
+
+            result = []
+            for item in raw_data:
+                if isinstance(item, MarketData):
+                    result.append(item)
+                elif hasattr(item, 'get'):
+                    result.append(MarketData(
+                        date=item.get('date', datetime.now()),
+                        index_code=item.get('index_code', index_code),
+                        index_name=item.get('index_name', ''),
+                        open=item.get('open', 0.0),
+                        high=item.get('high', 0.0),
+                        low=item.get('low', 0.0),
+                        close=item.get('close', 0.0),
+                        volume=item.get('volume', 0.0),
+                        amount=item.get('amount', 0.0),
+                        change=item.get('change'),
+                        change_pct=item.get('change_pct')
+                    ))
+            return result
+
+        except Exception as e:
+            self.logger.error(f"获取时间段市场数据失败: {e}")
+            return []
+
+    def clear_cache(self) -> None:
+        """清除缓存"""
+        self._market_cache.clear()
+        self.logger.debug("市场数据缓存已清除")
+
+    def refresh_market_indices(self) -> List[str]:
+        """刷新市场指数列表"""
+        try:
+            indices = self.get_market_indices()
+            self.logger.info(f"市场指数列表已刷新: {len(indices)}个指数")
+            return indices
+        except Exception as e:
+            self.logger.error(f"刷新市场指数列表失败: {e}")
             return []
 
 

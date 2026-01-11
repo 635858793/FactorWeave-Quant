@@ -40,35 +40,84 @@ except ImportError as e:
 
 
 class AISelectionWorker(QThread):
-    """AI选股工作线程"""
+    """AI选股工作线程（增强版 - 支持进度更新和取消）"""
     finished = pyqtSignal(dict)
-    progress = pyqtSignal(str)
+    progress = pyqtSignal(int, str)  # 进度百分比, 状态描述
     error = pyqtSignal(str)
+    cancelled = pyqtSignal()
     
     def __init__(self, ai_selection_service, criteria, strategy):
         super().__init__()
         self.ai_selection_service = ai_selection_service
         self.criteria = criteria
         self.strategy = strategy
+        self._cancelled = False
+        self._error_collector = None
+        
+    def cancel(self):
+        """取消选股"""
+        self._cancelled = True
+        logger.info("AI选股已取消")
         
     def run(self):
         try:
-            self.progress.emit("开始AI选股分析...")
+            self.progress.emit(0, "初始化AI选股分析...")
+            
+            # 检查是否已取消
+            if self._cancelled:
+                self.cancelled.emit()
+                return
+            
+            # 初始化错误收集器
+            from core.utils.error_collector import ErrorCollector
+            self._error_collector = ErrorCollector()
+            
+            # 定义进度回调函数
+            def progress_callback(progress_percent, status_message):
+                if self._cancelled:
+                    return
+                self.progress.emit(progress_percent, status_message)
+            
+            self.progress.emit(5, "开始AI选股分析...")
             
             # 调用AI选股服务
             if hasattr(self.ai_selection_service, 'select_stocks'):
                 result = self.ai_selection_service.select_stocks(
                     criteria=self.criteria,
-                    strategy=self.strategy
+                    strategy=self.strategy,
+                    error_collector=self._error_collector,
+                    progress_callback=progress_callback
                 )
+                
+                # 检查是否已取消
+                if self._cancelled:
+                    self.cancelled.emit()
+                    return
+                
+                self.progress.emit(100, "AI选股完成")
+                
+                # 添加错误摘要到结果
+                if self._error_collector:
+                    result['error_summary'] = self._error_collector.get_summary()
+                
                 self.finished.emit(result)
             else:
                 self.error.emit("AI选股服务不支持选股功能")
                 
         except Exception as e:
-            self.error.emit(f"AI选股失败: {str(e)}")
+            error_msg = f"AI选股失败: {str(e)}"
+            self.error.emit(error_msg)
             logger.error(f"AI选股线程错误: {e}")
             logger.error(traceback.format_exc())
+            
+            # 记录到错误收集器
+            if self._error_collector:
+                self._error_collector.add_error(
+                    error_type="strategy",
+                    error_message=error_msg,
+                    error_detail=traceback.format_exc(),
+                    severity="critical"
+                )
 
 
 class EnhancedAIStockSelectionPanel(BaseAnalysisPanel):
@@ -78,17 +127,9 @@ class EnhancedAIStockSelectionPanel(BaseAnalysisPanel):
         super().__init__(parent)
         self.ai_selection_service = None
         self.explainability_service = None
+        self.cache_service = None
         self.selection_results = {}
         self.explanation_data = {}
-        
-        # 缓存机制
-        self._cache = {
-            'indicator_data': {},  # 技术指标数据缓存
-            'fundamental_data': {},  # 基本面数据缓存
-            'explanations': {},  # 可解释性数据缓存
-            'last_update': {}  # 缓存时间戳
-        }
-        self._cache_expiry = 300  # 缓存过期时间（5分钟）
         
         # 初始化服务
         self._init_services()
@@ -108,55 +149,56 @@ class EnhancedAIStockSelectionPanel(BaseAnalysisPanel):
                 if AIExplainabilityService:
                     self.explainability_service = container.resolve(AIExplainabilityService)
                     logger.info("AI可解释性服务加载成功")
+                
+                # 初始化缓存服务
+                from core.services.cache_service import CacheService
+                self.cache_service = container.resolve(CacheService)
+                logger.info("缓存服务加载成功")
             else:
                 logger.warning("服务容器不可用")
         except Exception as e:
             logger.error(f"服务初始化失败: {e}")
     
-    def _is_cache_valid(self, cache_key):
-        """检查缓存是否有效"""
-        if cache_key not in self._cache['last_update']:
-            return False
+    def _get_cached_data(self, cache_key: str, default: Any = None) -> Any:
+        """从缓存服务获取数据
         
-        import time
-        current_time = time.time()
-        last_update = self._cache['last_update'][cache_key]
-        
-        return (current_time - last_update) < self._cache_expiry
-    
-    def _update_cache_timestamp(self, cache_key):
-        """更新缓存时间戳"""
-        import time
-        self._cache['last_update'][cache_key] = time.time()
-    
-    def _get_cached_data(self, cache_key, cache_type='indicator_data'):
-        """获取缓存数据"""
-        if self._is_cache_valid(cache_key):
-            return self._cache[cache_type].get(cache_key)
-        return None
-    
-    def _set_cached_data(self, cache_key, data, cache_type='indicator_data'):
-        """设置缓存数据"""
-        self._cache[cache_type][cache_key] = data
-        self._update_cache_timestamp(cache_key)
-    
-    def _clear_expired_cache(self):
-        """清理过期缓存"""
-        import time
-        current_time = time.time()
-        expired_keys = []
-        
-        for cache_key, last_update in self._cache['last_update'].items():
-            if (current_time - last_update) >= self._cache_expiry:
-                expired_keys.append(cache_key)
-        
-        for cache_type in ['indicator_data', 'fundamental_data', 'explanations']:
-            for key in expired_keys:
-                if key in self._cache[cache_type]:
-                    del self._cache[cache_type][key]
-                if key in self._cache['last_update']:
-                    del self._cache['last_update'][key]
+        Args:
+            cache_key: 缓存键
+            default: 默认值
             
+        Returns:
+            缓存数据或默认值
+        """
+        if self.cache_service:
+            return self.cache_service.get(cache_key, default)
+        return default
+    
+    def _set_cached_data(self, cache_key: str, data: Any, ttl: Optional[timedelta] = None) -> None:
+        """设置缓存数据
+        
+        Args:
+            cache_key: 缓存键
+            data: 缓存数据
+            ttl: 过期时间（默认5分钟）
+        """
+        if self.cache_service:
+            if ttl is None:
+                ttl = timedelta(minutes=5)
+            self.cache_service.set(cache_key, data, ttl=ttl)
+    
+    def _clear_cache(self, cache_key: Optional[str] = None) -> None:
+        """清除缓存
+        
+        Args:
+            cache_key: 缓存键，如果为None则清除所有缓存
+        """
+        if self.cache_service:
+            if cache_key:
+                self.cache_service.delete(cache_key)
+            else:
+                self.cache_service.clear()
+
+
     def _create_ui(self):
         """创建UI界面"""
         # 配置区域
@@ -285,6 +327,27 @@ class EnhancedAIStockSelectionPanel(BaseAnalysisPanel):
         button_layout.addWidget(self.clear_btn)
         
         button_layout.addStretch()
+        
+        # LLM配置按钮
+        self.llm_config_btn = QPushButton("LLM配置")
+        self.llm_config_btn.clicked.connect(self.open_llm_config)
+        self.llm_config_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2196F3;
+                color: white;
+                padding: 8px 16px;
+                border: none;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #1a5cd6;
+            }
+            QPushButton:pressed {
+                background-color: #154eb3;
+            }
+        """)
+        button_layout.addWidget(self.llm_config_btn)
+        
         self.main_layout.addLayout(button_layout)
         
         # 结果显示区域
@@ -366,16 +429,97 @@ class EnhancedAIStockSelectionPanel(BaseAnalysisPanel):
         # 创建并启动工作线程
         self.worker = AISelectionWorker(self.ai_selection_service, criteria, strategy)
         self.worker.finished.connect(self.on_selection_completed)
-        self.worker.progress.connect(self.update_status)
+        self.worker.progress.connect(self.update_progress)
         self.worker.error.connect(self.on_selection_error)
+        self.worker.cancelled.connect(self.on_selection_cancelled)
         
         # 更新UI状态
         self.start_btn.setEnabled(False)
+        self.cancel_btn = QPushButton("取消")
+        self.cancel_btn.clicked.connect(self.cancel_selection)
+        self.cancel_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #f44336;
+                color: white;
+                padding: 8px 16px;
+                border: none;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #da190b;
+            }
+            QPushButton:pressed {
+                background-color: #b71c1c;
+            }
+        """)
+        
+        # 添加取消按钮到布局
+        button_layout = self.start_btn.parent().layout()
+        button_layout.insertWidget(button_layout.indexOf(self.start_btn) + 1, self.cancel_btn)
+        
+        # 显示进度
         self.show_progress(True)
-        self.set_progress(0)
-        self.update_status("正在启动AI选股...")
         
         self.worker.start()
+    
+    def cancel_selection(self):
+        """取消AI选股"""
+        if hasattr(self, 'worker') and self.worker:
+            self.worker.cancel()
+            self.update_status("正在取消...")
+    
+    def update_progress(self, progress: int, status: str):
+        """更新进度"""
+        if hasattr(self, 'progress_bar') and self.progress_bar:
+            self.progress_bar.setValue(progress)
+        
+        if hasattr(self, 'status_label') and self.status_label:
+            self.status_label.setText(f"进度: {progress}% - {status}")
+    
+    def on_selection_cancelled(self):
+        """选股取消处理"""
+        self.update_status("AI选股已取消")
+        self.show_progress(False)
+        self._restore_ui_state()
+    
+    def _restore_ui_state(self):
+        """恢复UI状态"""
+        self.start_btn.setEnabled(True)
+        if hasattr(self, 'cancel_btn') and self.cancel_btn:
+            self.cancel_btn.deleteLater()
+            del self.cancel_btn
+    
+    def show_progress(self, show: bool):
+        """显示/隐藏进度条"""
+        if show:
+            # 创建进度对话框
+            self.progress_dialog = QDialog(self)
+            progress_layout = QVBoxLayout(self.progress_dialog)
+            
+            # 进度条
+            self.progress_bar = QProgressBar()
+            self.progress_bar.setRange(0, 100)
+            self.progress_bar.setValue(0)
+            progress_layout.addWidget(self.progress_bar)
+            
+            # 状态标签
+            self.status_label = QLabel("初始化...")
+            self.status_label.setAlignment(Qt.AlignCenter)
+            progress_layout.addWidget(self.status_label)
+            
+            # 取消按钮
+            cancel_btn = QPushButton("取消")
+            cancel_btn.clicked.connect(self.cancel_selection)
+            progress_layout.addWidget(cancel_btn)
+            
+            self.progress_dialog.setWindowTitle("AI选股进度")
+            self.progress_dialog.setModal(True)
+            self.progress_dialog.show()
+        else:
+            if hasattr(self, 'progress_dialog'):
+                self.progress_dialog.close()
+                self.progress_dialog.deleteLater()
+                del self.progress_dialog
         
     def _collect_criteria(self):
         """收集选股标准"""
@@ -420,25 +564,35 @@ class EnhancedAIStockSelectionPanel(BaseAnalysisPanel):
             return None
             
         strategy_map = {
-            "技术指标驱动": SelectionStrategy.TECHNICAL_DRIVEN,
-            "基本面驱动": SelectionStrategy.FUNDAMENTAL_DRIVEN,
-            "综合评分": SelectionStrategy.COMPREHENSIVE,
-            "成长性导向": SelectionStrategy.GROWTH_ORIENTED,
-            "价值投资": SelectionStrategy.VALUE_INVESTING,
-            "动量策略": SelectionStrategy.MOMENTUM_STRATEGY
+            "技术指标驱动": SelectionStrategy.TECH_ANALYSIS,
+            "基本面驱动": SelectionStrategy.QUALITY_BASED,
+            "综合评分": SelectionStrategy.HYBRID,
+            "成长性导向": SelectionStrategy.GROWTH_BASED,
+            "价值投资": SelectionStrategy.VALUE_BASED,
+            "动量策略": SelectionStrategy.MOMENTUM_BASED
         }
         
-        return strategy_map.get(self.strategy_combo.currentText(), SelectionStrategy.COMPREHENSIVE)
+        return strategy_map.get(self.strategy_combo.currentText(), SelectionStrategy.HYBRID)
         
     def on_selection_completed(self, result):
         """选股完成回调"""
         try:
             self.show_progress(False)
-            self.start_btn.setEnabled(True)
+            self._restore_ui_state()
             
             if result.get("success", False):
-                self.selection_results = result.get("data", {})
+                data = result.get("data", {})
+                
+                # 转换数据结构以匹配UI期望的格式
+                self.selection_results = self._convert_result_to_ui_format(data)
+                
                 self._update_results_table()
+                
+                # 显示错误摘要（如果有）
+                error_summary = result.get("error_summary")
+                if error_summary and error_summary.get("total_errors", 0) > 0:
+                    self._show_error_summary(error_summary)
+                
                 self.update_status(f"AI选股完成，共找到 {len(self.selection_results)} 只股票")
                 
                 # 启用导出按钮
@@ -448,17 +602,213 @@ class EnhancedAIStockSelectionPanel(BaseAnalysisPanel):
                 self._generate_explanations()
             else:
                 error_msg = result.get("error", "未知错误")
+                
+                # 显示错误摘要（如果有）
+                error_summary = result.get("error_summary")
+                if error_summary and error_summary.get("total_errors", 0) > 0:
+                    self._show_error_summary(error_summary)
+                
                 QMessageBox.warning(self, "选股失败", f"错误: {error_msg}")
                 self.update_status(f"选股失败: {error_msg}", error=True)
                 
         except Exception as e:
             logger.error(f"处理选股结果失败: {e}")
             QMessageBox.critical(self, "错误", f"处理结果时出错: {str(e)}")
+    
+    def _convert_result_to_ui_format(self, data: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+        """将后端返回的数据转换为UI期望的格式
+        
+        Args:
+            data: 后端返回的数据
+            
+        Returns:
+            UI期望的格式：{股票代码: {股票数据}}
+        """
+        ui_format = {}
+        
+        selected_stocks = data.get("selected_stocks", [])
+        stock_scores = data.get("stock_scores", {})
+        detailed_scores = data.get("detailed_scores", {})
+        explanations = data.get("explanations", [])
+        
+        # 创建解释映射
+        explanations_map = {}
+        for exp in explanations:
+            explanations_map[exp.get("stock_code", "")] = exp
+        
+        # 转换为UI格式
+        for stock_code in selected_stocks:
+            total_score = stock_scores.get(stock_code, 0)
+            
+            # 使用详细评分数据（如果可用）
+            if stock_code in detailed_scores:
+                detail = detailed_scores[stock_code]
+                technical_score = detail.get("technical_score", 0)
+                momentum_score = detail.get("momentum_score", 0)
+                volatility_score = detail.get("volatility_score", 0)
+                liquidity_score = detail.get("liquidity_score", 0)
+                
+                # 计算基本面评分（基于动量评分）
+                fundamental_score = momentum_score
+                
+                # 计算风险评分（基于波动性评分）
+                risk_score = 100 - volatility_score
+            else:
+                # 回退到基于综合评分的假设
+                technical_score = total_score * 0.4
+                fundamental_score = total_score * 0.4
+                risk_score = 100 - total_score
+            
+            stock_data = {
+                "name": "",  # 股票名称需要从数据源获取
+                "total_score": total_score,
+                "technical_score": technical_score,
+                "fundamental_score": fundamental_score,
+                "risk_score": risk_score,
+                "reason": "",
+                "confidence": total_score / 100,
+                "industry": "",
+                "market_cap": ""
+            }
+            
+            # 从解释中获取推荐理由
+            exp = explanations_map.get(stock_code, {})
+            if exp:
+                stock_data["reason"] = exp.get("selection_reason", "")
+                stock_data["name"] = exp.get("stock_name", "")
+            
+            ui_format[stock_code] = stock_data
+        
+        return ui_format
+    
+    def _show_error_summary(self, error_summary: Dict[str, Any]):
+        """显示错误摘要"""
+        try:
+            # 创建错误摘要对话框
+            dialog = QDialog(self)
+            dialog.setWindowTitle("错误摘要")
+            dialog.setMinimumSize(600, 400)
+            
+            layout = QVBoxLayout(dialog)
+            
+            # 总体信息
+            summary_group = QGroupBox("总体信息")
+            summary_layout = QFormLayout(summary_group)
+            
+            summary_layout.addRow("总错误数:", QLabel(str(error_summary.get("total_errors", 0))))
+            summary_layout.addRow("持续时间(秒):", QLabel(f"{error_summary.get('duration_seconds', 0):.2f}"))
+            summary_layout.addRow("错误率(个/秒):", QLabel(f"{error_summary.get('errors_per_second', 0):.4f}"))
+            summary_layout.addRow("受影响股票数:", QLabel(str(error_summary.get("affected_stocks_count", 0))))
+            
+            layout.addWidget(summary_group)
+            
+            # 按类型分组
+            if error_summary.get("errors_by_type"):
+                type_group = QGroupBox("按类型分组")
+                type_layout = QVBoxLayout(type_group)
+                
+                type_table = QTableWidget()
+                type_table.setColumnCount(2)
+                type_table.setHorizontalHeaderLabels(["错误类型", "数量"])
+                type_table.horizontalHeader().setStretchLastSection(True)
+                
+                for error_type, count in error_summary["errors_by_type"].items():
+                    row = type_table.rowCount()
+                    type_table.insertRow(row)
+                    type_table.setItem(row, 0, QTableWidgetItem(error_type))
+                    type_table.setItem(row, 1, QTableWidgetItem(str(count)))
+                
+                type_layout.addWidget(type_table)
+                layout.addWidget(type_group)
+            
+            # 按严重程度分组
+            if error_summary.get("errors_by_severity"):
+                severity_group = QGroupBox("按严重程度分组")
+                severity_layout = QVBoxLayout(severity_group)
+                
+                severity_table = QTableWidget()
+                severity_table.setColumnCount(2)
+                severity_table.setHorizontalHeaderLabels(["严重程度", "数量"])
+                severity_table.horizontalHeader().setStretchLastSection(True)
+                
+                for severity, count in error_summary["errors_by_severity"].items():
+                    row = severity_table.rowCount()
+                    severity_table.insertRow(row)
+                    severity_table.setItem(row, 0, QTableWidgetItem(severity))
+                    severity_table.setItem(row, 1, QTableWidgetItem(str(count)))
+                
+                severity_layout.addWidget(severity_table)
+                layout.addWidget(severity_group)
+            
+            # 最新错误
+            if error_summary.get("latest_errors"):
+                latest_group = QGroupBox("最新错误")
+                latest_layout = QVBoxLayout(latest_group)
+                
+                latest_table = QTableWidget()
+                latest_table.setColumnCount(4)
+                latest_table.setHorizontalHeaderLabels(["错误ID", "类型", "股票代码", "错误消息"])
+                latest_table.horizontalHeader().setStretchLastSection(True)
+                
+                for error in error_summary["latest_errors"]:
+                    row = latest_table.rowCount()
+                    latest_table.insertRow(row)
+                    latest_table.setItem(row, 0, QTableWidgetItem(error.get("error_id", "")))
+                    latest_table.setItem(row, 1, QTableWidgetItem(error.get("error_type", "")))
+                    latest_table.setItem(row, 2, QTableWidgetItem(error.get("stock_code", "")))
+                    latest_table.setItem(row, 3, QTableWidgetItem(error.get("error_message", "")))
+                
+                latest_layout.addWidget(latest_table)
+                layout.addWidget(latest_group)
+            
+            # 按钮
+            button_layout = QHBoxLayout()
+            
+            export_btn = QPushButton("导出错误报告")
+            export_btn.clicked.connect(lambda: self._export_error_report(error_summary))
+            button_layout.addWidget(export_btn)
+            
+            close_btn = QPushButton("关闭")
+            close_btn.clicked.connect(dialog.accept)
+            button_layout.addWidget(close_btn)
+            
+            button_layout.addStretch()
+            layout.addLayout(button_layout)
+            
+            dialog.exec_()
+            
+        except Exception as e:
+            logger.error(f"显示错误摘要失败: {e}")
+    
+    def _export_error_report(self, error_summary: Dict[str, Any]):
+        """导出错误报告"""
+        try:
+            from datetime import datetime
+            import json
+            
+            # 选择保存路径
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "保存错误报告",
+                f"error_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                "JSON Files (*.json)"
+            )
+            
+            if file_path:
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(error_summary, f, ensure_ascii=False, indent=2)
+                
+                QMessageBox.information(self, "导出成功", f"错误报告已保存到:\n{file_path}")
+                
+        except Exception as e:
+            logger.error(f"导出错误报告失败: {e}")
+            QMessageBox.critical(self, "导出失败", f"导出错误报告时出错: {str(e)}")
             
     def on_selection_error(self, error_msg):
         """选股错误回调"""
         self.show_progress(False)
         self.start_btn.setEnabled(True)
+        logger.error(f"AI选股错误: {error_msg}")
         QMessageBox.critical(self, "AI选股错误", error_msg)
         self.update_status(f"选股失败: {error_msg}", error=True)
         
@@ -753,6 +1103,39 @@ class EnhancedAIStockSelectionPanel(BaseAnalysisPanel):
             self.current_page = 1
             self.page_label.setText("第 1 页 / 共 1 页")
             self.update_status("结果已清空")
+    
+    def open_llm_config(self):
+        """打开LLM配置对话框"""
+        try:
+            from gui.dialogs.llm_config_dialog import LLMConfigDialog
+            from core.services.llm_config_service import LLMConfigService
+            
+            # 获取LLM配置服务
+            service_container = get_service_container()
+            llm_config_service = service_container.resolve(LLMConfigService)
+            
+            # 创建并显示配置对话框
+            dialog = LLMConfigDialog(self, llm_config_service)
+            dialog.exec_()
+            
+            # 如果配置更新，重新初始化AI选股服务
+            if hasattr(dialog, 'config_updated'):
+                dialog.config_updated.connect(self.on_llm_config_updated)
+                
+        except ImportError as e:
+            logger.error(f"LLM配置对话框导入失败: {e}")
+            QMessageBox.warning(self, "错误", "LLM配置功能不可用")
+        except Exception as e:
+            logger.error(f"打开LLM配置失败: {e}")
+            QMessageBox.critical(self, "错误", f"打开LLM配置失败: {str(e)}")
+    
+    def on_llm_config_updated(self):
+        """LLM配置更新回调"""
+        logger.info("LLM配置已更新，重新初始化AI选股服务")
+        self.update_status("LLM配置已更新")
+        
+        # 重新初始化服务
+        self._init_services()
             
     def _display_factor_contribution_chart(self, stock_code, explanation):
         """显示因子贡献图表"""

@@ -887,9 +887,6 @@ class MainWindowCoordinator(BaseCoordinator):
                 ui_data=self._current_stock_data
             )
 
-            # 验证事件数据
-            logger.info(f"UIDataReadyEvent.ui_data键: {list(data_ready_event.ui_data.keys()) if data_ready_event.ui_data else 'None'}")
-
             self.event_bus.publish(data_ready_event)
             logger.info(f"已发布UIDataReadyEvent事件: {event.stock_code}")
 
@@ -1152,7 +1149,6 @@ class MainWindowCoordinator(BaseCoordinator):
             # 获取中间面板的图表控件
             middle_panel = self._panels.get('middle')
             if not middle_panel or not hasattr(middle_panel, 'chart_widget'):
-                logger.warning("中间面板或图表控件不存在，跳过指标刷新")
                 return
                 
             chart_widget = middle_panel.chart_widget
