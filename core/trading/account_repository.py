@@ -432,7 +432,11 @@ class AccountRepository:
                 sql += f" LIMIT {query.limit} OFFSET {query.offset}"
 
             results = db_service.fetch_all(sql, params, pool_name="tradeaccount_sqlite")
-            return [Account.from_dict(r) for r in results]
+            accounts = []
+            for r in results:
+                r = self.crypto_utils.decrypt_account_data(r)
+                accounts.append(Account.from_dict(r))
+            return accounts
 
         except Exception as e:
             logger.error(f"获取账户列表失败: {e}")

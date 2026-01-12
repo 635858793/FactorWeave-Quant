@@ -86,6 +86,51 @@ class MetricsRepository:
         except Exception as e:
             logger.error(f"存储指标失败: {e}")
 
+    def update_metric(self, metric_id: int, value: float, metadata: Dict = None) -> bool:
+        """更新单个指标"""
+        try:
+            timestamp = int(time.time())
+            metadata_json = json.dumps(metadata) if metadata else None
+
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    UPDATE metrics
+                    SET value = ?, timestamp = ?, metadata = ?
+                    WHERE id = ?
+                ''', (value, timestamp, metadata_json, metric_id))
+                conn.commit()
+
+                if cursor.rowcount > 0:
+                    logger.debug(f"指标更新成功: id={metric_id}, value={value}")
+                    return True
+                else:
+                    logger.warning(f"指标未找到: id={metric_id}")
+                    return False
+
+        except Exception as e:
+            logger.error(f"更新指标失败: {e}")
+            return False
+
+    def delete_metric(self, metric_id: int) -> bool:
+        """删除单个指标"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM metrics WHERE id = ?", (metric_id,))
+                conn.commit()
+
+                if cursor.rowcount > 0:
+                    logger.debug(f"指标删除成功: id={metric_id}")
+                    return True
+                else:
+                    logger.warning(f"指标未找到: id={metric_id}")
+                    return False
+
+        except Exception as e:
+            logger.error(f"删除指标失败: {e}")
+            return False
+
     def query_metrics(self,
                       metric_name: str,
                       start_time: Optional[int] = None,

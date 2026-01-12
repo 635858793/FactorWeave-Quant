@@ -598,6 +598,11 @@ class OrderExecutor:
             # 1. 获取订单
             order = self.repository.get_order(order_id)
             if not order:
+                logger.error(f"订单取消失败: {order_id} - 订单不存在，可能原因：")
+                logger.error(f"  1. 订单创建时保存失败但ID已生成")
+                logger.error(f"  2. 订单被保存到了错误的数据池")
+                logger.error(f"  3. 订单已被删除")
+                logger.error(f"  4. 数据库事务问题导致订单未持久化")
                 return ExecutionResult(
                     order_id=order_id,
                     status=ExecutionStatus.FAILED,

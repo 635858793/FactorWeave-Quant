@@ -69,7 +69,7 @@ class UniversalNetworkConfigWidget(QWidget):
 
         # 状态栏
         self.status_label = QLabel("准备就绪")
-        self.status_label.setStyleSheet("color: #666; padding: 5px;")
+        self.status_label.setStyleSheet("color: blue; padding: 5px;")
         layout.addWidget(self.status_label)
 
     def create_endpoints_tab(self):

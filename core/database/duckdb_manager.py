@@ -70,7 +70,7 @@ class ConnectionInfo:
 class DuckDBConnectionPool:
     """DuckDB连接池"""
 
-    def __init__(self, database_path: str, pool_size: int = 10, config: DuckDBConfig = None):
+    def __init__(self, database_path: str, pool_size: int = 50, config: DuckDBConfig = None):
         """
         初始化连接池
 

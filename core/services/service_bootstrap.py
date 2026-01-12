@@ -19,6 +19,7 @@ from core.events import EventBus, get_event_bus
 # 然后导入服务类型
 from core.services.config_service import ConfigService
 from core.services.extension_service import ExtensionService
+from core.services.cache_service import CacheService
 from core.services.database_service import DatabaseService
 from core.services.stock_service import StockService
 from core.services.chart_service import ChartService
@@ -258,6 +259,17 @@ class ServiceBootstrap:
         self.service_container.register_instance(ExtensionService, extension_service)
         logger.info("扩展服务注册完成")
 
+        # 注册缓存服务 (CacheService)
+        if not self._is_service_registered(CacheService):
+            self.service_container.register(
+                CacheService,
+                scope=ServiceScope.SINGLETON,
+                factory=lambda: CacheService(service_container=self.service_container)
+            )
+            cache_service = self.service_container.resolve(CacheService)
+            cache_service.initialize()
+            logger.info("✅ 缓存服务注册完成")
+
         # 日志服务现在由纯Loguru系统全局管理，无需注册到容器
         # log_manager = LogManager()
         # self.service_container.register_instance(LogManager, log_manager)
@@ -430,6 +442,101 @@ class ServiceBootstrap:
             logger.error(f"❌ 智能推荐引擎注册失败: {e}")
             logger.error(traceback.format_exc())
 
+        # 注册推荐理由生成器
+        try:
+            from .recommendation_explanation_generator import RecommendationExplanationGenerator
+            if not self._is_service_registered(RecommendationExplanationGenerator):
+                self.service_container.register(
+                    RecommendationExplanationGenerator,
+                    scope=ServiceScope.SINGLETON,
+                    factory=lambda: RecommendationExplanationGenerator()
+                )
+            logger.info("✅ 推荐理由生成器注册完成")
+        except Exception as e:
+            logger.error(f"❌ 推荐理由生成器注册失败: {e}")
+            logger.error(traceback.format_exc())
+
+        # 注册持续学习管理器
+        try:
+            from core.ai.continuous_learning_manager import ContinuousLearningManager
+            if not self._is_service_registered(ContinuousLearningManager):
+                self.service_container.register(
+                    ContinuousLearningManager,
+                    scope=ServiceScope.SINGLETON,
+                    factory=lambda: ContinuousLearningManager()
+                )
+            logger.info("✅ 持续学习管理器注册完成")
+        except Exception as e:
+            logger.error(f"❌ 持续学习管理器注册失败: {e}")
+            logger.error(traceback.format_exc())
+
+        # 注册推荐模型训练器
+        try:
+            from .recommendation_model_trainer import RecommendationModelTrainer
+            if not self._is_service_registered(RecommendationModelTrainer):
+                self.service_container.register(
+                    RecommendationModelTrainer,
+                    scope=ServiceScope.SINGLETON,
+                    factory=lambda: RecommendationModelTrainer(
+                        recommendation_engine=self.service_container.resolve(SmartRecommendationEngine),
+                        continuous_learning_manager=self.service_container.resolve(ContinuousLearningManager)
+                    )
+                )
+            logger.info("✅ 推荐模型训练器注册完成")
+        except Exception as e:
+            logger.error(f"❌ 推荐模型训练器注册失败: {e}")
+            logger.error(traceback.format_exc())
+
+        # 在所有推荐相关服务注册完成后，设置推荐理由生成器到推荐引擎
+        try:
+            if self.service_container.is_registered(SmartRecommendationEngine) and self.service_container.is_registered(RecommendationExplanationGenerator):
+                smart_recommendation_engine = self.service_container.resolve(SmartRecommendationEngine)
+                explanation_generator = self.service_container.resolve(RecommendationExplanationGenerator)
+                smart_recommendation_engine.set_explanation_generator(explanation_generator)
+                logger.info("✅ 推荐理由生成器已设置到推荐引擎")
+        except Exception as e:
+            logger.error(f"❌ 设置推荐理由生成器到推荐引擎失败: {e}")
+            logger.error(traceback.format_exc())
+
+        # LLM配置服务（必须在AISelectionIntegrationService之前注册）
+        try:
+            from .llm_config_service import LLMConfigService
+            if not self._is_service_registered(LLMConfigService):
+                self.service_container.register(
+                    LLMConfigService,
+                    scope=ServiceScope.SINGLETON,
+                    factory=lambda: LLMConfigService(
+                        config={},
+                        event_bus=self.event_bus
+                    )
+                )
+            llm_config_service = self.service_container.resolve(LLMConfigService)
+            if hasattr(llm_config_service, 'initialize'):
+                llm_config_service.initialize()
+            logger.info("✅ LLM配置服务注册完成")
+        except Exception as e:
+            logger.error(f"❌ LLM配置服务注册失败: {e}")
+            logger.error(traceback.format_exc())
+
+        # AI可解释性服务（必须在AISelectionIntegrationService之前注册）
+        try:
+            from .ai_explainability_service import AIExplainabilityService
+            if not self._is_service_registered(AIExplainabilityService):
+                self.service_container.register(
+                    AIExplainabilityService,
+                    scope=ServiceScope.SINGLETON,
+                    factory=lambda: AIExplainabilityService(
+                        service_container=self.service_container
+                    )
+                )
+            ai_explainability_service = self.service_container.resolve(AIExplainabilityService)
+            if hasattr(ai_explainability_service, 'initialize'):
+                ai_explainability_service.initialize()
+            logger.info("✅ AI可解释性服务注册完成")
+        except Exception as e:
+            logger.error(f"❌ AI可解释性服务注册失败: {e}")
+            logger.error(traceback.format_exc())
+
         # AI选股集成服务
         try:
             from .ai_selection_integration_service import AISelectionIntegrationService
@@ -447,25 +554,6 @@ class ServiceBootstrap:
             logger.info("✅ AI选股集成服务注册完成")
         except Exception as e:
             logger.error(f"❌ AI选股集成服务注册失败: {e}")
-            logger.error(traceback.format_exc())
-
-        # AI可解释性服务
-        try:
-            from .ai_explainability_service import AIExplainabilityService
-            if not self._is_service_registered(AIExplainabilityService):
-                self.service_container.register(
-                    AIExplainabilityService,
-                    scope=ServiceScope.SINGLETON,
-                    factory=lambda: AIExplainabilityService(
-                        service_container=self.service_container
-                    )
-                )
-            ai_explainability_service = self.service_container.resolve(AIExplainabilityService)
-            if hasattr(ai_explainability_service, 'initialize'):
-                ai_explainability_service.initialize()
-            logger.info("✅ AI可解释性服务注册完成")
-        except Exception as e:
-            logger.error(f"❌ AI可解释性服务注册失败: {e}")
             logger.error(traceback.format_exc())
 
         # AI选股回测服务
@@ -1231,6 +1319,66 @@ class ServiceBootstrap:
 
             # 启动订单监控并创建定时任务
             self._setup_order_monitoring()
+
+            # 注册数据脱敏服务
+            try:
+                from .data_masking_service import DataMaskingService
+
+                if not self._is_service_registered(DataMaskingService):
+                    self.service_container.register(
+                        DataMaskingService,
+                        scope=ServiceScope.SINGLETON,
+                        factory=lambda: DataMaskingService(
+                            config={},
+                            event_bus=self.event_bus
+                        )
+                    )
+                    data_masking_service = self.service_container.resolve(DataMaskingService)
+                    data_masking_service.initialize()
+                    logger.info("✅ 数据脱敏服务注册完成")
+            except Exception as e:
+                logger.warning(f"数据脱敏服务注册失败: {e}")
+                logger.warning(traceback.format_exc())
+
+            # 注册资金费率分析服务
+            try:
+                from .funding_rate_analysis_service import FundingRateAnalysisService
+
+                if not self._is_service_registered(FundingRateAnalysisService):
+                    self.service_container.register(
+                        FundingRateAnalysisService,
+                        scope=ServiceScope.SINGLETON,
+                        factory=lambda: FundingRateAnalysisService(
+                            service_container=self.service_container,
+                            event_bus=self.event_bus
+                        )
+                    )
+                    funding_rate_service = self.service_container.resolve(FundingRateAnalysisService)
+                    funding_rate_service.initialize()
+                    logger.info("✅ 资金费率分析服务注册完成")
+            except Exception as e:
+                logger.warning(f"资金费率分析服务注册失败: {e}")
+                logger.warning(traceback.format_exc())
+
+            # 注册交易确认与风控服务
+            try:
+                from .trading_confirmation_service import TradingConfirmationService
+
+                if not self._is_service_registered(TradingConfirmationService):
+                    self.service_container.register(
+                        TradingConfirmationService,
+                        scope=ServiceScope.SINGLETON,
+                        factory=lambda: TradingConfirmationService(
+                            service_container=self.service_container,
+                            event_bus=self.event_bus
+                        )
+                    )
+                    trading_confirmation_service = self.service_container.resolve(TradingConfirmationService)
+                    trading_confirmation_service.initialize()
+                    logger.info("✅ 交易确认与风控服务注册完成")
+            except Exception as e:
+                logger.warning(f"交易确认与风控服务注册失败: {e}")
+                logger.warning(traceback.format_exc())
 
             logger.info("交易服务注册完成")
 

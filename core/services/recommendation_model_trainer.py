@@ -902,6 +902,67 @@ class RecommendationModelTrainer:
             logger.error(f"获取训练统计失败: {e}")
             return {}
 
+    def train(self, user_id: str = None, behavior_data: Dict[str, Any] = None) -> str:
+        """
+        训练推荐模型（同步接口）
+        
+        这是一个便捷方法，用于从同步上下文调用训练功能。
+        内部使用 asyncio.run() 来执行异步训练逻辑。
+        
+        参数:
+            user_id: 用户ID（保留参数以兼容现有调用）
+            behavior_data: 行为数据（保留参数以兼容现有调用）
+            
+        返回:
+            job_id: 训练任务ID
+        """
+        try:
+            logger.info(f"开始训练推荐模型（用户ID: {user_id}）")
+            
+            # 使用默认模型配置训练第一个可用的模型
+            if not self.model_configs:
+                logger.warning("没有可用的模型配置")
+                return ""
+            
+            # 获取第一个模型配置
+            model_id = list(self.model_configs.keys())[0]
+            
+            # 在新的事件循环中运行异步训练
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # 如果事件循环正在运行，使用 create_task
+                    import threading
+                    result = []
+                    
+                    def run_in_thread():
+                        new_loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(new_loop)
+                        try:
+                            result.append(new_loop.run_until_complete(self.train_model(model_id)))
+                        finally:
+                            new_loop.close()
+                    
+                    thread = threading.Thread(target=run_in_thread)
+                    thread.start()
+                    thread.join(timeout=60)  # 最多等待60秒
+                    
+                    if thread.is_alive():
+                        logger.warning("训练任务仍在后台运行")
+                        return f"train_{model_id}_{datetime.now().timestamp()}"
+                    
+                    return result[0] if result else ""
+                else:
+                    # 如果事件循环未运行，直接使用 asyncio.run
+                    return asyncio.run(self.train_model(model_id))
+            except RuntimeError:
+                # 没有事件循环，创建新的
+                return asyncio.run(self.train_model(model_id))
+                
+        except Exception as e:
+            logger.error(f"训练推荐模型失败: {e}")
+            raise
+
     def cleanup(self):
         """清理资源"""
         try:
@@ -915,6 +976,5 @@ class RecommendationModelTrainer:
             self.training_data = None
 
             logger.info("推荐模型训练器资源清理完成")
-
         except Exception as e:
             logger.error(f"资源清理失败: {e}")

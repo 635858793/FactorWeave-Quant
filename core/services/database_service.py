@@ -164,7 +164,35 @@ class DatabaseConnection:
                     result = self.connection.execute(sql, parameters)
                 else:
                     result = self.connection.execute(sql)
-                return result.fetchall() if is_select else None
+                
+                # 对于 SELECT 查询，将元组列表转换为字典列表
+                if is_select and result is not None:
+                    # 尝试使用 fetchdf 获取 DataFrame 并转换为字典列表
+                    try:
+                        df = result.fetchdf()
+                        return df.to_dict('records')
+                    except Exception as e:
+                        # 如果 fetchdf 失败，尝试其他方法
+                        logger.debug(f"fetchdf failed: {e}, trying alternative method")
+                        try:
+                            # 尝试获取列名并转换
+                            if hasattr(result, 'description'):
+                                columns = [col[0] for col in result.description]
+                            elif hasattr(result, 'columns'):
+                                columns = result.columns
+                            else:
+                                columns = None
+                            
+                            if columns:
+                                rows = result.fetchall()
+                                return [dict(zip(columns, row)) for row in rows]
+                            else:
+                                return result.fetchall()
+                        except Exception as e2:
+                            logger.warning(f"Alternative conversion failed: {e2}, returning raw result")
+                            return result.fetchall()
+                else:
+                    return None
             elif self.db_type == DatabaseType.SQLITE:
                 cursor = self.connection.cursor()
                 if parameters:
@@ -343,6 +371,12 @@ class DatabaseService(BaseService):
 
         # 默认数据库配置
         self._default_db_configs = {
+            "factorweave_system_sqlite": DatabaseConfig(
+                db_type=DatabaseType.SQLITE,
+                db_path="data/factorweave_system.sqlite",
+                pool_size=10,
+                max_pool_size=30
+            ),
             "analytics_duckdb": DatabaseConfig(
                 db_type=DatabaseType.DUCKDB,
                 db_path="data/factorweave_analytics.duckdb",
@@ -404,25 +438,28 @@ class DatabaseService(BaseService):
             # 4. 创建默认连接池（必须在其他初始化之前）
             self._create_default_pools()
 
-            # 5. 初始化分析数据库
+            # 6. 初始化分析数据库
             self._initialize_analytics_db()
 
-            # 6. 初始化AI选股相关数据表
+            # 7. 初始化AI选股相关数据表
             self._initialize_ai_tables()
             
-            # 7. 初始化策略配置相关数据表
+            # 8. 初始化系统配置相关数据表
+            self._initialize_system_config_tables()
+            
+            # 9. 初始化策略配置相关数据表
             self._initialize_strategy_tables()
 
-            # 8. 初始化交易账户相关数据表
+            # 10. 初始化交易账户相关数据表
             self._initialize_trade_account_tables()
 
-            # 9. 初始化性能优化器
+            # 11. 初始化性能优化器
             self._initialize_performance_optimizers()
 
-            # 10. 启动后台任务
+            # 12. 启动后台任务
             self._start_background_tasks()
 
-            # 11. 验证数据库连接
+            # 13. 验证数据库连接
             self._validate_database_connections()
 
             logger.info("✅ DatabaseService initialized successfully with full database management capabilities")
@@ -680,9 +717,11 @@ class DatabaseService(BaseService):
                 connection = sqlite3.connect(
                     str(db_path),
                     timeout=config.timeout,
-                    check_same_thread=False,
-                    autocommit=True
+                    check_same_thread=False
                 )
+
+                # 设置自动提交模式（相当于 autocommit=True）
+                connection.isolation_level = None
 
                 # 应用配置
                 if config.enable_wal:
@@ -791,14 +830,14 @@ class DatabaseService(BaseService):
             metrics = self._pool_metrics[pool_name]
             metrics.active_connections = max(0, metrics.active_connections - 1)
 
-    def execute_query(self, sql: str, parameters: Optional[Dict[str, Any]] = None,
+    def execute_query(self, sql: str, parameters: Optional[Union[Dict[str, Any], List[Any]]] = None,
                       pool_name: str = "analytics_duckdb") -> Any:
         """
         执行查询
 
         Args:
             sql: SQL查询语句
-            parameters: 查询参数
+            parameters: 查询参数（支持字典或列表）
             pool_name: 连接池名称（默认："analytics_duckdb"）
 
         Args:
@@ -875,14 +914,14 @@ class DatabaseService(BaseService):
             logger.error(f"Query execution failed: {e}")
             raise
 
-    def fetch_all(self, sql: str, parameters: Optional[Dict[str, Any]] = None,
+    def fetch_all(self, sql: str, parameters: Optional[Union[Dict[str, Any], List[Any]]] = None,
                   pool_name: str = "analytics_duckdb") -> List[Dict[str, Any]]:
         """
         执行查询并返回所有结果
 
         Args:
             sql: SQL查询语句
-            parameters: 查询参数
+            parameters: 查询参数（支持字典或列表）
             pool_name: 连接池名称（默认："analytics_duckdb"）
 
         Returns:
@@ -899,7 +938,30 @@ class DatabaseService(BaseService):
             if hasattr(result, 'to_pydict'):
                 # DuckDB ArrowTable
                 data = result.to_pydict()
-                return [dict(zip(data.keys(), row)) for row in zip(*data.values())]
+                if not data or not isinstance(data, dict):
+                    logger.warning(f"to_pydict returned invalid data: {type(data)}")
+                    return []
+                
+                # 检查数据格式
+                keys = list(data.keys())
+                values = list(data.values())
+                
+                # 确保所有值都是列表
+                if not all(isinstance(v, list) for v in values):
+                    logger.warning(f"to_pydict returned non-list values: {[type(v) for v in values]}")
+                    return []
+                
+                # 转换为字典列表
+                result_list = []
+                for i in range(len(values[0]) if values else 0):
+                    row_dict = {}
+                    for j, key in enumerate(keys):
+                        if j < len(values) and i < len(values[j]):
+                            row_dict[key] = values[j][i]
+                    result_list.append(row_dict)
+                
+                logger.debug(f"Converted DuckDB result: {len(result_list)} rows")
+                return result_list
             elif hasattr(result, 'fetchall'):
                 # 游标对象
                 return result.fetchall()
@@ -907,17 +969,17 @@ class DatabaseService(BaseService):
                 # 其他情况，尝试转换为列表
                 return list(result)
         except Exception as e:
-            logger.error(f"Failed to convert query result: {e}")
+            logger.error(f"Failed to convert query result: {e}, result type: {type(result)}")
             return []
 
-    def fetch_one(self, sql: str, parameters: Optional[Dict[str, Any]] = None,
+    def fetch_one(self, sql: str, parameters: Optional[Union[Dict[str, Any], List[Any]]] = None,
                   pool_name: str = "analytics_duckdb") -> Optional[Dict[str, Any]]:
         """
         执行查询并返回单个结果
 
         Args:
             sql: SQL查询语句
-            parameters: 查询参数
+            parameters: 查询参数（支持字典或列表）
             pool_name: 连接池名称（默认："analytics_duckdb"）
 
         Returns:
@@ -1013,14 +1075,14 @@ class DatabaseService(BaseService):
                 self._metrics.active_transactions = max(0, self._metrics.active_transactions - 1)
 
     def execute_in_transaction(self, transaction_id: str, sql: str,
-                               parameters: Optional[Dict[str, Any]] = None) -> Any:
+                               parameters: Optional[Union[Dict[str, Any], List[Any]]] = None) -> Any:
         """
         在事务中执行查询
 
         Args:
             transaction_id: 事务ID
             sql: SQL语句
-            parameters: 查询参数
+            parameters: 查询参数（支持字典或列表）
 
         Returns:
             查询结果
@@ -1043,13 +1105,16 @@ class DatabaseService(BaseService):
             logger.error(f"Query in transaction {transaction_id} failed: {e}")
             raise
 
-    def _generate_query_cache_key(self, sql: str, parameters: Optional[Dict[str, Any]]) -> str:
+    def _generate_query_cache_key(self, sql: str, parameters: Optional[Union[Dict[str, Any], List[Any]]]) -> str:
         """生成查询缓存键"""
         import hashlib
 
         key_data = sql
         if parameters:
-            param_str = str(sorted(parameters.items()))
+            if isinstance(parameters, dict):
+                param_str = str(sorted(parameters.items()))
+            else:
+                param_str = str(parameters)
             key_data += param_str
 
         return hashlib.md5(key_data.encode()).hexdigest()
@@ -1291,6 +1356,23 @@ class DatabaseService(BaseService):
             logger.error(f"Failed to initialize AI selection tables: {e}")
             raise
             
+    def _initialize_system_config_tables(self) -> None:
+        """初始化系统配置相关数据表"""
+        try:
+            logger.info("Initializing system configuration database tables...")
+
+            # 创建用户偏好表
+            self._create_user_preferences_table()
+            
+            # 创建用户反馈表
+            self._create_user_feedback_table()
+
+            logger.info("✓ System configuration database tables initialized")
+
+        except Exception as e:
+            logger.error(f"Failed to initialize system configuration tables: {e}")
+            raise
+            
     def _initialize_strategy_tables(self) -> None:
         """初始化策略配置相关数据表"""
         try:
@@ -1511,6 +1593,7 @@ class DatabaseService(BaseService):
             pe_ratio DECIMAL(10,2),
             pb_ratio DECIMAL(10,2),
             turnover_rate DECIMAL(8,4),
+            asset_type VARCHAR(50) DEFAULT 'stock_a',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             backtested BOOLEAN DEFAULT FALSE,
             performance_updated_at TIMESTAMP,
@@ -1521,18 +1604,38 @@ class DatabaseService(BaseService):
         with self.get_connection("analytics_duckdb") as conn:
             conn.execute(sql)
             
+            # 检查并添加 asset_type 列（如果表已存在但缺少该列）
+            try:
+                # 使用 DESCRIBE 命令检查列是否存在
+                check_sql = "DESCRIBE ai_selection_results"
+                result = conn.execute(check_sql).fetchall()
+                
+                # 检查是否有 asset_type 列
+                column_names = [row[0] for row in result]
+                if 'asset_type' not in column_names:
+                    logger.info("为 ai_selection_results 表添加 asset_type 列")
+                    alter_sql = "ALTER TABLE ai_selection_results ADD COLUMN asset_type VARCHAR(50) DEFAULT 'stock_a'"
+                    conn.execute(alter_sql)
+                    logger.info("ai_selection_results 表 asset_type 列添加成功")
+            except Exception as e:
+                logger.warning(f"检查或添加 asset_type 列时出错: {e}")
+            
         # 创建索引
         indices = [
             "CREATE INDEX IF NOT EXISTS idx_ai_results_strategy ON ai_selection_results(strategy_id)",
             "CREATE INDEX IF NOT EXISTS idx_ai_results_date ON ai_selection_results(selection_date)",
             "CREATE INDEX IF NOT EXISTS idx_ai_results_stock ON ai_selection_results(stock_code)",
             "CREATE INDEX IF NOT EXISTS idx_ai_results_score ON ai_selection_results(score DESC)",
-            "CREATE INDEX IF NOT EXISTS idx_ai_results_risk ON ai_selection_results(risk_level)"
+            "CREATE INDEX IF NOT EXISTS idx_ai_results_risk ON ai_selection_results(risk_level)",
+            "CREATE INDEX IF NOT EXISTS idx_ai_results_asset_type ON ai_selection_results(asset_type)"
         ]
         
         with self.get_connection("analytics_duckdb") as conn:
             for index_sql in indices:
-                conn.execute(index_sql)
+                try:
+                    conn.execute(index_sql)
+                except Exception as e:
+                    logger.warning(f"创建索引失败（可能已存在）: {e}")
 
     def _create_ai_backtest_results_table(self) -> None:
         """创建AI策略回测结果表"""
@@ -1594,6 +1697,7 @@ class DatabaseService(BaseService):
             importance_rank INTEGER,
             explanation_text TEXT,
             visualization_data JSON,
+            asset_type VARCHAR(50) DEFAULT 'stock_a',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (selection_result_id) REFERENCES ai_selection_results(id)
         )
@@ -1602,16 +1706,36 @@ class DatabaseService(BaseService):
         with self.get_connection("analytics_duckdb") as conn:
             conn.execute(sql)
             
+            # 检查并添加 asset_type 列（如果表已存在但缺少该列）
+            try:
+                # 使用 DESCRIBE 命令检查列是否存在
+                check_sql = "DESCRIBE ai_explanations"
+                result = conn.execute(check_sql).fetchall()
+                
+                # 检查是否有 asset_type 列
+                column_names = [row[0] for row in result]
+                if 'asset_type' not in column_names:
+                    logger.info("为 ai_explanations 表添加 asset_type 列")
+                    alter_sql = "ALTER TABLE ai_explanations ADD COLUMN asset_type VARCHAR(50) DEFAULT 'stock_a'"
+                    conn.execute(alter_sql)
+                    logger.info("ai_explanations 表 asset_type 列添加成功")
+            except Exception as e:
+                logger.warning(f"检查或添加 asset_type 列时出错: {e}")
+            
         # 创建索引
         indices = [
             "CREATE INDEX IF NOT EXISTS idx_ai_explain_result ON ai_explanations(selection_result_id)",
             "CREATE INDEX IF NOT EXISTS idx_ai_explain_type ON ai_explanations(explanation_type)",
-            "CREATE INDEX IF NOT EXISTS idx_ai_explain_factor ON ai_explanations(factor_name)"
+            "CREATE INDEX IF NOT EXISTS idx_ai_explain_factor ON ai_explanations(factor_name)",
+            "CREATE INDEX IF NOT EXISTS idx_ai_explain_asset_type ON ai_explanations(asset_type)"
         ]
         
         with self.get_connection("analytics_duckdb") as conn:
             for index_sql in indices:
-                conn.execute(index_sql)
+                try:
+                    conn.execute(index_sql)
+                except Exception as e:
+                    logger.warning(f"创建索引失败（可能已存在）: {e}")
 
     def _create_user_profiles_table(self) -> None:
         """创建用户画像表"""
@@ -1634,6 +1758,7 @@ class DatabaseService(BaseService):
             custom_constraints JSON,
             performance_history JSON,
             feedback_data JSON,
+            asset_type VARCHAR(50) DEFAULT 'stock_a',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             is_active BOOLEAN DEFAULT TRUE
@@ -1643,16 +1768,102 @@ class DatabaseService(BaseService):
         with self.get_connection("analytics_duckdb") as conn:
             conn.execute(sql)
             
+            # 检查并添加 asset_type 列（如果表已存在但缺少该列）
+            try:
+                # 使用 DESCRIBE 命令检查列是否存在
+                check_sql = "DESCRIBE user_profiles"
+                result = conn.execute(check_sql).fetchall()
+                
+                # 检查是否有 asset_type 列
+                column_names = [row[0] for row in result]
+                if 'asset_type' not in column_names:
+                    logger.info("为 user_profiles 表添加 asset_type 列")
+                    alter_sql = "ALTER TABLE user_profiles ADD COLUMN asset_type VARCHAR(50) DEFAULT 'stock_a'"
+                    conn.execute(alter_sql)
+                    logger.info("user_profiles 表 asset_type 列添加成功")
+            except Exception as e:
+                logger.warning(f"检查或添加 asset_type 列时出错: {e}")
+            
         # 创建索引
         indices = [
             "CREATE INDEX IF NOT EXISTS idx_user_profiles_user ON user_profiles(user_id)",
             "CREATE INDEX IF NOT EXISTS idx_user_profiles_risk ON user_profiles(risk_tolerance)",
-            "CREATE INDEX IF NOT EXISTS idx_user_profiles_style ON user_profiles(investment_style)"
+            "CREATE INDEX IF NOT EXISTS idx_user_profiles_style ON user_profiles(investment_style)",
+            "CREATE INDEX IF NOT EXISTS idx_user_profiles_asset_type ON user_profiles(asset_type)"
         ]
         
         with self.get_connection("analytics_duckdb") as conn:
             for index_sql in indices:
-                conn.execute(index_sql)
+                try:
+                    conn.execute(index_sql)
+                except Exception as e:
+                    logger.warning(f"创建索引失败（可能已存在）: {e}")
+
+    def _create_user_preferences_table(self) -> None:
+        """创建用户偏好表"""
+        sql = """
+        CREATE TABLE IF NOT EXISTS user_preferences (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id VARCHAR(100) NOT NULL,
+            preference_key VARCHAR(100) NOT NULL,
+            preference_value TEXT NOT NULL,
+            asset_type VARCHAR(50) DEFAULT 'stock_a',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, preference_key, asset_type)
+        )
+        """
+
+        with self.get_connection("factorweave_system_sqlite") as conn:
+            conn.execute(sql)
+
+        # 创建索引
+        indices = [
+            "CREATE INDEX IF NOT EXISTS idx_user_preferences_user_id ON user_preferences(user_id)",
+            "CREATE INDEX IF NOT EXISTS idx_user_preferences_key ON user_preferences(preference_key)",
+            "CREATE INDEX IF NOT EXISTS idx_user_preferences_asset_type ON user_preferences(asset_type)"
+        ]
+        
+        with self.get_connection("factorweave_system_sqlite") as conn:
+            for index_sql in indices:
+                try:
+                    conn.execute(index_sql)
+                except Exception as e:
+                    logger.warning(f"创建索引失败（可能已存在）: {e}")
+
+    def _create_user_feedback_table(self) -> None:
+        """创建用户反馈表"""
+        sql = """
+        CREATE TABLE IF NOT EXISTS user_feedback (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id VARCHAR(100) NOT NULL,
+            recommendation_id VARCHAR(100) NOT NULL,
+            feedback_type VARCHAR(50) NOT NULL,
+            rating INTEGER NOT NULL,
+            comment TEXT,
+            asset_type VARCHAR(50) DEFAULT 'stock_a',
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+
+        with self.get_connection("factorweave_system_sqlite") as conn:
+            conn.execute(sql)
+
+        # 创建索引
+        indices = [
+            "CREATE INDEX IF NOT EXISTS idx_user_feedback_user_id ON user_feedback(user_id)",
+            "CREATE INDEX IF NOT EXISTS idx_user_feedback_recommendation_id ON user_feedback(recommendation_id)",
+            "CREATE INDEX IF NOT EXISTS idx_user_feedback_feedback_type ON user_feedback(feedback_type)",
+            "CREATE INDEX IF NOT EXISTS idx_user_feedback_timestamp ON user_feedback(timestamp)",
+            "CREATE INDEX IF NOT EXISTS idx_user_feedback_asset_type ON user_feedback(asset_type)"
+        ]
+        
+        with self.get_connection("factorweave_system_sqlite") as conn:
+            for index_sql in indices:
+                try:
+                    conn.execute(index_sql)
+                except Exception as e:
+                    logger.warning(f"创建索引失败（可能已存在）: {e}")
 
     def create_ai_strategy(self, strategy_data: Dict[str, Any]) -> str:
         """

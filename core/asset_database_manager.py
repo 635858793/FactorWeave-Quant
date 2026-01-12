@@ -368,6 +368,61 @@ class AssetSeparatedDatabaseManager:
                     m.exchange
                 FROM historical_kline_data k
                 LEFT JOIN asset_metadata m ON k.symbol = m.symbol
+            """,
+
+            # 订单表
+            'orders': """
+                CREATE TABLE IF NOT EXISTS orders (
+                    -- 主键
+                    order_id VARCHAR(64) PRIMARY KEY,
+                    
+                    -- 基本信息
+                    strategy_id VARCHAR(128) NOT NULL DEFAULT '',
+                    asset_type VARCHAR(32) NOT NULL,
+                    stock_code VARCHAR(32) NOT NULL,
+                    
+                    -- 订单类型
+                    order_type VARCHAR(16) NOT NULL,
+                    order_category VARCHAR(16) NOT NULL,
+                    
+                    -- 订单价格和数量
+                    order_price DECIMAL(18,4) NOT NULL,
+                    order_quantity BIGINT NOT NULL,
+                    
+                    -- 订单状态
+                    order_status VARCHAR(16) NOT NULL,
+                    
+                    -- 时间戳
+                    create_time TIMESTAMP NOT NULL,
+                    update_time TIMESTAMP NOT NULL,
+                    execute_time TIMESTAMP,
+                    
+                    -- 成交信息
+                    filled_quantity BIGINT DEFAULT 0,
+                    filled_price DECIMAL(18,4),
+                    commission DECIMAL(18,4) DEFAULT 0,
+                    
+                    -- 错误信息
+                    error_message TEXT,
+                    
+                    -- 止损价格
+                    stop_price DECIMAL(18,4),
+                    
+                    -- 用户和账户信息
+                    user_id VARCHAR(64) NOT NULL DEFAULT 'system',
+                    account_id VARCHAR(64) NOT NULL DEFAULT '',
+                    
+                    -- 扩展字段（JSON字符串）
+                    tags VARCHAR,
+                    metadata TEXT DEFAULT '{}',
+                    
+                    -- 期货/期权特有字段
+                    contract_multiplier DECIMAL(10,2) DEFAULT 1.0,
+                    margin_ratio DECIMAL(10,6) DEFAULT 0,
+                    strike_price DECIMAL(18,4),
+                    expiry_date DATE,
+                    option_type VARCHAR(16)
+                )
             """
         }
 
@@ -592,6 +647,10 @@ class AssetSeparatedDatabaseManager:
                             # 如果是K线数据表，创建索引
                             if table_name == 'historical_kline_data':
                                 self._create_table_indexes(conn, table_name, DataType.HISTORICAL_KLINE)
+                            
+                            # 如果是订单表，创建索引
+                            if table_name == 'orders':
+                                self._create_orders_table_indexes(conn)
                         else:
                             logger.debug(f"表 {table_name} 已存在")
                     except Exception as e:
@@ -641,6 +700,32 @@ class AssetSeparatedDatabaseManager:
             logger.error(traceback.format_exc())
             raise
 
+    def _create_orders_table_indexes(self, conn):
+        """
+        为 orders 表创建索引
+        
+        Args:
+            conn: 数据库连接
+        """
+        try:
+            indexes = [
+                "CREATE INDEX IF NOT EXISTS idx_orders_asset_type ON orders(asset_type)",
+                "CREATE INDEX IF NOT EXISTS idx_orders_stock_code ON orders(stock_code)",
+                "CREATE INDEX IF NOT EXISTS idx_orders_order_status ON orders(order_status)",
+                "CREATE INDEX IF NOT EXISTS idx_orders_create_time ON orders(create_time)",
+                "CREATE INDEX IF NOT EXISTS idx_orders_strategy_id ON orders(strategy_id)",
+                "CREATE INDEX IF NOT EXISTS idx_orders_account_id ON orders(account_id)",
+                "CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id)",
+            ]
+            
+            for index_sql in indexes:
+                conn.execute(index_sql)
+            
+            logger.info("✅ orders 表索引创建成功")
+        except Exception as e:
+            logger.error(f"❌ 创建 orders 表索引失败: {e}")
+            raise
+
     def get_database_for_symbol(self, symbol: str, auto_create: bool = True) -> Tuple[str, AssetType]:
         """
         根据交易符号获取对应的数据库路径和资产类型
@@ -683,8 +768,15 @@ class AssetSeparatedDatabaseManager:
                     except Exception as e:
                         logger.error(f"创建表 {table_name} 失败: {e}")
                         raise
+                
+                # 第二步：为 orders 表创建索引
+                try:
+                    self._create_orders_table_indexes(conn)
+                except Exception as e:
+                    logger.error(f"创建 orders 表索引失败: {e}")
+                    raise
 
-                # 第二步：创建所有视图（依赖基础表）
+                # 第三步：创建所有视图（依赖基础表）
                 # ✅ 修复：确保视图创建100%成功
                 for view_name in view_names:
                     if view_name in self._table_schemas:

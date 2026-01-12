@@ -11,6 +11,9 @@
 """
 
 from .event_bus import EventBus, get_event_bus
+
+EVENT_BUS_AVAILABLE = True
+
 from .types import (
     BaseEvent,
     EventPriority,
@@ -84,6 +87,7 @@ from .realtime_write_events import (
 __all__ = [
     'EventBus',
     'get_event_bus',
+    'EVENT_BUS_AVAILABLE',
     'EventHandler',
     'AsyncEventHandler',
     'BaseEvent',

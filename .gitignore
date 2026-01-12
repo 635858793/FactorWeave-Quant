@@ -39,3 +39,5 @@ data/strategy.db-shm
 .serena/.gitignore
 .gitignore
 performance_reports/*
+*.md
+!README.md

@@ -492,6 +492,7 @@ class HybridRecommendationEngine(BaseService):
         # 核心组件 - 通过ServiceContainer注入
         self.traditional_engine = None  # 将在initialize中通过容器解析
         self.bettafish_agent = None     # 将在initialize中通过容器解析
+        self._database_service = None   # 将在initialize中通过容器解析
         
         # 融合和分析组件
         self.fusion_algorithm = RecommendationFusionEngine()
@@ -521,6 +522,13 @@ class HybridRecommendationEngine(BaseService):
         # 性能监控
         self.performance_monitor = PerformanceMonitor()
         
+        # 热门数据缓存
+        self._popular_users_cache = None
+        self._popular_users_cache_time = 0
+        self._popular_stocks_cache = None
+        self._popular_stocks_cache_time = 0
+        self._cache_ttl = 3600  # 缓存有效期1小时
+        
         logger.info("混合推荐引擎已初始化")
         
     async def initialize(self) -> None:
@@ -539,6 +547,13 @@ class HybridRecommendationEngine(BaseService):
             
             # 解析BettaFish智能体
             self.bettafish_agent = container.resolve(BettaFishAgent)
+            
+            # 解析数据库服务
+            try:
+                self._database_service = container.get_service('DatabaseService')
+                logger.info("数据库服务初始化成功")
+            except Exception as e:
+                logger.warning(f"数据库服务初始化失败: {e}")
             
             # 初始化缓存服务
             if self.cache_config.enable_multi_level:
@@ -1337,9 +1352,51 @@ class HybridRecommendationEngine(BaseService):
         Returns:
             热门用户ID列表
         """
-        # 这里应该从用户行为分析或数据库中获取
-        # 目前返回模拟数据
-        return [f"user_{i}" for i in range(1, 21)]  # 返回20个用户ID
+        import time
+        
+        current_time = time.time()
+        
+        if self._popular_users_cache and (current_time - self._popular_users_cache_time) < self._cache_ttl:
+            logger.debug(f"使用缓存的热门用户数据")
+            return self._popular_users_cache
+        
+        try:
+            if self._database_service is None:
+                logger.warning("数据库服务不可用，无法获取热门用户")
+                return []
+            
+            try:
+                user_activity_sql = """
+                    SELECT 
+                        strategy_id as user_id,
+                        COUNT(*) as order_count,
+                        MAX(create_time) as last_activity
+                    FROM orders
+                    WHERE create_time >= datetime('now', '-30 days')
+                    GROUP BY strategy_id
+                    ORDER BY order_count DESC, last_activity DESC
+                    LIMIT 20
+                """
+                
+                user_activity_result = self._database_service.fetch_all(user_activity_sql)
+                
+                if user_activity_result and len(user_activity_result) > 0:
+                    popular_users = [row['user_id'] for row in user_activity_result]
+                    self._popular_users_cache = popular_users
+                    self._popular_users_cache_time = current_time
+                    logger.info(f"从数据库查询到 {len(popular_users)} 个热门用户")
+                    return popular_users
+                else:
+                    logger.info("数据库中暂无用户活动数据")
+                    return []
+                    
+            except Exception as e:
+                logger.error(f"查询热门用户失败: {e}")
+                return []
+                
+        except Exception as e:
+            logger.error(f"获取热门用户失败: {e}")
+            return []
         
     async def _get_popular_stocks(self) -> List[str]:
         """
@@ -1348,15 +1405,51 @@ class HybridRecommendationEngine(BaseService):
         Returns:
             热门股票代码列表
         """
-        # 这里应该从市场数据或用户偏好中获取
-        # 目前返回模拟数据
-        popular_stocks = [
-            '000001', '000002', '000858', '600036', '600519', '600000',
-            '000725', '002415', '300059', '600276', '002304', '000651',
-            '600104', '601318', '000063', '002142', '600809', '000876',
-            '601166', '600585'
-        ]
-        return popular_stocks
+        import time
+        
+        current_time = time.time()
+        
+        if self._popular_stocks_cache and (current_time - self._popular_stocks_cache_time) < self._cache_ttl:
+            logger.debug(f"使用缓存的热门股票数据")
+            return self._popular_stocks_cache
+        
+        try:
+            if self._database_service is None:
+                logger.warning("数据库服务不可用，无法获取热门股票")
+                return []
+            
+            try:
+                stock_activity_sql = """
+                    SELECT 
+                        stock_code,
+                        SUM(fill_quantity) as total_volume,
+                        COUNT(*) as trade_count
+                    FROM order_fills
+                    WHERE fill_time >= datetime('now', '-30 days')
+                    GROUP BY stock_code
+                    ORDER BY (total_volume * 0.6 + trade_count * 0.4) DESC
+                    LIMIT 20
+                """
+                
+                stock_activity_result = self._database_service.fetch_all(stock_activity_sql)
+                
+                if stock_activity_result and len(stock_activity_result) > 0:
+                    popular_stocks = [row['stock_code'] for row in stock_activity_result]
+                    self._popular_stocks_cache = popular_stocks
+                    self._popular_stocks_cache_time = current_time
+                    logger.info(f"从数据库查询到 {len(popular_stocks)} 个热门股票")
+                    return popular_stocks
+                else:
+                    logger.info("数据库中暂无股票交易数据")
+                    return []
+                    
+            except Exception as e:
+                logger.error(f"查询热门股票失败: {e}")
+                return []
+                
+        except Exception as e:
+            logger.error(f"获取热门股票失败: {e}")
+            return []
         
     async def _preload_user_recommendations(self, user_id: str, context: Dict, stock_codes: List[str]) -> None:
         """

@@ -220,7 +220,7 @@ class SettingsDialog(QDialog):
         <p>配置包括内存限制、线程数、缓存设置等关键参数。</p>
         """)
         info_label.setWordWrap(True)
-        info_label.setStyleSheet("QLabel { padding: 10px; background-color: #f8f9fa; border-radius: 5px; }")
+        info_label.setStyleSheet("QLabel { padding: 10px; border-radius: 5px; }")
         info_layout.addWidget(info_label)
 
         duckdb_layout.addWidget(info_group)

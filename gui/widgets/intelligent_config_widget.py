@@ -96,7 +96,8 @@ class IntelligentConfigWidget(QWidget):
             self.setup_unavailable_ui()
             return
 
-        self.config_manager = config_manager or None          self.current_task_id = None
+        self.config_manager = config_manager or None          
+        self.current_task_id = None
         self.recommendations = []
         self.conflicts = []
 
@@ -107,7 +108,7 @@ class IntelligentConfigWidget(QWidget):
         # 定时刷新
         self.refresh_timer = QTimer()
         self.refresh_timer.timeout.connect(self.refresh_statistics)
-        self.refresh_timer.start(30000)  # 30秒刷新一次
+        self.refresh_timer.start(10000)  # 10秒刷新一次
 
         logger.info("智能配置管理界面初始化完成")
 
@@ -865,7 +866,8 @@ def main():
     app = QApplication(sys.argv)
 
     if INTELLIGENT_CONFIG_AVAILABLE:
-        config_manager = None          widget = IntelligentConfigWidget(config_manager)
+        config_manager = None          
+        widget = IntelligentConfigWidget(config_manager)
     else:
         widget = IntelligentConfigWidget()
 

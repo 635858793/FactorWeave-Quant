@@ -344,29 +344,9 @@ class UnifiedDataManager:
                 except Exception as e:
                     logger.warning(f"⚠️ StockService 解析失败: {e}")
 
-                try:
-                    from .index_service import IndexService
-                    if self.service_container.is_registered(IndexService):
-                        index_service = self.service_container.resolve(IndexService)
-                        logger.info("✅ IndexService 解析成功")
-                except Exception as e:
-                    logger.warning(f"⚠️ IndexService 解析失败: {e}")
-
-                try:
-                    from .fund_service import FundService
-                    if self.service_container.is_registered(FundService):
-                        fund_service = self.service_container.resolve(FundService)
-                        logger.info("✅ FundService 解析成功")
-                except Exception as e:
-                    logger.warning(f"⚠️ FundService 解析失败: {e}")
-
-                try:
-                    from .bond_service import BondService
-                    if self.service_container.is_registered(BondService):
-                        bond_service = self.service_container.resolve(BondService)
-                        logger.info("✅ BondService 解析成功")
-                except Exception as e:
-                    logger.warning(f"⚠️ BondService 解析失败: {e}")
+                # 注意：IndexService, FundService, BondService 尚未实现
+                # 这些服务将在未来版本中添加，目前保持为 None
+                logger.info("ℹ️ IndexService, FundService, BondService 尚未实现，跳过")
 
             # 加密货币 API 配置
             crypto_api_config = {
@@ -1057,9 +1037,6 @@ class UnifiedDataManager:
             }
             asset_type_enum = asset_type_enum_mapping.get(asset_type, AssetType.STOCK_A)
 
-            # ✅ 新架构：所有资产类型统一使用asset_metadata表
-            table_name = 'asset_metadata'
-
             # 资产类型映射（用于WHERE条件）- 完整支持20+资产类型
             asset_type_value_mapping = {
                 'stock': 'stock_a',
@@ -1086,9 +1063,10 @@ class UnifiedDataManager:
             }
             asset_type_value = asset_type_value_mapping.get(asset_type, 'stock_a')
 
-            # 构建查询语句（使用新的字段名）
-            # 新字段映射：list_date→listing_date, status→listing_status
-            # 只选择有实际值的核心字段，减少空列显示
+            # 所有资产类型统一使用 asset_metadata 表
+            table_name = 'asset_metadata'
+
+            # 构建查询语句（使用 asset_metadata 表的字段名）
             if market and market != 'all':
                 query = f"""
                 SELECT DISTINCT 
@@ -3762,3 +3740,375 @@ class UnifiedDataManager:
         except Exception as e:
             logger.error(f"导入板块历史数据失败: {e}")
             return {"success": False, "error": str(e)}
+
+    def add_stock(self, stock_data: Dict[str, Any]) -> bool:
+        """添加股票信息"""
+        try:
+            if not stock_data or 'code' not in stock_data:
+                logger.error("股票数据无效，必须包含 'code' 字段")
+                return False
+
+            stock_code = stock_data['code']
+            cache_key = f"stock_{stock_code}"
+
+            if self.duckdb_available and self.duckdb_operations:
+                success = self.duckdb_operations.insert_stock_info(stock_data)
+                if success:
+                    logger.info(f"股票信息已添加到DuckDB: {stock_code}")
+                    self._cache_data(cache_key, stock_data)
+                    return True
+                else:
+                    logger.warning(f"DuckDB添加失败，尝试SQLite: {stock_code}")
+
+            if self.conn and self._db_lock:
+                with self._db_lock:
+                    cursor = self.conn.cursor()
+                    cursor.execute('''
+                        INSERT OR REPLACE INTO stocks (code, name, market, industry, list_date, delist_date, status)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        stock_data.get('code'),
+                        stock_data.get('name'),
+                        stock_data.get('market'),
+                        stock_data.get('industry'),
+                        stock_data.get('list_date'),
+                        stock_data.get('delist_date'),
+                        stock_data.get('status', 'active')
+                    ))
+                    self.conn.commit()
+
+                logger.info(f"股票信息已添加到SQLite: {stock_code}")
+                self._cache_data(cache_key, stock_data)
+                return True
+
+            logger.error("数据库不可用，无法添加股票信息")
+            return False
+
+        except Exception as e:
+            logger.error(f"添加股票信息失败: {e}")
+            return False
+
+    def update_stock(self, stock_code: str, data: Dict[str, Any]) -> bool:
+        """更新股票信息"""
+        try:
+            if not stock_code:
+                logger.error("股票代码不能为空")
+                return False
+
+            cache_key = f"stock_{stock_code}"
+
+            if self.duckdb_available and self.duckdb_operations:
+                success = self.duckdb_operations.update_stock_info(stock_code, data)
+                if success:
+                    logger.info(f"股票信息已在DuckDB更新: {stock_code}")
+                    cached_data = self._get_cached_data(cache_key)
+                    if cached_data:
+                        cached_data.update(data)
+                        self._cache_data(cache_key, cached_data)
+                    return True
+
+            if self.conn and self._db_lock:
+                with self._db_lock:
+                    cursor = self.conn.cursor()
+                    set_clause = ', '.join([f"{key} = ?" for key in data.keys()])
+                    sql = f"UPDATE stocks SET {set_clause} WHERE code = ?"
+                    params = list(data.values()) + [stock_code]
+                    cursor.execute(sql, params)
+                    self.conn.commit()
+
+                    if cursor.rowcount > 0:
+                        logger.info(f"股票信息已在SQLite更新: {stock_code}")
+                        cached_data = self._get_cached_data(cache_key)
+                        if cached_data:
+                            cached_data.update(data)
+                            self._cache_data(cache_key, cached_data)
+                        return True
+
+            logger.error("数据库不可用，无法更新股票信息")
+            return False
+
+        except Exception as e:
+            logger.error(f"更新股票信息失败: {e}")
+            return False
+
+    def delete_stock(self, stock_code: str) -> bool:
+        """删除股票信息"""
+        try:
+            if not stock_code:
+                logger.error("股票代码不能为空")
+                return False
+
+            cache_key = f"stock_{stock_code}"
+            deleted = False
+
+            if self.duckdb_available and self.duckdb_operations:
+                success = self.duckdb_operations.delete_stock_info(stock_code)
+                if success:
+                    logger.info(f"股票信息已从DuckDB删除: {stock_code}")
+                    deleted = True
+
+            if self.conn and self._db_lock:
+                with self._db_lock:
+                    cursor = self.conn.cursor()
+                    cursor.execute("DELETE FROM stocks WHERE code = ?", (stock_code,))
+                    self.conn.commit()
+
+                    if cursor.rowcount > 0:
+                        logger.info(f"股票信息已从SQLite删除: {stock_code}")
+                        deleted = True
+
+            if deleted:
+                self._invalidate_cache(cache_key)
+                return True
+
+            logger.warning(f"股票未找到: {stock_code}")
+            return False
+
+        except Exception as e:
+            logger.error(f"删除股票信息失败: {e}")
+            return False
+
+    def add_kline(self, stock_code: str, period: str, data: pd.DataFrame) -> bool:
+        """添加K线数据"""
+        try:
+            if not stock_code or data.empty:
+                logger.error("股票代码或K线数据无效")
+                return False
+
+            cache_key = f"kdata_{stock_code}_{period}"
+
+            if self.duckdb_available and self.duckdb_operations:
+                success = self.duckdb_operations.insert_kline_data(stock_code, period, data)
+                if success:
+                    logger.info(f"K线数据已添加到DuckDB: {stock_code} ({period}), {len(data)} 条")
+                    self._cache_data(cache_key, data)
+                    return True
+
+            if self.conn and self._db_lock:
+                with self._db_lock:
+                    cursor = self.conn.cursor()
+                    for _, row in data.iterrows():
+                        cursor.execute('''
+                            INSERT OR REPLACE INTO kline (stock_code, period, trade_date, open, high, low, close, volume, amount)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (
+                            stock_code, period, row.get('trade_date'),
+                            row.get('open'), row.get('high'), row.get('low'),
+                            row.get('close'), row.get('volume'), row.get('amount')
+                        ))
+                    self.conn.commit()
+
+                logger.info(f"K线数据已添加到SQLite: {stock_code} ({period}), {len(data)} 条")
+                self._cache_data(cache_key, data)
+                return True
+
+            logger.error("数据库不可用，无法添加K线数据")
+            return False
+
+        except Exception as e:
+            logger.error(f"添加K线数据失败: {e}")
+            return False
+
+    def update_kline(self, stock_code: str, period: str, data: pd.DataFrame) -> bool:
+        """更新K线数据"""
+        try:
+            if not stock_code or data.empty:
+                logger.error("股票代码或K线数据无效")
+                return False
+
+            if self.delete_kline(stock_code, period):
+                return self.add_kline(stock_code, period, data)
+
+            logger.error("删除旧数据失败，无法更新K线数据")
+            return False
+
+        except Exception as e:
+            logger.error(f"更新K线数据失败: {e}")
+            return False
+
+    def delete_kline(self, stock_code: str, period: str = None, start_date: str = None, end_date: str = None) -> bool:
+        """删除K线数据"""
+        try:
+            if not stock_code:
+                logger.error("股票代码不能为空")
+                return False
+
+            cache_pattern = f"kdata_{stock_code}_{period}" if period else f"kdata_{stock_code}"
+            deleted = False
+
+            if self.duckdb_available and self.duckdb_operations:
+                success = self.duckdb_operations.delete_kline_data(stock_code, period, start_date, end_date)
+                if success:
+                    logger.info(f"K线数据已从DuckDB删除: {stock_code}")
+                    deleted = True
+
+            if self.conn and self._db_lock:
+                with self._db_lock:
+                    cursor = self.conn.cursor()
+                    sql = "DELETE FROM kline WHERE stock_code = ?"
+                    params = [stock_code]
+
+                    if period:
+                        sql += " AND period = ?"
+                        params.append(period)
+                    if start_date:
+                        sql += " AND trade_date >= ?"
+                        params.append(start_date)
+                    if end_date:
+                        sql += " AND trade_date <= ?"
+                        params.append(end_date)
+
+                    cursor.execute(sql, params)
+                    self.conn.commit()
+
+                    if cursor.rowcount > 0:
+                        logger.info(f"K线数据已从SQLite删除: {stock_code}")
+                        deleted = True
+
+            if deleted:
+                self._invalidate_cache(cache_pattern)
+                return True
+
+            logger.warning(f"K线数据未找到: {stock_code}")
+            return False
+
+        except Exception as e:
+            logger.error(f"删除K线数据失败: {e}")
+            return False
+
+    def add_market_data(self, market_data: Dict[str, Any]) -> bool:
+        """添加行情数据"""
+        try:
+            if not market_data or 'code' not in market_data:
+                logger.error("行情数据无效，必须包含 'code' 字段")
+                return False
+
+            stock_code = market_data['code']
+            trade_date = market_data.get('trade_date')
+            cache_key = f"market_{stock_code}_{trade_date}"
+
+            if self.duckdb_available and self.duckdb_operations:
+                success = self.duckdb_operations.insert_market_data(market_data)
+                if success:
+                    logger.info(f"行情数据已添加到DuckDB: {stock_code} ({trade_date})")
+                    self._cache_data(cache_key, market_data)
+                    return True
+
+            if self.conn and self._db_lock:
+                with self._db_lock:
+                    cursor = self.conn.cursor()
+                    cursor.execute('''
+                        INSERT OR REPLACE INTO market (code, trade_date, open, high, low, close, volume, amount, change_pct)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        stock_code, trade_date,
+                        market_data.get('open'), market_data.get('high'),
+                        market_data.get('low'), market_data.get('close'),
+                        market_data.get('volume'), market_data.get('amount'),
+                        market_data.get('change_pct')
+                    ))
+                    self.conn.commit()
+
+                logger.info(f"行情数据已添加到SQLite: {stock_code} ({trade_date})")
+                self._cache_data(cache_key, market_data)
+                return True
+
+            logger.error("数据库不可用，无法添加行情数据")
+            return False
+
+        except Exception as e:
+            logger.error(f"添加行情数据失败: {e}")
+            return False
+
+    def update_market_data(self, index_code: str, data: Dict[str, Any]) -> bool:
+        """更新行情数据"""
+        try:
+            if not index_code:
+                logger.error("股票代码不能为空")
+                return False
+
+            trade_date = data.get('trade_date')
+            if not trade_date:
+                logger.error("行情数据必须包含 'trade_date' 字段")
+                return False
+
+            cache_key = f"market_{index_code}_{trade_date}"
+
+            if self.duckdb_available and self.duckdb_operations:
+                success = self.duckdb_operations.update_market_data(index_code, trade_date, data)
+                if success:
+                    logger.info(f"行情数据已在DuckDB更新: {index_code} ({trade_date})")
+                    cached_data = self._get_cached_data(cache_key)
+                    if cached_data:
+                        cached_data.update(data)
+                        self._cache_data(cache_key, cached_data)
+                    return True
+
+            if self.conn and self._db_lock:
+                with self._db_lock:
+                    cursor = self.conn.cursor()
+                    set_clause = ', '.join([f"{key} = ?" for key in data.keys() if key != 'trade_date'])
+                    sql = f"UPDATE market SET {set_clause} WHERE code = ? AND trade_date = ?"
+                    params = [data[key] for key in data.keys() if key != 'trade_date']
+                    params.extend([index_code, trade_date])
+                    cursor.execute(sql, params)
+                    self.conn.commit()
+
+                    if cursor.rowcount > 0:
+                        logger.info(f"行情数据已在SQLite更新: {index_code} ({trade_date})")
+                        cached_data = self._get_cached_data(cache_key)
+                        if cached_data:
+                            cached_data.update(data)
+                            self._cache_data(cache_key, cached_data)
+                        return True
+
+            logger.error("数据库不可用，无法更新行情数据")
+            return False
+
+        except Exception as e:
+            logger.error(f"更新行情数据失败: {e}")
+            return False
+
+    def delete_market_data(self, index_code: str, date: datetime = None) -> bool:
+        """删除行情数据"""
+        try:
+            if not index_code:
+                logger.error("股票代码不能为空")
+                return False
+
+            cache_pattern = f"market_{index_code}_{date}" if date else f"market_{index_code}"
+            deleted = False
+
+            if self.duckdb_available and self.duckdb_operations:
+                success = self.duckdb_operations.delete_market_data(index_code, date)
+                if success:
+                    logger.info(f"行情数据已从DuckDB删除: {index_code}")
+                    deleted = True
+
+            if self.conn and self._db_lock:
+                with self._db_lock:
+                    cursor = self.conn.cursor()
+                    sql = "DELETE FROM market WHERE code = ?"
+                    params = [index_code]
+
+                    if date:
+                        sql += " AND trade_date = ?"
+                        params.append(date)
+
+                    cursor.execute(sql, params)
+                    self.conn.commit()
+
+                    if cursor.rowcount > 0:
+                        logger.info(f"行情数据已从SQLite删除: {index_code}")
+                        deleted = True
+
+            if deleted:
+                self._invalidate_cache(cache_pattern)
+                return True
+
+            logger.warning(f"行情数据未找到: {index_code}")
+            return False
+
+        except Exception as e:
+            logger.error(f"删除行情数据失败: {e}")
+            return False

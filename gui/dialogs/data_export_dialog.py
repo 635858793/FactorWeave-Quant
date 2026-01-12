@@ -593,6 +593,7 @@ class DataExportDialog(QDialog):
 
         # 显示错误信息
         QMessageBox.critical(self, "导出错误", f"导出失败: {error_msg}")
+        logger.error(f"Export error: {error_msg}")
 
     def closeEvent(self, event):
         """关闭事件处理"""

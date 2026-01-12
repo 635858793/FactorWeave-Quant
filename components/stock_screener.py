@@ -1911,6 +1911,7 @@ class StockScreenerWidget(BaseAnalysisPanel):
                     df.to_csv(file_path, index=False)
                 QMessageBox.information(self, "成功", "批量分析结果导出成功")
         except Exception as e:
+            logger.error(f"批量导出失败: {str(e)}")
             QMessageBox.critical(self, "错误", f"批量导出失败: {str(e)}")
 
     # 多面板联动和自定义指标预留接口
@@ -2005,6 +2006,7 @@ class StockScreenerWidget(BaseAnalysisPanel):
             self.multi_factor_result.resizeColumnsToContents()
             QMessageBox.information(self, "多因子选股完成", "多因子选股已完成，结果已展示。")
         except Exception as e:
+            logger.error(f"多因子选股异常: {str(e)}")
             QMessageBox.critical(self, "多因子选股异常", str(e))
 
     def export_multi_factor_results(self):
@@ -2031,6 +2033,7 @@ class StockScreenerWidget(BaseAnalysisPanel):
                     df.to_csv(file_path, index=False)
                 QMessageBox.information(self, "导出成功", "多因子选股结果已导出")
         except Exception as e:
+            logger.error(f"导出多因子选股结果失败: {str(e)}")
             QMessageBox.critical(self, "导出失败", f"导出多因子选股结果失败: {str(e)}")
 
     def _run_analysis_async(self, button, analysis_func, *args, **kwargs):

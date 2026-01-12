@@ -634,7 +634,8 @@ class ConfigRecommendationPanel(QWidget):
         if CORE_AVAILABLE:
             try:
                 self.ui_adapter = get_ui_adapter()
-                self.config_manager = None                  self.recommendation_engine = ConfigRecommendationEngine(self.config_manager)
+                self.config_manager = None
+                self.recommendation_engine = ConfigRecommendationEngine(self.config_manager)
                 self.impact_analyzer = ConfigImpactAnalyzer()
             except Exception as e:
                 logger.warning(f"核心服务初始化失败: {e}")
@@ -784,70 +785,134 @@ class ConfigRecommendationPanel(QWidget):
         pass
 
     def load_sample_recommendations(self):
-        """加载示例推荐"""
-        sample_recommendations = [
-            ConfigRecommendation(
-                id="rec_001",
-                title="批处理大小优化",
-                description="根据当前系统负载和历史性能数据，建议调整批处理大小以提升数据处理效率。",
-                recommendation_type=RecommendationType.PERFORMANCE_OPTIMIZATION,
-                priority=RecommendationPriority.HIGH,
-                confidence=0.89,
-                estimated_impact={"performance": 0.15, "throughput": 0.12},
-                current_config={"batch_size": 100, "buffer_size": 1024},
-                recommended_config={"batch_size": 150, "buffer_size": 1536},
-                rationale="基于过去30天的性能数据分析，当前批处理大小过小，增加到150可以显著提升吞吐量。",
-                prerequisites=["足够的内存资源"],
-                risks=["可能增加内存使用"]
-            ),
-            ConfigRecommendation(
-                id="rec_002",
-                title="工作线程数调整",
-                description="根据CPU核心数和当前负载情况，建议增加工作线程数量。",
-                recommendation_type=RecommendationType.RESOURCE_EFFICIENCY,
-                priority=RecommendationPriority.MEDIUM,
-                confidence=0.76,
-                estimated_impact={"cpu_utilization": 0.08, "response_time": -0.05},
-                current_config={"max_workers": 4, "thread_pool_size": 8},
-                recommended_config={"max_workers": 6, "thread_pool_size": 12},
-                rationale="CPU利用率较低，增加线程数可以充分利用多核处理器的能力。",
-                prerequisites=["CPU核心数 >= 6"],
-                risks=["可能增加上下文切换开销"]
-            ),
-            ConfigRecommendation(
-                id="rec_003",
-                title="连接池配置优化",
-                description="优化数据库连接池配置，减少连接创建和销毁的开销。",
-                recommendation_type=RecommendationType.RELIABILITY_IMPROVEMENT,
-                priority=RecommendationPriority.HIGH,
-                confidence=0.92,
-                estimated_impact={"stability": 0.18, "error_rate": -0.25},
-                current_config={"connection_pool_size": 5, "max_idle_time": 300},
-                recommended_config={"connection_pool_size": 10, "max_idle_time": 600},
-                rationale="当前连接池配置过小，在高并发场景下容易出现连接不足的问题。",
-                prerequisites=["数据库支持更多并发连接"],
-                risks=["占用更多数据库资源"]
-            ),
-            ConfigRecommendation(
-                id="rec_004",
-                title="缓存策略调整",
-                description="调整数据缓存策略，提高缓存命中率和数据访问速度。",
-                recommendation_type=RecommendationType.PERFORMANCE_OPTIMIZATION,
-                priority=RecommendationPriority.CRITICAL,
-                confidence=0.84,
-                estimated_impact={"cache_hit_rate": 0.22, "response_time": -0.15},
-                current_config={"cache_size": 1000, "cache_ttl": 300},
-                recommended_config={"cache_size": 2000, "cache_ttl": 600},
-                rationale="当前缓存大小不足，TTL过短导致频繁的缓存失效和重新加载。",
-                prerequisites=["足够的内存空间"],
-                risks=["增加内存使用", "可能出现数据一致性问题"]
-            )
-        ]
-
-        self.recommendations = sample_recommendations
+        """加载推荐（使用真实推荐引擎）"""
+        try:
+            if self.recommendation_engine is not None:
+                logger.info("使用真实推荐引擎生成配置推荐")
+                self._load_real_recommendations()
+            else:
+                logger.warning("推荐引擎不可用，显示无数据状态")
+                self._show_no_data_state()
+        except Exception as e:
+            logger.error(f"加载推荐失败: {e}")
+            self._show_no_data_state()
+    
+    def _show_no_data_state(self):
+        """显示无数据状态"""
+        logger.info("显示无数据状态")
+        self.recommendations = []
         self.update_recommendations_display()
         self.update_statistics()
-
+        
+        # 显示提示信息
+        QMessageBox.information(
+            self, 
+            "推荐引擎不可用",
+            "配置推荐引擎当前不可用，无法生成配置优化建议。\n\n"
+            "请检查系统配置或联系管理员。"
+        )
+    
+    def _load_real_recommendations(self):
+        """使用真实推荐引擎加载推荐"""
+        try:
+            from core.ai.config_recommendation_engine import ImportTaskConfig, RecommendationStrategy, OptimizationObjective
+            
+            base_config = ImportTaskConfig(
+                max_workers=4,
+                batch_size=100,
+                chunk_size=1000,
+                use_multiprocessing=True,
+                validate_data=True,
+                skip_duplicates=True,
+                enable_caching=True
+            )
+            
+            recommendations = []
+            
+            strategies = [
+                RecommendationStrategy.AGGRESSIVE,
+                RecommendationStrategy.CONSERVATIVE,
+                RecommendationStrategy.BALANCED
+            ]
+            
+            objectives = [
+                OptimizationObjective.MAXIMIZE_SUCCESS_RATE,
+                OptimizationObjective.MINIMIZE_EXECUTION_TIME,
+                OptimizationObjective.MAXIMIZE_THROUGHPUT
+            ]
+            
+            for strategy in strategies:
+                for objective in objectives:
+                    try:
+                        recommendation = self.recommendation_engine.recommend_config(
+                            base_config=base_config,
+                            strategy=strategy,
+                            objective=objective
+                        )
+                        
+                        if recommendation:
+                            formatted_rec = self._format_recommendation(recommendation, strategy, objective)
+                            recommendations.append(formatted_rec)
+                    except Exception as e:
+                        logger.warning(f"生成推荐失败 (策略: {strategy}, 目标: {objective}): {e}")
+                        continue
+            
+            if recommendations:
+                self.recommendations = recommendations[:10]
+                logger.info(f"成功生成 {len(self.recommendations)} 个真实推荐")
+            else:
+                logger.warning("未生成任何推荐，使用演示数据")
+                self._load_demo_recommendations()
+                
+            self.update_recommendations_display()
+            self.update_statistics()
+            
+        except Exception as e:
+            logger.error(f"加载真实推荐失败: {e}")
+            self._load_demo_recommendations()
+    
+    def _format_recommendation(self, recommendation, strategy, objective):
+        """格式化推荐为 ConfigRecommendation 对象"""
+        from core.ai.config_recommendation_engine import RecommendationType, RecommendationPriority
+        
+        strategy_names = {
+            RecommendationStrategy.AGGRESSIVE: "激进策略",
+            RecommendationStrategy.CONSERVATIVE: "保守策略",
+            RecommendationStrategy.BALANCED: "平衡策略"
+        }
+        
+        objective_names = {
+            OptimizationObjective.MAXIMIZE_SUCCESS_RATE: "最大化成功率",
+            OptimizationObjective.MINIMIZE_EXECUTION_TIME: "最小化执行时间",
+            OptimizationObjective.MAXIMIZE_THROUGHPUT: "最大化吞吐量"
+        }
+        
+        title = f"{strategy_names.get(strategy, '优化')} - {objective_names.get(objective, '优化')}"
+        
+        confidence = recommendation.confidence_score
+        
+        if confidence >= 0.8:
+            priority = RecommendationPriority.HIGH
+        elif confidence >= 0.6:
+            priority = RecommendationPriority.MEDIUM
+        else:
+            priority = RecommendationPriority.LOW
+        
+        return ConfigRecommendation(
+            id=f"real_rec_{strategy.value}_{objective.value}",
+            title=title,
+            description=recommendation.optimization_rationale,
+            recommendation_type=RecommendationType.PERFORMANCE_OPTIMIZATION,
+            priority=priority,
+            confidence=confidence,
+            estimated_impact=recommendation.expected_performance,
+            current_config={"max_workers": 4, "batch_size": 100},
+            recommended_config=recommendation.recommended_config,
+            rationale=recommendation.optimization_rationale,
+            prerequisites=recommendation.risk_assessment.get("prerequisites", []),
+            risks=recommendation.risk_assessment.get("risks", [])
+        )
+    
     def get_recommendations(self):
         """获取新推荐"""
         try:

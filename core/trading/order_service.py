@@ -428,7 +428,12 @@ class OrderService:
     def get_order_fills(self, order_id: str) -> List:
         """获取订单成交记录"""
         try:
-            return self.repository.get_order_fills(order_id)
+            order = self.repository.get_order(order_id)
+            if not order:
+                logger.warning(f"订单不存在: {order_id}")
+                return []
+            
+            return self.repository.get_order_fills(order_id, order.asset_type)
         except Exception as e:
             logger.error(f"获取订单成交记录异常: {e}")
             return []
@@ -458,7 +463,7 @@ class OrderService:
                 return False
 
             # 3. 删除订单
-            success = self.repository.delete_order(order_id)
+            success = self.repository.delete_order(order_id, order.asset_type)
 
             if success:
                 logger.info(f"订单删除成功: {order_id}")

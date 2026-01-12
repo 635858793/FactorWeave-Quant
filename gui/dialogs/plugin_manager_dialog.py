@@ -9,6 +9,7 @@
 - 插件更新
 """
 
+import traceback
 from loguru import logger
 import os
 import json

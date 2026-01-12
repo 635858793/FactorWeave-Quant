@@ -11,7 +11,6 @@ import pandas as pd
 
 from .models import StockInfo, KlineData, MarketData, QueryParams
 from .repository import StockRepository, KlineRepository, MarketRepository
-from core.services.uni_plugin_data_manager import UniPluginDataManager
 
 
 class DataAccess:
@@ -21,7 +20,7 @@ class DataAccess:
     提供统一的数据访问接口，内部使用仓库模式管理不同类型的数据。
     """
 
-    def __init__(self, data_manager=None, uni_plugin_manager: Optional[UniPluginDataManager] = None):
+    def __init__(self, data_manager=None, uni_plugin_manager=None):
         """
         初始化数据访问层
 
@@ -29,6 +28,8 @@ class DataAccess:
             data_manager: 数据管理器实例（可选，向后兼容）
             uni_plugin_manager: 统一插件数据管理器（优先使用）
         """
+        from core.services.uni_plugin_data_manager import UniPluginDataManager
+        
         # 设置数据管理器
         self.data_manager = data_manager
         

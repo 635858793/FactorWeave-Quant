@@ -10,8 +10,8 @@ import pandas as pd
 from typing import Dict, List, Optional, Any
 from .base_service import CacheableService, ConfigurableService
 from ..events import StockSelectedEvent, DataUpdateEvent
-from ..data import DataAccess, StockInfo, KlineData
 from ..business.stock_manager import StockManager
+from ..data.data_access import DataAccess
 from datetime import datetime, timedelta
 import numpy as np
 import time

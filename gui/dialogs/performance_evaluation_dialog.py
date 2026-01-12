@@ -13,7 +13,7 @@ import traceback
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QGridLayout,
+    QDialog, QFileDialog, QVBoxLayout, QHBoxLayout, QGridLayout,
     QTabWidget, QLabel, QLineEdit, QTextEdit, QTableWidget,
     QTableWidgetItem, QPushButton, QComboBox, QDateEdit,
     QFrame, QSplitter, QScrollArea, QGroupBox,
