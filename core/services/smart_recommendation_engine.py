@@ -26,15 +26,117 @@ from sklearn.decomposition import TruncatedSVD
 import pickle
 
 from loguru import logger
+from ..plugin_types import AssetType
 
 logger = logger.bind(module=__name__)
 
 
 class RecommendationType(Enum):
-    """推荐类型"""
-    STOCK = "stock"                 # 股票推荐
-    INDICATOR = "indicator"         # 指标推荐
-    STRATEGY = "strategy"           # 策略推荐
+    """推荐类型（与资产类型一致）"""
+    # 股票类型
+    STOCK_A = "stock_a"                      # A股推荐
+    STOCK_B = "stock_b"                      # B股推荐
+    STOCK_H = "stock_h"                      # H股推荐
+    STOCK_US = "stock_us"                    # 美股推荐
+    STOCK_HK = "stock_hk"                    # 港股推荐
+    
+    # 其他资产类型
+    FUTURES = "futures"                      # 期货推荐
+    CRYPTO = "crypto"                        # 加密货币推荐
+    FOREX = "forex"                          # 外汇推荐
+    BOND = "bond"                            # 债券推荐
+    COMMODITY = "commodity"                  # 商品推荐
+    INDEX = "index"                          # 指数推荐
+    FUND = "fund"                            # 基金推荐
+    OPTION = "option"                        # 期权推荐
+    WARRANT = "warrant"                      # 权证推荐
+    
+    # 板块相关
+    SECTOR = "sector"                        # 板块推荐
+    INDUSTRY_SECTOR = "industry_sector"      # 行业板块推荐
+    CONCEPT_SECTOR = "concept_sector"        # 概念板块推荐
+    STYLE_SECTOR = "style_sector"            # 风格板块推荐
+    THEME_SECTOR = "theme_sector"            # 主题板块推荐
+    
+    # 宏观经济
+    MACRO = "macro"                          # 宏观经济推荐
+    
+    # 传统推荐类型（保持向下兼容）
+    STOCK = "stock"                         # 股票推荐（通用）
+    INDICATOR = "indicator"                  # 指标推荐
+    STRATEGY = "strategy"                    # 策略推荐
+
+
+def asset_type_to_recommendation_type(asset_type: AssetType) -> RecommendationType:
+    """
+    将资产类型转换为推荐类型
+    
+    Args:
+        asset_type: 资产类型
+        
+    Returns:
+        推荐类型
+    """
+    mapping = {
+        AssetType.STOCK_A: RecommendationType.STOCK_A,
+        AssetType.STOCK_B: RecommendationType.STOCK_B,
+        AssetType.STOCK_H: RecommendationType.STOCK_H,
+        AssetType.STOCK_US: RecommendationType.STOCK_US,
+        AssetType.STOCK_HK: RecommendationType.STOCK_HK,
+        AssetType.FUTURES: RecommendationType.FUTURES,
+        AssetType.CRYPTO: RecommendationType.CRYPTO,
+        AssetType.FOREX: RecommendationType.FOREX,
+        AssetType.BOND: RecommendationType.BOND,
+        AssetType.COMMODITY: RecommendationType.COMMODITY,
+        AssetType.INDEX: RecommendationType.INDEX,
+        AssetType.FUND: RecommendationType.FUND,
+        AssetType.OPTION: RecommendationType.OPTION,
+        AssetType.WARRANT: RecommendationType.WARRANT,
+        AssetType.SECTOR: RecommendationType.SECTOR,
+        AssetType.INDUSTRY_SECTOR: RecommendationType.INDUSTRY_SECTOR,
+        AssetType.CONCEPT_SECTOR: RecommendationType.CONCEPT_SECTOR,
+        AssetType.STYLE_SECTOR: RecommendationType.STYLE_SECTOR,
+        AssetType.THEME_SECTOR: RecommendationType.THEME_SECTOR,
+        AssetType.MACRO: RecommendationType.MACRO,
+    }
+    
+    return mapping.get(asset_type, RecommendationType.STOCK_A)
+
+
+def recommendation_type_to_asset_type(recommendation_type: RecommendationType) -> AssetType:
+    """
+    将推荐类型转换为资产类型
+    
+    Args:
+        recommendation_type: 推荐类型
+        
+    Returns:
+        资产类型
+    """
+    mapping = {
+        RecommendationType.STOCK_A: AssetType.STOCK_A,
+        RecommendationType.STOCK_B: AssetType.STOCK_B,
+        RecommendationType.STOCK_H: AssetType.STOCK_H,
+        RecommendationType.STOCK_US: AssetType.STOCK_US,
+        RecommendationType.STOCK_HK: AssetType.STOCK_HK,
+        RecommendationType.FUTURES: AssetType.FUTURES,
+        RecommendationType.CRYPTO: AssetType.CRYPTO,
+        RecommendationType.FOREX: AssetType.FOREX,
+        RecommendationType.BOND: AssetType.BOND,
+        RecommendationType.COMMODITY: AssetType.COMMODITY,
+        RecommendationType.INDEX: AssetType.INDEX,
+        RecommendationType.FUND: AssetType.FUND,
+        RecommendationType.OPTION: AssetType.OPTION,
+        RecommendationType.WARRANT: AssetType.WARRANT,
+        RecommendationType.SECTOR: AssetType.SECTOR,
+        RecommendationType.INDUSTRY_SECTOR: AssetType.INDUSTRY_SECTOR,
+        RecommendationType.CONCEPT_SECTOR: AssetType.CONCEPT_SECTOR,
+        RecommendationType.STYLE_SECTOR: AssetType.STYLE_SECTOR,
+        RecommendationType.THEME_SECTOR: AssetType.THEME_SECTOR,
+        RecommendationType.MACRO: AssetType.MACRO,
+    }
+    
+    return mapping.get(recommendation_type, AssetType.STOCK_A)
 
 
 class RecommendationReason(Enum):
@@ -138,6 +240,9 @@ class Recommendation:
     explanation: str = ""
     confidence: float = 0.0
 
+    # 资产类型
+    asset_type: Optional[AssetType] = None
+
     # 元数据
     generated_at: datetime = field(default_factory=datetime.now)
     expires_at: Optional[datetime] = None
@@ -171,6 +276,9 @@ class SmartRecommendationEngine:
         # 特征提取器
         self.tfidf_vectorizer = TfidfVectorizer(max_features=1000, stop_words='english')
         self.svd_model = TruncatedSVD(n_components=50, random_state=42)
+
+        # 推荐理由生成器
+        self.explanation_generator = None
 
         # 缓存
         self.recommendation_cache: Dict[str, List[Recommendation]] = {}
@@ -242,6 +350,16 @@ class SmartRecommendationEngine:
             logger.error(f"获取用户画像失败: {e}")
             return None
 
+    def set_explanation_generator(self, generator):
+        """
+        设置推荐理由生成器
+        
+        Args:
+            generator: 推荐理由生成器实例
+        """
+        self.explanation_generator = generator
+        logger.info("推荐理由生成器已设置")
+
     def update_user_profile(self, user_id: str, updates: Dict[str, Any]):
         """更新用户画像"""
         try:
@@ -271,11 +389,15 @@ class SmartRecommendationEngine:
             logger.error(f"更新用户画像失败: {e}")
 
     async def get_recommendations(self, user_id: str, recommendation_type: RecommendationType = None,
-                                  count: int = 10) -> List[Recommendation]:
-        """获取推荐结果"""
+                                  count: int = 10, asset_type: AssetType = None) -> List[Recommendation]:
+        """获取推荐结果（支持资产类型）"""
         try:
             import time
             start_time = time.time()
+
+            # 如果没有指定推荐类型，但指定了资产类型，则转换
+            if recommendation_type is None and asset_type is not None:
+                recommendation_type = asset_type_to_recommendation_type(asset_type)
 
             # 检查缓存
             cache_key = f"{user_id}_{recommendation_type}_{count}"
@@ -305,7 +427,7 @@ class SmartRecommendationEngine:
             return recommendations
 
         except Exception as e:
-            logger.error(f"获取推荐失败: {user_id}, {e}")
+            logger.error(f"获取推荐失败: {e}")
             return []
 
     async def _generate_recommendations(self, user_id: str, recommendation_type: RecommendationType = None,
@@ -386,6 +508,27 @@ class SmartRecommendationEngine:
                         if item and (not recommendation_type or item.item_type == recommendation_type):
                             similarity_score = user_similarities[similar_user]
 
+                            # 转换推荐类型为资产类型
+                            asset_type = recommendation_type_to_asset_type(item.item_type)
+                            
+                            # 生成推荐理由
+                            if self.explanation_generator:
+                                explanation = self.explanation_generator.generate_explanation(
+                                    Recommendation(
+                                        user_id=user_id,
+                                        item_id=item_id,
+                                        item_type=item.item_type,
+                                        score=similarity_score * user_ratings[item_id],
+                                        reason=RecommendationReason.SIMILAR_USERS,
+                                        title=item.title,
+                                        description=item.description,
+                                        confidence=similarity_score,
+                                        asset_type=asset_type
+                                    )
+                                )
+                            else:
+                                explanation = f"与您兴趣相似的用户也喜欢这个内容"
+                            
                             recommendation = Recommendation(
                                 user_id=user_id,
                                 item_id=item_id,
@@ -394,8 +537,9 @@ class SmartRecommendationEngine:
                                 reason=RecommendationReason.SIMILAR_USERS,
                                 title=item.title,
                                 description=item.description,
-                                explanation=f"与您兴趣相似的用户也喜欢这个内容",
-                                confidence=similarity_score
+                                explanation=explanation,
+                                confidence=similarity_score,
+                                asset_type=asset_type
                             )
 
                             recommendations.append(recommendation)
@@ -432,6 +576,9 @@ class SmartRecommendationEngine:
                 similarity_score = self._calculate_content_similarity(user_preferences, item)
 
                 if similarity_score > self.similarity_threshold:
+                    # 转换推荐类型为资产类型
+                    asset_type = recommendation_type_to_asset_type(item.item_type)
+
                     recommendation = Recommendation(
                         user_id=user_id,
                         item_id=item_id,
@@ -441,7 +588,8 @@ class SmartRecommendationEngine:
                         title=item.title,
                         description=item.description,
                         explanation=f"基于您的历史偏好推荐",
-                        confidence=similarity_score
+                        confidence=similarity_score,
+                        asset_type=asset_type
                     )
 
                     recommendations.append(recommendation)
@@ -484,6 +632,9 @@ class SmartRecommendationEngine:
                     # 所有新内容给予基础分数0.5
                     popularity_score = 0.5
 
+                # 转换推荐类型为资产类型
+                asset_type = recommendation_type_to_asset_type(item.item_type)
+
                 recommendation = Recommendation(
                     user_id=user_id,
                     item_id=item.item_id,
@@ -494,6 +645,7 @@ class SmartRecommendationEngine:
                     description=item.description,
                     explanation="热门内容推荐" if heat_value > 0 else "新内容推荐",
                     confidence=0.7,
+                    asset_type=asset_type,
                     metadata=item.metadata
                 )
 

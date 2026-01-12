@@ -3693,9 +3693,36 @@ FactorWeave-Quant  2.0 (重构版本)
 
             # 创建智能推荐面板
             recommendation_start = time.time()
-            self._enhanced_components['smart_recommendation_panel'] = SmartRecommendationPanel(
-                parent=self._main_window
-            )
+            try:
+                from core.containers import get_service_container
+                from core.services.recommendation_model_trainer import RecommendationModelTrainer
+                from core.services.smart_recommendation_engine import SmartRecommendationEngine
+                
+                container = get_service_container()
+                recommendation_engine = None
+                model_trainer = None
+                
+                try:
+                    recommendation_engine = container.resolve(SmartRecommendationEngine)
+                except:
+                    logger.warning("无法获取SmartRecommendationEngine服务")
+                
+                try:
+                    model_trainer = container.resolve(RecommendationModelTrainer)
+                except:
+                    logger.warning("无法获取RecommendationModelTrainer服务")
+                
+                self._enhanced_components['smart_recommendation_panel'] = SmartRecommendationPanel(
+                    parent=self._main_window,
+                    recommendation_engine=recommendation_engine,
+                    model_trainer=model_trainer
+                )
+            except Exception as e:
+                logger.error(f"创建SmartRecommendationPanel时出错: {e}")
+                logger.error(traceback.format_exc())
+                self._enhanced_components['smart_recommendation_panel'] = SmartRecommendationPanel(
+                    parent=self._main_window
+                )
             recommendation_time = time.time() - recommendation_start
             logger.info(f"SmartRecommendationPanel创建耗时: {recommendation_time:.3f}秒")
 

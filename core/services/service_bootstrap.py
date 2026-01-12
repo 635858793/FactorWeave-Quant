@@ -442,6 +442,62 @@ class ServiceBootstrap:
             logger.error(f"❌ 智能推荐引擎注册失败: {e}")
             logger.error(traceback.format_exc())
 
+        # 注册推荐理由生成器
+        try:
+            from .recommendation_explanation_generator import RecommendationExplanationGenerator
+            if not self._is_service_registered(RecommendationExplanationGenerator):
+                self.service_container.register(
+                    RecommendationExplanationGenerator,
+                    scope=ServiceScope.SINGLETON,
+                    factory=lambda: RecommendationExplanationGenerator()
+                )
+            logger.info("✅ 推荐理由生成器注册完成")
+        except Exception as e:
+            logger.error(f"❌ 推荐理由生成器注册失败: {e}")
+            logger.error(traceback.format_exc())
+
+        # 注册持续学习管理器
+        try:
+            from core.ai.continuous_learning_manager import ContinuousLearningManager
+            if not self._is_service_registered(ContinuousLearningManager):
+                self.service_container.register(
+                    ContinuousLearningManager,
+                    scope=ServiceScope.SINGLETON,
+                    factory=lambda: ContinuousLearningManager()
+                )
+            logger.info("✅ 持续学习管理器注册完成")
+        except Exception as e:
+            logger.error(f"❌ 持续学习管理器注册失败: {e}")
+            logger.error(traceback.format_exc())
+
+        # 注册推荐模型训练器
+        try:
+            from .recommendation_model_trainer import RecommendationModelTrainer
+            if not self._is_service_registered(RecommendationModelTrainer):
+                self.service_container.register(
+                    RecommendationModelTrainer,
+                    scope=ServiceScope.SINGLETON,
+                    factory=lambda: RecommendationModelTrainer(
+                        recommendation_engine=self.service_container.resolve(SmartRecommendationEngine),
+                        continuous_learning_manager=self.service_container.resolve(ContinuousLearningManager)
+                    )
+                )
+            logger.info("✅ 推荐模型训练器注册完成")
+        except Exception as e:
+            logger.error(f"❌ 推荐模型训练器注册失败: {e}")
+            logger.error(traceback.format_exc())
+
+        # 在所有推荐相关服务注册完成后，设置推荐理由生成器到推荐引擎
+        try:
+            if self.service_container.is_registered(SmartRecommendationEngine) and self.service_container.is_registered(RecommendationExplanationGenerator):
+                smart_recommendation_engine = self.service_container.resolve(SmartRecommendationEngine)
+                explanation_generator = self.service_container.resolve(RecommendationExplanationGenerator)
+                smart_recommendation_engine.set_explanation_generator(explanation_generator)
+                logger.info("✅ 推荐理由生成器已设置到推荐引擎")
+        except Exception as e:
+            logger.error(f"❌ 设置推荐理由生成器到推荐引擎失败: {e}")
+            logger.error(traceback.format_exc())
+
         # LLM配置服务（必须在AISelectionIntegrationService之前注册）
         try:
             from .llm_config_service import LLMConfigService

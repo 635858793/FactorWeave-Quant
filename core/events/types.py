@@ -53,6 +53,7 @@ class EventType(Enum):
     UI_UPDATE = "ui_update"
     THEME_CHANGED = "theme_changed"
     ASSET_SELECTED = "asset_selected"
+    ASSET_TYPE_CHANGED = "asset_type_changed"
     
     # 交易相关事件
     TRADE_EXECUTED = "trade_executed"
@@ -321,6 +322,26 @@ class StockSelectedEvent(AssetSelectedEvent):
         self.data.update({
             'stock_code': self.stock_code,
             'stock_name': self.stock_name
+        })
+
+
+@dataclass
+class AssetTypeChangedEvent(BaseEvent):
+    """
+    资产类型变更事件
+
+    当用户切换资产类型时触发，用于通知相关组件更新状态。
+    """
+    old_asset_type: AssetType = AssetType.STOCK_A
+    new_asset_type: AssetType = AssetType.STOCK_A
+    source: str = ""  # 变更来源，如 "left_panel", "top_bar" 等
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.data.update({
+            'old_asset_type': self.old_asset_type.value if isinstance(self.old_asset_type, AssetType) else self.old_asset_type,
+            'new_asset_type': self.new_asset_type.value if isinstance(self.new_asset_type, AssetType) else self.new_asset_type,
+            'source': self.source
         })
 
 

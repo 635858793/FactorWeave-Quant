@@ -21,7 +21,7 @@ from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, pyqtSlot
 from PyQt5.QtGui import QIcon, QFont
 
 from .base_panel import BasePanel
-from core.events.types import StockSelectedEvent, AssetSelectedEvent
+from core.events.types import StockSelectedEvent, AssetSelectedEvent, AssetTypeChangedEvent
 from core.performance import measure_performance
 # 引入服务和类型
 from core.services import StockService
@@ -201,6 +201,15 @@ class LeftPanel(BasePanel):
                 self.current_asset_type = selected_data
 
                 logger.info(f"资产类型切换: {old_type.value} → {self.current_asset_type.value}")
+
+                # 发布资产类型变更事件
+                event = AssetTypeChangedEvent(
+                    old_asset_type=old_type,
+                    new_asset_type=self.current_asset_type,
+                    source="left_panel"
+                )
+                self.event_bus.publish(event)
+                logger.info(f"已发布资产类型变更事件: {old_type.value} → {self.current_asset_type.value}")
 
                 # 更新市场过滤器
                 self._update_market_filters()

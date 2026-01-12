@@ -1037,9 +1037,6 @@ class UnifiedDataManager:
             }
             asset_type_enum = asset_type_enum_mapping.get(asset_type, AssetType.STOCK_A)
 
-            # ✅ 新架构：所有资产类型统一使用asset_metadata表
-            table_name = 'asset_metadata'
-
             # 资产类型映射（用于WHERE条件）- 完整支持20+资产类型
             asset_type_value_mapping = {
                 'stock': 'stock_a',
@@ -1066,9 +1063,10 @@ class UnifiedDataManager:
             }
             asset_type_value = asset_type_value_mapping.get(asset_type, 'stock_a')
 
-            # 构建查询语句（使用新的字段名）
-            # 新字段映射：list_date→listing_date, status→listing_status
-            # 只选择有实际值的核心字段，减少空列显示
+            # 所有资产类型统一使用 asset_metadata 表
+            table_name = 'asset_metadata'
+
+            # 构建查询语句（使用 asset_metadata 表的字段名）
             if market and market != 'all':
                 query = f"""
                 SELECT DISTINCT 

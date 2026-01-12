@@ -408,17 +408,28 @@ def example_integration():
     # 假设这是现有的主窗口实例
     # main_window = existing_main_window
 
-    # 假设这些是已经初始化的管理器实例
-    managers = {
-        # 'event_bus': event_bus_instance,
-        # 'realtime_manager': realtime_manager_instance,
-        # 'fundamental_manager': fundamental_manager_instance,
-        # 'quality_monitor': quality_monitor_instance,
-        # 'recommendation_engine': recommendation_engine_instance,
-        # 'announcement_parser': announcement_parser_instance,
-        # 'report_generator': report_generator_instance,
-        # 'model_trainer': model_trainer_instance
-    }
+    # 从服务容器获取管理器实例
+    try:
+        from core.containers import get_service_container
+        from core.services.recommendation_model_trainer import RecommendationModelTrainer
+        from core.services.smart_recommendation_engine import SmartRecommendationEngine
+        
+        container = get_service_container()
+        
+        managers = {
+            # 'event_bus': event_bus_instance,
+            # 'realtime_manager': realtime_manager_instance,
+            # 'fundamental_manager': fundamental_manager_instance,
+            # 'quality_monitor': quality_monitor_instance,
+            'recommendation_engine': container.resolve(SmartRecommendationEngine) if container.is_registered(SmartRecommendationEngine) else None,
+            # 'announcement_parser': announcement_parser_instance,
+            # 'report_generator': report_generator_instance,
+            'model_trainer': container.resolve(RecommendationModelTrainer) if container.is_registered(RecommendationModelTrainer) else None
+        }
+    except Exception as e:
+        from loguru import logger
+        logger.error(f"从服务容器获取管理器失败: {e}")
+        managers = {}
 
     # 集成增强UI组件
     # integrator = integrate_enhanced_ui_to_main_window(main_window, **managers)

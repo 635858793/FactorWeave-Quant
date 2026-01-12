@@ -52,7 +52,7 @@ class SimpleConfigManager:
                 else:
                     return default
             return current
-        except Exception as e:
+        except (AttributeError, TypeError, KeyError) as e:
             logger.warning(f"获取配置 {key} 失败: {e}")
             return default
     
@@ -67,7 +67,7 @@ class SimpleConfigManager:
                 current = current[k]
             current[keys[-1]] = value
             logger.debug(f"配置已设置: {key} = {value}")
-        except Exception as e:
+        except (AttributeError, TypeError, KeyError) as e:
             logger.error(f"设置配置 {key} 失败: {e}")
 
 
@@ -148,7 +148,6 @@ class RecommendationCard(QFrame):
             'stock': '#3498DB',
             'strategy': '#9B59B6',
             'indicator': '#E67E22',
-            'news': '#1ABC9C',
             'analysis': '#34495E'
         }
 
@@ -299,8 +298,10 @@ class UserBehaviorChart(FigureCanvas):
             self.fig.tight_layout()
             self.draw()
 
-        except Exception as e:
+        except (ValueError, TypeError, KeyError) as e:
             logger.error(f"更新用户行为图表失败: {e}")
+        except Exception as e:
+            logger.error(f"更新用户行为图表发生未知错误: {e}")
 
 
 class SmartRecommendationPanel(QWidget):
@@ -329,10 +330,19 @@ class SmartRecommendationPanel(QWidget):
         # 配置服务
         self._config_service = None
 
+        # 数据库服务（延迟初始化）
+        self._database_service = None
+
         # 用户配置
         self.user_preferences = {}
         self.recommendation_history = []
         self.feedback_history = []
+
+        # 当前资产类型
+        self.current_asset_type = None
+
+        # 加载持久化数据
+        self._load_persistent_data()
 
         # 推荐配置
         self.max_recommendations = 10
@@ -346,6 +356,9 @@ class SmartRecommendationPanel(QWidget):
 
         # 创建定时器（确保在主Qt线程中）
         self._create_update_timer()
+
+        # 初始化事件订阅
+        self._initialize_event_subscriptions()
 
         # 初始加载推荐
         self._load_initial_recommendations()
@@ -410,7 +423,7 @@ class SmartRecommendationPanel(QWidget):
         # 推荐类型过滤
         layout.addWidget(QLabel("类型过滤:"))
         self.type_filter_combo = QComboBox()
-        self.type_filter_combo.addItems(["全部", "股票推荐", "策略推荐", "指标推荐", "新闻推荐", "分析推荐"])
+        self.type_filter_combo.addItems(["全部", "资产推荐", "策略推荐", "指标推荐", "分析推荐"])
         self.type_filter_combo.currentTextChanged.connect(self._filter_recommendations)
         layout.addWidget(self.type_filter_combo)
 
@@ -450,7 +463,7 @@ class SmartRecommendationPanel(QWidget):
 
         # 股票推荐
         stock_tab = self._create_stock_recommendations_tab()
-        rec_tabs.addTab(stock_tab, "股票推荐")
+        rec_tabs.addTab(stock_tab, "资产推荐")
 
         # 策略推荐
         strategy_tab = self._create_strategy_recommendations_tab()
@@ -877,7 +890,6 @@ class SmartRecommendationPanel(QWidget):
             ("技术分析偏好", "technical_preference"),
             ("基本面分析偏好", "fundamental_preference"),
             ("量化策略偏好", "quantitative_preference"),
-            ("新闻资讯偏好", "news_preference"),
             ("风险管理偏好", "risk_management_preference")
         ]
 
@@ -1051,6 +1063,11 @@ class SmartRecommendationPanel(QWidget):
 
             self.feedback_stats[key] = value_label
 
+        # 数据来源标识
+        self.feedback_data_source_label = QLabel("数据来源: 数据库")
+        self.feedback_data_source_label.setStyleSheet("color: #666; font-size: 11px; font-style: italic;")
+        stats_layout.addWidget(self.feedback_data_source_label, 2, 0, 1, 6)
+
         layout.addWidget(stats_group)
 
         # 反馈历史
@@ -1068,7 +1085,7 @@ class SmartRecommendationPanel(QWidget):
 
         filter_layout.addWidget(QLabel("推荐类型:"))
         self.feedback_rec_type_filter = QComboBox()
-        self.feedback_rec_type_filter.addItems(["全部", "股票", "策略", "指标", "新闻"])
+        self.feedback_rec_type_filter.addItems(["全部", "股票", "策略", "指标"])
         filter_layout.addWidget(self.feedback_rec_type_filter)
 
         filter_layout.addStretch()
@@ -1200,14 +1217,21 @@ class SmartRecommendationPanel(QWidget):
 
 
     def _load_hybrid_recommendations(self):
-        """加载混合推荐"""
+        """加载混合推荐（支持资产类型）"""
         try:
             # 在UI中显示正在加载的状态
             self._show_loading_message("正在加载混合推荐...")
 
             # 获取当前用户ID和上下文信息
             user_id = self._get_current_user_id()
-            context = {'category': 'all', 'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+            context = {
+                'category': 'all',
+                'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+            
+            # 如果有当前资产类型，添加到上下文中
+            if self.current_asset_type:
+                context['asset_type'] = self.current_asset_type.value if hasattr(self.current_asset_type, 'value') else str(self.current_asset_type)
             
             # 创建推荐参数
             params = {
@@ -1218,6 +1242,16 @@ class SmartRecommendationPanel(QWidget):
             
             # 创建后台任务加载混合推荐
             from PyQt5.QtCore import QThreadPool
+            
+            # 清理旧的 hybrid_worker
+            if hasattr(self, 'hybrid_worker') and self.hybrid_worker is not None:
+                if hasattr(self.hybrid_worker, 'signals'):
+                    try:
+                        self.hybrid_worker.signals.disconnect()
+                    except Exception as e:
+                        logger.warning(f"断开旧 hybrid_worker 信号连接失败: {e}")
+                self.hybrid_worker.deleteLater()
+            
             self.hybrid_worker = HybridRecommendationWorker(params)
             self.hybrid_worker.signals.recommendations_ready.connect(self._display_hybrid_recommendations)
             self.hybrid_worker.signals.error_occurred.connect(self._handle_hybrid_error)
@@ -1290,11 +1324,26 @@ class SmartRecommendationPanel(QWidget):
         self.hybrid_cards_layout.addWidget(error_widget, 0, 0, Qt.AlignCenter)
 
     def _clear_layout(self, layout):
-        """清空布局"""
-        while layout.count():
-            child = layout.takeAt(0)
-            if child.widget():
-                child.widget().deleteLater()
+        """清空布局
+        
+        Args:
+            layout: 要清空的布局对象
+            
+        Returns:
+            int: 清空的组件数量
+        """
+        try:
+            cleared_count = 0
+            while layout.count():
+                child = layout.takeAt(0)
+                if child.widget():
+                    child.widget().deleteLater()
+                    cleared_count += 1
+            logger.debug(f"清空了 {cleared_count} 个组件")
+            return cleared_count
+        except Exception as e:
+            logger.error(f"清空布局失败: {e}")
+            return 0
 
     def _display_hybrid_recommendations(self, recommendations):
         """显示混合推荐结果"""
@@ -1380,7 +1429,25 @@ class SmartRecommendationPanel(QWidget):
         # 发出推荐选择信号
         self.recommendation_selected.emit(recommendation_data)
         
-        # TODO: 实现更详细的推荐信息显示逻辑
+        # 记录用户交互
+        self._record_user_interaction("click", recommendation_data)
+        
+        # 更新推荐详情显示
+        self._update_recommendation_detail_display(recommendation_data)
+    
+    def _update_recommendation_detail_display(self, recommendation_data):
+        """更新推荐详情显示"""
+        try:
+            # 这里可以更新某个状态显示区域，显示当前选中的推荐详情
+            # 例如更新状态栏或某个信息面板
+            title = recommendation_data.get('title', '未知推荐')
+            score = recommendation_data.get('score', 0)
+            rec_type = recommendation_data.get('type', 'unknown')
+            
+            logger.info(f"当前选中推荐: {title}, 评分: {score:.1f}, 类型: {rec_type}")
+            
+        except Exception as e:
+            logger.error(f"更新推荐详情显示失败: {e}")
         
     def _on_hybrid_action_clicked(self, action, recommendation_data):
         """处理混合推荐操作按钮点击"""
@@ -1396,11 +1463,121 @@ class SmartRecommendationPanel(QWidget):
     
     def _show_recommendation_detail(self, recommendation_data):
         """显示推荐详情"""
-        # TODO: 实现推荐详情弹窗或详情页面
+        try:
+            # 创建详情对话框
+            dialog = QDialog(self)
+            dialog.setWindowTitle("推荐详情")
+            dialog.setMinimumWidth(500)
+            dialog.setMinimumHeight(400)
+            
+            layout = QVBoxLayout(dialog)
+            
+            # 标题
+            title = recommendation_data.get('title', '未知推荐')
+            title_label = QLabel(f"<h2>{title}</h2>")
+            title_label.setWordWrap(True)
+            layout.addWidget(title_label)
+            
+            # 描述
+            description = recommendation_data.get('description', '暂无描述')
+            desc_label = QLabel(description)
+            desc_label.setWordWrap(True)
+            layout.addWidget(desc_label)
+            
+            # 分隔线
+            separator = QLabel()
+            separator.setFixedHeight(1)
+            separator.setStyleSheet("background-color: #E0E0E0;")
+            layout.addWidget(separator)
+            
+            # 评分
+            score = recommendation_data.get('score', 0)
+            score_label = QLabel(f"推荐评分: {score:.1f}")
+            score_label.setStyleSheet("font-size: 14px; font-weight: bold; color: #3498DB;")
+            layout.addWidget(score_label)
+            
+            # 类型
+            rec_type = recommendation_data.get('type', 'unknown')
+            type_label = QLabel(f"推荐类型: {rec_type}")
+            layout.addWidget(type_label)
+            
+            # 时间戳
+            timestamp = recommendation_data.get('timestamp')
+            if timestamp:
+                time_label = QLabel(f"推荐时间: {timestamp}")
+                layout.addWidget(time_label)
+            
+            # 标签
+            tags = recommendation_data.get('tags', [])
+            if tags:
+                tags_text = "标签: " + ", ".join(tags)
+                tags_label = QLabel(tags_text)
+                tags_label.setStyleSheet("color: #7F8C8D;")
+                layout.addWidget(tags_label)
+            
+            layout.addStretch()
+            
+            # 关闭按钮
+            close_btn = QPushButton("关闭")
+            close_btn.clicked.connect(dialog.accept)
+            layout.addWidget(close_btn)
+            
+            dialog.exec_()
+            
+        except Exception as e:
+            logger.error(f"显示推荐详情失败: {e}")
+            QMessageBox.warning(self, "错误", f"显示推荐详情失败: {str(e)}")
         
     def _record_user_interaction(self, action, recommendation_data):
-        """记录用户交互"""
-        # TODO: 实现用户交互记录逻辑
+        """
+        记录用户交互
+        
+        此方法记录用户与推荐系统的交互行为，包括：
+        1. 点击推荐
+        2. 查看推荐详情
+        3. 提交反馈
+        4. 其他交互行为
+        
+        记录内容包括：
+        - 交互类型（action）
+        - 推荐ID（recommendation_id）
+        - 推荐类型（recommendation_type）
+        - 交互时间（timestamp）
+        
+        数据管理：
+        - 交互记录保存在 self.recommendation_history 中
+        - 最多保留 1000 条记录，超出后删除最早的记录
+        - 这些数据可用于训练推荐模型，提高推荐准确性
+        
+        注意：此方法会记录日志，方便调试和追踪
+        """
+        try:
+            # 步骤 1: 创建交互记录
+            # 创建一个字典，包含交互的所有相关信息
+            interaction = {
+                'action': action,  # 交互类型，如 'click', 'view', 'feedback' 等
+                'recommendation_id': recommendation_data.get('id', ''),  # 推荐ID
+                'recommendation_type': recommendation_data.get('type', 'unknown'),  # 推荐类型
+                'timestamp': datetime.now().isoformat()  # 交互时间（ISO格式）
+            }
+            
+            # 步骤 2: 添加到推荐历史
+            # 将交互记录添加到推荐历史列表中
+            self.recommendation_history.append(interaction)
+            
+            # 步骤 3: 限制历史记录数量
+            # 为了防止内存膨胀，最多保留 1000 条记录
+            # 如果超出限制，删除最早的记录（使用切片操作）
+            if len(self.recommendation_history) > 1000:
+                self.recommendation_history = self.recommendation_history[-1000:]
+            
+            # 步骤 4: 记录日志
+            # 记录交互日志，方便调试和追踪
+            logger.info(f"记录用户交互: {action}, 推荐ID: {recommendation_data.get('id', '')}")
+            
+        except Exception as e:
+            # 如果记录交互失败，记录错误日志
+            logger.error(f"记录用户交互失败: {e}")
         
     def _warm_hybrid_cache(self):
         """预热混合推荐缓存"""
@@ -1422,6 +1599,16 @@ class SmartRecommendationPanel(QWidget):
             
             # 创建后台任务预热缓存
             from PyQt5.QtCore import QThreadPool
+            
+            # 清理旧的 cache_warmup_worker
+            if hasattr(self, 'cache_warmup_worker') and self.cache_warmup_worker is not None:
+                if hasattr(self.cache_warmup_worker, 'signals'):
+                    try:
+                        self.cache_warmup_worker.signals.disconnect()
+                    except Exception as e:
+                        logger.warning(f"断开旧 cache_warmup_worker 信号连接失败: {e}")
+                self.cache_warmup_worker.deleteLater()
+            
             self.cache_warmup_worker = CacheWarmupWorker(params)
             self.cache_warmup_worker.signals.success.connect(self._on_cache_warmup_success)
             self.cache_warmup_worker.signals.error_occurred.connect(self._on_cache_warmup_error)
@@ -1443,6 +1630,16 @@ class SmartRecommendationPanel(QWidget):
             
             # 创建后台任务清空缓存
             from PyQt5.QtCore import QThreadPool
+            
+            # 清理旧的 cache_clear_worker
+            if hasattr(self, 'cache_clear_worker') and self.cache_clear_worker is not None:
+                if hasattr(self.cache_clear_worker, 'signals'):
+                    try:
+                        self.cache_clear_worker.signals.disconnect()
+                    except Exception as e:
+                        logger.warning(f"断开旧 cache_clear_worker 信号连接失败: {e}")
+                self.cache_clear_worker.deleteLater()
+            
             self.cache_clear_worker = CacheClearWorker()
             self.cache_clear_worker.signals.success.connect(self._on_cache_clear_success)
             self.cache_clear_worker.signals.error_occurred.connect(self._on_cache_clear_error)
@@ -1464,6 +1661,16 @@ class SmartRecommendationPanel(QWidget):
             
             # 创建后台任务获取缓存统计
             from PyQt5.QtCore import QThreadPool
+            
+            # 清理旧的 cache_stats_worker
+            if hasattr(self, 'cache_stats_worker') and self.cache_stats_worker is not None:
+                if hasattr(self.cache_stats_worker, 'signals'):
+                    try:
+                        self.cache_stats_worker.signals.disconnect()
+                    except Exception as e:
+                        logger.warning(f"断开旧 cache_stats_worker 信号连接失败: {e}")
+                self.cache_stats_worker.deleteLater()
+            
             self.cache_stats_worker = CacheStatsWorker()
             self.cache_stats_worker.signals.success.connect(self._on_cache_stats_success)
             self.cache_stats_worker.signals.error_occurred.connect(self._on_cache_stats_error)
@@ -1883,8 +2090,66 @@ class SmartRecommendationPanel(QWidget):
 
     def _get_current_user_id(self) -> str:
         """获取当前用户ID"""
-        # TODO: 实现获取当前用户ID的逻辑
-        return "user_1"
+        try:
+            # 尝试从配置服务获取用户ID
+            if self._config_service is not None:
+                user_id = self._config_service.get('user.id')
+                if user_id:
+                    logger.debug(f"从配置服务获取用户ID: {user_id}")
+                    return user_id
+            
+            # 尝试从用户偏好中获取用户ID
+            if 'user_id' in self.user_preferences:
+                user_id = self.user_preferences['user_id']
+                logger.debug(f"从用户偏好获取用户ID: {user_id}")
+                return user_id
+            
+            # 使用默认用户ID
+            default_user_id = "user_1"
+            logger.warning(f"未找到用户ID，使用默认值: {default_user_id}")
+            return default_user_id
+            
+        except Exception as e:
+            logger.error(f"获取当前用户ID失败: {e}")
+            return "user_1"
+
+    def _initialize_event_subscriptions(self):
+        """初始化事件订阅"""
+        try:
+            from core.events import get_event_bus, AssetTypeChangedEvent
+
+            event_bus = get_event_bus()
+
+            # 订阅资产类型变更事件
+            event_bus.subscribe(AssetTypeChangedEvent, self._on_asset_type_changed)
+
+            logger.info("智能推荐面板事件订阅初始化完成")
+
+        except Exception as e:
+            logger.error(f"初始化事件订阅失败: {e}")
+
+    def _on_asset_type_changed(self, event):
+        """处理资产类型变更事件"""
+        try:
+            old_type = event.old_asset_type
+            new_type = event.new_asset_type
+            source = event.source
+
+            logger.info(f"智能推荐面板收到资产类型变更事件: {old_type} → {new_type} (来源: {source})")
+
+            # 更新当前资产类型
+            self.current_asset_type = new_type
+
+            # 重新加载推荐引擎的数据
+            if self.recommendation_engine:
+                logger.info(f"重新加载推荐引擎数据，资产类型: {new_type}")
+                self._reload_asset_content_items(new_type)
+
+                # 重新加载推荐（使用新的资产类型）
+                self._update_recommendations()
+
+        except Exception as e:
+            logger.error(f"处理资产类型变更事件失败: {e}")
 
     def _create_update_timer(self):
         """创建更新定时器（确保在主Qt线程中创建）"""
@@ -1902,8 +2167,12 @@ class SmartRecommendationPanel(QWidget):
                 logger.info("初始化智能推荐引擎...")
                 self.recommendation_engine = SmartRecommendationEngine()
 
-                # 初始化引擎数据
+            # 初始化引擎数据（无论引擎是否已存在，都要加载数据）
+            if len(self.recommendation_engine.content_items) == 0:
+                logger.info("推荐引擎内容项为空，开始初始化引擎数据...")
                 self._initialize_recommendation_engine()
+            else:
+                logger.info(f"推荐引擎已有 {len(self.recommendation_engine.content_items)} 个内容项，跳过初始化")
 
             # 异步获取真实推荐
             logger.info("正在获取个性化推荐...")
@@ -1917,16 +2186,16 @@ class SmartRecommendationPanel(QWidget):
                 finished = pyqtSignal(list)
                 error = pyqtSignal(str)
 
-                def __init__(self, engine, user_id, count):
+                def __init__(self, engine, user_id, count, asset_type=None):
                     super().__init__()
                     self.engine = engine
                     self.user_id = user_id
                     self.count = count
+                    self.asset_type = asset_type
 
                 def run(self):
                     try:
-                        logger.info(f"🔄 Worker线程开始执行，user_id={self.user_id}, count={self.count}")
-                        print(f"🔄 [DEBUG] Worker线程开始执行，user_id={self.user_id}, count={self.count}")
+                        logger.info(f"🔄 Worker线程开始执行，user_id={self.user_id}, count={self.count}, asset_type={self.asset_type}")
 
                         import asyncio
                         # 在线程中创建新的事件循环
@@ -1936,14 +2205,30 @@ class SmartRecommendationPanel(QWidget):
 
                         # 执行异步获取推荐
                         logger.info("🔄 Worker线程：开始调用get_recommendations")
+                        
+                        # 准备参数
+                        kwargs = {
+                            'user_id': self.user_id,
+                            'count': self.count
+                        }
+                        
+                        # 如果指定了资产类型，添加到参数中
+                        if self.asset_type:
+                            from core.plugin_types import AssetType
+                            from core.services.smart_recommendation_engine import asset_type_to_recommendation_type
+                            
+                            # 如果是字符串，转换为AssetType
+                            if isinstance(self.asset_type, str):
+                                asset_type_enum = AssetType(self.asset_type)
+                            else:
+                                asset_type_enum = self.asset_type
+                            
+                            kwargs['asset_type'] = asset_type_enum
+                        
                         recommendations = loop.run_until_complete(
-                            self.engine.get_recommendations(
-                                user_id=self.user_id,
-                                count=self.count
-                            )
+                            self.engine.get_recommendations(**kwargs)
                         )
                         logger.info(f"🔄 Worker线程：get_recommendations返回，结果数量={len(recommendations)}")
-                        print(f"🔄 [DEBUG] Worker线程：获取到 {len(recommendations)} 个推荐")
 
                         loop.close()
                         logger.info("🔄 Worker线程：发送finished信号")
@@ -1952,18 +2237,26 @@ class SmartRecommendationPanel(QWidget):
 
                     except Exception as e:
                         logger.error(f"❌ 推荐加载线程执行失败: {e}")
-                        print(f"❌ [DEBUG] 推荐加载线程执行失败: {e}")
                         import traceback
                         logger.error(traceback.format_exc())
-                        print(f"❌ [DEBUG] 错误堆栈:\n{traceback.format_exc()}")
                         self.error.emit(str(e))
 
             # 创建并启动工作线程
             try:
+                # 清理旧的 _recommendation_worker
+                if hasattr(self, '_recommendation_worker') and self._recommendation_worker is not None:
+                    try:
+                        self._recommendation_worker.finished.disconnect()
+                        self._recommendation_worker.error.disconnect()
+                    except Exception as e:
+                        logger.warning(f"断开旧 _recommendation_worker 信号连接失败: {e}")
+                    self._recommendation_worker.deleteLater()
+                
                 self._recommendation_worker = RecommendationWorker(
                     self.recommendation_engine,
                     user_id,
-                    self.max_recommendations * 2
+                    self.max_recommendations * 2,
+                    self.current_asset_type
                 )
                 self._recommendation_worker.finished.connect(self._display_loaded_recommendations)
                 self._recommendation_worker.error.connect(self._on_recommendation_load_error)
@@ -1990,14 +2283,12 @@ class SmartRecommendationPanel(QWidget):
     def _on_recommendation_load_error(self, error_msg: str):
         """推荐加载错误处理"""
         logger.error(f"❌ 推荐加载错误回调被触发: {error_msg}")
-        print(f"❌ [DEBUG] 推荐加载错误: {error_msg}")
         self._show_empty_state(f"加载失败: {error_msg}")
 
     def _display_loaded_recommendations(self, recommendations):
         """显示加载的推荐结果（异步回调）"""
         try:
             logger.info(f"✅ _display_loaded_recommendations 被调用！原始推荐数量: {len(recommendations)}")
-            print(f"✅ [DEBUG] _display_loaded_recommendations 被调用！原始推荐数量: {len(recommendations)}")
 
             # ✅ 检查推荐是否为空
             if not recommendations:
@@ -2064,11 +2355,12 @@ class SmartRecommendationPanel(QWidget):
             import traceback
             logger.error(traceback.format_exc())
 
-    def _load_stock_content_items(self) -> int:
+    def _load_stock_content_items(self, asset_type=None) -> int:
         """从UnifiedDataManager加载股票数据"""
         try:
             from core.containers import get_service_container
             from core.services.smart_recommendation_engine import ContentItem, RecommendationType
+            from core.plugin_types import AssetType
 
             # 获取数据管理器（使用全局单例）
             container = get_service_container()
@@ -2079,46 +2371,79 @@ class SmartRecommendationPanel(QWidget):
                 from core.services.unified_data_manager import UnifiedDataManager
                 data_manager = UnifiedDataManager()
 
-            # 获取股票列表
-            stock_list = data_manager.get_asset_list('stock_a')
+            # 确定要加载的资产类型
+            if asset_type is None:
+                # 如果没有指定，使用当前资产类型
+                asset_type = self.current_asset_type or AssetType.STOCK_A
+            
+            # 将 AssetType 枚举转换为字符串
+            if isinstance(asset_type, AssetType):
+                asset_type_str = asset_type.value
+            else:
+                asset_type_str = str(asset_type)
 
-            if stock_list.empty:
-                logger.warning("股票列表为空")
+            logger.info(f"加载资产类型: {asset_type_str}")
+
+            # 获取资产列表
+            asset_list = data_manager.get_asset_list(asset_type_str)
+
+            if asset_list.empty:
+                logger.warning(f"{asset_type_str}资产列表为空")
                 return 0
 
-            # 添加股票内容项
+            # 添加资产内容项
             count = 0
-            for idx, stock in stock_list.iterrows():
-                stock_code = stock.get('code', stock.get('symbol', ''))
-                stock_name = stock.get('name', '')
+            for idx, asset in asset_list.iterrows():
+                asset_code = asset.get('code', asset.get('symbol', ''))
+                asset_name = asset.get('name', '')
 
-                if not stock_code:
+                if not asset_code:
                     continue
 
                 # 过滤None值和空字符串，确保所有值都是有效字符串
-                sector = stock.get('sector') or '未知'
-                industry = stock.get('industry') or '未知'
-                market = stock.get('market') or '未知'
+                sector = asset.get('sector') or '未知'
+                industry = asset.get('industry') or '未知'
+                market = asset.get('market') or '未知'
+
+                # 确定推荐类型
+                asset_type_to_recommendation_type = {
+                    'stock_a': RecommendationType.STOCK_A,
+                    'stock_b': RecommendationType.STOCK_B,
+                    'stock_h': RecommendationType.STOCK_H,
+                    'stock_us': RecommendationType.STOCK_US,
+                    'stock_hk': RecommendationType.STOCK_HK,
+                    'crypto': RecommendationType.CRYPTO,
+                    'fund': RecommendationType.FUND,
+                    'bond': RecommendationType.BOND,
+                    'index': RecommendationType.INDEX,
+                    'futures': RecommendationType.FUTURES,
+                    'forex': RecommendationType.FOREX,
+                    'option': RecommendationType.OPTION,
+                    'warrant': RecommendationType.WARRANT,
+                    'commodity': RecommendationType.COMMODITY
+                }
+                recommendation_type = asset_type_to_recommendation_type.get(asset_type_str, RecommendationType.STOCK_A)
 
                 # 确保tags、categories、keywords中没有None或空字符串
                 tags = [str(v) for v in [sector, industry, market] if v and v != '未知']
                 categories = [str(v) for v in [market, sector] if v and v != '未知']
-                keywords = [str(v) for v in [stock_name, stock_code, industry] if v and v != '未知']
+                keywords = [str(v) for v in [asset_name, asset_code, industry] if v and v != '未知']
 
                 item = ContentItem(
-                    item_id=f"stock_{stock_code}",
-                    item_type=RecommendationType.STOCK,
-                    title=f"{stock_name} ({stock_code})" if stock_name else stock_code,
+                    item_id=f"{asset_type_str}_{asset_code}",
+                    item_type=recommendation_type,
+                    title=f"{asset_name} ({asset_code})" if asset_name else asset_code,
                     description=f"行业: {industry} | 板块: {sector}",
                     tags=tags,
                     categories=categories,
                     keywords=keywords,
                     metadata={
-                        'code': stock_code,
-                        'name': stock_name,
+                        'code': asset_code,
+                        'name': asset_name,
                         'market': market,
                         'sector': sector,
-                        'industry': industry
+                        'industry': industry,
+                        'asset_type': asset_type_str
                     }
                 )
 
@@ -2132,75 +2457,229 @@ class SmartRecommendationPanel(QWidget):
             return count
 
         except Exception as e:
-            logger.error(f"加载股票内容项失败: {e}")
+            logger.error(f"加载资产内容项失败: {e}")
             return 0
 
+    def _reload_asset_content_items(self, asset_type):
+        """重新加载特定资产类型的内容项"""
+        try:
+            from core.plugin_types import AssetType
+
+            # 将 AssetType 枚举转换为字符串
+            if isinstance(asset_type, AssetType):
+                asset_type_str = asset_type.value
+            else:
+                asset_type_str = str(asset_type)
+
+            logger.info(f"重新加载资产内容项，资产类型: {asset_type_str}")
+
+            # 清空推荐引擎中的现有内容项
+            if self.recommendation_engine:
+                # 只删除匹配该资产类型的内容项
+                items_to_remove = []
+                for item_id, item in self.recommendation_engine.content_items.items():
+                    if item_id.startswith(asset_type_str):
+                        items_to_remove.append(item_id)
+                
+                for item_id in items_to_remove:
+                    del self.recommendation_engine.content_items[item_id]
+                
+                logger.info(f"删除了 {len(items_to_remove)} 个旧的 {asset_type_str} 内容项")
+
+            # 重新加载该资产类型的内容项
+            count = self._load_stock_content_items(asset_type)
+            logger.info(f"重新加载了 {count} 个 {asset_type_str} 内容项")
+
+        except Exception as e:
+            logger.error(f"重新加载资产内容项失败: {e}")
+
     def _load_strategy_content_items(self) -> int:
-        """加载策略内容项"""
+        """加载策略内容项（从真实系统数据）"""
         try:
             from core.services.smart_recommendation_engine import ContentItem, RecommendationType
+            from core.containers import get_service_container
 
-            # 常见策略列表
-            strategies = [
-                {"id": "ma_crossover", "name": "均线交叉策略", "desc": "基于移动平均线交叉的趋势跟踪策略", "tags": ["趋势", "移动平均"]},
-                {"id": "rsi_reversal", "name": "RSI反转策略", "desc": "利用RSI超买超卖信号的反转策略", "tags": ["震荡", "RSI"]},
-                {"id": "macd_signal", "name": "MACD信号策略", "desc": "基于MACD指标的交易信号策略", "tags": ["趋势", "MACD"]},
-                {"id": "bollinger_breakout", "name": "布林带突破策略", "desc": "基于布林带的突破交易策略", "tags": ["突破", "波动"]},
-                {"id": "volume_price", "name": "量价配合策略", "desc": "结合成交量和价格的确认策略", "tags": ["量价", "确认"]},
-            ]
+            # 从服务容器获取策略服务
+            container = get_service_container()
+            strategy_service = None
+
+            try:
+                # 尝试通过类型解析服务
+                from core.services.strategy_service import StrategyService
+                strategy_service = container.try_resolve(StrategyService)
+                if strategy_service:
+                    logger.info("成功从服务容器获取StrategyService")
+            except Exception as e:
+                logger.warning(f"无法从服务容器获取StrategyService: {e}")
 
             count = 0
-            for strategy in strategies:
-                item = ContentItem(
-                    item_id=f"strategy_{strategy['id']}",
-                    item_type=RecommendationType.STRATEGY,
-                    title=strategy['name'],
-                    description=strategy['desc'],
-                    tags=strategy['tags'],
-                    categories=["交易策略"],
-                    keywords=[strategy['name']] + strategy['tags']
-                )
-                self.recommendation_engine.add_content_item(item)
-                count += 1
+
+            # 尝试获取真实的策略数据
+            if strategy_service:
+                try:
+                    # 获取所有策略配置
+                    strategy_configs = strategy_service.get_all_strategy_configs()
+                    logger.info(f"从StrategyService获取到 {len(strategy_configs)} 个策略配置")
+
+                    # 获取所有策略模板
+                    strategy_templates = strategy_service.get_all_templates()
+                    logger.info(f"从StrategyService获取到 {len(strategy_templates)} 个策略模板")
+
+                    # 添加策略配置
+                    for config in strategy_configs:
+                        try:
+                            # 从metadata中获取描述和标签
+                            name = config.metadata.get('name', config.strategy_id)
+                            description = config.metadata.get('description', f"策略类型: {config.plugin_type}")
+                            tags = config.tags or [config.plugin_type]
+                            categories = config.metadata.get('categories', ['交易策略'])
+                            keywords = [name, config.strategy_id, config.plugin_type]
+
+                            item = ContentItem(
+                                item_id=f"strategy_config_{config.strategy_id}",
+                                item_type=RecommendationType.STRATEGY,
+                                title=name,
+                                description=description,
+                                tags=tags,
+                                categories=categories,
+                                keywords=keywords,
+                                metadata={
+                                    'strategy_id': config.strategy_id,
+                                    'plugin_type': config.plugin_type,
+                                    'enabled': config.enabled,
+                                    'source': 'strategy_config'
+                                }
+                            )
+
+                            self.recommendation_engine.add_content_item(item)
+                            count += 1
+                        except Exception as e:
+                            logger.error(f"添加策略配置 {config.strategy_id} 失败: {e}")
+                            continue
+
+                    # 添加策略模板
+                    for template in strategy_templates:
+                        try:
+                            name = template.name
+                            description = template.description
+                            tags = template.tags or [template.category]
+                            categories = [template.category]
+                            keywords = [name, template.template_id, template.plugin_type]
+
+                            item = ContentItem(
+                                item_id=f"strategy_template_{template.template_id}",
+                                item_type=RecommendationType.STRATEGY,
+                                title=name,
+                                description=description,
+                                tags=tags,
+                                categories=categories,
+                                keywords=keywords,
+                                metadata={
+                                    'template_id': template.template_id,
+                                    'plugin_type': template.plugin_type,
+                                    'category': template.category,
+                                    'is_builtin': template.is_builtin,
+                                    'source': 'strategy_template'
+                                }
+                            )
+
+                            self.recommendation_engine.add_content_item(item)
+                            count += 1
+                        except Exception as e:
+                            logger.error(f"添加策略模板 {template.template_id} 失败: {e}")
+                            continue
+
+                except Exception as e:
+                    logger.error(f"获取策略数据失败: {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+
+            # 如果无法获取真实数据，返回0
+            if count == 0:
+                logger.warning("无法加载任何策略数据")
 
             return count
 
         except Exception as e:
             logger.error(f"加载策略内容项失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return 0
 
     def _load_indicator_content_items(self) -> int:
-        """加载指标内容项"""
+        """加载指标内容项（从真实系统数据）"""
         try:
             from core.services.smart_recommendation_engine import ContentItem, RecommendationType
+            from core.containers import get_service_container
 
-            # 常用技术指标
-            indicators = [
-                {"id": "macd", "name": "MACD", "desc": "趋势指标，识别趋势方向和强度", "tags": ["趋势"]},
-                {"id": "rsi", "name": "RSI", "desc": "相对强弱指标，识别超买超卖", "tags": ["震荡"]},
-                {"id": "kdj", "name": "KDJ", "desc": "随机指标，短期交易信号", "tags": ["震荡"]},
-                {"id": "boll", "name": "布林带", "desc": "波动率指标，识别突破机会", "tags": ["波动"]},
-                {"id": "ma", "name": "移动平均线", "desc": "趋势指标，平滑价格波动", "tags": ["趋势"]},
-            ]
+            # 从服务容器获取指标服务
+            container = get_service_container()
+            indicator_service = None
+
+            try:
+                # 尝试通过类型解析服务
+                from core.services.enhanced_indicator_service import EnhancedIndicatorService
+                indicator_service = container.try_resolve(EnhancedIndicatorService)
+                if indicator_service:
+                    logger.info("成功从服务容器获取EnhancedIndicatorService")
+            except Exception as e:
+                logger.warning(f"无法从服务容器获取EnhancedIndicatorService: {e}")
 
             count = 0
-            for indicator in indicators:
-                item = ContentItem(
-                    item_id=f"indicator_{indicator['id']}",
-                    item_type=RecommendationType.INDICATOR,
-                    title=indicator['name'],
-                    description=indicator['desc'],
-                    tags=indicator['tags'],
-                    categories=["技术指标"],
-                    keywords=[indicator['name']] + indicator['tags']
-                )
-                self.recommendation_engine.add_content_item(item)
-                count += 1
+
+            # 尝试获取真实的指标数据
+            if indicator_service:
+                try:
+                    # 获取所有指标
+                    indicators = indicator_service.get_all_indicators()
+                    logger.info(f"从IndicatorService获取到 {len(indicators)} 个指标")
+
+                    # 添加指标
+                    for indicator in indicators:
+                        try:
+                            name = indicator.get('display_name', indicator.get('name', 'Unknown'))
+                            description = indicator.get('description', '技术指标')
+                            tags = indicator.get('tags', [])
+                            categories = indicator.get('categories', ['技术指标'])
+                            keywords = [name, indicator.get('name', '')]
+
+                            item = ContentItem(
+                                item_id=f"indicator_{indicator['name']}",
+                                item_type=RecommendationType.INDICATOR,
+                                title=name,
+                                description=description,
+                                tags=tags,
+                                categories=categories,
+                                keywords=keywords,
+                                metadata={
+                                    'indicator_name': indicator['name'],
+                                    'category': indicator.get('category', ''),
+                                    'is_builtin': indicator.get('is_builtin', False),
+                                    'source': 'indicator_service'
+                                }
+                            )
+
+                            self.recommendation_engine.add_content_item(item)
+                            count += 1
+                        except Exception as e:
+                            logger.error(f"添加指标 {indicator.get('name', 'Unknown')} 失败: {e}")
+                            continue
+
+                except Exception as e:
+                    logger.error(f"获取指标数据失败: {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+
+            # 如果无法获取真实数据，返回0
+            if count == 0:
+                logger.warning("无法加载任何指标数据")
 
             return count
 
         except Exception as e:
             logger.error(f"加载指标内容项失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return 0
 
     def _create_user_profile(self):
@@ -2239,17 +2718,27 @@ class SmartRecommendationPanel(QWidget):
 
         for idx, rec in enumerate(recommendations):
             try:
-                # 映射推荐类型
-                type_map = {
-                    'stock': 'stock',
-                    'strategy': 'strategy',
-                    'indicator': 'indicator',
-                    'news': 'news',
-                    'research': 'research',
-                    'portfolio': 'portfolio'
-                }
+                # 获取推荐类型的值
+                rec_type_value = rec.item_type.value if hasattr(rec.item_type, 'value') else str(rec.item_type)
 
-                rec_type = type_map.get(rec.item_type.value, 'unknown')
+                # 映射推荐类型
+                # 资产类型（stock_a, stock_b, crypto, fund, bond等）都映射为 'asset'
+                # 传统推荐类型（strategy, indicator）保持不变
+                asset_types = [
+                    'stock_a', 'stock_b', 'stock_h', 'stock_us', 'stock_hk',
+                    'crypto', 'fund', 'bond', 'index', 'futures', 'forex',
+                    'option', 'warrant', 'commodity', 'sector', 'industry_sector',
+                    'concept_sector', 'style_sector', 'theme_sector', 'macro'
+                ]
+
+                if rec_type_value in asset_types:
+                    rec_type = 'asset'
+                elif rec_type_value == 'strategy':
+                    rec_type = 'strategy'
+                elif rec_type_value == 'indicator':
+                    rec_type = 'indicator'
+                else:
+                    rec_type = 'unknown'
 
                 # ✅ 确保所有字段都有有效值
                 formatted_rec = {
@@ -2315,6 +2804,34 @@ class SmartRecommendationPanel(QWidget):
                 if child.widget():
                     child.widget().deleteLater()
 
+    def _show_empty_state_for_layout(self, layout, message: str = ""):
+        """在指定布局中显示空状态提示"""
+        logger.info(f"在布局中显示空状态: {message}")
+        
+        # 清空布局中的所有卡片
+        while layout.count():
+            child = layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+        
+        # 添加空状态提示标签
+        from PyQt5.QtWidgets import QLabel
+        from PyQt5.QtCore import Qt
+        
+        empty_label = QLabel(message)
+        empty_label.setAlignment(Qt.AlignCenter)
+        empty_label.setStyleSheet("""
+            QLabel {
+                color: #7f8c8d;
+                font-size: 14px;
+                padding: 20px;
+                background-color: #f8f9fa;
+                border-radius: 8px;
+                border: 1px solid #e9ecef;
+            }
+        """)
+        layout.addWidget(empty_label)
+
     def _display_recommendations_by_type(self, recommendations: List[Dict[str, Any]]):
         """按类型显示推荐"""
         logger.info(f"开始按类型显示 {len(recommendations)} 个推荐")
@@ -2329,45 +2846,37 @@ class SmartRecommendationPanel(QWidget):
 
         logger.info(f"推荐类型分布: {[(k, len(v)) for k, v in recommendations_by_type.items()]}")
 
-        # 显示股票推荐
-        if 'stock' in recommendations_by_type:
-            try:
-                logger.info(f"显示 {len(recommendations_by_type['stock'])} 个股票推荐")
-                self._display_recommendation_cards(
-                    recommendations_by_type['stock'],
-                    self.stock_cards_layout
-                )
-                logger.info("✅ 股票推荐显示成功")
-            except Exception as e:
-                logger.error(f"❌ 显示股票推荐失败: {e}")
-                import traceback
-                logger.error(traceback.format_exc())
+        # 类型到布局的映射
+        type_layout_map = {
+            'asset': self.stock_cards_layout,
+            'strategy': self.strategy_cards_layout,
+            'indicator': self.indicator_cards_layout
+        }
 
-        # 显示策略推荐
-        if 'strategy' in recommendations_by_type:
-            try:
-                logger.info(f"显示 {len(recommendations_by_type['strategy'])} 个策略推荐")
-                self._display_recommendation_cards(
-                    recommendations_by_type['strategy'],
-                    self.strategy_cards_layout
-                )
-                logger.info("✅ 策略推荐显示成功")
-            except Exception as e:
-                logger.error(f"❌ 显示策略推荐失败: {e}")
-                import traceback
-                logger.error(traceback.format_exc())
+        # 类型名称映射
+        type_name_map = {
+            'asset': '资产',
+            'strategy': '策略',
+            'indicator': '指标'
+        }
 
-        # 显示指标推荐
-        if 'indicator' in recommendations_by_type:
+        # 按类型显示推荐
+        for rec_type, layout in type_layout_map.items():
             try:
-                logger.info(f"显示 {len(recommendations_by_type['indicator'])} 个指标推荐")
-                self._display_recommendation_cards(
-                    recommendations_by_type['indicator'],
-                    self.indicator_cards_layout
-                )
-                logger.info("✅ 指标推荐显示成功")
+                recs = recommendations_by_type.get(rec_type, [])
+                type_name = type_name_map.get(rec_type, rec_type)
+                
+                if recs:
+                    logger.info(f"显示 {len(recs)} 个{type_name}推荐")
+                    self._display_recommendation_cards(recs, layout)
+                    logger.info(f"✅ {type_name}推荐显示成功")
+                else:
+                    # 没有推荐时显示提示
+                    logger.info(f"{type_name}推荐为空，显示空状态提示")
+                    self._show_empty_state_for_layout(layout, f"暂无{type_name}推荐")
             except Exception as e:
-                logger.error(f"❌ 显示指标推荐失败: {e}")
+                type_name = type_name_map.get(rec_type, rec_type)
+                logger.error(f"❌ 显示{type_name}推荐失败: {e}")
                 import traceback
                 logger.error(traceback.format_exc())
 
@@ -2447,16 +2956,99 @@ class SmartRecommendationPanel(QWidget):
 
     def _update_feedback_stats(self):
         """更新反馈统计"""
-        # 模拟反馈统计数据
+        try:
+            if self._database_service is None:
+                from core.containers import get_service_container
+                container = get_service_container()
+                self._database_service = container.get_service('DatabaseService')
+            
+            if self._database_service is None:
+                logger.warning("数据库服务不可用，使用默认统计数据")
+                self.feedback_data_source_label.setText("数据来源: 默认值（数据库不可用）")
+                self._use_default_feedback_stats()
+                return
+            
+            user_id = self._get_current_user_id()
+            
+            total_feedback = 0
+            positive_feedback = 0
+            negative_feedback = 0
+            total_rating = 0.0
+            rating_count = 0
+            
+            try:
+                feedback_sql = "SELECT rating, feedback_type FROM user_feedback WHERE user_id = ?"
+                feedback_result = self._database_service.fetch_all(feedback_sql, [user_id], pool_name="factorweave_system_sqlite")
+                
+                if feedback_result:
+                    total_feedback = len(feedback_result)
+                    
+                    for row in feedback_result:
+                        rating = row.get('rating', 0)
+                        feedback_type = row.get('feedback_type', '')
+                        
+                        if rating > 0:
+                            total_rating += rating
+                            rating_count += 1
+                        
+                        if rating >= 4:
+                            positive_feedback += 1
+                        elif rating <= 2:
+                            negative_feedback += 1
+                    
+                    logger.info(f"查询到 {total_feedback} 条反馈记录")
+                    self.feedback_data_source_label.setText("数据来源: 数据库（实时）")
+                else:
+                    logger.info("暂无反馈数据")
+                    self.feedback_data_source_label.setText("数据来源: 数据库（暂无数据）")
+            except Exception as e:
+                logger.error(f"查询反馈数据失败: {e}")
+                self.feedback_data_source_label.setText("数据来源: 查询失败")
+                self._use_default_feedback_stats()
+                return
+            
+            average_rating = total_rating / rating_count if rating_count > 0 else 0.0
+            satisfaction_rate = positive_feedback / total_feedback if total_feedback > 0 else 0.0
+            
+            accuracy_rate = satisfaction_rate
+            
+            stats_data = {
+                'total_feedback': total_feedback,
+                'positive_feedback': positive_feedback,
+                'negative_feedback': negative_feedback,
+                'average_rating': average_rating,
+                'accuracy_rate': accuracy_rate,
+                'satisfaction_rate': satisfaction_rate
+            }
+            
+            for key, value in stats_data.items():
+                if key in self.feedback_stats:
+                    if isinstance(value, float):
+                        if key in ['accuracy_rate', 'satisfaction_rate']:
+                            self.feedback_stats[key].setText(f"{value:.1%}")
+                        else:
+                            self.feedback_stats[key].setText(f"{value:.1f}")
+                    else:
+                        self.feedback_stats[key].setText(str(value))
+            
+            logger.info(f"反馈统计更新成功: {stats_data}")
+            
+        except Exception as e:
+            logger.error(f"更新反馈统计失败: {e}")
+            self.feedback_data_source_label.setText("数据来源: 更新失败")
+            self._use_default_feedback_stats()
+    
+    def _use_default_feedback_stats(self):
+        """使用默认反馈统计数据（降级方案）"""
         stats_data = {
-            'total_feedback': 156,
-            'positive_feedback': 98,
-            'negative_feedback': 32,
-            'average_rating': 4.2,
-            'accuracy_rate': 0.68,
-            'satisfaction_rate': 0.85
+            'total_feedback': 0,
+            'positive_feedback': 0,
+            'negative_feedback': 0,
+            'average_rating': 0.0,
+            'accuracy_rate': 0.0,
+            'satisfaction_rate': 0.0
         }
-
+        
         for key, value in stats_data.items():
             if key in self.feedback_stats:
                 if isinstance(value, float):
@@ -2511,6 +3103,9 @@ class SmartRecommendationPanel(QWidget):
 
         self.user_preferences[key] = value / 100.0
         logger.debug(f"用户偏好 {key} 已调整为: {value}%")
+        
+        # 保存持久化数据
+        self._save_persistent_data()
 
     def _on_algorithm_weight_changed(self, key: str, value: int):
         """算法权重变更"""
@@ -2520,39 +3115,62 @@ class SmartRecommendationPanel(QWidget):
             value_label.setText(f"{weight_value:.1f}")
 
         logger.debug(f"算法权重 {key} 已调整为: {weight_value:.1f}")
+        
+        # 保存持久化数据
+        self._save_persistent_data()
 
     def _on_personalization_changed(self, key: str, checked: bool):
         """个性化设置变更"""
         logger.debug(f"个性化设置 {key}: {checked}")
 
     def _on_recommendation_clicked(self, recommendation_data: Dict[str, Any]):
-        """推荐卡片点击处理（点击卡片主体区域）"""
+        """
+        推荐卡片点击处理（点击卡片主体区域）
+        
+        此方法处理用户点击推荐卡片主体区域的事件，根据推荐类型执行不同的操作：
+        1. 股票推荐（type='stock'）：联动到主界面选择该股票
+        2. 策略推荐（type='strategy'）：显示策略详情对话框
+        3. 指标推荐（type='indicator'）：显示指标详情对话框
+        4. 其他类型：显示通用详情对话框
+        
+        处理流程：
+        1. 获取推荐类型和 ID
+        2. 根据推荐类型执行相应的操作
+        3. 发送推荐选择信号，通知其他组件
+        
+        注意：此方法会记录日志，方便调试和追踪
+        """
         try:
+            # 步骤 1: 获取推荐信息
+            # 获取推荐类型、ID 和标题
             rec_type = recommendation_data.get('type', 'unknown')
             rec_id = recommendation_data.get('id', '')
             title = recommendation_data.get('title', 'Unknown')
 
             logger.info(f"选择推荐: {title}, 类型: {rec_type}, ID: {rec_id}")
 
-            # ✅ 根据推荐类型执行不同操作
+            # 步骤 2: 根据推荐类型执行不同操作
+            # 使用条件判断，根据推荐类型执行相应的操作
             if rec_type == 'stock' and rec_id.startswith('stock_'):
                 # 股票推荐：联动到主界面选择该股票
+                # 从推荐 ID 中提取股票代码，并发送股票选择事件
                 stock_code = rec_id.replace('stock_', '')
                 self._select_stock_in_main_panel(stock_code)
             elif rec_type == 'strategy':
                 # 策略推荐：显示策略详情
+                # 创建对话框显示策略的详细信息
                 self._show_recommendation_detail(recommendation_data)
             elif rec_type == 'indicator':
                 # 指标推荐：显示指标详情
-                self._show_recommendation_detail(recommendation_data)
-            elif rec_type == 'news':
-                # 新闻推荐：显示新闻详情
+                # 创建对话框显示指标的详细信息
                 self._show_recommendation_detail(recommendation_data)
             else:
                 # 其他类型：显示通用详情
+                # 对于未知类型的推荐，显示通用的详情对话框
                 self._show_recommendation_detail(recommendation_data)
 
-            # 发送推荐选择信号
+            # 步骤 3: 发送推荐选择信号
+            # 通知其他组件用户选择了该推荐
             self.recommendation_selected.emit(recommendation_data)
 
         except Exception as e:
@@ -2590,22 +3208,41 @@ class SmartRecommendationPanel(QWidget):
             logger.error(traceback.format_exc())
 
     def _show_recommendation_detail(self, recommendation_data: Dict[str, Any]):
-        """显示推荐详情"""
+        """
+        显示推荐详情
+        
+        此方法创建一个对话框，显示推荐的详细信息，包括：
+        1. 推荐标题
+        2. 推荐类型和评分
+        3. 推荐描述
+        4. 推荐理由
+        5. 推荐元数据（如果有）
+        
+        对话框特点：
+        - 使用模态对话框，用户必须关闭后才能继续操作
+        - 包含确定按钮，用户确认后关闭对话框
+        - 自动调整大小，确保内容完整显示
+        
+        注意：此方法会记录日志，方便调试和追踪
+        """
         try:
             from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QTextEdit, QPushButton, QDialogButtonBox
 
+            # 步骤 1: 创建对话框
             dialog = QDialog(self)
             dialog.setWindowTitle(f"推荐详情 - {recommendation_data.get('title', '未知')}")
             dialog.setMinimumSize(500, 400)
 
             layout = QVBoxLayout(dialog)
 
-            # 标题
+            # 步骤 2: 添加标题
+            # 显示推荐的标题，使用大号粗体字体
             title_label = QLabel(recommendation_data.get('title', '未知推荐'))
             title_label.setFont(QFont("Arial", 14, QFont.Bold))
             layout.addWidget(title_label)
 
-            # 类型和评分
+            # 步骤 3: 添加类型和评分信息
+            # 显示推荐类型、评分和置信度
             info_label = QLabel(
                 f"类型: {recommendation_data.get('type', 'unknown').upper()} | "
                 f"评分: {recommendation_data.get('score', 0):.1f} | "
@@ -2614,7 +3251,8 @@ class SmartRecommendationPanel(QWidget):
             info_label.setFont(QFont("Arial", 10))
             layout.addWidget(info_label)
 
-            # 描述
+            # 步骤 4: 添加描述
+            # 显示推荐的详细描述
             desc_label = QLabel("描述:")
             desc_label.setFont(QFont("Arial", 11, QFont.Bold))
             layout.addWidget(desc_label)
@@ -2622,10 +3260,11 @@ class SmartRecommendationPanel(QWidget):
             desc_text = QTextEdit()
             desc_text.setPlainText(recommendation_data.get('description', '暂无描述'))
             desc_text.setReadOnly(True)
-            desc_text.setMaximumHeight(100)
+            desc_text.setMaximumHeight(60)
             layout.addWidget(desc_text)
 
-            # 推荐理由
+            # 步骤 5: 添加推荐理由
+            # 显示推荐的理由或依据
             reason_label = QLabel("推荐理由:")
             reason_label.setFont(QFont("Arial", 11, QFont.Bold))
             layout.addWidget(reason_label)
@@ -2633,10 +3272,11 @@ class SmartRecommendationPanel(QWidget):
             reason_text = QTextEdit()
             reason_text.setPlainText(recommendation_data.get('reason', '系统推荐'))
             reason_text.setReadOnly(True)
-            desc_text.setMaximumHeight(100)
+            desc_text.setMaximumHeight(80)
             layout.addWidget(reason_text)
 
-            # 元数据
+            # 步骤 6: 添加元数据（如果有）
+            # 显示推荐的额外信息，如股票代码、策略参数等
             metadata = recommendation_data.get('metadata', {})
             if metadata:
                 meta_label = QLabel("详细信息:")
@@ -2647,14 +3287,17 @@ class SmartRecommendationPanel(QWidget):
                 meta_str = "\n".join([f"{k}: {v}" for k, v in metadata.items()])
                 meta_text.setPlainText(meta_str)
                 meta_text.setReadOnly(True)
-                meta_text.setMaximumHeight(80)
+                meta_text.setMaximumHeight(100)
                 layout.addWidget(meta_text)
 
-            # 按钮
+            # 步骤 7: 添加按钮
+            # 添加确定按钮，用户确认后关闭对话框
             button_box = QDialogButtonBox(QDialogButtonBox.Ok)
             button_box.accepted.connect(dialog.accept)
             layout.addWidget(button_box)
 
+            # 步骤 8: 显示对话框
+            # 记录日志并显示对话框
             logger.info(f"显示推荐详情: {recommendation_data.get('title', 'Unknown')}")
             dialog.exec_()
 
@@ -2673,26 +3316,325 @@ class SmartRecommendationPanel(QWidget):
             logger.error(f"刷新推荐失败: {e}")
 
     def _update_recommendations(self):
-        """定时更新推荐"""
+        """
+        定时更新推荐
+        
+        此方法由定时器定期调用，用于更新推荐内容。
+        更新频率由 self.update_interval 控制（默认为 30 分钟）。
+        
+        更新流程：
+        1. 获取当前用户 ID
+        2. 调用推荐引擎获取新的推荐
+        3. 更新 UI 显示
+        
+        注意：此方法只在推荐引擎可用时才会执行
+        """
         if self.recommendation_engine:
             logger.debug("定时更新推荐内容")
-            # 实现定时更新逻辑
+            try:
+                # 步骤 1: 获取当前用户 ID
+                # 用户 ID 用于个性化推荐
+                user_id = self._get_current_user_id()
+                
+                # 步骤 2: 异步获取推荐
+                # 调用推荐引擎获取新的推荐内容
+                self._load_initial_recommendations()
+            except Exception as e:
+                logger.error(f"定时更新推荐失败: {e}")
 
     def _train_recommendation_model(self):
-        """训练推荐模型"""
+        """
+        训练推荐模型
+        
+        此方法用于训练推荐模型，提高推荐的准确性。
+        训练数据来源于用户的实际行为数据，包括：
+        - 用户点击的推荐
+        - 用户查看的推荐详情
+        - 用户提交的反馈
+        
+        训练流程：
+        1. 获取当前用户 ID
+        2. 获取用户的实际行为数据
+        3. 调用模型训练器进行训练
+        
+        注意：此方法只在模型训练器可用时才会执行
+        """
         if self.model_trainer:
             logger.info("开始训练推荐模型")
-            # 实现模型训练逻辑
+            try:
+                # 步骤 1: 获取训练数据
+                # 获取当前用户 ID
+                user_id = self._get_current_user_id()
+                # 获取用户的实际行为数据
+                behavior_data = self._get_real_behavior_data()
+                
+                # 步骤 2: 检查训练数据是否可用
+                if behavior_data:
+                    # 步骤 3: 训练模型
+                    # 调用模型训练器进行训练
+                    self.model_trainer.train(user_id, behavior_data)
+                    logger.info("推荐模型训练完成")
+                else:
+                    logger.warning("没有可用的训练数据")
+            except Exception as e:
+                logger.error(f"训练推荐模型失败: {e}")
+
+    def _load_persistent_data(self):
+        """
+        加载持久化数据（从数据库）
+        
+        此方法从数据库中加载用户的持久化数据，包括：
+        1. 用户偏好设置（如技术分析偏好、基本面偏好等）
+        2. 用户反馈历史（如对推荐的评分、评论等）
+        
+        数据存储在以下数据库表中：
+        - user_preferences: 存储用户偏好设置
+        - user_feedback: 存储用户反馈历史
+        
+        注意：如果数据库服务不可用，此方法会返回并使用默认值
+        """
+        try:
+            # 步骤 1: 获取数据库服务
+            # 数据库服务是延迟初始化的，所以需要在这里检查并获取
+            if self._database_service is None:
+                from core.containers import get_service_container
+                container = get_service_container()
+                self._database_service = container.get_service('DatabaseService')
+            
+            # 检查数据库服务是否可用
+            if self._database_service is None:
+                logger.warning("数据库服务不可用，无法加载持久化数据")
+                return
+            
+            # 步骤 2: 跳过表创建（已在 DatabaseService 中创建）
+            # user_preferences 和 user_feedback 表现在由 DatabaseService 统一管理
+            # 不再需要在此处创建表
+            
+            # 步骤 3: 加载用户偏好
+            # 用户偏好包括技术分析偏好、基本面偏好等个性化设置
+            try:
+                # 性能优化：
+                # - 使用参数化查询防止 SQL 注入
+                # - 只查询需要的字段（preference_key, preference_value），减少数据传输量
+                # - 利用 UNIQUE(user_id, preference_key) 索引，快速定位用户的偏好数据
+                prefs_sql = "SELECT preference_key, preference_value FROM user_preferences WHERE user_id = ?"
+                prefs_result = self._database_service.fetch_all(prefs_sql, [self._get_current_user_id()], pool_name="factorweave_system_sqlite")
+                
+                if prefs_result:
+                    # 将查询结果转换为字典格式，方便后续使用
+                    self.user_preferences = {row['preference_key']: row['preference_value'] for row in prefs_result}
+                    logger.info(f"用户偏好加载成功: {len(self.user_preferences)} 条记录")
+                else:
+                    logger.info("用户偏好为空，使用默认值")
+            except Exception as e:
+                logger.error(f"加载用户偏好失败: {e}")
+            
+            # 步骤 4: 加载反馈历史
+            # 反馈历史包括用户对推荐的评分、评论等
+            # 为了性能考虑，只加载最近的 1000 条反馈
+            try:
+                # 性能优化：
+                # - 使用参数化查询防止 SQL 注入
+                # - 只查询需要的字段，减少数据传输量
+                # - 利用复合索引 (user_id, timestamp) 优化按用户 ID 查询并按时间戳排序的性能
+                # - 使用 LIMIT 1000 限制返回的记录数，减少内存占用
+                feedback_sql = """
+                    SELECT id, recommendation_id, feedback_type, rating, comment, timestamp 
+                    FROM user_feedback 
+                    WHERE user_id = ? 
+                    ORDER BY timestamp DESC 
+                    LIMIT 1000
+                """
+                feedback_result = self._database_service.fetch_all(feedback_sql, [self._get_current_user_id()], pool_name="factorweave_system_sqlite")
+                
+                if feedback_result:
+                    self.feedback_history = feedback_result
+                    logger.info(f"反馈历史加载成功: {len(self.feedback_history)} 条记录")
+                else:
+                    logger.info("反馈历史为空")
+            except Exception as e:
+                logger.error(f"加载反馈历史失败: {e}")
+                
+        except Exception as e:
+            logger.error(f"加载持久化数据失败: {e}")
+
+    def _create_recommendation_tables(self):
+        """
+        创建推荐相关表
+        
+        此方法创建智能推荐系统所需的数据库表，包括：
+        1. user_preferences: 存储用户偏好设置
+        2. user_feedback: 存储用户反馈历史
+        
+        表结构说明：
+        - user_preferences: 存储用户的个性化偏好，如技术分析偏好、基本面偏好等
+        - user_feedback: 存储用户对推荐的反馈，如评分、评论等
+        
+        索引说明：
+        - user_preferences: 使用 UNIQUE 约束确保每个用户每个偏好键只有一条记录
+        - user_feedback: 使用索引加速按用户 ID 和时间戳的查询
+        
+        注意：此方法使用 CREATE TABLE IF NOT EXISTS，可以安全地重复调用
+        """
+        try:
+            # 步骤 1: 创建用户偏好表
+            # 用户偏好表存储用户的个性化设置，如技术分析偏好、基本面偏好等
+            # 使用 UNIQUE 约束确保每个用户每个偏好键只有一条记录
+            # 性能优化：
+            # - 使用复合索引 (user_id, preference_key) 优化按用户 ID 和偏好键查询的性能
+            # - UNIQUE 约束会自动创建索引，提高查询效率
+            create_prefs_sql = """
+                CREATE TABLE IF NOT EXISTS user_preferences (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id VARCHAR(100) NOT NULL,
+                    preference_key VARCHAR(100) NOT NULL,
+                    preference_value TEXT NOT NULL,
+                    asset_type VARCHAR(50) DEFAULT 'stock_a',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_id, preference_key, asset_type)
+                )
+            """
+            self._database_service.execute_query(create_prefs_sql)
+            
+            # 步骤 2: 创建用户反馈表
+            # 用户反馈表存储用户对推荐的反馈，如评分、评论等
+            # 使用索引加速按用户 ID 和时间戳的查询
+            # 性能优化：
+            # - 使用复合索引 (user_id, timestamp) 优化按用户 ID 查询并按时间戳排序的查询
+            # - 添加 recommendation_id 索引，优化按推荐 ID 查询的性能
+            # - 添加 feedback_type 索引，优化按反馈类型查询的性能
+            create_feedback_sql = """
+                CREATE TABLE IF NOT EXISTS user_feedback (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id VARCHAR(100) NOT NULL,
+                    recommendation_id VARCHAR(100) NOT NULL,
+                    feedback_type VARCHAR(50) NOT NULL,
+                    rating INTEGER NOT NULL,
+                    comment TEXT,
+                    asset_type VARCHAR(50) DEFAULT 'stock_a',
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_user_feedback_user_id_timestamp (user_id, timestamp),
+                    INDEX idx_user_feedback_recommendation_id (recommendation_id),
+                    INDEX idx_user_feedback_feedback_type (feedback_type),
+                    INDEX idx_user_feedback_asset_type (asset_type)
+                )
+            """
+            self._database_service.execute_query(create_feedback_sql)
+            
+            logger.info("推荐相关表创建成功")
+        except Exception as e:
+            logger.error(f"创建推荐相关表失败: {e}")
+
+    def _save_persistent_data(self):
+        """
+        保存持久化数据（到数据库）
+        
+        此方法将用户的持久化数据保存到数据库，包括：
+        1. 用户偏好设置（如技术分析偏好、基本面偏好等）
+        2. 用户反馈历史（如对推荐的评分、评论等）
+        
+        保存策略：
+        - 用户偏好：先删除旧数据，再插入新数据（全量更新）
+        - 用户反馈：先删除旧数据，再插入新数据（全量更新）
+        - 反馈历史限制：只保存最近的 1000 条反馈，防止数据膨胀
+        
+        注意：如果数据库服务不可用，此方法会返回并跳过保存
+        """
+        try:
+            # 步骤 1: 获取数据库服务
+            # 数据库服务是延迟初始化的，所以需要在这里检查并获取
+            if self._database_service is None:
+                from core.containers import get_service_container
+                container = get_service_container()
+                self._database_service = container.get_service('DatabaseService')
+            
+            # 检查数据库服务是否可用
+            if self._database_service is None:
+                logger.warning("数据库服务不可用，无法保存持久化数据")
+                return
+            
+            user_id = self._get_current_user_id()
+            
+            # 步骤 2: 保存用户偏好
+            # 采用全量更新策略：先删除旧数据，再插入新数据
+            # 这样可以确保数据一致性，避免出现重复或过时的数据
+            try:
+                # 步骤 2.1: 删除旧的用户偏好
+                # 性能优化：
+                # - 使用参数化查询防止 SQL 注入
+                # - 利用 UNIQUE(user_id, preference_key) 索引，快速定位并删除用户的偏好数据
+                delete_prefs_sql = "DELETE FROM user_preferences WHERE user_id = ?"
+                self._database_service.execute_query(delete_prefs_sql, [user_id], pool_name="factorweave_system_sqlite")
+                
+                # 步骤 2.2: 插入新的用户偏好
+                # 性能优化：
+                # - 使用参数化查询防止 SQL 注入
+                # - 利用 UNIQUE(user_id, preference_key) 索引，快速插入数据
+                # 注意：逐条插入可能影响性能，未来可以考虑使用批量插入
+                for key, value in self.user_preferences.items():
+                    insert_pref_sql = """
+                        INSERT INTO user_preferences (user_id, preference_key, preference_value)
+                        VALUES (?, ?, ?)
+                    """
+                    self._database_service.execute_query(insert_pref_sql, [user_id, key, str(value)], pool_name="factorweave_system_sqlite")
+                
+                logger.info(f"用户偏好保存成功: {len(self.user_preferences)} 条记录")
+            except Exception as e:
+                logger.error(f"保存用户偏好失败: {e}")
+            
+            # 步骤 3: 保存反馈历史
+            # 采用全量更新策略：先删除旧数据，再插入新数据
+            # 为了防止数据膨胀，只保存最近的 1000 条反馈
+            try:
+                # 步骤 3.1: 只保存最近的 1000 条反馈
+                # 使用切片操作，如果反馈历史超过 1000 条，只保留最近的 1000 条
+                recent_feedback = self.feedback_history[-1000:] if len(self.feedback_history) > 1000 else self.feedback_history
+                
+                # 步骤 3.2: 删除旧的反馈
+                # 性能优化：
+                # - 使用参数化查询防止 SQL 注入
+                # - 利用复合索引 (user_id, timestamp) 优化删除性能
+                delete_feedback_sql = "DELETE FROM user_feedback WHERE user_id = ?"
+                self._database_service.execute_query(delete_feedback_sql, [user_id], pool_name="factorweave_system_sqlite")
+                
+                # 步骤 3.3: 插入新的反馈
+                # 性能优化：
+                # - 使用参数化查询防止 SQL 注入
+                # - 利用复合索引 (user_id, timestamp) 优化插入性能
+                # 注意：逐条插入可能影响性能，未来可以考虑使用批量插入
+                for feedback in recent_feedback:
+                    insert_feedback_sql = """
+                        INSERT INTO user_feedback (user_id, recommendation_id, feedback_type, rating, comment, timestamp)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """
+                    self._database_service.execute_query(insert_feedback_sql, [
+                        user_id,
+                        feedback.get('recommendation_id', ''),
+                        feedback.get('feedback_type', ''),
+                        feedback.get('rating', 0),
+                        feedback.get('timestamp', datetime.now())
+                    ], pool_name="factorweave_system_sqlite")
+                
+                logger.info(f"反馈历史保存成功: {len(recent_feedback)} 条记录")
+            except Exception as e:
+                logger.error(f"保存反馈历史失败: {e}")
+                
+            logger.info("持久化数据保存成功")
+        except Exception as e:
+            logger.error(f"保存持久化数据失败: {e}")
 
     def _save_settings(self):
         """保存设置"""
         logger.info("保存推荐设置")
-        # 实现设置保存逻辑
+        # 保存设置并持久化
+        self._save_persistent_data()
 
     def _load_settings(self):
         """加载设置"""
         logger.info("加载推荐设置")
-        # 实现设置加载逻辑
+        # 加载持久化数据
+        self._load_persistent_data()
 
     def _reset_settings(self):
         """重置设置"""
@@ -2718,6 +3660,9 @@ class SmartRecommendationPanel(QWidget):
         self.feedback_submitted.emit(feedback_type, feedback_data)
 
         logger.info(f"提交反馈: {feedback_type}, 评分: {rating}")
+        
+        # 保存持久化数据
+        self._save_persistent_data()
 
     def get_user_preferences(self) -> Dict[str, Any]:
         """获取用户偏好"""
@@ -2730,3 +3675,69 @@ class SmartRecommendationPanel(QWidget):
     def set_model_trainer(self, trainer: RecommendationModelTrainer):
         """设置模型训练器"""
         self.model_trainer = trainer
+
+    def cleanup(self):
+        """
+        清理资源，防止内存泄漏
+        
+        此方法负责清理所有可能造成内存泄漏的资源，包括：
+        1. 停止并删除定时器
+        2. 断开并删除所有 Worker 对象的信号连接
+        3. 删除所有 Worker 对象
+        
+        注意：此方法应该在窗口关闭时调用，以确保资源被正确释放
+        """
+        try:
+            logger.info("开始清理资源...")
+
+            # 步骤 1: 停止定时器
+            # 定时器是 Qt 对象，需要显式停止和删除以防止内存泄漏
+            if self.update_timer is not None:
+                self.update_timer.stop()  # 停止定时器
+                self.update_timer.deleteLater()  # 标记定时器对象为待删除
+                self.update_timer = None  # 清除引用，帮助垃圾回收
+                logger.debug("定时器已停止并清理")
+
+            # 步骤 2: 清理 Worker 对象
+            # Worker 对象通常包含信号连接，需要先断开连接再删除对象
+            workers = [
+                'hybrid_worker',          # 混合推荐工作线程
+                'cache_warmup_worker',    # 缓存预热工作线程
+                'cache_clear_worker',      # 缓存清理工作线程
+                'cache_stats_worker',      # 缓存统计工作线程
+                '_recommendation_worker'    # 推荐加载工作线程
+            ]
+
+            for worker_name in workers:
+                worker = getattr(self, worker_name, None)
+                if worker is not None:
+                    # 步骤 2.1: 断开所有信号连接
+                    # 信号连接如果不断开，会导致对象无法被正确释放
+                    if hasattr(worker, 'signals'):
+                        try:
+                            worker.signals.disconnect()  # 断开所有信号连接
+                        except Exception as e:
+                            logger.warning(f"断开 {worker_name} 信号连接失败: {e}")
+                    
+                    # 步骤 2.2: 删除 Worker 对象
+                    # deleteLater() 会安排对象在下一个事件循环中删除
+                    worker.deleteLater()
+                    setattr(self, worker_name, None)  # 清除引用
+                    logger.debug(f"{worker_name} 已清理")
+
+            logger.info("资源清理完成")
+        except Exception as e:
+            logger.error(f"资源清理失败: {e}")
+
+    def closeEvent(self, event):
+        """窗口关闭事件"""
+        logger.info("窗口关闭，清理资源...")
+        self.cleanup()
+        super().closeEvent(event)
+
+    def __del__(self):
+        """析构函数"""
+        try:
+            self.cleanup()
+        except Exception as e:
+            pass
