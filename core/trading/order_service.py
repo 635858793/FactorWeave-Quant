@@ -8,6 +8,7 @@ from loguru import logger
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 from uuid import uuid4
+import threading
 
 from core.trading.order_models import (
     Order, OrderRequest, OrderQuery, OrderType, OrderStatus, OrderCategory
@@ -34,6 +35,10 @@ class OrderService:
         self.monitor: OrderMonitor = None
         self.analyzer: OrderAnalyzer = None
 
+        # 并发控制：订单级别锁
+        self._order_locks: Dict[str, threading.Lock] = {}
+        self._lock_manager_lock = threading.Lock()
+
         self._initialize()
 
         logger.info("订单服务初始化完成")
@@ -45,6 +50,19 @@ class OrderService:
         self.executor = OrderExecutor(self.service_container, self.event_bus)
         self.monitor = OrderMonitor(self.service_container, self.event_bus)
         self.analyzer = OrderAnalyzer(self.service_container, self.event_bus)
+
+    def _get_order_lock(self, order_id: str) -> threading.Lock:
+        """获取订单级别的锁"""
+        with self._lock_manager_lock:
+            if order_id not in self._order_locks:
+                self._order_locks[order_id] = threading.Lock()
+            return self._order_locks[order_id]
+
+    def _cleanup_order_lock(self, order_id: str):
+        """清理订单锁"""
+        with self._lock_manager_lock:
+            if order_id in self._order_locks:
+                del self._order_locks[order_id]
 
     def create_order(self, request: OrderRequest) -> Optional[Order]:
         """创建订单"""
@@ -68,10 +86,61 @@ class OrderService:
                 )
                 return None
 
-            # 3. 创建订单对象
+            # 3. 验证并获取有效的账号信息
+            from core.trading.account_manager import AccountManager
+            from core.trading.strategy_manager import StrategyManager
+            
+            try:
+                account_manager = self.service_container.resolve(AccountManager)
+            except ValueError as e:
+                logger.error(f"AccountManager 未注册到服务容器: {e}")
+                logger.error("将跳过账号验证，使用请求中的账号信息")
+                account_manager = None
+            
+            try:
+                strategy_manager = self.service_container.resolve(StrategyManager)
+            except ValueError as e:
+                logger.error(f"StrategyManager 未注册到服务容器: {e}")
+                logger.error("将跳过策略验证，使用请求中的策略信息")
+                strategy_manager = None
+            
+            # 验证 account_id
+            account_id = request.account_id
+            if account_manager and (account_id == "default" or not account_manager.get_account(account_id)):
+                # 尝试从策略获取默认账号
+                if request.strategy_id and request.strategy_id != "default":
+                    strategy = strategy_manager.get_strategy(request.strategy_id) if strategy_manager else None
+                    if strategy and strategy.default_account_id:
+                        account = account_manager.get_account(strategy.default_account_id)
+                        if account:
+                            account_id = account.account_id
+                            logger.info(f"使用策略的默认账号: {account_id}")
+                
+                # 如果还是没有有效账号，使用系统第一个账号
+                if account_id == "default":
+                    accounts = account_manager.get_all_accounts()
+                    if accounts:
+                        account_id = accounts[0].account_id
+                        logger.info(f"使用系统默认账号: {account_id}")
+                    else:
+                        logger.error("系统中没有可用的账号")
+                        return None
+            
+            # 验证 strategy_id
+            strategy_id = request.strategy_id
+            if strategy_manager and (strategy_id == "default" or not strategy_manager.get_strategy(strategy_id)):
+                strategies = strategy_manager.get_all_strategies()
+                if strategies:
+                    strategy_id = strategies[0].strategy_id
+                    logger.info(f"使用系统默认策略: {strategy_id}")
+                else:
+                    logger.warning("系统中没有可用的策略，使用默认值")
+                    strategy_id = "default"
+
+            # 4. 创建订单对象
             order = Order(
                 order_id=self.repository.generate_order_id(),
-                strategy_id=request.strategy_id,
+                strategy_id=strategy_id,
                 asset_type=request.asset_type,
                 stock_code=request.stock_code,
                 order_type=request.order_type,
@@ -83,7 +152,7 @@ class OrderService:
                 update_time=datetime.now(),
                 stop_price=request.stop_price,
                 user_id=request.user_id,
-                account_id=request.account_id,
+                account_id=account_id,
                 tags=request.tags,
                 metadata=request.metadata
             )
@@ -93,9 +162,15 @@ class OrderService:
                 logger.error(f"订单保存失败: {order.order_id}")
                 return None
 
+            # 5. 验证订单是否已保存到数据库
+            saved_order = self.repository.get_order(order.order_id, asset_type=order.asset_type, use_cache=False)
+            if not saved_order:
+                logger.error(f"订单保存验证失败: {order.order_id} - 数据库中未找到订单")
+                return None
+
             logger.info(f"订单创建成功: {order.order_id}")
 
-            # 5. 发布事件
+            # 6. 发布事件（确认保存成功后）
             self.event_bus.publish('order_created',
                 order_id=order.order_id,
                 strategy_id=request.strategy_id,
@@ -112,7 +187,7 @@ class OrderService:
 
     def create_orders_batch(self, requests: List[OrderRequest]) -> List[Order]:
         """
-        批量创建订单
+        批量创建订单（性能优化）
 
         Args:
             requests: 订单请求列表
@@ -164,79 +239,102 @@ class OrderService:
 
                 orders.append(order)
 
-            # 3. 批量保存订单
-            saved_orders = []
+            # 3. 批量保存订单（性能优化）
+            save_results = self.repository.save_orders_batch(orders)
+
+            # 4. 验证所有订单是否已保存到数据库
+            verified_orders = []
             for order in orders:
-                if self.repository.save_order(order):
-                    saved_orders.append(order)
+                if save_results.get(order.order_id, False):
+                    verified_order = self.repository.get_order(order.order_id, asset_type=order.asset_type, use_cache=False)
+                    if verified_order:
+                        verified_orders.append(verified_order)
+                    else:
+                        logger.error(f"订单保存验证失败: {order.order_id} - 数据库中未找到订单")
+                        failed_count += 1
                 else:
                     logger.error(f"订单保存失败: {order.order_id}")
                     failed_count += 1
 
-            logger.info(f"批量创建订单完成: 成功 {len(saved_orders)}, 失败 {failed_count}")
+            logger.info(f"批量创建订单完成: 成功 {len(verified_orders)}, 失败 {failed_count}")
 
-            # 4. 发布批量事件
-            if saved_orders:
+            # 5. 发布批量事件（确认所有订单保存成功后）
+            if verified_orders:
                 self.event_bus.publish('batch_orders_created',
-                    count=len(saved_orders),
-                    order_ids=[order.order_id for order in saved_orders]
+                    count=len(verified_orders),
+                    order_ids=[order.order_id for order in verified_orders]
                 )
 
-            return saved_orders
+            return verified_orders
 
         except Exception as e:
             logger.error(f"批量创建订单异常: {e}")
             return []
 
     def submit_order(self, order_id: str) -> ExecutionResult:
-        """提交订单"""
+        """提交订单（带并发控制）"""
+        lock = self._get_order_lock(order_id)
         try:
-            logger.info(f"开始提交订单: {order_id}")
+            with lock:
+                logger.info(f"开始提交订单: {order_id}")
 
-            # 1. 获取订单
-            order = self.repository.get_order(order_id)
-            if not order:
-                logger.error(f"订单不存在: {order_id}")
-                return ExecutionResult(
-                    order_id=order_id,
-                    status='failed',
-                    message="订单不存在",
-                    error_code="ORDER_NOT_FOUND"
-                )
+                # 1. 获取订单
+                order = self.repository.get_order(order_id)
+                if not order:
+                    logger.error(f"订单不存在: {order_id}")
+                    return ExecutionResult(
+                        order_id=order_id,
+                        status='failed',
+                        message="订单不存在",
+                        error_code="ORDER_NOT_FOUND"
+                    )
 
-            # 2. 验证订单
-            validation_result = self.validator.validate_order(order)
-            if not validation_result.passed:
-                logger.error(f"订单验证失败: {validation_result.message}")
+                # 2. 验证订单
+                validation_result = self.validator.validate_order(order)
+                if not validation_result.passed:
+                    logger.error(f"订单验证失败: {validation_result.message}")
 
-                order.order_status = OrderStatus.REJECTED
-                order.error_message = validation_result.message
-                order.update_time = datetime.now()
-                self.repository.update_order(order)
+                    order.order_status = OrderStatus.REJECTED
+                    order.error_message = validation_result.message
+                    order.update_time = datetime.now()
+                    self.repository.update_order(order)
 
-                return ExecutionResult(
-                    order_id=order_id,
-                    status='failed',
-                    message=validation_result.message,
-                    error_code=validation_result.error_code
-                )
+                    # 发布订单被拒绝事件
+                    self.event_bus.publish('order_rejected',
+                        order_id=order_id,
+                        error=validation_result.message
+                    )
 
-            # 3. 执行订单
-            result = self.executor.submit_order(order)
+                    return ExecutionResult(
+                        order_id=order_id,
+                        status='failed',
+                        message=validation_result.message,
+                        error_code=validation_result.error_code
+                    )
 
-            # 4. 发布事件
-            if result.status == 'success':
-                self.event_bus.publish('order_submitted',
-                    order_id=order_id,
-                    exchange_order_id=result.exchange_order_id
-                )
-            else:
-                self.event_bus.publish('order_submit_failed',
-                    order_id=order_id,
-                    error=result.message
-                )
+                # 3. 执行订单
+                result = self.executor.submit_order(order)
 
-            return result
+                # 4. 发布事件
+                if result.status == 'success':
+                    self.event_bus.publish('order_submitted',
+                        order_id=order_id,
+                        exchange_order_id=result.exchange_order_id
+                    )
+                else:
+                    # 执行失败时更新订单状态
+                    if result.status == 'failed':
+                        order.order_status = OrderStatus.FAILED
+                        order.error_message = result.message
+                        order.update_time = datetime.now()
+                        self.repository.update_order(order)
+
+                    self.event_bus.publish('order_submit_failed',
+                        order_id=order_id,
+                        error=result.message
+                    )
+
+                return result
 
         except Exception as e:
             logger.error(f"提交订单异常: {e}")
@@ -248,16 +346,18 @@ class OrderService:
             )
 
     def cancel_order(self, order_id: str) -> ExecutionResult:
-        """取消订单"""
+        """取消订单（带并发控制）"""
+        lock = self._get_order_lock(order_id)
         try:
-            logger.info(f"开始取消订单: {order_id}")
+            with lock:
+                logger.info(f"开始取消订单: {order_id}")
 
-            # 发布取消请求事件
-            self.event_bus.publish('order_cancel_requested', order_id=order_id)
+                # 发布取消请求事件
+                self.event_bus.publish('order_cancel_requested', order_id=order_id)
 
-            result = self.executor.cancel_order(order_id)
+                result = self.executor.cancel_order(order_id)
 
-            return result
+                return result
 
         except Exception as e:
             logger.error(f"取消订单异常: {e}")
@@ -321,65 +421,91 @@ class OrderService:
 
     def modify_order(self, order_id: str, new_price: Optional[float] = None,
                    new_quantity: Optional[int] = None) -> bool:
-        """修改订单"""
+        """修改订单（带并发控制）"""
+        lock = self._get_order_lock(order_id)
         try:
-            logger.info(f"开始修改订单: {order_id}")
+            with lock:
+                logger.info(f"开始修改订单: {order_id}")
 
-            # 1. 获取订单
-            order = self.repository.get_order(order_id)
-            if not order:
-                logger.error(f"订单不存在: {order_id}")
-                return False
+                # 1. 获取订单
+                order = self.repository.get_order(order_id)
+                if not order:
+                    logger.error(f"订单不存在: {order_id}")
+                    return False
 
-            # 2. 验证订单状态
-            if order.is_completed:
-                logger.error(f"订单已完成，不能修改: {order_id}")
-                return False
+                # 2. 验证订单状态
+                if order.is_completed:
+                    logger.error(f"订单已完成，不能修改: {order_id}")
+                    return False
 
-            # 3. 取消原订单
-            cancel_result = self.cancel_order(order_id)
-            if cancel_result.status != 'success':
-                logger.error(f"取消原订单失败: {order_id}")
-                return False
+                # 3. 检查部分成交状态
+                if order.order_status == OrderStatus.PARTIALLY_FILLED:
+                    logger.error(f"订单部分成交，不能修改: {order_id}")
+                    return False
 
-            # 4. 创建新订单
-            new_price = new_price if new_price is not None else order.order_price
-            new_quantity = new_quantity if new_quantity is not None else order.order_quantity
+                # 4. 创建新订单
+                new_price = new_price if new_price is not None else order.order_price
+                new_quantity = new_quantity if new_quantity is not None else order.order_quantity
 
-            new_request = OrderRequest(
-                strategy_id=order.strategy_id,
-                stock_code=order.stock_code,
-                order_type=order.order_type,
-                order_category=order.order_category,
-                order_price=new_price,
-                order_quantity=new_quantity,
-                stop_price=order.stop_price,
-                user_id=order.user_id,
-                account_id=order.account_id,
-                tags=order.tags,
-                metadata={**order.metadata, 'original_order_id': order.order_id}
-            )
+                new_request = OrderRequest(
+                    strategy_id=order.strategy_id,
+                    stock_code=order.stock_code,
+                    order_type=order.order_type,
+                    order_category=order.order_category,
+                    order_price=new_price,
+                    order_quantity=new_quantity,
+                    stop_price=order.stop_price,
+                    user_id=order.user_id,
+                    account_id=order.account_id,
+                    tags=order.tags,
+                    metadata={**order.metadata, 'original_order_id': order.order_id}
+                )
 
-            new_order = self.create_order(new_request)
-            if not new_order:
-                logger.error(f"创建新订单失败")
-                return False
+                new_order = self.create_order(new_request)
+                if not new_order:
+                    logger.error(f"创建新订单失败")
+                    return False
 
-            # 5. 提交新订单
-            result = self.submit_order(new_order.order_id)
-            if result.status != 'success':
-                logger.error(f"提交新订单失败: {new_order.order_id}")
-                return False
+                # 5. 提交新订单
+                result = self.submit_order(new_order.order_id)
+                if result.status != 'success':
+                    logger.error(f"提交新订单失败: {new_order.order_id}")
 
-            logger.info(f"订单修改成功: {order_id} -> {new_order.order_id}")
+                    # 补偿：删除新订单
+                    try:
+                        self.repository.delete_order(new_order.order_id, asset_type=new_order.asset_type)
+                        logger.info(f"已删除未提交的新订单: {new_order.order_id}")
+                    except Exception as e:
+                        logger.error(f"删除新订单失败: {e}")
 
-            # 6. 发布事件
-            self.event_bus.publish('order_modified',
-                old_order_id=order_id,
-                new_order_id=new_order.order_id
-            )
+                    return False
 
-            return True
+                # 6. 取消原订单
+                cancel_result = self.cancel_order(order_id)
+                if cancel_result.status != 'success':
+                    logger.error(f"取消原订单失败: {order_id}")
+
+                    # 补偿：标记新订单为修改失败但保留
+                    try:
+                        new_order.order_status = OrderStatus.FAILED
+                        new_order.error_message = f"修改订单失败：无法取消原订单 {order_id}"
+                        new_order.update_time = datetime.now()
+                        self.repository.update_order(new_order)
+                        logger.info(f"已标记新订单为修改失败: {new_order.order_id}")
+                    except Exception as e:
+                        logger.error(f"更新新订单状态失败: {e}")
+
+                    return False
+
+                logger.info(f"订单修改成功: {order_id} -> {new_order.order_id}")
+
+                # 7. 发布事件
+                self.event_bus.publish('order_modified',
+                    old_order_id=order_id,
+                    new_order_id=new_order.order_id
+                )
+
+                return True
 
         except Exception as e:
             logger.error(f"修改订单异常: {e}")

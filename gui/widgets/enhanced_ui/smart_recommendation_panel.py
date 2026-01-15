@@ -2443,7 +2443,7 @@ class SmartRecommendationPanel(QWidget):
                         'market': market,
                         'sector': sector,
                         'industry': industry,
-                        'asset_type': asset_type_str
+                        'asset_type': recommendation_type
                     }
                 )
 
@@ -2722,10 +2722,10 @@ class SmartRecommendationPanel(QWidget):
                 rec_type_value = rec.item_type.value if hasattr(rec.item_type, 'value') else str(rec.item_type)
 
                 # 映射推荐类型
-                # 资产类型（stock_a, stock_b, crypto, fund, bond等）都映射为 'asset'
+                # 资产类型（stock, stock_a, stock_b, crypto, fund, bond等）都映射为 'asset'
                 # 传统推荐类型（strategy, indicator）保持不变
                 asset_types = [
-                    'stock_a', 'stock_b', 'stock_h', 'stock_us', 'stock_hk',
+                    'stock', 'stock_a', 'stock_b', 'stock_h', 'stock_us', 'stock_hk',
                     'crypto', 'fund', 'bond', 'index', 'futures', 'forex',
                     'option', 'warrant', 'commodity', 'sector', 'industry_sector',
                     'concept_sector', 'style_sector', 'theme_sector', 'macro'

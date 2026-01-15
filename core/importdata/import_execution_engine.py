@@ -3357,8 +3357,8 @@ class DataImportExecutionEngine(QObject):
             return 'sh'  # 上海
         elif symbol_clean.startswith(('0', '3')):
             return 'sz'  # 深圳
-        elif symbol_clean.startswith(('4', '8')):
-            return 'bj'  # 北京
+        elif symbol_clean.startswith(('4', '8', '9')):
+            return 'bj'  # 北京（43xxxx-89xxxx, 92xxxx-92xxxx）
         else:
             return 'unknown'
 
@@ -3914,7 +3914,7 @@ class DataImportExecutionEngine(QObject):
                     elif symbol.endswith('.SZ'):
                         return 'SZ'
                     elif symbol.endswith('.BJ'):
-                        return 'BJ'
+                        return 'BSE'
 
                     # 根据前缀判断（去除后缀后）
                     code = symbol.split('.')[0]
@@ -3922,8 +3922,8 @@ class DataImportExecutionEngine(QObject):
                         return 'SH'  # 沪市A股
                     elif code.startswith(('0', '3')):
                         return 'SZ'  # 深市A股/创业板
-                    elif code.startswith(('4', '8')):
-                        return 'BJ'  # 北交所
+                    elif code.startswith(('4', '8', '9')):
+                        return 'BSE'  # 北交所（43xxxx-89xxxx, 92xxxx-92xxxx）
 
                     return 'unknown'
 

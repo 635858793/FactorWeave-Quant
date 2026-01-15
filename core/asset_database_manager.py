@@ -423,6 +423,174 @@ class AssetSeparatedDatabaseManager:
                     expiry_date DATE,
                     option_type VARCHAR(16)
                 )
+            """,
+
+            # 股票股本数据表
+            'stock_shares': """
+                CREATE TABLE IF NOT EXISTS stock_shares (
+                    -- 主键
+                    id INTEGER PRIMARY KEY,
+                    
+                    -- 股票标识
+                    stock_code VARCHAR(20) NOT NULL,
+                    stock_name VARCHAR(100),
+                    
+                    -- 股本数据（BIGINT，单位：股）
+                    total_shares BIGINT NOT NULL,
+                    circulating_shares BIGINT NOT NULL,
+                    
+                    -- 市值数据（DECIMAL，单位：元）
+                    total_market_cap DECIMAL(18,2),
+                    circulating_market_cap DECIMAL(18,2),
+                    
+                    -- 更新信息
+                    update_date DATETIME NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    
+                    -- 唯一约束：同一股票在同一日期只能有一条记录
+                    UNIQUE(stock_code, update_date)
+                )
+            """,
+
+            # 期货合约数据表
+            'futures_contracts': """
+                CREATE TABLE IF NOT EXISTS futures_contracts (
+                    -- 主键
+                    id INTEGER PRIMARY KEY,
+                    
+                    -- 合约标识
+                    contract_code VARCHAR(20) NOT NULL,
+                    contract_name VARCHAR(100),
+                    underlying_asset VARCHAR(20) NOT NULL,
+                    
+                    -- 合约规格
+                    contract_multiplier DECIMAL(10,2) NOT NULL,
+                    contract_size DECIMAL(10,2) NOT NULL,
+                    tick_size DECIMAL(10,4) NOT NULL,
+                    
+                    -- 合约信息
+                    contract_type VARCHAR(20),
+                    exchange VARCHAR(20),
+                    delivery_month VARCHAR(10),
+                    expiry_date DATE,
+                    
+                    -- 交易信息
+                    trading_hours VARCHAR(100),
+                    margin_ratio DECIMAL(10,6),
+                    
+                    -- 更新信息
+                    update_date DATETIME NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    
+                    -- 唯一约束：同一合约在同一日期只能有一条记录
+                    UNIQUE(contract_code, update_date)
+                )
+            """,
+
+            # 期权合约数据表
+            'option_contracts': """
+                CREATE TABLE IF NOT EXISTS option_contracts (
+                    -- 主键
+                    id INTEGER PRIMARY KEY,
+                    
+                    -- 合约标识
+                    contract_code VARCHAR(20) NOT NULL,
+                    contract_name VARCHAR(100),
+                    underlying_asset VARCHAR(20) NOT NULL,
+                    
+                    -- 期权类型
+                    option_type VARCHAR(10) NOT NULL,
+                    strike_price DECIMAL(18,4) NOT NULL,
+                    
+                    -- 合约规格
+                    contract_multiplier DECIMAL(10,2) NOT NULL,
+                    contract_size DECIMAL(10,2) NOT NULL,
+                    tick_size DECIMAL(10,4) NOT NULL,
+                    
+                    -- 合约信息
+                    exchange VARCHAR(20),
+                    expiry_date DATE,
+                    exercise_type VARCHAR(20),
+                    
+                    -- 交易信息
+                    trading_hours VARCHAR(100),
+                    margin_ratio DECIMAL(10,6),
+                    
+                    -- 更新信息
+                    update_date DATETIME NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    
+                    -- 唯一约束：同一合约在同一日期只能有一条记录
+                    UNIQUE(contract_code, update_date)
+                )
+            """,
+
+            # 权证合约数据表
+            'warrant_contracts': """
+                CREATE TABLE IF NOT EXISTS warrant_contracts (
+                    -- 主键
+                    id INTEGER PRIMARY KEY,
+                    
+                    -- 合约标识
+                    warrant_code VARCHAR(20) NOT NULL,
+                    warrant_name VARCHAR(100),
+                    underlying_asset VARCHAR(20) NOT NULL,
+                    
+                    -- 权证类型
+                    warrant_type VARCHAR(20),
+                    
+                    -- 合约规格
+                    contract_multiplier DECIMAL(10,2) NOT NULL,
+                    contract_size DECIMAL(10,2) NOT NULL,
+                    tick_size DECIMAL(10,4) NOT NULL,
+                    
+                    -- 合约信息
+                    exchange VARCHAR(20),
+                    expiry_date DATE,
+                    
+                    -- 行权信息
+                    exercise_price DECIMAL(18,4),
+                    exercise_ratio DECIMAL(10,6),
+                    
+                    -- 交易信息
+                    trading_hours VARCHAR(100),
+                    margin_ratio DECIMAL(10,6),
+                    
+                    -- 更新信息
+                    update_date DATETIME NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    
+                    -- 唯一约束：同一权证在同一日期只能有一条记录
+                    UNIQUE(warrant_code, update_date)
+                )
+            """,
+
+            # 加密货币供应量数据表
+            'crypto_supply': """
+                CREATE TABLE IF NOT EXISTS crypto_supply (
+                    -- 主键
+                    id INTEGER PRIMARY KEY,
+                    
+                    -- 加密货币标识
+                    crypto_code VARCHAR(20) NOT NULL,
+                    crypto_name VARCHAR(100),
+                    
+                    -- 供应量数据（BIGINT，单位：最小单位）
+                    total_supply BIGINT NOT NULL,
+                    circulating_supply BIGINT NOT NULL,
+                    max_supply BIGINT,
+                    
+                    -- 市值数据（DECIMAL，单位：美元）
+                    market_cap DECIMAL(18,2),
+                    circulating_market_cap DECIMAL(18,2),
+                    
+                    -- 更新信息
+                    update_date DATETIME NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    
+                    -- 唯一约束：同一加密货币在同一日期只能有一条记录
+                    UNIQUE(crypto_code, update_date)
+                )
             """
         }
 
@@ -651,6 +819,10 @@ class AssetSeparatedDatabaseManager:
                             # 如果是订单表，创建索引
                             if table_name == 'orders':
                                 self._create_orders_table_indexes(conn)
+                            
+                            # 为新增的股本/合约表创建索引
+                            if table_name in ['stock_shares', 'futures_contracts', 'option_contracts', 'warrant_contracts', 'crypto_supply']:
+                                self._create_table_indexes(conn, table_name, None)
                         else:
                             logger.debug(f"表 {table_name} 已存在")
                     except Exception as e:
@@ -775,8 +947,16 @@ class AssetSeparatedDatabaseManager:
                 except Exception as e:
                     logger.error(f"创建 orders 表索引失败: {e}")
                     raise
+                
+                # 第三步：为新增的股本/合约表创建索引
+                for table_name in ['stock_shares', 'futures_contracts', 'option_contracts', 'warrant_contracts', 'crypto_supply']:
+                    try:
+                        self._create_table_indexes(conn, table_name, None)
+                    except Exception as e:
+                        logger.error(f"创建 {table_name} 表索引失败: {e}")
+                        # 索引创建失败不中断流程，记录警告即可
 
-                # 第三步：创建所有视图（依赖基础表）
+                # 第四步：创建所有视图（依赖基础表）
                 # ✅ 修复：确保视图创建100%成功
                 for view_name in view_names:
                     if view_name in self._table_schemas:
@@ -1370,6 +1550,43 @@ class AssetSeparatedDatabaseManager:
                 conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_symbol ON {table_name}(symbol)")
                 conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_market ON {table_name}(market)")
                 conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_industry ON {table_name}(industry)")
+            
+            # 为新增的股本/合约表创建索引
+            elif table_name == 'stock_shares':
+                conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_stock_code ON {table_name}(stock_code)")
+                conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_update_date ON {table_name}(update_date)")
+                conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_stock_code_update_date ON {table_name}(stock_code, update_date)")
+                logger.info(f"为{table_name}创建索引")
+            
+            elif table_name == 'futures_contracts':
+                conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_contract_code ON {table_name}(contract_code)")
+                conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_underlying_asset ON {table_name}(underlying_asset)")
+                conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_update_date ON {table_name}(update_date)")
+                conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_contract_code_update_date ON {table_name}(contract_code, update_date)")
+                logger.info(f"为{table_name}创建索引")
+            
+            elif table_name == 'option_contracts':
+                conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_contract_code ON {table_name}(contract_code)")
+                conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_underlying_asset ON {table_name}(underlying_asset)")
+                conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_expiry_date ON {table_name}(expiry_date)")
+                conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_update_date ON {table_name}(update_date)")
+                conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_contract_code_update_date ON {table_name}(contract_code, update_date)")
+                logger.info(f"为{table_name}创建索引")
+            
+            elif table_name == 'warrant_contracts':
+                conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_warrant_code ON {table_name}(warrant_code)")
+                conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_underlying_asset ON {table_name}(underlying_asset)")
+                conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_expiry_date ON {table_name}(expiry_date)")
+                conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_update_date ON {table_name}(update_date)")
+                conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_warrant_code_update_date ON {table_name}(warrant_code, update_date)")
+                logger.info(f"为{table_name}创建索引")
+            
+            elif table_name == 'crypto_supply':
+                conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_crypto_code ON {table_name}(crypto_code)")
+                conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_update_date ON {table_name}(update_date)")
+                conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_crypto_code_update_date ON {table_name}(crypto_code, update_date)")
+                logger.info(f"为{table_name}创建索引")
+            
             # 其他数据类型的索引...
         except Exception as e:
             logger.warning(f"创建索引失败: {e}")

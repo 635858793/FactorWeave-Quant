@@ -1276,6 +1276,18 @@ class ServiceBootstrap:
                     strategy_service.initialize()
                 logger.info("✅ 策略服务注册完成")
 
+                # 注册策略管理器（作为 StrategyService 的适配器）
+                from ..trading.strategy_manager import StrategyManager
+                if not self._is_service_registered(StrategyManager):
+                    self.service_container.register(
+                        StrategyManager,
+                        scope=ServiceScope.SINGLETON,
+                        factory=lambda: StrategyManager(
+                            service_container=self.service_container
+                        )
+                    )
+                logger.info("✅ 策略管理器注册完成")
+
             except Exception as e:
                 logger.warning(f" 策略服务注册失败: {e}")
                 logger.warning(traceback.format_exc())

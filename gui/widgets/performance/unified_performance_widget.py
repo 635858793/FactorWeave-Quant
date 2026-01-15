@@ -1080,31 +1080,62 @@ class ModernUnifiedPerformanceWidget(QWidget):
                 # 初始化统一优化服务
                 self.optimization_service = UnifiedOptimizationService(config)
                 
-                # 异步初始化服务
-                import asyncio
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
+                # 使用后台线程异步初始化服务,避免与PyQt5事件循环冲突
+                from PyQt5.QtCore import QThread, pyqtSignal, QObject
                 
-                # 初始化优化服务
-                success = loop.run_until_complete(self.optimization_service.initialize())
-                if success:
-                    # 启动优化服务
-                    start_success = loop.run_until_complete(self.optimization_service.start())
-                    if start_success:
-                        logger.info("深度优化服务初始化成功")
-                    else:
-                        logger.warning("深度优化服务启动失败")
-                        self.optimization_service = None
-                else:
-                    logger.warning("深度优化服务初始化失败")
-                    self.optimization_service = None
+                class OptimizationInitWorker(QObject):
+                    finished = pyqtSignal(bool)
+                    
+                    def __init__(self, service):
+                        super().__init__()
+                        self.service = service
+                    
+                    def run(self):
+                        import asyncio
+                        try:
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
+                            
+                            # 初始化优化服务
+                            success = loop.run_until_complete(self.service.initialize())
+                            if success:
+                                # 启动优化服务
+                                start_success = loop.run_until_complete(self.service.start())
+                                self.finished.emit(start_success)
+                            else:
+                                self.finished.emit(False)
+                            
+                            loop.close()
+                        except Exception as e:
+                            logger.error(f"优化服务初始化线程异常: {e}")
+                            self.finished.emit(False)
                 
-                loop.close()
+                # 创建并启动后台线程
+                self._optimization_thread = QThread()
+                self._optimization_worker = OptimizationInitWorker(self.optimization_service)
+                self._optimization_worker.moveToThread(self._optimization_thread)
+                
+                self._optimization_thread.started.connect(self._optimization_worker.run)
+                self._optimization_worker.finished.connect(self._on_optimization_init_finished)
+                self._optimization_worker.finished.connect(self._optimization_thread.quit)
+                self._optimization_thread.finished.connect(self._optimization_worker.deleteLater)
+                
+                self._optimization_thread.start()
+                logger.info("深度优化服务初始化线程已启动")
                 
             except Exception as e:
                 logger.error(f"深度优化服务初始化失败: {e}")
                 self.optimization_service = None
                 logger.warning("将使用基础性能优化功能")
+    
+    def _on_optimization_init_finished(self, success):
+        """深度优化服务初始化完成回调"""
+        if success:
+            logger.info("深度优化服务初始化成功")
+        else:
+            logger.warning("深度优化服务启动失败")
+            self.optimization_service = None
+            logger.warning("将使用基础性能优化功能")
 
     def start_immediate_update(self):
         """启动立即更新"""

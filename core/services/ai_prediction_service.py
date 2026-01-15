@@ -33,15 +33,57 @@ def _check_dl_availability():
     """检查深度学习模块是否可用（延迟检查）"""
     global DL_AVAILABLE, TENSORFLOW_AVAILABLE
     if DL_AVAILABLE:
+        logger.debug(f"深度学习模块已检查过，状态: DL_AVAILABLE={DL_AVAILABLE}, TENSORFLOW_AVAILABLE={TENSORFLOW_AVAILABLE}")
         return True
     try:
-        from models.deep_learning import build_deep_learning_model, TENSORFLOW_AVAILABLE
-        from models.model_evaluation import evaluate_ml_model
+        logger.info("开始检查深度学习模块可用性...")
+        
+        # 检查 TensorFlow 是否可用
+        try:
+            import tensorflow as tf
+            logger.info("TensorFlow 导入成功")
+        except ImportError as e:
+            logger.warning(f"TensorFlow 未安装: {e}")
+            logger.warning("深度学习功能将不可用，将使用统计模型")
+            DL_AVAILABLE = False
+            TENSORFLOW_AVAILABLE = False
+            return False
+        
+        # 尝试导入深度学习模块
+        try:
+            import models.deep_learning
+            logger.info("models.deep_learning 导入成功")
+        except ImportError as e:
+            logger.warning(f"models.deep_learning 导入失败: {e}")
+            logger.warning("深度学习模块不可用，将使用统计模型")
+            DL_AVAILABLE = False
+            TENSORFLOW_AVAILABLE = False
+            return False
+        
+        # 尝试导入模型评估模块
+        try:
+            import models.model_evaluation
+            logger.info("models.model_evaluation 导入成功")
+        except ImportError as e:
+            logger.warning(f"models.model_evaluation 导入失败: {e}")
+            logger.warning("模型评估模块不可用，将使用统计模型")
+            DL_AVAILABLE = False
+            TENSORFLOW_AVAILABLE = False
+            return False
+        
+        # 所有模块导入成功
         DL_AVAILABLE = True
+        TENSORFLOW_AVAILABLE = models.deep_learning.TENSORFLOW_AVAILABLE
+        logger.info(f"✅ 深度学习模块检查成功: DL_AVAILABLE={DL_AVAILABLE}, TENSORFLOW_AVAILABLE={TENSORFLOW_AVAILABLE}")
         return True
-    except ImportError:
+        
+    except Exception as e:
+        logger.error(f"❌ 深度学习模块检查时发生异常: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         DL_AVAILABLE = False
         TENSORFLOW_AVAILABLE = False
+        logger.warning("深度学习模块不可用，将使用统计模型")
         return False
 
 GPU_MANAGER_AVAILABLE = False
@@ -863,16 +905,22 @@ class AIPredictionService(BaseService):
             model_dir = Path("models/trained")
             model_dir.mkdir(exist_ok=True)
 
-            if _check_dl_availability() and DL_AVAILABLE:
-                logger.info("深度学习模块可用，初始化AI预测模型")
+            dl_available = _check_dl_availability()
+            logger.info(f"深度学习模块检查结果: _check_dl_availability()={dl_available}, DL_AVAILABLE={DL_AVAILABLE}, TENSORFLOW_AVAILABLE={TENSORFLOW_AVAILABLE}")
+
+            if dl_available and DL_AVAILABLE:
+                logger.info("✅ 深度学习模块可用，初始化AI预测模型")
                 logger.info(f"GPU状态: {'启用' if self._gpu_enabled else '禁用'}")
                 self._load_or_create_models()
             else:
-                logger.warning("深度学习模块不可用，使用统计模型")
+                logger.warning(f"❌ 深度学习模块不可用，使用统计模型")
+                logger.warning(f"  原因: _check_dl_availability()={dl_available}, DL_AVAILABLE={DL_AVAILABLE}")
                 self._initialize_statistical_models()
 
         except Exception as e:
             logger.error(f" 模型初始化失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             logger.warning("AI模型文件缺失或损坏，这是正常的初次运行状态")
             logger.info("💡 系统将使用内置的统计模型作为回退方案，功能完全正常")
             logger.info("📁 如需使用深度学习模型，请确保 'models/trained/' 目录下有相应的模型文件")

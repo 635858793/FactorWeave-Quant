@@ -152,13 +152,16 @@ def get_matplotlib_dates():
 @lru_cache(maxsize=1)
 def get_matplotlib_backends():
     """获取matplotlib后端"""
-    backend = _import_manager._safe_import(
-        'matplotlib.backends.backend_qt5agg', required=False)
-    if backend:
-        return {
-            'FigureCanvas': getattr(backend, 'FigureCanvasQTAgg', None),
-            'NavigationToolbar': getattr(backend, 'NavigationToolbar2QT', None)
-        }
+    try:
+        backend = _import_manager._safe_import(
+            'matplotlib.backends.backend_qt5agg', required=False)
+        if backend:
+            return {
+                'FigureCanvas': getattr(backend, 'FigureCanvasQTAgg', None),
+                'NavigationToolbar': getattr(backend, 'NavigationToolbar2QT', None)
+            }
+    except Exception as e:
+        logger.debug(f"无法导入matplotlib Qt后端: {e}")
     return None
 
 @lru_cache(maxsize=1)

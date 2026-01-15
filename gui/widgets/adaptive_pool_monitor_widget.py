@@ -179,20 +179,13 @@ class AdaptivePoolMonitorWidget(QWidget):
         """创建操作按钮"""
         button_layout = QHBoxLayout()
 
-        # 刷新按钮
         self.refresh_button = QPushButton("🔄 立即刷新")
         self.refresh_button.clicked.connect(self._update_display)
         button_layout.addWidget(self.refresh_button)
 
-        # 清空历史
         self.clear_button = QPushButton("🗑️ 清空历史")
         self.clear_button.clicked.connect(self._clear_history)
         button_layout.addWidget(self.clear_button)
-
-        # 配置按钮
-        self.config_button = QPushButton("⚙️ 配置")
-        self.config_button.clicked.connect(self._show_config_dialog)
-        button_layout.addWidget(self.config_button)
 
         button_layout.addStretch()
         parent_layout.addLayout(button_layout)
@@ -327,20 +320,6 @@ class AdaptivePoolMonitorWidget(QWidget):
     def _clear_history(self):
         """清空历史表"""
         self.history_table.setRowCount(0)
-
-    def _show_config_dialog(self):
-        """显示配置对话框"""
-        try:
-            from gui.dialogs.adaptive_pool_config_dialog import AdaptivePoolConfigDialog
-
-            dialog = AdaptivePoolConfigDialog(self)
-            if dialog.exec_():
-                # 配置已保存，刷新显示
-                self._update_display()
-        except Exception as e:
-            logger.error(f"打开配置对话框失败: {e}")
-            from PyQt5.QtWidgets import QMessageBox
-            QMessageBox.warning(self, "错误", f"无法打开配置对话框: {e}")
 
     def add_adjustment_record(self, old_size: int, new_size: int, reason: str):
         """添加调整记录"""

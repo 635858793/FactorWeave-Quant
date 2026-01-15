@@ -439,8 +439,14 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
                 '1w': 'weekly',
                 'weekly': 'weekly',
                 'M': 'monthly',
-                '1m': 'monthly',
-                'monthly': 'monthly'
+                '1M': 'monthly',
+                '1m': '1min',
+                'monthly': 'monthly',
+                '1min': '1min',
+                '5min': '5min',
+                '15min': '15min',
+                '30min': '30min',
+                '60min': '60min'
             }
 
             period = freq_map.get(freq, 'daily')
@@ -607,6 +613,8 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
                 market_code = f"1.{code}"  # 上海
             elif code.startswith(('0', '3')):
                 market_code = f"0.{code}"  # 深圳
+            elif code.startswith(('4', '8', '9')):
+                market_code = f"2.{code}"  # 北京
             else:
                 market_code = f"1.{code}"  # 默认上海
 
@@ -698,6 +706,8 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
                     codes.append(f"1.{code}")
                 elif code.startswith(('0', '3')):
                     codes.append(f"0.{code}")
+                elif code.startswith(('4', '8', '9')):
+                    codes.append(f"2.{code}")
                 else:
                     codes.append(f"1.{code}")
 
@@ -989,7 +999,7 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
             params = {
                 'lmt': 100,
                 'klt': 101,
-                'secid': f"1.{symbol}" if symbol.startswith('6') else f"0.{symbol}",
+                'secid': f"1.{symbol}" if symbol.startswith('6') else f"0.{symbol}" if symbol.startswith(('0', '3')) else f"2.{symbol}",
                 'fields1': 'f1,f2,f3,f7',
                 'fields2': 'f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62,f63'
             }

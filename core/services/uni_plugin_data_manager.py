@@ -265,7 +265,7 @@ class UniPluginDataManager:
                     return f"{numeric_code}.SZ", "SZ"
                 elif numeric_code.startswith('68'):
                     return f"{numeric_code}.SH", "SH"
-                elif numeric_code.startswith('8'):
+                elif numeric_code.startswith(('8', '9')):
                     return f"{numeric_code}.BJ", "BJ"
                 else:
                     return f"{numeric_code}.SZ", "SZ"
@@ -405,6 +405,33 @@ class UniPluginDataManager:
         }
 
         return self._execute_data_request(context, 'get_real_time_data', **realtime_params)
+
+    def get_fundamental_data(self, symbol: str, asset_type: AssetType = AssetType.STOCK_A,
+                             **params) -> Dict[str, Any]:
+        """
+        获取基本面数据 - 统一入口
+
+        Args:
+            symbol: 标的代码
+            asset_type: 资产类型
+            **params: 其他参数
+
+        Returns:
+            Dict[str, Any]: 基本面数据
+        """
+        context = RequestContext(
+            asset_type=asset_type,
+            data_type=DataType.FUNDAMENTAL,
+            symbol=symbol
+        )
+
+        # 准备参数
+        fundamental_params = {
+            'symbol': symbol,
+            **params
+        }
+
+        return self._execute_data_request(context, 'get_fundamental_data', **fundamental_params)
 
     def _execute_data_request(self, context: RequestContext, method_name: str, **params) -> Any:
         """

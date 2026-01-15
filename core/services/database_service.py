@@ -5,7 +5,6 @@
 整合DuckDBConnectionManager、SQLiteExtensionManager、AssetSeparatedDatabaseManager等。
 完全重构以符合15个核心服务的架构精简目标。
 """
-
 import asyncio
 import threading
 import time
@@ -16,7 +15,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Type, Union, Callable, Generator, Tuple
+from typing import Any, Dict, List, Optional, Type, Union, Callable, Generator, Tuple, TYPE_CHECKING
 import sqlite3
 import duckdb
 import uuid
@@ -38,6 +37,10 @@ from ..events import EventBus, get_event_bus
 from ..containers import ServiceContainer, get_service_container
 # from ..plugin_types import AssetType  # 延迟导入，避免循环依赖
 from .metrics_base import add_dict_interface
+
+# 延迟导入以避免循环依赖
+if TYPE_CHECKING:
+    from ..database.adaptive_connection_pool import AdaptiveConnectionPoolManager
 
 
 class DatabaseType(Enum):
@@ -307,7 +310,10 @@ class DatabaseService(BaseService):
     7. 自动备份和恢复
     8. 并发控制和资源管理
     """
-
+    # 支持订单的资产类型（复用 AssetType 枚举）
+    # 延迟初始化，避免循环依赖
+    _ORDER_SUPPORTED_ASSET_TYPES = None
+    
     def __init__(self, service_container: Optional[ServiceContainer] = None):
         """
         初始化数据库服务
@@ -334,6 +340,9 @@ class DatabaseService(BaseService):
         self._pool_configs: Dict[str, DatabaseConfig] = {}
         self._pool_metrics: Dict[str, ConnectionMetrics] = {}
         self._pool_locks: Dict[str, threading.RLock] = {}
+        
+        # 自适应连接池管理器（支持多个连接池）
+        self._adaptive_managers: Dict[str, 'AdaptiveConnectionPoolManager'] = {}
 
         # 性能优化器
         self._performance_optimizers: Dict[str, DuckDBPerformanceOptimizer] = {}
@@ -402,15 +411,39 @@ class DatabaseService(BaseService):
         # 延迟导入AssetType，避免循环依赖
         try:
             from core.plugin_types import AssetType
+            
+            # 初始化支持订单的资产类型集合
+            DatabaseService._ORDER_SUPPORTED_ASSET_TYPES = {
+                AssetType.STOCK_A,
+                AssetType.STOCK_B,
+                AssetType.STOCK_HK,
+                AssetType.STOCK_US,
+                AssetType.FUTURES,
+                AssetType.OPTION,
+                AssetType.CRYPTO,
+                AssetType.FOREX,
+                AssetType.BOND,
+                AssetType.COMMODITY,
+                AssetType.INDEX,
+                AssetType.FUND,
+                AssetType.WARRANT
+            }
+            
+            # 只为支持订单的资产类型创建配置
             for asset_type in AssetType:
-                pool_name = f"{asset_type.value.lower()}_orders"
-                db_path = f"data/databases/{asset_type.value.lower()}/{pool_name}.duckdb"
-                self._order_db_configs[pool_name] = DatabaseConfig(
-                    db_type=DatabaseType.DUCKDB,
-                    db_path=db_path,
-                    pool_size=5,
-                    max_pool_size=15
-                )
+                if asset_type in DatabaseService._ORDER_SUPPORTED_ASSET_TYPES:
+                    pool_name = f"{asset_type.value.lower()}_orders"
+                    db_path = f"data/databases/{asset_type.value.lower()}/{pool_name}.duckdb"
+                    self._order_db_configs[pool_name] = DatabaseConfig(
+                        db_type=DatabaseType.DUCKDB,
+                        db_path=db_path,
+                        pool_size=5,
+                        max_pool_size=15
+                    )
+                    logger.debug(f"✓ Added order database config for {asset_type.value}")
+                else:
+                    logger.debug(f"⊘ Skipped {asset_type.value} (orders not supported)")
+                    
         except Exception as e:
             logger.warning(f"初始化订单数据库配置失败: {e}")
 
@@ -526,19 +559,28 @@ class DatabaseService(BaseService):
     def _create_default_pools(self) -> None:
         """创建默认连接池"""
         try:
+            # 创建默认数据库连接池
             for pool_name, config in self._default_db_configs.items():
                 self.create_connection_pool(pool_name, config)
 
             logger.info(f"✓ Created {len(self._default_db_configs)} default connection pools")
 
             # 创建订单数据库连接池
+            order_pools_created = 0
+            order_pools_failed = 0
+            
             for pool_name, config in self._order_db_configs.items():
                 try:
                     self.create_connection_pool(pool_name, config)
+                    order_pools_created += 1
+                    logger.debug(f"✓ Created order pool: {pool_name}")
                 except Exception as e:
+                    order_pools_failed += 1
                     logger.warning(f"Failed to create order database pool {pool_name}: {e}")
 
-            logger.info(f"✓ Created {len(self._order_db_configs)} order database connection pools")
+            logger.info(f"✓ Created {order_pools_created}/{len(self._order_db_configs)} order database connection pools")
+            if order_pools_failed > 0:
+                logger.warning(f"⊘ {order_pools_failed} order pools failed to create")
 
             # 初始化订单数据库表和索引
             self._initialize_order_databases()
@@ -685,6 +727,9 @@ class DatabaseService(BaseService):
                 logger.error(f"Failed to create connection for pool {pool_name}: {e}")
                 break
 
+        metrics = self._pool_metrics[pool_name]
+        metrics.total_connections = len(self._connection_pools[pool_name])
+
     def _create_connection(self, config: DatabaseConfig) -> Any:
         """创建数据库连接"""
         try:
@@ -719,6 +764,9 @@ class DatabaseService(BaseService):
                     timeout=config.timeout,
                     check_same_thread=False
                 )
+
+                # 设置行工厂，使查询结果返回字典格式
+                connection.row_factory = sqlite3.Row
 
                 # 设置自动提交模式（相当于 autocommit=True）
                 connection.isolation_level = None
@@ -793,6 +841,7 @@ class DatabaseService(BaseService):
             # 查找可用连接
             for connection in pool:
                 if connection.is_active:
+                    connection.is_active = False
                     metrics.active_connections += 1
                     metrics.last_connection_time = datetime.now()
                     return connection
@@ -828,6 +877,7 @@ class DatabaseService(BaseService):
 
         with pool_lock:
             metrics = self._pool_metrics[pool_name]
+            connection.is_active = True
             metrics.active_connections = max(0, metrics.active_connections - 1)
 
     def execute_query(self, sql: str, parameters: Optional[Union[Dict[str, Any], List[Any]]] = None,
@@ -851,13 +901,18 @@ class DatabaseService(BaseService):
         query_id = str(uuid.uuid4())
         start_time = datetime.now()
 
+        # 检测是否为写操作
+        sql_upper = sql.strip().upper()
+        is_write_operation = any(sql_upper.startswith(prefix) for prefix in 
+                                ['INSERT', 'UPDATE', 'DELETE', 'CREATE', 'ALTER', 'DROP', 'REPLACE'])
+
         try:
             with self._query_lock:
                 self._metrics.total_queries += 1
                 self._query_counter += 1
 
-            # 检查查询缓存
-            if self._config["enable_query_cache"]:
+            # 检查查询缓存（仅针对读操作）
+            if self._config["enable_query_cache"] and not is_write_operation:
                 cache_key = self._generate_query_cache_key(sql, parameters)
                 cached_result = self._get_from_query_cache(cache_key)
                 if cached_result is not None:
@@ -867,8 +922,22 @@ class DatabaseService(BaseService):
             with self.get_connection(pool_name) as conn:
                 result = conn.execute(sql, parameters)
 
-                # 更新缓存
-                if self._config["enable_query_cache"]:
+                # 如果是写操作，提交事务
+                if is_write_operation:
+                    conn.commit()
+                    logger.debug(f"事务已提交: {sql[:100]}...")
+
+                # 对于读操作，获取所有结果（避免游标在连接归还后失效）
+                if not is_write_operation:
+                    if hasattr(result, 'fetchall'):
+                        # 游标对象，获取所有结果
+                        result = result.fetchall()
+                    elif not isinstance(result, list):
+                        # 其他情况，转换为列表
+                        result = list(result)
+
+                # 更新缓存（仅针对读操作）
+                if self._config["enable_query_cache"] and not is_write_operation:
                     self._update_query_cache(cache_key, result)
 
                 # 记录指标
@@ -929,8 +998,14 @@ class DatabaseService(BaseService):
         """
         result = self.execute_query(sql, parameters, pool_name)
         
-        # 如果结果已经是列表，直接返回
+        logger.debug(f"fetch_all: result type = {type(result)}, has fetchall = {hasattr(result, 'fetchall')}")
+        
+        # 如果结果已经是列表，检查是否需要转换 sqlite3.Row 对象
         if isinstance(result, list):
+            # 检查列表中的元素是否是 sqlite3.Row 对象
+            if result and hasattr(result[0], 'keys'):
+                # SQLite Row 对象，转换为字典
+                return [dict(row) for row in result]
             return result
         
         # 如果结果是DuckDB的ArrowTable或类似对象，转换为列表
@@ -964,7 +1039,12 @@ class DatabaseService(BaseService):
                 return result_list
             elif hasattr(result, 'fetchall'):
                 # 游标对象
-                return result.fetchall()
+                rows = result.fetchall()
+                # 检查是否是 sqlite3.Row 对象
+                if rows and hasattr(rows[0], 'keys'):
+                    # SQLite Row 对象，转换为字典
+                    return [dict(row) for row in rows]
+                return rows
             else:
                 # 其他情况，尝试转换为列表
                 return list(result)
@@ -1252,6 +1332,93 @@ class DatabaseService(BaseService):
             self._metrics.last_update = datetime.now()
             self._metrics.database_connections = sum(len(pool) for pool in self._connection_pools.values())
             return self._metrics
+
+    def create_adaptive_manager(self, pool_name: str, config: dict) -> 'Optional[AdaptiveConnectionPoolManager]':
+        """为指定连接池创建自适应管理器
+        
+        Args:
+            pool_name: 连接池名称
+            config: 自适应配置字典
+            
+        Returns:
+            AdaptiveConnectionPoolManager实例或None（如果失败）
+        """
+        try:
+            from .database.adaptive_connection_pool import AdaptiveConnectionPoolManager
+            from .database.factorweave_analytics_db import get_analytics_db
+            from .database.connection_pool_config import ConnectionPoolConfig
+            
+            # 检查是否启用自适应
+            from core.services.config_service import ConfigService
+            from core.containers import get_service_container
+            container = get_service_container()
+            config_service = container.resolve(ConfigService)
+            from .database.connection_pool_config import ConnectionPoolConfigManager
+            config_manager = ConnectionPoolConfigManager(config_service)
+            
+            pool_config = config_manager.load_adaptive_pool_config(pool_name)
+            
+            if not pool_config.get('enabled', False):
+                logger.info(f"连接池 {pool_name} 未启用自适应管理")
+                return None
+            
+            # 获取数据库实例
+            if pool_name == "analytics_duckdb":
+                db = get_analytics_db()
+            else:
+                logger.warning(f"连接池 {pool_name} 不支持自适应管理（仅 analytics_duckdb 支持）")
+                return None
+            
+            # 创建自适应配置
+            from .database.adaptive_connection_pool import AdaptivePoolConfig
+            adaptive_config = AdaptivePoolConfig(**pool_config)
+            
+            # 创建并启动管理器
+            manager = AdaptiveConnectionPoolManager(db, adaptive_config)
+            manager.start()
+            
+            # 保存到管理器字典
+            self._adaptive_managers[pool_name] = manager
+            
+            logger.info(f"✅ 连接池 {pool_name} 的自适应管理器已创建并启动")
+            return manager
+            
+        except Exception as e:
+            logger.error(f"创建自适应管理器失败: {e}")
+            return None
+
+    def get_adaptive_manager(self, pool_name: str) -> 'Optional[AdaptiveConnectionPoolManager]':
+        """获取指定连接池的自适应管理器
+        
+        Args:
+            pool_name: 连接池名称
+            
+        Returns:
+            AdaptiveConnectionPoolManager实例或None
+        """
+        return self._adaptive_managers.get(pool_name)
+
+    def stop_adaptive_manager(self, pool_name: str) -> None:
+        """停止指定连接池的自适应管理器
+        
+        Args:
+            pool_name: 连接池名称
+        """
+        manager = self._adaptive_managers.get(pool_name)
+        if manager:
+            manager.stop()
+            del self._adaptive_managers[pool_name]
+            logger.info(f"✅ 连接池 {pool_name} 的自适应管理器已停止")
+        else:
+            logger.warning(f"连接池 {pool_name} 没有自适应管理器")
+
+    def get_all_adaptive_managers(self) -> Dict[str, 'AdaptiveConnectionPoolManager']:
+        """获取所有自适应管理器
+        
+        Returns:
+            所有自适应管理器的字典
+        """
+        return self._adaptive_managers.copy()
 
     def get_pool_metrics(self, pool_name: str) -> Optional[ConnectionMetrics]:
         """获取连接池指标"""
@@ -1606,12 +1773,12 @@ class DatabaseService(BaseService):
             
             # 检查并添加 asset_type 列（如果表已存在但缺少该列）
             try:
-                # 使用 DESCRIBE 命令检查列是否存在
-                check_sql = "DESCRIBE ai_selection_results"
+                # 使用 PRAGMA 命令检查列是否存在（DuckDB 语法）
+                check_sql = "PRAGMA table_info('ai_selection_results')"
                 result = conn.execute(check_sql).fetchall()
                 
                 # 检查是否有 asset_type 列
-                column_names = [row[0] for row in result]
+                column_names = [row[1] for row in result]
                 if 'asset_type' not in column_names:
                     logger.info("为 ai_selection_results 表添加 asset_type 列")
                     alter_sql = "ALTER TABLE ai_selection_results ADD COLUMN asset_type VARCHAR(50) DEFAULT 'stock_a'"
@@ -1708,12 +1875,12 @@ class DatabaseService(BaseService):
             
             # 检查并添加 asset_type 列（如果表已存在但缺少该列）
             try:
-                # 使用 DESCRIBE 命令检查列是否存在
-                check_sql = "DESCRIBE ai_explanations"
+                # 使用 PRAGMA 命令检查列是否存在（DuckDB 语法）
+                check_sql = "PRAGMA table_info('ai_explanations')"
                 result = conn.execute(check_sql).fetchall()
                 
                 # 检查是否有 asset_type 列
-                column_names = [row[0] for row in result]
+                column_names = [row[1] for row in result]
                 if 'asset_type' not in column_names:
                     logger.info("为 ai_explanations 表添加 asset_type 列")
                     alter_sql = "ALTER TABLE ai_explanations ADD COLUMN asset_type VARCHAR(50) DEFAULT 'stock_a'"
@@ -1770,12 +1937,12 @@ class DatabaseService(BaseService):
             
             # 检查并添加 asset_type 列（如果表已存在但缺少该列）
             try:
-                # 使用 DESCRIBE 命令检查列是否存在
-                check_sql = "DESCRIBE user_profiles"
+                # 使用 PRAGMA 命令检查列是否存在（DuckDB 语法）
+                check_sql = "PRAGMA table_info('user_profiles')"
                 result = conn.execute(check_sql).fetchall()
                 
                 # 检查是否有 asset_type 列
-                column_names = [row[0] for row in result]
+                column_names = [row[1] for row in result]
                 if 'asset_type' not in column_names:
                     logger.info("为 user_profiles 表添加 asset_type 列")
                     alter_sql = "ALTER TABLE user_profiles ADD COLUMN asset_type VARCHAR(50) DEFAULT 'stock_a'"

@@ -262,10 +262,8 @@ def standardize_stock_code(code: str) -> str:
         return f'sh{code}'
     elif code.startswith(('0', '3')):
         return f'sz{code}'
-    elif code.startswith('8') or code.startswith('43'):
+    elif code.startswith('8') or code.startswith('43') or code.startswith('9'):
         return f'bj{code}'
-    elif code.startswith('9'):
-        return f'hk{code}'
     else:
         # 默认深圳市场
         return f'sz{code}'

@@ -1026,7 +1026,6 @@ class EnhancedDataImportWidget(QWidget):
                 margin: 5px;
             }
             QLabel {
-                color: white;
                 font-weight: bold;
             }
         """)
@@ -5403,20 +5402,22 @@ class EnhancedDataImportWidget(QWidget):
             if self.import_engine:
                 task_status = self.import_engine.get_task_status(task_id)
                 if task_status:
-                    progress_str = f"{task_status.progress:.1f}"
-                    start_time_str = task_status.start_time.strftime('Y-m-d H:M:S') if task_status.start_time else '未开始'
-                    end_time_str = task_status.end_time.strftime('Y-m-d H:M:S') if task_status.end_time else '未完成'
+                    progress_str = f"{task_status.progress:.1f}%"
+                    start_time_str = task_status.start_time.strftime('%Y-%m-%d %H:%M:%S') if task_status.start_time else '未开始'
+                    end_time_str = task_status.end_time.strftime('%Y-%m-%d %H:%M:%S') if task_status.end_time else '未完成'
 
                     details = f"""任务详细信息:
 
-    任务ID: {task_id}
-    状态: {task_status.status.value}
-    进度: {progress_str}
-    开始时间: {start_time_str}
-    结束时间: {end_time_str}"""
+任务ID: {task_id}
+状态: {task_status.status.value if hasattr(task_status.status, 'value') else task_status.status}
+进度: {progress_str}
+开始时间: {start_time_str}
+结束时间: {end_time_str}"""
                     QMessageBox.information(self, "任务详情", details)
                 else:
-                    QMessageBox.information(self, "任务详情", f"任务ID: {task_id}\n状态: 未开始")
+                    QMessageBox.information(self, "任务详情", f"任务ID: {task_id}\n状态: 未找到任务信息")
+            else:
+                QMessageBox.warning(self, "警告", "导入引擎未初始化，无法获取任务详情")
         except Exception as e:
             logger.error(f"查看任务详情失败: {e}") if logger else None
             QMessageBox.critical(self, "错误", f"查看任务详情失败: {e}")

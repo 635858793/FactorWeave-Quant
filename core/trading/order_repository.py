@@ -36,79 +36,212 @@ class OrderRepository:
         return f"{asset_type.value.lower()}_orders"
 
     def save_order(self, order: Order) -> bool:
-        """保存订单"""
+        """保存订单（带重试机制）"""
+        max_retries = 3
+        retry_delay = 0.5  # 秒
+        
+        for attempt in range(max_retries):
+            try:
+                from core.services.database_service import DatabaseService
+                db_service = self.service_container.resolve(DatabaseService)
+
+                order_data = order.to_dict()
+
+                sql = """
+                INSERT INTO orders (
+                    order_id, strategy_id, asset_type, stock_code, order_type, order_category,
+                    order_price, order_quantity, order_status, create_time, update_time,
+                    execute_time, filled_quantity, filled_price, commission, error_message,
+                    stop_price, user_id, account_id, tags, metadata,
+                    contract_multiplier, margin_ratio, strike_price, expiry_date, option_type
+                ) VALUES (
+                    ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?
+                )
+                """
+
+                params = [
+                    order_data['order_id'],
+                    order_data['strategy_id'],
+                    order_data['asset_type'],
+                    order_data['stock_code'],
+                    order_data['order_type'],
+                    order_data['order_category'],
+                    order_data['order_price'],
+                    order_data['order_quantity'],
+                    order_data['order_status'],
+                    order_data['create_time'],
+                    order_data['update_time'],
+                    order_data['execute_time'],
+                    order_data['filled_quantity'],
+                    order_data['filled_price'],
+                    order_data['commission'],
+                    order_data['error_message'],
+                    order_data['stop_price'],
+                    order_data['user_id'],
+                    order_data['account_id'],
+                    order_data['tags'],
+                    order_data['metadata'],
+                    order_data['contract_multiplier'],
+                    order_data['margin_ratio'],
+                    order_data['strike_price'],
+                    order_data['expiry_date'],
+                    order_data['option_type']
+                ]
+
+                pool_name = self._get_database_pool_name(order.asset_type)
+                logger.debug(f"准备保存订单到数据池: {pool_name} (尝试 {attempt + 1}/{max_retries})")
+                
+                db_service.execute_query(sql, params, pool_name=pool_name)
+
+                logger.info(f"订单保存成功: {order.order_id} → {pool_name}")
+                self.event_bus.publish('order_saved', order_id=order.order_id)
+                return True
+
+            except Exception as e:
+                pool_name = self._get_database_pool_name(order.asset_type) if hasattr(order, 'asset_type') else 'unknown'
+                
+                if attempt < max_retries - 1:
+                    logger.warning(f"保存订单失败 (尝试 {attempt + 1}/{max_retries}): {order.order_id} - {e}")
+                    logger.warning(f"将在 {retry_delay} 秒后重试...")
+                    import time
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # 指数退避
+                else:
+                    logger.error(f"保存订单失败 (已重试 {max_retries} 次): {order.order_id} ({order.asset_type.value if hasattr(order, 'asset_type') else 'unknown'}) - {e}")
+                    logger.error(f"订单详细信息:")
+                    logger.error(f"  order_id: {order.order_id if hasattr(order, 'order_id') else 'unknown'}")
+                    logger.error(f"  stock_code: {order.stock_code if hasattr(order, 'stock_code') else 'unknown'}")
+                    logger.error(f"  order_type: {order.order_type.value if hasattr(order, 'order_type') else 'unknown'}")
+                    logger.error(f"  order_quantity: {order.order_quantity if hasattr(order, 'order_quantity') else 'unknown'}")
+                    logger.error(f"  order_price: {order.order_price if hasattr(order, 'order_price') else 'unknown'}")
+                    logger.error(f"  account_id: {order.account_id if hasattr(order, 'account_id') else 'unknown'}")
+                    logger.error(f"  strategy_id: {order.strategy_id if hasattr(order, 'strategy_id') else 'unknown'}")
+                    logger.error(f"  asset_type: {order.asset_type.value if hasattr(order, 'asset_type') else 'unknown'}")
+                    logger.error(f"  数据池: {pool_name}")
+                    logger.error(f"可能原因：")
+                    logger.error(f"  1. 数据库连接失败")
+                    logger.error(f"  2. 数据表不存在")
+                    logger.error(f"  3. 数据库事务失败")
+                    logger.error(f"  4. 数据类型不匹配")
+                    logger.error(f"  5. 约束冲突（如订单ID重复）")
+                    logger.error(f"  6. 数据池未正确初始化")
+                    
+                    # 发布订单保存失败事件
+                    self.event_bus.publish('order_save_failed', 
+                        order_id=order.order_id,
+                        error=str(e),
+                        pool_name=pool_name
+                    )
+                    return False
+
+    def save_orders_batch(self, orders: List[Order]) -> Dict[str, bool]:
+        """
+        批量保存订单（性能优化）
+
+        Args:
+            orders: 订单列表
+
+        Returns:
+            Dict[str, bool]: 保存结果字典，key为order_id，value为是否成功
+        """
         try:
             from core.services.database_service import DatabaseService
             db_service = self.service_container.resolve(DatabaseService)
 
-            order_data = order.to_dict()
+            results = {}
+            success_count = 0
+            failed_count = 0
 
-            sql = """
-            INSERT INTO orders (
-                order_id, strategy_id, asset_type, stock_code, order_type, order_category,
-                order_price, order_quantity, order_status, create_time, update_time,
-                execute_time, filled_quantity, filled_price, commission, error_message,
-                stop_price, user_id, account_id, tags, metadata,
-                contract_multiplier, margin_ratio, strike_price, expiry_date, option_type
-            ) VALUES (
-                ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?
-            )
-            """
+            # 按资产类型分组
+            orders_by_asset_type: Dict[AssetType, List[Order]] = {}
+            for order in orders:
+                if order.asset_type not in orders_by_asset_type:
+                    orders_by_asset_type[order.asset_type] = []
+                orders_by_asset_type[order.asset_type].append(order)
 
-            params = [
-                order_data['order_id'],
-                order_data['strategy_id'],
-                order_data['asset_type'],
-                order_data['stock_code'],
-                order_data['order_type'],
-                order_data['order_category'],
-                order_data['order_price'],
-                order_data['order_quantity'],
-                order_data['order_status'],
-                order_data['create_time'],
-                order_data['update_time'],
-                order_data['execute_time'],
-                order_data['filled_quantity'],
-                order_data['filled_price'],
-                order_data['commission'],
-                order_data['error_message'],
-                order_data['stop_price'],
-                order_data['user_id'],
-                order_data['account_id'],
-                order_data['tags'],
-                order_data['metadata'],
-                order_data['contract_multiplier'],
-                order_data['margin_ratio'],
-                order_data['strike_price'],
-                order_data['expiry_date'],
-                order_data['option_type']
-            ]
+            # 按资产类型批量保存
+            for asset_type, asset_orders in orders_by_asset_type.items():
+                pool_name = self._get_database_pool_name(asset_type)
 
-            pool_name = self._get_database_pool_name(order.asset_type)
-            logger.debug(f"准备保存订单到数据池: {pool_name}")
-            
-            db_service.execute_query(sql, params, pool_name=pool_name)
+                try:
+                    # 准备批量插入数据
+                    sql = """
+                    INSERT INTO orders (
+                        order_id, strategy_id, asset_type, stock_code, order_type, order_category,
+                        order_price, order_quantity, order_status, create_time, update_time,
+                        execute_time, filled_quantity, filled_price, commission, error_message,
+                        stop_price, user_id, account_id, tags, metadata,
+                        contract_multiplier, margin_ratio, strike_price, expiry_date, option_type
+                    ) VALUES (
+                        ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?
+                    )
+                    """
 
-            logger.info(f"订单保存成功: {order.order_id} → {pool_name}")
-            self.event_bus.publish('order_saved', order_id=order.order_id)
-            return True
+                    params_list = []
+                    for order in asset_orders:
+                        order_data = order.to_dict()
+                        params = [
+                            order_data['order_id'],
+                            order_data['strategy_id'],
+                            order_data['asset_type'],
+                            order_data['stock_code'],
+                            order_data['order_type'],
+                            order_data['order_category'],
+                            order_data['order_price'],
+                            order_data['order_quantity'],
+                            order_data['order_status'],
+                            order_data['create_time'],
+                            order_data['update_time'],
+                            order_data['execute_time'],
+                            order_data['filled_quantity'],
+                            order_data['filled_price'],
+                            order_data['commission'],
+                            order_data['error_message'],
+                            order_data['stop_price'],
+                            order_data['user_id'],
+                            order_data['account_id'],
+                            order_data['tags'],
+                            order_data['metadata'],
+                            order_data['contract_multiplier'],
+                            order_data['margin_ratio'],
+                            order_data['strike_price'],
+                            order_data['expiry_date'],
+                            order_data['option_type']
+                        ]
+                        params_list.append(params)
+
+                    # 批量执行插入
+                    for params in params_list:
+                        db_service.execute_query(sql, params, pool_name=pool_name)
+
+                    # 更新缓存
+                    for order in asset_orders:
+                        self.cache.update(order)
+                        results[order.order_id] = True
+                        success_count += 1
+
+                    logger.info(f"批量保存订单成功: {pool_name} - {len(asset_orders)} 个订单")
+
+                except Exception as e:
+                    logger.error(f"批量保存订单失败: {pool_name} - {e}")
+                    for order in asset_orders:
+                        results[order.order_id] = False
+                        failed_count += 1
+
+            logger.info(f"批量保存订单完成: 成功 {success_count}, 失败 {failed_count}")
+            return results
 
         except Exception as e:
-            pool_name = self._get_database_pool_name(order.asset_type) if hasattr(order, 'asset_type') else 'unknown'
-            logger.error(f"保存订单失败: {order.order_id} ({order.asset_type.value if hasattr(order, 'asset_type') else 'unknown'}) - {e}")
-            logger.error(f"订单详细信息: stock_code={order.stock_code if hasattr(order, 'stock_code') else 'unknown'}, order_type={order.order_type.value if hasattr(order, 'order_type') else 'unknown'}, order_quantity={order.order_quantity if hasattr(order, 'order_quantity') else 'unknown'}")
-            logger.error(f"数据池: {pool_name}")
-            logger.error(f"可能原因：")
-            logger.error(f"  1. 数据库连接失败")
-            logger.error(f"  2. 数据表不存在")
-            logger.error(f"  3. 数据库事务失败")
-            logger.error(f"  4. 数据类型不匹配")
-            logger.error(f"  5. 约束冲突（如订单ID重复）")
-            return False
+            logger.error(f"批量保存订单异常: {e}")
+            return {order.order_id: False for order in orders}
 
     def update_order(self, order: Order) -> bool:
         """更新订单"""

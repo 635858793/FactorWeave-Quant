@@ -188,7 +188,7 @@ class IndicatorSelectionDialog(QDialog):
 
         # 后端选择
         self.backend_combo = QComboBox()
-        self.backend_combo.addItems(["所有后端", "FactorWeave-Quant", "TA-Lib", "Pandas-TA", "自定义"])
+        self.backend_combo.addItems(["所有后端", "FactorWeave-Quant", "TA-Lib", "自定义"])
         toolbar_layout.addWidget(QLabel("后端:"))
         toolbar_layout.addWidget(self.backend_combo)
 

@@ -53,7 +53,7 @@ jobs:
 
       - name: 运行 mypy 类型检查
         run: |
-          mypy --ignore-missing-imports --strict-optional core/
+          mypy --ignore-missing-imports core/
           if [ $? -ne 0 ]; then
             echo "mypy 类型检查失败"
             exit 1
@@ -117,9 +117,11 @@ jobs:
             exit 1
           fi
 
+      - name: 安装 bc 命令
+        run: sudo apt-get install -y bc
+
       - name: 检查整体覆盖率阈值
         run: |
-          coverage xml -o coverage.xml
           TOTAL_COVERAGE=$(grep -oP '(?<=<coverage .*line-rate=")[^"]*' coverage.xml | head -1)
           TOTAL_COVERAGE=$(echo "$TOTAL_COVERAGE * 100" | bc | cut -d'.' -f1)
           echo "当前测试覆盖率: ${TOTAL_COVERAGE}%"
@@ -185,11 +187,11 @@ jobs:
 
       - name: 运行 Safety 检查
         run: |
-          safety check -r requirements.txt --json > safety_report.json || true
-          if [ -s safety_report.json ]; then
-            echo "Safety 检查发现问题:"
+          safety check -r requirements.txt --json > safety_report.json || {
+            echo "Safety 检查发现潜在安全问题:"
             cat safety_report.json
-          fi
+            echo "警告: 存在已知漏洞的依赖项"
+          }
 
       - name: 上传安全报告
         uses: actions/upload-artifact@v4
@@ -261,7 +263,17 @@ jobs:
           pip install -q -r requirements.txt
           pip install pytest-benchmark
 
+      - name: 检查性能测试目录
+        id: check-perf-dir
+        run: |
+          if [ -d "tests/performance/" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: 运行性能测试
+        if: steps.check-perf-dir.outputs.exists == 'true'
         run: |
           pytest tests/performance/ -v --benchmark-only
           if [ $? -ne 0 ]; then
@@ -269,7 +281,13 @@ jobs:
             exit 1
           fi
 
+      - name: 跳过性能测试
+        if: steps.check-perf-dir.outputs.exists == 'false'
+        run: |
+          echo "性能测试目录不存在，跳过性能测试"
+
       - name: 上传性能报告
+        if: steps.check-perf-dir.outputs.exists == 'true'
         uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -286,11 +304,18 @@ jobs:
     steps:
       - name: 发送完成通知
         run: |
-          if [ "${{ needs.test.result }}" == "success" ] && \
-             [ "${{ needs.security-check.result }}" == "success" ] && \
-             [ "${{ needs.performance-test.result }}" == "success" ]; then
+          TEST_RESULT="${{ needs.test.result }}"
+          SECURITY_RESULT="${{ needs.security-check.result }}"
+          PERF_RESULT="${{ needs.performance-test.result }}"
+          
+          if [ "$TEST_RESULT" == "success" ] && \
+             [ "$SECURITY_RESULT" == "success" ] && \
+             [ "$PERF_RESULT" == "success" ]; then
              echo "✅ CI/CD 流水线执行成功"
           else
              echo "❌ CI/CD 流水线存在失败的任务"
+             echo "测试结果: $TEST_RESULT"
+             echo "安全检查结果: $SECURITY_RESULT"
+             echo "性能测试结果: $PERF_RESULT"
              exit 1
           fi

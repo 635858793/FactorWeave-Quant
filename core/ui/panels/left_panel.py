@@ -843,7 +843,7 @@ class LeftPanel(BasePanel):
         self._load_stock_data(search_text=search_text)
 
     def _show_advanced_search(self) -> None:
-        """显示高级搜索对话框"""
+        """显示高级搜索对话框（非模态）"""
         try:
             # 简化导入路径
             from gui.dialogs.advanced_search_dialog import AdvancedSearchDialog
@@ -853,8 +853,10 @@ class LeftPanel(BasePanel):
 
             dialog = AdvancedSearchDialog(
                 parent=main_window, stock_service=self.stock_service)
-            dialog.search_requested.connect(self._on_advanced_search)
-            dialog.exec_()
+            dialog.search_completed.connect(self._on_advanced_search)
+            dialog.show()  # 使用 show() 而不是 exec_() 来显示非模态对话框
+
+            logger.info("高级搜索对话框已打开（非模态）")
 
         except Exception as e:
             logger.error(f"显示高级搜索对话框失败: {e}")
@@ -862,20 +864,16 @@ class LeftPanel(BasePanel):
             main_window = self.coordinator.get_main_window() if self.coordinator else None
             QMessageBox.critical(main_window, "错误", f"无法打开高级搜索对话框: {str(e)}")
 
-    def _on_advanced_search(self, conditions: Dict[str, Any]) -> None:
-        """处理高级搜索请求"""
+    def _on_advanced_search(self, results: List[Dict[str, Any]]) -> None:
+        """处理高级搜索结果"""
         try:
-            # 执行高级搜索
-            filtered_stocks = self.stock_service.perform_advanced_search(
-                conditions)
-
             # 更新股票列表显示
-            self._update_stock_tree(filtered_stocks)
+            self._update_stock_tree(results)
 
-            logger.info(f"高级搜索完成，找到 {len(filtered_stocks)} 只符合条件的股票")
+            logger.info(f"高级搜索完成，找到 {len(results)} 只符合条件的股票")
 
         except Exception as e:
-            logger.error(f"执行高级搜索失败: {e}")
+            logger.error(f"处理高级搜索结果失败: {e}")
 
     def _export_stock_data(self, stock_code: str, stock_name: str) -> None:
         """导出股票数据"""

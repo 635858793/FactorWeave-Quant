@@ -62,9 +62,11 @@ class AccountManager:
                 self._accounts.clear()
                 for account in accounts:
                     self._accounts[account.account_id] = account
+                    logger.debug(f"Loaded account: {account.account_id}")
 
             if accounts:
                 logger.info(f"✓ 从数据库成功加载了 {len(accounts)} 个账户")
+                logger.debug(f"Loaded account IDs: {[a.account_id for a in accounts]}")
             else:
                 logger.info("✓ 从数据库加载账户完成，暂无账户数据")
 
