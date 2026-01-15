@@ -56,7 +56,7 @@ class AccountManagementDialog(QDialog):
         """初始化用户界面"""
         try:
             self.setWindowTitle("账户管理")
-            self.setMinimumSize(1200, 800)
+            self.setMinimumSize(1350, 800)
 
             layout = QVBoxLayout(self)
 

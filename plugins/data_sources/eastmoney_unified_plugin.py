@@ -342,6 +342,8 @@ class EastmoneyUnifiedPlugin(IDataSourcePlugin):
                 return f"1.{symbol}"  # 上海
             elif symbol.startswith(('0', '3')):
                 return f"0.{symbol}"  # 深圳
+            elif symbol.startswith(('4', '8', '9')):
+                return f"2.{symbol}"  # 北京
         return f"1.{symbol}"  # 默认上海
 
     def _parse_realtime_quotes(self, raw_data: List[Dict]) -> pd.DataFrame:

@@ -2559,6 +2559,57 @@ class UnifiedDataManager:
             logger.error(f"请求数据失败: {e}", exc_info=True)
             return None
 
+    async def get_data_async(self, symbol: str, asset_type: AssetType = AssetType.STOCK_A,
+                           data_type: str = 'kdata', period: str = 'D', 
+                           time_range: int = 365, **kwargs) -> Any:
+        """获取数据（异步适配器方法）
+
+        这是 request_data 方法的适配器，用于兼容调用方使用的参数格式。
+        调用方使用 symbol 和整数 time_range，而 request_data 使用 stock_code 和字符串 time_range。
+
+        Args:
+            symbol: 股票代码（或其他资产代码）
+            asset_type: 资产类型（默认为股票）
+            data_type: 数据类型，如'kdata', 'financial', 'news'等
+            period: 周期，如'D'(日线)、'W'(周线)、'M'(月线)等
+            time_range: 时间范围（天数，整数）
+            **kwargs: 其他参数
+
+        Returns:
+            请求的数据
+        """
+        try:
+            # 将整数 time_range 转换为 request_data 期望的字符串格式
+            time_range_map = {
+                7: "最近7天",
+                30: "最近30天",
+                90: "最近90天",
+                180: "最近180天",
+                365: "最近1年",
+                365 * 2: "最近2年",
+                365 * 3: "最近3年",
+                365 * 5: "最近5年"
+            }
+            
+            # 如果 time_range 是整数，转换为对应的字符串描述
+            if isinstance(time_range, int):
+                time_range_str = time_range_map.get(time_range, f"最近{time_range}天")
+            else:
+                time_range_str = str(time_range)
+            
+            # 调用 request_data 方法
+            return await self.request_data(
+                stock_code=symbol,
+                data_type=data_type,
+                period=period,
+                time_range=time_range_str,
+                asset_type=asset_type,
+                **kwargs
+            )
+        except Exception as e:
+            logger.error(f"get_data_async 获取数据失败: {e}", exc_info=True)
+            return None
+
     async def _get_kdata(self, stock_code: str, period: str = 'D', count: int = 365,
                          asset_type: AssetType = AssetType.STOCK_A) -> pd.DataFrame:
         """获取K线数据（✅ 优化：支持多资产类型）

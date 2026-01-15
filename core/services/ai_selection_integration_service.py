@@ -616,6 +616,11 @@ class AISelectionIntegrationService:
             # 执行选股
             result = await self._execute_selection(strategy_id, selection_criteria, error_collector, progress_callback)
             
+            # 保存结果到数据库（必须在生成解释之前，确保 result_id 存在于数据库中）
+            if progress_callback:
+                progress_callback(92, "保存选股结果...")
+            await self._save_selection_result(result)
+            
             # 生成解释
             if progress_callback:
                 progress_callback(95, "生成选股解释...")
@@ -626,9 +631,6 @@ class AISelectionIntegrationService:
             if progress_callback:
                 progress_callback(98, "计算组合指标...")
             result.portfolio_metrics = await self._calculate_portfolio_metrics(result)
-            
-            # 保存结果到数据库
-            await self._save_selection_result(result)
             
             # 缓存结果
             self._cache_result(cache_key, result)
@@ -699,7 +701,8 @@ class AISelectionIntegrationService:
                 stock_scores={},
                 weights={},
                 explanations=[],
-                overall_explanation="没有找到符合条件的股票"
+                overall_explanation="没有找到符合条件的股票",
+                portfolio_metrics={}
             )
         
         # 获取股票数据
@@ -732,7 +735,8 @@ class AISelectionIntegrationService:
             stock_scores=dict(zip(selected_stocks, [scores[stock] for stock in selected_stocks])),
             weights=weights,
             explanations=[],  # 将在后续步骤中填充
-            overall_explanation=""  # 将在后续步骤中填充
+            overall_explanation="",  # 将在后续步骤中填充
+            portfolio_metrics={}  # 将在后续步骤中更新
         )
         
         # 将详细评分存储到 result 的 metadata 中
@@ -825,7 +829,7 @@ class AISelectionIntegrationService:
             
             # 使用StockService获取股票列表
             if hasattr(self._data_manager, 'get_stock_list'):
-                stock_list = await self._data_manager.get_stock_list()
+                stock_list = self._data_manager.get_stock_list()
                 if stock_list is not None and not stock_list.empty:
                     return stock_list['code'].tolist() if 'code' in stock_list.columns else []
             
@@ -1347,11 +1351,14 @@ class AISelectionIntegrationService:
             explanation_level = ExplanationLevel.DETAILED
             
             # 调用AIExplainabilityService
+            # selection_result_id 格式为 {result_id}_{stock_code}
+            selection_result_id = f"{result.result_id}_{stock_code}"
             explanation_data = self._explainability_service.generate_explanation(
                 stock_code=stock_code,
                 stock_data=stock_data,
                 selection_data=selection_data,
-                explanation_level=explanation_level
+                explanation_level=explanation_level,
+                selection_result_id=selection_result_id
             )
             
             # 转换为SelectionExplanation
@@ -1764,7 +1771,7 @@ class AISelectionIntegrationService:
             raise
     
     async def _get_strategy_by_id(self, strategy_id: str) -> Optional[Dict[str, Any]]:
-        """根据ID获取策略"""
+        """根据ID或策略类型获取策略"""
         try:
             # 使用DatabaseService的get_ai_strategy方法
             if hasattr(self._database_service, 'get_ai_strategy'):
@@ -1772,20 +1779,181 @@ class AISelectionIntegrationService:
                 return strategy
             else:
                 # 如果DatabaseService没有get_ai_strategy方法，使用通用查询方法
-                query = "SELECT * FROM ai_strategies WHERE strategy_id = ?"
+                # 判断传入的是策略ID（UUID）还是策略类型
+                # 策略ID通常是36字符的UUID，策略类型是简短的字符串
+                if len(strategy_id) == 36 and '-' in strategy_id:
+                    # 传入的是策略ID，使用id字段查询
+                    query = "SELECT * FROM ai_strategies WHERE id = ?"
+                else:
+                    # 传入的是策略类型，使用strategy_type字段查询
+                    query = "SELECT * FROM ai_strategies WHERE strategy_type = ?"
+                
                 strategy = self._database_service.fetch_one(query, [strategy_id])
+                
+                # 如果找不到策略，且传入的是策略类型，则创建默认策略配置
+                if not strategy and len(strategy_id) != 36:
+                    logger.info(f"未找到策略 {strategy_id}，创建默认策略配置")
+                    strategy = self._create_default_strategy(strategy_id)
+                
                 return strategy
         except Exception as e:
             logger.error(f"从数据库获取策略失败: {e}")
             return None
     
+    def _create_default_strategy(self, strategy_type: str) -> Dict[str, Any]:
+        """创建默认策略配置
+        
+        Args:
+            strategy_type: 策略类型
+            
+        Returns:
+            默认策略配置字典
+        """
+        # 根据策略类型创建默认配置
+        default_strategies = {
+            "technical": {
+                "id": strategy_type,
+                "name": "技术分析策略",
+                "description": "基于技术指标的分析策略",
+                "strategy_type": strategy_type,
+                "parameters": {},
+                "criteria": {
+                    "strategy_type": "technical",
+                    "risk_level": "moderate",
+                    "max_stocks": 50
+                }
+            },
+            "momentum": {
+                "id": strategy_type,
+                "name": "动量策略",
+                "description": "基于价格动量的选股策略",
+                "strategy_type": strategy_type,
+                "parameters": {},
+                "criteria": {
+                    "strategy_type": "momentum",
+                    "risk_level": "moderate",
+                    "max_stocks": 50
+                }
+            },
+            "value": {
+                "id": strategy_type,
+                "name": "价值策略",
+                "description": "基于价值投资的选股策略",
+                "strategy_type": strategy_type,
+                "parameters": {},
+                "criteria": {
+                    "strategy_type": "value",
+                    "risk_level": "conservative",
+                    "max_stocks": 50
+                }
+            },
+            "growth": {
+                "id": strategy_type,
+                "name": "成长策略",
+                "description": "基于成长性的选股策略",
+                "strategy_type": strategy_type,
+                "parameters": {},
+                "criteria": {
+                    "strategy_type": "growth",
+                    "risk_level": "aggressive",
+                    "max_stocks": 50
+                }
+            },
+            "quality": {
+                "id": strategy_type,
+                "name": "质量策略",
+                "description": "基于公司质量的选股策略",
+                "strategy_type": strategy_type,
+                "parameters": {},
+                "criteria": {
+                    "strategy_type": "quality",
+                    "risk_level": "moderate",
+                    "max_stocks": 50
+                }
+            },
+            "dividend": {
+                "id": strategy_type,
+                "name": "股息策略",
+                "description": "基于股息收益的选股策略",
+                "strategy_type": strategy_type,
+                "parameters": {},
+                "criteria": {
+                    "strategy_type": "dividend",
+                    "risk_level": "conservative",
+                    "max_stocks": 50
+                }
+            },
+            "quantitative": {
+                "id": strategy_type,
+                "name": "量化策略",
+                "description": "基于量化模型的选股策略",
+                "strategy_type": strategy_type,
+                "parameters": {},
+                "criteria": {
+                    "strategy_type": "quantitative",
+                    "risk_level": "moderate",
+                    "max_stocks": 50
+                }
+            },
+            "hybrid": {
+                "id": strategy_type,
+                "name": "混合策略",
+                "description": "综合多种策略的选股策略",
+                "strategy_type": strategy_type,
+                "parameters": {},
+                "criteria": {
+                    "strategy_type": "hybrid",
+                    "risk_level": "moderate",
+                    "max_stocks": 50
+                }
+            }
+        }
+        
+        # 返回默认策略配置，如果策略类型未知，则使用量化策略作为默认
+        return default_strategies.get(strategy_type, default_strategies["quantitative"])
+    
     async def _save_selection_result(self, result: StockSelectionResult):
         """保存选股结果"""
-        # 使用DatabaseService保存结果
-        if hasattr(self._database_service, 'save_ai_selection_result'):
-            result_data = asdict(result)
-            result_data["criteria"] = asdict(result.criteria)
-            await self._database_service.save_ai_selection_result(result_data)
+        try:
+            # 将 StockSelectionResult 转换为多条单只股票的记录
+            results_to_save = []
+            
+            for stock_code in result.selected_stocks:
+                stock_result = {
+                    'id': f"{result.result_id}_{stock_code}",  # 使用 result_id + stock_code 作为唯一ID
+                    'strategy_id': result.strategy_id,
+                    'selection_date': result.selection_date,
+                    'stock_code': stock_code,
+                    'stock_name': '',  # 可以从其他数据源获取
+                    'industry': '',  # 可以从其他数据源获取
+                    'selection_reason': {
+                        'overall_explanation': result.overall_explanation,
+                        'criteria': asdict(result.criteria)
+                    },
+                    'score': result.stock_scores.get(stock_code, 0.0),
+                    'weight': result.weights.get(stock_code, 0.0),
+                    'confidence': 0.0,  # 可以从其他数据源获取
+                    'risk_level': result.criteria.risk_level.value if result.criteria.risk_level else 'moderate',
+                    'expected_return': 0.0,  # 可以从其他数据源获取
+                    'volatility': 0.0,  # 可以从其他数据源获取
+                    'sharpe_ratio': 0.0,  # 可以从其他数据源获取
+                    'max_drawdown': 0.0,  # 可以从其他数据源获取
+                    'market_cap': 0.0,  # 可以从其他数据源获取
+                    'pe_ratio': 0.0,  # 可以从其他数据源获取
+                    'pb_ratio': 0.0,  # 可以从其他数据源获取
+                    'turnover_rate': 0.0,  # 可以从其他数据源获取
+                    'backtested': False
+                }
+                results_to_save.append(stock_result)
+            
+            # 保存所有股票的选股结果
+            if results_to_save:
+                self._database_service.save_ai_selection_results(results_to_save)
+            
+            logger.info(f"成功保存选股结果: {result.result_id}, 共 {len(results_to_save)} 只股票")
+        except Exception as e:
+            logger.error(f"保存选股结果失败: {e}")
+            raise
     
     def _get_cached_result(self, cache_key: str) -> Optional[StockSelectionResult]:
         """获取缓存结果"""

@@ -67,7 +67,7 @@ class OrderManagementDialog(QDialog):
         try:
             self.setWindowTitle("订单管理")
             self.setMinimumSize(1200, 800)
-            self.resize(1400, 900)
+            self.resize(1500, 900)
 
             # 主布局
             main_layout = QVBoxLayout(self)
@@ -199,12 +199,13 @@ class OrderManagementDialog(QDialog):
             self.order_table.setHorizontalHeaderLabels([
                 "订单ID", "资产类型", "股票代码", "方向", "数量", "价格", "状态", "创建时间", "成交数量", "成交价格", "操作"
             ])
+            self.order_table.setSortingEnabled(True)
             self.order_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-            self.order_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Interactive)
+            self.order_table.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeToContents)
             # 设置表格样式
             header = self.order_table.horizontalHeader()
             header.setStretchLastSection(True)
-            header.setSectionResizeMode(QHeaderView.Interactive)
+            # header.setSectionResizeMode(QHeaderView.Interactive)
 
             # 设置选择模式
             self.order_table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -629,6 +630,9 @@ class OrderManagementDialog(QDialog):
             self.event_bus.subscribe('order_updated', self.on_order_updated_event)
             self.event_bus.subscribe('order_cancelled', self.on_order_cancelled_event)
             self.event_bus.subscribe('order_filled', self.on_order_filled_event)
+            self.event_bus.subscribe('order_rejected', self.on_order_rejected_event)
+            self.event_bus.subscribe('order_submit_failed', self.on_order_submit_failed_event)
+            self.event_bus.subscribe('order_modified', self.on_order_modified_event)
         except Exception as e:
             logger.error(f"订阅事件失败: {e}")
 
@@ -1226,7 +1230,7 @@ class OrderManagementDialog(QDialog):
                     QMessageBox.warning(self, '失败', f'取消订单失败: {result.message}')
 
         except Exception as e:
-            logger.error(f"取消订单失败: {e}")
+            logger.error(f"{order_id}:取消订单失败: {e}")
             QMessageBox.critical(self, '错误', f'取消订单失败: {str(e)}')
 
     def modify_order(self, order_id: str):
@@ -1307,6 +1311,30 @@ class OrderManagementDialog(QDialog):
             self.load_orders()
         except Exception as e:
             logger.error(f"处理订单成交事件失败: {e}")
+
+    @pyqtSlot(object)
+    def on_order_rejected_event(self, event):
+        """订单被拒绝事件"""
+        try:
+            self.load_orders()
+        except Exception as e:
+            logger.error(f"处理订单被拒绝事件失败: {e}")
+
+    @pyqtSlot(object)
+    def on_order_submit_failed_event(self, event):
+        """订单提交失败事件"""
+        try:
+            self.load_orders()
+        except Exception as e:
+            logger.error(f"处理订单提交失败事件失败: {e}")
+
+    @pyqtSlot(object)
+    def on_order_modified_event(self, event):
+        """订单修改事件"""
+        try:
+            self.load_orders()
+        except Exception as e:
+            logger.error(f"处理订单修改事件失败: {e}")
 
     @pyqtSlot(str)
     def on_search_text_changed(self, text: str):
@@ -1830,13 +1858,7 @@ class CreateOrderDialog(QDialog):
             
             self.search_results_popup = QFrame(self)
             self.search_results_popup.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)
-            # self.search_results_popup.setStyleSheet("""
-            #     QFrame {
-            #         background-color: white;
-            #         border: 1px solid #ccc;
-            #         border-radius: 4px;
-            #     }
-            # """)
+
             
             # 创建列表
             popup_layout = QVBoxLayout(self.search_results_popup)
@@ -1844,23 +1866,7 @@ class CreateOrderDialog(QDialog):
             popup_layout.setSpacing(2)
             
             results_list = QListWidget()
-            # results_list.setStyleSheet("""
-            #     QListWidget {
-            #         background-color: white;
-            #         border: none;
-            #     }
-            #     QListWidget::item {
-            #         padding: 5px;
-            #         border-radius: 3px;
-            #     }
-            #     QListWidget::item:hover {
-            #         background-color: #e3f2fd;
-            #     }
-            #     QListWidget::item:selected {
-            #         background-color: #2196f3;
-            #         color: white;
-            #     }
-            # """)
+
             results_list.setSelectionMode(QAbstractItemView.SingleSelection)
             results_list.itemClicked.connect(self.on_search_result_selected)
             
@@ -2320,7 +2326,7 @@ class ModifyOrderDialog(QDialog):
         """初始化用户界面"""
         try:
             self.setWindowTitle("修改订单")
-            self.setMinimumSize(500, 300)
+            self.setMinimumSize(400, 100)
 
             layout = QVBoxLayout(self)
 
@@ -2416,7 +2422,7 @@ class OrderDetailDialog(QDialog):
         """初始化用户界面"""
         try:
             self.setWindowTitle("订单详情")
-            self.setMinimumSize(600, 400)
+            self.setMinimumSize(300, 450)
 
             layout = QVBoxLayout(self)
 
@@ -2435,7 +2441,7 @@ class OrderDetailDialog(QDialog):
                 <tr><td><b>订单状态:</b></td><td>{self.order.order_status.value}</td></tr>
                 <tr><td><b>创建时间:</b></td><td>{self.order.create_time.strftime('%Y-%m-%d %H:%M:%S')}</td></tr>
                 <tr><td><b>成交数量:</b></td><td>{self.order.filled_quantity}</td></tr>
-                <tr><td><b>成交价格:</b></td><td>{self.order.filled_price:.2f if self.order.filled_price > 0 else '-'}</td></tr>
+                <tr><td><b>成交价格:</b></td><td>{f"{self.order.filled_price:.2f}" if self.order.filled_price > 0 else '-'}</td></tr>
                 <tr><td><b>手续费:</b></td><td>{self.order.commission:.2f}</td></tr>
                 <tr><td><b>策略ID:</b></td><td>{self.order.strategy_id}</td></tr>
                 <tr><td><b>用户ID:</b></td><td>{self.order.user_id}</td></tr>

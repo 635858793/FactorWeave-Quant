@@ -174,7 +174,7 @@ class ConnectionPoolConfigManager:
         return scenarios.get(scenario, {}).get('timeout', 30.0)
 
     def load_adaptive_config(self) -> Dict[str, Any]:
-        """加载自适应连接池配置"""
+        """加载自适应连接池配置（全局默认）"""
         config_dict = self.config_service.get('adaptive_connection_pool', {})
         if not config_dict:
             # 返回默认配置
@@ -193,13 +193,47 @@ class ConnectionPoolConfigManager:
             }
         return config_dict
 
+    def load_adaptive_pool_config(self, pool_name: str) -> Dict[str, Any]:
+        """加载指定连接池的自适应配置"""
+        per_pool_config = self.config_service.get('adaptive_pool_per_pool', {})
+        
+        if pool_name in per_pool_config:
+            pool_config = per_pool_config[pool_name]
+            if pool_config.get('enabled', False):
+                return pool_config
+            else:
+                return {'enabled': False}
+        
+        return {'enabled': False}
+
     def save_adaptive_config(self, config: Dict[str, Any]) -> bool:
-        """保存自适应连接池配置"""
+        """保存自适应连接池配置（全局默认）"""
         self.config_service.set('adaptive_connection_pool', config)
         logger.info(f"✅ 自适应连接池配置已保存")
         return True
 
+    def save_adaptive_pool_config(self, pool_name: str, config: Dict[str, Any]) -> bool:
+        """保存指定连接池的自适应配置"""
+        per_pool_config = self.config_service.get('adaptive_pool_per_pool', {})
+        
+        if pool_name not in per_pool_config:
+            per_pool_config[pool_name] = {}
+        
+        per_pool_config[pool_name] = config
+        self.config_service.set('adaptive_pool_per_pool', per_pool_config)
+        logger.info(f"✅ 连接池 {pool_name} 的自适应配置已保存")
+        return True
+
+    def is_adaptive_pool_enabled(self, pool_name: str) -> bool:
+        """检查指定连接池是否启用自适应"""
+        per_pool_config = self.config_service.get('adaptive_pool_per_pool', {})
+        
+        if pool_name in per_pool_config:
+            return per_pool_config[pool_name].get('enabled', False)
+        
+        return False
+
     def is_adaptive_enabled(self) -> bool:
-        """是否启用自适应连接池"""
-        config = self.load_adaptive_config()
-        return config.get('enabled', True)
+        """检查全局是否启用自适应管理（向后兼容）"""
+        adaptive_config = self.config_service.get('adaptive_connection_pool', {})
+        return adaptive_config.get('enabled', True)

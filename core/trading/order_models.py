@@ -133,6 +133,20 @@ class Order:
             'option_type': self.option_type
         }
 
+    @staticmethod
+    def _parse_metadata(metadata: Any) -> Dict[str, Any]:
+        """解析metadata字段"""
+        if isinstance(metadata, dict):
+            return metadata
+        elif isinstance(metadata, str):
+            try:
+                import json
+                return json.loads(metadata)
+            except (json.JSONDecodeError, TypeError):
+                return {}
+        else:
+            return {}
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'Order':
         """从字典创建"""
@@ -157,7 +171,7 @@ class Order:
             user_id=data.get('user_id', 'system'),
             account_id=data.get('account_id', 'default'),
             tags=data.get('tags', []),
-            metadata=data.get('metadata', {}),
+            metadata=cls._parse_metadata(data.get('metadata', '{}')),
             contract_multiplier=data.get('contract_multiplier', 1),
             margin_ratio=data.get('margin_ratio', 0.0),
             strike_price=data.get('strike_price'),

@@ -152,7 +152,8 @@ class AIExplainabilityService(BaseService):
                            stock_code: str, 
                            stock_data: Dict[str, Any],
                            selection_data: Dict[str, Any],
-                           explanation_level: ExplanationLevel = ExplanationLevel.DETAILED) -> ExplanationData:
+                           explanation_level: ExplanationLevel = ExplanationLevel.DETAILED,
+                           selection_result_id: Optional[str] = None) -> ExplanationData:
         """
         生成选股解释
         
@@ -161,6 +162,7 @@ class AIExplainabilityService(BaseService):
             stock_data: 股票数据
             selection_data: 选股数据
             explanation_level: 解释级别
+            selection_result_id: 选股结果ID（用于关联到ai_selection_results表）
             
         Returns:
             解释数据
@@ -198,7 +200,7 @@ class AIExplainabilityService(BaseService):
             )
             
             # 保存解释数据到数据库
-            self._save_explanation_to_db(explanation_data)
+            self._save_explanation_to_db(explanation_data, selection_result_id)
             
             logger.info(f"Generated explanation for {stock_code} with confidence {confidence_score:.2f}")
             return explanation_data
@@ -500,15 +502,32 @@ class AIExplainabilityService(BaseService):
         
         return max(0, min(1, confidence_score))
 
-    def _save_explanation_to_db(self, explanation_data: ExplanationData) -> None:
-        """保存解释数据到数据库"""
+    def _save_explanation_to_db(self, explanation_data: ExplanationData, selection_result_id: Optional[str] = None) -> None:
+        """保存解释数据到数据库
+        
+        Args:
+            explanation_data: 解释数据
+            selection_result_id: 选股结果ID（用于关联到ai_selection_results表）
+        """
         try:
+            # 如果没有提供 selection_result_id，则尝试查询或创建
+            if selection_result_id is None:
+                selection_result_id = self._get_or_create_selection_result_id(
+                    explanation_data.stock_code,
+                    explanation_data.created_at
+                )
+            
+            # 如果仍然没有有效的 selection_result_id，则跳过保存
+            if selection_result_id is None:
+                logger.warning(f"无法获取有效的 selection_result_id，跳过保存解释数据: {explanation_data.stock_code}")
+                return
+            
             explanations = []
             
             # 为每个因子创建解释记录
             for factor in explanation_data.factors:
                 explanation = {
-                    'selection_result_id': f"{explanation_data.stock_code}_{explanation_data.created_at.strftime('%Y%m%d')}",
+                    'selection_result_id': selection_result_id,
                     'explanation_type': 'factor_analysis',
                     'factor_name': factor.factor_name,
                     'factor_value': factor.value,
@@ -530,6 +549,68 @@ class AIExplainabilityService(BaseService):
         except Exception as e:
             logger.error(f"Failed to save explanation to database: {e}")
             # 不抛出异常，避免影响主流程
+
+    def _get_or_create_selection_result_id(self, stock_code: str, created_at: datetime) -> Optional[str]:
+        """获取或创建选股结果ID
+        
+        Args:
+            stock_code: 股票代码
+            created_at: 创建时间
+            
+        Returns:
+            选股结果ID，如果无法创建则返回None
+        """
+        try:
+            import uuid
+            
+            # 尝试查询匹配的选股结果记录
+            selection_date = created_at.date()
+            sql = """
+            SELECT id FROM ai_selection_results 
+            WHERE stock_code = ? AND selection_date = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """
+            
+            with self._database_service.get_connection("analytics_duckdb") as conn:
+                rows = conn.execute(sql, (stock_code, selection_date)).fetchall()
+                
+                if rows:
+                    return rows[0][0]
+            
+            # 如果没有找到匹配的记录，创建一条新的记录
+            logger.info(f"为股票 {stock_code} 创建新的选股结果记录")
+            
+            # 生成新的 result_id（UUID）
+            new_result_id = str(uuid.uuid4())
+            # 使用 {result_id}_{stock_code} 作为唯一ID
+            unique_id = f"{new_result_id}_{stock_code}"
+            
+            insert_sql = """
+            INSERT INTO ai_selection_results (
+                id, strategy_id, selection_date, stock_code, 
+                score, weight, confidence, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """
+            
+            with self._database_service.get_connection("analytics_duckdb") as conn:
+                conn.execute(insert_sql, (
+                    unique_id,
+                    str(uuid.uuid4()),  # 策略ID（临时生成）
+                    selection_date,
+                    stock_code,
+                    0.0,  # 评分
+                    0.0,  # 权重
+                    0.0,  # 置信度
+                    created_at
+                ))
+            
+            logger.info(f"成功创建选股结果记录: {unique_id}")
+            return unique_id
+            
+        except Exception as e:
+            logger.error(f"获取或创建选股结果ID失败: {e}")
+            return None
 
     def get_explanation_history(self, stock_code: str, days: int = 30) -> List[Dict[str, Any]]:
         """获取解释历史"""

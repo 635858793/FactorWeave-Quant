@@ -231,17 +231,12 @@ cp .env.example .env
 # 编辑 .env 文件，设置API密钥等
 ```
 
-#### 5. 初始化数据库
-```bash
-python init_database.py
-```
-
-#### 6. 启动应用
+#### 5. 启动应用
 ```bash
 python main.py
 ```
 
-#### 7. 访问UI界面
+#### 6. 访问UI界面
 启动成功后，UI界面会自动打开。主要功能包括：
 - **AI预测**：访问智能模型选择机制
 - **数据管理**：多数据源统一管理
@@ -385,7 +380,7 @@ FactorWeave-Quant/                     # 项目根目录
 ```
 
 ### 📈 项目统计信息
-- **代码规模**: 944个文件，533,174行代码
+- **代码规模**: 1208个文件，613,546行代码
 - **核心模块**: 15个主要功能模块
 - **业务服务**: 40+个专业服务
 - **数据源插件**: 10+个主流数据源
@@ -935,14 +930,9 @@ tail -f logs/performance_stats.log
 
 欢迎通过以下方式联系我们，获取更多信息和技术支持：
 
-### 📱 微信
-![微信二维码](docs/images/wechat.png)
-
-### 📧 QQ
-![QQ二维码](docs/images/qq.png)
-
-### 🪐 知识星球
-![知识星球二维码](docs/images/zsxq.png)
+| 📱 微信 | 📧 QQ | 🪐 知识星球 |
+| :---: | :---: | :---: |
+| ![微信二维码](docs/images/wechat.png) | ![QQ二维码](docs/images/qq.png) | ![知识星球二维码](docs/images/zsxq.png) |
 
 ## 📄 许可证
 
@@ -952,7 +942,7 @@ tail -f logs/performance_stats.log
 
 ## 🙏 致谢
 
-感谢以下重要项目和社区的支持（按重要性排序）：
+感谢以下重要项目和社区的支持（排序不分先后）：
 - [Backtrader](https://www.backtrader.com/) - 策略兼容引用
 - [AKShare](https://github.com/akfamily/akshare) - 多数据源集成
 - [PyQt5](https://www.riverbankcomputing.com/software/pyqt/) - 现代化UI框架
@@ -1300,7 +1290,7 @@ FactorWeave-Quant 2.0是一个功能强大的Python量化交易系统，集成�
 - **🖥️ 现代化**: 响应式UI设计和直观操作体验
 
 ### 🏆 技术成就
-- **代码规模**: 944个文件，533,174行代码
+- **代码规模**: 1208个文件，613,546行代码
 - **模块化**: 15个主要功能模块，40+个专业服务
 - **插件生态**: 10+个主流数据源插件
 - **AI能力**: 5+种预测模型和智能选择机制
@@ -1324,4 +1314,3 @@ FactorWeave-Quant 2.0是一个功能强大的Python量化交易系统，集成�
 2. 实现 `fuse()` 方法
 3. 注册到融合引擎配置
 
-详细技术文档请参考 `docs/智能模型选择机制实施指导文档.md`

@@ -46,7 +46,6 @@ pyqtgraph>=0.13.0
 akshare>=1.16.31
 pytdx>=1.72
 ta-lib>=0.4.28
-pandas-ta>=0.3.14b0
 mplfinance>=0.12.10b0
 
 # 数据库

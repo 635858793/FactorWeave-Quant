@@ -113,7 +113,8 @@ class AKSharePlugin(IDataSourcePlugin):
         return [
             DataType.SECTOR_FUND_FLOW,    # 板块资金流数据（主要功能）
             DataType.REAL_TIME_QUOTE,     # 实时行情
-            DataType.ASSET_LIST           # 资产列表
+            DataType.ASSET_LIST,          # 资产列表
+            DataType.FUNDAMENTAL          # 基本面数据（股本等）
             # 注意：不包含 HISTORICAL_KLINE，因为 AKShare 的 K线数据不完整
             # 虽然技术上可以通过 ak.stock_zh_a_hist() 获取，但不是所有股票都有数据
         ]
@@ -605,6 +606,111 @@ class AKSharePlugin(IDataSourcePlugin):
         """获取实时行情"""
         # AKShare插件主要用于板块资金流，暂不实现实时行情
         return []
+
+    def get_fundamental_data(self, symbol: str) -> Dict[str, Any]:
+        """获取股票基本面数据（股本等）
+
+        Args:
+            symbol: 股票代码（如'000001'）
+
+        Returns:
+            Dict[str, Any]: 包含基本面数据的字典
+                - total_shares: 总股本（股）
+                - circulating_shares: 流通股本（股）
+                - total_market_cap: 总市值（元）
+                - circulating_market_cap: 流通市值（元）
+                - industry: 所属行业
+                - list_date: 上市日期（YYYYMMDD格式）
+        """
+        try:
+            if not AKSHARE_AVAILABLE:
+                self.logger.error("akshare库不可用，无法获取基本面数据")
+                return {}
+
+            # 检查缓存
+            cache_key = f"fundamental_{symbol}"
+            if self._is_cache_valid() and hasattr(self, 'cached_fundamental_data'):
+                if cache_key in self.cached_fundamental_data:
+                    self.logger.debug(f"使用缓存的基本面数据: {symbol}")
+                    return self.cached_fundamental_data[cache_key]
+
+            self.logger.info(f"从AKShare获取股票 {symbol} 的基本面数据...")
+
+            # 添加请求延迟，避免触发反爬虫机制
+            time.sleep(1.0)
+
+            # 调用AKShare API获取个股信息
+            df = ak.stock_individual_info_em(symbol=symbol)
+
+            if df is None or df.empty:
+                self.logger.warning(f"AKShare未返回股票 {symbol} 的基本面数据")
+                return {}
+
+            # 提取股本相关数据
+            fundamental_data = {}
+
+            # 将DataFrame转换为字典，便于查找
+            info_dict = {}
+            for _, row in df.iterrows():
+                item = str(row.get('item', '')).strip()
+                value = row.get('value', None)
+                info_dict[item] = value
+
+            # 提取总股本
+            if '总股本' in info_dict:
+                try:
+                    fundamental_data['total_shares'] = float(info_dict['总股本'])
+                except (ValueError, TypeError):
+                    self.logger.warning(f"无法解析总股本: {info_dict['总股本']}")
+                    fundamental_data['total_shares'] = 0.0
+
+            # 提取流通股本
+            if '流通股' in info_dict:
+                try:
+                    fundamental_data['circulating_shares'] = float(info_dict['流通股'])
+                except (ValueError, TypeError):
+                    self.logger.warning(f"无法解析流通股: {info_dict['流通股']}")
+                    fundamental_data['circulating_shares'] = 0.0
+
+            # 提取总市值
+            if '总市值' in info_dict:
+                try:
+                    fundamental_data['total_market_cap'] = float(info_dict['总市值'])
+                except (ValueError, TypeError):
+                    fundamental_data['total_market_cap'] = 0.0
+
+            # 提取流通市值
+            if '流通市值' in info_dict:
+                try:
+                    fundamental_data['circulating_market_cap'] = float(info_dict['流通市值'])
+                except (ValueError, TypeError):
+                    fundamental_data['circulating_market_cap'] = 0.0
+
+            # 提取行业信息
+            if '行业' in info_dict:
+                fundamental_data['industry'] = str(info_dict['行业'])
+
+            # 提取上市日期
+            if '上市时间' in info_dict:
+                fundamental_data['list_date'] = str(info_dict['上市时间'])
+
+            # 添加数据源标识
+            fundamental_data['data_source'] = 'akshare'
+            fundamental_data['timestamp'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+            # 缓存结果
+            if not hasattr(self, 'cached_fundamental_data'):
+                self.cached_fundamental_data = {}
+            self.cached_fundamental_data[cache_key] = fundamental_data
+
+            self.logger.info(f"成功获取股票 {symbol} 的基本面数据: {len(fundamental_data)} 个字段")
+            return fundamental_data
+
+        except Exception as e:
+            self.logger.error(f"从AKShare获取股票 {symbol} 的基本面数据失败: {e}")
+            import traceback
+            self.logger.debug(traceback.format_exc())
+            return {}
 
     def perform_health_check(self) -> HealthCheckResult:
         """执行健康检查"""

@@ -41,6 +41,11 @@ from core.strategy_extensions import (
     StrategyType, RiskLevel, ParameterDef, PerformanceMetrics
 )
 
+# 导入服务
+from core.services.strategy_service import StrategyService, StrategyConfig, BacktestStatus, OptimizationStatus
+from core.services.trading_service import TradingService, StrategyState
+from core.services.unified_data_manager import UnifiedDataManager
+
 # 导入系统主题管理器
 from utils.theme import get_theme_manager, Theme
 from core.events.event_bus import get_event_bus
@@ -128,6 +133,9 @@ class EnhancedStrategyManagerDialogV2(QDialog):
 
         self.current_strategy_id = None
         self.current_view = 'home'  # 当前视图
+        
+        # 缓存图表引用，避免频繁查找
+        self._cached_charts = []
         
         # 设置窗口属性
         self.setWindowTitle("策略管理器")
@@ -434,25 +442,25 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         card.setFixedWidth(200)
         
         # 自定义样式（不使用系统主题）
-        card.setStyleSheet(f"""
-            QWidget {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, 
-                    stop:0 rgba(41, 98, 255, 0.1), 
-                    stop:1 rgba(41, 98, 255, 0.2));
-                border-radius: 8px;
-                border: 1px solid rgba(41, 98, 255, 0.3);
-            }}
-            QLabel {{
-                color: #FFFFFF;
-                font-size: 12px;
-                font-weight: bold;
-            }}
-            .value_label {{
-                color: #FFFFFF;
-                font-size: 24px;
-                font-weight: bold;
-            }}
-        """)
+        # card.setStyleSheet(f"""
+        #     QWidget {{
+        #         background: qlineargradient(x1:0, y1:0, x2:1, y2:1, 
+        #             stop:0 rgba(41, 98, 255, 0.1), 
+        #             stop:1 rgba(41, 98, 255, 0.2));
+        #         border-radius: 8px;
+        #         border: 1px solid rgba(41, 98, 255, 0.3);
+        #     }}
+        #     QLabel {{
+        #         color: #FFFFFF;
+        #         font-size: 12px;
+        #         font-weight: bold;
+        #     }}
+        #     .value_label {{
+        #         color: #FFFFFF;
+        #         font-size: 24px;
+        #         font-weight: bold;
+        #     }}
+        # """)
         
         layout = QVBoxLayout(card)
         layout.setAlignment(Qt.AlignCenter)
@@ -472,6 +480,9 @@ class EnhancedStrategyManagerDialogV2(QDialog):
     def _create_trend_chart(self) -> QWidget:
         """创建性能趋势图（使用系统主题背景，自定义金融配色）"""
         widget = FigureCanvas(Figure(figsize=(10, 4)))
+        
+        # 缓存图表引用
+        self._cached_charts.append(widget)
         
         # 应用系统主题到图表背景
         self.theme_manager.apply_chart_theme(widget.figure)
@@ -656,6 +667,9 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         export_btn = QPushButton("导出")
         export_btn.clicked.connect(self._export_strategy)
         
+        batch_update_btn = QPushButton("批量修改默认账号")
+        batch_update_btn.clicked.connect(self._batch_update_default_account)
+        
         refresh_btn = QPushButton("刷新")
         refresh_btn.clicked.connect(self._load_strategies)
         
@@ -668,16 +682,28 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         status_filter.addItems(["全部状态", "已配置", "运行中", "错误"])
         status_filter.currentTextChanged.connect(self._on_status_filter_changed)
         
+        # 默认账号筛选
+        account_filter = QComboBox()
+        account_filter.addItem("全部账号", "all")
+        account_filter.addItem("系统默认", "default")
+        
+        # 加载账号列表
+        self._load_accounts_for_filter(account_filter)
+        account_filter.currentTextChanged.connect(self._on_account_filter_changed)
+        
         # 布局
         layout.addWidget(create_btn)
         layout.addWidget(import_btn)
         layout.addWidget(export_btn)
+        layout.addWidget(batch_update_btn)
         layout.addWidget(refresh_btn)
         layout.addSpacing(20)
         layout.addWidget(QLabel("搜索:"))
         layout.addWidget(search_edit)
         layout.addWidget(QLabel("状态:"))
         layout.addWidget(status_filter)
+        layout.addWidget(QLabel("默认账号:"))
+        layout.addWidget(account_filter)
         layout.addStretch()
         
         return widget
@@ -685,10 +711,25 @@ class EnhancedStrategyManagerDialogV2(QDialog):
     def _create_strategy_table(self) -> QTableWidget:
         """创建策略表格（使用系统主题）"""
         table = QTableWidget()
-        table.setColumnCount(8)
+        table.setColumnCount(9)
         table.setHorizontalHeaderLabels([
-            "选择", "策略ID", "策略名称", "框架", "类型", "状态", "最后更新", "操作"
+            "选择", "策略ID", "策略名称", "框架", "类型", "默认账号", "状态", "最后更新", "操作"
         ])
+        
+        # 在第一列表头添加全选复选框
+        header = table.horizontalHeader()
+        self.select_all_checkbox = QCheckBox()
+        self.select_all_checkbox.stateChanged.connect(self._on_select_all_changed)
+        
+        # 创建容器并居中复选框
+        select_all_widget = QWidget()
+        select_all_layout = QHBoxLayout(select_all_widget)
+        select_all_layout.setContentsMargins(0, 0, 0, 0)
+        select_all_layout.setAlignment(Qt.AlignCenter)
+        select_all_layout.addWidget(self.select_all_checkbox)
+        
+        # 设置表头控件
+        header.setIndexWidget(header.model().index(0, 0), select_all_widget)
         
         # 设置表格属性
         table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -699,6 +740,7 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         # 连接信号
         table.itemDoubleClicked.connect(self._on_strategy_double_clicked)
         table.itemSelectionChanged.connect(self._on_strategy_selection_changed)
+        table.itemChanged.connect(self._on_item_changed)
         
         return table
 
@@ -758,7 +800,6 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         # 时间周期选择
         self.backtest_timeframe_combo = QComboBox()
         self.backtest_timeframe_combo.addItem("日线", TimeFrame.DAY_1)
-        self.backtest_timeframe_combo.addItem("4小时", TimeFrame.HOUR_4)
         self.backtest_timeframe_combo.addItem("1小时", TimeFrame.HOUR_1)
         self.backtest_timeframe_combo.addItem("30分钟", TimeFrame.MINUTE_30)
         self.backtest_timeframe_combo.addItem("15分钟", TimeFrame.MINUTE_15)
@@ -899,6 +940,9 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         """创建权益曲线图（使用系统主题背景，自定义金融配色）"""
         widget = FigureCanvas(Figure(figsize=(10, 6)))
         
+        # 缓存图表引用
+        self._cached_charts.append(widget)
+        
         # 应用系统主题到图表背景
         self.theme_manager.apply_chart_theme(widget.figure)
         
@@ -921,6 +965,9 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         """创建回撤分析图（使用系统主题背景，自定义金融配色）"""
         widget = FigureCanvas(Figure(figsize=(10, 6)))
         
+        # 缓存图表引用
+        self._cached_charts.append(widget)
+        
         # 应用系统主题到图表背景
         self.theme_manager.apply_chart_theme(widget.figure)
         
@@ -942,6 +989,9 @@ class EnhancedStrategyManagerDialogV2(QDialog):
     def _create_trades_chart(self) -> QWidget:
         """创建交易记录图（使用系统主题背景，自定义金融配色）"""
         widget = FigureCanvas(Figure(figsize=(10, 6)))
+        
+        # 缓存图表引用
+        self._cached_charts.append(widget)
         
         # 应用系统主题到图表背景
         self.theme_manager.apply_chart_theme(widget.figure)
@@ -1004,7 +1054,6 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         
         self.opt_timeframe_combo = QComboBox()
         self.opt_timeframe_combo.addItem("日线", TimeFrame.DAY_1)
-        self.opt_timeframe_combo.addItem("4小时", TimeFrame.HOUR_4)
         self.opt_timeframe_combo.addItem("1小时", TimeFrame.HOUR_1)
         self.opt_timeframe_combo.addItem("30分钟", TimeFrame.MINUTE_30)
         self.opt_timeframe_combo.addItem("15分钟", TimeFrame.MINUTE_15)
@@ -1175,6 +1224,9 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         """创建优化曲线图（使用系统主题背景，自定义金融配色）"""
         widget = FigureCanvas(Figure(figsize=(10, 6)))
         
+        # 缓存图表引用
+        self._cached_charts.append(widget)
+        
         # 应用系统主题到图表背景
         self.theme_manager.apply_chart_theme(widget.figure)
         
@@ -1283,6 +1335,9 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         """创建性能图表（使用系统主题背景，自定义金融配色）"""
         widget = FigureCanvas(Figure(figsize=(10, 6)))
         
+        # 缓存图表引用
+        self._cached_charts.append(widget)
+        
         # 应用系统主题到图表背景
         self.theme_manager.apply_chart_theme(widget.figure)
         
@@ -1343,22 +1398,20 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         self._refresh_all_charts()
 
     def _update_chart_themes(self):
-        """更新图表主题"""
+        """更新图表主题（使用缓存的图表引用）"""
         try:
-            # 获取所有图表
-            charts = self.findChildren(FigureCanvas)
-            
-            # 应用系统主题到图表背景
-            for chart in charts:
-                self.theme_manager.apply_chart_theme(chart.figure)
+            # 使用缓存的图表引用，避免遍历整个控件树
+            for chart in self._cached_charts:
+                if chart and hasattr(chart, 'figure'):
+                    self.theme_manager.apply_chart_theme(chart.figure)
+                    
+                    # 自定义图表线条颜色（金融配色）
+                    self._apply_chart_line_colors(chart.figure)
+                    
+                    # 重新绘制图表
+                    chart.draw()
                 
-                # 自定义图表线条颜色（金融配色）
-                self._apply_chart_line_colors(chart.figure)
-                
-                # 重新绘制图表
-                chart.draw()
-                
-            logger.info(f"已更新 {len(charts)} 个图表的主题")
+            logger.info(f"已更新 {len(self._cached_charts)} 个图表的主题")
             
         except Exception as e:
             logger.error(f"更新图表主题失败: {e}")
@@ -1432,62 +1485,185 @@ class EnhancedStrategyManagerDialogV2(QDialog):
             logger.error(f"更新统计卡片失败: {e}")
 
     def _refresh_all_charts(self):
-        """刷新所有图表"""
+        """刷新所有图表（使用缓存的图表引用）"""
         try:
-            # 获取所有图表
-            charts = self.findChildren(FigureCanvas)
-            
-            # 重新绘制所有图表
-            for chart in charts:
-                chart.draw()
+            # 使用缓存的图表引用，避免遍历整个控件树
+            for chart in self._cached_charts:
+                if chart:
+                    chart.draw()
                 
-            logger.info(f"已刷新 {len(charts)} 个图表")
+            logger.info(f"已刷新 {len(self._cached_charts)} 个图表")
             
         except Exception as e:
             logger.error(f"刷新图表失败: {e}")
 
     def _load_strategies(self):
-        """加载策略列表"""
+        """加载策略列表（使用增量更新优化性能）"""
         if not self.strategy_service:
             QMessageBox.warning(self, "警告", "策略服务不可用")
             return
 
         try:
+            # 阻塞信号以避免频繁更新全选复选框
+            self.strategy_table.blockSignals(True)
+            
             # 调用后端API获取策略列表
             strategies = self.strategy_service.get_all_strategy_configs()
             
-            # 更新策略表格
-            if hasattr(self, 'strategy_table'):
-                self.strategy_table.setRowCount(len(strategies))
-                for row, strategy in enumerate(strategies):
+            # 获取当前表格中的所有策略ID
+            current_strategy_ids = set()
+            for row in range(self.strategy_table.rowCount()):
+                item = self.strategy_table.item(row, 1)
+                if item:
+                    current_strategy_ids.add(item.text())
+            
+            # 获取新策略ID集合
+            new_strategy_ids = {strategy.strategy_id for strategy in strategies}
+            
+            # 找出需要删除的策略
+            to_remove = current_strategy_ids - new_strategy_ids
+            
+            # 找出需要添加的策略
+            to_add = new_strategy_ids - current_strategy_ids
+            
+            # 找出需要更新的策略
+            to_update = current_strategy_ids & new_strategy_ids
+            
+            # 创建策略ID到策略对象的映射
+            strategy_map = {strategy.strategy_id: strategy for strategy in strategies}
+            
+            # 删除不存在的策略（从后往前删除，避免索引变化）
+            rows_to_remove = []
+            for row in range(self.strategy_table.rowCount()):
+                item = self.strategy_table.item(row, 1)
+                if item and item.text() in to_remove:
+                    rows_to_remove.append(row)
+            
+            for row in sorted(rows_to_remove, reverse=True):
+                self.strategy_table.removeRow(row)
+            
+            # 更新现有策略
+            for row in range(self.strategy_table.rowCount()):
+                item = self.strategy_table.item(row, 1)
+                if item and item.text() in to_update:
+                    strategy_id = item.text()
+                    strategy = strategy_map.get(strategy_id)
+                    if strategy:
+                        self._update_strategy_row(row, strategy)
+            
+            # 添加新策略
+            for strategy_id in to_add:
+                strategy = strategy_map.get(strategy_id)
+                if strategy:
+                    row = self.strategy_table.rowCount()
+                    self.strategy_table.insertRow(row)
                     self._add_strategy_row(row, strategy)
+            
+            # 恢复信号
+            self.strategy_table.blockSignals(False)
             
             # 更新回测策略选择下拉框
             if hasattr(self, 'backtest_strategy_combo'):
-                self.backtest_strategy_combo.clear()
-                for strategy in strategies:
-                    display_text = f"{strategy.strategy_id}"
-                    self.backtest_strategy_combo.addItem(display_text, strategy.strategy_id)
+                self._update_combo_with_strategies(self.backtest_strategy_combo, strategies)
             
             # 更新优化策略选择下拉框
             if hasattr(self, 'opt_strategy_combo'):
-                self.opt_strategy_combo.clear()
-                for strategy in strategies:
-                    display_text = f"{strategy.strategy_id}"
-                    self.opt_strategy_combo.addItem(display_text, strategy.strategy_id)
+                self._update_combo_with_strategies(self.opt_strategy_combo, strategies)
             
             # 更新对比策略选择下拉框
             if hasattr(self, 'compare_strategy_combo1') and hasattr(self, 'compare_strategy_combo2'):
                 self._load_comparison_strategies()
+            
+            # 更新全选复选框状态
+            if hasattr(self, 'select_all_checkbox'):
+                self._update_select_all_checkbox_state()
                     
-            logger.info(f"成功加载 {len(strategies)} 个策略")
+            logger.info(f"成功加载 {len(strategies)} 个策略（新增: {len(to_add)}, 删除: {len(to_remove)}, 更新: {len(to_update)}）")
                     
         except Exception as e:
             logger.error(f"加载策略列表失败: {e}")
             QMessageBox.warning(self, "错误", f"加载策略列表失败: {e}")
+        finally:
+            self.strategy_table.blockSignals(False)
+    
+    def _update_strategy_row(self, row: int, strategy: StrategyConfig):
+        """更新策略行数据"""
+        # 策略名称（从metadata中获取）
+        strategy_name = strategy.metadata.get('name', strategy.strategy_id)
+        name_item = self.strategy_table.item(row, 2)
+        if name_item:
+            name_item.setText(strategy_name)
+        
+        # 框架类型
+        plugin_item = self.strategy_table.item(row, 3)
+        if plugin_item:
+            plugin_item.setText(strategy.plugin_type)
+        
+        # 策略类型（从metadata中获取）
+        strategy_type = strategy.metadata.get('type', 'unknown')
+        type_text = self._get_strategy_type_text(strategy_type)
+        type_item = self.strategy_table.item(row, 4)
+        if type_item:
+            type_item.setText(type_text)
+        
+        # 默认账号（从metadata中获取）
+        default_account_id = strategy.metadata.get('default_account_id', 'default')
+        default_account_text = "系统默认" if default_account_id == 'default' else default_account_id
+        account_item = self.strategy_table.item(row, 5)
+        if account_item:
+            account_item.setText(default_account_text)
+        
+        # 最后更新时间
+        last_updated = strategy.updated_at
+        if last_updated:
+            try:
+                last_updated = last_updated.strftime('%Y-%m-%d %H:%M')
+            except:
+                pass
+        updated_item = self.strategy_table.item(row, 7)
+        if updated_item:
+            updated_item.setText(last_updated)
+    
+    def _update_combo_with_strategies(self, combo: QComboBox, strategies: List[StrategyConfig]):
+        """更新下拉框的策略列表（增量更新）"""
+        # 保存当前选择
+        current_selection = combo.currentData()
+        
+        # 获取当前下拉框中的所有策略ID
+        current_ids = {combo.itemData(i) for i in range(combo.count())}
+        
+        # 获取新策略ID集合
+        new_ids = {strategy.strategy_id for strategy in strategies}
+        
+        # 找出需要删除的策略
+        to_remove = current_ids - new_ids
+        
+        # 找出需要添加的策略
+        to_add = new_ids - current_ids
+        
+        # 创建策略ID到策略对象的映射
+        strategy_map = {strategy.strategy_id: strategy for strategy in strategies}
+        
+        # 删除不存在的策略（从后往前删除，避免索引变化）
+        for i in range(combo.count() - 1, -1, -1):
+            if combo.itemData(i) in to_remove:
+                combo.removeItem(i)
+        
+        # 添加新策略
+        for strategy_id in to_add:
+            strategy = strategy_map.get(strategy_id)
+            if strategy:
+                display_text = f"{strategy.strategy_id}"
+                combo.addItem(display_text, strategy.strategy_id)
+        
+        # 恢复之前的选择
+        if current_selection:
+            index = combo.findData(current_selection)
+            if index >= 0:
+                combo.setCurrentIndex(index)
 
     def _add_strategy_row(self, row: int, strategy: StrategyConfig):
-        """添加策略行（适配8列表格结构）"""
+        """添加策略行（适配9列表格结构）"""
         # 选择框
         checkbox_item = QTableWidgetItem()
         checkbox_item.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
@@ -1509,11 +1685,16 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         type_text = self._get_strategy_type_text(strategy_type)
         self.strategy_table.setItem(row, 4, QTableWidgetItem(type_text))
         
+        # 默认账号（从metadata中获取）
+        default_account_id = strategy.metadata.get('default_account_id', 'default')
+        default_account_text = "系统默认" if default_account_id == 'default' else default_account_id
+        self.strategy_table.setItem(row, 5, QTableWidgetItem(default_account_text))
+        
         # 状态（使用自定义语义化颜色）
         status = "已配置"
         status_item = QTableWidgetItem(status)
         status_item.setForeground(QColor(STATUS_COLORS.get('configured', '#6B7280')))
-        self.strategy_table.setItem(row, 5, status_item)
+        self.strategy_table.setItem(row, 6, status_item)
         
         # 最后更新时间
         last_updated = strategy.updated_at
@@ -1522,7 +1703,7 @@ class EnhancedStrategyManagerDialogV2(QDialog):
                 last_updated = last_updated.strftime('%Y-%m-%d %H:%M')
             except:
                 pass
-        self.strategy_table.setItem(row, 6, QTableWidgetItem(last_updated))
+        self.strategy_table.setItem(row, 7, QTableWidgetItem(last_updated))
         
         # 操作按钮
         button_widget = QWidget()
@@ -1540,22 +1721,33 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         
         button_layout.addWidget(edit_button)
         button_layout.addWidget(delete_button)
-        self.strategy_table.setCellWidget(row, 7, button_widget)
+        self.strategy_table.setCellWidget(row, 8, button_widget)
 
     def _on_search_text_changed(self, text: str):
         """搜索文本变化事件"""
-        self._filter_strategies(text, self._get_current_status_filter())
+        try:
+            self._filter_strategies(text, self._get_current_status_filter(), self._get_current_account_filter())
+        except Exception as e:
+            logger.error(f"搜索失败: {e}")
+            QMessageBox.warning(self, "警告", f"搜索失败: {str(e)}")
 
     def _on_status_filter_changed(self, text: str):
         """状态筛选变化事件"""
-        self._filter_strategies(self._get_current_search_text(), text)
+        try:
+            self._filter_strategies(self._get_current_search_text(), text, self._get_current_account_filter())
+        except Exception as e:
+            logger.error(f"状态筛选失败: {e}")
+            QMessageBox.warning(self, "警告", f"状态筛选失败: {str(e)}")
 
-    def _filter_strategies(self, search_text: str, status_filter: str):
+    def _filter_strategies(self, search_text: str, status_filter: str, account_filter: str = "all"):
         """筛选策略列表"""
         if not self.strategy_service:
             return
         
         try:
+            # 阻塞信号以避免频繁更新全选复选框
+            self.strategy_table.blockSignals(True)
+            
             # 获取所有策略
             all_strategies = self.strategy_service.get_all_strategy_configs()
             
@@ -1583,6 +1775,12 @@ class EnhancedStrategyManagerDialogV2(QDialog):
                         if strategy_status != filter_status:
                             continue
                 
+                # 默认账号筛选
+                if account_filter and account_filter != "all":
+                    default_account_id = strategy.metadata.get('default_account_id', 'default')
+                    if default_account_id != account_filter:
+                        continue
+                
                 filtered_strategies.append(strategy)
             
             # 更新表格
@@ -1590,8 +1788,16 @@ class EnhancedStrategyManagerDialogV2(QDialog):
             for row, strategy in enumerate(filtered_strategies):
                 self._add_strategy_row(row, strategy)
             
+            # 恢复信号
+            self.strategy_table.blockSignals(False)
+            
+            # 更新全选复选框状态
+            self._update_select_all_checkbox_state()
+            
         except Exception as e:
             logger.error(f"筛选策略失败: {e}")
+        finally:
+            self.strategy_table.blockSignals(False)
 
     def _get_current_search_text(self) -> str:
         """获取当前搜索文本"""
@@ -1606,6 +1812,39 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         if status_filter and status_filter.count() > 0:
             return status_filter.currentText()
         return ""
+    
+    def _load_accounts_for_filter(self, account_filter: QComboBox):
+        """加载账号列表到筛选下拉框"""
+        try:
+            from core.trading.account_manager import AccountManager
+            account_manager = self.service_container.resolve(AccountManager)
+            
+            if account_manager:
+                accounts = account_manager.get_all_accounts()
+                for account in accounts:
+                    account_filter.addItem(account.account_id, account.account_id)
+        except Exception as e:
+            logger.error(f"加载账号列表失败: {e}")
+    
+    def _on_account_filter_changed(self, text: str):
+        """账号筛选变化事件"""
+        try:
+            self._filter_strategies(
+                self._get_current_search_text(),
+                self._get_current_status_filter(),
+                self._get_current_account_filter()
+            )
+        except Exception as e:
+            logger.error(f"账号筛选失败: {e}")
+            QMessageBox.warning(self, "警告", f"账号筛选失败: {str(e)}")
+    
+    def _get_current_account_filter(self) -> str:
+        """获取当前账号筛选"""
+        account_filters = self.findChildren(QComboBox)
+        for account_filter in account_filters:
+            if account_filter.count() > 0 and account_filter.itemData(0) == "all":
+                return account_filter.currentData()
+        return "all"
 
     def _load_comparison_strategies(self):
         """加载策略列表到对比下拉框"""
@@ -1688,23 +1927,72 @@ class EnhancedStrategyManagerDialogV2(QDialog):
 
     def _on_strategy_double_clicked(self, item):
         """策略双击事件"""
-        row = item.row()
-        strategy_id_item = self.strategy_table.item(row, 1)
-        if strategy_id_item:
-            self._edit_strategy(strategy_id_item.text())
+        try:
+            row = item.row()
+            strategy_id_item = self.strategy_table.item(row, 1)
+            if strategy_id_item:
+                self._edit_strategy(strategy_id_item.text())
+        except Exception as e:
+            logger.error(f"打开策略详情失败: {e}")
+            QMessageBox.warning(self, "警告", f"打开策略详情失败: {str(e)}")
 
     def _on_strategy_selection_changed(self):
         """策略选择变化事件"""
-        selected_items = self.strategy_table.selectedItems()
-        if not selected_items:
-            return
+        try:
+            selected_items = self.strategy_table.selectedItems()
+            if not selected_items:
+                return
 
-        row = selected_items[0].row()
-        strategy_id_item = self.strategy_table.item(row, 1)
-        if strategy_id_item:
-            strategy_id = strategy_id_item.text()
-            self.current_strategy_id = strategy_id
-            self.strategy_selected.emit(strategy_id)
+            row = selected_items[0].row()
+            strategy_id_item = self.strategy_table.item(row, 1)
+            if strategy_id_item:
+                strategy_id = strategy_id_item.text()
+                self.current_strategy_id = strategy_id
+                self.strategy_selected.emit(strategy_id)
+        except Exception as e:
+            logger.error(f"策略选择失败: {e}")
+    
+    def _on_select_all_changed(self, state: int):
+        """全选复选框状态变化事件"""
+        try:
+            for row in range(self.strategy_table.rowCount()):
+                checkbox_item = self.strategy_table.item(row, 0)
+                if checkbox_item:
+                    checkbox_item.setCheckState(Qt.CheckState(state))
+        except Exception as e:
+            logger.error(f"全选操作失败: {e}")
+            QMessageBox.warning(self, "警告", f"全选操作失败: {str(e)}")
+    
+    def _on_item_changed(self, item: QTableWidgetItem):
+        """表格项变化事件（用于更新全选复选框状态）"""
+        try:
+            if item.column() == 0:
+                self._update_select_all_checkbox_state()
+        except Exception as e:
+            logger.error(f"表格项变化处理失败: {e}")
+    
+    def _update_select_all_checkbox_state(self):
+        """更新全选复选框状态"""
+        if not hasattr(self, 'select_all_checkbox'):
+            return
+        
+        total_rows = self.strategy_table.rowCount()
+        if total_rows == 0:
+            self.select_all_checkbox.setCheckState(Qt.Unchecked)
+            return
+        
+        checked_count = 0
+        for row in range(total_rows):
+            checkbox_item = self.strategy_table.item(row, 0)
+            if checkbox_item and checkbox_item.checkState() == Qt.Checked:
+                checked_count += 1
+        
+        if checked_count == 0:
+            self.select_all_checkbox.setCheckState(Qt.Unchecked)
+        elif checked_count == total_rows:
+            self.select_all_checkbox.setCheckState(Qt.Checked)
+        else:
+            self.select_all_checkbox.setCheckState(Qt.PartiallyChecked)
 
     def _get_selected_strategy_rows(self):
         """获取选中的策略行号列表"""
@@ -1720,28 +2008,64 @@ class EnhancedStrategyManagerDialogV2(QDialog):
     def _create_strategy(self):
         """创建策略"""
         try:
+            # 检查策略服务
+            if not self.strategy_service:
+                logger.warning("策略服务未初始化")
+                QMessageBox.warning(self, "警告", "策略服务未初始化")
+                return
+            
             # 创建策略配置对话框
             dialog = StrategyConfigDialog(self)
             if dialog.exec_() == QDialog.Accepted:
                 config_data = dialog.get_config_data()
                 
+                # 验证策略ID
+                strategy_id = config_data.get('strategy_id', '').strip()
+                if not strategy_id:
+                    QMessageBox.warning(self, "警告", "策略ID不能为空")
+                    return
+                
+                # 验证策略ID格式（只允许字母、数字、下划线和连字符）
+                import re
+                if not re.match(r'^[a-zA-Z0-9_-]+$', strategy_id):
+                    QMessageBox.warning(self, "警告", "策略ID只能包含字母、数字、下划线和连字符")
+                    return
+                
+                # 验证策略名称
+                strategy_name = config_data.get('metadata', {}).get('name', '').strip()
+                if not strategy_name:
+                    QMessageBox.warning(self, "警告", "策略名称不能为空")
+                    return
+                
+                # 验证参数
+                parameters = config_data.get('parameters', {})
+                for param_name, param_value in parameters.items():
+                    if not param_name.strip():
+                        QMessageBox.warning(self, "警告", "参数名不能为空")
+                        return
+                    if param_value is None:
+                        QMessageBox.warning(self, "警告", f"参数 '{param_name}' 的值不能为空")
+                        return
+                
+                # 检查策略ID是否已存在
+                existing_strategy = self.strategy_service.get_strategy_config(strategy_id)
+                if existing_strategy:
+                    QMessageBox.warning(self, "警告", f"策略ID '{strategy_id}' 已存在，请使用其他ID")
+                    return
+                
                 # 调用后端API创建策略
-                if self.strategy_service:
-                    success = self.strategy_service.create_strategy_config(
-                        strategy_id=config_data['strategy_id'],
-                        plugin_type=config_data['plugin_type'],
-                        parameters=config_data['parameters'],
-                        metadata=config_data.get('metadata', {})
-                    )
-                    
-                    if success:
-                        QMessageBox.information(self, "成功", f"策略创建成功！\n策略ID: {config_data['strategy_id']}")
-                        self._load_strategies()
-                    else:
-                        QMessageBox.warning(self, "警告", "策略创建失败")
+                success = self.strategy_service.create_strategy_config(
+                    strategy_id=strategy_id,
+                    plugin_type=config_data['plugin_type'],
+                    parameters=parameters,
+                    metadata=config_data.get('metadata', {})
+                )
+                
+                if success:
+                    QMessageBox.information(self, "成功", f"策略创建成功！\n策略ID: {strategy_id}")
+                    self._load_strategies()
                 else:
-                    logger.warning("策略服务未初始化")
-                    QMessageBox.warning(self, "警告", "策略服务未初始化")
+                    QMessageBox.warning(self, "警告", "策略创建失败")
                     
         except Exception as e:
             logger.error(f"创建策略失败: {e}")
@@ -1750,6 +2074,12 @@ class EnhancedStrategyManagerDialogV2(QDialog):
     def _import_strategy(self):
         """导入策略"""
         try:
+            # 检查策略服务
+            if not self.strategy_service:
+                logger.warning("策略服务未初始化")
+                QMessageBox.warning(self, "警告", "策略服务未初始化")
+                return
+            
             # 选择文件
             file_path, _ = QFileDialog.getOpenFileName(
                 self,
@@ -1765,24 +2095,80 @@ class EnhancedStrategyManagerDialogV2(QDialog):
             with open(file_path, 'r', encoding='utf-8') as f:
                 strategy_data = json.load(f)
             
-            # 调用后端API创建策略
-            if self.strategy_service:
-                success = self.strategy_service.create_strategy_config(
-                    strategy_id=strategy_data.get('strategy_id', ''),
-                    plugin_type=strategy_data.get('plugin_type', ''),
-                    parameters=strategy_data.get('parameters', {}),
-                    metadata=strategy_data.get('metadata', {})
+            # 验证数据格式
+            if not isinstance(strategy_data, dict):
+                QMessageBox.warning(self, "警告", "策略文件格式错误：必须是JSON对象")
+                return
+            
+            # 验证必需字段
+            required_fields = ['strategy_id', 'plugin_type']
+            missing_fields = [field for field in required_fields if field not in strategy_data]
+            if missing_fields:
+                QMessageBox.warning(self, "警告", f"策略文件缺少必需字段: {', '.join(missing_fields)}")
+                return
+            
+            # 验证策略ID
+            strategy_id = strategy_data.get('strategy_id', '').strip()
+            if not strategy_id:
+                QMessageBox.warning(self, "警告", "策略ID不能为空")
+                return
+            
+            # 验证策略ID格式
+            import re
+            if not re.match(r'^[a-zA-Z0-9_-]+$', strategy_id):
+                QMessageBox.warning(self, "警告", "策略ID只能包含字母、数字、下划线和连字符")
+                return
+            
+            # 验证插件类型
+            plugin_type = strategy_data.get('plugin_type', '').strip()
+            if not plugin_type:
+                QMessageBox.warning(self, "警告", "插件类型不能为空")
+                return
+            
+            # 验证参数格式
+            parameters = strategy_data.get('parameters', {})
+            if not isinstance(parameters, dict):
+                QMessageBox.warning(self, "警告", "参数格式错误：必须是对象")
+                return
+            
+            # 验证元数据格式
+            metadata = strategy_data.get('metadata', {})
+            if not isinstance(metadata, dict):
+                QMessageBox.warning(self, "警告", "元数据格式错误：必须是对象")
+                return
+            
+            # 检查策略ID是否已存在
+            existing_strategy = self.strategy_service.get_strategy_config(strategy_id)
+            if existing_strategy:
+                reply = QMessageBox.question(
+                    self,
+                    "确认",
+                    f"策略ID '{strategy_id}' 已存在，是否覆盖？",
+                    QMessageBox.Yes | QMessageBox.No
                 )
-                
-                if success:
-                    QMessageBox.information(self, "成功", f"策略导入成功！\n策略ID: {strategy_data.get('strategy_id', '')}")
-                    self._load_strategies()
-                else:
-                    QMessageBox.warning(self, "警告", "策略导入失败")
+                if reply == QMessageBox.No:
+                    return
+            
+            # 调用后端API创建策略
+            success = self.strategy_service.create_strategy_config(
+                strategy_id=strategy_id,
+                plugin_type=plugin_type,
+                parameters=parameters,
+                metadata=metadata
+            )
+            
+            if success:
+                QMessageBox.information(self, "成功", f"策略导入成功！\n策略ID: {strategy_id}")
+                self._load_strategies()
             else:
-                logger.warning("策略服务未初始化")
-                QMessageBox.warning(self, "警告", "策略服务未初始化")
+                QMessageBox.warning(self, "警告", "策略导入失败")
                 
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON解析失败: {e}")
+            QMessageBox.critical(self, "错误", f"策略文件格式错误：无法解析JSON文件\n{str(e)}")
+        except FileNotFoundError:
+            logger.error(f"文件不存在: {file_path}")
+            QMessageBox.critical(self, "错误", f"文件不存在: {file_path}")
         except Exception as e:
             logger.error(f"导入策略失败: {e}")
             QMessageBox.critical(self, "错误", f"导入策略失败: {str(e)}")
@@ -1893,71 +2279,128 @@ class EnhancedStrategyManagerDialogV2(QDialog):
                     self._load_strategies()  # 刷新列表
                 else:
                     QMessageBox.warning(self, "失败", "策略删除失败")
-
-    def _generate_mock_market_data(self, start_date: str, end_date: str, timeframe: TimeFrame = TimeFrame.DAY_1) -> StandardMarketData:
-        """生成模拟的市场数据"""
+    
+    def _batch_update_default_account(self):
+        """批量修改默认账号"""
         try:
-            # 根据时间周期确定频率
-            freq_map = {
-                TimeFrame.DAY_1: 'D',
-                TimeFrame.HOUR_4: '4H',
-                TimeFrame.HOUR_1: '1H',
-                TimeFrame.MINUTE_30: '30T',
-                TimeFrame.MINUTE_15: '15T',
-                TimeFrame.MINUTE_5: '5T',
-                TimeFrame.MINUTE_1: '1T'
-            }
-            freq = freq_map.get(timeframe, 'D')
+            # 获取选中的策略
+            selected_strategy_ids = []
+            for row in range(self.strategy_table.rowCount()):
+                checkbox_item = self.strategy_table.item(row, 0)
+                if checkbox_item and checkbox_item.checkState() == Qt.Checked:
+                    strategy_id_item = self.strategy_table.item(row, 1)
+                    if strategy_id_item:
+                        selected_strategy_ids.append(strategy_id_item.text())
             
-            # 创建日期范围
-            dates = pd.date_range(start=start_date, end=end_date, freq=freq)
-            n_points = len(dates)
+            if not selected_strategy_ids:
+                QMessageBox.warning(self, "提示", "请先选择要修改的策略")
+                return
             
-            # 生成模拟的OHLCV数据
-            np.random.seed(42)  # 使用固定种子确保可重复性
+            # 获取账号管理器
+            account_manager = None
+            try:
+                from core.trading.account_manager import AccountManager
+                account_manager = self.service_container.resolve(AccountManager)
+            except Exception as e:
+                logger.error(f"获取账号管理器失败: {e}")
             
-            base_price = 100.0
-            opens = []
-            highs = []
-            lows = []
-            closes = []
-            volumes = []
+            # 打开批量修改对话框
+            dialog = BatchUpdateDefaultAccountDialog(
+                self,
+                strategy_ids=selected_strategy_ids,
+                strategy_service=self.strategy_service,
+                account_manager=account_manager
+            )
             
-            current_price = base_price
-            for i in range(n_points):
-                # 生成随机波动（根据时间周期调整波动率）
-                volatility = 0.02 if timeframe == TimeFrame.DAY_1 else 0.005
-                change = np.random.normal(0, volatility)
-                current_price *= (1 + change)
+            if dialog.exec_() == QDialog.Accepted:
+                # 获取选中的账号
+                selected_account = dialog.get_selected_account()
                 
-                # 生成OHLC数据
-                open_price = current_price * (1 + np.random.normal(0, 0.005))
-                high = current_price * (1 + abs(np.random.normal(0, 0.01)))
-                low = current_price * (1 - abs(np.random.normal(0, 0.01)))
-                close_price = current_price
-                volume = np.random.randint(1000000, 10000000)
+                # 批量更新策略
+                success_count = 0
+                failed_count = 0
                 
-                opens.append(open_price)
-                highs.append(high)
-                lows.append(low)
-                closes.append(close_price)
-                volumes.append(volume)
-            
-            # 创建DataFrame
-            df = pd.DataFrame({
-                'open': opens,
-                'high': highs,
-                'low': lows,
-                'close': closes,
-                'volume': volumes
-            }, index=dates)
-            
-            # 使用from_dataframe创建StandardMarketData
-            return StandardMarketData.from_dataframe(df, symbol='DEFAULT')
-            
+                for strategy_id in selected_strategy_ids:
+                    try:
+                        # 获取策略配置
+                        strategy_config = self.strategy_service.get_strategy_config(strategy_id)
+                        
+                        if strategy_config:
+                            # 更新 metadata 中的 default_account_id
+                            strategy_config.metadata['default_account_id'] = selected_account
+                            
+                            # 保存策略配置
+                            success = self.strategy_service.update_strategy_config(strategy_config)
+                            
+                            if success:
+                                success_count += 1
+                            else:
+                                failed_count += 1
+                        else:
+                            failed_count += 1
+                    except Exception as e:
+                        logger.error(f"更新策略 {strategy_id} 失败: {e}")
+                        failed_count += 1
+                
+                # 刷新策略列表
+                self._load_strategies()
+                
+                # 显示结果
+                if failed_count == 0:
+                    QMessageBox.information(
+                        self, "成功",
+                        f"成功更新 {success_count} 个策略的默认账号"
+                    )
+                else:
+                    QMessageBox.warning(
+                        self, "部分成功",
+                        f"成功更新 {success_count} 个策略，失败 {failed_count} 个策略"
+                    )
+        
         except Exception as e:
-            logger.error(f"生成模拟市场数据失败: {e}")
-            raise
+            logger.error(f"批量修改默认账号失败: {e}")
+            QMessageBox.critical(self, "错误", f"批量修改默认账号失败: {e}")
+
+    def _get_real_market_data(self, start_date: str, end_date: str, timeframe: TimeFrame, symbol: str = '000001') -> StandardMarketData:
+        """从真实数据源获取市场数据"""
+        try:
+            data_manager = UnifiedDataManager()
+            
+            timeframe_map = {
+                TimeFrame.DAY_1: 'D',
+                TimeFrame.HOUR_1: '60',
+                TimeFrame.MINUTE_30: '30',
+                TimeFrame.MINUTE_15: '15',
+                TimeFrame.MINUTE_5: '5',
+                TimeFrame.MINUTE_1: '1'
+            }
+            period = timeframe_map.get(timeframe, 'D')
+            
+            df = data_manager.get_kdata_from_source(
+                stock_code=symbol,
+                period=period,
+                start_date=start_date,
+                end_date=end_date,
+                count=365
+            )
+            
+            if df is None or df.empty:
+                logger.warning(f"无法获取 {symbol} 的历史数据，使用默认股票")
+                df = data_manager.get_kdata_from_source(
+                    stock_code='000001',
+                    period=period,
+                    count=365
+                )
+            
+            if df is not None and not df.empty:
+                return StandardMarketData.from_dataframe(df, symbol=symbol)
+            else:
+                logger.error(f"无法获取任何历史数据")
+                return None
+                
+        except Exception as e:
+            logger.error(f"获取真实市场数据失败: {e}")
+            return None
 
     def _run_backtest(self):
         """运行回测"""
@@ -1974,11 +2417,22 @@ class EnhancedStrategyManagerDialogV2(QDialog):
             commission_rate = self.backtest_commission_rate.value()
             timeframe = self.backtest_timeframe_combo.currentData()
             
-            # 构建市场数据和上下文
-            market_data = self._generate_mock_market_data(start_date, end_date, timeframe)
+            # 获取股票代码（如果有选择的话）
+            symbol = getattr(self, 'backtest_symbol_combo', None)
+            if symbol and hasattr(symbol, 'currentText'):
+                symbol = symbol.currentText()
+            else:
+                symbol = '000001'
+            
+            # 从真实数据源获取市场数据
+            market_data = self._get_real_market_data(start_date, end_date, timeframe, symbol)
+            
+            if market_data is None:
+                QMessageBox.warning(self, "警告", "无法获取历史数据，请检查数据源配置")
+                return
             
             context = StrategyContext(
-                symbol='DEFAULT',
+                symbol=symbol,
                 timeframe=timeframe,
                 start_date=start_date,
                 end_date=end_date,
@@ -2065,11 +2519,22 @@ class EnhancedStrategyManagerDialogV2(QDialog):
             commission_rate = self.backtest_commission_rate.value()
             timeframe = self.backtest_timeframe_combo.currentData()
             
-            # 构建市场数据和上下文
-            market_data = self._generate_mock_market_data(start_date, end_date, timeframe)
+            # 获取股票代码（如果有选择的话）
+            symbol = getattr(self, 'backtest_symbol_combo', None)
+            if symbol and hasattr(symbol, 'currentText'):
+                symbol = symbol.currentText()
+            else:
+                symbol = '000001'
+            
+            # 从真实数据源获取市场数据
+            market_data = self._get_real_market_data(start_date, end_date, timeframe, symbol)
+            
+            if market_data is None:
+                QMessageBox.warning(self, "警告", "无法获取历史数据，请检查数据源配置")
+                return
             
             context = StrategyContext(
-                symbol='DEFAULT',
+                symbol=symbol,
                 timeframe=timeframe,
                 start_date=start_date,
                 end_date=end_date,
@@ -2188,6 +2653,8 @@ class EnhancedStrategyManagerDialogV2(QDialog):
                 self.backtest_timer.timeout.connect(self._check_backtest_status)
             
             self.current_backtest_id = backtest_id
+            self.backtest_start_time = time.time()  # 记录开始时间
+            self.backtest_timeout = 600  # 10分钟超时
             self.backtest_timer.start(1000)  # 每秒检查一次
             
         except Exception as e:
@@ -2198,6 +2665,19 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         try:
             if not hasattr(self, 'current_backtest_id') or not self.current_backtest_id:
                 return
+            
+            # 检查是否超时
+            if hasattr(self, 'backtest_start_time') and hasattr(self, 'backtest_timeout'):
+                elapsed_time = time.time() - self.backtest_start_time
+                if elapsed_time > self.backtest_timeout:
+                    self.backtest_status_label.setText("回测超时")
+                    self._reset_backtest_ui()
+                    QMessageBox.warning(self, "警告", f"回测超时（超过{self.backtest_timeout // 60}分钟），已自动取消")
+                    
+                    # 停止定时器
+                    if hasattr(self, 'backtest_timer'):
+                        self.backtest_timer.stop()
+                    return
             
             # 调用后端API获取回测状态
             if self.strategy_service:
@@ -2211,7 +2691,8 @@ class EnhancedStrategyManagerDialogV2(QDialog):
                     # 更新状态标签
                     status = status_info.get('status', 'running')
                     if status == 'running':
-                        self.backtest_status_label.setText(f"回测进行中... {int(progress * 100)}%")
+                        elapsed = int(time.time() - self.backtest_start_time) if hasattr(self, 'backtest_start_time') else 0
+                        self.backtest_status_label.setText(f"回测进行中... {int(progress * 100)}% (已运行{elapsed}秒)")
                     elif status == 'completed':
                         self.backtest_status_label.setText("回测完成")
                         self.backtest_progress_bar.setValue(100)
@@ -2223,10 +2704,11 @@ class EnhancedStrategyManagerDialogV2(QDialog):
                         # 停止定时器
                         if hasattr(self, 'backtest_timer'):
                             self.backtest_timer.stop()
-                    elif status == 'error':
+                    elif status == 'error' or status == 'failed':
                         self.backtest_status_label.setText("回测失败")
                         self._reset_backtest_ui()
-                        QMessageBox.warning(self, "警告", "回测失败")
+                        error_message = status_info.get('error_message', '未知错误')
+                        QMessageBox.warning(self, "警告", f"回测失败: {error_message}")
                         
                         # 停止定时器
                         if hasattr(self, 'backtest_timer'):
@@ -2269,7 +2751,9 @@ class EnhancedStrategyManagerDialogV2(QDialog):
                     # 统计状态
                     completed_count = sum(1 for s in status_list if s.get('status') == 'completed')
                     running_count = sum(1 for s in status_list if s.get('status') == 'running')
-                    error_count = sum(1 for s in status_list if s.get('status') == 'error')
+                    failed_count = sum(1 for s in status_list if s.get('status') == 'failed')
+                    cancelled_count = sum(1 for s in status_list if s.get('status') == 'cancelled')
+                    error_count = failed_count + cancelled_count
                     
                     self.backtest_status_label.setText(
                         f"批量回测进度: {completed_count}/{len(status_list)} 完成, "
@@ -2578,11 +3062,15 @@ class EnhancedStrategyManagerDialogV2(QDialog):
                 QMessageBox.warning(self, "警告", "请至少配置一个参数范围")
                 return
             
-            # 构建市场数据和上下文
-            market_data = self._generate_mock_market_data('2023-01-01', '2024-01-01', timeframe)
+            # 从真实数据源获取市场数据
+            market_data = self._get_real_market_data('2023-01-01', '2024-01-01', timeframe, '000001')
+            
+            if market_data is None:
+                QMessageBox.warning(self, "警告", "无法获取历史数据，请检查数据源配置")
+                return
             
             context = StrategyContext(
-                symbol='DEFAULT',
+                symbol='000001',
                 timeframe=timeframe,
                 start_date='2023-01-01',
                 end_date='2024-01-01',
@@ -2664,6 +3152,8 @@ class EnhancedStrategyManagerDialogV2(QDialog):
                 self.optimization_timer.timeout.connect(self._check_optimization_status)
             
             self.current_optimization_id = optimization_id
+            self.optimization_start_time = time.time()  # 记录开始时间
+            self.optimization_timeout = 1800  # 30分钟超时
             self.optimization_timer.start(1000)  # 每秒检查一次
             
         except Exception as e:
@@ -2675,6 +3165,19 @@ class EnhancedStrategyManagerDialogV2(QDialog):
             if not hasattr(self, 'current_optimization_id') or not self.current_optimization_id:
                 return
             
+            # 检查是否超时
+            if hasattr(self, 'optimization_start_time') and hasattr(self, 'optimization_timeout'):
+                elapsed_time = time.time() - self.optimization_start_time
+                if elapsed_time > self.optimization_timeout:
+                    self.opt_iteration_label.setText("优化超时")
+                    self._reset_optimization_ui()
+                    QMessageBox.warning(self, "警告", f"优化超时（超过{self.optimization_timeout // 60}分钟），已自动取消")
+                    
+                    # 停止定时器
+                    if hasattr(self, 'optimization_timer'):
+                        self.optimization_timer.stop()
+                    return
+            
             # 调用后端API获取优化状态
             if self.strategy_service:
                 status_info = self.strategy_service.get_optimization_status(self.current_optimization_id)
@@ -2685,16 +3188,17 @@ class EnhancedStrategyManagerDialogV2(QDialog):
                     self.opt_progress_bar.setValue(int(progress * 100))
                     
                     # 更新迭代标签
-                    current_iteration = status_info.get('current_iteration', 0)
-                    max_iterations = status_info.get('max_iterations', 100)
-                    self.opt_iteration_label.setText(f"当前迭代：{current_iteration}/{max_iterations}")
+                    iterations_completed = status_info.get('iterations_completed', 0)
+                    elapsed = int(time.time() - self.optimization_start_time) if hasattr(self, 'optimization_start_time') else 0
+                    self.opt_iteration_label.setText(f"已完成迭代：{iterations_completed} (已运行{elapsed}秒)")
                     
                     # 更新最佳值标签
-                    best_value = status_info.get('best_value', 0)
-                    self.opt_best_value_label.setText(f"最佳值：{best_value:.4f}")
+                    best_performance = status_info.get('best_performance', 0)
+                    if best_performance:
+                        self.opt_best_value_label.setText(f"最佳值：{best_performance:.4f}")
                     
                     # 更新优化曲线
-                    optimization_history = status_info.get('history', [])
+                    optimization_history = status_info.get('optimization_history', [])
                     if optimization_history:
                         self._update_optimization_chart(optimization_history)
                     
@@ -2713,10 +3217,11 @@ class EnhancedStrategyManagerDialogV2(QDialog):
                         # 停止定时器
                         if hasattr(self, 'optimization_timer'):
                             self.optimization_timer.stop()
-                    elif status == 'error':
+                    elif status == 'error' or status == 'failed':
                         self.opt_iteration_label.setText("优化失败")
                         self._reset_optimization_ui()
-                        QMessageBox.warning(self, "警告", "参数优化失败")
+                        error_message = status_info.get('error_message', '未知错误')
+                        QMessageBox.warning(self, "警告", f"参数优化失败: {error_message}")
                         
                         # 停止定时器
                         if hasattr(self, 'optimization_timer'):
@@ -3008,6 +3513,62 @@ class EnhancedStrategyManagerDialogV2(QDialog):
             logger.error(f"保存优化配置失败: {e}")
             QMessageBox.critical(self, "错误", f"保存优化配置失败: {str(e)}")
 
+    def _cleanup(self):
+        """清理资源"""
+        try:
+            # 断开主题订阅
+            if hasattr(self, 'theme_manager') and self.theme_manager:
+                try:
+                    self.theme_manager.theme_changed.disconnect(self._on_theme_changed)
+                    logger.info("已断开主题订阅")
+                except Exception as e:
+                    logger.warning(f"断开主题订阅失败: {e}")
+            
+            # 停止所有定时器
+            timers = ['backtest_timer', 'batch_backtest_timer', 'optimization_timer']
+            for timer_name in timers:
+                if hasattr(self, timer_name):
+                    timer = getattr(self, timer_name)
+                    if timer and timer.isActive():
+                        timer.stop()
+                        logger.info(f"已停止定时器: {timer_name}")
+            
+            # 取消所有异步任务
+            if hasattr(self, 'task_manager') and self.task_manager:
+                try:
+                    self.task_manager.cancel_all_tasks()
+                    logger.info("已取消所有异步任务")
+                except Exception as e:
+                    logger.warning(f"取消异步任务失败: {e}")
+            
+            # 清理图表资源
+            if hasattr(self, '_cached_charts'):
+                chart_count = len(self._cached_charts)
+                for chart in self._cached_charts:
+                    if chart and hasattr(chart, 'figure'):
+                        try:
+                            chart.figure.clear()
+                            if MATPLOTLIB_AVAILABLE:
+                                plt.close(chart.figure)
+                        except Exception as e:
+                            logger.warning(f"清理图表资源失败: {e}")
+                self._cached_charts.clear()
+                logger.info(f"已清理 {chart_count} 个图表资源")
+            
+            # 取消策略事件订阅
+            if hasattr(self, '_strategy_event_handler') and self._strategy_event_handler:
+                try:
+                    from core.events.event_bus import get_event_bus
+                    event_bus = get_event_bus()
+                    event_bus.unsubscribe_all(self._strategy_event_handler)
+                    logger.info("已取消策略事件订阅")
+                except Exception as e:
+                    logger.warning(f"取消策略事件订阅失败: {e}")
+            
+            logger.info("资源清理完成")
+        except Exception as e:
+            logger.error(f"资源清理过程中发生错误: {e}")
+
     def _sensitivity_analysis(self):
         """敏感性分析"""
         try:
@@ -3033,14 +3594,7 @@ class EnhancedStrategyManagerDialogV2(QDialog):
     def closeEvent(self, event):
         """关闭事件"""
         # 清理资源
-        try:
-            # 取消所有异步任务
-            if hasattr(self, 'task_manager'):
-                self.task_manager.cancel_all_tasks()
-                logger.info("已取消所有异步任务")
-            
-        except Exception as e:
-            logger.error(f"资源清理过程中发生错误: {e}")
+        self._cleanup()
         
         event.accept()
         logger.info("策略管理器对话框已关闭")
@@ -3114,6 +3668,10 @@ class OptimizationParamDialog(QDialog):
             'step': self.step_spin.value(),
             'type': self.type_combo.currentText()
         }
+    
+    def closeEvent(self, event):
+        """关闭事件"""
+        event.accept()
 
 
 class SensitivityAnalysisDialog(QDialog):
@@ -3181,7 +3739,6 @@ class SensitivityAnalysisDialog(QDialog):
         param_layout.addWidget(QLabel("时间周期："), 4, 0)
         self.timeframe_combo = QComboBox()
         self.timeframe_combo.addItem("日线", TimeFrame.DAY_1)
-        self.timeframe_combo.addItem("4小时", TimeFrame.HOUR_4)
         self.timeframe_combo.addItem("1小时", TimeFrame.HOUR_1)
         self.timeframe_combo.addItem("30分钟", TimeFrame.MINUTE_30)
         self.timeframe_combo.addItem("15分钟", TimeFrame.MINUTE_15)
@@ -3310,11 +3867,15 @@ class SensitivityAnalysisDialog(QDialog):
             # 获取选择的时间周期
             timeframe = self.timeframe_combo.currentData()
             
-            # 构建市场数据和上下文
-            market_data = self._generate_mock_market_data('2023-01-01', '2024-01-01', timeframe)
+            # 从真实数据源获取市场数据
+            market_data = self._get_real_market_data('2023-01-01', '2024-01-01', timeframe, '000001')
+            
+            if market_data is None:
+                QMessageBox.warning(self, "警告", "无法获取历史数据，请检查数据源配置")
+                return
             
             context = StrategyContext(
-                symbol='DEFAULT',
+                symbol='000001',
                 timeframe=timeframe,
                 start_date='2023-01-01',
                 end_date='2024-01-01',
@@ -3490,70 +4051,46 @@ class SensitivityAnalysisDialog(QDialog):
         except Exception as e:
             logger.error(f"绘制敏感性曲线失败: {e}")
     
-    def _generate_mock_market_data(self, start_date: str, end_date: str, timeframe: TimeFrame = TimeFrame.DAY_1) -> StandardMarketData:
-        """生成模拟的市场数据"""
+    def _get_real_market_data(self, start_date: str, end_date: str, timeframe: TimeFrame, symbol: str = '000001') -> StandardMarketData:
+        """从真实数据源获取市场数据"""
         try:
-            # 根据时间周期确定频率
-            freq_map = {
+            data_manager = UnifiedDataManager()
+            
+            timeframe_map = {
                 TimeFrame.DAY_1: 'D',
-                TimeFrame.HOUR_4: '4H',
-                TimeFrame.HOUR_1: '1H',
-                TimeFrame.MINUTE_30: '30T',
-                TimeFrame.MINUTE_15: '15T',
-                TimeFrame.MINUTE_5: '5T',
-                TimeFrame.MINUTE_1: '1T'
+                TimeFrame.HOUR_1: '60',
+                TimeFrame.MINUTE_30: '30',
+                TimeFrame.MINUTE_15: '15',
+                TimeFrame.MINUTE_5: '5',
+                TimeFrame.MINUTE_1: '1'
             }
-            freq = freq_map.get(timeframe, 'D')
+            period = timeframe_map.get(timeframe, 'D')
             
-            # 创建日期范围
-            dates = pd.date_range(start=start_date, end=end_date, freq=freq)
-            n_points = len(dates)
+            df = data_manager.get_kdata_from_source(
+                stock_code=symbol,
+                period=period,
+                start_date=start_date,
+                end_date=end_date,
+                count=365
+            )
             
-            # 生成模拟的OHLCV数据
-            np.random.seed(42)  # 使用固定种子确保可重复性
+            if df is None or df.empty:
+                logger.warning(f"无法获取 {symbol} 的历史数据，使用默认股票")
+                df = data_manager.get_kdata_from_source(
+                    stock_code='000001',
+                    period=period,
+                    count=365
+                )
             
-            base_price = 100.0
-            opens = []
-            highs = []
-            lows = []
-            closes = []
-            volumes = []
-            
-            current_price = base_price
-            for i in range(n_points):
-                # 生成随机波动（根据时间周期调整波动率）
-                volatility = 0.02 if timeframe == TimeFrame.DAY_1 else 0.005
-                change = np.random.normal(0, volatility)
-                current_price *= (1 + change)
+            if df is not None and not df.empty:
+                return StandardMarketData.from_dataframe(df, symbol=symbol)
+            else:
+                logger.error(f"无法获取任何历史数据")
+                return None
                 
-                # 生成OHLC数据
-                open_price = current_price * (1 + np.random.normal(0, 0.005))
-                high = current_price * (1 + abs(np.random.normal(0, 0.01)))
-                low = current_price * (1 - abs(np.random.normal(0, 0.01)))
-                close_price = current_price
-                volume = np.random.randint(1000000, 10000000)
-                
-                opens.append(open_price)
-                highs.append(high)
-                lows.append(low)
-                closes.append(close_price)
-                volumes.append(volume)
-            
-            # 创建DataFrame
-            df = pd.DataFrame({
-                'open': opens,
-                'high': highs,
-                'low': lows,
-                'close': closes,
-                'volume': volumes
-            }, index=dates)
-            
-            # 使用from_dataframe创建StandardMarketData
-            return StandardMarketData.from_dataframe(df, symbol='DEFAULT')
-            
         except Exception as e:
-            logger.error(f"生成模拟市场数据失败: {e}")
-            raise
+            logger.error(f"获取真实市场数据失败: {e}")
+            return None
     
     def _export_results(self):
         """导出结果"""
@@ -3590,6 +4127,10 @@ class SensitivityAnalysisDialog(QDialog):
         except Exception as e:
             logger.error(f"导出结果失败: {e}")
             QMessageBox.critical(self, "错误", f"导出结果失败: {str(e)}")
+    
+    def closeEvent(self, event):
+        """关闭事件"""
+        event.accept()
 
 
 class StrategyComparisonDialog(QDialog):
@@ -3622,7 +4163,6 @@ class StrategyComparisonDialog(QDialog):
         # 时间周期选择
         self.timeframe_combo = QComboBox()
         self.timeframe_combo.addItem("日线", TimeFrame.DAY_1)
-        self.timeframe_combo.addItem("4小时", TimeFrame.HOUR_4)
         self.timeframe_combo.addItem("1小时", TimeFrame.HOUR_1)
         self.timeframe_combo.addItem("30分钟", TimeFrame.MINUTE_30)
         self.timeframe_combo.addItem("15分钟", TimeFrame.MINUTE_15)
@@ -3698,82 +4238,61 @@ class StrategyComparisonDialog(QDialog):
             logger.error(f"策略对比失败: {e}")
             QMessageBox.critical(self, "错误", f"策略对比失败: {str(e)}")
     
-    def _generate_mock_market_data(self, start_date: str, end_date: str, timeframe: TimeFrame = TimeFrame.DAY_1) -> StandardMarketData:
-        """生成模拟的市场数据"""
+    def _get_real_market_data(self, start_date: str, end_date: str, timeframe: TimeFrame, symbol: str = '000001') -> StandardMarketData:
+        """从真实数据源获取市场数据"""
         try:
-            # 根据时间周期确定频率
-            freq_map = {
+            data_manager = UnifiedDataManager()
+            
+            timeframe_map = {
                 TimeFrame.DAY_1: 'D',
-                TimeFrame.HOUR_4: '4H',
-                TimeFrame.HOUR_1: '1H',
-                TimeFrame.MINUTE_30: '30T',
-                TimeFrame.MINUTE_15: '15T',
-                TimeFrame.MINUTE_5: '5T',
-                TimeFrame.MINUTE_1: '1T'
+                TimeFrame.HOUR_1: '60',
+                TimeFrame.MINUTE_30: '30',
+                TimeFrame.MINUTE_15: '15',
+                TimeFrame.MINUTE_5: '5',
+                TimeFrame.MINUTE_1: '1'
             }
-            freq = freq_map.get(timeframe, 'D')
+            period = timeframe_map.get(timeframe, 'D')
             
-            # 创建日期范围
-            dates = pd.date_range(start=start_date, end=end_date, freq=freq)
-            n_points = len(dates)
+            df = data_manager.get_kdata_from_source(
+                stock_code=symbol,
+                period=period,
+                start_date=start_date,
+                end_date=end_date,
+                count=365
+            )
             
-            # 生成模拟的OHLCV数据
-            np.random.seed(42)  # 使用固定种子确保可重复性
+            if df is None or df.empty:
+                logger.warning(f"无法获取 {symbol} 的历史数据，使用默认股票")
+                df = data_manager.get_kdata_from_source(
+                    stock_code='000001',
+                    period=period,
+                    count=365
+                )
             
-            base_price = 100.0
-            prices = []
-            opens = []
-            highs = []
-            lows = []
-            closes = []
-            volumes = []
-            
-            current_price = base_price
-            for i in range(n_points):
-                # 生成随机波动（根据时间周期调整波动率）
-                volatility = 0.02 if timeframe == TimeFrame.DAY_1 else 0.005
-                change = np.random.normal(0, volatility)
-                current_price *= (1 + change)
+            if df is not None and not df.empty:
+                return StandardMarketData.from_dataframe(df, symbol=symbol)
+            else:
+                logger.error(f"无法获取任何历史数据")
+                return None
                 
-                # 生成OHLC数据
-                open_price = current_price * (1 + np.random.normal(0, 0.005))
-                high = current_price * (1 + abs(np.random.normal(0, 0.01)))
-                low = current_price * (1 - abs(np.random.normal(0, 0.01)))
-                close_price = current_price
-                volume = np.random.randint(1000000, 10000000)
-                
-                opens.append(open_price)
-                highs.append(high)
-                lows.append(low)
-                closes.append(close_price)
-                volumes.append(volume)
-            
-            # 创建DataFrame
-            df = pd.DataFrame({
-                'open': opens,
-                'high': highs,
-                'low': lows,
-                'close': closes,
-                'volume': volumes
-            }, index=dates)
-            
-            # 使用from_dataframe创建StandardMarketData
-            return StandardMarketData.from_dataframe(df, symbol='DEFAULT')
-            
         except Exception as e:
-            logger.error(f"生成模拟市场数据失败: {e}")
-            raise
+            logger.error(f"获取真实市场数据失败: {e}")
+            return None
     
     def _generate_comparison_data(self) -> Dict[str, Any]:
         """生成对比数据"""
         # 获取选择的时间周期
         timeframe = self.timeframe_combo.currentData()
         
-        # 构建市场数据和上下文
-        market_data = self._generate_mock_market_data('2023-01-01', '2024-01-01', timeframe)
+        # 从真实数据源获取市场数据
+        market_data = self._get_real_market_data('2023-01-01', '2024-01-01', timeframe, '000001')
+        
+        if market_data is None:
+            QMessageBox.warning(self, "警告", "无法获取历史数据，请检查数据源配置")
+            return {}
         
         context = StrategyContext(
-            symbol='DEFAULT',
+            symbol='000001',
             timeframe=timeframe,
             start_date='2023-01-01',
             end_date='2024-01-01',
@@ -4039,6 +4558,10 @@ class StrategyComparisonDialog(QDialog):
         except Exception as e:
             logger.error(f"导出对比结果失败: {e}")
             QMessageBox.critical(self, "错误", f"导出对比结果失败: {str(e)}")
+    
+    def closeEvent(self, event):
+        """关闭事件"""
+        event.accept()
 
 
 class ParameterScanDialog(QDialog):
@@ -4100,7 +4623,6 @@ class ParameterScanDialog(QDialog):
         param_layout.addWidget(QLabel("时间周期："), 3, 0)
         self.timeframe_combo = QComboBox()
         self.timeframe_combo.addItem("日线", TimeFrame.DAY_1)
-        self.timeframe_combo.addItem("4小时", TimeFrame.HOUR_4)
         self.timeframe_combo.addItem("1小时", TimeFrame.HOUR_1)
         self.timeframe_combo.addItem("30分钟", TimeFrame.MINUTE_30)
         self.timeframe_combo.addItem("15分钟", TimeFrame.MINUTE_15)
@@ -4229,11 +4751,15 @@ class ParameterScanDialog(QDialog):
             # 获取选择的时间周期
             timeframe = self.timeframe_combo.currentData()
             
-            # 构建市场数据和上下文
-            market_data = self._generate_mock_market_data('2023-01-01', '2024-01-01', timeframe)
+            # 从真实数据源获取市场数据
+            market_data = self._get_real_market_data('2023-01-01', '2024-01-01', timeframe, '000001')
+            
+            if market_data is None:
+                QMessageBox.warning(self, "警告", "无法获取历史数据，请检查数据源配置")
+                return
             
             context = StrategyContext(
-                symbol='DEFAULT',
+                symbol='000001',
                 timeframe=timeframe,
                 start_date='2023-01-01',
                 end_date='2024-01-01',
@@ -4428,71 +4954,50 @@ class ParameterScanDialog(QDialog):
             logger.error(f"导出结果失败: {e}")
             QMessageBox.critical(self, "错误", f"导出结果失败: {str(e)}")
     
-    def _generate_mock_market_data(self, start_date: str, end_date: str, timeframe: TimeFrame = TimeFrame.DAY_1) -> StandardMarketData:
-        """生成模拟的市场数据"""
+    def _get_real_market_data(self, start_date: str, end_date: str, timeframe: TimeFrame, symbol: str = '000001') -> StandardMarketData:
+        """从真实数据源获取市场数据"""
         try:
-            # 根据时间周期确定频率
-            freq_map = {
+            data_manager = UnifiedDataManager()
+            
+            timeframe_map = {
                 TimeFrame.DAY_1: 'D',
-                TimeFrame.HOUR_4: '4H',
-                TimeFrame.HOUR_1: '1H',
-                TimeFrame.MINUTE_30: '30T',
-                TimeFrame.MINUTE_15: '15T',
-                TimeFrame.MINUTE_5: '5T',
-                TimeFrame.MINUTE_1: '1T'
+                TimeFrame.HOUR_1: '60',
+                TimeFrame.MINUTE_30: '30',
+                TimeFrame.MINUTE_15: '15',
+                TimeFrame.MINUTE_5: '5',
+                TimeFrame.MINUTE_1: '1'
             }
-            freq = freq_map.get(timeframe, 'D')
+            period = timeframe_map.get(timeframe, 'D')
             
-            # 创建日期范围
-            dates = pd.date_range(start=start_date, end=end_date, freq=freq)
-            n_points = len(dates)
+            df = data_manager.get_kdata_from_source(
+                stock_code=symbol,
+                period=period,
+                start_date=start_date,
+                end_date=end_date,
+                count=365
+            )
             
-            # 生成模拟的OHLCV数据
-            np.random.seed(42)  # 使用固定种子确保可重复性
+            if df is None or df.empty:
+                logger.warning(f"无法获取 {symbol} 的历史数据，使用默认股票")
+                df = data_manager.get_kdata_from_source(
+                    stock_code='000001',
+                    period=period,
+                    count=365
+                )
             
-            base_price = 100.0
-            prices = []
-            opens = []
-            highs = []
-            lows = []
-            closes = []
-            volumes = []
-            
-            current_price = base_price
-            for i in range(n_points):
-                # 生成随机波动（根据时间周期调整波动率）
-                volatility = 0.02 if timeframe == TimeFrame.DAY_1 else 0.005
-                change = np.random.normal(0, volatility)
-                current_price *= (1 + change)
+            if df is not None and not df.empty:
+                return StandardMarketData.from_dataframe(df, symbol=symbol)
+            else:
+                logger.error(f"无法获取任何历史数据")
+                return None
                 
-                # 生成OHLC数据
-                open_price = current_price * (1 + np.random.normal(0, 0.005))
-                high = current_price * (1 + abs(np.random.normal(0, 0.01)))
-                low = current_price * (1 - abs(np.random.normal(0, 0.01)))
-                close_price = current_price
-                volume = np.random.randint(1000000, 10000000)
-                
-                opens.append(open_price)
-                highs.append(high)
-                lows.append(low)
-                closes.append(close_price)
-                volumes.append(volume)
-            
-            # 创建DataFrame
-            df = pd.DataFrame({
-                'open': opens,
-                'high': highs,
-                'low': lows,
-                'close': closes,
-                'volume': volumes
-            }, index=dates)
-            
-            # 使用from_dataframe创建StandardMarketData
-            return StandardMarketData.from_dataframe(df, symbol='DEFAULT')
-            
         except Exception as e:
-            logger.error(f"生成模拟市场数据失败: {e}")
-            raise
+            logger.error(f"获取真实市场数据失败: {e}")
+            return None
+    
+    def closeEvent(self, event):
+        """关闭事件"""
+        event.accept()
 
 
 class StrategyConfigDialog(QDialog):
@@ -4505,10 +5010,30 @@ class StrategyConfigDialog(QDialog):
         self.setModal(True)
         self.resize(600, 500)
         
+        # 获取账号列表
+        self.accounts = self._load_accounts()
+        
         self._setup_ui()
         
         if strategy_config:
             self._load_config(strategy_config)
+    
+    def _load_accounts(self) -> List[str]:
+        """加载账号列表"""
+        try:
+            from core.containers import get_service_container
+            from core.trading.account_manager import AccountManager
+            
+            service_container = get_service_container()
+            if service_container and service_container.is_registered(AccountManager):
+                account_manager = service_container.resolve(AccountManager)
+                accounts = account_manager.get_all_accounts()
+                return [acc.account_id for acc in accounts]
+            else:
+                return []
+        except Exception as e:
+            logger.warning(f"加载账号列表失败: {e}")
+            return []
     
     def _setup_ui(self):
         """设置UI"""
@@ -4527,9 +5052,15 @@ class StrategyConfigDialog(QDialog):
         self.type_combo = QComboBox()
         self.type_combo.addItems(['momentum', 'mean_reversion', 'trend_following', 'arbitrage', 'statistical', 'custom'])
         
+        self.default_account_combo = QComboBox()
+        self.default_account_combo.addItem("使用系统默认账号", "default")
+        for account_id in self.accounts:
+            self.default_account_combo.addItem(account_id, account_id)
+        
         basic_layout.addRow("策略ID：", self.strategy_id_edit)
         basic_layout.addRow("策略名称：", self.name_edit)
         basic_layout.addRow("策略类型：", self.type_combo)
+        basic_layout.addRow("默认账号：", self.default_account_combo)
         
         layout.addWidget(basic_group)
         
@@ -4582,6 +5113,14 @@ class StrategyConfigDialog(QDialog):
         self.name_edit.setText(strategy_config.metadata.get('name', ''))
         self.type_combo.setCurrentText(strategy_config.metadata.get('type', 'custom'))
         self.plugin_type_combo.setCurrentText(strategy_config.plugin_type)
+        
+        # 加载默认账号
+        default_account_id = strategy_config.metadata.get('default_account_id', 'default')
+        index = self.default_account_combo.findData(default_account_id)
+        if index >= 0:
+            self.default_account_combo.setCurrentIndex(index)
+        else:
+            self.default_account_combo.setCurrentIndex(0)
         
         # 加载参数
         self.param_table.setRowCount(0)
@@ -4639,6 +5178,85 @@ class StrategyConfigDialog(QDialog):
             'parameters': parameters,
             'metadata': {
                 'name': self.name_edit.text(),
-                'type': self.type_combo.currentText()
+                'type': self.type_combo.currentText(),
+                'default_account_id': self.default_account_combo.currentData()
             }
         }
+
+
+class BatchUpdateDefaultAccountDialog(QDialog):
+    """批量修改默认账号对话框"""
+    
+    def __init__(self, parent=None, strategy_ids=None, strategy_service=None, account_manager=None):
+        super().__init__(parent)
+        self.strategy_ids = strategy_ids or []
+        self.strategy_service = strategy_service
+        self.account_manager = account_manager
+        self.accounts = []
+        
+        self.setWindowTitle("批量修改默认账号")
+        self.setModal(True)
+        self.resize(600, 400)
+        
+        self._load_accounts()
+        self._setup_ui()
+    
+    def _load_accounts(self):
+        """加载账号列表"""
+        if self.account_manager:
+            try:
+                accounts = self.account_manager.get_all_accounts()
+                self.accounts = [account.account_id for account in accounts]
+            except Exception as e:
+                logger.error(f"加载账号列表失败: {e}")
+    
+    def _setup_ui(self):
+        """设置UI"""
+        layout = QVBoxLayout(self)
+        
+        # 策略列表
+        strategy_group = QGroupBox("选中的策略")
+        strategy_layout = QVBoxLayout(strategy_group)
+        
+        self.strategy_list = QListWidget()
+        self.strategy_list.setSelectionMode(QListWidget.NoSelection)
+        for strategy_id in self.strategy_ids:
+            self.strategy_list.addItem(strategy_id)
+        
+        strategy_layout.addWidget(self.strategy_list)
+        layout.addWidget(strategy_group)
+        
+        # 默认账号选择
+        account_group = QGroupBox("设置默认账号")
+        account_layout = QFormLayout(account_group)
+        
+        self.account_combo = QComboBox()
+        self.account_combo.addItem("使用系统默认账号", "default")
+        for account_id in self.accounts:
+            self.account_combo.addItem(account_id, account_id)
+        
+        account_layout.addRow("默认账号：", self.account_combo)
+        layout.addWidget(account_group)
+        
+        # 按钮
+        button_layout = QHBoxLayout()
+        
+        ok_button = QPushButton("确定")
+        ok_button.clicked.connect(self.accept)
+        
+        cancel_button = QPushButton("取消")
+        cancel_button.clicked.connect(self.reject)
+        
+        button_layout.addStretch()
+        button_layout.addWidget(ok_button)
+        button_layout.addWidget(cancel_button)
+        
+        layout.addLayout(button_layout)
+    
+    def get_selected_account(self) -> str:
+        """获取选中的账号ID"""
+        return self.account_combo.currentData()
+    
+    def closeEvent(self, event):
+        """关闭事件"""
+        event.accept()

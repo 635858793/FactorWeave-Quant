@@ -1409,39 +1409,6 @@ class MainWindowCoordinator(BaseCoordinator):
             self.show_message(f"刷新失败: {e}")
 
     # 工具菜单方法
-    def _on_advanced_search(self) -> None:
-        """高级搜索"""
-        try:
-            from gui.dialogs.advanced_search_dialog import AdvancedSearchDialog
-
-            dialog = AdvancedSearchDialog(self._main_window)
-            dialog.search_completed.connect(self._on_search_completed)
-            self.center_dialog(dialog)
-            dialog.exec_()
-
-        except Exception as e:
-            logger.error(f"高级搜索失败: {e}")
-            QMessageBox.critical(self._main_window, "错误",
-                                 f"打开高级搜索失败: {str(e)}")
-
-    def _on_search_completed(self, results):
-        """处理搜索完成事件"""
-        try:
-            # 这里可以将搜索结果显示在左侧面板的股票列表中
-            left_panel = self._panels.get('left')
-            if left_panel and hasattr(left_panel, 'update_stock_list'):
-                # 更新股票列表显示搜索结果
-                left_panel.update_stock_list(results)
-
-            QMessageBox.information(
-                self._main_window,
-                "搜索完成",
-                f"搜索完成，共找到 {len(results)} 只符合条件的股票"
-            )
-
-        except Exception as e:
-            logger.error(f"Failed to handle search results: {e}")
-
     def _on_data_export(self) -> None:
         """数据导出（别名方法）"""
         self._on_export_data()
@@ -1517,9 +1484,6 @@ Ctrl+V - 粘贴
 
 视图操作：
 F5 - 刷新数据
-
-搜索操作：
-Ctrl+Shift+F - 高级搜索
 
 工具操作：
 Ctrl+E - 数据导出
@@ -3364,6 +3328,39 @@ FactorWeave-Quant  2.0 (重构版本)
             logger.error(f"启动优化失败: {e}")
             QMessageBox.warning(self._main_window, "错误", f"无法启动优化: {e}")
 
+    def _on_unified_optimization(self) -> None:
+        """打开统一优化服务"""
+        try:
+            # 显示统一优化服务对话框
+            from gui.dialogs.unified_optimization_dialog import UnifiedOptimizationDialog
+            dialog = UnifiedOptimizationDialog(self._main_window)
+            dialog.exec_()
+            logger.info("打开统一优化服务")
+        except Exception as e:
+            logger.error(f"打开统一优化服务失败: {e}")
+            QMessageBox.warning(self._main_window, "错误", f"无法打开统一优化服务: {e}")
+
+    def _on_gpu_config(self) -> None:
+        """配置GPU加速"""
+        try:
+            from gui.dialogs.settings_dialog import SettingsDialog
+            
+            # 使用ThemeManager
+            theme_manager = self._theme_manager
+            
+            # 打开设置对话框并跳转到GPU配置标签页（索引3）
+            dialog = SettingsDialog(
+                parent=self._main_window,
+                theme_manager=theme_manager,
+                config_service=self.service_container.get_service(ConfigService),
+                initial_tab_index=3  # GPU配置标签页
+            )
+            dialog.exec_()
+            logger.info("打开GPU配置")
+        except Exception as e:
+            logger.error(f"打开GPU配置失败: {e}")
+            QMessageBox.warning(self._main_window, "错误", f"无法打开GPU配置: {e}")
+
     def _on_save_as_file(self) -> None:
         """另存为文件"""
         try:
@@ -3957,3 +3954,16 @@ FactorWeave-Quant  2.0 (重构版本)
             logger.warning("智能推荐面板未找到")
         except Exception as e:
             logger.error(f"切换智能推荐面板失败: {e}")
+
+    def _on_toggle_quality_monitor_panel(self):
+        """切换数据质量监控面板显示/隐藏"""
+        try:
+            dock_widgets = self._main_window.findChildren(QDockWidget)
+            for dock in dock_widgets:
+                if dock.windowTitle() == "数据质量监控":
+                    dock.setVisible(not dock.isVisible())
+                    logger.info(f"数据质量监控面板已{'显示' if dock.isVisible() else '隐藏'}")
+                    return
+            logger.warning("数据质量监控面板未找到")
+        except Exception as e:
+            logger.error(f"切换数据质量监控面板失败: {e}")

@@ -146,13 +146,6 @@ class ContextMenuManager(QObject):
                 lambda: self.action_triggered.emit("refresh_list", self.current_context))
             menu.addAction(refresh_action)
 
-            search_action = QAction("高级搜索", menu)
-            search_action.setIcon(QIcon(":/icons/search.png"))
-            search_action.setShortcut(QKeySequence("Ctrl+F"))
-            search_action.triggered.connect(lambda: self.action_triggered.emit(
-                "advanced_search", self.current_context))
-            menu.addAction(search_action)
-
             filter_action = QAction("筛选设置", menu)
             filter_action.setIcon(QIcon(":/icons/filter.png"))
             filter_action.triggered.connect(lambda: self.action_triggered.emit(

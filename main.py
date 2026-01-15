@@ -91,7 +91,6 @@ class FactorWeaveQuantApplication:
             suppress_warnings()
 
             # 抑制TensorFlow/Keras警告
-            import os
             os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
 
             # 3. 设置异常处理器
@@ -127,7 +126,6 @@ class FactorWeaveQuantApplication:
             return
 
         # 设置QtWebEngine缓存目录，避免创建缓存失败
-        import os
         cache_dir = os.path.join(os.path.expanduser("~"), ".factorweave", "cache")
         os.makedirs(cache_dir, exist_ok=True)
         os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = f"--user-data-dir={cache_dir}"

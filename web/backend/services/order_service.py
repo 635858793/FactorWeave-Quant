@@ -98,24 +98,28 @@ class OrderService:
         """
         创建订单
         """
-        from core.trading.order import Order, OrderSide, OrderType
+        from core.trading.order_models import OrderRequest, OrderType as CoreOrderType, OrderCategory
+        from core.plugin_types import AssetType
         
-        order = Order(
-            account_id=order_data.account_id,
-            asset_type=order_data.asset_type,
-            symbol=order_data.symbol,
-            side=OrderSide(order_data.side.value),
-            order_type=OrderType(order_data.order_type.value),
-            quantity=order_data.quantity,
-            price=order_data.price,
+        request = OrderRequest(
+            strategy_id="default",
+            asset_type=AssetType(order_data.asset_type),
+            stock_code=order_data.symbol,
+            order_type=CoreOrderType(order_data.side.value),
+            order_category=OrderCategory(order_data.order_type.value),
+            order_price=order_data.price if order_data.price else 0.0,
+            order_quantity=int(order_data.quantity),
             stop_price=order_data.stop_price,
-            time_in_force=order_data.time_in_force,
-            remark=order_data.remark
+            user_id="system",
+            account_id=str(order_data.account_id)
         )
         
-        self.core_order_service.create_order(order)
+        order = self.core_order_service.create_order(request)
         
-        return self.get_order_by_id(order.order_id)
+        if order:
+            return self.get_order_by_id(order.order_id)
+        
+        return None
     
     def update_order(self, order_id: str, order_data: OrderUpdate) -> Optional[Dict[str, Any]]:
         """

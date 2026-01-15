@@ -24,6 +24,11 @@ logs/*
 .cursor
 .cursorignore
 .cursorignore
+.serena
+.claude
+.trae
+.claude/*
+.trae/*
 .spec-workflow
 .spec-workflow/*
 *.duckdb
@@ -34,9 +39,6 @@ logs/*
 .vscode/*
 data/strategy.db-wal
 data/strategy.db-shm
-.claude/*
-.trae/*
-.serena/.gitignore
 .gitignore
 performance_reports/*
 *.md

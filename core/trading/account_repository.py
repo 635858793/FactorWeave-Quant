@@ -432,10 +432,17 @@ class AccountRepository:
                 sql += f" LIMIT {query.limit} OFFSET {query.offset}"
 
             results = db_service.fetch_all(sql, params, pool_name="tradeaccount_sqlite")
+            logger.debug(f"get_accounts: fetched {len(results)} rows from database")
             accounts = []
-            for r in results:
+            for i, r in enumerate(results):
                 r = self.crypto_utils.decrypt_account_data(r)
-                accounts.append(Account.from_dict(r))
+                try:
+                    account = Account.from_dict(r)
+                    accounts.append(account)
+                    logger.debug(f"get_accounts: loaded account {account.account_id}")
+                except Exception as e:
+                    logger.error(f"Failed to create account from dict (row {i}): {e}, data keys: {list(r.keys()) if isinstance(r, dict) else type(r)}")
+            logger.debug(f"get_accounts: returning {len(accounts)} accounts, account_ids: {[a.account_id for a in accounts]}")
             return accounts
 
         except Exception as e:

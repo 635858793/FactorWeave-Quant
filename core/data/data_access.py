@@ -223,6 +223,47 @@ class DataAccess:
 
         return self.market_repo.get_market_indices()
 
+    # 基本面数据相关方法
+    def get_fundamental_data(self, stock_code: str) -> Dict[str, Any]:
+        """
+        获取股票基本面数据（股本等）
+
+        Args:
+            stock_code: 股票代码
+
+        Returns:
+            Dict[str, Any]: 包含基本面数据的字典
+                - total_shares: 总股本（股）
+                - circulating_shares: 流通股本（股）
+                - total_market_cap: 总市值（元）
+                - circulating_market_cap: 流通市值（元）
+                - industry: 所属行业
+                - list_date: 上市日期（YYYYMMDD格式）
+        """
+        try:
+            if not self._connected:
+                self.connect()
+
+            # 优先使用UniPluginDataManager获取基本面数据
+            if self.uni_plugin_manager:
+                from core.plugin_types import AssetType
+                fundamental_data = self.uni_plugin_manager.get_fundamental_data(
+                    symbol=stock_code,
+                    asset_type=AssetType.STOCK_A
+                )
+                
+                if fundamental_data:
+                    self.logger.info(f"成功获取股票 {stock_code} 的基本面数据")
+                    return fundamental_data
+
+            # 如果UniPluginDataManager不可用或没有数据，返回空字典
+            self.logger.warning(f"无法获取股票 {stock_code} 的基本面数据")
+            return {}
+
+        except Exception as e:
+            self.logger.error(f"获取股票 {stock_code} 的基本面数据失败: {e}")
+            return {}
+
     # 批量操作方法
     def get_multiple_kline_data(self, stock_codes: List[str],
                                 period: str = 'D',

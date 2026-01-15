@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
     QGroupBox, QFormLayout, QComboBox, QSpinBox, QCheckBox,
     QListWidget, QPushButton, QTextEdit, QLabel, QDialogButtonBox,
-    QMessageBox, QFileDialog, QInputDialog, QLineEdit
+    QMessageBox, QFileDialog, QInputDialog, QLineEdit, QDoubleSpinBox
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QFont
@@ -27,7 +27,8 @@ class SettingsDialog(QDialog):
     settings_applied = pyqtSignal(dict)
 
     def __init__(self, parent: Optional[QWidget] = None,
-                 theme_manager=None, theme_service=None, config_service=None):
+                 theme_manager=None, theme_service=None, config_service=None,
+                 initial_tab_index=0):
         """
         初始化设置对话框
 
@@ -36,11 +37,13 @@ class SettingsDialog(QDialog):
             theme_manager: 主题管理器（新）
             theme_service: 主题服务（已废弃，为兼容性保留）
             config_service: 配置服务
+            initial_tab_index: 初始显示的标签页索引
         """
         super().__init__(parent)
         # 优先使用theme_manager，向后兼容theme_service
         self.theme_service = theme_manager if theme_manager else theme_service
         self.config_service = config_service
+        self.initial_tab_index = initial_tab_index
 
         self.setWindowTitle("设置")
         self.setMinimumSize(800, 600)
@@ -54,6 +57,10 @@ class SettingsDialog(QDialog):
 
         # 连接信号
         self._connect_signals()
+
+        # 跳转到指定标签页
+        if self.initial_tab_index >= 0:
+            self.tab_widget.setCurrentIndex(self.initial_tab_index)
 
     def _create_widgets(self) -> None:
         """创建UI组件"""
@@ -74,6 +81,9 @@ class SettingsDialog(QDialog):
 
         # 创建DuckDB配置选项卡
         self._create_duckdb_config_tab()
+
+        # 创建GPU配置选项卡
+        self._create_gpu_config_tab()
 
         # 创建按钮
         self._create_buttons(main_layout)
@@ -304,6 +314,215 @@ class SettingsDialog(QDialog):
         except Exception as e:
             logger.error(f"打开DuckDB高级配置失败: {e}")
             QMessageBox.warning(self, "错误", f"无法打开DuckDB高级配置: {str(e)}")
+
+    def _create_gpu_config_tab(self) -> None:
+        """创建GPU配置选项卡"""
+        gpu_tab = QWidget()
+        gpu_layout = QVBoxLayout(gpu_tab)
+        gpu_layout.setContentsMargins(10, 10, 10, 10)
+        gpu_layout.setSpacing(10)
+
+        # GPU状态显示
+        status_group = QGroupBox("GPU状态")
+        status_layout = QFormLayout(status_group)
+
+        self.gpu_enabled_label = QLabel("检测中...")
+        self.gpu_name_label = QLabel("未知")
+        self.gpu_memory_label = QLabel("0 MB")
+        self.gpu_driver_label = QLabel("未知")
+
+        status_layout.addRow("GPU状态:", self.gpu_enabled_label)
+        status_layout.addRow("GPU型号:", self.gpu_name_label)
+        status_layout.addRow("显存大小:", self.gpu_memory_label)
+        status_layout.addRow("驱动版本:", self.gpu_driver_label)
+
+        gpu_layout.addWidget(status_group)
+
+        # GPU配置
+        config_group = QGroupBox("GPU配置")
+        config_layout = QFormLayout(config_group)
+
+        # 运行模式
+        self.gpu_mode_combo = QComboBox()
+        self.gpu_mode_combo.addItems(["自动", "GPU优先", "CPU优先"])
+        config_layout.addRow("运行模式:", self.gpu_mode_combo)
+
+        # 显存分配
+        self.memory_fraction_spin = QDoubleSpinBox()
+        self.memory_fraction_spin.setRange(0.1, 1.0)
+        self.memory_fraction_spin.setSingleStep(0.1)
+        self.memory_fraction_spin.setValue(0.8)
+        self.memory_fraction_spin.setSuffix(" (0.1-1.0)")
+        config_layout.addRow("显存分配:", self.memory_fraction_spin)
+
+        # 线程数
+        self.inter_op_threads_spin = QSpinBox()
+        self.inter_op_threads_spin.setRange(1, 16)
+        self.inter_op_threads_spin.setValue(4)
+        config_layout.addRow("操作间线程:", self.inter_op_threads_spin)
+
+        self.intra_op_threads_spin = QSpinBox()
+        self.intra_op_threads_spin.setRange(1, 16)
+        self.intra_op_threads_spin.setValue(4)
+        config_layout.addRow("操作内线程:", self.intra_op_threads_spin)
+
+        # 混合精度
+        self.mixed_precision_checkbox = QCheckBox("启用混合精度训练 (FP16)")
+        self.mixed_precision_checkbox.setChecked(False)
+        config_layout.addRow("", self.mixed_precision_checkbox)
+
+        gpu_layout.addWidget(config_group)
+
+        # 操作按钮
+        button_group = QGroupBox("操作")
+        button_layout = QVBoxLayout(button_group)
+
+        self.detect_gpu_btn = QPushButton("重新检测GPU")
+        self.detect_gpu_btn.clicked.connect(self._detect_gpu)
+        button_layout.addWidget(self.detect_gpu_btn)
+
+        self.apply_gpu_config_btn = QPushButton("应用GPU配置")
+        self.apply_gpu_config_btn.clicked.connect(self._apply_gpu_config)
+        button_layout.addWidget(self.apply_gpu_config_btn)
+
+        self.reset_gpu_config_btn = QPushButton("重置为默认")
+        self.reset_gpu_config_btn.clicked.connect(self._reset_gpu_config)
+        button_layout.addWidget(self.reset_gpu_config_btn)
+
+        gpu_layout.addWidget(button_group)
+
+        # 状态显示
+        self.gpu_status_label = QLabel("状态: 配置正常")
+        self.gpu_status_label.setStyleSheet("""
+            QLabel {
+                background-color: #d4edda;
+                color: #155724;
+                border: 1px solid #c3e6cb;
+                padding: 8px;
+                border-radius: 5px;
+                font-weight: bold;
+            }
+        """)
+        gpu_layout.addWidget(self.gpu_status_label)
+
+        gpu_layout.addStretch()
+        self.tab_widget.addTab(gpu_tab, "GPU配置")
+
+        # 初始化GPU状态
+        self._detect_gpu()
+
+    def _detect_gpu(self) -> None:
+        """检测GPU状态"""
+        try:
+            from core.services.ai_prediction_service import AIPredictionService
+            from core.containers import get_service_container
+
+            container = get_service_container()
+            ai_service = container.get_service(AIPredictionService)
+
+            if ai_service:
+                gpu_status = ai_service.get_gpu_status()
+
+                if gpu_status['enabled']:
+                    self.gpu_enabled_label.setText("✅ 已启用")
+                    self.gpu_enabled_label.setStyleSheet("color: #28a745; font-weight: bold;")
+                else:
+                    self.gpu_enabled_label.setText("❌ 未启用")
+                    self.gpu_enabled_label.setStyleSheet("color: #dc3545; font-weight: bold;")
+
+                gpu_info = gpu_status.get('gpu_info', {})
+                self.gpu_name_label.setText(gpu_info.get('name', '未知'))
+                self.gpu_memory_label.setText(f"{gpu_info.get('memory_total', 0)} MB")
+
+                tf_info = gpu_status.get('tensorflow_info', {})
+                self.gpu_driver_label.setText(tf_info.get('cuda_version', '未知'))
+
+                self.gpu_status_label.setText(f"状态: {'GPU已启用' if gpu_status['enabled'] else '使用CPU模式'}")
+            else:
+                self.gpu_enabled_label.setText("⚠️ 服务未初始化")
+                self.gpu_name_label.setText("未知")
+                self.gpu_memory_label.setText("0 MB")
+                self.gpu_driver_label.setText("未知")
+                self.gpu_status_label.setText("状态: AI预测服务未启动")
+
+        except Exception as e:
+            logger.error(f"检测GPU状态失败: {e}")
+            self.gpu_enabled_label.setText("❌ 检测失败")
+            self.gpu_status_label.setText("状态: 检测失败")
+
+    def _apply_gpu_config(self) -> None:
+        """应用GPU配置"""
+        try:
+            from core.services.ai_prediction_service import AIPredictionService
+            from core.containers import get_service_container
+
+            container = get_service_container()
+            ai_service = container.get_service(AIPredictionService)
+
+            if ai_service and ai_service._gpu_manager:
+                mode = self.gpu_mode_combo.currentText()
+                memory_fraction = self.memory_fraction_spin.value()
+                inter_op_threads = self.inter_op_threads_spin.value()
+                intra_op_threads = self.intra_op_threads_spin.value()
+                mixed_precision = self.mixed_precision_checkbox.isChecked()
+
+                # 更新GPU管理器配置
+                ai_service._gpu_manager.device_preference = mode.lower()
+                ai_service._gpu_manager.config['memory_fraction'] = memory_fraction
+                ai_service._gpu_manager.config['inter_op_threads'] = inter_op_threads
+                ai_service._gpu_manager.config['intra_op_threads'] = intra_op_threads
+                ai_service._gpu_manager.config['mixed_precision'] = mixed_precision
+
+                # 重新配置GPU
+                success = ai_service._gpu_manager.configure_tensorflow_gpu()
+
+                if success:
+                    self.gpu_status_label.setText("状态: 配置已应用")
+                    self.gpu_status_label.setStyleSheet("""
+                        QLabel {
+                            background-color: #d1ecf1;
+                            color: #0c5460;
+                            border: 1px solid #bee5eb;
+                            padding: 8px;
+                            border-radius: 5px;
+                            font-weight: bold;
+                        }
+                    """)
+                    logger.info(f"GPU配置已应用: 模式={mode}, 显存分配={memory_fraction}")
+                else:
+                    self.gpu_status_label.setText("状态: 配置失败")
+                    self.gpu_status_label.setStyleSheet("""
+                        QLabel {
+                            background-color: #f8d7da;
+                            color: #721c24;
+                            border: 1px solid #f5c6cb;
+                            padding: 8px;
+                            border-radius: 5px;
+                            font-weight: bold;
+                        }
+                    """)
+            else:
+                QMessageBox.warning(self, "警告", "GPU管理器未初始化，无法应用配置")
+
+        except Exception as e:
+            logger.error(f"应用GPU配置失败: {e}")
+            QMessageBox.critical(self, "错误", f"应用GPU配置失败: {str(e)}")
+
+    def _reset_gpu_config(self) -> None:
+        """重置GPU配置为默认值"""
+        try:
+            self.gpu_mode_combo.setCurrentText("自动")
+            self.memory_fraction_spin.setValue(0.8)
+            self.inter_op_threads_spin.setValue(4)
+            self.intra_op_threads_spin.setValue(4)
+            self.mixed_precision_checkbox.setChecked(False)
+
+            self._apply_gpu_config()
+            logger.info("GPU配置已重置为默认值")
+
+        except Exception as e:
+            logger.error(f"重置GPU配置失败: {e}")
+            QMessageBox.critical(self, "错误", f"重置GPU配置失败: {str(e)}")
 
     def _apply_quick_duckdb_config(self) -> None:
         """应用快速DuckDB配置"""

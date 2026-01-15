@@ -32,44 +32,44 @@ class SearchWorker(QThread):
         super().__init__()
         self.search_params = search_params
 
-    def run(self):
-        """执行搜索"""
-        try:
-            # 这里模拟搜索过程
-            # 实际项目中需要连接到数据源进行搜索
-            import time
+    # def run(self):
+    #     """执行搜索"""
+    #     try:
+    #         # 这里模拟搜索过程
+    #         # 实际项目中需要连接到数据源进行搜索
+    #         import time
 
-            results = []
-            total_stocks = 100  # 假设有100只股票
+    #         results = []
+    #         total_stocks = 100  # 假设有100只股票
 
-            for i in range(total_stocks):
-                # 模拟搜索进度
-                time.sleep(0.01)
-                progress = int((i + 1) / total_stocks * 100)
-                self.search_progress.emit(progress)
+    #         for i in range(total_stocks):
+    #             # 模拟搜索进度
+    #             time.sleep(0.01)
+    #             progress = int((i + 1) / total_stocks * 100)
+    #             self.search_progress.emit(progress)
 
-                # 模拟符合条件的股票
-                if i % 3 == 0:  # 每3只股票中有1只符合条件
-                    stock = {
-                        'code': f'00000{i:02d}',
-                        'name': f'测试股票{i}',
-                        'market': '沪市主板' if i % 2 == 0 else '深市主板',
-                        'industry': '电子信息' if i % 4 == 0 else '制造业',
-                        'price': 10.0 + i * 0.1,
-                        'market_cap': 100000000 + i * 1000000,
-                        'volume': 1000000 + i * 10000,
-                        'turnover_rate': 1.0 + i * 0.01
-                    }
+    #             # 模拟符合条件的股票
+    #             if i % 3 == 0:  # 每3只股票中有1只符合条件
+    #                 stock = {
+    #                     'code': f'00000{i:02d}',
+    #                     'name': f'测试股票{i}',
+    #                     'market': '沪市主板' if i % 2 == 0 else '深市主板',
+    #                     'industry': '电子信息' if i % 4 == 0 else '制造业',
+    #                     'price': 10.0 + i * 0.1,
+    #                     'market_cap': 100000000 + i * 1000000,
+    #                     'volume': 1000000 + i * 10000,
+    #                     'turnover_rate': 1.0 + i * 0.01
+    #                 }
 
-                    # 应用筛选条件
-                    if self._matches_criteria(stock):
-                        results.append(stock)
+    #                 # 应用筛选条件
+    #                 if self._matches_criteria(stock):
+    #                     results.append(stock)
 
-            self.search_completed.emit(results)
+    #         self.search_completed.emit(results)
 
-        except Exception as e:
-            logger.error(f"Search failed: {e}")
-            self.search_error.emit(str(e))
+    #     except Exception as e:
+    #         logger.error(f"Search failed: {e}")
+    #         self.search_error.emit(str(e))
 
     def _matches_criteria(self, stock: Dict[str, Any]) -> bool:
         """检查股票是否符合搜索条件"""
@@ -129,15 +129,17 @@ class AdvancedSearchDialog(QDialog):
     # 定义信号
     search_completed = pyqtSignal(list)  # 搜索完成信号
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, stock_service=None):
         """
         初始化高级搜索对话框
 
         Args:
             parent: 父窗口
+            stock_service: 股票服务（可选，用于真实搜索）
         """
         super().__init__(parent)
         self.search_worker = None
+        self.stock_service = stock_service
 
         self.setWindowTitle("高级搜索")
         self.setMinimumSize(800, 600)
@@ -216,34 +218,47 @@ class AdvancedSearchDialog(QDialog):
         basic_group = QGroupBox("基础条件")
         basic_layout = QGridLayout(basic_group)
 
+        # 资产类型
+        basic_layout.addWidget(QLabel("资产类型:"), 0, 0)
+        self.asset_type_combo = QComboBox()
+        from core.plugin_types import AssetType
+        self.asset_type_combo.addItems([
+            "A股", "B股", "H股", "美股", "港股",
+            "期货", "期权", "权证", "加密货币", "外汇",
+            "债券", "商品", "指数", "基金"
+        ])
+        self.asset_type_combo.setCurrentIndex(0)
+        basic_layout.addWidget(self.asset_type_combo, 0, 1)
+
         # 股票代码
-        basic_layout.addWidget(QLabel("股票代码:"), 0, 0)
+        basic_layout.addWidget(QLabel("股票代码:"), 1, 0)
         self.code_edit = QLineEdit()
         self.code_edit.setPlaceholderText("如: 000001")
-        basic_layout.addWidget(self.code_edit, 0, 1)
+        basic_layout.addWidget(self.code_edit, 1, 1)
 
         # 股票名称
-        basic_layout.addWidget(QLabel("股票名称:"), 1, 0)
+        basic_layout.addWidget(QLabel("股票名称:"), 2, 0)
         self.name_edit = QLineEdit()
         self.name_edit.setPlaceholderText("如: 平安银行")
-        basic_layout.addWidget(self.name_edit, 1, 1)
+        basic_layout.addWidget(self.name_edit, 2, 1)
 
         # 市场分类
-        basic_layout.addWidget(QLabel("市场分类:"), 2, 0)
+        basic_layout.addWidget(QLabel("市场分类:"), 3, 0)
         self.market_combo = QComboBox()
         self.market_combo.addItems([
             "全部", "沪市主板", "深市主板", "创业板", "科创板", "北交所"
         ])
-        basic_layout.addWidget(self.market_combo, 2, 1)
+        self.market_combo.setCurrentIndex(0)
+        basic_layout.addWidget(self.market_combo, 3, 1)
 
         # 行业分类
-        basic_layout.addWidget(QLabel("行业分类:"), 3, 0)
+        basic_layout.addWidget(QLabel("行业分类:"), 4, 0)
         self.industry_combo = QComboBox()
         self.industry_combo.addItems([
-            "全部", "电子信息", "制造业", "金融业", "房地产", "医药生物",
+            "全部","电子信息", "制造业", "金融业", "房地产", "医药生物",
             "化工", "机械设备", "电力设备", "食品饮料", "交通运输"
         ])
-        basic_layout.addWidget(self.industry_combo, 3, 1)
+        basic_layout.addWidget(self.industry_combo, 4, 1)
 
         layout.addWidget(basic_group)
 
@@ -393,6 +408,7 @@ class AdvancedSearchDialog(QDialog):
         try:
             # 收集搜索参数
             search_params = {
+                'asset_type': self.asset_type_combo.currentText(),
                 'code': self.code_edit.text().strip(),
                 'name': self.name_edit.text().strip(),
                 'market': self.market_combo.currentText(),
@@ -415,18 +431,59 @@ class AdvancedSearchDialog(QDialog):
             self.result_table.setRowCount(0)
             self.result_label.setText("正在搜索...")
 
-            # 启动搜索线程
-            self.search_worker = SearchWorker(search_params)
-            self.search_worker.search_completed.connect(
-                self._on_search_completed)
-            self.search_worker.search_error.connect(self._on_search_error)
-            self.search_worker.search_progress.connect(
-                self._on_search_progress)
-            self.search_worker.start()
+            # 如果有 stock_service，使用真实搜索
+            if self.stock_service:
+                self._perform_real_search(search_params)
+            else:
+                # 否则使用模拟搜索
+                self._perform_mock_search(search_params)
 
         except Exception as e:
             logger.error(f"Failed to start search: {e}")
             QMessageBox.critical(self, "搜索错误", f"启动搜索失败: {str(e)}")
+
+    def _perform_real_search(self, search_params: Dict[str, Any]):
+        """执行真实搜索"""
+        try:
+            # 参数映射：将对话框参数转换为 stock_service 期望的参数
+            conditions = {
+                'code': search_params.get('code'),
+                'name': search_params.get('name'),
+                'market': search_params.get('market'),
+                'industry': search_params.get('industry'),
+                'min_price': search_params.get('price_min') or 0,
+                'max_price': search_params.get('price_max') or 10000,
+                'min_cap': search_params.get('market_cap_min') or 0,
+                'max_cap': search_params.get('market_cap_max') or 1000000,
+                'min_volume': search_params.get('volume_min') or 0,
+                'max_volume': search_params.get('volume_max') or 1000000,
+                'min_turnover': search_params.get('turnover_min') or 0,
+                'max_turnover': search_params.get('turnover_max') or 100,
+            }
+
+            # 执行搜索
+            results = self.stock_service.perform_advanced_search(conditions)
+
+            # 更新进度条到 100%
+            self.progress_bar.setValue(100)
+
+            # 处理搜索结果
+            self._on_search_completed(results)
+
+        except Exception as e:
+            logger.error(f"Real search failed: {e}")
+            self._on_search_error(str(e))
+
+    def _perform_mock_search(self, search_params: Dict[str, Any]):
+        """执行模拟搜索"""
+        # 启动搜索线程
+        self.search_worker = SearchWorker(search_params)
+        self.search_worker.search_completed.connect(
+            self._on_search_completed)
+        self.search_worker.search_error.connect(self._on_search_error)
+        self.search_worker.search_progress.connect(
+            self._on_search_progress)
+        self.search_worker.start()
 
     def _on_search_progress(self, progress: int):
         """更新搜索进度"""
@@ -450,13 +507,13 @@ class AdvancedSearchDialog(QDialog):
                 self.result_table.setItem(
                     i, 3, QTableWidgetItem(stock['industry']))
                 self.result_table.setItem(
-                    i, 4, QTableWidgetItem(f"{stock['price']:.2f}"))
+                    i, 4, QTableWidgetItem(f"{stock.get('price', 0):.2f}"))
                 self.result_table.setItem(i, 5, QTableWidgetItem(
-                    f"{stock['market_cap']/100000000:.2f}"))
+                    f"{stock.get('market_cap', 0)/100000000:.2f}"))
                 self.result_table.setItem(
-                    i, 6, QTableWidgetItem(f"{stock['volume']:,}"))
+                    i, 6, QTableWidgetItem(f"{stock.get('volume', 0):,}"))
                 self.result_table.setItem(i, 7, QTableWidgetItem(
-                    f"{stock['turnover_rate']:.2f}"))
+                    f"{stock.get('turnover_rate', 0):.2f}"))
 
             # 更新统计信息
             self.result_label.setText(f"共找到 {len(results)} 只股票")
@@ -482,6 +539,7 @@ class AdvancedSearchDialog(QDialog):
         try:
             self.code_edit.clear()
             self.name_edit.clear()
+            self.asset_type_combo.setCurrentIndex(0)
             self.market_combo.setCurrentIndex(0)
             self.industry_combo.setCurrentIndex(0)
             self.price_min_spin.setValue(0)

@@ -315,6 +315,59 @@ class AdaptiveConnectionPoolManager:
 
         logger.info("⏸️ 自适应连接池管理已停止")
 
+    def set_enabled(self, enabled: bool):
+        """动态启用/禁用自适应管理"""
+        if enabled == self.config.enabled:
+            logger.info(f"自适应管理器已经是{'启用' if enabled else '禁用'}状态")
+            return
+
+        self.config.enabled = enabled
+
+        if enabled:
+            if not self._running:
+                logger.info("🔄 启用自适应管理器...")
+                self.collector.start()
+                self._running = True
+                self._thread = threading.Thread(target=self._adjustment_loop, daemon=True, name="AdaptiveManager")
+                self._thread.start()
+                logger.info(f"✅ 自适应管理器已启用")
+        else:
+            if self._running:
+                logger.info("⏸️ 禁用自适应管理器...")
+                self._running = False
+                self.collector.stop()
+                if self._thread:
+                    self._thread.join(timeout=5)
+                logger.info(f"✅ 自适应管理器已禁用")
+
+    def get_enabled(self) -> bool:
+        """获取当前启用状态"""
+        return self.config.enabled
+
+    def pause(self):
+        """暂停监控（不停止管理器）"""
+        if not self._running:
+            logger.warning("自适应管理器未运行，无需暂停")
+            return
+
+        logger.info("⏸️ 暂停自适应监控...")
+        self._running = False
+        logger.info("✅ 自适应监控已暂停")
+
+    def resume(self):
+        """恢复监控"""
+        if self._running:
+            logger.warning("自适应管理器已在运行，无需恢复")
+            return
+
+        if not self.config.enabled:
+            logger.warning("自适应管理器已禁用，无法恢复")
+            return
+
+        logger.info("🔄 恢复自适应监控...")
+        self._running = True
+        logger.info("✅ 自适应监控已恢复")
+
     def _adjustment_loop(self):
         """调整循环"""
         check_interval = 30  # 每30秒检查一次

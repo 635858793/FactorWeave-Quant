@@ -46,6 +46,7 @@ class SinaConfig(PluginConfig):
         self.market_prefix_map = {
             "SH": "sh",      # 上海A股
             "SZ": "sz",      # 深圳A股
+            "BJ": "bj",      # 北京A股
             "HK": "rt_hk",   # 港股
             "US": "gb_"      # 美股
         }
@@ -366,6 +367,8 @@ class SinaPlugin(StandardDataSourcePlugin):
                     return f"sz{symbol}"  # 深圳
                 elif symbol.startswith('60') or symbol.startswith('68'):
                     return f"sh{symbol}"  # 上海
+                elif symbol.startswith(('4', '8', '9')):
+                    return f"bj{symbol}"  # 北京
                 else:
                     return f"sh{symbol}"  # 默认上海
 

@@ -409,13 +409,6 @@ class MainMenuBar(QMenuBar):
 
             self.tools_menu.addSeparator()
 
-            self.tools_menu.addSeparator()
-
-            # 高级搜索
-            self.advanced_search_action = QAction("高级搜索", self)
-            self.advanced_search_action.setStatusTip("打开高级搜索功能")
-            self.tools_menu.addAction(self.advanced_search_action)
-
             # 数据导出
             self.data_export_action = QAction("数据导出", self)
             self.data_export_action.setStatusTip("导出数据")
@@ -438,10 +431,16 @@ class MainMenuBar(QMenuBar):
             self.settings_action.setStatusTip("打开设置")
             self.tools_menu.addAction(self.settings_action)
             
-            # 自适应连接池配置
+            # 自适应连接池配置（快捷方式）
             self.adaptive_pool_config_action = QAction("自适应连接池配置", self)
-            self.adaptive_pool_config_action.setStatusTip("配置自适应连接池参数")
+            self.adaptive_pool_config_action.setStatusTip("快速打开连接池管理的自适应配置Tab")
             self.tools_menu.addAction(self.adaptive_pool_config_action)
+
+            # 连接池管理
+            self.connection_pool_manager_action = QAction("连接池管理", self)
+            self.connection_pool_manager_action.setStatusTip("打开统一连接池管理界面（包含列表、配置、自适应、监控、历史）")
+            self.connection_pool_manager_action.setShortcut("Ctrl+Shift+P")
+            self.tools_menu.addAction(self.connection_pool_manager_action)
 
             # 注意：信号连接已在connect_signals方法中统一处理，这里不再重复连接
 
@@ -506,15 +505,13 @@ class MainMenuBar(QMenuBar):
         """初始化高级功能菜单"""
         try:
 
-            # 分布式/云API/指标市场/批量分析
+            # 分布式/云API/指标市场
             self.node_manager_action = QAction("分布式节点管理", self)
             self.cloud_api_action = QAction("云API管理", self)
             self.indicator_market_action = QAction("指标市场", self)
-            self.batch_analysis_action = QAction("批量分析", self)
             self.advanced_menu.addAction(self.node_manager_action)
             self.advanced_menu.addAction(self.cloud_api_action)
             self.advanced_menu.addAction(self.indicator_market_action)
-            self.advanced_menu.addAction(self.batch_analysis_action)
 
             # GPU加速配置
             self.gpu_config_action = QAction("GPU加速配置", self)
@@ -1022,9 +1019,21 @@ class MainMenuBar(QMenuBar):
                 ('system_optimizer_action', '_on_system_optimizer'),
                 ('unified_optimization_action', '_on_unified_optimization'),
                 ('webgpu_status_action', 'show_webgpu_status'),
-                ('advanced_search_action', '_on_advanced_search'),
                 ('settings_action', '_on_settings'),
                 ('adaptive_pool_config_action', 'show_adaptive_pool_config'),
+                ('connection_pool_manager_action', 'show_connection_pool_manager'),
+
+                # 高级功能菜单
+                ('node_manager_action', '_on_node_management'),
+                ('cloud_api_action', '_on_cloud_api'),
+                ('indicator_market_action', '_on_indicator_market'),
+                ('gpu_config_action', '_on_gpu_config'),
+                ('optimization_status_action', '_on_optimization_status'),
+
+                # 缓存管理
+                ('clear_data_cache_action', '_on_clear_data_cache'),
+                ('clear_negative_cache_action', '_on_clear_negative_cache'),
+                ('clear_all_cache_action', '_on_clear_all_cache'),
 
                 # 性能监控菜单
                 ('performance_center_action', '_on_performance_center'),
@@ -1063,6 +1072,7 @@ class MainMenuBar(QMenuBar):
                 ('shortcuts_action', '_on_shortcuts'),
                 ('update_action', '_on_check_update'),
                 ('data_usage_terms_action', '_on_data_usage_terms'),
+                ('startup_guides_action', '_on_startup_guides'),
                 ('about_action', '_on_about'),
             ]
 
@@ -1161,20 +1171,41 @@ class MainMenuBar(QMenuBar):
                 logger.error(f"打开预测准确性跟踪对话框失败: {str(e)}")
     
     def show_adaptive_pool_config(self):
-        """显示自适应连接池配置对话框"""
+        """显示连接池管理对话框并切换到自适应配置Tab"""
         try:
-            from gui.dialogs.adaptive_pool_config_dialog import AdaptivePoolConfigDialog
+            from gui.dialogs.connection_pool_manager_dialog import ConnectionPoolManagerDialog
+
+            dialog = ConnectionPoolManagerDialog(self.parent())
             
-            dialog = AdaptivePoolConfigDialog(self.parent())
+            # 切换到自适应配置Tab（索引2）
+            if hasattr(dialog, 'tab_widget'):
+                dialog.tab_widget.setCurrentIndex(2)
+            
             dialog.exec_()
         except Exception as e:
             QMessageBox.critical(
                 self.parent(),
                 "错误",
-                f"打开自适应连接池配置对话框失败:\n{str(e)}"
+                f"打开连接池管理对话框失败:\n{str(e)}"
             )
             if True:  # 使用Loguru日志
-                logger.error(f"打开自适应连接池配置对话框失败: {str(e)}")
+                logger.error(f"打开连接池管理对话框失败: {str(e)}")
+
+    def show_connection_pool_manager(self):
+        """显示统一连接池管理对话框"""
+        try:
+            from gui.dialogs.connection_pool_manager_dialog import ConnectionPoolManagerDialog
+
+            dialog = ConnectionPoolManagerDialog(self.parent())
+            dialog.exec_()
+        except Exception as e:
+            QMessageBox.critical(
+                self.parent(),
+                "错误",
+                f"打开连接池管理对话框失败:\n{str(e)}"
+            )
+            if True:  # 使用Loguru日志
+                logger.error(f"打开连接池管理对话框失败: {str(e)}")
 
     def show_distributed_monitor(self):
         """显示分布式节点监控对话框"""

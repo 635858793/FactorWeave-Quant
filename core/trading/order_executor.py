@@ -262,6 +262,64 @@ class OrderExecutor:
             return self.trading_interface
         return trading_interface
 
+    def _validate_order_integrity(self, order: Order) -> Optional[str]:
+        """
+        验证订单对象的完整性
+
+        Args:
+            order: 订单对象
+
+        Returns:
+            Optional[str]: 如果验证失败返回错误信息，否则返回 None
+        """
+        try:
+            # 验证必要字段
+            required_fields = {
+                'order_id': order.order_id,
+                'strategy_id': order.strategy_id,
+                'asset_type': order.asset_type,
+                'stock_code': order.stock_code,
+                'order_type': order.order_type,
+                'order_category': order.order_category,
+                'order_price': order.order_price,
+                'order_quantity': order.order_quantity,
+                'order_status': order.order_status,
+                'create_time': order.create_time,
+                'update_time': order.update_time,
+                'account_id': order.account_id
+            }
+
+            for field_name, field_value in required_fields.items():
+                if field_value is None:
+                    return f"必要字段 {field_name} 为 None"
+
+            # 验证数据类型和值
+            if not isinstance(order.order_price, (int, float)) or order.order_price <= 0:
+                return f"订单价格无效: {order.order_price}"
+
+            if not isinstance(order.order_quantity, int) or order.order_quantity <= 0:
+                return f"订单数量无效: {order.order_quantity}"
+
+            if not isinstance(order.stock_code, str) or len(order.stock_code) == 0:
+                return f"股票代码无效: {order.stock_code}"
+
+            # 验证账号ID
+            if order.account_id == "default":
+                logger.warning(f"订单 {order.order_id} 的 account_id 为 'default'，可能导致账号解析失败")
+
+            # 验证策略ID
+            if order.strategy_id == "default":
+                logger.warning(f"订单 {order.order_id} 的 strategy_id 为 'default'，可能导致账号解析失败")
+
+            logger.debug(f"订单完整性验证通过: {order.order_id}")
+            return None
+
+        except Exception as e:
+            logger.error(f"验证订单完整性时发生异常: {e}")
+            import traceback
+            logger.error(f"错误堆栈:\n{traceback.format_exc()}")
+            return f"验证异常: {str(e)}"
+
     def _resolve_account_for_order(self, order: Order) -> Optional[Account]:
         """
         解析订单使用的账号（三级优先级）
@@ -279,6 +337,8 @@ class OrderExecutor:
             account_manager = self.service_container.resolve(AccountManager)
             strategy_manager = self.service_container.resolve(StrategyManager)
 
+            logger.debug(f"开始解析订单账号: order_id={order.order_id}, account_id={order.account_id}, strategy_id={order.strategy_id}")
+
             # 优先级1：订单级别
             if order.account_id and order.account_id != "default":
                 account = account_manager.get_account(order.account_id)
@@ -287,31 +347,53 @@ class OrderExecutor:
                     return account
                 else:
                     logger.warning(f"订单指定的账号不存在: {order.account_id}")
+                    logger.warning(f"订单详细信息: order_id={order.order_id}, stock_code={order.stock_code}")
 
             # 优先级2：策略级别
             if order.strategy_id and order.strategy_id != "default":
                 strategy = strategy_manager.get_strategy(order.strategy_id)
-                if strategy and hasattr(strategy, 'default_account_id') and strategy.default_account_id:
+                if strategy and strategy.default_account_id:
                     account = account_manager.get_account(strategy.default_account_id)
                     if account:
-                        logger.info(f"使用策略的默认账号: {account.account_id}")
+                        logger.info(f"使用策略的默认账号: {account.account_id} (策略: {strategy.strategy_id})")
                         return account
                     else:
-                        logger.warning(f"策略的默认账号不存在: {strategy.default_account_id}")
+                        logger.warning(f"策略的默认账号不存在: {strategy.default_account_id} (策略: {strategy.strategy_id})")
+                else:
+                    logger.warning(f"策略不存在或没有默认账号: {order.strategy_id}")
 
             # 优先级3：系统级别
             accounts = account_manager.get_all_accounts()
             if accounts:
                 # 返回第一个账号作为系统默认账号
                 account = accounts[0]
-                logger.info(f"使用系统默认账号: {account.account_id}")
+                logger.info(f"使用系统默认账号: {account.account_id} (共 {len(accounts)} 个账号)")
                 return account
 
-            logger.warning("无法解析订单使用的账号")
+            logger.error("无法解析订单使用的账号")
+            logger.error(f"订单详细信息:")
+            logger.error(f"  order_id: {order.order_id}")
+            logger.error(f"  stock_code: {order.stock_code}")
+            logger.error(f"  order_type: {order.order_type.value}")
+            logger.error(f"  order_quantity: {order.order_quantity}")
+            logger.error(f"  order_price: {order.order_price}")
+            logger.error(f"  account_id: {order.account_id}")
+            logger.error(f"  strategy_id: {order.strategy_id}")
+            logger.error(f"  asset_type: {order.asset_type.value}")
+            logger.error(f"系统状态:")
+            logger.error(f"  可用账号数: {len(accounts) if accounts else 0}")
+            logger.error(f"  可能原因:")
+            logger.error(f"    1. 系统中没有配置任何账号")
+            logger.error(f"    2. 订单的 account_id 和 strategy_id 都是 'default'")
+            logger.error(f"    3. 订单指定的账号不存在")
+            logger.error(f"    4. 策略指定的默认账号不存在")
             return None
 
         except Exception as e:
             logger.error(f"解析订单账号失败: {e}")
+            logger.error(f"订单ID: {order.order_id}")
+            import traceback
+            logger.error(f"错误堆栈:\n{traceback.format_exc()}")
             return None
 
     def _get_trading_interface_for_account(self, account: Account) -> Optional[TradingInterface]:
@@ -409,6 +491,17 @@ class OrderExecutor:
         """提交订单"""
         try:
             logger.info(f"开始提交订单: {order.order_id} ({order.asset_type.value})")
+
+            # 0. 验证订单对象的完整性
+            validation_error = self._validate_order_integrity(order)
+            if validation_error:
+                logger.error(f"订单完整性验证失败: {order.order_id} - {validation_error}")
+                return ExecutionResult(
+                    order_id=order.order_id,
+                    status=ExecutionStatus.FAILED,
+                    message=f"订单完整性验证失败: {validation_error}",
+                    error_code="ORDER_VALIDATION_FAILED"
+                )
 
             # 1. 解析订单使用的账号
             account = self._resolve_account_for_order(order)
@@ -595,8 +688,8 @@ class OrderExecutor:
         try:
             logger.info(f"开始取消订单: {order_id}")
 
-            # 1. 获取订单
-            order = self.repository.get_order(order_id)
+            # 1. 获取订单（遍历所有数据池）
+            order = self.repository.get_order(order_id, asset_type=None, use_cache=False)
             if not order:
                 logger.error(f"订单取消失败: {order_id} - 订单不存在，可能原因：")
                 logger.error(f"  1. 订单创建时保存失败但ID已生成")
@@ -619,13 +712,22 @@ class OrderExecutor:
                     error_code="ORDER_COMPLETED"
                 )
 
-            # 3. 根据资产类型获取对应的交易接口
+            # 3. 检查部分成交状态
+            if order.order_status == OrderStatus.PARTIALLY_FILLED:
+                return ExecutionResult(
+                    order_id=order_id,
+                    status=ExecutionStatus.FAILED,
+                    message=f"订单部分成交，不能取消",
+                    error_code="ORDER_PARTIALLY_FILLED"
+                )
+
+            # 4. 根据资产类型获取对应的交易接口
             trading_interface = self._get_trading_interface(order.asset_type)
 
-            # 4. 提交取消请求
+            # 5. 提交取消请求
             result = trading_interface.cancel_order(order_id)
 
-            # 5. 处理取消结果
+            # 6. 处理取消结果
             if result.status == ExecutionStatus.SUCCESS:
                 order.order_status = OrderStatus.CANCELLED
                 order.update_time = datetime.now()
