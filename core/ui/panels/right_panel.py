@@ -783,7 +783,8 @@ class RightPanel(BasePanel):
         self._create_signal_tab(tab_widget)
         self._create_risk_tab(tab_widget)
         self._create_backtest_tab(tab_widget)
-        self._create_ai_stock_tab(tab_widget)
+        # 注释掉普通AI选股tab，使用增强AI选股面板
+        # self._create_ai_stock_tab(tab_widget)
         self._create_industry_tab(tab_widget)
         self._has_basic_tabs = True
         

@@ -34,6 +34,7 @@ class TradingInterfaceType(Enum):
     TORA = "tora"                        # TORA接口
     OMS = "oms"                          # OMS接口
     CUSTOM = "custom"                    # 自定义接口
+    MINIQMT = "miniqmt"                  # miniQMT接口
     
     # 加密货币交易所
     BINANCE = "binance"                  # 币安
@@ -164,6 +165,12 @@ class Account:
     bybit_rest_url: str = "https://api.bybit.com"
     bybit_ws_url: str = "wss://stream.bybit.com"
     
+    # miniQMT配置
+    miniqmt_account_id: str = ""
+    miniqmt_password: str = ""
+    miniqmt_ip: str = "127.0.0.1"
+    miniqmt_port: int = 58610
+    
     # 交易接口（已废弃，使用 trading_interface_type 替代）
     trading_interface: str = ""
 
@@ -251,6 +258,10 @@ class Account:
             'bybit_secret_key': self.bybit_secret_key,
             'bybit_rest_url': self.bybit_rest_url,
             'bybit_ws_url': self.bybit_ws_url,
+            'miniqmt_account_id': self.miniqmt_account_id,
+            'miniqmt_password': self.miniqmt_password,
+            'miniqmt_ip': self.miniqmt_ip,
+            'miniqmt_port': self.miniqmt_port,
             'trading_interface': self.trading_interface
         }
 
@@ -334,6 +345,10 @@ class Account:
             bybit_secret_key=data.get('bybit_secret_key', ''),
             bybit_rest_url=data.get('bybit_rest_url', 'https://api.bybit.com'),
             bybit_ws_url=data.get('bybit_ws_url', 'wss://stream.bybit.com'),
+            miniqmt_account_id=data.get('miniqmt_account_id', ''),
+            miniqmt_password=data.get('miniqmt_password', ''),
+            miniqmt_ip=data.get('miniqmt_ip', '127.0.0.1'),
+            miniqmt_port=data.get('miniqmt_port', 58610),
             trading_interface=data.get('trading_interface', '')
         )
 

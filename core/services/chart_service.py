@@ -10,6 +10,7 @@ from core.plugin_types import AssetType
 import pandas as pd
 import uuid
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional, Any, Tuple, TYPE_CHECKING
 from .base_service import CacheableService, ConfigurableService
 from ..events import ChartUpdateEvent, StockSelectedEvent, EventBus
@@ -756,3 +757,23 @@ class ChartService(CacheableService, ConfigurableService):
         except Exception as e:
             logger.error(f"Failed to get kdata for {stock_code}: {e}")
             return pd.DataFrame()
+
+    async def get_kdata_async(self, stock_code: str, period: str = 'D', count: int = 365,
+                             asset_type: 'AssetType' = None) -> pd.DataFrame:
+        """
+        获取K线数据（异步版本 - 优化版）
+
+        Args:
+            stock_code: 股票代码（或其他资产代码）
+            period: 周期
+            count: 数据条数
+            asset_type: 资产类型（可选，如果不提供则使用默认值）
+
+        Returns:
+            K线数据DataFrame
+        """
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None,
+            lambda: self.get_kdata(stock_code, period, count, asset_type)
+        )

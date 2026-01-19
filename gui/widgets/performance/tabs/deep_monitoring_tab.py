@@ -28,7 +28,7 @@ try:
         DeepOptimizationMonitor, OptimizationMetrics, MonitoringStatus,
         create_deep_optimization_monitor
     )
-    from core.performance.unified_monitor import UnifiedMonitor
+    from core.performance.unified_monitor import UnifiedPerformanceMonitor
 except ImportError as e:
     print(f"监控模块导入失败: {e}")
 

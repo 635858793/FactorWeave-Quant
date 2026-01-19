@@ -76,7 +76,7 @@ class DuckDBConnectionPool:
 
         Args:
             database_path: 数据库文件路径
-            pool_size: 连接池大小
+            pool_size: 连接池大小（默认50，从原来的50保持不变，已经足够大）
             config: DuckDB配置
         """
         self.database_path = database_path
@@ -223,8 +223,50 @@ class DuckDBConnectionPool:
                     return None
 
             except Exception as conn_error:
-                logger.error(f"创建DuckDB连接时出错: {type(conn_error).__name__}: {conn_error}")
-                raise
+                error_msg = str(conn_error)
+                error_type = type(conn_error).__name__
+
+                # 检查是否是WAL文件相关错误
+                is_wal_error = (
+                    'WAL' in error_msg or
+                    'wal' in error_msg or
+                    'Catalog' in error_msg and 'does not exist' in error_msg or
+                    'Failure while replaying WAL file' in error_msg
+                )
+
+                if is_wal_error and db_exists:
+                    logger.warning(f"检测到WAL文件错误: {error_type}: {error_msg}")
+                    logger.warning(f"尝试清理WAL文件并重试...")
+
+                    # 尝试清理WAL文件
+                    wal_file = db_file.with_suffix('.duckdb.wal')
+                    wal_shm_file = db_file.with_suffix('.duckdb-wal')
+
+                    try:
+                        # 删除WAL文件
+                        if wal_file.exists():
+                            logger.info(f"删除WAL文件: {wal_file}")
+                            wal_file.unlink()
+
+                        if wal_shm_file.exists():
+                            logger.info(f"删除WAL共享内存文件: {wal_shm_file}")
+                            wal_shm_file.unlink()
+
+                        logger.info("✅ WAL文件清理完成，重新尝试连接...")
+
+                        # 重新尝试连接
+                        conn = duckdb.connect(db_path, read_only=False)
+                        logger.info("✅ 成功连接数据库（清理WAL后）")
+
+                    except Exception as wal_error:
+                        logger.error(f"❌ 清理WAL文件失败: {wal_error}")
+                        logger.error(f"💡 解决方案: 请手动删除WAL文件: {wal_file}")
+                        # 继续抛出原始错误
+                        raise conn_error
+                else:
+                    # 非WAL错误，直接抛出
+                    logger.error(f"创建DuckDB连接时出错: {error_type}: {error_msg}")
+                    raise
 
             # 生成连接ID
             conn_id = f"conn_{self._total_connections}_{int(time.time())}"
@@ -590,14 +632,14 @@ class DuckDBConnectionManager:
             return self._pools[database_path]
 
     @contextmanager
-    def get_connection(self, database_path: str, pool_size: int = 10,
+    def get_connection(self, database_path: str, pool_size: int = 15,
                        config: Optional[DuckDBConfig] = None):
         """
         获取数据库连接
 
         Args:
             database_path: 数据库文件路径
-            pool_size: 连接池大小
+            pool_size: 连接池大小（默认15，从10增加到15，支持批量查询）
             config: DuckDB配置
         """
         pool = self.get_pool(database_path, pool_size, config)
@@ -660,6 +702,52 @@ class DuckDBConnectionManager:
                     logger.info(f"连接池已移除: {database_path}")
                 except Exception as e:
                     logger.error(f"移除连接池失败 {database_path}: {e}")
+
+    def restart_pool(self, database_path: str, pool_size: int = 15,
+                    config: Optional[DuckDBConfig] = None) -> bool:
+        """
+        重启数据库连接池（用于DuckDB进入受限模式时）
+
+        Args:
+            database_path: 数据库文件路径
+            pool_size: 连接池大小
+            config: DuckDB配置
+
+        Returns:
+            是否成功重启
+        """
+        database_path = str(Path(database_path).resolve())
+
+        try:
+            logger.warning(f"🔄 正在重启数据库连接池: {database_path}")
+
+            with self._lock:
+                # 关闭并移除旧的连接池
+                if database_path in self._pools:
+                    try:
+                        self._pools[database_path].close_all_connections()
+                        del self._pools[database_path]
+                        logger.info(f"旧连接池已关闭: {database_path}")
+                    except Exception as e:
+                        logger.error(f"关闭旧连接池失败: {e}")
+
+                # 创建新的连接池
+                pool_config = config or self._default_config
+                pool = DuckDBConnectionPool(
+                    database_path=database_path,
+                    pool_size=pool_size,
+                    config=pool_config
+                )
+
+                self._pools[database_path] = pool
+                logger.info(f"✅ 新连接池已创建: {database_path}")
+
+            logger.info(f"✅ 数据库连接池重启成功: {database_path}")
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ 重启数据库连接池失败 {database_path}: {e}")
+            return False
 
 
 # 全局连接管理器实例

@@ -1,4 +1,3 @@
-from loguru import logger
 """
 主窗口协调器
 
@@ -6,6 +5,7 @@ from loguru import logger
 这是整个应用的中央协调器，替代原来的TradingGUI类。
 """
 
+from loguru import logger
 from typing import Dict, Any, Optional, List, Union
 import asyncio
 import traceback
@@ -3649,13 +3649,13 @@ FactorWeave-Quant  2.0 (重构版本)
             from gui.widgets.enhanced_ui import (
                 Level2DataPanel, OrderBookWidget, FundamentalAnalysisTab, SmartRecommendationPanel
             )
-            # 导入增强AI选股面板
+            # 导入AI选股面板
             try:
-                from components.enhanced_ai_stock_selection import EnhancedAIStockSelectionPanel
-                ENHANCED_AI_STOCK_AVAILABLE = True
+                from components.ai_stock_selection import AIStockSelectionPanel
+                AI_STOCK_AVAILABLE = True
             except ImportError as e:
-                logger.warning(f"无法导入EnhancedAIStockSelectionPanel: {e}")
-                ENHANCED_AI_STOCK_AVAILABLE = False
+                logger.warning(f"无法导入AIStockSelectionPanel: {e}")
+                AI_STOCK_AVAILABLE = False
             import_time = time.time() - import_start
             logger.info(f"模块导入耗时: {import_time:.3f}秒")
 
@@ -3723,14 +3723,14 @@ FactorWeave-Quant  2.0 (重构版本)
             recommendation_time = time.time() - recommendation_start
             logger.info(f"SmartRecommendationPanel创建耗时: {recommendation_time:.3f}秒")
 
-            # 创建增强AI选股面板
-            if ENHANCED_AI_STOCK_AVAILABLE:
+            # 创建AI选股面板
+            if AI_STOCK_AVAILABLE:
                 ai_stock_start = time.time()
-                self._enhanced_components['ai_stock_selection'] = EnhancedAIStockSelectionPanel(
+                self._enhanced_components['ai_stock_selection'] = AIStockSelectionPanel(
                     parent=self._main_window
                 )
                 ai_stock_time = time.time() - ai_stock_start
-                logger.info(f"EnhancedAIStockSelectionPanel创建耗时: {ai_stock_time:.3f}秒")
+                logger.info(f"AIStockSelectionPanel创建耗时: {ai_stock_time:.3f}秒")
 
             # 集成增强组件到UI
             integration_start = time.time()
@@ -3954,16 +3954,3 @@ FactorWeave-Quant  2.0 (重构版本)
             logger.warning("智能推荐面板未找到")
         except Exception as e:
             logger.error(f"切换智能推荐面板失败: {e}")
-
-    def _on_toggle_quality_monitor_panel(self):
-        """切换数据质量监控面板显示/隐藏"""
-        try:
-            dock_widgets = self._main_window.findChildren(QDockWidget)
-            for dock in dock_widgets:
-                if dock.windowTitle() == "数据质量监控":
-                    dock.setVisible(not dock.isVisible())
-                    logger.info(f"数据质量监控面板已{'显示' if dock.isVisible() else '隐藏'}")
-                    return
-            logger.warning("数据质量监控面板未找到")
-        except Exception as e:
-            logger.error(f"切换数据质量监控面板失败: {e}")

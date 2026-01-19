@@ -19,6 +19,7 @@ from core.trading.trading_types import ExecutionResult, ExecutionStatus, Trading
 from core.trading.interfaces.xtp_trading_interface import XTPTradingInterface
 from core.trading.interfaces.xtp_pro_trading_interface import XTPProTradingInterface
 from core.trading.interfaces.ctp_trading_interface import CTPTradingInterface
+from core.trading.interfaces.miniqmt_trading_interface import MiniQMTTradingInterface
 from core.trading.account_models import TradingInterfaceType, Account
 from typing import Optional
 
@@ -463,6 +464,15 @@ class OrderExecutor:
                 interface.app_id = account.ctp_app_id
                 interface.auth_code = account.ctp_auth_code
                 interface.product_info = account.ctp_product_info
+
+            elif trading_interface_type == TradingInterfaceType.MINIQMT:
+                from core.trading.interfaces.miniqmt_trading_interface import MiniQMTConfig
+                config = MiniQMTConfig()
+                config.account_id = account.miniqmt_account_id if hasattr(account, 'miniqmt_account_id') else account.account_id
+                config.password = account.miniqmt_password if hasattr(account, 'miniqmt_password') else ""
+                config.ip = account.miniqmt_ip if hasattr(account, 'miniqmt_ip') else "127.0.0.1"
+                config.port = account.miniqmt_port if hasattr(account, 'miniqmt_port') else 58610
+                interface = MiniQMTTradingInterface(config)
 
             else:
                 logger.warning(f"未知的交易接口类型: {trading_interface_type.value}，使用模拟接口")

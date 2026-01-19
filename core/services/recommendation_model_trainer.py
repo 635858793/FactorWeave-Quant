@@ -39,6 +39,102 @@ from core.ai.continuous_learning_manager import ContinuousLearningManager
 logger = logger.bind(module=__name__)
 
 
+class SVDModelWrapper:
+    """
+    SVD模型包装类
+    
+    为TruncatedSVD添加predict方法，使其与其他模型接口一致
+    """
+    
+    def __init__(self, svd_model: TruncatedSVD, user_item_matrix: pd.DataFrame):
+        self.svd_model = svd_model
+        self.user_item_matrix = user_item_matrix
+        self.user_ids = user_item_matrix.index.tolist()
+        self.item_ids = user_item_matrix.columns.tolist()
+        
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        """
+        预测评分
+        
+        Args:
+            X: 包含user_id和item_id的DataFrame
+            
+        Returns:
+            预测的评分数组
+        """
+        predictions = []
+        
+        for _, row in X.iterrows():
+            user_id = row.get('user_id')
+            item_id = row.get('item_id')
+            
+            if user_id in self.user_ids and item_id in self.item_ids:
+                user_idx = self.user_ids.index(user_id)
+                item_idx = self.item_ids.index(item_id)
+                
+                # 使用SVD重构评分
+                user_vector = self.svd_model.transform(self.user_item_matrix.iloc[[user_idx]])
+                item_vector = self.svd_model.components_.T[item_idx]
+                prediction = np.dot(user_vector, item_vector)[0]
+                
+                # 确保评分在合理范围内
+                prediction = max(0, min(1, prediction))
+                predictions.append(prediction)
+            else:
+                # 如果用户或物品不在训练数据中，返回默认评分
+                predictions.append(0.5)
+        
+        return np.array(predictions)
+
+
+class NMFModelWrapper:
+    """
+    NMF模型包装类
+    
+    为NMF添加predict方法，使其与其他模型接口一致
+    """
+    
+    def __init__(self, nmf_model: NMF, user_item_matrix: pd.DataFrame):
+        self.nmf_model = nmf_model
+        self.user_item_matrix = user_item_matrix
+        self.user_ids = user_item_matrix.index.tolist()
+        self.item_ids = user_item_matrix.columns.tolist()
+        
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        """
+        预测评分
+        
+        Args:
+            X: 包含user_id和item_id的DataFrame
+            
+        Returns:
+            预测的评分数组
+        """
+        predictions = []
+        
+        for _, row in X.iterrows():
+            user_id = row.get('user_id')
+            item_id = row.get('item_id')
+            
+            if user_id in self.user_ids and item_id in self.item_ids:
+                user_idx = self.user_ids.index(user_id)
+                item_idx = self.item_ids.index(item_id)
+                
+                # 使用NMF重构评分
+                W = self.nmf_model.transform(self.user_item_matrix.iloc[[user_idx]])
+                H = self.nmf_model.components_
+                prediction = np.dot(W, H[:, item_idx])[0]
+                
+                # 确保评分在合理范围内
+                prediction = max(0, min(1, prediction))
+                predictions.append(prediction)
+            else:
+                # 如果用户或物品不在训练数据中，返回默认评分
+                predictions.append(0.5)
+        
+        return np.array(predictions)
+
+
 class ModelType(Enum):
     """模型类型"""
     COLLABORATIVE_FILTERING = "collaborative_filtering"
@@ -167,9 +263,11 @@ class RecommendationModelTrainer:
     """
 
     def __init__(self, recommendation_engine: SmartRecommendationEngine,
-                 continuous_learning_manager: ContinuousLearningManager):
+                 continuous_learning_manager: ContinuousLearningManager,
+                 database_service=None):
         self.recommendation_engine = recommendation_engine
         self.continuous_learning_manager = continuous_learning_manager
+        self.database_service = database_service
 
         # 模型管理
         self.models: Dict[str, Any] = {}  # 训练好的模型
@@ -286,8 +384,80 @@ class RecommendationModelTrainer:
             content_items = self.recommendation_engine.content_items
             user_profiles = self.recommendation_engine.user_profiles
 
+            # 如果没有交互数据，尝试从数据库加载
+            if not interactions:
+                logger.info("内存中没有交互数据，尝试从数据库加载...")
+                
+                if self.database_service:
+                    # 从数据库加载交互数据
+                    interactions_data = self.database_service.get_user_interactions(limit=10000)
+                    logger.info(f"从数据库加载了 {len(interactions_data)} 条交互数据")
+                    
+                    # 从数据库加载内容项数据
+                    content_items_data = self.database_service.get_content_items(limit=10000)
+                    logger.info(f"从数据库加载了 {len(content_items_data)} 条内容项数据")
+                    
+                    # 从数据库加载用户画像数据
+                    user_profiles_data = self.database_service.get_all_user_profiles(limit=10000)
+                    logger.info(f"从数据库加载了 {len(user_profiles_data)} 条用户画像数据")
+                    
+                    # 将数据库数据转换为推荐引擎的数据格式
+                    for item in interactions_data:
+                        interaction = UserInteraction(
+                            user_id=item['user_id'],
+                            item_id=item['item_id'],
+                            interaction_type=item['interaction_type'],
+                            timestamp=datetime.fromisoformat(item['timestamp']) if isinstance(item['timestamp'], str) else item['timestamp'],
+                            duration=item.get('duration'),
+                            rating=item.get('rating'),
+                            context=item.get('context', {})
+                        )
+                        self.recommendation_engine.interactions.append(interaction)
+                    
+                    for item in content_items_data:
+                        from core.services.smart_recommendation_engine import RecommendationType
+                        content_item = ContentItem(
+                            item_id=item['item_id'],
+                            item_type=RecommendationType(item['item_type']),
+                            title=item['title'],
+                            description=item.get('description', ''),
+                            tags=item.get('tags', []),
+                            categories=item.get('categories', []),
+                            keywords=item.get('keywords', []),
+                            view_count=item.get('view_count', 0),
+                            like_count=item.get('like_count', 0),
+                            share_count=item.get('share_count', 0),
+                            rating=item.get('rating', 0.0),
+                            created_at=datetime.fromisoformat(item['created_at']) if isinstance(item['created_at'], str) else item['created_at'],
+                            updated_at=datetime.fromisoformat(item['updated_at']) if isinstance(item['updated_at'], str) else item['updated_at'],
+                            metadata=item.get('metadata', {})
+                        )
+                        self.recommendation_engine.content_items[content_item.item_id] = content_item
+                    
+                    for profile_data in user_profiles_data:
+                        from core.services.smart_recommendation_engine import UserProfile
+                        user_profile = UserProfile(
+                            user_id=profile_data['user_id'],
+                            registration_date=datetime.fromisoformat(profile_data['created_at']) if isinstance(profile_data['created_at'], str) else profile_data['created_at'],
+                            last_active=datetime.fromisoformat(profile_data['updated_at']) if isinstance(profile_data['updated_at'], str) else profile_data['updated_at'],
+                            activity_level='medium',
+                            preferred_stocks=[],
+                            preferred_sectors=[],
+                            risk_tolerance='medium',
+                            investment_horizon='medium'
+                        )
+                        self.recommendation_engine.user_profiles[user_profile.user_id] = user_profile
+                    
+                    # 重新获取数据
+                    interactions = self.recommendation_engine.interactions
+                    content_items = self.recommendation_engine.content_items
+                    user_profiles = self.recommendation_engine.user_profiles
+                else:
+                    logger.warning("数据库服务未提供，无法从数据库加载数据")
+
             if not interactions:
                 logger.warning("没有交互数据，无法准备训练数据")
+                logger.info("提示：请确保数据库中有足够的交互数据")
                 return False
 
             # 构建特征矩阵
@@ -354,6 +524,8 @@ class RecommendationModelTrainer:
 
         except Exception as e:
             logger.error(f"准备训练数据失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return False
 
     async def train_model(self, model_id: str, config: ModelConfig = None) -> str:
@@ -491,10 +663,23 @@ class RecommendationModelTrainer:
 
             if config.model_type == ModelType.COLLABORATIVE_FILTERING:
                 if algorithm == "svd":
-                    model = TruncatedSVD(**hyperparams)
                     # 对于SVD，需要特殊处理
                     user_item_matrix = self._create_user_item_matrix()
-                    model.fit(user_item_matrix)
+                    
+                    # 动态调整 n_components 参数，确保不超过特征数量
+                    n_features = user_item_matrix.shape[1]
+                    n_components = hyperparams.get('n_components', 50)
+                    
+                    if n_components > n_features:
+                        logger.warning(f"n_components({n_components}) 大于特征数量({n_features})，自动调整为 {n_features}")
+                        hyperparams = hyperparams.copy()
+                        hyperparams['n_components'] = n_features
+                    
+                    svd_model = TruncatedSVD(**hyperparams)
+                    svd_model.fit(user_item_matrix)
+                    
+                    # 使用包装类包装SVD模型
+                    model = SVDModelWrapper(svd_model, user_item_matrix)
                     return model
 
             elif config.model_type == ModelType.CONTENT_BASED:
@@ -516,10 +701,23 @@ class RecommendationModelTrainer:
 
             elif config.model_type == ModelType.MATRIX_FACTORIZATION:
                 if algorithm == "nmf":
-                    model = NMF(**hyperparams)
                     # 对于NMF，需要特殊处理
                     user_item_matrix = self._create_user_item_matrix()
-                    model.fit(user_item_matrix)
+                    
+                    # 动态调整 n_components 参数，确保不超过特征数量
+                    n_features = user_item_matrix.shape[1]
+                    n_components = hyperparams.get('n_components', 30)
+                    
+                    if n_components > n_features:
+                        logger.warning(f"n_components({n_components}) 大于特征数量({n_features})，自动调整为 {n_features}")
+                        hyperparams = hyperparams.copy()
+                        hyperparams['n_components'] = n_features
+                    
+                    nmf_model = NMF(**hyperparams)
+                    nmf_model.fit(user_item_matrix)
+                    
+                    # 使用包装类包装NMF模型
+                    model = NMFModelWrapper(nmf_model, user_item_matrix)
                     return model
 
             elif config.model_type == ModelType.ENSEMBLE:

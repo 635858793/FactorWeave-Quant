@@ -1,0 +1,200 @@
+<mxfile host="65bd71144e">
+    <diagram name="DuckDB数据导入股票选择调用链" id="duckdb-stock-selection-flow">
+        <mxGraphModel dx="1746" dy="905" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="user_action" value="用户在UI面板选择股票" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontStyle=1;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="40" width="180" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="left_panel_select" value="core.ui.panels.left_panel&#10;_select_stock()&#10;验证股票代码并启动异步任务" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="140" width="200" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="async_select" value="_async_select_stock()&#10;异步处理&#10;传递 asset_type" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="280" y="140" width="160" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="data_manager_request" value="data_manager.request_data()&#10;统一数据请求接口&#10;支持多资产类型" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="240" width="200" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="get_kdata_async" value="_get_kdata()&#10;异步K线数据获取&#10;传递 asset_type" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="280" y="240" width="160" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="chart_service" value="UnifiedDataManager&#10;统一数据管理器&#10;调用 _get_kdata_from_duckdb" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="480" y="240" width="200" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="data_router" value="IntelligentDataRouter&#10;智能数据路由器&#10;插件注册与性能监控" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="340" width="200" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="duckdb_path" value="DuckDB路径&#10;_get_kdata_from_duckdb()&#10;从本地数据库读取" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="280" y="320" width="160" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="tet_path" value="TET框架路径&#10;_get_external_kdata()&#10;外部数据源" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="280" y="380" width="160" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="kline_repository" value="core.data.repository&#10;KlineRepository.get_kline_data()" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fad7ac;strokeColor=#b46504;fontSize=12;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="440" y="340" width="180" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="tet_mode" value="TET模式&#10;AssetService.get_historical_data()" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="650" y="320" width="170" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="fallback_mode" value="传统模式降级&#10;DataManager.get_kdata()" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="650" y="380" width="170" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="plugin_manager" value="UniPluginDataManager&#10;插件管理器&#10;统一数据源接口" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="480" width="200" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="create_context" value="create_request_context()&#10;创建请求上下文&#10;包含资产类型信息" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="280" y="460" width="160" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="execute_request" value="execute_data_request()&#10;执行数据请求&#10;调用数据源插件" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="280" y="520" width="160" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="data_source_plugins" value="数据源插件&#10;(eastmoney, sina, tushare)&#10;支持多资产类型" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#cdeb8b;strokeColor=#36393d;fontSize=12;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="480" y="480" width="200" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="data_validation" value="数据验证和清洗&#10;_validate_and_clean_kline_data()&#10;检查数据完整性" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d0cee2;strokeColor=#56517e;fontSize=12;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="580" width="200" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="data_storage" value="数据存储&#10;_store_kline_data_to_duckdb()&#10;写入 DuckDB 数据库" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d0cee2;strokeColor=#56517e;fontSize=12;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="280" y="580" width="160" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="duckdb_operations" value="DuckDBOperations&#10;数据库操作&#10;批量写入与索引优化" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#bac8d3;strokeColor=#23445d;fontSize=12;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="480" y="580" width="200" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="duckdb_files" value="DuckDB文件&#10;db/kline_stock.duckdb&#10;表: kline_data_d" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;fontSize=12;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="720" y="580" width="170" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="cache_layer" value="缓存层&#10;MultiLevelCacheManager" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fad9d5;strokeColor=#ae4132;fontSize=12;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="680" width="180" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="return_to_ui" value="数据返回UI&#10;_handle_data_result()" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="260" y="680" width="150" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="arrow1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" source="user_action" target="left_panel_select" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="arrow2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" source="left_panel_select" target="async_select" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="arrow3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" source="async_select" target="data_manager_request" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="360" y="220"/>
+                            <mxPoint x="140" y="220"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="arrow4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" source="data_manager_request" target="get_kdata_async" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="arrow5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" source="get_kdata_async" target="chart_service" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="arrow6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" source="chart_service" target="data_router" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="580" y="320"/>
+                            <mxPoint x="140" y="320"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="arrow7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" source="data_router" target="duckdb_path" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="arrow8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" source="data_router" target="tet_path" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="arrow9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" source="tet_path" target="kline_repository" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="arrow10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" source="kline_repository" target="tet_mode" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="arrow11" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" source="kline_repository" target="fallback_mode" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="arrow12" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" source="tet_mode" target="plugin_manager" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="735" y="460"/>
+                            <mxPoint x="140" y="460"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="arrow13" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" source="plugin_manager" target="create_context" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="arrow14" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" source="create_context" target="execute_request" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="arrow15" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" source="execute_request" target="data_source_plugins" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="arrow16" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" source="data_source_plugins" target="data_validation" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="580" y="560"/>
+                            <mxPoint x="140" y="560"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="arrow17" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" source="data_validation" target="data_storage" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="arrow18" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" source="data_storage" target="duckdb_operations" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="arrow19" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" source="duckdb_operations" target="duckdb_files" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="arrow20" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" source="data_storage" target="cache_layer" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="360" y="660"/>
+                            <mxPoint x="140" y="660"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="arrow21" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" source="cache_layer" target="return_to_ui" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="label1" value="用户交互层" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=16;fontStyle=1;labelBackgroundColor=none;labelBorderColor=none;fillColor=#008a00;fontColor=#ffffff;strokeColor=default;dashed=1;dashPattern=8 8;gradientColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="970" y="40" width="100" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="label2" value="UI处理层" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=16;fontStyle=1;labelBackgroundColor=none;labelBorderColor=none;fillColor=#008a00;fontColor=#ffffff;strokeColor=default;dashed=1;dashPattern=8 8;gradientColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="970" y="140" width="100" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="label3" value="数据管理层" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=16;fontStyle=1;labelBackgroundColor=none;labelBorderColor=none;fillColor=#008a00;fontColor=#ffffff;strokeColor=default;dashed=1;dashPattern=8 8;gradientColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="970" y="240" width="100" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="label4" value="数据路由层" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=16;fontStyle=1;labelBackgroundColor=none;labelBorderColor=none;fillColor=#008a00;fontColor=#ffffff;strokeColor=default;dashed=1;dashPattern=8 8;gradientColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="970" y="340" width="100" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="label5" value="插件执行层" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=16;fontStyle=1;labelBackgroundColor=none;labelBorderColor=none;fillColor=#008a00;fontColor=#ffffff;strokeColor=default;dashed=1;dashPattern=8 8;gradientColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="970" y="480" width="100" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="label6" value="数据存储层" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=16;fontStyle=1;labelBackgroundColor=none;labelBorderColor=none;fillColor=#008a00;fontColor=#ffffff;strokeColor=default;dashed=1;dashPattern=8 8;gradientColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="970" y="580" width="100" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="label7" value="缓存返回层" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=16;fontStyle=1;labelBackgroundColor=none;labelBorderColor=none;fillColor=#008a00;fontColor=#ffffff;strokeColor=default;dashed=1;dashPattern=8 8;gradientColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="970" y="680" width="100" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="decision1" value="路由决策点" style="shape=rhombus;perimeter=rhombusPerimeter;whiteSpace=wrap;html=1;align=center;fillColor=#ffcd28;strokeColor=#d79b00;fontColor=#080808;fontSize=11;fontStyle=1;labelBackgroundColor=none;labelBorderColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="250" y="310" width="80" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="decision2" value="模式选择" style="shape=rhombus;perimeter=rhombusPerimeter;whiteSpace=wrap;html=1;align=center;fillColor=none;strokeColor=#d79b00;fontColor=#f2f2f2;fontSize=11;fontStyle=1;labelBackgroundColor=none;labelBorderColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="860" y="340" width="80" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="performance1" value="缓存检查" style="shape=note;size=20;whiteSpace=wrap;html=1;fillColor=#f0f0f0;strokeColor=#666666;fontSize=10;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="250" y="200" width="60" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="performance2" value="数据验证" style="shape=note;size=20;whiteSpace=wrap;html=1;fillColor=#f0f0f0;strokeColor=#666666;fontSize=10;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="550" width="60" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="performance3" value="批量存储" style="shape=note;size=20;whiteSpace=wrap;html=1;fillColor=#f0f0f0;strokeColor=#666666;fontSize=10;fontColor=#080808;labelBackgroundColor=none;labelBorderColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="280" y="550" width="60" height="30" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

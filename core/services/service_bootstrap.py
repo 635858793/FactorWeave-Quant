@@ -46,6 +46,9 @@ from core.metrics.aggregation_service import MetricsAggregationService
 # 策略相关服务
 from core.strategy.strategy_dependency_manager import StrategyDependencyManager
 from core.strategy.strategy_hot_reloader import StrategyHotReloader
+from core.strategy.strategy_registry import StrategyRegistry
+from core.strategy.strategy_factory import StrategyFactory
+from core.strategy.strategy_engine import StrategyEngine
 
 # 插件相关服务
 from core.plugin_hot_reloader import PluginHotReloader
@@ -434,12 +437,31 @@ class ServiceBootstrap:
                 self.service_container.register(
                     SmartRecommendationEngine,
                     scope=ServiceScope.SINGLETON,
-                    factory=lambda: SmartRecommendationEngine()
+                    factory=lambda: SmartRecommendationEngine(database_service=self.service_container.resolve(DatabaseService))
                 )
             smart_recommendation_engine = self.service_container.resolve(SmartRecommendationEngine)
             logger.info("✅ 智能推荐引擎注册完成")
         except Exception as e:
             logger.error(f"❌ 智能推荐引擎注册失败: {e}")
+            logger.error(traceback.format_exc())
+
+        # AI可解释性服务（必须在RecommendationExplanationGenerator之前注册）
+        try:
+            from .ai_explainability_service import AIExplainabilityService
+            if not self._is_service_registered(AIExplainabilityService):
+                self.service_container.register(
+                    AIExplainabilityService,
+                    scope=ServiceScope.SINGLETON,
+                    factory=lambda: AIExplainabilityService(
+                        service_container=self.service_container
+                    )
+                )
+            ai_explainability_service = self.service_container.resolve(AIExplainabilityService)
+            if hasattr(ai_explainability_service, 'initialize'):
+                ai_explainability_service.initialize()
+            logger.info("✅ AI可解释性服务注册完成")
+        except Exception as e:
+            logger.error(f"❌ AI可解释性服务注册失败: {e}")
             logger.error(traceback.format_exc())
 
         # 注册推荐理由生成器
@@ -479,7 +501,8 @@ class ServiceBootstrap:
                     scope=ServiceScope.SINGLETON,
                     factory=lambda: RecommendationModelTrainer(
                         recommendation_engine=self.service_container.resolve(SmartRecommendationEngine),
-                        continuous_learning_manager=self.service_container.resolve(ContinuousLearningManager)
+                        continuous_learning_manager=self.service_container.resolve(ContinuousLearningManager),
+                        database_service=self.service_container.resolve(DatabaseService)
                     )
                 )
             logger.info("✅ 推荐模型训练器注册完成")
@@ -516,25 +539,6 @@ class ServiceBootstrap:
             logger.info("✅ LLM配置服务注册完成")
         except Exception as e:
             logger.error(f"❌ LLM配置服务注册失败: {e}")
-            logger.error(traceback.format_exc())
-
-        # AI可解释性服务（必须在AISelectionIntegrationService之前注册）
-        try:
-            from .ai_explainability_service import AIExplainabilityService
-            if not self._is_service_registered(AIExplainabilityService):
-                self.service_container.register(
-                    AIExplainabilityService,
-                    scope=ServiceScope.SINGLETON,
-                    factory=lambda: AIExplainabilityService(
-                        service_container=self.service_container
-                    )
-                )
-            ai_explainability_service = self.service_container.resolve(AIExplainabilityService)
-            if hasattr(ai_explainability_service, 'initialize'):
-                ai_explainability_service.initialize()
-            logger.info("✅ AI可解释性服务注册完成")
-        except Exception as e:
-            logger.error(f"❌ AI可解释性服务注册失败: {e}")
             logger.error(traceback.format_exc())
 
         # AI选股集成服务
@@ -794,7 +798,7 @@ class ServiceBootstrap:
                 from core.services.ai_explainability_service import AIExplainabilityService
                 if self.service_container.is_registered(AIExplainabilityService):
                     ai_explain_service = self.service_container.resolve(AIExplainabilityService)
-                    if hasattr(ai_explain_service, 'initialize'):
+                    if hasattr(ai_explain_service, 'initialize') and not ai_explain_service.initialized:
                         ai_explain_service.initialize()
                     logger.info("AIExplainabilityService初始化完成")
             except ImportError as e:
@@ -1096,6 +1100,48 @@ class ServiceBootstrap:
                 logger.info("✅ 策略热重载器注册完成")
             else:
                 logger.warning("StrategyHotReloader已注册，跳过")
+
+            # 注册策略核心组件（确保DatabaseService已注册）
+            if not self._is_service_registered(StrategyRegistry):
+                self.service_container.register(
+                    StrategyRegistry,
+                    scope=ServiceScope.SINGLETON,
+                    factory=lambda: StrategyRegistry()
+                )
+                strategy_registry = self.service_container.resolve(StrategyRegistry)
+                logger.info("✅ 策略注册器注册完成")
+            else:
+                strategy_registry = self.service_container.resolve(StrategyRegistry)
+                logger.warning("StrategyRegistry已注册，跳过")
+
+            # 处理待注册的策略（在模块导入时使用装饰器注册的策略）
+            try:
+                from core.strategy.strategy_registry import process_pending_registrations
+                process_pending_registrations()
+            except Exception as e:
+                logger.warning(f"处理待注册策略失败: {e}")
+
+            if not self._is_service_registered(StrategyFactory):
+                self.service_container.register(
+                    StrategyFactory,
+                    scope=ServiceScope.SINGLETON,
+                    factory=lambda: StrategyFactory(registry=strategy_registry)
+                )
+                strategy_factory = self.service_container.resolve(StrategyFactory)
+                logger.info("✅ 策略工厂注册完成")
+            else:
+                logger.warning("StrategyFactory已注册，跳过")
+
+            if not self._is_service_registered(StrategyEngine):
+                self.service_container.register(
+                    StrategyEngine,
+                    scope=ServiceScope.SINGLETON,
+                    factory=lambda: StrategyEngine(registry=strategy_registry)
+                )
+                strategy_engine = self.service_container.resolve(StrategyEngine)
+                logger.info("✅ 策略执行引擎注册完成")
+            else:
+                logger.warning("StrategyEngine已注册，跳过")
 
             # 注册插件热重载器
             if not self._is_service_registered(PluginHotReloader):

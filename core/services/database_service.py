@@ -37,6 +37,31 @@ from ..events import EventBus, get_event_bus
 from ..containers import ServiceContainer, get_service_container
 # from ..plugin_types import AssetType  # 延迟导入，避免循环依赖
 from .metrics_base import add_dict_interface
+import numpy as np
+
+
+def _serialize_for_json(value: Any) -> Any:
+    """
+    将值序列化为 JSON 兼容格式
+    
+    处理 numpy 数组和其他不可序列化的类型
+    """
+    if value is None:
+        return None
+    elif isinstance(value, np.ndarray):
+        return value.tolist()
+    elif isinstance(value, np.integer):
+        return int(value)
+    elif isinstance(value, np.floating):
+        return float(value)
+    elif isinstance(value, Enum):
+        return value.value
+    elif isinstance(value, dict):
+        return {k: _serialize_for_json(v) for k, v in value.items()}
+    elif isinstance(value, (list, tuple)):
+        return [_serialize_for_json(item) for item in value]
+    else:
+        return value
 
 # 延迟导入以避免循环依赖
 if TYPE_CHECKING:
@@ -207,6 +232,41 @@ class DatabaseConnection:
             logger.error(f"Query execution failed: {e}")
             raise
 
+    def executemany(self, sql: str, parameters: List[Union[Tuple, List]]) -> None:
+        """批量执行SQL
+        
+        Args:
+            sql: SQL语句
+            parameters: 参数列表，每个元素是一个参数元组或列表
+        
+        Note:
+            DuckDB原生支持executemany方法
+            SQLite的cursor也支持executemany方法
+        """
+        self.last_used = datetime.now()
+        self.query_count += len(parameters)
+
+        try:
+            if self.db_type == DatabaseType.DUCKDB:
+                # DuckDB原生支持executemany
+                if isinstance(parameters, list) and all(isinstance(p, (tuple, list)) for p in parameters):
+                    # 确保每个参数都是元组或列表
+                    result = self.connection.executemany(sql, parameters)
+                else:
+                    # 如果参数格式不对，回退到循环执行
+                    logger.warning("DuckDB executemany参数格式不正确，使用循环执行")
+                    for params in parameters:
+                        self.connection.execute(sql, params)
+            elif self.db_type == DatabaseType.SQLITE:
+                # SQLite通过cursor执行
+                cursor = self.connection.cursor()
+                cursor.executemany(sql, parameters)
+            else:
+                raise ValueError(f"Unsupported database type: {self.db_type}")
+        except Exception as e:
+            logger.error(f"Batch execution failed: {e}")
+            raise
+
     def cursor(self):
         """获取数据库游标 - 代理方法以支持SQLite API兼容性"""
         if self.db_type == DatabaseType.SQLITE:
@@ -257,26 +317,62 @@ class DuckDBCursorWrapper:
 
     def __init__(self, connection: Any):
         self.connection = connection
+        self._last_result = None
 
     def execute(self, sql: str, parameters: Optional[Tuple] = None):
         """执行SQL查询"""
         try:
             if parameters:
-                return self.connection.execute(sql, parameters)
+                self._last_result = self.connection.execute(sql, parameters)
             else:
-                return self.connection.execute(sql)
+                self._last_result = self.connection.execute(sql)
+            return self
         except Exception as e:
             logger.error(f"DuckDB execute failed: {e}")
             raise
 
     def fetchall(self):
         """获取所有结果"""
-        # DuckDB的execute()已经返回结果，这里直接返回
-        return []
+        if self._last_result is None:
+            return []
+        
+        try:
+            # 尝试转换为字典列表
+            if hasattr(self._last_result, 'fetchdf'):
+                df = self._last_result.fetchdf()
+                return df.to_dict('records')
+            elif hasattr(self._last_result, '__iter__'):
+                # 如果是可迭代对象，转换为列表
+                return list(self._last_result)
+            else:
+                return []
+        except Exception as e:
+            logger.error(f"DuckDB fetchall failed: {e}")
+            return []
 
     def fetchone(self):
         """获取单个结果"""
-        return None
+        if self._last_result is None:
+            return None
+        
+        try:
+            # 尝试获取第一行
+            if hasattr(self._last_result, 'fetchdf'):
+                df = self._last_result.fetchdf()
+                if len(df) > 0:
+                    return df.iloc[0].to_dict()
+                return None
+            elif hasattr(self._last_result, '__iter__'):
+                # 如果是可迭代对象，获取第一个元素
+                result_list = list(self._last_result)
+                if len(result_list) > 0:
+                    return result_list[0]
+                return None
+            else:
+                return None
+        except Exception as e:
+            logger.error(f"DuckDB fetchone failed: {e}")
+            return None
 
     def commit(self):
         """提交事务（DuckDB自动提交）"""
@@ -453,6 +549,12 @@ class DatabaseService(BaseService):
         self._last_backup = datetime.now()
 
         logger.info("DatabaseService initialized for architecture simplification")
+
+    def initialize(self) -> None:
+        """
+        初始化数据库服务（公开方法，供服务容器调用）
+        """
+        self._do_initialize()
 
     def _do_initialize(self) -> None:
         """执行具体的初始化逻辑"""
@@ -1516,6 +1618,15 @@ class DatabaseService(BaseService):
             
             # 创建用户画像表
             self._create_user_profiles_table()
+            
+            # 创建用户交互表
+            self._create_user_interactions_table()
+            
+            # 创建内容项表
+            self._create_content_items_table()
+
+            # 初始化默认AI策略
+            self._initialize_default_ai_strategies()
 
             logger.info("✓ AI selection database tables initialized")
 
@@ -1550,6 +1661,15 @@ class DatabaseService(BaseService):
 
             # 创建策略表
             self._create_strategies_table()
+
+            # 创建策略参数表
+            self._create_strategy_parameters_table()
+
+            # 创建策略执行历史表
+            self._create_strategy_executions_table()
+
+            # 创建策略信号表
+            self._create_strategy_signals_table()
 
             # 注意：订单表现在由多资产支持系统管理，不再在此处创建
             # 订单表会根据资产类型路由到对应的数据库中
@@ -1700,6 +1820,99 @@ class DatabaseService(BaseService):
             for index_sql in indices:
                 conn.execute(index_sql)
 
+    def _create_strategy_parameters_table(self) -> None:
+        """创建策略参数表"""
+        sql = """
+        CREATE TABLE IF NOT EXISTS strategy_parameters (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            strategy_id INTEGER NOT NULL,
+            param_name TEXT NOT NULL,
+            param_value TEXT NOT NULL,
+            param_type TEXT NOT NULL,
+            description TEXT DEFAULT '',
+            min_value TEXT DEFAULT NULL,
+            max_value TEXT DEFAULT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (strategy_id) REFERENCES strategies (id) ON DELETE CASCADE,
+            UNIQUE(strategy_id, param_name)
+        )
+        """
+        
+        with self.get_connection("strategy_sqlite") as conn:
+            conn.execute(sql)
+            
+        # 创建索引
+        indices = [
+            "CREATE INDEX IF NOT EXISTS idx_strategy_parameters_strategy_id ON strategy_parameters(strategy_id)",
+            "CREATE INDEX IF NOT EXISTS idx_strategy_parameters_param_name ON strategy_parameters(param_name)"
+        ]
+        
+        with self.get_connection("strategy_sqlite") as conn:
+            for index_sql in indices:
+                conn.execute(index_sql)
+
+    def _create_strategy_executions_table(self) -> None:
+        """创建策略执行历史表"""
+        sql = """
+        CREATE TABLE IF NOT EXISTS strategy_executions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            strategy_id INTEGER NOT NULL,
+            execution_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            data_hash TEXT NOT NULL,
+            signals_count INTEGER DEFAULT 0,
+            execution_duration REAL DEFAULT 0.0,
+            success BOOLEAN DEFAULT 1,
+            error_message TEXT DEFAULT NULL,
+            performance_metrics TEXT DEFAULT '{}',
+            FOREIGN KEY (strategy_id) REFERENCES strategies (id) ON DELETE CASCADE
+        )
+        """
+        
+        with self.get_connection("strategy_sqlite") as conn:
+            conn.execute(sql)
+            
+        # 创建索引
+        indices = [
+            "CREATE INDEX IF NOT EXISTS idx_strategy_executions_strategy_id ON strategy_executions(strategy_id)",
+            "CREATE INDEX IF NOT EXISTS idx_strategy_executions_execution_time ON strategy_executions(execution_time)"
+        ]
+        
+        with self.get_connection("strategy_sqlite") as conn:
+            for index_sql in indices:
+                conn.execute(index_sql)
+
+    def _create_strategy_signals_table(self) -> None:
+        """创建策略信号表"""
+        sql = """
+        CREATE TABLE IF NOT EXISTS strategy_signals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            execution_id INTEGER NOT NULL,
+            timestamp TIMESTAMP NOT NULL,
+            signal_type TEXT NOT NULL,
+            price REAL NOT NULL,
+            confidence REAL NOT NULL,
+            reason TEXT DEFAULT '',
+            stop_loss REAL DEFAULT NULL,
+            take_profit REAL DEFAULT NULL,
+            metadata TEXT DEFAULT '{}',
+            FOREIGN KEY (execution_id) REFERENCES strategy_executions (id) ON DELETE CASCADE
+        )
+        """
+        
+        with self.get_connection("strategy_sqlite") as conn:
+            conn.execute(sql)
+            
+        # 创建索引
+        indices = [
+            "CREATE INDEX IF NOT EXISTS idx_strategy_signals_execution_id ON strategy_signals(execution_id)",
+            "CREATE INDEX IF NOT EXISTS idx_strategy_signals_timestamp ON strategy_signals(timestamp)",
+            "CREATE INDEX IF NOT EXISTS idx_strategy_signals_signal_type ON strategy_signals(signal_type)"
+        ]
+        
+        with self.get_connection("strategy_sqlite") as conn:
+            for index_sql in indices:
+                conn.execute(index_sql)
+
     def _create_ai_strategy_table(self) -> None:
         """创建AI选股策略表"""
         sql = """
@@ -1737,6 +1950,177 @@ class DatabaseService(BaseService):
             for index_sql in indices:
                 conn.execute(index_sql)
 
+    def _initialize_default_ai_strategies(self) -> None:
+        """初始化默认AI策略记录"""
+        try:
+            logger.info("Initializing default AI strategies...")
+            
+            # 定义默认策略配置
+            default_strategies = [
+                {
+                    "id": "550e8400-e29b-41d4-a716-446655440001",
+                    "name": "动量策略",
+                    "description": "基于价格动量和趋势的选股策略",
+                    "strategy_type": "momentum",
+                    "parameters": json.dumps({"lookback_period": 20, "momentum_threshold": 0.05}),
+                    "weight_config": json.dumps({"equal_weight": True}),
+                    "risk_config": json.dumps({"max_position_size": 0.1}),
+                    "performance_metrics": json.dumps({}),
+                    "is_active": True,
+                    "version": 1,
+                    "created_by": "system",
+                    "tags": "momentum,trend",
+                    "status": "active"
+                },
+                {
+                    "id": "550e8400-e29b-41d4-a716-446655440002",
+                    "name": "价值策略",
+                    "description": "基于估值指标的选股策略",
+                    "strategy_type": "value",
+                    "parameters": json.dumps({"pe_threshold": 15, "pb_threshold": 2.0}),
+                    "weight_config": json.dumps({"equal_weight": True}),
+                    "risk_config": json.dumps({"max_position_size": 0.1}),
+                    "performance_metrics": json.dumps({}),
+                    "is_active": True,
+                    "version": 1,
+                    "created_by": "system",
+                    "tags": "value,valuation",
+                    "status": "active"
+                },
+                {
+                    "id": "550e8400-e29b-41d4-a716-446655440003",
+                    "name": "成长策略",
+                    "description": "基于成长性指标的选股策略",
+                    "strategy_type": "growth",
+                    "parameters": json.dumps({"revenue_growth_threshold": 0.2, "earnings_growth_threshold": 0.15}),
+                    "weight_config": json.dumps({"equal_weight": True}),
+                    "risk_config": json.dumps({"max_position_size": 0.1}),
+                    "performance_metrics": json.dumps({}),
+                    "is_active": True,
+                    "version": 1,
+                    "created_by": "system",
+                    "tags": "growth,revenue",
+                    "status": "active"
+                },
+                {
+                    "id": "550e8400-e29b-41d4-a716-446655440004",
+                    "name": "质量策略",
+                    "description": "基于财务质量的选股策略",
+                    "strategy_type": "quality",
+                    "parameters": json.dumps({"roe_threshold": 0.15, "debt_to_equity_threshold": 0.5}),
+                    "weight_config": json.dumps({"equal_weight": True}),
+                    "risk_config": json.dumps({"max_position_size": 0.1}),
+                    "performance_metrics": json.dumps({}),
+                    "is_active": True,
+                    "version": 1,
+                    "created_by": "system",
+                    "tags": "quality,financial",
+                    "status": "active"
+                },
+                {
+                    "id": "550e8400-e29b-41d4-a716-446655440005",
+                    "name": "股息策略",
+                    "description": "基于股息收益的选股策略",
+                    "strategy_type": "dividend",
+                    "parameters": json.dumps({"dividend_yield_threshold": 0.03, "payout_ratio_threshold": 0.6}),
+                    "weight_config": json.dumps({"equal_weight": True}),
+                    "risk_config": json.dumps({"max_position_size": 0.1}),
+                    "performance_metrics": json.dumps({}),
+                    "is_active": True,
+                    "version": 1,
+                    "created_by": "system",
+                    "tags": "dividend,yield",
+                    "status": "active"
+                },
+                {
+                    "id": "550e8400-e29b-41d4-a716-446655440006",
+                    "name": "技术分析策略",
+                    "description": "基于技术指标的选股策略",
+                    "strategy_type": "technical",
+                    "parameters": json.dumps({"indicators": ["MA", "MACD", "RSI", "KDJ"]}),
+                    "weight_config": json.dumps({"equal_weight": True}),
+                    "risk_config": json.dumps({"max_position_size": 0.1}),
+                    "performance_metrics": json.dumps({}),
+                    "is_active": True,
+                    "version": 1,
+                    "created_by": "system",
+                    "tags": "technical,indicators",
+                    "status": "active"
+                },
+                {
+                    "id": "550e8400-e29b-41d4-a716-446655440007",
+                    "name": "量化策略",
+                    "description": "基于多因子模型的量化选股策略",
+                    "strategy_type": "quantitative",
+                    "parameters": json.dumps({"factors": ["momentum", "value", "quality", "growth"]}),
+                    "weight_config": json.dumps({"equal_weight": True}),
+                    "risk_config": json.dumps({"max_position_size": 0.1}),
+                    "performance_metrics": json.dumps({}),
+                    "is_active": True,
+                    "version": 1,
+                    "created_by": "system",
+                    "tags": "quantitative,factors",
+                    "status": "active"
+                },
+                {
+                    "id": "550e8400-e29b-41d4-a716-446655440008",
+                    "name": "混合策略",
+                    "description": "综合多种策略的混合选股策略",
+                    "strategy_type": "hybrid",
+                    "parameters": json.dumps({"strategies": ["momentum", "value", "quality"]}),
+                    "weight_config": json.dumps({"equal_weight": True}),
+                    "risk_config": json.dumps({"max_position_size": 0.1}),
+                    "performance_metrics": json.dumps({}),
+                    "is_active": True,
+                    "version": 1,
+                    "created_by": "system",
+                    "tags": "hybrid,combined",
+                    "status": "active"
+                }
+            ]
+            
+            # 插入默认策略（如果不存在）
+            with self.get_connection("analytics_duckdb") as conn:
+                for strategy in default_strategies:
+                    # 检查策略是否已存在
+                    check_sql = "SELECT id FROM ai_strategies WHERE id = ?"
+                    result = conn.execute(check_sql, (strategy["id"],))
+                    existing = result[0] if result else None
+                    
+                    if not existing:
+                        # 插入新策略
+                        insert_sql = """
+                        INSERT INTO ai_strategies (
+                            id, name, description, strategy_type, parameters,
+                            weight_config, risk_config, performance_metrics,
+                            is_active, version, created_by, tags, status
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """
+                        conn.execute(insert_sql, (
+                            strategy["id"],
+                            strategy["name"],
+                            strategy["description"],
+                            strategy["strategy_type"],
+                            strategy["parameters"],
+                            strategy["weight_config"],
+                            strategy["risk_config"],
+                            strategy["performance_metrics"],
+                            strategy["is_active"],
+                            strategy["version"],
+                            strategy["created_by"],
+                            strategy["tags"],
+                            strategy["status"]
+                        ))
+                        logger.info(f"Created default strategy: {strategy['name']} ({strategy['strategy_type']})")
+                    else:
+                        logger.debug(f"Strategy already exists: {strategy['name']} ({strategy['strategy_type']})")
+            
+            logger.info("✓ Default AI strategies initialized")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize default AI strategies: {e}")
+            raise
+
     def _create_ai_selection_results_table(self) -> None:
         """创建AI选股结果表"""
         sql = """
@@ -1770,22 +2154,6 @@ class DatabaseService(BaseService):
         
         with self.get_connection("analytics_duckdb") as conn:
             conn.execute(sql)
-            
-            # 检查并添加 asset_type 列（如果表已存在但缺少该列）
-            try:
-                # 使用 PRAGMA 命令检查列是否存在（DuckDB 语法）
-                check_sql = "PRAGMA table_info('ai_selection_results')"
-                result = conn.execute(check_sql).fetchall()
-                
-                # 检查是否有 asset_type 列
-                column_names = [row[1] for row in result]
-                if 'asset_type' not in column_names:
-                    logger.info("为 ai_selection_results 表添加 asset_type 列")
-                    alter_sql = "ALTER TABLE ai_selection_results ADD COLUMN asset_type VARCHAR(50) DEFAULT 'stock_a'"
-                    conn.execute(alter_sql)
-                    logger.info("ai_selection_results 表 asset_type 列添加成功")
-            except Exception as e:
-                logger.warning(f"检查或添加 asset_type 列时出错: {e}")
             
         # 创建索引
         indices = [
@@ -1873,22 +2241,6 @@ class DatabaseService(BaseService):
         with self.get_connection("analytics_duckdb") as conn:
             conn.execute(sql)
             
-            # 检查并添加 asset_type 列（如果表已存在但缺少该列）
-            try:
-                # 使用 PRAGMA 命令检查列是否存在（DuckDB 语法）
-                check_sql = "PRAGMA table_info('ai_explanations')"
-                result = conn.execute(check_sql).fetchall()
-                
-                # 检查是否有 asset_type 列
-                column_names = [row[1] for row in result]
-                if 'asset_type' not in column_names:
-                    logger.info("为 ai_explanations 表添加 asset_type 列")
-                    alter_sql = "ALTER TABLE ai_explanations ADD COLUMN asset_type VARCHAR(50) DEFAULT 'stock_a'"
-                    conn.execute(alter_sql)
-                    logger.info("ai_explanations 表 asset_type 列添加成功")
-            except Exception as e:
-                logger.warning(f"检查或添加 asset_type 列时出错: {e}")
-            
         # 创建索引
         indices = [
             "CREATE INDEX IF NOT EXISTS idx_ai_explain_result ON ai_explanations(selection_result_id)",
@@ -1899,10 +2251,7 @@ class DatabaseService(BaseService):
         
         with self.get_connection("analytics_duckdb") as conn:
             for index_sql in indices:
-                try:
-                    conn.execute(index_sql)
-                except Exception as e:
-                    logger.warning(f"创建索引失败（可能已存在）: {e}")
+                conn.execute(index_sql)
 
     def _create_user_profiles_table(self) -> None:
         """创建用户画像表"""
@@ -1935,22 +2284,6 @@ class DatabaseService(BaseService):
         with self.get_connection("analytics_duckdb") as conn:
             conn.execute(sql)
             
-            # 检查并添加 asset_type 列（如果表已存在但缺少该列）
-            try:
-                # 使用 PRAGMA 命令检查列是否存在（DuckDB 语法）
-                check_sql = "PRAGMA table_info('user_profiles')"
-                result = conn.execute(check_sql).fetchall()
-                
-                # 检查是否有 asset_type 列
-                column_names = [row[1] for row in result]
-                if 'asset_type' not in column_names:
-                    logger.info("为 user_profiles 表添加 asset_type 列")
-                    alter_sql = "ALTER TABLE user_profiles ADD COLUMN asset_type VARCHAR(50) DEFAULT 'stock_a'"
-                    conn.execute(alter_sql)
-                    logger.info("user_profiles 表 asset_type 列添加成功")
-            except Exception as e:
-                logger.warning(f"检查或添加 asset_type 列时出错: {e}")
-            
         # 创建索引
         indices = [
             "CREATE INDEX IF NOT EXISTS idx_user_profiles_user ON user_profiles(user_id)",
@@ -1961,10 +2294,7 @@ class DatabaseService(BaseService):
         
         with self.get_connection("analytics_duckdb") as conn:
             for index_sql in indices:
-                try:
-                    conn.execute(index_sql)
-                except Exception as e:
-                    logger.warning(f"创建索引失败（可能已存在）: {e}")
+                conn.execute(index_sql)
 
     def _create_user_preferences_table(self) -> None:
         """创建用户偏好表"""
@@ -2032,6 +2362,148 @@ class DatabaseService(BaseService):
                 except Exception as e:
                     logger.warning(f"创建索引失败（可能已存在）: {e}")
 
+    def _create_user_interactions_table(self) -> None:
+        """创建用户交互表"""
+        sql = """
+        CREATE TABLE IF NOT EXISTS user_interactions (
+            id VARCHAR(36) PRIMARY KEY,
+            user_id VARCHAR(100) NOT NULL,
+            item_id VARCHAR(100) NOT NULL,
+            interaction_type VARCHAR(50) NOT NULL,
+            timestamp TIMESTAMP NOT NULL,
+            duration DECIMAL(10,2),
+            rating DECIMAL(5,4),
+            context JSON,
+            asset_type VARCHAR(50) DEFAULT 'stock_a',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+
+        with self.get_connection("analytics_duckdb") as conn:
+            conn.execute(sql)
+
+        # 创建索引
+        indices = [
+            "CREATE INDEX IF NOT EXISTS idx_user_interactions_user_id ON user_interactions(user_id)",
+            "CREATE INDEX IF NOT EXISTS idx_user_interactions_item_id ON user_interactions(item_id)",
+            "CREATE INDEX IF NOT EXISTS idx_user_interactions_type ON user_interactions(interaction_type)",
+            "CREATE INDEX IF NOT EXISTS idx_user_interactions_timestamp ON user_interactions(timestamp)",
+            "CREATE INDEX IF NOT EXISTS idx_user_interactions_asset_type ON user_interactions(asset_type)"
+        ]
+        
+        with self.get_connection("analytics_duckdb") as conn:
+            for index_sql in indices:
+                try:
+                    conn.execute(index_sql)
+                except Exception as e:
+                    logger.warning(f"创建索引失败（可能已存在）: {e}")
+
+    def _create_content_items_table(self) -> None:
+        """创建内容项表"""
+        sql = """
+        CREATE TABLE IF NOT EXISTS content_items (
+            id VARCHAR(36) PRIMARY KEY,
+            item_id VARCHAR(100) NOT NULL UNIQUE,
+            item_type VARCHAR(50) NOT NULL,
+            title VARCHAR(500) NOT NULL,
+            description TEXT,
+            tags JSON,
+            categories JSON,
+            keywords JSON,
+            view_count INTEGER DEFAULT 0,
+            like_count INTEGER DEFAULT 0,
+            share_count INTEGER DEFAULT 0,
+            rating DECIMAL(5,4) DEFAULT 0.0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            feature_vector JSON,
+            metadata JSON,
+            asset_type VARCHAR(50) DEFAULT 'stock_a'
+        )
+        """
+
+        with self.get_connection("analytics_duckdb") as conn:
+            conn.execute(sql)
+
+        # 创建索引
+        indices = [
+            "CREATE INDEX IF NOT EXISTS idx_content_items_item_id ON content_items(item_id)",
+            "CREATE INDEX IF NOT EXISTS idx_content_items_type ON content_items(item_type)",
+            "CREATE INDEX IF NOT EXISTS idx_content_items_asset_type ON content_items(asset_type)",
+            "CREATE INDEX IF NOT EXISTS idx_content_items_rating ON content_items(rating DESC)"
+        ]
+        
+        with self.get_connection("analytics_duckdb") as conn:
+            for index_sql in indices:
+                try:
+                    conn.execute(index_sql)
+                except Exception as e:
+                    logger.warning(f"创建索引失败（可能已存在）: {e}")
+
+    def get_ai_strategy(self, strategy_identifier: str) -> Optional[Dict[str, Any]]:
+        """
+        根据策略类型或策略ID获取AI策略
+        
+        Args:
+            strategy_identifier: 策略类型（如 "technical", "momentum" 等）或策略ID（UUID）
+            
+        Returns:
+            策略配置字典，如果不存在则返回None
+        """
+        # 判断传入的是策略ID（UUID）还是策略类型
+        # 策略ID通常是36字符的UUID，策略类型是简短的字符串
+        if len(strategy_identifier) == 36 and '-' in strategy_identifier:
+            # 传入的是策略ID，使用id字段查询
+            sql = """
+            SELECT * FROM ai_strategies 
+            WHERE id = ? AND is_active = TRUE
+            """
+            params = (strategy_identifier,)
+        else:
+            # 传入的是策略类型，使用strategy_type字段查询
+            sql = """
+            SELECT * FROM ai_strategies 
+            WHERE strategy_type = ? AND is_active = TRUE
+            ORDER BY 
+                CASE WHEN status = 'active' THEN 0 ELSE 1 END,
+                created_at DESC
+            LIMIT 1
+            """
+            params = (strategy_identifier,)
+        
+        with self.get_connection("analytics_duckdb") as conn:
+            results = conn.execute(sql, params)
+            
+        if results and len(results) > 0:
+            result = results[0]
+            strategy = dict(result)
+            # 解析JSON字段
+            if strategy.get('parameters'):
+                strategy['parameters'] = json.loads(strategy['parameters'])
+            if strategy.get('weight_config'):
+                strategy['weight_config'] = json.loads(strategy['weight_config'])
+            if strategy.get('risk_config'):
+                strategy['risk_config'] = json.loads(strategy['risk_config'])
+            if strategy.get('performance_metrics'):
+                strategy['performance_metrics'] = json.loads(strategy['performance_metrics'])
+            logger.debug(f"返回策略: {strategy['name']} (ID: {strategy['id']}, status: {strategy['status']}, is_active: {strategy['is_active']})")
+            return strategy
+        
+        # 如果找不到策略，且传入的是策略类型，则尝试创建默认策略
+        if len(strategy_identifier) != 36:
+            logger.warning(f"未找到策略类型 '{strategy_identifier}' 的活跃策略，尝试创建默认策略")
+            try:
+                default_strategy = self._create_and_save_default_strategy(strategy_identifier)
+                if default_strategy:
+                    logger.info(f"成功创建默认策略: {default_strategy['name']} (ID: {default_strategy['id']})")
+                    return default_strategy
+            except Exception as e:
+                logger.error(f"创建默认策略失败: {e}")
+        else:
+            logger.warning(f"未找到策略ID '{strategy_identifier}'")
+        
+        return None
+
     def create_ai_strategy(self, strategy_data: Dict[str, Any]) -> str:
         """
         创建AI选股策略
@@ -2071,6 +2543,108 @@ class DatabaseService(BaseService):
         logger.info(f"Created AI strategy: {strategy_id}")
         return strategy_id
 
+    def update_ai_strategy(self, strategy_id: str, strategy_data: Dict[str, Any]) -> bool:
+        """
+        更新AI选股策略
+        
+        Args:
+            strategy_id: 策略ID
+            strategy_data: 策略数据
+            
+        Returns:
+            是否更新成功
+        """
+        sql = """
+        UPDATE ai_strategies SET
+            name = ?,
+            description = ?,
+            strategy_type = ?,
+            parameters = ?,
+            weight_config = ?,
+            risk_config = ?,
+            performance_metrics = ?,
+            tags = ?,
+            status = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """
+        
+        params = (
+            strategy_data.get('name', ''),
+            strategy_data.get('description', ''),
+            strategy_data.get('strategy_type', 'comprehensive'),
+            json.dumps(strategy_data.get('parameters', {})),
+            json.dumps(strategy_data.get('weight_config', {})),
+            json.dumps(strategy_data.get('risk_config', {})),
+            json.dumps(strategy_data.get('performance_metrics', {})),
+            strategy_data.get('tags', ''),
+            strategy_data.get('status', 'draft'),
+            strategy_id
+        )
+        
+        with self.get_connection("analytics_duckdb") as conn:
+            conn.execute(sql, params)
+            
+        logger.info(f"Updated AI strategy: {strategy_id}")
+        return True
+
+    def get_all_ai_strategies(self) -> List[Dict[str, Any]]:
+        """
+        获取所有AI选股策略
+        
+        Returns:
+            策略列表
+        """
+        sql = """
+        SELECT * FROM ai_strategies 
+        WHERE is_active = TRUE
+        ORDER BY created_at DESC
+        """
+        
+        with self.get_connection("analytics_duckdb") as conn:
+            results = conn.execute(sql)
+            
+        strategies = []
+        if results:
+            for result in results:
+                strategy = dict(result)
+                # 解析JSON字段
+                if strategy.get('parameters'):
+                    strategy['parameters'] = json.loads(strategy['parameters'])
+                if strategy.get('weight_config'):
+                    strategy['weight_config'] = json.loads(strategy['weight_config'])
+                if strategy.get('risk_config'):
+                    strategy['risk_config'] = json.loads(strategy['risk_config'])
+                if strategy.get('performance_metrics'):
+                    strategy['performance_metrics'] = json.loads(strategy['performance_metrics'])
+                strategies.append(strategy)
+        
+        logger.debug(f"返回 {len(strategies)} 个策略")
+        return strategies
+
+    def delete_ai_strategy(self, strategy_id: str) -> bool:
+        """
+        删除AI选股策略（软删除，设置is_active为FALSE）
+        
+        Args:
+            strategy_id: 策略ID
+            
+        Returns:
+            是否删除成功
+        """
+        sql = """
+        UPDATE ai_strategies SET
+            is_active = FALSE,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """
+        
+        with self.get_connection("analytics_duckdb") as conn:
+            conn.execute(sql, (strategy_id,))
+            
+        logger.info(f"Deleted AI strategy: {strategy_id}")
+        return True
+
     def save_ai_selection_results(self, results: List[Dict[str, Any]]) -> None:
         """
         保存AI选股结果
@@ -2081,6 +2655,19 @@ class DatabaseService(BaseService):
         if not results:
             return
             
+        def convert_to_serializable(obj):
+            """将不可序列化的对象转换为可序列化的格式"""
+            if isinstance(obj, datetime):
+                return obj.isoformat()
+            elif isinstance(obj, Enum):
+                return obj.value
+            elif isinstance(obj, dict):
+                return {k: convert_to_serializable(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_to_serializable(item) for item in obj]
+            else:
+                return obj
+        
         sql = """
         INSERT OR REPLACE INTO ai_selection_results (
             id, strategy_id, selection_date, stock_code, stock_name, industry,
@@ -2090,32 +2677,40 @@ class DatabaseService(BaseService):
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         
+        # 准备批量插入的参数
+        params_list = []
+        for result in results:
+            result_id = result.get('id', str(uuid.uuid4()))
+            selection_reason = result.get('selection_reason', {})
+            selection_reason = convert_to_serializable(selection_reason)
+            
+            params = (
+                result_id,
+                result.get('strategy_id'),
+                result.get('selection_date'),
+                result.get('stock_code'),
+                result.get('stock_name'),
+                result.get('industry'),
+                json.dumps(selection_reason),
+                result.get('score'),
+                result.get('weight'),
+                result.get('confidence'),
+                result.get('risk_level'),
+                result.get('expected_return'),
+                result.get('volatility'),
+                result.get('sharpe_ratio'),
+                result.get('max_drawdown'),
+                result.get('market_cap'),
+                result.get('pe_ratio'),
+                result.get('pb_ratio'),
+                result.get('turnover_rate'),
+                result.get('backtested', False)
+            )
+            params_list.append(params)
+        
+        # 使用批量插入
         with self.get_connection("analytics_duckdb") as conn:
-            for result in results:
-                result_id = result.get('id', str(uuid.uuid4()))
-                params = (
-                    result_id,
-                    result.get('strategy_id'),
-                    result.get('selection_date'),
-                    result.get('stock_code'),
-                    result.get('stock_name'),
-                    result.get('industry'),
-                    json.dumps(result.get('selection_reason', {})),
-                    result.get('score'),
-                    result.get('weight'),
-                    result.get('confidence'),
-                    result.get('risk_level'),
-                    result.get('expected_return'),
-                    result.get('volatility'),
-                    result.get('sharpe_ratio'),
-                    result.get('max_drawdown'),
-                    result.get('market_cap'),
-                    result.get('pe_ratio'),
-                    result.get('pb_ratio'),
-                    result.get('turnover_rate'),
-                    result.get('backtested', False)
-                )
-                conn.execute(sql, params)
+            conn.executemany(sql, params_list)
                 
         logger.info(f"Saved {len(results)} AI selection results")
 
@@ -2140,7 +2735,7 @@ class DatabaseService(BaseService):
         sql += " ORDER BY created_at DESC"
         
         with self.get_connection("analytics_duckdb") as conn:
-            rows = conn.execute(sql, params).fetchall()
+            rows = conn.execute(sql, params)
             
         strategies = []
         for row in rows:
@@ -2173,7 +2768,7 @@ class DatabaseService(BaseService):
         """
         
         with self.get_connection("analytics_duckdb") as conn:
-            rows = conn.execute(sql, (strategy_id, limit)).fetchall()
+            rows = conn.execute(sql, (strategy_id, limit))
             
         results = []
         for row in rows:
@@ -2182,6 +2777,253 @@ class DatabaseService(BaseService):
             results.append(result)
             
         return results
+
+    def get_selection_results_by_date_range(
+        self, 
+        start_date: datetime, 
+        end_date: datetime,
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """
+        按日期范围查询选股结果
+        
+        Args:
+            start_date: 开始日期
+            end_date: 结束日期
+            limit: 返回数量限制
+            
+        Returns:
+            选股结果列表
+        """
+        sql = """
+        SELECT * FROM ai_selection_results 
+        WHERE selection_date BETWEEN ? AND ?
+        ORDER BY selection_date DESC, score DESC
+        LIMIT ?
+        """
+        
+        with self.get_connection("analytics_duckdb") as conn:
+            results = conn.execute(sql, (start_date.isoformat(), end_date.isoformat(), limit))
+            
+        for result in results:
+            result['selection_reason'] = json.loads(result['selection_reason']) if result['selection_reason'] else {}
+            
+        return results
+
+    def get_selection_result_by_result_id(self, result_id: str) -> List[Dict[str, Any]]:
+        """
+        按result_id查询选股结果（返回同一result_id的所有股票）
+        
+        Args:
+            result_id: 结果ID（前36位）
+            
+        Returns:
+            选股结果列表（同一result_id的所有股票记录）
+        """
+        sql = """
+        SELECT * FROM ai_selection_results 
+        WHERE SUBSTR(id, 1, 36) = ?
+        ORDER BY score DESC
+        """
+        
+        with self.get_connection("analytics_duckdb") as conn:
+            results = conn.execute(sql, (result_id,))
+            
+        for result in results:
+            result['selection_reason'] = json.loads(result['selection_reason']) if result['selection_reason'] else {}
+            
+        return results
+
+    def get_all_selection_results(
+        self,
+        page: int = 1,
+        page_size: int = 20
+    ) -> Dict[str, Any]:
+        """
+        获取所有历史选股记录（分页）
+        
+        Args:
+            page: 页码（从1开始）
+            page_size: 每页数量
+            
+        Returns:
+            包含数据和分页信息的字典：
+            {
+                'data': List[Dict],  # 选股记录列表
+                'total': int,         # 总记录数
+                'page': int,          # 当前页码
+                'page_size': int,      # 每页数量
+                'total_pages': int     # 总页数
+            }
+        """
+        offset = (page - 1) * page_size
+        
+        # 查询总数
+        count_sql = """
+        SELECT COUNT(DISTINCT SUBSTR(id, 1, 36)) as total
+        FROM ai_selection_results
+        """
+        
+        with self.get_connection("analytics_duckdb") as conn:
+            count_result = conn.execute(count_sql)
+            total_rows = count_result[0]['total'] if count_result else 0
+        
+        # 查询数据（按result_id分组）
+        sql = """
+        SELECT 
+            SUBSTR(id, 1, 36) as result_id,
+            strategy_id,
+            MIN(selection_date) as selection_date,
+            COUNT(*) as stock_count,
+            AVG(score) as avg_score,
+            MIN(score) as min_score,
+            MAX(score) as max_score
+        FROM ai_selection_results
+        GROUP BY SUBSTR(id, 1, 36), strategy_id
+        ORDER BY selection_date DESC
+        LIMIT ? OFFSET ?
+        """
+        
+        with self.get_connection("analytics_duckdb") as conn:
+            results = conn.execute(sql, (page_size, offset))
+        
+        total_pages = (total_rows + page_size - 1) // page_size
+        
+        return {
+            'data': results,
+            'total': total_rows,
+            'page': page,
+            'page_size': page_size,
+            'total_pages': total_pages
+        }
+
+    def get_strategy_by_id(self, strategy_id: str) -> Optional[Dict[str, Any]]:
+        """
+        获取策略配置
+        
+        Args:
+            strategy_id: 策略ID
+            
+        Returns:
+            策略配置字典，如果不存在则返回None
+        """
+        sql = """
+        SELECT * FROM ai_strategies 
+        WHERE id = ?
+        """
+        
+        with self.get_connection("analytics_duckdb") as conn:
+            results = conn.execute(sql, (strategy_id,))
+            
+        if results and len(results) > 0:
+            result = results[0]
+            # 解析JSON字段
+            if result.get('parameters'):
+                result['parameters'] = json.loads(result['parameters'])
+            if result.get('weight_config'):
+                result['weight_config'] = json.loads(result['weight_config'])
+            if result.get('risk_config'):
+                result['risk_config'] = json.loads(result['risk_config'])
+            if result.get('performance_metrics'):
+                result['performance_metrics'] = json.loads(result['performance_metrics'])
+            return result
+        
+        return None
+
+    def compare_selection_results(self, result_ids: List[str]) -> Dict[str, Any]:
+        """
+        对比多个选股结果
+        
+        Args:
+            result_ids: 结果ID列表
+            
+        Returns:
+            对比报告字典：
+            {
+                'results': List[Dict],  # 各个结果的详细信息
+                'comparison': Dict,      # 对比指标
+                'overlap': Dict,         # 股票重叠度分析
+                'metrics': Dict          # 性能指标对比
+            }
+        """
+        # 获取所有结果的数据
+        all_results = {}
+        for result_id in result_ids:
+            results = self.get_selection_result_by_result_id(result_id)
+            if results:
+                all_results[result_id] = results
+        
+        if not all_results:
+            return {
+                'results': [],
+                'comparison': {},
+                'overlap': {},
+                'metrics': {}
+            }
+        
+        # 计算对比指标
+        comparison = {
+            'stock_counts': {},
+            'avg_scores': {},
+            'score_ranges': {},
+            'risk_levels': {},
+            'date_ranges': {}
+        }
+        
+        for result_id, results in all_results.items():
+            comparison['stock_counts'][result_id] = len(results)
+            comparison['avg_scores'][result_id] = sum(r['score'] for r in results) / len(results)
+            comparison['score_ranges'][result_id] = {
+                'min': min(r['score'] for r in results),
+                'max': max(r['score'] for r in results)
+            }
+            comparison['risk_levels'][result_id] = [r['risk_level'] for r in results if r['risk_level']]
+            comparison['date_ranges'][result_id] = results[0]['selection_date'] if results else None
+        
+        # 计算股票重叠度
+        stock_sets = {}
+        for result_id, results in all_results.items():
+            stock_sets[result_id] = set(r['stock_code'] for r in results)
+        
+        overlap = {}
+        result_id_list = list(all_results.keys())
+        for i in range(len(result_id_list)):
+            for j in range(i + 1, len(result_id_list)):
+                id1 = result_id_list[i]
+                id2 = result_id_list[j]
+                intersection = stock_sets[id1] & stock_sets[id2]
+                union = stock_sets[id1] | stock_sets[id2]
+                overlap_ratio = len(intersection) / len(union) if union else 0
+                
+                overlap[f"{id1}_vs_{id2}"] = {
+                    'intersection': list(intersection),
+                    'union': list(union),
+                    'overlap_ratio': overlap_ratio,
+                    'intersection_count': len(intersection),
+                    'union_count': len(union)
+                }
+        
+        # 性能指标对比
+        metrics = {}
+        for result_id, results in all_results.items():
+            if results and results[0].get('selection_reason', {}).get('criteria'):
+                criteria = results[0]['selection_reason']['criteria']
+                metrics[result_id] = {
+                    'strategy_type': criteria.get('strategy_type'),
+                    'risk_level': criteria.get('risk_level'),
+                    'max_stocks': criteria.get('max_stocks'),
+                    'market_cap_range': {
+                        'min': criteria.get('market_cap_min'),
+                        'max': criteria.get('market_cap_max')
+                    }
+                }
+        
+        return {
+            'results': all_results,
+            'comparison': comparison,
+            'overlap': overlap,
+            'metrics': metrics
+        }
 
     def save_ai_backtest_results(self, backtest_data: Dict[str, Any]) -> str:
         """
@@ -2241,7 +3083,7 @@ class DatabaseService(BaseService):
 
     def save_ai_explanations(self, explanations: List[Dict[str, Any]]) -> None:
         """
-        保存AI选股解释
+        保存AI选股解释（优化版 - 使用executemany批量插入）
         
         Args:
             explanations: 解释列表
@@ -2257,21 +3099,26 @@ class DatabaseService(BaseService):
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         
+        # 准备批量插入的参数
+        params_list = []
+        for explanation in explanations:
+            explanation_id = explanation.get('id', str(uuid.uuid4()))
+            params = (
+                explanation_id,
+                explanation.get('selection_result_id'),
+                explanation.get('explanation_type'),
+                explanation.get('factor_name'),
+                explanation.get('factor_value'),
+                explanation.get('contribution_score'),
+                explanation.get('importance_rank'),
+                explanation.get('explanation_text'),
+                json.dumps(explanation.get('visualization_data', {}))
+            )
+            params_list.append(params)
+        
+        # 使用批量插入
         with self.get_connection("analytics_duckdb") as conn:
-            for explanation in explanations:
-                explanation_id = explanation.get('id', str(uuid.uuid4()))
-                params = (
-                    explanation_id,
-                    explanation.get('selection_result_id'),
-                    explanation.get('explanation_type'),
-                    explanation.get('factor_name'),
-                    explanation.get('factor_value'),
-                    explanation.get('contribution_score'),
-                    explanation.get('importance_rank'),
-                    explanation.get('explanation_text'),
-                    json.dumps(explanation.get('visualization_data', {}))
-                )
-                conn.execute(sql, params)
+            conn.executemany(sql, params_list)
                 
         logger.info(f"Saved {len(explanations)} AI explanations")
 
@@ -2291,12 +3138,12 @@ class DatabaseService(BaseService):
         """
         
         with self.get_connection("analytics_duckdb") as conn:
-            row = conn.execute(sql, (user_id,)).fetchone()
+            rows = conn.execute(sql, (user_id,))
             
-        if not row:
+        if not rows or len(rows) == 0:
             return None
             
-        profile = dict(row)
+        profile = rows[0]
         profile['preferred_industries'] = profile['preferred_industries'].split(',') if profile['preferred_industries'] else []
         profile['excluded_industries'] = profile['excluded_industries'].split(',') if profile['excluded_industries'] else []
         profile['custom_constraints'] = json.loads(profile['custom_constraints']) if profile['custom_constraints'] else {}
@@ -2304,6 +3151,223 @@ class DatabaseService(BaseService):
         profile['feedback_data'] = json.loads(profile['feedback_data']) if profile['feedback_data'] else {}
         
         return profile
+
+    def get_user_interactions(self, user_id: Optional[str] = None, item_id: Optional[str] = None, 
+                           interaction_type: Optional[str] = None, limit: int = None) -> List[Dict[str, Any]]:
+        """
+        获取用户交互数据
+        
+        Args:
+            user_id: 用户ID（可选）
+            item_id: 内容项ID（可选）
+            interaction_type: 交互类型（可选）
+            limit: 返回的最大记录数（可选）
+            
+        Returns:
+            用户交互数据列表
+        """
+        sql = "SELECT * FROM user_interactions WHERE 1=1"
+        params = []
+        
+        if user_id:
+            sql += " AND user_id = ?"
+            params.append(user_id)
+        
+        if item_id:
+            sql += " AND item_id = ?"
+            params.append(item_id)
+        
+        if interaction_type:
+            sql += " AND interaction_type = ?"
+            params.append(interaction_type)
+        
+        sql += " ORDER BY timestamp DESC"
+        
+        if limit:
+            sql += f" LIMIT {limit}"
+        
+        with self.get_connection("analytics_duckdb") as conn:
+            rows = conn.execute(sql, tuple(params))
+        
+        results = []
+        for row in rows:
+            interaction = dict(row)
+            interaction['context'] = json.loads(interaction['context']) if interaction['context'] else {}
+            results.append(interaction)
+        
+        return results
+
+    def get_content_items(self, item_id: Optional[str] = None, item_type: Optional[str] = None,
+                        limit: int = None) -> List[Dict[str, Any]]:
+        """
+        获取内容项数据
+        
+        Args:
+            item_id: 内容项ID（可选）
+            item_type: 内容类型（可选）
+            limit: 返回的最大记录数（可选）
+            
+        Returns:
+            内容项数据列表
+        """
+        sql = "SELECT * FROM content_items WHERE 1=1"
+        params = []
+        
+        if item_id:
+            sql += " AND item_id = ?"
+            params.append(item_id)
+        
+        if item_type:
+            sql += " AND item_type = ?"
+            params.append(item_type)
+        
+        sql += " ORDER BY created_at DESC"
+        
+        if limit:
+            sql += f" LIMIT {limit}"
+        
+        with self.get_connection("analytics_duckdb") as conn:
+            rows = conn.execute(sql, tuple(params))
+        
+        results = []
+        for row in rows:
+            item = dict(row)
+            item['tags'] = json.loads(item['tags']) if item['tags'] else []
+            item['categories'] = json.loads(item['categories']) if item['categories'] else []
+            item['keywords'] = json.loads(item['keywords']) if item['keywords'] else []
+            item['feature_vector'] = json.loads(item['feature_vector']) if item['feature_vector'] else None
+            item['metadata'] = json.loads(item['metadata']) if item['metadata'] else {}
+            results.append(item)
+        
+        return results
+
+    def save_user_interaction(self, interaction_data: Dict[str, Any]) -> str:
+        """
+        保存用户交互数据
+        
+        Args:
+            interaction_data: 交互数据
+            
+        Returns:
+            交互ID
+        """
+        interaction_id = interaction_data.get('id', str(uuid.uuid4()))
+        
+        sql = """
+        INSERT OR REPLACE INTO user_interactions (
+            id, user_id, item_id, interaction_type, timestamp, duration, rating, context, asset_type
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        
+        params = (
+            interaction_id,
+            interaction_data.get('user_id'),
+            interaction_data.get('item_id'),
+            interaction_data.get('interaction_type'),
+            interaction_data.get('timestamp'),
+            interaction_data.get('duration'),
+            interaction_data.get('rating'),
+            json.dumps(interaction_data.get('context', {})),
+            interaction_data.get('asset_type', 'stock_a')
+        )
+        
+        with self.get_connection("analytics_duckdb") as conn:
+            conn.execute(sql, params)
+            
+        logger.info(f"Saved user interaction: {interaction_id}")
+        return interaction_id
+
+    def save_content_item(self, item_data: Dict[str, Any]) -> str:
+        """
+        保存内容项数据
+        
+        Args:
+            item_data: 内容项数据
+            
+        Returns:
+            内容项ID
+        """
+        item_id = item_data.get('item_id', str(uuid.uuid4()))
+        id_value = item_data.get('id') or str(uuid.uuid4())
+        
+        sql = """
+        INSERT INTO content_items (
+            id, item_id, item_type, title, description, tags, categories, keywords,
+            view_count, like_count, share_count, rating, created_at, updated_at,
+            feature_vector, metadata, asset_type
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (item_id) DO UPDATE SET
+            item_type = EXCLUDED.item_type,
+            title = EXCLUDED.title,
+            description = EXCLUDED.description,
+            tags = EXCLUDED.tags,
+            categories = EXCLUDED.categories,
+            keywords = EXCLUDED.keywords,
+            view_count = EXCLUDED.view_count,
+            like_count = EXCLUDED.like_count,
+            share_count = EXCLUDED.share_count,
+            rating = EXCLUDED.rating,
+            created_at = EXCLUDED.created_at,
+            updated_at = EXCLUDED.updated_at,
+            feature_vector = EXCLUDED.feature_vector,
+            metadata = EXCLUDED.metadata,
+            asset_type = EXCLUDED.asset_type
+        """
+        
+        params = (
+            id_value,
+            item_id,
+            item_data.get('item_type'),
+            item_data.get('title'),
+            item_data.get('description'),
+            json.dumps(_serialize_for_json(item_data.get('tags', []))),
+            json.dumps(_serialize_for_json(item_data.get('categories', []))),
+            json.dumps(_serialize_for_json(item_data.get('keywords', []))),
+            item_data.get('view_count',0),
+            item_data.get('like_count', 0),
+            item_data.get('share_count', 0),
+            item_data.get('rating', 0.0),
+            item_data.get('created_at'),
+            item_data.get('updated_at'),
+            json.dumps(_serialize_for_json(item_data.get('feature_vector'))),
+            json.dumps(_serialize_for_json(item_data.get('metadata', {}))),
+            item_data.get('asset_type', 'stock_a')
+        )
+        
+        with self.get_connection("analytics_duckdb") as conn:
+            conn.execute(sql, params)
+            
+        return item_id
+
+    def get_all_user_profiles(self, limit: int = None) -> List[Dict[str, Any]]:
+        """
+        获取所有用户画像
+        
+        Args:
+            limit: 返回的最大记录数（可选）
+            
+        Returns:
+            用户画像数据列表
+        """
+        sql = "SELECT * FROM user_profiles WHERE is_active = TRUE ORDER BY updated_at DESC"
+        
+        if limit:
+            sql += f" LIMIT {limit}"
+        
+        with self.get_connection("analytics_duckdb") as conn:
+            rows = conn.execute(sql).fetchall()
+        
+        results = []
+        for row in rows:
+            profile = dict(row)
+            profile['preferred_industries'] = profile['preferred_industries'].split(',') if profile['preferred_industries'] else []
+            profile['excluded_industries'] = profile['excluded_industries'].split(',') if profile['excluded_industries'] else []
+            profile['custom_constraints'] = json.loads(profile['custom_constraints']) if profile['custom_constraints'] else {}
+            profile['performance_history'] = json.loads(profile['performance_history']) if profile['performance_history'] else {}
+            profile['feedback_data'] = json.loads(profile['feedback_data']) if profile['feedback_data'] else {}
+            results.append(profile)
+        
+        return results
 
     def save_user_profile(self, profile_data: Dict[str, Any]) -> str:
         """
@@ -2321,16 +3385,33 @@ class DatabaseService(BaseService):
             
         # 检查用户画像是否已存在
         existing = self.get_user_profile(user_id)
-        profile_id = existing['id'] if existing else str(uuid.uuid4())
+        profile_id = existing['id'] if existing and existing.get('id') else str(uuid.uuid4())
         
         sql = """
-        INSERT OR REPLACE INTO user_profiles (
+        INSERT INTO user_profiles (
             id, user_id, risk_tolerance, investment_horizon, investment_style,
             preferred_industries, excluded_industries, max_position_size,
             min_market_cap, max_pe_ratio, max_pb_ratio, max_volatility,
             preferred_stock_count, rebalance_frequency, custom_constraints,
             performance_history, feedback_data, is_active
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (user_id) DO UPDATE SET
+            risk_tolerance = EXCLUDED.risk_tolerance,
+            investment_horizon = EXCLUDED.investment_horizon,
+            investment_style = EXCLUDED.investment_style,
+            preferred_industries = EXCLUDED.preferred_industries,
+            excluded_industries = EXCLUDED.excluded_industries,
+            max_position_size = EXCLUDED.max_position_size,
+            min_market_cap = EXCLUDED.min_market_cap,
+            max_pe_ratio = EXCLUDED.max_pe_ratio,
+            max_pb_ratio = EXCLUDED.max_pb_ratio,
+            max_volatility = EXCLUDED.max_volatility,
+            preferred_stock_count = EXCLUDED.preferred_stock_count,
+            rebalance_frequency = EXCLUDED.rebalance_frequency,
+            custom_constraints = EXCLUDED.custom_constraints,
+            performance_history = EXCLUDED.performance_history,
+            feedback_data = EXCLUDED.feedback_data,
+            is_active = EXCLUDED.is_active
         """
         
         params = (
@@ -2441,6 +3522,573 @@ class DatabaseService(BaseService):
         with self.get_connection(pool_name) as conn:
             for index_sql in indices:
                 conn.execute(index_sql)
+
+    def register_strategy(self, strategy_class: type, metadata: Dict[str, Any]) -> int:
+        """
+        注册策略到数据库
+
+        Args:
+            strategy_class: 策略类
+            metadata: 策略元数据
+
+        Returns:
+            策略ID
+        """
+        try:
+            sql = """
+            INSERT INTO strategies (name, strategy_type, version, author, description, category, metadata, class_path)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(name) DO UPDATE SET
+                strategy_type = excluded.strategy_type,
+                version = excluded.version,
+                author = excluded.author,
+                description = excluded.description,
+                category = excluded.category,
+                metadata = excluded.metadata,
+                class_path = excluded.class_path,
+                updated_at = CURRENT_TIMESTAMP
+            """
+
+            with self.get_connection("strategy_sqlite") as conn:
+                cursor = conn.cursor()
+                cursor.execute(sql, (
+                    metadata['name'],
+                    metadata['strategy_type'],
+                    metadata.get('version', '1.0.0'),
+                    metadata.get('author', ''),
+                    metadata.get('description', ''),
+                    metadata.get('category', ''),
+                    json.dumps(metadata.get('metadata', {})),
+                    f"{strategy_class.__module__}.{strategy_class.__name__}"
+                ))
+                conn.commit()
+
+                strategy_id = cursor.lastrowid
+                logger.info(f"策略注册成功: {metadata['name']} (ID: {strategy_id})")
+                return strategy_id
+
+        except Exception as e:
+            logger.error(f"策略注册失败: {e}")
+            raise
+
+    def get_strategy_info(self, strategy_id: int) -> Optional[Dict[str, Any]]:
+        """
+        获取策略信息
+
+        Args:
+            strategy_id: 策略ID
+
+        Returns:
+            策略信息字典
+        """
+        try:
+            sql = "SELECT * FROM strategies WHERE id = ?"
+
+            with self.get_connection("strategy_sqlite") as conn:
+                cursor = conn.cursor()
+                cursor.execute(sql, (strategy_id,))
+                result = cursor.fetchone()
+
+            if result:
+                return {
+                    'id': result[0],
+                    'name': result[1],
+                    'strategy_type': result[2],
+                    'version': result[3],
+                    'author': result[4],
+                    'description': result[5],
+                    'category': result[6],
+                    'created_at': result[7],
+                    'updated_at': result[8],
+                    'is_active': result[9],
+                    'metadata': json.loads(result[10]) if result[10] else {},
+                    'class_path': result[11]
+                }
+            return None
+
+        except Exception as e:
+            logger.error(f"获取策略信息失败: {e}")
+            return None
+
+    def list_strategies(self, strategy_type: Optional[str] = None, is_active: Optional[bool] = None) -> List[Dict[str, Any]]:
+        """
+        列出策略
+
+        Args:
+            strategy_type: 策略类型过滤
+            is_active: 是否活跃过滤
+
+        Returns:
+            策略列表
+        """
+        try:
+            sql = "SELECT * FROM strategies WHERE 1=1"
+            params = []
+
+            if strategy_type:
+                sql += " AND strategy_type = ?"
+                params.append(strategy_type)
+
+            if is_active is not None:
+                sql += " AND is_active = ?"
+                params.append(is_active)
+
+            sql += " ORDER BY created_at DESC"
+
+            with self.get_connection("strategy_sqlite") as conn:
+                cursor = conn.cursor()
+                cursor.execute(sql, params)
+                results = cursor.fetchall()
+
+            strategies = []
+            for result in results:
+                strategies.append({
+                    'id': result[0],
+                    'name': result[1],
+                    'strategy_type': result[2],
+                    'version': result[3],
+                    'author': result[4],
+                    'description': result[5],
+                    'category': result[6],
+                    'created_at': result[7],
+                    'updated_at': result[8],
+                    'is_active': result[9],
+                    'metadata': json.loads(result[10]) if result[10] else {},
+                    'class_path': result[11]
+                })
+
+            return strategies
+
+        except Exception as e:
+            logger.error(f"列出策略失败: {e}")
+            return []
+
+    def save_strategy_parameters(self, strategy_id: int, parameters: Dict[str, Any]) -> bool:
+        """
+        保存策略参数
+
+        Args:
+            strategy_id: 策略ID
+            parameters: 参数字典
+
+        Returns:
+            是否保存成功
+        """
+        try:
+            with self.get_connection("strategy_sqlite") as conn:
+                cursor = conn.cursor()
+
+                for param_name, param_value in parameters.items():
+                    param_type = type(param_value).__name__
+                    param_value_str = self._serialize_value(param_value)
+
+                    sql = """
+                    INSERT INTO strategy_parameters (strategy_id, param_name, param_value, param_type)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(strategy_id, param_name) DO UPDATE SET
+                        param_value = excluded.param_value,
+                        param_type = excluded.param_type
+                    """
+                    cursor.execute(sql, (strategy_id, param_name, param_value_str, param_type))
+
+                conn.commit()
+                logger.info(f"策略参数保存成功: strategy_id={strategy_id}, 参数数={len(parameters)}")
+                return True
+
+        except Exception as e:
+            logger.error(f"保存策略参数失败: {e}")
+            return False
+
+    def get_strategy_parameters(self, strategy_id: int) -> Dict[str, Any]:
+        """
+        获取策略参数
+
+        Args:
+            strategy_id: 策略ID
+
+        Returns:
+            参数字典
+        """
+        try:
+            sql = "SELECT param_name, param_value, param_type FROM strategy_parameters WHERE strategy_id = ?"
+
+            with self.get_connection("strategy_sqlite") as conn:
+                cursor = conn.cursor()
+                cursor.execute(sql, (strategy_id,))
+                results = cursor.fetchall()
+
+            parameters = {}
+            for result in results:
+                param_name, param_value_str, param_type = result
+                parameters[param_name] = self._deserialize_value(param_value_str, param_type)
+
+            return parameters
+
+        except Exception as e:
+            logger.error(f"获取策略参数失败: {e}")
+            return {}
+
+    def delete_strategy_parameters(self, strategy_id: int, param_names: Optional[List[str]] = None) -> bool:
+        """
+        删除策略参数
+
+        Args:
+            strategy_id: 策略ID
+            param_names: 参数名称列表，None表示删除所有参数
+
+        Returns:
+            是否删除成功
+        """
+        try:
+            with self.get_connection("strategy_sqlite") as conn:
+                cursor = conn.cursor()
+
+                if param_names:
+                    placeholders = ','.join(['?' for _ in param_names])
+                    sql = f"DELETE FROM strategy_parameters WHERE strategy_id = ? AND param_name IN ({placeholders})"
+                    cursor.execute(sql, [strategy_id] + param_names)
+                else:
+                    sql = "DELETE FROM strategy_parameters WHERE strategy_id = ?"
+                    cursor.execute(sql, (strategy_id,))
+
+                conn.commit()
+                logger.info(f"策略参数删除成功: strategy_id={strategy_id}")
+                return True
+
+        except Exception as e:
+            logger.error(f"删除策略参数失败: {e}")
+            return False
+
+    def save_execution_result(self, execution_data: Dict[str, Any]) -> bool:
+        """
+        保存策略执行结果
+
+        Args:
+            execution_data: 执行数据字典
+
+        Returns:
+            是否保存成功
+        """
+        try:
+            sql = """
+            INSERT INTO strategy_executions (strategy_id, execution_time, data_hash, signals_count, execution_duration, success, error_message, performance_metrics)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """
+
+            with self.get_connection("strategy_sqlite") as conn:
+                cursor = conn.cursor()
+                cursor.execute(sql, (
+                    execution_data['strategy_id'],
+                    execution_data['execution_time'],
+                    execution_data['data_hash'],
+                    execution_data.get('signals_count', 0),
+                    execution_data.get('execution_duration', 0.0),
+                    execution_data.get('success', True),
+                    execution_data.get('error_message'),
+                    json.dumps(execution_data.get('performance_metrics', {}))
+                ))
+                conn.commit()
+
+                execution_id = cursor.lastrowid
+                logger.debug(f"策略执行结果保存成功: execution_id={execution_id}")
+                return True
+
+        except Exception as e:
+            logger.error(f"保存策略执行结果失败: {e}")
+            return False
+
+    def get_execution_history(self, strategy_id: int, limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        获取策略执行历史
+
+        Args:
+            strategy_id: 策略ID
+            limit: 返回记录数限制
+
+        Returns:
+            执行历史列表
+        """
+        try:
+            sql = """
+            SELECT * FROM strategy_executions
+            WHERE strategy_id = ?
+            ORDER BY execution_time DESC
+            LIMIT ?
+            """
+
+            with self.get_connection("strategy_sqlite") as conn:
+                cursor = conn.cursor()
+                cursor.execute(sql, (strategy_id, limit))
+                results = cursor.fetchall()
+
+            executions = []
+            for result in results:
+                executions.append({
+                    'id': result[0],
+                    'strategy_id': result[1],
+                    'execution_time': result[2],
+                    'data_hash': result[3],
+                    'signals_count': result[4],
+                    'execution_duration': result[5],
+                    'success': result[6],
+                    'error_message': result[7],
+                    'performance_metrics': json.loads(result[8]) if result[8] else {}
+                })
+
+            return executions
+
+        except Exception as e:
+            logger.error(f"获取执行历史失败: {e}")
+            return []
+
+    def delete_strategy(self, strategy_id: int) -> bool:
+        """
+        删除策略（软删除）
+
+        Args:
+            strategy_id: 策略ID
+
+        Returns:
+            是否删除成功
+        """
+        try:
+            sql = "UPDATE strategies SET is_active = 0 WHERE id = ?"
+
+            with self.get_connection("strategy_sqlite") as conn:
+                cursor = conn.cursor()
+                cursor.execute(sql, (strategy_id,))
+                conn.commit()
+
+                if cursor.rowcount > 0:
+                    logger.info(f"策略删除成功: strategy_id={strategy_id}")
+                    return True
+                else:
+                    logger.warning(f"策略不存在: strategy_id={strategy_id}")
+                    return False
+
+        except Exception as e:
+            logger.error(f"删除策略失败: {e}")
+            return False
+
+    def import_strategies(self, strategies_data: List[Dict[str, Any]]) -> int:
+        """
+        批量导入策略
+
+        Args:
+            strategies_data: 策略数据列表
+
+        Returns:
+            成功导入的策略数
+        """
+        try:
+            success_count = 0
+
+            with self.get_connection("strategy_sqlite") as conn:
+                cursor = conn.cursor()
+
+                for strategy_data in strategies_data:
+                    try:
+                        sql = """
+                        INSERT INTO strategies (name, strategy_type, version, author, description, category, metadata, class_path, is_active)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(name) DO UPDATE SET
+                            strategy_type = excluded.strategy_type,
+                            version = excluded.version,
+                            author = excluded.author,
+                            description = excluded.description,
+                            category = excluded.category,
+                            metadata = excluded.metadata,
+                            class_path = excluded.class_path,
+                            is_active = excluded.is_active,
+                            updated_at = CURRENT_TIMESTAMP
+                        """
+                        cursor.execute(sql, (
+                            strategy_data['name'],
+                            strategy_data['strategy_type'],
+                            strategy_data.get('version', '1.0.0'),
+                            strategy_data.get('author', ''),
+                            strategy_data.get('description', ''),
+                            strategy_data.get('category', ''),
+                            json.dumps(strategy_data.get('metadata', {})),
+                            strategy_data['class_path'],
+                            strategy_data.get('is_active', True)
+                        ))
+                        success_count += 1
+                    except Exception as e:
+                        logger.warning(f"导入策略失败: {strategy_data.get('name', 'unknown')} - {e}")
+
+                conn.commit()
+                logger.info(f"策略批量导入成功: {success_count}/{len(strategies_data)}")
+                return success_count
+
+        except Exception as e:
+            logger.error(f"批量导入策略失败: {e}")
+            return 0
+
+    def export_strategies(self, strategy_ids: Optional[List[int]] = None) -> List[Dict[str, Any]]:
+        """
+        导出策略数据
+
+        Args:
+            strategy_ids: 策略ID列表，None表示导出所有策略
+
+        Returns:
+            策略数据列表
+        """
+        try:
+            sql = "SELECT * FROM strategies WHERE 1=1"
+            params = []
+
+            if strategy_ids:
+                placeholders = ','.join(['?' for _ in strategy_ids])
+                sql += f" AND id IN ({placeholders})"
+                params.extend(strategy_ids)
+
+            with self.get_connection("strategy_sqlite") as conn:
+                cursor = conn.cursor()
+                cursor.execute(sql, params)
+                results = cursor.fetchall()
+
+            strategies = []
+            for result in results:
+                strategies.append({
+                    'id': result[0],
+                    'name': result[1],
+                    'strategy_type': result[2],
+                    'version': result[3],
+                    'author': result[4],
+                    'description': result[5],
+                    'category': result[6],
+                    'created_at': result[7],
+                    'updated_at': result[8],
+                    'is_active': result[9],
+                    'metadata': json.loads(result[10]) if result[10] else {},
+                    'class_path': result[11]
+                })
+
+            logger.info(f"策略导出成功: {len(strategies)}个策略")
+            return strategies
+
+        except Exception as e:
+            logger.error(f"导出策略失败: {e}")
+            return []
+
+    def cleanup_old_data(self, days: int = 30) -> int:
+        """
+        清理旧数据
+
+        Args:
+            days: 保留天数
+
+        Returns:
+            清理的记录数
+        """
+        try:
+            cutoff_date = datetime.now() - timedelta(days=days)
+
+            sql = "DELETE FROM strategy_executions WHERE execution_time < ?"
+
+            with self.get_connection("strategy_sqlite") as conn:
+                cursor = conn.cursor()
+                cursor.execute(sql, (cutoff_date,))
+                deleted_count = cursor.rowcount
+                conn.commit()
+
+            logger.info(f"清理旧数据成功: 删除了{deleted_count}条记录")
+            return deleted_count
+
+        except Exception as e:
+            logger.error(f"清理旧数据失败: {e}")
+            return 0
+
+    def get_database_stats(self) -> Dict[str, Any]:
+        """
+        获取数据库统计信息
+
+        Returns:
+            统计信息字典
+        """
+        try:
+            stats = {}
+
+            # 策略统计
+            with self.get_connection("strategy_sqlite") as conn:
+                cursor = conn.cursor()
+
+                cursor.execute("SELECT COUNT(*) FROM strategies")
+                stats['total_strategies'] = cursor.fetchone()[0]
+
+                cursor.execute("SELECT COUNT(*) FROM strategies WHERE is_active = 1")
+                stats['active_strategies'] = cursor.fetchone()[0]
+
+                cursor.execute("SELECT COUNT(*) FROM strategy_executions")
+                stats['total_executions'] = cursor.fetchone()[0]
+
+                cursor.execute("SELECT COUNT(*) FROM strategy_signals")
+                stats['total_signals'] = cursor.fetchone()[0]
+
+            # AI策略统计
+            with self.get_connection("analytics_duckdb") as conn:
+                cursor = conn.cursor()
+
+                cursor.execute("SELECT COUNT(*) FROM ai_strategies")
+                stats['total_ai_strategies'] = cursor.fetchone()[0]
+
+                cursor.execute("SELECT COUNT(*) FROM ai_strategies WHERE is_active = TRUE")
+                stats['active_ai_strategies'] = cursor.fetchone()[0]
+
+            return stats
+
+        except Exception as e:
+            logger.error(f"获取数据库统计信息失败: {e}")
+            return {}
+
+    def _serialize_value(self, value: Any) -> str:
+        """
+        序列化参数值
+
+        Args:
+            value: 参数值
+
+        Returns:
+            序列化后的字符串
+        """
+        if value is None:
+            return 'null'
+        elif isinstance(value, (int, float, str, bool)):
+            return str(value)
+        elif isinstance(value, (list, dict)):
+            return json.dumps(value)
+        else:
+            return str(value)
+
+    def _deserialize_value(self, value_str: str, value_type: str) -> Any:
+        """
+        反序列化参数值
+
+        Args:
+            value_str: 序列化后的字符串
+            value_type: 值类型
+
+        Returns:
+            反序列化后的值
+        """
+        if value_str == 'null':
+            return None
+
+        try:
+            if value_type in ['int', 'integer']:
+                return int(value_str)
+            elif value_type in ['float', 'double', 'decimal']:
+                return float(value_str)
+            elif value_type == 'bool':
+                return value_str.lower() in ['true', '1', 'yes']
+            elif value_type in ['list', 'dict', 'json']:
+                return json.loads(value_str)
+            else:
+                return value_str
+        except Exception:
+            return value_str
 
     def _create_order_fills_table(self, pool_name: str) -> None:
         """创建订单成交记录表"""

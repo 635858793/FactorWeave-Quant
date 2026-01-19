@@ -77,9 +77,9 @@ class AIExplainabilityService(BaseService):
         if not self._container:
             raise ValueError("无法获取服务容器，请确保服务容器已初始化")
             
-        # 解析依赖服务
-        self._database_service = self._container.resolve(DatabaseService)
-        self._event_bus = get_event_bus()
+        # 延迟解析依赖服务，在 _do_initialize 中解析
+        self._database_service = None
+        self._event_bus = None
         
         # 因子权重配置
         self._factor_weights = {
@@ -127,6 +127,10 @@ class AIExplainabilityService(BaseService):
         """执行初始化逻辑"""
         try:
             logger.info("Initializing AI Explainability Service...")
+            
+            # 解析依赖服务
+            self._database_service = self._container.resolve(DatabaseService)
+            self._event_bus = get_event_bus()
             
             # 验证依赖服务
             self._validate_dependencies()
@@ -214,40 +218,51 @@ class AIExplainabilityService(BaseService):
         factors = {}
         
         # 技术指标因子
+        technical_indicators = stock_data.get('technical_indicators', {})
         technical_factors = {
-            'RSI': stock_data.get('technical_indicators', {}).get('rsi'),
-            'MACD': stock_data.get('technical_indicators', {}).get('macd'),
-            'BOLL': stock_data.get('technical_indicators', {}).get('bollinger'),
-            'MA': stock_data.get('technical_indicators', {}).get('moving_averages'),
+            'RSI': technical_indicators.get('rsi'),
+            'MACD': technical_indicators.get('macd'),
+            'MACD_SIGNAL': technical_indicators.get('macd_signal'),
+            'MA5': technical_indicators.get('ma5'),
+            'MA10': technical_indicators.get('ma10'),
+            'MA20': technical_indicators.get('ma20'),
+            'MA50': technical_indicators.get('ma50'),
+            'BOLL_UPPER': technical_indicators.get('boll_upper'),
+            'BOLL_MIDDLE': technical_indicators.get('boll_middle'),
+            'BOLL_LOWER': technical_indicators.get('boll_lower'),
             'VOLUME': stock_data.get('volume', 0)
         }
         
         # 基本面因子
+        fundamental_data = stock_data.get('fundamental_data', {})
         fundamental_factors = {
-            'PE_RATIO': stock_data.get('fundamental_data', {}).get('pe_ratio'),
-            'PB_RATIO': stock_data.get('fundamental_data', {}).get('pb_ratio'),
-            'ROE': stock_data.get('fundamental_data', {}).get('roe'),
-            'ROA': stock_data.get('fundamental_data', {}).get('roa'),
-            'DEBT_RATIO': stock_data.get('fundamental_data', {}).get('debt_ratio')
+            'PE_RATIO': fundamental_data.get('pe_ratio'),
+            'PB_RATIO': fundamental_data.get('pb_ratio'),
+            'ROE': fundamental_data.get('roe'),
+            'ROA': fundamental_data.get('roa'),
+            'DEBT_RATIO': fundamental_data.get('debt_ratio')
         }
         
         # 市场因子
+        market_data = stock_data.get('market_data', {})
         market_factors = {
-            'MARKET_CAP': stock_data.get('market_data', {}).get('market_cap'),
-            'TURNOVER': stock_data.get('market_data', {}).get('turnover_rate'),
-            'SECTOR': stock_data.get('market_data', {}).get('sector')
+            'MARKET_CAP': market_data.get('market_cap'),
+            'TURNOVER': market_data.get('turnover_rate'),
+            'SECTOR': market_data.get('sector')
         }
         
         # 风险因子
+        risk_metrics = stock_data.get('risk_metrics', {})
         risk_factors = {
-            'VOLATILITY': stock_data.get('risk_metrics', {}).get('volatility'),
-            'BETA': stock_data.get('risk_metrics', {}).get('beta'),
-            'SHARPE': stock_data.get('risk_metrics', {}).get('sharpe_ratio')
+            'VOLATILITY': risk_metrics.get('volatility'),
+            'BETA': risk_metrics.get('beta'),
+            'SHARPE': risk_metrics.get('sharpe_ratio')
         }
         
         # 情绪因子
+        sentiment_data = stock_data.get('sentiment_data', {})
         sentiment_factors = {
-            'SENTIMENT_SCORE': stock_data.get('sentiment_data', {}).get('sentiment_score')
+            'SENTIMENT_SCORE': sentiment_data.get('sentiment_score')
         }
         
         # 合并所有因子
@@ -486,14 +501,34 @@ class AIExplainabilityService(BaseService):
         # 因子数量置信度
         factor_count_score = min(len(contributions) / 10, 1.0)
         
-        # 因子一致性置信度
+        # 因子一致性置信度 - 优化版本
         positive_contributions = [f for f in contributions if f.contribution_score > 0]
-        consistency_score = len(positive_contributions) / len(contributions) if contributions else 0
+        negative_contributions = [f for f in contributions if f.contribution_score < 0]
+        
+        # 1. 基础一致性：正向因子占比
+        base_consistency = len(positive_contributions) / len(contributions) if contributions else 0
+        
+        # 2. 加权一致性：考虑因子权重
+        if contributions:
+            weighted_positive = sum(f.contribution_score * f.weight for f in positive_contributions)
+            weighted_negative = sum(abs(f.contribution_score) * f.weight for f in negative_contributions)
+            total_weighted = weighted_positive + weighted_negative
+            weighted_consistency = weighted_positive / total_weighted if total_weighted > 0 else 0
+        else:
+            weighted_consistency = 0
+        
+        # 3. 类别一致性：检查同一类别因子的一致性
+        category_consistency = self._calculate_category_consistency(contributions)
+        
+        # 综合一致性得分
+        consistency_score = (base_consistency * 0.4 + 
+                          weighted_consistency * 0.4 + 
+                          category_consistency * 0.2)
         
         # 因子重要性置信度（Top 3因子占总贡献的比例）
         top_3_contributions = sum(f.contribution_score for f in contributions[:3])
         total_contribution = sum(abs(f.contribution_score) for f in contributions)
-        importance_score = top_3_contribution / total_contribution if total_contribution > 0 else 0
+        importance_score = top_3_contributions / total_contribution if total_contribution > 0 else 0
         
         # 综合置信度
         confidence_score = (factor_count_score * 0.3 + 
@@ -501,6 +536,34 @@ class AIExplainabilityService(BaseService):
                           importance_score * 0.3)
         
         return max(0, min(1, confidence_score))
+    
+    def _calculate_category_consistency(self, contributions: List[FactorContribution]) -> float:
+        """计算类别一致性"""
+        if not contributions:
+            return 0.0
+        
+        # 按类别分组
+        from collections import defaultdict
+        category_scores = defaultdict(list)
+        
+        for factor in contributions:
+            category_scores[factor.category].append(factor.contribution_score)
+        
+        # 计算每个类别的一致性
+        category_consistencies = []
+        for category, scores in category_scores.items():
+            if len(scores) > 1:
+                # 计算同一类别因子的一致性
+                positive_count = sum(1 for s in scores if s > 0)
+                category_consistency = positive_count / len(scores)
+                category_consistencies.append(category_consistency)
+        
+        # 返回平均类别一致性
+        if category_consistencies:
+            return sum(category_consistencies) / len(category_consistencies)
+        else:
+            # 如果只有一个类别或每个类别只有一个因子，返回中等一致性
+            return 0.5
 
     def _save_explanation_to_db(self, explanation_data: ExplanationData, selection_result_id: Optional[str] = None) -> None:
         """保存解释数据到数据库

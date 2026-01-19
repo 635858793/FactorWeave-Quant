@@ -161,11 +161,11 @@ class FactorWeaveAnalyticsDB:
             )
         else:
             # 使用默认配置
-            logger.info("📋 使用默认配置创建连接池: pool_size=5, max_overflow=10")
+            logger.info("📋 使用默认配置创建连接池: pool_size=15, max_overflow=100")
             self.pool = DuckDBConnectionPool(
                 db_path=str(self.db_path),
-                pool_size=5,
-                max_overflow=10,
+                pool_size=15,
+                max_overflow=100,
                 timeout=30.0,
                 pool_recycle=3600
             )

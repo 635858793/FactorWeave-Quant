@@ -64,6 +64,7 @@ from .types import (
     StrategyConfigUpdatedEvent,
     StrategyConfigDeletedEvent,
     StrategyConfigsLoadedEvent,
+    AssetTypeChangedEvent,
     Event,
 )
 from .event_handler import EventHandler, AsyncEventHandler
@@ -139,6 +140,7 @@ __all__ = [
     'StrategyConfigUpdatedEvent',
     'StrategyConfigDeletedEvent',
     'StrategyConfigsLoadedEvent',
+    'AssetTypeChangedEvent',
     'AggregationStrategy',
     'AggregationConfig',
     'AggregatedResult',

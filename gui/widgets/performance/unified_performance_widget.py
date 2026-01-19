@@ -25,7 +25,7 @@ from gui.widgets.performance.tabs.strategy_performance_tab import ModernStrategy
 from gui.widgets.performance.tabs.algorithm_optimization_tab import ModernAlgorithmOptimizationTab
 from gui.widgets.performance.tabs.risk_control_center_tab import ModernRiskControlCenterTab
 from gui.widgets.performance.tabs.trading_execution_monitor_tab import ModernTradingExecutionMonitorTab
-from gui.widgets.performance.tabs.data_quality_monitor_tab import ModernDataQualityMonitorTab
+from gui.widgets.enhanced_ui.data_quality_monitor_tab import DataQualityMonitorTab
 from gui.widgets.performance.tabs.system_health_tab import ModernSystemHealthTab
 # 已删除的标签页：UI优化、深度分析、算法性能、自动调优、告警配置
 # 已合并或升级为新的标签页
@@ -258,7 +258,7 @@ class ModernUnifiedPerformanceWidget(QWidget):
         tab_widget.addTab(self.execution_monitor_tab, "执行监控")
 
         # 6. 数据质量监控 - 量化交易数据质量保障
-        self.data_quality_tab = ModernDataQualityMonitorTab()
+        self.data_quality_tab = DataQualityMonitorTab()
         tab_widget.addTab(self.data_quality_tab, "数据质量")
 
         # 7. 系统健康检查 - 系统诊断和健康状态
@@ -918,12 +918,29 @@ class ModernUnifiedPerformanceWidget(QWidget):
 
     def closeEvent(self, event):
         """关闭事件"""
-        self.refresh_timer.stop()
-
-        # 等待所有异步任务完成
-        self.thread_pool.waitForDone(3000)  # 最多等待3秒
-
-        event.accept()
+        try:
+            # 停止定时器
+            self.refresh_timer.stop()
+            self.drag_detect_timer.stop()
+            
+            # 清理所有标签页
+            for i in range(self.tab_widget.count()):
+                tab = self.tab_widget.widget(i)
+                if hasattr(tab, 'cleanup'):
+                    try:
+                        tab.cleanup()
+                    except Exception as e:
+                        logger.error(f"清理标签页 {i} 失败: {e}")
+            
+            # 等待所有异步任务完成
+            self.thread_pool.waitForDone(5000)  # 增加到5秒
+            
+            logger.info("性能监控窗口已关闭")
+            event.accept()
+            
+        except Exception as e:
+            logger.error(f"关闭性能监控窗口失败: {e}")
+            event.accept()  # 即使失败也允许关闭
 
     def on_tab_changed(self, index):
         """tab切换时的处理 - 优化性能"""

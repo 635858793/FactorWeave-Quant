@@ -578,6 +578,7 @@ class CreateAccountDialog(QDialog):
                 TradingInterfaceType.TORA.value,
                 TradingInterfaceType.OMS.value,
                 TradingInterfaceType.CUSTOM.value,
+                TradingInterfaceType.MINIQMT.value,
                 TradingInterfaceType.BINANCE.value,
                 TradingInterfaceType.BINANCE_FUTURES.value,
                 TradingInterfaceType.OKX.value,
@@ -952,6 +953,36 @@ class CreateAccountDialog(QDialog):
             self.bybit_group.setVisible(False)
             scroll_layout.addWidget(self.bybit_group)
 
+            # miniQMT配置
+            self.miniqmt_group = QGroupBox("miniQMT交易接口配置")
+            miniqmt_layout = QGridLayout()
+
+            miniqmt_layout.addWidget(QLabel("账户ID:"), 0, 0)
+            self.miniqmt_account_id_input = QLineEdit()
+            self.miniqmt_account_id_input.setPlaceholderText("miniQMT账户ID")
+            miniqmt_layout.addWidget(self.miniqmt_account_id_input, 0, 1)
+
+            miniqmt_layout.addWidget(QLabel("密码:"), 1, 0)
+            self.miniqmt_password_input = QLineEdit()
+            self.miniqmt_password_input.setEchoMode(QLineEdit.Password)
+            self.miniqmt_password_input.setPlaceholderText("miniQMT密码")
+            miniqmt_layout.addWidget(self.miniqmt_password_input, 1, 1)
+
+            miniqmt_layout.addWidget(QLabel("服务器IP:"), 2, 0)
+            self.miniqmt_ip_input = QLineEdit()
+            self.miniqmt_ip_input.setPlaceholderText("127.0.0.1")
+            miniqmt_layout.addWidget(self.miniqmt_ip_input, 2, 1)
+
+            miniqmt_layout.addWidget(QLabel("端口:"), 3, 0)
+            self.miniqmt_port_input = QSpinBox()
+            self.miniqmt_port_input.setRange(1, 65535)
+            self.miniqmt_port_input.setValue(58610)
+            miniqmt_layout.addWidget(self.miniqmt_port_input, 3, 1)
+
+            self.miniqmt_group.setLayout(miniqmt_layout)
+            self.miniqmt_group.setVisible(False)
+            scroll_layout.addWidget(self.miniqmt_group)
+
             layout.addWidget(scroll_area)
 
             button_layout = QHBoxLayout()
@@ -1085,6 +1116,18 @@ class CreateAccountDialog(QDialog):
             self.huobi_futures_group.setVisible(False)
             self.bitget_group.setVisible(False)
             self.bybit_group.setVisible(True)
+        elif interface_type == TradingInterfaceType.MINIQMT.value:
+            self.ctp_group.setVisible(False)
+            self.xtp_group.setVisible(False)
+            self.binance_group.setVisible(False)
+            self.binance_futures_group.setVisible(False)
+            self.okx_group.setVisible(False)
+            self.okx_futures_group.setVisible(False)
+            self.huobi_group.setVisible(False)
+            self.huobi_futures_group.setVisible(False)
+            self.bitget_group.setVisible(False)
+            self.bybit_group.setVisible(False)
+            self.miniqmt_group.setVisible(True)
         else:
             self.ctp_group.setVisible(False)
             self.xtp_group.setVisible(False)
@@ -1096,6 +1139,7 @@ class CreateAccountDialog(QDialog):
             self.huobi_futures_group.setVisible(False)
             self.bitget_group.setVisible(False)
             self.bybit_group.setVisible(False)
+            self.miniqmt_group.setVisible(False)
 
     def create_account(self):
         """创建账户"""
@@ -1206,7 +1250,11 @@ class CreateAccountDialog(QDialog):
                 bybit_api_key=self.bybit_api_key_input.text().strip(),
                 bybit_secret_key=self.bybit_secret_key_input.text(),
                 bybit_rest_url=self.bybit_rest_url_input.text().strip(),
-                bybit_ws_url=self.bybit_ws_url_input.text().strip()
+                bybit_ws_url=self.bybit_ws_url_input.text().strip(),
+                miniqmt_account_id=self.miniqmt_account_id_input.text().strip(),
+                miniqmt_password=self.miniqmt_password_input.text(),
+                miniqmt_ip=self.miniqmt_ip_input.text().strip(),
+                miniqmt_port=self.miniqmt_port_input.value()
             )
 
             if self.account_manager.create_account(account):

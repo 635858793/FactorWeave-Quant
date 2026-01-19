@@ -43,3 +43,5 @@ data/strategy.db-shm
 performance_reports/*
 *.md
 !README.md
+!系统功能目录.md
+web/*

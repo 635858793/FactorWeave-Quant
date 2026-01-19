@@ -744,6 +744,43 @@ class IndustryManager(QObject):
             logger.info(f"获取行业股票失败: {e}")
             return []
 
+    def get_industry_stocks_batch(self, industry_codes: List[str], source: str = "eastmoney") -> Dict[str, List[Dict[str, Any]]]:
+        """
+        批量获取行业股票（优化版 - 一次性遍历所有股票）
+
+        Args:
+            industry_codes: 行业代码列表
+            source: 数据源
+
+        Returns:
+            Dict[industry_code, List[stock_info]]: 行业股票字典
+        """
+        try:
+            result = {industry_code: [] for industry_code in industry_codes}
+
+            # 一次性遍历所有股票，分类到各个行业
+            for stock_code, info in self.industry_data.items():
+                # 检查该股票是否属于任何一个请求的行业
+                for industry_code in industry_codes:
+                    if (info.get('code') == industry_code or
+                        info.get('csrc_industry') == industry_code or
+                        info.get('exchange_industry') == industry_code):
+
+                        result[industry_code].append({
+                            'code': stock_code,
+                            'name': info.get('name', ''),
+                            'industry': industry_code,
+                            'market': info.get('market', ''),
+                            'source': source
+                        })
+                        break  # 股票只属于一个行业，找到匹配后跳出
+                    
+            return result
+
+        except Exception as e:
+            logger.info(f"批量获取行业股票失败: {e}")
+            return {industry_code: [] for industry_code in industry_codes}
+
     def get_supported_sources(self) -> List[str]:
         """
         获取支持的数据源

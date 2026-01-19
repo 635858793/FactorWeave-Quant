@@ -42,8 +42,8 @@ class DuckDBConnectionPool:
     def __init__(
         self,
         db_path: str,
-        pool_size: int = 5,
-        max_overflow: int = 10,
+        pool_size: int = 15,
+        max_overflow: int = 100,
         timeout: float = 30.0,
         pool_recycle: int = 3600,
         pool_pre_ping: bool = True,
@@ -54,8 +54,8 @@ class DuckDBConnectionPool:
 
         Args:
             db_path: 数据库文件路径
-            pool_size: 连接池大小（保持的持久连接数），默认5
-            max_overflow: 允许的额外连接数，默认10
+            pool_size: 连接池大小（保持的持久连接数），默认15（从5增加到15，支持批量查询）
+            max_overflow: 允许的额外连接数，默认20（从10增加到100，支持高并发）
             timeout: 获取连接的超时时间（秒），默认30
             pool_recycle: 连接回收时间（秒），超过此时间的连接将被回收，默认3600（1小时）
             pool_pre_ping: 是否在使用前检查连接有效性，默认True

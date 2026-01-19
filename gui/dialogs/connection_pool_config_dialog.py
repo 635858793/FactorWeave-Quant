@@ -93,8 +93,8 @@ class ConnectionPoolConfigWidget(QWidget):
         pool_layout = QHBoxLayout()
         self.pool_size_slider = QSlider(Qt.Horizontal)
         self.pool_size_slider.setRange(1, 50)
-        self.pool_size_slider.setValue(5)
-        self.pool_size_label = QLabel("5")
+        self.pool_size_slider.setValue(15)
+        self.pool_size_label = QLabel("15")
         self.pool_size_slider.valueChanged.connect(
             lambda v: self.pool_size_label.setText(str(v))
         )
@@ -106,8 +106,8 @@ class ConnectionPoolConfigWidget(QWidget):
         overflow_layout = QHBoxLayout()
         self.max_overflow_slider = QSlider(Qt.Horizontal)
         self.max_overflow_slider.setRange(0, 100)
-        self.max_overflow_slider.setValue(10)
-        self.max_overflow_label = QLabel("10")
+        self.max_overflow_slider.setValue(20)
+        self.max_overflow_label = QLabel("20")
         self.max_overflow_slider.valueChanged.connect(
             lambda v: self.max_overflow_label.setText(str(v))
         )

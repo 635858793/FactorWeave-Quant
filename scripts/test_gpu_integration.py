@@ -102,11 +102,16 @@ class GPUIntegrationTest:
             
             # 测试CUDA环境验证
             start_time = time.time()
-            cuda_ok = gpu_manager.verify_cuda_environment()
+            cuda_result = gpu_manager.verify_cuda_environment()
             duration = time.time() - start_time
             
+            cuda_ok = cuda_result.success
             cuda_status = "通过" if cuda_ok else "失败"
             self.log_test_result(test_name + "_CUDA验证", 'PASS' if cuda_ok else 'WARN', f'CUDA环境验证: {cuda_status}', duration)
+            
+            # 输出详细的验证结果
+            if not cuda_ok:
+                print("\n" + cuda_result.get_summary())
             
             # 测试TensorFlow GPU配置
             start_time = time.time()

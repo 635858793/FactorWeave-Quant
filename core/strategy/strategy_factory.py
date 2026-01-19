@@ -15,7 +15,6 @@ from core.adapters import get_config
 
 from .base_strategy import BaseStrategy, StrategyParameter
 from .strategy_registry import StrategyRegistry
-from .strategy_database import get_strategy_database_manager
 
 class StrategyFactory:
     """策略工厂 - 统一的策略创建和管理"""
@@ -29,7 +28,10 @@ class StrategyFactory:
         self.logger = logger.bind(module=__name__)
         self.config = get_config()
         self.registry = registry
-        self.db_manager = get_strategy_database_manager()
+
+        # 使用DatabaseService替代StrategyDatabaseManager
+        self.database_service = None
+        self._database_service_initialized = False
 
         self._instances: Dict[str, BaseStrategy] = {}
         self._lock = threading.RLock()
@@ -43,6 +45,23 @@ class StrategyFactory:
         }
 
         self.logger.info("策略工厂初始化完成")
+
+    def _ensure_database_service(self):
+        """确保DatabaseService已初始化"""
+        if self._database_service_initialized:
+            return
+            
+        try:
+            from core.containers.service_container import get_service_container
+            from core.services.database_service import DatabaseService
+            container = get_service_container()
+            self.database_service = container.resolve(DatabaseService)
+            if self.database_service is not None:
+                self._database_service_initialized = True
+                self.logger.info("成功获取DatabaseService")
+        except Exception as e:
+            self.logger.warning(f"无法获取DatabaseService: {e}")
+            self.database_service = None
 
     def create_strategy(self, strategy_name: str, instance_name: str = None,
                         **kwargs) -> Optional[BaseStrategy]:
@@ -132,8 +151,20 @@ class StrategyFactory:
                 self._creation_stats['database_loads'] += 1
 
                 # 从数据库获取策略信息
-                strategy_info = self.db_manager.get_strategy_info(
-                    strategy_name)
+                self._ensure_database_service()
+                if not self.database_service:
+                    self.logger.error("DatabaseService不可用")
+                    self._creation_stats['failed_database_loads'] +=1
+                    return None
+
+                # 先从数据库查找策略
+                all_strategies = self.database_service.list_strategies()
+                strategy_info = None
+                for s in all_strategies:
+                    if s['name'] == strategy_name:
+                        strategy_info = s
+                        break
+
                 if not strategy_info:
                     self.logger.error(f"数据库中未找到策略: {strategy_name}")
                     self._creation_stats['failed_database_loads'] += 1
@@ -162,10 +193,9 @@ class StrategyFactory:
                 strategy = strategy_class(name=instance_name)
 
                 # 应用数据库中的参数
-                parameters = strategy_info.get('parameters', {})
+                parameters = self.database_service.get_strategy_parameters(strategy_info['id'])
                 param_count = 0
-                for param_name, param_info in parameters.items():
-                    param_value = param_info['value']
+                for param_name, param_value in parameters.items():
                     if strategy.set_parameter(param_name, param_value):
                         param_count += 1
                         self.logger.debug(
@@ -224,12 +254,21 @@ class StrategyFactory:
             self.logger.info(
                 f"开始从数据库批量加载策略: category={category}, type={strategy_type}")
 
+            self._ensure_database_service()
+            if not self.database_service:
+                self.logger.warning("DatabaseService不可用")
+                return {}
+
             # 获取策略列表
-            strategies_info = self.db_manager.list_strategies(
-                category=category, strategy_type=strategy_type)
+            strategies_info = self.database_service.list_strategies(
+                strategy_type=strategy_type, is_active=True)
             if not strategies_info:
                 self.logger.warning("数据库中没有找到匹配的策略")
                 return {}
+
+            # 如果需要按category过滤，在内存中过滤
+            if category:
+                strategies_info = [s for s in strategies_info if s.get('category') == category]
 
             self.logger.info(f"找到 {len(strategies_info)} 个策略")
 
@@ -277,6 +316,11 @@ class StrategyFactory:
                 self.logger.error(f"策略实例不存在: {instance_name}")
                 return False
 
+            self._ensure_database_service()
+            if not self.database_service:
+                self.logger.error("DatabaseService不可用")
+                return False
+
             self.logger.info(f"开始保存策略到数据库: {instance_name}")
 
             # 准备策略元数据
@@ -290,7 +334,7 @@ class StrategyFactory:
             }
 
             # 注册策略到数据库
-            strategy_id = self.db_manager.register_strategy(
+            strategy_id = self.database_service.register_strategy(
                 type(strategy), metadata)
 
             # 保存参数
@@ -299,7 +343,7 @@ class StrategyFactory:
                 for param_name, param in strategy.parameters.items():
                     parameters[param_name] = param
 
-            self.db_manager.save_strategy_parameters(strategy.name, parameters)
+            self.database_service.save_strategy_parameters(strategy_id, parameters)
 
             self.logger.info(
                 f"策略保存到数据库成功: {instance_name} (ID: {strategy_id})")

@@ -1,22 +1,42 @@
 # FactorWeave-Quant 2.0
 
+<div align="center">
+  <img src="icons/logo.png" alt="FactorWeave-Quant Logo" width="180">
+  <h3>因子编织量化交易系统</h3>
+</div>
+
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-AGPL%203.0-blue.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/status-Active%20Development-brightgreen.svg)]()
 
+---
+
 ### 一个功能强大的Python量化交易系统，集成了多数据源支持、智能插件系统、实时数据处理、AI预测分析等核心功能。专为量化投资者和金融技术研究者设计。
 
-### ⭐ 如果您觉得这个项目有帮助，请给个Star支持！  注意：学习使用请加微信，研究使用请加星球
+<div align="center">
+
+### ⭐ 如果您觉得这个项目有帮助，请给个Star支持！
+
+**注意：学习使用请加微信，研究使用请加星球**
+
+</div>
+
+---
 
 
 ## 🌟 系统重要UI
 
-![系统主界面](docs/images/系统主界面.png)
-![多屏数据页](docs/images/多屏数据.png)
-![形态识别指标](docs/images/形态识别指标.png)
-![系统运行监控](docs/images/系统运行监控.png)
-![策略性能监控](docs/images/策略性能监控.png)
-![风控指标监控](docs/images/风控指标监控.png)
+<div align="center">
+
+| 系统主界面 | 多屏数据页 | 形态识别指标 |
+|:---:|:---:|:---:|
+| ![系统主界面](docs/images/系统主界面.png) | ![多屏数据页](docs/images/多屏数据.png) | ![形态识别指标](docs/images/形态识别指标.png) |
+
+| 系统运行监控 | 策略性能监控 | 风控指标监控 |
+|:---:|:---:|:---:|
+| ![系统运行监控](docs/images/系统运行监控.png) | ![策略性能监控](docs/images/策略性能监控.png) | ![风控指标监控](docs/images/风控指标监控.png) |
+
+</div>
 
 
 ## 📊 核心特性
@@ -342,7 +362,6 @@ FactorWeave-Quant/                     # 项目根目录
 │
 ├── 🤖 AI组件 (components/)
 │   ├── ai_stock_selection.py         # AI选股组件
-│   ├── enhanced_ai_stock_selection.py # 增强AI选股
 │   ├── ai_strategy_generator.py      # AI策略生成器
 │   ├── market_sentiment.py           # 市场情绪分析
 │   └── [其他AI组件...]
@@ -561,7 +580,7 @@ class MyStrategyPlugin(IStrategyPlugin):
 - **📰 情绪分析**: 市场情绪和舆情监控
 - **🔄 自动调仓**: AI辅助的投资组合调整
 - **📝 智能报告**: AI生成的投研报告
-- **核心文件**: `components/enhanced_ai_stock_selection.py`
+- **核心文件**: `components/ai_stock_selection.py`
 
 ### 11. 🎯 枚举统一系统 (Enum Unification System)
 - **📊 统一枚举定义**: 所有枚举类型统一到 `core.enums` 模块

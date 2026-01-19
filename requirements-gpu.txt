@@ -63,9 +63,11 @@ click>=8.1.0
 pyyaml>=6.0.0
 python-dotenv>=1.0.0
 tqdm>=4.64.0
-
+xtquant>=0.4.0
 # 可选的GPU加速包（需要手动安装CUDA和cuDNN）
 # 注意：这些包在Windows 11上可能需要手动安装对应的CUDA版本
 # tensorflow-gpu>=2.19.0  # 需要手动安装匹配的CUDA版本
 # cupy-cuda12x>=13.0.0    # 需要手动安装CUDA Toolkit
 # cudf-cu12>=24.10.0      # 需要手动安装RAPIDS套件
+# 安装GPU版本（包含CUDA和cuDNN）
+# pip install tensorflow[and-cuda]

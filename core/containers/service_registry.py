@@ -1,10 +1,10 @@
-from loguru import logger
 """
 服务注册表模块
 
 管理服务的注册信息、生命周期和依赖关系。
 """
 
+from loguru import logger
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Set, Type, Union

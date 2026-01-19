@@ -502,18 +502,18 @@ class CacheService(BaseService):
         self._l1_cache: Optional[MemoryCache] = None  # 内存缓存
         self._l2_cache: Optional[DiskCache] = None    # 磁盘缓存
 
-        # 缓存配置（v2.4性能优化：增加缓存容量）
+        # 缓存配置（v2.5性能优化：增加缓存容量和延长TTL）
         self._l1_config = CacheConfig(
-            max_size=2000,        # 从1000增加到2000
-            max_memory_mb=200,    # 从100增加到200
-            default_ttl=timedelta(minutes=30),
+            max_size=5000,        # 从2000增加到5000，提升缓存命中率
+            max_memory_mb=200,    # 保持200MB
+            default_ttl=timedelta(hours=2),  # 从30分钟延长到2小时，减少重复查询
             strategy=CacheStrategy.LRU
         )
 
         self._l2_config = CacheConfig(
-            max_size=20000,       # 从10000增加到20000
-            max_memory_mb=2000,   # 从1000增加到2000
-            default_ttl=timedelta(hours=6),
+            max_size=50000,       # 从20000增加到50000，提升缓存命中率
+            max_memory_mb=2000,   # 保持2000MB
+            default_ttl=timedelta(hours=24),  # 从6小时延长到24小时，历史数据变化不频繁
             strategy=CacheStrategy.LRU,
             enable_persistence=True
         )

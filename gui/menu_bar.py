@@ -577,12 +577,6 @@ class MainMenuBar(QMenuBar):
             self.fundamental_action.setStatusTip("显示/隐藏基本面分析标签页")
             self.enhanced_menu.addAction(self.fundamental_action)
 
-            # 数据质量监控
-            self.quality_monitor_action = QAction("数据质量监控", self)
-            self.quality_monitor_action.setCheckable(True)
-            self.quality_monitor_action.setStatusTip("显示/隐藏数据质量监控面板")
-            self.enhanced_menu.addAction(self.quality_monitor_action)
-
             # 智能推荐
             self.smart_recommendation_action = QAction("智能推荐", self)
             self.smart_recommendation_action.setCheckable(True)
@@ -976,7 +970,6 @@ class MainMenuBar(QMenuBar):
                 ('level2_panel_action', '_on_toggle_level2_panel'),
                 ('orderbook_action', '_on_toggle_orderbook_panel'),
                 ('fundamental_action', '_on_toggle_fundamental_panel'),
-                ('quality_monitor_action', '_on_toggle_quality_monitor_panel'),
                 ('smart_recommendation_action', '_on_toggle_smart_recommendation_panel'),
 
                 # 主题相关

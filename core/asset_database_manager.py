@@ -240,6 +240,7 @@ class AssetSeparatedDatabaseManager:
                     symbol VARCHAR NOT NULL,
                     data_source VARCHAR NOT NULL,
                     check_date DATE NOT NULL,
+                    frequency VARCHAR NOT NULL DEFAULT '1d',
                     quality_score DECIMAL(5,2),
                     anomaly_count INTEGER DEFAULT 0,
                     missing_count INTEGER DEFAULT 0,
@@ -285,7 +286,8 @@ class AssetSeparatedDatabaseManager:
                     LEFT JOIN data_quality_monitor dqm ON (
                         hkd.symbol = dqm.symbol 
                         AND hkd.data_source = dqm.data_source 
-                        AND CAST(hkd.timestamp AS DATE) = dqm.check_date
+                        AND DATE(hkd.timestamp) = dqm.check_date
+                        AND hkd.frequency = dqm.frequency
                     )
                 )
                 SELECT * FROM ranked_data WHERE quality_rank = 1
@@ -368,6 +370,40 @@ class AssetSeparatedDatabaseManager:
                     m.exchange
                 FROM historical_kline_data k
                 LEFT JOIN asset_metadata m ON k.symbol = m.symbol
+            """,
+
+            # 基本面数据+元数据视图（便捷查询）
+            'fundamental_with_metadata': """
+                CREATE OR REPLACE VIEW fundamental_with_metadata AS
+                SELECT 
+                    f.*,
+                    m.name,
+                    m.exchange,
+                    m.listing_status,
+                    m.sector,
+                    m.industry as metadata_industry
+                FROM fundamentals f
+                LEFT JOIN asset_metadata m ON f.symbol = m.symbol
+            """,
+
+            # 基本面数据表（新增）
+            'fundamentals': """
+                CREATE TABLE IF NOT EXISTS fundamentals (
+                    symbol VARCHAR PRIMARY KEY,
+                    name VARCHAR,
+                    market VARCHAR,
+                    industry VARCHAR,
+                    sector VARCHAR,
+                    list_date DATE,
+                    total_shares DOUBLE,
+                    float_shares DOUBLE,
+                    market_cap DOUBLE,
+                    status VARCHAR,
+                    currency VARCHAR,
+                    is_st BOOLEAN,
+                    updated_time TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
             """,
 
             # 订单表
@@ -791,9 +827,39 @@ class AssetSeparatedDatabaseManager:
             db_path: 数据库文件路径
         """
         try:
-            view_names = ['unified_best_quality_kline', 'kline_with_metadata']
+            view_names = ['unified_best_quality_kline', 'kline_with_metadata', 'fundamental_with_metadata']
 
             with self.duckdb_manager.get_connection(db_path) as conn:
+                # ✅ 数据库迁移：为现有的data_quality_monitor表添加frequency字段
+                # 只在表已存在且缺少frequency字段时才执行迁移
+                try:
+                    # 检查表是否存在
+                    table_exists = conn.execute("""
+                        SELECT COUNT(*) 
+                        FROM duckdb_tables() 
+                        WHERE table_name = 'data_quality_monitor'
+                    """).fetchone()[0] > 0
+                    
+                    if table_exists:
+                        # 检查frequency字段是否存在
+                        check_column = conn.execute("""
+                            SELECT COUNT(*) 
+                            FROM information_schema.columns 
+                            WHERE table_name = 'data_quality_monitor' 
+                            AND column_name = 'frequency'
+                        """).fetchone()
+                        
+                        if check_column[0] == 0:
+                            # 字段不存在，添加frequency字段
+                            conn.execute("ALTER TABLE data_quality_monitor ADD COLUMN frequency VARCHAR DEFAULT '1d'")
+                            logger.info("✅ 数据库迁移：为现有的data_quality_monitor表添加frequency字段")
+                        else:
+                            logger.debug("data_quality_monitor表已包含frequency字段，跳过迁移")
+                    else:
+                        logger.debug("data_quality_monitor表不存在，跳过迁移（新建数据库时会自动创建）")
+                except Exception as migration_error:
+                    logger.warning(f"数据库迁移检查失败: {migration_error}")
+
                 # 第一步：确保所有基础表存在
                 for table_name, schema_sql in self._table_schemas.items():
                     if table_name in view_names:
@@ -815,6 +881,10 @@ class AssetSeparatedDatabaseManager:
                             # 如果是K线数据表，创建索引
                             if table_name == 'historical_kline_data':
                                 self._create_table_indexes(conn, table_name, DataType.HISTORICAL_KLINE)
+                            
+                            # 如果是数据质量监控表，创建索引
+                            if table_name == 'data_quality_monitor':
+                                self._create_table_indexes(conn, table_name, None)
                             
                             # 如果是订单表，创建索引
                             if table_name == 'orders':
@@ -927,8 +997,38 @@ class AssetSeparatedDatabaseManager:
             )
 
             with self.duckdb_manager.get_connection(db_path, config=duckdb_config) as conn:
+                # ✅ 数据库迁移：为现有的data_quality_monitor表添加frequency字段
+                # 只在表已存在且缺少frequency字段时才执行迁移
+                try:
+                    # 检查表是否存在
+                    table_exists = conn.execute("""
+                        SELECT COUNT(*) 
+                        FROM duckdb_tables() 
+                        WHERE table_name = 'data_quality_monitor'
+                    """).fetchone()[0] > 0
+                    
+                    if table_exists:
+                        # 检查frequency字段是否存在
+                        check_column = conn.execute("""
+                            SELECT COUNT(*) 
+                            FROM information_schema.columns 
+                            WHERE table_name = 'data_quality_monitor' 
+                            AND column_name = 'frequency'
+                        """).fetchone()
+                        
+                        if check_column[0] == 0:
+                            # 字段不存在，添加frequency字段
+                            conn.execute("ALTER TABLE data_quality_monitor ADD COLUMN frequency VARCHAR DEFAULT '1d'")
+                            logger.info("✅ 数据库迁移：为现有的data_quality_monitor表添加frequency字段")
+                        else:
+                            logger.debug("data_quality_monitor表已包含frequency字段，跳过迁移")
+                    else:
+                        logger.debug("data_quality_monitor表不存在，跳过迁移（新建数据库时会自动创建）")
+                except Exception as migration_error:
+                    logger.warning(f"数据库迁移检查失败: {migration_error}")
+
                 # 区分表和视图
-                view_names = ['unified_best_quality_kline', 'kline_with_metadata']
+                view_names = ['unified_best_quality_kline', 'kline_with_metadata', 'fundamental_with_metadata']
 
                 # 第一步：创建所有基础表
                 for table_name, schema_sql in self._table_schemas.items():
@@ -1540,6 +1640,22 @@ class AssetSeparatedDatabaseManager:
                 """)
                 logger.info(f"为{table_name}创建upsert优化索引")
 
+                # ✅ 优化unified_best_quality_kline视图查询性能
+                # 为常用查询条件添加索引：symbol + frequency, symbol + timestamp + frequency
+                conn.execute(f"""
+                    CREATE INDEX IF NOT EXISTS idx_{table_name}_symbol_frequency 
+                    ON {table_name}(symbol, frequency)
+                """)
+                conn.execute(f"""
+                    CREATE INDEX IF NOT EXISTS idx_{table_name}_symbol_timestamp_frequency 
+                    ON {table_name}(symbol, timestamp, frequency)
+                """)
+                conn.execute(f"""
+                    CREATE INDEX IF NOT EXISTS idx_{table_name}_frequency_timestamp 
+                    ON {table_name}(frequency, timestamp)
+                """)
+                logger.info(f"为{table_name}创建视图查询优化索引（支持frequency）")
+
             elif data_type == DataType.REAL_TIME_QUOTE:
                 conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_symbol ON {table_name}(symbol)")
                 conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_timestamp ON {table_name}(timestamp)")
@@ -1550,6 +1666,26 @@ class AssetSeparatedDatabaseManager:
                 conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_symbol ON {table_name}(symbol)")
                 conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_market ON {table_name}(market)")
                 conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_industry ON {table_name}(industry)")
+            
+            # 为数据质量监控表创建索引（优化unified_best_quality_kline视图性能）
+            elif table_name == 'data_quality_monitor':
+                # 完全匹配JOIN条件的复合索引（包含frequency）
+                conn.execute(f"""
+                    CREATE INDEX IF NOT EXISTS idx_{table_name}_symbol_data_source_check_date_frequency 
+                    ON {table_name}(symbol, data_source, check_date, frequency)
+                """)
+                # 用于按股票和日期查询的索引（包含frequency）
+                conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_symbol_check_date_frequency ON {table_name}(symbol, check_date, frequency)")
+                # 用于按日期查询的索引（包含frequency）
+                conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_check_date_frequency ON {table_name}(check_date, frequency)")
+                # 保留旧索引以确保向后兼容
+                conn.execute(f"""
+                    CREATE INDEX IF NOT EXISTS idx_{table_name}_symbol_data_source_check_date 
+                    ON {table_name}(symbol, data_source, check_date)
+                """)
+                conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_symbol_check_date ON {table_name}(symbol, check_date)")
+                conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_check_date ON {table_name}(check_date)")
+                logger.info(f"为{table_name}创建索引（优化视图JOIN性能，支持frequency）")
             
             # 为新增的股本/合约表创建索引
             elif table_name == 'stock_shares':
@@ -2522,6 +2658,92 @@ class AssetSeparatedDatabaseManager:
 
         except Exception as e:
             logger.error(f"批量获取资产元数据失败: {e}")
+            return {}
+
+    def load_fundamental_data(self, symbol: str, asset_type: AssetType) -> Optional[Dict[str, Any]]:
+        """从数据库加载基本面数据
+
+        Args:
+            symbol: 标的代码
+            asset_type: 资产类型
+
+        Returns:
+            Dict[str, Any]: 基本面数据字典，如果不存在则返回None
+        """
+        try:
+            db_path = self._get_database_path(asset_type)
+            with self.duckdb_manager.get_pool(db_path).get_connection() as conn:
+                result = conn.execute(
+                    "SELECT * FROM fundamentals WHERE symbol = ?",
+                    [symbol]
+                ).fetchone()
+
+                if result:
+                    columns = [desc[0] for desc in conn.description]
+                    fundamental_dict = dict(zip(columns, result))
+
+                    # 解析JSON字段（如果有）
+                    for field in ['attributes', 'tags']:
+                        if field in fundamental_dict and fundamental_dict[field]:
+                            try:
+                                import json
+                                fundamental_dict[field] = json.loads(fundamental_dict[field])
+                            except:
+                                pass
+
+                    logger.debug(f"从数据库加载基本面数据成功: {symbol}")
+                    return fundamental_dict
+                else:
+                    logger.debug(f"数据库中未找到基本面数据: {symbol}")
+                    return None
+
+        except Exception as e:
+            logger.error(f"从数据库加载基本面数据失败: {symbol}, {e}")
+            return None
+
+    def load_fundamental_data_batch(self, symbols: List[str], asset_type: AssetType) -> Dict[str, Dict[str, Any]]:
+        """批量从数据库加载基本面数据
+
+        Args:
+            symbols: 标的代码列表
+            asset_type: 资产类型
+
+        Returns:
+            Dict[symbol, Dict[str, Any]]: 基本面数据字典
+        """
+        try:
+            if not symbols:
+                return {}
+
+            db_path = self._get_database_path(asset_type)
+            with self.duckdb_manager.get_pool(db_path).get_connection() as conn:
+                placeholders = ','.join(['?' for _ in symbols])
+                query = f"SELECT * FROM fundamentals WHERE symbol IN ({placeholders})"
+
+                results = conn.execute(query, symbols).fetchall()
+                columns = [desc[0] for desc in conn.description]
+
+                import json
+                result_dict = {}
+                for row in results:
+                    fundamental_dict = dict(zip(columns, row))
+                    symbol = fundamental_dict['symbol']
+
+                    # 解析JSON字段（如果有）
+                    for field in ['attributes', 'tags']:
+                        if field in fundamental_dict and fundamental_dict[field]:
+                            try:
+                                fundamental_dict[field] = json.loads(fundamental_dict[field])
+                            except:
+                                pass
+
+                    result_dict[symbol] = fundamental_dict
+
+                logger.info(f"批量加载基本面数据成功: {len(result_dict)}/{len(symbols)}")
+                return result_dict
+
+        except Exception as e:
+            logger.error(f"批量加载基本面数据失败: {e}")
             return {}
 
     def close_all_connections(self):

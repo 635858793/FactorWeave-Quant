@@ -21,6 +21,7 @@ import platform
 import subprocess
 import ctypes
 import logging
+import time
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 from enum import Enum
@@ -59,6 +60,71 @@ class GPUInfo:
     cuda_version: str = "unknown"
     driver_version: str = "unknown"
     status: GPUStatus = GPUStatus.UNAVAILABLE
+
+@dataclass
+class CudaVerificationResult:
+    """CUDA环境验证结果"""
+    success: bool
+    cuda_available: bool = False
+    cudnn_available: bool = False
+    cuda_version: Optional[str] = None
+    cudnn_version: Optional[str] = None
+    gpu_devices: List[Dict[str, Any]] = None
+    loaded_libraries: List[str] = None
+    warnings: List[str] = None
+    errors: List[str] = None
+    tensorflow_build_info: Optional[Dict[str, str]] = None
+    platform: str = ""
+    
+    def __post_init__(self):
+        """初始化默认值"""
+        if self.gpu_devices is None:
+            self.gpu_devices = []
+        if self.loaded_libraries is None:
+            self.loaded_libraries = []
+        if self.warnings is None:
+            self.warnings = []
+        if self.errors is None:
+            self.errors = []
+        self.platform = platform.system()
+    
+    def get_summary(self) -> str:
+        """获取验证结果摘要"""
+        lines = [
+            "=" * 60,
+            "CUDA环境验证结果",
+            "=" * 60,
+            f"✅ 验证状态: {'成功' if self.success else '失败'}",
+            f"🖥️  操作系统: {self.platform}",
+            f"📦 CUDA可用: {'是' if self.cuda_available else '否'}",
+            f"📦 cuDNN可用: {'是' if self.cudnn_available else '否'}",
+        ]
+        
+        if self.cuda_version:
+            lines.append(f"🔧 CUDA版本: {self.cuda_version}")
+        if self.cudnn_version:
+            lines.append(f"🔧 cuDNN版本: {self.cudnn_version}")
+        
+        if self.loaded_libraries:
+            lines.append(f"📚 已加载库: {', '.join(self.loaded_libraries)}")
+        
+        if self.gpu_devices:
+            lines.append(f"🎯 GPU设备数量: {len(self.gpu_devices)}")
+            for i, device in enumerate(self.gpu_devices):
+                lines.append(f"   设备{i}: {device.get('name', 'Unknown')}")
+        
+        if self.warnings:
+            lines.append("\n⚠️  警告:")
+            for warning in self.warnings:
+                lines.append(f"   - {warning}")
+        
+        if self.errors:
+            lines.append("\n❌ 错误:")
+            for error in self.errors:
+                lines.append(f"   - {error}")
+        
+        lines.append("=" * 60)
+        return "\n".join(lines)
     
 class TensorFlowGPUManager:
     """TensorFlow GPU智能管理器"""
@@ -181,55 +247,266 @@ class TensorFlowGPUManager:
         except Exception:
             return None
     
-    def verify_cuda_environment(self) -> bool:
-        """验证CUDA环境"""
-        logger.info("验证CUDA环境...")
+    def verify_cuda_environment(self, detailed: bool = True) -> CudaVerificationResult:
+        """验证CUDA环境
+        
+        Args:
+            detailed: 是否返回详细信息（包括GPU设备信息）
+        
+        Returns:
+            CudaVerificationResult: 详细的验证结果
+        """
+        logger.info("🔍 开始验证CUDA环境...")
+        logger.info("=" * 60)
+        
+        result = CudaVerificationResult(success=False)
+        
+        # 1. 检查CUDA库
+        logger.info("📚 [步骤 1/3] 检查CUDA和cuDNN库...")
+        cuda_libs = self._get_cuda_libraries()
+        for lib_name, lib_path in cuda_libs.items():
+            if self._load_library(lib_name, lib_path):
+                result.loaded_libraries.append(lib_name)
+                logger.info(f"   ✅ {lib_name} 加载成功")
+            else:
+                logger.debug(f"   ❌ {lib_name} 加载失败")
+        
+        # 判断CUDA和cuDNN是否可用
+        result.cuda_available = any('cuda' in lib.lower() for lib in result.loaded_libraries)
+        result.cudnn_available = any('cudnn' in lib.lower() for lib in result.loaded_libraries)
+        
+        if not result.cuda_available:
+            result.warnings.append("未找到CUDA库")
+            logger.warning("⚠️ 未找到CUDA库")
+        if not result.cudnn_available:
+            result.warnings.append("未找到cuDNN库")
+            logger.warning("⚠️ 未找到cuDNN库")
+        
+        # 2. 检查TensorFlow构建信息
+        logger.info("🔧 [步骤 2/3] 检查TensorFlow构建信息...")
+        if TENSORFLOW_AVAILABLE:
+            result.tensorflow_build_info = self._get_tensorflow_build_info()
+            result.cuda_version = result.tensorflow_build_info.get("cuda_version")
+            result.cudnn_version = result.tensorflow_build_info.get("cudnn_version")
+            
+            logger.info(f"   CUDA版本: {result.cuda_version}")
+            logger.info(f"   cuDNN版本: {result.cudnn_version}")
+            
+            # 检查版本兼容性
+            if result.cuda_version and result.cudnn_version:
+                # 检查版本是否为有效值（不是"unknown"）
+                if result.cuda_version != "unknown" and result.cudnn_version != "unknown":
+                    compatibility_check = self._check_version_compatibility(
+                        result.cuda_version, result.cudnn_version
+                    )
+                    if not compatibility_check['compatible']:
+                        result.warnings.append(compatibility_check['message'])
+                        logger.warning(f"⚠️ {compatibility_check['message']}")
+                else:
+                    # 版本为"unknown"，可能安装了CPU版本的TensorFlow
+                    result.warnings.append("TensorFlow未检测到CUDA/cuDNN版本，可能安装的是CPU版本")
+                    logger.warning("⚠️ TensorFlow未检测到CUDA/cuDNN版本，可能安装的是CPU版本")
+                    logger.info("💡 建议：pip install tensorflow[and-cuda] 安装GPU版本")
+            else:
+                result.warnings.append("TensorFlow未检测到CUDA/cuDNN版本")
+                logger.warning("⚠️ TensorFlow未检测到CUDA/cuDNN版本")
+        else:
+            result.warnings.append("TensorFlow未安装")
+            logger.warning("⚠️ TensorFlow未安装")
+        
+        # 3. 检查GPU设备（如果detailed=True）
+        if detailed and TENSORFLOW_AVAILABLE:
+            logger.info("🎯 [步骤 3/3] 检查GPU设备...")
+            result.gpu_devices = self._get_gpu_devices()
+            
+            if result.gpu_devices:
+                logger.info(f"   ✅ 检测到 {len(result.gpu_devices)} 个GPU设备")
+                for device in result.gpu_devices:
+                    logger.info(f"      - {device.get('name', 'Unknown')}")
+            else:
+                result.warnings.append("未检测到GPU设备")
+                logger.warning("⚠️ 未检测到GPU设备")
+        
+        # 4. 综合判断
+        result.success = self._evaluate_success(result)
+        
+        logger.info("=" * 60)
+        if result.success:
+            logger.info("✅ CUDA环境验证通过")
+        else:
+            logger.error("❌ CUDA环境验证失败")
+        
+        return result
+    
+    def _get_cuda_libraries(self) -> Dict[str, str]:
+        """获取平台特定的CUDA库列表
+        
+        Returns:
+            Dict[str, str]: 库名称到路径的映射
+        """
+        system = platform.system()
+        
+        if system == "Windows":
+            return {
+                "cudart64_110.dll": "cudart64_110.dll",
+                "cudart64_12.dll": "cudart64_12.dll",
+                "cudnn64_8.dll": "cudnn64_8.dll",
+                "cudnn64_9.dll": "cudnn64_9.dll",
+            }
+        else:
+            return {
+                "cudart.so.11.0": "cudart.so.11.0",
+                "cudart.so.12.0": "cudart.so.12.0",
+                "libcudnn.so.8": "libcudnn.so.8",
+                "libcudnn.so.9": "libcudnn.so.9",
+            }
+    
+    def _load_library(self, lib_name: str, lib_path: str) -> bool:
+        """加载单个库
+        
+        Args:
+            lib_name: 库名称
+            lib_path: 库路径
+        
+        Returns:
+            bool: 是否加载成功
+        """
+        try:
+            if platform.system() == "Windows":
+                ctypes.WinDLL(lib_path)
+            else:
+                ctypes.CDLL(lib_path)
+            return True
+        except (OSError, FileNotFoundError, AttributeError) as e:
+            logger.debug(f"库加载失败: {lib_name} - {e}")
+            return False
+        except Exception as e:
+            logger.warning(f"库加载异常: {lib_name} - {e}")
+            return False
+    
+    def _get_tensorflow_build_info(self) -> Dict[str, str]:
+        """获取TensorFlow构建信息
+        
+        Returns:
+            Dict[str, str]: 构建信息字典
+        """
+        try:
+            build_info = tf.sysconfig.get_build_info()
+            return {
+                "cuda_version": build_info.get("cuda_version", "unknown"),
+                "cudnn_version": build_info.get("cudnn_version", "unknown"),
+                "cuda_version_number": build_info.get("cuda_version_number", "unknown"),
+            }
+        except Exception as e:
+            logger.error(f"获取TensorFlow构建信息失败: {e}")
+            return {}
+    
+    def _get_gpu_devices(self) -> List[Dict[str, Any]]:
+        """获取GPU设备信息
+        
+        Returns:
+            List[Dict[str, Any]]: GPU设备信息列表
+        """
+        devices = []
         
         try:
-            # 1. 检查CUDA库
-            cuda_libraries = [
-                "cudart64_110.dll",  # Windows
-                "cudart.so.11.0",    # Linux
-                "cudnn64_8.dll",     # Windows
-                "libcudnn.so.8",     # Linux
-            ]
-            
-            for lib in cuda_libraries:
+            gpus = tf.config.list_physical_devices('GPU')
+            for i, gpu in enumerate(gpus):
+                device_info = {
+                    "name": gpu.name,
+                    "device_type": gpu.device_type,
+                    "index": i,
+                }
+                
+                # 尝试获取更详细的设备信息
                 try:
-                    if platform.system() == "Windows":
-                        ctypes.WinDLL(lib)
-                        logger.info(f"✅ CUDA库加载成功: {lib}")
-                        break
-                    else:
-                        ctypes.CDLL(lib)
-                        logger.info(f"✅ CUDA库加载成功: {lib}")
-                        break
-                except (OSError, FileNotFoundError):
-                    continue
-            else:
-                logger.warning("⚠️ 未找到CUDA库")
-                return False
-            
-            # 2. 检查TensorFlow构建信息
-            if TENSORFLOW_AVAILABLE:
-                build_info = tf.sysconfig.get_build_info()
-                cuda_version = build_info.get("cuda_version", "unknown")
-                cudnn_version = build_info.get("cudnn_version", "unknown")
+                    device_details = tf.config.experimental.get_device_details(gpu)
+                    device_info.update(device_details)
+                except Exception:
+                    pass
                 
-                logger.info(f"TensorFlow构建信息:")
-                logger.info(f"  CUDA版本: {cuda_version}")
-                logger.info(f"  cuDNN版本: {cudnn_version}")
-                
-                # 检查版本兼容性
-                if cuda_version != "unknown" and cudnn_version != "unknown":
-                    logger.info("✅ TensorFlow CUDA环境验证通过")
-                    return True
-            
-            return False
-            
+                devices.append(device_info)
         except Exception as e:
-            logger.error(f"❌ CUDA环境验证失败: {e}")
+            logger.error(f"获取GPU设备信息失败: {e}")
+        
+        return devices
+    
+    def _evaluate_success(self, result: CudaVerificationResult) -> bool:
+        """评估验证是否成功
+        
+        Args:
+            result: 验证结果
+        
+        Returns:
+            bool: 是否成功
+        """
+        # 至少需要CUDA库可用
+        if not result.cuda_available:
+            logger.debug("验证失败：CUDA库不可用")
             return False
+        
+        # 如果TensorFlow可用，需要有版本信息
+        if TENSORFLOW_AVAILABLE:
+            if not result.cuda_version or result.cuda_version == "unknown":
+                logger.debug("验证失败：TensorFlow未检测到CUDA版本，可能安装的是CPU版本")
+                return False
+        
+        return True
+    
+    def _check_version_compatibility(self, cuda_version: str, cudnn_version: str) -> Dict[str, Any]:
+        """检查CUDA和cuDNN版本兼容性
+        
+        Args:
+            cuda_version: CUDA版本
+            cudnn_version: cuDNN版本
+        
+        Returns:
+            Dict[str, Any]: 兼容性检查结果
+        """
+        # 检查版本是否为"unknown"
+        if cuda_version == "unknown" or cudnn_version == "unknown":
+            return {
+                "compatible": False,
+                "message": "CUDA或cuDNN版本未知，可能安装了CPU版本的TensorFlow",
+                "cuda_version": cuda_version,
+                "cudnn_version": cudnn_version,
+            }
+        
+        # 简化的兼容性检查
+        # 实际应用中应该使用更详细的兼容性矩阵
+        
+        try:
+            cuda_major = int(cuda_version.split('.')[0])
+            cudnn_major = int(cudnn_version.split('.')[0])
+            
+            # 基本兼容性规则
+            compatible = True
+            message = "版本兼容"
+            
+            # CUDA 11.x 应该配合 cuDNN 8.x
+            if cuda_major == 11 and cudnn_major != 8:
+                compatible = False
+                message = f"CUDA {cuda_version} 建议配合 cuDNN 8.x，当前为 {cudnn_version}"
+            
+            # CUDA 12.x 应该配合 cuDNN 9.x
+            elif cuda_major == 12 and cudnn_major != 9:
+                compatible = False
+                message = f"CUDA {cuda_version} 建议配合 cuDNN 9.x，当前为 {cudnn_version}"
+            
+            return {
+                "compatible": compatible,
+                "message": message,
+                "cuda_version": cuda_version,
+                "cudnn_version": cudnn_version,
+            }
+            
+        except (ValueError, IndexError) as e:
+            return {
+                "compatible": False,
+                "message": f"版本解析失败: {e}，版本格式应为 'x.y.z'",
+                "cuda_version": cuda_version,
+                "cudnn_version": cudnn_version,
+            }
     
     def configure_tensorflow_gpu(self) -> bool:
         """配置TensorFlow GPU支持"""
@@ -415,10 +692,16 @@ class TensorFlowGPUManager:
             
             # 2. 验证CUDA环境
             logger.info("🔧 [步骤 2/4] 正在验证CUDA环境...")
-            cuda_ok = self.verify_cuda_environment()
+            cuda_result = self.verify_cuda_environment()
+            cuda_ok = cuda_result.success
+            
             if not cuda_ok:
                 logger.error("❌ [CUDA验证] CUDA环境验证失败")
                 logger.info("💡 [建议] 请安装CUDA Toolkit和cuDNN库")
+                
+                # 输出详细的验证结果
+                logger.info(cuda_result.get_summary())
+                
                 if self.auto_fallback_enabled:
                     logger.info("🔄 [回退] 启用自动回退到CPU模式")
                     self.gpu_info.status = GPUStatus.FALLBACK_CPU

@@ -6,7 +6,7 @@
 """
 
 import math
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Tuple
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget, QTableWidgetItem,
@@ -285,7 +285,11 @@ class OrderBookWidget(QWidget):
             ("中间价", "mid_price"),
             ("不平衡度", "imbalance"),
             ("深度强度", "depth_strength"),
-            ("价格影响", "price_impact")
+            ("价格影响", "price_impact"),
+            ("VWAP", "vwap"),
+            ("TWAP", "twap"),
+            ("买卖压力指数", "buy_sell_pressure"),
+            ("订单流不平衡度", "order_flow_imbalance")
         ]
 
         for i, (label, key) in enumerate(metrics_items):
@@ -582,6 +586,12 @@ class OrderBookWidget(QWidget):
             target_volume = (total_bid_volume + total_ask_volume) * 0.01
             price_impact = self._calculate_price_impact(bids, asks, target_volume)
 
+            # 计算新指标
+            vwap = self._calculate_vwap(bids, asks)
+            twap = self._calculate_twap()
+            buy_sell_pressure = self._calculate_buy_sell_pressure(bids, asks)
+            order_flow_imbalance = self._calculate_order_flow_imbalance(bids, asks)
+
             # 更新显示
             self.metrics_labels['buy_sell_ratio'].setText(f"{buy_sell_ratio:.2f}")
             self.metrics_labels['spread'].setText(f"{spread:.{self.price_precision}f}")
@@ -589,6 +599,12 @@ class OrderBookWidget(QWidget):
             self.metrics_labels['imbalance'].setText(f"{imbalance:.1f}%")
             self.metrics_labels['depth_strength'].setText(f"{depth_strength:,.0f}")
             self.metrics_labels['price_impact'].setText(f"{price_impact:.{self.price_precision}f}")
+            
+            # 更新新指标显示
+            self.metrics_labels['vwap'].setText(f"{vwap:.{self.price_precision}f}")
+            self.metrics_labels['twap'].setText(f"{twap:.{self.price_precision}f}")
+            self.metrics_labels['buy_sell_pressure'].setText(f"{buy_sell_pressure:.2f}")
+            self.metrics_labels['order_flow_imbalance'].setText(f"{order_flow_imbalance:.2f}")
 
         except Exception as e:
             logger.error(f"计算分析指标失败: {e}")
@@ -754,6 +770,173 @@ class OrderBookWidget(QWidget):
         except Exception as e:
             logger.error(f"计算市场压力失败: {e}")
             return "未知"
+
+    def _calculate_vwap(self, bids: List[Dict], asks: List[Dict], time_window: int = 300) -> float:
+        """
+        计算成交量加权平均价 (VWAP)
+        
+        Args:
+            bids: 买盘数据
+            asks: 卖盘数据
+            time_window: 时间窗口（秒），默认5分钟
+        
+        Returns:
+            VWAP值
+        """
+        try:
+            if not bids or not asks:
+                return 0.0
+            
+            # 获取时间窗口内的历史快照
+            cutoff_time = datetime.now() - timedelta(seconds=time_window)
+            relevant_snapshots = [
+                s for s in self.historical_snapshots 
+                if s['timestamp'] >= cutoff_time
+            ]
+            
+            if not relevant_snapshots:
+                # 如果没有历史数据，使用当前订单簿计算
+                total_value = sum(bid['price'] * bid['volume'] for bid in bids)
+                total_value += sum(ask['price'] * ask['volume'] for ask in asks)
+                total_volume = sum(bid['volume'] for bid in bids) + sum(ask['volume'] for ask in asks)
+                return total_value / total_volume if total_volume > 0 else 0.0
+            
+            # 使用历史快照计算VWAP
+            total_value = 0.0
+            total_volume = 0.0
+            
+            for snapshot in relevant_snapshots:
+                data = snapshot['data']
+                snapshot_bids = data.get('bids', [])
+                snapshot_asks = data.get('asks', [])
+                
+                for bid in snapshot_bids:
+                    total_value += bid['price'] * bid['volume']
+                    total_volume += bid['volume']
+                
+                for ask in snapshot_asks:
+                    total_value += ask['price'] * ask['volume']
+                    total_volume += ask['volume']
+            
+            return total_value / total_volume if total_volume > 0 else 0.0
+        
+        except Exception as e:
+            logger.error(f"计算VWAP失败: {e}")
+            return 0.0
+
+    def _calculate_twap(self, time_window: int = 300) -> float:
+        """
+        计算时间加权平均价 (TWAP)
+        
+        Args:
+            time_window: 时间窗口（秒），默认5分钟
+        
+        Returns:
+            TWAP值
+        """
+        try:
+            if len(self.historical_snapshots) < 2:
+                return 0.0
+            
+            # 获取时间窗口内的历史快照
+            cutoff_time = datetime.now() - timedelta(seconds=time_window)
+            relevant_snapshots = [
+                s for s in self.historical_snapshots 
+                if s['timestamp'] >= cutoff_time
+            ]
+            
+            if not relevant_snapshots:
+                return 0.0
+            
+            # 计算每个快照的中间价
+            mid_prices = []
+            for snapshot in relevant_snapshots:
+                data = snapshot['data']
+                bids = data.get('bids', [])
+                asks = data.get('asks', [])
+                
+                if bids and asks:
+                    mid_price = (bids[0]['price'] + asks[0]['price']) / 2
+                    mid_prices.append(mid_price)
+            
+            if not mid_prices:
+                return 0.0
+            
+            # 计算时间加权平均价
+            total_weighted_price = 0.0
+            total_weight = 0.0
+            
+            for i, price in enumerate(mid_prices):
+                # 时间权重：越新的数据权重越大
+                weight = (i + 1) / len(mid_prices)
+                total_weighted_price += price * weight
+                total_weight += weight
+            
+            return total_weighted_price / total_weight if total_weight > 0 else 0.0
+        
+        except Exception as e:
+            logger.error(f"计算TWAP失败: {e}")
+            return 0.0
+
+    def _calculate_buy_sell_pressure(self, bids: List[Dict], asks: List[Dict]) -> float:
+        """
+        计算买卖压力指数
+        
+        Args:
+            bids: 买盘数据
+            asks: 卖盘数据
+        
+        Returns:
+            买卖压力指数，范围[-1, 1]，正值表示买盘压力，负值表示卖盘压力
+        """
+        try:
+            if not bids or not asks:
+                return 0.0
+            
+            total_bid_volume = sum(bid['volume'] for bid in bids)
+            total_ask_volume = sum(ask['volume'] for ask in asks)
+            
+            total_volume = total_bid_volume + total_ask_volume
+            if total_volume == 0:
+                return 0.0
+            
+            # 买卖压力指数
+            pressure = (total_bid_volume - total_ask_volume) / total_volume
+            return pressure
+        
+        except Exception as e:
+            logger.error(f"计算买卖压力指数失败: {e}")
+            return 0.0
+
+    def _calculate_order_flow_imbalance(self, bids: List[Dict], asks: List[Dict]) -> float:
+        """
+        计算订单流不平衡度
+        
+        Args:
+            bids: 买盘数据
+            asks: 卖盘数据
+        
+        Returns:
+            订单流不平衡度，范围[0, 1]，值越大表示不平衡度越高
+        """
+        try:
+            if not bids or not asks:
+                return 0.0
+            
+            total_bid_volume = sum(bid['volume'] for bid in bids)
+            total_ask_volume = sum(ask['volume'] for ask in asks)
+            
+            total_volume = total_bid_volume + total_ask_volume
+            if total_volume == 0:
+                return 0.0
+            
+            # 订单流不平衡度
+            imbalance = abs(total_bid_volume - total_ask_volume) / total_volume
+            return imbalance
+        
+        except Exception as e:
+            logger.error(f"计算订单流不平衡度失败: {e}")
+            return 0.0
 
     def _export_data(self):
         """导出订单簿数据"""
