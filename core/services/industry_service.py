@@ -277,6 +277,56 @@ class IndustryService(CacheableService, ConfigurableService):
                 f"Failed to get industry stocks for {industry_code} from {source}: {e}")
             return []
 
+    def get_industry_stocks_batch(self, industry_codes: List[str], source: str = "eastmoney") -> Dict[str, List[Dict[str, Any]]]:
+        """
+        批量获取行业股票（优化版 - 一次性遍历所有股票）
+
+        Args:
+            industry_codes: 行业代码列表
+            source: 数据源
+
+        Returns:
+            Dict[industry_code, List[stock_info]]: 行业股票字典
+        """
+        self._ensure_initialized()
+
+        # 检查缓存
+        result = {}
+        uncached_industries = []
+        for industry_code in industry_codes:
+            cache_key = f"industry_stocks_{industry_code}_{source}"
+            cached_result = self.get_from_cache(cache_key)
+            if cached_result is not None:
+                result[industry_code] = cached_result
+            else:
+                uncached_industries.append(industry_code)
+
+        # 如果所有行业都有缓存，直接返回
+        if not uncached_industries:
+            return result
+
+        try:
+            if self._industry_manager:
+                # 批量获取未缓存的行业股票
+                batch_result = self._industry_manager.get_industry_stocks_batch(
+                    uncached_industries, source)
+
+                # 缓存结果
+                for industry_code, stocks in batch_result.items():
+                    cache_key = f"industry_stocks_{industry_code}_{source}"
+                    self.put_to_cache(cache_key, stocks)
+                    result[industry_code] = stocks
+
+                return result
+            else:
+                logger.warning("Industry manager not available")
+                return {industry_code: [] for industry_code in industry_codes}
+
+        except Exception as e:
+            logger.error(
+                f"Failed to get industry stocks batch from {source}: {e}")
+            return {industry_code: [] for industry_code in industry_codes}
+
     def update_industry_data(self, source: str = "eastmoney") -> bool:
         """
         更新行业数据

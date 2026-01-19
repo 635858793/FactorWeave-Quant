@@ -3,7 +3,7 @@
 架构精简重构 - 整合所有性能监控Manager为单一Service
 
 整合的Manager类：
-- UnifiedMonitor (core/performance/unified_monitor.py)
+- UnifiedPerformanceMonitor (core/performance/unified_monitor.py)
 - DynamicResourceManager (core/services/dynamic_resource_manager.py)
 - ResourceManager (core/async_management/enhanced_async_manager.py)
 - PerformanceMonitor (core/managers/performance_monitor.py)
@@ -137,9 +137,7 @@ class PerformanceService(BaseService):
         try:
             # 初始化统一监控器
             self._unified_monitor = UnifiedPerformanceMonitor()
-            logger.info("UnifiedMonitor initialized")
-
-            # 资源管理器功能已集成到PerformanceService核心
+            logger.info("UnifiedPerformanceMonitor initialized")
 
             # 启用内存跟踪
             if not tracemalloc.is_tracing():

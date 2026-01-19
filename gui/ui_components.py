@@ -1,10 +1,10 @@
-from loguru import logger
 """
-UI components for the trading system
+UI components for trading system
 
 This module contains reusable UI components for the trading system.
 """
 
+from loguru import logger
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
     QPushButton, QLineEdit, QProgressBar, QTextEdit,
@@ -18,7 +18,6 @@ import pandas as pd
 import psutil
 from datetime import datetime
 import traceback
-from gui.widgets.trading_widget import TradingWidget
 from utils.config_types import LoggingConfig
 from typing import Optional, Dict, Any
 import csv
@@ -211,6 +210,7 @@ class AnalysisToolsPanel(BaseAnalysisPanel, EnhancedBatchAnalysisMixin):
             logger.info("初始化策略回测UI组件")
             super().__init__(parent)
             # 集成TradingWidget实例（仅作分析逻辑调用，不显示UI）
+            from gui.widgets.trading_widget import TradingWidget
             self.trading_widget = TradingWidget()
             # 初始化UI
             try:

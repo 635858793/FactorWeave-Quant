@@ -36,8 +36,7 @@ try:
     from gui.widgets.performance.unified_performance_widget import ModernUnifiedPerformanceWidget
     from gui.widgets.performance.tabs.system_monitor_tab import ModernSystemMonitorTab
     from gui.widgets.performance.tabs.risk_control_center_tab import ModernRiskControlCenterTab
-    # 注意：cache_optimization_tab、ai_prediction_tab、import_performance_tab 不存在，使用现有的
-    from gui.widgets.performance.tabs.data_quality_monitor_tab import ModernDataQualityMonitorTab as ModernCacheOptimizationTab
+    # 注意：cache_optimization_tab、ai_prediction_tab、import_performance_tab 不存在
     # 使用 algorithm_optimization_tab 替代不存在的 enhanced_deep_analysis_tab
     from gui.widgets.performance.tabs.algorithm_optimization_tab import ModernAlgorithmOptimizationTab as ModernAIPredictionTab
     from gui.widgets.performance.tabs.trading_execution_monitor_tab import ModernTradingExecutionMonitorTab as ModernImportPerformanceTab
@@ -901,10 +900,6 @@ class UnifiedPerformanceCoordinator:
             # 风险控制标签页
             risk_tab = ModernRiskControlCenterTab()
             self.register_modern_tab("risk_control", risk_tab)
-
-            # 缓存优化标签页
-            cache_tab = ModernCacheOptimizationTab()
-            self.register_modern_tab("cache_optimization", cache_tab)
 
             # AI预测标签页
             ai_tab = ModernAIPredictionTab()

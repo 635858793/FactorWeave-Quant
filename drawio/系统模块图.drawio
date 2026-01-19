@@ -1,0 +1,250 @@
+<mxfile host="65bd71144e">
+    <diagram name="FactorWeave-Quant 高层功能模块图" id="high-level-modules">
+        <mxGraphModel dx="1571" dy="1055" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1400" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                
+                <mxCell id="ui_layer" value="表示层（UI层）" style="swimlane;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=18;fontStyle=1;fontColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="40" width="1720" height="180" as="geometry"/>
+                </mxCell>
+                <mxCell id="main_window" value="MainWindow" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontStyle=1;fontColor=#000000;" parent="ui_layer" vertex="1">
+                    <mxGeometry x="60" y="50" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="main_coordinator" value="MainWindowCoordinator" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#000000;" parent="ui_layer" vertex="1">
+                    <mxGeometry x="300" y="50" width="240" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="ui_dialogs" value="各种Dialog组件" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#000000;" parent="ui_layer" vertex="1">
+                    <mxGeometry x="580" y="50" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="ui_widgets" value="各种Widget组件" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#000000;" parent="ui_layer" vertex="1">
+                    <mxGeometry x="820" y="50" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="ui_panels" value="各种Panel组件" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#000000;" parent="ui_layer" vertex="1">
+                    <mxGeometry x="1060" y="50" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="ui_tabs" value="各种Tab组件" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#000000;" parent="ui_layer" vertex="1">
+                    <mxGeometry x="1300" y="50" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="ui_enhanced" value="Enhanced UI组件" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#000000;" parent="ui_layer" vertex="1">
+                    <mxGeometry x="1540" y="50" width="200" height="50" as="geometry"/>
+                </mxCell>
+                
+                <mxCell id="business_layer" value="业务逻辑层" style="swimlane;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=18;fontStyle=1;fontColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="240" width="1720" height="180" as="geometry"/>
+                </mxCell>
+                <mxCell id="portfolio_manager" value="PortfolioManager" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontStyle=1;fontColor=#000000;" parent="business_layer" vertex="1">
+                    <mxGeometry x="60" y="50" width="220" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="trading_manager" value="TradingManager" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontStyle=1;fontColor=#000000;" parent="business_layer" vertex="1">
+                    <mxGeometry x="320" y="50" width="220" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="stock_manager" value="StockManager" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontStyle=1;fontColor=#000000;" parent="business_layer" vertex="1">
+                    <mxGeometry x="580" y="50" width="220" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="analysis_manager" value="AnalysisManager" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontStyle=1;fontColor=#000000;" parent="business_layer" vertex="1">
+                    <mxGeometry x="840" y="50" width="220" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="strategy_manager" value="StrategyManager" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontStyle=1;fontColor=#000000;" parent="business_layer" vertex="1">
+                    <mxGeometry x="1100" y="50" width="220" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="backtest_manager" value="BacktestManager" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontStyle=1;fontColor=#000000;" parent="business_layer" vertex="1">
+                    <mxGeometry x="1360" y="50" width="220" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="risk_manager" value="RiskManager" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontStyle=1;fontColor=#000000;" parent="business_layer" vertex="1">
+                    <mxGeometry x="1620" y="50" width="140" height="50" as="geometry"/>
+                </mxCell>
+                
+                <mxCell id="service_layer" value="服务层（核心服务）" style="swimlane;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=18;fontStyle=1;fontColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="440" width="1720" height="350" as="geometry"/>
+                </mxCell>
+                <mxCell id="data_services_group" value="数据服务组" style="swimlane;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=14;fontStyle=1;fontColor=#000000;" parent="service_layer" vertex="1">
+                    <mxGeometry x="60" y="40" width="400" height="280" as="geometry"/>
+                </mxCell>
+                <mxCell id="data_service" value="DataService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;fontStyle=1;fontColor=#000000;" parent="data_services_group" vertex="1">
+                    <mxGeometry x="20" y="40" width="160" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="unified_data_manager" value="UnifiedDataManager" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;fontStyle=1;fontColor=#000000;" parent="data_services_group" vertex="1">
+                    <mxGeometry x="20" y="100" width="160" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="database_service" value="DatabaseService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;fontStyle=1;fontColor=#000000;" parent="data_services_group" vertex="1">
+                    <mxGeometry x="20" y="160" width="160" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="realtime_data_manager" value="RealtimeDataManager" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;fontColor=#000000;" parent="data_services_group" vertex="1">
+                    <mxGeometry x="20" y="220" width="160" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="stock_service" value="StockService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;fontColor=#000000;" parent="data_services_group" vertex="1">
+                    <mxGeometry x="220" y="40" width="160" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="industry_service" value="IndustryService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;fontColor=#000000;" parent="data_services_group" vertex="1">
+                    <mxGeometry x="220" y="100" width="160" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="fundamental_data_manager" value="FundamentalDataManager" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;fontColor=#000000;" parent="data_services_group" vertex="1">
+                    <mxGeometry x="220" y="160" width="160" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="macro_economic_data_manager" value="MacroEconomicDataManager" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;fontColor=#000000;" parent="data_services_group" vertex="1">
+                    <mxGeometry x="220" y="220" width="160" height="40" as="geometry"/>
+                </mxCell>
+                
+                <mxCell id="ai_services_group" value="AI智能服务组" style="swimlane;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontStyle=1;fontColor=#000000;" parent="service_layer" vertex="1">
+                    <mxGeometry x="480" y="40" width="400" height="280" as="geometry"/>
+                </mxCell>
+                <mxCell id="ai_prediction_service" value="AIPredictionService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;fontColor=#000000;" parent="ai_services_group" vertex="1">
+                    <mxGeometry x="20" y="40" width="160" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="ai_selection_integration" value="AISelectionIntegrationService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontColor=#000000;" parent="ai_services_group" vertex="1">
+                    <mxGeometry x="20" y="100" width="160" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="ai_selection_backtest" value="AISelectionBacktestService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontColor=#000000;" parent="ai_services_group" vertex="1">
+                    <mxGeometry x="20" y="160" width="160" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="ai_selection_risk_control" value="AISelectionRiskControlService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontColor=#000000;" parent="ai_services_group" vertex="1">
+                    <mxGeometry x="20" y="220" width="160" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="ai_stock_selector_service" value="AIStockSelectorService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontColor=#000000;" parent="ai_services_group" vertex="1">
+                    <mxGeometry x="220" y="40" width="160" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="ai_explainability_service" value="AIExplainabilityService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontColor=#000000;" parent="ai_services_group" vertex="1">
+                    <mxGeometry x="220" y="100" width="160" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="hybrid_recommendation_engine" value="HybridRecommendationEngine" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontColor=#000000;" parent="ai_services_group" vertex="1">
+                    <mxGeometry x="220" y="160" width="160" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="smart_recommendation_engine" value="SmartRecommendationEngine" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontColor=#000000;" parent="ai_services_group" vertex="1">
+                    <mxGeometry x="220" y="220" width="160" height="40" as="geometry"/>
+                </mxCell>
+                
+                <mxCell id="trading_services_group" value="交易和风险服务组" style="swimlane;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontStyle=1;fontColor=#000000;" parent="service_layer" vertex="1">
+                    <mxGeometry x="900" y="40" width="400" height="280" as="geometry"/>
+                </mxCell>
+                <mxCell id="trading_service" value="TradingService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;fontStyle=1;fontColor=#000000;" parent="trading_services_group" vertex="1">
+                    <mxGeometry x="20" y="40" width="160" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="order_service" value="OrderService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;fontColor=#000000;" parent="trading_services_group" vertex="1">
+                    <mxGeometry x="20" y="100" width="160" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="account_manager" value="AccountManager" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;fontColor=#000000;" parent="trading_services_group" vertex="1">
+                    <mxGeometry x="20" y="160" width="160" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="advanced_risk_control" value="AdvancedRiskControlService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;fontStyle=1;fontColor=#000000;" parent="trading_services_group" vertex="1">
+                    <mxGeometry x="20" y="220" width="160" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="strategy_service" value="StrategyService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;fontStyle=1;fontColor=#000000;" parent="trading_services_group" vertex="1">
+                    <mxGeometry x="220" y="40" width="160" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="backtest_result_manager" value="BacktestResultManager" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;fontColor=#000000;" parent="trading_services_group" vertex="1">
+                    <mxGeometry x="220" y="100" width="160" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="trading_confirmation_service" value="TradingConfirmationService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;fontColor=#000000;" parent="trading_services_group" vertex="1">
+                    <mxGeometry x="220" y="160" width="160" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="dynamic_risk_adjustment" value="DynamicRiskAdjustmentService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;fontColor=#000000;" parent="trading_services_group" vertex="1">
+                    <mxGeometry x="220" y="220" width="160" height="40" as="geometry"/>
+                </mxCell>
+                
+                <mxCell id="chart_services_group" value="图表和分析服务组" style="swimlane;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontStyle=1;fontColor=#000000;" parent="service_layer" vertex="1">
+                    <mxGeometry x="1320" y="40" width="360" height="280" as="geometry"/>
+                </mxCell>
+                <mxCell id="chart_service" value="ChartService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontStyle=1;fontColor=#000000;" parent="chart_services_group" vertex="1">
+                    <mxGeometry x="20" y="40" width="140" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="unified_chart_service" value="UnifiedChartService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontColor=#000000;" parent="chart_services_group" vertex="1">
+                    <mxGeometry x="20" y="100" width="140" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="enhanced_indicator_service" value="EnhancedIndicatorService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontColor=#000000;" parent="chart_services_group" vertex="1">
+                    <mxGeometry x="20" y="160" width="140" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="analysis_service" value="AnalysisService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontColor=#000000;" parent="chart_services_group" vertex="1">
+                    <mxGeometry x="20" y="220" width="140" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="performance_service" value="PerformanceService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontColor=#000000;" parent="chart_services_group" vertex="1">
+                    <mxGeometry x="200" y="40" width="140" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="cache_service" value="CacheService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontColor=#000000;" parent="chart_services_group" vertex="1">
+                    <mxGeometry x="200" y="100" width="140" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="config_service" value="ConfigService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontColor=#000000;" parent="chart_services_group" vertex="1">
+                    <mxGeometry x="200" y="160" width="140" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="notification_service" value="NotificationService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontColor=#000000;" parent="chart_services_group" vertex="1">
+                    <mxGeometry x="200" y="220" width="140" height="40" as="geometry"/>
+                </mxCell>
+                
+                <mxCell id="infrastructure_layer" value="基础设施层" style="swimlane;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=18;fontStyle=1;fontColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="810" width="1720" height="200" as="geometry"/>
+                </mxCell>
+                <mxCell id="service_container" value="ServiceContainer" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontStyle=1;fontColor=#000000;" parent="infrastructure_layer" vertex="1">
+                    <mxGeometry x="60" y="50" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="service_registry" value="ServiceRegistry" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#000000;" parent="infrastructure_layer" vertex="1">
+                    <mxGeometry x="300" y="50" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="event_bus" value="EventBus" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontStyle=1;fontColor=#000000;" parent="infrastructure_layer" vertex="1">
+                    <mxGeometry x="540" y="50" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="database_manager" value="DatabaseManager" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#000000;" parent="infrastructure_layer" vertex="1">
+                    <mxGeometry x="780" y="50" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="plugin_manager" value="PluginManager" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#000000;" parent="infrastructure_layer" vertex="1">
+                    <mxGeometry x="1020" y="50" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="performance_monitor" value="PerformanceMonitor" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#000000;" parent="infrastructure_layer" vertex="1">
+                    <mxGeometry x="1260" y="50" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="health_check_engine" value="HealthCheckEngine" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#000000;" parent="infrastructure_layer" vertex="1">
+                    <mxGeometry x="1500" y="50" width="200" height="50" as="geometry"/>
+                </mxCell>
+                
+                <mxCell id="data_access_layer" value="数据访问层" style="swimlane;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=18;fontStyle=1;fontColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="1030" width="1720" height="150" as="geometry"/>
+                </mxCell>
+                <mxCell id="data_access" value="DataAccess" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontStyle=1;fontColor=#000000;" parent="data_access_layer" vertex="1">
+                    <mxGeometry x="60" y="50" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="repository" value="Repository" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#000000;" parent="data_access_layer" vertex="1">
+                    <mxGeometry x="300" y="50" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="data_models" value="DataModels" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#000000;" parent="data_access_layer" vertex="1">
+                    <mxGeometry x="540" y="50" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="data_source" value="DataSource" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#000000;" parent="data_access_layer" vertex="1">
+                    <mxGeometry x="780" y="50" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="data_router" value="DataRouter" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#000000;" parent="data_access_layer" vertex="1">
+                    <mxGeometry x="1020" y="50" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="data_validator" value="DataValidator" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#000000;" parent="data_access_layer" vertex="1">
+                    <mxGeometry x="1260" y="50" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="data_quality" value="DataQualityMonitor" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#000000;" parent="data_access_layer" vertex="1">
+                    <mxGeometry x="1500" y="50" width="200" height="50" as="geometry"/>
+                </mxCell>
+                
+                <mxCell id="external_layer" value="外部系统层" style="swimlane;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=18;fontStyle=1;fontColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="1200" width="1720" height="150" as="geometry"/>
+                </mxCell>
+                <mxCell id="market_data_sources" value="市场数据源" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#000000;" parent="external_layer" vertex="1">
+                    <mxGeometry x="60" y="50" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="trading_apis" value="交易API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#000000;" parent="external_layer" vertex="1">
+                    <mxGeometry x="300" y="50" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="ai_models" value="AI模型" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#000000;" parent="external_layer" vertex="1">
+                    <mxGeometry x="540" y="50" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="news_sources" value="新闻源" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#000000;" parent="external_layer" vertex="1">
+                    <mxGeometry x="780" y="50" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="fundamental_data" value="基本面数据" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#000000;" parent="external_layer" vertex="1">
+                    <mxGeometry x="1020" y="50" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="macro_economic_data" value="宏观经济数据" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#000000;" parent="external_layer" vertex="1">
+                    <mxGeometry x="1260" y="50" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="cloud_services" value="云服务" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#000000;" parent="external_layer" vertex="1">
+                    <mxGeometry x="1500" y="50" width="200" height="50" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

@@ -21,8 +21,8 @@ from loguru import logger
 @dataclass
 class ConnectionPoolConfig:
     """连接池配置"""
-    pool_size: int = 5
-    max_overflow: int = 10
+    pool_size: int = 15
+    max_overflow: int = 100
     timeout: float = 30.0
     pool_recycle: int = 3600
     use_lifo: bool = True

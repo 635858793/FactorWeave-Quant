@@ -17,7 +17,6 @@ from pathlib import Path
 # 使用系统统一组件
 from core.adapters import get_config
 from .base_strategy import BaseStrategy, StrategyType
-from .strategy_database import get_strategy_database_manager
 
 class StrategyInfo:
     """策略信息类，用于封装策略基本信息"""
@@ -41,8 +40,11 @@ class StrategyRegistry:
         """初始化策略注册器"""
         self.logger = logger.bind(module=__name__)
         self.config = get_config()
-        self.db_manager = get_strategy_database_manager()
-
+        
+        # 使用DatabaseService替代StrategyDatabaseManager
+        self.database_service = None
+        self._database_service_initialized = False
+        
         # 线程安全的策略存储
         self._strategies: Dict[str, Type[BaseStrategy]] = {}
         self._metadata: Dict[str, Dict[str, Any]] = {}
@@ -50,6 +52,23 @@ class StrategyRegistry:
         self._lock = threading.RLock()
 
         self.logger.info("策略注册器初始化完成")
+
+    def _ensure_database_service(self):
+        """确保DatabaseService已初始化"""
+        if self._database_service_initialized:
+            return
+            
+        try:
+            from core.containers.service_container import get_service_container
+            from core.services.database_service import DatabaseService
+            container = get_service_container()
+            self.database_service = container.resolve(DatabaseService)
+            if self.database_service is not None:
+                self._database_service_initialized = True
+                self.logger.info("成功获取DatabaseService")
+        except Exception as e:
+            self.logger.warning(f"无法获取DatabaseService: {e}")
+            self.database_service = None
 
     def register(self, strategy_name: str, strategy_class: Type[BaseStrategy],
                  metadata: Optional[Dict[str, Any]] = None) -> bool:
@@ -73,6 +92,11 @@ class StrategyRegistry:
                 # 提取元数据
                 if metadata is None:
                     metadata = self._extract_metadata(strategy_class)
+                else:
+                    # 如果提供了metadata但缺少strategy_type，尝试从策略类提取
+                    if 'strategy_type' not in metadata:
+                        extracted_metadata = self._extract_metadata(strategy_class)
+                        metadata['strategy_type'] = extracted_metadata['strategy_type']
 
                 # 确保元数据包含必要信息
                 metadata.setdefault('name', strategy_name)
@@ -87,9 +111,13 @@ class StrategyRegistry:
 
                 # 注册到数据库
                 try:
-                    strategy_id = self.db_manager.register_strategy(
-                        strategy_class, metadata)
-                    metadata['database_id'] = strategy_id
+                    self._ensure_database_service()
+                    if self.database_service:
+                        strategy_id = self.database_service.register_strategy(
+                            strategy_class, metadata)
+                        metadata['database_id'] = strategy_id
+                    else:
+                        self.logger.warning("DatabaseService不可用，仅注册到内存")
                 except Exception as e:
                     self.logger.warning(f"数据库注册失败，仅注册到内存: {e}")
 
@@ -125,7 +153,14 @@ class StrategyRegistry:
 
                 # 从数据库中软删除
                 try:
-                    self.db_manager.delete_strategy(strategy_name)
+                    self._ensure_database_service()
+                    if self.database_service:
+                        # 使用database_id进行删除
+                        database_id = metadata.get('database_id')
+                        if database_id:
+                            self.database_service.delete_strategy(database_id)
+                    else:
+                        self.logger.warning("DatabaseService不可用，无法从数据库删除")
                 except Exception as e:
                     self.logger.warning(f"数据库删除失败: {e}")
 
@@ -174,18 +209,26 @@ class StrategyRegistry:
 
             if metadata is None:
                 # 尝试从数据库获取
-                db_info = self.db_manager.get_strategy_info(strategy_name)
-                if db_info:
-                    metadata = db_info.get('metadata', {})
-                    metadata.update({
-                        'name': db_info['name'],
-                        'version': db_info['version'],
-                        'author': db_info['author'],
-                        'description': db_info['description'],
-                        'category': db_info['category'],
-                        'database_id': db_info['id']
-                    })
-                    self._metadata[strategy_name] = metadata
+                self._ensure_database_service()
+                if self.database_service:
+                    # 先从数据库获取策略信息
+                    all_strategies = self.database_service.list_strategies()
+                    # 查找匹配的策略
+                    for strategy_info in all_strategies:
+                        if strategy_info['name'] == strategy_name:
+                            metadata = strategy_info.get('metadata', {})
+                            metadata.update({
+                                'name': strategy_info['name'],
+                                'version': strategy_info['version'],
+                                'author': strategy_info['author'],
+                                'description': strategy_info['description'],
+                                'category': strategy_info['category'],
+                                'database_id': strategy_info['id']
+                            })
+                            self._metadata[strategy_name] = metadata
+                            break
+                else:
+                    self.logger.warning("DatabaseService不可用，无法从数据库获取策略元数据")
 
             return metadata
 
@@ -207,11 +250,12 @@ class StrategyRegistry:
 
             # 从数据库获取策略列表
             try:
-                db_strategies = self.db_manager.list_strategies(
-                    category=category,
-                    strategy_type=strategy_type.value if strategy_type else None
-                )
-                all_strategies.update(s['name'] for s in db_strategies)
+                self._ensure_database_service()
+                if self.database_service:
+                    db_strategies = self.database_service.list_strategies()
+                    all_strategies.update(s['name'] for s in db_strategies)
+                else:
+                    self.logger.warning("DatabaseService不可用，无法从数据库获取策略列表")
             except Exception as e:
                 self.logger.warning(f"从数据库获取策略列表失败: {e}")
 
@@ -453,7 +497,11 @@ class StrategyRegistry:
 
                 # 更新数据库
                 try:
-                    self.db_manager.register_strategy(new_class, new_metadata)
+                    self._ensure_database_service()
+                    if self.database_service:
+                        self.database_service.register_strategy(new_class, new_metadata)
+                    else:
+                        self.logger.warning("DatabaseService不可用，无法更新数据库")
                 except Exception as e:
                     self.logger.warning(f"数据库更新失败: {e}")
 
@@ -494,8 +542,12 @@ class StrategyRegistry:
 
             # 数据库统计
             try:
-                db_stats = self.db_manager.get_database_stats()
-                stats['database'] = db_stats
+                self._ensure_database_service()
+                if self.database_service:
+                    db_stats = self.database_service.get_database_stats()
+                    stats['database'] = db_stats
+                else:
+                    stats['database'] = {}
             except Exception as e:
                 self.logger.warning(f"获取数据库统计失败: {e}")
                 stats['database'] = {}
@@ -515,11 +567,14 @@ class StrategyRegistry:
             'extracted_at': datetime.now().isoformat()
         }
 
-        # 提取参数信息
+        # 提取参数信息和策略类型
         try:
             instance = strategy_class("temp_instance")
             if hasattr(instance, 'get_parameter_info'):
                 metadata['parameters'] = instance.get_parameter_info()
+            # 从实例中提取 strategy_type（优先级高于类属性）
+            if hasattr(instance, 'strategy_type') and isinstance(instance.strategy_type, StrategyType):
+                metadata['strategy_type'] = instance.strategy_type.value
         except Exception as e:
             self.logger.debug(f"提取参数信息失败 {strategy_class}: {e}")
 
@@ -528,7 +583,17 @@ class StrategyRegistry:
     def _load_strategy_from_database(self, strategy_name: str) -> Optional[Type[BaseStrategy]]:
         """从数据库加载策略类"""
         try:
-            db_info = self.db_manager.get_strategy_info(strategy_name)
+            if not self.database_service:
+                return None
+
+            # 先从数据库查找策略
+            all_strategies = self.database_service.list_strategies()
+            db_info = None
+            for strategy_info in all_strategies:
+                if strategy_info['name'] == strategy_name:
+                    db_info = strategy_info
+                    break
+
             if not db_info:
                 return None
 
@@ -571,6 +636,10 @@ class StrategyRegistry:
 _strategy_registry = None
 _registry_lock = threading.Lock()
 
+# 延迟注册队列（用于在服务容器初始化之前注册策略）
+_pending_registrations = []
+_pending_registrations_lock = threading.Lock()
+
 def get_strategy_registry() -> StrategyRegistry:
     """获取策略注册器单例"""
     global _strategy_registry
@@ -584,15 +653,13 @@ def get_strategy_registry() -> StrategyRegistry:
 
 def register_strategy(strategy_name: str, metadata: Optional[Dict[str, Any]] = None):
     """
-    策略注册装饰器
+    策略注册装饰器（支持延迟注册）
 
     Args:
         strategy_name: 策略名称
         metadata: 策略元数据
     """
     def decorator(strategy_class: Type[BaseStrategy]):
-        registry = get_strategy_registry()
-
         # 设置策略名称属性
         strategy_class._strategy_name = strategy_name
 
@@ -600,9 +667,52 @@ def register_strategy(strategy_name: str, metadata: Optional[Dict[str, Any]] = N
         final_metadata = metadata or {}
         final_metadata['name'] = strategy_name
 
-        # 注册策略
-        registry.register(strategy_name, strategy_class, final_metadata)
+        # 尝试获取注册器
+        try:
+            from core.containers.service_container import get_service_container
+            container = get_service_container()
+            if container.is_registered(StrategyRegistry):
+                registry = container.resolve(StrategyRegistry)
+                registry.register(strategy_name, strategy_class, final_metadata)
+            else:
+                raise Exception("StrategyRegistry not registered")
+        except Exception:
+            # 如果服务容器未初始化，将注册信息保存到待注册队列
+            with _pending_registrations_lock:
+                _pending_registrations.append({
+                    'strategy_name': strategy_name,
+                    'strategy_class': strategy_class,
+                    'metadata': final_metadata
+                })
 
         return strategy_class
 
     return decorator
+
+def process_pending_registrations():
+    """处理待注册的策略队列"""
+    global _pending_registrations
+
+    with _pending_registrations_lock:
+        if not _pending_registrations:
+            return
+
+        try:
+            from core.containers.service_container import get_service_container
+            container = get_service_container()
+            registry = container.resolve(StrategyRegistry)
+
+            for registration in _pending_registrations:
+                try:
+                    registry.register(
+                        registration['strategy_name'],
+                        registration['strategy_class'],
+                        registration['metadata']
+                    )
+                except Exception as e:
+                    logger.error(f"注册策略失败 {registration['strategy_name']}: {e}")
+
+            logger.info(f"成功处理 {len(_pending_registrations)} 个待注册策略")
+            _pending_registrations.clear()
+        except Exception as e:
+            logger.error(f"处理待注册策略失败: {e}")

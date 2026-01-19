@@ -27,7 +27,6 @@ from .tabs.strategy_performance_tab import ModernStrategyPerformanceTab
 from .tabs.algorithm_optimization_tab import ModernAlgorithmOptimizationTab
 from .tabs.risk_control_center_tab import ModernRiskControlCenterTab
 from .tabs.trading_execution_monitor_tab import ModernTradingExecutionMonitorTab
-from .tabs.data_quality_monitor_tab import ModernDataQualityMonitorTab
 from .tabs.system_health_tab import ModernSystemHealthTab
 # 已删除的标签页：UI优化、深度分析、算法性能、自动调优、告警配置
 # 已合并或升级为新的专业量化交易标签页
@@ -53,7 +52,6 @@ __all__ = [
     'ModernAlgorithmOptimizationTab',
     'ModernRiskControlCenterTab',
     'ModernTradingExecutionMonitorTab',
-    'ModernDataQualityMonitorTab',
     'ModernSystemHealthTab',
     # 已删除的标签页类名：
     # 'ModernUIOptimizationTab', 'ModernDeepAnalysisTab',

@@ -23,7 +23,7 @@ from PyQt5.QtGui import QFont, QPalette, QIcon, QPixmap
 try:
     from .deep_monitoring_tab import DeepMonitoringTab
     from core.advanced_optimization.real_time_monitoring import DeepOptimizationMonitor, create_deep_optimization_monitor
-    from core.performance.unified_monitor import UnifiedMonitor
+    from core.performance.unified_monitor import UnifiedPerformanceMonitor
 except ImportError as e:
     print(f"监控模块导入失败: {e}")
     DeepMonitoringTab = None
@@ -825,8 +825,8 @@ class DeepOptimizationTab(QWidget):
         
         # 创建监控标签页
         try:
-            from core.performance.unified_monitor import UnifiedMonitor
-            unified_monitor = UnifiedMonitor()
+            from core.performance.unified_monitor import UnifiedPerformanceMonitor
+            unified_monitor = UnifiedPerformanceMonitor()
             self.monitoring_tab = DeepMonitoringTab(self.optimization_service, unified_monitor) if DeepMonitoringTab else QWidget()
         except ImportError:
             self.monitoring_tab = QWidget()

@@ -1410,6 +1410,10 @@ class AIFeaturesControlPanel(QWidget):
         recommendation_tab = self.create_recommendation_tab()
         self.tab_widget.addTab(recommendation_tab, "智能推荐")
 
+        # AI选股策略管理选项卡
+        strategy_tab = self.create_strategy_management_tab()
+        self.tab_widget.addTab(strategy_tab, "策略管理")
+
         layout.addWidget(self.tab_widget)
 
         # 保存引用
@@ -1492,6 +1496,147 @@ class AIFeaturesControlPanel(QWidget):
         self.current_recommendations = []
 
         return widget
+
+    def create_strategy_management_tab(self) -> QWidget:
+        """创建AI选股策略管理选项卡"""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+
+        # 策略管理说明
+        info_group = QGroupBox("策略管理说明")
+        info_layout = QVBoxLayout(info_group)
+
+        info_text = QLabel(
+            "AI选股策略管理提供完整的策略生命周期管理功能：\n"
+            "• 创建策略：从模板创建或创建空白策略\n"
+            "• 编辑策略：修改策略参数、权重和风险配置\n"
+            "• 复制策略：基于现有策略快速创建新策略\n"
+            "• 删除策略：删除不需要的策略\n"
+            "• 验证配置：自动验证策略配置的正确性"
+        )
+        info_text.setWordWrap(True)
+        info_layout.addWidget(info_text)
+
+        layout.addWidget(info_group)
+
+        # 打开策略管理对话框按钮
+        button_layout = QHBoxLayout()
+
+        open_strategy_dialog_btn = QPushButton("打开策略管理器")
+        open_strategy_dialog_btn.setMinimumHeight(50)
+        open_strategy_dialog_btn.setStyleSheet("""
+            QPushButton {
+                font-size: 16px;
+                font-weight: bold;
+                background-color: #3498db;
+                color: white;
+                border: none;
+                border-radius: 5px;
+                padding: 10px;
+            }
+            QPushButton:hover {
+                background-color: #2980b9;
+            }
+            QPushButton:pressed {
+                background-color: #21618c;
+            }
+        """)
+        open_strategy_dialog_btn.clicked.connect(self.open_strategy_management_dialog)
+        button_layout.addWidget(open_strategy_dialog_btn)
+
+        layout.addLayout(button_layout)
+
+        # 当前策略信息
+        current_strategy_group = QGroupBox("当前策略")
+        current_strategy_layout = QFormLayout(current_strategy_group)
+
+        self.current_strategy_id_label = QLabel("未选择")
+        self.current_strategy_name_label = QLabel("未选择")
+        self.current_strategy_type_label = QLabel("未选择")
+        self.current_strategy_status_label = QLabel("未选择")
+
+        current_strategy_layout.addRow("策略ID:", self.current_strategy_id_label)
+        current_strategy_layout.addRow("策略名称:", self.current_strategy_name_label)
+        current_strategy_layout.addRow("策略类型:", self.current_strategy_type_label)
+        current_strategy_layout.addRow("策略状态:", self.current_strategy_status_label)
+
+        layout.addWidget(current_strategy_group)
+
+        # 策略统计信息
+        stats_group = QGroupBox("策略统计")
+        stats_layout = QGridLayout(stats_group)
+
+        self.total_strategies_label = QLabel("0")
+        self.active_strategies_label = QLabel("0")
+        self.inactive_strategies_label = QLabel("0")
+
+        stats_layout.addWidget(QLabel("总策略数:"), 0, 0)
+        stats_layout.addWidget(self.total_strategies_label, 0, 1)
+        stats_layout.addWidget(QLabel("活跃策略:"), 1, 0)
+        stats_layout.addWidget(self.active_strategies_label, 1, 1)
+        stats_layout.addWidget(QLabel("非活跃策略:"), 2, 0)
+        stats_layout.addWidget(self.inactive_strategies_label, 2, 1)
+
+        layout.addWidget(stats_group)
+
+        # 刷新统计信息
+        self.refresh_strategy_stats()
+
+        return widget
+
+    def open_strategy_management_dialog(self):
+        """打开策略管理对话框"""
+        try:
+            from gui.dialogs.ai_strategy_management_dialog import AIStrategyManagementDialog
+
+            dialog = AIStrategyManagementDialog(self, database_service=self.ui_adapter.database_service if self.ui_adapter else None)
+            dialog.strategy_selected.connect(self.on_strategy_selected)
+            dialog.strategy_updated.connect(self.on_strategy_updated)
+            dialog.exec_()
+
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"打开策略管理对话框失败: {e}")
+            if logger:
+                logger.error(f"打开策略管理对话框失败: {e}")
+
+    def on_strategy_selected(self, strategy_id: str):
+        """策略选择事件处理"""
+        try:
+            if self.ui_adapter and hasattr(self.ui_adapter, 'database_service'):
+                strategy = self.ui_adapter.database_service.get_ai_strategy(strategy_id)
+                if strategy:
+                    self.current_strategy_id_label.setText(strategy.get('id', ''))
+                    self.current_strategy_name_label.setText(strategy.get('name', ''))
+                    self.current_strategy_type_label.setText(strategy.get('strategy_type', ''))
+                    self.current_strategy_status_label.setText(strategy.get('status', ''))
+
+            self.refresh_strategy_stats()
+
+        except Exception as e:
+            if logger:
+                logger.error(f"处理策略选择事件失败: {e}")
+
+    def on_strategy_updated(self, strategy_id: str):
+        """策略更新事件处理"""
+        self.refresh_strategy_stats()
+
+    def refresh_strategy_stats(self):
+        """刷新策略统计信息"""
+        try:
+            if self.ui_adapter and hasattr(self.ui_adapter, 'database_service'):
+                strategies = self.ui_adapter.database_service.get_all_ai_strategies()
+
+                total = len(strategies)
+                active = sum(1 for s in strategies if s.get('status') == 'active')
+                inactive = total - active
+
+                self.total_strategies_label.setText(str(total))
+                self.active_strategies_label.setText(str(active))
+                self.inactive_strategies_label.setText(str(inactive))
+
+        except Exception as e:
+            if logger:
+                logger.error(f"刷新策略统计信息失败: {e}")
 
     def get_recommendations(self):
         """✅ 修复：获取配置推荐（连接真实推荐引擎）"""

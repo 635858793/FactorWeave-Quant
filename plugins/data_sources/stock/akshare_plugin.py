@@ -124,7 +124,7 @@ class AKSharePlugin(IDataSourcePlugin):
         return {
             "markets": ["CN"],  # 中国市场
             "asset_types": ["stock", "sector"],
-            "data_types": ["sector_fund_flow", "real_time_quote", "asset_list"],
+            "data_types": ["sector_fund_flow", "real_time_quote", "asset_list", "fundamental"],
             "real_time_support": True,
             "historical_data": False,  # 主要提供当日数据
             "sector_fund_flow": True,
@@ -157,6 +157,7 @@ class AKSharePlugin(IDataSourcePlugin):
                 'historical': False,
                 'sector_fund_flow': True,
                 'asset_list': True,
+                'fundamental': True,
                 'rate_limit': 0,  # 无限制
                 'cache_enabled': True,
                 'primary_strength': 'sector_fund_flow'
@@ -608,7 +609,7 @@ class AKSharePlugin(IDataSourcePlugin):
         return []
 
     def get_fundamental_data(self, symbol: str) -> Dict[str, Any]:
-        """获取股票基本面数据（股本等）
+        """获取股票基本面数据（股本、财务指标等）
 
         Args:
             symbol: 股票代码（如'000001'）
@@ -621,6 +622,11 @@ class AKSharePlugin(IDataSourcePlugin):
                 - circulating_market_cap: 流通市值（元）
                 - industry: 所属行业
                 - list_date: 上市日期（YYYYMMDD格式）
+                - pe_ratio: 市盈率
+                - pb_ratio: 市净率
+                - roe: 净资产收益率
+                - roa: 总资产收益率
+                - debt_ratio: 负债率
         """
         try:
             if not AKSHARE_AVAILABLE:
@@ -639,60 +645,147 @@ class AKSharePlugin(IDataSourcePlugin):
             # 添加请求延迟，避免触发反爬虫机制
             time.sleep(1.0)
 
-            # 调用AKShare API获取个股信息
-            df = ak.stock_individual_info_em(symbol=symbol)
-
-            if df is None or df.empty:
-                self.logger.warning(f"AKShare未返回股票 {symbol} 的基本面数据")
-                return {}
-
-            # 提取股本相关数据
             fundamental_data = {}
 
-            # 将DataFrame转换为字典，便于查找
-            info_dict = {}
-            for _, row in df.iterrows():
-                item = str(row.get('item', '')).strip()
-                value = row.get('value', None)
-                info_dict[item] = value
+            # 调用AKShare API获取个股信息
+            try:
+                df = ak.stock_individual_info_em(symbol=symbol)
 
-            # 提取总股本
-            if '总股本' in info_dict:
-                try:
-                    fundamental_data['total_shares'] = float(info_dict['总股本'])
-                except (ValueError, TypeError):
-                    self.logger.warning(f"无法解析总股本: {info_dict['总股本']}")
-                    fundamental_data['total_shares'] = 0.0
+                if df is not None and not df.empty:
+                    # 将DataFrame转换为字典，便于查找
+                    info_dict = {}
+                    for _, row in df.iterrows():
+                        item = str(row.get('item', '')).strip()
+                        value = row.get('value', None)
+                        info_dict[item] = value
 
-            # 提取流通股本
-            if '流通股' in info_dict:
-                try:
-                    fundamental_data['circulating_shares'] = float(info_dict['流通股'])
-                except (ValueError, TypeError):
-                    self.logger.warning(f"无法解析流通股: {info_dict['流通股']}")
-                    fundamental_data['circulating_shares'] = 0.0
+                    # 提取总股本
+                    if '总股本' in info_dict:
+                        try:
+                            fundamental_data['total_shares'] = float(info_dict['总股本'])
+                        except (ValueError, TypeError):
+                            self.logger.warning(f"无法解析总股本: {info_dict['总股本']}")
+                            fundamental_data['total_shares'] = 0.0
 
-            # 提取总市值
-            if '总市值' in info_dict:
-                try:
-                    fundamental_data['total_market_cap'] = float(info_dict['总市值'])
-                except (ValueError, TypeError):
-                    fundamental_data['total_market_cap'] = 0.0
+                    # 提取流通股本
+                    if '流通股' in info_dict:
+                        try:
+                            fundamental_data['circulating_shares'] = float(info_dict['流通股'])
+                        except (ValueError, TypeError):
+                            self.logger.warning(f"无法解析流通股: {info_dict['流通股']}")
+                            fundamental_data['circulating_shares'] = 0.0
 
-            # 提取流通市值
-            if '流通市值' in info_dict:
-                try:
-                    fundamental_data['circulating_market_cap'] = float(info_dict['流通市值'])
-                except (ValueError, TypeError):
-                    fundamental_data['circulating_market_cap'] = 0.0
+                    # 提取总市值
+                    if '总市值' in info_dict:
+                        try:
+                            fundamental_data['total_market_cap'] = float(info_dict['总市值'])
+                        except (ValueError, TypeError):
+                            fundamental_data['total_market_cap'] = 0.0
 
-            # 提取行业信息
-            if '行业' in info_dict:
-                fundamental_data['industry'] = str(info_dict['行业'])
+                    # 提取流通市值
+                    if '流通市值' in info_dict:
+                        try:
+                            fundamental_data['circulating_market_cap'] = float(info_dict['流通市值'])
+                        except (ValueError, TypeError):
+                            fundamental_data['circulating_market_cap'] = 0.0
 
-            # 提取上市日期
-            if '上市时间' in info_dict:
-                fundamental_data['list_date'] = str(info_dict['上市时间'])
+                    # 提取行业信息
+                    if '行业' in info_dict:
+                        fundamental_data['industry'] = str(info_dict['行业'])
+
+                    # 提取上市日期
+                    if '上市时间' in info_dict:
+                        fundamental_data['list_date'] = str(info_dict['上市时间'])
+            except Exception as e:
+                self.logger.warning(f"获取个股基本信息失败: {e}")
+
+            # 获取财务指标数据
+            # 注意：AKShare的stock_financial_analysis_indicator_em API目前不稳定，暂时跳过
+            # 如果需要财务指标，可以考虑使用其他数据源或等待AKShare API修复
+            try:
+                # 尝试使用stock_financial_abstract获取部分财务数据
+                time.sleep(0.5)
+                financial_abstract_df = ak.stock_financial_abstract(symbol=symbol)
+
+                if financial_abstract_df is not None and not financial_abstract_df.empty:
+                    # 查找净资产收益率指标 - 注意指标名称是"净资产收益率(ROE)"
+                    roe_row = financial_abstract_df[financial_abstract_df['指标'] == '净资产收益率(ROE)']
+                    if roe_row.empty:
+                        # 尝试另一个可能的名称
+                        roe_row = financial_abstract_df[financial_abstract_df['指标'].str.contains('净资产收益率', na=False)]
+                    
+                    if not roe_row.empty:
+                        try:
+                            roe_value = roe_row.iloc[0]['20250930']
+                            if pd.notna(roe_value) and roe_value != '-':
+                                fundamental_data['roe'] = float(roe_value) / 100  # 转换为小数
+                                self.logger.debug(f"成功获取净资产收益率: {roe_value}")
+                        except (ValueError, TypeError):
+                            pass
+
+                    # 查找总资产收益率指标 - 尝试多个可能的名称
+                    roa_row = financial_abstract_df[financial_abstract_df['指标'].str.contains('总资产报酬率|总资产收益率', na=False)]
+                    if not roa_row.empty:
+                        try:
+                            # 获取最新的数据列（排除'指标'列）
+                            data_columns = [col for col in roa_row.columns if col != '指标']
+                            if data_columns:
+                                latest_column = data_columns[0]  # 通常第一列是最新的
+                                roa_value = roa_row.iloc[0][latest_column]
+                                if pd.notna(roa_value) and roa_value != '-':
+                                    fundamental_data['roa'] = float(roa_value) / 100  # 转换为小数
+                                    self.logger.debug(f"成功获取总资产收益率: {roa_value}")
+                        except (ValueError, TypeError):
+                            pass
+
+                    # 查找资产负债率指标
+                    debt_ratio_row = financial_abstract_df[financial_abstract_df['指标'].str.contains('资产负债率', na=False)]
+                    if not debt_ratio_row.empty:
+                        try:
+                            debt_ratio_value = debt_ratio_row.iloc[0]['20250930']
+                            if pd.notna(debt_ratio_value) and debt_ratio_value != '-':
+                                fundamental_data['debt_ratio'] = float(debt_ratio_value) / 100  # 转换为小数
+                                self.logger.debug(f"成功获取资产负债率: {debt_ratio_value}")
+                        except (ValueError, TypeError):
+                            pass
+
+                    self.logger.info(f"成功从财务摘要获取部分财务指标数据")
+            except Exception as e:
+                self.logger.warning(f"获取财务摘要数据失败: {e}")
+
+            # 尝试获取PE、PB等估值指标
+            try:
+                time.sleep(0.5)
+                a_stock_df = ak.stock_zh_a_spot_em()
+                
+                if a_stock_df is not None and not a_stock_df.empty:
+                    # 查找对应股票的估值数据
+                    stock_row = a_stock_df[a_stock_df['代码'] == symbol]
+                    
+                    if not stock_row.empty:
+                        # 提取PE、PB等估值指标
+                        try:
+                            pe_value = stock_row.iloc[0]['市盈率-动态']
+                            if pd.notna(pe_value) and pe_value != '-':
+                                fundamental_data['pe_ratio'] = float(pe_value)
+                                self.logger.debug(f"成功获取市盈率: {pe_value}")
+                        except (KeyError, ValueError, TypeError):
+                            pass
+                        
+                        try:
+                            pb_value = stock_row.iloc[0]['市净率']
+                            if pd.notna(pb_value) and pb_value != '-':
+                                fundamental_data['pb_ratio'] = float(pb_value)
+                                self.logger.debug(f"成功获取市净率: {pb_value}")
+                        except (KeyError, ValueError, TypeError):
+                            pass
+                        
+                        self.logger.info(f"成功从实时行情获取估值指标数据")
+            except Exception as e:
+                self.logger.warning(f"获取估值指标数据失败: {e}")
+
+            # 注意：PE、PB等估值指标需要实时行情数据，不在此处获取
+            # 这些指标通常由实时行情数据源提供
 
             # 添加数据源标识
             fundamental_data['data_source'] = 'akshare'

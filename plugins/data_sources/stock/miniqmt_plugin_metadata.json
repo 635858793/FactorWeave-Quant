@@ -1,0 +1,248 @@
+{
+  "plugin_info": {
+    "id": "miniqmt_data_source",
+    "name": "miniQMT数据源插件",
+    "version": "1.0.0",
+    "description": "提供miniQMT实时行情数据接入，支持A股、港股、美股等市场",
+    "author": "FactorWeave-Quant Team",
+    "homepage": "https://github.com/factorweave/factorweave-quant",
+    "repository": "https://github.com/factorweave/factorweave-quant",
+    "license": "MIT",
+    "keywords": ["miniqmt", "xtquant", "real-time", "stock", "trading"],
+    "category": "data_source",
+    "type": "data_source"
+  },
+  "capabilities": {
+    "supported_asset_types": [
+      "stock_a",
+      "stock_hk",
+      "stock_us",
+      "index",
+      "fund"
+    ],
+    "supported_data_types": [
+      "real_time_quote",
+      "tick_data",
+      "kline_data",
+      "level2_data"
+    ],
+    "supported_markets": [
+      "SH",
+      "SZ",
+      "HK",
+      "US"
+    ],
+    "supported_frequencies": [
+      "tick",
+      "1m",
+      "5m",
+      "15m",
+      "30m",
+      "60m",
+      "D",
+      "W",
+      "M"
+    ],
+    "features": {
+      "real_time_support": true,
+      "historical_data": true,
+      "fundamental_data": false,
+      "technical_indicators": false,
+      "news_data": false,
+      "options_data": false,
+      "futures_data": false,
+      "crypto_data": false,
+      "forex_data": false,
+      "level2_data": true
+    },
+    "limits": {
+      "max_history_years": 10,
+      "max_symbols_per_request": 500,
+      "rate_limit_per_minute": 1000,
+      "concurrent_requests": 10
+    }
+  },
+  "requirements": {
+    "python_version": ">=3.8",
+    "dependencies": [
+      "xtquant>=1.0.0",
+      "pandas>=1.3.0",
+      "numpy>=1.20.0"
+    ],
+    "system_requirements": {
+      "memory_mb": 512,
+      "disk_space_mb": 1024,
+      "cpu_cores": 1
+    }
+  },
+  "configuration": {
+    "schema": {
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "integer",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 255,
+          "description": "会话ID"
+        },
+        "ip": {
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "miniQMT服务器IP地址"
+        },
+        "port": {
+          "type": "integer",
+          "default": 58610,
+          "minimum": 1024,
+          "maximum": 65535,
+          "description": "miniQMT服务器端口"
+        },
+        "enable_cache": {
+          "type": "boolean",
+          "default": true,
+          "description": "是否启用缓存"
+        },
+        "cache_ttl": {
+          "type": "integer",
+          "default": 60,
+          "minimum": 1,
+          "maximum": 3600,
+          "description": "缓存生存时间（秒）"
+        },
+        "max_symbols_per_subscription": {
+          "type": "integer",
+          "default": 500,
+          "minimum": 1,
+          "maximum": 1000,
+          "description": "每个订阅支持的最大股票数量"
+        },
+        "heartbeat_interval": {
+          "type": "integer",
+          "default": 30,
+          "minimum": 5,
+          "maximum": 300,
+          "description": "心跳间隔（秒）"
+        },
+        "reconnect_interval": {
+          "type": "integer",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 60,
+          "description": "重连间隔（秒）"
+        },
+        "log_level": {
+          "type": "string",
+          "enum": ["DEBUG", "INFO", "WARNING", "ERROR"],
+          "default": "INFO",
+          "description": "日志级别"
+        }
+      },
+      "required": ["ip", "port"]
+    },
+    "ui_schema": {
+      "session_id": {
+        "ui:widget": "number"
+      },
+      "ip": {
+        "ui:widget": "text"
+      },
+      "port": {
+        "ui:widget": "number"
+      },
+      "cache_ttl": {
+        "ui:widget": "range"
+      },
+      "max_symbols_per_subscription": {
+        "ui:widget": "range"
+      },
+      "heartbeat_interval": {
+        "ui:widget": "range"
+      },
+      "reconnect_interval": {
+        "ui:widget": "range"
+      },
+      "log_level": {
+        "ui:widget": "select"
+      }
+    }
+  },
+  "trading_interface": {
+    "id": "miniqmt_trading",
+    "name": "miniQMT交易接口",
+    "version": "1.0.0",
+    "description": "提供miniQMT交易执行功能",
+    "supported_order_types": [
+      "market",
+      "limit",
+      "stop",
+      "stop_limit"
+    ],
+    "supported_order_sides": [
+      "buy",
+      "sell"
+    ],
+    "supported_markets": [
+      "SH",
+      "SZ",
+      "HK",
+      "US"
+    ],
+    "features": {
+      "order_submission": true,
+      "order_cancellation": true,
+      "order_query": true,
+      "position_query": true,
+      "fund_query": true,
+      "batch_orders": true
+    }
+  },
+  "installation": {
+    "install_command": "pip install xtquant",
+    "verify_command": "python -c \"import xtquant.xtdata; print('miniQMT安装成功')\"",
+    "setup_instructions": [
+      "1. 安装xtquant: pip install xtquant",
+      "2. 启动miniQMT客户端",
+      "3. 配置服务器IP和端口",
+      "4. 启用插件"
+    ]
+  },
+  "documentation": {
+    "readme_url": "https://github.com/factorweave/factorweave-quant/blob/main/docs/miniqmt_integration.md",
+    "api_docs_url": "https://github.com/factorweave/factorweave-quant/blob/main/docs/miniqmt_api.md",
+    "tutorials": [
+      {
+        "title": "miniQMT快速开始",
+        "url": "https://github.com/factorweave/factorweave-quant/blob/main/docs/miniqmt_quickstart.md"
+      },
+      {
+        "title": "实时行情订阅",
+        "url": "https://github.com/factorweave/factorweave-quant/blob/main/docs/miniqmt_realtime.md"
+      },
+      {
+        "title": "交易执行",
+        "url": "https://github.com/factorweave/factorweave-quant/blob/main/docs/miniqmt_trading.md"
+      }
+    ],
+    "examples": [
+      {
+        "title": "获取实时行情",
+        "file": "examples/miniqmt_realtime_quote.py"
+      },
+      {
+        "title": "提交订单",
+        "file": "examples/miniqmt_submit_order.py"
+      },
+      {
+        "title": "查询持仓",
+        "file": "examples/miniqmt_query_positions.py"
+      }
+    ]
+  },
+  "support": {
+    "issues_url": "https://github.com/factorweave/factorweave-quant/issues",
+    "documentation_url": "https://github.com/factorweave/factorweave-quant/blob/main/docs/miniqmt_integration.md",
+    "community_url": "https://github.com/factorweave/factorweave-quant/discussions",
+    "email": "support@factorweave.org"
+  }
+}

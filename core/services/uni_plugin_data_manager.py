@@ -85,7 +85,7 @@ class UniPluginDataManager:
 
         # 缓存
         self._cache: Dict[str, Tuple[Any, datetime]] = {}
-        self._cache_ttl = timedelta(minutes=5)
+        self._cache_ttl = timedelta(minutes=30)
 
         # 线程池（v2.4性能优化）
         self._executor = ThreadPoolExecutor(max_workers=8)  # 从4增加到8
@@ -93,6 +93,9 @@ class UniPluginDataManager:
         # 延迟初始化标志
 
         self._is_initialized = False
+
+        # 基本面数据数据库管理器（延迟初始化）
+        self._asset_db_manager = None
 
         logger.info("UniPluginDataManager构造完成，等待initialize()调用")
 
@@ -433,6 +436,89 @@ class UniPluginDataManager:
 
         return self._execute_data_request(context, 'get_fundamental_data', **fundamental_params)
 
+    def get_fundamental_data_batch(self, symbols: List[str], asset_type: AssetType = AssetType.STOCK_A,
+                                   **params) -> Dict[str, Dict[str, Any]]:
+        """
+        批量获取基本面数据 - 统一入口（优化版：优先从数据库批量读取）
+
+        Args:
+            symbols: 标的代码列表
+            asset_type: 资产类型
+            **params: 其他参数
+
+        Returns:
+            Dict[symbol, Dict[str, Any]]: 基本面数据字典
+        """
+        result = {}
+        
+        # 检查缓存
+        uncached_symbols = []
+        for symbol in symbols:
+            context = RequestContext(
+                asset_type=asset_type,
+                data_type=DataType.FUNDAMENTAL,
+                symbol=symbol
+            )
+            cache_key = self._generate_cache_key(context, 'get_fundamental_data', symbol=symbol, **params)
+            cached_result = self._get_from_cache(cache_key)
+            if cached_result is not None:
+                result[symbol] = cached_result
+            else:
+                uncached_symbols.append(symbol)
+        
+        # 如果所有股票都有缓存，直接返回
+        if not uncached_symbols:
+            logger.debug(f"批量获取基本面数据：全部命中缓存 ({len(symbols)}个)")
+            return result
+        
+        # 新增：优先从数据库批量读取未缓存的基本面数据
+        db_loaded_symbols = []
+        try:
+            logger.info(f"[BATCH-DB] 开始批量从数据库加载基本面数据: {len(uncached_symbols)}个股票")
+            
+            if self._asset_db_manager is None:
+                from core.asset_database_manager import get_asset_separated_database_manager
+                self._asset_db_manager = get_asset_separated_database_manager()
+                logger.debug("[BATCH-DB] 数据库管理器已初始化")
+            
+            # 批量从数据库加载
+            db_results = self._asset_db_manager.load_fundamental_data_batch(uncached_symbols, asset_type)
+            
+            # 缓存数据库结果
+            for symbol, fundamental_data in db_results.items():
+                context = RequestContext(
+                    asset_type=asset_type,
+                    data_type=DataType.FUNDAMENTAL,
+                    symbol=symbol
+                )
+                cache_key = self._generate_cache_key(context, 'get_fundamental_data', symbol=symbol, **params)
+                self._cache_result(cache_key, fundamental_data)
+                result[symbol] = fundamental_data
+                db_loaded_symbols.append(symbol)
+            
+            logger.info(f"[BATCH-DB] ✅ 从数据库加载基本面数据成功: {len(db_loaded_symbols)}/{len(uncached_symbols)}个")
+            
+            # 更新未缓存列表（排除已从数据库加载的）
+            uncached_symbols = [s for s in uncached_symbols if s not in db_loaded_symbols]
+            
+        except Exception as e:
+            logger.error(f"[BATCH-DB] ❌ 批量从数据库加载基本面数据失败: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
+        
+        # 如果还有未加载的数据，调用插件获取
+        if uncached_symbols:
+            logger.warning(f"[BATCH-API] ⚠️  需要调用API获取基本面数据: {len(uncached_symbols)}个股票")
+            for symbol in uncached_symbols:
+                try:
+                    fundamental_data = self.get_fundamental_data(symbol, asset_type, **params)
+                    result[symbol] = fundamental_data
+                except Exception as e:
+                    logger.warning(f"获取股票 {symbol} 基本面数据失败: {e}")
+                    result[symbol] = {}
+        
+        return result
+
     def _execute_data_request(self, context: RequestContext, method_name: str, **params) -> Any:
         """
         执行数据请求的核心逻辑
@@ -457,7 +543,22 @@ class UniPluginDataManager:
                 logger.info(f"[CACHE] 缓存命中 - 方法: {method_name}, 数据类型: {context.data_type.value}")
                 return cached_result
 
-            # 2. 获取可用插件
+            # 2. 新增：对于基本面数据，先尝试从数据库读取（三级缓存策略）
+            if context.data_type == DataType.FUNDAMENTAL and method_name == 'get_fundamental_data':
+                symbol = params.get('symbol')
+                if symbol:
+                    logger.info(f"[DATABASE-QUERY] 开始查询基本面数据: {symbol}, asset_type={context.asset_type.value}")
+                    db_result = self._load_fundamental_from_database(symbol, context.asset_type)
+                    if db_result:
+                        # 缓存数据库结果
+                        self._cache_result(cache_key, db_result)
+                        self.stats["cache_hits"] += 1
+                        logger.info(f"[DATABASE-SUCCESS] ✅ 从数据库加载基本面数据成功: {symbol}, 已缓存")
+                        return db_result
+                    else:
+                        logger.info(f"[DATABASE-EMPTY] ⚠️  数据库中未找到基本面数据: {symbol}，将调用插件获取")
+
+            # 3. 获取可用插件
             logger.info(f"[TET] TET框架开始数据请求处理 - 方法: {method_name}, 资产类型: {context.asset_type.value}, 数据类型: {context.data_type.value}")
 
             # 检查是否指定了数据源
@@ -731,6 +832,44 @@ class UniPluginDataManager:
         """清空缓存"""
         self._cache.clear()
         logger.info("缓存已清空")
+
+    def _load_fundamental_from_database(self, symbol: str, asset_type: AssetType) -> Optional[Dict[str, Any]]:
+        """从数据库加载基本面数据（三级缓存策略的第二层）
+
+        Args:
+            symbol: 标的代码
+            asset_type: 资产类型
+
+        Returns:
+            Dict[str, Any]: 基本面数据字典，如果不存在则返回None
+        """
+        try:
+            logger.info(f"[DATABASE] 尝试从数据库加载基本面数据: {symbol}, asset_type={asset_type.value}")
+            
+            # 延迟初始化数据库管理器
+            if self._asset_db_manager is None:
+                try:
+                    from core.asset_database_manager import get_asset_separated_database_manager
+                    self._asset_db_manager = get_asset_separated_database_manager()
+                    logger.debug("基本面数据数据库管理器已初始化")
+                except Exception as e:
+                    logger.error(f"[DATABASE] 初始化数据库管理器失败: {e}")
+                    return None
+            
+            # 从数据库加载基本面数据
+            fundamental_data = self._asset_db_manager.load_fundamental_data(symbol, asset_type)
+            
+            if fundamental_data:
+                logger.info(f"[DATABASE] ✅ 从数据库成功加载基本面数据: {symbol}, 字段数={len(fundamental_data)}")
+                return fundamental_data
+            else:
+                logger.info(f"[DATABASE] ⚠️  数据库中未找到基本面数据: {symbol}")
+                return None
+        except Exception as e:
+            logger.error(f"[DATABASE] ❌ 从数据库加载基本面数据失败: {symbol}, {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
+            return None
 
     def get_plugin_status(self) -> Dict[str, Any]:
         """获取所有插件状态"""

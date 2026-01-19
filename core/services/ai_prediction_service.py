@@ -1,4 +1,6 @@
 from loguru import logger
+
+from core.services.tensorflow_gpu_manager import TensorFlowGPUManager
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
@@ -87,19 +89,6 @@ def _check_dl_availability():
         return False
 
 GPU_MANAGER_AVAILABLE = False
-
-def _check_gpu_manager_availability():
-    """检查GPU管理器是否可用（延迟检查）"""
-    global GPU_MANAGER_AVAILABLE
-    if GPU_MANAGER_AVAILABLE:
-        return True
-    try:
-        from core.services.tensorflow_gpu_manager import TensorFlowGPUManager, auto_configure_gpu, get_device_for_training
-        GPU_MANAGER_AVAILABLE = True
-        return True
-    except ImportError:
-        GPU_MANAGER_AVAILABLE = False
-        return False
 
 from core.services.base_service import BaseService
 
@@ -271,10 +260,7 @@ class AIPredictionService(BaseService):
 
     def _initialize_gpu_manager(self):
         """初始化GPU管理器"""
-        if not GPU_MANAGER_AVAILABLE:
-            logger.info("TensorFlow GPU管理器不可用，使用CPU模式")
-            return
-        
+
         try:
             logger.info("=== 初始化TensorFlow GPU管理器 ===")
             

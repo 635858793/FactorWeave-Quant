@@ -1,0 +1,31 @@
+数据库备份信息
+============================================================
+备份时间: 20260118_162619
+备份目录: D:\DevelopTool\FreeCode\HIkyuu-UI\hikyuu-ui\data\backups
+
+备份详情:
+------------------------------------------------------------
+数据库: factorweave_system.sqlite
+  源文件: D:\DevelopTool\FreeCode\HIkyuu-UI\hikyuu-ui\data\factorweave_system.sqlite
+  备份文件: D:\DevelopTool\FreeCode\HIkyuu-UI\hikyuu-ui\data\backups\factorweave_system.sqlite.backup_20260118_162619
+  文件大小: 9.10 MB
+  备份时间: 20260118_162619
+
+数据库: strategy.sqlite
+  源文件: D:\DevelopTool\FreeCode\HIkyuu-UI\hikyuu-ui\data\strategy.sqlite
+  备份文件: D:\DevelopTool\FreeCode\HIkyuu-UI\hikyuu-ui\data\backups\strategy.sqlite.backup_20260118_162619
+  文件大小: 0.13 MB
+  备份时间: 20260118_162619
+
+数据库: factorweave_analytics.duckdb
+  源文件: D:\DevelopTool\FreeCode\HIkyuu-UI\hikyuu-ui\data\factorweave_analytics.duckdb
+  备份文件: D:\DevelopTool\FreeCode\HIkyuu-UI\hikyuu-ui\data\backups\factorweave_analytics.duckdb.backup_20260118_162619
+  文件大小: 15.26 MB
+  备份时间: 20260118_162619
+
+数据库: tradeaccount.sqlite
+  源文件: D:\DevelopTool\FreeCode\HIkyuu-UI\hikyuu-ui\data\tradeaccount.sqlite
+  备份文件: D:\DevelopTool\FreeCode\HIkyuu-UI\hikyuu-ui\data\backups\tradeaccount.sqlite.backup_20260118_162619
+  文件大小: 0.09 MB
+  备份时间: 20260118_162619
+

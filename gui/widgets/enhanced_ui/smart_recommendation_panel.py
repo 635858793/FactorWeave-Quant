@@ -1546,6 +1546,7 @@ class SmartRecommendationPanel(QWidget):
         
         数据管理：
         - 交互记录保存在 self.recommendation_history 中
+        - 同时通过推荐引擎保存到数据库
         - 最多保留 1000 条记录，超出后删除最早的记录
         - 这些数据可用于训练推荐模型，提高推荐准确性
         
@@ -1571,7 +1572,25 @@ class SmartRecommendationPanel(QWidget):
             if len(self.recommendation_history) > 1000:
                 self.recommendation_history = self.recommendation_history[-1000:]
             
-            # 步骤 4: 记录日志
+            # 步骤 4: 通过推荐引擎保存到数据库
+            # 将交互数据保存到数据库，用于后续的模型训练
+            if self.recommendation_engine:
+                from core.services.smart_recommendation_engine import UserInteraction
+                user_interaction = UserInteraction(
+                    user_id=self._get_current_user_id(),
+                    item_id=recommendation_data.get('id', ''),
+                    interaction_type=action,
+                    timestamp=datetime.now(),
+                    duration=None,
+                    rating=None,
+                    context={
+                        'recommendation_type': recommendation_data.get('type', 'unknown'),
+                        'title': recommendation_data.get('title', '')
+                    }
+                )
+                self.recommendation_engine.add_user_interaction(user_interaction)
+            
+            # 步骤 5: 记录日志
             # 记录交互日志，方便调试和追踪
             logger.info(f"记录用户交互: {action}, 推荐ID: {recommendation_data.get('id', '')}")
             
@@ -2699,6 +2718,29 @@ class SmartRecommendationPanel(QWidget):
                     investment_horizon="medium"
                 )
                 self.recommendation_engine.user_profiles[user_id] = profile
+                
+                # 保存到数据库
+                if self.recommendation_engine.database_service:
+                    profile_data = {
+                        'user_id': user_id,
+                        'risk_tolerance': 'medium',
+                        'investment_horizon': 'medium',
+                        'investment_style': 'balanced',
+                        'preferred_industries': [],
+                        'excluded_industries': [],
+                        'max_position_size': 1.0,
+                        'min_market_cap': 0,
+                        'max_pe_ratio': 100.0,
+                        'max_pb_ratio': 10.0,
+                        'max_volatility': 1.0,
+                        'preferred_stock_count': 10,
+                        'rebalance_frequency': 'monthly',
+                        'custom_constraints': {},
+                        'performance_history': {},
+                        'feedback_data': {}
+                    }
+                    self.recommendation_engine.database_service.save_user_profile(profile_data)
+                
                 logger.info(f"创建用户画像: {user_id}")
 
         except Exception as e:
@@ -3660,6 +3702,23 @@ class SmartRecommendationPanel(QWidget):
         self.feedback_submitted.emit(feedback_type, feedback_data)
 
         logger.info(f"提交反馈: {feedback_type}, 评分: {rating}")
+        
+        # 通过推荐引擎保存到数据库
+        if self.recommendation_engine:
+            from core.services.smart_recommendation_engine import UserInteraction
+            user_interaction = UserInteraction(
+                user_id=self._get_current_user_id(),
+                item_id=recommendation_id,
+                interaction_type='feedback',
+                timestamp=datetime.now(),
+                duration=None,
+                rating=rating,
+                context={
+                    'feedback_type': feedback_type,
+                    'comment': comment
+                }
+            )
+            self.recommendation_engine.add_user_interaction(user_interaction)
         
         # 保存持久化数据
         self._save_persistent_data()

@@ -551,6 +551,31 @@ class EnhancedIndicatorService:
             self._results_cache.clear()
             logger.info("指标计算缓存已清空")
 
+    def get_all_indicators(self) -> List[Dict[str, Any]]:
+        """获取所有指标信息
+        
+        Returns:
+            指标信息列表，每个指标包含：
+            - name: 指标名称
+            - category: 指标类别
+            - description: 指标描述
+            - parameters: 默认参数
+            - status: 指标状态
+        """
+        with self._lock:
+            indicators = []
+            for name, definition in self._indicators.items():
+                indicators.append({
+                    'name': name,
+                    'category': definition.category.value,
+                    'description': definition.description,
+                    'parameters': definition.parameters,
+                    'status': definition.status.value,
+                    'required_columns': definition.required_columns,
+                    'output_columns': definition.output_columns
+                })
+            return indicators
+
 
 # 便利函数
 def calculate_talib_indicators(data: Union[pd.DataFrame, Dict[str, np.ndarray]], 

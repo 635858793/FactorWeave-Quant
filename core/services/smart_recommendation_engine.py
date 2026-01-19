@@ -13,6 +13,8 @@ import asyncio
 import threading
 import json
 import hashlib
+import os
+import uuid
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Tuple, Set
 from dataclasses import dataclass, field
@@ -262,11 +264,14 @@ class SmartRecommendationEngine:
     - 实时推荐更新
     """
 
-    def __init__(self):
+    def __init__(self, database_service=None):
         # 数据存储
         self.user_profiles: Dict[str, UserProfile] = {}
         self.content_items: Dict[str, ContentItem] = {}
         self.interactions: List[UserInteraction] = []
+        
+        # 数据库服务
+        self.database_service = database_service
 
         # 推荐模型
         self.user_item_matrix: Optional[pd.DataFrame] = None
@@ -320,6 +325,20 @@ class SmartRecommendationEngine:
                 # 标记需要重新训练
                 self._model_trained = False
 
+                # 保存到数据库
+                if self.database_service:
+                    interaction_data = {
+                        'id': interaction.id if hasattr(interaction, 'id') else None,
+                        'user_id': interaction.user_id,
+                        'item_id': interaction.item_id,
+                        'interaction_type': interaction.interaction_type,
+                        'timestamp': interaction.timestamp.isoformat() if hasattr(interaction.timestamp, 'isoformat') else interaction.timestamp,
+                        'duration': interaction.duration,
+                        'rating': interaction.rating,
+                        'context': interaction.context
+                    }
+                    self.database_service.save_user_interaction(interaction_data)
+
             logger.debug(f"用户交互已记录: {interaction.user_id} - {interaction.item_id}")
 
         except Exception as e:
@@ -337,10 +356,238 @@ class SmartRecommendationEngine:
                 # 标记需要重新训练
                 self._model_trained = False
 
+                # 保存到数据库
+                if self.database_service:
+                    item_data = {
+                        'id': item.id if hasattr(item, 'id') else str(uuid.uuid4()),
+                        'item_id': item.item_id,
+                        'item_type': item.item_type.value,
+                        'title': item.title,
+                        'description': item.description,
+                        'tags': item.tags,
+                        'categories': item.categories,
+                        'keywords': item.keywords if hasattr(item, 'keywords') else [],
+                        'view_count': item.view_count,
+                        'like_count': item.like_count,
+                        'share_count': item.share_count,
+                        'rating': item.rating,
+                        'created_at': item.created_at.isoformat() if hasattr(item.created_at, 'isoformat') else item.created_at,
+                        'updated_at': item.updated_at.isoformat() if hasattr(item.updated_at, 'isoformat') else item.updated_at,
+                        'feature_vector': item.feature_vector if hasattr(item, 'feature_vector') else None,
+                        'metadata': item.metadata
+                    }
+                    self.database_service.save_content_item(item_data)
+
             # logger.info(f"内容项已添加: {item.item_id}")
 
         except Exception as e:
             logger.error(f"添加内容项失败: {e}")
+
+    def load_interactions_from_database(self, db_manager=None, limit: int = None) -> int:
+        """
+        从数据库加载交互数据
+        
+        Args:
+            db_manager: 数据库管理器实例
+            limit: 加载的最大记录数
+            
+        Returns:
+            加载的交互记录数量
+        """
+        try:
+            if db_manager is None:
+                logger.warning("数据库管理器未提供，无法加载交互数据")
+                return 0
+            
+            logger.info("开始从数据库加载交互数据...")
+            
+            # 尝试从数据库查询交互数据
+            # 这里需要根据实际的数据库表结构进行调整
+            query = """
+            SELECT user_id, item_id, interaction_type, timestamp, duration, rating
+            FROM user_interactions
+            ORDER BY timestamp DESC
+            """
+            
+            if limit:
+                query += f" LIMIT {limit}"
+            
+            # 执行查询
+            result = db_manager.execute_query(query)
+            
+            if not result:
+                logger.warning("数据库中没有找到交互数据")
+                return 0
+            
+            # 转换为 UserInteraction 对象
+            loaded_count = 0
+            for row in result:
+                try:
+                    interaction = UserInteraction(
+                        user_id=row[0],
+                        item_id=row[1],
+                        interaction_type=row[2],
+                        timestamp=datetime.fromisoformat(row[3]) if isinstance(row[3], str) else row[3],
+                        duration=row[4],
+                        rating=row[5]
+                    )
+                    self.interactions.append(interaction)
+                    loaded_count += 1
+                except Exception as e:
+                    logger.warning(f"解析交互记录失败: {e}")
+                    continue
+            
+            logger.info(f"成功从数据库加载 {loaded_count} 条交互数据")
+            
+            # 标记需要重新训练
+            self._model_trained = False
+            
+            return loaded_count
+            
+        except Exception as e:
+            logger.error(f"从数据库加载交互数据失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return 0
+
+    def load_content_items_from_database(self, db_manager=None, limit: int = None) -> int:
+        """
+        从数据库加载内容项数据
+        
+        Args:
+            db_manager: 数据库管理器实例
+            limit: 加载的最大记录数
+            
+        Returns:
+            加载的内容项数量
+        """
+        try:
+            if db_manager is None:
+                logger.warning("数据库管理器未提供，无法加载内容项数据")
+                return 0
+            
+            logger.info("开始从数据库加载内容项数据...")
+            
+            # 尝试从数据库查询内容项数据
+            query = """
+            SELECT item_id, item_type, title, description, tags, categories, 
+                   view_count, like_count, share_count, rating, created_at, updated_at
+            FROM content_items
+            ORDER BY created_at DESC
+            """
+            
+            if limit:
+                query += f" LIMIT {limit}"
+            
+            # 执行查询
+            result = db_manager.execute_query(query)
+            
+            if not result:
+                logger.warning("数据库中没有找到内容项数据")
+                return 0
+            
+            # 转换为 ContentItem 对象
+            loaded_count = 0
+            for row in result:
+                try:
+                    content_item = ContentItem(
+                        item_id=row[0],
+                        item_type=RecommendationType(row[1]),
+                        title=row[2],
+                        description=row[3] or "",
+                        tags=json.loads(row[4]) if row[4] else [],
+                        categories=json.loads(row[5]) if row[5] else [],
+                        view_count=row[6] or 0,
+                        like_count=row[7] or 0,
+                        share_count=row[8] or 0,
+                        rating=row[9] or 0.0,
+                        created_at=datetime.fromisoformat(row[10]) if isinstance(row[10], str) else row[10],
+                        updated_at=datetime.fromisoformat(row[11]) if isinstance(row[11], str) else row[11]
+                    )
+                    self.content_items[content_item.item_id] = content_item
+                    loaded_count += 1
+                except Exception as e:
+                    logger.warning(f"解析内容项记录失败: {e}")
+                    continue
+            
+            logger.info(f"成功从数据库加载 {loaded_count} 条内容项数据")
+            
+            # 标记需要重新训练
+            self._model_trained = False
+            
+            return loaded_count
+            
+        except Exception as e:
+            logger.error(f"从数据库加载内容项数据失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return 0
+
+    def load_user_profiles_from_database(self, db_manager=None, limit: int = None) -> int:
+        """
+        从数据库加载用户画像数据
+        
+        Args:
+            db_manager: 数据库管理器实例
+            limit: 加载的最大记录数
+            
+        Returns:
+            加载的用户画像数量
+        """
+        try:
+            if db_manager is None:
+                logger.warning("数据库管理器未提供，无法加载用户画像数据")
+                return 0
+            
+            logger.info("开始从数据库加载用户画像数据...")
+            
+            # 尝试从数据库查询用户画像数据
+            query = """
+            SELECT user_id, registration_date, last_active, activity_level,
+                   preferred_stocks, preferred_sectors, risk_tolerance, investment_horizon
+            FROM user_profiles
+            ORDER BY last_active DESC
+            """
+            
+            if limit:
+                query += f" LIMIT {limit}"
+            
+            # 执行查询
+            result = db_manager.execute_query(query)
+            
+            if not result:
+                logger.warning("数据库中没有找到用户画像数据")
+                return 0
+            
+            # 转换为 UserProfile 对象
+            loaded_count = 0
+            for row in result:
+                try:
+                    user_profile = UserProfile(
+                        user_id=row[0],
+                        registration_date=datetime.fromisoformat(row[1]) if isinstance(row[1], str) else row[1],
+                        last_active=datetime.fromisoformat(row[2]) if isinstance(row[2], str) else row[2],
+                        activity_level=row[3] or "medium",
+                        preferred_stocks=json.loads(row[4]) if row[4] else [],
+                        preferred_sectors=json.loads(row[5]) if row[5] else [],
+                        risk_tolerance=row[6] or "medium",
+                        investment_horizon=row[7] or "medium"
+                    )
+                    self.user_profiles[user_profile.user_id] = user_profile
+                    loaded_count += 1
+                except Exception as e:
+                    logger.warning(f"解析用户画像记录失败: {e}")
+                    continue
+            
+            logger.info(f"成功从数据库加载 {loaded_count} 条用户画像数据")
+            
+            return loaded_count
+            
+        except Exception as e:
+            logger.error(f"从数据库加载用户画像数据失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return 0
 
     def get_user_profile(self, user_id: str) -> Optional[UserProfile]:
         """获取用户画像"""

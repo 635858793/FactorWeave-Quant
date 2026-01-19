@@ -907,6 +907,27 @@ class DataSourcePluginConfigDialog(QDialog):
                         ]
                     }
                 }
+            },
+
+            # miniQMT数据源插件
+            "miniqmt_data_source": {
+                "connection": {
+                    "host": "127.0.0.1",
+                    "port": 58610,
+                    "use_ssl": False,
+                    "timeout": 30
+                },
+                "auth": {
+                    "type": "无认证"
+                },
+                "advanced": {
+                    "custom_params": {
+                        "market": "沪深A股",
+                        "enable_realtime": True,
+                        "enable_historical": True,
+                        "max_subscriptions": 100
+                    }
+                }
             }
         }
 

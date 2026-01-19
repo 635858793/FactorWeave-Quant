@@ -18,8 +18,7 @@ import pandas as pd
 # 使用系统统一组件
 from core.adapters import get_config, get_performance_monitor
 from .base_strategy import BaseStrategy, StrategySignal
-from .strategy_registry import get_strategy_registry
-from .strategy_database import get_strategy_database_manager
+from .strategy_registry import get_strategy_registry, StrategyRegistry
 from .strategy_factory import get_strategy_factory
 from core.performance import measure_performance
 
@@ -266,11 +265,12 @@ class StrategyCache:
 class StrategyEngine:
     """策略执行引擎"""
 
-    def __init__(self, max_workers: int = None, cache_size: int = 1000, cache_ttl: int = 3600):
+    def __init__(self, registry: StrategyRegistry = None, max_workers: int = None, cache_size: int = 1000, cache_ttl: int = 3600):
         """
         初始化策略执行引擎
 
         Args:
+            registry: 策略注册器（可选，如果不提供则使用全局单例）
             max_workers: 最大工作线程数
             cache_size: 缓存大小
             cache_ttl: 缓存过期时间（秒）
@@ -278,8 +278,15 @@ class StrategyEngine:
         self.logger = logger.bind(module=__name__)
         self.config = get_config()
         self.performance_monitor = get_performance_monitor()
-        self.registry = get_strategy_registry()
-        self.db_manager = get_strategy_database_manager()
+        
+        if registry is None:
+            self.registry = get_strategy_registry()
+        else:
+            self.registry = registry
+
+        # 使用DatabaseService替代StrategyDatabaseManager
+        self.database_service = None
+        self._database_service_initialized = False
 
         # 从配置获取参数，避免硬编码
         engine_config = self.config.get('strategy_engine', {})
@@ -301,6 +308,23 @@ class StrategyEngine:
         self._stats_lock = threading.Lock()
 
         self.logger.info(f"策略执行引擎初始化完成: max_workers={self.max_workers}")
+
+    def _ensure_database_service(self):
+        """确保DatabaseService已初始化"""
+        if self._database_service_initialized:
+            return
+            
+        try:
+            from core.containers.service_container import get_service_container
+            from core.services.database_service import DatabaseService
+            container = get_service_container()
+            self.database_service = container.resolve(DatabaseService)
+            if self.database_service is not None:
+                self._database_service_initialized = True
+                self.logger.info("成功获取DatabaseService")
+        except Exception as e:
+            self.logger.warning(f"无法获取DatabaseService: {e}")
+            self.database_service = None
 
     def execute_strategy(self, strategy_name: str, data: pd.DataFrame,
                          use_cache: bool = True, save_to_db: bool = True) -> Tuple[List[StrategySignal], Dict[str, Any]]:
@@ -383,15 +407,27 @@ class StrategyEngine:
             # 保存到数据库
             if save_to_db:
                 try:
-                    self.db_manager.save_execution_result(
-                        strategy_name=strategy_name,
-                        data_hash=data_hash,
-                        signals=signals,
-                        execution_time=execution_info['execution_time'],
-                        success=True,
-                        performance_metrics=self._calculate_performance_metrics(
-                            signals)
-                    )
+                    self._ensure_database_service()
+                    if self.database_service:
+                        # 获取策略ID
+                        all_strategies = self.database_service.list_strategies()
+                        strategy_id = None
+                        for s in all_strategies:
+                            if s['name'] == strategy_name:
+                                strategy_id = s['id']
+                                break
+
+                        if strategy_id:
+                            execution_data = {
+                                'strategy_id': strategy_id,
+                                'execution_time': datetime.now(),
+                                'data_hash': data_hash,
+                                'signals_count': len(signals),
+                                'execution_duration': execution_info['execution_time'],
+                                'success': True,
+                                'performance_metrics': self._calculate_performance_metrics(signals)
+                            }
+                            self.database_service.save_execution_result(execution_data)
                 except Exception as e:
                     self.logger.warning(f"保存执行结果到数据库失败: {e}")
 
@@ -410,15 +446,28 @@ class StrategyEngine:
             # 保存失败记录到数据库
             if save_to_db:
                 try:
-                    data_hash = self._generate_data_hash(data)
-                    self.db_manager.save_execution_result(
-                        strategy_name=strategy_name,
-                        data_hash=data_hash,
-                        signals=[],
-                        execution_time=execution_info['execution_time'],
-                        success=False,
-                        error_message=str(e)
-                    )
+                    self._ensure_database_service()
+                    if self.database_service:
+                        # 获取策略ID
+                        all_strategies = self.database_service.list_strategies()
+                        strategy_id = None
+                        for s in all_strategies:
+                            if s['name'] == strategy_name:
+                                strategy_id = s['id']
+                                break
+
+                        if strategy_id:
+                            data_hash = self._generate_data_hash(data)
+                            execution_data = {
+                                'strategy_id': strategy_id,
+                                'execution_time': datetime.now(),
+                                'data_hash': data_hash,
+                                'signals_count': 0,
+                                'execution_duration': execution_info['execution_time'],
+                                'success': False,
+                                'error_message': str(e)
+                            }
+                            self.database_service.save_execution_result(execution_data)
                 except Exception as db_e:
                     self.logger.warning(f"保存失败记录到数据库失败: {db_e}")
 
@@ -536,7 +585,23 @@ class StrategyEngine:
             执行历史列表
         """
         try:
-            return self.db_manager.get_execution_history(strategy_name, limit)
+            self._ensure_database_service()
+            if not self.database_service:
+                return []
+
+            # 先根据策略名称查找策略ID
+            all_strategies = self.database_service.list_strategies()
+            strategy_id = None
+            for s in all_strategies:
+                if s['name'] == strategy_name:
+                    strategy_id = s['id']
+                    break
+
+            if not strategy_id:
+                self.logger.warning(f"未找到策略: {strategy_name}")
+                return []
+
+            return self.database_service.get_execution_history(strategy_id, limit)
         except Exception as e:
             self.logger.error(f"获取执行历史失败 {strategy_name}: {e}")
             return []

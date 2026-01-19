@@ -9,6 +9,7 @@ AI选股集成服务
 """
 
 import asyncio
+import hashlib
 import json
 import traceback
 import uuid
@@ -92,6 +93,7 @@ class StockSelectionCriteria:
     selection_date: datetime = field(default_factory=datetime.now)
     rebalance_frequency: str = "monthly"              # 调仓频率
     time_period: int = 90                             # 时间周期（天）
+    data_period: str = "D"                            # 数据周期（D=日线, W=周线, M=月线, 1=1分钟, 5=5分钟, 15=15分钟, 30=30分钟, 60=60分钟）
     
     # 风险和策略条件
     risk_level: RiskLevel = RiskLevel.MODERATE        # 风险等级
@@ -101,6 +103,13 @@ class StockSelectionCriteria:
     # 指标权重
     technical_indicators: Dict[str, float] = field(default_factory=dict)  # 技术指标权重
     fundamental_indicators: Dict[str, float] = field(default_factory=dict)  # 基本面指标权重
+    
+    # 解释级别
+    explanation_level: str = "detailed"  # 解释级别（simple, detailed, technical）
+    
+    # 自然语言模式
+    use_nlp: bool = False  # 是否使用自然语言模式
+    nlp_query: str = ""  # 自然语言查询内容
 
 
 @dataclass
@@ -180,6 +189,15 @@ class AISelectionIntegrationService:
         self._indicator_service = self._container.resolve(EnhancedIndicatorService)
         self._database_service = self._container.resolve(DatabaseService)
         self._event_bus = get_event_bus()
+        
+        # 解析行业服务
+        self._industry_service = None
+        try:
+            from .industry_service import IndustryService
+            self._industry_service = self._container.resolve(IndustryService)
+            logger.info("行业服务加载成功")
+        except Exception as e:
+            logger.warning(f"行业服务加载失败: {e}")
         
         # 解析可解释性服务
         self._explainability_service = None
@@ -380,6 +398,10 @@ class AISelectionIntegrationService:
 - themes: 主题列表（数组）
 - risk_level: 风险等级（conservative/moderate/aggressive）
 - strategy_type: 策略类型（momentum/value/growth/quality/technical/quantitative/hybrid）
+- technical_indicators: 技术指标权重字典（可选），如 {{"MA5": 0.1, "MACD": 0.15, "RSI": 0.1}}
+- fundamental_indicators: 基本面指标权重字典（可选），如 {{"PE比率": 0.2, "ROE": 0.2}}
+- max_stocks: 最大选股数量（可选），默认50
+- time_period: 分析时间周期（天）（可选），默认90
 
 示例输出：
 {{
@@ -388,7 +410,11 @@ class AISelectionIntegrationService:
     "roe_min": 15,
     "industries": ["科技", "医药"],
     "risk_level": "moderate",
-    "strategy_type": "growth"
+    "strategy_type": "growth",
+    "technical_indicators": {{"MA5": 0.1, "MACD": 0.15}},
+    "fundamental_indicators": {{"PE比率": 0.2, "ROE": 0.2}},
+    "max_stocks": 50,
+    "time_period": 90
 }}
 """
         return prompt
@@ -488,7 +514,11 @@ class AISelectionIntegrationService:
             roe_min=parsed.get('roe_min'),
             roe_max=parsed.get('roe_max'),
             industries=parsed.get('industries'),
-            themes=parsed.get('themes')
+            themes=parsed.get('themes'),
+            technical_indicators=parsed.get('technical_indicators', {}),
+            fundamental_indicators=parsed.get('fundamental_indicators', {}),
+            max_stocks=parsed.get('max_stocks', 50),
+            time_period=parsed.get('time_period', 90)
         )
         
         return criteria
@@ -596,10 +626,29 @@ class AISelectionIntegrationService:
             # 准备选股标准
             selection_criteria = criteria or StockSelectionCriteria(**strategy_data["criteria"])
             
-            # 检查缓存
+            # 验证选股标准
+            self._validate_selection_criteria(selection_criteria)
+            
+            # 检查缓存（优化版 - 改进缓存键设计）
             if progress_callback:
                 progress_callback(8, "检查缓存...")
-            cache_key = f"{strategy_id}_{selection_criteria.selection_date.strftime('%Y%m%d')}"
+            
+            # 生成参数哈希值
+            params_dict = {
+                'max_stocks': selection_criteria.max_stocks,
+                'risk_level': selection_criteria.risk_level.value if selection_criteria.risk_level else None,
+                'market_cap_min': selection_criteria.market_cap_min,
+                'market_cap_max': selection_criteria.market_cap_max,
+                'industries': tuple(selection_criteria.industries) if selection_criteria.industries else None,
+                'themes': tuple(selection_criteria.themes) if selection_criteria.themes else None,
+                'technical_indicators': selection_criteria.technical_indicators,
+                'fundamental_indicators': selection_criteria.fundamental_indicators,
+            }
+            params_str = json.dumps(params_dict, sort_keys=True)
+            params_hash = hashlib.md5(params_str.encode()).hexdigest()
+            
+            # 改进的缓存键
+            cache_key = f"{strategy_id}_{selection_criteria.selection_date.strftime('%Y%m%d')}_{params_hash}"
             cached_result = self._get_cached_result(cache_key)
             if cached_result:
                 logger.info("返回缓存的选股结果")
@@ -624,7 +673,7 @@ class AISelectionIntegrationService:
             # 生成解释
             if progress_callback:
                 progress_callback(95, "生成选股解释...")
-            result.explanations = await self._generate_explanations(result, error_collector)
+            result.explanations = await self._generate_explanations(result, criteria, error_collector)
             result.overall_explanation = await self._generate_overall_explanation(result)
             
             # 计算性能指标
@@ -756,21 +805,36 @@ class AISelectionIntegrationService:
         try:
             candidate_stocks = []
             
-            # 如果指定了行业筛选，使用行业股票列表
+            # 如果指定了行业筛选，使用批量获取行业股票
             if criteria.industries:
-                for industry in criteria.industries:
-                    try:
-                        # 从数据库或数据服务获取行业股票
-                        industry_stocks = await self._get_industry_stocks(industry)
-                        candidate_stocks.extend(industry_stocks)
-                    except Exception as e:
-                        error_collector.add_error(
-                            error_type=ErrorType.DATA_FETCH,
-                            error_message=f"获取行业 {industry} 股票列表失败",
-                            error_detail=str(e),
-                            severity=ErrorSeverity.MEDIUM
-                        )
-                        continue
+                try:
+                    # 批量获取所有行业的股票
+                    industry_stocks_dict = await self._get_industry_stocks_batch(criteria.industries)
+                    
+                    # 合并所有行业的股票
+                    for industry, stocks in industry_stocks_dict.items():
+                        candidate_stocks.extend(stocks)
+                        logger.info(f"行业 {industry} 获取到 {len(stocks)} 只股票")
+                except Exception as e:
+                    error_collector.add_error(
+                        error_type=ErrorType.DATA_FETCH,
+                        error_message=f"批量获取行业股票列表失败",
+                        error_detail=str(e),
+                        severity=ErrorSeverity.HIGH
+                    )
+                    # 回退到逐个获取
+                    for industry in criteria.industries:
+                        try:
+                            industry_stocks = await self._get_industry_stocks(industry)
+                            candidate_stocks.extend(industry_stocks)
+                        except Exception as e:
+                            error_collector.add_error(
+                                error_type=ErrorType.DATA_FETCH,
+                                error_message=f"获取行业 {industry} 股票列表失败",
+                                error_detail=str(e),
+                                severity=ErrorSeverity.MEDIUM
+                            )
+                            continue
             
             # 如果没有指定行业，获取主要股票池
             if not candidate_stocks:
@@ -797,6 +861,34 @@ class AISelectionIntegrationService:
             )
             # 返回基础股票池作为后备
             return await self._get_main_stock_pool(criteria, error_collector)
+    
+    async def _get_industry_stocks_batch(self, industries: List[str]) -> Dict[str, List[str]]:
+        """批量获取指定行业的股票列表"""
+        try:
+            # 使用IndustryService批量获取行业股票
+            if self._industry_service and hasattr(self._industry_service, 'get_industry_stocks_batch'):
+                stocks_dict = self._industry_service.get_industry_stocks_batch(industries)
+                # 转换为股票代码列表
+                return {
+                    industry: [stock.get('code', '') for stock in stocks if stock.get('code')]
+                    for industry, stocks in stocks_dict.items()
+                }
+            
+            # 如果无法批量获取，回退到逐个获取
+            result = {}
+            for industry in industries:
+                stocks = await self._get_industry_stocks(industry)
+                result[industry] = stocks
+            return result
+            
+        except Exception as e:
+            logger.error(f"批量获取行业股票列表失败: {e}")
+            # 回退到逐个获取
+            result = {}
+            for industry in industries:
+                stocks = await self._get_industry_stocks(industry)
+                result[industry] = stocks
+            return result
     
     async def _get_industry_stocks(self, industry: str) -> List[str]:
         """获取指定行业的股票列表"""
@@ -866,7 +958,8 @@ class AISelectionIntegrationService:
                     if price_data is not None and not price_data.empty:
                         # 获取最新市值数据
                         latest_data = price_data.iloc[-1]
-                        market_cap = latest_data.get('total_market_cap', 0)
+                        # 修复：使用字典访问方式，而不是 Series.get()
+                        market_cap = latest_data.get('total_market_cap', 0) if isinstance(latest_data, dict) else (latest_data['total_market_cap'] if 'total_market_cap' in latest_data.index else 0)
                         
                         # 检查是否符合市值范围
                         if market_cap_min and market_cap < market_cap_min:
@@ -894,10 +987,63 @@ class AISelectionIntegrationService:
         criteria: StockSelectionCriteria,
         error_collector: ErrorCollector
     ) -> Dict[str, Dict[str, Any]]:
-        """批量获取股票数据（优化版 - 使用asyncio.gather并行获取）"""
+        """批量获取股票数据（优化版 - 使用系统批量查询方法）"""
         # 设置数据获取参数
-        time_range = 365  # 获取一年的数据
-        period = "D"
+        time_range = criteria.time_period if criteria.time_period else 365
+        period = criteria.data_period if criteria.data_period else "D"
+        
+        try:
+            # 检查是否有批量获取方法
+            if hasattr(self._data_manager, 'get_historical_data_batch'):
+                logger.info(f"使用批量查询方法获取 {len(stock_codes)} 只股票数据")
+                
+                # 使用UnifiedDataManager的批量查询方法（直接从数据库查询）
+                # 不使用日期范围过滤，只使用count参数限制每只股票的数据量
+                stock_data_dict = await self._data_manager.get_historical_data_batch(
+                    symbols=stock_codes,
+                    period=period,
+                    start_date=None,  # 不使用日期范围过滤
+                    end_date=None,    # 不使用日期范围过滤
+                    count=time_range
+                )
+                
+                # 转换为统一格式
+                stock_data = {}
+                for stock_code, df in stock_data_dict.items():
+                    if df is not None and not df.empty:
+                        stock_data[stock_code] = {
+                            "price_data": df,
+                            "fetched_at": datetime.now()
+                        }
+                
+                logger.info(f"成功获取 {len(stock_data)} 只股票的数据（批量查询）")
+                return stock_data
+            else:
+                # 使用回退方案
+                logger.warning("批量查询方法不可用，回退到原有实现")
+                return await self._get_stock_data_batch_fallback(stock_codes, criteria, error_collector)
+                
+        except Exception as e:
+            error_collector.add_error(
+                error_type=ErrorType.DATA_FETCH,
+                error_message=f"批量获取股票数据失败",
+                error_detail=str(e),
+                severity=ErrorSeverity.HIGH
+            )
+            # 回退到原有实现
+            logger.warning("批量获取失败，回退到原有实现")
+            return await self._get_stock_data_batch_fallback(stock_codes, criteria, error_collector)
+    
+    async def _get_stock_data_batch_fallback(
+        self,
+        stock_codes: List[str],
+        criteria: StockSelectionCriteria,
+        error_collector: ErrorCollector
+    ) -> Dict[str, Dict[str, Any]]:
+        """批量获取股票数据（回退方案 - 使用asyncio.gather并行获取）"""
+        # 设置数据获取参数
+        time_range = criteria.time_period if criteria.time_period else 365
+        period = criteria.data_period if criteria.data_period else "D"
         
         # 创建获取任务列表
         tasks = []
@@ -917,7 +1063,7 @@ class AISelectionIntegrationService:
             elif result is not None:
                 stock_data[stock_code] = result
                 
-        logger.info(f"成功获取 {len(stock_data)} 只股票的数据")
+        logger.info(f"成功获取 {len(stock_data)} 只股票的数据（回退方案）")
         return stock_data
     
     async def _get_single_stock_data(
@@ -971,13 +1117,20 @@ class AISelectionIntegrationService:
             scores: 股票评分
             detailed_scores: 详细评分（如果策略支持）
         """
+        logger.info(f"开始执行选股策略，输入股票数量: {len(stock_data)}")
         
         # 在线程池中执行策略计算
         loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            self._executor,
-            lambda: strategy_func(stock_data, criteria)
-        )
+        try:
+            result = await loop.run_in_executor(
+                self._executor,
+                lambda: strategy_func(stock_data, criteria)
+            )
+        except Exception as e:
+            logger.error(f"执行选股策略失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return [], {}, {}
         
         # 处理不同的返回值格式
         if len(result) == 3:
@@ -988,6 +1141,7 @@ class AISelectionIntegrationService:
             selected_stocks, scores = result
             detailed_scores = {}
         
+        logger.info(f"选股策略执行完成，选中股票数量: {len(selected_stocks)}")
         return selected_stocks, scores, detailed_scores
     
     def _quantitative_strategy(
@@ -1003,32 +1157,53 @@ class AISelectionIntegrationService:
             detailed_scores: 详细评分 {股票代码: {技术评分, 动量评分, 波动性评分, 流动性评分}}
         """
         
+        # 确定权重配置
+        if criteria.technical_indicators:
+            # 使用用户配置的权重
+            weights = criteria.technical_indicators
+            tech_weight = weights.get("技术指标", 0.4)
+            momentum_weight = weights.get("动量指标", 0.3)
+            volatility_weight = weights.get("波动性", 0.2)
+            liquidity_weight = weights.get("流动性", 0.1)
+        else:
+            # 使用默认权重
+            tech_weight = 0.4
+            momentum_weight = 0.3
+            volatility_weight = 0.2
+            liquidity_weight = 0.1
+        
         stock_scores = {}
         detailed_scores = {}
+        
+        data_count = 0
+        skipped_count = 0
+        error_count = 0
         
         for stock_code, data in stock_data.items():
             try:
                 price_data = data["price_data"]
                 if price_data.empty or len(price_data) < 30:
+                    skipped_count += 1
                     continue
                     
+                data_count += 1
                 score = 0.0
                 
-                # 技术指标评分 (40%)
+                # 技术指标评分
                 tech_score = self._calculate_technical_score(price_data, criteria)
-                score += tech_score * 0.4
+                score += tech_score * tech_weight
                 
-                # 动量指标评分 (30%)
+                # 动量指标评分
                 momentum_score = self._calculate_momentum_score(price_data)
-                score += momentum_score * 0.3
+                score += momentum_score * momentum_weight
                 
-                # 波动性评分 (20%)
+                # 波动性评分
                 volatility_score = self._calculate_volatility_score(price_data)
-                score += volatility_score * 0.2
+                score += volatility_score * volatility_weight
                 
-                # 流动性评分 (10%)
+                # 流动性评分
                 liquidity_score = self._calculate_liquidity_score(price_data)
-                score += liquidity_score * 0.1
+                score += liquidity_score * liquidity_weight
                 
                 # 风险调整
                 if criteria.risk_level == RiskLevel.CONSERVATIVE:
@@ -1049,23 +1224,22 @@ class AISelectionIntegrationService:
                 }
                 
             except Exception as e:
+                error_count += 1
                 logger.warning(f"计算股票 {stock_code} 评分失败: {e}")
                 continue
+        
+        logger.info(f"量化策略计算完成: 处理={data_count}, 跳过={skipped_count}, 错误={error_count}, 总计={len(stock_data)}")
         
         # 选择评分最高的股票
         sorted_stocks = sorted(stock_scores.items(), key=lambda x: x[1], reverse=True)
         
-        # 根据风险等级确定选择数量
-        if criteria.risk_level == RiskLevel.CONSERVATIVE:
-            top_n = min(10, len(sorted_stocks))
-        elif criteria.risk_level == RiskLevel.MODERATE:
-            top_n = min(20, len(sorted_stocks))
-        else:  # AGGRESSIVE
-            top_n = min(30, len(sorted_stocks))
+        # 根据用户配置的数量选择股票
+        top_n = min(criteria.max_stocks, len(sorted_stocks))
         
         selected_stocks = [stock for stock, _ in sorted_stocks[:top_n]]
         selected_scores = {stock: stock_scores[stock] for stock in selected_stocks}
         
+        logger.info(f"选择评分最高的 {len(selected_stocks)} 只股票 (max_stocks={criteria.max_stocks})")
         return selected_stocks, selected_scores, detailed_scores
     
     def _calculate_technical_score(
@@ -1277,22 +1451,36 @@ class AISelectionIntegrationService:
     async def _generate_explanations(
         self,
         result: StockSelectionResult,
+        criteria: StockSelectionCriteria,
         error_collector: ErrorCollector
     ) -> List[SelectionExplanation]:
-        """生成选股解释"""
-        explanations = []
+        """生成选股解释（优化版 - 使用批量数据获取 + asyncio.gather并行生成）"""
         
         # 使用AIExplainabilityService生成解释
         if self._explainability_service:
-            for stock_code in result.selected_stocks:
-                try:
-                    explanation = await self._generate_explanation_with_service(stock_code, result)
-                    explanations.append(explanation)
-                except Exception as e:
+            # 批量获取所有股票的数据
+            stock_data_batch = await self._get_stock_data_batch_for_explanation(
+                result.selected_stocks, criteria, error_collector
+            )
+            
+            # 创建并行任务列表
+            tasks = [
+                self._generate_explanation_with_service(stock_code, result, stock_data_batch)
+                for stock_code in result.selected_stocks
+            ]
+            
+            # 使用asyncio.gather并行执行
+            task_results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # 处理结果
+            explanations = []
+            for stock_code, task_result in zip(result.selected_stocks, task_results):
+                if isinstance(task_result, Exception):
+                    # 错误处理
                     error_collector.add_error(
                         error_type=ErrorType.EXPLANATION,
                         error_message=f"生成股票 {stock_code} 解释失败",
-                        error_detail=str(e),
+                        error_detail=str(task_result),
                         stock_code=stock_code,
                         severity=ErrorSeverity.MEDIUM
                     )
@@ -1309,35 +1497,336 @@ class AISelectionIntegrationService:
                             severity=ErrorSeverity.MEDIUM
                         )
                         continue
+                else:
+                    explanations.append(task_result)
         else:
-            # 回退到原有实现
-            for stock_code in result.selected_stocks:
-                try:
-                    explanation = await self._generate_single_explanation(stock_code, result)
-                    explanations.append(explanation)
-                except Exception as e:
+            # 回退到原有实现（也可以并行化）
+            # 批量获取所有股票的数据
+            stock_data_batch = await self._get_stock_data_batch_for_explanation(
+                result.selected_stocks, criteria, error_collector
+            )
+            
+            tasks = [
+                self._generate_single_explanation(stock_code, result, stock_data_batch)
+                for stock_code in result.selected_stocks
+            ]
+            task_results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # 处理结果
+            explanations = []
+            for stock_code, task_result in zip(result.selected_stocks, task_results):
+                if isinstance(task_result, Exception):
+                    # 错误处理
                     error_collector.add_error(
                         error_type=ErrorType.EXPLANATION,
                         error_message=f"生成股票 {stock_code} 解释失败",
-                        error_detail=str(e),
+                        error_detail=str(task_result),
                         stock_code=stock_code,
                         severity=ErrorSeverity.MEDIUM
                     )
                     continue
+                else:
+                    explanations.append(task_result)
         
         return explanations
+    
+    async def _get_stock_data_batch_for_explanation(
+        self,
+        stock_codes: List[str],
+        criteria: StockSelectionCriteria,
+        error_collector: ErrorCollector
+    ) -> Dict[str, Dict[str, Any]]:
+        """批量获取用于解释的股票数据（使用批量查询方法）"""
+        try:
+            # 检查是否有批量查询方法
+            if hasattr(self._data_manager, 'get_historical_data_batch'):
+                logger.info(f"使用批量查询方法获取 {len(stock_codes)} 只股票数据用于解释生成")
+                
+                # 计算日期范围
+                end_date = datetime.now()
+                start_date = end_date - timedelta(days=365)
+                
+                # 使用UnifiedDataManager的批量查询方法（直接从数据库查询）
+                period = criteria.data_period if criteria.data_period else "D"
+                stock_data_dict = await self._data_manager.get_historical_data_batch(
+                    symbols=stock_codes,
+                    period=period,
+                    start_date=start_date,
+                    end_date=end_date,
+                    count=365
+                )
+                
+                # 批量获取基本面数据
+                fundamental_data_dict = {}
+                try:
+                    if hasattr(self._data_manager, 'get_fundamental_data_batch'):
+                        fundamental_data_dict = self._data_manager.get_fundamental_data_batch(
+                            stock_codes, AssetType.STOCK_A
+                        )
+                    else:
+                        # 回退到逐个获取
+                        for stock_code in stock_codes:
+                            try:
+                                fundamental = await self._data_manager.get_fundamental_data(stock_code)
+                                fundamental_data_dict[stock_code] = fundamental
+                            except Exception as e:
+                                logger.warning(f"获取股票 {stock_code} 基本面数据失败: {e}")
+                                fundamental_data_dict[stock_code] = {}
+                except Exception as e:
+                    logger.warning(f"批量获取基本面数据失败: {e}")
+                
+                # 转换为统一格式
+                stock_data = {}
+                for stock_code, df in stock_data_dict.items():
+                    if df is not None and not df.empty:
+                        # 计算技术指标
+                        technical_indicators = {}
+                        try:
+                            # 计算RSI
+                            if len(df) >= 14:
+                                delta = df['close'].diff()
+                                gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+                                loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+                                rs = gain / loss
+                                rsi = 100 - (100 / (1 + rs))
+                                technical_indicators['rsi'] = float(rsi.iloc[-1]) if not rsi.empty else None
+                            
+                            # 计算MACD
+                            if len(df) >= 26:
+                                ema_12 = df['close'].ewm(span=12).mean()
+                                ema_26 = df['close'].ewm(span=26).mean()
+                                macd_line = ema_12 - ema_26
+                                if len(macd_line) >= 9:
+                                    signal_line = macd_line.ewm(span=9).mean()
+                                    technical_indicators['macd'] = float(macd_line.iloc[-1]) if not macd_line.empty else None
+                                    technical_indicators['macd_signal'] = float(signal_line.iloc[-1]) if not signal_line.empty else None
+                            
+                            # 计算移动平均线
+                            if len(df) >= 20:
+                                technical_indicators['ma5'] = float(df['close'].rolling(window=5).mean().iloc[-1])
+                                technical_indicators['ma10'] = float(df['close'].rolling(window=10).mean().iloc[-1])
+                                technical_indicators['ma20'] = float(df['close'].rolling(window=20).mean().iloc[-1])
+                            if len(df) >= 50:
+                                technical_indicators['ma50'] = float(df['close'].rolling(window=50).mean().iloc[-1])
+                            
+                            # 计算布林带
+                            if len(df) >= 20:
+                                sma_20 = df['close'].rolling(window=20).mean()
+                                std_20 = df['close'].rolling(window=20).std()
+                                technical_indicators['boll_upper'] = float(sma_20.iloc[-1] + 2 * std_20.iloc[-1])
+                                technical_indicators['boll_middle'] = float(sma_20.iloc[-1])
+                                technical_indicators['boll_lower'] = float(sma_20.iloc[-1] - 2 * std_20.iloc[-1])
+                            
+                            logger.debug(f"成功计算股票 {stock_code} 的技术指标: {len(technical_indicators)} 个")
+                        except Exception as e:
+                            logger.warning(f"计算股票 {stock_code} 技术指标失败: {e}")
+                        
+                        stock_data[stock_code] = {
+                            'price_data': df,
+                            'fundamental_data': fundamental_data_dict.get(stock_code, {}),
+                            'technical_indicators': technical_indicators
+                        }
+                
+                logger.info(f"成功获取 {len(stock_data)} 只股票的数据用于解释生成（批量查询）")
+                return stock_data
+            else:
+                # 回退到逐个获取
+                logger.warning("批量查询方法不可用，回退到逐个获取")
+                stock_data = {}
+                period = criteria.data_period if criteria.data_period else "D"
+                for stock_code in stock_codes:
+                    try:
+                        data_request = {
+                            "symbol": stock_code,
+                            "asset_type": AssetType.STOCK_A,
+                            "data_type": "kdata",
+                            "period": period,
+                            "time_range": 365
+                        }
+                        price_data = await self._data_manager.get_data_async(**data_request)
+                        if price_data is not None and not price_data.empty:
+                            # 获取基本面数据
+                            try:
+                                fundamental = await self._data_manager.get_fundamental_data(stock_code)
+                            except Exception as e:
+                                logger.warning(f"获取股票 {stock_code} 基本面数据失败: {e}")
+                                fundamental = {}
+                            
+                            # 计算技术指标
+                            technical_indicators = {}
+                            try:
+                                # 计算RSI
+                                if len(price_data) >= 14:
+                                    delta = price_data['close'].diff()
+                                    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+                                    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+                                    rs = gain / loss
+                                    rsi = 100 - (100 / (1 + rs))
+                                    technical_indicators['rsi'] = float(rsi.iloc[-1]) if not rsi.empty else None
+                                
+                                # 计算MACD
+                                if len(price_data) >= 26:
+                                    ema_12 = price_data['close'].ewm(span=12).mean()
+                                    ema_26 = price_data['close'].ewm(span=26).mean()
+                                    macd_line = ema_12 - ema_26
+                                    if len(macd_line) >= 9:
+                                        signal_line = macd_line.ewm(span=9).mean()
+                                        technical_indicators['macd'] = float(macd_line.iloc[-1]) if not macd_line.empty else None
+                                        technical_indicators['macd_signal'] = float(signal_line.iloc[-1]) if not signal_line.empty else None
+                                
+                                # 计算移动平均线
+                                if len(price_data) >= 20:
+                                    technical_indicators['ma5'] = float(price_data['close'].rolling(window=5).mean().iloc[-1])
+                                    technical_indicators['ma10'] = float(price_data['close'].rolling(window=10).mean().iloc[-1])
+                                    technical_indicators['ma20'] = float(price_data['close'].rolling(window=20).mean().iloc[-1])
+                                if len(price_data) >= 50:
+                                    technical_indicators['ma50'] = float(price_data['close'].rolling(window=50).mean().iloc[-1])
+                                
+                                # 计算布林带
+                                if len(price_data) >= 20:
+                                    sma_20 = price_data['close'].rolling(window=20).mean()
+                                    std_20 = price_data['close'].rolling(window=20).std()
+                                    technical_indicators['boll_upper'] = float(sma_20.iloc[-1] + 2 * std_20.iloc[-1])
+                                    technical_indicators['boll_middle'] = float(sma_20.iloc[-1])
+                                    technical_indicators['boll_lower'] = float(sma_20.iloc[-1] - 2 * std_20.iloc[-1])
+                                
+                                logger.debug(f"成功计算股票 {stock_code} 的技术指标: {len(technical_indicators)} 个")
+                            except Exception as e:
+                                logger.warning(f"计算股票 {stock_code} 技术指标失败: {e}")
+                            
+                            stock_data[stock_code] = {
+                                'price_data': price_data,
+                                'fundamental_data': fundamental,
+                                'technical_indicators': technical_indicators
+                            }
+                    except Exception as e:
+                        logger.warning(f"获取股票 {stock_code} 数据失败: {e}")
+                return stock_data
+            
+        except Exception as e:
+            error_collector.add_error(
+                error_type=ErrorType.DATA_FETCH,
+                error_message=f"批量获取股票数据失败",
+                error_detail=str(e),
+                severity=ErrorSeverity.HIGH
+            )
+            # 回退到逐个获取
+            logger.warning("批量获取失败，回退到逐个获取")
+            stock_data = {}
+            for stock_code in stock_codes:
+                try:
+                    data_request = {
+                        "symbol": stock_code,
+                        "asset_type": AssetType.STOCK_A,
+                        "data_type": "kdata",
+                        "period": "D",
+                        "time_range": 365
+                    }
+                    price_data = await self._data_manager.get_data_async(**data_request)
+                    if price_data is not None and not price_data.empty:
+                        # 获取基本面数据
+                        try:
+                            fundamental = await self._data_manager.get_fundamental_data(stock_code)
+                        except Exception as e:
+                            logger.warning(f"获取股票 {stock_code} 基本面数据失败: {e}")
+                            fundamental = {}
+                        
+                        stock_data[stock_code] = {
+                            'price_data': price_data,
+                            'fundamental_data': fundamental
+                        }
+                except Exception as e:
+                    logger.warning(f"获取股票 {stock_code} 数据失败: {e}")
+            return stock_data
     
     async def _generate_explanation_with_service(
         self,
         stock_code: str,
-        result: StockSelectionResult
+        result: StockSelectionResult,
+        stock_data_batch: Dict[str, Dict[str, Any]]
     ) -> SelectionExplanation:
         """使用AIExplainabilityService生成解释"""
         try:
             from .ai_explainability_service import ExplanationLevel
             
-            # 获取股票数据
-            stock_data = await self._get_stock_data_for_explanation(stock_code)
+            # 从批量数据中获取股票数据
+            stock_data_info = stock_data_batch.get(stock_code)
+            
+            # 如果批量数据中没有，回退到单独获取
+            if stock_data_info is None:
+                price_data = await self._get_stock_data_for_explanation(stock_code)
+                fundamental_data = {}
+                try:
+                    fundamental = await self._data_manager.get_fundamental_data(stock_code)
+                    if fundamental:
+                        if 'pe_ratio' in fundamental:
+                            fundamental_data['PE_RATIO'] = float(fundamental['pe_ratio'])
+                        if 'pb_ratio' in fundamental:
+                            fundamental_data['PB_RATIO'] = float(fundamental['pb_ratio'])
+                        if 'roe' in fundamental:
+                            fundamental_data['ROE'] = float(fundamental['roe'])
+                        if 'debt_ratio' in fundamental:
+                            fundamental_data['DEBT_RATIO'] = float(fundamental['debt_ratio'])
+                except Exception as e:
+                    logger.warning(f"获取股票 {stock_code} 基本面数据失败: {e}")
+            else:
+                price_data = stock_data_info.get('price_data')
+                fundamental_data_raw = stock_data_info.get('fundamental_data', {})
+                
+                # 转换基本面数据
+                fundamental_data = {}
+                if fundamental_data_raw:
+                    if 'pe_ratio' in fundamental_data_raw:
+                        fundamental_data['PE_RATIO'] = float(fundamental_data_raw['pe_ratio'])
+                    if 'pb_ratio' in fundamental_data_raw:
+                        fundamental_data['PB_RATIO'] = float(fundamental_data_raw['pb_ratio'])
+                    if 'roe' in fundamental_data_raw:
+                        fundamental_data['ROE'] = float(fundamental_data_raw['roe'])
+                    if 'debt_ratio' in fundamental_data_raw:
+                        fundamental_data['DEBT_RATIO'] = float(fundamental_data_raw['debt_ratio'])
+            
+            # 计算技术指标
+            indicator_data = {}
+            if price_data is not None and not price_data.empty:
+                # RSI
+                rsi = self._calculate_rsi(price_data['close'], 14)
+                if not rsi.empty:
+                    indicator_data['RSI'] = float(rsi.iloc[-1])
+                
+                # MACD
+                macd_signal = self._calculate_macd_signal(price_data['close'])
+                indicator_data['MACD'] = macd_signal
+                
+                # SMA
+                sma_20 = price_data['close'].rolling(window=20).mean()
+                if not sma_20.empty:
+                    sma_20_current = float(sma_20.iloc[-1])
+                    current_price = float(price_data['close'].iloc[-1])
+                    indicator_data['SMA_20'] = round(current_price / sma_20_current, 2) if sma_20_current > 0 else 0
+                
+                # 成交量比率
+                if 'volume' in price_data.columns:
+                    avg_volume = price_data['volume'].tail(20).mean()
+                    current_volume = float(price_data['volume'].iloc[-1])
+                    indicator_data['Volume_Ratio'] = round(current_volume / avg_volume, 2) if avg_volume > 0 else 0
+                
+                # 价格趋势
+                if len(price_data) >= 5:
+                    price_change = (price_data['close'].iloc[-1] - price_data['close'].iloc[-5]) / price_data['close'].iloc[-5]
+                    indicator_data['price_trend'] = "up" if price_change > 0 else "down"
+                
+                # 成交量趋势
+                if 'volume' in price_data.columns and len(price_data) >= 5:
+                    volume_change = (price_data['volume'].iloc[-1] - price_data['volume'].iloc[-5]) / price_data['volume'].iloc[-5]
+                    indicator_data['volume_trend'] = "increasing" if volume_change > 0 else "decreasing"
+            
+            # 构建股票数据
+            stock_data = {
+                'name': stock_code,
+                'price_data': price_data,
+                'indicators': indicator_data,
+                'fundamentals': fundamental_data
+            }
             
             # 构建选股数据
             selection_data = {
@@ -1348,7 +1837,15 @@ class AISelectionIntegrationService:
             }
             
             # 确定解释级别
-            explanation_level = ExplanationLevel.DETAILED
+            explanation_level_map = {
+                "simple": ExplanationLevel.SIMPLE,
+                "detailed": ExplanationLevel.DETAILED,
+                "technical": ExplanationLevel.TECHNICAL
+            }
+            explanation_level = explanation_level_map.get(
+                getattr(result.criteria, 'explanation_level', 'detailed'),
+                ExplanationLevel.DETAILED
+            )
             
             # 调用AIExplainabilityService
             # selection_result_id 格式为 {result_id}_{stock_code}
@@ -1514,7 +2011,8 @@ class AISelectionIntegrationService:
     async def _generate_single_explanation(
         self,
         stock_code: str,
-        result: StockSelectionResult
+        result: StockSelectionResult,
+        stock_data_batch: Dict[str, Dict[str, Any]]
     ) -> SelectionExplanation:
         """生成单个股票的选股解释"""
         
@@ -1537,16 +2035,48 @@ class AISelectionIntegrationService:
         fundamental_signals = {}
         
         try:
-            # 使用 EnhancedIndicatorService 获取技术指标
-            data_request = {
-                "symbol": stock_code,
-                "asset_type": AssetType.STOCK_A,
-                "data_type": "kdata",
-                "period": "D",
-                "time_range": 365
-            }
+            # 从批量数据中获取股票数据
+            stock_data_info = stock_data_batch.get(stock_code)
             
-            price_data = await self._data_manager.get_data_async(**data_request)
+            # 如果批量数据中没有，回退到单独获取
+            if stock_data_info is None:
+                data_request = {
+                    "symbol": stock_code,
+                    "asset_type": AssetType.STOCK_A,
+                    "data_type": "kdata",
+                    "period": "D",
+                    "time_range": 365
+                }
+                price_data = await self._data_manager.get_data_async(**data_request)
+                fundamental_data = {}
+                try:
+                    fundamental = await self._data_manager.get_fundamental_data(stock_code)
+                    if fundamental:
+                        if 'pe_ratio' in fundamental:
+                            fundamental_data['PE_RATIO'] = float(fundamental['pe_ratio'])
+                        if 'pb_ratio' in fundamental:
+                            fundamental_data['PB_RATIO'] = float(fundamental['pb_ratio'])
+                        if 'roe' in fundamental:
+                            fundamental_data['ROE'] = float(fundamental['roe'])
+                        if 'debt_ratio' in fundamental:
+                            fundamental_data['DEBT_RATIO'] = float(fundamental['debt_ratio'])
+                except Exception as e:
+                    logger.warning(f"获取股票 {stock_code} 基本面数据失败: {e}")
+            else:
+                price_data = stock_data_info.get('price_data')
+                fundamental_data_raw = stock_data_info.get('fundamental_data', {})
+                
+                # 转换基本面数据
+                fundamental_data = {}
+                if fundamental_data_raw:
+                    if 'pe_ratio' in fundamental_data_raw:
+                        fundamental_data['PE_RATIO'] = float(fundamental_data_raw['pe_ratio'])
+                    if 'pb_ratio' in fundamental_data_raw:
+                        fundamental_data['PB_RATIO'] = float(fundamental_data_raw['pb_ratio'])
+                    if 'roe' in fundamental_data_raw:
+                        fundamental_data['ROE'] = float(fundamental_data_raw['roe'])
+                    if 'debt_ratio' in fundamental_data_raw:
+                        fundamental_data['DEBT_RATIO'] = float(fundamental_data_raw['debt_ratio'])
             
             if price_data is not None and not price_data.empty:
                 # 计算真实的技术指标
@@ -1612,20 +2142,16 @@ class AISelectionIntegrationService:
                     technical_signals["support_level"] = "unknown"
                     technical_signals["resistance_level"] = "unknown"
             
-            # 获取基本面数据
-            try:
-                fundamental_data = await self._data_manager.get_fundamental_data(stock_code)
-                if fundamental_data:
-                    if 'pe_ratio' in fundamental_data:
-                        fundamental_signals["pe_ratio"] = float(fundamental_data['pe_ratio'])
-                    if 'pb_ratio' in fundamental_data:
-                        fundamental_signals["pb_ratio"] = float(fundamental_data['pb_ratio'])
-                    if 'roe' in fundamental_data:
-                        fundamental_signals["roe"] = float(fundamental_data['roe'])
-                    if 'debt_ratio' in fundamental_data:
-                        fundamental_signals["debt_ratio"] = float(fundamental_data['debt_ratio'])
-            except Exception as e:
-                logger.warning(f"获取股票 {stock_code} 基本面数据失败: {e}")
+            # 使用批量获取的基本面数据
+            if fundamental_data:
+                if 'PE_RATIO' in fundamental_data:
+                    fundamental_signals["pe_ratio"] = fundamental_data['PE_RATIO']
+                if 'PB_RATIO' in fundamental_data:
+                    fundamental_signals["pb_ratio"] = fundamental_data['PB_RATIO']
+                if 'ROE' in fundamental_data:
+                    fundamental_signals["roe"] = fundamental_data['ROE']
+                if 'DEBT_RATIO' in fundamental_data:
+                    fundamental_signals["debt_ratio"] = fundamental_data['DEBT_RATIO']
                 
         except Exception as e:
             logger.warning(f"获取股票 {stock_code} 技术指标失败: {e}")
@@ -1770,12 +2296,67 @@ class AISelectionIntegrationService:
             logger.error(f"保存策略到数据库失败: {e}")
             raise
     
+    def _validate_selection_criteria(self, criteria: StockSelectionCriteria) -> None:
+        """验证选股标准
+        
+        Args:
+            criteria: 选股标准
+            
+        Raises:
+            ValueError: 参数验证失败
+        """
+        # 验证选股数量
+        if criteria.max_stocks < 1:
+            raise ValueError("选股数量必须大于0")
+        if criteria.max_stocks > 500:
+            logger.warning(f"选股数量过大（{criteria.max_stocks}），建议不超过500")
+        
+        # 验证时间周期
+        if criteria.time_period < 1:
+            raise ValueError("时间周期必须大于0")
+        if criteria.time_period > 3650:
+            logger.warning(f"时间周期过长（{criteria.time_period}天），建议不超过3650天（10年）")
+        
+        # 验证市值范围
+        if criteria.market_cap_min is not None and criteria.market_cap_max is not None:
+            if criteria.market_cap_min > criteria.market_cap_max:
+                raise ValueError(f"最小市值（{criteria.market_cap_min}）不能大于最大市值（{criteria.market_cap_max}）")
+        
+        # 验证市盈率范围
+        if criteria.pe_ratio_min is not None and criteria.pe_ratio_max is not None:
+            if criteria.pe_ratio_min > criteria.pe_ratio_max:
+                raise ValueError(f"最小市盈率（{criteria.pe_ratio_min}）不能大于最大市盈率（{criteria.pe_ratio_max}）")
+        
+        # 验证市净率范围
+        if criteria.pb_ratio_min is not None and criteria.pb_ratio_max is not None:
+            if criteria.pb_ratio_min > criteria.pb_ratio_max:
+                raise ValueError(f"最小市净率（{criteria.pb_ratio_min}）不能大于最大市净率（{criteria.pb_ratio_max}）")
+        
+        # 验证ROE范围
+        if criteria.roe_min is not None and criteria.roe_max is not None:
+            if criteria.roe_min > criteria.roe_max:
+                raise ValueError(f"最小ROE（{criteria.roe_min}）不能大于最大ROE（{criteria.roe_max}）")
+        
+        # 验证技术指标权重
+        if criteria.technical_indicators:
+            total_weight = sum(criteria.technical_indicators.values())
+            if total_weight > 1.0:
+                logger.warning(f"技术指标总权重（{total_weight:.1f}）超过1.0，建议控制在1.0以内")
+        
+        # 验证基本面指标权重
+        if criteria.fundamental_indicators:
+            total_weight = sum(criteria.fundamental_indicators.values())
+            if total_weight > 1.0:
+                logger.warning(f"基本面指标总权重（{total_weight:.1f}）超过1.0，建议控制在1.0以内")
+        
+        logger.debug("选股标准验证通过")
+    
     async def _get_strategy_by_id(self, strategy_id: str) -> Optional[Dict[str, Any]]:
         """根据ID或策略类型获取策略"""
         try:
             # 使用DatabaseService的get_ai_strategy方法
             if hasattr(self._database_service, 'get_ai_strategy'):
-                strategy = await self._database_service.get_ai_strategy(strategy_id)
+                strategy = self._database_service.get_ai_strategy(strategy_id)
                 return strategy
             else:
                 # 如果DatabaseService没有get_ai_strategy方法，使用通用查询方法
@@ -1790,29 +2371,149 @@ class AISelectionIntegrationService:
                 
                 strategy = self._database_service.fetch_one(query, [strategy_id])
                 
-                # 如果找不到策略，且传入的是策略类型，则创建默认策略配置
+                # 如果找不到策略，且传入的是策略类型，则创建并保存默认策略
                 if not strategy and len(strategy_id) != 36:
-                    logger.info(f"未找到策略 {strategy_id}，创建默认策略配置")
-                    strategy = self._create_default_strategy(strategy_id)
+                    logger.info(f"未找到策略 {strategy_id}，创建并保存默认策略配置")
+                    strategy = self._create_and_save_default_strategy(strategy_id)
                 
                 return strategy
         except Exception as e:
             logger.error(f"从数据库获取策略失败: {e}")
             return None
     
-    def _create_default_strategy(self, strategy_type: str) -> Dict[str, Any]:
-        """创建默认策略配置
+    def _create_and_save_default_strategy(self, strategy_type: str) -> Dict[str, Any]:
+        """创建并保存默认策略配置到数据库
         
         Args:
             strategy_type: 策略类型
             
         Returns:
-            默认策略配置字典
+            策略配置字典
         """
+        from datetime import datetime
+        
         # 根据策略类型创建默认配置
         default_strategies = {
             "technical": {
-                "id": strategy_type,
+                "name": "技术分析策略",
+                "description": "基于技术指标的分析策略",
+                "strategy_type": strategy_type,
+                "parameters": {},
+                "weight_config": {},
+                "risk_config": {},
+                "performance_metrics": {}
+            },
+            "momentum": {
+                "name": "动量策略",
+                "description": "基于价格动量的选股策略",
+                "strategy_type": strategy_type,
+                "parameters": {},
+                "weight_config": {},
+                "risk_config": {},
+                "performance_metrics": {}
+            },
+            "value": {
+                "name": "价值策略",
+                "description": "基于价值投资的选股策略",
+                "strategy_type": strategy_type,
+                "parameters": {},
+                "weight_config": {},
+                "risk_config": {},
+                "performance_metrics": {}
+            },
+            "growth": {
+                "name": "成长策略",
+                "description": "基于成长性的选股策略",
+                "strategy_type": strategy_type,
+                "parameters": {},
+                "weight_config": {},
+                "risk_config": {},
+                "performance_metrics": {}
+            },
+            "quality": {
+                "name": "质量策略",
+                "description": "基于公司质量的选股策略",
+                "strategy_type": strategy_type,
+                "parameters": {},
+                "weight_config": {},
+                "risk_config": {},
+                "performance_metrics": {}
+            },
+            "dividend": {
+                "name": "股息策略",
+                "description": "基于股息收益的选股策略",
+                "strategy_type": strategy_type,
+                "parameters": {},
+                "weight_config": {},
+                "risk_config": {},
+                "performance_metrics": {}
+            },
+            "quantitative": {
+                "name": "量化策略",
+                "description": "基于量化模型的选股策略",
+                "strategy_type": strategy_type,
+                "parameters": {},
+                "weight_config": {},
+                "risk_config": {},
+                "performance_metrics": {}
+            },
+            "hybrid": {
+                "name": "混合策略",
+                "description": "综合多种策略的混合选股策略",
+                "strategy_type": strategy_type,
+                "parameters": {},
+                "weight_config": {},
+                "risk_config": {},
+                "performance_metrics": {}
+            }
+        }
+        
+        # 获取默认配置
+        if strategy_type in default_strategies:
+            strategy_data = default_strategies[strategy_type]
+            
+            # 保存到数据库
+            try:
+                strategy_id = self._database_service.create_ai_strategy(strategy_data)
+                strategy_data['id'] = strategy_id
+                logger.info(f"默认策略已保存到数据库: {strategy_id} ({strategy_type})")
+                return strategy_data
+            except Exception as e:
+                logger.error(f"保存默认策略失败: {e}")
+                # 如果保存失败，返回临时配置
+                return strategy_data
+        else:
+            # 未知策略类型
+            raise ValueError(f"未知的策略类型: {strategy_type}")
+    
+    def _create_default_strategy(self, strategy_type: str) -> Dict[str, Any]:
+        """创建默认策略配置（仅用于临时配置，不保存到数据库）
+        
+        注意：此方法已废弃，请使用 _create_and_save_default_strategy
+        此方法不会将策略保存到数据库。如果策略不存在，
+        系统会记录警告日志，提醒用户通过专门的策略系统框架创建策略。
+        
+        Args:
+            strategy_type: 策略类型
+            
+        Returns:
+            默认策略配置字典（仅用于临时配置）
+        """
+        # 记录警告：策略不存在，提醒用户通过策略系统框架创建
+        logger.warning(
+            f"策略类型 '{strategy_type}' 在数据库中不存在。"
+            f"请通过专门的策略系统框架创建此策略。"
+            f"当前使用临时配置继续选股操作。"
+        )
+        
+        # 生成一个临时的UUID作为strategy_id，以满足外键约束
+        import uuid
+        temp_strategy_id = str(uuid.uuid4())
+        
+        # 根据策略类型创建默认配置（仅用于临时配置）
+        default_strategies = {
+            "technical": {
+                "id": temp_strategy_id,
                 "name": "技术分析策略",
                 "description": "基于技术指标的分析策略",
                 "strategy_type": strategy_type,
@@ -1824,7 +2525,7 @@ class AISelectionIntegrationService:
                 }
             },
             "momentum": {
-                "id": strategy_type,
+                "id": temp_strategy_id,
                 "name": "动量策略",
                 "description": "基于价格动量的选股策略",
                 "strategy_type": strategy_type,
@@ -1836,7 +2537,7 @@ class AISelectionIntegrationService:
                 }
             },
             "value": {
-                "id": strategy_type,
+                "id": temp_strategy_id,
                 "name": "价值策略",
                 "description": "基于价值投资的选股策略",
                 "strategy_type": strategy_type,
@@ -1848,7 +2549,7 @@ class AISelectionIntegrationService:
                 }
             },
             "growth": {
-                "id": strategy_type,
+                "id": temp_strategy_id,
                 "name": "成长策略",
                 "description": "基于成长性的选股策略",
                 "strategy_type": strategy_type,
@@ -1860,7 +2561,7 @@ class AISelectionIntegrationService:
                 }
             },
             "quality": {
-                "id": strategy_type,
+                "id": temp_strategy_id,
                 "name": "质量策略",
                 "description": "基于公司质量的选股策略",
                 "strategy_type": strategy_type,
@@ -1872,7 +2573,7 @@ class AISelectionIntegrationService:
                 }
             },
             "dividend": {
-                "id": strategy_type,
+                "id": temp_strategy_id,
                 "name": "股息策略",
                 "description": "基于股息收益的选股策略",
                 "strategy_type": strategy_type,
@@ -1884,7 +2585,7 @@ class AISelectionIntegrationService:
                 }
             },
             "quantitative": {
-                "id": strategy_type,
+                "id": temp_strategy_id,
                 "name": "量化策略",
                 "description": "基于量化模型的选股策略",
                 "strategy_type": strategy_type,
@@ -1915,20 +2616,36 @@ class AISelectionIntegrationService:
     async def _save_selection_result(self, result: StockSelectionResult):
         """保存选股结果"""
         try:
+            def convert_to_serializable(obj):
+                """将不可序列化的对象转换为可序列化的格式"""
+                if isinstance(obj, datetime):
+                    return obj.isoformat()
+                elif isinstance(obj, Enum):
+                    return obj.value
+                elif isinstance(obj, dict):
+                    return {k: convert_to_serializable(v) for k, v in obj.items()}
+                elif isinstance(obj, list):
+                    return [convert_to_serializable(item) for item in obj]
+                else:
+                    return obj
+            
             # 将 StockSelectionResult 转换为多条单只股票的记录
             results_to_save = []
             
             for stock_code in result.selected_stocks:
+                criteria_dict = asdict(result.criteria)
+                criteria_dict = convert_to_serializable(criteria_dict)
+                
                 stock_result = {
                     'id': f"{result.result_id}_{stock_code}",  # 使用 result_id + stock_code 作为唯一ID
-                    'strategy_id': result.strategy_id,
-                    'selection_date': result.selection_date,
+                    'strategy_id': result.strategy_id,  # 使用策略ID
+                    'selection_date': result.selection_date.isoformat() if result.selection_date else None,
                     'stock_code': stock_code,
                     'stock_name': '',  # 可以从其他数据源获取
                     'industry': '',  # 可以从其他数据源获取
                     'selection_reason': {
                         'overall_explanation': result.overall_explanation,
-                        'criteria': asdict(result.criteria)
+                        'criteria': criteria_dict
                     },
                     'score': result.stock_scores.get(stock_code, 0.0),
                     'weight': result.weights.get(stock_code, 0.0),
@@ -2048,13 +2765,8 @@ class AISelectionIntegrationService:
         # 选择评分最高的股票
         sorted_stocks = sorted(stock_scores.items(), key=lambda x: x[1], reverse=True)
         
-        # 根据风险等级确定选择数量
-        if criteria.risk_level == RiskLevel.CONSERVATIVE:
-            top_n = min(10, len(sorted_stocks))
-        elif criteria.risk_level == RiskLevel.MODERATE:
-            top_n = min(20, len(sorted_stocks))
-        else:  # AGGRESSIVE
-            top_n = min(30, len(sorted_stocks))
+        # 根据用户配置的数量选择股票
+        top_n = min(criteria.max_stocks, len(sorted_stocks))
         
         selected_stocks = [stock for stock, _ in sorted_stocks[:top_n]]
         selected_scores = {stock: stock_scores[stock] for stock in selected_stocks}
@@ -2070,6 +2782,24 @@ class AISelectionIntegrationService:
         
         基于估值指标的选股策略
         """
+        
+        # 确定权重配置
+        if criteria.fundamental_indicators:
+            # 使用用户配置的权重
+            weights = criteria.fundamental_indicators
+            pe_weight = weights.get("PE估值", 0.30)
+            pb_weight = weights.get("PB估值", 0.25)
+            dividend_weight = weights.get("股息率", 0.20)
+            industry_pb_weight = weights.get("市净率相对行业", 0.15)
+            fcf_weight = weights.get("自由现金流", 0.10)
+        else:
+            # 使用默认权重
+            pe_weight = 0.30
+            pb_weight = 0.25
+            dividend_weight = 0.20
+            industry_pb_weight = 0.15
+            fcf_weight = 0.10
+        
         stock_scores = {}
         
         for stock_code, data in stock_data.items():
@@ -2078,69 +2808,79 @@ class AISelectionIntegrationService:
                 
                 score = 0.0
                 
-                # PE 估值 (30%)
+                # PE 估值
                 pe_ratio = fundamental_data.get('pe_ratio', 0)
+                pe_score = 0.0
                 if pe_ratio > 0:
                     # PE 越低越好，10-20 为合理区间
                     if pe_ratio < 10:
-                        score += 30
+                        pe_score = 100
                     elif pe_ratio < 15:
-                        score += 25
+                        pe_score = 83
                     elif pe_ratio < 20:
-                        score += 20
+                        pe_score = 67
                     elif pe_ratio < 30:
-                        score += 10
+                        pe_score = 33
                     elif pe_ratio < 50:
-                        score += 5
+                        pe_score = 17
+                score += pe_score * pe_weight
                 
-                # PB 估值 (25%)
+                # PB 估值
                 pb_ratio = fundamental_data.get('pb_ratio', 0)
+                pb_score = 0.0
                 if pb_ratio > 0:
                     # PB 越低越好，1-3 为合理区间
                     if pb_ratio < 1:
-                        score += 25
+                        pb_score = 100
                     elif pb_ratio < 2:
-                        score += 20
+                        pb_score = 80
                     elif pb_ratio < 3:
-                        score += 15
+                        pb_score = 60
                     elif pb_ratio < 5:
-                        score += 10
+                        pb_score = 40
                     elif pb_ratio < 8:
-                        score += 5
+                        pb_score = 20
+                score += pb_score * pb_weight
                 
-                # 股息率 (20%)
+                # 股息率
                 dividend_yield = fundamental_data.get('dividend_yield', 0)
+                dividend_score = 0.0
                 if dividend_yield > 0:
                     # 股息率越高越好
                     if dividend_yield > 0.05:  # > 5%
-                        score += 20
+                        dividend_score = 100
                     elif dividend_yield > 0.03:  # > 3%
-                        score += 15
+                        dividend_score = 75
                     elif dividend_yield > 0.02:  # > 2%
-                        score += 10
+                        dividend_score = 50
                     elif dividend_yield > 0.01:  # > 1%
-                        score += 5
+                        dividend_score = 25
+                score += dividend_score * dividend_weight
                 
-                # 市净率相对行业 (15%)
+                # 市净率相对行业
                 industry_pb = fundamental_data.get('industry_pb', 0)
+                industry_pb_score = 0.0
                 if industry_pb > 0 and pb_ratio > 0:
                     pb_ratio_to_industry = pb_ratio / industry_pb
                     if pb_ratio_to_industry < 0.8:
-                        score += 15
+                        industry_pb_score = 100
                     elif pb_ratio_to_industry < 1.0:
-                        score += 10
+                        industry_pb_score = 67
                     elif pb_ratio_to_industry < 1.2:
-                        score += 5
+                        industry_pb_score = 33
+                score += industry_pb_score * industry_pb_weight
                 
-                # 自由现金流 (10%)
+                # 自由现金流
                 fcf_yield = fundamental_data.get('fcf_yield', 0)
+                fcf_score = 0.0
                 if fcf_yield > 0:
                     if fcf_yield > 0.05:  # > 5%
-                        score += 10
+                        fcf_score = 100
                     elif fcf_yield > 0.03:  # > 3%
-                        score += 7
+                        fcf_score = 70
                     elif fcf_yield > 0.02:  # > 2%
-                        score += 5
+                        fcf_score = 50
+                score += fcf_score * fcf_weight
                 
                 stock_scores[stock_code] = min(score, 100.0)
                 
@@ -2151,13 +2891,8 @@ class AISelectionIntegrationService:
         # 选择评分最高的股票
         sorted_stocks = sorted(stock_scores.items(), key=lambda x: x[1], reverse=True)
         
-        # 根据风险等级确定选择数量
-        if criteria.risk_level == RiskLevel.CONSERVATIVE:
-            top_n = min(10, len(sorted_stocks))
-        elif criteria.risk_level == RiskLevel.MODERATE:
-            top_n = min(20, len(sorted_stocks))
-        else:  # AGGRESSIVE
-            top_n = min(30, len(sorted_stocks))
+        # 根据用户配置的数量选择股票
+        top_n = min(criteria.max_stocks, len(sorted_stocks))
         
         selected_stocks = [stock for stock, _ in sorted_stocks[:top_n]]
         selected_scores = {stock: stock_scores[stock] for stock in selected_stocks}
@@ -2173,6 +2908,24 @@ class AISelectionIntegrationService:
         
         基于成长性指标的选股策略
         """
+        
+        # 确定权重配置
+        if criteria.fundamental_indicators:
+            # 使用用户配置的权重
+            weights = criteria.fundamental_indicators
+            revenue_weight = weights.get("营收增长率", 0.30)
+            profit_weight = weights.get("净利润增长率", 0.30)
+            roe_weight = weights.get("ROE", 0.20)
+            momentum_weight = weights.get("价格动量", 0.10)
+            industry_growth_weight = weights.get("行业成长性", 0.10)
+        else:
+            # 使用默认权重
+            revenue_weight = 0.30
+            profit_weight = 0.30
+            roe_weight = 0.20
+            momentum_weight = 0.10
+            industry_growth_weight = 0.10
+        
         stock_scores = {}
         
         for stock_code, data in stock_data.items():
@@ -2182,61 +2935,71 @@ class AISelectionIntegrationService:
                 
                 score = 0.0
                 
-                # 营收增长率 (30%)
+                # 营收增长率
                 revenue_growth = fundamental_data.get('revenue_growth', 0)
+                revenue_score = 0.0
                 if revenue_growth > 0:
                     if revenue_growth > 0.30:  # > 30%
-                        score += 30
+                        revenue_score = 100
                     elif revenue_growth > 0.20:  # > 20%
-                        score += 25
+                        revenue_score = 83
                     elif revenue_growth > 0.15:  # > 15%
-                        score += 20
+                        revenue_score = 67
                     elif revenue_growth > 0.10:  # > 10%
-                        score += 15
+                        revenue_score = 50
                     elif revenue_growth > 0.05:  # > 5%
-                        score += 10
+                        revenue_score = 33
+                score += revenue_score * revenue_weight
                 
-                # 净利润增长率 (30%)
+                # 净利润增长率
                 profit_growth = fundamental_data.get('profit_growth', 0)
+                profit_score = 0.0
                 if profit_growth > 0:
                     if profit_growth > 0.30:  # > 30%
-                        score += 30
+                        profit_score = 100
                     elif profit_growth > 0.20:  # > 20%
-                        score += 25
+                        profit_score = 83
                     elif profit_growth > 0.15:  # > 15%
-                        score += 20
+                        profit_score = 67
                     elif profit_growth > 0.10:  # > 10%
-                        score += 15
+                        profit_score = 50
                     elif profit_growth > 0.05:  # > 5%
-                        score += 10
+                        profit_score = 33
+                score += profit_score * profit_weight
                 
-                # ROE (20%)
+                # ROE
                 roe = fundamental_data.get('roe', 0)
+                roe_score = 0.0
                 if roe > 0:
                     if roe > 0.20:  # > 20%
-                        score += 20
+                        roe_score = 100
                     elif roe > 0.15:  # > 15%
-                        score += 15
+                        roe_score = 75
                     elif roe > 0.10:  # > 10%
-                        score += 10
+                        roe_score = 50
                     elif roe > 0.05:  # > 5%
-                        score += 5
+                        roe_score = 25
+                score += roe_score * roe_weight
                 
-                # 价格动量 (10%)
+                # 价格动量
+                momentum_score = 0.0
                 if price_data is not None and not price_data.empty:
                     momentum_20d = price_data['close'].pct_change(20)
                     if not momentum_20d.empty and momentum_20d.iloc[-1] > 0:
-                        score += min(momentum_20d.iloc[-1] * 100, 10)
+                        momentum_score = min(momentum_20d.iloc[-1] * 100, 100)
+                score += momentum_score * momentum_weight
                 
-                # 行业成长性 (10%)
+                # 行业成长性
                 industry_growth = fundamental_data.get('industry_growth', 0)
+                industry_growth_score = 0.0
                 if industry_growth > 0:
                     if industry_growth > 0.20:  # > 20%
-                        score += 10
+                        industry_growth_score = 100
                     elif industry_growth > 0.15:  # > 15%
-                        score += 7
+                        industry_growth_score = 70
                     elif industry_growth > 0.10:  # > 10%
-                        score += 5
+                        industry_growth_score = 50
+                score += industry_growth_score * industry_growth_weight
                 
                 stock_scores[stock_code] = min(score, 100.0)
                 
@@ -2247,13 +3010,8 @@ class AISelectionIntegrationService:
         # 选择评分最高的股票
         sorted_stocks = sorted(stock_scores.items(), key=lambda x: x[1], reverse=True)
         
-        # 根据风险等级确定选择数量
-        if criteria.risk_level == RiskLevel.CONSERVATIVE:
-            top_n = min(10, len(sorted_stocks))
-        elif criteria.risk_level == RiskLevel.MODERATE:
-            top_n = min(20, len(sorted_stocks))
-        else:  # AGGRESSIVE
-            top_n = min(30, len(sorted_stocks))
+        # 根据用户配置的数量选择股票
+        top_n = min(criteria.max_stocks, len(sorted_stocks))
         
         selected_stocks = [stock for stock, _ in sorted_stocks[:top_n]]
         selected_scores = {stock: stock_scores[stock] for stock in selected_stocks}
@@ -2269,6 +3027,26 @@ class AISelectionIntegrationService:
         
         基于财务质量的选股策略
         """
+        
+        # 确定权重配置
+        if criteria.fundamental_indicators:
+            # 使用用户配置的权重
+            weights = criteria.fundamental_indicators
+            roe_weight = weights.get("ROE", 0.25)
+            roa_weight = weights.get("ROA", 0.20)
+            debt_ratio_weight = weights.get("资产负债率", 0.20)
+            cash_flow_weight = weights.get("现金流", 0.15)
+            profit_margin_weight = weights.get("利润质量", 0.10)
+            dividend_stability_weight = weights.get("分红稳定性", 0.10)
+        else:
+            # 使用默认权重
+            roe_weight = 0.25
+            roa_weight = 0.20
+            debt_ratio_weight = 0.20
+            cash_flow_weight = 0.15
+            profit_margin_weight = 0.10
+            dividend_stability_weight = 0.10
+        
         stock_scores = {}
         
         for stock_code, data in stock_data.items():
@@ -2277,72 +3055,84 @@ class AISelectionIntegrationService:
                 
                 score = 0.0
                 
-                # ROE (25%)
+                # ROE
                 roe = fundamental_data.get('roe', 0)
+                roe_score = 0.0
                 if roe > 0:
                     if roe > 0.20:  # > 20%
-                        score += 25
+                        roe_score = 100
                     elif roe > 0.15:  # > 15%
-                        score += 20
+                        roe_score = 80
                     elif roe > 0.10:  # > 10%
-                        score += 15
+                        roe_score = 60
                     elif roe > 0.05:  # > 5%
-                        score += 10
+                        roe_score = 40
+                score += roe_score * roe_weight
                 
-                # ROA (20%)
+                # ROA
                 roa = fundamental_data.get('roa', 0)
+                roa_score = 0.0
                 if roa > 0:
                     if roa > 0.10:  # > 10%
-                        score += 20
+                        roa_score = 100
                     elif roa > 0.08:  # > 8%
-                        score += 15
+                        roa_score = 75
                     elif roa > 0.05:  # > 5%
-                        score += 10
+                        roa_score = 50
                     elif roa > 0.03:  # > 3%
-                        score += 5
+                        roa_score = 25
+                score += roa_score * roa_weight
                 
-                # 资产负债率 (20%)
+                # 资产负债率
                 debt_ratio = fundamental_data.get('debt_ratio', 1.0)
+                debt_ratio_score = 0.0
                 if debt_ratio < 0.3:  # < 30%
-                    score += 20
+                    debt_ratio_score = 100
                 elif debt_ratio < 0.5:  # < 50%
-                    score += 15
+                    debt_ratio_score = 75
                 elif debt_ratio < 0.7:  # < 70%
-                    score += 10
+                    debt_ratio_score = 50
                 elif debt_ratio < 0.8:  # < 80%
-                    score += 5
+                    debt_ratio_score = 25
+                score += debt_ratio_score * debt_ratio_weight
                 
-                # 现金流 (15%)
+                # 现金流
                 operating_cash_flow = fundamental_data.get('operating_cash_flow', 0)
+                cash_flow_score = 0.0
                 if operating_cash_flow > 0:
                     if operating_cash_flow > 1000000000:  # > 10亿
-                        score += 15
+                        cash_flow_score = 100
                     elif operating_cash_flow > 500000000:  # > 5亿
-                        score += 10
+                        cash_flow_score = 67
                     elif operating_cash_flow > 100000000:  # > 1亿
-                        score += 5
+                        cash_flow_score = 33
+                score += cash_flow_score * cash_flow_weight
                 
-                # 利润质量 (10%)
+                # 利润质量
                 net_profit = fundamental_data.get('net_profit', 0)
                 gross_profit = fundamental_data.get('gross_profit', 0)
+                profit_margin_score = 0.0
                 if gross_profit > 0:
                     profit_margin = net_profit / gross_profit
                     if profit_margin > 0.30:  # > 30%
-                        score += 10
+                        profit_margin_score = 100
                     elif profit_margin > 0.20:  # > 20%
-                        score += 7
+                        profit_margin_score = 70
                     elif profit_margin > 0.10:  # > 10%
-                        score += 5
+                        profit_margin_score = 50
+                score += profit_margin_score * profit_margin_weight
                 
-                # 分红稳定性 (10%)
+                # 分红稳定性
                 dividend_growth = fundamental_data.get('dividend_growth', 0)
+                dividend_stability_score = 0.0
                 if dividend_growth > 0:
                     if dividend_growth > 0.10:  # > 10%
-                        score += 10
+                        dividend_stability_score = 100
                     elif dividend_growth > 0.05:  # > 5%
-                        score += 7
+                        dividend_stability_score = 70
                     elif dividend_growth > 0.02:  # > 2%
-                        score += 5
+                        dividend_stability_score = 40
+                score += dividend_stability_score * dividend_stability_weight
                 
                 stock_scores[stock_code] = min(score, 100.0)
                 
@@ -2353,13 +3143,8 @@ class AISelectionIntegrationService:
         # 选择评分最高的股票
         sorted_stocks = sorted(stock_scores.items(), key=lambda x: x[1], reverse=True)
         
-        # 根据风险等级确定选择数量
-        if criteria.risk_level == RiskLevel.CONSERVATIVE:
-            top_n = min(10, len(sorted_stocks))
-        elif criteria.risk_level == RiskLevel.MODERATE:
-            top_n = min(20, len(sorted_stocks))
-        else:  # AGGRESSIVE
-            top_n = min(30, len(sorted_stocks))
+        # 根据用户配置的数量选择股票
+        top_n = min(criteria.max_stocks, len(sorted_stocks))
         
         selected_stocks = [stock for stock, _ in sorted_stocks[:top_n]]
         selected_scores = {stock: stock_scores[stock] for stock in selected_stocks}
@@ -2398,9 +3183,19 @@ class AISelectionIntegrationService:
             
             logger.info(f"开始选股: 策略={strategy.value}, 日期={criteria.selection_date}")
             
+            # 根据策略类型获取策略ID
+            strategy_id = strategy.value
+            if hasattr(self._database_service, 'get_ai_strategy'):
+                strategy_data = self._database_service.get_ai_strategy(strategy.value)
+                if strategy_data and 'id' in strategy_data:
+                    strategy_id = strategy_data['id']
+                    logger.info(f"使用策略ID: {strategy_id} (类型: {strategy.value})")
+                else:
+                    logger.warning(f"未找到策略类型 {strategy.value} 的记录，使用策略类型作为ID")
+            
             result = asyncio.run(
                 self.select_stocks_with_explanation(
-                    strategy_id=strategy.value,
+                    strategy_id=strategy_id,
                     criteria=criteria,
                     error_collector=error_collector,
                     progress_callback=progress_callback

@@ -182,14 +182,6 @@ def integrate_enhanced_components(main_window, **managers):
             )
             integrated_components['fundamental_tab'] = fundamental_tab
 
-        # 添加数据质量监控标签页
-        quality_monitor_tab = DataQualityMonitorTab(
-            parent=main_window,
-            quality_monitor=managers.get('quality_monitor'),
-            report_generator=managers.get('report_generator')
-        )
-        integrated_components['quality_monitor_tab'] = quality_monitor_tab
-
         # 添加智能推荐面板
         recommendation_panel = SmartRecommendationPanel(
             parent=main_window,

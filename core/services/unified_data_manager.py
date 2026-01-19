@@ -435,6 +435,11 @@ class UnifiedDataManager:
             # 使用正确的构造函数参数：max_size和ttl（秒）
             self.multi_cache = MultiLevelCacheManager(max_size=1000, ttl=1800)  # 30分钟 = 1800秒
 
+            # 质量评分缓存（专门用于data_quality_monitor查询）
+            self._quality_score_cache = {}
+            self._quality_cache_lock = threading.RLock()
+            self._quality_cache_ttl = 300  # 5分钟缓存时间
+
             # DuckDB可用标志
             self.duckdb_available = True
 
@@ -497,6 +502,55 @@ class UnifiedDataManager:
             self._stock_service = None
             logger.warning(f"⚠️ StockService初始化失败: {e}")
 
+    def _get_quality_score_from_cache(self, symbol: str, frequency: str, 
+                                       data_source: str, check_date: str) -> Optional[float]:
+        """
+        从缓存获取质量评分
+        
+        Args:
+            symbol: 股票代码
+            frequency: 频率
+            data_source: 数据源
+            check_date: 检查日期
+            
+        Returns:
+            质量评分，如果缓存不存在或已过期则返回None
+        """
+        cache_key = f"{symbol}_{frequency}_{data_source}_{check_date}"
+        
+        with self._quality_cache_lock:
+            if cache_key in self._quality_score_cache:
+                cached_data = self._quality_score_cache[cache_key]
+                if (datetime.now() - cached_data['timestamp']).seconds < self._quality_cache_ttl:
+                    logger.debug(f"[质量评分缓存] 命中缓存: {cache_key}")
+                    return cached_data['score']
+                else:
+                    del self._quality_score_cache[cache_key]
+                    logger.debug(f"[质量评分缓存] 缓存过期: {cache_key}")
+        
+        return None
+
+    def _set_quality_score_to_cache(self, symbol: str, frequency: str, 
+                                    data_source: str, check_date: str, score: float):
+        """
+        将质量评分存入缓存
+        
+        Args:
+            symbol: 股票代码
+            frequency: 频率
+            data_source: 数据源
+            check_date: 检查日期
+            score: 质量评分
+        """
+        cache_key = f"{symbol}_{frequency}_{data_source}_{check_date}"
+        
+        with self._quality_cache_lock:
+            self._quality_score_cache[cache_key] = {
+                'score': score,
+                'timestamp': datetime.now()
+            }
+            logger.debug(f"[质量评分缓存] 存入缓存: {cache_key}, score: {score:.3f}")
+
     def _create_uni_plugin_manager_if_needed(self):
         """初始化UniPluginDataManager"""
         try:
@@ -518,6 +572,9 @@ class UnifiedDataManager:
                 data_source_router=data_source_router,
                 tet_pipeline=tet_pipeline
             )
+
+            # 关键修复：调用initialize()方法来注册插件到路由器
+            self._uni_plugin_manager.initialize()
 
             logger.info("UniPluginDataManager初始化成功")
 
@@ -1168,15 +1225,49 @@ class UnifiedDataManager:
             frequency = period_to_frequency_map.get(period, '1d')
             logger.debug(f"📊 周期映射: {period} -> {frequency}")
 
-            # ✅ 优先查询质量优选视图（获取最优质量数据）
+            # ✅ 优化：在CTE中添加WHERE条件，提前过滤数据，减少JOIN的数据量
             view_query = f"""
+                WITH ranked_data AS (
+                    SELECT 
+                        hkd.*,
+                        dqm.quality_score,
+                        -- 数据源优先级：有质量评分的优先，其次按数据源名称稳定排序
+                        CASE 
+                            WHEN dqm.quality_score IS NOT NULL THEN dqm.quality_score
+                            WHEN hkd.data_source = 'tongdaxin' THEN 60.0
+                            WHEN hkd.data_source = 'akshare' THEN 55.0
+                            WHEN hkd.data_source = 'tushare' THEN 65.0
+                            ELSE 50.0
+                        END as effective_quality_score,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY hkd.symbol, hkd.timestamp, hkd.frequency 
+                            ORDER BY 
+                                -- 首先按有效质量分数排序（降序）
+                                CASE 
+                                    WHEN dqm.quality_score IS NOT NULL THEN dqm.quality_score
+                                    WHEN hkd.data_source = 'tongdaxin' THEN 60.0
+                                    WHEN hkd.data_source = 'akshare' THEN 55.0
+                                    WHEN hkd.data_source = 'tushare' THEN 65.0
+                                    ELSE 50.0
+                                END DESC,
+                                -- 其次按更新时间排序（降序，最新的优先）
+                                hkd.updated_at DESC
+                        ) as quality_rank
+                    FROM historical_kline_data hkd
+                    LEFT JOIN data_quality_monitor dqm ON (
+                        hkd.symbol = dqm.symbol 
+                        AND hkd.data_source = dqm.data_source 
+                        AND DATE(hkd.timestamp) = dqm.check_date
+                        AND hkd.frequency = dqm.frequency
+                    )
+                    WHERE hkd.symbol = ? AND hkd.frequency = ?
+                )
                 SELECT 
                     symbol as code, 
                     timestamp as datetime, 
                     open, high, low, close, volume, amount
-                FROM unified_best_quality_kline
-                WHERE symbol = ? 
-                  AND frequency = ?
+                FROM ranked_data 
+                WHERE quality_rank = 1
                 ORDER BY timestamp DESC 
                 LIMIT ?
             """
@@ -1201,6 +1292,19 @@ class UnifiedDataManager:
                         logger.info(f"✅ [视图查询成功（质量优选）]: {stock_code}, frequency={frequency}, {len(df)} 条记录")
                         # ✅ 为视图结果添加data_source列，默认值为'best_quality'
                         df['data_source'] = 'best_quality'
+                        
+                        # ✅ 缓存质量评分（从查询结果中提取）
+                        if 'quality_score' in df.columns:
+                            for idx, row in df.iterrows():
+                                check_date = row['datetime'].date() if pd.notna(row['datetime']) else datetime.now().date()
+                                self._set_quality_score_to_cache(
+                                    symbol=stock_code,
+                                    frequency=frequency,
+                                    data_source='best_quality',
+                                    check_date=check_date.isoformat(),
+                                    score=row.get('quality_score', 0.0)
+                                )
+                        
                         # ✅ 修复：对从DuckDB获取的数据进行标准化和排序
                         df = self._standardize_kdata_format(df, stock_code)
                         return df
@@ -2959,6 +3063,568 @@ class UnifiedDataManager:
         import asyncio
         return asyncio.run(self.enhanced_duckdb_downloader.get_data_statistics())
 
+    async def get_historical_data_batch(self,
+                                       symbols: List[str],
+                                       period: str = 'D',
+                                       start_date: datetime = None,
+                                       end_date: datetime = None,
+                                       count: int = 365,
+                                       asset_type: AssetType = AssetType.STOCK_A) -> Dict[str, pd.DataFrame]:
+        """
+        从数据库批量获取历史数据（非下载，直接查询）
+
+        Args:
+            symbols: 股票代码列表
+            period: 数据周期
+            start_date: 开始日期（可选）
+            end_date: 结束日期（可选）
+            count: 数据条数（当start_date和end_date都为None时使用）
+            asset_type: 资产类型
+
+        Returns:
+            Dict[symbol, DataFrame]: 历史数据字典
+        """
+        if not self.duckdb_available or not self.duckdb_operations:
+            logger.error("DuckDB不可用，无法批量查询历史数据")
+            return {}
+
+        if not symbols:
+            logger.warning("股票代码列表为空")
+            return {}
+
+        try:
+            logger.info(f"开始批量查询历史数据: {len(symbols)} 只股票, period={period}, asset_type={asset_type.value}")
+
+            # 周期到频率的映射
+            period_to_frequency_map = {
+                'D': '1d', 'W': '1w', 'M': '1M',
+                '1': '1min', '5': '5min', '15': '15min',
+                '30': '30min', '60': '60min',
+                'daily': '1d', 'weekly': '1w', 'monthly': '1M'
+            }
+            frequency = period_to_frequency_map.get(period, '1d')
+
+            # 获取数据库路径
+            database_path = self.asset_manager.get_database_path(asset_type)
+            logger.debug(f"使用数据库路径: {database_path}")
+
+            # 性能优化：使用临时表替代IN子查询
+            # 当symbols列表很大时，IN子查询性能急剧下降
+            # 使用临时表+JOIN可以显著提升性能
+            temp_table_name = f"temp_symbols_{int(datetime.now().timestamp())}"
+            
+            # 创建临时表并插入数据
+            create_temp_table = f"""
+                CREATE TEMPORARY TABLE {temp_table_name} (
+                    symbol VARCHAR PRIMARY KEY
+                )
+            """
+            
+            # 准备批量插入数据
+            symbols_values = [(s,) for s in symbols]
+            
+            # 准备查询参数
+            query_params = [frequency]
+            
+            # 优先查询质量优选视图（使用临时表JOIN）
+            view_query = f"""
+                {create_temp_table}
+            """
+            
+            # 执行创建临时表、插入数据、查询（在同一个connection中）
+            with self.duckdb_manager.get_connection(database_path) as conn:
+                import time
+                
+                # 记录开始时间
+                start_time = time.time()
+                temp_table_start = time.time()
+                
+                conn.execute(view_query)
+                
+                # 批量插入symbol到临时表
+                conn.executemany(f"INSERT INTO {temp_table_name} VALUES (?)", symbols_values)
+                
+                temp_table_end = time.time()
+                logger.debug(f"⏱️ 临时表创建和插入耗时: {temp_table_end - temp_table_start:.3f}秒")
+                
+                # 使用JOIN替代IN子查询（先去重，再取前count条）
+                view_query = f"""
+                    SELECT 
+                        code, 
+                        datetime, 
+                        open, high, low, close, volume, amount
+                    FROM (
+                        SELECT 
+                            symbol as code, 
+                            timestamp as datetime, 
+                            open, high, low, close, volume, amount,
+                            ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY timestamp DESC) as rn
+                        FROM (
+                            SELECT 
+                                hkd.symbol,
+                                hkd.timestamp,
+                                hkd.open, hkd.high, hkd.low, hkd.close, hkd.volume, hkd.amount,
+                                hkd.frequency,
+                                hkd.data_source,
+                                hkd.updated_at,
+                                dqm.quality_score
+                            FROM historical_kline_data hkd
+                            INNER JOIN {temp_table_name} temp ON hkd.symbol = temp.symbol
+                            LEFT JOIN data_quality_monitor dqm ON (
+                                hkd.symbol = dqm.symbol 
+                                AND hkd.data_source = dqm.data_source 
+                                AND CAST(hkd.timestamp AS DATE) = dqm.check_date
+                                AND hkd.frequency = dqm.frequency
+                            )
+                            WHERE hkd.frequency = ?
+                            QUALIFY ROW_NUMBER() OVER (
+                                PARTITION BY hkd.symbol, hkd.timestamp, hkd.frequency 
+                                ORDER BY 
+                                    CASE 
+                                        WHEN dqm.quality_score IS NOT NULL THEN dqm.quality_score
+                                        WHEN hkd.data_source = 'tongdaxin' THEN 60.0
+                                        WHEN hkd.data_source = 'akshare' THEN 55.0
+                                        WHEN hkd.data_source = 'tushare' THEN 65.0
+                                        ELSE 50.0
+                                    END DESC,
+                                    hkd.updated_at DESC
+                            ) = 1
+                        ) deduplicated_hkd
+                    ) subq
+                """
+
+                # 添加日期过滤条件和行数限制
+                if start_date or end_date:
+                    if start_date:
+                        view_query += " WHERE datetime >= ?"
+                        query_params.append(start_date)
+                    
+                    if end_date:
+                        if start_date:
+                            view_query += " AND datetime <= ?"
+                        else:
+                            view_query += " WHERE datetime <= ?"
+                        query_params.append(end_date)
+                    
+                    view_query += " AND rn <= ?"
+                    query_params.append(count)
+                else:
+                    view_query += " WHERE rn <= ?"
+                    query_params.append(count)
+
+                # 按symbol和timestamp排序
+                view_query += " ORDER BY code, datetime DESC"
+
+                logger.debug(f"执行批量查询SQL: {view_query}")
+                logger.debug(f"查询参数: {query_params}")
+                logger.debug(f"参数类型: {[type(p).__name__ for p in query_params]}")
+
+                # ========== EXPLAIN分析查询执行计划 ==========
+                explain_start = time.time()
+                try:
+                    explain_query = f"EXPLAIN {view_query}"
+                    explain_result = conn.execute(explain_query, query_params).fetchall()
+                    
+                    logger.info("=" * 80)
+                    logger.info("📊 查询执行计划分析")
+                    logger.info("=" * 80)
+                    
+                    for i, row in enumerate(explain_result, 1):
+                        logger.info(f"  步骤{i}: {row[0]}")
+                    
+                    # 检查是否使用了索引
+                    explain_str = str(explain_result)
+                    index_used = False
+                    index_details = []
+                    
+                    if 'idx_' in explain_str:
+                        index_used = True
+                        for row in explain_result:
+                            if 'idx_' in str(row[0]):
+                                index_details.append(row[0])
+                    
+                    if index_used:
+                        logger.info(f"✅ 索引使用情况: 已使用索引")
+                        for detail in index_details:
+                            logger.info(f"   - {detail}")
+                    else:
+                        logger.warning(f"⚠️  索引使用情况: 未使用索引（可能存在全表扫描）")
+                    
+                    # 检查是否有全表扫描
+                    if 'SEQ_SCAN' in explain_str or 'sequential_scan' in explain_str:
+                        logger.warning(f"⚠️  检测到全表扫描（SEQ_SCAN），性能可能受影响")
+                    
+                    # 检查是否有哈希连接
+                    if 'HASH_JOIN' in explain_str or 'hash_join' in explain_str:
+                        logger.info(f"✅ 使用哈希连接（HASH_JOIN）")
+                    
+                    # 检查是否有排序操作
+                    if 'ORDER_BY' in explain_str or 'order_by' in explain_str:
+                        logger.info(f"✅ 检测到排序操作（ORDER_BY）")
+                    
+                    logger.info("=" * 80)
+                    
+                    explain_end = time.time()
+                    logger.debug(f"⏱️ EXPLAIN分析耗时: {explain_end - explain_start:.3f}秒")
+                    
+                except Exception as explain_error:
+                    logger.warning(f"EXPLAIN分析失败: {explain_error}")
+                
+                # ========== 检查数据库索引信息 ==========
+                try:
+                    logger.info("=" * 80)
+                    logger.info("📋 数据库索引信息")
+                    logger.info("=" * 80)
+                    
+                    # 检查historical_kline_data表的索引
+                    index_check = conn.execute("""
+                        SELECT index_name 
+                        FROM duckdb_indexes() 
+                        WHERE table_name = 'historical_kline_data'
+                        ORDER BY index_name
+                    """).fetchall()
+                    
+                    if index_check:
+                        logger.info(f"historical_kline_data表索引数量: {len(index_check)}")
+                        for idx_info in index_check:
+                            logger.info(f"  - {idx_info[0]}")
+                    else:
+                        logger.warning(f"⚠️  historical_kline_data表没有索引")
+                        logger.info(f"💡 提示: 请在数据库初始化时创建索引，或在系统空闲时手动创建索引")
+                    
+                    # 检查data_quality_monitor表的索引
+                    index_check = conn.execute("""
+                        SELECT index_name 
+                        FROM duckdb_indexes() 
+                        WHERE table_name = 'data_quality_monitor'
+                        ORDER BY index_name
+                    """).fetchall()
+                    
+                    if index_check:
+                        logger.info(f"data_quality_monitor表索引数量: {len(index_check)}")
+                        for idx_info in index_check:
+                            logger.info(f"  - {idx_info[0]}")
+                    else:
+                        logger.warning(f"⚠️  data_quality_monitor表没有索引")
+                        logger.info(f"💡 提示: 请在数据库初始化时创建索引，或在系统空闲时手动创建索引")
+                    
+                    logger.info("=" * 80)
+                    
+                except Exception as index_error:
+                    logger.warning(f"索引信息检查失败: {index_error}")
+
+                try:
+                    # 直接在同一个connection中执行查询
+                    query_start = time.time()
+                    result_df = conn.execute(view_query, query_params).df()
+                    query_end = time.time()
+                    
+                    logger.info(f"⏱️ 查询执行耗时: {query_end - query_start:.3f}秒")
+                    logger.info(f"⏱️ 总耗时（含EXPLAIN）: {query_end - start_time:.3f}秒")
+                    
+                    # 清理临时表
+                    try:
+                        cleanup_start = time.time()
+                        conn.execute(f"DROP TABLE IF EXISTS {temp_table_name}")
+                        cleanup_end = time.time()
+                        logger.debug(f"⏱️ 清理临时表耗时: {cleanup_end - cleanup_start:.3f}秒")
+                        logger.debug(f"已清理临时表: {temp_table_name}")
+                    except Exception as cleanup_error:
+                        logger.warning(f"清理临时表失败: {cleanup_error}")
+
+                    if result_df is not None and not result_df.empty:
+                        df = result_df
+                        logger.info(f"✅ 批量查询成功: 共 {len(df)} 条记录, {df['code'].nunique()} 只股票")
+
+                        # 为视图结果添加data_source列
+                        df['data_source'] = 'best_quality'
+
+                        # ========== 数据标准化阶段性能监控 ==========
+                        standardization_start = time.time()
+                        
+                        # ✅ 缓存质量评分（从查询结果中提取）
+                        if 'quality_score' in df.columns:
+                            cache_start = time.time()
+                            for idx, row in df.iterrows():
+                                check_date = row['datetime'].date() if pd.notna(row['datetime']) else datetime.now().date()
+                                self._set_quality_score_to_cache(
+                                    symbol=row['code'],
+                                    frequency=frequency,
+                                    data_source='best_quality',
+                                    check_date=check_date.isoformat(),
+                                    score=row.get('quality_score', 0.0)
+                                )
+                            cache_end = time.time()
+                            logger.debug(f"⏱️ 质量评分缓存耗时: {cache_end - cache_start:.3f}秒")
+
+                        # ========== 批量标准化优化 ==========
+                        # 一次性标准化所有数据，而不是对每只股票单独调用标准化函数
+                        # 这可以大幅提升性能（从61秒降低到几秒）
+                        batch_standardize_start = time.time()
+                        
+                        try:
+                            # 1. 数据清洗（一次性处理所有数据）
+                            df = df.replace([np.inf, -np.inf], np.nan)
+                            df = df.dropna(subset=['close'])
+                            
+                            # 2. 确保datetime是datetime类型
+                            df['datetime'] = pd.to_datetime(df['datetime'])
+                            
+                            # 3. 确保symbol字段存在
+                            if 'symbol' not in df.columns:
+                                df['symbol'] = df['code']
+                            
+                            # 4. 添加缺失的字段（向量化操作）
+                            if 'adj_close' not in df.columns:
+                                df['adj_close'] = df['close']
+                            
+                            if 'adj_factor' not in df.columns:
+                                df['adj_factor'] = 1.0
+                            
+                            if 'amount' not in df.columns:
+                                df['amount'] = 0.0
+                            
+                            # 5. 数据类型转换（向量化操作）
+                            for col in ['open', 'high', 'low', 'close', 'volume', 'amount']:
+                                if col in df.columns:
+                                    df[col] = pd.to_numeric(df[col], errors='coerce')
+                            
+                            # 6. 按code和datetime排序（一次性排序所有数据）
+                            df = df.sort_values(by=['code', 'datetime'], ascending=[True, True]).reset_index(drop=True)
+                            
+                            batch_standardize_end = time.time()
+                            logger.debug(f"⏱️ 批量标准化耗时: {batch_standardize_end - batch_standardize_start:.3f}秒")
+                            
+                        except Exception as batch_error:
+                            logger.warning(f"批量标准化失败，回退到逐个标准化: {batch_error}")
+                            # 如果批量标准化失败，回退到原来的逐个标准化方式
+                            batch_standardize_end = time.time()
+                            logger.debug(f"⏱️ 批量标准化耗时（失败）: {batch_standardize_end - batch_standardize_start:.3f}秒")
+
+                        # 按symbol分组（使用pandas groupby优化，避免循环扫描）
+                        result_dict = {}
+                        grouping_start = time.time()
+                        
+                        # 使用字典推导式分组，避免循环扫描DataFrame
+                        # 这比逐个筛选快10-100倍
+                        grouped = {code: group for code, group in df.groupby('code')}
+                        
+                        for symbol in symbols:
+                            if symbol in grouped:
+                                # 数据已经批量标准化过了，直接使用
+                                result_dict[symbol] = grouped[symbol].copy()
+                            else:
+                                # 如果视图查询没有数据，尝试查询基础表
+                                result_dict[symbol] = await self._get_kdata_from_base_table(
+                                    database_path, symbol, frequency, start_date, end_date, count
+                                )
+                        
+                        grouping_end = time.time()
+                        logger.debug(f"⏱️ 数据分组耗时: {grouping_end - grouping_start:.3f}秒")
+                        
+                        standardization_end = time.time()
+                        logger.info(f"⏱️ 数据标准化总耗时: {standardization_end - standardization_start:.3f}秒")
+                        
+                        # ========== 性能汇总 ==========
+                        total_end = time.time()
+                        total_time = total_end - start_time
+                        logger.info("=" * 80)
+                        logger.info("📊 批量查询性能汇总")
+                        logger.info("=" * 80)
+                        logger.info(f"总耗时: {total_time:.3f}秒")
+                        logger.info(f"查询股票数: {len(symbols)}")
+                        logger.info(f"返回记录数: {len(df)}")
+                        logger.info(f"有数据股票数: {len(result_dict)}")
+                        logger.info(f"平均每只股票耗时: {total_time / len(symbols):.3f}秒")
+                        logger.info(f"平均每条记录耗时: {total_time / len(df):.3f}秒")
+                        logger.info("=" * 80)
+
+                        logger.info(f"批量查询完成: {len(result_dict)}/{len(symbols)} 只股票有数据")
+                        return result_dict
+                    else:
+                        logger.warning(f"批量查询结果为空，尝试使用基础表查询")
+                        return await self._batch_query_from_base_table(
+                            database_path, symbols, frequency, start_date, end_date, count
+                        )
+
+                except Exception as view_error:
+                    error_msg = str(view_error)
+                    
+                    # 检测DuckDB受限模式（FATAL Error）
+                    if "FATAL Error" in error_msg or "database has been invalidated" in error_msg:
+                        logger.error("🚨 检测到DuckDB受限模式，尝试重启连接池...")
+                        
+                        # 重启连接池
+                        try:
+                            restart_success = self.duckdb_manager.restart_pool(database_path)
+                            if restart_success:
+                                logger.info("✅ 连接池重启成功，重试查询...")
+                                # 重试查询
+                                return await self.get_historical_data_batch(
+                                    symbols=symbols,
+                                    period=period,
+                                    start_date=start_date,
+                                    end_date=end_date,
+                                    count=count,
+                                    asset_type=asset_type
+                                )
+                            else:
+                                logger.error("❌ 连接池重启失败，使用基础表查询")
+                        except Exception as restart_error:
+                            logger.error(f"重启连接池异常: {restart_error}")
+                    
+                    logger.error(f"批量查询异常: {view_error}")
+                    import traceback
+                    logger.error(f"详细错误:\n{traceback.format_exc()}")
+                    return await self._batch_query_from_base_table(
+                        database_path, symbols, frequency, start_date, end_date, count
+                    )
+
+        except Exception as e:
+            logger.error(f"批量获取历史数据失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {}
+
+    async def _get_kdata_from_base_table(self, database_path: str, symbol: str, frequency: str,
+                                       start_date: datetime = None, end_date: datetime = None,
+                                       count: int = 365) -> pd.DataFrame:
+        """从基础表查询单个股票的数据"""
+        try:
+            base_query = f"""
+                SELECT 
+                    symbol as code, 
+                    timestamp as datetime, 
+                    open, high, low, close, volume, amount,
+                    data_source
+                FROM historical_kline_data
+                WHERE symbol = ? 
+                  AND frequency = ?
+            """
+
+            query_params = [symbol, frequency]
+
+            if start_date:
+                base_query += " AND timestamp >= ?"
+                query_params.append(start_date)
+
+            if end_date:
+                base_query += " AND timestamp <= ?"
+                query_params.append(end_date)
+
+            if not start_date and not end_date:
+                base_query += " ORDER BY timestamp DESC LIMIT ?"
+                query_params.append(count)
+            else:
+                base_query += " ORDER BY timestamp"
+
+            result = self.duckdb_operations.execute_query(
+                database_path=database_path,
+                query=base_query,
+                params=query_params
+            )
+
+            if result.success and result.data is not None:
+                if isinstance(result.data, pd.DataFrame):
+                    df = result.data
+                else:
+                    df = pd.DataFrame(result.data)
+
+                if not df.empty:
+                    df = self._standardize_kdata_format(df, symbol)
+                    return df
+
+            return pd.DataFrame()
+
+        except Exception as e:
+            logger.error(f"从基础表查询失败 {symbol}: {e}")
+            return pd.DataFrame()
+
+    async def _batch_query_from_base_table(self, database_path: str, symbols: List[str], frequency: str,
+                                         start_date: datetime = None, end_date: datetime = None,
+                                         count: int = 365) -> Dict[str, pd.DataFrame]:
+        """从基础表批量查询数据"""
+        try:
+            base_query = f"""
+                SELECT 
+                    code, 
+                    datetime, 
+                    open, high, low, close, volume, amount,
+                    data_source
+                FROM (
+                    SELECT 
+                        symbol as code, 
+                        timestamp as datetime, 
+                        open, high, low, close, volume, amount,
+                        data_source,
+                        ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY timestamp DESC) as rn
+                    FROM historical_kline_data
+                    WHERE symbol IN ({','.join([f"'{s}'" for s in symbols])})
+                      AND frequency = ?
+            """
+
+            query_params = [frequency]
+
+            if start_date:
+                base_query += " AND timestamp >= ?"
+                query_params.append(start_date)
+
+            if end_date:
+                base_query += " AND timestamp <= ?"
+                query_params.append(end_date)
+
+            # 闭合子查询并添加过滤条件
+            base_query += ") subq WHERE rn <= ?"
+            query_params.append(count)
+
+            # 按symbol和timestamp排序
+            base_query += " ORDER BY code, datetime DESC"
+
+            result = self.duckdb_operations.execute_query(
+                database_path=database_path,
+                query=base_query,
+                params=query_params
+            )
+
+            if result.success and result.data is not None:
+                if isinstance(result.data, pd.DataFrame):
+                    df = result.data
+                else:
+                    df = pd.DataFrame(result.data)
+
+                if not df.empty:
+                    logger.info(f"✅ 基础表批量查询成功: 共 {len(df)} 条记录, {df['code'].nunique()} 只股票")
+
+                    # 如果没有指定日期范围，按symbol分组并取前count条
+                    if not start_date and not end_date:
+                        df_list = []
+                        for symbol in df['code'].unique():
+                            symbol_df = df[df['code'] == symbol].head(count)
+                            df_list.append(symbol_df)
+                        df = pd.concat(df_list, ignore_index=True)
+
+                    # 按symbol分组
+                    result_dict = {}
+                    for symbol in symbols:
+                        symbol_df = df[df['code'] == symbol].copy()
+                        if not symbol_df.empty:
+                            symbol_df = self._standardize_kdata_format(symbol_df, symbol)
+                            result_dict[symbol] = symbol_df
+                        else:
+                            result_dict[symbol] = pd.DataFrame()
+
+                    return result_dict
+                else:
+                    logger.warning(f"基础表批量查询结果为空")
+                    return {symbol: pd.DataFrame() for symbol in symbols}
+            else:
+                logger.warning(f"基础表批量查询失败: success={result.success}")
+                return {symbol: pd.DataFrame() for symbol in symbols}
+
+        except Exception as e:
+            logger.error(f"基础表批量查询异常: {e}")
+            return {symbol: pd.DataFrame() for symbol in symbols}
+
     async def _get_news(self, stock_code: str) -> Dict[str, Any]:
         """获取新闻数据
 
@@ -2978,6 +3644,89 @@ class UnifiedDataManager:
         except Exception as e:
             logger.error(f"获取新闻数据失败: {e}", exc_info=True)
             return {}
+
+    async def create_database_indexes(self, asset_type: AssetType = AssetType.STOCK_A) -> Dict[str, Any]:
+        """
+        创建数据库索引（独立功能，避免在批量查询时创建）
+
+        Args:
+            asset_type: 资产类型
+
+        Returns:
+            创建结果字典
+        """
+        result = {
+            'success': False,
+            'message': '',
+            'created_indexes': [],
+            'failed_indexes': []
+        }
+
+        if not self.duckdb_available or not self.duckdb_manager:
+            result['message'] = 'DuckDB不可用'
+            return result
+
+        try:
+            database_path = self.asset_manager.get_database_path(asset_type)
+            logger.info(f"开始为数据库创建索引: {database_path}")
+
+            with self.duckdb_manager.get_connection(database_path) as conn:
+                # 创建historical_kline_data表的索引
+                logger.info("创建historical_kline_data表索引...")
+                indexes_to_create = [
+                    ("idx_historical_kline_data_symbol", "CREATE INDEX IF NOT EXISTS idx_historical_kline_data_symbol ON historical_kline_data(symbol)"),
+                    ("idx_historical_kline_data_timestamp", "CREATE INDEX IF NOT EXISTS idx_historical_kline_data_timestamp ON historical_kline_data(timestamp)"),
+                    ("idx_historical_kline_data_symbol_timestamp", "CREATE INDEX IF NOT EXISTS idx_historical_kline_data_symbol_timestamp ON historical_kline_data(symbol, timestamp)"),
+                    ("idx_historical_kline_data_data_source", "CREATE INDEX IF NOT EXISTS idx_historical_kline_data_data_source ON historical_kline_data(data_source)"),
+                    ("idx_historical_kline_data_conflict_key", "CREATE INDEX IF NOT EXISTS idx_historical_kline_data_conflict_key ON historical_kline_data(symbol, data_source, timestamp, frequency)"),
+                    ("idx_historical_kline_data_symbol_frequency", "CREATE INDEX IF NOT EXISTS idx_historical_kline_data_symbol_frequency ON historical_kline_data(symbol, frequency)"),
+                    ("idx_historical_kline_data_symbol_timestamp_frequency", "CREATE INDEX IF NOT EXISTS idx_historical_kline_data_symbol_timestamp_frequency ON historical_kline_data(symbol, timestamp, frequency)"),
+                    ("idx_historical_kline_data_frequency_timestamp", "CREATE INDEX IF NOT EXISTS idx_historical_kline_data_frequency_timestamp ON historical_kline_data(frequency, timestamp)")
+                ]
+
+                for index_name, create_sql in indexes_to_create:
+                    try:
+                        conn.execute(create_sql)
+                        result['created_indexes'].append(index_name)
+                        logger.info(f"✅ 创建索引成功: {index_name}")
+                    except Exception as e:
+                        result['failed_indexes'].append({'index': index_name, 'error': str(e)})
+                        logger.error(f"❌ 创建索引失败: {index_name}, 错误: {e}")
+
+                # 创建data_quality_monitor表的索引
+                logger.info("创建data_quality_monitor表索引...")
+                quality_indexes_to_create = [
+                    ("idx_data_quality_monitor_symbol_data_source_check_date_frequency", "CREATE INDEX IF NOT EXISTS idx_data_quality_monitor_symbol_data_source_check_date_frequency ON data_quality_monitor(symbol, data_source, check_date, frequency)"),
+                    ("idx_data_quality_monitor_symbol_check_date_frequency", "CREATE INDEX IF NOT EXISTS idx_data_quality_monitor_symbol_check_date_frequency ON data_quality_monitor(symbol, check_date, frequency)"),
+                    ("idx_data_quality_monitor_check_date_frequency", "CREATE INDEX IF NOT EXISTS idx_data_quality_monitor_check_date_frequency ON data_quality_monitor(check_date, frequency)"),
+                    ("idx_data_quality_monitor_symbol_data_source_check_date", "CREATE INDEX IF NOT EXISTS idx_data_quality_monitor_symbol_data_source_check_date ON data_quality_monitor(symbol, data_source, check_date)"),
+                    ("idx_data_quality_monitor_symbol_check_date", "CREATE INDEX IF NOT EXISTS idx_data_quality_monitor_symbol_check_date ON data_quality_monitor(symbol, check_date)"),
+                    ("idx_data_quality_monitor_check_date", "CREATE INDEX IF NOT EXISTS idx_data_quality_monitor_check_date ON data_quality_monitor(check_date)")
+                ]
+
+                for index_name, create_sql in quality_indexes_to_create:
+                    try:
+                        conn.execute(create_sql)
+                        result['created_indexes'].append(index_name)
+                        logger.info(f"✅ 创建索引成功: {index_name}")
+                    except Exception as e:
+                        result['failed_indexes'].append({'index': index_name, 'error': str(e)})
+                        logger.error(f"❌ 创建索引失败: {index_name}, 错误: {e}")
+
+                result['success'] = True
+                result['message'] = f"成功创建 {len(result['created_indexes'])} 个索引，失败 {len(result['failed_indexes'])} 个"
+
+                logger.info("=" * 80)
+                logger.info("📊 索引创建完成")
+                logger.info(f"成功: {len(result['created_indexes'])} 个")
+                logger.info(f"失败: {len(result['failed_indexes'])} 个")
+                logger.info("=" * 80)
+
+        except Exception as e:
+            result['message'] = f"创建索引失败: {str(e)}"
+            logger.error(f"创建数据库索引失败: {e}", exc_info=True)
+
+        return result
 
     def cancel_request(self, request_id: str) -> bool:
         """
@@ -4163,3 +4912,53 @@ class UnifiedDataManager:
         except Exception as e:
             logger.error(f"删除行情数据失败: {e}")
             return False
+
+    def get_fundamental_data(self, symbol: str, asset_type: AssetType = AssetType.STOCK_A, **params) -> Dict[str, Any]:
+        """
+        获取基本面数据 - 统一入口
+
+        Args:
+            symbol: 标的代码
+            asset_type: 资产类型
+            **params: 其他参数
+
+        Returns:
+            Dict[str, Any]: 基本面数据
+        """
+        try:
+            if self._uni_plugin_manager is None:
+                self._create_uni_plugin_manager_if_needed()
+            
+            if self._uni_plugin_manager:
+                return self._uni_plugin_manager.get_fundamental_data(symbol, asset_type, **params)
+            else:
+                logger.warning("UniPluginDataManager不可用，返回空的基本面数据")
+                return {}
+        except Exception as e:
+            logger.error(f"获取基本面数据失败: {e}")
+            return {}
+
+    def get_fundamental_data_batch(self, symbols: List[str], asset_type: AssetType = AssetType.STOCK_A, **params) -> Dict[str, Dict[str, Any]]:
+        """
+        批量获取基本面数据 - 统一入口
+
+        Args:
+            symbols: 标的代码列表
+            asset_type: 资产类型
+            **params: 其他参数
+
+        Returns:
+            Dict[symbol, Dict[str, Any]]: 基本面数据字典
+        """
+        try:
+            if self._uni_plugin_manager is None:
+                self._create_uni_plugin_manager_if_needed()
+            
+            if self._uni_plugin_manager:
+                return self._uni_plugin_manager.get_fundamental_data_batch(symbols, asset_type, **params)
+            else:
+                logger.warning("UniPluginDataManager不可用，返回空的基本面数据字典")
+                return {symbol: {} for symbol in symbols}
+        except Exception as e:
+            logger.error(f"批量获取基本面数据失败: {e}")
+            return {symbol: {} for symbol in symbols}

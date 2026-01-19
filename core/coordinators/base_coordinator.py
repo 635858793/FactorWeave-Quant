@@ -1,10 +1,10 @@
-from loguru import logger
 """
 基础协调器模块
 
 定义协调器的基础接口和通用功能。
 """
 
+from loguru import logger
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Type
 from core.events import EventBus, get_event_bus, BaseEvent

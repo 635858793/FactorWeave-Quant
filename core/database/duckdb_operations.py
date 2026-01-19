@@ -653,10 +653,14 @@ class DuckDBOperations:
             if params:
                 # 将?占位符替换为实际值
                 formatted_query = query
-                for param in params:
+                for i, param in enumerate(params):
+                    # 处理datetime对象，转换为ISO格式字符串并加引号
+                    if isinstance(param, (datetime, pd.Timestamp)):
+                        formatted_query = formatted_query.replace('?', f"'{param.isoformat()}'", 1)
                     # 处理字符串参数，需要加引号
-                    if isinstance(param, str):
+                    elif isinstance(param, str):
                         formatted_query = formatted_query.replace('?', f"'{param}'", 1)
+                    # 处理其他类型，直接转换为字符串
                     else:
                         formatted_query = formatted_query.replace('?', str(param), 1)
             else:

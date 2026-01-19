@@ -1,13 +1,13 @@
-from threading import Lock
-from concurrent.futures import ThreadPoolExecutor
-from .event_handler import EventHandler, AsyncEventHandler
-from loguru import logger
 """
 事件总线模块
 
 提供事件总线的实现，负责事件的发布、订阅和分发。
 """
 
+from threading import Lock
+from concurrent.futures import ThreadPoolExecutor
+from .event_handler import EventHandler, AsyncEventHandler
+from loguru import logger
 import asyncio
 import threading
 import weakref

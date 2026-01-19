@@ -148,10 +148,6 @@ class PerformanceDataBridge:
             disk_percent = (disk.used / disk.total) * 100
             self.deep_analysis_service.record_metric("disk_usage", disk_percent, "system")
 
-            # 暂时注释掉debug语句以排除格式化问题
-            # logger.debug("系统指标收集完成: CPU={}%, MEM={}%, DISK={}%",
-            #            round(cpu_percent, 1), round(memory.percent, 1), round(disk_percent, 1))
-
         except ImportError:
             # 如果psutil不可用，生成模拟数据
             import random
@@ -213,48 +209,6 @@ class PerformanceDataBridge:
         except Exception as e:
             logger.debug(f"收集应用服务指标时出现问题: {str(e)}")
 
-    def inject_sample_data(self, count: int = 100):
-        """注入示例数据用于测试"""
-        import random
-
-        logger.info(f"开始注入 {count} 条示例数据...")
-
-        # 示例操作类型
-        operations = [
-            "股票数据加载", "K线图渲染", "技术指标计算", "策略回测",
-            "数据库查询", "UI界面更新", "网络请求", "文件读写",
-            "缓存操作", "数据验证", "图表绘制", "算法执行"
-        ]
-
-        # 示例系统指标
-        system_metrics = ["cpu_usage", "memory_usage", "disk_usage", "response_time", "query_time"]
-
-        for i in range(count):
-            # 注入操作计时数据
-            for op_name in operations:
-                duration = random.uniform(0.01, 2.0)  # 10ms 到 2秒
-                self.deep_analysis_service.record_operation_timing(op_name, duration)
-
-            # 注入系统指标数据
-            for metric_name in system_metrics:
-                if metric_name in ['cpu_usage', 'memory_usage', 'disk_usage']:
-                    value = random.uniform(10, 90)  # 百分比
-                else:
-                    value = random.uniform(0.05, 3.0)  # 时间（秒）
-
-                self.deep_analysis_service.record_metric(metric_name, value, "system")
-
-            if i % 20 == 0:
-                logger.info(f"已注入 {i+1}/{count} 批数据")
-
-        logger.info(f"示例数据注入完成: {count} 批数据")
-
-        # 验证数据
-        metrics_count = len(self.deep_analysis_service.metrics_history)
-        operations_count = sum(len(timings) for timings in self.deep_analysis_service.operation_timings.values())
-
-        logger.info(f"数据验证: 指标 {metrics_count} 条, 操作 {operations_count} 条")
-
     def get_status(self) -> Dict[str, Any]:
         """获取桥接器状态"""
         metrics_count = len(self.deep_analysis_service.metrics_history)
@@ -287,9 +241,6 @@ def initialize_performance_bridge(auto_start: bool = True) -> PerformanceDataBri
 
     if auto_start:
         bridge.start_active_collection()
-
-        # 注入一些示例数据用于测试
-        bridge.inject_sample_data(50)
 
     logger.info("性能数据桥接器初始化完成")
     return bridge

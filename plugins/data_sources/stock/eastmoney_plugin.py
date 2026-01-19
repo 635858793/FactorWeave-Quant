@@ -512,7 +512,7 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
                 'invt': '2',
                 'fid': 'f3',
                 'fs': 'm:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23',  # A股主要板块
-                'fields': 'f12,f14,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f15,f16,f17,f18'
+                'fields': 'f12,f14,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f15,f16,f17,f18,f23'
             }
 
             response = self.session.get(url, params=params, timeout=self.timeout)
@@ -542,7 +542,8 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
                         'f15': 'high',
                         'f16': 'low',
                         'f17': 'open',
-                        'f18': 'pre_close'
+                        'f18': 'pre_close',
+                        'f23': 'pb_ratio'
                     }
 
                     df = df.rename(columns=column_mapping)
@@ -550,7 +551,7 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
                     # 数据类型转换
                     numeric_cols = ['close', 'pct_change', 'change', 'volume', 'amount',
                                     'amplitude', 'turnover', 'pe_ratio', 'volume_ratio',
-                                    'total_mv', 'high', 'low', 'open', 'pre_close']
+                                    'total_mv', 'high', 'low', 'open', 'pre_close', 'pb_ratio']
 
                     for col in numeric_cols:
                         if col in df.columns:
@@ -718,7 +719,7 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
                 'fltt': '2',
                 'invt': '2',
                 'secids': ','.join(codes),
-                'fields': 'f12,f14,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f15,f16,f17,f18'
+                'fields': 'f12,f14,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f15,f16,f17,f18,f23'
             }
 
             response = self.session.get(url, params=params, timeout=self.timeout)
@@ -742,14 +743,15 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
                         'f15': 'high',
                         'f16': 'low',
                         'f17': 'open',
-                        'f18': 'pre_close'
+                        'f18': 'pre_close',
+                        'f23': 'pb_ratio'
                     }
 
                     df = df.rename(columns=column_mapping)
 
                     # 数据类型转换
                     numeric_cols = ['price', 'pct_change', 'change', 'volume', 'amount',
-                                    'high', 'low', 'open', 'pre_close']
+                                    'high', 'low', 'open', 'pre_close', 'pb_ratio']
 
                     for col in numeric_cols:
                         if col in df.columns:
