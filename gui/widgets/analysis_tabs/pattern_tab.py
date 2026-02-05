@@ -324,48 +324,169 @@ class PatternAnalysisTab(PatternAnalysisTabPro):
     def start_backtest(self):
         """开始回测 - 增强版错误处理"""
         try:
-            # 记录开始回测
-            if True:  # 使用Loguru日志
-                logger.info("用户点击开始回测按钮")
-            else:
-                logger.info("[Pattern]  用户点击开始回测按钮")
+            logger.info("用户点击开始回测按钮")
 
             # 验证K线数据
-            if not self._validate_kdata(self.current_kdata):
+            if not self.validate_kdata_with_warning():
                 error_msg = "请先加载有效的K线数据"
-                if True:  # 使用Loguru日志
-                    logger.warning(f" 回测失败: {error_msg}")
-                QMessageBox.warning(self, "警告", error_msg)
+                logger.warning(f" 回测失败: {error_msg}")
                 return
 
             # 检查回测周期设置
             if not hasattr(self, 'backtest_period'):
                 error_msg = "回测周期设置组件未找到，请重新初始化界面"
-                if True:  # 使用Loguru日志
-                    logger.error(f" {error_msg}")
+                logger.error(f" {error_msg}")
                 QMessageBox.critical(self, "错误", error_msg)
                 return
 
             period = self.backtest_period.value()
-            if True:  # 使用Loguru日志
-                logger.info(f" K线数据验证通过，开始{period}天回测")
+            logger.info(f" K线数据验证通过，开始{period}天回测")
+
+            # 检查是否已有形态数据
+            patterns = self._get_real_patterns()
+            if not patterns:
+                QMessageBox.warning(self, "提示", "未找到形态数据，请先执行形态识别")
+                return
+
+            logger.info(f" 形态数据准备完成，将回测 {len(patterns)} 个形态")
+
+            # 检查并清理旧的回测线程
+            if hasattr(self, '_backtest_worker') and self._backtest_worker is not None:
+                if self._backtest_worker.isRunning():
+                    logger.warning("检测到正在运行的回测线程，正在停止...")
+                    self._backtest_worker.quit()
+                    self._backtest_worker.wait(3000)
+                self._backtest_worker.deleteLater()
+
+            # 创建异步回测工作线程
+            from PyQt5.QtCore import QThread, pyqtSignal, QMutex, QMutexLocker
+
+            class BacktestWorker(QThread):
+                """回测工作线程"""
+                backtest_completed = pyqtSignal(dict)
+                backtest_error = pyqtSignal(str)
+
+                def __init__(self, parent_tab, patterns, period):
+                    super().__init__()
+                    self.parent_tab = parent_tab
+                    self.patterns = patterns
+                    self.period = period
+                    self._mutex = QMutex()
+
+                def run(self):
+                    """在后台线程执行回测"""
+                    try:
+                        with QMutexLocker(self._mutex):
+                            logger.info("=== 异步回测线程开始执行 ===")
+
+                            # 第一步：基于形态生成交易信号
+                            logger.info("开始生成交易信号...")
+                            signal_data = self.parent_tab._generate_trading_signals_from_patterns(self.patterns, self.period)
+                            if signal_data is None or signal_data.empty:
+                                self.backtest_error.emit('无法生成有效的交易信号')
+                                return
+
+                            # 第二步：使用专业回测引擎
+                            logger.info("启动专业回测引擎...")
+                            from backtest.unified_backtest_engine import UnifiedBacktestEngine, BacktestLevel
+
+                            engine = UnifiedBacktestEngine(backtest_level=BacktestLevel.PROFESSIONAL)
+
+                            # 运行回测
+                            backtest_results = engine.run_backtest(
+                                data=signal_data,
+                                signal_col='signal',
+                                price_col='close',
+                                initial_capital=100000,
+                                position_size=0.8,
+                                commission_pct=0.0003,
+                                slippage_pct=0.001
+                            )
+
+                            # 提取关键指标
+                            risk_metrics = backtest_results.get('risk_metrics', {})
+                            performance_summary = backtest_results.get('performance_summary', {})
+
+                            # 统计形态效果
+                            pattern_stats = self.parent_tab._calculate_pattern_effectiveness(self.patterns, signal_data)
+
+                            # 构建标准化回测结果
+                            final_results = {
+                                'period': self.period,
+                                'total_signals': len([p for p in self.patterns if p.get('signal_type') != 'neutral']),
+                                'successful_signals': pattern_stats.get('successful_count', 0),
+                                'success_rate': pattern_stats.get('success_rate', 0.0),
+                                'avg_return': risk_metrics.get('总收益率', 0.0),
+                                'max_drawdown': abs(risk_metrics.get('最大回撤', 0.0)),
+                                'sharpe_ratio': risk_metrics.get('夏普比率', 0.0),
+                                'total_patterns': len(self.patterns),
+                                'pattern_breakdown': pattern_stats.get('pattern_breakdown', {}),
+                                'generated_time': datetime.now().isoformat(),
+                                'backtest_method': 'professional_engine',
+                                'data_quality': 'real_pattern_recognition'
+                            }
+
+                            # 保存回测结果到 BacktestResultManager
+                            try:
+                                from core.services.backtest_result_manager import BacktestResult
+                                import time
+
+                                backtest_result = BacktestResult(
+                                    stock_code=getattr(self.parent_tab, 'stock_code', ''),
+                                    stock_name=getattr(self.parent_tab, 'stock_name', ''),
+                                    strategy_name='形态识别策略',
+                                    backtest_time=time.time(),
+                                    backtest_results=final_results,
+                                    trades=backtest_results.get('trades', []),
+                                    duration=backtest_results.get('duration', 0),
+                                    is_professional=True
+                                )
+
+                                if hasattr(self.parent_tab, 'backtest_result_manager'):
+                                    self.parent_tab.backtest_result_manager.add_result(backtest_result)
+                                    logger.info(f"回测结果已保存到 BacktestResultManager")
+
+                                # 发布回测完成事件
+                                if hasattr(self.parent_tab, 'event_bus') and self.parent_tab.event_bus:
+                                    from core.events import BacktestCompletedEvent
+                                    backtest_event = BacktestCompletedEvent(
+                                        stock_code=getattr(self.parent_tab, 'stock_code', ''),
+                                        stock_name=getattr(self.parent_tab, 'stock_name', ''),
+                                        strategy_name='形态识别策略',
+                                        backtest_results=final_results
+                                    )
+                                    self.parent_tab.event_bus.publish(backtest_event)
+                                    logger.info(f"回测完成事件已发布")
+
+                            except Exception as save_error:
+                                logger.warning(f"保存回测结果失败: {save_error}")
+
+                            logger.info("=== 异步回测线程执行完成 ===")
+
+                            # 发送结果
+                            self.backtest_completed.emit(final_results)
+
+                    except Exception as e:
+                        logger.error(f"回测执行失败: {e}")
+                        import traceback
+                        logger.error(traceback.format_exc())
+                        self.backtest_error.emit(str(e))
 
             # 显示加载状态
             self.show_loading("正在执行历史回测...")
 
-            # 启动异步回测
-            if True:  # 使用Loguru日志
-                logger.info("启动异步回测线程")
-            self.run_analysis_async(self._backtest_async)
+            # 创建并启动工作线程
+            self._backtest_worker = BacktestWorker(self, patterns, period)
+            self._backtest_worker.backtest_completed.connect(self._on_backtest_completed)
+            self._backtest_worker.backtest_error.connect(self._on_backtest_error)
+
+            logger.info("异步回测已启动")
 
         except Exception as e:
             error_msg = f"启动回测失败: {str(e)}"
-            if True:  # 使用Loguru日志
-                logger.error(f" {error_msg}")
-                import traceback
-                logger.error(traceback.format_exc())
-            else:
-                logger.info(f"[Pattern]  {error_msg}")
+            logger.error(f" {error_msg}")
+            import traceback
+            logger.error(traceback.format_exc())
 
             # 隐藏加载状态
             self.hide_loading()
@@ -448,6 +569,40 @@ class PatternAnalysisTab(PatternAnalysisTabPro):
                     'data_quality': 'real_pattern_recognition'
                 }
 
+                # 保存回测结果到 BacktestResultManager
+                try:
+                    from core.services.backtest_result_manager import BacktestResult
+                    import time
+                    
+                    backtest_result = BacktestResult(
+                        stock_code=getattr(self, 'stock_code', ''),
+                        stock_name=getattr(self, 'stock_name', ''),
+                        strategy_name='形态识别策略',
+                        backtest_time=time.time(),
+                        backtest_results=final_results,
+                        trades=backtest_results.get('trades', []),
+                        duration=backtest_results.get('duration', 0),
+                        is_professional=True
+                    )
+                    
+                    if hasattr(self, 'backtest_result_manager'):
+                        self.backtest_result_manager.add_result(backtest_result)
+                        logger.info(f"回测结果已保存到 BacktestResultManager")
+                    
+                    # 发布回测完成事件
+                    if hasattr(self, 'event_bus') and self.event_bus:
+                        from core.events import BacktestCompletedEvent
+                        backtest_event = BacktestCompletedEvent(
+                            stock_code=getattr(self, 'stock_code', ''),
+                            stock_name=getattr(self, 'stock_name', ''),
+                            strategy_name='形态识别策略',
+                            backtest_results=final_results
+                        )
+                        self.event_bus.publish(backtest_event)
+                        logger.info(f"已发布 BacktestCompletedEvent 事件")
+                except Exception as save_error:
+                    logger.warning(f"保存回测结果失败: {save_error}")
+
                 if True:  # 使用Loguru日志
                     logger.info(f" 专业回测完成: {final_results['total_signals']}个信号，成功率{final_results['success_rate']:.2%}")
 
@@ -478,43 +633,23 @@ class PatternAnalysisTab(PatternAnalysisTabPro):
             if hasattr(self, 'analysis_results') and self.analysis_results:
                 patterns = self.analysis_results.get('patterns', [])
                 if patterns:
+                    logger.info(f"使用已保存的分析结果，形态数量: {len(patterns)}")
                     return patterns
 
             # 尝试从表格获取
             if hasattr(self, 'patterns_table') and self.patterns_table.rowCount() > 0:
                 patterns = self._extract_patterns_from_table()
                 if patterns:
+                    logger.info(f"从表格提取形态数据，数量: {len(patterns)}")
                     return patterns
 
-            # 执行真实形态识别
-            if True:  # 使用Loguru日志
-                logger.info("执行实时形态识别...")
-
-            from analysis.pattern_manager import PatternManager
-            from analysis.pattern_recognition import PatternRecognizer
-
-            pattern_manager = PatternManager()
-            pattern_recognizer = PatternRecognizer()
-
-            # 获取置信度阈值
-            confidence_threshold = 0.1
-            if hasattr(self, 'min_confidence'):
-                confidence_threshold = self.min_confidence.value()
-
-            # 执行形态识别
-            patterns = pattern_recognizer.identify_patterns(
-                self.current_kdata,
-                confidence_threshold=confidence_threshold
-            )
-
-            if True:  # 使用Loguru日志
-                logger.info(f" 实时识别到 {len(patterns)} 个形态")
-
-            return patterns
+            # 优化：不再在主线程执行实时形态识别
+            # 如果没有形态数据，返回空列表，提示用户先执行形态识别
+            logger.warning("未找到形态数据，请先执行形态识别")
+            return []
 
         except Exception as e:
-            if True:  # 使用Loguru日志
-                logger.error(f" 获取真实形态失败: {e}")
+            logger.error(f" 获取真实形态失败: {e}")
             return []
 
     def _generate_trading_signals_from_patterns(self, patterns, period):
@@ -531,6 +666,13 @@ class PatternAnalysisTab(PatternAnalysisTabPro):
 
             # 初始化信号列
             data['signal'] = 0
+
+            # 保存原始数据的索引，用于索引映射
+            original_indices = self.current_kdata.index.tolist()
+            truncated_indices = data.index.tolist()
+
+            # 创建索引映射：原始索引 -> 截断后索引
+            index_mapping = {orig_idx: trunc_idx for trunc_idx, orig_idx in enumerate(truncated_indices)}
 
             # 为每个形态生成信号
             for pattern in patterns:
@@ -556,9 +698,11 @@ class PatternAnalysisTab(PatternAnalysisTabPro):
                     else:
                         signal_value *= 0.6  # 低置信度
 
-                    # 应用信号到相应位置
-                    if 0 <= pattern_index < len(data):
-                        data.iloc[pattern_index, data.columns.get_loc('signal')] = signal_value
+                    # 应用信号到相应位置（使用索引映射）
+                    if pattern_index in index_mapping:
+                        mapped_index = index_mapping[pattern_index]
+                        if 0 <= mapped_index < len(data):
+                            data.iloc[mapped_index, data.columns.get_loc('signal')] = signal_value
 
                 except Exception as e:
                     if True:  # 使用Loguru日志
@@ -577,27 +721,57 @@ class PatternAnalysisTab(PatternAnalysisTabPro):
             return None
 
     def _calculate_pattern_effectiveness(self, patterns, signal_data):
-        """计算形态有效性统计"""
+        """计算形态有效性统计 - 基于真实价格变动"""
         try:
-            if not patterns or signal_data is None:
+            if not patterns or signal_data is None or signal_data.empty:
                 return {'successful_count': 0, 'success_rate': 0.0, 'pattern_breakdown': {}}
 
             pattern_breakdown = {}
             successful_count = 0
             total_valid_patterns = 0
 
+            # 获取信号数据的索引映射
+            original_indices = self.current_kdata.index.tolist() if hasattr(self, 'current_kdata') and self.current_kdata is not None else []
+            truncated_indices = signal_data.index.tolist()
+            index_mapping = {orig_idx: trunc_idx for trunc_idx, orig_idx in enumerate(truncated_indices)}
+
             for pattern in patterns:
                 pattern_type = pattern.get('pattern_type', pattern.get('name', 'unknown'))
                 signal_type = pattern.get('signal_type', 'neutral')
                 confidence = pattern.get('confidence', 0.0)
+                pattern_index = pattern.get('index', 0)
 
                 if signal_type.lower() == 'neutral':
                     continue
 
                 total_valid_patterns += 1
 
-                # 简化的效果评估：基于置信度
-                is_successful = confidence >= 0.6
+                # 基于真实价格变动评估形态有效性
+                is_successful = False
+
+                # 检查形态索引是否在信号数据中
+                if pattern_index in index_mapping:
+                    mapped_index = index_mapping[pattern_index]
+                    
+                    # 确保有足够的数据来评估形态效果
+                    if mapped_index + 5 < len(signal_data):
+                        # 获取形态出现时的价格
+                        entry_price = signal_data.iloc[mapped_index]['close']
+                        
+                        # 获取5个交易日后的价格
+                        exit_price = signal_data.iloc[mapped_index + 5]['close']
+                        
+                        # 计算价格变动
+                        price_change = (exit_price - entry_price) / entry_price
+                        
+                        # 根据信号类型判断是否成功
+                        if signal_type.lower() in ['buy', 'bullish', '买入']:
+                            # 买入信号：价格上涨为成功
+                            is_successful = price_change > 0
+                        elif signal_type.lower() in ['sell', 'bearish', '卖出']:
+                            # 卖出信号：价格下跌为成功
+                            is_successful = price_change < 0
+
                 if is_successful:
                     successful_count += 1
 
@@ -641,12 +815,59 @@ class PatternAnalysisTab(PatternAnalysisTabPro):
             # 计算基础统计
             pattern_stats = self._calculate_pattern_effectiveness(patterns, signal_data)
 
-            # 模拟收益计算
-            avg_return = np.random.uniform(-0.02, 0.12) if pattern_stats['success_rate'] > 0.5 else np.random.uniform(-0.08, 0.05)
-            max_drawdown = np.random.uniform(0.03, 0.15)
-            sharpe_ratio = np.random.uniform(0.3, 1.8) if avg_return > 0 else np.random.uniform(-0.5, 0.3)
+            # 基于真实数据计算收益
+            if signal_data is None or signal_data.empty:
+                # 如果没有信号数据，使用默认值
+                avg_return = 0.0
+                max_drawdown = 0.0
+                sharpe_ratio = 0.0
+            else:
+                # 计算实际收益
+                returns = []
+                peak_value = 0
+                max_drawdown = 0
+                
+                # 模拟交易：基于信号计算收益
+                position = 0  # 0: 空仓, 1: 多头, -1: 空头
+                entry_price = 0
+                total_return = 0
+                
+                for i in range(len(signal_data)):
+                    signal = signal_data.iloc[i]['signal']
+                    price = signal_data.iloc[i]['close']
+                    
+                    # 处理信号
+                    if signal != 0 and position == 0:
+                        # 开仓
+                        position = signal
+                        entry_price = price
+                    elif signal == 0 and position != 0:
+                        # 平仓
+                        if position > 0:
+                            trade_return = (price - entry_price) / entry_price
+                        else:
+                            trade_return = (entry_price - price) / entry_price
+                        returns.append(trade_return)
+                        total_return += trade_return
+                        position = 0
+                    
+                    # 计算最大回撤
+                    if total_return > peak_value:
+                        peak_value = total_return
+                    drawdown = peak_value - total_return
+                    if drawdown > max_drawdown:
+                        max_drawdown = drawdown
+                
+                # 计算平均收益
+                avg_return = np.mean(returns) if returns else 0.0
+                
+                # 计算夏普比率
+                if returns:
+                    sharpe_ratio = np.mean(returns) / np.std(returns) if np.std(returns) > 0 else 0.0
+                else:
+                    sharpe_ratio = 0.0
 
-            return {
+            simplified_results = {
                 'period': period,
                 'total_signals': pattern_stats.get('total_valid_patterns', 0),
                 'successful_signals': pattern_stats.get('successful_count', 0),
@@ -660,6 +881,30 @@ class PatternAnalysisTab(PatternAnalysisTabPro):
                 'backtest_method': 'simplified',
                 'data_quality': 'real_pattern_recognition'
             }
+
+            # 保存简化回测结果到 BacktestResultManager
+            try:
+                from core.services.backtest_result_manager import BacktestResult
+                import time
+                
+                backtest_result = BacktestResult(
+                    stock_code=getattr(self, 'stock_code', ''),
+                    stock_name=getattr(self, 'stock_name', ''),
+                    strategy_name='形态识别策略（简化版）',
+                    backtest_time=time.time(),
+                    backtest_results=simplified_results,
+                    trades=[],
+                    duration=0,
+                    is_professional=False
+                )
+                
+                if hasattr(self, 'backtest_result_manager'):
+                    self.backtest_result_manager.add_result(backtest_result)
+                    logger.info(f"简化回测结果已保存到 BacktestResultManager")
+            except Exception as save_error:
+                logger.warning(f"保存简化回测结果失败: {save_error}")
+
+            return simplified_results
 
         except Exception as e:
             if True:  # 使用Loguru日志
@@ -784,6 +1029,38 @@ class PatternAnalysisTab(PatternAnalysisTabPro):
             'unknown': '未知来源'
         }
         return descriptions.get(quality, quality)
+
+    def _on_backtest_completed(self, results):
+        """处理回测完成"""
+        try:
+            self.hide_loading()
+
+            if 'error' in results:
+                QMessageBox.warning(self, "回测失败", results['error'])
+                return
+
+            logger.info(f"回测完成，结果: {results}")
+
+            # 更新显示
+            self._update_results_display(results)
+
+            # 发射完成信号
+            self.analysis_completed.emit(results)
+
+        except Exception as e:
+            logger.error(f"处理回测结果失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+
+    def _on_backtest_error(self, error_msg):
+        """处理回测错误"""
+        try:
+            self.hide_loading()
+            logger.error(f"回测执行失败: {error_msg}")
+            QMessageBox.critical(self, "回测错误", f"回测执行失败: {error_msg}")
+
+        except Exception as e:
+            logger.error(f"处理回测错误失败: {e}")
 
     def _update_results_display(self, results):
         """更新结果显示 - 重写以支持回测"""

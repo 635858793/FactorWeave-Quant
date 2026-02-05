@@ -526,7 +526,6 @@ class ScheduleQueueWidget(QWidget):
         # 队列表格
         self.queue_table = QTableWidget()
         self.queue_table.setSelectionBehavior(QTableWidget.SelectRows)
-        self.queue_table.setAlternatingRowColors(True)
         self.queue_table.setSortingEnabled(True)
 
         # 设置列

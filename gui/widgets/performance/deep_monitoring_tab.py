@@ -137,6 +137,23 @@ class MetricsChartWidget(QWidget):
             
         except Exception as e:
             logger.warning(f"更新图表失败: {e}")
+    
+    def cleanup(self):
+        """清理资源"""
+        try:
+            if hasattr(self, 'update_timer'):
+                self.update_timer.stop()
+            
+            if hasattr(self, 'data_history'):
+                self.data_history.clear()
+            
+            if HAS_MATPLOTLIB and hasattr(self, 'figure'):
+                import matplotlib.pyplot as plt
+                plt.close(self.figure)
+            
+            logger.info("MetricsChartWidget 资源已清理")
+        except Exception as e:
+            logger.error(f"清理 MetricsChartWidget 资源失败: {e}")
 
 
 class MetricsTableWidget(QWidget):
@@ -159,7 +176,6 @@ class MetricsTableWidget(QWidget):
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Stretch)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table.setAlternatingRowColors(True)
         
         # 预定义指标配置
         self.metrics_config = [
@@ -278,6 +294,38 @@ class MetricsTableWidget(QWidget):
             item.setForeground(color_map[status_text])
             item.setBackground(QColor(240, 240, 240))
 
+    def cleanup(self):
+        """清理资源"""
+        try:
+            # 清理表格
+            if hasattr(self, 'table'):
+                self.table.clearContents()
+                self.table.setRowCount(0)
+            
+            # 清理配置
+            if hasattr(self, 'metrics_config'):
+                self.metrics_config.clear()
+            
+            # 清理当前指标
+            self.current_metrics = None
+            
+            # 清理布局
+            if self.layout():
+                while self.layout().count():
+                    item = self.layout().takeAt(0)
+                    if item.widget():
+                        item.widget().deleteLater()
+                    elif item.layout():
+                        while item.layout().count():
+                            sub_item = item.layout().takeAt(0)
+                            if sub_item.widget():
+                                sub_item.widget().deleteLater()
+            
+            logger.debug("MetricsTableWidget cleanup completed")
+            
+        except Exception as e:
+            logger.error(f"清理资源失败: {e}")
+
 
 class AlertPanelWidget(QWidget):
     """告警面板组件"""
@@ -314,7 +362,6 @@ class AlertPanelWidget(QWidget):
         header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.Stretch)
         
-        self.alert_table.setAlternatingRowColors(True)
         self.alert_table.setMaximumHeight(200)
         
         layout.addWidget(self.alert_table)
@@ -407,6 +454,34 @@ class AlertPanelWidget(QWidget):
         self.alerts_history.clear()
         self.alert_table.setRowCount(0)
         self._update_statistics()
+
+    def cleanup(self):
+        """清理资源"""
+        try:
+            # 清空告警历史
+            self.alerts_history.clear()
+            
+            # 清理表格
+            if hasattr(self, 'alert_table'):
+                self.alert_table.clearContents()
+                self.alert_table.setRowCount(0)
+            
+            # 清理布局
+            if self.layout():
+                while self.layout().count():
+                    item = self.layout().takeAt(0)
+                    if item.widget():
+                        item.widget().deleteLater()
+                    elif item.layout():
+                        while item.layout().count():
+                            sub_item = item.layout().takeAt(0)
+                            if sub_item.widget():
+                                sub_item.widget().deleteLater()
+            
+            logger.debug("AlertPanelWidget cleanup completed")
+            
+        except Exception as e:
+            logger.error(f"清理资源失败: {e}")
 
 
 class DeepMonitoringTab(QWidget):
@@ -822,6 +897,28 @@ class DeepMonitoringTab(QWidget):
             return f"{minutes}m {secs}s"
         else:
             return f"{secs}s"
+    
+    def cleanup(self):
+        """清理资源"""
+        try:
+            if hasattr(self, 'update_timer'):
+                self.update_timer.stop()
+            
+            if hasattr(self, 'monitor') and self.monitor:
+                try:
+                    self.monitor.stop()
+                except Exception as e:
+                    logger.error(f"停止监控器失败: {e}")
+            
+            if hasattr(self, 'optimization_service') and self.optimization_service:
+                try:
+                    self.optimization_service.stop()
+                except Exception as e:
+                    logger.error(f"停止优化服务失败: {e}")
+            
+            logger.info("DeepMonitoringTab 资源已清理")
+        except Exception as e:
+            logger.error(f"清理 DeepMonitoringTab 资源失败: {e}")
 
 
 # 全局函数

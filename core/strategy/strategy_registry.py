@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 
 # 使用系统统一组件
-from core.adapters import get_config
+from core.system_adapters import get_config
 from .base_strategy import BaseStrategy, StrategyType
 
 class StrategyInfo:

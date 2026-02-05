@@ -9,7 +9,7 @@ from analysis.pattern_manager import PatternManager
 from optimization.optimization_dashboard import OptimizationDashboard, run_dashboard
 from optimization.ui_integration import UIIntegration, create_ui_integration
 from optimization.database_schema import OptimizationDatabaseManager
-from optimization.algorithm_optimizer import AlgorithmOptimizer
+from optimization.algorithm_optimizer import AlgorithmOptimizer, PerformanceEvaluator
 from optimization.version_manager import VersionManager
 from optimization.auto_tuner import AlgorithmAutoTuner, OptimizationConfig
 import sys

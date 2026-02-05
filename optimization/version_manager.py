@@ -1,4 +1,3 @@
-from loguru import logger
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
@@ -6,7 +5,9 @@ from loguru import logger
 支持算法版本的保存、回滚、比较和自动清理
 """
 
-from core.performance import PerformanceMetric as PerformanceMetrics
+from loguru import logger
+
+from core.strategy_extensions import PerformanceMetrics, TradingPerformanceMetrics
 from optimization.database_schema import OptimizationDatabaseManager
 import json
 import sqlite3
@@ -34,7 +35,7 @@ class AlgorithmVersion:
     is_active: bool
     parent_version_id: Optional[int]
     optimization_method: str
-    performance_metrics: Optional[PerformanceMetrics] = None
+    performance_metrics: Optional[TradingPerformanceMetrics] = None
 
 
 class VersionManager:
@@ -48,7 +49,8 @@ class VersionManager:
                      algorithm_code: str, parameters: Dict[str, Any],
                      description: str = "", optimization_method: str = "manual",
                      parent_version_id: Optional[int] = None,
-                     performance_metrics: Optional[PerformanceMetrics] = None) -> int:
+                     performance_metrics: Optional[TradingPerformanceMetrics] = None,
+                     created_by: str = "system") -> int:
         """
         保存新的算法版本
 
@@ -61,6 +63,7 @@ class VersionManager:
             optimization_method: 优化方法
             parent_version_id: 父版本ID
             performance_metrics: 性能指标
+            created_by: 创建者
 
         Returns:
             新版本的ID
@@ -75,7 +78,8 @@ class VersionManager:
             parameters=parameters,
             description=description,
             optimization_method=optimization_method,
-            parent_version_id=parent_version_id
+            parent_version_id=parent_version_id,
+            created_by=created_by
         )
 
         # 保存性能指标（如果有）
@@ -111,7 +115,7 @@ class VersionManager:
                 algorithm_code=data['algorithm_code'],
                 parameters=data['parameters'],
                 created_time=data['created_time'],
-                created_by='auto_optimizer',
+                created_by=data.get('created_by', 'system'),
                 description=data['description'],
                 is_active=data['is_active'],
                 parent_version_id=None,
@@ -334,12 +338,13 @@ class VersionManager:
             parameters=base_version.parameters,
             description=f"分支: {branch_description}",
             optimization_method="branch",
-            parent_version_id=base_version_id
+            parent_version_id=base_version_id,
+            created_by="branch"
         )
 
         return branch_version_id
 
-    def _get_version_performance(self, version_id: int) -> Optional[PerformanceMetrics]:
+    def _get_version_performance(self, version_id: int) -> Optional[TradingPerformanceMetrics]:
         """获取版本的性能指标"""
         conn = sqlite3.connect(self.db_manager.db_path)
         cursor = conn.cursor()
@@ -370,7 +375,7 @@ class VersionManager:
 
         data = dict(zip(columns, row))
 
-        return PerformanceMetrics(
+        return TradingPerformanceMetrics(
             true_positives=data.get('true_positives', 0),
             false_positives=data.get('false_positives', 0),
             true_negatives=data.get('true_negatives', 0),
@@ -431,8 +436,8 @@ class VersionManager:
             "changes": changes
         }
 
-    def _compare_performance(self, metrics1: Optional[PerformanceMetrics],
-                             metrics2: Optional[PerformanceMetrics]) -> Dict[str, Any]:
+    def _compare_performance(self, metrics1: Optional[TradingPerformanceMetrics],
+                             metrics2: Optional[TradingPerformanceMetrics]) -> Dict[str, Any]:
         """比较性能差异"""
         if not metrics1 or not metrics2:
             return {"error": "缺少性能数据"}
@@ -462,7 +467,7 @@ class VersionManager:
 
         return comparisons
 
-    def _get_performance_summary(self, metrics: Optional[PerformanceMetrics]) -> Dict[str, Any]:
+    def _get_performance_summary(self, metrics: Optional[TradingPerformanceMetrics]) -> Dict[str, Any]:
         """获取性能摘要"""
         if not metrics:
             return {"status": "无性能数据"}
@@ -513,7 +518,8 @@ class VersionManager:
                 algorithm_code=version_info['algorithm_code'],
                 parameters=version_info['parameters'],
                 description=f"导入版本: {version_info.get('description', '')}",
-                optimization_method="import"
+                optimization_method="import",
+                created_by="import"
             )
 
             logger.info(f" 版本已导入，新版本ID: {version_id}")

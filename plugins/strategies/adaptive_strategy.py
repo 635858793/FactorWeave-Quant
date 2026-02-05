@@ -373,7 +373,7 @@ class AdaptivePandasStrategy(BaseStrategy):
     def calculate_performance(self, context) -> 'PerformanceMetrics':
         """计算策略性能指标"""
         try:
-            from core.strategy_extensions import PerformanceMetrics
+            from core.strategy_extensions import TradingPerformanceMetrics
             
             # 基于计算历史和参数计算性能指标
             total_signals = len(self._calculation_history)
@@ -410,7 +410,7 @@ class AdaptivePandasStrategy(BaseStrategy):
             # 盈亏比估算
             profit_factor = 1.5 if total_return > 0 else 0.8
             
-            return PerformanceMetrics(
+            return TradingPerformanceMetrics(
                 total_return=total_return,
                 annual_return=annual_return,
                 sharpe_ratio=sharpe_ratio,
@@ -427,8 +427,8 @@ class AdaptivePandasStrategy(BaseStrategy):
             )
         except Exception as e:
             logger.error(f"计算性能指标失败: {e}")
-            from core.strategy_extensions import PerformanceMetrics
-            return PerformanceMetrics(
+            from core.strategy_extensions import TradingPerformanceMetrics
+            return TradingPerformanceMetrics(
                 total_return=0.0,
                 annual_return=0.0,
                 sharpe_ratio=0.0,

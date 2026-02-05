@@ -1,0 +1,13 @@
+{
+  "test_time": "2026-01-23T22:39:05.413395",
+  "end_time": "2026-01-23T22:39:12.157105",
+  "total_duration": 6.74371,
+  "summary": {
+    "total_tests": 0,
+    "passed_tests": 0,
+    "failed_tests": 0,
+    "skipped_tests": 0,
+    "pass_rate": 0
+  },
+  "results": []
+}

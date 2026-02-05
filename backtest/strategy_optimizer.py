@@ -7,7 +7,7 @@ from itertools import product
 import random
 import math
 
-from core.strategy_extensions import PerformanceMetrics
+from core.strategy_extensions import TradingPerformanceMetrics
 
 
 class OptimizationMethod(Enum):
@@ -29,7 +29,7 @@ class OptimizationObjective(Enum):
 class OptimizationResult:
     """单次优化结果"""
     parameters: Dict[str, Any]
-    metrics: PerformanceMetrics
+    metrics: TradingPerformanceMetrics
     score: float
     rank: int
 
@@ -118,7 +118,7 @@ class StrategyParameterOptimizer:
     
     def optimize(
         self,
-        objective_function: Callable[[Dict[str, Any]], Tuple[PerformanceMetrics, float]],
+        objective_function: Callable[[Dict[str, Any]], Tuple[TradingPerformanceMetrics, float]],
         param_grid: Dict[str, Any],
         config: Optional[OptimizationConfig] = None
     ) -> OptimizationRun:
@@ -367,17 +367,17 @@ def create_objective_function(
     market_data,
     context,
     objective: OptimizationObjective = OptimizationObjective.MAXIMIZE_SHARPE
-) -> Callable[[Dict[str, Any]], Tuple[PerformanceMetrics, float]]:
+) -> Callable[[Dict[str, Any]], Tuple[TradingPerformanceMetrics, float]]:
     """创建目标函数"""
     
-    def objective_function(params: Dict[str, Any]) -> Tuple[PerformanceMetrics, float]:
+    def objective_function(params: Dict[str, Any]) -> Tuple[TradingPerformanceMetrics, float]:
         try:
             result = strategy_service.run_backtest_with_params(
                 strategy_id, market_data, context, params
             )
             
             if result and result.get('status') == 'completed':
-                metrics = result.get('metrics', PerformanceMetrics(
+                metrics = result.get('metrics', TradingPerformanceMetrics(
                     total_return=0, sharpe_ratio=0, max_drawdown=0,
                     win_rate=0, total_trades=0, profitable_trades=0, losing_trades=0
                 ))
@@ -395,10 +395,10 @@ def create_objective_function(
                 
                 return metrics, score
             else:
-                return PerformanceMetrics(0, 0, 0, 0, 0, 0, 0), float('-inf')
+                return TradingPerformanceMetrics(0, 0, 0, 0, 0, 0, 0), float('-inf')
                 
         except Exception as e:
             logger.error(f"目标函数执行失败: {e}")
-            return PerformanceMetrics(0, 0, 0, 0, 0, 0, 0), float('-inf')
+            return TradingPerformanceMetrics(0, 0, 0, 0, 0, 0, 0), float('-inf')
     
     return objective_function

@@ -11,7 +11,7 @@ import atexit
 from typing import Dict, List, Optional, Any, Type
 
 # 使用系统统一组件
-from core.adapters import get_config
+from core.system_adapters import get_config
 
 # 导入核心组件
 from .base_strategy import (

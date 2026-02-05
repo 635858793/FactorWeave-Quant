@@ -1,4 +1,3 @@
-from loguru import logger
 #!/usr/bin/env python3
 """
 数据访问最佳实践示例
@@ -8,13 +7,12 @@ from loguru import logger
 
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
+from loguru import logger
 
 # 系统框架导入
 from core.containers import get_service_container
 from core.services.unified_data_manager import get_unified_data_manager
 from core.services.stock_service import StockService
-
-logger = logger
 
 
 class DataAccessExamples:
@@ -276,8 +274,5 @@ def main():
 
 
 if __name__ == "__main__":
-    # 配置日志
-    # Loguru配置在core.loguru_config中统一管理s - %(name)s - %(levelname)s - %(message)s'
-    )
-
+    # Loguru配置在core.loguru_config中统一管理
     main()

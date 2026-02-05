@@ -9,14 +9,15 @@ import json
 from datetime import datetime, timedelta
 from typing import Dict, List, Any
 from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QPushButton,
+    QHeaderView, QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QPushButton,
     QTreeWidget, QTreeWidgetItem, QFormLayout, QCheckBox, QComboBox,
     QLineEdit, QSpinBox, QTextEdit, QTableWidget, QTableWidgetItem,
     QAbstractItemView, QMessageBox, QInputDialog, QFileDialog, QMenu,
-    QLabel, QTabWidget, QFrame, QGridLayout, QProgressBar, QSlider
+    QLabel, QTabWidget, QFrame, QGridLayout, QProgressBar, QSlider,
+    QScrollArea
 )
 from PyQt5.QtCore import QThreadPool, pyqtSlot, Qt, QTimer
-from PyQt5.QtGui import QColor, QFont
+from PyQt5.QtGui import QBrush, QColor, QFont
 from gui.widgets.performance.components.metric_card import ModernMetricCard
 from gui.widgets.performance.components.performance_chart import ModernPerformanceChart
 from gui.widgets.performance.workers.async_workers import AlertHistoryWorker
@@ -31,7 +32,32 @@ except ImportError as e:
     logger.warning(f"增强风险监控后端不可用: {e}")
     ENHANCED_RISK_AVAILABLE = False
 
-logger = logger
+# 导入动态风险调整服务
+try:
+    from core.services.dynamic_risk_adjustment_service import (
+        DynamicRiskAdjustmentEngine, AdjustmentStrategy, AdjustmentTrigger,
+        AdjustmentRule, AdjustmentHistory, PerformanceMetrics
+    )
+    DYNAMIC_RISK_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"动态风险调整服务不可用: {e}")
+    DYNAMIC_RISK_AVAILABLE = False
+
+# 延迟导入主题管理器，避免在模块级别导入时崩溃
+THEME_MANAGER_AVAILABLE = False
+get_theme_manager = None
+
+def _import_theme_manager():
+    """延迟导入主题管理器"""
+    global THEME_MANAGER_AVAILABLE, get_theme_manager
+    if not THEME_MANAGER_AVAILABLE:
+        try:
+            from utils.theme import get_theme_manager as _get_theme_manager
+            get_theme_manager = _get_theme_manager
+            THEME_MANAGER_AVAILABLE = True
+            logger.info("主题管理器模块导入成功")
+        except Exception as e:
+            logger.warning(f"导入主题管理器失败: {e}")
 
 
 class ModernRiskControlCenterTab(QWidget):
@@ -51,14 +77,33 @@ class ModernRiskControlCenterTab(QWidget):
             except Exception as e:
                 logger.error(f"初始化增强风险监控后端失败: {e}")
 
+        # 初始化动态风险调整引擎
+        self.dynamic_risk_engine = None
+        if DYNAMIC_RISK_AVAILABLE:
+            try:
+                self.dynamic_risk_engine = DynamicRiskAdjustmentEngine()
+                logger.info("动态风险调整引擎初始化成功")
+            except Exception as e:
+                logger.error(f"初始化动态风险调整引擎失败: {e}")
+
+        # 延迟导入并初始化主题管理器
+        _import_theme_manager()
+        self.theme_manager = None
+        if THEME_MANAGER_AVAILABLE:
+            try:
+                self.theme_manager = get_theme_manager()
+                self.theme_manager.theme_changed.connect(self._on_theme_changed)
+            except Exception as e:
+                logger.warning(f"获取ThemeManager失败: {e}")
+
         self.init_ui()
 
         # 加载风险规则
         self.load_risk_rules()
 
-        # 启动增强风险监控
-        if self.enhanced_risk_monitor:
-            self.start_enhanced_monitoring()
+        # 不在初始化时启动增强风险监控，延迟到UI完全准备好后再启动
+        # if self.enhanced_risk_monitor:
+        #     self.start_enhanced_monitoring()
 
     def init_ui(self):
         layout = QVBoxLayout(self)
@@ -84,6 +129,11 @@ class ModernRiskControlCenterTab(QWidget):
         if ENHANCED_RISK_AVAILABLE:
             self.ai_analysis_tab = self._create_ai_analysis_tab()
             self.tab_widget.addTab(self.ai_analysis_tab, "AI分析")
+
+        # 动态调整（新增）
+        if DYNAMIC_RISK_AVAILABLE:
+            self.dynamic_adjustment_tab = self._create_dynamic_adjustment_tab()
+            self.tab_widget.addTab(self.dynamic_adjustment_tab, "动态调整")
 
         layout.addWidget(self.tab_widget)
 
@@ -255,7 +305,6 @@ class ModernRiskControlCenterTab(QWidget):
         self.risk_history_table.setHorizontalHeaderLabels([
             "时间", "风险类型", "风险等级", "风险值", "阈值", "状态"
         ])
-        self.risk_history_table.setAlternatingRowColors(True)
         self.risk_history_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         layout.addWidget(self.risk_history_table)
 
@@ -263,6 +312,16 @@ class ModernRiskControlCenterTab(QWidget):
 
     def update_risk_data(self, risk_metrics: Dict[str, float]):
         """更新实时风险数据"""
+        try:
+            # 使用 QTimer.singleShot 确保在主线程中更新UI
+            from PyQt5.QtCore import QTimer
+            QTimer.singleShot(0, lambda: self._update_risk_ui_in_main_thread(risk_metrics))
+
+        except Exception as e:
+            logger.error(f"更新风险数据失败: {e}")
+
+    def _update_risk_ui_in_main_thread(self, risk_metrics: Dict[str, float]):
+        """在主线程中更新风险UI"""
         try:
             # 更新风险指标卡片
             for name, value in risk_metrics.items():
@@ -299,7 +358,7 @@ class ModernRiskControlCenterTab(QWidget):
             self._check_risk_rules(risk_metrics)
 
         except Exception as e:
-            logger.error(f"更新风险数据失败: {e}")
+            logger.error(f"在主线程中更新风险UI失败: {e}")
 
     def _save_risk_history(self, risk_metrics: Dict[str, float], overall_risk: float):
         """保存风险历史数据"""
@@ -868,6 +927,16 @@ class ModernRiskControlCenterTab(QWidget):
             return
 
         try:
+            # 使用 QTimer.singleShot 确保在主线程中更新UI
+            from PyQt5.QtCore import QTimer
+            QTimer.singleShot(0, self._update_enhanced_risk_ui_in_main_thread)
+
+        except Exception as e:
+            logger.error(f"更新增强风险数据失败: {e}")
+
+    def _update_enhanced_risk_ui_in_main_thread(self):
+        """在主线程中更新增强风险UI"""
+        try:
             # 获取当前风险状态
             risk_status = self.enhanced_risk_monitor.get_current_risk_status()
 
@@ -885,7 +954,7 @@ class ModernRiskControlCenterTab(QWidget):
                 self._update_ai_analysis_data()
 
         except Exception as e:
-            logger.error(f"更新增强风险数据失败: {e}")
+            logger.error(f"在主线程中更新增强风险UI失败: {e}")
 
     def _update_risk_level_from_enhanced_data(self, risk_status):
         """从增强数据更新风险等级"""
@@ -1200,12 +1269,966 @@ class ModernRiskControlCenterTab(QWidget):
             logger.error(f"导出AI报告失败: {e}")
             QMessageBox.warning(self, "导出失败", f"导出AI报告失败: {e}")
 
+    def _create_dynamic_adjustment_tab(self):
+        """创建动态调整标签页"""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(5)
+
+        # 工具栏
+        toolbar = QHBoxLayout()
+
+        refresh_btn = QPushButton("刷新")
+        refresh_btn.clicked.connect(self._refresh_dynamic_adjustment)
+        toolbar.addWidget(refresh_btn)
+
+        manual_adjust_btn = QPushButton("手动调整")
+        manual_adjust_btn.clicked.connect(self._manual_risk_adjustment)
+        toolbar.addWidget(manual_adjust_btn)
+
+        toolbar.addStretch()
+
+        auto_update_check = QCheckBox("自动更新")
+        auto_update_check.setChecked(True)
+        auto_update_check.toggled.connect(self._toggle_auto_update)
+        toolbar.addWidget(auto_update_check)
+
+        layout.addLayout(toolbar)
+
+        # 创建子标签页
+        sub_tab_widget = QTabWidget()
+
+        # 参数监控子标签页
+        params_tab = self._create_params_monitor_subtab()
+        sub_tab_widget.addTab(params_tab, "参数监控")
+
+        # 调整历史子标签页
+        history_tab = self._create_adjustment_history_subtab()
+        sub_tab_widget.addTab(history_tab, "调整历史")
+
+        # 规则配置子标签页
+        rules_tab = self._create_adjustment_rules_subtab()
+        sub_tab_widget.addTab(rules_tab, "规则配置")
+
+        # 性能分析子标签页
+        performance_tab = self._create_adjustment_performance_subtab()
+        sub_tab_widget.addTab(performance_tab, "性能分析")
+
+        layout.addWidget(sub_tab_widget)
+
+        # 状态栏
+        self.dynamic_adjustment_status = QLabel("就绪")
+        layout.addWidget(self.dynamic_adjustment_status)
+
+        return tab
+
+    def _create_params_monitor_subtab(self):
+        """创建参数监控子标签页"""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setSpacing(10)
+
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        scroll_content = QWidget()
+        scroll_layout = QVBoxLayout(scroll_content)
+        scroll_layout.setSpacing(10)
+
+        # 风险参数组
+        params_group = QGroupBox("当前风险参数")
+        params_layout = QGridLayout(params_group)
+        params_layout.setSpacing(10)
+        params_layout.setContentsMargins(10, 10, 10, 10)
+
+        self.param_labels = {}
+        self.param_values = {}
+        self.param_change_indicators = {}
+        self.param_status_indicators = {}
+
+        param_names = [
+            ('risk_budget_multiplier', '风险预算乘数', '1.0000', '2.0000'),
+            ('position_limit_multiplier', '持仓限制乘数', '0.5000', '1.5000'),
+            ('stop_loss_adjustment', '止损调整', '0.8000', '1.2000'),
+            ('hedge_ratio_adjustment', '对冲比例调整', '0.0000', '1.0000'),
+            ('market_regime_adjustment', '市场状态调整', '0.5000', '1.5000'),
+            ('volatility_threshold', '波动率阈值', '0.1000', '0.3000'),
+            ('correlation_threshold', '相关性阈值', '0.5000', '0.9000'),
+            ('liquidity_threshold', '流动性阈值', '0.7000', '1.0000')
+        ]
+
+        for i, (param_key, param_name, min_val, max_val) in enumerate(param_names):
+            row = i // 2
+            col = (i % 2) * 3
+
+            name_label = QLabel(param_name)
+            params_layout.addWidget(name_label, row, col)
+
+            value_label = QLabel("0.0000")
+            value_label.setAlignment(Qt.AlignCenter)
+            params_layout.addWidget(value_label, row, col + 1)
+
+            change_indicator = QLabel("→")
+            change_indicator.setAlignment(Qt.AlignCenter)
+            params_layout.addWidget(change_indicator, row, col + 2)
+
+            self.param_labels[param_key] = name_label
+            self.param_values[param_key] = value_label
+            self.param_change_indicators[param_key] = change_indicator
+
+        scroll_layout.addWidget(params_group)
+
+        # 策略组
+        strategy_group = QGroupBox("调整策略")
+        strategy_layout = QHBoxLayout(strategy_group)
+        strategy_layout.setSpacing(15)
+        strategy_layout.setContentsMargins(10, 10, 10, 10)
+
+        strategy_label = QLabel("当前策略:")
+        strategy_layout.addWidget(strategy_label)
+
+        self.strategy_combo = QComboBox()
+        if DYNAMIC_RISK_AVAILABLE:
+            for strategy in AdjustmentStrategy:
+                self.strategy_combo.addItem(strategy.value.replace("_", " ").title(), strategy)
+        self.strategy_combo.currentIndexChanged.connect(self._change_strategy)
+        strategy_layout.addWidget(self.strategy_combo)
+
+        strategy_layout.addStretch()
+
+        scroll_layout.addWidget(strategy_group)
+        scroll_layout.addStretch()
+
+        scroll_area.setWidget(scroll_content)
+        layout.addWidget(scroll_area)
+
+        return widget
+
+    def _create_adjustment_history_subtab(self):
+        """创建调整历史子标签页"""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setSpacing(10)
+
+        # 工具栏
+        toolbar = QHBoxLayout()
+
+        export_btn = QPushButton("导出")
+        export_btn.clicked.connect(self._export_adjustment_history)
+        toolbar.addWidget(export_btn)
+
+        clear_btn = QPushButton("清空")
+        clear_btn.clicked.connect(self._clear_adjustment_history)
+        toolbar.addWidget(clear_btn)
+
+        separator = QFrame()
+        separator.setFrameShape(QFrame.VLine)
+        separator.setFrameShadow(QFrame.Sunken)
+        separator.setFixedWidth(2)
+        toolbar.addWidget(separator)
+
+        filter_label = QLabel("筛选:")
+        toolbar.addWidget(filter_label)
+
+        self.history_filter_combo = QComboBox()
+        self.history_filter_combo.addItems(["全部", "成功", "失败"])
+        self.history_filter_combo.currentIndexChanged.connect(self._filter_adjustment_history)
+        toolbar.addWidget(self.history_filter_combo)
+
+        toolbar.addStretch()
+        layout.addLayout(toolbar)
+
+        # 历史表格
+        self.adjustment_history_table = QTableWidget()
+        self.adjustment_history_table.setColumnCount(7)
+        self.adjustment_history_table.setHorizontalHeaderLabels([
+            "时间", "策略", "触发条件", "调整前", "调整后", "性能影响", "状态"
+        ])
+
+        header = self.adjustment_history_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.Stretch)
+        header.setSectionResizeMode(4, QHeaderView.Stretch)
+        header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(6, QHeaderView.ResizeToContents)
+
+        self.adjustment_history_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.adjustment_history_table.setAlternatingRowColors(True)
+        layout.addWidget(self.adjustment_history_table)
+
+        return widget
+
+    def _create_adjustment_rules_subtab(self):
+        """创建调整规则子标签页"""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setSpacing(10)
+
+        # 工具栏
+        toolbar = QHBoxLayout()
+
+        add_rule_btn = QPushButton("添加规则")
+        add_rule_btn.clicked.connect(self._add_adjustment_rule)
+        toolbar.addWidget(add_rule_btn)
+
+        edit_rule_btn = QPushButton("编辑规则")
+        edit_rule_btn.clicked.connect(self._edit_adjustment_rule)
+        toolbar.addWidget(edit_rule_btn)
+
+        delete_rule_btn = QPushButton("删除规则")
+        delete_rule_btn.clicked.connect(self._delete_adjustment_rule)
+        toolbar.addWidget(delete_rule_btn)
+
+        separator = QFrame()
+        separator.setFrameShape(QFrame.VLine)
+        separator.setFrameShadow(QFrame.Sunken)
+        separator.setFixedWidth(2)
+        toolbar.addWidget(separator)
+
+        enable_all_btn = QPushButton("全部启用")
+        enable_all_btn.clicked.connect(self._enable_all_adjustment_rules)
+        toolbar.addWidget(enable_all_btn)
+
+        disable_all_btn = QPushButton("全部禁用")
+        disable_all_btn.clicked.connect(self._disable_all_adjustment_rules)
+        toolbar.addWidget(disable_all_btn)
+
+        layout.addLayout(toolbar)
+
+        # 规则表格
+        self.adjustment_rules_table = QTableWidget()
+        self.adjustment_rules_table.setColumnCount(6)
+        self.adjustment_rules_table.setHorizontalHeaderLabels([
+            "规则名称", "触发条件", "优先级", "冷却时间", "状态", "最后触发"
+        ])
+
+        header = self.adjustment_rules_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
+
+        self.adjustment_rules_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.adjustment_rules_table.setAlternatingRowColors(True)
+        layout.addWidget(self.adjustment_rules_table)
+
+        return widget
+
+    def _create_adjustment_performance_subtab(self):
+        """创建调整性能分析子标签页"""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setSpacing(10)
+
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        scroll_content = QWidget()
+        scroll_layout = QVBoxLayout(scroll_content)
+        scroll_layout.setSpacing(10)
+
+        # 统计摘要组
+        summary_group = QGroupBox("调整统计摘要")
+        summary_layout = QGridLayout(summary_group)
+        summary_layout.setSpacing(15)
+        summary_layout.setContentsMargins(10, 10, 10, 10)
+
+        self.total_adjustments_label = QLabel("0")
+        self.total_adjustments_label.setAlignment(Qt.AlignCenter)
+
+        self.successful_adjustments_label = QLabel("0")
+        self.successful_adjustments_label.setAlignment(Qt.AlignCenter)
+
+        self.success_rate_label = QLabel("0%")
+        self.success_rate_label.setAlignment(Qt.AlignCenter)
+
+        self.avg_impact_label = QLabel("0.00")
+        self.avg_impact_label.setAlignment(Qt.AlignCenter)
+
+        summary_layout.addWidget(QLabel("总调整次数:"), 0, 0)
+        summary_layout.addWidget(self.total_adjustments_label, 0, 1)
+        summary_layout.addWidget(QLabel("成功次数:"), 0, 2)
+        summary_layout.addWidget(self.successful_adjustments_label, 0, 3)
+        summary_layout.addWidget(QLabel("成功率:"), 1, 0)
+        summary_layout.addWidget(self.success_rate_label, 1, 1)
+        summary_layout.addWidget(QLabel("平均影响:"), 1, 2)
+        summary_layout.addWidget(self.avg_impact_label, 1, 3)
+
+        scroll_layout.addWidget(summary_group)
+
+        # 性能表格
+        self.adjustment_performance_table = QTableWidget()
+        self.adjustment_performance_table.setColumnCount(5)
+        self.adjustment_performance_table.setHorizontalHeaderLabels([
+            "参数名称", "基准值", "当前值", "变化率", "状态"
+        ])
+
+        header = self.adjustment_performance_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+
+        self.adjustment_performance_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.adjustment_performance_table.setAlternatingRowColors(True)
+        scroll_layout.addWidget(self.adjustment_performance_table)
+        scroll_layout.addStretch()
+
+        scroll_area.setWidget(scroll_content)
+        layout.addWidget(scroll_area)
+
+        return widget
+
+    def _refresh_dynamic_adjustment(self):
+        """刷新动态调整数据"""
+        if not self.dynamic_risk_engine:
+            return
+
+        try:
+            self.dynamic_adjustment_status.setText("正在刷新数据...")
+            self._update_dynamic_adjustment_display()
+            self.dynamic_adjustment_status.setText("数据已刷新")
+            logger.info("动态调整数据已刷新")
+        except Exception as e:
+            logger.error(f"刷新动态调整数据失败: {e}")
+            self.dynamic_adjustment_status.setText(f"刷新失败: {e}")
+
+    def _update_dynamic_adjustment_display(self):
+        """更新动态调整显示"""
+        if not self.dynamic_risk_engine:
+            return
+
+        try:
+            self._update_params_display()
+            self._update_adjustment_history_table()
+            self._update_adjustment_rules_table()
+            self._update_adjustment_performance_analysis()
+        except Exception as e:
+            logger.error(f"更新动态调整显示失败: {e}")
+
+    def _update_params_display(self):
+        """更新参数显示"""
+        if not self.dynamic_risk_engine:
+            return
+
+        try:
+            current_params = self.dynamic_risk_engine.current_params
+            base_params = self.dynamic_risk_engine.base_params
+
+            for param_key, value in current_params.items():
+                if param_key in self.param_values:
+                    self.param_values[param_key].setText(f"{value:.4f}")
+
+                    base_value = base_params.get(param_key, 0)
+                    change_ratio = (value - base_value) / base_value if base_value != 0 else 0
+
+                    if abs(change_ratio) > 0.1:
+                        change_symbol = "↑" if change_ratio > 0 else "↓"
+                    elif abs(change_ratio) > 0.05:
+                        change_symbol = "↑" if change_ratio > 0 else "↓"
+                    else:
+                        change_symbol = "→"
+
+                    if param_key in self.param_change_indicators:
+                        self.param_change_indicators[param_key].setText(change_symbol)
+
+        except Exception as e:
+            logger.error(f"更新参数显示失败: {e}")
+
+    def _update_adjustment_history_table(self):
+        """更新调整历史表格"""
+        if not self.dynamic_risk_engine:
+            return
+
+        try:
+            self.adjustment_history_table.setRowCount(0)
+
+            for record in list(self.dynamic_risk_engine.adjustment_history)[-100:]:
+                row = self.adjustment_history_table.rowCount()
+                self.adjustment_history_table.insertRow(row)
+
+                self.adjustment_history_table.setItem(row, 0, QTableWidgetItem(
+                    record.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+                ))
+                self.adjustment_history_table.setItem(row, 1, QTableWidgetItem(
+                    record.strategy.value.replace("_", " ").title()
+                ))
+                self.adjustment_history_table.setItem(row, 2, QTableWidgetItem(
+                    record.trigger.value.replace("_", " ").title()
+                ))
+
+                before_text = ", ".join([f"{k}:{v:.4f}" for k, v in record.before_params.items()])
+                after_text = ", ".join([f"{k}:{v:.4f}" for k, v in record.after_params.items()])
+
+                self.adjustment_history_table.setItem(row, 3, QTableWidgetItem(before_text))
+                self.adjustment_history_table.setItem(row, 4, QTableWidgetItem(after_text))
+
+                impact_item = QTableWidgetItem(f"{record.performance_impact:.4f}")
+                if record.performance_impact > 0.1:
+                    impact_item.setForeground(QBrush(QColor(76, 175, 80)))
+                elif record.performance_impact < -0.1:
+                    impact_item.setForeground(QBrush(QColor(244, 67, 54)))
+                self.adjustment_history_table.setItem(row, 5, impact_item)
+
+                status_item = QTableWidgetItem("成功" if record.success else "失败")
+                status_item.setForeground(
+                    QBrush(QColor(76, 175, 80) if record.success else QColor(244, 67, 54))
+                )
+                self.adjustment_history_table.setItem(row, 6, status_item)
+
+        except Exception as e:
+            logger.error(f"更新调整历史表格失败: {e}")
+
+    def _update_adjustment_rules_table(self):
+        """更新调整规则表格"""
+        if not self.dynamic_risk_engine:
+            return
+
+        try:
+            self.adjustment_rules_table.setRowCount(0)
+
+            for rule in self.dynamic_risk_engine.adjustment_rules:
+                row = self.adjustment_rules_table.rowCount()
+                self.adjustment_rules_table.insertRow(row)
+
+                self.adjustment_rules_table.setItem(row, 0, QTableWidgetItem(rule.name))
+                self.adjustment_rules_table.setItem(row, 1, QTableWidgetItem(
+                    rule.trigger.value.replace("_", " ").title()
+                ))
+                self.adjustment_rules_table.setItem(row, 2, QTableWidgetItem(str(rule.priority)))
+                self.adjustment_rules_table.setItem(row, 3, QTableWidgetItem(
+                    f"{rule.cooldown_period}秒"
+                ))
+
+                status_item = QTableWidgetItem("启用" if rule.enabled else "禁用")
+                status_item.setForeground(
+                    QBrush(QColor(76, 175, 80) if rule.enabled else QColor(158, 158, 158))
+                )
+                self.adjustment_rules_table.setItem(row, 4, status_item)
+
+                last_triggered = rule.last_triggered
+                if last_triggered:
+                    self.adjustment_rules_table.setItem(row, 5, QTableWidgetItem(
+                        last_triggered.strftime("%Y-%m-%d %H:%M:%S")
+                    ))
+
+        except Exception as e:
+            logger.error(f"更新调整规则表格失败: {e}")
+
+    def _update_adjustment_performance_analysis(self):
+        """更新调整性能分析"""
+        if not self.dynamic_risk_engine:
+            return
+
+        try:
+            total_adjustments = len(self.dynamic_risk_engine.adjustment_history)
+            successful_adjustments = sum(1 for h in self.dynamic_risk_engine.adjustment_history if h.success)
+            success_rate = (successful_adjustments / total_adjustments * 100) if total_adjustments > 0 else 0
+            avg_impact = sum(h.performance_impact for h in self.dynamic_risk_engine.adjustment_history) / total_adjustments if total_adjustments > 0 else 0
+
+            self.total_adjustments_label.setText(str(total_adjustments))
+            self.successful_adjustments_label.setText(str(successful_adjustments))
+            self.success_rate_label.setText(f"{success_rate:.1f}%")
+            self.avg_impact_label.setText(f"{avg_impact:.4f}")
+
+            current_params = self.dynamic_risk_engine.current_params
+            base_params = self.dynamic_risk_engine.base_params
+
+            self.adjustment_performance_table.setRowCount(0)
+
+            for param_key, current_value in current_params.items():
+                row = self.adjustment_performance_table.rowCount()
+                self.adjustment_performance_table.insertRow(row)
+
+                base_value = base_params.get(param_key, 0)
+                change_ratio = (current_value - base_value) / base_value if base_value != 0 else 0
+
+                param_names = {
+                    'risk_budget_multiplier': '风险预算乘数',
+                    'position_limit_multiplier': '持仓限制乘数',
+                    'stop_loss_adjustment': '止损调整',
+                    'hedge_ratio_adjustment': '对冲比例调整',
+                    'market_regime_adjustment': '市场状态调整',
+                    'volatility_threshold': '波动率阈值',
+                    'correlation_threshold': '相关性阈值',
+                    'liquidity_threshold': '流动性阈值'
+                }
+
+                param_name = param_names.get(param_key, param_key)
+
+                self.adjustment_performance_table.setItem(row, 0, QTableWidgetItem(param_name))
+                self.adjustment_performance_table.setItem(row, 1, QTableWidgetItem(f"{base_value:.4f}"))
+                self.adjustment_performance_table.setItem(row, 2, QTableWidgetItem(f"{current_value:.4f}"))
+                self.adjustment_performance_table.setItem(row, 3, QTableWidgetItem(f"{change_ratio:.2%}"))
+
+                status_item = QTableWidgetItem("正常")
+                if abs(change_ratio) > 0.1:
+                    status_item.setText("大幅变化")
+                    status_item.setForeground(QBrush(QColor(244, 67, 54)))
+                elif abs(change_ratio) > 0.05:
+                    status_item.setText("显著变化")
+                    status_item.setForeground(QBrush(QColor(255, 152, 0)))
+                else:
+                    status_item.setForeground(QBrush(QColor(76, 175, 80)))
+
+                self.adjustment_performance_table.setItem(row, 4, status_item)
+
+        except Exception as e:
+            logger.error(f"更新调整性能分析失败: {e}")
+
+    def _change_strategy(self, index: int):
+        """更改调整策略"""
+        if not self.dynamic_risk_engine:
+            return
+
+        try:
+            strategy = self.strategy_combo.currentData()
+            if strategy:
+                self.dynamic_risk_engine.current_strategy = strategy
+                self.dynamic_adjustment_status.setText(f"策略已切换为: {strategy.value.replace('_', ' ').title()}")
+                logger.info(f"调整策略已切换为: {strategy.value}")
+        except Exception as e:
+            logger.error(f"切换调整策略失败: {e}")
+            self.dynamic_adjustment_status.setText(f"切换失败: {e}")
+
+    def _manual_risk_adjustment(self):
+        """手动风险调整"""
+        if not self.dynamic_risk_engine:
+            return
+
+        try:
+            from PyQt5.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QDialogButtonBox, QDoubleSpinBox
+
+            dialog = QDialog(self)
+            dialog.setWindowTitle("手动风险调整")
+            dialog.setMinimumWidth(400)
+
+            layout = QVBoxLayout(dialog)
+
+            form_layout = QFormLayout()
+
+            param_inputs = {}
+            for param_key, param_name, min_val, max_val in [
+                ('risk_budget_multiplier', '风险预算乘数', 0.5, 2.0),
+                ('position_limit_multiplier', '持仓限制乘数', 0.5, 1.5),
+                ('stop_loss_adjustment', '止损调整', 0.0, 0.5),
+                ('hedge_ratio_adjustment', '对冲比例调整', 0.0, 1.0),
+                ('market_regime_adjustment', '市场状态调整', 0.5, 1.5),
+                ('volatility_threshold', '波动率阈值', 0.1, 0.3),
+                ('correlation_threshold', '相关性阈值', 0.5, 0.9),
+                ('liquidity_threshold', '流动性阈值', 0.7, 1.0)
+            ]:
+                spinbox = QDoubleSpinBox()
+                spinbox.setRange(min_val, max_val)
+                spinbox.setSingleStep(0.01)
+                spinbox.setDecimals(4)
+                spinbox.setValue(self.dynamic_risk_engine.current_params.get(param_key, min_val))
+                form_layout.addRow(param_name + ":", spinbox)
+                param_inputs[param_key] = spinbox
+
+            layout.addLayout(form_layout)
+
+            buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+            buttons.accepted.connect(dialog.accept)
+            buttons.rejected.connect(dialog.reject)
+            layout.addWidget(buttons)
+
+            if dialog.exec_() == QDialog.Accepted:
+                new_params = {key: spinbox.value() for key, spinbox in param_inputs.items()}
+                self.dynamic_risk_engine.current_params.update(new_params)
+                self._update_params_display()
+                self.dynamic_adjustment_status.setText("手动调整已应用")
+                logger.info(f"手动风险调整已应用: {new_params}")
+
+        except Exception as e:
+            logger.error(f"手动风险调整失败: {e}")
+            self.dynamic_adjustment_status.setText(f"调整失败: {e}")
+
+    def _add_adjustment_rule(self):
+        """添加调整规则"""
+        if not self.dynamic_risk_engine:
+            return
+
+        try:
+            from PyQt5.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QDialogButtonBox, QComboBox, QSpinBox, QLineEdit, QCheckBox
+
+            dialog = QDialog(self)
+            dialog.setWindowTitle("添加调整规则")
+            dialog.setMinimumWidth(500)
+
+            layout = QVBoxLayout(dialog)
+
+            form_layout = QFormLayout()
+
+            name_edit = QLineEdit()
+            form_layout.addRow("规则名称:", name_edit)
+
+            trigger_combo = QComboBox()
+            for trigger in AdjustmentTrigger:
+                trigger_combo.addItem(trigger.value.replace("_", " ").title(), trigger)
+            form_layout.addRow("触发条件:", trigger_combo)
+
+            priority_spin = QSpinBox()
+            priority_spin.setRange(1, 100)
+            priority_spin.setValue(1)
+            form_layout.addRow("优先级:", priority_spin)
+
+            cooldown_spin = QSpinBox()
+            cooldown_spin.setRange(0, 3600)
+            cooldown_spin.setValue(300)
+            cooldown_spin.setSuffix(" 秒")
+            form_layout.addRow("冷却时间:", cooldown_spin)
+
+            enabled_check = QCheckBox()
+            enabled_check.setChecked(True)
+            form_layout.addRow("启用:", enabled_check)
+
+            layout.addLayout(form_layout)
+
+            buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+            buttons.accepted.connect(dialog.accept)
+            buttons.rejected.connect(dialog.reject)
+            layout.addWidget(buttons)
+
+            if dialog.exec_() == QDialog.Accepted:
+                rule_data = {
+                    'name': name_edit.text(),
+                    'trigger': trigger_combo.currentData(),
+                    'condition': lambda x: True,
+                    'action': lambda x: {},
+                    'priority': priority_spin.value(),
+                    'enabled': enabled_check.isChecked(),
+                    'cooldown_period': cooldown_spin.value()
+                }
+                self.dynamic_risk_engine.adjustment_rules.append(AdjustmentRule(**rule_data))
+                self._update_adjustment_rules_table()
+                self.dynamic_adjustment_status.setText("规则已添加")
+                logger.info(f"调整规则已添加: {rule_data['name']}")
+
+        except Exception as e:
+            logger.error(f"添加调整规则失败: {e}")
+            self.dynamic_adjustment_status.setText(f"添加失败: {e}")
+
+    def _edit_adjustment_rule(self):
+        """编辑调整规则"""
+        if not self.dynamic_risk_engine:
+            return
+
+        try:
+            current_row = self.adjustment_rules_table.currentRow()
+            if current_row < 0:
+                QMessageBox.information(self, "提示", "请先选择要编辑的规则")
+                return
+
+            rule = self.dynamic_risk_engine.adjustment_rules[current_row]
+
+            from PyQt5.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QDialogButtonBox, QComboBox, QSpinBox, QLineEdit, QCheckBox
+
+            dialog = QDialog(self)
+            dialog.setWindowTitle("编辑调整规则")
+            dialog.setMinimumWidth(500)
+
+            layout = QVBoxLayout(dialog)
+
+            form_layout = QFormLayout()
+
+            name_edit = QLineEdit()
+            name_edit.setText(rule.name)
+            form_layout.addRow("规则名称:", name_edit)
+
+            trigger_combo = QComboBox()
+            for trigger in AdjustmentTrigger:
+                trigger_combo.addItem(trigger.value.replace("_", " ").title(), trigger)
+            trigger_combo.setCurrentIndex(list(AdjustmentTrigger).index(rule.trigger))
+            form_layout.addRow("触发条件:", trigger_combo)
+
+            priority_spin = QSpinBox()
+            priority_spin.setRange(1, 100)
+            priority_spin.setValue(rule.priority)
+            form_layout.addRow("优先级:", priority_spin)
+
+            cooldown_spin = QSpinBox()
+            cooldown_spin.setRange(0, 3600)
+            cooldown_spin.setValue(rule.cooldown_period)
+            cooldown_spin.setSuffix(" 秒")
+            form_layout.addRow("冷却时间:", cooldown_spin)
+
+            enabled_check = QCheckBox()
+            enabled_check.setChecked(rule.enabled)
+            form_layout.addRow("启用:", enabled_check)
+
+            layout.addLayout(form_layout)
+
+            buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+            buttons.accepted.connect(dialog.accept)
+            buttons.rejected.connect(dialog.reject)
+            layout.addWidget(buttons)
+
+            if dialog.exec_() == QDialog.Accepted:
+                rule.name = name_edit.text()
+                rule.trigger = trigger_combo.currentData()
+                rule.priority = priority_spin.value()
+                rule.cooldown_period = cooldown_spin.value()
+                rule.enabled = enabled_check.isChecked()
+                self._update_adjustment_rules_table()
+                self.dynamic_adjustment_status.setText("规则已更新")
+                logger.info(f"调整规则已更新: {rule.name}")
+
+        except Exception as e:
+            logger.error(f"编辑调整规则失败: {e}")
+            self.dynamic_adjustment_status.setText(f"编辑失败: {e}")
+
+    def _delete_adjustment_rule(self):
+        """删除调整规则"""
+        if not self.dynamic_risk_engine:
+            return
+
+        try:
+            current_row = self.adjustment_rules_table.currentRow()
+            if current_row < 0:
+                QMessageBox.information(self, "提示", "请先选择要删除的规则")
+                return
+
+            rule = self.dynamic_risk_engine.adjustment_rules[current_row]
+            reply = QMessageBox.question(
+                self, "确认删除", f"确定要删除规则 '{rule.name}' 吗？",
+                QMessageBox.Yes | QMessageBox.No
+            )
+
+            if reply == QMessageBox.Yes:
+                self.dynamic_risk_engine.adjustment_rules.remove(rule)
+                self._update_adjustment_rules_table()
+                self.dynamic_adjustment_status.setText("规则已删除")
+                logger.info(f"调整规则已删除: {rule.name}")
+
+        except Exception as e:
+            logger.error(f"删除调整规则失败: {e}")
+            self.dynamic_adjustment_status.setText(f"删除失败: {e}")
+
+    def _enable_all_adjustment_rules(self):
+        """启用所有调整规则"""
+        if not self.dynamic_risk_engine:
+            return
+
+        try:
+            for rule in self.dynamic_risk_engine.adjustment_rules:
+                rule.enabled = True
+
+            self._update_adjustment_rules_table()
+            self.dynamic_adjustment_status.setText("所有规则已启用")
+            logger.info("所有调整规则已启用")
+
+        except Exception as e:
+            logger.error(f"启用所有调整规则失败: {e}")
+            self.dynamic_adjustment_status.setText(f"启用失败: {e}")
+
+    def _disable_all_adjustment_rules(self):
+        """禁用所有调整规则"""
+        if not self.dynamic_risk_engine:
+            return
+
+        try:
+            for rule in self.dynamic_risk_engine.adjustment_rules:
+                rule.enabled = False
+
+            self._update_adjustment_rules_table()
+            self.dynamic_adjustment_status.setText("所有规则已禁用")
+            logger.info("所有调整规则已禁用")
+
+        except Exception as e:
+            logger.error(f"禁用所有调整规则失败: {e}")
+            self.dynamic_adjustment_status.setText(f"禁用失败: {e}")
+
+    def _export_adjustment_history(self):
+        """导出调整历史"""
+        if not self.dynamic_risk_engine:
+            return
+
+        try:
+            from PyQt5.QtWidgets import QFileDialog
+            import csv
+
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "导出调整历史", "", "CSV文件 (*.csv);;所有文件 (*)"
+            )
+
+            if file_path:
+                with open(file_path, 'w', newline='', encoding='utf-8') as f:
+                    writer = csv.writer(f)
+                    writer.writerow([
+                        "时间", "策略", "触发条件", "调整前", "调整后", "性能影响", "状态"
+                    ])
+
+                    for record in self.dynamic_risk_engine.adjustment_history:
+                        before_text = ", ".join([f"{k}:{v:.4f}" for k, v in record.before_params.items()])
+                        after_text = ", ".join([f"{k}:{v:.4f}" for k, v in record.after_params.items()])
+
+                        writer.writerow([
+                            record.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+                            record.strategy.value.replace("_", " ").title(),
+                            record.trigger.value.replace("_", " ").title(),
+                            before_text,
+                            after_text,
+                            f"{record.performance_impact:.4f}",
+                            "成功" if record.success else "失败"
+                        ])
+
+                self.dynamic_adjustment_status.setText(f"调整历史已导出到: {file_path}")
+                logger.info(f"调整历史已导出到: {file_path}")
+
+        except Exception as e:
+            logger.error(f"导出调整历史失败: {e}")
+            self.dynamic_adjustment_status.setText(f"导出失败: {e}")
+
+    def _clear_adjustment_history(self):
+        """清空调整历史"""
+        if not self.dynamic_risk_engine:
+            return
+
+        try:
+            reply = QMessageBox.question(
+                self, "确认清空", "确定要清空所有调整历史吗？",
+                QMessageBox.Yes | QMessageBox.No
+            )
+
+            if reply == QMessageBox.Yes:
+                self.dynamic_risk_engine.adjustment_history.clear()
+                self._update_adjustment_history_table()
+                self._update_adjustment_performance_analysis()
+                self.dynamic_adjustment_status.setText("调整历史已清空")
+                logger.info("调整历史已清空")
+
+        except Exception as e:
+            logger.error(f"清空调整历史失败: {e}")
+            self.dynamic_adjustment_status.setText(f"清空失败: {e}")
+
+    def _filter_adjustment_history(self, index: int):
+        """筛选调整历史"""
+        filter_text = self.history_filter_combo.currentText()
+
+        try:
+            for row in range(self.adjustment_history_table.rowCount()):
+                status_item = self.adjustment_history_table.item(row, 6)
+                if status_item:
+                    status_text = status_item.text()
+
+                    if filter_text == "全部":
+                        self.adjustment_history_table.setRowHidden(row, False)
+                    elif filter_text == "成功":
+                        self.adjustment_history_table.setRowHidden(row, status_text != "成功")
+                    elif filter_text == "失败":
+                        self.adjustment_history_table.setRowHidden(row, status_text != "失败")
+
+        except Exception as e:
+            logger.error(f"筛选调整历史失败: {e}")
+
+    def _toggle_auto_update(self, enabled: bool):
+        """切换自动更新"""
+        if enabled:
+            self.dynamic_adjustment_status.setText("自动更新已启用")
+            logger.info("动态调整自动更新已启用")
+        else:
+            self.dynamic_adjustment_status.setText("自动更新已禁用")
+            logger.info("动态调整自动更新已禁用")
+
     def closeEvent(self, event):
         """关闭事件"""
         try:
-            # 停止增强风险监控
-            self.stop_enhanced_monitoring()
+            self.cleanup()
             event.accept()
         except Exception as e:
             logger.error(f"关闭风险控制中心失败: {e}")
             event.accept()
+
+    def _on_theme_changed(self):
+        """主题变化回调"""
+        try:
+            # 更新所有卡片的主题样式
+            if hasattr(self, 'cards'):
+                for card in self.cards.values():
+                    if hasattr(card, 'update_theme'):
+                        card.update_theme()
+            
+            # 更新图表主题
+            if hasattr(self, 'risk_chart') and hasattr(self.risk_chart, 'update_theme'):
+                self.risk_chart.update_theme()
+            if hasattr(self, 'alert_history_chart') and hasattr(self.alert_history_chart, 'update_theme'):
+                self.alert_history_chart.update_theme()
+                
+            logger.debug("风险控制中心标签页主题已更新")
+        except Exception as e:
+            logger.error(f"更新风险控制中心标签页主题失败: {e}")
+
+    def cleanup(self):
+        """清理资源 - 优化性能，避免卡顿"""
+        try:
+            # 停止增强风险监控 - 添加异常处理
+            try:
+                self.stop_enhanced_monitoring()
+            except Exception as e:
+                logger.debug(f"停止增强风险监控失败: {e}")
+            
+            # 清理风险监控器 - 添加异常处理
+            if hasattr(self, 'enhanced_risk_monitor') and self.enhanced_risk_monitor:
+                try:
+                    if hasattr(self.enhanced_risk_monitor, 'cleanup'):
+                        self.enhanced_risk_monitor.cleanup()
+                except Exception as e:
+                    logger.debug(f"清理风险监控器失败: {e}")
+            
+            # 清理图表 - 添加异常处理
+            if hasattr(self, 'risk_chart') and self.risk_chart:
+                try:
+                    if hasattr(self.risk_chart, 'cleanup'):
+                        self.risk_chart.cleanup()
+                except Exception as e:
+                    logger.debug(f"清理风险图表失败: {e}")
+            
+            # 清理指标卡片 - 添加异常处理
+            if hasattr(self, 'risk_cards'):
+                for card in self.risk_cards.values():
+                    try:
+                        if hasattr(card, 'cleanup'):
+                            card.cleanup()
+                    except Exception as e:
+                        logger.debug(f"清理指标卡片失败: {e}")
+            
+            # 清理表格 - 添加异常处理
+            if hasattr(self, 'risk_history_table'):
+                try:
+                    self.risk_history_table.clearContents()
+                    self.risk_history_table.setRowCount(0)
+                except Exception as e:
+                    logger.debug(f"清理表格失败: {e}")
+            
+            # 清理风险规则树 - 添加异常处理
+            if hasattr(self, 'rules_tree'):
+                try:
+                    self.rules_tree.clear()
+                except Exception as e:
+                    logger.debug(f"清理规则树失败: {e}")
+            
+            # 清理告警历史 - 添加异常处理
+            if hasattr(self, 'risk_alerts'):
+                try:
+                    self.risk_alerts.clear()
+                except Exception as e:
+                    logger.debug(f"清理告警历史失败: {e}")
+            if hasattr(self, 'risk_history'):
+                try:
+                    self.risk_history.clear()
+                except Exception as e:
+                    logger.debug(f"清理风险历史失败: {e}")
+            
+            logger.debug("ModernRiskControlCenterTab cleanup completed")
+            
+        except Exception as e:
+            logger.debug(f"清理资源失败: {e}")

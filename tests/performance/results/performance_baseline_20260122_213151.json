@@ -1,0 +1,33 @@
+{
+  "test_name": "架构精简性能基线测试",
+  "timestamp": "2026-01-22T21:31:51.133996",
+  "current_metrics": {
+    "startup_time": 137.90744948387146,
+    "memory_usage_mb": 496.91796875,
+    "memory_peak_mb": 497.03515625,
+    "cpu_usage_percent": 0.0,
+    "response_time_ms": 30.051149999962945,
+    "concurrent_capacity": 48,
+    "thread_count": 10
+  },
+  "baseline_metrics": {
+    "startup_time": 17.5,
+    "memory_usage_mb": 800.0,
+    "memory_peak_mb": 1200.0,
+    "cpu_usage_percent": 25.0,
+    "response_time_ms": 150.0,
+    "concurrent_capacity": 50,
+    "thread_count": 25
+  },
+  "improvements": {
+    "startup_time": -688.0425684792656,
+    "memory_usage": 37.88525390625,
+    "memory_peak": 58.580403645833336,
+    "cpu_usage": 100.0,
+    "response_time": 79.9659000000247,
+    "concurrent_capacity": -4.0,
+    "thread_count": 60.0
+  },
+  "meets_target": false,
+  "target_description": "启动时间137.9s > 目标8.0s (未达标); 内存减少37.9% < 目标50.0% (未达标); 响应时间30.1ms ≤ 目标100.0ms (达标); 并发能力48 < 目标100 (未达标)"
+}

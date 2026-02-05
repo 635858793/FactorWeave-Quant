@@ -6,15 +6,8 @@ import time
 import threading
 from typing import Any, Optional, Dict
 from collections import OrderedDict
-from enum import Enum
 from loguru import logger
-
-
-class CacheLevel(Enum):
-    """缓存级别枚举"""
-    L1_MEMORY = "l1_memory"
-    L2_REDIS = "l2_redis"
-    L3_DISK = "l3_disk"
+from ..interfaces.cache import CacheLevel
 
 
 class MultiLevelCacheManager:

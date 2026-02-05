@@ -618,7 +618,7 @@ QSpinBox::up-button:!enabled {
         background: transparent;
 }
 QSpinBox::up-button:enabled:hover {
-        background: rgb(255, 255, 255, 30);
+        background: rgba(255, 255, 255, 0.12);
 }
 QSpinBox::down-button {
         border-left: 1px solid rgb(111, 156, 207);
@@ -631,7 +631,7 @@ QSpinBox::down-button:!enabled {
         background: transparent;
 }
 QSpinBox::down-button:hover {
-        background: rgb(255, 255, 255, 30);
+        background: rgba(255, 255, 255, 0.12);
 }
 
 /**********标签**********/

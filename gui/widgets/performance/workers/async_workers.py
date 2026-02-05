@@ -1,4 +1,5 @@
-from loguru import logger
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 异步工作线程
 
@@ -7,9 +8,8 @@ from loguru import logger
 
 import json
 import os
+from loguru import logger
 from PyQt5.QtCore import QRunnable, QThread, QObject, pyqtSignal
-
-logger = logger
 
 
 class AsyncDataSignals(QObject):
@@ -250,6 +250,34 @@ class AlertHistoryWorker(QRunnable):
             return level_mapping.get(level.value, '未知')
         else:
             return level_mapping.get(str(level).lower(), '未知')
+
+
+class TabLoadSignals(QObject):
+    """标签页加载信号"""
+    result = pyqtSignal(object)  # 加载结果
+    error = pyqtSignal(str)     # 错误信息
+
+
+class TabLoadWorker(QRunnable):
+    """标签页延迟加载工作线程"""
+
+    def __init__(self, factory_func):
+        super().__init__()
+        self.factory_func = factory_func
+        self.signals = TabLoadSignals()
+
+    def run(self):
+        """在后台线程中执行标签页创建"""
+        try:
+            logger.info("开始创建标签页...")
+            tab = self.factory_func()
+            logger.info("标签页创建成功")
+            self.signals.result.emit(tab)
+        except Exception as e:
+            import traceback
+            error_msg = f"创建标签页失败: {str(e)}\n{traceback.format_exc()}"
+            logger.error(error_msg)
+            self.signals.error.emit(error_msg)
 
 
 class NotificationTestSignals(QObject):

@@ -1,4 +1,3 @@
-from loguru import logger
 """
 现代化性能图表组件
 
@@ -10,17 +9,43 @@ from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont
 
-logger = logger
+# 延迟导入logger，避免在模块级别导入时触发性能监控
+logger = None
 
-# 可选导入matplotlib
-try:
-    import matplotlib.pyplot as plt
-    from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-    from matplotlib.figure import Figure
-    import numpy as np
-    MATPLOTLIB_AVAILABLE = True
-except ImportError:
-    MATPLOTLIB_AVAILABLE = False
+def _get_logger():
+    """延迟导入logger"""
+    global logger
+    if logger is None:
+        from loguru import logger as _logger
+        logger = _logger
+    return logger
+
+# 延迟导入matplotlib，避免在模块级别导入时崩溃
+MATPLOTLIB_AVAILABLE = False
+matplotlib = None
+plt = None
+FigureCanvas = None
+Figure = None
+np = None
+
+def _import_matplotlib():
+    """延迟导入matplotlib"""
+    global MATPLOTLIB_AVAILABLE, matplotlib, plt, FigureCanvas, Figure, np
+    
+    if not MATPLOTLIB_AVAILABLE:
+        try:
+            import matplotlib
+            matplotlib.use('Qt5Agg')
+            import matplotlib.pyplot as plt
+            from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+            from matplotlib.figure import Figure
+            import numpy as np
+            
+            MATPLOTLIB_AVAILABLE = True
+            _get_logger().info("matplotlib导入成功")
+        except Exception as e:
+            _get_logger().error(f"matplotlib导入失败: {e}")
+            MATPLOTLIB_AVAILABLE = False
 
 class ModernPerformanceChart(QWidget):
     """现代化性能图表组件 - 参考专业交易软件"""
@@ -36,6 +61,9 @@ class ModernPerformanceChart(QWidget):
         self.init_ui()
 
     def init_ui(self):
+        # 延迟导入matplotlib
+        _import_matplotlib()
+        
         layout = QVBoxLayout(self)
         layout.setContentsMargins(5, 5, 5, 5)
 
@@ -84,6 +112,9 @@ class ModernPerformanceChart(QWidget):
 
     def update_chart(self):
         """更新图表 - 专业交易软件风格"""
+        # 确保matplotlib和numpy已导入
+        _import_matplotlib()
+        
         if not MATPLOTLIB_AVAILABLE or not self.data_history:
             return
 
@@ -218,3 +249,36 @@ class ModernPerformanceChart(QWidget):
         if MATPLOTLIB_AVAILABLE:
             self.ax.clear()
             self.canvas.draw()
+
+    def cleanup(self):
+        """清理资源"""
+        try:
+            # 清空数据
+            self.data_history.clear()
+            
+            # 清理matplotlib资源
+            if MATPLOTLIB_AVAILABLE:
+                if hasattr(self, 'ax'):
+                    self.ax.clear()
+                if hasattr(self, 'figure'):
+                    import matplotlib.pyplot as plt
+                    plt.close(self.figure)
+                if hasattr(self, 'canvas'):
+                    self.canvas.close()
+            
+            # 清理布局
+            if self.layout():
+                while self.layout().count():
+                    item = self.layout().takeAt(0)
+                    if item.widget():
+                        item.widget().deleteLater()
+                    elif item.layout():
+                        while item.layout().count():
+                            sub_item = item.layout().takeAt(0)
+                            if sub_item.widget():
+                                sub_item.widget().deleteLater()
+            
+            _get_logger().debug("ModernPerformanceChart cleanup completed")
+            
+        except Exception as e:
+            _get_logger().error(f"清理资源失败: {e}")

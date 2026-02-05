@@ -14,7 +14,7 @@ from datetime import datetime
 from PyQt5.QtWidgets import QWidget, QFormLayout, QSpinBox, QComboBox
 
 from core.strategy_extensions import (
-    IStrategyPlugin, Signal, TradeResult, Position, PerformanceMetrics,
+    IStrategyPlugin, Signal, TradeResult, Position, TradingPerformanceMetrics,
     StandardMarketData, StrategyContext, SignalType, TradeAction, TradeStatus,
     ParameterDef, StrategyType, RiskLevel
 )
@@ -292,8 +292,8 @@ class MovingAverageStrategyPlugin(IStrategyPlugin):
             timestamp=trade_result.timestamp
         )
 
-    def calculate_performance(self, context: StrategyContext) -> PerformanceMetrics:
-        return PerformanceMetrics(
+    def calculate_performance(self, context: StrategyContext) -> TradingPerformanceMetrics:
+        return TradingPerformanceMetrics(
             total_return=0.0,
             annual_return=0.0,
             sharpe_ratio=0.0,

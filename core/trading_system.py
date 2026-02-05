@@ -51,7 +51,8 @@ class TradingSystem:
             self._trading_service = self.service_container.resolve(TradingService)
 
             # 获取指标服务
-                        self._unified_indicator_service = self.service_container.resolve(UnifiedIndicatorService)
+            from .services.unified_indicator_service import UnifiedIndicatorService
+            self._unified_indicator_service = self.service_container.resolve(UnifiedIndicatorService)
 
             logger.info("交易系统服务依赖初始化完成")
 

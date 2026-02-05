@@ -2586,7 +2586,7 @@ FactorWeave-Quant  2.0 (重构版本)
         try:
             from gui.widgets.modern_performance_widget import show_modern_performance_monitor
 
-            # 显示现代化性能监控界面（移除智能洞察功能）
+            # 显示现代化性能监控界面
             performance_widget = show_modern_performance_monitor(self._main_window)
 
             if performance_widget is not None:

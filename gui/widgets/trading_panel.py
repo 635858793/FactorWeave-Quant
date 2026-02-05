@@ -219,7 +219,6 @@ class TradingPanel(QWidget):
         # 设置表格属性
         header = self.position_table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Stretch)
-        self.position_table.setAlternatingRowColors(True)
         self.position_table.setSelectionBehavior(QTableWidget.SelectRows)
 
         layout.addWidget(self.position_table)
@@ -255,7 +254,6 @@ class TradingPanel(QWidget):
         # 设置表格属性
         header = self.history_table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Stretch)
-        self.history_table.setAlternatingRowColors(True)
         self.history_table.setSelectionBehavior(QTableWidget.SelectRows)
 
         layout.addWidget(self.history_table)

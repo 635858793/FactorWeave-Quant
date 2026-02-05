@@ -13,8 +13,23 @@ from core.metrics.app_metrics_service import measure
 from optimization.progressive_loading_manager import load_chart_progressive, get_progressive_loader
 from gui.widgets.async_data_processor import AsyncDataProcessor
 from utils.cache import Cache
-from utils.theme import get_theme_manager
 from utils.config_manager import ConfigManager
+
+# 延迟导入主题管理器，避免在模块级别导入时崩溃
+THEME_MANAGER_AVAILABLE = False
+get_theme_manager = None
+
+def _import_theme_manager():
+    """延迟导入主题管理器"""
+    global THEME_MANAGER_AVAILABLE, get_theme_manager
+    if not THEME_MANAGER_AVAILABLE:
+        try:
+            from utils.theme import get_theme_manager as _get_theme_manager
+            get_theme_manager = _get_theme_manager
+            THEME_MANAGER_AVAILABLE = True
+            logger.info("主题管理器模块导入成功")
+        except Exception as e:
+            logger.warning(f"导入主题管理器失败: {e}")
 from .chart_mixins import (
     BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
     CrosshairMixin, InteractionMixin, ZoomMixin,
@@ -91,7 +106,16 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
             self.coordinator = coordinator
             self.event_bus = coordinator.event_bus if coordinator else None
             self.config_manager = config_manager or ConfigManager()
-            self.theme_manager = theme_manager or get_theme_manager(self.config_manager)
+            
+            # 延迟导入并初始化主题管理器
+            _import_theme_manager()
+            self.theme_manager = None
+            if THEME_MANAGER_AVAILABLE:
+                try:
+                    self.theme_manager = theme_manager or get_theme_manager(self.config_manager)
+                except Exception as e:
+                    logger.warning(f"获取ThemeManager失败: {e}")
+            
             # 纯Loguru架构，移除log_manager依赖
             logger.info("ChartWidget __init__: 开始初始化...")
 

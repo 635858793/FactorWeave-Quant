@@ -13,13 +13,25 @@ except ImportError:
     diskcache = None
     DISKCACHE_AVAILABLE = False
 
-# 分布式缓存（同步/异步均官方支持）
-try:
-    import redis
-    import redis.asyncio as aioredis
-except ImportError:
-    redis = None
-    aioredis = None
+# 分布式缓存（同步/异步均官方支持）- 使用惰性导入避免启动延迟
+# 注意：redis 导入会导致长时间的 DNS 解析延迟，因此我们延迟导入
+redis = None
+aioredis = None
+REDIS_AVAILABLE = False
+
+def _ensure_redis_imported():
+    """确保 redis 已导入（惰性导入）"""
+    global redis, aioredis, REDIS_AVAILABLE
+    if REDIS_AVAILABLE:
+        return True
+    try:
+        import redis
+        import redis.asyncio as aioredis
+        REDIS_AVAILABLE = True
+        return True
+    except ImportError:
+        REDIS_AVAILABLE = False
+        return False
 
 
 class Cache:
@@ -54,11 +66,22 @@ class Cache:
                 # diskcache官方文档：多进程多线程安全，推荐本地缓存首选
                 self.cache = diskcache.Cache(cache_dir, size_limit=size_limit)
                 self._memory_cache = False
-        elif backend == "redis" and redis:
-            if async_mode and aioredis:
-                self.cache = aioredis.from_url(redis_url)
+        elif backend == "redis":
+            if not _ensure_redis_imported():
+                logger.warning("WARNING: redis 不可用，回退到内存缓存")
+                self.cache = {}
+                self._memory_cache = True
             else:
-                self.cache = redis.StrictRedis.from_url(redis_url)
+                try:
+                    if async_mode and aioredis:
+                        self.cache = aioredis.from_url(redis_url)
+                    else:
+                        self.cache = redis.StrictRedis.from_url(redis_url)
+                    self._memory_cache = False
+                except Exception as e:
+                    logger.warning(f"WARNING: redis 连接失败，回退到内存缓存: {e}")
+                    self.cache = {}
+                    self._memory_cache = True
         else:
             raise ValueError("Unsupported backend or missing dependency")
 
@@ -141,10 +164,15 @@ class Cache:
                 }
             else:
                 stats = self.cache.stats()
+                # diskcache.stats()返回tuple (hits, misses)
+                if isinstance(stats, tuple) and len(stats) >= 2:
+                    hits, misses = stats[0], stats[1]
+                else:
+                    hits, misses = 0, 0
                 return {
                     'size': len(self.cache),
-                    'hits': stats.get('hits', 0),
-                    'misses': stats.get('misses', 0),
+                    'hits': hits,
+                    'misses': misses,
                     'volume': self.cache.volume(),
                     'backend': 'diskcache'
                 }
