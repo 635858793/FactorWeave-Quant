@@ -18,7 +18,7 @@ from examples.strategies.adj_price_momentum_strategy import AdjPriceMomentumStra
 from core.strategy_extensions import (
     IStrategyPlugin, StrategyInfo, ParameterDef,
     StrategyContext, StandardMarketData, Signal, TradeResult,
-    Position, PerformanceMetrics,
+    Position, TradingPerformanceMetrics,
     StrategyType, AssetType, TimeFrame, RiskLevel,
     SignalType, TradeAction, TradeStatus
 )
@@ -272,12 +272,12 @@ class AdjMomentumPlugin(IStrategyPlugin):
                 timestamp=datetime.now()
             )
 
-    def calculate_performance(self, context: StrategyContext) -> PerformanceMetrics:
+    def calculate_performance(self, context: StrategyContext) -> TradingPerformanceMetrics:
         """计算策略性能指标"""
         try:
             # 这里应该实现实际的性能计算逻辑
             # 现在返回模拟数据
-            return PerformanceMetrics(
+            return TradingPerformanceMetrics(
                 total_return=0.0,
                 annual_return=0.0,
                 sharpe_ratio=0.0,
@@ -296,7 +296,7 @@ class AdjMomentumPlugin(IStrategyPlugin):
         except Exception as e:
             logger.error(f"性能计算失败: {e}")
             # 返回默认性能指标
-            return PerformanceMetrics(
+            return TradingPerformanceMetrics(
                 total_return=0.0,
                 annual_return=0.0,
                 sharpe_ratio=0.0,
@@ -472,12 +472,12 @@ class VWAPReversionPlugin(IStrategyPlugin):
                 timestamp=datetime.now()
             )
 
-    def calculate_performance(self, context: StrategyContext) -> PerformanceMetrics:
+    def calculate_performance(self, context: StrategyContext) -> TradingPerformanceMetrics:
         """计算策略性能指标"""
         try:
             # 这里应该实现实际的性能计算逻辑
             # 现在返回模拟数据
-            return PerformanceMetrics(
+            return TradingPerformanceMetrics(
                 total_return=0.0,
                 annual_return=0.0,
                 sharpe_ratio=0.0,
@@ -496,7 +496,7 @@ class VWAPReversionPlugin(IStrategyPlugin):
         except Exception as e:
             logger.error(f"VWAP性能计算失败: {e}")
             # 返回默认性能指标
-            return PerformanceMetrics(
+            return TradingPerformanceMetrics(
                 total_return=0.0,
                 annual_return=0.0,
                 sharpe_ratio=0.0,

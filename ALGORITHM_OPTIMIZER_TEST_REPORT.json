@@ -1,0 +1,50 @@
+{
+  "test_date": "2026-01-23T20:43:58.312589",
+  "test_results": [
+    {
+      "method": "genetic",
+      "success": true,
+      "optimization_time": 21.04680871963501,
+      "best_score": 0.35281629774623596,
+      "baseline_score": 0.29356940585372354,
+      "improvement_percentage": 20.18156208076849,
+      "iterations": 5,
+      "best_version_id": 100
+    },
+    {
+      "method": "bayesian",
+      "success": true,
+      "optimization_time": 4.651892185211182,
+      "best_score": 0.32269021794845304,
+      "baseline_score": 0.29356940585372354,
+      "improvement_percentage": 9.919566383303405,
+      "iterations": 5,
+      "best_version_id": 101
+    },
+    {
+      "method": "random",
+      "success": true,
+      "optimization_time": 4.533299922943115,
+      "best_score": 0.3354825277434364,
+      "baseline_score": 0.29356940585372354,
+      "improvement_percentage": 14.277074195734436,
+      "iterations": 5,
+      "best_version_id": 102
+    },
+    {
+      "method": "gradient",
+      "success": true,
+      "optimization_time": 41.575040340423584,
+      "best_score": 0.32351879517489546,
+      "baseline_score": 0.29356940585372354,
+      "improvement_percentage": 10.201808745729709,
+      "iterations": 5,
+      "best_version_id": 103
+    }
+  ],
+  "summary": {
+    "total_tests": 4,
+    "successful_tests": 4,
+    "failed_tests": 0
+  }
+}

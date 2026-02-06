@@ -1103,7 +1103,6 @@ class SmartRecommendationPanel(QWidget):
         self.feedback_table.setHorizontalHeaderLabels([
             "时间", "推荐内容", "反馈类型", "评分", "评论", "处理状态"
         ])
-        self.feedback_table.setAlternatingRowColors(True)
         history_layout.addWidget(self.feedback_table)
 
         layout.addWidget(history_group)

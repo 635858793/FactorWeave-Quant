@@ -17,7 +17,7 @@ from PyQt5.QtWidgets import (
     QCheckBox, QSpinBox, QDoubleSpinBox, QSlider, QLineEdit, QMessageBox, QFileDialog
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QDateTime, QThreadPool, QRunnable, pyqtSlot
-from PyQt5.QtGui import QFont, QPalette, QIcon, QPixmap
+from PyQt5.QtGui import QFont, QPalette, QIcon, QPixmap, QColor
 
 # 导入监控相关模块
 try:
@@ -419,6 +419,68 @@ class DeepOptimizationOverviewTab(QWidget):
         """)
         
         logger.error(f"深度优化错误: {error}")
+    
+    def update_metrics(self, metrics: dict):
+        """更新优化指标 - 支持事件驱动"""
+        try:
+            # 更新性能评分
+            if 'cache_hit_rate' in metrics:
+                score = 5.0 + metrics['cache_hit_rate'] * 5.0
+                self.performance_score.findChild(QLabel, "", Qt.FindDirectChildrenOnly).setText(
+                    f"{score:.1f}/10"
+                )
+            
+            # 更新缓存命中率
+            if 'cache_hit_rate' in metrics:
+                self.cache_hit_ratio.findChild(QLabel, "", Qt.FindDirectChildrenOnly).setText(
+                    f"{metrics['cache_hit_rate']:.1%}"
+                )
+            
+            # 更新网络延迟
+            if 'network_latency_ms' in metrics:
+                latency = metrics['network_latency_ms']
+                improvement = max(0, 120 - latency) / 120 * 100
+                self.response_time.findChild(QLabel, "", Qt.FindDirectChildrenOnly).setText(
+                    f"-{improvement:.0f}ms"
+                )
+            
+            # 更新数据吞吐
+            if 'data_throughput' in metrics:
+                throughput = metrics['data_throughput']
+                improvement = max(0, throughput - 11.8) / 11.8 * 100
+                self.memory_usage.findChild(QLabel, "", Qt.FindDirectChildrenOnly).setText(
+                    f"+{improvement:.0f}%"
+                )
+            
+            logger.debug(f"优化指标已更新: {metrics}")
+            
+        except Exception as e:
+            logger.error(f"更新优化指标失败: {e}")
+    
+    def cleanup(self):
+        """清理资源 - 优化性能，避免卡顿"""
+        try:
+            # 停止工作线程 - 添加异常处理
+            if hasattr(self, 'worker') and self.worker:
+                try:
+                    if hasattr(self.worker, 'is_running') and self.worker.is_running:
+                        self.worker.stop()
+                        self.worker.wait(timeout=3.0)
+                        if self.worker.isRunning():
+                            logger.debug("工作线程未能在超时时间内停止")
+                except Exception as e:
+                    logger.debug(f"停止工作线程失败: {e}")
+            
+            # 停止优化服务 - 添加异常处理
+            if hasattr(self, 'optimization_service') and self.optimization_service:
+                try:
+                    self.optimization_service.stop()
+                except Exception as e:
+                    logger.debug(f"停止优化服务失败: {e}")
+            
+            logger.debug("DeepOptimizationOverviewTab 资源已清理")
+        except Exception as e:
+            logger.debug(f"清理 DeepOptimizationOverviewTab 资源失败: {e}")
 
 
 class DeepOptimizationControlTab(QWidget):
@@ -561,6 +623,18 @@ class DeepOptimizationControlTab(QWidget):
             logger.error(f"应用设置到服务失败: {e}")
             raise Exception(f"应用设置到服务失败: {e}")
 
+    def cleanup(self):
+        """清理资源 - 优化性能，避免卡顿"""
+        try:
+            if hasattr(self, 'optimization_service') and self.optimization_service:
+                try:
+                    self.optimization_service.stop()
+                except Exception as e:
+                    logger.debug(f"停止优化服务失败: {e}")
+            logger.debug("DeepOptimizationControlTab cleanup completed")
+        except Exception as e:
+            logger.debug(f"清理 DeepOptimizationControlTab 资源失败: {e}")
+
 
 class DeepOptimizationMetricsTab(QWidget):
     """深度优化指标标签页"""
@@ -615,11 +689,56 @@ class DeepOptimizationMetricsTab(QWidget):
                         item.setBackground(Qt.red)
                 self.metrics_table.setItem(row, col, item)
                 
-    def update_metrics(self):
-        """更新指标数据"""
-        # 这里可以实现真实的指标更新逻辑
-        current_time = QDateTime.currentDateTime().toString("hh:mm:ss")
-        logger.debug(f"更新指标数据 - {current_time}")
+    def update_metrics(self, metrics: dict = None):
+        """更新指标数据 - 支持事件驱动"""
+        try:
+            if metrics is None:
+                current_time = QDateTime.currentDateTime().toString("hh:mm:ss")
+                logger.debug(f"更新指标数据 - {current_time}")
+                return
+            
+            # 更新表格数据
+            metrics_mapping = {
+                'cache_hit_rate': ['缓存命中率', f"{metrics.get('cache_hit_rate', 0.0):.1%}", '78%', '+17.9%'],
+                'network_latency_ms': ['网络延迟', f"{metrics.get('network_latency_ms', 0.0):.0f}ms", '120ms', '+62.5%'],
+                'data_throughput': ['数据吞吐', f"{metrics.get('data_throughput', 0.0):.1f}msg/s", '11.8K/s', '+28.8%'],
+                'scroll_performance': ['滚动性能', f"{metrics.get('scroll_performance', 0.0):.1f}fps", '30fps', '+50%'],
+            }
+            
+            row = 0
+            for key, data in metrics_mapping.items():
+                if row >= self.metrics_table.rowCount():
+                    self.metrics_table.insertRow(row)
+                
+                for col, value in enumerate(data):
+                    item = QTableWidgetItem(str(value))
+                    if col == 3:  # 改进率列
+                        if "+" in value:
+                            item.setBackground(QColor(46, 204, 113))
+                        else:
+                            item.setBackground(QColor(231, 76, 60))
+                    self.metrics_table.setItem(row, col, item)
+                
+                row += 1
+            
+            logger.debug(f"优化服务指标已更新到表格: {metrics}")
+            
+        except Exception as e:
+            logger.error(f"更新指标数据失败: {e}")
+
+    def cleanup(self):
+        """清理资源 - 优化性能，避免卡顿"""
+        try:
+            if hasattr(self, 'timer') and self.timer:
+                try:
+                    if self.timer.isActive():
+                        self.timer.stop()
+                    self.timer.deleteLater()
+                except Exception as e:
+                    logger.debug(f"停止定时器失败: {e}")
+            logger.debug("DeepOptimizationMetricsTab cleanup completed")
+        except Exception as e:
+            logger.debug(f"清理 DeepOptimizationMetricsTab 资源失败: {e}")
 
 
 class DeepOptimizationAdvancedTab(QWidget):
@@ -704,14 +823,96 @@ GPU加速: 不可用
         # 这里可以实现日志导出功能
         logger.info("导出深度优化日志")
 
+    def cleanup(self):
+        """清理资源 - 优化性能，避免卡顿"""
+        try:
+            if hasattr(self, 'log_text'):
+                try:
+                    self.log_text.clear()
+                except Exception as e:
+                    logger.debug(f"清理日志文本失败: {e}")
+            if hasattr(self, 'debug_text'):
+                try:
+                    self.debug_text.clear()
+                except Exception as e:
+                    logger.debug(f"清理调试文本失败: {e}")
+            logger.debug("DeepOptimizationAdvancedTab cleanup completed")
+        except Exception as e:
+            logger.debug(f"清理 DeepOptimizationAdvancedTab 资源失败: {e}")
+
 
 class DeepOptimizationTab(QWidget):
-    """深度优化标签页主类"""
+    """深度优化标签页主类 - 事件驱动版本"""
     
-    def __init__(self, optimization_service):
+    def __init__(self, optimization_service, event_bus=None):
         super().__init__()
         self.optimization_service = optimization_service
+        self.event_bus = event_bus
+        self._event_handlers = []
         self.init_ui()
+        self._setup_event_handlers()
+    
+    def _setup_event_handlers(self):
+        """设置事件处理器"""
+        if not self.event_bus:
+            return
+        
+        try:
+            from core.events.types import OptimizationMetricsUpdatedEvent
+            
+            # 订阅优化服务指标更新事件
+            self.event_bus.subscribe(
+                OptimizationMetricsUpdatedEvent,
+                self._on_optimization_metrics_updated
+            )
+            self._event_handlers.append(OptimizationMetricsUpdatedEvent)
+            
+            logger.info("深度优化标签页事件处理器已设置")
+            
+        except Exception as e:
+            logger.error(f"设置事件处理器失败: {e}")
+    
+    def _on_optimization_metrics_updated(self, event):
+        """处理优化服务指标更新事件"""
+        try:
+            metrics = event.data.get('metrics', {})
+            
+            # 更新概览标签页的指标
+            if hasattr(self, 'overview_tab') and hasattr(self.overview_tab, 'update_metrics'):
+                self.overview_tab.update_metrics(metrics)
+            
+            # 更新指标标签页
+            if hasattr(self, 'metrics_tab') and hasattr(self.metrics_tab, 'update_metrics'):
+                self.metrics_tab.update_metrics(metrics)
+            
+            logger.debug(f"优化服务指标已更新: {metrics}")
+            
+        except Exception as e:
+            logger.error(f"处理优化服务指标更新事件失败: {e}")
+    
+    def cleanup(self):
+        """清理资源"""
+        try:
+            # 取消事件订阅
+            if self.event_bus and self._event_handlers:
+                for event_type in self._event_handlers:
+                    self.event_bus.unsubscribe(event_type)
+                self._event_handlers.clear()
+            
+            # 清理子标签页
+            if hasattr(self, 'overview_tab') and hasattr(self.overview_tab, 'cleanup'):
+                self.overview_tab.cleanup()
+            if hasattr(self, 'control_tab') and hasattr(self.control_tab, 'cleanup'):
+                self.control_tab.cleanup()
+            if hasattr(self, 'metrics_tab') and hasattr(self.metrics_tab, 'cleanup'):
+                self.metrics_tab.cleanup()
+            if hasattr(self, 'advanced_tab') and hasattr(self.advanced_tab, 'cleanup'):
+                self.advanced_tab.cleanup()
+            
+            logger.info("深度优化标签页资源已清理")
+            
+        except Exception as e:
+            logger.error(f"清理深度优化标签页资源失败: {e}")
         
     def init_ui(self):
         """初始化UI"""
@@ -783,6 +984,38 @@ class DeepOptimizationTab(QWidget):
         # 这里可以调用实际的设置应用逻辑
         # if self.optimization_service:
         #     self.optimization_service.update_config(settings)
+
+    def cleanup(self):
+        """清理资源 - 优化性能，避免卡顿"""
+        try:
+            if hasattr(self, 'overview_tab') and hasattr(self.overview_tab, 'cleanup'):
+                try:
+                    self.overview_tab.cleanup()
+                except Exception as e:
+                    logger.debug(f"清理概览标签页失败: {e}")
+            if hasattr(self, 'control_tab') and hasattr(self.control_tab, 'cleanup'):
+                try:
+                    self.control_tab.cleanup()
+                except Exception as e:
+                    logger.debug(f"清理控制标签页失败: {e}")
+            if hasattr(self, 'metrics_tab') and hasattr(self.metrics_tab, 'cleanup'):
+                try:
+                    self.metrics_tab.cleanup()
+                except Exception as e:
+                    logger.debug(f"清理指标标签页失败: {e}")
+            if hasattr(self, 'advanced_tab') and hasattr(self.advanced_tab, 'cleanup'):
+                try:
+                    self.advanced_tab.cleanup()
+                except Exception as e:
+                    logger.debug(f"清理高级标签页失败: {e}")
+            if hasattr(self, 'monitoring_tab') and hasattr(self.monitoring_tab, 'cleanup'):
+                try:
+                    self.monitoring_tab.cleanup()
+                except Exception as e:
+                    logger.debug(f"清理监控标签页失败: {e}")
+            logger.debug("DeepOptimizationTab cleanup completed")
+        except Exception as e:
+            logger.debug(f"清理 DeepOptimizationTab 资源失败: {e}")
 
         
     def init_ui(self):

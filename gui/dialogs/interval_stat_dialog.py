@@ -18,18 +18,8 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QFont, QColor
 
-# 尝试导入matplotlib
-try:
-    import matplotlib
-    matplotlib.use('Qt5Agg')
-    from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-    from matplotlib.figure import Figure
-    import matplotlib.pyplot as plt
-    MATPLOTLIB_AVAILABLE = True
-except ImportError:
-    MATPLOTLIB_AVAILABLE = False
-    FigureCanvas = None
-    Figure = None
+# Matplotlib 延迟导入标志
+MATPLOTLIB_AVAILABLE = False
 
 logger = logger
 
@@ -282,6 +272,19 @@ class IntervalStatDialog(QDialog):
 
     def _create_chart_tab(self) -> QWidget:
         """创建图表分析标签页"""
+        # 延迟导入 matplotlib，避免在没有 QApplication 时崩溃
+        try:
+            import matplotlib
+            matplotlib.use('Qt5Agg')
+            from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+            from matplotlib.figure import Figure
+            import matplotlib.pyplot as plt
+            MATPLOTLIB_AVAILABLE = True
+        except ImportError:
+            MATPLOTLIB_AVAILABLE = False
+            FigureCanvas = None
+            Figure = None
+
         if not MATPLOTLIB_AVAILABLE:
             widget = QWidget()
             layout = QVBoxLayout(widget)

@@ -89,6 +89,11 @@ class PatternRecognizer(BasePatternRecognizer):
             return results
 
         try:
+            # 从配置中获取参数，如果没有则使用默认值
+            min_body_ratio = self.parameters.get('min_body_ratio', 0.1)
+            shadow_ratio_threshold = self.parameters.get('shadow_ratio_threshold', 2.0)
+            confidence_threshold = self.parameters.get('confidence_threshold', 0.7)
+
             for i in range(len(data)):
                 row = data.iloc[i]
                 open_price = row['open']
@@ -101,14 +106,14 @@ class PatternRecognizer(BasePatternRecognizer):
                 upper_shadow = high_price - max(open_price, close_price)
                 lower_shadow = min(open_price, close_price) - low_price
 
-                # 简单的锤子线判断逻辑
-                if lower_shadow > 2 * body and upper_shadow < body * 0.1:
+                # 使用配置参数判断
+                if lower_shadow > shadow_ratio_threshold * body and upper_shadow < body * min_body_ratio:
                     result = PatternResult(
                         pattern_type="candlestick",
                         pattern_name="锤子线",
                         pattern_category="反转形态",
                         signal_type=SignalType.BUY,
-                        confidence=0.7,
+                        confidence=confidence_threshold,
                         confidence_level="中等",
                         index=i,
                         datetime_val=None,
@@ -132,6 +137,10 @@ class PatternRecognizer(BasePatternRecognizer):
             return results
 
         try:
+            # 从配置中获取参数，如果没有则使用默认值
+            body_ratio_threshold = self.parameters.get('body_ratio_threshold', 0.1)
+            confidence_threshold = self.parameters.get('confidence_threshold', 0.6)
+
             for i in range(len(data)):
                 row = data.iloc[i]
                 open_price = row['open']
@@ -143,14 +152,14 @@ class PatternRecognizer(BasePatternRecognizer):
                 body = abs(close_price - open_price)
                 total_range = high_price - low_price
 
-                # 简单的十字星判断逻辑
-                if total_range > 0 and body / total_range < 0.1:
+                # 使用配置参数判断
+                if total_range > 0 and body / total_range < body_ratio_threshold:
                     result = PatternResult(
                         pattern_type="candlestick",
                         pattern_name="十字星",
                         pattern_category="反转形态",
                         signal_type=SignalType.NEUTRAL,
-                        confidence=0.6,
+                        confidence=confidence_threshold,
                         confidence_level="中等",
                         index=i,
                         datetime_val=None,

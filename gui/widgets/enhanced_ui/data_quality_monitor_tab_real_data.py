@@ -10,9 +10,18 @@
 
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
-import pandas as pd
 import time
 from loguru import logger
+
+# 延迟导入pandas，避免在模块级别导入时调用matplotlib.get_backend()
+pd = None
+
+def _import_pandas():
+    """延迟导入pandas"""
+    global pd
+    if pd is None:
+        import pandas as pd
+    return pd
 
 
 class RealDataQualityProvider:
@@ -26,6 +35,13 @@ class RealDataQualityProvider:
         self._sources_cache = None  # 缓存数据源信息
         self._cache_time = None     # 缓存时间
         self._cache_ttl = 30        # 缓存有效期30秒
+        self._services_initialized = False  # 延迟初始化标记
+
+    def _ensure_services_initialized(self):
+        """确保服务已初始化（延迟初始化）"""
+        if self._services_initialized:
+            return
+        self._services_initialized = True
         self._init_services()
 
     def _init_services(self):
@@ -88,6 +104,7 @@ class RealDataQualityProvider:
 
     def get_quality_metrics(self) -> Dict[str, float]:
         """获取真实质量指标"""
+        self._ensure_services_initialized()
         try:
             if not self.data_manager:
                 return self._get_default_metrics()
@@ -128,8 +145,19 @@ class RealDataQualityProvider:
         try:
             total_expected = stats.get('expected_records', 1000)
             total_actual = stats.get('actual_records', 950)
-            return min(1.0, total_actual / total_expected if total_expected > 0 else 0.95)
-        except:
+            
+            # 如果没有数据，返回默认值
+            if total_expected == 0 and total_actual == 0:
+                logger.debug("完整性计算：无数据，返回默认值0.95")
+                return 0.95
+            
+            # 如果预期记录数为0，避免除零错误
+            if total_expected == 0:
+                return 0.95
+            
+            return min(1.0, total_actual / total_expected)
+        except Exception as e:
+            logger.warning(f"完整性计算失败: {e}，返回默认值0.95")
             return 0.95
 
     def _calculate_accuracy(self, stats: Dict) -> float:
@@ -137,8 +165,15 @@ class RealDataQualityProvider:
         try:
             error_count = stats.get('error_count', 0)
             total_count = stats.get('total_count', 1000)
-            return 1.0 - (error_count / total_count if total_count > 0 else 0.0)
-        except:
+            
+            # 如果没有数据，返回默认值
+            if total_count == 0:
+                logger.debug("准确性计算：无数据，返回默认值0.97")
+                return 0.97
+            
+            return 1.0 - (error_count / total_count)
+        except Exception as e:
+            logger.warning(f"准确性计算失败: {e}，返回默认值0.97")
             return 0.97
 
     def _calculate_timeliness(self, stats: Dict) -> float:
@@ -163,8 +198,15 @@ class RealDataQualityProvider:
         try:
             inconsistent_count = stats.get('inconsistent_records', 0)
             total_count = stats.get('total_count', 1000)
-            return 1.0 - (inconsistent_count / total_count if total_count > 0 else 0.0)
-        except:
+            
+            # 如果没有数据，返回默认值
+            if total_count == 0:
+                logger.debug("一致性计算：无数据，返回默认值0.92")
+                return 0.92
+            
+            return 1.0 - (inconsistent_count / total_count)
+        except Exception as e:
+            logger.warning(f"一致性计算失败: {e}，返回默认值0.92")
             return 0.92
 
     def _calculate_validity(self, stats: Dict) -> float:
@@ -172,8 +214,15 @@ class RealDataQualityProvider:
         try:
             invalid_count = stats.get('invalid_records', 0)
             total_count = stats.get('total_count', 1000)
-            return 1.0 - (invalid_count / total_count if total_count > 0 else 0.0)
-        except:
+            
+            # 如果没有数据，返回默认值
+            if total_count == 0:
+                logger.debug("有效性计算：无数据，返回默认值0.94")
+                return 0.94
+            
+            return 1.0 - (invalid_count / total_count)
+        except Exception as e:
+            logger.warning(f"有效性计算失败: {e}，返回默认值0.94")
             return 0.94
 
     def _calculate_uniqueness(self, stats: Dict) -> float:
@@ -181,8 +230,15 @@ class RealDataQualityProvider:
         try:
             duplicate_count = stats.get('duplicate_records', 0)
             total_count = stats.get('total_count', 1000)
-            return 1.0 - (duplicate_count / total_count if total_count > 0 else 0.0)
-        except:
+            
+            # 如果没有数据，返回默认值
+            if total_count == 0:
+                logger.debug("唯一性计算：无数据，返回默认值0.96")
+                return 0.96
+            
+            return 1.0 - (duplicate_count / total_count)
+        except Exception as e:
+            logger.warning(f"唯一性计算失败: {e}，返回默认值0.96")
             return 0.96
 
     def _get_default_metrics(self) -> Dict[str, float]:

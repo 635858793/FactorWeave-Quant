@@ -506,7 +506,6 @@ class DataSourceStatusWidget(QWidget):
 
         # 通知列表
         self.notifications_list = QListWidget()
-        self.notifications_list.setAlternatingRowColors(True)
         layout.addWidget(self.notifications_list)
 
         return tab

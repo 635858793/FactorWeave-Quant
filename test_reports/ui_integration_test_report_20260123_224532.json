@@ -1,0 +1,118 @@
+{
+  "test_time": "2026-01-23T22:45:25.659945",
+  "end_time": "2026-01-23T22:45:32.302112",
+  "total_duration": 6.642167,
+  "summary": {
+    "total_tests": 13,
+    "passed_tests": 13,
+    "failed_tests": 0,
+    "skipped_tests": 0,
+    "pass_rate": 100.0
+  },
+  "results": [
+    {
+      "test_name": "test_backend_auto_tuner_connection",
+      "test_category": "backend_connection_tests",
+      "status": "passed",
+      "duration": 0.489636,
+      "error_message": null,
+      "details": {}
+    },
+    {
+      "test_name": "test_backend_pattern_manager_connection",
+      "test_category": "backend_connection_tests",
+      "status": "passed",
+      "duration": 0.002982,
+      "error_message": null,
+      "details": {}
+    },
+    {
+      "test_name": "test_backend_performance_evaluator_connection",
+      "test_category": "backend_connection_tests",
+      "status": "passed",
+      "duration": 0.002579,
+      "error_message": null,
+      "details": {}
+    },
+    {
+      "test_name": "test_backend_version_manager_connection",
+      "test_category": "backend_connection_tests",
+      "status": "passed",
+      "duration": 0.0,
+      "error_message": null,
+      "details": {}
+    },
+    {
+      "test_name": "test_error_duplicate_optimization",
+      "test_category": "error_handling_tests",
+      "status": "passed",
+      "duration": 3.33853,
+      "error_message": null,
+      "details": {}
+    },
+    {
+      "test_name": "test_error_invalid_pattern_name",
+      "test_category": "error_handling_tests",
+      "status": "passed",
+      "duration": 0.020229,
+      "error_message": null,
+      "details": {}
+    },
+    {
+      "test_name": "test_function_create_pattern_context_menu",
+      "test_category": "functional_tests",
+      "status": "passed",
+      "duration": 0.040028,
+      "error_message": null,
+      "details": {}
+    },
+    {
+      "test_name": "test_function_evaluate_pattern",
+      "test_category": "functional_tests",
+      "status": "passed",
+      "duration": 1.643416,
+      "error_message": null,
+      "details": {}
+    },
+    {
+      "test_name": "test_function_quick_optimize",
+      "test_category": "functional_tests",
+      "status": "passed",
+      "duration": 0.52071,
+      "error_message": null,
+      "details": {}
+    },
+    {
+      "test_name": "test_function_show_version_manager",
+      "test_category": "functional_tests",
+      "status": "passed",
+      "duration": 0.017776,
+      "error_message": null,
+      "details": {}
+    },
+    {
+      "test_name": "test_integration_optimization_workflow",
+      "test_category": "integration_tests",
+      "status": "passed",
+      "duration": 0.514487,
+      "error_message": null,
+      "details": {}
+    },
+    {
+      "test_name": "test_integration_ui_to_backend",
+      "test_category": "ui_component_tests",
+      "status": "passed",
+      "duration": 0.02337,
+      "error_message": null,
+      "details": {}
+    },
+    {
+      "test_name": "test_ui_integration_initialization",
+      "test_category": "ui_component_tests",
+      "status": "passed",
+      "duration": 0.012186,
+      "error_message": null,
+      "details": {}
+    }
+  ]
+}

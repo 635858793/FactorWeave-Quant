@@ -14,7 +14,7 @@ import threading
 import time
 
 # 使用系统统一组件
-from core.adapters import get_config
+from core.system_adapters import get_config
 
 class UIOptimizer(QObject):
     """UI优化器 - 提供更好的UI刷新机制"""

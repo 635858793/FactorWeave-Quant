@@ -19,9 +19,24 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 # 导入必要的管理器
 from utils.cache import Cache
 from core.config import ConfigManager
-from utils.theme import get_theme_manager
 from ..async_data_processor import AsyncDataProcessor
 from ..chart_renderer import ChartRenderer
+
+# 延迟导入主题管理器，避免在模块级别导入时崩溃
+THEME_MANAGER_AVAILABLE = False
+get_theme_manager = None
+
+def _import_theme_manager():
+    """延迟导入主题管理器"""
+    global THEME_MANAGER_AVAILABLE, get_theme_manager
+    if not THEME_MANAGER_AVAILABLE:
+        try:
+            from utils.theme import get_theme_manager as _get_theme_manager
+            get_theme_manager = _get_theme_manager
+            THEME_MANAGER_AVAILABLE = True
+            logger.info("主题管理器模块导入成功")
+        except Exception as e:
+            logger.warning(f"导入主题管理器失败: {e}")
 
 class BaseMixin:
     """基础功能Mixin - 负责初始化、配置管理、主题应用等"""
@@ -82,8 +97,18 @@ class BaseMixin:
     def _apply_initial_theme(self):
         """应用初始主题，并优化坐标轴贴边和刻度方向"""
         try:
-            theme = self.theme_manager.current_theme
-            colors = self.theme_manager.get_theme_colors(theme)
+            if not self.theme_manager:
+                # 如果主题管理器不可用，使用默认颜色
+                theme = None
+                colors = {
+                    'chart_background': '#181c24',
+                    'chart_grid': '#2c3140',
+                    'chart_text': '#b0b8c1'
+                }
+            else:
+                theme = self.theme_manager.current_theme
+                colors = self.theme_manager.get_theme_colors(theme)
+            
             self.figure.patch.set_facecolor(
                 colors.get('chart_background', '#181c24'))
             for ax in [self.price_ax, self.volume_ax, self.indicator_ax]:

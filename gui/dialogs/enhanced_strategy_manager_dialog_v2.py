@@ -9,6 +9,8 @@
 """
 
 from loguru import logger
+import matplotlib
+matplotlib.use('Agg')
 import asyncio
 import json
 import time
@@ -35,25 +37,34 @@ from PyQt5.QtGui import QFont, QPixmap, QIcon, QColor, QPalette, QPainter, QBrus
 
 # 导入服务和数据结构
 from core.services.strategy_service import StrategyService, StrategyConfig, BacktestStatus, OptimizationStatus
-from core.services.trading_service import TradingService, StrategyState
+from core.services.unified_data_manager import UnifiedDataManager
 from core.strategy_extensions import (
     StrategyContext, StandardMarketData, TimeFrame, AssetType,
-    StrategyType, RiskLevel, ParameterDef, PerformanceMetrics
+    StrategyType, RiskLevel, ParameterDef, TradingPerformanceMetrics
 )
 
-# 导入服务
-from core.services.strategy_service import StrategyService, StrategyConfig, BacktestStatus, OptimizationStatus
-from core.services.trading_service import TradingService, StrategyState
-from core.services.unified_data_manager import UnifiedDataManager
+# 延迟导入系统主题管理器，避免在模块级别导入时崩溃
+THEME_MANAGER_AVAILABLE = False
+get_theme_manager = None
+Theme = None
 
-# 导入系统主题管理器
-from utils.theme import get_theme_manager, Theme
+def _import_theme_manager():
+    """延迟导入主题管理器"""
+    global THEME_MANAGER_AVAILABLE, get_theme_manager, Theme
+    if not THEME_MANAGER_AVAILABLE:
+        try:
+            from utils.theme import get_theme_manager as _get_theme_manager, Theme as _Theme
+            get_theme_manager = _get_theme_manager
+            Theme = _Theme
+            THEME_MANAGER_AVAILABLE = True
+            logger.info("主题管理器模块导入成功")
+        except Exception as e:
+            logger.warning(f"导入主题管理器失败: {e}")
 from core.events.event_bus import get_event_bus
 from core.events.types import ThemeChangedEvent
 from core.events import (
     StrategyStartedEvent, StrategyStoppedEvent, StrategyErrorEvent,
-    SignalGeneratedEvent, EventType, EventPriority, EventFilter,
-    get_event_bus
+    SignalGeneratedEvent, EventType, EventPriority, EventFilter
 )
 
 # 导入图表库（带错误处理）
@@ -114,22 +125,27 @@ class EnhancedStrategyManagerDialogV2(QDialog):
     strategy_started = pyqtSignal(str)   # 策略ID
     strategy_stopped = pyqtSignal(str)   # 策略ID
 
-    def __init__(self, parent=None, strategy_service=None, trading_service=None):
+    def __init__(self, parent=None, strategy_service=None):
         """
         初始化增强策略管理对话框 V2
 
         Args:
             parent: 父窗口
             strategy_service: 策略服务（已弃用，建议使用服务容器）
-            trading_service: 交易服务（已弃用，建议使用服务容器）
         """
         super().__init__(parent)
 
-        # 获取系统主题管理器
-        self.theme_manager = get_theme_manager()
+        # 延迟导入并获取系统主题管理器
+        _import_theme_manager()
+        self.theme_manager = None
+        if THEME_MANAGER_AVAILABLE:
+            try:
+                self.theme_manager = get_theme_manager()
+            except Exception as e:
+                logger.warning(f"获取ThemeManager失败: {e}")
         
         # 初始化服务容器（如果提供了服务，使用依赖注入）
-        self._setup_services(strategy_service, trading_service)
+        self._setup_services(strategy_service)
 
         self.current_strategy_id = None
         self.current_view = 'home'  # 当前视图
@@ -137,56 +153,60 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         # 缓存图表引用，避免频繁查找
         self._cached_charts = []
         
+        # 初始化异步任务管理器
+        self._async_tasks = set()
+        
         # 设置窗口属性
         self.setWindowTitle("策略管理器")
         self.setModal(False)  # 非模态对话框，允许与主窗口交互
         self.resize(1600, 1000)
 
         # 监听主题变化
-        self.theme_manager.theme_changed.connect(self._on_theme_changed)
+        if self.theme_manager:
+            self.theme_manager.theme_changed.connect(self._on_theme_changed)
 
         # 创建UI
         self._setup_ui()
         
         # 应用系统主题
-        self.theme_manager.apply_theme(self)
+        if self.theme_manager:
+            self.theme_manager.apply_theme(self)
+        
+        # 订阅策略事件（在UI创建后订阅，避免访问不存在的UI组件）
+        self._subscribe_strategy_events()
         
         # 加载策略数据
         self._load_strategies()
 
-    def _setup_services(self, strategy_service=None, trading_service=None):
+    def _setup_services(self, strategy_service=None):
         """设置服务依赖注入"""
+        # 初始化服务容器
+        try:
+            from core.containers.service_container import get_service_container
+            self.service_container = get_service_container()
+        except Exception as e:
+            logger.warning(f"无法获取服务容器: {e}")
+            self.service_container = None
+
         # 如果提供了服务实例，直接使用（向后兼容）
         if strategy_service:
             self.strategy_service = strategy_service
         else:
             # 使用服务容器获取服务实例
             try:
-                from core.containers.service_container import get_service_container
-                container = get_service_container()
-                self.strategy_service = container.resolve(StrategyService)
+                if self.service_container:
+                    self.strategy_service = self.service_container.resolve(StrategyService)
+                else:
+                    logger.warning("服务容器未初始化，无法获取StrategyService")
+                    self.strategy_service = None
             except Exception as e:
                 logger.warning(f"无法从服务容器获取StrategyService: {e}")
                 self.strategy_service = None
 
-        if trading_service:
-            self.trading_service = trading_service
-        else:
-            # 使用服务容器获取服务实例
-            try:
-                from core.containers.service_container import get_service_container
-                container = get_service_container()
-                self.trading_service = container.resolve(TradingService)
-            except Exception as e:
-                logger.warning(f"无法从服务容器获取TradingService: {e}")
-                self.trading_service = None
-
         logger.info(f"策略服务初始化完成: {self.strategy_service is not None}")
-        logger.info(f"交易服务初始化完成: {self.trading_service is not None}")
         
         # 初始化策略事件处理器
         self._strategy_event_handler = None
-        self._subscribe_strategy_events()
 
     def _subscribe_strategy_events(self):
         """订阅策略事件"""
@@ -198,8 +218,9 @@ class EnhancedStrategyManagerDialogV2(QDialog):
                     if hasattr(self, '_on_strategy_event'):
                         self._on_strategy_event(event)
                 except Exception as e:
-                    pass
+                    logger.error(f"策略事件处理器执行失败: {e}")
 
+            self._strategy_event_handler = strategy_event_handler
             event_bus.subscribe(StrategyStartedEvent, strategy_event_handler, priority=0)
             event_bus.subscribe(StrategyStoppedEvent, strategy_event_handler, priority=0)
             event_bus.subscribe(SignalGeneratedEvent, strategy_event_handler, priority=0)
@@ -250,8 +271,9 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         """显示性能通知"""
         try:
             if performance:
-                value_label = self.total_return_card.findChild(QLabel, "value_label")
-                if value_label:
+                # 使用直接引用，避免使用 findChild
+                if hasattr(self.total_return_card, 'value_label'):
+                    value_label = self.total_return_card.value_label
                     total_return = performance.total_return
                     if hasattr(total_return, 'iloc'):
                         total_return = float(total_return.iloc[0]) if len(total_return) > 0 else 0.0
@@ -261,8 +283,8 @@ class EnhancedStrategyManagerDialogV2(QDialog):
                         total_return = 0.0
                     value_label.setText(f"{total_return*100:.2f}%")
 
-                value_label = self.sharpe_ratio_card.findChild(QLabel, "value_label")
-                if value_label:
+                if hasattr(self.sharpe_ratio_card, 'value_label'):
+                    value_label = self.sharpe_ratio_card.value_label
                     sharpe = performance.sharpe_ratio
                     if hasattr(sharpe, 'iloc'):
                         sharpe = float(sharpe.iloc[0]) if len(sharpe) > 0 else 0.0
@@ -272,8 +294,8 @@ class EnhancedStrategyManagerDialogV2(QDialog):
                         sharpe = 0.0
                     value_label.setText(f"{sharpe:.2f}")
 
-                value_label = self.max_drawdown_card.findChild(QLabel, "value_label")
-                if value_label:
+                if hasattr(self.max_drawdown_card, 'value_label'):
+                    value_label = self.max_drawdown_card.value_label
                     drawdown = performance.max_drawdown
                     if hasattr(drawdown, 'iloc'):
                         drawdown = float(drawdown.iloc[0]) if len(drawdown) > 0 else 0.0
@@ -283,8 +305,8 @@ class EnhancedStrategyManagerDialogV2(QDialog):
                         drawdown = 0.0
                     value_label.setText(f"{drawdown*100:.2f}%")
 
-                value_label = self.win_rate_card.findChild(QLabel, "value_label")
-                if value_label:
+                if hasattr(self.win_rate_card, 'value_label'):
+                    value_label = self.win_rate_card.value_label
                     win_rate = performance.win_rate
                     if hasattr(win_rate, 'iloc'):
                         win_rate = float(win_rate.iloc[0]) if len(win_rate) > 0 else 0.0
@@ -506,7 +528,8 @@ class EnhancedStrategyManagerDialogV2(QDialog):
                 for strategy in strategies:
                     # 获取该策略的所有回测任务
                     strategy_backtests = []
-                    for task_id, task in self.strategy_service._backtest_tasks.items():
+                    backtest_tasks = self.strategy_service.get_all_backtest_tasks()
+                    for task_id, task in backtest_tasks.items():
                         if (task.strategy_config.strategy_id == strategy.strategy_id and 
                             task.status.value == 'completed' and
                             task.result):
@@ -580,7 +603,8 @@ class EnhancedStrategyManagerDialogV2(QDialog):
                 for strategy in all_strategies:
                     # 获取该策略的所有回测任务
                     strategy_backtests = []
-                    for task_id, task in self.strategy_service._backtest_tasks.items():
+                    backtest_tasks = self.strategy_service.get_all_backtest_tasks()
+                    for task_id, task in backtest_tasks.items():
                         if (task.strategy_config.strategy_id == strategy.strategy_id and 
                             task.status.value == 'completed' and
                             task.result):
@@ -933,6 +957,9 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         
         layout.addWidget(title_label)
         layout.addWidget(value_label)
+        
+        # 保存 value_label 引用，避免使用 findChild
+        card.value_label = value_label
         
         return card
 
@@ -1816,6 +1843,10 @@ class EnhancedStrategyManagerDialogV2(QDialog):
     def _load_accounts_for_filter(self, account_filter: QComboBox):
         """加载账号列表到筛选下拉框"""
         try:
+            if not self.service_container:
+                logger.warning("服务容器未初始化，无法加载账号列表")
+                return
+            
             from core.trading.account_manager import AccountManager
             account_manager = self.service_container.resolve(AccountManager)
             
@@ -2299,8 +2330,11 @@ class EnhancedStrategyManagerDialogV2(QDialog):
             # 获取账号管理器
             account_manager = None
             try:
-                from core.trading.account_manager import AccountManager
-                account_manager = self.service_container.resolve(AccountManager)
+                if self.service_container:
+                    from core.trading.account_manager import AccountManager
+                    account_manager = self.service_container.resolve(AccountManager)
+                else:
+                    logger.warning("服务容器未初始化，无法获取账号管理器")
             except Exception as e:
                 logger.error(f"获取账号管理器失败: {e}")
             
@@ -2453,7 +2487,10 @@ class EnhancedStrategyManagerDialogV2(QDialog):
                     loop = asyncio.get_event_loop()
                     if loop.is_running():
                         # 如果事件循环正在运行，使用create_task
-                        asyncio.create_task(self._run_backtest_async(strategy_id, market_data, context))
+                        task = asyncio.create_task(self._run_backtest_async(strategy_id, market_data, context))
+                        self._async_tasks.add(task)
+                        task.add_done_callback(lambda t: self._async_tasks.discard(t))
+                        task.add_done_callback(lambda t: self._handle_async_task_error(t, "回测任务"))
                     else:
                         # 如果事件循环未运行，使用run_until_complete
                         backtest_id = loop.run_until_complete(
@@ -2482,6 +2519,17 @@ class EnhancedStrategyManagerDialogV2(QDialog):
             logger.error(f"运行回测失败: {e}")
             QMessageBox.critical(self, "错误", f"运行回测失败: {str(e)}")
             self._reset_backtest_ui()
+
+    def _handle_async_task_error(self, task, task_name: str = "异步任务"):
+        """处理异步任务的错误"""
+        try:
+            if task.exception():
+                error = task.exception()
+                logger.error(f"{task_name}执行失败: {error}")
+                QMessageBox.critical(self, "错误", f"{task_name}执行失败: {str(error)}")
+                self._reset_backtest_ui()
+        except Exception as e:
+            logger.error(f"处理{task_name}错误失败: {e}")
 
     async def _run_backtest_async(self, strategy_id: str, market_data: StandardMarketData, context: StrategyContext):
         """异步运行回测（用于事件循环运行时）"""
@@ -2554,7 +2602,10 @@ class EnhancedStrategyManagerDialogV2(QDialog):
                     loop = asyncio.get_event_loop()
                     if loop.is_running():
                         # 如果事件循环正在运行，使用异步任务
-                        asyncio.create_task(self._run_batch_backtest_async(selected_rows, market_data, context))
+                        task = asyncio.create_task(self._run_batch_backtest_async(selected_rows, market_data, context))
+                        self._async_tasks.add(task)
+                        task.add_done_callback(lambda t: self._async_tasks.discard(t))
+                        task.add_done_callback(lambda t: self._handle_async_task_error(t, "批量回测任务"))
                     else:
                         # 如果事件循环未运行，使用同步方式
                         for row in selected_rows:
@@ -3534,9 +3585,12 @@ class EnhancedStrategyManagerDialogV2(QDialog):
                         logger.info(f"已停止定时器: {timer_name}")
             
             # 取消所有异步任务
-            if hasattr(self, 'task_manager') and self.task_manager:
+            if hasattr(self, '_async_tasks'):
                 try:
-                    self.task_manager.cancel_all_tasks()
+                    for task in self._async_tasks:
+                        if not task.done():
+                            task.cancel()
+                    self._async_tasks.clear()
                     logger.info("已取消所有异步任务")
                 except Exception as e:
                     logger.warning(f"取消异步任务失败: {e}")
@@ -3560,7 +3614,10 @@ class EnhancedStrategyManagerDialogV2(QDialog):
                 try:
                     from core.events.event_bus import get_event_bus
                     event_bus = get_event_bus()
-                    event_bus.unsubscribe_all(self._strategy_event_handler)
+                    event_bus.unsubscribe(StrategyStartedEvent, self._strategy_event_handler)
+                    event_bus.unsubscribe(StrategyStoppedEvent, self._strategy_event_handler)
+                    event_bus.unsubscribe(SignalGeneratedEvent, self._strategy_event_handler)
+                    event_bus.unsubscribe(StrategyErrorEvent, self._strategy_event_handler)
                     logger.info("已取消策略事件订阅")
                 except Exception as e:
                     logger.warning(f"取消策略事件订阅失败: {e}")
@@ -3671,6 +3728,14 @@ class OptimizationParamDialog(QDialog):
     
     def closeEvent(self, event):
         """关闭事件"""
+        # 清理 matplotlib 图表资源
+        if hasattr(self, 'figure') and MATPLOTLIB_AVAILABLE:
+            try:
+                self.figure.clear()
+                plt.close(self.figure)
+            except Exception as e:
+                logger.warning(f"清理图表资源失败: {e}")
+        
         event.accept()
 
 
@@ -4130,6 +4195,14 @@ class SensitivityAnalysisDialog(QDialog):
     
     def closeEvent(self, event):
         """关闭事件"""
+        # 清理 matplotlib 图表资源
+        if hasattr(self, 'figure') and MATPLOTLIB_AVAILABLE:
+            try:
+                self.figure.clear()
+                plt.close(self.figure)
+            except Exception as e:
+                logger.warning(f"清理图表资源失败: {e}")
+        
         event.accept()
 
 
@@ -4561,6 +4634,14 @@ class StrategyComparisonDialog(QDialog):
     
     def closeEvent(self, event):
         """关闭事件"""
+        # 清理 matplotlib 图表资源
+        if hasattr(self, 'figure') and MATPLOTLIB_AVAILABLE:
+            try:
+                self.figure.clear()
+                plt.close(self.figure)
+            except Exception as e:
+                logger.warning(f"清理图表资源失败: {e}")
+        
         event.accept()
 
 

@@ -17,7 +17,7 @@ import threading
 from contextlib import contextmanager
 
 # 使用系统统一组件
-from core.adapters import get_config, get_data_validator
+from core.system_adapters import get_config, get_data_validator
 from .base_strategy import BaseStrategy, StrategySignal, StrategyParameter
 
 class StrategyDatabaseManager:

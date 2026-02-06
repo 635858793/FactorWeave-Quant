@@ -9,11 +9,26 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from datetime import datetime
-from utils.theme import get_theme_manager
 import json
 import pandas as pd
 import matplotlib.pyplot as plt
 from PyQt5.QtCore import QMetaObject, Qt, Q_ARG
+
+# 延迟导入主题管理器，避免在模块级别导入时崩溃
+THEME_MANAGER_AVAILABLE = False
+get_theme_manager = None
+
+def _import_theme_manager():
+    """延迟导入主题管理器"""
+    global THEME_MANAGER_AVAILABLE, get_theme_manager
+    if not THEME_MANAGER_AVAILABLE:
+        try:
+            from utils.theme import get_theme_manager as _get_theme_manager
+            get_theme_manager = _get_theme_manager
+            THEME_MANAGER_AVAILABLE = True
+            logger.info("主题管理器模块导入成功")
+        except Exception as e:
+            logger.warning(f"导入主题管理器失败: {e}")
 
 class DragHandle(QWidget):
     """顶部可拖动分隔条"""
@@ -89,8 +104,14 @@ class LogWidget(QWidget):
             self._log_received.connect(self._update_log_text)
             self.connect_signals()
 
-            # 设置样式
-            self.theme_manager = get_theme_manager()
+            # 延迟导入并设置样式
+            _import_theme_manager()
+            self.theme_manager = None
+            if THEME_MANAGER_AVAILABLE:
+                try:
+                    self.theme_manager = get_theme_manager()
+                except Exception as e:
+                    logger.warning(f"获取ThemeManager失败: {e}")
 
             logger.info("日志控件初始化完成")
 

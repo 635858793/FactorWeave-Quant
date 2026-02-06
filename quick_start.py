@@ -711,7 +711,7 @@ class FactorWeaveQuantLauncher:
             import tempfile
             import shutil
             temp_dir = tempfile.gettempdir()
-            FactorWeave-Quant_temp = os.path.join(temp_dir, "FactorWeave-Quant_*")
+            FactorWeave_Quant_temp = os.path.join(temp_dir, "FactorWeave-Quant_*")
 
             # 清理日志文件
             log_dir = project_root / "logs"
@@ -966,12 +966,13 @@ class FactorWeaveQuantLauncher:
         """性能对比分析"""
         print("启动性能对比分析...")
         try:
-            from optimization.optimization_dashboard import OptimizationDashboard
+            from optimization.optimization_dashboard import create_optimization_dashboard
+            from core.events.event_bus import get_event_bus
 
             if not QApplication.instance():
                 app = QApplication([])
 
-            dashboard = OptimizationDashboard()
+            dashboard = create_optimization_dashboard(get_event_bus())
             dashboard.show()
 
         except Exception as e:
@@ -998,11 +999,13 @@ class FactorWeaveQuantLauncher:
         """查看性能历史"""
         print("启动性能历史查看...")
         try:
+            from optimization.optimization_dashboard import create_optimization_dashboard
+            from core.events.event_bus import get_event_bus
 
             if not QApplication.instance():
                 app = QApplication([])
 
-            dashboard = OptimizationDashboard()
+            dashboard = create_optimization_dashboard(get_event_bus())
             dashboard.show()
 
         except Exception as e:
@@ -1029,11 +1032,13 @@ class FactorWeaveQuantLauncher:
         """查看优化历史"""
         print("启动优化历史查看...")
         try:
+            from optimization.optimization_dashboard import create_optimization_dashboard
+            from core.events.event_bus import get_event_bus
 
             if not QApplication.instance():
                 app = QApplication([])
 
-            dashboard = OptimizationDashboard()
+            dashboard = create_optimization_dashboard(get_event_bus())
             dashboard.show()
 
         except Exception as e:
@@ -1188,11 +1193,13 @@ class FactorWeaveQuantLauncher:
         """启动性能监控"""
         print("启动性能监控界面...")
         try:
+            from optimization.optimization_dashboard import create_optimization_dashboard
+            from core.events.event_bus import get_event_bus
 
             if not QApplication.instance():
                 app = QApplication([])
 
-            dashboard = OptimizationDashboard()
+            dashboard = create_optimization_dashboard(get_event_bus())
             dashboard.start_monitoring()
             dashboard.show()
 

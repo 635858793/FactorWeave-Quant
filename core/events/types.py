@@ -48,6 +48,7 @@ class EventType(Enum):
     PERFORMANCE_OPTIMIZED = "performance_optimized"
     PERFORMANCE_DEGRADED = "performance_degraded"
     PERFORMANCE_METRICS_UPDATED = "performance_metrics_updated"
+    OPTIMIZATION_METRICS_UPDATED = "optimization_metrics_updated"
     
     # UI相关事件
     UI_UPDATE = "ui_update"
@@ -254,6 +255,19 @@ class PerformanceUpdatedEvent(BaseEvent):
         super().__post_init__()
         self.data.update({
             'strategy_id': self.strategy_id,
+            'metrics': self.metrics
+        })
+
+
+@dataclass
+class OptimizationMetricsUpdatedEvent(BaseEvent):
+    """优化指标更新事件"""
+    metrics: Dict[str, Any] = field(default_factory=dict)
+    event_type: EventType = EventType.OPTIMIZATION_METRICS_UPDATED
+    
+    def __post_init__(self):
+        super().__post_init__()
+        self.data.update({
             'metrics': self.metrics
         })
 

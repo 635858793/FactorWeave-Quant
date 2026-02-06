@@ -2,6 +2,8 @@ from loguru import logger
 """
 重构后的分析控件模块 - 使用模块化标签页组件
 """
+import matplotlib
+matplotlib.use('Agg')
 from utils.manager_factory import get_config_manager
 from analysis.pattern_manager import PatternManager
 from .analysis_tabs import (
@@ -44,8 +46,23 @@ import time
 from concurrent.futures import *
 import numba
 import json
-from utils.theme import get_theme_manager
 from utils.config_manager import ConfigManager
+
+# 延迟导入主题管理器，避免在模块级别导入时崩溃
+THEME_MANAGER_AVAILABLE = False
+get_theme_manager = None
+
+def _import_theme_manager():
+    """延迟导入主题管理器"""
+    global THEME_MANAGER_AVAILABLE, get_theme_manager
+    if not THEME_MANAGER_AVAILABLE:
+        try:
+            from utils.theme import get_theme_manager as _get_theme_manager
+            get_theme_manager = _get_theme_manager
+            THEME_MANAGER_AVAILABLE = True
+            logger.info("主题管理器模块导入成功")
+        except Exception as e:
+            logger.warning(f"导入主题管理器失败: {e}")
 # 已移除 hikyuu 依赖 - 替换为新指标系统导入
 from core.indicator_service import calculate_indicator, get_indicator_metadata, get_all_indicators_metadata
 from utils.cache import Cache

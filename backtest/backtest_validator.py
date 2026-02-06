@@ -396,7 +396,7 @@ class ProfessionalBacktestValidator:
 
         # 检查时间间隔
         if len(time_series) > 1:
-            time_diffs = time_series.to_series().diff().dropna()
+            time_diffs = time_series.diff().dropna()
 
             # 检查是否有异常的时间间隔
             median_diff = time_diffs.median()

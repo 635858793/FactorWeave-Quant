@@ -1,0 +1,108 @@
+{
+  "test_config": {
+    "test_name": "UI 集成回归测试",
+    "version": "1.0.0",
+    "description": "全面测试 ui_integration.py 中的所有功能，包括 UI 与后端的连接调用"
+  },
+  "test_environment": {
+    "python_version": "3.8+",
+    "required_packages": [
+      "PyQt5>=5.15.0",
+      "loguru>=0.6.0",
+      "pandas>=1.3.0",
+      "numpy>=1.21.0"
+    ],
+    "optional_packages": [
+      "matplotlib>=3.4.0"
+    ]
+  },
+  "test_categories": {
+    "ui_component_tests": {
+      "name": "UI 组件测试",
+      "description": "测试 UI 组件的初始化和基本功能",
+      "tests": [
+        "test_ui_integration_initialization",
+        "test_ui_optimization_dialog_initialization",
+        "test_ui_version_manager_dialog_initialization",
+        "test_ui_optimization_worker_initialization"
+      ]
+    },
+    "backend_connection_tests": {
+      "name": "后端连接测试",
+      "description": "测试 UI 与后端组件的连接",
+      "tests": [
+        "test_backend_auto_tuner_connection",
+        "test_backend_version_manager_connection",
+        "test_backend_performance_evaluator_connection",
+        "test_backend_pattern_manager_connection"
+      ]
+    },
+    "function_workflow_tests": {
+      "name": "功能流程测试",
+      "description": "测试各个功能的完整流程",
+      "tests": [
+        "test_function_quick_optimize",
+        "test_function_show_optimization_dialog",
+        "test_function_show_version_manager",
+        "test_function_evaluate_pattern",
+        "test_function_create_pattern_context_menu"
+      ]
+    },
+    "error_handling_tests": {
+      "name": "错误处理测试",
+      "description": "测试各种错误情况的处理",
+      "tests": [
+        "test_error_invalid_pattern_name",
+        "test_error_duplicate_optimization"
+      ]
+    },
+    "integration_tests": {
+      "name": "集成测试",
+      "description": "测试完整的集成场景",
+      "tests": [
+        "test_integration_ui_to_backend",
+        "test_integration_optimization_workflow"
+      ]
+    }
+  },
+  "test_patterns": {
+    "test_patterns": [
+      "hammer",
+      "doji",
+      "three_white_soldiers",
+      "three_black_crows",
+      "morning_star",
+      "evening_star"
+    ],
+    "default_pattern": "hammer"
+  },
+  "optimization_config": {
+    "default_method": "random",
+    "default_iterations": 10,
+    "default_timeout_minutes": 5,
+    "test_iterations": 5,
+    "test_timeout_minutes": 1
+  },
+  "test_data": {
+    "generate_test_data": true,
+    "test_data_size": 1000,
+    "test_data_periods": ["1d", "1h", "30m"]
+  },
+  "report_config": {
+    "output_dir": "test_reports",
+    "generate_text_report": true,
+    "generate_json_report": true,
+    "include_details": true,
+    "include_error_traceback": true
+  },
+  "timeout_config": {
+    "test_timeout_seconds": 300,
+    "optimization_timeout_seconds": 60,
+    "dialog_timeout_seconds": 10
+  },
+  "skip_config": {
+    "skip_gui_tests": false,
+    "skip_slow_tests": false,
+    "skip_integration_tests": false
+  }
+}

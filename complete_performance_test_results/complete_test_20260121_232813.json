@@ -1,0 +1,50 @@
+[
+  {
+    "test_name": "回测速度",
+    "success": true,
+    "measured_value": 0.6259397696623537,
+    "unit": "万条/秒",
+    "readme_value": 100.0,
+    "target_value": 50.0,
+    "status": "未达标",
+    "improvement_percent": -99.37406023033765,
+    "notes": "实测: 0.63万条/秒, 耗时: 159.76秒",
+    "timestamp": "2026-01-21T23:28:03.299815"
+  },
+  {
+    "test_name": "策略执行延迟",
+    "success": true,
+    "measured_value": 0.017989000079978723,
+    "unit": "ms",
+    "readme_value": 15.0,
+    "target_value": 50.0,
+    "status": "优秀",
+    "improvement_percent": 99.88007333280015,
+    "notes": "实测: 0.02ms, 测试次数: 100",
+    "timestamp": "2026-01-21T23:28:03.304929"
+  },
+  {
+    "test_name": "数据处理吞吐量",
+    "success": true,
+    "measured_value": 212100.0,
+    "unit": "笔/秒",
+    "readme_value": 2000.0,
+    "target_value": 1000.0,
+    "status": "优秀",
+    "improvement_percent": 10505.0,
+    "notes": "实测: 212100笔/秒, 测试时长: 10.0秒",
+    "timestamp": "2026-01-21T23:28:13.306298"
+  },
+  {
+    "test_name": "并发处理能力",
+    "success": true,
+    "measured_value": 48,
+    "unit": "个",
+    "readme_value": 48,
+    "target_value": 100,
+    "status": "未达标",
+    "improvement_percent": 0.0,
+    "notes": "实测: 48个任务, 最大并发: 48",
+    "timestamp": "2026-01-21T23:28:13.326430"
+  }
+]

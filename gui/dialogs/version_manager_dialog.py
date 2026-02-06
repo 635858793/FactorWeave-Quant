@@ -724,7 +724,8 @@ class VersionManagerDialog(QDialog):
                             algorithm_code="# 新版本算法代码\npass",  # 默认代码
                             parameters={},  # 默认参数
                             description=name,
-                            optimization_method="manual"
+                            optimization_method="manual",
+                            created_by="user"
                         )
                         QMessageBox.information(
                             self, "成功", f"版本创建成功！版本ID: {version_id}")

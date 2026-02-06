@@ -30,7 +30,7 @@ except ImportError:
 # 项目内部导入
 from core.strategy_extensions import (
     IStrategyPlugin, StrategyInfo, ParameterDef, Signal, TradeResult, Position,
-    PerformanceMetrics, StandardMarketData, StrategyContext,
+    TradingPerformanceMetrics, StandardMarketData, StrategyContext,
     StrategyType, SignalType, TradeAction, TradeStatus, RiskLevel,
     AssetType, TimeFrame
 )
@@ -536,11 +536,11 @@ class BacktraderStrategyPlugin(IStrategyPlugin):
 
         return position
 
-    def calculate_performance(self, context: StrategyContext) -> PerformanceMetrics:
+    def calculate_performance(self, context: StrategyContext) -> TradingPerformanceMetrics:
         """计算策略性能"""
         try:
             if not self.results or len(self.results) == 0:
-                return PerformanceMetrics(
+                return TradingPerformanceMetrics(
                     total_return=0.0, annual_return=0.0, sharpe_ratio=0.0,
                     max_drawdown=0.0, win_rate=0.0, profit_factor=0.0,
                     total_trades=0, winning_trades=0, losing_trades=0,
@@ -596,7 +596,7 @@ class BacktraderStrategyPlugin(IStrategyPlugin):
                 if avg_loss > 0:
                     profit_factor = (avg_win * winning_trades) / (avg_loss * losing_trades)
 
-            return PerformanceMetrics(
+            return TradingPerformanceMetrics(
                 total_return=total_return,
                 annual_return=total_return,  # 简化计算
                 sharpe_ratio=sharpe_ratio,
@@ -615,7 +615,7 @@ class BacktraderStrategyPlugin(IStrategyPlugin):
 
         except Exception as e:
             logger.error(f"Backtrader性能计算失败: {e}")
-            return PerformanceMetrics(
+            return TradingPerformanceMetrics(
                 total_return=0.0, annual_return=0.0, sharpe_ratio=0.0,
                 max_drawdown=0.0, win_rate=0.0, profit_factor=0.0,
                 total_trades=0, winning_trades=0, losing_trades=0,

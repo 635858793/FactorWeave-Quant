@@ -15,7 +15,7 @@ import threading
 import time
 
 # 使用系统统一组件
-from core.adapters import get_config, get_data_validator
+from core.system_adapters import get_config, get_data_validator
 from core.services.unified_data_manager import UnifiedDataManager
 from core.plugin_types import AssetType
 

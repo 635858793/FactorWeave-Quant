@@ -1,9 +1,8 @@
 from utils.imports import (
-from loguru import logger
     plt, pd, np, go, px, sns,
     get_plotly
 )
-
+from loguru import logger
 from typing import Dict, List, Optional
 from datetime import datetime
 

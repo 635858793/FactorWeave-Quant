@@ -45,7 +45,7 @@ class SectorFundFlowExample:
 
             # 直接创建SectorDataService，避免依赖服务容器
             from core.services.sector_data_service import SectorDataService
-                        from core.tet_data_pipeline import TETDataPipeline
+            from core.tet_data_pipeline import TETDataPipeline
 
             # 创建必要的组件（这里可以使用None，SectorDataService会处理）
             cache_manager = None  # SectorDataService会处理None情况

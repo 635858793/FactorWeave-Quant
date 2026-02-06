@@ -20,9 +20,6 @@ from ..data.data_access import DataAccess
 
 
 class OrderType(Enum):
-def __init__(self):
-        self.logger = logger.bind(module=self.__class__.__name__)
-    
     """订单类型"""
     MARKET = "market"  # 市价单
     LIMIT = "limit"    # 限价单

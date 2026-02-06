@@ -255,18 +255,41 @@ class RealTimeBacktestMonitor:
             logger.info("正在停止监控...")
             self.is_monitoring = False
 
-            if self.monitor_thread and self.monitor_thread.is_alive():
-                logger.info(f"等待监控线程结束 - 线程ID: {self.monitor_thread.ident}")
+            # 安全检查：确保 monitor_thread 不为 None
+            if self.monitor_thread is None:
+                logger.info("监控线程对象为 None，无需停止")
+                return
 
+            # 再次检查线程是否存活，避免竞态条件
+            try:
+                if not self.monitor_thread.is_alive():
+                    logger.info(f"监控线程已结束 - 线程ID: {self.monitor_thread.ident}")
+                    self.monitor_thread = None
+                    return
+            except AttributeError:
+                logger.warning("监控线程对象已失效，清理引用")
+                self.monitor_thread = None
+                return
+
+            logger.info(f"等待监控线程结束 - 线程ID: {self.monitor_thread.ident}")
+
+            # 检查是否是当前线程，如果是则跳过 join
+            current_thread = threading.current_thread()
+            if self.monitor_thread is current_thread:
+                logger.info("当前线程为监控线程，跳过 join 操作")
+            else:
                 # 给线程更多时间优雅退出
                 self.monitor_thread.join(timeout=10.0)
 
-                if self.monitor_thread.is_alive():
-                    logger.warning(f"监控线程未能在10秒内结束 - 线程ID: {self.monitor_thread.ident}")
-                    # 注意：Python无法强制杀死线程，只能标记为停止
-                    # 线程应该检查 self.is_monitoring 标志来退出
-                else:
-                    logger.info("监控线程已正常结束")
+                # 再次检查线程状态，确保线程对象仍然有效
+                if self.monitor_thread is not None:
+                    try:
+                        if self.monitor_thread.is_alive():
+                            logger.warning(f"监控线程未能在10秒内结束 - 线程ID: {self.monitor_thread.ident}")
+                        else:
+                            logger.info("监控线程已正常结束")
+                    except AttributeError:
+                        logger.warning("监控线程对象在 join 后已失效")
 
             # 清理线程引用
             self.monitor_thread = None
