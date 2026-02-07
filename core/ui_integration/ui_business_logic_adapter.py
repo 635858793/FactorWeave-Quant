@@ -967,7 +967,7 @@ class UIBusinessLogicAdapter(QObject):
             self.logger.error(f"触发全局AI优化失败: {e}")
             raise
 
-    # ✅ 新增：AI控制面板所需的方法
+    # 新增：AI控制面板所需的方法
 
     def get_ai_model_status(self) -> Dict[str, Any]:
         """获取AI模型状态"""
@@ -1046,9 +1046,9 @@ class UIBusinessLogicAdapter(QObject):
                 self.logger.warning("AI预测服务不可用")
                 return None
 
-            # ✅ 修复：调用预测服务（predict方法签名是predict(prediction_type, data)）
+            # 修复：调用预测服务（predict方法签名是predict(prediction_type, data)）
             if hasattr(ai_service, 'predict'):
-                # ✅ 修复：尝试将字符串转换为PredictionType枚举（如果可能）
+                # 修复：尝试将字符串转换为PredictionType枚举（如果可能）
                 try:
                     from core.services.ai_prediction_service import PredictionType
                     # 如果prediction_type是字符串，尝试转换为枚举
@@ -1066,7 +1066,7 @@ class UIBusinessLogicAdapter(QObject):
                 except Exception as e:
                     self.logger.debug(f"无法转换prediction_type为枚举: {e}，使用字符串")
                 
-                # ✅ 修复：predict方法的第一个参数是prediction_type，第二个是data
+                # 修复：predict方法的第一个参数是prediction_type，第二个是data
                 result = ai_service.predict(prediction_type, context)
                 return result
             else:
@@ -1100,8 +1100,8 @@ class UIBusinessLogicAdapter(QObject):
                     'stats': {}
                 }
 
-            # ✅ 修复：从UserBehaviorLearner获取真实数据
-            # ✅ 修复：使用get_current_user_id方法获取用户ID
+            # 修复：从UserBehaviorLearner获取真实数据
+            # 修复：使用get_current_user_id方法获取用户ID
             user_id = self.get_current_user_id()
             
             # 尝试从用户画像获取真实数据
@@ -1109,7 +1109,7 @@ class UIBusinessLogicAdapter(QObject):
                 try:
                     profile = behavior_learner.get_user_profile(user_id, force_refresh=False)
                     if profile:
-                        # ✅ 从真实的用户画像提取统计信息
+                        # 从真实的用户画像提取统计信息
                         behavior_analysis = None
                         if hasattr(behavior_learner, 'get_user_behavior_analysis'):
                             try:

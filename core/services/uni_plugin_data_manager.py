@@ -496,7 +496,7 @@ class UniPluginDataManager:
                 result[symbol] = fundamental_data
                 db_loaded_symbols.append(symbol)
             
-            logger.info(f"[BATCH-DB] ✅ 从数据库加载基本面数据成功: {len(db_loaded_symbols)}/{len(uncached_symbols)}个")
+            logger.info(f"[BATCH-DB] 从数据库加载基本面数据成功: {len(db_loaded_symbols)}/{len(uncached_symbols)}个")
             
             # 更新未缓存列表（排除已从数据库加载的）
             uncached_symbols = [s for s in uncached_symbols if s not in db_loaded_symbols]
@@ -553,7 +553,7 @@ class UniPluginDataManager:
                         # 缓存数据库结果
                         self._cache_result(cache_key, db_result)
                         self.stats["cache_hits"] += 1
-                        logger.info(f"[DATABASE-SUCCESS] ✅ 从数据库加载基本面数据成功: {symbol}, 已缓存")
+                        logger.info(f"[DATABASE-SUCCESS] 从数据库加载基本面数据成功: {symbol}, 已缓存")
                         return db_result
                     else:
                         logger.info(f"[DATABASE-EMPTY] ⚠️  数据库中未找到基本面数据: {symbol}，将调用插件获取")
@@ -866,7 +866,7 @@ class UniPluginDataManager:
             fundamental_data = self._asset_db_manager.load_fundamental_data(symbol, asset_type)
             
             if fundamental_data:
-                logger.info(f"[DATABASE] ✅ 从数据库成功加载基本面数据: {symbol}, 字段数={len(fundamental_data)}")
+                logger.info(f"[DATABASE] 从数据库成功加载基本面数据: {symbol}, 字段数={len(fundamental_data)}")
                 return fundamental_data
             else:
                 logger.info(f"[DATABASE] ⚠️  数据库中未找到基本面数据: {symbol}")

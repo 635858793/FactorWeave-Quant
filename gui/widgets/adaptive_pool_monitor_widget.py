@@ -238,7 +238,7 @@ class AdaptivePoolMonitorWidget(QWidget):
         """更新状态概览"""
         # 运行状态
         if status['running']:
-            self.status_label.setText("状态: ✅ 运行中")
+            self.status_label.setText("状态: 运行中")
             self.status_label.setStyleSheet("font-size: 13px; font-weight: bold; color: #27ae60;")
         else:
             self.status_label.setText("状态: ⏸️ 已停止")

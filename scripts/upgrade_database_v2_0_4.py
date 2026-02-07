@@ -59,7 +59,7 @@ class DatabaseUpgrader:
             self._verify_upgrade(conn)
 
             conn.close()
-            logger.success(f"✅ 数据库 {db_path} 升级完成！")
+            logger.success(f"数据库 {db_path} 升级完成！")
             return True
 
         except Exception as e:
@@ -91,14 +91,14 @@ class DatabaseUpgrader:
                     sql = sql_template.format(table_name)
                     conn.execute(sql)
                     added_fields.append(field_name)
-                    logger.debug(f"  ✅ 添加字段: {field_name}")
+                    logger.debug(f"  添加字段: {field_name}")
                 else:
                     logger.debug(f"  ⏭️  字段已存在: {field_name}")
 
             if added_fields:
                 # 更新现有数据的默认值
                 self._update_default_values(conn, table_name)
-                logger.success(f"✅ 表 {table_name} 升级成功，新增 {len(added_fields)} 个字段")
+                logger.success(f"表 {table_name} 升级成功，新增 {len(added_fields)} 个字段")
                 self.upgraded_tables.append(table_name)
             else:
                 logger.info(f"ℹ️  表 {table_name} 已是最新版本，跳过")
@@ -162,7 +162,7 @@ class DatabaseUpgrader:
                 WHERE data_source = 'unknown' OR data_source IS NULL
             """)
 
-            logger.debug("  ✅ 默认值更新完成")
+            logger.debug("  默认值更新完成")
 
         except Exception as e:
             logger.warning(f"  ⚠️  默认值更新失败: {e}")
@@ -191,7 +191,7 @@ class DatabaseUpgrader:
             logger.info("\n升级后的表结构：")
             for row in result:
                 table_name, total_cols, has_adj_close, has_adj_factor, has_turnover_rate, has_vwap, has_data_source = row
-                status = "✅" if all([has_adj_close, has_adj_factor, has_turnover_rate, has_vwap, has_data_source]) else "⚠️"
+                status = "✓" if all([has_adj_close, has_adj_factor, has_turnover_rate, has_vwap, has_data_source]) else "⚠️"
                 logger.info(f"  {status} {table_name}: {total_cols}列 (新字段: {has_adj_close + has_adj_factor + has_turnover_rate + has_vwap + has_data_source}/5)")
 
         except Exception as e:
@@ -203,7 +203,7 @@ class DatabaseUpgrader:
         logger.info("升级总结")
         logger.info("="*60)
 
-        logger.success(f"✅ 成功升级: {len(self.upgraded_tables)} 个表")
+        logger.success(f"成功升级: {len(self.upgraded_tables)} 个表")
         if self.upgraded_tables:
             for table in self.upgraded_tables:
                 logger.info(f"  - {table}")
@@ -214,11 +214,11 @@ class DatabaseUpgrader:
                 logger.error(f"  - {table}: {error}")
 
         logger.info("\n升级内容：")
-        logger.info("  ✅ adj_close - 复权收盘价（量化回测必需）")
-        logger.info("  ✅ adj_factor - 复权因子（默认1.0）")
-        logger.info("  ✅ turnover_rate - 换手率（行业标准）")
-        logger.info("  ✅ vwap - 成交量加权均价（机构常用）")
-        logger.info("  ✅ data_source - 数据来源（追溯管理）")
+        logger.info("  adj_close - 复权收盘价（量化回测必需）")
+        logger.info("  adj_factor - 复权因子（默认1.0）")
+        logger.info("  turnover_rate - 换手率（行业标准）")
+        logger.info("  vwap - 成交量加权均价（机构常用）")
+        logger.info("  data_source - 数据来源（追溯管理）")
 
 
 def main():

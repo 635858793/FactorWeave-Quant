@@ -556,7 +556,7 @@ class DistributedTaskScheduler:
             if suitable_task:
                 self._assign_task_to_node(suitable_task, node)
 
-        # ✅ Fallback机制：如果队列中还有任务但没有可用节点，fallback到本地执行
+        # Fallback机制：如果队列中还有任务但没有可用节点，fallback到本地执行
         if self.task_queue and not available_nodes:
             logger.warning(f"没有可用远程节点，将{len(self.task_queue)}个任务fallback到本地执行")
             for task in list(self.task_queue):  # 使用list()复制避免迭代中修改
@@ -625,7 +625,7 @@ class DistributedTaskScheduler:
     def _execute_task_on_node(self, task: DistributedTask, node: NodeInfo):
         """在节点上执行任务 - 使用HTTP Bridge真正分布式执行"""
         try:
-            # ✅ 使用HTTP Bridge进行真正的分布式执行
+            # 使用HTTP Bridge进行真正的分布式执行
             if self.http_bridge and hasattr(self.http_bridge, '_execute_distributed'):
                 import asyncio
 
@@ -668,7 +668,7 @@ class DistributedTaskScheduler:
                         loop.close()
 
                 result = task_result.result if task_result else {}
-                logger.info(f"✅ HTTP Bridge执行完成: {task.task_id}")
+                logger.info(f"HTTP Bridge执行完成: {task.task_id}")
 
             else:
                 # Fallback: 本地执行（无HTTP Bridge或无节点时）
@@ -716,7 +716,7 @@ class DistributedTaskScheduler:
         analysis_type = task.task_data.get("analysis_type", "technical")
 
         try:
-            # ✅ 调用真实分析服务
+            # 调用真实分析服务
             from core.services.analysis_service import AnalysisService, TimeFrame
             from core.containers import get_service_container
 
@@ -759,7 +759,7 @@ class DistributedTaskScheduler:
                     "analysis_type": analysis_type,
                     "result": result,
                     "processed_by": node.node_id,
-                    "is_mock": False  # ✅ 真实数据
+                    "is_mock": False  # 真实数据
                 }
             else:
                 logger.warning("AnalysisService未注册，返回待集成状态")
@@ -919,7 +919,7 @@ class DistributedTaskScheduler:
         method = task.task_data.get("method", "genetic")
 
         try:
-            # ✅ 调用真实优化服务
+            # 调用真实优化服务
             logger.info(f"执行真实优化: {pattern}, 方法: {method}")
 
             from core.containers import get_service_container
@@ -941,7 +941,7 @@ class DistributedTaskScheduler:
                     "method": method,
                     "result": optimization_result,
                     "processed_by": node.node_id,
-                    "is_mock": False  # ✅ 真实数据
+                    "is_mock": False  # 真实数据
                 }
             else:
                 logger.warning("AIPredictionService未注册")
@@ -964,7 +964,7 @@ class DistributedTaskScheduler:
 
     def _execute_data_import_task(self, task: DistributedTask, node: NodeInfo) -> Dict[str, Any]:
         """执行数据导入任务（分布式）"""
-        # ✅ 真实实现：调用数据导入逻辑
+        # 真实实现：调用数据导入逻辑
         try:
             symbols = task.task_data.get("symbols", [])
             data_source = task.task_data.get("data_source", "tongdaxin")
@@ -1006,11 +1006,11 @@ class DistributedService:
         self.discovery_port = discovery_port
         self.node_discovery = NodeDiscovery(discovery_port)
 
-        # ✅ 初始化HTTP Bridge用于真正的分布式通信
+        # 初始化HTTP Bridge用于真正的分布式通信
         try:
             from .distributed_http_bridge import DistributedHTTPBridge
             self.http_bridge = DistributedHTTPBridge()
-            logger.info("✅ HTTP Bridge initialized for distributed communication")
+            logger.info("HTTP Bridge initialized for distributed communication")
         except Exception as e:
             logger.warning(f"HTTP Bridge initialization failed: {e}, using local execution")
             self.http_bridge = None
@@ -1696,7 +1696,7 @@ class DistributedService:
             future = self.executor.submit(
                 self._execute_task_on_node, task, local_node)
 
-            logger.info(f"✅ 任务 {task.task_id} 已提交本地执行")
+            logger.info(f"任务 {task.task_id} 已提交本地执行")
 
         except Exception as e:
             logger.error(f"本地执行任务失败: {e}")

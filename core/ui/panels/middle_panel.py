@@ -15,7 +15,7 @@ import pandas as pd
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
     QPushButton, QTabWidget, QSplitter, QFrame, QProgressBar,
-    QMessageBox, QToolBar, QAction, QSpinBox, QCheckBox
+    QMessageBox, QToolBar, QAction, QSpinBox, QCheckBox, QSizePolicy
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QThread, pyqtSlot, QDateTime, QDate, QTime
 from PyQt5.QtGui import QFont, QIcon
@@ -164,8 +164,7 @@ class ChartCanvas(QWidget):
         self.loading_progress_bar.setRange(0, 100)
         self.loading_progress_bar.setValue(0)
         self.loading_progress_bar.setTextVisible(True)
-        self.loading_progress_bar.setMinimumWidth(300)
-        self.loading_progress_bar.setMaximumHeight(15)
+        self.loading_progress_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         skeleton_layout.addWidget(self.loading_progress_bar)
 
         # 阶段指示器
@@ -177,9 +176,9 @@ class ChartCanvas(QWidget):
         stage_names = ["基础K线", "成交量", "基础指标", "高级指标", "装饰元素"]
         for i, name in enumerate(stage_names):
             indicator = QLabel(name)
-            indicator.setStyleSheet("color: #999; font-size: 12px;")
+            indicator.setStyleSheet("color: #999; font-size: 0.75em;")
             indicator.setAlignment(Qt.AlignCenter)
-            indicator.setMinimumWidth(60)
+            indicator.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             stages_layout.addWidget(indicator)
             self.stage_indicators.append(indicator)
 
@@ -206,7 +205,7 @@ class ChartCanvas(QWidget):
                 background-color: #e9ecef;
             }
         """)
-        self.cancel_button.setMaximumWidth(100)
+        self.cancel_button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.cancel_button.clicked.connect(self._cancel_loading)
         skeleton_layout.addWidget(self.cancel_button, 0, Qt.AlignCenter)
 
@@ -367,7 +366,7 @@ class ChartCanvas(QWidget):
 
             logger.info(f"数据验证通过，准备更新图表。数据形状: {self.current_kdata.shape}")
 
-            # ✅ 修复：关键任务（K线图）立即执行，不使用渐进式加载
+            # 修复：关键任务（K线图）立即执行，不使用渐进式加载
             # 只有非关键任务（指标、装饰）使用渐进式加载
             if self.chart_widget:
                 # 转换数据格式为ChartWidget期望的格式
@@ -378,14 +377,14 @@ class ChartCanvas(QWidget):
                     'title': stock_data.get('stock_name', self.current_stock)
                 }
 
-                # ✅ 修复：关键K线图渲染立即执行（不使用渐进式加载）
-                logger.info("✅ 关键K线图渲染立即执行（不使用渐进式加载）")
+                # 修复：关键K线图渲染立即执行（不使用渐进式加载）
+                logger.info("关键K线图渲染立即执行（不使用渐进式加载）")
                 start_time = time.time()
                 self.chart_widget.update_chart(chart_data)
                 render_time = (time.time() - start_time) * 1000  # 转换为毫秒
-                logger.info(f"✅ K线图渲染完成，耗时: {render_time:.2f}ms")
+                logger.info(f"K线图渲染完成，耗时: {render_time:.2f}ms")
 
-                # ✅ 非关键任务（指标、装饰）使用渐进式加载（可选）
+                # 非关键任务（指标、装饰）使用渐进式加载（可选）
                 # 如果指标数据存在，可以在后台渐进式加载
                 indicators = stock_data.get('indicators_data', stock_data.get('indicators', {}))
                 if self.progressive_loader and indicators:
@@ -774,7 +773,7 @@ class MiddlePanel(BasePanel):
         # 创建进度条
         progress_bar = QProgressBar()
         progress_bar.setVisible(False)
-        progress_bar.setMaximumHeight(8)
+        progress_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         main_layout.addWidget(progress_bar)
         self.add_widget('progress_bar', progress_bar)
 
@@ -1427,7 +1426,7 @@ class MiddlePanel(BasePanel):
             # 从ChartCanvas中获取真正的chart_widget
             if hasattr(chart_canvas, 'chart_widget'):
                 chart_widget = chart_canvas.chart_widget
-                logger.info(f"✅ 从ChartCanvas中获取到实际的chart_widget")
+                logger.info(f"从ChartCanvas中获取到实际的chart_widget")
             else:
                 # 如果ChartCanvas没有chart_widget属性，尝试直接使用chart_canvas
                 logger.warning("ChartCanvas没有chart_widget属性，尝试直接使用chart_canvas")
@@ -1486,7 +1485,7 @@ class MiddlePanel(BasePanel):
             # 更新chart_widget的active_indicators
             if hasattr(chart_widget, 'on_indicator_selected'):
                 chart_widget.on_indicator_selected(indicator_list)
-                logger.info(f"✅ 已通过on_indicator_selected更新主图指标")
+                logger.info(f"已通过on_indicator_selected更新主图指标")
             elif hasattr(chart_widget, 'active_indicators'):
                 chart_widget.active_indicators = indicator_list
                 # 如果有current_kdata，触发图表更新
@@ -1495,7 +1494,7 @@ class MiddlePanel(BasePanel):
                         'kdata': chart_widget.current_kdata,
                         'indicators_data': {}  # 传递空的indicators_data，因为builtin指标会自己计算
                     })
-                    logger.info(f"✅ 已直接设置active_indicators并更新主图")
+                    logger.info(f"已直接设置active_indicators并更新主图")
             else:
                 logger.warning("chart_widget没有on_indicator_selected或active_indicators属性")
 
@@ -1632,6 +1631,33 @@ class MiddlePanel(BasePanel):
         except Exception as e:
             logger.error(f"Failed to show stat dialog: {e}")
             QMessageBox.critical(self._root_frame, "区间统计错误", str(e))
+
+    def resizeEvent(self, event):
+        """窗口大小改变事件处理"""
+        super().resizeEvent(event)
+        self._update_responsive_layout()
+
+    def _update_responsive_layout(self):
+        """更新响应式布局"""
+        try:
+            window_width = self.width()
+            window_height = self.height()
+
+            logger.debug(f"MiddlePanel 响应式布局更新: {window_width}x{window_height}")
+
+            # 更新进度条高度
+            progress_bar = self.get_widget('progress_bar')
+            if progress_bar:
+                progress_height = max(8, int(window_height * 0.015))
+                progress_bar.setFixedHeight(progress_height)
+
+            # 更新图表区域
+            chart_canvas = self.get_widget('chart_canvas')
+            if chart_canvas:
+                chart_canvas.setMinimumSize(int(window_width * 0.5), int(window_height * 0.6))
+
+        except Exception as e:
+            logger.error(f"更新响应式布局失败: {e}")
 
     def _do_dispose(self) -> None:
         """清理资源"""

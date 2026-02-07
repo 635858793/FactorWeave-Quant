@@ -321,7 +321,7 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
             if response.status_code == 200:
                 data = response.json()
                 if data and 'data' in data and data['data']:
-                    logger.info("✅ 东方财富插件连接成功，网络正常")
+                    logger.info("东方财富插件连接成功，网络正常")
                     self.plugin_state = PluginLifecycle.CONNECTED
                     return True
                 else:

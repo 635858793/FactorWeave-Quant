@@ -31,7 +31,7 @@ def test_visualization():
             print("❌ 综合分析报告生成失败")
             return False
 
-        print("✅ 综合分析报告生成成功")
+        print("综合分析报告生成成功")
         print(f"   - 报告时间: {report.get('report_time', '未知')}")
         print(f"   - 分析周期: {report.get('period', '未知')}")
 
@@ -46,28 +46,28 @@ def test_visualization():
         print("\n3. 生成订单执行图表...")
         execution_chart = analyzer.generate_execution_chart(report, chart_type='bar')
         if execution_chart:
-            print(f"✅ 订单执行图表生成成功: {execution_chart}")
+            print(f"订单执行图表生成成功: {execution_chart}")
         else:
             print("❌ 订单执行图表生成失败")
 
         print("\n4. 生成滑点分析图表...")
         slippage_chart = analyzer.generate_slippage_chart(report, chart_type='line')
         if slippage_chart:
-            print(f"✅ 滑点分析图表生成成功: {slippage_chart}")
+            print(f"滑点分析图表生成成功: {slippage_chart}")
         else:
             print("❌ 滑点分析图表生成失败")
 
         print("\n5. 生成成交量分析图表...")
         volume_chart = analyzer.generate_volume_chart(report, chart_type='bar')
         if volume_chart:
-            print(f"✅ 成交量分析图表生成成功: {volume_chart}")
+            print(f"成交量分析图表生成成功: {volume_chart}")
         else:
             print("❌ 成交量分析图表生成失败")
 
         print("\n6. 生成订单效率图表...")
         efficiency_chart = analyzer.generate_efficiency_chart(report, chart_type='radar')
         if efficiency_chart:
-            print(f"✅ 订单效率图表生成成功: {efficiency_chart}")
+            print(f"订单效率图表生成成功: {efficiency_chart}")
         else:
             print("❌ 订单效率图表生成失败")
 
@@ -76,7 +76,7 @@ def test_visualization():
         os.makedirs(os.path.dirname(html_report_path), exist_ok=True)
 
         if analyzer.export_report_with_charts(report, html_report_path, format='html'):
-            print(f"✅ HTML报告导出成功: {html_report_path}")
+            print(f"HTML报告导出成功: {html_report_path}")
         else:
             print("❌ HTML报告导出失败")
 
@@ -84,7 +84,7 @@ def test_visualization():
         pdf_report_path = f"reports/order_analysis_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
 
         if analyzer.export_report_with_charts(report, pdf_report_path, format='pdf'):
-            print(f"✅ PDF报告导出成功: {pdf_report_path}")
+            print(f"PDF报告导出成功: {pdf_report_path}")
         else:
             print("❌ PDF报告导出失败（可能需要安装reportlab）")
 

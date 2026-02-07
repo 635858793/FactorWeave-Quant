@@ -25,7 +25,7 @@ def test_gpu_detection():
             import pynvml
             pynvml.nvmlInit()
             device_count = pynvml.nvmlDeviceGetCount()
-            print(f"✅ NVIDIA GPU检测成功: 发现 {device_count} 个GPU设备")
+            print(f"NVIDIA GPU检测成功: 发现 {device_count} 个GPU设备")
             
             for i in range(device_count):
                 handle = pynvml.nvmlDeviceGetHandleByIndex(i)
@@ -58,12 +58,12 @@ def test_tensorflow_gpu():
     
     try:
         import tensorflow as tf
-        print(f"✅ TensorFlow版本: {tf.__version__}")
+        print(f"TensorFlow版本: {tf.__version__}")
         
         # 检测GPU可用性
         gpus = tf.config.list_physical_devices('GPU')
         if gpus:
-            print(f"✅ TensorFlow检测到 {len(gpus)} 个GPU设备")
+            print(f"TensorFlow检测到 {len(gpus)} 个GPU设备")
             
             # 显示GPU详细信息
             for i, gpu in enumerate(gpus):
@@ -103,7 +103,7 @@ def test_cuda_environment():
         try:
             import ctypes
             cuda_lib = ctypes.CDLL('nvcuda.dll' if sys.platform == 'win32' else 'libcuda.so.1')
-            print("✅ CUDA运行时库加载成功")
+            print("CUDA运行时库加载成功")
         except Exception as e:
             print(f"❌ CUDA运行时库加载失败: {e}")
             return False
@@ -111,12 +111,12 @@ def test_cuda_environment():
         # 检查cuDNN
         try:
             cudnn_lib = ctypes.CDLL('cudnn64_8.dll' if sys.platform == 'win32' else 'libcudnn.so.8')
-            print("✅ cuDNN库加载成功")
+            print("cuDNN库加载成功")
         except Exception as e:
             print(f"❌ cuDNN库加载失败: {e}")
             return False
         
-        print("✅ CUDA环境基本验证通过")
+        print("CUDA环境基本验证通过")
         return True
         
     except Exception as e:
@@ -135,7 +135,7 @@ def test_gpu_manager_module():
             print("❌ GPU管理器模块文件不存在")
             return False
         
-        print("✅ GPU管理器模块文件存在")
+        print("GPU管理器模块文件存在")
         
         # 验证文件内容
         with open(gpu_manager_path, 'r', encoding='utf-8') as f:
@@ -152,12 +152,12 @@ def test_gpu_manager_module():
         
         for element in required_elements:
             if element in content:
-                print(f"  ✅ 找到关键元素: {element}")
+                print(f"  找到关键元素: {element}")
             else:
                 print(f"  ❌ 缺少关键元素: {element}")
                 return False
         
-        print("✅ GPU管理器模块结构验证通过")
+        print("GPU管理器模块结构验证通过")
         return True
         
     except Exception as e:
@@ -187,7 +187,7 @@ def generate_verification_report(results):
     
     for test_key, result in results.items():
         test_name = test_names.get(test_key, test_key)
-        status = "✅ 通过" if result else "❌ 失败"
+        status = "通过" if result else "❌ 失败"
         print(f"  {test_name}: {status}")
         if result:
             passed += 1

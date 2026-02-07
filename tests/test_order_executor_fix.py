@@ -57,14 +57,14 @@ def test_resolve_account_without_strategy_manager():
         account = order_executor._resolve_account_for_order(order)
         
         if account:
-            logger.info(f"✅ 成功解析账号: {account.account_id}")
+            logger.info(f"成功解析账号: {account.account_id}")
             logger.info(f"   账号名称: {account.account_name}")
             logger.info(f"   机构名称: {account.institution_name}")
         else:
             logger.warning("⚠️ 未能解析账号（可能是因为没有配置账号）")
         
         logger.info("=" * 60)
-        logger.info("✅ 测试完成：订单执行器在没有 StrategyManager 的情况下正常工作")
+        logger.info("测试完成：订单执行器在没有 StrategyManager 的情况下正常工作")
         logger.info("=" * 60)
         
         return True

@@ -198,7 +198,7 @@ try:
     gpus = tf.config.list_physical_devices('GPU')
     print(f"GPU设备数量: {len(gpus)}")
     if len(gpus) > 0:
-        print("✅ TensorFlow GPU支持正常")
+        print("TensorFlow GPU支持正常")
     else:
         print("⚠️  仅CPU模式运行")
 except ImportError:

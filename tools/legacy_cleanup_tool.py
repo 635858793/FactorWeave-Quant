@@ -571,7 +571,7 @@ def main():
             print(f"  - {issue}")
         return 1
     else:
-        print("\\n✅ 迁移验证成功！统一插件架构已就绪。")
+        print("\\n迁移验证成功！统一插件架构已就绪。")
         return 0
 
 if __name__ == "__main__":

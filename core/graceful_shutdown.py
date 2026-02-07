@@ -26,7 +26,7 @@ class GracefulShutdownManager:
         self._is_shutting_down = False
         self._shutdown_lock = threading.Lock()
         self._register_signal_handlers()
-        logger.info("✅ 优雅关闭管理器已初始化")
+        logger.info("优雅关闭管理器已初始化")
 
     def register_cleanup_handler(self, handler: Callable, name: str = None):
         """
@@ -100,7 +100,7 @@ class GracefulShutdownManager:
             try:
                 logger.info(f"[{i}/{total_handlers}] 执行清理: {name}")
                 handler()
-                logger.info(f"    ✅ {name} 清理完成")
+                logger.info(f"    {name} 清理完成")
                 success_count += 1
             except Exception as e:
                 logger.error(f"    ❌ {name} 清理失败: {e}")
@@ -108,7 +108,7 @@ class GracefulShutdownManager:
                 # 继续执行其他清理，不中断
 
         logger.info("=" * 70)
-        logger.info(f"✅ 优雅关闭完成: 成功 {success_count}/{total_handlers}, 失败 {failed_count}")
+        logger.info(f"优雅关闭完成: 成功 {success_count}/{total_handlers}, 失败 {failed_count}")
         logger.info("=" * 70)
 
     def shutdown_now(self):

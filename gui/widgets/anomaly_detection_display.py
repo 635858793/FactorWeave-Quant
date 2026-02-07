@@ -126,8 +126,11 @@ class AnomalyChart(QGraphicsView):
         self.setDragMode(QGraphicsView.NoDrag)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.setFixedSize(self.chart_width + 2 * self.margin,
-                          self.chart_height + 2 * self.margin)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.setMinimumSize(self.chart_width + 2 * self.margin,
+                        self.chart_height + 2 * self.margin)
+        self.setMaximumSize(self.chart_width + 2 * self.margin,
+                        self.chart_height + 2 * self.margin)
 
         self.setup_chart()
 
@@ -271,7 +274,9 @@ class AnomalySeverityPie(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.severity_counts: Dict[AnomalySeverity, int] = {}
-        self.setFixedSize(200, 200)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.setMinimumSize(200, 200)
+        self.setMaximumSize(200, 200)
 
     def update_data(self, severity_counts: Dict[AnomalySeverity, int]):
         """更新数据"""

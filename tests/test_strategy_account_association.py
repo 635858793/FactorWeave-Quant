@@ -83,7 +83,7 @@ def test_strategy_account_association():
         success2 = account_manager.create_account(account2)
         
         if success1 and success2:
-            logger.info(f"✅ 成功创建账号: {account1.account_id}, {account2.account_id}")
+            logger.info(f"成功创建账号: {account1.account_id}, {account2.account_id}")
         else:
             logger.error("❌ 创建账号失败")
             return False
@@ -118,7 +118,7 @@ def test_strategy_account_association():
         success = strategy_service.create_strategy_config(strategy_config)
         
         if success:
-            logger.info(f"✅ 成功创建策略: {strategy_config.strategy_id}")
+            logger.info(f"成功创建策略: {strategy_config.strategy_id}")
             logger.info(f"   默认账号: {strategy_config.metadata['default_account_id']}")
         else:
             logger.error("❌ 创建策略配置失败")
@@ -147,7 +147,7 @@ def test_strategy_account_association():
         
         account = order_executor._resolve_account_for_order(order1)
         if account and account.account_id == "STOCK_TEST_001":
-            logger.info(f"✅ 正确使用策略的默认账号: {account.account_id}")
+            logger.info(f"正确使用策略的默认账号: {account.account_id}")
         else:
             logger.error(f"❌ 账号解析失败，期望: STOCK_TEST_001, 实际: {account.account_id if account else 'None'}")
             return False
@@ -171,7 +171,7 @@ def test_strategy_account_association():
         
         account = order_executor._resolve_account_for_order(order2)
         if account and account.account_id == "STOCK_TEST_002":
-            logger.info(f"✅ 正确使用订单指定的账号: {account.account_id}")
+            logger.info(f"正确使用订单指定的账号: {account.account_id}")
         else:
             logger.error(f"❌ 账号解析失败，期望: STOCK_TEST_002, 实际: {account.account_id if account else 'None'}")
             return False
@@ -195,13 +195,13 @@ def test_strategy_account_association():
         
         account = order_executor._resolve_account_for_order(order3)
         if account:
-            logger.info(f"✅ 正确使用系统默认账号: {account.account_id}")
+            logger.info(f"正确使用系统默认账号: {account.account_id}")
         else:
             logger.error("❌ 账号解析失败")
             return False
         
         logger.info("\n" + "=" * 60)
-        logger.info("✅ 所有测试通过")
+        logger.info("所有测试通过")
         logger.info("=" * 60)
         
         return True

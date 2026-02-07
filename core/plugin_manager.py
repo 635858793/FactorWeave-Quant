@@ -1656,7 +1656,7 @@ class PluginManager:
                         logger.info(f"🔍 发现分类插件: {plugin_name}")
                         if self.load_plugin(plugin_name, plugin_path):
                             loaded_count += 1
-                            logger.info(f"✅ 成功加载分类插件: {plugin_name}")
+                            logger.info(f"成功加载分类插件: {plugin_name}")
                         else:
                             logger.warning(f"❌ 加载分类插件失败: {plugin_name}")
 

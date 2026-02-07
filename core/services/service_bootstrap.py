@@ -66,6 +66,9 @@ from core.trading.account_repository import AccountRepository
 
 from core.services.task_scheduler import TaskScheduler
 
+# 通知服务
+from core.services.notification_service import NotificationService, init_notification_service
+
 
 class ServiceBootstrap:
     """
@@ -271,7 +274,7 @@ class ServiceBootstrap:
             )
             cache_service = self.service_container.resolve(CacheService)
             cache_service.initialize()
-            logger.info("✅ 缓存服务注册完成")
+            logger.info("缓存服务注册完成")
 
         # 日志服务现在由纯Loguru系统全局管理，无需注册到容器
         # log_manager = LogManager()
@@ -317,7 +320,7 @@ class ServiceBootstrap:
                 )
             database_service = self.service_container.resolve(DatabaseService)
             database_service.initialize()
-            logger.info("✅ 数据库服务注册完成")
+            logger.info("数据库服务注册完成")
         except Exception as e:
             logger.error(f"❌ 数据库服务注册失败: {e}")
             logger.error(traceback.format_exc())
@@ -425,7 +428,7 @@ class ServiceBootstrap:
             enhanced_indicator_service = self.service_container.resolve(EnhancedIndicatorService)
             if hasattr(enhanced_indicator_service, 'initialize'):
                 enhanced_indicator_service.initialize()
-            logger.info("✅ 增强指标服务注册完成")
+            logger.info("增强指标服务注册完成")
         except Exception as e:
             logger.error(f"❌ 增强指标服务注册失败: {e}")
             logger.error(traceback.format_exc())
@@ -440,7 +443,7 @@ class ServiceBootstrap:
                     factory=lambda: SmartRecommendationEngine(database_service=self.service_container.resolve(DatabaseService))
                 )
             smart_recommendation_engine = self.service_container.resolve(SmartRecommendationEngine)
-            logger.info("✅ 智能推荐引擎注册完成")
+            logger.info("智能推荐引擎注册完成")
         except Exception as e:
             logger.error(f"❌ 智能推荐引擎注册失败: {e}")
             logger.error(traceback.format_exc())
@@ -459,7 +462,7 @@ class ServiceBootstrap:
             ai_explainability_service = self.service_container.resolve(AIExplainabilityService)
             if hasattr(ai_explainability_service, 'initialize'):
                 ai_explainability_service.initialize()
-            logger.info("✅ AI可解释性服务注册完成")
+            logger.info("AI可解释性服务注册完成")
         except Exception as e:
             logger.error(f"❌ AI可解释性服务注册失败: {e}")
             logger.error(traceback.format_exc())
@@ -473,7 +476,7 @@ class ServiceBootstrap:
                     scope=ServiceScope.SINGLETON,
                     factory=lambda: RecommendationExplanationGenerator()
                 )
-            logger.info("✅ 推荐理由生成器注册完成")
+            logger.info("推荐理由生成器注册完成")
         except Exception as e:
             logger.error(f"❌ 推荐理由生成器注册失败: {e}")
             logger.error(traceback.format_exc())
@@ -487,7 +490,7 @@ class ServiceBootstrap:
                     scope=ServiceScope.SINGLETON,
                     factory=lambda: ContinuousLearningManager()
                 )
-            logger.info("✅ 持续学习管理器注册完成")
+            logger.info("持续学习管理器注册完成")
         except Exception as e:
             logger.error(f"❌ 持续学习管理器注册失败: {e}")
             logger.error(traceback.format_exc())
@@ -505,7 +508,7 @@ class ServiceBootstrap:
                         database_service=self.service_container.resolve(DatabaseService)
                     )
                 )
-            logger.info("✅ 推荐模型训练器注册完成")
+            logger.info("推荐模型训练器注册完成")
         except Exception as e:
             logger.error(f"❌ 推荐模型训练器注册失败: {e}")
             logger.error(traceback.format_exc())
@@ -516,7 +519,7 @@ class ServiceBootstrap:
                 smart_recommendation_engine = self.service_container.resolve(SmartRecommendationEngine)
                 explanation_generator = self.service_container.resolve(RecommendationExplanationGenerator)
                 smart_recommendation_engine.set_explanation_generator(explanation_generator)
-                logger.info("✅ 推荐理由生成器已设置到推荐引擎")
+                logger.info("推荐理由生成器已设置到推荐引擎")
         except Exception as e:
             logger.error(f"❌ 设置推荐理由生成器到推荐引擎失败: {e}")
             logger.error(traceback.format_exc())
@@ -536,7 +539,7 @@ class ServiceBootstrap:
             llm_config_service = self.service_container.resolve(LLMConfigService)
             if hasattr(llm_config_service, 'initialize'):
                 llm_config_service.initialize()
-            logger.info("✅ LLM配置服务注册完成")
+            logger.info("LLM配置服务注册完成")
         except Exception as e:
             logger.error(f"❌ LLM配置服务注册失败: {e}")
             logger.error(traceback.format_exc())
@@ -555,7 +558,7 @@ class ServiceBootstrap:
             ai_selection_service = self.service_container.resolve(AISelectionIntegrationService)
             if hasattr(ai_selection_service, 'initialize'):
                 ai_selection_service.initialize()
-            logger.info("✅ AI选股集成服务注册完成")
+            logger.info("AI选股集成服务注册完成")
         except Exception as e:
             logger.error(f"❌ AI选股集成服务注册失败: {e}")
             logger.error(traceback.format_exc())
@@ -576,7 +579,7 @@ class ServiceBootstrap:
             ai_backtest_service = self.service_container.resolve(AISelectionBacktestService)
             if hasattr(ai_backtest_service, 'initialize'):
                 ai_backtest_service.initialize()
-            logger.info("✅ AI选股回测服务注册完成")
+            logger.info("AI选股回测服务注册完成")
         except Exception as e:
             logger.error(f"❌ AI选股回测服务注册失败: {e}")
             logger.error(traceback.format_exc())
@@ -600,7 +603,7 @@ class ServiceBootstrap:
             ai_risk_control_service = self.service_container.resolve(AISelectionRiskControlService)
             if hasattr(ai_risk_control_service, 'initialize'):
                 ai_risk_control_service.initialize()
-            logger.info("✅ AI选股风险控制服务注册完成")
+            logger.info("AI选股风险控制服务注册完成")
         except Exception as e:
             logger.error(f"❌ AI选股风险控制服务注册失败: {e}")
             logger.error(traceback.format_exc())
@@ -618,7 +621,7 @@ class ServiceBootstrap:
             # 初始化混合推荐引擎
             if hasattr(hybrid_recommendation_engine, 'initialize'):
                 hybrid_recommendation_engine.initialize()
-            logger.info("✅ 混合推荐引擎注册完成")
+            logger.info("混合推荐引擎注册完成")
         except Exception as e:
             logger.error(f"❌ 混合推荐引擎注册失败: {e}")
             logger.error(traceback.format_exc())
@@ -667,7 +670,7 @@ class ServiceBootstrap:
             logger.error(f" 资产服务注册失败: {e}")
             logger.error(traceback.format_exc())
 
-            # ✅ 情绪数据服务和K线情绪分析服务已删除（被热点分析功能取代）
+            # 情绪数据服务和K线情绪分析服务已删除（被热点分析功能取代）
             # 相关文件已清理：sentiment_data_service.py、kline_sentiment_analyzer.py
             # 相关UI组件已删除：enhanced_kline_sentiment_tab.py、sentiment_overview_widget.py
             logger.debug("情绪数据服务和K线情绪分析服务已移除（功能已整合到热点分析）")
@@ -735,7 +738,7 @@ class ServiceBootstrap:
                     scope=ServiceScope.SINGLETON,
                     factory=get_alert_manager
                 )
-            logger.info("✅ 外部告警渠道服务注册完成")
+            logger.info("外部告警渠道服务注册完成")
         except Exception as e:
             logger.error(f"❌ 外部告警渠道服务注册失败: {e}")
             logger.error(traceback.format_exc())
@@ -928,16 +931,38 @@ class ServiceBootstrap:
                 logger.error(f" 告警数据库初始化失败: {e}")
                 logger.error(traceback.format_exc())
 
-            #  新增：注册并启动告警规则引擎服务
+            #  新增：注册告警去重服务
             try:
-                from .alert_rule_engine import AlertRuleEngine, initialize_alert_rule_engine
+                from .alert_deduplication_service import AlertDeduplicationService, initialize_alert_deduplication_service
                 self.service_container.register(
-                    AlertRuleEngine,
+                    AlertDeduplicationService,
                     scope=ServiceScope.SINGLETON
                 )
 
-                # 自动初始化并启动告警引擎
-                alert_engine = initialize_alert_rule_engine(self.event_bus)
+                # 自动初始化告警去重服务
+                dedup_service = initialize_alert_deduplication_service()
+                logger.info("告警去重服务注册并初始化完成")
+            except Exception as e:
+                logger.error(f" 告警去重服务注册失败: {e}")
+                logger.error(traceback.format_exc())
+
+            #  新增：注册并启动告警规则引擎服务
+            try:
+                from .alert_rule_engine import AlertRuleEngine, initialize_alert_rule_engine
+
+                # 使用工厂函数注册 AlertRuleEngine，确保依赖注入正确
+                if not self._is_service_registered(AlertRuleEngine):
+                    self.service_container.register(
+                        AlertRuleEngine,
+                        scope=ServiceScope.SINGLETON,
+                        factory=lambda: initialize_alert_rule_engine(
+                            self.event_bus,
+                            self.service_container.try_resolve(AlertDeduplicationService)
+                        )
+                    )
+
+                # 自动启动告警引擎
+                alert_engine = self.service_container.resolve(AlertRuleEngine)
                 alert_engine.start()
                 logger.info("告警规则引擎服务注册并启动完成")
             except Exception as e:
@@ -957,7 +982,8 @@ class ServiceBootstrap:
 
                 # 将引擎作为热加载回调
                 try:
-                    alert_engine = initialize_alert_rule_engine(self.event_bus)
+                    dedup_service = self.service_container.try_resolve(AlertDeduplicationService)
+                    alert_engine = initialize_alert_rule_engine(self.event_bus, dedup_service)
                     hot_loader.add_update_callback(alert_engine.reload_rules_sync)
                     logger.info("告警引擎与热加载服务关联完成")
                 except:
@@ -1086,7 +1112,7 @@ class ServiceBootstrap:
                     scope=ServiceScope.SINGLETON
                 )
                 strategy_dependency_manager = self.service_container.resolve(StrategyDependencyManager)
-                logger.info("✅ 策略依赖管理器注册完成")
+                logger.info("策略依赖管理器注册完成")
             else:
                 logger.warning("StrategyDependencyManager已注册，跳过")
 
@@ -1097,7 +1123,7 @@ class ServiceBootstrap:
                     scope=ServiceScope.SINGLETON
                 )
                 strategy_hot_reloader = self.service_container.resolve(StrategyHotReloader)
-                logger.info("✅ 策略热重载器注册完成")
+                logger.info("策略热重载器注册完成")
             else:
                 logger.warning("StrategyHotReloader已注册，跳过")
 
@@ -1109,7 +1135,7 @@ class ServiceBootstrap:
                     factory=lambda: StrategyRegistry()
                 )
                 strategy_registry = self.service_container.resolve(StrategyRegistry)
-                logger.info("✅ 策略注册器注册完成")
+                logger.info("策略注册器注册完成")
             else:
                 strategy_registry = self.service_container.resolve(StrategyRegistry)
                 logger.warning("StrategyRegistry已注册，跳过")
@@ -1128,7 +1154,7 @@ class ServiceBootstrap:
                     factory=lambda: StrategyFactory(registry=strategy_registry)
                 )
                 strategy_factory = self.service_container.resolve(StrategyFactory)
-                logger.info("✅ 策略工厂注册完成")
+                logger.info("策略工厂注册完成")
             else:
                 logger.warning("StrategyFactory已注册，跳过")
 
@@ -1139,7 +1165,7 @@ class ServiceBootstrap:
                     factory=lambda: StrategyEngine(registry=strategy_registry)
                 )
                 strategy_engine = self.service_container.resolve(StrategyEngine)
-                logger.info("✅ 策略执行引擎注册完成")
+                logger.info("策略执行引擎注册完成")
             else:
                 logger.warning("StrategyEngine已注册，跳过")
 
@@ -1151,7 +1177,7 @@ class ServiceBootstrap:
                     factory=lambda: PluginHotReloader()
                 )
                 plugin_hot_reloader = self.service_container.resolve(PluginHotReloader)
-                logger.info("✅ 插件热重载器注册完成")
+                logger.info("插件热重载器注册完成")
             else:
                 logger.warning("PluginHotReloader已注册，跳过")
 
@@ -1165,11 +1191,11 @@ class ServiceBootstrap:
                     )
                 )
                 plugin_version_manager = self.service_container.resolve(PluginVersionManager)
-                logger.info("✅ 插件版本管理器注册完成")
+                logger.info("插件版本管理器注册完成")
             else:
                 logger.warning("PluginVersionManager已注册，跳过")
 
-            # ✅ 情绪数据服务已删除（功能已整合到热点分析）
+            # 情绪数据服务已删除（功能已整合到热点分析）
             logger.debug("情绪数据服务初始化已跳过（服务已移除）")
 
         except Exception as e:
@@ -1191,7 +1217,7 @@ class ServiceBootstrap:
                         event_bus=self.event_bus
                     )
                 )
-                logger.info("✅ 账户仓储注册完成")
+                logger.info("账户仓储注册完成")
             else:
                 logger.warning("AccountRepository已注册，跳过")
 
@@ -1206,7 +1232,7 @@ class ServiceBootstrap:
                     )
                 )
                 account_manager = self.service_container.resolve(AccountManager)
-                logger.info("✅ 账户管理器注册完成")
+                logger.info("账户管理器注册完成")
             else:
                 logger.warning("AccountManager已注册，跳过")
 
@@ -1221,7 +1247,7 @@ class ServiceBootstrap:
                     )
                 )
                 order_service = self.service_container.resolve(OrderService)
-                logger.info("✅ 订单服务注册完成")
+                logger.info("订单服务注册完成")
             else:
                 logger.warning("OrderService已注册，跳过")
 
@@ -1235,7 +1261,7 @@ class ServiceBootstrap:
                     )
                 )
                 task_scheduler = self.service_container.resolve(TaskScheduler)
-                logger.info("✅ 任务调度器注册完成")
+                logger.info("任务调度器注册完成")
             else:
                 logger.warning("TaskScheduler已注册，跳过")
 
@@ -1250,7 +1276,7 @@ class ServiceBootstrap:
                     )
                 )
                 order_monitor = self.service_container.resolve(OrderMonitor)
-                logger.info("✅ 订单监控器注册完成")
+                logger.info("订单监控器注册完成")
             else:
                 logger.warning("OrderMonitor已注册，跳过")
 
@@ -1265,7 +1291,7 @@ class ServiceBootstrap:
                     )
                 )
                 order_analyzer = self.service_container.resolve(OrderAnalyzer)
-                logger.info("✅ 订单分析器注册完成")
+                logger.info("订单分析器注册完成")
             else:
                 logger.warning("OrderAnalyzer已注册，跳过")
 
@@ -1291,7 +1317,7 @@ class ServiceBootstrap:
                         logger.info("TradingService 初始化成功")
                     except Exception as init_error:
                         logger.warning(f"TradingService 初始化失败: {init_error}, 使用未初始化状态")
-                logger.info("✅ 交易服务（TradingService）注册完成")
+                logger.info("交易服务（TradingService）注册完成")
 
             except ImportError as e:
                 logger.error(f"❌ TradingService 导入失败: {e}")
@@ -1320,7 +1346,7 @@ class ServiceBootstrap:
                 strategy_service = self.service_container.resolve(StrategyService)
                 if hasattr(strategy_service, 'initialize'):
                     strategy_service.initialize()
-                logger.info("✅ 策略服务注册完成")
+                logger.info("策略服务注册完成")
 
                 # 注册策略管理器（作为 StrategyService 的适配器）
                 from ..trading.strategy_manager import StrategyManager
@@ -1332,7 +1358,7 @@ class ServiceBootstrap:
                             service_container=self.service_container
                         )
                     )
-                logger.info("✅ 策略管理器注册完成")
+                logger.info("策略管理器注册完成")
 
             except Exception as e:
                 logger.warning(f" 策略服务注册失败: {e}")
@@ -1351,7 +1377,7 @@ class ServiceBootstrap:
                             event_bus=self.event_bus
                         )
                     )
-                logger.info("✅ 交易引擎注册完成")
+                logger.info("交易引擎注册完成")
 
             except Exception as e:
                 logger.warning(f" 交易引擎注册失败: {e}")
@@ -1369,7 +1395,7 @@ class ServiceBootstrap:
                             service_container=self.service_container
                         )
                     )
-                logger.info("✅ 交易控制器注册完成")
+                logger.info("交易控制器注册完成")
 
             except Exception as e:
                 logger.warning(f" 交易控制器注册失败: {e}")
@@ -1393,7 +1419,7 @@ class ServiceBootstrap:
                     )
                     data_masking_service = self.service_container.resolve(DataMaskingService)
                     data_masking_service.initialize()
-                    logger.info("✅ 数据脱敏服务注册完成")
+                    logger.info("数据脱敏服务注册完成")
             except Exception as e:
                 logger.warning(f"数据脱敏服务注册失败: {e}")
                 logger.warning(traceback.format_exc())
@@ -1413,7 +1439,7 @@ class ServiceBootstrap:
                     )
                     funding_rate_service = self.service_container.resolve(FundingRateAnalysisService)
                     funding_rate_service.initialize()
-                    logger.info("✅ 资金费率分析服务注册完成")
+                    logger.info("资金费率分析服务注册完成")
             except Exception as e:
                 logger.warning(f"资金费率分析服务注册失败: {e}")
                 logger.warning(traceback.format_exc())
@@ -1433,7 +1459,7 @@ class ServiceBootstrap:
                     )
                     trading_confirmation_service = self.service_container.resolve(TradingConfirmationService)
                     trading_confirmation_service.initialize()
-                    logger.info("✅ 交易确认与风控服务注册完成")
+                    logger.info("交易确认与风控服务注册完成")
             except Exception as e:
                 logger.warning(f"交易确认与风控服务注册失败: {e}")
                 logger.warning(traceback.format_exc())
@@ -1477,7 +1503,7 @@ class ServiceBootstrap:
                 interval_seconds=300  # 300秒 = 5分钟
             )
 
-            logger.info("✅ 订单监控定时任务已设置（每5分钟检查超时）")
+            logger.info("订单监控定时任务已设置（每5分钟检查超时）")
 
         except Exception as e:
             logger.error(f"设置订单监控失败: {e}")
@@ -1587,7 +1613,7 @@ class ServiceBootstrap:
             logger.error(f" GPU加速服务注册失败: {e}")
             logger.error(traceback.format_exc())
         
-        # ✅ 分布式服务
+        # 分布式服务
         try:
             from .distributed_service import DistributedService
             
@@ -1614,7 +1640,7 @@ class ServiceBootstrap:
                 name='distributed_service'
             )
             
-            logger.info("✅ 分布式服务注册完成（类型 + 名称 'distributed_service'）")
+            logger.info("分布式服务注册完成（类型 + 名称 'distributed_service'）")
             
         except ImportError as e:
             logger.warning(f"分布式服务模块不可用，跳过注册: {e}")
@@ -1624,6 +1650,82 @@ class ServiceBootstrap:
 
         # 🚀 注册5个深度优化功能模块
         self._register_optimization_modules()
+
+        # 注册通知服务
+        self._register_notification_service()
+
+        # 注册数据质量服务
+        self._register_data_quality_services()
+
+    def _register_data_quality_services(self) -> None:
+        """注册数据质量相关服务"""
+        logger.info("注册数据质量服务...")
+
+        try:
+            # 1. 注册数据质量风险管理器
+            try:
+                from core.data_quality_risk_manager import DataQualityRiskManager
+
+                if not self._is_service_registered(DataQualityRiskManager):
+                    self.service_container.register(
+                        DataQualityRiskManager,
+                        scope=ServiceScope.SINGLETON,
+                        factory=lambda: DataQualityRiskManager()
+                    )
+                data_quality_risk_manager = self.service_container.resolve(DataQualityRiskManager)
+                logger.info("数据质量风险管理器注册完成")
+            except Exception as e:
+                logger.error(f"❌ 数据质量风险管理器注册失败: {e}")
+                logger.error(traceback.format_exc())
+
+            # 2. 注册增强数据质量监控器（依赖 DataQualityRiskManager 和 AlertRuleEngine）
+            try:
+                from core.services.enhanced_data_quality_monitor import EnhancedDataQualityMonitor
+                from .alert_rule_engine import AlertRuleEngine
+
+                # 确保依赖服务已注册
+                if not self.service_container.is_registered(AlertRuleEngine):
+                    logger.warning("AlertRuleEngine 未注册，跳过 EnhancedDataQualityMonitor 注册")
+                    return
+
+                if not self._is_service_registered(EnhancedDataQualityMonitor):
+                    self.service_container.register(
+                        EnhancedDataQualityMonitor,
+                        scope=ServiceScope.SINGLETON,
+                        factory=lambda: EnhancedDataQualityMonitor(
+                            risk_manager=self.service_container.resolve(DataQualityRiskManager),
+                            alert_engine=self.service_container.resolve(AlertRuleEngine)
+                        )
+                    )
+                enhanced_data_quality_monitor = self.service_container.resolve(EnhancedDataQualityMonitor)
+                logger.info("增强数据质量监控器注册完成")
+            except Exception as e:
+                logger.error(f"❌ 增强数据质量监控器注册失败: {e}")
+                logger.error(traceback.format_exc())
+
+            # 3. 注册质量报告生成器（依赖 EnhancedDataQualityMonitor）
+            try:
+                from core.services.quality_report_generator import QualityReportGenerator
+
+                if not self._is_service_registered(QualityReportGenerator):
+                    self.service_container.register(
+                        QualityReportGenerator,
+                        scope=ServiceScope.SINGLETON,
+                        factory=lambda: QualityReportGenerator(
+                            quality_monitor=self.service_container.resolve(EnhancedDataQualityMonitor)
+                        )
+                    )
+                quality_report_generator = self.service_container.resolve(QualityReportGenerator)
+                logger.info("质量报告生成器注册完成")
+            except Exception as e:
+                logger.error(f"❌ 质量报告生成器注册失败: {e}")
+                logger.error(traceback.format_exc())
+
+            logger.info("数据质量服务注册完成")
+
+        except Exception as e:
+            logger.error(f"❌ 数据质量服务注册失败: {e}")
+            logger.error(traceback.format_exc())
 
     def _register_optimization_modules(self) -> None:
         """注册5个深度优化功能模块"""
@@ -1645,7 +1747,7 @@ class ServiceBootstrap:
             # 5. 注册响应式界面适配器
             self._register_responsive_adapter()
             
-            logger.info("✅ 5个深度优化功能模块注册完成")
+            logger.info("5个深度优化功能模块注册完成")
             
         except Exception as e:
             logger.error(f"❌ 深度优化模块注册失败: {e}")
@@ -1688,7 +1790,7 @@ class ServiceBootstrap:
                 name='cache_manager'
             )
             
-            logger.info("✅ 智能缓存管理器注册完成（类型 + 名称 'intelligent_cache' + 'cache_manager'）")
+            logger.info("智能缓存管理器注册完成（类型 + 名称 'intelligent_cache' + 'cache_manager'）")
             
         except ImportError as e:
             logger.warning(f"智能缓存模块不可用，跳过注册: {e}")
@@ -1721,7 +1823,7 @@ class ServiceBootstrap:
                 name='component_virtualization'
             )
             
-            logger.info("✅ 组件虚拟化注册完成（类型 + 名称 'component_virtualization'）")
+            logger.info("组件虚拟化注册完成（类型 + 名称 'component_virtualization'）")
             
         except ImportError as e:
             logger.warning(f"组件虚拟化模块不可用，跳过注册: {e}")
@@ -1762,7 +1864,7 @@ class ServiceBootstrap:
                 name='ws_client'
             )
             
-            logger.info("✅ WebSocket客户端注册完成（类型 + 名称 'websocket_client' + 'ws_client'）")
+            logger.info("WebSocket客户端注册完成（类型 + 名称 'websocket_client' + 'ws_client'）")
             
         except ImportError as e:
             logger.warning(f"WebSocket客户端模块不可用，跳过注册: {e}")
@@ -1803,7 +1905,7 @@ class ServiceBootstrap:
                 name='chart_recommender'
             )
             
-            logger.info("✅ 智能图表推荐器注册完成（类型 + 名称 'smart_chart_recommender' + 'chart_recommender'）")
+            logger.info("智能图表推荐器注册完成（类型 + 名称 'smart_chart_recommender' + 'chart_recommender'）")
             
         except ImportError as e:
             logger.warning(f"智能图表推荐器模块不可用，跳过注册: {e}")
@@ -1844,7 +1946,7 @@ class ServiceBootstrap:
                 name='ui_adapter'
             )
             
-            logger.info("✅ 响应式界面适配器注册完成（类型 + 名称 'responsive_adapter' + 'ui_adapter'）")
+            logger.info("响应式界面适配器注册完成（类型 + 名称 'responsive_adapter' + 'ui_adapter'）")
             
         except ImportError as e:
             logger.warning(f"响应式界面适配器模块不可用，跳过注册: {e}")
@@ -1907,7 +2009,7 @@ class ServiceBootstrap:
                 name='optimization_service'
             )
             
-            logger.info("✅ 统一优化服务接口注册完成（类型 + 名称 'unified_optimization_service' + 'optimization_service'）")
+            logger.info("统一优化服务接口注册完成（类型 + 名称 'unified_optimization_service' + 'optimization_service'）")
             
         except ImportError as e:
             logger.warning(f"统一优化服务模块不可用，跳过注册: {e}")
@@ -2006,6 +2108,29 @@ class ServiceBootstrap:
 
         except Exception as e:
             logger.error(f"统一插件数据管理器注册失败: {e}")
+            logger.error(traceback.format_exc())
+
+    def _register_notification_service(self) -> None:
+        """注册通知服务"""
+        logger.info("注册通知服务...")
+
+        try:
+            if not self._is_service_registered(NotificationService):
+                self.service_container.register(
+                    NotificationService,
+                    scope=ServiceScope.SINGLETON,
+                    factory=lambda: NotificationService(service_container=self.service_container)
+                )
+            notification_service = self.service_container.resolve(NotificationService)
+            
+            logger.info("通知服务注册完成")
+
+            logger.info("初始化全局通知服务实例...")
+            init_notification_service(self.service_container)
+            logger.info("全局通知服务实例初始化完成")
+
+        except Exception as e:
+            logger.error(f"❌ 通知服务注册失败: {e}")
             logger.error(traceback.format_exc())
 
 

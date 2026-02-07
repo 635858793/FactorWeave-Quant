@@ -45,7 +45,6 @@ try:
     from core.advanced_optimization.real_time_monitoring import (
         DeepOptimizationMonitor, OptimizationMetrics, MonitoringStatus, create_deep_optimization_monitor
     )
-    from gui.widgets.performance.deep_optimization_tab import DeepOptimizationTab
 except ImportError as e:
     logger.warning(f"深度优化模块导入失败: {e}")
 

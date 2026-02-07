@@ -21,7 +21,7 @@ from PyQt5.QtWidgets import (
     QTableWidgetItem, QHeaderView, QGroupBox, QFrame,
     QScrollArea, QListWidget, QListWidgetItem, QSplitter,
     QTabWidget, QTextEdit, QComboBox, QSpinBox, QCheckBox,
-    QApplication
+    QApplication, QSizePolicy
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread, QPropertyAnimation, QEasingCurve
 from PyQt5.QtGui import QFont, QColor, QPalette, QPixmap, QPainter, QBrush
@@ -175,7 +175,9 @@ class StatusIndicator(QLabel):
     def __init__(self, initial_status="unknown", parent=None):
         super().__init__(parent)
         self.status = initial_status
-        self.setFixedSize(16, 16)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.setMinimumSize(16, 16)
+        self.setMaximumSize(16, 16)
         self.update_indicator()
 
     def set_status(self, status: str):

@@ -108,13 +108,13 @@ class FactorWeaveAnalyticsDB:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # ✅ 初始化配置管理器
+        # 初始化配置管理器
         self.config_manager = self._get_config_manager()
 
-        # ✅ 使用配置创建连接池
+        # 使用配置创建连接池
         try:
             self._create_pool()
-            logger.info(f"✅ FactorWeave分析数据库连接池已初始化: {self.db_path}")
+            logger.info(f"FactorWeave分析数据库连接池已初始化: {self.db_path}")
 
             # 应用优化配置
             self._apply_optimization()
@@ -127,7 +127,7 @@ class FactorWeaveAnalyticsDB:
             raise
 
         self._initialized = True
-        logger.info(f"✅ FactorWeave分析数据库初始化完成: {self.db_path}")
+        logger.info(f"FactorWeave分析数据库初始化完成: {self.db_path}")
 
     def _get_config_manager(self):
         """获取配置管理器"""
@@ -207,7 +207,7 @@ class FactorWeaveAnalyticsDB:
             # 3. 重新应用优化配置
             self._apply_optimization()
 
-            logger.info("✅ 连接池热重载完成！")
+            logger.info("连接池热重载完成！")
             return True
 
         except Exception as e:
@@ -253,7 +253,7 @@ class FactorWeaveAnalyticsDB:
                 conn.execute("SET enable_object_cache = true")
                 conn.execute("SET enable_progress_bar = false")  # 关闭进度条，避免日志混乱
 
-            logger.info(f"✅ 数据库优化配置已应用: 内存={memory_limit:.1f}GB, 线程={threads}")
+            logger.info(f"数据库优化配置已应用: 内存={memory_limit:.1f}GB, 线程={threads}")
 
         except Exception as e:
             logger.warning(f"应用优化配置失败: {e}")
@@ -346,7 +346,7 @@ class FactorWeaveAnalyticsDB:
                 )
             """)
 
-                logger.info("✅ 数据库表结构初始化完成")
+                logger.info("数据库表结构初始化完成")
 
         except Exception as e:
             logger.error(f"❌ 初始化表结构失败: {e}")
@@ -594,7 +594,7 @@ class FactorWeaveAnalyticsDB:
         if hasattr(self, 'pool'):
             try:
                 self.pool.dispose()
-                logger.info("✅ 数据库连接池已关闭")
+                logger.info("数据库连接池已关闭")
             except Exception as e:
                 logger.error(f"关闭连接池失败: {e}")
 

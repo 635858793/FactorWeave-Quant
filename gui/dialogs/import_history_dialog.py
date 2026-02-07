@@ -207,7 +207,7 @@ class ImportHistoryDialog(QDialog):
         status_map = {
             'pending': '⏳ 等待中',
             'running': '▶️ 运行中',
-            'completed': '✅ 成功',
+            'completed': '成功',
             'failed': '❌ 失败',
             'cancelled': '⏹️ 已取消'
         }
@@ -233,7 +233,7 @@ class ImportHistoryDialog(QDialog):
         success_rate = (success / total * 100) if total > 0 else 0
         self.stats_label.setText(
             f"📈 统计：总共 {total} 条记录 | "
-            f"✅ 成功 {success} | "
+            f"成功 {success} | "
             f"❌ 失败 {failed} | "
             f"📊 成功率 {success_rate:.1f}%"
         )

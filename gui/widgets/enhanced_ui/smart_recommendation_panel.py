@@ -13,7 +13,7 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget, QTableWidgetItem,
     QFrame, QPushButton, QComboBox, QSlider, QTextEdit, QScrollArea,
     QGroupBox, QGridLayout, QProgressBar, QSplitter, QTabWidget,
-    QListWidget, QListWidgetItem, QCheckBox, QSpinBox, QDialog, QMessageBox
+    QListWidget, QListWidgetItem, QCheckBox, QSpinBox, QDialog, QMessageBox, QSizePolicy
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread, pyqtSlot, QSize
 from PyQt5.QtGui import QFont, QColor, QPalette, QPixmap, QIcon, QPainter, QMovie
@@ -83,22 +83,24 @@ class RecommendationCard(QFrame):
         
         self.recommendation_data = recommendation_data
         self.setFrameStyle(QFrame.StyledPanel)
-        # ✅ 修改：增加卡片高度从95到105，确保右下角按钮完整显示
-        self.setFixedHeight(105)
+        # 修改：使用响应式布局
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        self.setMinimumHeight(105)
+        self.setMaximumHeight(105)
         self.setCursor(Qt.PointingHandCursor)
         self.init_ui()
 
     def init_ui(self):
         """初始化UI（精简版）"""
         layout = QVBoxLayout(self)
-        # ✅ 修改：增加垂直空间确保内容完整显示
+        # 修改：增加垂直空间确保内容完整显示
         layout.setContentsMargins(8, 6, 8, 8)
         layout.setSpacing(4)
 
         # 标题和评分
         header_layout = QHBoxLayout()
 
-        # ✅ 修改：推荐标题字体从11降至10
+        # 修改：推荐标题字体从11降至10
         title = self.recommendation_data.get('title', '未知推荐')
         self.title_label = QLabel(title)
         self.title_label.setFont(QFont("Arial", 10, QFont.Bold))
@@ -108,12 +110,13 @@ class RecommendationCard(QFrame):
 
         header_layout.addStretch()
 
-        # ✅ 修改：推荐评分字体从14降至11，尺寸从40x25降至35x22
+        # 修改：推荐评分字体从14降至11，尺寸从40x25降至35x22
         score = self.recommendation_data.get('score', 0)
         self.score_label = QLabel(f"{score:.1f}")
         self.score_label.setFont(QFont("Arial", 11, QFont.Bold))
         self.score_label.setAlignment(Qt.AlignCenter)
-        self.score_label.setFixedSize(35, 22)
+        self.score_label.setMinimumSize(35, 22)
+        self.score_label.setMaximumSize(35, 22)
 
         # 根据评分设置颜色
         if score >= 8.0:
@@ -127,7 +130,7 @@ class RecommendationCard(QFrame):
 
         layout.addLayout(header_layout)
 
-        # ✅ 修改：推荐描述字体从9降至8，限制行数
+        # 修改：推荐描述字体从9降至8，限制行数
         description = self.recommendation_data.get('description', '')
         # 限制描述长度
         if len(description) > 50:
@@ -163,7 +166,7 @@ class RecommendationCard(QFrame):
 
         footer_layout.addStretch()
 
-        # ✅ 修改：增大操作按钮尺寸和字体，确保可见性
+        # 修改：增大操作按钮尺寸和字体，确保可见性
         self.action_btn = QPushButton("详情")
         self.action_btn.setFont(QFont("Arial", 9, QFont.Bold))
         self.action_btn.setFixedSize(55, 22)
@@ -746,7 +749,7 @@ class SmartRecommendationPanel(QWidget):
         
         # 显示测试结果
         if success:
-            self.test_connection_status_label.setText("✅ " + message)
+            self.test_connection_status_label.setText("" + message)
             self.test_connection_status_label.setStyleSheet("color: #27AE60; font-weight: bold;")
         else:
             self.test_connection_status_label.setText("❌ " + message)
@@ -784,7 +787,7 @@ class SmartRecommendationPanel(QWidget):
         scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
-        # ✅ 修改：推荐卡片容器使用网格布局（一行4个，靠上对齐）
+        # 修改：推荐卡片容器使用网格布局（一行4个，靠上对齐）
         self.stock_cards_widget = QWidget()
         from PyQt5.QtWidgets import QGridLayout
         self.stock_cards_layout = QGridLayout(self.stock_cards_widget)
@@ -806,7 +809,7 @@ class SmartRecommendationPanel(QWidget):
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
 
-        # ✅ 修改：策略推荐也使用网格布局（一行4个，靠上对齐）
+        # 修改：策略推荐也使用网格布局（一行4个，靠上对齐）
         self.strategy_cards_widget = QWidget()
         from PyQt5.QtWidgets import QGridLayout
         self.strategy_cards_layout = QGridLayout(self.strategy_cards_widget)
@@ -828,7 +831,7 @@ class SmartRecommendationPanel(QWidget):
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
 
-        # ✅ 修改：指标推荐也使用网格布局（一行4个，靠上对齐）
+        # 修改：指标推荐也使用网格布局（一行4个，靠上对齐）
         self.indicator_cards_widget = QWidget()
         from PyQt5.QtWidgets import QGridLayout
         self.indicator_cards_layout = QGridLayout(self.indicator_cards_widget)
@@ -2196,7 +2199,7 @@ class SmartRecommendationPanel(QWidget):
             logger.info("正在获取个性化推荐...")
             user_id = self._get_current_user_id()
 
-            # ✅ 修复：使用QThread在后台执行推荐获取
+            # 修复：使用QThread在后台执行推荐获取
             from PyQt5.QtCore import QThread, pyqtSignal
 
             class RecommendationWorker(QThread):
@@ -2251,7 +2254,7 @@ class SmartRecommendationPanel(QWidget):
                         loop.close()
                         logger.info("🔄 Worker线程：发送finished信号")
                         self.finished.emit(recommendations)
-                        logger.info("✅ Worker线程：finished信号已发送")
+                        logger.info("Worker线程：finished信号已发送")
 
                     except Exception as e:
                         logger.error(f"❌ 推荐加载线程执行失败: {e}")
@@ -2306,9 +2309,9 @@ class SmartRecommendationPanel(QWidget):
     def _display_loaded_recommendations(self, recommendations):
         """显示加载的推荐结果（异步回调）"""
         try:
-            logger.info(f"✅ _display_loaded_recommendations 被调用！原始推荐数量: {len(recommendations)}")
+            logger.info(f"_display_loaded_recommendations 被调用！原始推荐数量: {len(recommendations)}")
 
-            # ✅ 检查推荐是否为空
+            # 检查推荐是否为空
             if not recommendations:
                 logger.warning("推荐列表为空，显示空状态")
                 self._show_empty_state("暂无推荐内容")
@@ -2318,7 +2321,7 @@ class SmartRecommendationPanel(QWidget):
             formatted_recommendations = self._format_engine_recommendations(recommendations)
             logger.info(f"格式化后推荐数量: {len(formatted_recommendations)}")
 
-            # ✅ 检查格式化后是否为空
+            # 检查格式化后是否为空
             if not formatted_recommendations:
                 logger.warning("格式化后推荐列表为空")
                 self._show_empty_state("推荐格式化失败")
@@ -2338,7 +2341,7 @@ class SmartRecommendationPanel(QWidget):
             self._update_feedback_stats()
             logger.info("反馈统计已更新")
 
-            logger.info(f"✅ 成功加载并显示了 {len(recommendations)} 个推荐")
+            logger.info(f"成功加载并显示了 {len(recommendations)} 个推荐")
 
         except Exception as e:
             logger.error(f"显示推荐失败: {e}")
@@ -2781,7 +2784,7 @@ class SmartRecommendationPanel(QWidget):
                 else:
                     rec_type = 'unknown'
 
-                # ✅ 确保所有字段都有有效值
+                # 确保所有字段都有有效值
                 formatted_rec = {
                     "id": rec.item_id,
                     "type": rec_type,
@@ -2910,7 +2913,7 @@ class SmartRecommendationPanel(QWidget):
                 if recs:
                     logger.info(f"显示 {len(recs)} 个{type_name}推荐")
                     self._display_recommendation_cards(recs, layout)
-                    logger.info(f"✅ {type_name}推荐显示成功")
+                    logger.info(f"{type_name}推荐显示成功")
                 else:
                     # 没有推荐时显示提示
                     logger.info(f"{type_name}推荐为空，显示空状态提示")
@@ -2963,7 +2966,7 @@ class SmartRecommendationPanel(QWidget):
                     card.card_clicked.connect(self._on_recommendation_clicked)
                     card.action_clicked.connect(self._on_recommendation_action)
 
-                    # ✅ 根据布局类型添加卡片
+                    # 根据布局类型添加卡片
                     if is_grid_layout:
                         row = idx // columns
                         col = idx % columns
@@ -2974,7 +2977,7 @@ class SmartRecommendationPanel(QWidget):
                         logger.debug(f"卡片 {idx+1} 已添加到垂直布局")
 
                     added_count += 1
-                    logger.debug(f"✅ 成功添加卡片 {idx+1}: {rec.get('title', 'Unknown')}")
+                    logger.debug(f"成功添加卡片 {idx+1}: {rec.get('title', 'Unknown')}")
                 except Exception as card_error:
                     logger.error(f"❌ 创建第 {idx} 个推荐卡片失败: {card_error}")
                     logger.error(f"推荐数据: {rec}")
@@ -2982,11 +2985,11 @@ class SmartRecommendationPanel(QWidget):
                     logger.error(traceback.format_exc())
                     continue
 
-            # ✅ 只对VBox布局添加弹性空间
+            # 只对VBox布局添加弹性空间
             if isinstance(layout, QVBoxLayout):
                 layout.addStretch()
 
-            logger.info(f"✅ 成功添加 {added_count}/{len(recommendations)} 个推荐卡片到{'网格' if is_grid_layout else '垂直'}布局")
+            logger.info(f"成功添加 {added_count}/{len(recommendations)} 个推荐卡片到{'网格' if is_grid_layout else '垂直'}布局")
 
         except Exception as e:
             logger.error(f"❌ 显示推荐卡片失败: {e}")
@@ -3241,7 +3244,7 @@ class SmartRecommendationPanel(QWidget):
             )
             event_bus.publish(event)
 
-            logger.info(f"✅ 已发送股票选择事件: {stock_code}")
+            logger.info(f"已发送股票选择事件: {stock_code}")
 
         except Exception as e:
             logger.error(f"选择股票失败: {e}")

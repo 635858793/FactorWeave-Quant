@@ -82,7 +82,7 @@ def main():
         success_count = sum(1 for _, success, _ in results if success)
         fail_count = len(results) - success_count
         
-        print(f"✅ 成功: {success_count} 个文件")
+        print(f"成功: {success_count} 个文件")
         print(f"❌ 失败: {fail_count} 个文件")
         
         # 显示失败的文件
@@ -101,7 +101,7 @@ def main():
     total_fail = total_files - total_success
     
     print(f"总文件数: {total_files}")
-    print(f"✅ 成功: {total_success}")
+    print(f"成功: {total_success}")
     print(f"❌ 失败: {total_fail}")
     
     if total_fail == 0:

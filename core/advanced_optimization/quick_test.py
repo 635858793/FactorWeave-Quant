@@ -31,7 +31,7 @@ def test_module_imports():
             module_file = module_path.replace(".", "/") + ".py"
             file_path = os.path.join("d:\\DevelopTool\\FreeCode\\FactorWeave-Quant\\factorweave-quant", module_file)
             if os.path.exists(file_path):
-                print(f"  ✅ {module_path}.py 文件存在")
+                print(f"  {module_path}.py 文件存在")
                 results.append(True)
             else:
                 print(f"  ❌ {module_path}.py 文件不存在")
@@ -119,7 +119,7 @@ def main():
     ]
     
     for i, (module_name, result) in enumerate(zip(module_names, import_results)):
-        status = "✅ 已实现" if result else "❌ 需要检查"
+        status = "已实现" if result else "❌ 需要检查"
         print(f"{i+1}. {module_name}: {status}")
     
     print("\n🔍 性能基准测试:")

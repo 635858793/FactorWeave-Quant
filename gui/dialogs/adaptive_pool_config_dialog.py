@@ -182,7 +182,7 @@ class AdaptivePoolConfigDialog(QDialog):
         button_layout.addStretch()
 
         # 保存按钮
-        self.save_button = QPushButton("✅ 保存并应用")
+        self.save_button = QPushButton("保存并应用")
         self.save_button.setObjectName("save_button")
         self.save_button.clicked.connect(self._save_config)
         button_layout.addWidget(self.save_button)

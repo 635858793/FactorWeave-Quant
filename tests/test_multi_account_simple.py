@@ -128,7 +128,7 @@ def test_account_models():
         logger.info(f"  交易接口类型: {account3.trading_interface_type.value}")
         logger.info(f"  总资产: {account3.total_assets:.2f}")
         
-        logger.info("\n✅ 账号模型测试通过")
+        logger.info("\n账号模型测试通过")
         return [account1, account2, account3]
     
     except Exception as e:
@@ -152,7 +152,7 @@ def test_order_executor():
         # 创建订单执行器
         order_executor = OrderExecutor(service_container, event_bus)
         
-        logger.info("\n✅ 订单执行器初始化成功")
+        logger.info("\n订单执行器初始化成功")
         
         # 测试账号解析逻辑
         logger.info("\n测试账号解析逻辑（三级优先级）:")
@@ -175,7 +175,7 @@ def test_order_executor():
         
         resolved_account = order_executor._resolve_account_for_order(order1)
         if resolved_account and resolved_account.account_id == "STOCK_001":
-            logger.info("✅ 测试1通过：订单级别账号解析成功")
+            logger.info("测试1通过：订单级别账号解析成功")
         else:
             logger.warning("⚠️  测试1失败：订单级别账号解析失败")
         
@@ -197,7 +197,7 @@ def test_order_executor():
         
         resolved_account = order_executor._resolve_account_for_order(order2)
         if resolved_account:
-            logger.info(f"✅ 测试2通过：系统默认账号解析成功: {resolved_account.account_id}")
+            logger.info(f"测试2通过：系统默认账号解析成功: {resolved_account.account_id}")
         else:
             logger.warning("⚠️  测试2失败：系统默认账号解析失败")
         
@@ -230,18 +230,18 @@ def test_order_executor():
         # 第一次获取交易接口（应该创建并缓存）
         interface1 = order_executor._get_trading_interface_for_account(account1)
         if interface1:
-            logger.info(f"✅ 第一次获取交易接口成功")
+            logger.info(f"第一次获取交易接口成功")
             
             # 第二次获取交易接口（应该从缓存中获取）
             interface2 = order_executor._get_trading_interface_for_account(account1)
             if interface2 and interface1 is interface2:
-                logger.info("✅ 交易接口缓存功能正常")
+                logger.info("交易接口缓存功能正常")
             else:
                 logger.warning("⚠️  交易接口缓存功能异常")
         else:
             logger.warning("⚠️  获取交易接口失败")
         
-        logger.info("\n✅ 订单执行器的多账号功能测试通过")
+        logger.info("\n订单执行器的多账号功能测试通过")
         return order_executor
     
     except Exception as e:

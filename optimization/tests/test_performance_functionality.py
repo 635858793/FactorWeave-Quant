@@ -213,7 +213,7 @@ def main():
     print("=" * 60)
     
     for test_name, result in results:
-        status = "✅ 通过" if result else "❌ 失败"
+        status = "通过" if result else "❌ 失败"
         print(f"{test_name}: {status}")
     
     # 总体评估

@@ -35,12 +35,22 @@ def _import_matplotlib():
     if not MATPLOTLIB_AVAILABLE:
         try:
             import matplotlib
-            matplotlib.use('Qt5Agg')
+            # 检查是否已有 QApplication 实例
+            from PyQt5.QtWidgets import QApplication
+            if QApplication.instance() is None:
+                # 如果没有 QApplication，使用 Agg 后端
+                matplotlib.use('Agg')
+                from matplotlib.backends.backend_agg import FigureCanvasAgg as _FigureCanvas
+            else:
+                # 如果已有 QApplication，使用 Qt5Agg 后端
+                matplotlib.use('Qt5Agg')
+                from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as _FigureCanvas
+            
             import matplotlib.pyplot as plt
-            from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
             from matplotlib.figure import Figure
             import numpy as np
             
+            FigureCanvas = _FigureCanvas
             MATPLOTLIB_AVAILABLE = True
             _get_logger().info("matplotlib导入成功")
         except Exception as e:

@@ -109,7 +109,7 @@ class TestIncrementalUpdateSystem(unittest.TestCase):
                 try:
                     # 这里我们只测试能否导入，实际注册可能需要完整的依赖
                     service_name = service.__name__
-                    print(f"✅ {service_name} 服务可以导入")
+                    print(f"{service_name} 服务可以导入")
                 except Exception as e:
                     print(f"❌ {service_name} 服务导入失败: {e}")
                     # 不直接失败，只是记录
@@ -151,7 +151,7 @@ class TestIncrementalUpdateSystem(unittest.TestCase):
                 self.assertIsNotNone(result)
                 self.assertEqual(result.symbol, 'TEST001')
 
-                print("✅ 数据完整性检查器测试通过")
+                print("数据完整性检查器测试通过")
 
         except Exception as e:
             print(f"❌ 数据完整性检查器测试失败: {e}")
@@ -192,7 +192,7 @@ class TestIncrementalUpdateSystem(unittest.TestCase):
                 self.assertIsNotNone(result)
                 self.assertEqual(len(result.symbols_to_download), 2)
 
-                print("✅ 增量数据分析仪测试通过")
+                print("增量数据分析仪测试通过")
 
         except Exception as e:
             print(f"❌ 增量数据分析仪测试失败: {e}")
@@ -230,7 +230,7 @@ class TestIncrementalUpdateSystem(unittest.TestCase):
                 self.assertIsNotNone(result)
                 self.assertEqual(result['task_id'], 'test_task_001')
 
-                print("✅ 增量更新记录器测试通过")
+                print("增量更新记录器测试通过")
 
         except Exception as e:
             print(f"❌ 增量更新记录器测试失败: {e}")
@@ -260,7 +260,7 @@ class TestIncrementalUpdateSystem(unittest.TestCase):
             self.assertIsNotNone(status)
             self.assertEqual(status['task_name'], '测试任务')
 
-            print("✅ 断点续传管理器测试通过")
+            print("断点续传管理器测试通过")
 
         except Exception as e:
             print(f"❌ 断点续传管理器测试失败: {e}")
@@ -289,7 +289,7 @@ class TestIncrementalUpdateSystem(unittest.TestCase):
             self.assertIsNotNone(status)
             self.assertEqual(status['name'], '定时测试任务')
 
-            print("✅ 增量更新调度器测试通过")
+            print("增量更新调度器测试通过")
 
         except Exception as e:
             print(f"❌ 增量更新调度器测试失败: {e}")
@@ -311,7 +311,7 @@ class TestIncrementalUpdateSystem(unittest.TestCase):
             self.assertIsNotNone(import_widget)
             self.assertTrue(hasattr(import_widget, 'download_mode_combo'))
 
-            print("✅ UI组件测试通过")
+            print("UI组件测试通过")
 
         except Exception as e:
             print(f"❌ UI组件测试失败: {e}")
@@ -379,7 +379,7 @@ class TestIncrementalUpdateSystem(unittest.TestCase):
                     self.assertIsNotNone(record)
                     self.assertEqual(len(analysis_result.symbols_to_download), 2)
 
-                    print("✅ 服务集成测试通过")
+                    print("服务集成测试通过")
 
         except Exception as e:
             print(f"❌ 服务集成测试失败: {e}")
@@ -401,7 +401,7 @@ class TestIncrementalUpdateSystem(unittest.TestCase):
             result = manager.delete_breakpoint('nonexistent_task')
             self.assertFalse(result)
 
-            print("✅ 错误处理测试通过")
+            print("错误处理测试通过")
 
         except Exception as e:
             print(f"❌ 错误处理测试失败: {e}")
@@ -445,7 +445,7 @@ class TestIncrementalUpdateSystem(unittest.TestCase):
                 for result in results:
                     self.assertIsNotNone(result)
 
-            print("✅ 性能集成测试通过")
+            print("性能集成测试通过")
 
         except Exception as e:
             print(f"❌ 性能集成测试失败: {e}")
@@ -514,7 +514,7 @@ class TestIncrementalUpdateWorkflow(unittest.TestCase):
             self.assertIsNotNone(analysis_result)
             self.assertIsNotNone(record)
 
-            print("✅ 完整工作流测试通过")
+            print("完整工作流测试通过")
 
         except Exception as e:
             print(f"❌ 完整工作流测试失败: {e}")

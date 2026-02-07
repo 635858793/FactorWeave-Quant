@@ -371,7 +371,7 @@ class ServiceContainer:
                 scope=ServiceScope.SINGLETON
             )
 
-            logger.info("✅ WebGPU服务注册完成")
+            logger.info("WebGPU服务注册完成")
 
         except Exception as e:
             logger.error(f"❌ WebGPU服务注册失败: {e}")

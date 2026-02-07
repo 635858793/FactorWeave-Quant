@@ -259,7 +259,7 @@ class PluginService(BaseService):
             # 9. 验证插件功能
             self._validate_plugin_functionality()
 
-            logger.info("✅ PluginService initialized successfully with comprehensive plugin management")
+            logger.info("PluginService initialized successfully with comprehensive plugin management")
 
         except Exception as e:
             logger.error(f"❌ Failed to initialize PluginService: {e}")

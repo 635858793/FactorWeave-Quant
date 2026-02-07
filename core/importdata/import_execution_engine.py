@@ -86,7 +86,7 @@ class DatabaseWriterThread(threading.Thread):
         self._queue_peak = 0
         self._stats_lock = threading.RLock()
 
-        # ✅ 优化：批量合并配置（动态调整以加快写入速度）
+        # 优化：批量合并配置（动态调整以加快写入速度）
         self._batch_threshold_normal = 5  # 正常批量阈值：5个DataFrame（提高批量写入效率）
         self._batch_threshold_medium = 3  # 中等批量阈值：3个DataFrame
         self._batch_threshold_urgent = 1  # 紧急批量阈值：队列积压时立即写入
@@ -97,7 +97,7 @@ class DatabaseWriterThread(threading.Thread):
         self._flush_timeout_urgent = 0.5  # 紧急超时刷新时间（秒）：队列积压时快速刷新
         self._buffer_timestamps: Dict[str, float] = {}  # 缓冲区时间戳，用于超时刷新
 
-        # ✅ 优化：复用AssetSeparatedDatabaseManager实例，避免重复创建
+        # 优化：复用AssetSeparatedDatabaseManager实例，避免重复创建
         from ..asset_database_manager import AssetSeparatedDatabaseManager
         self._asset_manager = AssetSeparatedDatabaseManager()
 
@@ -115,11 +115,11 @@ class DatabaseWriterThread(threading.Thread):
             是否成功放入队列
         """
         try:
-            # ✅ 优化：记录队列状态，便于性能分析
+            # 优化：记录队列状态，便于性能分析
             queue_size_before = self.write_queue.qsize()
             put_start_time = time.time()
 
-            # ✅ 优化：如果队列接近满载，记录警告
+            # 优化：如果队列接近满载，记录警告
             if queue_size_before > self.write_queue.maxsize * 0.8:  # 队列容量5000，超过4000警告
                 logger.warning(f"⚠️  [队列接近满载] 当前队列大小: {queue_size_before}/{self.write_queue.maxsize}，可能影响写入性能")
 
@@ -128,7 +128,7 @@ class DatabaseWriterThread(threading.Thread):
             put_duration = time.time() - put_start_time
             queue_size_after = self.write_queue.qsize()
 
-            # ✅ 优化：如果入队耗时较长，记录警告（说明队列积压严重）
+            # 优化：如果入队耗时较长，记录警告（说明队列积压严重）
             if put_duration > 0.5:
                 logger.warning(f"⚠️  [队列阻塞] 入队耗时:{put_duration:.2f}秒 | 队列大小:{queue_size_before}→{queue_size_after} | buffer_key:{task.buffer_key}")
 
@@ -147,12 +147,12 @@ class DatabaseWriterThread(threading.Thread):
         """线程主循环"""
         logger.info("DatabaseWriterThread 启动")
 
-        # ✅ 优化：记录最后检查超时缓冲区的时间
+        # 优化：记录最后检查超时缓冲区的时间
         last_timeout_check = time.time()
 
         while not self._stop_event.is_set() or not self.write_queue.empty():
             try:
-                # ✅ 优化：根据队列大小动态调整检查频率（队列积压时更频繁检查）
+                # 优化：根据队列大小动态调整检查频率（队列积压时更频繁检查）
                 current_time = time.time()
                 queue_size = self.write_queue.qsize()
                 # 队列积压时每0.5秒检查一次，正常时每1秒检查一次
@@ -163,10 +163,10 @@ class DatabaseWriterThread(threading.Thread):
 
                 # 从队列获取任务（带超时，避免阻塞关闭）
                 try:
-                    # ✅ 优化：减少超时时间，加快响应速度
+                    # 优化：减少超时时间，加快响应速度
                     task = self.write_queue.get(timeout=1.0)
                 except Empty:
-                    # ✅ 优化：队列为空时，检查是否有超时缓冲区需要刷新
+                    # 优化：队列为空时，检查是否有超时缓冲区需要刷新
                     self._check_and_flush_timeout_buffers()
                     last_timeout_check = time.time()
                     continue
@@ -199,7 +199,7 @@ class DatabaseWriterThread(threading.Thread):
         """检查并刷新超时的缓冲区"""
         try:
             current_time = time.time()
-            # ✅ 优化：根据队列大小动态调整超时刷新时间
+            # 优化：根据队列大小动态调整超时刷新时间
             queue_size = self.write_queue.qsize()
             if queue_size > self._queue_size_threshold_urgent:
                 flush_timeout = self._flush_timeout_urgent  # 紧急：0.5秒
@@ -244,7 +244,7 @@ class DatabaseWriterThread(threading.Thread):
         - 队列积压时使用紧急阈值，立即写入
         """
         try:
-            # ✅ 优化：根据队列大小动态调整批量阈值（三级阈值）
+            # 优化：根据队列大小动态调整批量阈值（三级阈值）
             queue_size = self.write_queue.qsize()
             if queue_size > self._queue_size_threshold_urgent:
                 current_batch_threshold = self._batch_threshold_urgent  # 紧急：立即写入
@@ -261,10 +261,10 @@ class DatabaseWriterThread(threading.Thread):
 
                 self._merge_buffer[task.buffer_key].append(task.data)
 
-                # ✅ 优化：更新缓冲区时间戳（每次添加数据时重置）
+                # 优化：更新缓冲区时间戳（每次添加数据时重置）
                 self._buffer_timestamps[task.buffer_key] = time.time()
 
-                # ✅ 优化：检查是否需要刷新（达到批量阈值，队列积压时使用紧急阈值）
+                # 优化：检查是否需要刷新（达到批量阈值，队列积压时使用紧急阈值）
                 if len(self._merge_buffer[task.buffer_key]) >= current_batch_threshold:
                     result = self._flush_buffer_key(task.buffer_key, task.asset_type, task.data_type)
                     # 清除时间戳
@@ -289,17 +289,17 @@ class DatabaseWriterThread(threading.Thread):
             # 合并所有DataFrame
             data_list = self._merge_buffer[buffer_key]
 
-            # ✅ 优化：如果只有一个DataFrame，直接使用，避免concat开销
+            # 优化：如果只有一个DataFrame，直接使用，避免concat开销
             if len(data_list) == 1:
                 combined_data = data_list[0]
             else:
-                # ✅ 优化：使用sort=False提高合并性能，因为数据已经按时间排序
+                # 优化：使用sort=False提高合并性能，因为数据已经按时间排序
                 combined_data = pd.concat(data_list, ignore_index=True, sort=False)
 
             record_count = len(combined_data)
             logger.info(f"📊 [写入线程] 写入: {buffer_key}, {record_count}条记录 (合并{len(data_list)}个DataFrame)")
 
-            # ✅ 优化：使用复用的AssetSeparatedDatabaseManager实例
+            # 优化：使用复用的AssetSeparatedDatabaseManager实例
             write_start_time = time.time()
             success = self._asset_manager.store_standardized_data(
                 data=combined_data,
@@ -309,9 +309,9 @@ class DatabaseWriterThread(threading.Thread):
             write_duration = time.time() - write_start_time
 
             if success:
-                # ✅ 优化：记录写入性能
+                # 优化：记录写入性能
                 write_speed = record_count / write_duration if write_duration > 0 else 0
-                logger.info(f"✅ [写入线程] 写入成功: {buffer_key}, {record_count}条记录, 耗时: {write_duration:.2f}秒, 速度: {write_speed:.1f}条/秒")
+                logger.info(f"[写入线程] 写入成功: {buffer_key}, {record_count}条记录, 耗时: {write_duration:.2f}秒, 速度: {write_speed:.1f}条/秒")
                 # 清空已写入的缓冲区
                 del self._merge_buffer[buffer_key]
             else:
@@ -373,7 +373,7 @@ class DatabaseWriterThread(threading.Thread):
     def get_stats(self) -> Dict[str, Any]:
         """获取统计信息"""
         with self._stats_lock:
-            # ✅ 修复：merge_buffer_size应该是所有缓冲区中DataFrame的总数，而不是缓冲区数量
+            # 修复：merge_buffer_size应该是所有缓冲区中DataFrame的总数，而不是缓冲区数量
             merge_buffer_size = sum(len(buffer_list) for buffer_list in self._merge_buffer.values())
 
             return {
@@ -408,7 +408,7 @@ class TaskExecutionResult:
     end_time: Optional[datetime] = None
     error_message: Optional[str] = None
     execution_time: float = 0.0
-    processed_symbols_list: List[str] = field(default_factory=list)  # ✅ 修复：已处理的股票列表（用于恢复）
+    processed_symbols_list: List[str] = field(default_factory=list)  # 修复：已处理的股票列表（用于恢复）
 
     @property
     def progress(self) -> float:
@@ -440,7 +440,7 @@ class DataImportExecutionEngine(QObject):
     task_progress = pyqtSignal(str, float, str)  # 任务进度 (task_id, progress, message)
     task_completed = pyqtSignal(str, object)  # 任务完成 (task_id, result)
     task_failed = pyqtSignal(str, str)  # 任务失败 (task_id, error_message)
-    task_cancelled = pyqtSignal(str)  # ✅ 修复：添加任务取消信号 (task_id)
+    task_cancelled = pyqtSignal(str)  # 修复：添加任务取消信号 (task_id)
 
     def __init__(self, config_manager: ImportConfigManager = None,
                  data_manager: UnifiedDataManager = None,
@@ -517,26 +517,26 @@ class DataImportExecutionEngine(QObject):
         # 数据质量监控系统
         self.data_quality_monitor = self._init_data_quality_monitor()
 
-        # ✅ 实时写入服务系统
+        # 实时写入服务系统
         self.realtime_write_service = None
         self.enable_realtime_write = True
         self._batch_write_buffer = {}  # {symbol: DataFrame} 批量写入缓冲区
         self._batch_write_lock = threading.Lock()
         self._init_realtime_write_service()
 
-        # ✅ 数据库写入线程（单线程模式，解决DuckDB并发写入死锁）
+        # 数据库写入线程（单线程模式，解决DuckDB并发写入死锁）
         self.db_writer_thread = DatabaseWriterThread()
         self.db_writer_thread.start()
         logger.info("DatabaseWriterThread 已启动")
 
-        # ✅ 基本面数据下载线程池（异步同步下载基本面数据）
+        # 基本面数据下载线程池（异步同步下载基本面数据）
         self.fundamental_executor = ThreadPoolExecutor(
             max_workers=10,
             thread_name_prefix="FundamentalDownloader"
         )
         logger.info("基本面数据下载线程池已初始化")
 
-        # ✅ 优化2&3：质量评分缓存（数据源+日期→评分）
+        # 优化2&3：质量评分缓存（数据源+日期→评分）
         self._quality_score_cache = {}  # key: f"{data_source}_{date}", value: score
         self._quality_cache_ttl = 3600  # 缓存1小时
 
@@ -906,14 +906,14 @@ class DataImportExecutionEngine(QObject):
     def _init_distributed_service(self) -> Optional[DistributedService]:
         """初始化分布式服务"""
         try:
-            # ✅ 使用ServiceContainer中的DistributedService
+            # 使用ServiceContainer中的DistributedService
             from ..containers import get_service_container
 
             container = get_service_container()
 
             if container.is_registered(DistributedService):
                 distributed_service = container.resolve(DistributedService)
-                logger.info("✅ 使用ServiceContainer中的DistributedService")
+                logger.info("使用ServiceContainer中的DistributedService")
                 return distributed_service
 
             # Fallback：创建新实例
@@ -996,7 +996,7 @@ class DataImportExecutionEngine(QObject):
             return False
 
         try:
-            # ✅ 使用真实的DistributedService检查节点
+            # 使用真实的DistributedService检查节点
             if not self.distributed_service:
                 logger.debug("分布式服务未初始化")
                 return False
@@ -1018,7 +1018,7 @@ class DataImportExecutionEngine(QObject):
             can_distribute = symbol_count >= 100 and len(available_nodes) > 0
 
             if can_distribute:
-                logger.info(f"✅ 任务可分布式执行: {symbol_count}个股票，{len(available_nodes)}个可用节点")
+                logger.info(f"任务可分布式执行: {symbol_count}个股票，{len(available_nodes)}个可用节点")
 
             return can_distribute
 
@@ -1032,7 +1032,7 @@ class DataImportExecutionEngine(QObject):
             return False
 
         try:
-            # ✅ 使用真实的DistributedService提交任务
+            # 使用真实的DistributedService提交任务
             logger.info(f"开始分布式执行任务: {task_config.task_id}")
 
             # 构造导入配置
@@ -1051,7 +1051,7 @@ class DataImportExecutionEngine(QObject):
             task_id = self.distributed_service.submit_data_import_task(import_config)
 
             if task_id:
-                logger.info(f"✅ 成功提交分布式任务: {task_id}")
+                logger.info(f"成功提交分布式任务: {task_id}")
 
                 # 记录任务ID用于后续跟踪
                 if not hasattr(self, '_distributed_task_ids'):
@@ -1419,7 +1419,7 @@ class DataImportExecutionEngine(QObject):
             server_list = getattr(plugin, 'server_list', None)
             plugin_state = getattr(plugin, 'plugin_state', None)
 
-            # ✅ 修复：如果连接池未初始化，尝试触发异步连接（如果插件状态允许）
+            # 修复：如果连接池未初始化，尝试触发异步连接（如果插件状态允许）
             if use_connection_pool and not connection_pool:
                 # 检查插件状态
                 from plugins.plugin_interface import PluginLifecycle
@@ -1505,7 +1505,7 @@ class DataImportExecutionEngine(QObject):
                         logger.debug(f"IP监控: 跳过无效的stats数据 (server_key={server_key}, type={type(stats)})")
                         continue
 
-                    # ✅ 修复：确保所有字段都有有效值，避免显示空白
+                    # 修复：确保所有字段都有有效值，避免显示空白
                     ip = stats.get('ip', '')
                     port = stats.get('port', '')
                     use_count = stats.get('use_count', 0) or 0
@@ -1515,7 +1515,7 @@ class DataImportExecutionEngine(QObject):
                     status = stats.get('status', 'healthy') or 'healthy'
                     success_rate = stats.get('success_rate', 0.0) or 0.0
 
-                    # ✅ 修复：如果IP或端口为空，尝试从server_key解析
+                    # 修复：如果IP或端口为空，尝试从server_key解析
                     if not ip or not port:
                         try:
                             if ':' in server_key:
@@ -1525,7 +1525,7 @@ class DataImportExecutionEngine(QObject):
                         except Exception as e:
                             logger.debug(f"IP监控: 从server_key解析IP/端口失败: {server_key}, {e}")
 
-                    # ✅ 修复：如果数据仍然不完整，记录警告并跳过
+                    # 修复：如果数据仍然不完整，记录警告并跳过
                     if not ip:
                         logger.debug(f"IP监控: IP地址为空，跳过此条记录 (server_key={server_key})")
                         continue
@@ -1828,7 +1828,7 @@ class DataImportExecutionEngine(QObject):
         try:
             logger.info(f" 开始数据质量验证: {task_id}")
 
-            # ✅ 关键修复：确保datetime是列而不是索引
+            # 关键修复：确保datetime是列而不是索引
             # 解决"'datetime' is both an index level and a column label"错误
             if data.index.name == 'datetime' or isinstance(data.index, pd.DatetimeIndex):
                 logger.debug("[数据质量验证] 检测到datetime被设置为索引，将其转换回列")
@@ -1862,7 +1862,7 @@ class DataImportExecutionEngine(QObject):
             # 这个值将被用于质量评分计算和后续的记录质量指标
             data_usage = self._infer_data_usage(data, task_id)
 
-            # ✅ 优化2&3：检查缓存（相同数据源+日期）
+            # 优化2&3：检查缓存（相同数据源+日期）
             from datetime import datetime
             cache_key = f"{data_source}_{datetime.now().date().isoformat()}"
 
@@ -1878,7 +1878,7 @@ class DataImportExecutionEngine(QObject):
                         cached_symbols = cached_data.get('symbols', set())
                         if new_symbols - cached_symbols:  # 有新symbol
                             logger.info(f"[增量评分] 发现新symbol: {len(new_symbols - cached_symbols)}个，重新计算")
-                            # ✅ 使用已识别的data_usage（避免重复调用）
+                            # 使用已识别的data_usage（避免重复调用）
                             quality_score = self.data_quality_monitor.calculate_quality_score(
                                 data, data_type, data_usage=data_usage, data_source=data_source
                             )
@@ -1923,14 +1923,14 @@ class DataImportExecutionEngine(QObject):
                 data_source=data_source  # 🆕 传递数据源参数
             )
 
-            # ✅ 关键：将质量评分写入DuckDB的data_quality_monitor表
+            # 关键：将质量评分写入DuckDB的data_quality_monitor表
             #    这样unified_best_quality_kline视图才能使用实际评分
             try:
                 from ..asset_database_manager import get_asset_separated_database_manager
                 from ..plugin_types import AssetType
                 from datetime import date
 
-                # ✅ 优化1：批量写入质量评分（提升性能）
+                # 优化1：批量写入质量评分（提升性能）
                 if 'symbol' in data.columns:
                     asset_manager = get_asset_separated_database_manager()
                     symbols = data['symbol'].unique()
@@ -1943,7 +1943,7 @@ class DataImportExecutionEngine(QObject):
                     from collections import defaultdict
                     quality_records_by_asset = defaultdict(list)
 
-                    # ✅ 优化：使用向量化计算替代逐个循环（性能提升50-70%）
+                    # 优化：使用向量化计算替代逐个循环（性能提升50-70%）
                     logger.debug(f"[质量评分写入] 使用向量化计算质量指标...")
                     
                     # 按symbol分组，向量化计算
@@ -2056,16 +2056,16 @@ class DataImportExecutionEngine(QObject):
             if task_id:
                 task_id_lower = task_id.lower()
                 if 'backtest' in task_id_lower or '回测' in task_id:
-                    logger.info(f"[数据用途推断] ✅ 方法1-任务ID关键词识别 → backtest (关键词: {task_id})")
+                    logger.info(f"[数据用途推断] 方法1-任务ID关键词识别 → backtest (关键词: {task_id})")
                     return 'backtest'
                 elif 'realtime' in task_id_lower or '实时' in task_id:
-                    logger.info(f"[数据用途推断] ✅ 方法1-任务ID关键词识别 → realtime (关键词: {task_id})")
+                    logger.info(f"[数据用途推断] 方法1-任务ID关键词识别 → realtime (关键词: {task_id})")
                     return 'realtime'
                 elif 'live' in task_id_lower or 'trading' in task_id_lower or '交易' in task_id:
-                    logger.info(f"[数据用途推断] ✅ 方法1-任务ID关键词识别 → live_trading (关键词: {task_id})")
+                    logger.info(f"[数据用途推断] 方法1-任务ID关键词识别 → live_trading (关键词: {task_id})")
                     return 'live_trading'
                 elif 'historical' in task_id_lower or '历史' in task_id:
-                    logger.info(f"[数据用途推断] ✅ 方法1-任务ID关键词识别 → historical (关键词: {task_id})")
+                    logger.info(f"[数据用途推断] 方法1-任务ID关键词识别 → historical (关键词: {task_id})")
                     return 'historical'
                 else:
                     logger.debug(f"[数据用途推断] 方法1-任务ID未匹配关键词，继续检查数据特征")
@@ -2086,23 +2086,23 @@ class DataImportExecutionEngine(QObject):
 
                     # 5分钟内的数据 → 实盘交易用途
                     if delay_minutes <= 5:
-                        logger.info(f"[数据用途推断] ✅ 方法2-数据新鲜度识别 → live_trading "
+                        logger.info(f"[数据用途推断] 方法2-数据新鲜度识别 → live_trading "
                                     f"(延迟: {delay_minutes:.1f}分钟 ≤ 5分钟)")
                         return 'live_trading'
                     # 1小时内的数据 → 实时行情用途
                     elif delay_minutes <= 60:
-                        logger.info(f"[数据用途推断] ✅ 方法2-数据新鲜度识别 → realtime "
+                        logger.info(f"[数据用途推断] 方法2-数据新鲜度识别 → realtime "
                                     f"(延迟: {delay_minutes:.1f}分钟 ≤ 60分钟)")
                         return 'realtime'
                     # 1天以上的数据 → 历史数据或回测用途
                     elif delay_minutes > 1440:  # 1天
                         # 进一步判断是否用于回测（时间跨度超过3个月）
                         if time_span_days > 90:  # 超过3个月数据，可能用于回测
-                            logger.info(f"[数据用途推断] ✅ 方法2-数据新鲜度识别 → backtest "
+                            logger.info(f"[数据用途推断] 方法2-数据新鲜度识别 → backtest "
                                         f"(延迟: {delay_minutes/1440:.1f}天, 时间跨度: {time_span_days}天 > 90天)")
                             return 'backtest'
                         else:
-                            logger.info(f"[数据用途推断] ✅ 方法2-数据新鲜度识别 → historical "
+                            logger.info(f"[数据用途推断] 方法2-数据新鲜度识别 → historical "
                                         f"(延迟: {delay_minutes/1440:.1f}天, 时间跨度: {time_span_days}天 ≤ 90天)")
                             return 'historical'
                     else:
@@ -2116,14 +2116,14 @@ class DataImportExecutionEngine(QObject):
             # 方法3: 检查数据量和时间跨度
             data_count = len(data)
             if data_count > 500:  # 大量历史数据
-                logger.info(f"[数据用途推断] ✅ 方法3-数据量识别 → backtest (数据量: {data_count} > 500)")
+                logger.info(f"[数据用途推断] 方法3-数据量识别 → backtest (数据量: {data_count} > 500)")
                 return 'backtest'
             elif data_count < 50:  # 少量数据
-                logger.info(f"[数据用途推断] ✅ 方法3-数据量识别 → realtime (数据量: {data_count} < 50)")
+                logger.info(f"[数据用途推断] 方法3-数据量识别 → realtime (数据量: {data_count} < 50)")
                 return 'realtime'
 
             # 默认：通用场景
-            logger.info(f"[数据用途推断] ✅ 默认场景 → general (数据量: {data_count}, 无明确特征)")
+            logger.info(f"[数据用途推断] 默认场景 → general (数据量: {data_count}, 无明确特征)")
             return 'general'
 
         except Exception as e:
@@ -2692,7 +2692,7 @@ class DataImportExecutionEngine(QObject):
             with self._task_lock:
                 if task_id not in self._running_tasks:
                     logger.warning(f"任务未在运行: {task_id}")
-                    # ✅ 修复：即使任务不在运行中，也检查任务状态，可能任务已完成或已取消
+                    # 修复：即使任务不在运行中，也检查任务状态，可能任务已完成或已取消
                     if task_id in self._task_results:
                         result = self._task_results[task_id]
                         if result.status == TaskExecutionStatus.CANCELLED:
@@ -2703,7 +2703,7 @@ class DataImportExecutionEngine(QObject):
                             return True
                     return False
 
-                # ✅ 修复：先更新任务状态为CANCELLED，让执行中的任务能够检查并退出
+                # 修复：先更新任务状态为CANCELLED，让执行中的任务能够检查并退出
                 if task_id in self._task_results:
                     self._task_results[task_id].status = TaskExecutionStatus.CANCELLED
                     logger.info(f"任务状态已标记为取消: {task_id}")
@@ -2742,7 +2742,7 @@ class DataImportExecutionEngine(QObject):
                     self.stop_enhanced_risk_monitoring()
                     logger.info("增强版风险监控已停止")
 
-                # ✅ 修复：发送任务取消信号
+                # 修复：发送任务取消信号
                 self.task_cancelled.emit(task_id)
 
                 logger.info(f"任务停止成功: {task_id}")
@@ -2839,7 +2839,7 @@ class DataImportExecutionEngine(QObject):
             
             logger.info(f" 任务详情: 数据类型={getattr(task_config, 'data_type', 'K线数据')}, 股票数量={len(task_config.symbols)}")
 
-            # ✅ 修复：检查是否有已保存的进度并恢复
+            # 修复：检查是否有已保存的进度并恢复
             saved_progress = self.config_manager.get_progress(task_config.task_id)
             if saved_progress and saved_progress.status == ImportStatus.RUNNING:
                 logger.info(f"📋 [进度恢复] 发现已保存的进度: task_id={task_config.task_id}")
@@ -2850,7 +2850,7 @@ class DataImportExecutionEngine(QObject):
                 result.failed_records = saved_progress.error_count
                 result.total_records = saved_progress.total_records or len(task_config.symbols)
 
-                # ✅ 修复：使用processed_symbols_list过滤已处理的股票
+                # 修复：使用processed_symbols_list过滤已处理的股票
                 if hasattr(saved_progress, 'processed_symbols_list') and saved_progress.processed_symbols_list:
                     processed_symbols = set(saved_progress.processed_symbols_list)
                     original_symbols = task_config.symbols.copy()
@@ -2914,9 +2914,9 @@ class DataImportExecutionEngine(QObject):
                             self.task_completed.emit(task_config.task_id, result)
                             return
 
-                logger.info(f"✅ [进度恢复] 任务将从第{result.processed_records + 1}条记录继续执行")
+                logger.info(f"[进度恢复] 任务将从第{result.processed_records + 1}条记录继续执行")
 
-            # ✅ 修复：在执行前检查任务是否已取消
+            # 修复：在执行前检查任务是否已取消
             if result.status == TaskExecutionStatus.CANCELLED:
                 logger.info(f"⚠️ [任务已取消] {task_config.task_id} 在执行前已取消，跳过执行")
                 result.end_time = datetime.now()
@@ -2949,7 +2949,7 @@ class DataImportExecutionEngine(QObject):
                 logger.warning(f" 不支持的数据类型，默认使用K线数据: {data_type}")
                 self._import_kline_data(task_config, result)
 
-            # ✅ 修复：检查任务是否在完成前被取消
+            # 修复：检查任务是否在完成前被取消
             if result.status == TaskExecutionStatus.CANCELLED:
                 logger.info(f"⚠️ [任务已取消] {task_config.task_id} 在执行过程中被取消")
                 result.end_time = datetime.now()
@@ -2983,7 +2983,7 @@ class DataImportExecutionEngine(QObject):
                 )
 
             # 更新配置管理器中的进度
-            # ✅ 修复：获取已处理股票列表（如果result中有）
+            # 修复：获取已处理股票列表（如果result中有）
             processed_symbols_list = getattr(result, 'processed_symbols_list', [])
             if not processed_symbols_list and hasattr(result, 'processed_records') and result.processed_records > 0:
                 # 如果没有processed_symbols_list，尝试从task_config中获取所有股票（因为都处理完了）
@@ -3000,7 +3000,7 @@ class DataImportExecutionEngine(QObject):
                 start_time=result.start_time.isoformat() if result.start_time else datetime.now().isoformat(),
                 end_time=result.end_time.isoformat() if result.end_time else datetime.now().isoformat(),
                 error_message=result.error_message,
-                processed_symbols_list=processed_symbols_list  # ✅ 保存已处理股票列表
+                processed_symbols_list=processed_symbols_list  # 保存已处理股票列表
             )
             self.config_manager.update_progress(progress)
 
@@ -3035,7 +3035,7 @@ class DataImportExecutionEngine(QObject):
             self.task_failed.emit(task_config.task_id, str(e))
 
         finally:
-            # ✅ 任务结束时等待写入队列清空（DatabaseWriterThread会自动处理）
+            # 任务结束时等待写入队列清空（DatabaseWriterThread会自动处理）
             if hasattr(self, 'db_writer_thread'):
                 queue_size = self.db_writer_thread.write_queue.qsize()
                 if queue_size > 0:
@@ -3055,7 +3055,7 @@ class DataImportExecutionEngine(QObject):
     def _save_kdata_to_database(self, symbol: str, kdata: 'pd.DataFrame', task_config: ImportTaskConfig):
         """保存K线数据到数据库（支持实时/批量模式）"""
         try:
-            # ✅ 优化：复用AssetSeparatedDatabaseManager实例，避免重复创建
+            # 优化：复用AssetSeparatedDatabaseManager实例，避免重复创建
             from ..asset_database_manager import AssetSeparatedDatabaseManager
             from ..plugin_types import AssetType, DataType
 
@@ -3064,19 +3064,19 @@ class DataImportExecutionEngine(QObject):
                 self._metadata_asset_manager = AssetSeparatedDatabaseManager()
             asset_manager = self._metadata_asset_manager
 
-            # ✅ 修复：先添加symbol字段，再标准化
+            # 修复：先添加symbol字段，再标准化
             if 'symbol' not in kdata.columns:
                 kdata['symbol'] = symbol
                 logger.debug(f"添加symbol字段: {symbol}")
 
             # 标准化数据字段，确保与表结构匹配
-            # ✅ 修复：传递data_source参数，确保保存到数据库的数据包含正确的数据源标识
+            # 修复：传递data_source参数，确保保存到数据库的数据包含正确的数据源标识
             kdata = self._standardize_kline_data_fields(kdata, data_source=task_config.data_source)
 
             # 使用任务配置中的资产类型，不再进行推断
             asset_type = task_config.asset_type
 
-            # ✅ 改进：统一资产类型转换逻辑，支持三种格式
+            # 改进：统一资产类型转换逻辑，支持三种格式
             if isinstance(asset_type, str):
                 from core.ui_asset_type_utils import UIAssetTypeUtils
                 try:
@@ -3093,11 +3093,11 @@ class DataImportExecutionEngine(QObject):
                     else:
                         logger.debug(f"资产类型从中文名称转换: {task_config.asset_type} -> {asset_type.value}")
 
-            # ✅ 优化：保存资产元数据改为异步（避免阻塞主流程）
+            # 优化：保存资产元数据改为异步（避免阻塞主流程）
             # 元数据保存移到后台线程，不阻塞K线数据入队
             self._save_asset_metadata_async(symbol, asset_type, task_config, kdata)
 
-            # ✅ 新方案：统一使用写入队列（DatabaseWriterThread）
+            # 新方案：统一使用写入队列（DatabaseWriterThread）
             # 生成buffer_key
             buffer_key = f"{asset_type.value}_{task_config.task_id}"
 
@@ -3109,7 +3109,7 @@ class DataImportExecutionEngine(QObject):
                 data_type=DataType.HISTORICAL_KLINE
             )
 
-            # ✅ 优化：放入队列（记录队列状态，便于性能分析）
+            # 优化：放入队列（记录队列状态，便于性能分析）
             queue_size_before = self.db_writer_thread.write_queue.qsize()
             queue_start_time = time.time()
 
@@ -3120,7 +3120,7 @@ class DataImportExecutionEngine(QObject):
             mode = "队列写入"
 
             if success:
-                # ✅ 优化：记录详细的队列操作信息
+                # 优化：记录详细的队列操作信息
                 if queue_put_duration > 0.1:  # 如果入队耗时超过0.1秒，记录警告
                     logger.warning(f"⚠️  [队列积压] {symbol} | 入队耗时:{queue_put_duration:.2f}秒 | 队列大小:{queue_size_before}→{queue_size_after} | 可能队列积压严重")
                 logger.debug(f"K线数据保存成功({mode}模式): {symbol}, {len(kdata)}条记录 | 队列:{queue_size_before}→{queue_size_after}")
@@ -3146,12 +3146,12 @@ class DataImportExecutionEngine(QObject):
             from ..asset_database_manager import AssetSeparatedDatabaseManager
             from ..plugin_types import AssetType
 
-            # ✅ 优化：复用AssetSeparatedDatabaseManager实例
+            # 优化：复用AssetSeparatedDatabaseManager实例
             if not hasattr(self, '_metadata_asset_manager'):
                 self._metadata_asset_manager = AssetSeparatedDatabaseManager()
             asset_manager = self._metadata_asset_manager
 
-            # ✅ 从K线数据中提取元数据信息
+            # 从K线数据中提取元数据信息
             stock_name = symbol  # 默认使用symbol
             stock_market = self._infer_market_from_symbol(symbol)
             stock_exchange = self._infer_exchange_from_market(stock_market)
@@ -3175,18 +3175,18 @@ class DataImportExecutionEngine(QObject):
                         stock_name = str(name_value).strip()
                         logger.debug(f"从K线数据获取股票名称: {symbol} -> {stock_name}")
 
-                # ✅ 优化：如果K线数据中没有name，先检查数据库中是否已有元数据，再尝试从外部API获取
+                # 优化：如果K线数据中没有name，先检查数据库中是否已有元数据，再尝试从外部API获取
                 if stock_name == symbol:
                     logger.debug(f"K线数据中未包含股票名称，尝试获取: {symbol}")
 
-                    # ✅ 修复：先检查数据库中是否已有元数据（避免重复API调用）
+                    # 修复：先检查数据库中是否已有元数据（避免重复API调用）
                     try:
                         from ..asset_database_manager import AssetSeparatedDatabaseManager
                         asset_manager = AssetSeparatedDatabaseManager.get_instance()
                         existing_metadata = asset_manager.get_asset_metadata(symbol, asset_type)
                         if existing_metadata and existing_metadata.get('name'):
                             stock_name = existing_metadata['name']
-                            logger.debug(f"✅ 从数据库获取股票名称: {symbol} -> {stock_name}")
+                            logger.debug(f"从数据库获取股票名称: {symbol} -> {stock_name}")
                             # 同时获取行业板块信息
                             if existing_metadata.get('industry'):
                                 industry = existing_metadata['industry']
@@ -3197,13 +3197,13 @@ class DataImportExecutionEngine(QObject):
                     except Exception as e:
                         logger.debug(f"从数据库获取元数据失败 {symbol}: {e}")
 
-                    # ✅ 修复：如果数据库中也没有，才尝试从外部API获取（添加超时，避免长时间阻塞）
+                    # 修复：如果数据库中也没有，才尝试从外部API获取（添加超时，避免长时间阻塞）
                     if stock_name == symbol:
                         logger.debug(f"数据库中也没有股票名称，尝试从元数据增强器获取: {symbol}")
                         try:
                             from ..utils.stock_metadata_enhancer import get_metadata_enhancer
                             enhancer = get_metadata_enhancer()
-                            # ✅ 优化：添加超时机制，避免外部API调用阻塞太久
+                            # 优化：添加超时机制，避免外部API调用阻塞太久
                             import threading
 
                             enhanced_data = None
@@ -3212,7 +3212,7 @@ class DataImportExecutionEngine(QObject):
                             def fetch_metadata():
                                 nonlocal enhanced_data, api_error
                                 try:
-                                    # ✅ 优化：批量获取元数据（虽然只有一个symbol，但利用缓存机制）
+                                    # 优化：批量获取元数据（虽然只有一个symbol，但利用缓存机制）
                                     enhanced_data = enhancer.enhance_stock_metadata_batch([symbol], source='akshare')
                                 except Exception as e:
                                     api_error = e
@@ -3220,16 +3220,16 @@ class DataImportExecutionEngine(QObject):
                             # 在单独线程中执行，带超时
                             fetch_thread = threading.Thread(target=fetch_metadata, daemon=True)
                             fetch_thread.start()
-                            fetch_thread.join(timeout=5.0)  # ✅ 优化：增加超时时间到5秒，避免频繁超时
+                            fetch_thread.join(timeout=5.0)  # 优化：增加超时时间到5秒，避免频繁超时
 
                             if fetch_thread.is_alive():
-                                # ✅ 优化：超时时不记录警告，只记录debug日志（因为可能是网络问题，不影响主流程）
+                                # 优化：超时时不记录警告，只记录debug日志（因为可能是网络问题，不影响主流程）
                                 logger.debug(f"从外部API获取元数据超时: {symbol}，跳过（不影响主流程）")
                             elif enhanced_data and symbol in enhanced_data:
                                 metadata = enhanced_data[symbol]
                                 if 'name' in metadata and metadata['name']:
                                     stock_name = metadata['name']
-                                    logger.info(f"✅ 从外部API获取股票名称: {symbol} -> {stock_name}")
+                                    logger.info(f"从外部API获取股票名称: {symbol} -> {stock_name}")
                                 # 同时获取行业板块信息
                                 if 'industry' in metadata and metadata['industry']:
                                     industry = metadata['industry']
@@ -3238,7 +3238,7 @@ class DataImportExecutionEngine(QObject):
                                     sector = metadata['sector']
                                     logger.debug(f"从外部API获取板块: {symbol} -> {sector}")
                                 if 'listing_date' in metadata and metadata['listing_date']:
-                                    # ✅ 根本修复：统一转换日期格式（支持INTEGER和字符串）
+                                    # 根本修复：统一转换日期格式（支持INTEGER和字符串）
                                     raw_date = metadata['listing_date']
                                     listing_date = self._normalize_date_format(raw_date)
                                     if listing_date:
@@ -3257,7 +3257,7 @@ class DataImportExecutionEngine(QObject):
                         stock_market = str(market_value).strip().lower()
                         stock_exchange = self._infer_exchange_from_market(stock_market)
 
-                # ✅ 提取行业板块信息（支持多种字段名称变体）
+                # 提取行业板块信息（支持多种字段名称变体）
                 # 板块字段变体：sector, sector_name, plate, plate_name, 板块, 所属板块
                 sector_fields = ['sector', 'sector_name', 'sectorname', 'plate', 'plate_name', '板块', '所属板块']
                 for field in sector_fields:
@@ -3288,19 +3288,19 @@ class DataImportExecutionEngine(QObject):
                             logger.debug(f"从K线数据获取行业代码: {symbol} -> {industry_code} (字段:{field})")
                             break
 
-                # ✅ 提取上市日期（如果K线数据中有）
+                # 提取上市日期（如果K线数据中有）
                 for date_col in ['listing_date', 'list_date', 'ipo_date']:
                     if date_col in kdata.columns:
                         date_value = first_row.get(date_col)
                         if date_value:
-                            # ✅ 使用统一的日期格式转换方法
+                            # 使用统一的日期格式转换方法
                             normalized_date = self._normalize_date_format(date_value)
                             if normalized_date:
                                 listing_date = normalized_date
                                 logger.debug(f"从K线数据获取上市日期: {symbol} -> {listing_date} (原值:{date_value})")
                                 break
 
-                # ✅ 提取股本信息（如果K线数据中有）
+                # 提取股本信息（如果K线数据中有）
                 if 'total_shares' in kdata.columns:
                     shares_value = first_row.get('total_shares')
                     if shares_value and shares_value > 0:
@@ -3313,10 +3313,10 @@ class DataImportExecutionEngine(QObject):
                         circulating_shares = int(circ_value)
                         logger.debug(f"从K线数据获取流通股本: {symbol} -> {circulating_shares}")
 
-            # ✅ 根据资产类型推断货币
+            # 根据资产类型推断货币
             currency = self._infer_currency_from_asset_type(asset_type, stock_market)
 
-            # ✅ 构建元数据字典（仅包含非None的字段，避免覆盖已有数据）
+            # 构建元数据字典（仅包含非None的字段，避免覆盖已有数据）
             metadata = {
                 'symbol': symbol,
                 'name': stock_name,
@@ -3364,7 +3364,7 @@ class DataImportExecutionEngine(QObject):
         将元数据保存操作移到后台线程执行，不阻塞K线数据入队
         """
         try:
-            # ✅ 优化：使用线程池异步执行元数据保存，避免阻塞
+            # 优化：使用线程池异步执行元数据保存，避免阻塞
             def save_metadata_task():
                 try:
                     self._save_asset_metadata(symbol, asset_type, task_config, kdata)
@@ -3544,7 +3544,7 @@ class DataImportExecutionEngine(QObject):
     def _flush_batch_buffer(self, buffer_key: str = None) -> bool:
         """刷新批量写入缓冲区到数据库"""
         try:
-            # ✅ 修复死锁：分两步操作，先取数据（持有锁），再写入（释放锁）
+            # 修复死锁：分两步操作，先取数据（持有锁），再写入（释放锁）
             buffers_to_write = []
 
             # 第一步：快速持有锁，取出数据并清空缓冲区
@@ -3593,7 +3593,7 @@ class DataImportExecutionEngine(QObject):
                 )
 
                 if success:
-                    logger.info(f"✅ 批量刷新成功: {key}, {len(combined_data)}条记录")
+                    logger.info(f"批量刷新成功: {key}, {len(combined_data)}条记录")
                 else:
                     logger.error(f"❌ 批量刷新失败: {key}")
                     return False
@@ -3750,10 +3750,10 @@ class DataImportExecutionEngine(QObject):
             if df.empty:
                 return df
 
-            # ✅ 步骤1: 如果datetime是index，将其重置为列
+            # 步骤1: 如果datetime是index，将其重置为列
             if isinstance(df.index, pd.DatetimeIndex):
                 logger.debug("检测到DatetimeIndex，转换为datetime列")
-                # ✅ 修复：检查datetime列是否已存在，避免重复插入
+                # 修复：检查datetime列是否已存在，避免重复插入
                 if 'datetime' not in df.columns:
                     df = df.reset_index()
                     # 如果reset后的列名为'index'或'date'，重命名为datetime
@@ -3768,7 +3768,7 @@ class DataImportExecutionEngine(QObject):
                     df = df.reset_index(drop=True)
                     logger.debug("datetime列已存在，重置为默认索引")
 
-            # ✅ 步骤2: 如果有'date'列但没有'datetime'列，重命名
+            # 步骤2: 如果有'date'列但没有'datetime'列，重命名
             if 'date' in df.columns and 'datetime' not in df.columns:
                 df = df.rename(columns={'date': 'datetime'})
                 logger.debug("已将'date'列重命名为'datetime'")
@@ -3812,7 +3812,7 @@ class DataImportExecutionEngine(QObject):
                 'market': None,
                 'frequency': '1d',      # 🔧 修复：频率字段默认值为'1d'
                 'period': None,
-                'data_source': data_source if data_source else 'unknown',  # ✅ 修复：使用传入的data_source参数，而不是硬编码'unknown'
+                'data_source': data_source if data_source else 'unknown',  # 修复：使用传入的data_source参数，而不是硬编码'unknown'
                 'created_at': None,
                 'updated_at': None,
 
@@ -3831,11 +3831,11 @@ class DataImportExecutionEngine(QObject):
                 if field not in df.columns:
                     df[field] = default_value
 
-            # ✅ 修复：单独处理data_source字段，确保使用正确的数据源标识
+            # 修复：单独处理data_source字段，确保使用正确的数据源标识
             # 如果传入了data_source参数（来自任务配置），始终使用它（这是最权威的数据源标识）
             if data_source:
                 df['data_source'] = data_source
-                logger.debug(f"✅ 设置data_source字段: {data_source} (来自任务配置)")
+                logger.debug(f"设置data_source字段: {data_source} (来自任务配置)")
             elif 'data_source' not in df.columns:
                 # 如果没有传入data_source参数且字段不存在，使用默认值'unknown'
                 df['data_source'] = 'unknown'
@@ -3959,7 +3959,7 @@ class DataImportExecutionEngine(QObject):
                 logger.error(f"标准化完成但datetime字段全为空！")
                 return pd.DataFrame()
 
-            logger.info(f"✅ 数据字段标准化完成，字段数: {len(df.columns)}, 记录数: {len(df)}")
+            logger.info(f"数据字段标准化完成，字段数: {len(df.columns)}, 记录数: {len(df)}")
             logger.debug(f"📋 标准化后的列: {df.columns.tolist()}")
             logger.debug(f"📊 频率分布: {df['frequency'].value_counts().to_dict() if 'frequency' in df.columns else '无频率列'}")
             return df
@@ -4146,7 +4146,7 @@ class DataImportExecutionEngine(QObject):
         thread_id = threading.current_thread().name
 
         try:
-            # ✅ 修复：在执行前检查任务是否已取消
+            # 修复：在执行前检查任务是否已取消
             if hasattr(self, '_task_results') and task_config.task_id in self._task_results:
                 task_result = self._task_results[task_config.task_id]
                 if task_result.status == TaskExecutionStatus.CANCELLED:
@@ -4208,10 +4208,10 @@ class DataImportExecutionEngine(QObject):
                 logger.error(f"❌ [数据格式错误] {symbol} | 数据缺少datetime/timestamp列，数据列={kdata.columns.tolist()}")
                 return {'symbol': symbol, 'success': False, 'record_count': 0, 'error': '数据格式无效'}
 
-            logger.info(f"✅ [数据获取成功] {symbol} | 条数:{len(kdata)} | 列数:{len(kdata.columns)} | 耗时:{network_elapsed:.2f}秒")
+            logger.info(f"[数据获取成功] {symbol} | 条数:{len(kdata)} | 列数:{len(kdata.columns)} | 耗时:{network_elapsed:.2f}秒")
             logger.debug(f"📊 [数据字段] {kdata.columns.tolist()}")
 
-            # 2. ✅ 数据质量验证
+            # 2. 数据质量验证
             if self.enable_data_quality_monitoring or strict_validation:
                 validation_start = time.time()
                 validation_result = self._validate_imported_data(
@@ -4231,19 +4231,19 @@ class DataImportExecutionEngine(QObject):
             # 🔧 修复：添加asset_type调试日志
             logger.debug(f"📝 [资产类型] 原始值={task_config.asset_type}, 类型={type(task_config.asset_type)}")
 
-            # ✅ 修复：记录队列状态，便于分析性能问题
+            # 修复：记录队列状态，便于分析性能问题
             queue_size_before = self.db_writer_thread.write_queue.qsize() if hasattr(self, 'db_writer_thread') else 0
 
             self._save_kdata_to_database(symbol, kdata, task_config)
 
-            # ✅ 修复：只计算放入队列的时间，不包含等待队列消费的时间
+            # 修复：只计算放入队列的时间，不包含等待队列消费的时间
             # 真正的数据库写入是异步的，在DatabaseWriterThread中完成
             db_elapsed = time.time() - db_start
             queue_size_after = self.db_writer_thread.write_queue.qsize() if hasattr(self, 'db_writer_thread') else 0
 
             logger.info(f"⏱️  [数据入队完成] {symbol} | 入队耗时:{db_elapsed:.2f}秒 | 队列大小:{queue_size_before}→{queue_size_after} | 线程:{thread_id}")
 
-            # ✅ 异步触发基本面数据下载（在K线数据成功获取后）
+            # 异步触发基本面数据下载（在K线数据成功获取后）
             self._async_download_fundamental_data(symbol, task_config)
 
             total_elapsed = time.time() - task_start_time
@@ -4271,17 +4271,17 @@ class DataImportExecutionEngine(QObject):
                 raise Exception("真实数据提供器初始化失败，无法导入K线数据")
 
             symbols = task_config.symbols
-            # ✅ 修复：如果total_records已设置（从进度恢复），不要覆盖
+            # 修复：如果total_records已设置（从进度恢复），不要覆盖
             if result.total_records == 0:
                 result.total_records = len(symbols)
 
-            # ✅ 修复：初始化已处理股票列表（用于进度恢复）
+            # 修复：初始化已处理股票列表（用于进度恢复）
             processed_symbols_set = set()
             if hasattr(result, 'processed_symbols_list') and result.processed_symbols_list:
                 processed_symbols_set = set(result.processed_symbols_list)
                 logger.debug(f"📋 [进度恢复] 从result恢复已处理股票列表: {len(processed_symbols_set)}个股票")
 
-            # ✅ 使用max_workers进行并行处理
+            # 使用max_workers进行并行处理
             max_workers = min(task_config.max_workers, len(symbols)) if hasattr(task_config, 'max_workers') else 1
 
             if max_workers > 1:
@@ -4323,13 +4323,13 @@ class DataImportExecutionEngine(QObject):
                             with result_lock:
                                 if import_result['success']:
                                     result.processed_records += 1
-                                    processed_symbols_set.add(symbol)  # ✅ 记录已处理的股票
+                                    processed_symbols_set.add(symbol)  # 记录已处理的股票
                                 else:
                                     result.failed_records += 1
                                     # 失败也记录，避免重复尝试（可根据需要调整）
                                     processed_symbols_set.add(symbol)
 
-                            # ✅ 修复：实时更新进度（包含已处理股票列表）
+                            # 修复：实时更新进度（包含已处理股票列表）
                             progress = ImportProgress(
                                 task_id=task_config.task_id,
                                 status=ImportStatus.RUNNING,
@@ -4341,7 +4341,7 @@ class DataImportExecutionEngine(QObject):
                                 start_time=result.start_time.isoformat() if result.start_time else datetime.now().isoformat(),
                                 end_time=None,
                                 error_message=None,
-                                processed_symbols_list=list(processed_symbols_set)  # ✅ 保存已处理股票列表
+                                processed_symbols_list=list(processed_symbols_set)  # 保存已处理股票列表
                             )
                             self.config_manager.update_progress(progress)
 
@@ -4353,7 +4353,7 @@ class DataImportExecutionEngine(QObject):
 
                             logger.info(f"📊 [进度] {completed_count}/{len(symbols)} | 成功:{result.processed_records} 失败:{result.failed_records} | 平均耗时:{avg_time:.2f}s | 预计剩余:{eta:.1f}s")
 
-                            # ✅ 修复：在进度消息中包含错误信息（如果失败），以便UI可以提取并记录到错误表
+                            # 修复：在进度消息中包含错误信息（如果失败），以便UI可以提取并记录到错误表
                             if import_result['success']:
                                 progress_message = f"导入股票数据: {symbol} ({result.processed_records + result.failed_records}/{result.total_records})"
                             else:
@@ -4371,18 +4371,18 @@ class DataImportExecutionEngine(QObject):
                             logger.error(f"⏰ [超时] {symbol} 执行超过300秒，future.result()超时")
                             with result_lock:
                                 result.failed_records += 1
-                                processed_symbols_set.add(symbol)  # ✅ 超时也记录
+                                processed_symbols_set.add(symbol)  # 超时也记录
                         except Exception as e:
                             symbol = future_to_symbol[future]
                             logger.error(f"🔴 [异常] {symbol} 处理结果失败: {e}")
                             with result_lock:
                                 result.failed_records += 1
-                                processed_symbols_set.add(symbol)  # ✅ 异常也记录
+                                processed_symbols_set.add(symbol)  # 异常也记录
 
                 total_elapsed = time.time() - batch_start_time
                 logger.info(f"📊 [并行完成] 总耗时:{total_elapsed:.2f}秒 | 成功:{result.processed_records} 失败:{result.failed_records}")
 
-                # ✅ 修复：将已处理股票列表设置到result中
+                # 修复：将已处理股票列表设置到result中
                 result.processed_symbols_list = list(processed_symbols_set)
             else:
                 logger.info(f"开始串行导入K线数据: {len(symbols)}个股票")
@@ -4396,12 +4396,12 @@ class DataImportExecutionEngine(QObject):
 
                     if import_result['success']:
                         result.processed_records += 1
-                        processed_symbols_set.add(symbol)  # ✅ 记录已处理的股票
+                        processed_symbols_set.add(symbol)  # 记录已处理的股票
                     else:
                         result.failed_records += 1
-                        processed_symbols_set.add(symbol)  # ✅ 失败也记录
+                        processed_symbols_set.add(symbol)  # 失败也记录
 
-                    # ✅ 修复：实时更新进度（包含已处理股票列表）
+                    # 修复：实时更新进度（包含已处理股票列表）
                     progress = ImportProgress(
                         task_id=task_config.task_id,
                         status=ImportStatus.RUNNING,
@@ -4413,11 +4413,11 @@ class DataImportExecutionEngine(QObject):
                         start_time=result.start_time.isoformat() if result.start_time else datetime.now().isoformat(),
                         end_time=None,
                         error_message=None,
-                        processed_symbols_list=list(processed_symbols_set)  # ✅ 保存已处理股票列表
+                        processed_symbols_list=list(processed_symbols_set)  # 保存已处理股票列表
                     )
                     self.config_manager.update_progress(progress)
 
-                    # ✅ 修复：在进度消息中包含错误信息（如果失败），以便UI可以提取并记录到错误表
+                    # 修复：在进度消息中包含错误信息（如果失败），以便UI可以提取并记录到错误表
                     if import_result['success']:
                         progress_message = f"导入股票数据: {symbol} ({i+1}/{len(symbols)})"
                     else:
@@ -4432,7 +4432,7 @@ class DataImportExecutionEngine(QObject):
                         progress_message
                     )
 
-                # ✅ 修复：将已处理股票列表设置到result中
+                # 修复：将已处理股票列表设置到result中
                 result.processed_symbols_list = list(processed_symbols_set)
 
                 # 控制请求频率
@@ -4542,7 +4542,7 @@ class DataImportExecutionEngine(QObject):
                     task_config
                 )
 
-                logger.info(f"✅ [基本面] {symbol} | 数据已保存到数据库")
+                logger.info(f"[基本面] {symbol} | 数据已保存到数据库")
             else:
                 logger.debug(f"⚠️  [基本面] {symbol} | 未获取到基本面数据")
 
@@ -5190,7 +5190,7 @@ class DataImportExecutionEngine(QObject):
                 for task_id in list(self._running_tasks.keys()):
                     self.stop_task(task_id)
 
-            # ✅ 停止数据库写入线程（等待队列清空）
+            # 停止数据库写入线程（等待队列清空）
             if hasattr(self, 'db_writer_thread'):
                 logger.info("停止DatabaseWriterThread...")
                 self.db_writer_thread.stop(wait=True, timeout=30.0)
@@ -5200,7 +5200,7 @@ class DataImportExecutionEngine(QObject):
             # 关闭线程池
             self.executor.shutdown(wait=True)
 
-            # ✅ 关闭基本面数据下载线程池
+            # 关闭基本面数据下载线程池
             if hasattr(self, 'fundamental_executor'):
                 logger.info("停止基本面数据下载线程池...")
                 self.fundamental_executor.shutdown(wait=True, timeout=10.0)

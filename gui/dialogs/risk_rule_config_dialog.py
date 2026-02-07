@@ -9,7 +9,7 @@ from typing import Dict, Optional
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QGroupBox,
     QPushButton, QLineEdit, QComboBox, QDoubleSpinBox, QSpinBox,
-    QCheckBox, QTextEdit, QLabel, QTabWidget, QWidget, QMessageBox
+    QCheckBox, QTextEdit, QLabel, QTabWidget, QWidget, QMessageBox, QGridLayout
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
@@ -182,30 +182,38 @@ class RiskRuleConfigDialog(QDialog):
 
         # 通知方式组
         notification_group = QGroupBox("通知方式")
-        notification_form = QFormLayout()
+        notification_layout = QGridLayout()
+        notification_layout.setColumnStretch(0, 1)
+        notification_layout.setColumnStretch(1, 1)
+        notification_layout.setColumnStretch(2, 1)
 
-        self.email_checkbox = QCheckBox()
-        self.email_checkbox.setChecked(True)
-        notification_form.addRow("邮件通知:", self.email_checkbox)
+        # 第一行
+        self.email_checkbox = QCheckBox("邮件通知")
+        self.email_checkbox.setChecked(False)
+        notification_layout.addWidget(self.email_checkbox, 0, 0)
 
-        self.sms_checkbox = QCheckBox()
-        notification_form.addRow("短信通知:", self.sms_checkbox)
+        self.sms_checkbox = QCheckBox("短信通知")
+        self.sms_checkbox.setChecked(False)
+        notification_layout.addWidget(self.sms_checkbox, 0, 1)
 
-        self.desktop_checkbox = QCheckBox()
+        self.desktop_checkbox = QCheckBox("桌面通知")
         self.desktop_checkbox.setChecked(True)
-        notification_form.addRow("桌面通知:", self.desktop_checkbox)
+        notification_layout.addWidget(self.desktop_checkbox, 0, 2)
 
-        self.sound_checkbox = QCheckBox()
+        # 第二行
+        self.sound_checkbox = QCheckBox("声音通知")
         self.sound_checkbox.setChecked(True)
-        notification_form.addRow("声音通知:", self.sound_checkbox)
+        notification_layout.addWidget(self.sound_checkbox, 1, 0)
 
-        self.webhook_checkbox = QCheckBox()
-        notification_form.addRow("Webhook通知:", self.webhook_checkbox)
+        self.webhook_checkbox = QCheckBox("Webhook通知")
+        self.webhook_checkbox.setChecked(False)
+        notification_layout.addWidget(self.webhook_checkbox, 1, 1)
 
-        self.dingtalk_checkbox = QCheckBox()
-        notification_form.addRow("钉钉通知:", self.dingtalk_checkbox)
+        self.dingtalk_checkbox = QCheckBox("钉钉通知")
+        self.dingtalk_checkbox.setChecked(False)
+        notification_layout.addWidget(self.dingtalk_checkbox, 1, 2)
 
-        notification_group.setLayout(notification_form)
+        notification_group.setLayout(notification_layout)
         layout.addWidget(notification_group)
 
         # 收件人设置组
@@ -312,7 +320,7 @@ class RiskRuleConfigDialog(QDialog):
             self.max_alerts_spin.setValue(self.rule_data.get('max_alerts', 10))
 
             # 通知设置
-            self.email_checkbox.setChecked(self.rule_data.get('email_notification', True))
+            self.email_checkbox.setChecked(self.rule_data.get('email_notification', False))
             self.sms_checkbox.setChecked(self.rule_data.get('sms_notification', False))
             self.desktop_checkbox.setChecked(self.rule_data.get('desktop_notification', True))
             self.sound_checkbox.setChecked(self.rule_data.get('sound_notification', True))

@@ -10,7 +10,7 @@ from typing import Dict, Any
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFrame, QGridLayout, QGroupBox,
     QTableWidget, QTableWidgetItem, QSplitter, QLabel, QPushButton,
-    QDialog, QMessageBox, QInputDialog
+    QDialog, QMessageBox, QInputDialog, QSizePolicy
 )
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QColor
@@ -64,8 +64,7 @@ class ModernStrategyPerformanceTab(QWidget):
 
         # 指标卡片区域 - 3行6列布局，紧凑显示18个专业金融指标
         cards_frame = QFrame()
-        cards_frame.setMinimumHeight(130)  # 设置最小高度
-        cards_frame.setMaximumHeight(160)  # 限制指标卡片区域高度，3行布局需要更多空间
+        cards_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         cards_frame.setStyleSheet("""
             QFrame {
                 background: transparent;
@@ -130,7 +129,7 @@ class ModernStrategyPerformanceTab(QWidget):
 
         # 图表区域 - 专业分割布局，紧凑显示
         charts_splitter = QSplitter(Qt.Horizontal)
-        charts_splitter.setMinimumHeight(150)  # 减少最小高度，更灵活
+        charts_splitter.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         charts_splitter.setStyleSheet("""
             QSplitter::handle {
                 background: #34495e;
@@ -149,7 +148,7 @@ class ModernStrategyPerformanceTab(QWidget):
 
         # 交易统计表格 - 现代化设计，给予适当的伸缩权重
         trade_group = QGroupBox("交易统计详情")
-        trade_group.setMinimumHeight(200)  # 减少最小高度，更灵活
+        trade_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         trade_group.setStyleSheet("""
             QGroupBox {
                 font-weight: bold;
@@ -209,8 +208,7 @@ class ModernStrategyPerformanceTab(QWidget):
         """创建策略信息显示区域"""
         # 策略信息框架
         info_frame = QFrame()
-        info_frame.setMinimumHeight(50)  # 设置最小高度
-        info_frame.setMaximumHeight(60)  # 紧凑显示
+        info_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         info_frame.setStyleSheet("""
             QFrame {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
@@ -249,7 +247,9 @@ class ModernStrategyPerformanceTab(QWidget):
 
         # 添加股票池设置按钮
         self.stock_pool_settings_btn = QPushButton("设置")
-        self.stock_pool_settings_btn.setFixedSize(50, 25)
+        self.stock_pool_settings_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.stock_pool_settings_btn.setMinimumSize(50, 25)
+        self.stock_pool_settings_btn.setMaximumSize(50, 25)
         self.stock_pool_settings_btn.setStyleSheet("""
             QPushButton {
                 background: #e67e22;
@@ -1201,3 +1201,39 @@ class ModernStrategyPerformanceTab(QWidget):
             
         except Exception as e:
             logger.debug(f"清理资源失败: {e}")
+
+    def resizeEvent(self, event):
+        """窗口大小改变事件处理"""
+        super().resizeEvent(event)
+        self._update_responsive_layout()
+
+    def _update_responsive_layout(self):
+        """更新响应式布局"""
+        try:
+            window_width = self.width()
+            window_height = self.height()
+
+            logger.debug(f"StrategyPerformanceTab 响应式布局更新: {window_width}x{window_height}")
+
+            # 更新指标卡片高度
+            cards_frames = self.findChildren(QFrame)
+            for frame in cards_frames:
+                if frame.layout() and isinstance(frame.layout(), QGridLayout):
+                    frame_height = max(120, int(window_height * 0.2))
+                    frame.setMinimumHeight(frame_height)
+                    frame.setMaximumHeight(int(window_height * 0.25))
+
+            # 更新图表分割器高度
+            charts_splitter = self.findChild(QSplitter)
+            if charts_splitter:
+                splitter_height = max(150, int(window_height * 0.35))
+                charts_splitter.setMinimumHeight(splitter_height)
+
+            # 更新交易统计表格高度
+            trade_group = self.findChild(QGroupBox, "交易统计详情")
+            if trade_group:
+                group_height = max(150, int(window_height * 0.35))
+                trade_group.setMinimumHeight(group_height)
+
+        except Exception as e:
+            logger.error(f"更新响应式布局失败: {e}")

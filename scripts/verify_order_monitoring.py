@@ -49,7 +49,7 @@ def test_order_monitoring_setup():
                     event_bus=event_bus
                 )
             )
-            logger.info("✅ OrderService 已注册到服务容器")
+            logger.info("OrderService 已注册到服务容器")
 
         # 获取订单服务
         order_service = service_container.resolve(OrderService)
@@ -57,13 +57,13 @@ def test_order_monitoring_setup():
         # 启动订单监控
         logger.info("\n🔍 启动订单监控...")
         order_service.start_monitoring()
-        logger.info("✅ 订单监控已启动")
+        logger.info("订单监控已启动")
 
         # 检查TaskScheduler是否注册
         from core.services.task_scheduler import TaskScheduler
 
         if service_container.is_registered(TaskScheduler):
-            logger.info("✅ TaskScheduler 已注册")
+            logger.info("TaskScheduler 已注册")
 
             # 获取TaskScheduler
             task_scheduler = service_container.resolve(TaskScheduler)
@@ -71,7 +71,7 @@ def test_order_monitoring_setup():
             # 检查订单监控任务是否已注册
             task = task_scheduler.get_task('order_monitor_check')
             if task:
-                logger.info(f"✅ 订单监控任务已注册: {task['name']}")
+                logger.info(f"订单监控任务已注册: {task['name']}")
                 logger.info(f"   - 任务ID: {task['task_id']}")
                 logger.info(f"   - 执行间隔: {task['interval_seconds']} 秒")
                 logger.info(f"   - 下次执行时间: {task['next_run_time']}")
@@ -133,7 +133,7 @@ def test_order_monitoring_execution():
 
         order = order_service.create_order(request)
         if order:
-            logger.info(f"✅ 测试订单创建成功: {order.order_id}")
+            logger.info(f"测试订单创建成功: {order.order_id}")
         else:
             logger.error("❌ 测试订单创建失败")
             return
@@ -142,7 +142,7 @@ def test_order_monitoring_execution():
         logger.info("\n🔍 执行订单检查...")
         checked_orders = order_service.check_orders()
 
-        logger.info(f"✅ 订单检查完成，检查了 {len(checked_orders)} 个订单")
+        logger.info(f"订单检查完成，检查了 {len(checked_orders)} 个订单")
 
         # 查询订单状态
         query = OrderQuery(order_id=order.order_id)
@@ -212,7 +212,7 @@ def test_order_timeout_detection():
             logger.error("❌ 超时测试订单创建失败")
             return
 
-        logger.info(f"✅ 超时测试订单创建成功: {order.order_id}")
+        logger.info(f"超时测试订单创建成功: {order.order_id}")
 
         # 模拟订单创建时间超过超时阈值
         logger.info("\n⏰ 模拟订单超时...")
@@ -226,7 +226,7 @@ def test_order_timeout_detection():
         logger.info("\n🔍 执行订单检查（超时检测）...")
         checked_orders = order_service.check_orders()
 
-        logger.info(f"✅ 订单检查完成，检查了 {len(checked_orders)} 个订单")
+        logger.info(f"订单检查完成，检查了 {len(checked_orders)} 个订单")
 
         # 查询订单状态
         query = OrderQuery(order_id=order.order_id)
@@ -239,7 +239,7 @@ def test_order_timeout_detection():
 
             # 检查是否被标记为超时
             if checked_order.error_message and "超时" in checked_order.error_message:
-                logger.info("✅ 订单超时检测成功")
+                logger.info("订单超时检测成功")
             else:
                 logger.warning("⚠️  订单超时检测未触发")
 

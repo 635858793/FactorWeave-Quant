@@ -11,7 +11,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFrame, QGridLayout,
-    QGroupBox, QPushButton, QProgressBar, QLabel, QTabWidget
+    QGroupBox, QPushButton, QProgressBar, QLabel, QTabWidget, QSizePolicy
 )
 from PyQt5.QtCore import Qt, QTimer
 from gui.widgets.performance.components.metric_card import ModernMetricCard
@@ -149,8 +149,7 @@ class ModernAlgorithmOptimizationTab(QWidget):
 
         # 算法性能指标卡片
         cards_frame = QFrame()
-        cards_frame.setMinimumHeight(100)
-        cards_frame.setMaximumHeight(120)
+        cards_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         cards_layout = QGridLayout(cards_frame)
         cards_layout.setContentsMargins(2, 2, 2, 2)
         cards_layout.setSpacing(2)
@@ -190,8 +189,7 @@ class ModernAlgorithmOptimizationTab(QWidget):
         layout.setSpacing(5)
 
         cards_frame = QFrame()
-        cards_frame.setMinimumHeight(110)
-        cards_frame.setMaximumHeight(140)
+        cards_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         cards_layout = QGridLayout(cards_frame)
         cards_layout.setContentsMargins(2, 2, 2, 2)
         cards_layout.setSpacing(2)
@@ -867,3 +865,37 @@ class ModernAlgorithmOptimizationTab(QWidget):
 
         except Exception as e:
             logger.debug(f"清理算法优化资源失败: {e}")
+
+    def resizeEvent(self, event):
+        """窗口大小改变事件处理"""
+        super().resizeEvent(event)
+        self._update_responsive_layout()
+
+    def _update_responsive_layout(self):
+        """更新响应式布局"""
+        try:
+            window_width = self.width()
+            window_height = self.height()
+
+            logger.debug(f"AlgorithmOptimizationTab 响应式布局更新: {window_width}x{window_height}")
+
+            # 更新算法性能卡片高度
+            cards_frames = self.findChildren(QFrame)
+            for frame in cards_frames:
+                if frame.layout() and isinstance(frame.layout(), QGridLayout):
+                    frame_height = max(80, int(window_height * 0.15))
+                    frame.setMinimumHeight(frame_height)
+                    frame.setMaximumHeight(int(window_height * 0.2))
+
+            # 更新性能图表高度
+            if hasattr(self, 'performance_chart'):
+                chart_height = max(150, int(window_height * 0.3))
+                self.performance_chart.setMinimumHeight(chart_height)
+
+            # 更新JIT图表高度
+            if hasattr(self, 'jit_chart'):
+                chart_height = max(150, int(window_height * 0.3))
+                self.jit_chart.setMinimumHeight(chart_height)
+
+        except Exception as e:
+            logger.error(f"更新响应式布局失败: {e}")

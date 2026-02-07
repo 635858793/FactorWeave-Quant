@@ -9,10 +9,10 @@ from PyQt5.QtWidgets import (
     QToolBar, QAction, QToolButton, QMenu,
     QFileDialog, QMessageBox, QDialog, QVBoxLayout,
     QLabel, QPushButton, QLineEdit, QSpinBox, QComboBox,
-    QHBoxLayout, QGroupBox, QFormLayout, QDialogButtonBox
+    QHBoxLayout, QGroupBox, QFormLayout, QDialogButtonBox, QSizePolicy
 )
-from PyQt5.QtCore import Qt, QSize
-from PyQt5.QtGui import QIcon, QKeySequence
+from PyQt5.QtCore import Qt, QSize, QKeySequence
+from PyQt5.QtGui import QIcon
 import os
 import traceback
 from gui.widgets.log_widget import LogWidget
@@ -45,6 +45,11 @@ class MainToolBar(QToolBar):
         """
         try:
             super().__init__(parent)
+
+            # 初始化缩放级别
+            self._zoom_level = 1.0
+            self._zoom_history = []
+            self._max_zoom_history = 10
 
             # 初始化日志管理器
             if True:  # 使用Loguru日志
@@ -129,23 +134,27 @@ class MainToolBar(QToolBar):
         # 缩放工具
         self.zoom_in_action = QAction(QIcon("icons/zoom_in.png"), "放大", self)
         self.zoom_in_action.setStatusTip("放大图表")
-        self.zoom_in_action.setShortcut("Ctrl++")
+        self.zoom_in_action.setShortcut(QKeySequence("Ctrl+="))
+        self.zoom_in_action.triggered.connect(self.zoom_in)
         self.addAction(self.zoom_in_action)
 
         self.zoom_out_action = QAction(QIcon("icons/zoom_out.png"), "缩小", self)
         self.zoom_out_action.setStatusTip("缩小图表")
-        self.zoom_out_action.setShortcut("Ctrl+-")
+        self.zoom_out_action.setShortcut(QKeySequence("Ctrl+-"))
+        self.zoom_out_action.triggered.connect(self.zoom_out)
         self.addAction(self.zoom_out_action)
 
         self.reset_zoom_action = QAction(
             QIcon("icons/reset_zoom.png"), "重置缩放", self)
         self.reset_zoom_action.setStatusTip("重置图表缩放")
-        self.reset_zoom_action.setShortcut("Ctrl+0")
+        self.reset_zoom_action.setShortcut(QKeySequence("Ctrl+0"))
+        self.reset_zoom_action.triggered.connect(self.reset_zoom)
         self.addAction(self.reset_zoom_action)
 
         self.undo_zoom_action = QAction(QIcon("icons/undo.png"), "撤销缩放", self)
         self.undo_zoom_action.setStatusTip("撤销上一次缩放操作")
-        self.undo_zoom_action.setShortcut("Ctrl+Z")
+        self.undo_zoom_action.setShortcut(QKeySequence("Ctrl+Z"))
+        self.undo_zoom_action.triggered.connect(self.undo_zoom)
         self.addAction(self.undo_zoom_action)
 
         self.addSeparator()
@@ -179,7 +188,7 @@ class MainToolBar(QToolBar):
         self.addSeparator()
         self.search_box = QLineEdit()
         self.search_box.setPlaceholderText("搜索股票代码或名称...")
-        self.search_box.setMaximumWidth(200)
+        self.search_box.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.addWidget(self.search_box)
 
     def log_message(self, message: str, level: str = "info") -> None:
@@ -361,3 +370,112 @@ class MainToolBar(QToolBar):
 
         except Exception as e:
             logger.error(f"显示单位转换器失败: {str(e)}")
+
+    def resizeEvent(self, event):
+        """窗口大小改变事件处理"""
+        super().resizeEvent(event)
+        self._update_responsive_layout()
+
+    def _update_responsive_layout(self):
+        """更新响应式布局"""
+        try:
+            window_width = self.width()
+
+            logger.debug(f"MainToolBar 响应式布局更新: {window_width}")
+
+            # 更新搜索框宽度
+            if hasattr(self, 'search_box'):
+                search_width = max(150, int(window_width * 0.15))
+                self.search_box.setMinimumWidth(search_width)
+                self.search_box.setMaximumWidth(int(window_width * 0.25))
+
+        except Exception as e:
+            logger.error(f"更新响应式布局失败: {e}")
+
+    def zoom_in(self):
+        """放大图表"""
+        try:
+            logger.info(f"执行放大操作，当前缩放级别: {self._zoom_level}")
+            
+            # 保存当前缩放级别到历史记录
+            self._zoom_history.append(self._zoom_level)
+            if len(self._zoom_history) > self._max_zoom_history:
+                self._zoom_history.pop(0)
+            
+            # 增加缩放级别
+            self._zoom_level = min(self._zoom_level + 0.1, 3.0)
+            logger.info(f"放大后缩放级别: {self._zoom_level}")
+            
+            # 通知父窗口更新缩放
+            self._notify_zoom_change()
+            
+        except Exception as e:
+            logger.error(f"放大操作失败: {e}")
+
+    def zoom_out(self):
+        """缩小图表"""
+        try:
+            logger.info(f"执行缩小操作，当前缩放级别: {self._zoom_level}")
+            
+            # 保存当前缩放级别到历史记录
+            self._zoom_history.append(self._zoom_level)
+            if len(self._zoom_history) > self._max_zoom_history:
+                self._zoom_history.pop(0)
+            
+            # 减小缩放级别
+            self._zoom_level = max(self._zoom_level - 0.1, 0.5)
+            logger.info(f"缩小后缩放级别: {self._zoom_level}")
+            
+            # 通知父窗口更新缩放
+            self._notify_zoom_change()
+            
+        except Exception as e:
+            logger.error(f"缩小操作失败: {e}")
+
+    def reset_zoom(self):
+        """重置缩放"""
+        try:
+            logger.info(f"执行重置缩放操作，当前缩放级别: {self._zoom_level}")
+            
+            # 保存当前缩放级别到历史记录
+            self._zoom_history.append(self._zoom_level)
+            if len(self._zoom_history) > self._max_zoom_history:
+                self._zoom_history.pop(0)
+            
+            # 重置缩放级别
+            self._zoom_level = 1.0
+            logger.info(f"重置后缩放级别: {self._zoom_level}")
+            
+            # 通知父窗口更新缩放
+            self._notify_zoom_change()
+            
+        except Exception as e:
+            logger.error(f"重置缩放操作失败: {e}")
+
+    def undo_zoom(self):
+        """撤销缩放"""
+        try:
+            if not self._zoom_history:
+                logger.info("没有可撤销的缩放操作")
+                return
+            
+            # 从历史记录中恢复上一个缩放级别
+            self._zoom_level = self._zoom_history.pop()
+            logger.info(f"撤销缩放操作，恢复缩放级别: {self._zoom_level}")
+            
+            # 通知父窗口更新缩放
+            self._notify_zoom_change()
+            
+        except Exception as e:
+            logger.error(f"撤销缩放操作失败: {e}")
+
+    def _notify_zoom_change(self):
+        """通知父窗口缩放级别改变"""
+        try:
+            parent = self.parentWidget()
+            if parent and hasattr(parent, 'on_zoom_changed'):
+                parent.on_zoom_changed(self._zoom_level)
+            else:
+                logger.debug("父窗口不支持缩放通知")
+        except Exception as e:
+            logger.error(f"通知缩放改变失败: {e}")

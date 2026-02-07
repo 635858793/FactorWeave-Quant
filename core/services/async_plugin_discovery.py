@@ -133,7 +133,7 @@ class AsyncPluginDiscoveryWorker(QThread):
                     plugin_files.append((plugin_path.stem, plugin_path))
 
             # 扫描子目录
-            for subdir in ["sentiment_data_sources"]:  # ✅ 修复：移除examples
+            for subdir in ["sentiment_data_sources"]:  # 修复：移除examples
                 sub_path = plugin_dir / subdir
                 if sub_path.exists():
                     for plugin_path in sub_path.glob("*.py"):
@@ -141,7 +141,7 @@ class AsyncPluginDiscoveryWorker(QThread):
                             plugin_name = f"{subdir}.{plugin_path.stem}"
                             plugin_files.append((plugin_name, plugin_path))
             
-            # ✅ 修复：扫描data_sources及其分类子目录
+            # 修复：扫描data_sources及其分类子目录
             data_sources_dir = plugin_dir / "data_sources"
             if data_sources_dir.exists():
                 # 扫描data_sources根目录

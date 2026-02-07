@@ -163,7 +163,7 @@ class ImportProgress:
     start_time: Optional[str] = None   # 开始时间
     end_time: Optional[str] = None     # 结束时间
     error_message: Optional[str] = None  # 错误信息
-    processed_symbols_list: List[str] = field(default_factory=list)  # ✅ 修复：已处理的股票列表（用于恢复）
+    processed_symbols_list: List[str] = field(default_factory=list)  # 修复：已处理的股票列表（用于恢复）
 
     @property
     def progress_percentage(self) -> float:
@@ -193,7 +193,7 @@ class ImportProgress:
     def from_dict(cls, data: Dict[str, Any]) -> 'ImportProgress':
         """从字典创建"""
         data['status'] = ImportStatus(data['status'])
-        # ✅ 修复：处理processed_symbols_list字段（兼容旧数据）
+        # 修复：处理processed_symbols_list字段（兼容旧数据）
         if 'processed_symbols_list' not in data:
             data['processed_symbols_list'] = []
         return cls(**data)

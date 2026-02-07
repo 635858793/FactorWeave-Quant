@@ -125,7 +125,7 @@ class CompletePerformanceTest:
             # 计算改进百分比
             improvement = ((backtest_speed - readme_value) / readme_value) * 100 if readme_value > 0 else 0
             
-            logger.info(f"✅ 测试完成")
+            logger.info(f"测试完成")
             logger.info(f"   实测回测速度: {backtest_speed:.2f}万条/秒")
             logger.info(f"   README声明: {readme_value}万条/秒")
             logger.info(f"   目标值: {target_value}万条/秒")
@@ -202,7 +202,7 @@ class CompletePerformanceTest:
             # 计算改进百分比
             improvement = ((readme_value - avg_execution_delay) / readme_value) * 100 if readme_value > 0 else 0
             
-            logger.info(f"✅ 测试完成")
+            logger.info(f"测试完成")
             logger.info(f"   实测执行延迟: {avg_execution_delay:.2f}ms")
             logger.info(f"   README声明: {readme_value}ms")
             logger.info(f"   目标值: {target_value}ms")
@@ -274,7 +274,7 @@ class CompletePerformanceTest:
             # 计算改进百分比
             improvement = ((throughput - readme_value) / readme_value) * 100 if readme_value > 0 else 0
             
-            logger.info(f"✅ 测试完成")
+            logger.info(f"测试完成")
             logger.info(f"   实测吞吐量: {throughput:.0f}笔/秒")
             logger.info(f"   README声明: {readme_value}笔/秒")
             logger.info(f"   目标值: {target_value}笔/秒")
@@ -358,7 +358,7 @@ class CompletePerformanceTest:
             # 计算改进百分比
             improvement = ((successful_tasks - readme_value) / readme_value) * 100 if readme_value > 0 else 0
             
-            logger.info(f"✅ 测试完成")
+            logger.info(f"测试完成")
             logger.info(f"   实测并发能力: {successful_tasks}个任务")
             logger.info(f"   README声明: {readme_value}个")
             logger.info(f"   目标值: {target_value}个")
@@ -462,7 +462,7 @@ class CompletePerformanceTest:
         failed_count = sum(1 for r in self.test_results if not r.success or r.status == '未达标')
         
         report_lines.extend([
-            f"✅ 达标/优秀: {passed_count}/{len(self.test_results)} ({passed_count/len(self.test_results)*100:.1f}%)",
+            f"达标/优秀: {passed_count}/{len(self.test_results)} ({passed_count/len(self.test_results)*100:.1f}%)",
             f"🌟 优秀: {excellent_count}/{len(self.test_results)} ({excellent_count/len(self.test_results)*100:.1f}%)",
             f"❌ 未达标/失败: {failed_count}/{len(self.test_results)} ({failed_count/len(self.test_results)*100:.1f}%)",
             ""
@@ -493,7 +493,7 @@ class CompletePerformanceTest:
         if corrections:
             report_lines.extend(corrections)
         else:
-            report_lines.append("✅ 所有指标与README声明一致，无需纠正")
+            report_lines.append("所有指标与README声明一致，无需纠正")
         
         report_lines.extend([
             "",
@@ -520,7 +520,7 @@ class CompletePerformanceTest:
         with open(report_file, 'w', encoding='utf-8') as f:
             f.write(report_content)
         
-        logger.info(f"✅ 测试结果已保存到: {output_dir}")
+        logger.info(f"测试结果已保存到: {output_dir}")
         return str(output_dir)
 
 

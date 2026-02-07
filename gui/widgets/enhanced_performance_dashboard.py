@@ -132,8 +132,11 @@ class RealTimeChart(QGraphicsView):
         self.setDragMode(QGraphicsView.NoDrag)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.setFixedSize(self.chart_width + 2 * self.margin,
-                          self.chart_height + 2 * self.margin)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.setMinimumSize(self.chart_width + 2 * self.margin,
+                        self.chart_height + 2 * self.margin)
+        self.setMaximumSize(self.chart_width + 2 * self.margin,
+                        self.chart_height + 2 * self.margin)
 
         self.setup_chart()
 
@@ -292,7 +295,9 @@ class MetricGauge(QWidget):
         self.warning_threshold = max_value * 0.7
         self.critical_threshold = max_value * 0.9
 
-        self.setFixedSize(120, 120)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.setMinimumSize(120, 120)
+        self.setMaximumSize(120, 120)
 
     def set_value(self, value: float):
         """设置数值"""

@@ -44,7 +44,7 @@ def test_fundamental_data_factory():
         print(f"支持的资产类型数量: {len(supported_types)}")
         for asset_type in supported_types:
             print(f"  - {asset_type.value}")
-        print("✅ 支持的资产类型测试通过")
+        print("支持的资产类型测试通过")
 
         print("\n[1.2] 测试资产类型支持检查")
         test_cases = [
@@ -55,7 +55,7 @@ def test_fundamental_data_factory():
         ]
         for asset_type, expected in test_cases:
             result = FundamentalDataFactory.is_supported(asset_type)
-            status = "✅" if result == expected else "❌"
+            status = "✓" if result == expected else "❌"
             print(f"{status} {asset_type.value}: {result} (期望: {expected})")
 
         print("\n[1.3] 测试获取基本面数据类")
@@ -64,12 +64,12 @@ def test_fundamental_data_factory():
         crypto_class = FundamentalDataFactory.get_fundamental_data_class(AssetType.CRYPTO)
         bond_class = FundamentalDataFactory.get_fundamental_data_class(AssetType.BOND)
 
-        print(f"✅ 股票基本面数据类: {stock_class.__name__}")
-        print(f"✅ 期货基本面数据类: {futures_class.__name__}")
-        print(f"✅ 加密货币基本面数据类: {crypto_class.__name__}")
-        print(f"✅ 债券基本面数据类: {bond_class}")
+        print(f"股票基本面数据类: {stock_class.__name__}")
+        print(f"期货基本面数据类: {futures_class.__name__}")
+        print(f"加密货币基本面数据类: {crypto_class.__name__}")
+        print(f"债券基本面数据类: {bond_class}")
 
-        print("\n✅ 基本面数据工厂测试通过")
+        print("\n基本面数据工厂测试通过")
         return True
 
     except Exception as e:
@@ -103,7 +103,7 @@ def test_stock_fundamental_data():
             data_date=date.today(),
             raw_data=raw_data
         )
-        print(f"✅ 股票基本面数据创建成功: {stock_data}")
+        print(f"股票基本面数据创建成功: {stock_data}")
         print(f"   - 股票代码: {stock_data.symbol}")
         print(f"   - 资产类型: {stock_data.asset_type.value}")
         print(f"   - 指标数量: {len(stock_data._indicators)}")
@@ -113,14 +113,14 @@ def test_stock_fundamental_data():
         print(f"关键指标数量: {len(indicators)}")
         for name, value in indicators.items():
             print(f"  - {name}: {value:.2f}")
-        print("✅ 关键指标获取成功")
+        print("关键指标获取成功")
 
         print("\n[2.3] 测试基本面评分")
         score = stock_data.get_score()
         score_level = stock_data.get_score_level()
         print(f"基本面评分: {score:.2f}")
         print(f"评分等级: {score_level.value}")
-        print("✅ 基本面评分计算成功")
+        print("基本面评分计算成功")
 
         print("\n[2.4] 测试分类评分")
         valuation_score = stock_data.get_valuation_score()
@@ -132,19 +132,19 @@ def test_stock_fundamental_data():
         print(f"盈利能力评分: {profitability_score:.2f}")
         print(f"成长性评分: {growth_score:.2f}")
         print(f"财务健康评分: {financial_health_score:.2f}")
-        print("✅ 分类评分计算成功")
+        print("分类评分计算成功")
 
         print("\n[2.5] 测试数据验证")
         is_valid = stock_data.validate()
         print(f"数据有效性: {is_valid}")
-        print("✅ 数据验证成功")
+        print("数据验证成功")
 
         print("\n[2.6] 测试转换为字典")
         data_dict = stock_data.to_dict()
         print(f"字典键: {list(data_dict.keys())}")
         print(f"包含评分: {'score' in data_dict}")
         print(f"包含指标: {'indicators' in data_dict}")
-        print("✅ 数据转换成功")
+        print("数据转换成功")
 
         print("\n[2.7] 测试获取摘要")
         summary = stock_data.get_summary()
@@ -152,9 +152,9 @@ def test_stock_fundamental_data():
         print(f"股票代码: {summary['symbol']}")
         print(f"评分: {summary['score']:.2f}")
         print(f"评分等级: {summary['score_level']}")
-        print("✅ 摘要获取成功")
+        print("摘要获取成功")
 
-        print("\n✅ 股票基本面数据测试通过")
+        print("\n股票基本面数据测试通过")
         return True
 
     except Exception as e:
@@ -188,7 +188,7 @@ def test_futures_fundamental_data():
             data_date=date.today(),
             raw_data=raw_data
         )
-        print(f"✅ 期货基本面数据创建成功: {futures_data}")
+        print(f"期货基本面数据创建成功: {futures_data}")
         print(f"   - 期货代码: {futures_data.symbol}")
         print(f"   - 资产类型: {futures_data.asset_type.value}")
         print(f"   - 指标数量: {len(futures_data._indicators)}")
@@ -198,14 +198,14 @@ def test_futures_fundamental_data():
         print(f"关键指标数量: {len(indicators)}")
         for name, value in indicators.items():
             print(f"  - {name}: {value:.2f}")
-        print("✅ 关键指标获取成功")
+        print("关键指标获取成功")
 
         print("\n[3.3] 测试基本面评分")
         score = futures_data.get_score()
         score_level = futures_data.get_score_level()
         print(f"基本面评分: {score:.2f}")
         print(f"评分等级: {score_level.value}")
-        print("✅ 基本面评分计算成功")
+        print("基本面评分计算成功")
 
         print("\n[3.4] 测试分类评分")
         liquidity_score = futures_data.get_liquidity_score()
@@ -215,14 +215,14 @@ def test_futures_fundamental_data():
         print(f"流动性评分: {liquidity_score:.2f}")
         print(f"供需评分: {supply_demand_score:.2f}")
         print(f"市场情绪评分: {market_sentiment_score:.2f}")
-        print("✅ 分类评分计算成功")
+        print("分类评分计算成功")
 
         print("\n[3.5] 测试数据验证")
         is_valid = futures_data.validate()
         print(f"数据有效性: {is_valid}")
-        print("✅ 数据验证成功")
+        print("数据验证成功")
 
-        print("\n✅ 期货基本面数据测试通过")
+        print("\n期货基本面数据测试通过")
         return True
 
     except Exception as e:
@@ -262,7 +262,7 @@ def test_crypto_fundamental_data():
             data_date=date.today(),
             raw_data=raw_data
         )
-        print(f"✅ 加密货币基本面数据创建成功: {crypto_data}")
+        print(f"加密货币基本面数据创建成功: {crypto_data}")
         print(f"   - 加密货币代码: {crypto_data.symbol}")
         print(f"   - 资产类型: {crypto_data.asset_type.value}")
         print(f"   - 指标数量: {len(crypto_data._indicators)}")
@@ -272,14 +272,14 @@ def test_crypto_fundamental_data():
         print(f"关键指标数量: {len(indicators)}")
         for name, value in indicators.items():
             print(f"  - {name}: {value:.2f}")
-        print("✅ 关键指标获取成功")
+        print("关键指标获取成功")
 
         print("\n[4.3] 测试基本面评分")
         score = crypto_data.get_score()
         score_level = crypto_data.get_score_level()
         print(f"基本面评分: {score:.2f}")
         print(f"评分等级: {score_level.value}")
-        print("✅ 基本面评分计算成功")
+        print("基本面评分计算成功")
 
         print("\n[4.4] 测试分类评分")
         market_score = crypto_data.get_market_score()
@@ -295,14 +295,14 @@ def test_crypto_fundamental_data():
         print(f"社区评分: {community_score:.2f}")
         print(f"情绪评分: {sentiment_score:.2f}")
         print(f"增长评分: {growth_score:.2f}")
-        print("✅ 分类评分计算成功")
+        print("分类评分计算成功")
 
         print("\n[4.5] 测试数据验证")
         is_valid = crypto_data.validate()
         print(f"数据有效性: {is_valid}")
-        print("✅ 数据验证成功")
+        print("数据验证成功")
 
-        print("\n✅ 加密货币基本面数据测试通过")
+        print("\n加密货币基本面数据测试通过")
         return True
 
     except Exception as e:
@@ -331,7 +331,7 @@ def test_factory_creation():
             raw_data=stock_raw_data,
             asset_type=AssetType.STOCK_A
         )
-        print(f"✅ 股票基本面数据创建成功: {stock_data}")
+        print(f"股票基本面数据创建成功: {stock_data}")
         assert isinstance(stock_data, StockFundamentalData)
 
         print("\n[5.2] 测试使用工厂创建期货基本面数据")
@@ -347,7 +347,7 @@ def test_factory_creation():
             raw_data=futures_raw_data,
             asset_type=AssetType.FUTURES
         )
-        print(f"✅ 期货基本面数据创建成功: {futures_data}")
+        print(f"期货基本面数据创建成功: {futures_data}")
         assert isinstance(futures_data, FuturesFundamentalData)
 
         print("\n[5.3] 测试使用工厂创建加密货币基本面数据")
@@ -364,7 +364,7 @@ def test_factory_creation():
             raw_data=crypto_raw_data,
             asset_type=AssetType.CRYPTO
         )
-        print(f"✅ 加密货币基本面数据创建成功: {crypto_data}")
+        print(f"加密货币基本面数据创建成功: {crypto_data}")
         assert isinstance(crypto_data, CryptoFundamentalData)
 
         print("\n[5.4] 测试从字典创建基本面数据")
@@ -381,7 +381,7 @@ def test_factory_creation():
         }
 
         fundamental_data = FundamentalDataFactory.create_from_dict(data_dict)
-        print(f"✅ 从字典创建基本面数据成功: {fundamental_data}")
+        print(f"从字典创建基本面数据成功: {fundamental_data}")
         assert isinstance(fundamental_data, StockFundamentalData)
 
         print("\n[5.5] 测试批量创建基本面数据")
@@ -421,10 +421,10 @@ def test_factory_creation():
         ]
 
         fundamental_data_list = FundamentalDataFactory.create_batch(data_list)
-        print(f"✅ 批量创建基本面数据成功: {len(fundamental_data_list)}个")
+        print(f"批量创建基本面数据成功: {len(fundamental_data_list)}个")
         assert len(fundamental_data_list) == 3
 
-        print("\n✅ 工厂创建功能测试通过")
+        print("\n工厂创建功能测试通过")
         return True
 
     except Exception as e:
@@ -447,10 +447,10 @@ def test_edge_cases():
                 raw_data={}
             )
             is_valid = empty_data.validate()
-            print(f"✅ 空数据验证结果: {is_valid} (期望: False)")
+            print(f"空数据验证结果: {is_valid} (期望: False)")
             assert is_valid is False
         except Exception as e:
-            print(f"✅ 空数据处理正确: {type(e).__name__}")
+            print(f"空数据处理正确: {type(e).__name__}")
 
         print("\n[6.2] 测试部分缺失数据")
         partial_data = StockFundamentalData(
@@ -461,7 +461,7 @@ def test_edge_cases():
             }
         )
         is_valid = partial_data.validate()
-        print(f"✅ 部分缺失数据验证结果: {is_valid} (期望: False)")
+        print(f"部分缺失数据验证结果: {is_valid} (期望: False)")
         assert is_valid is False
 
         print("\n[6.3] 测试不支持的资产类型")
@@ -475,7 +475,7 @@ def test_edge_cases():
             print("❌ 应该抛出异常")
             return False
         except ValueError as e:
-            print(f"✅ 不支持的资产类型处理正确: {e}")
+            print(f"不支持的资产类型处理正确: {e}")
 
         print("\n[6.4] 测试评分边界值")
         boundary_data = StockFundamentalData(
@@ -489,10 +489,10 @@ def test_edge_cases():
             }
         )
         score = boundary_data.get_score()
-        print(f"✅ 边界值评分: {score:.2f}")
+        print(f"边界值评分: {score:.2f}")
         assert 0.0 <= score <= 100.0
 
-        print("\n✅ 边界情况测试通过")
+        print("\n边界情况测试通过")
         return True
 
     except Exception as e:
@@ -522,7 +522,7 @@ def test_integration_with_existing_system():
         )
 
         indicators = stock_data.get_key_indicators()
-        print(f"✅ 现有格式兼容性测试通过")
+        print(f"现有格式兼容性测试通过")
         print(f"   - PE_RATIO: {indicators.get('PE_RATIO')}")
         print(f"   - PB_RATIO: {indicators.get('PB_RATIO')}")
         print(f"   - ROE: {indicators.get('ROE')}")
@@ -534,15 +534,15 @@ def test_integration_with_existing_system():
         assert 'PB_RATIO' in data_dict['indicators']
         assert 'ROE' in data_dict['indicators']
         assert 'DEBT_RATIO' in data_dict['indicators']
-        print("✅ 数据转换一致性测试通过")
+        print("数据转换一致性测试通过")
 
         print("\n[7.3] 测试评分计算一致性")
         score1 = stock_data.get_score()
         score2 = stock_data.get_score()
         assert score1 == score2
-        print(f"✅ 评分计算一致性测试通过: {score1:.2f}")
+        print(f"评分计算一致性测试通过: {score1:.2f}")
 
-        print("\n✅ 与现有系统的集成测试通过")
+        print("\n与现有系统的集成测试通过")
         return True
 
     except Exception as e:
@@ -574,7 +574,7 @@ def main():
     total = len(results)
 
     for name, result in results:
-        status = "✅ 通过" if result else "❌ 失败"
+        status = "通过" if result else "❌ 失败"
         print(f"{status} - {name}")
 
     print(f"\n总计: {passed}/{total} 测试通过")

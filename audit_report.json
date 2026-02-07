@@ -26,13 +26,13 @@
       "audit_status": "⚠️ 部分正确",
       "detailed_findings": {
         "field_definition": {
-          "status": "✅ 正确",
+          "status": "正确",
           "location": "import_config_manager.py:84,88",
           "evidence": "description: Optional[str] = None, data_usage: str = 'general'",
           "assessment": "字段定义正确，类型和默认值合理"
         },
         "field_persistence": {
-          "status": "✅ 正确",
+          "status": "正确",
           "location": "import_config_manager.py:238-245",
           "evidence": "数据库表使用JSON存储config字段",
           "assessment": "数据库schema无需修改，新字段会自动序列化到JSON"
@@ -46,7 +46,7 @@
           "severity": "中"
         },
         "backward_compatibility": {
-          "status": "✅ 正确",
+          "status": "正确",
           "evidence": "description默认值为None，data_usage默认值为'general'",
           "assessment": "旧数据加载时自动使用默认值，不会破坏现有功能"
         }
@@ -77,19 +77,19 @@
       "audit_status": "⚠️ 部分正确",
       "detailed_findings": {
         "method_implementation": {
-          "status": "✅ 正确",
+          "status": "正确",
           "location": "import_execution_engine.py:3597-3647",
           "evidence": "update_realtime_write_config()方法定义完整",
           "assessment": "方法签名、参数处理、策略映射、配置更新逻辑都正确"
         },
         "strategy_mapping": {
-          "status": "✅ 正确",
+          "status": "正确",
           "location": "import_execution_engine.py:3610-3619",
           "evidence": "strategy_map包含所有UI选项",
           "assessment": "策略映射完整，包括'实时写入'、'批量写入'、'自适应写入'、'禁用写入'"
         },
         "config_update": {
-          "status": "✅ 正确",
+          "status": "正确",
           "location": "import_execution_engine.py:3621-3643",
           "evidence": "正确更新self.realtime_write_service.config对象",
           "assessment": "直接修改config对象，无需重新初始化服务"
@@ -147,19 +147,19 @@
       "audit_status": "⚠️ 部分正确",
       "detailed_findings": {
         "start_import_method": {
-          "status": "✅ 正确",
+          "status": "正确",
           "location": "enhanced_data_import_widget.py:3655-3867",
           "evidence": "所有四种下载模式都正确传递了description和data_usage",
           "assessment": "start_import()方法中所有参数收集和传递都正确",
           "verification": [
-            "task_desc收集：✅ task_desc = self.task_desc_edit.toPlainText().strip()",
-            "data_usage收集：✅ data_usage = self._get_data_usage_value()",
-            "write_strategy收集：✅ write_strategy = self.write_strategy_combo.currentText()",
-            "enable_perf_monitor收集：✅ enable_perf_monitor = self.enable_perf_monitor_cb.isChecked()",
-            "enable_memory_monitor收集：✅ enable_memory_monitor = self.enable_memory_monitor_cb.isChecked()",
-            "description传递：✅ 所有四种下载模式都传递了description=task_desc",
-            "data_usage传递：✅ 所有四种下载模式都传递了data_usage=data_usage",
-            "update_realtime_write_config调用：✅ self.import_engine.update_realtime_write_config(...)"
+            "task_desc收集：task_desc = self.task_desc_edit.toPlainText().strip()",
+            "data_usage收集：data_usage = self._get_data_usage_value()",
+            "write_strategy收集：write_strategy = self.write_strategy_combo.currentText()",
+            "enable_perf_monitor收集：enable_perf_monitor = self.enable_perf_monitor_cb.isChecked()",
+            "enable_memory_monitor收集：enable_memory_monitor = self.enable_memory_monitor_cb.isChecked()",
+            "description传递：所有四种下载模式都传递了description=task_desc",
+            "data_usage传递：所有四种下载模式都传递了data_usage=data_usage",
+            "update_realtime_write_config调用：self.import_engine.update_realtime_write_config(...)"
           ]
         },
         "_get_current_ui_config_method": {
@@ -209,21 +209,21 @@
           "component": "UI层",
           "location": "enhanced_data_import_widget.py:3664",
           "action": "收集task_desc",
-          "status": "✅ 正确"
+          "status": "正确"
         },
         {
           "step": 2,
           "component": "UI层",
           "location": "enhanced_data_import_widget.py:3702,3739,3776,3808",
           "action": "传递description=task_desc到ImportTaskConfig",
-          "status": "✅ 正确"
+          "status": "正确"
         },
         {
           "step": 3,
           "component": "配置管理层",
           "location": "import_config_manager.py:4434",
           "action": "保存ImportTaskConfig到数据库",
-          "status": "✅ 正确"
+          "status": "正确"
         },
         {
           "step": 4,
@@ -244,21 +244,21 @@
           "component": "UI层",
           "location": "enhanced_data_import_widget.py:3692",
           "action": "收集data_usage",
-          "status": "✅ 正确"
+          "status": "正确"
         },
         {
           "step": 2,
           "component": "UI层",
           "location": "enhanced_data_import_widget.py:3707,3744,3781,3813",
           "action": "传递data_usage=data_usage到ImportTaskConfig",
-          "status": "✅ 正确"
+          "status": "正确"
         },
         {
           "step": 3,
           "component": "配置管理层",
           "location": "import_config_manager.py:4434",
           "action": "保存ImportTaskConfig到数据库",
-          "status": "✅ 正确"
+          "status": "正确"
         },
         {
           "step": 4,
@@ -279,21 +279,21 @@
           "component": "UI层",
           "location": "enhanced_data_import_widget.py:3836-3846",
           "action": "收集write_strategy、enable_perf_monitor、enable_memory_monitor",
-          "status": "✅ 正确"
+          "status": "正确"
         },
         {
           "step": 2,
           "component": "UI层",
           "location": "enhanced_data_import_widget.py:3840-3846",
           "action": "调用self.import_engine.update_realtime_write_config(...)",
-          "status": "✅ 正确"
+          "status": "正确"
         },
         {
           "step": 3,
           "component": "执行引擎层",
           "location": "import_execution_engine.py:3597-3647",
           "action": "更新self.realtime_write_service.config对象",
-          "status": "✅ 正确"
+          "status": "正确"
         },
         {
           "step": 4,

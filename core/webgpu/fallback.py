@@ -542,7 +542,7 @@ class MatplotlibRenderer(BaseRenderer):
                         if success:
                             render_time = time.time() - start_time
                             self._update_performance_stats(render_time)
-                            logger.debug(f"✅ 虚拟滚动成交量渲染完成: {len(optimized_data)}个数据点，耗时 {render_time*1000:.2f}ms")
+                            logger.debug(f"虚拟滚动成交量渲染完成: {len(optimized_data)}个数据点，耗时 {render_time*1000:.2f}ms")
                             return True
                         else:
                             logger.debug("虚拟滚动渲染失败，降级到常规渲染")
@@ -620,7 +620,7 @@ class MatplotlibRenderer(BaseRenderer):
                     # 优化轴范围更新
                     ax.autoscale_view()
                     
-                    logger.debug(f"✅ PolyCollection成交量渲染完成: {len(verts)}个柱子")
+                    logger.debug(f"PolyCollection成交量渲染完成: {len(verts)}个柱子")
                 else:
                     logger.debug("没有有效的成交量数据需要渲染")
 

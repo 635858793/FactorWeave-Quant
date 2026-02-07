@@ -39,7 +39,7 @@ end_time = time.time()
 elapsed_time = end_time - start_time
 backtest_speed = (data_size / 10000) / elapsed_time
 
-print(f"✅ 实测回测速度: {backtest_speed:.2f}万条/秒")
+print(f"实测回测速度: {backtest_speed:.2f}万条/秒")
 print(f"   耗时: {elapsed_time:.2f}秒")
 print()
 
@@ -58,7 +58,7 @@ for _ in range(100):
     execution_times.append(execution_time_ms)
 
 avg_execution_delay = sum(execution_times) / len(execution_times)
-print(f"✅ 实测执行延迟: {avg_execution_delay:.2f}ms")
+print(f"实测执行延迟: {avg_execution_delay:.2f}ms")
 print()
 
 # 测试3: 数据处理吞吐量
@@ -74,7 +74,7 @@ while time.time() - start_time < test_duration:
     processed_count += 1
 
 throughput = processed_count / test_duration
-print(f"✅ 实测吞吐量: {throughput:.0f}笔/秒")
+print(f"实测吞吐量: {throughput:.0f}笔/秒")
 print()
 
 # 测试4: 并发处理能力
@@ -99,7 +99,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         except Exception:
             continue
 
-print(f"✅ 实测并发能力: {successful_tasks}个任务")
+print(f"实测并发能力: {successful_tasks}个任务")
 print()
 
 # 生成报告

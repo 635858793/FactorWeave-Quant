@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget, QTableWidgetItem,
     QTabWidget, QFrame, QPushButton, QComboBox, QDateEdit, QTextEdit,
     QGroupBox, QGridLayout, QProgressBar, QSplitter,
-    QCheckBox, QSpinBox, QSlider,
+    QCheckBox, QSpinBox, QSlider, QSizePolicy,
     QFileDialog, QMessageBox, QDialogButtonBox, QDialog, QHeaderView
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QDate
@@ -385,7 +385,7 @@ class DataQualityMonitorTab(QWidget):
         """创建控制面板"""
         panel = QFrame()
         panel.setFrameStyle(QFrame.StyledPanel)
-        panel.setMaximumHeight(60)
+        panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         layout = QHBoxLayout(panel)
 
@@ -424,7 +424,7 @@ class DataQualityMonitorTab(QWidget):
 
         # 加载进度指示器（新增）
         self.loading_progress = QProgressBar()
-        self.loading_progress.setMaximumWidth(200)
+        self.loading_progress.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.loading_progress.setMaximum(100)
         self.loading_progress.setValue(0)
         self.loading_progress.setVisible(False)
@@ -454,7 +454,7 @@ class DataQualityMonitorTab(QWidget):
         # 质量指标概览
         metrics_group = QGroupBox("质量指标概览")
         metrics_layout = QGridLayout(metrics_group)
-        metrics_group.setMaximumHeight(100)
+        metrics_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         # 创建质量指标标签
         self.quality_metrics = {}
         metrics_items = [
@@ -601,7 +601,7 @@ class DataQualityMonitorTab(QWidget):
         detail_layout = QVBoxLayout(detail_group)
 
         self.anomaly_detail = QTextEdit()
-        self.anomaly_detail.setMaximumHeight(100)
+        self.anomaly_detail.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.anomaly_detail.setReadOnly(True)
         detail_layout.addWidget(self.anomaly_detail)
 
@@ -3138,6 +3138,48 @@ class DataQualityMonitorTab(QWidget):
             
         except Exception as e:
             logger.debug(f"清理数据质量监控资源失败: {e}")
+
+    def resizeEvent(self, event):
+        """窗口大小改变事件处理"""
+        super().resizeEvent(event)
+        self._update_responsive_layout()
+
+    def _update_responsive_layout(self):
+        """更新响应式布局"""
+        try:
+            window_width = self.width()
+            window_height = self.height()
+
+            logger.debug(f"DataQualityMonitorTab 响应式布局更新: {window_width}x{window_height}")
+
+            # 更新控制面板高度
+            control_panel = self.findChild(QFrame, "control_panel")
+            if control_panel:
+                panel_height = max(40, int(window_height * 0.08))
+                control_panel.setMinimumHeight(panel_height)
+                control_panel.setMaximumHeight(int(window_height * 0.12))
+
+            # 更新质量指标概览高度
+            metrics_group = self.findChild(QGroupBox, "metrics_group")
+            if metrics_group:
+                metrics_height = max(80, int(window_height * 0.15))
+                metrics_group.setMinimumHeight(metrics_height)
+                metrics_group.setMaximumHeight(int(window_height * 0.25))
+
+            # 更新异常详情高度
+            if hasattr(self, 'anomaly_detail'):
+                detail_height = max(80, int(window_height * 0.15))
+                self.anomaly_detail.setMinimumHeight(detail_height)
+                self.anomaly_detail.setMaximumHeight(int(window_height * 0.25))
+
+            # 更新加载进度宽度
+            if hasattr(self, 'loading_progress'):
+                progress_width = max(150, int(window_width * 0.2))
+                self.loading_progress.setMinimumWidth(progress_width)
+                self.loading_progress.setMaximumWidth(int(window_width * 0.3))
+
+        except Exception as e:
+            logger.error(f"更新响应式布局失败: {e}")
 
 
 class _QualityRuleDialog(QDialog):

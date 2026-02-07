@@ -124,7 +124,7 @@ class UnifiedOptimizationService:
                         self.logger.info(f"模块 {i} 初始化成功")
             
             self.is_initialized = True
-            self.logger.info("✅ 统一优化服务初始化完成")
+            self.logger.info("统一优化服务初始化完成")
             return True
             
         except Exception as e:
@@ -136,7 +136,7 @@ class UnifiedOptimizationService:
         try:
             self.cache_manager = IntelligentCache()
             # 直接初始化，不需要configure异步方法
-            self.logger.info("✅ 智能缓存管理器初始化成功")
+            self.logger.info("智能缓存管理器初始化成功")
             return True
         except Exception as e:
             self.logger.error(f"❌ 智能缓存管理器初始化失败: {e}")
@@ -147,7 +147,7 @@ class UnifiedOptimizationService:
         try:
             self.virtual_scroll = VirtualScrollRenderer()
             # VirtualScrollRenderer 使用初始化配置，不需要configure异步方法
-            self.logger.info("✅ 组件虚拟化初始化成功")
+            self.logger.info("组件虚拟化初始化成功")
             return True
         except Exception as e:
             self.logger.error(f"❌ 组件虚拟化初始化失败: {e}")
@@ -158,7 +158,7 @@ class UnifiedOptimizationService:
         try:
             self.realtime_processor = RealTimeDataProcessor()
             # 直接初始化，不需要configure异步方法
-            self.logger.info("✅ 实时数据处理器初始化成功")
+            self.logger.info("实时数据处理器初始化成功")
             return True
         except Exception as e:
             self.logger.error(f"❌ 实时数据处理器初始化失败: {e}")
@@ -169,7 +169,7 @@ class UnifiedOptimizationService:
         try:
             self.ai_recommender = UserBehaviorAnalyzer()
             # 直接初始化，不需要configure异步方法
-            self.logger.info("✅ AI推荐器初始化成功")
+            self.logger.info("AI推荐器初始化成功")
             return True
         except Exception as e:
             self.logger.error(f"❌ AI推荐器初始化失败: {e}")
@@ -185,7 +185,7 @@ class UnifiedOptimizationService:
                 'dynamic_layout': True,
                 'gesture_recognition': True
             })
-            self.logger.info("✅ 响应式UI初始化成功")
+            self.logger.info("响应式UI初始化成功")
             return True
         except Exception as e:
             self.logger.error(f"❌ 响应式UI初始化失败: {e}")
@@ -217,14 +217,14 @@ class UnifiedOptimizationService:
             self._performance_monitor_task = asyncio.create_task(self._performance_monitor())
             
             self.is_running = True
-            self.logger.info("✅ 统一优化服务启动成功")
+            self.logger.info("统一优化服务启动成功")
             return True
             
             # 启动性能监控
             self._performance_monitor_task = asyncio.create_task(self._performance_monitor())
             
             self.is_running = True
-            self.logger.info("✅ 统一优化服务启动成功")
+            self.logger.info("统一优化服务启动成功")
             return True
             
         except Exception as e:
@@ -236,7 +236,7 @@ class UnifiedOptimizationService:
         try:
             self.responsive_ui = ResponsiveLayoutManager()
             # 直接初始化，不需要configure异步方法
-            self.logger.info("✅ 响应式UI初始化成功")
+            self.logger.info("响应式UI初始化成功")
             return True
         except Exception as e:
             self.logger.error(f"❌ 响应式UI初始化失败: {e}")
@@ -268,7 +268,7 @@ class UnifiedOptimizationService:
                 self.logger.info("响应式UI已停止")
             
             self.is_running = False
-            self.logger.info("✅ 统一优化服务已停止")
+            self.logger.info("统一优化服务已停止")
             return True
             
         except Exception as e:

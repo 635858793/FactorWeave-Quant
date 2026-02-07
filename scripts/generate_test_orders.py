@@ -115,7 +115,7 @@ def generate_test_orders(count=50):
                 order = order_service.create_order(order_request)
                 if order:
                     success_count += 1
-                    logger.info(f"  [{i+1}/{count}] ✅ 订单创建成功: {order.order_id} ({asset_type.value} {symbol})")
+                    logger.info(f"  [{i+1}/{count}] 订单创建成功: {order.order_id} ({asset_type.value} {symbol})")
                 else:
                     failed_count += 1
                     logger.warning(f"  [{i+1}/{count}] ⚠️  订单创建失败: {asset_type.value} {symbol}")

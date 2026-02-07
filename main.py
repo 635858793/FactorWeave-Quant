@@ -163,6 +163,23 @@ class FactorWeaveQuantApplication:
         if icon_path.exists():
             self.app.setWindowIcon(QIcon(str(icon_path)))
 
+        # 初始化显示优化管理器（响应式UI支持）
+        try:
+            from gui.utils.display_optimization import setup_high_dpi_support
+            setup_high_dpi_support()
+            logger.info("✓ 显示优化管理器已初始化")
+        except Exception as e:
+            logger.warning(f"显示优化管理器初始化失败: {e}")
+
+        # 初始化全局字体管理器（字体缩放功能）
+        try:
+            from gui.utils.global_font_manager import get_global_font_manager
+            self.font_manager = get_global_font_manager()
+            logger.info(f"✓ 全局字体管理器已初始化，当前字体大小: {self.font_manager.get_font_size()}")
+        except Exception as e:
+            logger.warning(f"全局字体管理器初始化失败: {e}")
+            self.font_manager = None
+
         logger.info("Qt应用程序创建完成")
 
 
@@ -342,7 +359,7 @@ def main():
                 cleanup_duckdb_manager,
                 name="DuckDB连接管理器"
             )
-            logger.info("✅ 已注册DuckDB优雅关闭处理器")
+            logger.info("已注册DuckDB优雅关闭处理器")
         except Exception as e:
             logger.warning(f"注册DuckDB清理失败: {e}")
 

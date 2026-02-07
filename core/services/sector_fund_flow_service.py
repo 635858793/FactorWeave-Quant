@@ -420,7 +420,7 @@ class SectorFundFlowService(QObject):
                 'description': 'AkShare板块资金流数据源'
             }
             
-            logger.info("✅ AkShare数据源已配置为板块资金流的默认数据源")
+            logger.info("AkShare数据源已配置为板块资金流的默认数据源")
 
         except Exception as e:
             logger.error(f"[ERROR] 数据源检测失败: {e}")
@@ -456,30 +456,30 @@ class SectorFundFlowService(QObject):
                 logger.debug(f"数据源 {source_id} 不存在")
                 return False
 
-            # ✅ 方法1：调用 get_plugin_info() 方法（适配器）
+            # 方法1：调用 get_plugin_info() 方法（适配器）
             plugin_info = None
             if hasattr(source_instance, 'get_plugin_info'):
                 try:
                     plugin_info = source_instance.get_plugin_info()
-                    logger.debug(f"✅ 通过 get_plugin_info() 获取插件信息: {source_id}")
+                    logger.debug(f"通过 get_plugin_info() 获取插件信息: {source_id}")
                 except Exception as e:
                     logger.debug(f"调用 get_plugin_info() 失败: {e}")
 
-            # ✅ 方法2：访问 plugin_info 属性（直接插件）
+            # 方法2：访问 plugin_info 属性（直接插件）
             elif hasattr(source_instance, 'plugin_info'):
                 try:
                     plugin_info = source_instance.plugin_info
-                    logger.debug(f"✅ 通过 plugin_info 属性获取插件信息: {source_id}")
+                    logger.debug(f"通过 plugin_info 属性获取插件信息: {source_id}")
                 except Exception as e:
                     logger.debug(f"访问 plugin_info 属性失败: {e}")
 
-            # ✅ 方法3：通过适配器的 plugin 属性获取（适配器包装）
+            # 方法3：通过适配器的 plugin 属性获取（适配器包装）
             elif hasattr(source_instance, 'plugin'):
                 plugin = source_instance.plugin
                 if hasattr(plugin, 'plugin_info'):
                     try:
                         plugin_info = plugin.plugin_info
-                        logger.debug(f"✅ 通过适配器 plugin 属性获取插件信息: {source_id}")
+                        logger.debug(f"通过适配器 plugin 属性获取插件信息: {source_id}")
                     except Exception as e:
                         logger.debug(f"通过适配器获取插件信息失败: {e}")
 
@@ -492,7 +492,7 @@ class SectorFundFlowService(QObject):
                     if supports_fund_flow:
                         return True
 
-            # ✅ 回退方案：检查插件实例是否有相关方法
+            # 回退方案：检查插件实例是否有相关方法
             # 首先获取真正的插件实例（处理适配器包装）
             plugin = source_instance
             if hasattr(source_instance, 'plugin'):

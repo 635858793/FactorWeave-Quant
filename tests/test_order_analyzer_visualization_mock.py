@@ -87,7 +87,7 @@ def test_visualization_mock():
             ]
         }
 
-        print("✅ 模拟分析报告创建成功")
+        print("模拟分析报告创建成功")
 
         summary = report.get('summary', {})
         print(f"\n2. 执行摘要:")
@@ -100,7 +100,7 @@ def test_visualization_mock():
         print("\n3. 生成订单执行图表...")
         execution_chart = analyzer.generate_execution_chart(report, chart_type='bar')
         if execution_chart:
-            print(f"✅ 订单执行图表生成成功: {execution_chart}")
+            print(f"订单执行图表生成成功: {execution_chart}")
             print(f"   文件存在: {os.path.exists(execution_chart)}")
             if os.path.exists(execution_chart):
                 file_size = os.path.getsize(execution_chart)
@@ -111,7 +111,7 @@ def test_visualization_mock():
         print("\n4. 生成滑点分析图表...")
         slippage_chart = analyzer.generate_slippage_chart(report, chart_type='line')
         if slippage_chart:
-            print(f"✅ 滑点分析图表生成成功: {slippage_chart}")
+            print(f"滑点分析图表生成成功: {slippage_chart}")
             print(f"   文件存在: {os.path.exists(slippage_chart)}")
             if os.path.exists(slippage_chart):
                 file_size = os.path.getsize(slippage_chart)
@@ -122,7 +122,7 @@ def test_visualization_mock():
         print("\n5. 生成成交量分析图表...")
         volume_chart = analyzer.generate_volume_chart(report, chart_type='bar')
         if volume_chart:
-            print(f"✅ 成交量分析图表生成成功: {volume_chart}")
+            print(f"成交量分析图表生成成功: {volume_chart}")
             print(f"   文件存在: {os.path.exists(volume_chart)}")
             if os.path.exists(volume_chart):
                 file_size = os.path.getsize(volume_chart)
@@ -133,7 +133,7 @@ def test_visualization_mock():
         print("\n6. 生成订单效率图表...")
         efficiency_chart = analyzer.generate_efficiency_chart(report, chart_type='radar')
         if efficiency_chart:
-            print(f"✅ 订单效率图表生成成功: {efficiency_chart}")
+            print(f"订单效率图表生成成功: {efficiency_chart}")
             print(f"   文件存在: {os.path.exists(efficiency_chart)}")
             if os.path.exists(efficiency_chart):
                 file_size = os.path.getsize(efficiency_chart)
@@ -146,7 +146,7 @@ def test_visualization_mock():
         html_report_path = f"reports/order_analysis_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
 
         if analyzer.export_report_with_charts(report, html_report_path, format='html'):
-            print(f"✅ HTML报告导出成功: {html_report_path}")
+            print(f"HTML报告导出成功: {html_report_path}")
             print(f"   文件存在: {os.path.exists(html_report_path)}")
             if os.path.exists(html_report_path):
                 file_size = os.path.getsize(html_report_path)

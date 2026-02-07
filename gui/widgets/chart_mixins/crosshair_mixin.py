@@ -42,7 +42,7 @@ class CrosshairMixin:
     def enable_crosshair(self, force_rebind=False):
         """启用十字光标功能"""
         try:
-            # ✅ 性能优化：检查是否已经启用，避免重复调用
+            # 性能优化：检查是否已经启用，避免重复调用
             if not force_rebind and hasattr(self, '_crosshair_initialized') and self._crosshair_initialized:
                 if hasattr(self, 'crosshair_enabled') and self.crosshair_enabled:
                     logger.debug("十字光标已启用，跳过重复初始化")
@@ -84,15 +84,15 @@ class CrosshairMixin:
         重置十字光标状态 - 在图表数据更新后调用
         确保十字光标在图表更新后仍然正常工作
         
-        ✅ 性能优化：避免不必要的重置，只在真正需要时重置
+        性能优化：避免不必要的重置，只在真正需要时重置
         """
         try:
-            # ✅ 性能优化：如果十字光标未启用，直接返回
+            # 性能优化：如果十字光标未启用，直接返回
             if not hasattr(self, 'crosshair_enabled') or not self.crosshair_enabled:
                 logger.debug("十字光标未启用，跳过重置")
                 return
             
-            # ✅ 性能优化：如果已经初始化且状态正常，可能不需要完全重置
+            # 性能优化：如果已经初始化且状态正常，可能不需要完全重置
             # 只清除元素，不重新绑定事件（减少事件连接开销）
             if hasattr(self, '_crosshair_initialized') and self._crosshair_initialized:
                 logger.debug("十字光标已初始化，只清除元素")
@@ -517,7 +517,7 @@ class CrosshairMixin:
                 self.canvas.draw_idle()
 
             def on_mouse_move(event):
-                # ✅ 性能优化P3：延迟初始化十字光标到用户首次交互时
+                # 性能优化P3：延迟初始化十字光标到用户首次交互时
                 if hasattr(self, '_crosshair_needs_init') and self._crosshair_needs_init:
                     if not hasattr(self, '_crosshair_initialized') or not self._crosshair_initialized:
                         logger.debug("用户首次交互，初始化十字光标")

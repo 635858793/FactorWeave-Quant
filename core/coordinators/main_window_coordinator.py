@@ -17,11 +17,25 @@ import pandas as pd
 from PyQt5.QtWidgets import (
     QFileDialog, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QSplitter, QStatusBar, QMenuBar, QMessageBox, QDockWidget, QLabel, QPushButton, QFrame,
-    QApplication
+    QApplication, QSizePolicy
 )
-from PyQt5.QtCore import QThread, Qt, pyqtSignal
+from PyQt5.QtCore import QThread, Qt, pyqtSignal, QEvent
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import pyqtSlot
+
+
+class ResponsiveMainWindow(QMainWindow):
+    """支持响应式布局的主窗口"""
+    
+    resize_requested = pyqtSignal()
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+    
+    def resizeEvent(self, event):
+        """窗口大小改变事件"""
+        super().resizeEvent(event)
+        self.resize_requested.emit()
 
 from core.performance.unified_monitor import PerformanceAutoTuner
 from core.plugin_manager import PluginManager
@@ -74,11 +88,14 @@ class MainWindowCoordinator(BaseCoordinator):
         """
         super().__init__(service_container, event_bus)
 
-        # 创建主窗口
-        self._main_window = QMainWindow(parent)
+        # 创建主窗口 - 使用响应式窗口
+        self._main_window = ResponsiveMainWindow(parent)
         self._main_window.setWindowTitle("FactorWeave-Quant  2.0 多资产分析系统")
         self._main_window.setGeometry(100, 100, 1400, 900)
         self._main_window.setMinimumSize(1200, 800)
+
+        # 连接窗口大小改变信号
+        self._main_window.resize_requested.connect(self._update_responsive_layout)
 
         # UI面板
         self._panels: Dict[str, Any] = {}
@@ -98,68 +115,6 @@ class MainWindowCoordinator(BaseCoordinator):
             'right_panel_width': 350,
             'bottom_panel_height': 200,
             # 'panel_padding': 5
-        }
-
-        # 中央数据状态（支持多资产类型）
-        self._current_symbol: Optional[str] = None
-        self._current_asset_name: Optional[str] = None
-        self._current_asset_type: AssetType = AssetType.STOCK_A
-        self._current_market: Optional[str] = None
-        self._current_asset_data: Dict[str, Any] = {}
-        self._is_loading = False
-
-        # 向后兼容属性
-        @property
-        def _current_stock_code(self) -> Optional[str]:
-            return self._current_symbol
-
-        @_current_stock_code.setter
-        def _current_stock_code(self, value: Optional[str]):
-            self._current_symbol = value
-
-        @property
-        def _current_stock_data(self) -> Dict[str, Any]:
-            return self._current_asset_data
-
-        @_current_stock_data.setter
-        def _current_stock_data(self, value: Dict[str, Any]):
-            self._current_asset_data = value
-
-    def __init__(self, service_container, event_bus, parent=None):
-        """
-        初始化主窗口协调器
-
-        Args:
-            service_container: 服务容器
-            event_bus: 事件总线
-            parent: 父窗口（可选）
-        """
-        super().__init__(service_container, event_bus)
-
-        # 创建主窗口
-        self._main_window = QMainWindow(parent)
-        self._main_window.setWindowTitle("FactorWeave-Quant 2.0 多资产分析系统")
-        self._main_window.setGeometry(100, 100, 1400, 900)
-        self._main_window.setMinimumSize(1200, 800)
-
-        # UI面板
-        self._panels: Dict[str, Any] = {}
-        self._optimization_dashboard = None
-
-        # 窗口状态
-        self._window_state = {
-            'title': 'FactorWeave-Quant 2.0 多资产分析系统',
-            'geometry': (100, 100, 1400, 900),
-            'min_size': (1200, 800),
-            'is_maximized': False
-        }
-
-        # 布局配置
-        self._layout_config = {
-            'left_panel_width': 300,
-            'right_panel_width': 350,
-            'bottom_panel_height': 200,
-            'panel_padding': 5
         }
 
         # 中央数据状态（支持多资产类型）
@@ -304,13 +259,13 @@ class MainWindowCoordinator(BaseCoordinator):
             # 数据时间标签
             self._data_time_label = QLabel("")
             self._data_time_label.setToolTip("当前数据的最新时间")
-            self._data_time_label.setFixedWidth(150)
+            self._data_time_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
             self._status_bar.addPermanentWidget(self._data_time_label)
 
             # 创建日志显示/隐藏按钮
             self._log_toggle_btn = QPushButton("隐藏日志")
             self._log_toggle_btn.setToolTip("隐藏/显示日志面板")
-            self._log_toggle_btn.setFixedWidth(80)
+            self._log_toggle_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
             self._log_toggle_btn.setStyleSheet("""
                 QPushButton {
                     background-color: transparent;
@@ -384,9 +339,7 @@ class MainWindowCoordinator(BaseCoordinator):
                 parent=self._main_window,
                 coordinator=self
             )
-            left_panel._root_frame.setMinimumWidth(
-                self._layout_config['left_panel_width'])
-            left_panel._root_frame.setMaximumWidth(300)
+            left_panel._root_frame.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
             horizontal_splitter.addWidget(left_panel._root_frame)
             self._panels['left'] = left_panel
 
@@ -395,13 +348,13 @@ class MainWindowCoordinator(BaseCoordinator):
                 parent=self._main_window,
                 coordinator=self
             )
-            # ✅ 修复：设置中间面板的合理尺寸限制，避免图表区域过宽
+            # 修复：设置中间面板的合理尺寸限制，避免图表区域过宽
             # 由于右侧面板已改为 QDockWidget，中间面板需要设置最小宽度以确保图表正常显示
-            middle_panel._root_frame.setMinimumWidth(400)  # 确保图表有足够的显示空间
+            middle_panel._root_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
             horizontal_splitter.addWidget(middle_panel._root_frame)
             self._panels['middle'] = middle_panel
 
-            # ✅ 修复：将右侧面板改为 QDockWidget，提供灵活的布局调整能力
+            # 修复：将右侧面板改为 QDockWidget，提供灵活的布局调整能力
             # 创建右侧面板（技术分析面板）
             right_panel = RightPanel(
                 parent=self._main_window,
@@ -415,8 +368,7 @@ class MainWindowCoordinator(BaseCoordinator):
             right_dock.setAllowedAreas(Qt.RightDockWidgetArea | Qt.LeftDockWidgetArea)
 
             # 设置尺寸限制
-            right_dock.setMinimumWidth(self._layout_config['right_panel_width'])
-            right_dock.setMaximumWidth(1500)
+            right_dock.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
 
             # 添加到主窗口右侧停靠区域
             self._main_window.addDockWidget(Qt.RightDockWidgetArea, right_dock)
@@ -450,7 +402,7 @@ class MainWindowCoordinator(BaseCoordinator):
             # 连接面板之间的信号
             self._connect_panel_signals()
 
-            # ✅ 修复：增强UI组件的集成已移至异步初始化中
+            # 修复：增强UI组件的集成已移至异步初始化中
             # 不再在这里同步集成，避免阻塞主初始化流程
             # 集成将在 _initialize_enhanced_ui_components_async() 中完成
 
@@ -624,7 +576,7 @@ class MainWindowCoordinator(BaseCoordinator):
         """设置布局"""
         # 布局已在_create_panels中设置
         try:
-            # ✅ 修复：注册股票选择事件处理器
+            # 修复：注册股票选择事件处理器
             # 注意：_on_stock_selected是异步方法，需要用QTimer或其他机制调度
             self.event_bus.subscribe(StockSelectedEvent, self._handle_stock_selected_sync)
 
@@ -798,7 +750,7 @@ class MainWindowCoordinator(BaseCoordinator):
 
             logger.info(f"加载数据，股票：{event.stock_code}，周期：{period}，时间范围：{time_range}，图表类型：{chart_type}")
 
-            # 1. ✅ 优化：优先使用事件中的K线数据，避免重复查询
+            # 1. 优化：优先使用事件中的K线数据，避免重复查询
             kline_data = None
             if hasattr(event, 'kline_data') and event.kline_data is not None:
                 logger.info(f"使用LeftPanel预加载的K线数据: {event.stock_code}")
@@ -806,7 +758,7 @@ class MainWindowCoordinator(BaseCoordinator):
                 logger.debug(f"预加载数据行数: {len(kline_data) if hasattr(kline_data, '__len__') else 'N/A'}")
             else:
                 # 降级：重新查询K线数据
-                # ✅ 从事件中获取资产类型（默认为股票）
+                # 从事件中获取资产类型（默认为股票）
                 asset_type = getattr(event, 'asset_type', AssetType.STOCK_A)
                 logger.info(f"事件中无K线数据，开始请求K线数据: {event.stock_code} ({asset_type.value})")
                 kline_data_response = await self._data_manager.request_data(
@@ -814,7 +766,7 @@ class MainWindowCoordinator(BaseCoordinator):
                     data_type='kdata',
                     period=period,          # 传递周期
                     time_range=time_range,  # 传递时间范围
-                    asset_type=asset_type   # ✅ 传递资产类型
+                    asset_type=asset_type   # 传递资产类型
                 )
 
                 if isinstance(kline_data_response, dict):
@@ -967,13 +919,13 @@ class MainWindowCoordinator(BaseCoordinator):
             except Exception as e:
                 logger.warning(f"使用TET模式获取数据失败，尝试传统方式: {e}")
 
-                # ✅ 降级到传统request_data方式（支持所有资产类型）
+                # 降级到传统request_data方式（支持所有资产类型）
                 kline_data_response = await self._data_manager.request_data(
                     stock_code=event.symbol,
                     data_type='kdata',
                     period=period,
                     time_range=time_range,
-                    asset_type=event.asset_type  # ✅ 传递资产类型
+                    asset_type=event.asset_type  # 传递资产类型
                 )
 
                 if isinstance(kline_data_response, dict):
@@ -1182,7 +1134,7 @@ class MainWindowCoordinator(BaseCoordinator):
             # 触发图表更新，这将重新渲染所有指标
             logger.info(f"触发图表更新，股票代码: {stock_code}")
             chart_widget.update_chart(update_data)
-            logger.info("✅ 图表更新完成，指标将重新渲染")
+            logger.info("图表更新完成，指标将重新渲染")
             
         except Exception as e:
             logger.error(f"触发图表更新失败: {e}", exc_info=True)
@@ -1408,6 +1360,42 @@ class MainWindowCoordinator(BaseCoordinator):
             logger.error(f"Failed to refresh data: {e}")
             self.show_message(f"刷新失败: {e}")
 
+    def _on_increase_font(self) -> None:
+        """增大字体"""
+        try:
+            from gui.utils.global_font_manager import get_global_font_manager
+            font_manager = get_global_font_manager()
+            font_manager.increase_font_size()
+            self.show_message(f"字体大小: {font_manager.get_font_size()}")
+            logger.info(f"字体大小已增大: {font_manager.get_font_size()}")
+        except Exception as e:
+            logger.error(f"增大字体失败: {e}")
+            self.show_message(f"增大字体失败: {e}")
+
+    def _on_decrease_font(self) -> None:
+        """减小字体"""
+        try:
+            from gui.utils.global_font_manager import get_global_font_manager
+            font_manager = get_global_font_manager()
+            font_manager.decrease_font_size()
+            self.show_message(f"字体大小: {font_manager.get_font_size()}")
+            logger.info(f"字体大小已减小: {font_manager.get_font_size()}")
+        except Exception as e:
+            logger.error(f"减小字体失败: {e}")
+            self.show_message(f"减小字体失败: {e}")
+
+    def _on_reset_font(self) -> None:
+        """重置字体"""
+        try:
+            from gui.utils.global_font_manager import get_global_font_manager
+            font_manager = get_global_font_manager()
+            font_manager.reset_font_size()
+            self.show_message(f"字体大小已重置: {font_manager.get_font_size()}")
+            logger.info(f"字体大小已重置: {font_manager.get_font_size()}")
+        except Exception as e:
+            logger.error(f"重置字体失败: {e}")
+            self.show_message(f"重置字体失败: {e}")
+
     # 工具菜单方法
     def _on_data_export(self) -> None:
         """数据导出（别名方法）"""
@@ -1521,7 +1509,7 @@ FactorWeave-Quant  2.0 (重构版本)
     def _on_node_management(self) -> None:
         """节点管理（分布式节点监控）"""
         try:
-            # ✅ 使用新的真实数据UI
+            # 使用新的真实数据UI
             from gui.dialogs.distributed_node_monitor_dialog import DistributedNodeMonitorDialog
             from core.containers import get_service_container
 
@@ -1651,7 +1639,7 @@ FactorWeave-Quant  2.0 (重构版本)
                     logger.error(traceback.format_exc())
                     # 继续执行，允许dialog处理空的plugin_manager
 
-            # ✅ 情绪数据服务已删除（功能已整合到热点分析）
+            # 情绪数据服务已删除（功能已整合到热点分析）
             sentiment_service = None
 
             # 显示插件管理器状态
@@ -3764,7 +3752,7 @@ FactorWeave-Quant  2.0 (重构版本)
 
             logger.info("开始集成增强UI组件到主界面...")
 
-            # ✅ 修复：将技术分析面板与增强组件组合在一起，默认在右侧
+            # 修复：将技术分析面板与增强组件组合在一起，默认在右侧
             # 首先创建技术分析面板的 QDockWidget（如果尚未创建）
             right_dock = None
             if 'right_dock' in self._panels:
@@ -3773,7 +3761,7 @@ FactorWeave-Quant  2.0 (重构版本)
             else:
                 logger.warning("技术分析面板 QDockWidget 未找到，跳过组合")
 
-            # ✅ 修复：存储所有需要组合到右侧的 QDockWidget
+            # 修复：存储所有需要组合到右侧的 QDockWidget
             right_area_docks = []
 
             # 将技术分析面板作为第一个（如果存在）
@@ -3781,13 +3769,13 @@ FactorWeave-Quant  2.0 (重构版本)
                 right_area_docks.append(right_dock)
                 logger.info("技术分析面板已添加到右侧组合列表")
 
-            # ✅ 修复：将所有增强组件组合到右侧，与技术分析面板形成标签页组
+            # 修复：将所有增强组件组合到右侧，与技术分析面板形成标签页组
             # 添加Level-2数据面板作为停靠窗口（组合到右侧）
             if 'level2_panel' in self._enhanced_components:
                 level2_dock = QDockWidget("Level-2 数据", self._main_window)
                 level2_dock.setWidget(self._enhanced_components['level2_panel'])
                 level2_dock.setAllowedAreas(Qt.RightDockWidgetArea | Qt.LeftDockWidgetArea)
-                # ✅ 修复：如果已有技术分析面板，直接组合；否则先添加到右侧
+                # 修复：如果已有技术分析面板，直接组合；否则先添加到右侧
                 if right_area_docks:
                     # 技术分析面板已存在，直接组合
                     self._main_window.tabifyDockWidget(right_area_docks[0], level2_dock)
@@ -3804,7 +3792,7 @@ FactorWeave-Quant  2.0 (重构版本)
                 orderbook_dock = QDockWidget("订单簿深度", self._main_window)
                 orderbook_dock.setWidget(self._enhanced_components['order_book_widget'])
                 orderbook_dock.setAllowedAreas(Qt.RightDockWidgetArea | Qt.LeftDockWidgetArea)
-                # ✅ 修复：组合到右侧（与技术分析面板或Level-2面板组合）
+                # 修复：组合到右侧（与技术分析面板或Level-2面板组合）
                 if right_area_docks:
                     # 已有其他面板在右侧，直接组合
                     self._main_window.tabifyDockWidget(right_area_docks[0], orderbook_dock)
@@ -3821,7 +3809,7 @@ FactorWeave-Quant  2.0 (重构版本)
                 recommendation_dock = QDockWidget("智能推荐", self._main_window)
                 recommendation_dock.setWidget(self._enhanced_components['smart_recommendation_panel'])
                 recommendation_dock.setAllowedAreas(Qt.RightDockWidgetArea | Qt.LeftDockWidgetArea)
-                # ✅ 修复：组合到右侧（与技术分析面板或其他面板组合）
+                # 修复：组合到右侧（与技术分析面板或其他面板组合）
                 if right_area_docks:
                     # 已有其他面板在右侧，直接组合
                     self._main_window.tabifyDockWidget(right_area_docks[0], recommendation_dock)
@@ -3838,7 +3826,7 @@ FactorWeave-Quant  2.0 (重构版本)
                 ai_stock_dock = QDockWidget("增强AI选股", self._main_window)
                 ai_stock_dock.setWidget(self._enhanced_components['ai_stock_selection'])
                 ai_stock_dock.setAllowedAreas(Qt.RightDockWidgetArea | Qt.LeftDockWidgetArea)
-                # ✅ 修复：组合到右侧（与技术分析面板或其他面板组合）
+                # 修复：组合到右侧（与技术分析面板或其他面板组合）
                 if right_area_docks:
                     # 已有其他面板在右侧，直接组合
                     self._main_window.tabifyDockWidget(right_area_docks[0], ai_stock_dock)
@@ -3850,17 +3838,17 @@ FactorWeave-Quant  2.0 (重构版本)
                     right_area_docks.append(ai_stock_dock)
                     logger.info("增强AI选股面板已添加到右侧停靠区域")
 
-            # ✅ 修复：将所有右侧组合的 QDockWidget 的标签页位置设置为顶部
+            # 修复：将所有右侧组合的 QDockWidget 的标签页位置设置为顶部
             if right_area_docks:
                 # 确保第一个 dock（技术分析面板）可见并激活
                 right_area_docks[0].setVisible(True)
                 right_area_docks[0].raise_()
                 logger.info(f"所有右侧 QDockWidget 已组合在一起（共{len(right_area_docks)}个面板）")
 
-            # ✅ 修复：存储底部区域的 QDockWidget（用于标签页位置设置）
+            # 修复：存储底部区域的 QDockWidget（用于标签页位置设置）
             bottom_area_docks = []
 
-            # ✅ 修复：将所有组合的 QDockWidget 的标签页位置设置为顶部
+            # 修复：将所有组合的 QDockWidget 的标签页位置设置为顶部
             # 注意：对于 QDockWidget 组合后的标签页，需要通过查找 QTabBar 来设置位置
             all_docks = right_area_docks + bottom_area_docks
             if all_docks:
@@ -3954,3 +3942,52 @@ FactorWeave-Quant  2.0 (重构版本)
             logger.warning("智能推荐面板未找到")
         except Exception as e:
             logger.error(f"切换智能推荐面板失败: {e}")
+
+    def _update_responsive_layout(self):
+        """更新响应式布局"""
+        try:
+            if not self._main_window:
+                return
+
+            window_width = self._main_window.width()
+            window_height = self._main_window.height()
+
+            logger.debug(f"MainWindowCoordinator 响应式布局更新: {window_width}x{window_height}")
+
+            # 更新数据时间标签宽度
+            if hasattr(self, '_data_time_label'):
+                label_width = max(120, int(window_width * 0.1))
+                self._data_time_label.setMinimumWidth(label_width)
+                self._data_time_label.setMaximumWidth(int(window_width * 0.15))
+
+            # 更新日志切换按钮宽度
+            if hasattr(self, '_log_toggle_btn'):
+                btn_width = max(70, int(window_width * 0.06))
+                self._log_toggle_btn.setMinimumWidth(btn_width)
+                self._log_toggle_btn.setMaximumWidth(int(window_width * 0.1))
+
+            # 更新左侧面板宽度
+            if 'left' in self._panels:
+                left_panel = self._panels['left']
+                if hasattr(left_panel, '_root_frame'):
+                    panel_width = max(200, int(window_width * 0.2))
+                    left_panel._root_frame.setMinimumWidth(panel_width)
+                    left_panel._root_frame.setMaximumWidth(int(window_width * 0.3))
+
+            # 更新中间面板宽度
+            if 'middle' in self._panels:
+                middle_panel = self._panels['middle']
+                if hasattr(middle_panel, '_root_frame'):
+                    panel_width = max(300, int(window_width * 0.4))
+                    middle_panel._root_frame.setMinimumWidth(panel_width)
+
+            # 更新右侧停靠面板宽度
+            dock_widgets = self._main_window.findChildren(QDockWidget)
+            for dock in dock_widgets:
+                if dock.windowTitle() == "技术分析":
+                    dock_width = max(250, int(window_width * 0.25))
+                    dock.setMinimumWidth(dock_width)
+                    dock.setMaximumWidth(int(window_width * 0.4))
+
+        except Exception as e:
+            logger.error(f"更新响应式布局失败: {e}")

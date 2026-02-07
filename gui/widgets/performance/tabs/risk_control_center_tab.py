@@ -14,13 +14,14 @@ from PyQt5.QtWidgets import (
     QLineEdit, QSpinBox, QTextEdit, QTableWidget, QTableWidgetItem,
     QAbstractItemView, QMessageBox, QInputDialog, QFileDialog, QMenu,
     QLabel, QTabWidget, QFrame, QGridLayout, QProgressBar, QSlider,
-    QScrollArea
+    QScrollArea, QSizePolicy
 )
 from PyQt5.QtCore import QThreadPool, pyqtSlot, Qt, QTimer
 from PyQt5.QtGui import QBrush, QColor, QFont
 from gui.widgets.performance.components.metric_card import ModernMetricCard
 from gui.widgets.performance.components.performance_chart import ModernPerformanceChart
 from gui.widgets.performance.workers.async_workers import AlertHistoryWorker
+from gui.utils.responsive_helper import calculate_spacing, calculate_margins, calculate_percentage_height
 from loguru import logger
 
 # 导入增强风险监控后端
@@ -107,8 +108,9 @@ class ModernRiskControlCenterTab(QWidget):
 
     def init_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(5, 5, 5, 5)
-        layout.setSpacing(5)
+        spacing = calculate_spacing(5)
+        layout.setContentsMargins(spacing, spacing, spacing, spacing)
+        layout.setSpacing(spacing)
 
         # 创建子标签页
         self.tab_widget = QTabWidget()
@@ -141,15 +143,16 @@ class ModernRiskControlCenterTab(QWidget):
         """创建实时风险监控标签页"""
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        layout.setContentsMargins(5, 5, 5, 5)
-        layout.setSpacing(5)
+        spacing = calculate_spacing(5)
+        layout.setContentsMargins(spacing, spacing, spacing, spacing)
+        layout.setSpacing(spacing)
 
         # 风险等级指示器
         risk_level_group = QGroupBox("风险等级")
         risk_level_layout = QHBoxLayout()
 
         self.risk_level_label = QLabel("当前风险等级: 低风险")
-        self.risk_level_label.setStyleSheet("font-size: 14px; font-weight: bold; color: #27ae60;")
+        self.risk_level_label.setStyleSheet("font-size: 0.9em; font-weight: bold; color: #27ae60;")
         risk_level_layout.addWidget(self.risk_level_label)
 
         risk_level_layout.addStretch()
@@ -160,13 +163,13 @@ class ModernRiskControlCenterTab(QWidget):
         self.risk_level_bar.setValue(25)  # 默认低风险
         self.risk_level_bar.setStyleSheet("""
             QProgressBar {
-                border: 2px solid grey;
-                border-radius: 5px;
+                border: 0.15em solid grey;
+                border-radius: 0.3em;
                 text-align: center;
             }
             QProgressBar::chunk {
                 background-color: #27ae60;
-                border-radius: 3px;
+                border-radius: 0.2em;
             }
         """)
         risk_level_layout.addWidget(self.risk_level_bar)
@@ -176,11 +179,11 @@ class ModernRiskControlCenterTab(QWidget):
 
         # 风险指标卡片
         cards_frame = QFrame()
-        cards_frame.setMinimumHeight(120)
-        cards_frame.setMaximumHeight(150)
+        cards_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         cards_layout = QGridLayout(cards_frame)
-        cards_layout.setContentsMargins(2, 2, 2, 2)
-        cards_layout.setSpacing(2)
+        card_spacing = calculate_spacing(2)
+        cards_layout.setContentsMargins(card_spacing, card_spacing, card_spacing, card_spacing)
+        cards_layout.setSpacing(card_spacing)
 
         self.risk_cards = {}
         risk_metrics = [
@@ -211,7 +214,7 @@ class ModernRiskControlCenterTab(QWidget):
 
         # 风险趋势图表
         self.risk_chart = ModernPerformanceChart("风险指标趋势", "line")
-        self.risk_chart.setMinimumHeight(200)  # 减少最小高度，更灵活
+        self.risk_chart.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout.addWidget(self.risk_chart, 1)
 
         return tab
@@ -220,8 +223,9 @@ class ModernRiskControlCenterTab(QWidget):
         """创建告警配置标签页"""
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(10)
+        spacing = calculate_spacing(10)
+        layout.setContentsMargins(spacing, spacing, spacing, spacing)
+        layout.setSpacing(spacing)
 
         # 告警规则配置
         rules_group = QGroupBox("告警规则配置")
@@ -256,7 +260,9 @@ class ModernRiskControlCenterTab(QWidget):
                 background-color: #3498db;
                 color: white;
                 border: none;
-                border-radius: 4px;
+                border-radius: 0.3em;
+                padding: 0.5em 1em;
+                font-size: 0.9em;
             }
             QPushButton:hover {
                 background-color: #2980b9;
@@ -276,10 +282,15 @@ class ModernRiskControlCenterTab(QWidget):
                 background-color: #e74c3c;
                 color: white;
                 border: none;
-                border-radius: 4px;
+                border-radius: 0.3em;
+                padding: 0.5em 1em;
+                font-size: 0.9em;
             }
             QPushButton:hover {
                 background-color: #c0392b;
+            }
+            QPushButton:pressed {
+                background-color: #962d22;
             }
             QPushButton:checked {
                 background-color: #27ae60;
@@ -299,8 +310,9 @@ class ModernRiskControlCenterTab(QWidget):
         """创建风险历史标签页"""
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(10)
+        spacing = calculate_spacing(10)
+        layout.setContentsMargins(spacing, spacing, spacing, spacing)
+        layout.setSpacing(spacing)
 
         # 历史数据控制
         control_layout = QHBoxLayout()
@@ -536,8 +548,10 @@ class ModernRiskControlCenterTab(QWidget):
                     # 重新加载通知服务中的告警规则
                     self._reload_notification_config()
                     
+                    logger.info(f"风险规则 '{rule.name}' 已添加")
                     QMessageBox.information(self, "成功", f"风险规则 '{rule.name}' 已添加")
                 else:
+                    logger.warning(f"添加风险规则失败，规则名称 '{rule.name}' 可能已存在")
                     QMessageBox.warning(self, "失败", "添加风险规则失败，可能规则名称已存在")
 
         except Exception as e:
@@ -612,8 +626,10 @@ class ModernRiskControlCenterTab(QWidget):
                     # 重新加载通知服务中的告警规则
                     self._reload_notification_config()
                     
+                    logger.info(f"风险规则 '{updated_rule.name}' 已更新")
                     QMessageBox.information(self, "成功", f"风险规则 '{updated_rule.name}' 已更新")
                 else:
+                    logger.warning(f"更新风险规则失败，规则名称 '{updated_rule.name}'")
                     QMessageBox.warning(self, "失败", "更新风险规则失败")
 
         except Exception as e:
@@ -651,10 +667,13 @@ class ModernRiskControlCenterTab(QWidget):
                         # 重新加载通知服务中的告警规则
                         self._reload_notification_config()
                         
+                        logger.info(f"风险规则 '{rule_name}' 已删除")
                         QMessageBox.information(self, "成功", f"风险规则 '{rule_name}' 已删除")
                     else:
+                        logger.warning(f"删除风险规则失败，规则名称 '{rule_name}'")
                         QMessageBox.warning(self, "失败", "删除风险规则失败")
                 else:
+                    logger.warning("无法获取规则ID")
                     QMessageBox.warning(self, "错误", "无法获取规则ID")
 
         except Exception as e:
@@ -729,6 +748,7 @@ class ModernRiskControlCenterTab(QWidget):
             dialog = ExternalAlertChannelManagerDialog(parent=self)
             if dialog.exec_() == dialog.Accepted:
                 self._reload_notification_config()
+                logger.info("通知服务配置已更新（通过外部告警渠道管理器）")
                 QMessageBox.information(self, "成功", "通知服务配置已更新")
         
         except Exception as e:
@@ -756,6 +776,7 @@ class ModernRiskControlCenterTab(QWidget):
             
             service = get_notification_service()
             if not service:
+                logger.warning("通知服务未初始化，无法切换通知服务状态")
                 QMessageBox.warning(self, "警告", "通知服务未初始化")
                 self.stop_notification_btn.setChecked(False)
                 return
@@ -763,15 +784,19 @@ class ModernRiskControlCenterTab(QWidget):
             if self.stop_notification_btn.isChecked():
                 if service.stop_all_notifications():
                     self.stop_notification_btn.setText("恢复通知")
+                    logger.info("通知服务已暂停，所有通知已停止发送")
                     QMessageBox.warning(self, "通知已暂停", "所有通知已暂停发送！\n\n点击「恢复通知」按钮可重新启用。")
                 else:
+                    logger.error("暂停通知服务失败")
                     self.stop_notification_btn.setChecked(False)
                     QMessageBox.critical(self, "错误", "暂停通知服务失败")
             else:
                 if service.resume_notification_service():
                     self.stop_notification_btn.setText("暂停通知")
+                    logger.info("通知服务已恢复，告警信息将继续发送")
                     QMessageBox.information(self, "通知已恢复", "通知服务已恢复，告警信息将继续发送。")
                 else:
+                    logger.error("恢复通知服务失败")
                     self.stop_notification_btn.setChecked(True)
                     QMessageBox.critical(self, "错误", "恢复通知服务失败")
 
@@ -796,11 +821,13 @@ class ModernRiskControlCenterTab(QWidget):
                 
                 # 保存通知配置
                 if service.update_notification_config(config):
+                    logger.info("通知服务配置已更新")
                     QMessageBox.information(self, "成功", "通知服务配置已更新")
                     
                     # 重新加载通知服务配置
                     self._reload_notification_config()
                 else:
+                    logger.warning("更新通知服务配置失败")
                     QMessageBox.warning(self, "失败", "更新通知服务配置失败")
         
         except Exception as e:
@@ -1311,8 +1338,9 @@ class ModernRiskControlCenterTab(QWidget):
         """创建AI智能分析标签页"""
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        layout.setContentsMargins(5, 5, 5, 5)
-        layout.setSpacing(5)
+        spacing = calculate_spacing(5)
+        layout.setContentsMargins(spacing, spacing, spacing, spacing)
+        layout.setSpacing(spacing)
 
         # AI预测区域
         prediction_group = QGroupBox("🔮 AI风险预测")
@@ -1320,7 +1348,7 @@ class ModernRiskControlCenterTab(QWidget):
 
         # 预测结果显示
         self.ai_prediction_text = QTextEdit()
-        self.ai_prediction_text.setMaximumHeight(120)
+        self.ai_prediction_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.ai_prediction_text.setReadOnly(True)
         self.ai_prediction_text.setPlainText("AI风险预测功能已启用，正在分析...")
         prediction_layout.addWidget(self.ai_prediction_text)
@@ -1339,7 +1367,7 @@ class ModernRiskControlCenterTab(QWidget):
             "检测时间", "异常类型", "严重程度", "描述"
         ])
         self.anomaly_table.horizontalHeader().setStretchLastSection(True)
-        self.anomaly_table.setMaximumHeight(150)
+        self.anomaly_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         anomaly_layout.addWidget(self.anomaly_table)
 
         anomaly_group.setLayout(anomaly_layout)
@@ -1350,7 +1378,7 @@ class ModernRiskControlCenterTab(QWidget):
         suggestions_layout = QVBoxLayout()
 
         self.ai_suggestions_text = QTextEdit()
-        self.ai_suggestions_text.setMaximumHeight(100)
+        self.ai_suggestions_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.ai_suggestions_text.setReadOnly(True)
         self.ai_suggestions_text.setPlainText("正在生成智能风险控制建议...")
         suggestions_layout.addWidget(self.ai_suggestions_text)
@@ -1368,7 +1396,7 @@ class ModernRiskControlCenterTab(QWidget):
             "情景名称", "发生概率", "影响程度", "风险分数"
         ])
         self.scenarios_table.horizontalHeader().setStretchLastSection(True)
-        self.scenarios_table.setMaximumHeight(120)
+        self.scenarios_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         scenarios_layout.addWidget(self.scenarios_table)
 
         scenarios_group.setLayout(scenarios_layout)
@@ -2404,6 +2432,50 @@ class ModernRiskControlCenterTab(QWidget):
             logger.debug("风险控制中心标签页主题已更新")
         except Exception as e:
             logger.error(f"更新风险控制中心标签页主题失败: {e}")
+
+    def resizeEvent(self, event):
+        """窗口大小改变事件 - 动态调整响应式布局"""
+        super().resizeEvent(event)
+        
+        # 使用防抖机制，避免频繁计算
+        if not hasattr(self, '_resize_timer'):
+            self._resize_timer = QTimer()
+            self._resize_timer.setSingleShot(True)
+            self._resize_timer.timeout.connect(self._update_responsive_layout)
+        
+        # 延迟 100ms 后执行更新，避免频繁触发
+        self._resize_timer.start(100)
+
+    def _update_responsive_layout(self):
+        """更新响应式布局 - 根据当前窗口大小动态调整控件"""
+        try:
+            # 获取当前窗口尺寸
+            current_height = self.height()
+            current_width = self.width()
+            
+            # 动态调整 AI 预测文本框高度
+            if hasattr(self, 'ai_prediction_text'):
+                prediction_height = int(current_height * 0.15)
+                self.ai_prediction_text.setMaximumHeight(max(prediction_height, 50))
+            
+            # 动态调整异常表格高度
+            if hasattr(self, 'anomaly_table'):
+                anomaly_height = int(current_height * 0.18)
+                self.anomaly_table.setMaximumHeight(max(anomaly_height, 80))
+            
+            # 动态调整 AI 建议文本框高度
+            if hasattr(self, 'ai_suggestions_text'):
+                suggestions_height = int(current_height * 0.12)
+                self.ai_suggestions_text.setMaximumHeight(max(suggestions_height, 60))
+            
+            # 动态调整情景表格高度
+            if hasattr(self, 'scenarios_table'):
+                scenarios_height = int(current_height * 0.15)
+                self.scenarios_table.setMaximumHeight(max(scenarios_height, 70))
+            
+            logger.debug(f"响应式布局已更新: {current_width}x{current_height}")
+        except Exception as e:
+            logger.error(f"更新响应式布局失败: {e}")
 
     def cleanup(self):
         """清理资源 - 优化性能，避免卡顿"""

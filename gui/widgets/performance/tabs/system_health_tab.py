@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import (
     QCheckBox, QLabel, QGridLayout, QTextEdit, QListWidget,
     QFrame, QMessageBox, QTabWidget, QToolBar, QAction, QComboBox,
     QSpinBox, QDoubleSpinBox, QTableWidget, QTableWidgetItem, QHeaderView,
-    QProgressBar, QSplitter
+    QProgressBar, QSplitter, QSizePolicy
 )
 from PyQt5.QtCore import pyqtSlot, Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QColor

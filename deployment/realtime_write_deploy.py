@@ -56,7 +56,7 @@ class RealtimeWriteDeployer:
                 logger.error("服务容器或事件总线不可用")
                 return False
             
-            logger.info("✅ 健康检查通过")
+            logger.info("健康检查通过")
             return True
             
         except Exception as e:
@@ -96,7 +96,7 @@ class RealtimeWriteDeployer:
             logger.info("[5/5] 启动监控...")
             self._monitor_deployment()
             
-            logger.info("✅ 灰度部署成功")
+            logger.info("灰度部署成功")
             return True
             
         except Exception as e:
@@ -137,7 +137,7 @@ class RealtimeWriteDeployer:
             logger.info("[6/6] 发送通知...")
             self._send_notification("部署成功")
             
-            logger.info("✅ 完整部署成功")
+            logger.info("完整部署成功")
             return True
             
         except Exception as e:
@@ -156,7 +156,7 @@ class RealtimeWriteDeployer:
             for py_file in py_files:
                 py_compile.compile(py_file, doraise=True)
             
-            logger.info(f"  ✅ {len(py_files)} 个文件验证通过")
+            logger.info(f"  {len(py_files)} 个文件验证通过")
             return True
             
         except Exception as e:
@@ -178,7 +178,7 @@ class RealtimeWriteDeployer:
                 logger.error(f"  ❌ 单元测试失败")
                 return False
             
-            logger.info("  ✅ 单元测试通过")
+            logger.info("  单元测试通过")
             return True
             
         except Exception as e:
@@ -201,7 +201,7 @@ class RealtimeWriteDeployer:
                 logger.warning("  ⚠️  集成测试部分失败（可能因服务不可用）")
                 return True  # 允许继续
             
-            logger.info("  ✅ 集成测试通过")
+            logger.info("  集成测试通过")
             return True
             
         except Exception as e:
@@ -212,7 +212,7 @@ class RealtimeWriteDeployer:
         """执行灰度部署"""
         logger.info("  启用灰度部署...")
         time.sleep(1)  # 模拟部署
-        logger.info("  ✅ 灰度版本已部署")
+        logger.info("  灰度版本已部署")
     
     def _monitor_deployment(self):
         """监控部署"""
@@ -220,19 +220,19 @@ class RealtimeWriteDeployer:
         for i in range(3):
             logger.info(f"  监控周期 {i+1}/3...")
             time.sleep(1)
-        logger.info("  ✅ 监控完成，无异常")
+        logger.info("  监控完成，无异常")
     
     def _backup_current_version(self):
         """备份当前版本"""
         logger.info("  创建备份...")
         time.sleep(0.5)
-        logger.info("  ✅ 备份完成")
+        logger.info("  备份完成")
     
     def _deploy_new_version(self):
         """部署新版本"""
         logger.info("  部署新版本...")
         time.sleep(1)
-        logger.info("  ✅ 新版本已部署")
+        logger.info("  新版本已部署")
     
     def _verify_deployment(self) -> bool:
         """验证部署"""
@@ -244,7 +244,7 @@ class RealtimeWriteDeployer:
                 RealtimeWriteControlPanel,
                 RealtimeWriteMonitoringWidget
             )
-            logger.info("  ✅ 所有功能模块验证通过")
+            logger.info("  所有功能模块验证通过")
             return True
         except Exception as e:
             logger.error(f"  ❌ 功能验证失败: {e}")
@@ -254,18 +254,18 @@ class RealtimeWriteDeployer:
         """启用监控"""
         logger.info("  配置监控...")
         time.sleep(0.5)
-        logger.info("  ✅ 监控已启用")
+        logger.info("  监控已启用")
     
     def _send_notification(self, message: str):
         """发送通知"""
         logger.info(f"  发送通知: {message}")
-        logger.info("  ✅ 通知已发送")
+        logger.info("  通知已发送")
     
     def _rollback(self):
         """回滚部署"""
         logger.warning("  执行回滚...")
         time.sleep(0.5)
-        logger.warning("  ✅ 回滚完成")
+        logger.warning("  回滚完成")
 
 
 def main():

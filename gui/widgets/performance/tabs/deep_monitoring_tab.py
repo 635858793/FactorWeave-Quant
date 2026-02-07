@@ -436,7 +436,8 @@ class DeepMonitoringOverviewTab(QWidget):
                 if self.monitoring_thread and self.monitoring_thread.is_alive():
                     if self.monitoring_stop_event:
                         self.monitoring_stop_event.set()
-                    self.monitoring_thread.join(timeout=2.0)
+                    # 不等待线程结束，因为线程是 daemon=True，会自动清理
+                    # 如果使用 join() 会阻塞主线程，导致UI卡顿
                 
                 # 创建新的停止事件
                 self.monitoring_stop_event = threading.Event()
@@ -478,9 +479,8 @@ class DeepMonitoringOverviewTab(QWidget):
             if self.monitoring_thread and self.monitoring_thread.is_alive():
                 if self.monitoring_stop_event:
                     self.monitoring_stop_event.set()
-                self.monitoring_thread.join(timeout=3.0)
-                if self.monitoring_thread.is_alive():
-                    logger.warning("监控线程未能在超时时间内停止")
+                # 不等待线程结束，因为线程是 daemon=True，会自动清理
+                # 如果使用 join() 会阻塞主线程，导致UI卡顿
             
             # 更新UI状态
             self.start_button.setEnabled(True)

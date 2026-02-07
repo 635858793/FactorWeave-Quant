@@ -18,7 +18,7 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QGridLayout, QFrame, QGroupBox, QHBoxLayout,
     QTabWidget, QToolBar, QAction, QComboBox, QPushButton, QTableWidget,
-    QTableWidgetItem, QHeaderView, QTextEdit, QLabel, QProgressBar
+    QTableWidgetItem, QHeaderView, QTextEdit, QLabel, QProgressBar, QSizePolicy
 )
 from PyQt5.QtCore import Qt, QTimer, QObject, pyqtSignal, pyqtSlot
 from PyQt5.QtGui import QColor
@@ -190,8 +190,7 @@ class ModernSystemMonitorTab(QWidget):
 
         # 系统资源指标卡片 - 两行布局，每行8个
         cards_frame = QFrame()
-        cards_frame.setMinimumHeight(120)
-        cards_frame.setMaximumHeight(140)
+        cards_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         cards_layout = QGridLayout(cards_frame)
         cards_layout.setContentsMargins(0, 0, 0, 0)
         cards_layout.setSpacing(2)
@@ -264,7 +263,6 @@ class ModernSystemMonitorTab(QWidget):
 
         # 系统资源历史图表 - 适应性显示区域
         self.resource_chart = ModernPerformanceChart("系统资源使用趋势", "line")
-        self.resource_chart.setMinimumHeight(200)
         layout.addWidget(self.resource_chart, 1)
 
         return widget
@@ -806,3 +804,38 @@ class ModernSystemMonitorTab(QWidget):
             for metric in risk_metrics:
                 if metric in self.cards:
                     self.cards[metric].update_value("--", "neutral")
+
+    def resizeEvent(self, event):
+        """窗口大小改变事件处理"""
+        super().resizeEvent(event)
+        self._update_responsive_layout()
+
+    def _update_responsive_layout(self):
+        """更新响应式布局"""
+        try:
+            window_width = self.width()
+            window_height = self.height()
+
+            logger.debug(f"SystemMonitorTab 响应式布局更新: {window_width}x{window_height}")
+
+            # 更新系统资源卡片高度
+            cards_frames = self.findChildren(QFrame)
+            for frame in cards_frames:
+                if frame.layout() and isinstance(frame.layout(), QGridLayout):
+                    frame_height = max(100, int(window_height * 0.18))
+                    frame.setMinimumHeight(frame_height)
+                    frame.setMaximumHeight(int(window_height * 0.22))
+
+            # 更新资源图表高度
+            if hasattr(self, 'resource_chart'):
+                chart_height = max(150, int(window_height * 0.35))
+                self.resource_chart.setMinimumHeight(chart_height)
+
+            # 更新组件选择框宽度
+            if hasattr(self, 'component_combo'):
+                combo_width = max(120, int(window_width * 0.12))
+                self.component_combo.setMinimumWidth(combo_width)
+                self.component_combo.setMaximumWidth(int(window_width * 0.18))
+
+        except Exception as e:
+            logger.error(f"更新响应式布局失败: {e}")

@@ -46,7 +46,7 @@ def check_order_database_status():
                     # 检查orders表
                     result = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='orders'").fetchall()
                     orders_exists = len(result) > 0
-                    logger.info(f"   {pool_name}: orders表 {'✅ 存在' if orders_exists else '❌ 不存在'}")
+                    logger.info(f"   {pool_name}: orders表 {'存在' if orders_exists else '❌ 不存在'}")
 
                     if orders_exists:
                         # 查询订单数量

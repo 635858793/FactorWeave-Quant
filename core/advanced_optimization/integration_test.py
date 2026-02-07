@@ -30,7 +30,7 @@ try:
     from .cache.intelligent_cache import IntelligentCache, MLPredictor, L1MemoryCache
     from .ui.responsive_adapter import ResponsiveAdapter, ResponsiveManager, ScreenType, LayoutMode
     from .ai.smart_chart_recommender import SmartChartRecommender, UserBehavior, ChartContext, ChartType, UserActivityType
-    print("✅ 深度优化模块导入成功")
+    print("深度优化模块导入成功")
 except ImportError as e:
     print(f"❌ 模块导入失败: {e}")
     # 模拟实现用于测试
@@ -202,7 +202,7 @@ class DeepOptimizationTester:
             }
             metrics.append(rendering_metrics)
             
-            print(f"✅ 大数据渲染: {data_size:,} 数据点, 耗时: {rendering_metrics.execution_time:.2f}s")
+            print(f"大数据渲染: {data_size:,} 数据点, 耗时: {rendering_metrics.execution_time:.2f}s")
             print(f"   吞吐量: {rendering_metrics.throughput:.0f} 数据点/秒")
             print(f"   内存使用: {rendering_metrics.memory_usage_mb:.1f} MB")
             
@@ -270,7 +270,7 @@ class DeepOptimizationTester:
             }
             metrics.append(realtime_metrics)
             
-            print(f"✅ 实时数据流: {processed_messages:,} 消息, 耗时: {processing_time:.2f}s")
+            print(f"实时数据流: {processed_messages:,} 消息, 耗时: {processing_time:.2f}s")
             print(f"   处理速度: {realtime_metrics.throughput:.0f} 消息/秒")
             print(f"   平均延迟: {realtime_metrics.additional_metrics['processing_latency_ms']:.2f}ms")
             
@@ -353,7 +353,7 @@ class DeepOptimizationTester:
             }
             metrics.append(cache_metrics)
             
-            print(f"✅ 智能缓存: {cache_operations:,} 操作, 命中率: {hit_rate:.1%}")
+            print(f"智能缓存: {cache_operations:,} 操作, 命中率: {hit_rate:.1%}")
             print(f"   处理速度: {cache_metrics.throughput:.0f} 操作/秒")
             print(f"   缓存命中: {cache_hits:,}, 缓存未命中: {cache_misses:,}")
             
@@ -411,7 +411,7 @@ class DeepOptimizationTester:
                 }
                 metrics.append(ui_metrics)
                 
-                print(f"✅ {screen_type.value}适配: 耗时 {adaptation_time*1000:.1f}ms")
+                print(f"{screen_type.value}适配: 耗时 {adaptation_time*1000:.1f}ms")
             
         except Exception as e:
             print(f"❌ 响应式界面测试失败: {e}")
@@ -488,7 +488,7 @@ class DeepOptimizationTester:
             }
             metrics.append(ai_metrics)
             
-            print(f"✅ AI推荐系统: {recommendation_requests:,} 推荐, 耗时: {ai_time:.2f}s")
+            print(f"AI推荐系统: {recommendation_requests:,} 推荐, 耗时: {ai_time:.2f}s")
             print(f"   推荐速度: {ai_metrics.throughput:.0f} 推荐/秒")
             print(f"   平均置信度: {ai_metrics.additional_metrics['avg_confidence']:.2f}")
             
@@ -576,7 +576,7 @@ class DeepOptimizationTester:
             }
             metrics.append(integration_metrics)
             
-            print(f"✅ 系统集成测试: {len(all_results):,} 操作, 耗时: {integration_time:.2f}s")
+            print(f"系统集成测试: {len(all_results):,} 操作, 耗时: {integration_time:.2f}s")
             print(f"   并发吞吐量: {integration_metrics.throughput:.0f} 操作/秒")
             print(f"   系统稳定性: {integration_metrics.additional_metrics['system_stability']:.1%}")
             
@@ -680,7 +680,7 @@ class DeepOptimizationTester:
         
         print(f"\n📊 测试总览:")
         print(f"   总测试数: {result.total_tests}")
-        print(f"   通过测试: {result.passed_tests} ✅")
+        print(f"   通过测试: {result.passed_tests} ✓")
         print(f"   失败测试: {result.failed_tests} ❌")
         print(f"   整体得分: {result.overall_score:.1f}/100")
         

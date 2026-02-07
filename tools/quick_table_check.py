@@ -63,11 +63,11 @@ def main():
         has_indexes = len(schema.indexes) > 0
         has_data_source_index = any('data_source' in idx.get('columns', []) for idx in schema.indexes)
         
-        print(f"  ✅ Schema定义: 存在")
+        print(f"  Schema定义: 存在")
         print(f"  📊 字段数量: {len(schema.columns)}")
         print(f"  🔑 主键: {schema.primary_key if has_primary_key else '❌ 缺失'}")
         print(f"  📇 索引数量: {len(schema.indexes)}")
-        print(f"  🏷️ 数据源索引: {'✅ 存在' if has_data_source_index else '❌ 缺失'}")
+        print(f"  🏷️ 数据源索引: {'存在' if has_data_source_index else '❌ 缺失'}")
         
         if missing_fields:
             print(f"  ⚠️ 缺失必要字段: {missing_fields}")
@@ -94,7 +94,7 @@ def main():
             print(f"  ⚠️ 存在问题: {'; '.join(issues)}")
         else:
             complete_schemas.append(table_type.value)
-            print(f"  ✅ 配置完整")
+            print(f"  配置完整")
         
         print()
     
@@ -102,12 +102,12 @@ def main():
     print("="*60)
     print("📋 表结构检查总结")
     print("="*60)
-    print(f"✅ 完整配置: {len(complete_schemas)}/{len(all_table_types)} 种表类型")
+    print(f"完整配置: {len(complete_schemas)}/{len(all_table_types)} 种表类型")
     print(f"⚠️ 不完整配置: {len(incomplete_schemas)} 种表类型")
     print(f"❌ 缺失Schema: {len(missing_schemas)} 种表类型")
     
     if complete_schemas:
-        print(f"\n✅ 完整配置的表类型:")
+        print(f"\n完整配置的表类型:")
         for table_type in complete_schemas:
             print(f"  - {table_type}")
     
@@ -130,7 +130,7 @@ def main():
     if success_rate == 100:
         print("🎉 所有表结构配置完整！")
     elif success_rate >= 90:
-        print("✅ 表结构基本完整，存在少量问题")
+        print("表结构基本完整，存在少量问题")
     elif success_rate >= 70:
         print("⚠️ 表结构大部分完整，需要关注一些问题")
     else:

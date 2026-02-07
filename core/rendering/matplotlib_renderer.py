@@ -66,7 +66,7 @@ class MatplotlibChartRenderer(BaseChartRenderer):
             else:
                 width = 0.6
             
-            # ✅ 性能优化：完全向量化的numpy操作
+            # 性能优化：完全向量化的numpy操作
             opens = data['open'].values
             highs = data['high'].values  
             lows = data['low'].values
@@ -75,7 +75,7 @@ class MatplotlibChartRenderer(BaseChartRenderer):
             # 涨跌判断
             is_up = closes >= opens
             
-            # ✅ 性能优化：批量构建K线顶点，使用PolyCollection
+            # 性能优化：批量构建K线顶点，使用PolyCollection
             def build_candle_verts(indices, is_up_mask):
                 """批量构建K线图顶点"""
                 if len(indices) == 0:
@@ -176,7 +176,7 @@ class MatplotlibChartRenderer(BaseChartRenderer):
             else:
                 bar_width = 0.3
             
-            # ✅ 性能优化：完全向量化的numpy操作，避免iterrows()
+            # 性能优化：完全向量化的numpy操作，避免iterrows()
             volumes = data['volume'].values
             closes = data['close'].values
             opens = data['open'].values
@@ -190,7 +190,7 @@ class MatplotlibChartRenderer(BaseChartRenderer):
             up_indices = np.where(is_up)[0]
             down_indices = np.where(~is_up)[0]
             
-            # ✅ 性能优化：批量构建成交量柱状图顶点
+            # 性能优化：批量构建成交量柱状图顶点
             def build_volume_verts(indices):
                 """批量构建成交量柱状图顶点，返回numpy数组"""
                 if len(indices) == 0:
