@@ -211,8 +211,7 @@ class ModernRiskControlCenterTab(QWidget):
 
         # 风险趋势图表
         self.risk_chart = ModernPerformanceChart("风险指标趋势", "line")
-        self.risk_chart.setMinimumHeight(400)
-        # self.risk_chart.setMaximumHeight(500)
+        self.risk_chart.setMinimumHeight(200)  # 减少最小高度，更灵活
         layout.addWidget(self.risk_chart, 1)
 
         return tab
@@ -250,27 +249,49 @@ class ModernRiskControlCenterTab(QWidget):
         self.delete_rule_btn.clicked.connect(self.delete_risk_rule)
         rules_buttons_layout.addWidget(self.delete_rule_btn)
 
+        self.config_notification_btn = QPushButton("配置通知服务")
+        self.config_notification_btn.clicked.connect(self._open_notification_config)
+        self.config_notification_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #3498db;
+                color: white;
+                border: none;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #2980b9;
+            }
+            QPushButton:pressed {
+                background-color: #1f6391;
+            }
+        """)
+        rules_buttons_layout.addWidget(self.config_notification_btn)
+
+        self.stop_notification_btn = QPushButton("暂停通知")
+        self.stop_notification_btn.setCheckable(True)
+        self.stop_notification_btn.setChecked(False)
+        self.stop_notification_btn.clicked.connect(self._toggle_notification_service)
+        self.stop_notification_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #e74c3c;
+                color: white;
+                border: none;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #c0392b;
+            }
+            QPushButton:checked {
+                background-color: #27ae60;
+            }
+        """)
+        rules_buttons_layout.addWidget(self.stop_notification_btn)
+
         rules_buttons_layout.addStretch()
         rules_layout.addLayout(rules_buttons_layout)
 
         rules_group.setLayout(rules_layout)
         layout.addWidget(rules_group)
-
-        # 通知配置
-        notification_group = QGroupBox("通知配置")
-        notification_layout = QFormLayout()
-
-        self.email_enabled = QCheckBox("启用邮件通知")
-        notification_layout.addRow("邮件通知:", self.email_enabled)
-
-        self.sms_enabled = QCheckBox("启用短信通知")
-        notification_layout.addRow("短信通知:", self.sms_enabled)
-
-        self.webhook_enabled = QCheckBox("启用Webhook通知")
-        notification_layout.addRow("Webhook通知:", self.webhook_enabled)
-
-        notification_group.setLayout(notification_layout)
-        layout.addWidget(notification_group)
 
         return tab
 
@@ -352,7 +373,7 @@ class ModernRiskControlCenterTab(QWidget):
                     self.risk_chart.add_data_point(name, value)
 
             # 自动保存风险历史数据
-            self._save_risk_history(risk_metrics, overall_risk)
+            self._save_risk_metrics_history(risk_metrics, overall_risk)
 
             # 检查风险规则并生成告警
             self._check_risk_rules(risk_metrics)
@@ -360,8 +381,8 @@ class ModernRiskControlCenterTab(QWidget):
         except Exception as e:
             logger.error(f"在主线程中更新风险UI失败: {e}")
 
-    def _save_risk_history(self, risk_metrics: Dict[str, float], overall_risk: float):
-        """保存风险历史数据"""
+    def _save_risk_metrics_history(self, risk_metrics: Dict[str, float], overall_risk: float):
+        """保存风险指标历史数据"""
         try:
             from db.models.performance_history_models import get_performance_history_manager, RiskHistoryRecord
             from datetime import datetime
@@ -511,6 +532,10 @@ class ModernRiskControlCenterTab(QWidget):
                 if rule_manager.add_rule(rule):
                     # 添加到界面
                     self._add_rule_to_tree(rule)
+                    
+                    # 重新加载通知服务中的告警规则
+                    self._reload_notification_config()
+                    
                     QMessageBox.information(self, "成功", f"风险规则 '{rule.name}' 已添加")
                 else:
                     QMessageBox.warning(self, "失败", "添加风险规则失败，可能规则名称已存在")
@@ -564,7 +589,12 @@ class ModernRiskControlCenterTab(QWidget):
                 'desktop_notification': rule.desktop_notification,
                 'sound_notification': rule.sound_notification,
                 'webhook_notification': rule.webhook_notification,
-                'message_template': rule.message_template
+                'dingtalk_notification': rule.dingtalk_notification,
+                'message_template': rule.message_template,
+                'email_recipients': rule.email_recipients,
+                'sms_recipients': rule.sms_recipients,
+                'webhook_url': rule.webhook_url,
+                'dingtalk_webhook_url': rule.dingtalk_webhook_url
             }
 
             dialog = RiskRuleConfigDialog(rule_data, parent=self)
@@ -578,6 +608,10 @@ class ModernRiskControlCenterTab(QWidget):
                 if rule_manager.update_rule(updated_rule):
                     # 更新界面
                     self._update_rule_in_tree(current_item, updated_rule)
+                    
+                    # 重新加载通知服务中的告警规则
+                    self._reload_notification_config()
+                    
                     QMessageBox.information(self, "成功", f"风险规则 '{updated_rule.name}' 已更新")
                 else:
                     QMessageBox.warning(self, "失败", "更新风险规则失败")
@@ -613,6 +647,10 @@ class ModernRiskControlCenterTab(QWidget):
                         self.rules_tree.takeTopLevelItem(
                             self.rules_tree.indexOfTopLevelItem(current_item)
                         )
+                        
+                        # 重新加载通知服务中的告警规则
+                        self._reload_notification_config()
+                        
                         QMessageBox.information(self, "成功", f"风险规则 '{rule_name}' 已删除")
                     else:
                         QMessageBox.warning(self, "失败", "删除风险规则失败")
@@ -683,6 +721,92 @@ class ModernRiskControlCenterTab(QWidget):
         except Exception as e:
             logger.error(f"加载风险规则失败: {e}")
 
+    def _open_notification_config(self):
+        """打开通知服务配置对话框"""
+        try:
+            from gui.dialogs.external_alert_channel_config_dialog import ExternalAlertChannelManagerDialog
+            
+            dialog = ExternalAlertChannelManagerDialog(parent=self)
+            if dialog.exec_() == dialog.Accepted:
+                self._reload_notification_config()
+                QMessageBox.information(self, "成功", "通知服务配置已更新")
+        
+        except Exception as e:
+            logger.error(f"打开通知服务配置失败: {e}")
+            QMessageBox.critical(self, "错误", f"打开通知服务配置失败：{str(e)}")
+
+    def _reload_notification_config(self):
+        """重新加载通知服务配置"""
+        try:
+            from core.services.notification_service import get_notification_service
+            
+            service = get_notification_service()
+            service._load_notification_config()
+            service._load_alert_rules()
+            
+            logger.info("✓ 通知服务配置已重新加载")
+            
+        except Exception as e:
+            logger.error(f"重新加载通知服务配置失败: {e}")
+
+    def _toggle_notification_service(self):
+        """暂停/恢复通知服务（防止信息爆炸和费用爆炸）"""
+        try:
+            from core.services.notification_service import get_notification_service
+            
+            service = get_notification_service()
+            if not service:
+                QMessageBox.warning(self, "警告", "通知服务未初始化")
+                self.stop_notification_btn.setChecked(False)
+                return
+
+            if self.stop_notification_btn.isChecked():
+                if service.stop_all_notifications():
+                    self.stop_notification_btn.setText("恢复通知")
+                    QMessageBox.warning(self, "通知已暂停", "所有通知已暂停发送！\n\n点击「恢复通知」按钮可重新启用。")
+                else:
+                    self.stop_notification_btn.setChecked(False)
+                    QMessageBox.critical(self, "错误", "暂停通知服务失败")
+            else:
+                if service.resume_notification_service():
+                    self.stop_notification_btn.setText("暂停通知")
+                    QMessageBox.information(self, "通知已恢复", "通知服务已恢复，告警信息将继续发送。")
+                else:
+                    self.stop_notification_btn.setChecked(True)
+                    QMessageBox.critical(self, "错误", "恢复通知服务失败")
+
+            logger.info(f"通知服务状态切换: 暂停={service.is_notification_paused()}")
+
+        except Exception as e:
+            logger.error(f"切换通知服务状态失败: {e}")
+            self.stop_notification_btn.setChecked(False)
+            QMessageBox.critical(self, "错误", f"操作失败：{str(e)}")
+
+    def _configure_notification_service(self):
+        """配置通知服务"""
+        try:
+            from gui.dialogs.external_alert_channel_config_dialog import ExternalAlertChannelConfigDialog
+            from core.services.notification_service import get_notification_service
+            
+            service = get_notification_service()
+            
+            dialog = ExternalAlertChannelConfigDialog(parent=self)
+            if dialog.exec_() == dialog.Accepted:
+                config = dialog.get_notification_config()
+                
+                # 保存通知配置
+                if service.update_notification_config(config):
+                    QMessageBox.information(self, "成功", "通知服务配置已更新")
+                    
+                    # 重新加载通知服务配置
+                    self._reload_notification_config()
+                else:
+                    QMessageBox.warning(self, "失败", "更新通知服务配置失败")
+        
+        except Exception as e:
+            logger.error(f"配置通知服务失败: {e}")
+            QMessageBox.critical(self, "错误", f"配置通知服务时发生错误：{str(e)}")
+
     def _check_risk_rules(self, risk_metrics: Dict[str, float]):
         """检查风险规则并处理告警"""
         try:
@@ -701,20 +825,59 @@ class ModernRiskControlCenterTab(QWidget):
     def _handle_risk_alert(self, alert):
         """处理风险告警"""
         try:
-            # 记录告警日志
             logger.warning(f"风险告警: {alert.message}")
 
-            # 发送桌面通知
-            self._send_desktop_notification(alert)
+            self._save_risk_alert_history(alert)
 
-            # 播放声音通知（如果启用）
-            self._play_alert_sound(alert)
+            if getattr(alert, 'desktop_notification', True):
+                self._send_desktop_notification(alert)
 
-            # 更新UI显示
+            if getattr(alert, 'sound_notification', True):
+                self._play_alert_sound(alert)
+
+            if getattr(alert, 'email_notification', False):
+                self._send_email_notification(alert)
+
+            if getattr(alert, 'sms_notification', False):
+                self._send_sms_notification(alert)
+
+            if getattr(alert, 'webhook_notification', False):
+                self._send_webhook_notification(alert)
+
+            if getattr(alert, 'dingtalk_notification', False):
+                self._send_dingtalk_notification(alert)
+
             self._update_alert_display(alert)
 
         except Exception as e:
             logger.error(f"处理风险告警失败: {e}")
+
+    def _save_risk_alert_history(self, alert):
+        """保存风险告警历史到数据库"""
+        try:
+            from db.models.alert_config_models import get_alert_config_database, AlertHistory
+            from datetime import datetime
+            
+            db = get_alert_config_database()
+            
+            history = AlertHistory(
+                timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                level=alert.alert_level,
+                category="risk",
+                message=alert.message,
+                status="active",
+                rule_id=alert.rule_id,
+                metric_name=alert.metric_name,
+                current_value=alert.metric_value,
+                threshold_value=alert.threshold_value,
+                recommendation=""
+            )
+            
+            db.save_alert_history(history)
+            logger.info(f"风险历史已保存: {alert.message}")
+            
+        except Exception as e:
+            logger.error(f"保存风险历史失败: {e}")
 
     def _send_desktop_notification(self, alert):
         """发送桌面通知"""
@@ -737,12 +900,114 @@ class ModernRiskControlCenterTab(QWidget):
     def _play_alert_sound(self, alert):
         """播放告警声音"""
         try:
-            # 这里可以集成声音播放
-            # 暂时跳过
             pass
 
         except Exception as e:
             logger.debug(f"播放告警声音失败: {e}")
+
+    def _send_email_notification(self, alert):
+        """发送邮件通知"""
+        try:
+            from core.services.notification_service import get_notification_service
+
+            service = get_notification_service()
+            if not service:
+                logger.warning("通知服务未初始化，无法发送邮件")
+                return
+
+            recipients = getattr(alert, 'email_recipients', '')
+            if not recipients:
+                logger.warning("邮件收件人为空")
+                return
+
+            service.send_notification(
+                title=f"[{alert.alert_level}] {alert.rule_name}",
+                content=alert.message,
+                channels=["default_email"],
+                notification_config={'email_recipients': recipients}
+            )
+            logger.info(f"邮件通知已发送: {recipients}")
+
+        except Exception as e:
+            logger.error(f"发送邮件通知失败: {e}")
+
+    def _send_sms_notification(self, alert):
+        """发送短信通知"""
+        try:
+            from core.services.notification_service import get_notification_service
+
+            service = get_notification_service()
+            if not service:
+                logger.warning("通知服务未初始化，无法发送短信")
+                return
+
+            recipients = getattr(alert, 'sms_recipients', '')
+            if not recipients:
+                logger.warning("短信收件人为空")
+                return
+
+            service.send_notification(
+                title=f"[{alert.alert_level}] {alert.rule_name}",
+                content=alert.message,
+                channels=["sms"],
+                notification_config={'sms_recipients': recipients}
+            )
+            logger.info(f"短信通知已发送: {recipients}")
+
+        except Exception as e:
+            logger.error(f"发送短信通知失败: {e}")
+
+    def _send_webhook_notification(self, alert):
+        """发送Webhook通知"""
+        try:
+            from core.services.notification_service import get_notification_service
+
+            service = get_notification_service()
+            if not service:
+                logger.warning("通知服务未初始化，无法发送Webhook")
+                return
+
+            webhook_url = getattr(alert, 'webhook_url', '')
+            if not webhook_url:
+                logger.warning("Webhook URL为空")
+                return
+
+            service.send_notification(
+                title=f"[{alert.alert_level}] {alert.rule_name}",
+                content=alert.message,
+                channels=["webhook"],
+                notification_config={'webhook_url': webhook_url}
+            )
+            logger.info(f"Webhook通知已发送: {webhook_url}")
+
+        except Exception as e:
+            logger.error(f"发送Webhook通知失败: {e}")
+
+    def _send_dingtalk_notification(self, alert):
+        """发送钉钉通知"""
+        try:
+            from core.services.notification_service import get_notification_service
+
+            service = get_notification_service()
+            if not service:
+                logger.warning("通知服务未初始化，无法发送钉钉")
+                return
+
+            dingtalk_url = getattr(alert, 'dingtalk_webhook_url', '')
+            if not dingtalk_url:
+                logger.warning("钉钉Webhook URL为空")
+                return
+
+            service.send_notification(
+                title=f"[{alert.alert_level}] {alert.rule_name}",
+                content=alert.message,
+                channels=["dingtalk"],
+                notification_config={'dingtalk_webhook_url': dingtalk_url}
+            )
+            logger.info(f"钉钉通知已发送: {dingtalk_url}")
+
+        except Exception as e:
+            logger.error(f"发送钉钉通知失败: {e}")
 
     def _update_alert_display(self, alert):
         """更新告警显示"""
@@ -768,7 +1033,7 @@ class ModernRiskControlCenterTab(QWidget):
     def load_risk_history(self):
         """加载风险历史数据"""
         try:
-            from db.models.performance_history_models import get_performance_history_manager
+            from db.models.alert_config_models import get_alert_config_database
             from datetime import datetime, timedelta
 
             time_range = self.time_range_combo.currentText()
@@ -777,23 +1042,19 @@ class ModernRiskControlCenterTab(QWidget):
             # 计算时间范围
             end_time = datetime.now()
             if time_range == "最近1小时":
-                start_time = end_time - timedelta(hours=1)
+                hours = 1
             elif time_range == "最近24小时":
-                start_time = end_time - timedelta(days=1)
+                hours = 24
             elif time_range == "最近7天":
-                start_time = end_time - timedelta(days=7)
+                hours = 7 * 24
             elif time_range == "最近30天":
-                start_time = end_time - timedelta(days=30)
+                hours = 30 * 24
             else:
-                start_time = end_time - timedelta(days=1)
+                hours = 24
 
             # 从数据库获取风险历史数据
-            history_manager = get_performance_history_manager()
-            risk_records = history_manager.get_risk_history(
-                start_time=start_time,
-                end_time=end_time,
-                limit=500
-            )
+            db = get_alert_config_database()
+            risk_records = db.load_alert_history(limit=500, hours=hours)
 
             # 更新历史表格
             self._update_risk_history_table(risk_records)
@@ -808,27 +1069,19 @@ class ModernRiskControlCenterTab(QWidget):
 
             for row, record in enumerate(records):
                 # 时间
-                time_item = QTableWidgetItem(record.timestamp.strftime('%Y-%m-%d %H:%M:%S'))
+                time_item = QTableWidgetItem(record.timestamp)
                 self.risk_history_table.setItem(row, 0, time_item)
 
-                # 风险类型（选择主要风险）
-                main_risk = "综合风险"
-                if record.market_risk > 50:
-                    main_risk = "市场风险"
-                elif record.position_risk > 50:
-                    main_risk = "仓位风险"
-                elif record.liquidity_risk > 50:
-                    main_risk = "流动性风险"
-
-                risk_type_item = QTableWidgetItem(main_risk)
+                # 风险类型
+                risk_type_item = QTableWidgetItem(record.category)
                 self.risk_history_table.setItem(row, 1, risk_type_item)
 
                 # 风险等级
-                level_item = QTableWidgetItem(record.risk_level)
+                level_item = QTableWidgetItem(record.level)
                 # 根据风险等级设置颜色
-                if record.risk_level in ["高风险", "极高风险"]:
+                if record.level in ["critical", "error"]:
                     level_item.setBackground(QColor("#ffebee"))  # 浅红色
-                elif record.risk_level in ["中高风险"]:
+                elif record.level in ["warning"]:
                     level_item.setBackground(QColor("#fff3e0"))  # 浅橙色
                 else:
                     level_item.setBackground(QColor("#e8f5e8"))  # 浅绿色
@@ -836,30 +1089,15 @@ class ModernRiskControlCenterTab(QWidget):
                 self.risk_history_table.setItem(row, 2, level_item)
 
                 # 风险值
-                risk_value_item = QTableWidgetItem(f"{record.overall_risk_score:.2f}")
+                risk_value_item = QTableWidgetItem(f"{record.current_value:.2f}")
                 self.risk_history_table.setItem(row, 3, risk_value_item)
 
-                # 阈值（根据风险等级设置）
-                if record.risk_level == "低风险":
-                    threshold = "< 15%"
-                elif record.risk_level == "中低风险":
-                    threshold = "15-35%"
-                elif record.risk_level == "中高风险":
-                    threshold = "35-60%"
-                elif record.risk_level == "高风险":
-                    threshold = "60-80%"
-                else:
-                    threshold = "> 80%"
-
-                threshold_item = QTableWidgetItem(threshold)
+                # 阈值
+                threshold_item = QTableWidgetItem(f"{record.threshold_value:.2f}")
                 self.risk_history_table.setItem(row, 4, threshold_item)
 
                 # 状态
-                status = "正常" if record.overall_risk_score < 60 else "警告"
-                status_item = QTableWidgetItem(status)
-                if status == "警告":
-                    status_item.setBackground(QColor("#ffebee"))
-
+                status_item = QTableWidgetItem(record.status)
                 self.risk_history_table.setItem(row, 5, status_item)
 
             logger.info(f"风险历史表格已更新: {len(records)}条记录")

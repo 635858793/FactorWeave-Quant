@@ -234,6 +234,9 @@ class ModernUnifiedPerformanceWidget(QWidget):
         self._trading_controller_cache = None
         self._data_manager_cache = None
 
+        # 设置合理的最小窗口尺寸，确保窗口可以缩放
+        self.setMinimumSize(1000, 600)
+
         self.init_ui()
         self.setup_timer()
 

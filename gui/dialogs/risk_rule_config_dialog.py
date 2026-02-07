@@ -202,8 +202,34 @@ class RiskRuleConfigDialog(QDialog):
         self.webhook_checkbox = QCheckBox()
         notification_form.addRow("Webhook通知:", self.webhook_checkbox)
 
+        self.dingtalk_checkbox = QCheckBox()
+        notification_form.addRow("钉钉通知:", self.dingtalk_checkbox)
+
         notification_group.setLayout(notification_form)
         layout.addWidget(notification_group)
+
+        # 收件人设置组
+        recipients_group = QGroupBox("收件人设置")
+        recipients_form = QFormLayout()
+
+        self.email_recipients_edit = QLineEdit()
+        self.email_recipients_edit.setPlaceholderText("多个邮箱用逗号分隔")
+        recipients_form.addRow("邮件收件人:", self.email_recipients_edit)
+
+        self.sms_recipients_edit = QLineEdit()
+        self.sms_recipients_edit.setPlaceholderText("多个手机号用逗号分隔")
+        recipients_form.addRow("短信收件人:", self.sms_recipients_edit)
+
+        self.webhook_url_edit = QLineEdit()
+        self.webhook_url_edit.setPlaceholderText("Webhook URL")
+        recipients_form.addRow("Webhook URL:", self.webhook_url_edit)
+
+        self.dingtalk_webhook_url_edit = QLineEdit()
+        self.dingtalk_webhook_url_edit.setPlaceholderText("钉钉Webhook URL")
+        recipients_form.addRow("钉钉Webhook URL:", self.dingtalk_webhook_url_edit)
+
+        recipients_group.setLayout(recipients_form)
+        layout.addWidget(recipients_group)
 
         # 消息模板组
         template_group = QGroupBox("消息模板")
@@ -221,6 +247,21 @@ class RiskRuleConfigDialog(QDialog):
 
         template_group.setLayout(template_layout)
         layout.addWidget(template_group)
+
+        # 添加提示文字
+        hint_label = QLabel("提示：如需配置邮件服务器、钉钉Webhook等通知渠道，请前往主界面的「告警配置」标签页，点击「配置通知服务」按钮进行全局设置。")
+        hint_label.setWordWrap(True)
+        hint_label.setStyleSheet("""
+            QLabel {
+                color: #666666;
+                font-style: italic;
+                background-color: #f5f5f5;
+                padding: 10px;
+                border-radius: 4px;
+                border: 1px solid #e0e0e0;
+            }
+        """)
+        layout.addWidget(hint_label)
 
         layout.addStretch()
         return tab
@@ -276,6 +317,13 @@ class RiskRuleConfigDialog(QDialog):
             self.desktop_checkbox.setChecked(self.rule_data.get('desktop_notification', True))
             self.sound_checkbox.setChecked(self.rule_data.get('sound_notification', True))
             self.webhook_checkbox.setChecked(self.rule_data.get('webhook_notification', False))
+            self.dingtalk_checkbox.setChecked(self.rule_data.get('dingtalk_notification', False))
+
+            # 通知参数
+            self.email_recipients_edit.setText(self.rule_data.get('email_recipients', ''))
+            self.sms_recipients_edit.setText(self.rule_data.get('sms_recipients', ''))
+            self.webhook_url_edit.setText(self.rule_data.get('webhook_url', ''))
+            self.dingtalk_webhook_url_edit.setText(self.rule_data.get('dingtalk_webhook_url', ''))
 
             template = self.rule_data.get('message_template', '')
             if template:
@@ -331,10 +379,36 @@ class RiskRuleConfigDialog(QDialog):
                 self.sms_checkbox.isChecked(),
                 self.desktop_checkbox.isChecked(),
                 self.sound_checkbox.isChecked(),
-                self.webhook_checkbox.isChecked()
+                self.webhook_checkbox.isChecked(),
+                self.dingtalk_checkbox.isChecked()
             ]):
                 QMessageBox.warning(self, "验证失败", "请至少选择一种通知方式")
                 self.tab_widget.setCurrentIndex(2)  # 切换到通知设置标签页
+                return
+
+            # 验证通知参数
+            if self.email_checkbox.isChecked() and not self.email_recipients_edit.text().strip():
+                QMessageBox.warning(self, "验证失败", "启用邮件通知时必须设置收件人")
+                self.tab_widget.setCurrentIndex(2)
+                self.email_recipients_edit.setFocus()
+                return
+
+            if self.sms_checkbox.isChecked() and not self.sms_recipients_edit.text().strip():
+                QMessageBox.warning(self, "验证失败", "启用短信通知时必须设置收件人")
+                self.tab_widget.setCurrentIndex(2)
+                self.sms_recipients_edit.setFocus()
+                return
+
+            if self.webhook_checkbox.isChecked() and not self.webhook_url_edit.text().strip():
+                QMessageBox.warning(self, "验证失败", "启用Webhook通知时必须设置URL")
+                self.tab_widget.setCurrentIndex(2)
+                self.webhook_url_edit.setFocus()
+                return
+
+            if self.dingtalk_checkbox.isChecked() and not self.dingtalk_webhook_url_edit.text().strip():
+                QMessageBox.warning(self, "验证失败", "启用钉钉通知时必须设置Webhook URL")
+                self.tab_widget.setCurrentIndex(2)
+                self.dingtalk_webhook_url_edit.setFocus()
                 return
 
             # 验证消息模板格式（如果有自定义模板）
@@ -376,6 +450,12 @@ class RiskRuleConfigDialog(QDialog):
                 'desktop_notification': self.desktop_checkbox.isChecked(),
                 'sound_notification': self.sound_checkbox.isChecked(),
                 'webhook_notification': self.webhook_checkbox.isChecked(),
+                'dingtalk_notification': self.dingtalk_checkbox.isChecked(),
+
+                'email_recipients': self.email_recipients_edit.text().strip(),
+                'sms_recipients': self.sms_recipients_edit.text().strip(),
+                'webhook_url': self.webhook_url_edit.text().strip(),
+                'dingtalk_webhook_url': self.dingtalk_webhook_url_edit.text().strip(),
 
                 'message_template': self.message_template_edit.toPlainText().strip()
             }

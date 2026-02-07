@@ -3661,6 +3661,7 @@ class EnhancedDataImportWidget(QWidget):
         try:
             # 获取配置
             task_name = self.task_name_edit.text() or f"导入任务_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            task_desc = self.task_desc_edit.toPlainText().strip() if hasattr(self, 'task_desc_edit') else None
             symbols_text = self.symbols_edit.toPlainText().strip()
 
             if not symbols_text:
@@ -3687,6 +3688,9 @@ class EnhancedDataImportWidget(QWidget):
             check_completeness = self.check_completeness_cb.isChecked() if hasattr(self, 'check_completeness_cb') else True
             skip_latest_data = self.skip_latest_data_cb.isChecked() if hasattr(self, 'skip_latest_data_cb') else True
 
+            # 获取数据用途
+            data_usage = self._get_data_usage_value() if hasattr(self, '_get_data_usage_value') else "general"
+
             # 根据下载模式创建不同的任务配置
             if download_mode == "gap_fill":
                 # 间隙填充模式配置
@@ -3695,10 +3699,12 @@ class EnhancedDataImportWidget(QWidget):
                 task_config = ImportTaskConfig(
                     task_id=f"task_{int(datetime.now().timestamp())}",
                     name=task_name,
+                    description=task_desc,
                     symbols=symbols,
                     data_source=self.data_source_combo.currentText(),
                     asset_type=self._get_asset_type_value(),
                     data_type=self.data_type_combo.currentText() if hasattr(self, 'data_type_combo') else "K线数据",
+                    data_usage=data_usage,
                     frequency=freq_map.get(self.frequency_combo.currentText(), DataFrequency.DAILY),
                     mode=ImportMode.MANUAL,  # 使用MANUAL模式，通过config区分功能
                     batch_size=self.batch_size_spin.value(),
@@ -3730,10 +3736,12 @@ class EnhancedDataImportWidget(QWidget):
                 task_config = ImportTaskConfig(
                     task_id=f"task_{int(datetime.now().timestamp())}",
                     name=task_name,
+                    description=task_desc,
                     symbols=symbols,
                     data_source=self.data_source_combo.currentText(),
                     asset_type=self._get_asset_type_value(),
                     data_type=self.data_type_combo.currentText() if hasattr(self, 'data_type_combo') else "K线数据",
+                    data_usage=data_usage,
                     frequency=freq_map.get(self.frequency_combo.currentText(), DataFrequency.DAILY),
                     mode=ImportMode.MANUAL,  # 使用MANUAL模式，通过config区分功能
                     batch_size=self.batch_size_spin.value(),
@@ -3765,10 +3773,12 @@ class EnhancedDataImportWidget(QWidget):
                 task_config = ImportTaskConfig(
                     task_id=f"task_{int(datetime.now().timestamp())}",
                     name=task_name,
+                    description=task_desc,
                     symbols=symbols,
                     data_source=self.data_source_combo.currentText(),
                     asset_type=self._get_asset_type_value(),
                     data_type=self.data_type_combo.currentText() if hasattr(self, 'data_type_combo') else "K线数据",
+                    data_usage=data_usage,
                     frequency=freq_map.get(self.frequency_combo.currentText(), DataFrequency.DAILY),
                     mode=ImportMode.INCREMENTAL,  # 使用INCREMENTAL模式
                     batch_size=self.batch_size_spin.value(),
@@ -3795,10 +3805,12 @@ class EnhancedDataImportWidget(QWidget):
                 task_config = ImportTaskConfig(
                     task_id=f"task_{int(datetime.now().timestamp())}",
                     name=task_name,
+                    description=task_desc,
                     symbols=symbols,
                     data_source=self.data_source_combo.currentText(),
                     asset_type=self._get_asset_type_value(),
                     data_type=self.data_type_combo.currentText() if hasattr(self, 'data_type_combo') else "K线数据",
+                    data_usage=data_usage,
                     frequency=freq_map.get(self.frequency_combo.currentText(), DataFrequency.DAILY),
                     mode=ImportMode.MANUAL,  # 全量下载使用MANUAL模式
                     batch_size=self.batch_size_spin.value(),
@@ -3819,6 +3831,17 @@ class EnhancedDataImportWidget(QWidget):
             self.import_engine.enable_distributed_execution = self.distributed_cb.isChecked()
             self.import_engine.enable_intelligent_caching = self.caching_cb.isChecked()
             self.import_engine.enable_data_quality_monitoring = self.quality_monitoring_cb.isChecked()
+
+            # 更新实时写入配置
+            write_strategy = self.write_strategy_combo.currentText() if hasattr(self, 'write_strategy_combo') else "批量写入"
+            enable_perf_monitor = self.enable_perf_monitor_cb.isChecked() if hasattr(self, 'enable_perf_monitor_cb') else True
+            enable_memory_monitor = self.enable_memory_monitor_cb.isChecked() if hasattr(self, 'enable_memory_monitor_cb') else True
+
+            self.import_engine.update_realtime_write_config(
+                write_strategy=write_strategy,
+                enable_performance_monitoring=enable_perf_monitor,
+                enable_memory_monitoring=enable_memory_monitor
+            )
 
             # 保存配置并启动任化
             self.config_manager.add_import_task(task_config)
@@ -4316,6 +4339,7 @@ class EnhancedDataImportWidget(QWidget):
             config = {
                 'task_id': f"task_{int(datetime.now().timestamp())}",
                 'name': final_task_name,  # ✅ 使用带标记的任务名
+                'description': self.task_desc_edit.toPlainText().strip() if hasattr(self, 'task_desc_edit') else None,  # ✅ 添加任务描述字段
                 'data_usage': self._get_data_usage_value() if hasattr(self, '_get_data_usage_value') else "general",  # 🆕 添加数据用途字段
                 'symbols': symbols,
                 'asset_type': self._get_asset_type_value() if hasattr(self, '_get_asset_type_value') else (self.asset_type_combo.currentText() if hasattr(self, 'asset_type_combo') else "股票"),
@@ -4388,10 +4412,12 @@ class EnhancedDataImportWidget(QWidget):
             task_config = ImportTaskConfig(
                 task_id=task_config_dict.get('task_id', f"task_{int(datetime.now().timestamp())}"),
                 name=task_config_dict.get('name', f"导入任务_{datetime.now().strftime('%Y%m%d_%H%M%S')}"),
+                description=task_config_dict.get('description', None),  # ✅ 添加任务描述字段
                 symbols=task_config_dict.get('symbols', []),
                 data_source=task_config_dict.get('data_source', ''),
                 asset_type=task_config_dict.get('asset_type', ''),
                 data_type=task_config_dict.get('data_type', 'K线数据'),
+                data_usage=task_config_dict.get('data_usage', 'general'),  # ✅ 添加数据用途字段
                 frequency=frequency_enum,
                 mode=ImportMode.MANUAL,
                 batch_size=task_config_dict.get('batch_size', 100),

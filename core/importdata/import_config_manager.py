@@ -7,6 +7,7 @@
 """
 
 import json
+import os
 from loguru import logger
 from typing import Dict, List, Any, Optional, Union
 from datetime import datetime, timedelta
@@ -78,7 +79,6 @@ class DataSourceConfig:
 
 @dataclass
 class ImportTaskConfig:
-    import os
     """导入任务配置"""
     task_id: str                                # 任务ID
     name: str                                   # 任务名称
@@ -88,6 +88,8 @@ class ImportTaskConfig:
     symbols: List[str]                          # 股票代码列表
     frequency: DataFrequency                    # 数据频率
     mode: ImportMode                            # 导入模式
+    description: Optional[str] = None           # 任务描述
+    data_usage: str = "general"                 # 数据用途
     start_date: Optional[str] = None            # 开始日期
     end_date: Optional[str] = None              # 结束日期
     schedule_cron: Optional[str] = None         # 定时任务表达式

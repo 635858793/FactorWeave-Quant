@@ -68,8 +68,14 @@ class AlertRule:
     # 通知设置
     email_notification: bool = True
     sms_notification: bool = False
+    webhook_notification: bool = False
+    dingtalk_notification: bool = False
     desktop_notification: bool = True
     sound_notification: bool = True
+    email_recipients: str = ""
+    sms_recipients: str = ""
+    webhook_url: str = ""
+    dingtalk_webhook_url: str = ""
     message_template: str = ""
 
     # 元数据
@@ -90,6 +96,20 @@ class AlertHistory:
     current_value: float = 0.0
     threshold_value: float = 0.0
     recommendation: str = ""
+
+
+@dataclass
+class RiskHistoryRecord:
+    """风险历史记录数据类"""
+    id: Optional[int] = None
+    timestamp: str = ""
+    overall_risk_score: float = 0.0
+    risk_level: str = ""
+    var_95: float = 0.0
+    max_drawdown: float = 0.0
+    volatility: float = 0.0
+    status: str = ""
+
 
 class AlertConfigDatabase:
     """告警配置数据库管理类"""
@@ -172,13 +192,64 @@ class AlertConfigDatabase:
                         -- 通知设置
                         email_notification BOOLEAN DEFAULT 1,
                         sms_notification BOOLEAN DEFAULT 0,
+                        webhook_notification BOOLEAN DEFAULT 0,
+                        dingtalk_notification BOOLEAN DEFAULT 0,
                         desktop_notification BOOLEAN DEFAULT 1,
                         sound_notification BOOLEAN DEFAULT 1,
+                        email_recipients TEXT DEFAULT '',
+                        sms_recipients TEXT DEFAULT '',
+                        webhook_url TEXT DEFAULT '',
+                        dingtalk_webhook_url TEXT DEFAULT '',
                         message_template TEXT DEFAULT '',
                         
                         -- 元数据
                         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                         updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+
+                # 数据库迁移：添加新字段（如果不存在）
+                try:
+                    cursor.execute("ALTER TABLE alert_rules ADD COLUMN webhook_notification BOOLEAN DEFAULT 0")
+                except sqlite3.OperationalError:
+                    pass  # 字段已存在
+
+                try:
+                    cursor.execute("ALTER TABLE alert_rules ADD COLUMN dingtalk_notification BOOLEAN DEFAULT 0")
+                except sqlite3.OperationalError:
+                    pass  # 字段已存在
+
+                try:
+                    cursor.execute("ALTER TABLE alert_rules ADD COLUMN email_recipients TEXT DEFAULT ''")
+                except sqlite3.OperationalError:
+                    pass  # 字段已存在
+
+                try:
+                    cursor.execute("ALTER TABLE alert_rules ADD COLUMN sms_recipients TEXT DEFAULT ''")
+                except sqlite3.OperationalError:
+                    pass  # 字段已存在
+
+                try:
+                    cursor.execute("ALTER TABLE alert_rules ADD COLUMN webhook_url TEXT DEFAULT ''")
+                except sqlite3.OperationalError:
+                    pass  # 字段已存在
+
+                try:
+                    cursor.execute("ALTER TABLE alert_rules ADD COLUMN dingtalk_webhook_url TEXT DEFAULT ''")
+                except sqlite3.OperationalError:
+                    pass  # 字段已存在
+
+                # 创建风险历史表
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS risk_history (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        timestamp TEXT NOT NULL,
+                        overall_risk_score REAL NOT NULL,
+                        risk_level TEXT NOT NULL,
+                        var_95 REAL DEFAULT 0.0,
+                        max_drawdown REAL DEFAULT 0.0,
+                        volatility REAL DEFAULT 0.0,
+                        status TEXT DEFAULT '正常'
                     )
                 """)
 
@@ -202,6 +273,7 @@ class AlertConfigDatabase:
                 """)
 
                 # 创建索引
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_risk_history_timestamp ON risk_history(timestamp)")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_alert_history_timestamp ON alert_history(timestamp)")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_alert_history_level ON alert_history(level)")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_alert_history_rule_id ON alert_history(rule_id)")
@@ -292,15 +364,19 @@ class AlertConfigDatabase:
                         UPDATE alert_rules SET
                             name=?, rule_type=?, priority=?, enabled=?, description=?,
                             metric_name=?, operator=?, threshold_value=?, threshold_unit=?, duration=?,
-                            email_notification=?, sms_notification=?, desktop_notification=?,
-                            sound_notification=?, message_template=?, updated_at=?
+                            check_interval=?, silence_period=?, max_alerts=?,
+                            email_notification=?, sms_notification=?, webhook_notification=?, dingtalk_notification=?, desktop_notification=?,
+                            sound_notification=?, email_recipients=?, sms_recipients=?, webhook_url=?, dingtalk_webhook_url=?,
+                            message_template=?, updated_at=?
                         WHERE id=?
                     """, (
                         rule.name, rule.rule_type, rule.priority, rule.enabled, rule.description,
                         rule.metric_name, rule.operator, rule.threshold_value, rule.threshold_unit,
-                        rule.duration, rule.email_notification, rule.sms_notification,
-                        rule.desktop_notification, rule.sound_notification, rule.message_template,
-                        rule.updated_at, rule.id
+                        rule.duration, rule.check_interval, rule.silence_period, rule.max_alerts,
+                        rule.email_notification, rule.sms_notification, rule.webhook_notification,
+                        rule.dingtalk_notification, rule.desktop_notification, rule.sound_notification,
+                        rule.email_recipients, rule.sms_recipients, rule.webhook_url, rule.dingtalk_webhook_url,
+                        rule.message_template, rule.updated_at, rule.id
                     ))
                     rule_id = rule.id
                 else:
@@ -310,15 +386,19 @@ class AlertConfigDatabase:
                         INSERT INTO alert_rules (
                             name, rule_type, priority, enabled, description,
                             metric_name, operator, threshold_value, threshold_unit, duration,
-                            email_notification, sms_notification, desktop_notification,
-                            sound_notification, message_template, created_at, updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            check_interval, silence_period, max_alerts,
+                            email_notification, sms_notification, webhook_notification, dingtalk_notification, desktop_notification,
+                            sound_notification, email_recipients, sms_recipients, webhook_url, dingtalk_webhook_url,
+                            message_template, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         rule.name, rule.rule_type, rule.priority, rule.enabled, rule.description,
                         rule.metric_name, rule.operator, rule.threshold_value, rule.threshold_unit,
-                        rule.duration, rule.email_notification, rule.sms_notification,
-                        rule.desktop_notification, rule.sound_notification, rule.message_template,
-                        rule.created_at, rule.updated_at
+                        rule.duration, rule.check_interval, rule.silence_period, rule.max_alerts,
+                        rule.email_notification, rule.sms_notification, rule.webhook_notification,
+                        rule.dingtalk_notification, rule.desktop_notification, rule.sound_notification,
+                        rule.email_recipients, rule.sms_recipients, rule.webhook_url, rule.dingtalk_webhook_url,
+                        rule.message_template, rule.created_at, rule.updated_at
                     ))
                     rule_id = cursor.lastrowid
 
@@ -431,6 +511,69 @@ class AlertConfigDatabase:
 
         except Exception as e:
             logger.error(f"加载告警历史失败: {e}")
+            return []
+
+    def save_risk_history(self, record: RiskHistoryRecord) -> Optional[int]:
+        """保存风险历史记录"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+
+                if not record.timestamp:
+                    record.timestamp = datetime.now().isoformat()
+
+                cursor.execute("""
+                    INSERT INTO risk_history (
+                        timestamp, overall_risk_score, risk_level, var_95,
+                        max_drawdown, volatility, status
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    record.timestamp, record.overall_risk_score, record.risk_level,
+                    record.var_95, record.max_drawdown, record.volatility, record.status
+                ))
+
+                record_id = cursor.lastrowid
+                conn.commit()
+                logger.info(f"风险历史记录保存成功，ID: {record_id}")
+                return record_id
+
+        except Exception as e:
+            logger.error(f"保存风险历史记录失败: {e}")
+            return None
+
+    def load_risk_history(self, limit: int = 100, hours: int = 24) -> List[RiskHistoryRecord]:
+        """加载风险历史记录"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+
+                # 构建查询条件
+                query = "SELECT * FROM risk_history"
+                params = []
+
+                if hours:
+                    from datetime import datetime, timedelta
+                    cutoff_time = (datetime.now() - timedelta(hours=hours)).isoformat()
+                    query += " WHERE timestamp >= ?"
+                    params.append(cutoff_time)
+
+                query += " ORDER BY timestamp DESC LIMIT ?"
+                params.append(limit)
+
+                cursor.execute(query, params)
+                rows = cursor.fetchall()
+
+                history_list = []
+                columns = [description[0] for description in cursor.description]
+
+                for row in rows:
+                    history_dict = dict(zip(columns, row))
+                    history_list.append(RiskHistoryRecord(**history_dict))
+
+                return history_list
+
+        except Exception as e:
+            logger.error(f"加载风险历史记录失败: {e}")
             return []
 
     def clear_alert_history(self, hours: int = None) -> bool:

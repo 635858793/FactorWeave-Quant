@@ -74,6 +74,10 @@ def show_modern_performance_monitor(parent=None):
             health_checker=health_checker,
             event_bus=event_bus
         )
+        
+        # 设置合理的初始窗口大小（不固定，允许缩放）
+        widget.resize(1200, 700)
+        
         widget.show()
         return widget
 

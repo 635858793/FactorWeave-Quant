@@ -34,10 +34,10 @@ def _ensure_qt_imports():
                 raise RuntimeError("QApplication实例不存在，无法导入Qt模块")
             from PyQt5.QtCore import QTimer, QObject, pyqtSignal
         except ImportError:
-            from PyQt6.QtWidgets import QApplication
+            from PyQt5.QtWidgets import QApplication
             if QApplication.instance() is None:
                 raise RuntimeError("QApplication实例不存在，无法导入Qt模块")
-            from PyQt6.QtCore import QTimer, QObject, pyqtSignal
+            from PyQt5.QtCore import QTimer, QObject, pyqtSignal
 
 
 class TimerPriority(Enum):

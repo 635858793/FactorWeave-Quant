@@ -658,10 +658,16 @@ class UniPluginDataManager:
                     raise RuntimeError(f"所有插件都无法连接，数据类型: {context.data_type.value}/{context.asset_type.value}")
 
             # 3. TET路由引擎选择最优插件（仅从已连接的插件中选择）
-            logger.info(f"[ROUTING] TET路由引擎开始智能插件选择（从 {len(connected_plugins)} 个已连接插件中选择）...")
-            selected_plugin_id = self.tet_engine.select_optimal_plugin(
-                connected_plugins, context, self.plugin_center
-            )
+            # 如果用户指定了数据源且已连接，强制使用用户指定的数据源
+            if specified_data_source and specified_data_source in connected_plugins:
+                selected_plugin_id = specified_data_source
+                logger.info(f"[FORCE_USE] 强制使用用户指定数据源: {selected_plugin_id}")
+            else:
+                # 否则使用TET路由引擎进行智能选择
+                logger.info(f"[ROUTING] TET路由引擎开始智能插件选择（从 {len(connected_plugins)} 个已连接插件中选择）...")
+                selected_plugin_id = self.tet_engine.select_optimal_plugin(
+                    connected_plugins, context, self.plugin_center
+                )
 
             if not selected_plugin_id:
                 raise RuntimeError("TET路由引擎无法从已连接插件中选择合适的插件")

@@ -202,6 +202,10 @@ class PerformanceMonitor(QObject):
         self.monitoring_enabled = True
         self.auto_report_enabled = self.config.get('auto_report', True)
         
+        # 告警规则引擎
+        self.alert_rule_engine = None
+        self._connect_alert_system()
+        
         # 实时监控
         self.monitoring_timer = QTimer()
         self.monitoring_timer.timeout.connect(self._periodic_monitoring)
@@ -235,6 +239,46 @@ class PerformanceMonitor(QObject):
         """停止性能监控"""
         self.monitoring_enabled = False
         logger.info("性能监控已禁用")
+    
+    def _connect_alert_system(self) -> None:
+        """连接告警系统"""
+        try:
+            from core.services.alert_rule_engine import AlertRuleEngine
+            from core.services.alert_deduplication_service import AlertDeduplicationService
+            
+            dedup_service = AlertDeduplicationService()
+            self.alert_rule_engine = AlertRuleEngine(dedup_service)
+            
+            # 连接告警信号
+            self.alert_raised.connect(self._on_alert_raised)
+            
+            logger.info("PerformanceMonitor 已与 AlertRuleEngine 集成")
+            
+        except Exception as e:
+            logger.error(f"连接告警系统失败: {e}")
+    
+    def _on_alert_raised(self, alert: PerformanceAlert) -> None:
+        """处理告警信号"""
+        if self.alert_rule_engine:
+            try:
+                # 将 PerformanceAlert 转换为指标数据
+                metrics = {
+                    "alert_level": alert.level,
+                    "alert_category": "performance",
+                    "alert_message": alert.message,
+                    "metric_name": alert.component,
+                    "metric_value": alert.metric_value,
+                    "threshold": alert.threshold,
+                    "timestamp": alert.timestamp
+                }
+                
+                # 评估规则
+                import asyncio
+                loop = asyncio.get_event_loop()
+                loop.create_task(self.alert_rule_engine.evaluate_rules(metrics))
+                
+            except Exception as e:
+                logger.error(f"处理告警信号失败: {e}")
     
     def record_metric(self, metric_type: str, value: float, unit: str, 
                      component: str, additional_data: Dict[str, Any] = None) -> List[PerformanceAlert]:

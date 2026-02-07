@@ -219,20 +219,19 @@ class ModernTradingExecutionMonitorTab(QWidget):
 
         # 滑点分布图
         self.slippage_chart = ModernPerformanceChart("滑点分布分析", "histogram")
-        self.slippage_chart.setMinimumHeight(250)
+        self.slippage_chart.setMinimumHeight(150)  # 减少最小高度，更灵活
         charts_splitter.addWidget(self.slippage_chart)
 
         # 延迟分布图
         self.latency_chart = ModernPerformanceChart("延迟分布分析", "histogram")
-        self.latency_chart.setMinimumHeight(250)
+        self.latency_chart.setMinimumHeight(150)  # 减少最小高度，更灵活
         charts_splitter.addWidget(self.latency_chart)
 
         layout.addWidget(charts_splitter)
 
         # 执行质量趋势图
         self.quality_trend_chart = ModernPerformanceChart("执行质量趋势", "line")
-        self.quality_trend_chart.setMinimumHeight(200)
-        self.quality_trend_chart.setMaximumHeight(250)
+        self.quality_trend_chart.setMinimumHeight(150)  # 减少最小高度，更灵活
         layout.addWidget(self.quality_trend_chart)
 
         return tab

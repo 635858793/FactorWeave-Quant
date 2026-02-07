@@ -130,8 +130,7 @@ class ModernStrategyPerformanceTab(QWidget):
 
         # 图表区域 - 专业分割布局，紧凑显示
         charts_splitter = QSplitter(Qt.Horizontal)
-        charts_splitter.setMinimumHeight(200)  # 减少最小高度
-        charts_splitter.setMaximumHeight(300)  # 限制最大高度，避免过度拉伸
+        charts_splitter.setMinimumHeight(150)  # 减少最小高度，更灵活
         charts_splitter.setStyleSheet("""
             QSplitter::handle {
                 background: #34495e;
@@ -150,8 +149,7 @@ class ModernStrategyPerformanceTab(QWidget):
 
         # 交易统计表格 - 现代化设计，给予适当的伸缩权重
         trade_group = QGroupBox("交易统计详情")
-        trade_group.setMinimumHeight(400)  # 减少最小高度，避免过多空白
-        trade_group.setMaximumHeight(800)  # 限制最大高度
+        trade_group.setMinimumHeight(200)  # 减少最小高度，更灵活
         trade_group.setStyleSheet("""
             QGroupBox {
                 font-weight: bold;

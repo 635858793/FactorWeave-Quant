@@ -685,21 +685,25 @@ class DataImportExecutionEngine(QObject):
             logger.error(f"详细错误: {traceback.format_exc()}")
             return None
 
-    def _init_realtime_write_service(self):
+    def _init_realtime_write_service(self, realtime_config=None):
         """初始化实时写入服务"""
         try:
             from ..services.realtime_write_service import RealtimeWriteService
             from ..services.realtime_write_config import RealtimeWriteConfig, WriteStrategy
 
-            # 创建默认配置
-            config = RealtimeWriteConfig(
-                enabled=True,
-                write_strategy=WriteStrategy.BATCH,  # 默认批量模式
-                batch_size=100,
-                concurrency=4,
-                max_retries=3,
-                enable_performance_monitoring=True
-            )
+            if realtime_config is None:
+                # 创建默认配置
+                config = RealtimeWriteConfig(
+                    enabled=True,
+                    write_strategy=WriteStrategy.BATCH,  # 默认批量模式
+                    batch_size=100,
+                    concurrency=4,
+                    max_retries=3,
+                    enable_performance_monitoring=True
+                )
+            else:
+                # 使用传入的配置
+                config = realtime_config
 
             self.realtime_write_service = RealtimeWriteService(config)
             logger.info(f"实时写入服务初始化成功，策略: {config.write_strategy.value}")
@@ -1796,9 +1800,17 @@ class DataImportExecutionEngine(QObject):
             return None
 
     def _validate_imported_data(self, task_id: str, data: pd.DataFrame,
-                                data_source: str, data_type: str = 'kdata') -> ValidationResult:
-        """验证导入的数据质量"""
-        logger.info(f"[数据质量验证] 开始验证 - 任务: {task_id}, 数据源: {data_source}, 类型: {data_type}, 记录数: {len(data) if not data.empty else 0}")
+                                data_source: str, data_type: str = 'kdata', strict_validation: bool = False) -> ValidationResult:
+        """验证导入的数据质量
+        
+        Args:
+            task_id: 任务ID
+            data: 数据DataFrame
+            data_source: 数据源
+            data_type: 数据类型
+            strict_validation: 是否启用严格验证模式（用于回测和实盘）
+        """
+        logger.info(f"[数据质量验证] 开始验证 - 任务: {task_id}, 数据源: {data_source}, 类型: {data_type}, 记录数: {len(data) if not data.empty else 0}, 严格模式: {strict_validation}")
 
         if not self.enable_data_quality_monitoring or not self.data_quality_monitor:
             logger.debug(f"[数据质量验证] 质量监控未启用，跳过验证")
@@ -1993,15 +2005,20 @@ class DataImportExecutionEngine(QObject):
 
             # 创建详细的验证结果
             validation_result = self._create_detailed_validation_result(
-                data, quality_score, data_source, data_type
+                data, quality_score, data_source, data_type, strict_validation
             )
 
             # 记录质量评估结果
             quality_level = validation_result.quality_level
             logger.info(f" 数据质量评估完成: {quality_level.value}, 评分: {quality_score:.3f}")
 
-            if quality_score < 0.7:
-                logger.warning(f" 数据质量较差 (评分: {quality_score:.3f})，建议检查数据源")
+            # 根据严格模式调整质量阈值
+            if strict_validation:
+                if quality_score < 0.85:
+                    logger.warning(f" 严格模式：数据质量不达标 (评分: {quality_score:.3f} < 0.85)，建议检查数据源")
+            else:
+                if quality_score < 0.7:
+                    logger.warning(f" 数据质量较差 (评分: {quality_score:.3f})，建议检查数据源")
 
             return validation_result
 
@@ -2114,8 +2131,16 @@ class DataImportExecutionEngine(QObject):
             return 'general'
 
     def _create_detailed_validation_result(self, data: pd.DataFrame, quality_score: float,
-                                           data_source: str, data_type: str) -> ValidationResult:
-        """创建详细的验证结果"""
+                                           data_source: str, data_type: str, strict_validation: bool = False) -> ValidationResult:
+        """创建详细的验证结果
+        
+        Args:
+            data: 数据DataFrame
+            quality_score: 质量评分
+            data_source: 数据源
+            data_type: 数据类型
+            strict_validation: 是否启用严格验证模式
+        """
         try:
             issues = []
 
@@ -2172,17 +2197,33 @@ class DataImportExecutionEngine(QObject):
                     if ((data['close'] > data['high']) | (data['close'] < data['low'])).any():
                         issues.append("存在收盘价超出最高最低价范围的异常数据")
 
-            # 确定质量等级
-            if quality_score >= 0.95:
-                quality_level = DataQuality.EXCELLENT
-            elif quality_score >= 0.85:
-                quality_level = DataQuality.GOOD
-            elif quality_score >= 0.70:
-                quality_level = DataQuality.FAIR
+            # 确定质量等级（根据严格模式调整阈值）
+            if strict_validation:
+                # 严格模式：更高的质量阈值
+                if quality_score >= 0.98:
+                    quality_level = DataQuality.EXCELLENT
+                elif quality_score >= 0.90:
+                    quality_level = DataQuality.GOOD
+                elif quality_score >= 0.85:
+                    quality_level = DataQuality.FAIR
+                else:
+                    quality_level = DataQuality.POOR
+                
+                # 严格模式下，质量评分必须 >= 0.85 且没有问题
+                is_valid = quality_score >= 0.85 and len(issues) == 0
             else:
-                quality_level = DataQuality.POOR
-
-            is_valid = quality_score >= 0.70 and len(issues) == 0
+                # 普通模式：标准质量阈值
+                if quality_score >= 0.95:
+                    quality_level = DataQuality.EXCELLENT
+                elif quality_score >= 0.85:
+                    quality_level = DataQuality.GOOD
+                elif quality_score >= 0.70:
+                    quality_level = DataQuality.FAIR
+                else:
+                    quality_level = DataQuality.POOR
+                
+                # 普通模式下，质量评分必须 >= 0.70 且没有问题
+                is_valid = quality_score >= 0.70 and len(issues) == 0
 
             # 生成建议
             suggestions = []
@@ -2768,6 +2809,34 @@ class DataImportExecutionEngine(QObject):
         """
         try:
             logger.info(f" 开始执行任务: {task_config.task_id}")
+            logger.info(f" 任务名称: {task_config.name}")
+            
+            # 记录任务描述
+            if task_config.description:
+                logger.info(f" 任务描述: {task_config.description}")
+            
+            # 记录数据用途
+            logger.info(f" 数据用途: {task_config.data_usage}")
+            
+            # 根据数据用途调整监控策略
+            if task_config.data_usage == "backtest":
+                # 回测用途：启用更严格的数据质量监控
+                if hasattr(self, 'enable_data_quality_monitoring'):
+                    self.enable_data_quality_monitoring = True
+                    logger.info(" 回测用途：启用严格数据质量监控")
+            elif task_config.data_usage == "realtime":
+                # 实时用途：启用性能监控
+                if hasattr(self, 'enable_performance_monitoring'):
+                    self.enable_performance_monitoring = True
+                    logger.info(" 实时用途：启用性能监控")
+            elif task_config.data_usage == "live_trading":
+                # 实盘用途：启用所有监控
+                if hasattr(self, 'enable_data_quality_monitoring'):
+                    self.enable_data_quality_monitoring = True
+                if hasattr(self, 'enable_performance_monitoring'):
+                    self.enable_performance_monitoring = True
+                logger.info(" 实盘用途：启用所有监控")
+            
             logger.info(f" 任务详情: 数据类型={getattr(task_config, 'data_type', 'K线数据')}, 股票数量={len(task_config.symbols)}")
 
             # ✅ 修复：检查是否有已保存的进度并恢复
@@ -3590,6 +3659,61 @@ class DataImportExecutionEngine(QObject):
             logger.error(f"更新写入策略失败: {e}")
             return False
 
+    def update_realtime_write_config(self, write_strategy: str = None,
+                                    enable_performance_monitoring: bool = None,
+                                    enable_memory_monitoring: bool = None):
+        """
+        更新实时写入配置
+
+        Args:
+            write_strategy: 写入策略 ('realtime', 'batch', 'adaptive', '禁用写入')
+            enable_performance_monitoring: 启用性能监控
+            enable_memory_monitoring: 启用内存监控
+        """
+        try:
+            if not self.realtime_write_service:
+                logger.warning("实时写入服务未启用，无法更新配置")
+                return False
+
+            config = self.realtime_write_service.config
+
+            if write_strategy is not None:
+                from ..services.realtime_write_config import WriteStrategy
+
+                strategy_map = {
+                    '实时写入': WriteStrategy.REALTIME,
+                    '批量写入': WriteStrategy.BATCH,
+                    '自适应写入': WriteStrategy.ADAPTIVE,
+                    '禁用写入': None
+                }
+
+                if write_strategy in strategy_map:
+                    new_strategy = strategy_map[write_strategy]
+                    if new_strategy is None:
+                        config.enabled = False
+                        logger.info("实时写入已禁用")
+                    else:
+                        config.enabled = True
+                        old_strategy = config.write_strategy
+                        config.write_strategy = new_strategy
+                        logger.info(f"写入策略已更新: {old_strategy.value} -> {new_strategy.value}")
+                else:
+                    logger.warning(f"未知的写入策略: {write_strategy}")
+
+            if enable_performance_monitoring is not None:
+                config.enable_performance_monitoring = enable_performance_monitoring
+                logger.info(f"性能监控已{'启用' if enable_performance_monitoring else '禁用'}")
+
+            if enable_memory_monitoring is not None:
+                config.enable_memory_monitoring = enable_memory_monitoring
+                logger.info(f"内存监控已{'启用' if enable_memory_monitoring else '禁用'}")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"更新实时写入配置失败: {e}")
+            return False
+
     def get_write_strategy(self) -> str:
         """获取当前写入策略"""
         if self.realtime_write_service:
@@ -4030,6 +4154,20 @@ class DataImportExecutionEngine(QObject):
                     return {'symbol': symbol, 'success': False, 'record_count': 0, 'error': '任务已取消'}
 
             logger.info(f"🔵 [开始] {symbol} ({index+1}/{total}) | 线程:{thread_id}")
+            
+            # 记录任务描述和数据用途
+            if task_config.description:
+                logger.debug(f"📝 [任务描述] {task_config.description}")
+            logger.debug(f"🎯 [数据用途] {task_config.data_usage}")
+            
+            # 根据数据用途调整数据验证策略
+            strict_validation = False
+            if task_config.data_usage == "backtest":
+                strict_validation = True
+                logger.debug(f"🎯 [验证策略] 回测用途：启用严格验证")
+            elif task_config.data_usage == "live_trading":
+                strict_validation = True
+                logger.debug(f"🎯 [验证策略] 实盘用途：启用严格验证")
 
             # 1. 从真实数据提供者获取K线数据（关键监控点1：网络请求）
             network_start = time.time()
@@ -4074,16 +4212,17 @@ class DataImportExecutionEngine(QObject):
             logger.debug(f"📊 [数据字段] {kdata.columns.tolist()}")
 
             # 2. ✅ 数据质量验证
-            if self.enable_data_quality_monitoring:
+            if self.enable_data_quality_monitoring or strict_validation:
                 validation_start = time.time()
                 validation_result = self._validate_imported_data(
                     task_id=task_config.task_id,
                     data=kdata,
                     data_source=task_config.data_source,
-                    data_type='kdata'
+                    data_type='kdata',
+                    strict_validation=strict_validation  # 根据数据用途调整验证严格度
                 )
                 validation_elapsed = time.time() - validation_start
-                logger.debug(f"⏱️  [质量验证] {symbol} | 评分:{validation_result.quality_score:.3f} | 耗时:{validation_elapsed:.2f}秒")
+                logger.debug(f"⏱️  [质量验证] {symbol} | 评分:{validation_result.quality_score:.3f} | 严格度:{strict_validation} | 耗时:{validation_elapsed:.2f}秒")
 
             # 3. 保存K线数据到数据库（关键监控点2：数据库写入）
             db_start = time.time()
