@@ -171,7 +171,7 @@ class AssetFallbackLoader:
                             df['market'] = df['market'].astype(str).str.upper().str.strip()
                             df = df[df['market'].isin(valid_markets)]
 
-                        logger.debug(f"✅ 从 StockService 获取 {asset_type.value} 资产列表: {len(df)} 条")
+                        logger.debug(f"从 StockService 获取 {asset_type.value} 资产列表: {len(df)} 条")
                         return df
 
             # 2. 尝试从 DuckDB 获取
@@ -185,7 +185,7 @@ class AssetFallbackLoader:
 
                         result = self._query_duckdb(db_path, query)
                         if result is not None and not result.empty:
-                            logger.debug(f"✅ 从 DuckDB 获取 {asset_type.value} 资产列表: {len(result)} 条")
+                            logger.debug(f"从 DuckDB 获取 {asset_type.value} 资产列表: {len(result)} 条")
                             return result
                 except Exception as e:
                     logger.warning(f"⚠️ 从 DuckDB 获取 {asset_type.value} 资产列表失败: {e}")
@@ -211,7 +211,7 @@ class AssetFallbackLoader:
                     if index_list is not None and not index_list.empty:
                         df = index_list.copy()
                         df['asset_type'] = asset_type.value
-                        logger.debug(f"✅ 从 IndexService 获取指数资产列表: {len(df)} 条")
+                        logger.debug(f"从 IndexService 获取指数资产列表: {len(df)} 条")
                         return df
 
             # 2. 尝试从 DuckDB 获取
@@ -222,7 +222,7 @@ class AssetFallbackLoader:
                         query = f"SELECT * FROM asset_metadata WHERE asset_type = 'index'"
                         result = self._query_duckdb(db_path, query)
                         if result is not None and not result.empty:
-                            logger.debug(f"✅ 从 DuckDB 获取指数资产列表: {len(result)} 条")
+                            logger.debug(f"从 DuckDB 获取指数资产列表: {len(result)} 条")
                             return result
                 except Exception as e:
                     logger.warning(f"⚠️ 从 DuckDB 获取指数资产列表失败: {e}")
@@ -268,7 +268,7 @@ class AssetFallbackLoader:
                     if fund_list is not None and not fund_list.empty:
                         df = fund_list.copy()
                         df['asset_type'] = asset_type.value
-                        logger.debug(f"✅ 从 FundService 获取基金资产列表: {len(df)} 条")
+                        logger.debug(f"从 FundService 获取基金资产列表: {len(df)} 条")
                         return df
 
             # 2. 尝试从 DuckDB 获取
@@ -279,7 +279,7 @@ class AssetFallbackLoader:
                         query = f"SELECT * FROM asset_metadata WHERE asset_type = 'fund'"
                         result = self._query_duckdb(db_path, query)
                         if result is not None and not result.empty:
-                            logger.debug(f"✅ 从 DuckDB 获取基金资产列表: {len(result)} 条")
+                            logger.debug(f"从 DuckDB 获取基金资产列表: {len(result)} 条")
                             return result
                 except Exception as e:
                     logger.warning(f"⚠️ 从 DuckDB 获取基金资产列表失败: {e}")
@@ -304,7 +304,7 @@ class AssetFallbackLoader:
                     if bond_list is not None and not bond_list.empty:
                         df = bond_list.copy()
                         df['asset_type'] = asset_type.value
-                        logger.debug(f"✅ 从 BondService 获取债券资产列表: {len(df)} 条")
+                        logger.debug(f"从 BondService 获取债券资产列表: {len(df)} 条")
                         return df
 
             # 2. 尝试从 DuckDB 获取
@@ -315,7 +315,7 @@ class AssetFallbackLoader:
                         query = f"SELECT * FROM asset_metadata WHERE asset_type = 'bond'"
                         result = self._query_duckdb(db_path, query)
                         if result is not None and not result.empty:
-                            logger.debug(f"✅ 从 DuckDB 获取债券资产列表: {len(result)} 条")
+                            logger.debug(f"从 DuckDB 获取债券资产列表: {len(result)} 条")
                             return result
                 except Exception as e:
                     logger.warning(f"⚠️ 从 DuckDB 获取债券资产列表失败: {e}")
@@ -338,7 +338,7 @@ class AssetFallbackLoader:
                 crypto_list = self._fetch_crypto_from_api()
                 if crypto_list is not None and not crypto_list.empty:
                     crypto_list['asset_type'] = asset_type.value
-                    logger.debug(f"✅ 从 API 获取加密货币资产列表: {len(crypto_list)} 条")
+                    logger.debug(f"从 API 获取加密货币资产列表: {len(crypto_list)} 条")
                     return crypto_list
 
             # 2. 尝试从 DuckDB 获取
@@ -349,7 +349,7 @@ class AssetFallbackLoader:
                         query = f"SELECT * FROM asset_metadata WHERE asset_type = 'crypto'"
                         result = self._query_duckdb(db_path, query)
                         if result is not None and not result.empty:
-                            logger.debug(f"✅ 从 DuckDB 获取加密货币资产列表: {len(result)} 条")
+                            logger.debug(f"从 DuckDB 获取加密货币资产列表: {len(result)} 条")
                             return result
                 except Exception as e:
                     logger.warning(f"⚠️ 从 DuckDB 获取加密货币资产列表失败: {e}")
@@ -396,7 +396,7 @@ class AssetFallbackLoader:
                         query = f"SELECT * FROM asset_metadata WHERE asset_type = 'futures'"
                         result = self._query_duckdb(db_path, query)
                         if result is not None and not result.empty:
-                            logger.debug(f"✅ 从 DuckDB 获取期货资产列表: {len(result)} 条")
+                            logger.debug(f"从 DuckDB 获取期货资产列表: {len(result)} 条")
                             return result
                 except Exception as e:
                     logger.warning(f"⚠️ 从 DuckDB 获取期货资产列表失败: {e}")
@@ -445,7 +445,7 @@ class AssetFallbackLoader:
                         query = f"SELECT * FROM asset_metadata WHERE asset_type = 'forex'"
                         result = self._query_duckdb(db_path, query)
                         if result is not None and not result.empty:
-                            logger.debug(f"✅ 从 DuckDB 获取外汇资产列表: {len(result)} 条")
+                            logger.debug(f"从 DuckDB 获取外汇资产列表: {len(result)} 条")
                             return result
                 except Exception as e:
                     logger.warning(f"⚠️ 从 DuckDB 获取外汇资产列表失败: {e}")
@@ -493,7 +493,7 @@ class AssetFallbackLoader:
                         query = f"SELECT * FROM asset_metadata WHERE asset_type = 'option'"
                         result = self._query_duckdb(db_path, query)
                         if result is not None and not result.empty:
-                            logger.debug(f"✅ 从 DuckDB 获取期权资产列表: {len(result)} 条")
+                            logger.debug(f"从 DuckDB 获取期权资产列表: {len(result)} 条")
                             return result
                 except Exception as e:
                     logger.warning(f"⚠️ 从 DuckDB 获取期权资产列表失败: {e}")
@@ -518,7 +518,7 @@ class AssetFallbackLoader:
                         query = f"SELECT * FROM asset_metadata WHERE asset_type = 'warrant'"
                         result = self._query_duckdb(db_path, query)
                         if result is not None and not result.empty:
-                            logger.debug(f"✅ 从 DuckDB 获取涡轮资产列表: {len(result)} 条")
+                            logger.debug(f"从 DuckDB 获取涡轮资产列表: {len(result)} 条")
                             return result
                 except Exception as e:
                     logger.warning(f"⚠️ 从 DuckDB 获取涡轮资产列表失败: {e}")
@@ -543,7 +543,7 @@ class AssetFallbackLoader:
                         query = f"SELECT * FROM asset_metadata WHERE asset_type = 'commodity'"
                         result = self._query_duckdb(db_path, query)
                         if result is not None and not result.empty:
-                            logger.debug(f"✅ 从 DuckDB 获取大宗商品资产列表: {len(result)} 条")
+                            logger.debug(f"从 DuckDB 获取大宗商品资产列表: {len(result)} 条")
                             return result
                 except Exception as e:
                     logger.warning(f"⚠️ 从 DuckDB 获取大宗商品资产列表失败: {e}")
@@ -633,7 +633,7 @@ class AssetFallbackLoader:
                         query = f"SELECT * FROM asset_metadata WHERE asset_type = 'macro'"
                         result = self._query_duckdb(db_path, query)
                         if result is not None and not result.empty:
-                            logger.debug(f"✅ 从 DuckDB 获取宏观经济资产列表: {len(result)} 条")
+                            logger.debug(f"从 DuckDB 获取宏观经济资产列表: {len(result)} 条")
                             return result
                 except Exception as e:
                     logger.warning(f"⚠️ 从 DuckDB 获取宏观经济资产列表失败: {e}")
@@ -927,7 +927,7 @@ class AssetFallbackLoader:
                 if self.crypto_api_config.get('enabled', False):
                     crypto_data = self._fetch_crypto_from_api()
                     if crypto_data is not None and not crypto_data.empty:
-                        logger.info(f"✅ 成功从 API 获取 {asset_type.value} 资产数据: {len(crypto_data)} 条")
+                        logger.info(f"成功从 API 获取 {asset_type.value} 资产数据: {len(crypto_data)} 条")
                         return True
 
             logger.warning(f"⚠️ 无法从 API 重新加载 {asset_type.value} 资产数据")
@@ -945,4 +945,4 @@ class AssetFallbackLoader:
             except Exception:
                 pass
         self._http_session = None
-        logger.info("✅ Fallback 加载器缓存已清理")
+        logger.info("Fallback 加载器缓存已清理")

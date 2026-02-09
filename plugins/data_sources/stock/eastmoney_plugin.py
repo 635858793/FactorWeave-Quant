@@ -321,7 +321,7 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
             if response.status_code == 200:
                 data = response.json()
                 if data and 'data' in data and data['data']:
-                    logger.info("✅ 东方财富插件连接成功，网络正常")
+                    logger.info("东方财富插件连接成功，网络正常")
                     self.plugin_state = PluginLifecycle.CONNECTED
                     return True
                 else:
@@ -811,14 +811,15 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
             description=self.description,
             author="FactorWeave-Quant 团队",
             supported_asset_types=[AssetType.STOCK_A, AssetType.SECTOR],
-            supported_data_types=[DataType.HISTORICAL_KLINE, DataType.REAL_TIME_QUOTE, DataType.SECTOR_FUND_FLOW],
+            supported_data_types=[DataType.HISTORICAL_KLINE, DataType.REAL_TIME_QUOTE, DataType.SECTOR_FUND_FLOW, DataType.FUNDAMENTAL],
             capabilities={
                 "markets": ["SH", "SZ"],
                 "frequencies": ["1m", "5m", "15m", "30m", "60m", "D"],
                 "real_time_support": True,
                 "historical_data": True,
                 "max_history_years": 10,
-                "sector_fund_flow": True  # 支持板块资金流
+                "sector_fund_flow": True,  # 支持板块资金流
+                "fundamental_data": True  # 支持基本面数据
             }
         )
 
@@ -894,6 +895,217 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
             return result
         except Exception as e:
             self.logger.error(f"实时数据获取失败: {e}")
+            return {}
+
+    def get_fundamental_data(self, symbol: str) -> Dict[str, Any]:
+        """获取股票基本面数据（股本、财务指标等）
+
+        Args:
+            symbol: 股票代码（如'000001'）
+
+        Returns:
+            Dict[str, Any]: 包含基本面数据的字典
+                - total_shares: 总股本（股）
+                - circulating_shares: 流通股本（股）
+                - total_market_cap: 总市值（元）
+                - circulating_market_cap: 流通市值（元）
+                - industry: 所属行业
+                - list_date: 上市日期（YYYYMMDD格式）
+                - pe_ratio: 市盈率
+                - pb_ratio: 市净率
+                - roe: 净资产收益率
+                - roa: 总资产收益率
+                - debt_ratio: 负债率
+        """
+        try:
+            import time
+            import requests
+            
+            # 检查缓存
+            cache_key = f"fundamental_{symbol}"
+            if hasattr(self, 'cached_fundamental_data') and cache_key in self.cached_fundamental_data:
+                self.logger.debug(f"使用缓存的基本面数据: {symbol}")
+                return self.cached_fundamental_data[cache_key]
+
+            self.logger.info(f"从东方财富获取股票 {symbol} 的基本面数据...")
+
+            # 添加请求延迟，避免触发反爬虫机制
+            time.sleep(1.0)
+
+            fundamental_data = {}
+
+            # 标准化股票代码
+            normalized_code = self._normalize_stock_code(symbol)
+
+            # 尝试获取个股基本信息（使用东方财富API）
+            try:
+                # 东方财富个股信息API
+                url = f"{self.config['base_url']}/api/datacenter/get"
+                params = {
+                    'type': 'RPTA_APP_BS_TREND',
+                    'sty': 'ALL',
+                    'token': '894050c764c3c4b3ed01527b998f5d0',
+                    'filter': f"(SECUCODE=\"{normalized_code}\")",
+                    'p': '1',
+                    'ps': '500'
+                }
+
+                response = self.session.get(url, params=params, timeout=self.timeout)
+                response.raise_for_status()
+                data = response.json()
+
+                if data.get('success') and data.get('result') and data['result'].get('data'):
+                    items = data['result']['data']
+                    if items and len(items) > 0:
+                        item = items[0]
+                        
+                        # 提取总股本
+                        if 'TOTAL_SHARES' in item:
+                            try:
+                                fundamental_data['total_shares'] = float(item['TOTAL_SHARES'])
+                            except (ValueError, TypeError):
+                                fundamental_data['total_shares'] = 0.0
+
+                        # 提取流通股本
+                        if 'FLOAT_SHARES' in item:
+                            try:
+                                fundamental_data['circulating_shares'] = float(item['FLOAT_SHARES'])
+                            except (ValueError, TypeError):
+                                fundamental_data['circulating_shares'] = 0.0
+
+                        # 提取总市值
+                        if 'TOTAL_MARKET_CAP' in item:
+                            try:
+                                fundamental_data['total_market_cap'] = float(item['TOTAL_MARKET_CAP'])
+                            except (ValueError, TypeError):
+                                fundamental_data['total_market_cap'] = 0.0
+
+                        # 提取流通市值
+                        if 'FLOAT_MARKET_CAP' in item:
+                            try:
+                                fundamental_data['circulating_market_cap'] = float(item['FLOAT_MARKET_CAP'])
+                            except (ValueError, TypeError):
+                                fundamental_data['circulating_market_cap'] = 0.0
+
+                        # 提取行业信息
+                        if 'INDUSTRY' in item:
+                            fundamental_data['industry'] = str(item['INDUSTRY'])
+
+                        # 提取上市日期
+                        if 'LIST_DATE' in item:
+                            fundamental_data['list_date'] = str(item['LIST_DATE'])
+
+                        self.logger.debug(f"成功获取个股基本信息: {symbol}")
+            except Exception as e:
+                self.logger.warning(f"获取个股基本信息失败: {e}")
+
+            # 尝试获取财务指标数据
+            try:
+                time.sleep(0.5)
+                
+                # 东方财富财务指标API
+                url = f"{self.config['base_url']}/api/datacenter/get"
+                params = {
+                    'type': 'RPTA_APP_BS_TREND',
+                    'sty': 'ALL',
+                    'token': '894050c764c3c4b3ed01527b998f5d0',
+                    'filter': f"(SECUCODE=\"{normalized_code}\")",
+                    'p': '1',
+                    'ps': '500'
+                }
+
+                response = self.session.get(url, params=params, timeout=self.timeout)
+                response.raise_for_status()
+                data = response.json()
+
+                if data.get('success') and data.get('result') and data['result'].get('data'):
+                    items = data['result']['data']
+                    if items and len(items) > 0:
+                        item = items[0]
+                        
+                        # 提取净资产收益率
+                        if 'ROE' in item:
+                            try:
+                                fundamental_data['roe'] = float(item['ROE']) / 100
+                            except (ValueError, TypeError):
+                                pass
+
+                        # 提取总资产收益率
+                        if 'ROA' in item:
+                            try:
+                                fundamental_data['roa'] = float(item['ROA']) / 100
+                            except (ValueError, TypeError):
+                                pass
+
+                        # 提取资产负债率
+                        if 'DEBT_RATIO' in item:
+                            try:
+                                fundamental_data['debt_ratio'] = float(item['DEBT_RATIO']) / 100
+                            except (ValueError, TypeError):
+                                pass
+
+                        self.logger.debug(f"成功获取财务指标数据: {symbol}")
+            except Exception as e:
+                self.logger.warning(f"获取财务指标数据失败: {e}")
+
+            # 尝试获取估值指标（PE、PB等）
+            try:
+                time.sleep(0.5)
+                
+                # 东方财富实时行情API（包含估值指标）
+                url = f"{self.config['base_url']}/api/qt/stock/get"
+                params = {
+                    'secid': normalized_code,
+                    'fields': 'f43,f57,f58,f169,f170,f46,f60,f162,f167,f168,f169,f170'
+                }
+
+                response = self.session.get(url, params=params, timeout=self.timeout)
+                response.raise_for_status()
+                data = response.json()
+
+                if data.get('data') and data.get('data'):
+                    item = data['data']
+                    
+                    # 提取市盈率
+                    if 'f43' in item:
+                        try:
+                            pe_value = item['f43']
+                            if pe_value and pe_value != '-':
+                                fundamental_data['pe_ratio'] = float(pe_value)
+                                self.logger.debug(f"成功获取市盈率: {pe_value}")
+                        except (ValueError, TypeError):
+                            pass
+                    
+                    # 提取市净率
+                    if 'f57' in item:
+                        try:
+                            pb_value = item['f57']
+                            if pb_value and pb_value != '-':
+                                fundamental_data['pb_ratio'] = float(pb_value)
+                                self.logger.debug(f"成功获取市净率: {pb_value}")
+                        except (ValueError, TypeError):
+                            pass
+
+                        self.logger.debug(f"成功获取估值指标数据: {symbol}")
+            except Exception as e:
+                self.logger.warning(f"获取估值指标数据失败: {e}")
+
+            # 添加数据源标识
+            fundamental_data['data_source'] = 'eastmoney'
+            fundamental_data['timestamp'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+            # 缓存结果
+            if not hasattr(self, 'cached_fundamental_data'):
+                self.cached_fundamental_data = {}
+            self.cached_fundamental_data[cache_key] = fundamental_data
+
+            self.logger.info(f"成功获取股票 {symbol} 的基本面数据: {len(fundamental_data)} 个字段")
+            return fundamental_data
+
+        except Exception as e:
+            self.logger.error(f"从东方财富获取股票 {symbol} 的基本面数据失败: {e}")
+            import traceback
+            self.logger.debug(traceback.format_exc())
             return {}
 
     def get_sector_fund_flow_data(self, symbol: str = "sector", **kwargs) -> pd.DataFrame:

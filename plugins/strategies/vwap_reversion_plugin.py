@@ -30,7 +30,7 @@ from core.strategy_extensions import (
     TradeAction,
     TradeStatus,
     Position,
-    PerformanceMetrics,
+    TradingPerformanceMetrics,
     StandardMarketData,
     StrategyContext
 )
@@ -321,11 +321,11 @@ class VWAPReversionPlugin(IStrategyPlugin):
             logger.error(f"更新持仓失败: {e}")
             raise
     
-    def calculate_performance(self, context: StrategyContext) -> PerformanceMetrics:
+    def calculate_performance(self, context: StrategyContext) -> TradingPerformanceMetrics:
         """计算策略性能"""
         try:
             # 简化处理，实际应基于交易结果和持仓计算
-            return PerformanceMetrics(
+            return TradingPerformanceMetrics(
                 total_return=0.0,
                 annual_return=0.0,
                 sharpe_ratio=0.0,

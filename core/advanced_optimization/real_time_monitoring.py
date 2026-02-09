@@ -150,7 +150,7 @@ class DeepOptimizationMonitor:
             await asyncio.sleep(0.1)
         
         if self.status == MonitoringStatus.RUNNING:
-            logger.info("✅ 深度优化实时监控启动成功")
+            logger.info("深度优化实时监控启动成功")
         else:
             logger.error("❌ 深度优化实时监控启动失败")
     

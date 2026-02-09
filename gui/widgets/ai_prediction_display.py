@@ -34,7 +34,7 @@ from PyQt5.QtWidgets import (
     QTreeWidgetItem, QGraphicsView, QGraphicsScene, QGraphicsRectItem,
     QGraphicsTextItem, QGraphicsProxyWidget, QToolBar, QAction,
     QMenu, QActionGroup, QButtonGroup, QRadioButton, QLCDNumber,
-    QDial, QCalendarWidget, QGraphicsEllipseItem, QGraphicsLineItem
+    QDial, QCalendarWidget, QGraphicsEllipseItem, QGraphicsLineItem, QSizePolicy
 )
 from PyQt5.QtCore import (
     Qt, pyqtSignal, QTimer, QThread, QMutex, QMutexLocker,
@@ -92,7 +92,9 @@ class ConfidenceIndicator(QWidget):
     def __init__(self, confidence: float = 0.0, parent=None):
         super().__init__(parent)
         self.confidence = confidence
-        self.setFixedSize(100, 20)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.setMinimumSize(100, 20)
+        self.setMaximumSize(100, 20)
 
     def set_confidence(self, confidence: float):
         """设置置信度"""

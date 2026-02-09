@@ -271,7 +271,7 @@ class MarketService(BaseService):
             # 4. 启动实时行情更新
             self._start_quote_updates()
 
-            logger.info("✅ MarketService initialized successfully")
+            logger.info("MarketService initialized successfully")
 
         except Exception as e:
             logger.error(f"❌ Failed to initialize MarketService: {e}")

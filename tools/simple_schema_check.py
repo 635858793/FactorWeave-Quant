@@ -28,7 +28,7 @@ try:
     for table_type in all_types:
         schema = registry.get_schema(table_type)
         if schema:
-            print(f"✅ {table_type.value}: {len(schema.columns)}字段, {len(schema.indexes)}索引")
+            print(f"{table_type.value}: {len(schema.columns)}字段, {len(schema.indexes)}索引")
             complete_count += 1
         else:
             print(f"❌ {table_type.value}: Schema缺失")

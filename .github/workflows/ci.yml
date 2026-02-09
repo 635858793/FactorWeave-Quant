@@ -311,7 +311,7 @@ jobs:
           if [ "$TEST_RESULT" == "success" ] && \
              [ "$SECURITY_RESULT" == "success" ] && \
              [ "$PERF_RESULT" == "success" ]; then
-             echo "✅ CI/CD 流水线执行成功"
+             echo "CI/CD 流水线执行成功"
           else
              echo "❌ CI/CD 流水线存在失败的任务"
              echo "测试结果: $TEST_RESULT"

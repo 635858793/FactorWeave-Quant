@@ -275,7 +275,7 @@ class StockService(CacheableService, ConfigurableService):
     def get_kdata(self, stock_code: str, period: str = 'D', count: int = 365,
                   asset_type: 'AssetType' = None) -> pd.DataFrame:
         """
-        获取K线数据（✅ 优化：支持多资产类型智能路由）
+        获取K线数据（优化：支持多资产类型智能路由）
 
         Args:
             stock_code: 股票代码（或其他资产代码）
@@ -286,7 +286,7 @@ class StockService(CacheableService, ConfigurableService):
         Returns:
             K线数据DataFrame
         """
-        # ✅ 智能路由：如果指定了非股票资产类型，使用UnifiedDataManager
+        # 智能路由：如果指定了非股票资产类型，使用UnifiedDataManager
         if asset_type is not None:
             from core.plugin_types import AssetType
             if asset_type != AssetType.STOCK_A:

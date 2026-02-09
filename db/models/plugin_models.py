@@ -933,7 +933,7 @@ class DataSourcePluginConfigManager:
                 affected_rows = cursor.rowcount
                 conn.commit()
 
-                logger.info(f"✅ 数据源实例池配置已更新: max_pool_size={max_pool_size}, "
+                logger.info(f"数据源实例池配置已更新: max_pool_size={max_pool_size}, "
                             f"pool_timeout={pool_timeout}, pool_cleanup_interval={pool_cleanup_interval}, "
                             f"影响 {affected_rows} 个插件配置")
                 return True

@@ -1,10 +1,13 @@
-from loguru import logger
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 UI集成组件
 提供形态算法优化的图形界面集成功能
 """
+
+from loguru import logger
+
+from optimization.algorithm_optimizer import PerformanceEvaluator
 
 from analysis.pattern_manager import PatternManager
 from optimization.version_manager import VersionManager
@@ -60,11 +63,13 @@ class OptimizationWorker(QThread if GUI_AVAILABLE else QObject):
         super().__init__()
         self.auto_tuner = auto_tuner
         self.current_task = None
+        self.current_config = None
         self.is_running = False
 
     def run_optimization(self, pattern_name: str, config: OptimizationConfig):
         """运行单个优化任务"""
         self.current_task = pattern_name
+        self.current_config = config
         self.is_running = True
 
         if GUI_AVAILABLE:
@@ -95,7 +100,7 @@ class OptimizationWorker(QThread if GUI_AVAILABLE else QObject):
             # 执行优化
             result = self.auto_tuner.optimizer.optimize_algorithm(
                 pattern_name=self.current_task,
-                config=OptimizationConfig()
+                config=self.current_config
             )
 
             if GUI_AVAILABLE:

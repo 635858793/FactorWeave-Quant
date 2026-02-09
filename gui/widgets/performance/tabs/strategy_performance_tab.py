@@ -10,14 +10,28 @@ from typing import Dict, Any
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFrame, QGridLayout, QGroupBox,
     QTableWidget, QTableWidgetItem, QSplitter, QLabel, QPushButton,
-    QDialog, QMessageBox, QInputDialog
+    QDialog, QMessageBox, QInputDialog, QSizePolicy
 )
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QColor
 from gui.widgets.performance.components.metric_card import ModernMetricCard
 from gui.widgets.performance.components.performance_chart import ModernPerformanceChart
 
-logger = logger
+# 延迟导入主题管理器，避免在模块级别导入时崩溃
+THEME_MANAGER_AVAILABLE = False
+get_theme_manager = None
+
+def _import_theme_manager():
+    """延迟导入主题管理器"""
+    global THEME_MANAGER_AVAILABLE, get_theme_manager
+    if not THEME_MANAGER_AVAILABLE:
+        try:
+            from utils.theme import get_theme_manager as _get_theme_manager
+            get_theme_manager = _get_theme_manager
+            THEME_MANAGER_AVAILABLE = True
+            logger.info("主题管理器模块导入成功")
+        except Exception as e:
+            logger.warning(f"导入主题管理器失败: {e}")
 
 
 class ModernStrategyPerformanceTab(QWidget):
@@ -27,6 +41,17 @@ class ModernStrategyPerformanceTab(QWidget):
         super().__init__()
         # 策略分析配置
         self.strategy_stock_limit = 10  # 默认分析10只股票（可配置）
+        
+        # 延迟导入并初始化主题管理器
+        _import_theme_manager()
+        self.theme_manager = None
+        if THEME_MANAGER_AVAILABLE:
+            try:
+                self.theme_manager = get_theme_manager()
+                self.theme_manager.theme_changed.connect(self._on_theme_changed)
+            except Exception as e:
+                logger.warning(f"获取ThemeManager失败: {e}")
+        
         self.init_ui()
 
     def init_ui(self):
@@ -39,8 +64,7 @@ class ModernStrategyPerformanceTab(QWidget):
 
         # 指标卡片区域 - 3行6列布局，紧凑显示18个专业金融指标
         cards_frame = QFrame()
-        cards_frame.setMinimumHeight(130)  # 设置最小高度
-        cards_frame.setMaximumHeight(160)  # 限制指标卡片区域高度，3行布局需要更多空间
+        cards_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         cards_frame.setStyleSheet("""
             QFrame {
                 background: transparent;
@@ -105,8 +129,7 @@ class ModernStrategyPerformanceTab(QWidget):
 
         # 图表区域 - 专业分割布局，紧凑显示
         charts_splitter = QSplitter(Qt.Horizontal)
-        charts_splitter.setMinimumHeight(200)  # 减少最小高度
-        charts_splitter.setMaximumHeight(300)  # 限制最大高度，避免过度拉伸
+        charts_splitter.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         charts_splitter.setStyleSheet("""
             QSplitter::handle {
                 background: #34495e;
@@ -125,8 +148,7 @@ class ModernStrategyPerformanceTab(QWidget):
 
         # 交易统计表格 - 现代化设计，给予适当的伸缩权重
         trade_group = QGroupBox("交易统计详情")
-        trade_group.setMinimumHeight(400)  # 减少最小高度，避免过多空白
-        trade_group.setMaximumHeight(800)  # 限制最大高度
+        trade_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         trade_group.setStyleSheet("""
             QGroupBox {
                 font-weight: bold;
@@ -186,8 +208,7 @@ class ModernStrategyPerformanceTab(QWidget):
         """创建策略信息显示区域"""
         # 策略信息框架
         info_frame = QFrame()
-        info_frame.setMinimumHeight(50)  # 设置最小高度
-        info_frame.setMaximumHeight(60)  # 紧凑显示
+        info_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         info_frame.setStyleSheet("""
             QFrame {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
@@ -226,7 +247,9 @@ class ModernStrategyPerformanceTab(QWidget):
 
         # 添加股票池设置按钮
         self.stock_pool_settings_btn = QPushButton("设置")
-        self.stock_pool_settings_btn.setFixedSize(50, 25)
+        self.stock_pool_settings_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.stock_pool_settings_btn.setMinimumSize(50, 25)
+        self.stock_pool_settings_btn.setMaximumSize(50, 25)
         self.stock_pool_settings_btn.setStyleSheet("""
             QPushButton {
                 background: #e67e22;
@@ -547,11 +570,16 @@ class ModernStrategyPerformanceTab(QWidget):
                 display_text = ", ".join(full_stock_info_list[:3]) + f" 等{len(selected_codes)}只（共{total_stocks}只）"
 
             # 构建详细的tooltip信息
+            if total_stocks > 0:
+                sampling_ratio = f"{(len(selected_codes)/total_stocks*100):.1f}%"
+            else:
+                sampling_ratio = "N/A"
+            
             tooltip_lines = [
                 f"策略分析股票池详情：",
                 f"分析数量：{len(selected_codes)} 只股票",
                 f"系统总数：{total_stocks} 只股票",
-                f"采样比例：{(len(selected_codes)/total_stocks*100):.1f}%",
+                f"采样比例：{sampling_ratio}",
                 "",
                 "包含股票："
             ]
@@ -804,6 +832,16 @@ class ModernStrategyPerformanceTab(QWidget):
     def update_data(self, monitor):
         """更新策略性能数据 - 使用FactorWeave-Quant真实市场数据"""
         try:
+            # 使用 QTimer.singleShot 确保在主线程中更新UI
+            from PyQt5.QtCore import QTimer
+            QTimer.singleShot(0, lambda: self._update_ui_in_main_thread(monitor))
+
+        except Exception as e:
+            logger.error(f"更新策略性能数据失败: {e}")
+
+    def _update_ui_in_main_thread(self, monitor):
+        """在主线程中更新UI"""
+        try:
             # 获取真实的FactorWeave-Quant市场数据计算策略性能
             import pandas as pd
 
@@ -1035,7 +1073,7 @@ class ModernStrategyPerformanceTab(QWidget):
             self._update_trade_table(strategy_stats or {})
 
         except Exception as e:
-            logger.error(f"更新策略性能数据失败: {e}")
+            logger.error(f"在主线程中更新UI失败: {e}")
             # 出错时显示基本信息
             for name in self.cards.keys():
                 self.cards[name].update_value("--", "neutral")
@@ -1106,3 +1144,96 @@ class ModernStrategyPerformanceTab(QWidget):
 
         except Exception as e:
             logger.error(f"更新交易统计表格失败: {e}")
+
+    def _on_theme_changed(self):
+        """主题变化回调"""
+        try:
+            # 更新所有卡片的主题样式
+            for card in self.cards.values():
+                if hasattr(card, 'update_theme'):
+                    card.update_theme()
+            
+            # 更新图表主题
+            if hasattr(self, 'returns_chart') and hasattr(self.returns_chart, 'update_theme'):
+                self.returns_chart.update_theme()
+            if hasattr(self, 'risk_chart') and hasattr(self.risk_chart, 'update_theme'):
+                self.risk_chart.update_theme()
+                
+            logger.debug("策略性能标签页主题已更新")
+        except Exception as e:
+            logger.error(f"更新策略性能标签页主题失败: {e}")
+
+    def cleanup(self):
+        """清理资源 - 优化性能，避免卡顿"""
+        try:
+            # 清理图表 - 添加异常处理
+            if hasattr(self, 'returns_chart') and self.returns_chart:
+                try:
+                    if hasattr(self.returns_chart, 'cleanup'):
+                        self.returns_chart.cleanup()
+                except Exception as e:
+                    logger.debug(f"清理收益图表失败: {e}")
+            if hasattr(self, 'risk_chart') and self.risk_chart:
+                try:
+                    if hasattr(self.risk_chart, 'cleanup'):
+                        self.risk_chart.cleanup()
+                except Exception as e:
+                    logger.debug(f"清理风险图表失败: {e}")
+            
+            # 清理指标卡片 - 添加异常处理
+            if hasattr(self, 'cards'):
+                for card in self.cards.values():
+                    try:
+                        if hasattr(card, 'cleanup'):
+                            card.cleanup()
+                    except Exception as e:
+                        logger.debug(f"清理指标卡片失败: {e}")
+            
+            # 清理表格
+            if hasattr(self, 'trade_table'):
+                try:
+                    self.trade_table.clearContents()
+                    self.trade_table.setRowCount(0)
+                except Exception as e:
+                    logger.debug(f"清理表格失败: {e}")
+            
+            logger.debug("ModernStrategyPerformanceTab cleanup completed")
+            
+        except Exception as e:
+            logger.debug(f"清理资源失败: {e}")
+
+    def resizeEvent(self, event):
+        """窗口大小改变事件处理"""
+        super().resizeEvent(event)
+        self._update_responsive_layout()
+
+    def _update_responsive_layout(self):
+        """更新响应式布局"""
+        try:
+            window_width = self.width()
+            window_height = self.height()
+
+            logger.debug(f"StrategyPerformanceTab 响应式布局更新: {window_width}x{window_height}")
+
+            # 更新指标卡片高度
+            cards_frames = self.findChildren(QFrame)
+            for frame in cards_frames:
+                if frame.layout() and isinstance(frame.layout(), QGridLayout):
+                    frame_height = max(120, int(window_height * 0.2))
+                    frame.setMinimumHeight(frame_height)
+                    frame.setMaximumHeight(int(window_height * 0.25))
+
+            # 更新图表分割器高度
+            charts_splitter = self.findChild(QSplitter)
+            if charts_splitter:
+                splitter_height = max(150, int(window_height * 0.35))
+                charts_splitter.setMinimumHeight(splitter_height)
+
+            # 更新交易统计表格高度
+            trade_group = self.findChild(QGroupBox, "交易统计详情")
+            if trade_group:
+                group_height = max(150, int(window_height * 0.35))
+                trade_group.setMinimumHeight(group_height)
+
+        except Exception as e:
+            logger.error(f"更新响应式布局失败: {e}")

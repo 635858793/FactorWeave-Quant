@@ -496,7 +496,7 @@ class UniPluginDataManager:
                 result[symbol] = fundamental_data
                 db_loaded_symbols.append(symbol)
             
-            logger.info(f"[BATCH-DB] ✅ 从数据库加载基本面数据成功: {len(db_loaded_symbols)}/{len(uncached_symbols)}个")
+            logger.info(f"[BATCH-DB] 从数据库加载基本面数据成功: {len(db_loaded_symbols)}/{len(uncached_symbols)}个")
             
             # 更新未缓存列表（排除已从数据库加载的）
             uncached_symbols = [s for s in uncached_symbols if s not in db_loaded_symbols]
@@ -553,7 +553,7 @@ class UniPluginDataManager:
                         # 缓存数据库结果
                         self._cache_result(cache_key, db_result)
                         self.stats["cache_hits"] += 1
-                        logger.info(f"[DATABASE-SUCCESS] ✅ 从数据库加载基本面数据成功: {symbol}, 已缓存")
+                        logger.info(f"[DATABASE-SUCCESS] 从数据库加载基本面数据成功: {symbol}, 已缓存")
                         return db_result
                     else:
                         logger.info(f"[DATABASE-EMPTY] ⚠️  数据库中未找到基本面数据: {symbol}，将调用插件获取")
@@ -658,10 +658,16 @@ class UniPluginDataManager:
                     raise RuntimeError(f"所有插件都无法连接，数据类型: {context.data_type.value}/{context.asset_type.value}")
 
             # 3. TET路由引擎选择最优插件（仅从已连接的插件中选择）
-            logger.info(f"[ROUTING] TET路由引擎开始智能插件选择（从 {len(connected_plugins)} 个已连接插件中选择）...")
-            selected_plugin_id = self.tet_engine.select_optimal_plugin(
-                connected_plugins, context, self.plugin_center
-            )
+            # 如果用户指定了数据源且已连接，强制使用用户指定的数据源
+            if specified_data_source and specified_data_source in connected_plugins:
+                selected_plugin_id = specified_data_source
+                logger.info(f"[FORCE_USE] 强制使用用户指定数据源: {selected_plugin_id}")
+            else:
+                # 否则使用TET路由引擎进行智能选择
+                logger.info(f"[ROUTING] TET路由引擎开始智能插件选择（从 {len(connected_plugins)} 个已连接插件中选择）...")
+                selected_plugin_id = self.tet_engine.select_optimal_plugin(
+                    connected_plugins, context, self.plugin_center
+                )
 
             if not selected_plugin_id:
                 raise RuntimeError("TET路由引擎无法从已连接插件中选择合适的插件")
@@ -860,7 +866,7 @@ class UniPluginDataManager:
             fundamental_data = self._asset_db_manager.load_fundamental_data(symbol, asset_type)
             
             if fundamental_data:
-                logger.info(f"[DATABASE] ✅ 从数据库成功加载基本面数据: {symbol}, 字段数={len(fundamental_data)}")
+                logger.info(f"[DATABASE] 从数据库成功加载基本面数据: {symbol}, 字段数={len(fundamental_data)}")
                 return fundamental_data
             else:
                 logger.info(f"[DATABASE] ⚠️  数据库中未找到基本面数据: {symbol}")

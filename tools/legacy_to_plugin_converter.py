@@ -490,7 +490,7 @@ def get_available_plugin_ids():
                 plugin_name = config.get("plugin_name", source_name)
 
                 if status == "success":
-                    status_desc = "✅ 成功"
+                    status_desc = "成功"
                     desc = "迁移完成，插件可正常使用"
                 elif status == "failed":
                     status_desc = "❌ 失败"

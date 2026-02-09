@@ -57,7 +57,7 @@ def test_order_creation_with_valid_account():
         order = order_service.create_order(request)
         
         if order:
-            logger.info(f"✅ 订单创建成功: {order.order_id}")
+            logger.info(f"订单创建成功: {order.order_id}")
             logger.info(f"   账号ID: {order.account_id}")
             logger.info(f"   策略ID: {order.strategy_id}")
             logger.info(f"   股票代码: {order.stock_code}")
@@ -66,7 +66,7 @@ def test_order_creation_with_valid_account():
             
             # 验证账号和策略不是 default
             if order.account_id != "default" and order.strategy_id != "default":
-                logger.info("✅ 账号和策略ID已正确设置（不是 default）")
+                logger.info("账号和策略ID已正确设置（不是 default）")
             else:
                 logger.warning("⚠️ 账号或策略ID仍然是 default")
             
@@ -112,13 +112,13 @@ def test_order_creation_with_default_account():
         order = order_service.create_order(request)
         
         if order:
-            logger.info(f"✅ 订单创建成功: {order.order_id}")
+            logger.info(f"订单创建成功: {order.order_id}")
             logger.info(f"   账号ID: {order.account_id}")
             logger.info(f"   策略ID: {order.strategy_id}")
             
             # 验证系统是否自动解析了有效的账号
             if order.account_id != "default":
-                logger.info("✅ 系统成功解析了有效的账号")
+                logger.info("系统成功解析了有效的账号")
             else:
                 logger.warning("⚠️ 系统未能解析有效的账号（可能是因为没有配置账号）")
             
@@ -166,7 +166,7 @@ def test_order_integrity_validation():
         # 验证有效订单
         validation_error = order_executor._validate_order_integrity(valid_order)
         if not validation_error:
-            logger.info("✅ 有效订单验证通过")
+            logger.info("有效订单验证通过")
         else:
             logger.error(f"❌ 有效订单验证失败: {validation_error}")
             return False
@@ -190,7 +190,7 @@ def test_order_integrity_validation():
         # 验证无效订单
         validation_error = order_executor._validate_order_integrity(invalid_order)
         if validation_error:
-            logger.info(f"✅ 无效订单验证失败（预期行为）: {validation_error}")
+            logger.info(f"无效订单验证失败（预期行为）: {validation_error}")
         else:
             logger.error("❌ 无效订单验证通过（应该失败）")
             return False
@@ -238,11 +238,11 @@ def test_account_resolution_logging():
         account = order_executor._resolve_account_for_order(order)
         
         if account:
-            logger.info(f"✅ 成功解析账号: {account.account_id}")
+            logger.info(f"成功解析账号: {account.account_id}")
         else:
             logger.warning("⚠️ 未能解析账号（请查看详细日志了解原因）")
         
-        logger.info("✅ 账号解析日志测试完成")
+        logger.info("账号解析日志测试完成")
         return True
             
     except Exception as e:
@@ -287,12 +287,12 @@ def test_order_save_retry():
         success = order_repository.save_order(order)
         
         if success:
-            logger.info(f"✅ 订单保存成功: {order.order_id}")
+            logger.info(f"订单保存成功: {order.order_id}")
         else:
             logger.warning(f"⚠️ 订单保存失败（已重试3次）: {order.order_id}")
             logger.warning("请查看详细日志了解失败原因")
         
-        logger.info("✅ 订单保存重试机制测试完成")
+        logger.info("订单保存重试机制测试完成")
         return True
             
     except Exception as e:
@@ -326,7 +326,7 @@ def run_all_tests():
     failed = 0
     
     for test_name, result in results:
-        status = "✅ 通过" if result else "❌ 失败"
+        status = "通过" if result else "❌ 失败"
         logger.info(f"{test_name}: {status}")
         if result:
             passed += 1

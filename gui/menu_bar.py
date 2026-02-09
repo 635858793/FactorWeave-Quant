@@ -12,8 +12,23 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QKeySequence, QIcon
 import traceback
-from utils.theme import get_theme_manager
 from core.importdata.intelligent_config_manager import IntelligentConfigManager
+
+# 延迟导入主题管理器，避免在模块级别导入时崩溃
+THEME_MANAGER_AVAILABLE = False
+get_theme_manager = None
+
+def _import_theme_manager():
+    """延迟导入主题管理器"""
+    global THEME_MANAGER_AVAILABLE, get_theme_manager
+    if not THEME_MANAGER_AVAILABLE:
+        try:
+            from utils.theme import get_theme_manager as _get_theme_manager
+            get_theme_manager = _get_theme_manager
+            THEME_MANAGER_AVAILABLE = True
+            logger.info("主题管理器模块导入成功")
+        except Exception as e:
+            logger.warning(f"导入主题管理器失败: {e}")
 
 
 class MainMenuBar(QMenuBar):
@@ -31,8 +46,14 @@ class MainMenuBar(QMenuBar):
 
             # 保存coordinator引用
             self.coordinator = coordinator
-            # 初始化主题管理器
-            self.theme_manager = get_theme_manager()
+            # 延迟导入并初始化主题管理器
+            _import_theme_manager()
+            self.theme_manager = None
+            if THEME_MANAGER_AVAILABLE:
+                try:
+                    self.theme_manager = get_theme_manager()
+                except Exception as e:
+                    logger.warning(f"获取ThemeManager失败: {e}")
 
             # 初始化UI
             self.init_ui()
@@ -162,6 +183,24 @@ class MainMenuBar(QMenuBar):
             self.statusbar_action.setCheckable(True)
             self.statusbar_action.setChecked(True)
             self.view_menu.addAction(self.statusbar_action)
+
+            self.view_menu.addSeparator()
+
+            # 字体缩放
+            self.increase_font_action = QAction("增大字体", self)
+            self.increase_font_action.setStatusTip("增大字体大小 (Ctrl++)")
+            self.increase_font_action.setShortcut("Ctrl++")
+            self.view_menu.addAction(self.increase_font_action)
+
+            self.decrease_font_action = QAction("减小字体", self)
+            self.decrease_font_action.setStatusTip("减小字体大小 (Ctrl+-)")
+            self.decrease_font_action.setShortcut("Ctrl+-")
+            self.view_menu.addAction(self.decrease_font_action)
+
+            self.reset_font_action = QAction("重置字体", self)
+            self.reset_font_action.setStatusTip("重置字体大小为默认值 (Ctrl+0)")
+            self.reset_font_action.setShortcut("Ctrl+0")
+            self.view_menu.addAction(self.reset_font_action)
 
             self.view_menu.addSeparator()
 
@@ -392,7 +431,7 @@ class MainMenuBar(QMenuBar):
             
             self.tools_menu.addSeparator()
             
-            # ✅ 分布式节点监控
+            # 分布式节点监控
             self.distributed_monitor_action = QAction("🌐 分布式节点监控", self)
             self.distributed_monitor_action.setStatusTip("监控和管理分布式计算节点")
             self.distributed_monitor_action.setShortcut("Ctrl+Shift+N")
@@ -422,6 +461,14 @@ class MainMenuBar(QMenuBar):
             self.cache_menu.addAction(self.clear_data_cache_action)
             self.cache_menu.addAction(self.clear_negative_cache_action)
             self.cache_menu.addAction(self.clear_all_cache_action)
+
+            self.tools_menu.addSeparator()
+
+            # 功能控制
+            self.feature_control_action = QAction("功能控制", self)
+            self.feature_control_action.setStatusTip("管理系统功能开关和配置")
+            self.feature_control_action.setShortcut("Ctrl+Shift+F")
+            self.tools_menu.addAction(self.feature_control_action)
 
             self.tools_menu.addSeparator()
 
@@ -963,6 +1010,9 @@ class MainMenuBar(QMenuBar):
                 # 视图菜单
                 ('toolbar_action', '_on_toggle_toolbar'),
                 ('statusbar_action', '_on_toggle_statusbar'),
+                ('increase_font_action', '_on_increase_font'),
+                ('decrease_font_action', '_on_decrease_font'),
+                ('reset_font_action', '_on_reset_font'),
                 # ('backtest_panel_action', '_on_toggle_backtest_panel'),  # 已合并到专业回测
                 ('refresh_action', '_on_refresh'),
 
@@ -1012,6 +1062,7 @@ class MainMenuBar(QMenuBar):
                 ('system_optimizer_action', '_on_system_optimizer'),
                 ('unified_optimization_action', '_on_unified_optimization'),
                 ('webgpu_status_action', 'show_webgpu_status'),
+                ('feature_control_action', '_on_feature_control'),
                 ('settings_action', '_on_settings'),
                 ('adaptive_pool_config_action', 'show_adaptive_pool_config'),
                 ('connection_pool_manager_action', 'show_connection_pool_manager'),
@@ -1044,12 +1095,12 @@ class MainMenuBar(QMenuBar):
                 ('sentiment_plugin_action', 'show_sentiment_plugin_manager'),
                 ('plugin_market_action', 'show_plugin_market'),
                 
-                # ✅ 分布式节点监控
+                # 分布式节点监控
                 ('distributed_monitor_action', 'show_distributed_monitor'),
                 ('optimization_dashboard_action', '_on_optimization_dashboard'),
-                ('one_click_optimize_action', '_on_one_click_optimize'),
-                ('smart_optimize_action', '_on_smart_optimize'),
-                ('version_manager_action', '_on_version_manager'),
+                ('one_click_optimize_action', '_on_one_click_optimization'),
+                ('smart_optimize_action', '_on_intelligent_optimization'),
+                ('version_manager_action', '_on_version_management'),
                 ('performance_evaluation_action', '_on_performance_evaluation'),
 
                 # AI模型训练
@@ -1291,7 +1342,7 @@ class MainMenuBar(QMenuBar):
                     except Exception as e:
                         logger.info(f" 获取插件管理器失败: {e}")
 
-            # ✅ 情绪数据服务已删除，传递None保持兼容性
+            # 情绪数据服务已删除，传递None保持兼容性
             # 创建增强版插件管理器对话框
             dialog = EnhancedPluginManagerDialog(
                 plugin_manager=plugin_manager,
@@ -1319,7 +1370,7 @@ class MainMenuBar(QMenuBar):
             # 导入增强版数据导入UI
             from gui.enhanced_data_import_launcher import EnhancedDataImportMainWindow
 
-            # ✅ 获取plugin_manager
+            # 获取plugin_manager
             plugin_manager = None
 
             # 方法1: 从ServiceContainer获取（推荐）
@@ -1330,7 +1381,7 @@ class MainMenuBar(QMenuBar):
                 container = get_service_container()
                 if container and container.is_registered(PluginManager):
                     plugin_manager = container.resolve(PluginManager)
-                    logger.info("✅ 从ServiceContainer获取plugin_manager成功")
+                    logger.info("从ServiceContainer获取plugin_manager成功")
             except Exception as e:
                 logger.debug(f"从ServiceContainer获取失败: {e}")
 

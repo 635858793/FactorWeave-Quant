@@ -127,7 +127,7 @@ class Phase2FunctionalVerification:
                     self.test_results[test_name] = success
 
                     if success:
-                        logger.info(f"✅ {test_name}: 通过")
+                        logger.info(f"{test_name}: 通过")
                     else:
                         logger.error(f"❌ {test_name}: 失败")
 
@@ -694,7 +694,7 @@ class Phase2FunctionalVerification:
 
         logger.info("\n详细结果:")
         for test_name, result in self.test_results.items():
-            status = "✅ 通过" if result else "❌ 失败"
+            status = "通过" if result else "❌ 失败"
             logger.info(f"  {test_name}: {status}")
 
         if self.error_messages:

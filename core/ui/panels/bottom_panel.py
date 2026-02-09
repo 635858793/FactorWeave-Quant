@@ -6,7 +6,7 @@ from typing import Optional
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTextEdit,
     QLineEdit, QPushButton, QComboBox, QLabel,
-    QSplitter, QFrame, QCheckBox, QSpinBox
+    QSplitter, QFrame, QCheckBox, QSpinBox, QSizePolicy
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, pyqtSlot
 from PyQt5.QtGui import QFont, QTextCursor
@@ -412,9 +412,36 @@ class BottomPanel(BasePanel):
             self.log_widget.setVisible(True)
             self.get_widget('toolbar').setVisible(True)
 
-            # 恢复面板大小
-            self._root_frame.setMinimumHeight(150)
-            self._root_frame.setMaximumHeight(800)
+            # 恢复面板大小 - 使用响应式布局
+            self._update_responsive_layout()
 
-            # 取消固定高度限制
-            self._root_frame.setFixedHeight(200)  # 设置一个合适的默认高度
+            logger.debug("日志面板已显示")
+
+    def resizeEvent(self, event):
+        """窗口大小改变事件处理"""
+        super().resizeEvent(event)
+        self._update_responsive_layout()
+
+    def _update_responsive_layout(self):
+        """更新响应式布局"""
+        try:
+            window_width = self.width()
+            window_height = self.height()
+
+            logger.debug(f"BottomPanel 响应式布局更新: {window_width}x{window_height}")
+
+            # 更新工具栏高度
+            toolbar = self.get_widget('toolbar')
+            if toolbar:
+                toolbar_height = max(30, int(window_height * 0.05))
+                toolbar.setFixedHeight(toolbar_height)
+
+            # 更新日志面板高度范围
+            if self._root_frame and self.is_panel_visible:
+                min_height = max(100, int(window_height * 0.15))
+                max_height = max(300, int(window_height * 0.5))
+                self._root_frame.setMinimumHeight(min_height)
+                self._root_frame.setMaximumHeight(max_height)
+
+        except Exception as e:
+            logger.error(f"更新响应式布局失败: {e}")

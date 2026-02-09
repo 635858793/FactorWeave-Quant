@@ -212,7 +212,6 @@ class SignalMonitorWidget(QWidget):
         for i in range(5):
             header.setSectionResizeMode(i, QHeaderView.ResizeToContents)
 
-        self.signal_table.setAlternatingRowColors(True)
         self.signal_table.setSelectionBehavior(QTableWidget.SelectRows)
 
         list_layout.addWidget(self.signal_table)
@@ -322,7 +321,6 @@ class OrderMonitorWidget(QWidget):
         for i in range(7):
             header.setSectionResizeMode(i, QHeaderView.ResizeToContents)
 
-        self.order_table.setAlternatingRowColors(True)
         self.order_table.setSelectionBehavior(QTableWidget.SelectRows)
 
         list_layout.addWidget(self.order_table)
@@ -439,7 +437,6 @@ class PositionMonitorWidget(QWidget):
         for i in range(7):
             header.setSectionResizeMode(i, QHeaderView.ResizeToContents)
 
-        self.position_table.setAlternatingRowColors(True)
         self.position_table.setSelectionBehavior(QTableWidget.SelectRows)
 
         detail_layout.addWidget(self.position_table)

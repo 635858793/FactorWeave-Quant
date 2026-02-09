@@ -47,8 +47,7 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
 
         # 指标选择和控制区域 - 使用更灵活的高度设置
         control_group = QGroupBox("指标控制")
-        control_group.setMinimumHeight(180)  # 设置最小高度而不是最大高度
-        control_group.setMaximumHeight(250)  # 适当增加最大高度
+        control_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         control_layout = QHBoxLayout(control_group)
         control_layout.setSpacing(2)
 
@@ -64,7 +63,7 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
         category_layout.setSpacing(4)
         category_layout.addWidget(QLabel("分类:"))
         self.category_combo = QComboBox()
-        self.category_combo.setMaximumHeight(28)
+        self.category_combo.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         category_indicators = get_all_indicators_by_category(use_chinese=True)
         categories = ["全部"] + list(category_indicators.keys())
         self.category_combo.addItems(categories)
@@ -74,7 +73,7 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
 
         # 指标选择组合框 - 显示所有ta-lib指标
         self.indicator_combo = QComboBox()
-        self.indicator_combo.setMaximumHeight(28)
+        self.indicator_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.indicator_combo.setEditable(True)
         self.indicator_combo.setInsertPolicy(QComboBox.NoInsert)
         self.populate_indicators("全部")
@@ -104,14 +103,14 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
         button_layout.setSpacing(4)
 
         self.calc_btn = QPushButton("计算指标")
-        self.calc_btn.setMaximumHeight(30)  # 限制按钮高度
+        self.calc_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.calc_btn.setStyleSheet(
             "QPushButton { background-color: #007bff; color: white; font-weight: bold; padding: 4px 8px; height: 20px; }")
         self.calc_btn.clicked.connect(self.calculate_indicators)
         self.calc_btn.setToolTip("根据当前设置计算选定的技术指标\n快捷键：Ctrl+Enter")
 
         clear_indicators_btn = QPushButton("清除")
-        clear_indicators_btn.setMaximumHeight(30)
+        clear_indicators_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         clear_indicators_btn.setStyleSheet(
             "QPushButton { background-color: #6c757d; color: white; font-weight: bold; padding: 4px 8px; height: 20px; }")
         clear_indicators_btn.clicked.connect(self.clear_indicators)
@@ -119,7 +118,7 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
 
         # 新增：缓存管理按钮
         cache_btn = QPushButton("清缓存")
-        cache_btn.setMaximumHeight(30)
+        cache_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         cache_btn.setStyleSheet(
             "QPushButton { background-color: #ffc107; color: black; font-weight: bold; padding: 4px 8px; height: 20px; }")
         cache_btn.clicked.connect(self.clear_cache)
@@ -1457,7 +1456,7 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
                                 processed["values"][standardized_col] = col_data
                                 logger.info(f"模糊匹配添加列 {col} -> {standardized_col}")
 
-            # ✅ 根本性修复：确保summary_stats始终被初始化
+            # 根本性修复：确保summary_stats始终被初始化
             summary_stats = {}  # 移至if语句外部，确保总是被初始化
             
             # 生成改进的统计摘要
@@ -1490,7 +1489,7 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
             else:
                 logger.warning(f"指标 {indicator_name} 未产生有效结果列，统计摘要将为空")
                 
-            # ✅ 根本性修复：确保summary总是存在，避免调用方出现NoneType错误
+            # 根本性修复：确保summary总是存在，避免调用方出现NoneType错误
             processed["summary"] = {
                 "columns_count": len(processed["values"]),
                 "data_points": len(result_df),
@@ -1502,7 +1501,7 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
 
         except Exception as e:
             logger.error(f"处理DataFrame结果失败: {str(e)}")
-            # ✅ 根本性修复：确保错误情况下也返回有效的summary结构
+            # 根本性修复：确保错误情况下也返回有效的summary结构
             return {
                 "name": indicator_name,
                 "timestamp": datetime.now(),
@@ -1909,7 +1908,7 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
     def _add_indicator_to_table(self, indicator_name: str, result: Dict[str, Any]):
         """将指标结果添加到表格 - 优化版：批量插入，减少list()调用"""
         try:
-            # ✅ 性能优化：减少list()调用，使用len()和直接迭代
+            # 性能优化：减少list()调用，使用len()和直接迭代
             logger.debug(f"开始添加指标 {indicator_name} 到表格")
             if isinstance(result, dict):
                 logger.debug(f"结果类型: {type(result)}, 结果键数量: {len(result)}")
@@ -1946,7 +1945,7 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
             signals = result.get("signals", [])
             summary = result.get("summary", {})
 
-            # ✅ 性能优化：减少list()调用
+            # 性能优化：减少list()调用
             logger.debug(f"指标 {indicator_name} 的值数量: {len(values)}")
             # if logger.level <= 10:  # DEBUG级别才记录详细信息
             #     logger.debug(f"值的键: {tuple(values.keys())}")
@@ -1963,7 +1962,7 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
                             elif isinstance(value, (int, float)) and not np.isnan(value):
                                 values[key] = value
 
-                    # ✅ 性能优化：减少list()调用
+                    # 性能优化：减少list()调用
                     logger.debug(f"从结果中提取的值数量: {len(values)}")
                     # if logger.level <= 10:  # DEBUG级别才记录详细信息
                     #     logger.debug(f"值的键: {tuple(values.keys())}")
@@ -1986,7 +1985,7 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
                 self.technical_table.setSortingEnabled(sorting_enabled)
                 return
 
-            # ✅ 性能优化：批量准备数据，然后一次性插入
+            # 性能优化：批量准备数据，然后一次性插入
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
             rows_data = []  # 批量收集所有行数据
 
@@ -2124,7 +2123,7 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
 
                 logger.debug(f"提取的当前值: {current_value}")
 
-                # ✅ 性能优化：收集数据而不是立即插入
+                # 性能优化：收集数据而不是立即插入
                 if current_value is not None:
                     # 指标名称 - 改进显示逻辑
                     display_name = self._get_display_name(indicator_name, value_name)
@@ -2149,7 +2148,7 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
                         'note': note
                     })
 
-            # ✅ 性能优化：批量插入所有行
+            # 性能优化：批量插入所有行
             if rows_data:
                 start_row = self.technical_table.rowCount()
                 self.technical_table.setRowCount(start_row + len(rows_data))
@@ -3158,3 +3157,54 @@ class AdvancedFilterDialog(QDialog):
             elif filter_type == 'date':
                 controls['start_date'].setDateTime(QDateTime.currentDateTime().addDays(-30))
                 controls['end_date'].setDateTime(QDateTime.currentDateTime())
+
+    def resizeEvent(self, event):
+        """窗口大小改变事件处理"""
+        super().resizeEvent(event)
+        self._update_responsive_layout()
+
+    def _update_responsive_layout(self):
+        """更新响应式布局"""
+        try:
+            window_width = self.width()
+            window_height = self.height()
+
+            logger.debug(f"TechnicalAnalysisTab 响应式布局更新: {window_width}x{window_height}")
+
+            # 更新控制组高度
+            control_group = self.findChild(QGroupBox, "指标控制")
+            if control_group:
+                group_height = max(150, int(window_height * 0.25))
+                control_group.setMinimumHeight(group_height)
+                control_group.setMaximumHeight(int(window_height * 0.35))
+
+            # 更新分类选择框高度
+            if hasattr(self, 'category_combo'):
+                combo_height = max(24, int(window_height * 0.04))
+                self.category_combo.setMinimumHeight(combo_height)
+                self.category_combo.setMaximumHeight(int(window_height * 0.06))
+
+            # 更新指标选择框高度
+            if hasattr(self, 'indicator_combo'):
+                combo_height = max(24, int(window_height * 0.04))
+                self.indicator_combo.setMinimumHeight(combo_height)
+                self.indicator_combo.setMaximumHeight(int(window_height * 0.06))
+
+            # 更新按钮高度
+            if hasattr(self, 'calc_btn'):
+                btn_height = max(24, int(window_height * 0.04))
+                self.calc_btn.setMinimumHeight(btn_height)
+                self.calc_btn.setMaximumHeight(int(window_height * 0.06))
+
+            if hasattr(self, 'clear_indicators_btn'):
+                btn_height = max(24, int(window_height * 0.04))
+                self.clear_indicators_btn.setMinimumHeight(btn_height)
+                self.clear_indicators_btn.setMaximumHeight(int(window_height * 0.06))
+
+            if hasattr(self, 'cache_btn'):
+                btn_height = max(24, int(window_height * 0.04))
+                self.cache_btn.setMinimumHeight(btn_height)
+                self.cache_btn.setMaximumHeight(int(window_height * 0.06))
+
+        except Exception as e:
+            logger.error(f"更新响应式布局失败: {e}")

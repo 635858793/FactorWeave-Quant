@@ -309,7 +309,7 @@ class CUDAEnvironmentValidator:
             # 检查Python版本兼容性
             if self.python_version >= (3, 8) and self.python_version < (3, 13):
                 compatibility["python_compatible"] = True
-                logger.info("  ✅ Python版本兼容")
+                logger.info("  Python版本兼容")
             else:
                 compatibility["issues"].append("Python版本不兼容，建议使用Python 3.8-3.12")
                 compatibility["recommendations"].append("升级到Python 3.8-3.12")
@@ -321,7 +321,7 @@ class CUDAEnvironmentValidator:
                 compatible_versions = self.compatibility_matrix["cuda_versions"]
                 if cuda_version in compatible_versions:
                     compatibility["cuda_compatible"] = True
-                    logger.info("  ✅ CUDA版本兼容")
+                    logger.info("  CUDA版本兼容")
                 else:
                     compatibility["issues"].append(f"CUDA版本 {cuda_version} 不在兼容列表中")
                     compatibility["recommendations"].append("升级到CUDA 11.8或12.1")
@@ -332,7 +332,7 @@ class CUDAEnvironmentValidator:
             # 检查TensorFlow-GPU兼容性
             if self.tensorflow_info.get("is_gpu_version"):
                 compatibility["tensorflow_compatible"] = True
-                logger.info("  ✅ TensorFlow GPU版本已安装")
+                logger.info("  TensorFlow GPU版本已安装")
             else:
                 compatibility["issues"].append("TensorFlow不是GPU版本")
                 compatibility["recommendations"].append("安装tensorflow-gpu或 tensorflow[and-cuda]")
@@ -341,7 +341,7 @@ class CUDAEnvironmentValidator:
             if compatibility["python_compatible"] and compatibility["cuda_compatible"] and \
                compatibility["tensorflow_compatible"]:
                 compatibility["overall_status"] = "compatible"
-                logger.info("  ✅ 环境完全兼容")
+                logger.info("  环境完全兼容")
             elif compatibility["python_compatible"]:
                 compatibility["overall_status"] = "partial"
                 logger.info("  ⚠️ 环境部分兼容")

@@ -57,6 +57,7 @@ class OptimizationDatabaseManager:
                     algorithm_code TEXT NOT NULL,
                     parameters TEXT,  -- JSON格式存储参数
                     created_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    created_by TEXT DEFAULT 'system',  -- 创建者
                     description TEXT,
                     is_active BOOLEAN DEFAULT 0,
                     parent_version_id INTEGER,
@@ -159,6 +160,9 @@ class OptimizationDatabaseManager:
             conn.commit()
             conn.close()
 
+            # 检查并添加缺失的列（用于数据库迁移）
+            self._migrate_database()
+
             # 标记表已初始化
             self._tables_initialized = True
             logger.info("优化系统数据库表初始化完成")
@@ -170,10 +174,35 @@ class OptimizationDatabaseManager:
             logger.info(f" 优化系统数据库初始化异常: {e}")
             # 不抛出异常，允许系统继续运行
 
+    def _migrate_database(self):
+        """数据库迁移，添加缺失的列"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # 检查 algorithm_versions 表是否有 created_by 列
+            cursor.execute("PRAGMA table_info(algorithm_versions)")
+            columns = [row[1] for row in cursor.fetchall()]
+            
+            if 'created_by' not in columns:
+                logger.info("为 algorithm_versions 表添加 created_by 列")
+                cursor.execute('''
+                    ALTER TABLE algorithm_versions 
+                    ADD COLUMN created_by TEXT DEFAULT 'system'
+                ''')
+                conn.commit()
+                logger.info("成功添加 created_by 列")
+            
+            conn.close()
+            
+        except Exception as e:
+            logger.error(f"数据库迁移失败: {e}")
+
     def save_algorithm_version(self, pattern_id: int, pattern_name: str,
                                algorithm_code: str, parameters: Dict[str, Any],
                                description: str = "", optimization_method: str = "manual",
-                               parent_version_id: Optional[int] = None) -> int:
+                               parent_version_id: Optional[int] = None,
+                               created_by: str = "system") -> int:
         """保存算法版本"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -190,10 +219,10 @@ class OptimizationDatabaseManager:
         cursor.execute('''
             INSERT INTO algorithm_versions 
             (pattern_id, pattern_name, version_number, algorithm_code, parameters, 
-             description, parent_version_id, optimization_method)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+             created_by, description, parent_version_id, optimization_method)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (pattern_id, pattern_name, version_number, algorithm_code,
-              json.dumps(parameters), description, parent_version_id, optimization_method))
+              json.dumps(parameters), created_by, description, parent_version_id, optimization_method))
 
         version_id = cursor.lastrowid
         conn.commit()
@@ -208,7 +237,7 @@ class OptimizationDatabaseManager:
 
         cursor.execute('''
             SELECT id, version_number, algorithm_code, parameters, created_time,
-                   description, is_active, optimization_method
+                   created_by, description, is_active, optimization_method
             FROM algorithm_versions 
             WHERE pattern_name = ?
             ORDER BY version_number DESC
@@ -223,9 +252,10 @@ class OptimizationDatabaseManager:
                 'algorithm_code': row[2],
                 'parameters': json.loads(row[3]) if row[3] else {},
                 'created_time': row[4],
-                'description': row[5],
-                'is_active': bool(row[6]),
-                'optimization_method': row[7]
+                'created_by': row[5],
+                'description': row[6],
+                'is_active': bool(row[7]),
+                'optimization_method': row[8]
             })
 
         conn.close()

@@ -20,9 +20,6 @@ from ..data.data_access import DataAccess
 
 @dataclass
 class Position:
-def __init__(self):
-        self.logger = logger.bind(module=self.__class__.__name__)
-    
     """持仓信息"""
     stock_code: str
     stock_name: str

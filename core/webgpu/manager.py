@@ -44,7 +44,7 @@ class WebGPUManager:
 
         # 核心组件
         self._environment = None
-        self._webgpu_renderer = None  # ✅ 新增：真正的WebGPU渲染器
+        self._webgpu_renderer = None  # 新增：真正的WebGPU渲染器
         self._fallback_renderer = None
         self._compatibility_checker = GPUCompatibilityChecker()
         self._compatibility_report = None
@@ -139,7 +139,7 @@ class WebGPUManager:
                 webgpu_success = self._webgpu_renderer.initialize(self._compatibility_report)
                 
                 if webgpu_success:
-                    logger.info(f"✅ WebGPU渲染器初始化成功，使用后端: {self._webgpu_renderer.backend_type.value}")
+                    logger.info(f"WebGPU渲染器初始化成功，使用后端: {self._webgpu_renderer.backend_type.value}")
                     self._performance_stats['current_backend'] = self._webgpu_renderer.backend_type.value
                 else:
                     logger.warning("⚠️ WebGPU渲染器初始化失败，将使用降级渲染器")
@@ -224,7 +224,7 @@ class WebGPUManager:
         start_time = time.time()
         
         try:
-            # ✅ 优先使用WebGPU渲染器
+            # 优先使用WebGPU渲染器
             if self._webgpu_renderer and self._webgpu_renderer.initialized:
                 logger.info(f"🚀 使用WebGPU渲染器执行: {method_name}")
                 method = getattr(self._webgpu_renderer, method_name)
@@ -234,7 +234,7 @@ class WebGPUManager:
                     # 更新性能统计
                     render_time = time.time() - start_time
                     self._update_performance_stats(True, render_time)
-                    logger.info(f"✅ WebGPU渲染成功: {method_name} ({render_time:.3f}s)")
+                    logger.info(f"WebGPU渲染成功: {method_name} ({render_time:.3f}s)")
                     return True
                 else:
                     logger.warning(f"⚠️ WebGPU渲染失败: {method_name}")
@@ -250,7 +250,7 @@ class WebGPUManager:
                 self._update_performance_stats(success, render_time)
                 
                 if success:
-                    logger.info(f"✅ 降级渲染成功: {method_name} ({render_time:.3f}s)")
+                    logger.info(f"降级渲染成功: {method_name} ({render_time:.3f}s)")
                 else:
                     logger.warning(f"⚠️ 降级渲染失败: {method_name}")
                     
@@ -272,7 +272,7 @@ class WebGPUManager:
                     method = getattr(self._fallback_renderer, method_name)
                     success = method(*args, **kwargs)
                     if success:
-                        logger.info(f"✅ 降级渲染成功: {method_name}")
+                        logger.info(f"降级渲染成功: {method_name}")
                         self._performance_stats['fallback_triggered'] += 1
                     return success
                 except Exception as fallback_error:
@@ -301,7 +301,7 @@ class WebGPUManager:
             try:
                 render_context = self._environment.create_render_context()
                 if self._fallback_renderer.initialize(self._compatibility_report, render_context):
-                    logger.info("✅ 降级渲染器初始化成功")
+                    logger.info("降级渲染器初始化成功")
                     return True
             except Exception as e:
                 logger.error(f"降级渲染器初始化失败: {e}")

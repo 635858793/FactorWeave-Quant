@@ -2352,7 +2352,7 @@ class SectorFlowTabPro(BaseAnalysisTab):
 
             download_btn = QPushButton("🚀 开始下载")
             cancel_btn = QPushButton("❌ 取消")
-            close_btn = QPushButton("✅ 关闭")
+            close_btn = QPushButton("关闭")
             close_btn.setEnabled(False)
 
             button_layout.addWidget(download_btn)
@@ -2439,7 +2439,7 @@ class SectorFlowTabPro(BaseAnalysisTab):
 
                     if result.get('success', False):
                         count = result.get('processed_count', 0)
-                        log_text.append(f"✅ 下载成功! 共处理 {count} 条数据")
+                        log_text.append(f"下载成功! 共处理 {count} 条数据")
                         status_label.setText(f"下载完成 - {count} 条数据")
 
                         # 刷新主界面数据

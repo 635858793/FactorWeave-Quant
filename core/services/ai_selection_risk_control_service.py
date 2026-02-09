@@ -1877,7 +1877,7 @@ class AISelectionRiskControlService:
                     
                     if check_result['passed']:
                         passed_checks += 1
-                        logger.info(f"  ✅ {check_name}: 通过")
+                        logger.info(f"  {check_name}: 通过")
                     else:
                         logger.warning(f"  ❌ {check_name}: 失败 - {check_result['issue']}")
                         compliance_result.issues_found.append({
@@ -2537,7 +2537,7 @@ class AISelectionRiskControlService:
                     if execution_result['success']:
                         executed_actions.append(execution_result['action'])
                         total_risk_reduction += expected_risk_reduction
-                        logger.info(f"✅ 成功执行风险缓解措施: {recommendation['title']}")
+                        logger.info(f"成功执行风险缓解措施: {recommendation['title']}")
                     else:
                         execution_errors.append({
                             'recommendation': recommendation['title'],

@@ -1,4 +1,3 @@
-from loguru import logger
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
@@ -6,9 +5,8 @@ from loguru import logger
 重构后的入口文件，提供向后兼容性
 """
 
+from loguru import logger
 from gui.widgets.performance.unified_performance_widget import ModernUnifiedPerformanceWidget
-
-logger = logger
 
 
 def show_modern_performance_monitor_with_import_monitoring():
@@ -23,7 +21,7 @@ def show_modern_performance_monitor_with_import_monitoring():
 
         # 设置窗口属性
         main_window.setWindowTitle("FactorWeave-Quant 智能性能监控中心 (含数据导入)")
-        main_window.resize(1400, 900)
+        main_window.resize(1400, 800)
         main_window.show()
 
         return main_window
@@ -49,9 +47,9 @@ def show_modern_performance_monitor(parent=None):
             service_container = get_service_container()
             event_bus = get_event_bus()
 
-            # 获取依赖服务
-            aggregation_service = service_container.resolve(MetricsAggregationService)
-            metrics_repository = service_container.resolve(MetricsRepository)
+            # 获取依赖服务，使用 try_resolve 避免服务未注册时抛出异常
+            aggregation_service = service_container.try_resolve(MetricsAggregationService)
+            metrics_repository = service_container.try_resolve(MetricsRepository)
 
             if aggregation_service and metrics_repository:
                 # 创建健康检查器
@@ -64,17 +62,22 @@ def show_modern_performance_monitor(parent=None):
                 logger.warning("无法获取依赖服务，健康检查器将为空")
 
         except Exception as e:
-            logger.warning(f" 创建健康检查器失败: {e}")
-            # 继续创建窗口，但健康检查器为空
+            logger.warning(f"创建健康检查器失败: {e}")
 
         # 创建性能监控窗口
+        # 注意：parent 参数应该是 QWidget 或其子类，如果传入的是 QApplication，则设为 None
+        if parent is not None and not hasattr(parent, 'setWindowTitle'):
+            parent = None
+            
         widget = ModernUnifiedPerformanceWidget(
             parent=parent,
             health_checker=health_checker,
             event_bus=event_bus
         )
-        widget.setWindowTitle("FactorWeave-Quant 智能性能监控中心")
-        widget.resize(1400, 900)
+        
+        # 设置合理的初始窗口大小（不固定，允许缩放）
+        widget.resize(1200, 700)
+        
         widget.show()
         return widget
 

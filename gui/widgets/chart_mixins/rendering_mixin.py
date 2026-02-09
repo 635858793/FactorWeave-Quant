@@ -407,7 +407,7 @@ class RenderingMixin:
                 logger.debug(f"处理后的kdata形状: {kdata.shape}")
 
             render_time = (time.time() - start_time) * 1000  # 转换为毫秒
-            logger.info(f"✅ K线类型转化完成，耗时: {render_time:.2f}ms")
+            logger.info(f"K线类型转化完成，耗时: {render_time:.2f}ms")
 
             start_time = time.time()
             # 检查kdata是否包含必要的列
@@ -424,7 +424,7 @@ class RenderingMixin:
             kdata = kdata.loc[~kdata.index.duplicated(keep='first')]
 
             render_time = (time.time() - start_time) * 1000  # 转换为毫秒
-            logger.info(f"✅ K线数据校验，耗时: {render_time:.2f}ms")
+            logger.info(f"K线数据校验，耗时: {render_time:.2f}ms")
 
             start_time = time.time()
             self.current_kdata = kdata
@@ -445,7 +445,7 @@ class RenderingMixin:
                 ax.cla()
 
             render_time = (time.time() - start_time) * 1000  # 转换为毫秒
-            logger.info(f"✅ K线price_ax，耗时: {render_time:.2f}ms")
+            logger.info(f"K线price_ax，耗时: {render_time:.2f}ms")
 
             start_time = time.time()
 
@@ -453,14 +453,14 @@ class RenderingMixin:
             x = np.arange(len(kdata))  # 用等距序号做X轴
 
             render_time = (time.time() - start_time) * 1000  # 转换为毫秒
-            logger.info(f"✅ K线style设置，耗时: {render_time:.2f}ms")
+            logger.info(f"K线style设置，耗时: {render_time:.2f}ms")
 
             start_time = time.time()
 
             # 记录渲染参数
             logger.debug(f"准备调用renderer.render_candlesticks，x轴长度: {len(x)}")
 
-            # ✅ 性能优化：延迟绘制 - 先完成所有渲染，最后统一绘制
+            # 性能优化：延迟绘制 - 先完成所有渲染，最后统一绘制
             # 调用渲染器
             try:
                 self.renderer.render_candlesticks(self.price_ax, kdata, style, x=x)
@@ -469,7 +469,7 @@ class RenderingMixin:
                 logger.error(f"K线渲染失败: {e}", exc_info=True)
                 raise
             render_time = (time.time() - start_time) * 1000  # 转换为毫秒
-            logger.info(f"✅ render_candlesticks，耗时: {render_time:.2f}ms")
+            logger.info(f"render_candlesticks，耗时: {render_time:.2f}ms")
 
             start_time = time.time()
             try:
@@ -479,18 +479,18 @@ class RenderingMixin:
                 logger.error(f"成交量渲染失败: {e}", exc_info=True)
 
             render_time = (time.time() - start_time) * 1000  # 转换为毫秒
-            logger.info(f"✅ render_volume，耗时: {render_time:.2f}ms")
+            logger.info(f"render_volume，耗时: {render_time:.2f}ms")
 
             start_time = time.time()
 
-            # ✅ 性能优化P2.1：合并autoscale_view()调用 - 在所有渲染完成后统一调用
+            # 性能优化P2.1：合并autoscale_view()调用 - 在所有渲染完成后统一调用
             # 统一设置所有轴（价格、成交量、指标）的自动缩放范围
             try:
                 self.price_ax.autoscale_view()
                 self.volume_ax.autoscale_view()
                 if hasattr(self, 'indicator_ax') and self.indicator_ax:
                     self.indicator_ax.autoscale_view()
-                logger.debug("✅ 统一调用autoscale_view()完成（3轴合并）")
+                logger.debug("统一调用autoscale_view()完成（3轴合并）")
             except Exception as e:
                 logger.warning(f"autoscale_view()调用失败: {e}")
 
@@ -498,9 +498,9 @@ class RenderingMixin:
             indicators_data = data.get('indicators_data', {})
             if indicators_data:
                 # 将indicators_data传递给渲染函数
-                logger.info(f"✅ 检测到indicators_data，指标数量: {len(indicators_data)}, 指标名称: {list(indicators_data.keys())}")
+                logger.info(f"检测到indicators_data，指标数量: {len(indicators_data)}, 指标名称: {list(indicators_data.keys())}")
                 self._render_indicator_data(indicators_data, kdata, x)
-                logger.info(f"✅ _render_indicator_data调用完成")
+                logger.info(f"_render_indicator_data调用完成")
             else:
                 logger.debug(f"💡 indicators_data为空，builtin指标将在_render_indicators中计算")
 
@@ -510,14 +510,14 @@ class RenderingMixin:
                 # 调用_get_active_indicators获取默认指标
                 if hasattr(self, '_get_active_indicators'):
                     self.active_indicators = self._get_active_indicators()
-                    logger.info(f"✅ active_indicators为None，使用默认指标: {len(self.active_indicators) if self.active_indicators else 0}个")
+                    logger.info(f"active_indicators为None，使用默认指标: {len(self.active_indicators) if self.active_indicators else 0}个")
                 else:
                     # 硬编码默认指标作为最后的fallback
                     self.active_indicators = [
                         {"name": "MA20", "params": {"period": 20}, "group": "builtin"},
                         {"name": "MA60", "params": {"period": 60}, "group": "builtin"}
                     ]
-                    logger.info(f"✅ active_indicators为None，使用硬编码默认指标: MA20, MA60")
+                    logger.info(f"active_indicators为None，使用硬编码默认指标: MA20, MA60")
             else:
                 # 验证active_indicators是否为列表
                 if not isinstance(self.active_indicators, list):
@@ -527,7 +527,7 @@ class RenderingMixin:
                         {"name": "MA20", "params": {"period": 20}, "group": "builtin"},
                         {"name": "MA60", "params": {"period": 60}, "group": "builtin"}
                     ]
-                    logger.info(f"✅ active_indicators格式错误，已重置为默认指标: MA20, MA60")
+                    logger.info(f"active_indicators格式错误，已重置为默认指标: MA20, MA60")
                 else:
                     # 记录active_indicators状态
                     indicator_names = []
@@ -536,7 +536,7 @@ class RenderingMixin:
                             indicator_names.append(ind.get('name', 'unknown'))
                         else:
                             indicator_names.append('invalid')
-                    logger.info(f"✅ active_indicators已被设置，保持现有值不变: {indicator_names}")
+                    logger.info(f"active_indicators已被设置，保持现有值不变: {indicator_names}")
 
             # 记录active_indicators状态
             active_inds = getattr(self, 'active_indicators', None)
@@ -565,15 +565,15 @@ class RenderingMixin:
             if pattern_signals:
                 self.plot_patterns(pattern_signals)
             render_time = (time.time() - start_time) * 1000  # 转换为毫秒
-            logger.info(f"✅ _render_indicators，耗时: {render_time:.2f}ms")
+            logger.info(f"_render_indicators，耗时: {render_time:.2f}ms")
 
-            # ✅ 性能优化P1: 统一调用_optimize_display()设置所有轴的完整样式
+            # 性能优化P1: 统一调用_optimize_display()设置所有轴的完整样式
             # 替代chart_renderer中的_optimize_display()调用，避免重复设置样式
             # _optimize_display()会设置所有轴（price_ax、volume_ax、indicator_ax）的样式
             self._optimize_display()
 
             render_time = (time.time() - start_time) * 1000  # 转换为毫秒
-            logger.info(f"✅ 形态信号可视化，耗时: {render_time:.2f}ms")
+            logger.info(f"形态信号可视化，耗时: {render_time:.2f}ms")
 
             if not kdata.empty:
                 for ax in [self.price_ax, self.volume_ax, self.indicator_ax]:
@@ -601,31 +601,31 @@ class RenderingMixin:
                 ax.yaxis.set_label_position('left')
                 ax.tick_params(axis='y', direction='in', pad=0)
 
-            # ✅ 性能优化：延迟十字光标初始化到渲染完成后
+            # 性能优化：延迟十字光标初始化到渲染完成后
             # 不在渲染过程中初始化，避免影响渲染性能
             self.crosshair_enabled = True
             # self.enable_crosshair(force_rebind=True)  # 已移除，延迟到绘制完成后
 
-            # ✅ 性能优化：延迟绘制 - 所有渲染和范围设置完成后，只调用一次draw_idle()
+            # 性能优化：延迟绘制 - 所有渲染和范围设置完成后，只调用一次draw_idle()
             # 这样可以避免K线、成交量、指标分别触发绘制，大幅提升性能
             if hasattr(self, 'canvas') and self.canvas:
                 self.canvas.draw_idle()
-                logger.debug("✅ 统一绘制完成（延迟绘制优化）")
+                logger.debug("统一绘制完成（延迟绘制优化）")
 
-            # ✅ 性能优化P3：进一步延迟十字光标初始化到用户交互时
+            # 性能优化P3：进一步延迟十字光标初始化到用户交互时
             # 不在渲染完成后立即初始化，而是在用户首次鼠标移动时再初始化
             # 这样可以避免在渲染过程中初始化十字光标，进一步提升渲染性能
             if hasattr(self, 'crosshair_enabled') and self.crosshair_enabled:
                 # 标记需要初始化，但不立即执行
                 self._crosshair_needs_init = True
-                logger.debug("✅ 十字光标初始化已延迟到用户交互时")
+                logger.debug("十字光标初始化已延迟到用户交互时")
 
                 # 如果已经初始化，只需要清除旧元素（不重新绑定事件）
                 if hasattr(self, '_crosshair_initialized') and self._crosshair_initialized:
                     try:
                         if hasattr(self, '_clear_crosshair_elements'):
                             self._clear_crosshair_elements()
-                            logger.debug("✅ 十字光标元素已清除（已初始化，不重新绑定）")
+                            logger.debug("十字光标元素已清除（已初始化，不重新绑定）")
                     except Exception as e:
                         logger.warning(f"清除十字光标元素失败: {e}")
             # 左上角显示股票名称和代码
@@ -662,7 +662,7 @@ class RenderingMixin:
                           edgecolor='none', boxstyle='round,pad=0.2'),
                 zorder=200
             )
-            # ✅ 性能优化P0: 移除draw_idle()调用，由最后统一绘制处理
+            # 性能优化P0: 移除draw_idle()调用，由最后统一绘制处理
             # 不再在这里触发绘制，避免在渲染过程中触发额外绘制
             # self.canvas.draw_idle()  # 已移除，在最后统一绘制
             for ax in [self.price_ax, self.volume_ax, self.indicator_ax]:
@@ -981,7 +981,7 @@ class RenderingMixin:
                             func_args = []
                             for input_name in required_inputs:
                                 if input_name in kdata.columns:
-                                    # ✅ 关键修复：将数据转换为float64（double）类型
+                                    # 关键修复：将数据转换为float64（double）类型
                                     input_data = kdata[input_name].values.astype(np.float64)
                                     func_args.append(input_data)
                                     logger.debug(f"指标 {english_name} 输入列 {input_name}: dtype={input_data.dtype}, shape={input_data.shape}")
@@ -1561,7 +1561,7 @@ class RenderingMixin:
                     label.set_rotation(30)
 
             render_time = (time.time() - start_time) * 1000  # 转换为毫秒
-            logger.info(f"✅ _optimize_display，耗时: {render_time:.2f}ms")
+            logger.info(f"_optimize_display，耗时: {render_time:.2f}ms")
 
         except Exception as e:
             logger.error(f"优化显示失败: {str(e)}")

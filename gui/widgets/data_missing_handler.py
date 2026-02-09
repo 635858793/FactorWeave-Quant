@@ -18,7 +18,7 @@ from PyQt5.QtWidgets import (
     QFrame, QScrollArea, QGroupBox, QProgressBar, QComboBox,
     QTextEdit, QSplitter, QTabWidget, QTableWidget, QTableWidgetItem,
     QHeaderView, QAbstractItemView, QMessageBox, QDialog, QDialogButtonBox,
-    QCheckBox, QSpinBox, QDateEdit, QApplication
+    QCheckBox, QSpinBox, QDateEdit, QApplication, QSizePolicy
 )
 from PyQt5.QtCore import (
     Qt, QTimer, QThread, pyqtSignal, QSize, QDate, QPropertyAnimation,
@@ -187,7 +187,9 @@ class DataMissingPromptWidget(QWidget):
 
         # 关闭按钮
         self.close_btn = QPushButton("×")
-        self.close_btn.setFixedSize(24, 24)
+        self.close_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.close_btn.setMinimumSize(24, 24)
+        self.close_btn.setMaximumSize(24, 24)
         self.close_btn.setStyleSheet("""
             QPushButton {
                 background-color: transparent;

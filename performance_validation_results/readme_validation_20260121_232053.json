@@ -1,0 +1,194 @@
+[
+  {
+    "test_name": "系统启动时间",
+    "success": true,
+    "metrics": {
+      "test_name": "系统启动时间",
+      "measured_value": 5.648865222930908,
+      "unit": "s",
+      "readme_value": 16.8,
+      "target_value": 8.0,
+      "status": "优秀",
+      "improvement_percent": 66.37580224445888,
+      "notes": "README声明: 16.8s, 实测: 5.65s"
+    },
+    "error_message": "",
+    "timestamp": "2026-01-21T23:17:52.437258"
+  },
+  {
+    "test_name": "运行内存占用",
+    "success": true,
+    "metrics": {
+      "test_name": "运行内存占用",
+      "measured_value": 441.09765625,
+      "unit": "MB",
+      "readme_value": 547.6,
+      "target_value": 400.0,
+      "status": "未达标",
+      "improvement_percent": 19.4489305606282,
+      "notes": "README声明: 547.6MB, 实测: 441.1MB"
+    },
+    "error_message": "",
+    "timestamp": "2026-01-21T23:17:52.439795"
+  },
+  {
+    "test_name": "峰值内存使用",
+    "success": true,
+    "metrics": {
+      "test_name": "峰值内存使用",
+      "measured_value": 457.296875,
+      "unit": "MB",
+      "readme_value": 549.1,
+      "target_value": 1200.0,
+      "status": "优秀",
+      "improvement_percent": 16.71883536696413,
+      "notes": "README声明: 549.1MB, 实测: 457.3MB"
+    },
+    "error_message": "",
+    "timestamp": "2026-01-21T23:17:52.500255"
+  },
+  {
+    "test_name": "CPU平均负载",
+    "success": true,
+    "metrics": {
+      "test_name": "CPU平均负载",
+      "measured_value": 0.0,
+      "unit": "%",
+      "readme_value": 0.0,
+      "target_value": 25.0,
+      "status": "优秀",
+      "improvement_percent": 0,
+      "notes": "README声明: 0.0%, 实测: 0.0%"
+    },
+    "error_message": "",
+    "timestamp": "2026-01-21T23:17:53.507979"
+  },
+  {
+    "test_name": "活跃线程数量",
+    "success": true,
+    "metrics": {
+      "test_name": "活跃线程数量",
+      "measured_value": 5,
+      "unit": "个",
+      "readme_value": 13,
+      "target_value": 25,
+      "status": "优秀",
+      "improvement_percent": 61.53846153846154,
+      "notes": "README声明: 13个, 实测: 5个"
+    },
+    "error_message": "",
+    "timestamp": "2026-01-21T23:17:53.509503"
+  },
+  {
+    "test_name": "API响应时间",
+    "success": true,
+    "metrics": {
+      "test_name": "API响应时间",
+      "measured_value": 1.3898749994041282,
+      "unit": "ms",
+      "readme_value": 30.1,
+      "target_value": 100.0,
+      "status": "优秀",
+      "improvement_percent": 95.38247508503612,
+      "notes": "README声明: 30.1ms, 实测: 1.39ms"
+    },
+    "error_message": "",
+    "timestamp": "2026-01-21T23:17:53.516895"
+  },
+  {
+    "test_name": "回测速度",
+    "success": true,
+    "metrics": {
+      "test_name": "回测速度",
+      "measured_value": 0.5873215834205595,
+      "unit": "万条/秒",
+      "readme_value": 100.0,
+      "target_value": 50.0,
+      "status": "未达标",
+      "improvement_percent": -99.41267841657944,
+      "notes": "README声明: 100.0万条/秒, 实测: 0.59万条/秒"
+    },
+    "error_message": "",
+    "timestamp": "2026-01-21T23:20:43.911851"
+  },
+  {
+    "test_name": "策略执行延迟",
+    "success": true,
+    "metrics": {
+      "test_name": "策略执行延迟",
+      "measured_value": 0.018105000108334934,
+      "unit": "ms",
+      "readme_value": 15.0,
+      "target_value": 50.0,
+      "status": "优秀",
+      "improvement_percent": 99.87929999927778,
+      "notes": "README声明: 15.0ms, 实测: 0.02ms"
+    },
+    "error_message": "",
+    "timestamp": "2026-01-21T23:20:43.916431"
+  },
+  {
+    "test_name": "数据处理吞吐量",
+    "success": true,
+    "metrics": {
+      "test_name": "数据处理吞吐量",
+      "measured_value": 201511.7,
+      "unit": "笔/秒",
+      "readme_value": 2000.0,
+      "target_value": 1000.0,
+      "status": "优秀",
+      "improvement_percent": 9975.585000000001,
+      "notes": "README声明: 2000.0笔/秒, 实测: 201512笔/秒"
+    },
+    "error_message": "",
+    "timestamp": "2026-01-21T23:20:53.917261"
+  },
+  {
+    "test_name": "并发处理能力",
+    "success": true,
+    "metrics": {
+      "test_name": "并发处理能力",
+      "measured_value": 48,
+      "unit": "个",
+      "readme_value": 48,
+      "target_value": 100,
+      "status": "未达标",
+      "improvement_percent": 0.0,
+      "notes": "README声明: 48个, 实测: 48个"
+    },
+    "error_message": "",
+    "timestamp": "2026-01-21T23:20:53.939220"
+  },
+  {
+    "test_name": "内存泄漏率",
+    "success": false,
+    "metrics": {
+      "test_name": "内存泄漏率",
+      "measured_value": 0,
+      "unit": "MB/小时",
+      "readme_value": 0.0,
+      "target_value": 50.0,
+      "status": "跳过",
+      "improvement_percent": 0.0,
+      "notes": "需要长时间运行模式"
+    },
+    "error_message": "需要长时间运行模式",
+    "timestamp": "2026-01-21T23:20:53.940730"
+  },
+  {
+    "test_name": "系统稳定性",
+    "success": false,
+    "metrics": {
+      "test_name": "系统稳定性",
+      "measured_value": 0,
+      "unit": "%",
+      "readme_value": 99.9,
+      "target_value": 99.5,
+      "status": "跳过",
+      "improvement_percent": 0.0,
+      "notes": "需要长时间运行模式"
+    },
+    "error_message": "需要长时间运行模式",
+    "timestamp": "2026-01-21T23:20:53.940730"
+  }
+]

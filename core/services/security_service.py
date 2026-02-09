@@ -260,7 +260,7 @@ class SecurityService(BaseService):
             # 5. 验证安全配置
             self._validate_security_config()
 
-            logger.info("✅ SecurityService initialized successfully with comprehensive security management")
+            logger.info("SecurityService initialized successfully with comprehensive security management")
 
         except Exception as e:
             logger.error(f"❌ Failed to initialize SecurityService: {e}")

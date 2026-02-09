@@ -1,0 +1,204 @@
+# JIT配置文件
+# 用于管理JIT优化函数的配置
+
+# 全局设置
+global:
+  # 是否启用JIT优化
+  enabled: true
+  
+  # 是否启用缓存
+  cache_enabled: true
+  
+  # 是否启用快速数学运算
+  fastmath_enabled: true
+  
+  # 是否启用并行计算
+  parallel_enabled: false
+  
+  # 缓存目录
+  cache_dir: "cache/numba"
+
+# JIT函数配置
+functions:
+  # 技术指标
+  - name: calculate_sma
+    module: core.indicators.jit_indicators
+    enabled: true
+    category: "技术指标"
+    description: "简单移动平均计算"
+    priority: high
+    cache: true
+    fastmath: true
+    parallel: true
+
+  - name: calculate_ema
+    module: core.indicators.jit_indicators
+    enabled: true
+    category: "技术指标"
+    description: "指数移动平均计算"
+    priority: high
+    cache: true
+    fastmath: true
+    parallel: true
+
+  - name: calculate_rsi
+    module: core.indicators.jit_indicators
+    enabled: true
+    category: "技术指标"
+    description: "RSI指标计算"
+    priority: high
+    cache: true
+    fastmath: true
+    parallel: false
+
+  - name: calculate_macd
+    module: core.indicators.jit_indicators
+    enabled: true
+    category: "技术指标"
+    description: "MACD指标计算"
+    priority: high
+    cache: true
+    fastmath: true
+    parallel: true
+
+  - name: calculate_bollinger_bands
+    module: core.indicators.jit_indicators
+    enabled: true
+    category: "技术指标"
+    description: "布林带计算"
+    priority: high
+    cache: true
+    fastmath: true
+    parallel: true
+
+  - name: calculate_atr
+    module: core.indicators.jit_indicators
+    enabled: true
+    category: "技术指标"
+    description: "ATR指标计算"
+    priority: medium
+    cache: true
+    fastmath: true
+    parallel: true
+
+  - name: calculate_stochastic
+    module: core.indicators.jit_indicators
+    enabled: true
+    category: "技术指标"
+    description: "随机指标计算"
+    priority: medium
+    cache: true
+    fastmath: true
+    parallel: true
+
+  - name: calculate_williams_r
+    module: core.indicators.jit_indicators
+    enabled: true
+    category: "技术指标"
+    description: "威廉指标计算"
+    priority: medium
+    cache: true
+    fastmath: true
+    parallel: true
+
+  # 风险指标
+  - name: calculate_sharpe_ratio
+    module: backtest.jit_optimizer
+    enabled: true
+    category: "风险指标"
+    description: "夏普比率计算"
+    priority: high
+    cache: true
+    fastmath: true
+    parallel: true
+
+  - name: calculate_max_drawdown
+    module: backtest.jit_optimizer
+    enabled: true
+    category: "风险指标"
+    description: "最大回撤计算"
+    priority: high
+    cache: true
+    fastmath: true
+    parallel: true
+
+  - name: calculate_volatility
+    module: backtest.jit_optimizer
+    enabled: true
+    category: "风险指标"
+    description: "波动率计算"
+    priority: high
+    cache: true
+    fastmath: true
+    parallel: true
+
+  # 回测核心
+  - name: optimized_backtest_core
+    module: backtest.jit_optimizer
+    enabled: true
+    category: "回测核心"
+    description: "回测核心计算"
+    priority: high
+    cache: true
+    fastmath: true
+    parallel: false
+
+  - name: batch_calculate_metrics
+    module: backtest.jit_optimizer
+    enabled: true
+    category: "回测核心"
+    description: "批量指标计算"
+    priority: high
+    cache: true
+    fastmath: true
+    parallel: true
+
+# 自动发现配置
+auto_discovery:
+  # 是否启用自动发现
+  enabled: true
+  
+  # 要扫描的模块列表
+  modules:
+    - name: core.indicators
+      pattern: "calculate_"
+      enabled: true
+      description: "技术指标模块"
+    
+    - name: backtest
+      pattern: "calculate_"
+      enabled: true
+      description: "回测模块"
+    
+    - name: analysis
+      pattern: "compute_"
+      enabled: true
+      description: "分析模块"
+
+# 性能监控配置
+monitoring:
+  # 是否启用性能监控
+  enabled: true
+  
+  # 性能统计间隔（秒）
+  stats_interval: 60
+  
+  # 是否记录详细日志
+  detailed_logging: false
+  
+  # 性能警告阈值（秒）
+  performance_warning_threshold: 1.0
+
+# 缓存管理配置
+cache_management:
+  # 是否自动清理缓存
+  auto_cleanup: false
+  
+  # 缓存清理间隔（天）
+  cleanup_interval: 7
+  
+  # 最大缓存大小（MB）
+  max_cache_size: 1024
+  
+  # 是否压缩缓存
+  compress_cache: false

@@ -45,7 +45,7 @@ class SectorFundFlowExample:
 
             # 直接创建SectorDataService，避免依赖服务容器
             from core.services.sector_data_service import SectorDataService
-                        from core.tet_data_pipeline import TETDataPipeline
+            from core.tet_data_pipeline import TETDataPipeline
 
             # 创建必要的组件（这里可以使用None，SectorDataService会处理）
             cache_manager = None  # SectorDataService会处理None情况
@@ -56,7 +56,7 @@ class SectorFundFlowExample:
             if self.sector_service is None:
                 raise ValueError("板块资金流服务创建失败")
 
-            logger.info("✅ 直接创建SectorDataService成功")
+            logger.info("直接创建SectorDataService成功")
             return True
 
         except Exception as e:
@@ -76,7 +76,7 @@ class SectorFundFlowExample:
             )
 
             if not ranking_data.empty:
-                logger.info(f"✅ 成功获取 {len(ranking_data)} 条排行榜数据")
+                logger.info(f"成功获取 {len(ranking_data)} 条排行榜数据")
                 logger.info("前5名板块:")
                 for i, row in ranking_data.head(5).iterrows():
                     logger.info(f"  {i+1}. {row['sector_name']} - 主力净流入: {row['main_net_inflow']:,.0f}")
@@ -102,7 +102,7 @@ class SectorFundFlowExample:
             )
 
             if not trend_data.empty:
-                logger.info(f"✅ 成功获取 {len(trend_data)} 条历史趋势数据")
+                logger.info(f"成功获取 {len(trend_data)} 条历史趋势数据")
                 logger.info("近5天数据:")
                 for i, row in trend_data.tail(5).iterrows():
                     logger.info(f"  {row['trade_date']} - 主力净流入: {row['main_net_inflow']:,.0f}")
@@ -128,7 +128,7 @@ class SectorFundFlowExample:
             )
 
             if not intraday_data.empty:
-                logger.info(f"✅ 成功获取 {len(intraday_data)} 条分时数据")
+                logger.info(f"成功获取 {len(intraday_data)} 条分时数据")
                 logger.info("近5个时间点数据:")
                 for i, row in intraday_data.tail(5).iterrows():
                     logger.info(f"  {row['trade_time']} - 净流入: {row['net_inflow']:,.0f}")
@@ -157,7 +157,7 @@ class SectorFundFlowExample:
 
             if import_result.get('success', False):
                 processed_count = import_result.get('processed_count', 0)
-                logger.info(f"✅ 成功导入 {processed_count} 条历史数据")
+                logger.info(f"成功导入 {processed_count} 条历史数据")
             else:
                 error_msg = import_result.get('error', '未知错误')
                 logger.warning(f"⚠️ 导入失败: {error_msg}")
@@ -175,7 +175,7 @@ class SectorFundFlowExample:
             status_response = requests.get(f"{self.api_base_url}/api/sector/fund-flow/status")
             if status_response.status_code == 200:
                 status_data = status_response.json()
-                logger.info(f"✅ 服务状态: {status_data['status']}")
+                logger.info(f"服务状态: {status_data['status']}")
             else:
                 logger.warning(f"⚠️ 服务状态检查失败: {status_response.status_code}")
                 return
@@ -189,7 +189,7 @@ class SectorFundFlowExample:
             if ranking_response.status_code == 200:
                 ranking_data = ranking_response.json()
                 count = ranking_data.get('count', 0)
-                logger.info(f"✅ API获取 {count} 条排行榜数据")
+                logger.info(f"API获取 {count} 条排行榜数据")
             else:
                 logger.warning(f"⚠️ API获取排行榜失败: {ranking_response.status_code}")
 
@@ -202,7 +202,7 @@ class SectorFundFlowExample:
             if trend_response.status_code == 200:
                 trend_data = trend_response.json()
                 count = trend_data.get('count', 0)
-                logger.info(f"✅ API获取 {count} 条历史趋势数据")
+                logger.info(f"API获取 {count} 条历史趋势数据")
             else:
                 logger.warning(f"⚠️ API获取历史趋势失败: {trend_response.status_code}")
 
@@ -220,7 +220,7 @@ class SectorFundFlowExample:
             if import_response.status_code == 200:
                 import_data = import_response.json()
                 processed_count = import_data.get('processed_count', 0)
-                logger.info(f"✅ API导入 {processed_count} 条数据")
+                logger.info(f"API导入 {processed_count} 条数据")
             else:
                 logger.warning(f"⚠️ API导入数据失败: {import_response.status_code}")
 

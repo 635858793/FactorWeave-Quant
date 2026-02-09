@@ -6,7 +6,7 @@
 
 from .base_tab import BaseAnalysisTab
 # professional_sentiment_tab已删除（性能优化）
-# ✅ 修复：enhanced_kline_technical_tab 模块未实现，暂时注释掉
+# 修复：enhanced_kline_technical_tab 模块未实现，暂时注释掉
 # from .enhanced_kline_technical_tab import EnhancedKLineTechnicalTab
 from .technical_tab import TechnicalAnalysisTab
 from .trend_tab import TrendAnalysisTab
@@ -20,7 +20,7 @@ from .hotspot_tab import HotspotAnalysisTab
 
 __all__ = [
     'BaseAnalysisTab',
-    # 'EnhancedKLineTechnicalTab',  # ✅ 修复：模块未实现，暂时移除
+    # 'EnhancedKLineTechnicalTab',  # 修复：模块未实现，暂时移除
     'TechnicalAnalysisTab',
     'TrendAnalysisTab',
     'WaveAnalysisTab',

@@ -156,7 +156,7 @@ class ExtensionService(BaseService):
         self._register_default_hooks()
         logger.info("✓ Default hooks registered")
 
-        logger.info("✅ ExtensionService initialized successfully")
+        logger.info("ExtensionService initialized successfully")
 
     def _register_default_hooks(self):
         """注册系统默认钩子"""

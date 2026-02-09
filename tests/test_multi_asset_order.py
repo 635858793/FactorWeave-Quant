@@ -72,7 +72,7 @@ def test_multi_asset_order_creation():
             success = repository.save_order(order)
             
             if success:
-                logger.success(f"✅ 订单创建成功: {order.order_id}")
+                logger.success(f"订单创建成功: {order.order_id}")
                 logger.info(f"   资产类型: {order.asset_type.value}")
                 logger.info(f"   资产代码: {order.stock_code}")
                 logger.info(f"   订单价格: {order.order_price}")
@@ -117,7 +117,7 @@ def test_multi_asset_order_query():
             # 查询订单
             orders = repository.query_orders(query)
             
-            logger.success(f"✅ 查询成功: 返回 {len(orders)} 条记录")
+            logger.success(f"查询成功: 返回 {len(orders)} 条记录")
             
             for order in orders[:3]:  # 只显示前3条
                 logger.info(f"   - {order.order_id}: {order.asset_type.value} {order.stock_code}")
@@ -188,7 +188,7 @@ def test_multi_asset_order_validation():
             result = validator.validate_order(order)
             
             if result.passed:
-                logger.success(f"✅ 验证通过: {test_name}")
+                logger.success(f"验证通过: {test_name}")
             else:
                 logger.warning(f"⚠️ 验证失败: {test_name}")
                 logger.info(f"   错误信息: {result.message}")

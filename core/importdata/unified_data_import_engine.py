@@ -1425,7 +1425,7 @@ class UnifiedDataImportEngine(QObject):
                     )
                     
                     if save_success:
-                        logger.info(f"✅ 保存资产元数据成功: {symbol}, market={market}, asset_type={asset_type.value}, data_source={task_config.data_source}")
+                        logger.info(f"保存资产元数据成功: {symbol}, market={market}, asset_type={asset_type.value}, data_source={task_config.data_source}")
                         # 立即验证是否保存成功
                         saved_metadata = asset_db_manager.get_asset_metadata(symbol, asset_type)
                         if saved_metadata:
@@ -1589,7 +1589,7 @@ class UnifiedDataImportEngine(QObject):
                     )
                     
                     if save_success:
-                        logger.info(f"✅ 同步保存资产元数据成功: {symbol}, market={market}, asset_type={asset_type.value}, data_source={task_config.data_source}")
+                        logger.info(f"同步保存资产元数据成功: {symbol}, market={market}, asset_type={asset_type.value}, data_source={task_config.data_source}")
                         # 立即验证是否保存成功
                         saved_metadata = asset_db_manager.get_asset_metadata(symbol, asset_type)
                         if saved_metadata:

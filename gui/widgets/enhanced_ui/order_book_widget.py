@@ -234,7 +234,6 @@ class OrderBookWidget(QWidget):
         self._setup_table_columns()
 
         # 设置表格属性
-        self.order_table.setAlternatingRowColors(True)
         self.order_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.order_table.verticalHeader().setVisible(False)
         self.order_table.itemClicked.connect(self._on_table_item_clicked)

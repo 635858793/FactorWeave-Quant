@@ -72,7 +72,7 @@ print(f"参数数量: {len(params)}")
 
 # 检查是否匹配
 if placeholder_count == len(params):
-    print("✅ 占位符和参数数量匹配")
+    print("占位符和参数数量匹配")
 else:
     print(f"❌ 占位符和参数数量不匹配: {placeholder_count} vs {len(params)}")
 

@@ -232,7 +232,7 @@ class ArchitectureMigrationGuide:
 
             self.migration_config.backup_path = str(backup_path)
             self.migration_config.rollback_available = True
-            logger.info("✅ System backup completed successfully")
+            logger.info("System backup completed successfully")
             return True
 
         except Exception as e:
@@ -308,7 +308,7 @@ class ArchitectureMigrationGuide:
                 logger.error(f"Missing required services: {missing_services}")
                 return False
 
-            logger.info("✅ All dependencies validated successfully")
+            logger.info("All dependencies validated successfully")
             return True
 
         except Exception as e:
@@ -383,7 +383,7 @@ class ArchitectureMigrationGuide:
                 with open(main_config_file, 'w', encoding='utf-8') as f:
                     json.dump(config_data, f, indent=2, ensure_ascii=False)
 
-            logger.info("✅ Configuration migration completed")
+            logger.info("Configuration migration completed")
             return True
 
         except Exception as e:
@@ -419,7 +419,7 @@ class ArchitectureMigrationGuide:
                 if success:
                     step.completed = True
                     step.completion_time = datetime.now()
-                    logger.info(f"✅ Completed: {step.name}")
+                    logger.info(f"Completed: {step.name}")
                 else:
                     if step.required:
                         logger.error(f"❌ Critical step failed: {step.name}")
@@ -538,7 +538,7 @@ class ArchitectureMigrationGuide:
                 if result != 0:
                     logger.warning(f"Test command failed: {cmd}")
 
-            logger.info("✅ Migration validation completed")
+            logger.info("Migration validation completed")
             return True
 
         except Exception as e:
@@ -602,7 +602,7 @@ class ArchitectureMigrationGuide:
 """
 
             for step in self.migration_config.steps:
-                status = "✅ COMPLETED" if step.completed else "❌ FAILED"
+                status = "COMPLETED" if step.completed else "❌ FAILED"
                 report += f"- **{step.name}**: {status}\n"
                 report += f"  - Description: {step.description}\n"
                 if step.error_message:
@@ -678,7 +678,7 @@ For migration issues or questions, contact the architecture team.
                             shutil.copytree(source_path, dest_path)
                         logger.info(f"Restored: {item}")
 
-            logger.info("✅ Rollback completed successfully")
+            logger.info("Rollback completed successfully")
             return True
 
         except Exception as e:

@@ -408,7 +408,7 @@ def get_alert_deduplication_service(config: DeduplicationConfig = None) -> Alert
     return _alert_deduplication_service
 
 
-def initialize_alert_deduplication_service(config: DeduplicationConfig = None) -> AlertDeduplicationService:
+def initialize_alert_deduplication_service(config=None) -> AlertDeduplicationService:
     """
     初始化告警去重服务
 

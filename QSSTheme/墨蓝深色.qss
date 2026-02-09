@@ -149,7 +149,7 @@ QTabBar::tab {
 		border-top-left-radius: 4px;
 		border-top-right-radius: 4px;
 		color: rgb(175, 175, 175);
-		background: rgb(255, 255, 255, 30);
+		background: rgba(255, 255, 255, 0.12);
 		height: 28px;
 		min-width: 85px;
 		margin-right: 5px;
@@ -620,7 +620,7 @@ QSpinBox::up-button:!enabled {
         background: transparent;
 }
 QSpinBox::up-button:enabled:hover {
-        background: rgb(255, 255, 255, 30);
+        background: rgba(255, 255, 255, 0.12);
 }
 QSpinBox::down-button {
         width: 18px;
@@ -635,7 +635,7 @@ QSpinBox::down-button:!enabled {
         background: transparent;
 }
 QSpinBox::down-button:enabled:hover {
-        background: rgb(255, 255, 255, 30);
+        background: rgba(255, 255, 255, 0.12);
 }
 
 /**********标签**********/
@@ -1403,7 +1403,7 @@ QDoubleSpinBox::up-button:!enabled {
         background: transparent;
 }
 QDoubleSpinBox::up-button:enabled:hover {
-        background: rgb(255, 255, 255, 30);
+        background: rgba(255, 255, 255, 0.12);
 }
 QDoubleSpinBox::down-button {
         width: 18px;
@@ -1418,7 +1418,7 @@ QDoubleSpinBox::down-button:!enabled {
         background: transparent;
 }
 QDoubleSpinBox::down-button:enabled:hover {
-        background: rgb(255, 255, 255, 30);
+        background: rgba(255, 255, 255, 0.12);
 }
 
 /**********日期编辑框**********/
@@ -1497,7 +1497,7 @@ QTimeEdit::down-button:!enabled {
         background: transparent;
 }
 QTimeEdit::down-button:enabled:hover {
-        background: rgb(255, 255, 255, 30);
+        background: rgba(255, 255, 255, 0.12);
 }
 
 /**********文本浏览器**********/

@@ -12,6 +12,7 @@ from typing import List, Optional
 
 try:
     import matplotlib as mpl
+    mpl.use('Agg')
     import matplotlib.pyplot as plt
     MATPLOTLIB_AVAILABLE = True
 except ImportError:
@@ -174,7 +175,10 @@ def configure_matplotlib_chinese_font(font_size: int = 10, force_config: bool = 
 
 # 自动配置（当模块被导入时）
 if __name__ != "__main__":
-    configure_matplotlib_chinese_font()
+    try:
+        configure_matplotlib_chinese_font()
+    except Exception:
+        pass  # 静默忽略初始化错误，避免阻塞模块导入
 
 if __name__ == "__main__":
     # 测试脚本

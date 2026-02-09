@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QPushButton,
     QTableWidget, QTableWidgetItem, QAbstractItemView, QComboBox,
     QLabel, QTabWidget, QFrame, QGridLayout, QProgressBar,
-    QTextEdit, QSplitter, QHeaderView
+    QTextEdit, QSplitter, QHeaderView, QSizePolicy
 )
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QColor, QFont
@@ -19,7 +19,21 @@ from gui.widgets.performance.components.metric_card import ModernMetricCard
 from gui.widgets.performance.components.performance_chart import ModernPerformanceChart
 from loguru import logger
 
-logger = logger
+# 延迟导入主题管理器，避免在模块级别导入时崩溃
+THEME_MANAGER_AVAILABLE = False
+get_theme_manager = None
+
+def _import_theme_manager():
+    """延迟导入主题管理器"""
+    global THEME_MANAGER_AVAILABLE, get_theme_manager
+    if not THEME_MANAGER_AVAILABLE:
+        try:
+            from utils.theme import get_theme_manager as _get_theme_manager
+            get_theme_manager = _get_theme_manager
+            THEME_MANAGER_AVAILABLE = True
+            logger.info("主题管理器模块导入成功")
+        except Exception as e:
+            logger.warning(f"导入主题管理器失败: {e}")
 
 class ModernTradingExecutionMonitorTab(QWidget):
     """现代化交易执行监控标签页 - 量化交易专用"""
@@ -28,6 +42,17 @@ class ModernTradingExecutionMonitorTab(QWidget):
         super().__init__()
         self.execution_data = []
         self.order_history = []
+        
+        # 延迟导入并初始化主题管理器
+        _import_theme_manager()
+        self.theme_manager = None
+        if THEME_MANAGER_AVAILABLE:
+            try:
+                self.theme_manager = get_theme_manager()
+                self.theme_manager.theme_changed.connect(self._on_theme_changed)
+            except Exception as e:
+                logger.warning(f"获取ThemeManager失败: {e}")
+        
         self.init_ui()
 
     def init_ui(self):
@@ -92,8 +117,7 @@ class ModernTradingExecutionMonitorTab(QWidget):
 
         # 执行指标卡片
         cards_frame = QFrame()
-        cards_frame.setMinimumHeight(120)
-        cards_frame.setMaximumHeight(150)
+        cards_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         cards_layout = QGridLayout(cards_frame)
         cards_layout.setContentsMargins(2, 2, 2, 2)
         cards_layout.setSpacing(2)
@@ -141,7 +165,6 @@ class ModernTradingExecutionMonitorTab(QWidget):
             "时间", "股票代码", "方向", "数量", "价格", "状态", "延迟(ms)", "滑点(%)"
         ])
         self.realtime_orders_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.realtime_orders_table.setAlternatingRowColors(True)
         self.realtime_orders_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         # self.realtime_orders_table.setMaximumHeight(200)
 
@@ -164,6 +187,7 @@ class ModernTradingExecutionMonitorTab(QWidget):
 
         # 分析控制面板
         control_group = QGroupBox("分析控制")
+        control_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         control_layout = QHBoxLayout()
 
         control_layout.addWidget(QLabel("分析周期:"))
@@ -194,20 +218,16 @@ class ModernTradingExecutionMonitorTab(QWidget):
 
         # 滑点分布图
         self.slippage_chart = ModernPerformanceChart("滑点分布分析", "histogram")
-        self.slippage_chart.setMinimumHeight(250)
         charts_splitter.addWidget(self.slippage_chart)
 
         # 延迟分布图
         self.latency_chart = ModernPerformanceChart("延迟分布分析", "histogram")
-        self.latency_chart.setMinimumHeight(250)
         charts_splitter.addWidget(self.latency_chart)
 
         layout.addWidget(charts_splitter)
 
         # 执行质量趋势图
         self.quality_trend_chart = ModernPerformanceChart("执行质量趋势", "line")
-        self.quality_trend_chart.setMinimumHeight(200)
-        self.quality_trend_chart.setMaximumHeight(250)
         layout.addWidget(self.quality_trend_chart)
 
         return tab
@@ -253,7 +273,6 @@ class ModernTradingExecutionMonitorTab(QWidget):
             "时间", "订单ID", "股票代码", "股票名称", "方向", "委托数量",
             "委托价格", "成交数量", "成交价格", "状态", "延迟(ms)", "滑点(%)"
         ])
-        self.order_history_table.setAlternatingRowColors(True)
         self.order_history_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.order_history_table.setSortingEnabled(True)
 
@@ -291,6 +310,16 @@ class ModernTradingExecutionMonitorTab(QWidget):
     def update_execution_data(self, execution_metrics: Dict[str, float]):
         """更新执行监控数据"""
         try:
+            # 使用 QTimer.singleShot 确保在主线程中更新UI
+            from PyQt5.QtCore import QTimer
+            QTimer.singleShot(0, lambda: self._update_execution_ui_in_main_thread(execution_metrics))
+
+        except Exception as e:
+            logger.error(f"更新执行监控数据失败: {e}")
+
+    def _update_execution_ui_in_main_thread(self, execution_metrics: Dict[str, float]):
+        """在主线程中更新执行UI"""
+        try:
             # 更新执行指标卡片
             for name, value in execution_metrics.items():
                 if name in self.execution_cards:
@@ -317,7 +346,7 @@ class ModernTradingExecutionMonitorTab(QWidget):
             self._update_execution_score(execution_score)
 
         except Exception as e:
-            logger.error(f"更新执行监控数据失败: {e}")
+            logger.error(f"在主线程中更新执行UI失败: {e}")
 
     def _calculate_execution_score(self, metrics: Dict[str, float]) -> float:
         """计算执行质量评分 - 修复版算法"""
@@ -759,3 +788,108 @@ class ModernTradingExecutionMonitorTab(QWidget):
 
         except Exception as e:
             logger.error(f"更新交易执行监控数据失败: {e}")
+
+    def _on_theme_changed(self):
+        """主题变化回调"""
+        try:
+            # 更新所有卡片的主题样式
+            if hasattr(self, 'cards'):
+                for card in self.cards.values():
+                    if hasattr(card, 'update_theme'):
+                        card.update_theme()
+            if hasattr(self, 'execution_cards'):
+                for card in self.execution_cards.values():
+                    if hasattr(card, 'update_theme'):
+                        card.update_theme()
+            
+            # 更新图表主题
+            if hasattr(self, 'execution_chart') and hasattr(self.execution_chart, 'update_theme'):
+                self.execution_chart.update_theme()
+                
+            logger.debug("交易执行监控标签页主题已更新")
+        except Exception as e:
+            logger.error(f"更新交易执行监控标签页主题失败: {e}")
+
+    def cleanup(self):
+        """清理资源 - 优化性能，避免卡顿"""
+        try:
+            # 清理图表 - 添加异常处理
+            if hasattr(self, 'execution_chart') and self.execution_chart:
+                try:
+                    if hasattr(self.execution_chart, 'cleanup'):
+                        self.execution_chart.cleanup()
+                except Exception as e:
+                    logger.debug(f"清理执行图表失败: {e}")
+            
+            # 清理指标卡片 - 添加异常处理
+            if hasattr(self, 'execution_cards'):
+                for card in self.execution_cards.values():
+                    try:
+                        if hasattr(card, 'cleanup'):
+                            card.cleanup()
+                    except Exception as e:
+                        logger.debug(f"清理指标卡片失败: {e}")
+            
+            # 清理表格 - 添加异常处理
+            if hasattr(self, 'order_history_table'):
+                try:
+                    self.order_history_table.clearContents()
+                    self.order_history_table.setRowCount(0)
+                except Exception as e:
+                    logger.debug(f"清理表格失败: {e}")
+            
+            # 清理执行数据 - 添加异常处理
+            if hasattr(self, 'execution_data'):
+                try:
+                    self.execution_data.clear()
+                except Exception as e:
+                    logger.debug(f"清理执行数据失败: {e}")
+            if hasattr(self, 'order_history'):
+                try:
+                    self.order_history.clear()
+                except Exception as e:
+                    logger.debug(f"清理订单历史失败: {e}")
+            
+            logger.debug("ModernTradingExecutionMonitorTab cleanup completed")
+            
+        except Exception as e:
+            logger.debug(f"清理资源失败: {e}")
+
+    def resizeEvent(self, event):
+        """窗口大小改变事件处理"""
+        super().resizeEvent(event)
+        self._update_responsive_layout()
+
+    def _update_responsive_layout(self):
+        """更新响应式布局"""
+        try:
+            window_width = self.width()
+            window_height = self.height()
+
+            logger.debug(f"TradingExecutionMonitorTab 响应式布局更新: {window_width}x{window_height}")
+
+            # 更新执行指标卡片高度
+            cards_frames = self.findChildren(QFrame)
+            for frame in cards_frames:
+                if frame.layout() and isinstance(frame.layout(), QGridLayout):
+                    frame_height = max(100, int(window_height * 0.18))
+                    frame.setMinimumHeight(frame_height)
+                    frame.setMaximumHeight(int(window_height * 0.22))
+
+            # 更新滑点分布图高度
+            if hasattr(self, 'slippage_chart'):
+                chart_height = max(120, int(window_height * 0.25))
+                self.slippage_chart.setMinimumHeight(chart_height)
+
+            # 更新延迟分布图高度
+            if hasattr(self, 'latency_chart'):
+                chart_height = max(120, int(window_height * 0.25))
+                self.latency_chart.setMinimumHeight(chart_height)
+
+            # 更新执行质量趋势图高度
+            if hasattr(self, 'quality_trend_chart'):
+                chart_height = max(120, int(window_height * 0.25))
+                self.quality_trend_chart.setMinimumHeight(chart_height)
+
+        except Exception as e:
+            logger.error(f"更新响应式布局失败: {e}")

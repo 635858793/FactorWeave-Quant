@@ -539,7 +539,6 @@ class Level2DataPanel(QWidget):
             "档位", "买量", "买价", "卖价", "卖量", "比例"
         ])
 
-        self.level2_table.setAlternatingRowColors(True)
         self.level2_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.level2_table.verticalHeader().setVisible(False)
 
@@ -596,7 +595,6 @@ class Level2DataPanel(QWidget):
         self.tick_table.setColumnCount(5)
         self.tick_table.setHorizontalHeaderLabels(["时间", "价格", "成交量", "方向", "类型"])
         self.tick_table.horizontalHeader().setStretchLastSection(True)
-        self.tick_table.setAlternatingRowColors(True)
         tick_layout.addWidget(self.tick_table)
 
         tab_widget.addTab(tick_tab, "Tick数据")
@@ -610,7 +608,6 @@ class Level2DataPanel(QWidget):
         self.order_book_table.setColumnCount(3)
         self.order_book_table.setHorizontalHeaderLabels(["买量", "价格", "卖量"])
         self.order_book_table.horizontalHeader().setStretchLastSection(True)
-        self.order_book_table.setAlternatingRowColors(True)
         order_book_layout.addWidget(self.order_book_table)
 
         # 订单簿深度图表

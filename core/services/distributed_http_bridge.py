@@ -64,7 +64,7 @@ class DistributedHTTPBridge:
         # 检查是否有可用节点
         if self.has_available_nodes():
             try:
-                # ✅ 新逻辑：支持任务拆分到多个节点
+                # 新逻辑：支持任务拆分到多个节点
                 return await self._execute_distributed(
                     task_id, task_type, task_data, priority, timeout
                 )
@@ -151,7 +151,7 @@ class DistributedHTTPBridge:
         total_imported = 0
         total_records = 0
         failed_nodes = []
-        all_kdata = []  # ✅ 收集所有节点的数据
+        all_kdata = []  # 收集所有节点的数据
 
         for i, result in enumerate(results):
             if isinstance(result, Exception):
@@ -162,14 +162,14 @@ class DistributedHTTPBridge:
                     total_imported += result.result.get("imported_count", 0)
                     total_records += result.result.get("total_records", 0)
 
-                    # ✅ 收集节点返回的数据
+                    # 收集节点返回的数据
                     node_kdata = result.result.get("kdata", [])
                     if node_kdata:
                         all_kdata.extend(node_kdata)
             else:
                 failed_nodes.append(i)
 
-        # ✅ 关键：主系统统一保存所有节点返回的数据
+        # 关键：主系统统一保存所有节点返回的数据
         saved_to_db = False
         if all_kdata:
             try:
@@ -195,7 +195,7 @@ class DistributedHTTPBridge:
 
                 if success:
                     saved_to_db = True
-                    logger.info(f"✅ 主系统已保存数据: {asset_type.value}, {len(combined_data)}条记录")
+                    logger.info(f"主系统已保存数据: {asset_type.value}, {len(combined_data)}条记录")
                 else:
                     logger.error(f"❌ 主系统数据保存失败")
 
@@ -215,7 +215,7 @@ class DistributedHTTPBridge:
                 "distributed": True,
                 "nodes_used": len(sub_tasks),
                 "failed_nodes": len(failed_nodes),
-                "saved_to_db": saved_to_db,  # ✅ 标记数据是否已保存
+                "saved_to_db": saved_to_db,  # 标记数据是否已保存
                 "status": "completed"
             },
             started_at=datetime.now(),
@@ -368,7 +368,7 @@ class DistributedHTTPBridge:
                 timeout
             )
 
-            # ✅ 本地执行时也需要保存数据到主系统数据库
+            # 本地执行时也需要保存数据到主系统数据库
             if task_type == "data_import" and result.result:
                 kdata = result.result.get("kdata", [])
                 if kdata:
@@ -394,7 +394,7 @@ class DistributedHTTPBridge:
 
                             if success:
                                 result.result["saved_to_db"] = True
-                                logger.info(f"✅ 本地执行：数据已保存: {len(combined_data)}条记录")
+                                logger.info(f"本地执行：数据已保存: {len(combined_data)}条记录")
                             else:
                                 result.result["saved_to_db"] = False
                                 logger.error(f"❌ 本地执行：数据保存失败")

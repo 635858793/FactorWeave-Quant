@@ -50,7 +50,9 @@ class AlertCard(QFrame):
 
         # 警报图标和标题
         icon_label = QLabel(self._get_alert_icon())
-        icon_label.setFixedSize(24, 24)
+        icon_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        icon_label.setMinimumSize(24, 24)
+        icon_label.setMaximumSize(24, 24)
         icon_label.setAlignment(Qt.AlignCenter)
 
         title_label = QLabel(self.alert.title)
@@ -73,7 +75,9 @@ class AlertCard(QFrame):
 
         # 关闭按钮
         close_btn = QPushButton("×")
-        close_btn.setFixedSize(20, 20)
+        close_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        close_btn.setMinimumSize(20, 20)
+        close_btn.setMaximumSize(20, 20)
         close_btn.setStyleSheet("""
             QPushButton {
                 border: none;
@@ -442,7 +446,9 @@ class SmartAlertWidget(QWidget):
         # 外部告警渠道状态按钮
         self.channel_status_btn = QToolButton()
         self.channel_status_btn.setText("🔔")
-        self.channel_status_btn.setFixedSize(30, 30)
+        self.channel_status_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.channel_status_btn.setMinimumSize(30, 30)
+        self.channel_status_btn.setMaximumSize(30, 30)
         self.channel_status_btn.setToolTip("外部告警渠道状态")
         self.channel_status_btn.setStyleSheet("""
             QToolButton {

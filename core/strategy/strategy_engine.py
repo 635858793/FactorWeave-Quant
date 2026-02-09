@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 
 # 使用系统统一组件
-from core.adapters import get_config, get_performance_monitor
+from core.system_adapters import get_config, get_performance_monitor
 from .base_strategy import BaseStrategy, StrategySignal
 from .strategy_registry import get_strategy_registry, StrategyRegistry
 from .strategy_factory import get_strategy_factory

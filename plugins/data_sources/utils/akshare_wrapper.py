@@ -176,7 +176,7 @@ def patch_akshare_headers():
         requests.get = patched_get
         requests.post = patched_post
         
-        logger.info("✅ 已为AKShare应用反爬虫请求头补丁")
+        logger.info("已为AKShare应用反爬虫请求头补丁")
         return True
         
     except Exception as e:

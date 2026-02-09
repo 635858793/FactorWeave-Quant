@@ -87,7 +87,7 @@ def analyze_connection_pools():
             try:
                 logger.info(f"   尝试创建: {pool_name}")
                 db_service.create_connection_pool(pool_name, config)
-                logger.info(f"   ✅ 成功创建: {pool_name}")
+                logger.info(f"   成功创建: {pool_name}")
             except Exception as e:
                 logger.error(f"   ❌ 创建失败: {pool_name} - {e}")
                 failed_pools.append((pool_name, str(e)))
@@ -110,7 +110,7 @@ def analyze_connection_pools():
             for pool_name in sorted(missing_pools):
                 logger.warning(f"     - {pool_name}")
         else:
-            logger.info(f"   ✅ 所有配置的订单连接池都已创建")
+            logger.info(f"   所有配置的订单连接池都已创建")
 
         extra_pools = actual_order_pools - configured_order_pools
         if extra_pools:
@@ -139,7 +139,7 @@ def analyze_connection_pools():
                     has_orders = "orders" in table_names
                     has_fills = "fills" in table_names
 
-                    status = "✅" if has_orders else "⚠️ "
+                    status = "✓" if has_orders else "⚠️ "
                     logger.info(f"     {status} {db_file.name:40s} ({size_str}) - 表: {', '.join(table_names)}")
 
                     conn.close()
@@ -195,7 +195,7 @@ def analyze_connection_pools():
             logger.warning("  2. 数据库路径创建失败")
             logger.warning("  3. 连接池创建时出现异常")
         else:
-            logger.info("\n✅ 所有配置的订单连接池都已成功创建")
+            logger.info("\n所有配置的订单连接池都已成功创建")
 
         logger.info("=" * 80)
 

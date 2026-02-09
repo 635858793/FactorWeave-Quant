@@ -9,9 +9,9 @@ VWAP均值回归策略示例
 3. 期待价格回归到VWAP水平
 
 技术要点：
-- ✅ 使用vwap字段（成交量加权均价）
-- ✅ VWAP是机构交易的重要参考价
-- ✅ 适合日内或短期均值回归策略
+- 使用vwap字段（成交量加权均价）
+- VWAP是机构交易的重要参考价
+- 适合日内或短期均值回归策略
 
 作者：FactorWeave-Quant Team
 版本：V2.0.4
@@ -77,7 +77,7 @@ class VWAPMeanReversionStrategy:
         if error.mean() > 0.05:  # 允许5%误差（不同数据源可能有差异）
             logger.warning(f"VWAP计算公式验证异常，平均误差: {error.mean():.2%}")
         
-        logger.info("✅ VWAP数据验证通过")
+        logger.info("VWAP数据验证通过")
         return True
     
     def calculate_vwap_deviation(self, df: pd.DataFrame) -> pd.Series:

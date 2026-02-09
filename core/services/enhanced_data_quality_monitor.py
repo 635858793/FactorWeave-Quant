@@ -15,10 +15,21 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
-import pandas as pd
-import numpy as np
 
 from loguru import logger
+
+# 延迟导入pandas和numpy，避免在模块级别导入时调用matplotlib.get_backend()
+pd = None
+np = None
+
+def _import_pandas_numpy():
+    """延迟导入pandas和numpy"""
+    global pd, np
+    if pd is None:
+        import pandas as pd
+    if np is None:
+        import numpy as np
+    return pd, np
 
 # 导入数据质量风险管理器和告警规则引擎
 from ..data_quality_risk_manager import DataQualityRiskManager
@@ -192,7 +203,7 @@ class EnhancedDataQualityMonitor:
                 logger.error(f"质量监控循环异常: {e}")
                 threading.Event().wait(10)  # 异常时等待10秒
 
-    def monitor_data_quality(self, data_source: str, data_type: str, data: pd.DataFrame,
+    def monitor_data_quality(self, data_source: str, data_type: str, data: 'pd.DataFrame',
                              symbol: str = None) -> QualityMetrics:
         """
         监控数据质量
@@ -207,6 +218,9 @@ class EnhancedDataQualityMonitor:
             QualityMetrics: 质量评估结果
         """
         try:
+            # 延迟导入pandas和numpy
+            _import_pandas_numpy()
+            
             logger.debug(f"监控数据质量: {data_source} - {data_type} - {symbol}")
 
             # 计算各维度质量分数
@@ -283,9 +297,12 @@ class EnhancedDataQualityMonitor:
                 quality_issues=[f"质量监控异常: {e}"]
             )
 
-    def _calculate_completeness(self, data: pd.DataFrame) -> float:
+    def _calculate_completeness(self, data: 'pd.DataFrame') -> float:
         """计算完整性分数"""
         try:
+            # 延迟导入pandas和numpy
+            _import_pandas_numpy()
+            
             if data.empty:
                 return 0.0
 
@@ -299,9 +316,12 @@ class EnhancedDataQualityMonitor:
             logger.error(f"计算完整性分数失败: {e}")
             return 0.0
 
-    def _calculate_accuracy(self, data: pd.DataFrame, data_source: str, data_type: str) -> float:
+    def _calculate_accuracy(self, data: 'pd.DataFrame', data_source: str, data_type: str) -> float:
         """计算准确性分数"""
         try:
+            # 延迟导入pandas和numpy
+            _import_pandas_numpy()
+            
             if data.empty:
                 return 0.0
 
@@ -330,9 +350,12 @@ class EnhancedDataQualityMonitor:
             logger.error(f"计算准确性分数失败: {e}")
             return 0.5
 
-    def _calculate_timeliness(self, data: pd.DataFrame, data_type: str) -> float:
+    def _calculate_timeliness(self, data: 'pd.DataFrame', data_type: str) -> float:
         """计算及时性分数"""
         try:
+            # 延迟导入pandas和numpy
+            _import_pandas_numpy()
+            
             if data.empty:
                 return 0.0
 
@@ -372,9 +395,12 @@ class EnhancedDataQualityMonitor:
             logger.error(f"计算及时性分数失败: {e}")
             return 0.5
 
-    def _calculate_consistency(self, data: pd.DataFrame, data_source: str, data_type: str) -> float:
+    def _calculate_consistency(self, data: 'pd.DataFrame', data_source: str, data_type: str) -> float:
         """计算一致性分数"""
         try:
+            # 延迟导入pandas和numpy
+            _import_pandas_numpy()
+            
             if data.empty:
                 return 0.0
 
@@ -403,9 +429,12 @@ class EnhancedDataQualityMonitor:
             logger.error(f"计算一致性分数失败: {e}")
             return 0.5
 
-    def _calculate_validity(self, data: pd.DataFrame, data_type: str) -> float:
+    def _calculate_validity(self, data: 'pd.DataFrame', data_type: str) -> float:
         """计算有效性分数"""
         try:
+            # 延迟导入pandas和numpy
+            _import_pandas_numpy()
+            
             if data.empty:
                 return 0.0
 
@@ -455,9 +484,12 @@ class EnhancedDataQualityMonitor:
             logger.error(f"计算有效性分数失败: {e}")
             return 0.5
 
-    def _calculate_uniqueness(self, data: pd.DataFrame) -> float:
+    def _calculate_uniqueness(self, data: 'pd.DataFrame') -> float:
         """计算唯一性分数"""
         try:
+            # 延迟导入pandas和numpy
+            _import_pandas_numpy()
+            
             if data.empty:
                 return 0.0
 

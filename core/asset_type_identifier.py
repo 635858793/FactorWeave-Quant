@@ -378,14 +378,14 @@ class AssetTypeIdentifier:
             str: 数据库文件名
         """
         database_mapping = {
-            # ✅ 股票相关资产类型 -> 对应的独立数据库 (与 AssetDatabaseManager 动态路径保持一致)
+            # 股票相关资产类型 -> 对应的独立数据库 (与 AssetDatabaseManager 动态路径保持一致)
             AssetType.STOCK_A: "stock_a_data.duckdb",
             AssetType.STOCK_B: "stock_b_data.duckdb",
             AssetType.STOCK_HK: "stock_hk_data.duckdb",
             AssetType.STOCK_US: "stock_us_data.duckdb",
             AssetType.STOCK_H: "stock_h_data.duckdb",
 
-            # ✅ 其他资产类型 -> 专用数据库 (与 AssetDatabaseManager 动态路径保持一致)
+            # 其他资产类型 -> 专用数据库 (与 AssetDatabaseManager 动态路径保持一致)
             AssetType.FUTURES: "futures_data.duckdb",
             AssetType.CRYPTO: "crypto_data.duckdb",
             AssetType.FOREX: "forex_data.duckdb",
@@ -397,7 +397,7 @@ class AssetTypeIdentifier:
             AssetType.OPTION: "option_data.duckdb",
             AssetType.WARRANT: "warrant_data.duckdb",
 
-            # ✅ 板块数据 -> 对应的独立数据库
+            # 板块数据 -> 对应的独立数据库
             AssetType.SECTOR: "sector_data.duckdb",
             AssetType.INDUSTRY_SECTOR: "industry_sector_data.duckdb",
             AssetType.CONCEPT_SECTOR: "concept_sector_data.duckdb",

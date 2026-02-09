@@ -18,7 +18,7 @@ from examples.strategies.adj_price_momentum_strategy import AdjPriceMomentumStra
 from core.strategy_extensions import (
     IStrategyPlugin, StrategyInfo, ParameterDef,
     StrategyContext, StandardMarketData, Signal, TradeResult,
-    Position, PerformanceMetrics,
+    Position, TradingPerformanceMetrics,
     StrategyType, AssetType, TimeFrame, RiskLevel,
     SignalType, TradeAction, TradeStatus
 )
@@ -272,12 +272,12 @@ class AdjMomentumPlugin(IStrategyPlugin):
                 timestamp=datetime.now()
             )
 
-    def calculate_performance(self, context: StrategyContext) -> PerformanceMetrics:
+    def calculate_performance(self, context: StrategyContext) -> TradingPerformanceMetrics:
         """计算策略性能指标"""
         try:
             # 这里应该实现实际的性能计算逻辑
             # 现在返回模拟数据
-            return PerformanceMetrics(
+            return TradingPerformanceMetrics(
                 total_return=0.0,
                 annual_return=0.0,
                 sharpe_ratio=0.0,
@@ -296,7 +296,7 @@ class AdjMomentumPlugin(IStrategyPlugin):
         except Exception as e:
             logger.error(f"性能计算失败: {e}")
             # 返回默认性能指标
-            return PerformanceMetrics(
+            return TradingPerformanceMetrics(
                 total_return=0.0,
                 annual_return=0.0,
                 sharpe_ratio=0.0,
@@ -472,12 +472,12 @@ class VWAPReversionPlugin(IStrategyPlugin):
                 timestamp=datetime.now()
             )
 
-    def calculate_performance(self, context: StrategyContext) -> PerformanceMetrics:
+    def calculate_performance(self, context: StrategyContext) -> TradingPerformanceMetrics:
         """计算策略性能指标"""
         try:
             # 这里应该实现实际的性能计算逻辑
             # 现在返回模拟数据
-            return PerformanceMetrics(
+            return TradingPerformanceMetrics(
                 total_return=0.0,
                 annual_return=0.0,
                 sharpe_ratio=0.0,
@@ -496,7 +496,7 @@ class VWAPReversionPlugin(IStrategyPlugin):
         except Exception as e:
             logger.error(f"VWAP性能计算失败: {e}")
             # 返回默认性能指标
-            return PerformanceMetrics(
+            return TradingPerformanceMetrics(
                 total_return=0.0,
                 annual_return=0.0,
                 sharpe_ratio=0.0,
@@ -689,16 +689,16 @@ def register_20field_strategies(strategy_service):
             'adj_momentum_v2',
             AdjMomentumPlugin
         )
-        logger.info("✅ 已注册: 复权价格动量策略 (adj_momentum_v2)")
+        logger.info("已注册: 复权价格动量策略 (adj_momentum_v2)")
 
         # 注册VWAP均值回归策略
         strategy_service.register_strategy_plugin(
             'vwap_reversion_v2',
             VWAPReversionPlugin
         )
-        logger.info("✅ 已注册: VWAP均值回归策略 (vwap_reversion_v2)")
+        logger.info("已注册: VWAP均值回归策略 (vwap_reversion_v2)")
 
-        logger.success("✅ 20字段标准策略注册完成！")
+        logger.success("20字段标准策略注册完成！")
 
     except Exception as e:
         logger.error(f"注册20字段策略失败: {e}")
@@ -729,4 +729,4 @@ if __name__ == "__main__":
     print(f"   参数数量: {len(vwap_info.parameters)}")
 
     print("\n" + "=" * 60)
-    print("✅ 策略适配器加载成功")
+    print("策略适配器加载成功")

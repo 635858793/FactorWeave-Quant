@@ -149,7 +149,7 @@ class ScheduledImportDialog(QDialog):
         status_map = {
             'pending': '⏸️ 待执行',
             'running': '▶️ 运行中',
-            'completed': '✅ 已完成',
+            'completed': '已完成',
             'failed': '❌ 失败',
             'paused': '⏸️ 已暂停'
         }

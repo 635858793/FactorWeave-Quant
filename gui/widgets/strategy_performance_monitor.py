@@ -7,7 +7,7 @@ from enum import Enum
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, 
     QFrame, QProgressBar, QTableWidget, QTableWidgetItem,
-    QHeaderView, QGroupBox
+    QHeaderView, QGroupBox, QSizePolicy
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QFont, QColor, QPainter, QLinearGradient
@@ -17,7 +17,7 @@ from core.events import (
     PerformanceUpdatedEvent, EventType, EventPriority, EventFilter,
     get_event_bus, EventHandler
 )
-from core.strategy_extensions import PerformanceMetrics
+from core.strategy_extensions import TradingPerformanceMetrics
 
 
 class PerformanceCard(QFrame):
@@ -74,7 +74,7 @@ class PerformanceCard(QFrame):
         if value_label:
             value_label.setText(value)
     
-    def update_metrics(self, metrics: PerformanceMetrics):
+    def update_metrics(self, metrics: TradingPerformanceMetrics):
         """更新性能指标"""
         pass
 
@@ -142,6 +142,8 @@ class StrategyPerformanceMonitor(QWidget):
         ])
         self.history_table.horizontalHeader().setStretchLastSection(True)
         self.history_table.setRowCount(0)
+        self.history_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.history_table.setMinimumHeight(100)
         self.history_table.setMaximumHeight(150)
         self.history_table.setStyleSheet("""
             QTableWidget {
@@ -207,7 +209,7 @@ class StrategyPerformanceMonitor(QWidget):
         """处理策略停止事件"""
         self.logger.info(f"策略 {event.strategy_id} 已停止")
     
-    def _update_metrics(self, metrics: PerformanceMetrics):
+    def _update_metrics(self, metrics: TradingPerformanceMetrics):
         """更新性能指标卡片"""
         self.total_return_card.set_value(f"{metrics.total_return*100:.2f}%")
         self.sharpe_card.set_value(f"{metrics.sharpe_ratio:.2f}")
@@ -218,7 +220,7 @@ class StrategyPerformanceMonitor(QWidget):
         profit_factor = self._calculate_profit_factor(metrics)
         self.profit_factor_card.set_value(f"{profit_factor:.2f}")
     
-    def _calculate_profit_factor(self, metrics: PerformanceMetrics) -> float:
+    def _calculate_profit_factor(self, metrics: TradingPerformanceMetrics) -> float:
         """计算盈亏比"""
         if metrics.profitable_trades == 0:
             return 0.0
@@ -226,7 +228,7 @@ class StrategyPerformanceMonitor(QWidget):
             return float('inf') if metrics.profitable_trades > 0 else 0.0
         return metrics.profitable_trades / metrics.losing_trades
     
-    def _add_to_history(self, metrics: PerformanceMetrics):
+    def _add_to_history(self, metrics: TradingPerformanceMetrics):
         """添加性能记录到历史"""
         record = {
             'timestamp': datetime.now(),

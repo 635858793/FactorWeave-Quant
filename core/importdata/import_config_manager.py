@@ -7,6 +7,7 @@
 """
 
 import json
+import os
 from loguru import logger
 from typing import Dict, List, Any, Optional, Union
 from datetime import datetime, timedelta
@@ -78,7 +79,6 @@ class DataSourceConfig:
 
 @dataclass
 class ImportTaskConfig:
-    import os
     """导入任务配置"""
     task_id: str                                # 任务ID
     name: str                                   # 任务名称
@@ -88,6 +88,8 @@ class ImportTaskConfig:
     symbols: List[str]                          # 股票代码列表
     frequency: DataFrequency                    # 数据频率
     mode: ImportMode                            # 导入模式
+    description: Optional[str] = None           # 任务描述
+    data_usage: str = "general"                 # 数据用途
     start_date: Optional[str] = None            # 开始日期
     end_date: Optional[str] = None              # 结束日期
     schedule_cron: Optional[str] = None         # 定时任务表达式
@@ -161,7 +163,7 @@ class ImportProgress:
     start_time: Optional[str] = None   # 开始时间
     end_time: Optional[str] = None     # 结束时间
     error_message: Optional[str] = None  # 错误信息
-    processed_symbols_list: List[str] = field(default_factory=list)  # ✅ 修复：已处理的股票列表（用于恢复）
+    processed_symbols_list: List[str] = field(default_factory=list)  # 修复：已处理的股票列表（用于恢复）
 
     @property
     def progress_percentage(self) -> float:
@@ -191,7 +193,7 @@ class ImportProgress:
     def from_dict(cls, data: Dict[str, Any]) -> 'ImportProgress':
         """从字典创建"""
         data['status'] = ImportStatus(data['status'])
-        # ✅ 修复：处理processed_symbols_list字段（兼容旧数据）
+        # 修复：处理processed_symbols_list字段（兼容旧数据）
         if 'processed_symbols_list' not in data:
             data['processed_symbols_list'] = []
         return cls(**data)

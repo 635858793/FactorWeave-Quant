@@ -52,7 +52,7 @@ class SystemHealthChecker:
             'memory_usage': self._check_memory_usage(),
             'dependencies': self._check_dependencies(),
             'database_connectivity': self._check_database_connectivity(),
-            'connection_pool_health': self._check_connection_pool_health(),  # ✅ 新增
+            'connection_pool_health': self._check_connection_pool_health(),  # 新增
             'ui_components': self._check_ui_components(),
             'overall_health': 'unknown'
         }
@@ -362,7 +362,7 @@ class SystemHealthChecker:
             }
 
     def _check_connection_pool_health(self) -> Dict[str, Any]:
-        """✅ 检查DuckDB连接池健康状态"""
+        """检查DuckDB连接池健康状态"""
         try:
             logger.info("检查DuckDB连接池健康状态...")
 

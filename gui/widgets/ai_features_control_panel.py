@@ -216,7 +216,7 @@ class AIStatusWidget(QWidget):
 
         layout.addLayout(controls_layout)
 
-        # ✅ 修复：加载真实数据而不是示例数据
+        # 修复：加载真实数据而不是示例数据
         self.load_real_models()
 
     def setup_timer(self):
@@ -226,12 +226,12 @@ class AIStatusWidget(QWidget):
         self.update_timer.start(5000)  # 每5秒更新一次
 
     def load_real_models(self):
-        """✅ 修复：加载真实模型数据（使用get_enhanced_model_info获取真实数据）"""
+        """修复：加载真实模型数据（使用get_enhanced_model_info获取真实数据）"""
         try:
             if self.ai_prediction_service:
                 models = []
 
-                # ✅ 修复：使用get_enhanced_model_info获取真实模型信息
+                # 修复：使用get_enhanced_model_info获取真实模型信息
                 try:
                     model_info = self.ai_prediction_service.get_enhanced_model_info()
                     performance_metrics = model_info.get('performance_metrics', {})
@@ -239,7 +239,7 @@ class AIStatusWidget(QWidget):
                     # 获取可用模型列表
                     available_models = model_info.get('available_models', [])
 
-                    # ✅ 修复：从性能指标中获取真实数据（安全的类型转换）
+                    # 修复：从性能指标中获取真实数据（安全的类型转换）
                     accuracy = performance_metrics.get('prediction_accuracy', 0.75)
                     if not isinstance(accuracy, (int, float)):
                         try:
@@ -272,7 +272,7 @@ class AIStatusWidget(QWidget):
                             failed_predictions = 0
                     failed_predictions = max(0, failed_predictions)
 
-                    # ✅ 修复：安全的除法操作
+                    # 修复：安全的除法操作
                     error_rate = (failed_predictions / total_predictions) if total_predictions > 0 else 0.0
                     error_rate = max(0.0, min(1.0, error_rate))  # 限制在0-1之间
 
@@ -291,13 +291,13 @@ class AIStatusWidget(QWidget):
 
                     # 如果没有可用模型，但从性能指标看服务可用，创建通用模型
                     if not models and performance_metrics:
-                        # ✅ 修复：基于真实性能指标创建模型信息
+                        # 修复：基于真实性能指标创建模型信息
                         model_status = AIServiceStatus.ACTIVE if total_predictions > 0 or accuracy > 0 else AIServiceStatus.INACTIVE
                         models.append(AIModelInfo(
                             "AI预测模型", "v1.0.0", model_status,
-                            accuracy=accuracy,  # ✅ 基于真实数据
-                            prediction_count=total_predictions,  # ✅ 真实预测数量
-                            error_rate=error_rate,  # ✅ 基于真实数据计算
+                            accuracy=accuracy,  # 基于真实数据
+                            prediction_count=total_predictions,  # 真实预测数量
+                            error_rate=error_rate,  # 基于真实数据计算
                             last_trained=datetime.now() - timedelta(days=1) if total_predictions > 0 else None
                         ))
 
@@ -308,16 +308,16 @@ class AIStatusWidget(QWidget):
                         model_info = self.ai_prediction_service.get_model_info()
                         available_models = model_info.get('available_models', [])
 
-                        # ✅ 修复：使用真实模型信息，如果没有性能数据则标记为INACTIVE
+                        # 修复：使用真实模型信息，如果没有性能数据则标记为INACTIVE
                         for model_name in available_models:
                             models.append(AIModelInfo(
                                 name=model_name,
                                 version="v1.0.0",
-                                status=AIServiceStatus.INACTIVE,  # ✅ 没有性能数据时标记为INACTIVE
-                                accuracy=0.0,  # ✅ 无数据时使用0.0而不是虚假的0.75
-                                prediction_count=0,  # ✅ 真实数据
-                                error_rate=0.0,  # ✅ 无数据时使用0.0
-                                last_trained=None  # ✅ 无训练数据时不设置
+                                status=AIServiceStatus.INACTIVE,  # 没有性能数据时标记为INACTIVE
+                                accuracy=0.0,  # 无数据时使用0.0而不是虚假的0.75
+                                prediction_count=0,  # 真实数据
+                                error_rate=0.0,  # 无数据时使用0.0
+                                last_trained=None  # 无训练数据时不设置
                             ))
                     except Exception as e2:
                         logger.warning(f"获取基础模型信息也失败: {e2}")
@@ -362,17 +362,17 @@ class AIStatusWidget(QWidget):
 
     def load_sample_models(self):
         """加载示例模型数据（降级方案 - 仅在服务完全不可用时使用）"""
-        # ✅ 修复：降级时显示真实的状态（INACTIVE，无数据）
+        # 修复：降级时显示真实的状态（INACTIVE，无数据）
         sample_models = [
             AIModelInfo(
                 "执行时间预测器", "v2.1.0", AIServiceStatus.INACTIVE,
-                accuracy=0.0, prediction_count=0, error_rate=0.0,  # ✅ 使用真实的无数据状态
-                last_trained=None  # ✅ 无训练数据
+                accuracy=0.0, prediction_count=0, error_rate=0.0,  # 使用真实的无数据状态
+                last_trained=None  # 无训练数据
             ),
             AIModelInfo(
                 "参数优化器", "v1.8.3", AIServiceStatus.INACTIVE,
-                accuracy=0.0, prediction_count=0, error_rate=0.0,  # ✅ 使用真实的无数据状态
-                last_trained=None  # ✅ 无训练数据
+                accuracy=0.0, prediction_count=0, error_rate=0.0,  # 使用真实的无数据状态
+                last_trained=None  # 无训练数据
             ),
         ]
 
@@ -382,7 +382,7 @@ class AIStatusWidget(QWidget):
         self.update_models_table()
         self.update_overview_stats()
 
-        # ✅ 添加警告日志
+        # 添加警告日志
         logger.warning("AI服务不可用，使用降级模式显示模型状态（所有指标为0，状态为INACTIVE）")
 
     def update_models_table(self):
@@ -474,12 +474,12 @@ class AIStatusWidget(QWidget):
             """)
 
     def update_status_display(self):
-        """✅ 修复：更新状态显示（不再随机修改数据）"""
+        """修复：更新状态显示（不再随机修改数据）"""
         # 重新加载真实数据
         self.load_real_models()
 
     def refresh_ai_status(self):
-        """✅ 修复：刷新AI状态（连接真实服务）"""
+        """修复：刷新AI状态（连接真实服务）"""
         logger.info("刷新AI服务状态")
         try:
             # 重新初始化服务
@@ -494,7 +494,7 @@ class AIStatusWidget(QWidget):
             QMessageBox.warning(self, "刷新失败", f"无法刷新AI服务状态: {str(e)}")
 
     def retrain_models(self):
-        """✅ 修复：重新训练模型（实际功能）"""
+        """修复：重新训练模型（实际功能）"""
         reply = QMessageBox.question(
             self, "确认重训练", "确定要重新训练所有AI模型吗？这可能需要较长时间。",
             QMessageBox.Yes | QMessageBox.No
@@ -502,7 +502,7 @@ class AIStatusWidget(QWidget):
 
         if reply == QMessageBox.Yes:
             try:
-                # ✅ 修复：实际训练模型
+                # 修复：实际训练模型
                 if self.ai_prediction_service:
                     # 标记模型为训练中
                     for model in self.ai_models.values():
@@ -512,7 +512,7 @@ class AIStatusWidget(QWidget):
                     self.update_models_table()
                     self.update_overview_stats()
 
-                    # ✅ 修复：通过UI适配器触发模型重训练
+                    # 修复：通过UI适配器触发模型重训练
                     if self.ui_adapter and hasattr(self.ui_adapter, 'retrain_ai_models'):
                         try:
                             self.ui_adapter.retrain_ai_models()
@@ -577,7 +577,7 @@ class AIStatusWidget(QWidget):
             logger.error(f"恢复模型状态失败: {e}")
 
     def export_report(self):
-        """✅ 修复：导出AI状态报告（实际功能）"""
+        """修复：导出AI状态报告（实际功能）"""
         try:
             from pathlib import Path
             import json
@@ -726,7 +726,7 @@ class PredictionDisplayWidget(QWidget):
         self.update_timer.start(10000)  # 每10秒更新统计
 
     def execute_prediction(self):
-        """✅ 修复：执行预测（使用真实服务）"""
+        """修复：执行预测（使用真实服务）"""
         prediction_type_text = self.prediction_type_combo.currentText()
         confidence_threshold = self.confidence_slider.value() / 100.0
 
@@ -738,7 +738,7 @@ class PredictionDisplayWidget(QWidget):
                 QMessageBox.warning(self, "服务不可用", "AI预测服务不可用，无法执行预测")
                 return
 
-            # ✅ 修复：映射UI预测类型到后端PredictionType
+            # 修复：映射UI预测类型到后端PredictionType
             from core.services.ai_prediction_service import PredictionType
 
             prediction_type_map = {
@@ -754,7 +754,7 @@ class PredictionDisplayWidget(QWidget):
                 QMessageBox.warning(self, "无效类型", f"不支持的预测类型: {prediction_type_text}")
                 return
 
-            # ✅ 修复：准备预测数据（从UI适配器或当前任务获取）
+            # 修复：准备预测数据（从UI适配器或当前任务获取）
             prediction_data = {}
             if self.ui_adapter:
                 # 尝试从适配器获取当前任务信息
@@ -773,8 +773,8 @@ class PredictionDisplayWidget(QWidget):
                 except Exception as e:
                     logger.warning(f"获取任务配置失败: {e}")
 
-            # ✅ 修复：优先通过UI适配器调用预测服务
-            # ✅ 修复：将PredictionType枚举转换为字符串（后端期望字符串）
+            # 修复：优先通过UI适配器调用预测服务
+            # 修复：将PredictionType枚举转换为字符串（后端期望字符串）
             prediction_type_str = prediction_type.value if hasattr(prediction_type, 'value') else str(prediction_type)
 
             prediction_result = None
@@ -787,7 +787,7 @@ class PredictionDisplayWidget(QWidget):
             # 降级：直接调用服务
             if not prediction_result and self.ai_prediction_service:
                 try:
-                    # ✅ 修复：后端predict方法期望PredictionType枚举或字符串
+                    # 修复：后端predict方法期望PredictionType枚举或字符串
                     prediction_result = self.ai_prediction_service.predict(prediction_type, prediction_data)
                 except Exception as e:
                     logger.error(f"直接调用预测服务也失败: {e}")
@@ -799,7 +799,7 @@ class PredictionDisplayWidget(QWidget):
             execution_time = (time.time() - start_time) * 1000  # 转换为毫秒
 
             if prediction_result:
-                # ✅ 修复：安全地解析预测结果
+                # 修复：安全地解析预测结果
                 if not isinstance(prediction_result, dict):
                     logger.warning(f"prediction_result不是字典类型: {type(prediction_result)}")
                     prediction_result = {}
@@ -927,7 +927,7 @@ class PredictionDisplayWidget(QWidget):
         daily_count = sum(1 for p in self.predictions if p.timestamp.date() == today)
         self.daily_predictions_label.setText(str(daily_count))
 
-        # ✅ 修复：平均置信度（安全的除法操作）
+        # 修复：平均置信度（安全的除法操作）
         if len(self.predictions) > 0:
             avg_confidence = sum(p.confidence for p in self.predictions) / len(self.predictions)
             avg_confidence = max(0.0, min(1.0, avg_confidence))  # 限制在0-1之间
@@ -935,14 +935,14 @@ class PredictionDisplayWidget(QWidget):
             avg_confidence = 0.0
         self.avg_confidence_label.setText(f"{avg_confidence:.1%}")
 
-        # ✅ 修复：成功率（置信度 >= 70%）（安全的除法操作）
+        # 修复：成功率（置信度 >= 70%）（安全的除法操作）
         success_count = sum(1 for p in self.predictions if p.confidence >= 0.7)
         success_rate = (success_count / len(self.predictions)) if len(self.predictions) > 0 else 0.0
         success_rate = max(0.0, min(1.0, success_rate))  # 限制在0-1之间
         self.success_rate_label.setText(f"{success_rate:.1%}")
 
     def simulate_predictions(self):
-        """✅ 修复：移除自动模拟预测（不再使用随机数据）"""
+        """修复：移除自动模拟预测（不再使用随机数据）"""
         # 不再自动生成模拟预测，用户需要手动点击"执行预测"按钮
         pass
 
@@ -991,13 +991,13 @@ class UserBehaviorWidget(QWidget):
         learning_rate_layout.addWidget(self.learning_rate_label)
         control_layout.addRow("学习速率:", learning_rate_layout)
 
-        # ✅ 修复：数据保留期（暂时仅显示，实际应用需要后端支持）
+        # 修复：数据保留期（暂时仅显示，实际应用需要后端支持）
         self.retention_spin = QSpinBox()
         self.retention_spin.setRange(7, 365)
         self.retention_spin.setValue(30)
         self.retention_spin.setSuffix("天")
         control_layout.addRow("数据保留期:", self.retention_spin)
-        # ✅ 注意：数据保留期设置需要后端UserBehaviorLearner支持set_retention_period方法
+        # 注意：数据保留期设置需要后端UserBehaviorLearner支持set_retention_period方法
         # 当前版本仅显示，实际应用需要后端实现
 
         layout.addWidget(control_group)
@@ -1073,16 +1073,16 @@ class UserBehaviorWidget(QWidget):
             lambda v: self.learning_rate_label.setText(f"{v/10:.1f}")
         )
 
-        # ✅ 修复：连接学习模式切换信号
+        # 修复：连接学习模式切换信号
         self.learning_mode_combo.currentTextChanged.connect(self.on_learning_mode_changed)
 
-        # ✅ 修复：连接数据保留期更改信号
+        # 修复：连接数据保留期更改信号
         self.retention_spin.valueChanged.connect(self._on_retention_changed)
 
     def load_real_data(self):
-        """✅ 修复：加载真实用户行为数据（优先使用UI适配器）"""
+        """修复：加载真实用户行为数据（优先使用UI适配器）"""
         try:
-            # ✅ 修复：优先通过UI适配器获取用户行为统计
+            # 修复：优先通过UI适配器获取用户行为统计
             behavior_stats = None
             if self.ui_adapter and hasattr(self.ui_adapter, 'get_user_behavior_stats'):
                 try:
@@ -1096,7 +1096,7 @@ class UserBehaviorWidget(QWidget):
                     self.insights_text.setText("用户行为学习器不可用")
                     return
 
-                # ✅ 修复：获取真实用户ID（从UI适配器或使用默认值）
+                # 修复：获取真实用户ID（从UI适配器或使用默认值）
                 user_id = "default_user"
                 if self.ui_adapter:
                     try:
@@ -1108,7 +1108,7 @@ class UserBehaviorWidget(QWidget):
                     except Exception as e:
                         logger.warning(f"获取用户ID失败: {e}")
 
-                # ✅ 修复：获取真实用户画像
+                # 修复：获取真实用户画像
                 user_profile = self.user_behavior_learner.get_user_profile(user_id, force_refresh=False)
             else:
                 # 使用UI适配器返回的数据
@@ -1227,7 +1227,7 @@ class UserBehaviorWidget(QWidget):
                     pattern_progress = min(100, int((patterns_count / 20) * 100))
                     self.pattern_progress.setValue(pattern_progress)
 
-                # ✅ 修复：获取真实行为洞察（behavior_analysis是字典，不是对象）
+                # 修复：获取真实行为洞察（behavior_analysis是字典，不是对象）
                 behavior_analysis = None
                 try:
                     behavior_analysis = self.user_behavior_learner.get_user_behavior_analysis(user_id)
@@ -1236,7 +1236,7 @@ class UserBehaviorWidget(QWidget):
 
                 insights_lines = []
                 if behavior_analysis and isinstance(behavior_analysis, dict):
-                    # ✅ 修复：从字典中提取洞察信息
+                    # 修复：从字典中提取洞察信息
                     # 提取常用操作（从action_distribution）
                     action_distribution = behavior_analysis.get('action_distribution', {})
                     if action_distribution:
@@ -1265,7 +1265,7 @@ class UserBehaviorWidget(QWidget):
                     if recommendation_accuracy > 0:
                         insights_lines.append(f"• AI推荐接受率: {recommendation_accuracy:.1%}")
 
-                # ✅ 修复：获取用户推荐
+                # 修复：获取用户推荐
                 recommendations = self.user_behavior_learner.get_user_recommendations(user_id, limit=3)
                 if recommendations:
                     insights_lines.append(f"• 当前有 {len(recommendations)} 个活跃推荐")
@@ -1292,7 +1292,7 @@ class UserBehaviorWidget(QWidget):
             self.insights_text.setText(f"加载数据失败: {str(e)}")
 
     def on_learning_mode_changed(self, mode_text: str):
-        """✅ 修复：处理学习模式切换"""
+        """修复：处理学习模式切换"""
         try:
             # 映射UI文本到后端模式
             mode_map = {
@@ -1304,7 +1304,7 @@ class UserBehaviorWidget(QWidget):
             mode = mode_map.get(mode_text, "auto")
             enabled = mode != "paused"
 
-            # ✅ 修复：通过UI适配器设置学习模式
+            # 修复：通过UI适配器设置学习模式
             if self.ui_adapter and hasattr(self.ui_adapter, 'set_learning_mode'):
                 try:
                     success = self.ui_adapter.set_learning_mode(mode, enabled)
@@ -1324,10 +1324,10 @@ class UserBehaviorWidget(QWidget):
             logger.error(f"处理学习模式切换失败: {e}")
 
     def _on_retention_changed(self, days: int):
-        """✅ 修复：处理数据保留期更改"""
+        """修复：处理数据保留期更改"""
         try:
             logger.info(f"数据保留期设置为: {days}天")
-            # ✅ 注意：实际应用需要后端UserBehaviorLearner支持set_retention_period方法
+            # 注意：实际应用需要后端UserBehaviorLearner支持set_retention_period方法
             # 当前版本仅记录日志，实际应用需要后端实现
             if self.user_behavior_learner and hasattr(self.user_behavior_learner, 'set_retention_period'):
                 try:
@@ -1393,7 +1393,7 @@ class AIFeaturesControlPanel(QWidget):
         # 创建选项卡
         self.tab_widget = QTabWidget()
 
-        # ✅ 修复：传递ui_adapter给所有子组件
+        # 修复：传递ui_adapter给所有子组件
         # AI状态监控选项卡
         status_tab = AIStatusWidget(ui_adapter=self.ui_adapter)
         self.tab_widget.addTab(status_tab, "状态监控")
@@ -1422,7 +1422,7 @@ class AIFeaturesControlPanel(QWidget):
         self.behavior_widget = behavior_tab
 
     def create_recommendation_tab(self) -> QWidget:
-        """✅ 修复：创建配置推荐选项卡（连接真实推荐引擎）"""
+        """修复：创建配置推荐选项卡（连接真实推荐引擎）"""
         widget = QWidget()
         layout = QVBoxLayout(widget)
 
@@ -1451,7 +1451,7 @@ class AIFeaturesControlPanel(QWidget):
         results_group = QGroupBox("[INFO] 推荐结果")
         results_layout = QVBoxLayout(results_group)
 
-        # ✅ 修复：使用QTextEdit显示推荐结果（支持多行文本）
+        # 修复：使用QTextEdit显示推荐结果（支持多行文本）
         self.recommendations_text = QTextEdit()
         self.recommendations_text.setReadOnly(True)
         self.recommendations_text.setText("点击'获取推荐'按钮获取智能配置推荐")
@@ -1464,7 +1464,7 @@ class AIFeaturesControlPanel(QWidget):
         apply_all_btn.clicked.connect(lambda: self.apply_recommendations(apply_all=True))
         actions_layout.addWidget(apply_all_btn)
 
-        # ✅ 修复：当前只有一个推荐，"应用选中"暂时禁用或提示
+        # 修复：当前只有一个推荐，"应用选中"暂时禁用或提示
         apply_selected_btn = QPushButton("应用选中")
         apply_selected_btn.setToolTip("当前版本仅支持应用全部推荐")
         apply_selected_btn.clicked.connect(lambda: QMessageBox.information(
@@ -1483,7 +1483,7 @@ class AIFeaturesControlPanel(QWidget):
 
         layout.addWidget(results_group)
 
-        # ✅ 修复：初始化推荐引擎
+        # 修复：初始化推荐引擎
         self.config_recommendation_engine = None
         if CORE_AVAILABLE:
             try:
@@ -1639,7 +1639,7 @@ class AIFeaturesControlPanel(QWidget):
                 logger.error(f"刷新策略统计信息失败: {e}")
 
     def get_recommendations(self):
-        """✅ 修复：获取配置推荐（连接真实推荐引擎）"""
+        """修复：获取配置推荐（连接真实推荐引擎）"""
         try:
             if not self.config_recommendation_engine:
                 QMessageBox.warning(self, "服务不可用", "配置推荐引擎不可用")
@@ -1647,7 +1647,7 @@ class AIFeaturesControlPanel(QWidget):
 
             recommendation_type = self.recommendation_type_combo.currentText()
 
-            # ✅ 修复：获取当前任务配置（从UI适配器）
+            # 修复：获取当前任务配置（从UI适配器）
             task_config = None
             default_config_created = False
             if self.ui_adapter:
@@ -1663,7 +1663,7 @@ class AIFeaturesControlPanel(QWidget):
                 except Exception as e:
                     logger.warning(f"获取任务配置失败: {e}")
 
-            # ✅ 修复：如果没有任务配置，使用默认配置
+            # 修复：如果没有任务配置，使用默认配置
             if not task_config:
                 from core.importdata.import_config_manager import ImportTaskConfig, DataFrequency, ImportMode
                 task_config = ImportTaskConfig(
@@ -1681,7 +1681,7 @@ class AIFeaturesControlPanel(QWidget):
                 default_config_created = True
                 logger.info("使用默认任务配置进行推荐查询")
 
-            # ✅ 修复：调用真实推荐引擎（使用recommend_config方法）
+            # 修复：调用真实推荐引擎（使用recommend_config方法）
             from core.ai.config_recommendation_engine import RecommendationStrategy, OptimizationObjective
 
             # 根据推荐类型选择策略
@@ -1704,17 +1704,17 @@ class AIFeaturesControlPanel(QWidget):
             # 保存推荐（ConfigRecommendation对象）
             self.current_recommendations = [recommendation] if recommendation else []
 
-            # ✅ 修复：格式化并显示推荐结果（正确处理ConfigRecommendation对象）
+            # 修复：格式化并显示推荐结果（正确处理ConfigRecommendation对象）
             if recommendation:
                 result_lines = ["当前推荐配置：\n"]
 
-                # ✅ 修复：ConfigRecommendation是dataclass，recommended_config是ImportTaskConfig对象
+                # 修复：ConfigRecommendation是dataclass，recommended_config是ImportTaskConfig对象
                 rec_config = recommendation.recommended_config
                 confidence = recommendation.confidence_score
                 expected_perf = recommendation.expected_performance
                 rationale = recommendation.optimization_rationale
 
-                # ✅ 添加：检查推荐是否基于真实数据（基于置信度判断）
+                # 添加：检查推荐是否基于真实数据（基于置信度判断）
                 if confidence < 0.3:
                     result_lines.append("⚠️ 注意：此推荐基于有限的历史数据，置信度较低。建议在测试环境验证后再应用。\n")
 
@@ -1787,13 +1787,13 @@ class AIFeaturesControlPanel(QWidget):
             QMessageBox.critical(self, "获取推荐失败", f"获取配置推荐时发生错误:\n{str(e)}")
 
     def apply_recommendations(self, apply_all: bool = True):
-        """✅ 修复：应用推荐配置"""
+        """修复：应用推荐配置"""
         try:
             if not self.current_recommendations:
                 QMessageBox.warning(self, "无推荐", "没有可应用的推荐配置")
                 return
 
-            # ✅ 修复：当前版本仅支持应用全部推荐（apply_all参数保留以便未来扩展）
+            # 修复：当前版本仅支持应用全部推荐（apply_all参数保留以便未来扩展）
             if not apply_all:
                 QMessageBox.information(
                     self, "提示",
@@ -1802,14 +1802,14 @@ class AIFeaturesControlPanel(QWidget):
                 )
                 # 继续执行，应用全部推荐
 
-            # ✅ 修复：应用ConfigRecommendation对象（正确处理ImportTaskConfig）
+            # 修复：应用ConfigRecommendation对象（正确处理ImportTaskConfig）
             applied_count = 0
             for rec in self.current_recommendations:
                 try:
-                    # ✅ 修复：rec是ConfigRecommendation对象，recommended_config是ImportTaskConfig对象
+                    # 修复：rec是ConfigRecommendation对象，recommended_config是ImportTaskConfig对象
                     rec_config = rec.recommended_config
 
-                    # ✅ 修复：通过UI适配器应用推荐配置
+                    # 修复：通过UI适配器应用推荐配置
                     if self.ui_adapter:
                         # 尝试应用整个配置
                         if hasattr(self.ui_adapter, 'apply_task_config'):
@@ -1841,7 +1841,7 @@ class AIFeaturesControlPanel(QWidget):
                                             current_config = self.ui_adapter.get_current_task_config()
 
                                         if current_config:
-                                            # ✅ 修复：检查current_config是否为ImportTaskConfig对象
+                                            # 修复：检查current_config是否为ImportTaskConfig对象
                                             from core.importdata.import_config_manager import ImportTaskConfig
                                             if isinstance(current_config, ImportTaskConfig):
                                                 # 更新配置参数（rec_config是ImportTaskConfig对象）
@@ -1866,7 +1866,7 @@ class AIFeaturesControlPanel(QWidget):
                                     current_config = self.ui_adapter.get_current_task_config()
 
                                 if current_config:
-                                    # ✅ 修复：检查current_config是否为ImportTaskConfig对象
+                                    # 修复：检查current_config是否为ImportTaskConfig对象
                                     from core.importdata.import_config_manager import ImportTaskConfig
                                     if isinstance(current_config, ImportTaskConfig):
                                         # 更新配置参数
@@ -1922,7 +1922,7 @@ class AIFeaturesControlPanel(QWidget):
             QMessageBox.critical(self, "应用失败", f"应用推荐配置时发生错误:\n{str(e)}")
 
     def ignore_recommendations(self):
-        """✅ 修复：忽略推荐"""
+        """修复：忽略推荐"""
         self.current_recommendations = []
         self.recommendations_text.setText("推荐已被忽略")
         logger.info("用户忽略了配置推荐")
@@ -1932,12 +1932,12 @@ class AIFeaturesControlPanel(QWidget):
         self.ai_master_switch.toggled.connect(self.on_ai_master_switch_toggled)
 
     def on_ai_master_switch_toggled(self, enabled: bool):
-        """✅ 修复：处理AI总开关切换（真正控制AI服务）"""
+        """修复：处理AI总开关切换（真正控制AI服务）"""
         if enabled:
             logger.info("AI功能已启用")
             self.tab_widget.setEnabled(True)
 
-            # ✅ 修复：初始化所有AI服务
+            # 修复：初始化所有AI服务
             if hasattr(self, 'status_widget'):
                 self.status_widget.initialize_services()
             if hasattr(self, 'prediction_widget'):
@@ -1954,10 +1954,10 @@ class AIFeaturesControlPanel(QWidget):
             logger.info("AI功能已禁用")
             self.tab_widget.setEnabled(False)
 
-            # ✅ 修复：停止AI服务（可选，根据需求决定是否真正停止）
+            # 修复：停止AI服务（可选，根据需求决定是否真正停止）
             # 这里只是禁用UI，不停止服务本身，以便快速恢复
 
-        # ✅ 修复：通过适配器控制AI服务
+        # 修复：通过适配器控制AI服务
         if self.ui_adapter:
             try:
                 if hasattr(self.ui_adapter, 'set_ai_enabled'):

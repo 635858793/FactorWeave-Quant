@@ -37,10 +37,10 @@ def _ensure_qt_imports():
                 return
             from PyQt5.QtCore import QObject, pyqtSignal
         except ImportError:
-            from PyQt6.QtWidgets import QApplication
+            from PyQt5.QtWidgets import QApplication
             if QApplication.instance() is None:
                 return
-            from PyQt6.QtCore import QObject, pyqtSignal
+            from PyQt5.QtCore import QObject, pyqtSignal
 
 # 添加项目根目录到Python路径，确保可以导入plugins包
 current_dir = Path(__file__).parent
@@ -1656,7 +1656,7 @@ class PluginManager:
                         logger.info(f"🔍 发现分类插件: {plugin_name}")
                         if self.load_plugin(plugin_name, plugin_path):
                             loaded_count += 1
-                            logger.info(f"✅ 成功加载分类插件: {plugin_name}")
+                            logger.info(f"成功加载分类插件: {plugin_name}")
                         else:
                             logger.warning(f"❌ 加载分类插件失败: {plugin_name}")
 

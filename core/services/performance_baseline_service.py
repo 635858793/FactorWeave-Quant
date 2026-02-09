@@ -106,7 +106,7 @@ class PerformanceBaselineService(BaseService):
             self._load_latest_baseline()
 
             self._initialized = True
-            logger.info("✅ Performance baseline service initialized")
+            logger.info("Performance baseline service initialized")
 
         except Exception as e:
             logger.error(f"Failed to initialize performance baseline service: {e}")
@@ -700,7 +700,7 @@ class PerformanceBaselineService(BaseService):
         report.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         report.append(f"Benchmark ID: {benchmark.id}")
         report.append(f"Duration: {benchmark.duration_seconds:.2f} seconds")
-        report.append(f"Success: {'✅' if benchmark.success else '❌'}")
+        report.append(f"Success: {'✓' if benchmark.success else '❌'}")
 
         if benchmark.error_message:
             report.append(f"Error: {benchmark.error_message}")
@@ -741,7 +741,7 @@ class PerformanceBaselineService(BaseService):
             report.append(f"Baseline: {self._baseline_benchmark.name} ({self._baseline_benchmark.id})")
 
             if comparison.improvements:
-                report.append("\n### Improvements ✅")
+                report.append("\n### Improvements ✓")
                 for improvement in comparison.improvements:
                     report.append(f"- {improvement}")
 

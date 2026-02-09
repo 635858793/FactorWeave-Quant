@@ -41,7 +41,7 @@ from examples.strategies.adj_price_momentum_strategy import AdjPriceMomentumStra
 from core.strategy_extensions import (
     IStrategyPlugin, StrategyInfo, ParameterDef,
     StrategyContext, StandardMarketData,
-    Signal, TradeResult, Position, PerformanceMetrics,
+    Signal, TradeResult, Position, TradingPerformanceMetrics,
     StrategyType, AssetType, TimeFrame, RiskLevel,
     SignalType, TradeAction, TradeStatus
 )
@@ -301,11 +301,11 @@ class AdjMomentumPlugin(IStrategyPlugin):
             logger.error(f"更新持仓失败: {e}")
             return self.positions.get(trade_result.symbol, None)
 
-    def calculate_performance(self, context: StrategyContext) -> PerformanceMetrics:
+    def calculate_performance(self, context: StrategyContext) -> TradingPerformanceMetrics:
         """计算策略性能"""
         try:
             if not self.trades:
-                return PerformanceMetrics(
+                return TradingPerformanceMetrics(
                     total_return=0.0,
                     annual_return=0.0,
                     sharpe_ratio=0.0,
@@ -344,7 +344,7 @@ class AdjMomentumPlugin(IStrategyPlugin):
             # 盈亏比
             profit_factor = abs(avg_win / avg_loss) if avg_loss != 0 else 0
 
-            metrics = PerformanceMetrics(
+            metrics = TradingPerformanceMetrics(
                 total_return=total_return,
                 annual_return=annual_return,
                 sharpe_ratio=self._calculate_sharpe_ratio(),
@@ -366,7 +366,7 @@ class AdjMomentumPlugin(IStrategyPlugin):
 
         except Exception as e:
             logger.error(f"性能计算失败: {e}")
-            return PerformanceMetrics(
+            return TradingPerformanceMetrics(
                 total_return=0.0,
                 annual_return=0.0,
                 sharpe_ratio=0.0,
@@ -675,12 +675,12 @@ class VWAPReversionPlugin(IStrategyPlugin):
             logger.error(f"更新持仓失败: {e}")
             return self.positions.get(trade_result.symbol, None)
 
-    def calculate_performance(self, context: StrategyContext) -> PerformanceMetrics:
+    def calculate_performance(self, context: StrategyContext) -> TradingPerformanceMetrics:
         """计算策略性能（复用AdjMomentumPlugin的实现）"""
         # 与AdjMomentumPlugin相同的逻辑
         try:
             if not self.trades:
-                return PerformanceMetrics(
+                return TradingPerformanceMetrics(
                     total_return=0.0,
                     annual_return=0.0,
                     sharpe_ratio=0.0,
@@ -706,7 +706,7 @@ class VWAPReversionPlugin(IStrategyPlugin):
             losing_trades = len(self.trades) - winning_trades
             win_rate = winning_trades / len(self.trades) if self.trades else 0
 
-            metrics = PerformanceMetrics(
+            metrics = TradingPerformanceMetrics(
                 total_return=total_return,
                 annual_return=annual_return,
                 sharpe_ratio=0.0,
@@ -727,7 +727,7 @@ class VWAPReversionPlugin(IStrategyPlugin):
 
         except Exception as e:
             logger.error(f"性能计算失败: {e}")
-            return PerformanceMetrics(
+            return TradingPerformanceMetrics(
                 total_return=0.0,
                 annual_return=0.0,
                 sharpe_ratio=0.0,

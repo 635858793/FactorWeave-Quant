@@ -36,7 +36,6 @@ __all__ = [
     "Level2DataPanel",
     "OrderBookWidget",
     "FundamentalAnalysisTab",
-    "",
     "SmartRecommendationPanel",
 
     # 辅助组件

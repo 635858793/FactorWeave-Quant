@@ -541,7 +541,7 @@ class IndicatorMixin:
                     zorder=200
                 )
 
-            # ✅ 性能优化：避免强制重新绑定，只在必要时启用
+            # 性能优化：避免强制重新绑定，只在必要时启用
             # 重新启用十字光标（确保切换股票后十字光标正常工作）
             # 使用force_rebind=False，让enable_crosshair检查状态，避免重复绑定
             if hasattr(self, 'crosshair_enabled') and self.crosshair_enabled:

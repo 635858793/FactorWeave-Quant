@@ -77,7 +77,7 @@ def initialize_adaptive_pool() -> Optional[AdaptiveConnectionPoolManager]:
         _adaptive_manager = AdaptiveConnectionPoolManager(db, adaptive_config)
         _adaptive_manager.start()
 
-        logger.info("✅ 自适应连接池管理已成功初始化并启动")
+        logger.info("自适应连接池管理已成功初始化并启动")
         return _adaptive_manager
 
     except Exception as e:
@@ -158,7 +158,7 @@ def initialize_adaptive_pools_by_config() -> Optional[AdaptiveConnectionPoolMana
         # 确保默认配置存在
         if not per_pool_config:
             config_manager.set('adaptive_pool_per_pool', all_pools)
-            logger.info("✅ 已初始化连接池级别的自适应默认配置")
+            logger.info("已初始化连接池级别的自适应默认配置")
 
         # 遍历所有连接池，创建自适应管理器
         created_manager = None
@@ -191,7 +191,7 @@ def initialize_adaptive_pools_by_config() -> Optional[AdaptiveConnectionPoolMana
                 # 保存第一个成功创建的管理器
                 if created_manager is None:
                     created_manager = manager
-                    logger.info(f"✅ 连接池 {pool_name} 的自适应管理器已创建并启动")
+                    logger.info(f"连接池 {pool_name} 的自适应管理器已创建并启动")
 
             except Exception as e:
                 logger.error(f"创建连接池 {pool_name} 的自适应管理器失败: {e}")

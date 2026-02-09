@@ -76,7 +76,7 @@ def test_vwap_calculation():
     
     # 验证结果
     if abs(actual_vwap - expected_vwap) < 0.01:
-        print("✅ VWAP计算正确")
+        print("VWAP计算正确")
         return True
     else:
         print(f"❌ VWAP计算错误，差异: {abs(actual_vwap - expected_vwap):.4f}")
@@ -139,7 +139,7 @@ def test_twap_calculation():
     
     # 验证结果应该在合理范围内
     if 100.0 <= twap <= 102.0:
-        print("✅ TWAP计算正确")
+        print("TWAP计算正确")
         return True
     else:
         print(f"❌ TWAP计算错误，超出合理范围")
@@ -169,7 +169,7 @@ def test_buy_sell_pressure_calculation():
     print(f"实际压力指数: {pressure1:.4f}")
     
     if abs(pressure1 - expected1) < 0.01 and pressure1 > 0:
-        print("✅ 买盘压力计算正确")
+        print("买盘压力计算正确")
         test1_passed = True
     else:
         print(f"❌ 买盘压力计算错误")
@@ -187,7 +187,7 @@ def test_buy_sell_pressure_calculation():
     print(f"实际压力指数: {pressure2:.4f}")
     
     if abs(pressure2 - expected2) < 0.01 and pressure2 < 0:
-        print("✅ 卖盘压力计算正确")
+        print("卖盘压力计算正确")
         test2_passed = True
     else:
         print(f"❌ 卖盘压力计算错误")
@@ -205,7 +205,7 @@ def test_buy_sell_pressure_calculation():
     print(f"实际压力指数: {pressure3:.4f}")
     
     if abs(pressure3 - expected3) < 0.01:
-        print("✅ 平衡状态计算正确")
+        print("平衡状态计算正确")
         test3_passed = True
     else:
         print(f"❌ 平衡状态计算错误")
@@ -237,7 +237,7 @@ def test_order_flow_imbalance_calculation():
     print(f"实际不平衡度: {imbalance1:.4f}")
     
     if abs(imbalance1 - expected1) < 0.01 and imbalance1 > 0.8:
-        print("✅ 高不平衡度计算正确")
+        print("高不平衡度计算正确")
         test1_passed = True
     else:
         print(f"❌ 高不平衡度计算错误")
@@ -255,7 +255,7 @@ def test_order_flow_imbalance_calculation():
     print(f"实际不平衡度: {imbalance2:.4f}")
     
     if abs(imbalance2 - expected2) < 0.01 and imbalance2 < 0.1:
-        print("✅ 低不平衡度计算正确")
+        print("低不平衡度计算正确")
         test2_passed = True
     else:
         print(f"❌ 低不平衡度计算错误")
@@ -273,7 +273,7 @@ def test_order_flow_imbalance_calculation():
     print(f"实际不平衡度: {imbalance3:.4f}")
     
     if abs(imbalance3 - expected3) < 0.01:
-        print("✅ 完全平衡计算正确")
+        print("完全平衡计算正确")
         test3_passed = True
     else:
         print(f"❌ 完全平衡计算错误")
@@ -310,7 +310,7 @@ def test_edge_cases():
     
     if (vwap_empty == 0.0 and twap_empty == 0.0 and 
         pressure_empty == 0.0 and imbalance_empty == 0.0):
-        print("✅ 空数据处理正确")
+        print("空数据处理正确")
         test1_passed = True
     else:
         print("❌ 空数据处理错误")
@@ -330,7 +330,7 @@ def test_edge_cases():
     print(f"订单流不平衡度: {imbalance_zero:.4f}")
     
     if vwap_zero == 0.0 and pressure_zero == 0.0 and imbalance_zero == 0.0:
-        print("✅ 零成交量处理正确")
+        print("零成交量处理正确")
         test2_passed = True
     else:
         print("❌ 零成交量处理错误")
@@ -360,7 +360,7 @@ def main():
     print("="*60)
     
     for test_name, passed in results:
-        status = "✅ 通过" if passed else "❌ 失败"
+        status = "通过" if passed else "❌ 失败"
         print(f"{test_name}: {status}")
     
     # 计算通过率

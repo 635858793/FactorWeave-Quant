@@ -57,7 +57,7 @@ def verify_connection_pool_fix():
         logger.info(f"   实际创建的订单连接池数: {len(actual_order_pools)}")
         
         if configured_order_pools == actual_order_pools:
-            logger.info(f"   ✅ 配置与实际一致")
+            logger.info(f"   配置与实际一致")
         else:
             missing_pools = configured_order_pools - actual_order_pools
             if missing_pools:
@@ -86,12 +86,12 @@ def verify_connection_pool_fix():
         logger.info(f"实际创建的订单连接池数: {len(actual_order_pools)}")
         
         if len(configured_order_pools) == 13:
-            logger.info(f"✅ 订单连接池配置正确（13个）")
+            logger.info(f"订单连接池配置正确（13个）")
         else:
             logger.warning(f"⚠️  订单连接池配置数量不正确（应为13，实际{len(configured_order_pools)}）")
         
         if len(actual_order_pools) == 13:
-            logger.info(f"✅ 订单连接池创建成功（13个）")
+            logger.info(f"订单连接池创建成功（13个）")
         else:
             logger.warning(f"⚠️  订单连接池创建数量不正确（应为13，实际{len(actual_order_pools)}）")
         

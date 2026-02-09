@@ -322,7 +322,7 @@ def example_basic_usage():
 
     # 清理
     pool.dispose()
-    print("✅ 基础使用示例完成")
+    print("基础使用示例完成")
 
 
 def example_concurrent_usage():
@@ -343,7 +343,7 @@ def example_concurrent_usage():
         futures = [executor.submit(query_in_thread, i) for i in range(10)]
         results = [f.result() for f in futures]
 
-    print(f"✅ 并发查询完成，总查询次数: {len(results)}")
+    print(f"并发查询完成，总查询次数: {len(results)}")
 
     # 检查连接池状态
     pool.log_pool_status()
@@ -355,4 +355,4 @@ if __name__ == "__main__":
     example_basic_usage()
     example_concurrent_usage()
 
-    print("\n✅ 所有示例运行完成")
+    print("\n所有示例运行完成")

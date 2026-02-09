@@ -5,12 +5,12 @@
 包含所有原Manager类的适配器和迁移指导。
 """
 
-from .cache_service import CacheService, get_unified_cache_service
+from ..services.unified_cache_service import CacheService, get_unified_cache_service
 from ..containers import get_service_container
-from .config_service import ConfigService
-from .plugin_service import PluginService, get_unified_plugin_service
-from .database_service import DatabaseService, get_unified_database_service
-from .network_service import NetworkService, get_unified_network_service
+from ..services.config_service import ConfigService
+from ..services.unified_plugin_service import PluginService, get_unified_plugin_service
+from ..services.unified_database_service import DatabaseService, get_unified_database_service
+from ..services.unified_network_service import NetworkService, get_unified_network_service
 import warnings
 from typing import Any, Dict, List, Optional, Type, Union
 from loguru import logger
@@ -353,7 +353,6 @@ def monkey_patch_legacy_imports():
     legacy_paths = {
         'core.services.unified_data_manager.UnifiedDataManager': LegacyDataManagerAdapter,
         'core.performance.cache_manager.MultiLevelCacheManager': LegacyCacheManagerAdapter,
-        'core.performance.cache_manager.CacheManager': LegacyCacheManagerAdapter,
         'core.services.config_service.ConfigService': LegacyConfigServiceAdapter,
     }
 
@@ -423,7 +422,6 @@ This guide helps you migrate your code to the new architecture.
 Step 1: Update Imports
 OLD:
   from core.services.unified_data_manager import UnifiedDataManager
-  from core.performance.cache_manager import CacheManager
 
 NEW:
   from core.services.unified_data_service import get_unified_data_service
@@ -432,7 +430,6 @@ NEW:
 Step 2: Update Instantiation
 OLD:
   data_manager = UnifiedDataManager()
-  cache_manager = CacheManager()
 
 NEW:
   data_service = get_unified_data_service()
@@ -471,13 +468,13 @@ Phase 3 (Future): Adapters removed, new services only
 
 📚 BENEFITS OF NEW ARCHITECTURE:
 
-✅ 93% reduction in service classes (226 → 15)
-✅ No circular dependencies
-✅ Proper dependency injection
-✅ Unified service interfaces
-✅ Better performance and reliability
-✅ Comprehensive health monitoring
-✅ Automatic service initialization ordering
+93% reduction in service classes (226 → 15)
+No circular dependencies
+Proper dependency injection
+Unified service interfaces
+Better performance and reliability
+Comprehensive health monitoring
+Automatic service initialization ordering
 
 🔗 RESOURCES:
 

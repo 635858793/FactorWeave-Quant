@@ -44,13 +44,13 @@ def test_strategy_manager_with_service():
         from core.trading.strategy_manager import StrategyManager
         strategy_manager = StrategyManager(service_container)
         
-        logger.info("✅ StrategyManager 初始化成功")
+        logger.info("StrategyManager 初始化成功")
         
         # 测试获取不存在的策略
         logger.info("\n测试 2: 获取不存在的策略")
         strategy = strategy_manager.get_strategy("non_existent_strategy")
         if strategy is None:
-            logger.info("✅ 正确返回 None（策略不存在）")
+            logger.info("正确返回 None（策略不存在）")
         else:
             logger.error("❌ 应该返回 None")
             return False
@@ -58,7 +58,7 @@ def test_strategy_manager_with_service():
         # 测试获取所有策略
         logger.info("\n测试 3: 获取所有策略")
         strategies = strategy_manager.get_all_strategies()
-        logger.info(f"✅ 获取到 {len(strategies)} 个策略")
+        logger.info(f"获取到 {len(strategies)} 个策略")
         
         # 如果有策略，测试获取第一个策略
         if strategies:
@@ -66,7 +66,7 @@ def test_strategy_manager_with_service():
             logger.info(f"\n测试 4: 获取第一个策略: {first_strategy_id}")
             strategy = strategy_manager.get_strategy(first_strategy_id)
             if strategy:
-                logger.info(f"✅ 成功获取策略: {strategy.name}")
+                logger.info(f"成功获取策略: {strategy.name}")
                 logger.info(f"   策略ID: {strategy.strategy_id}")
                 logger.info(f"   插件类型: {strategy.plugin_type}")
                 logger.info(f"   默认账号: {strategy.default_account_id}")
@@ -75,7 +75,7 @@ def test_strategy_manager_with_service():
                 return False
         
         logger.info("=" * 60)
-        logger.info("✅ StrategyManager 测试通过")
+        logger.info("StrategyManager 测试通过")
         logger.info("=" * 60)
         
         return True
@@ -125,14 +125,14 @@ def test_account_resolution_with_strategy():
         account = order_executor._resolve_account_for_order(order)
         
         if account:
-            logger.info(f"✅ 成功解析账号: {account.account_id}")
+            logger.info(f"成功解析账号: {account.account_id}")
             logger.info(f"   账号名称: {account.account_name}")
             logger.info(f"   机构名称: {account.institution_name}")
         else:
             logger.warning("⚠️ 未能解析账号（可能是因为没有配置账号或策略）")
         
         logger.info("=" * 60)
-        logger.info("✅ 订单执行器测试通过")
+        logger.info("订单执行器测试通过")
         logger.info("=" * 60)
         
         return True
@@ -162,7 +162,7 @@ def main():
     
     if success:
         logger.info("\n" + "=" * 60)
-        logger.info("✅ 所有测试通过")
+        logger.info("所有测试通过")
         logger.info("=" * 60)
     else:
         logger.info("\n" + "=" * 60)

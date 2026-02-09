@@ -741,9 +741,11 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
     pattern_selected = pyqtSignal(int)  # 形态选择信号
     ml_prediction_ready = pyqtSignal(dict)  # 机器学习预测就绪
 
-    def __init__(self, config_manager=None, event_bus=None):
+    def __init__(self, config_manager=None, event_bus=None, stock_code=None, stock_name=None):
         """初始化专业级形态分析"""
         # 初始化K线数据属性
+        self.stock_code = stock_code or ''
+        self.stock_name = stock_name or ''
         self.kdata = None
         self.current_kdata = None
 
@@ -815,11 +817,11 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
         # 连接父组件信号
         self._connect_parent_signals()
 
-    def set_parent_widget(self, parent_widget):
-        """设置父组件并连接信号"""
-        super().set_parent_widget(parent_widget)
-        # 连接父组件信号
-        self._connect_parent_signals()
+    def set_stock_info(self, stock_code, stock_name):
+        """设置股票信息"""
+        self.stock_code = stock_code or ''
+        self.stock_name = stock_name or ''
+        logger.info(f"更新股票信息: {self.stock_name} ({self.stock_code})")
 
     def _initialize_professional_patterns(self):
         """初始化专业级形态数据结构"""
@@ -913,7 +915,7 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
     def _create_professional_toolbar(self, layout):
         """创建专业工具栏"""
         toolbar = QFrame()
-        toolbar.setFixedHeight(160)  # 减少固定高度以防重叠
+        toolbar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         toolbar.setFrameStyle(QFrame.StyledPanel)
 
         toolbar_layout = QVBoxLayout(toolbar)
@@ -975,12 +977,11 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
         advanced_layout = QHBoxLayout(advanced_group)
 
         lmdQl = QLabel("灵敏度:")
-        lmdQl.setFixedWidth(80)
+        lmdQl.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
         # 灵敏度设置
         advanced_layout.addWidget(lmdQl)
         self.sensitivity_slider = QSlider(Qt.Horizontal)
-        self.sensitivity_slider.setMaximumWidth(200)
-        self.sensitivity_slider.setMinimumWidth(30)
+        self.sensitivity_slider.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.sensitivity_slider.setRange(1, 10)
         self.sensitivity_slider.setValue(5)
         self.sensitivity_slider.setToolTip("调整形态识别的灵敏度\n1=最保守, 10=最激进")
@@ -988,17 +989,17 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
 
         # 时间周期
         zqQl = QLabel("周期:")
-        zqQl.setFixedWidth(80)
+        zqQl.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
         advanced_layout.addWidget(zqQl)
         self.timeframe_combo = QComboBox()
-        self.timeframe_combo.setFixedWidth(80)
+        self.timeframe_combo.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.timeframe_combo.addItems(
             ["日线", "周线", "月线", "60分钟", "30分钟", "15分钟"])
         advanced_layout.addWidget(self.timeframe_combo)
 
         # 实时监控开关
         self.realtime_cb = QCheckBox("实时监控")
-        self.realtime_cb.setFixedWidth(90)
+        self.realtime_cb.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.realtime_cb.setToolTip("启用实时形态监控和预警")
         advanced_layout.addWidget(self.realtime_cb)
 
@@ -1570,6 +1571,14 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
                         except Exception as e:
                             self.backtest_error.emit(str(e))
 
+                # 检查并清理旧的回测线程
+                if hasattr(self, '_backtest_worker') and self._backtest_worker is not None:
+                    if self._backtest_worker.isRunning():
+                        logger.warning("检测到正在运行的回测线程，正在停止...")
+                        self._backtest_worker.quit()
+                        self._backtest_worker.wait(3000)  # 等待最多3秒
+                    self._backtest_worker.deleteLater()
+
                 # 创建并启动工作线程
                 self._backtest_worker = BacktestWorker(patterns, backtest_period, self)
                 self._backtest_worker.backtest_completed.connect(self._on_backtest_completed)
@@ -1625,28 +1634,40 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
             # 初始化信号列
             data['signal'] = 0
 
+            # 保存原始数据的索引，用于索引映射
+            original_indices = self.current_kdata.index.tolist()
+            truncated_indices = data.index.tolist()
+
+            # 创建索引映射：原始索引 -> 截断后索引
+            index_mapping = {orig_idx: trunc_idx for trunc_idx, orig_idx in enumerate(truncated_indices)}
+
             # 基于形态生成信号
             for pattern in patterns:
                 try:
                     signal_type = pattern.get('signal_type', 'neutral')
                     confidence = pattern.get('confidence', 0.5)
+                    pattern_index = pattern.get('index', 0)
 
                     # 只有高置信度的形态才生成信号
                     if confidence < 0.6:
                         continue
 
+                    # 使用索引映射找到在截断数据中的位置
+                    if pattern_index not in index_mapping:
+                        continue
+
+                    mapped_index = index_mapping[pattern_index]
+                    if not (0 <= mapped_index < len(data)):
+                        continue
+
                     # 根据形态类型生成信号
                     if signal_type in ['bullish', 'buy'] and confidence > 0.7:
-                        # 买入信号 - 在一定范围内设置
-                        signal_start = max(0, len(data) - int(period_days * 0.3))
-                        signal_end = min(len(data), signal_start + int(period_days * 0.1))
-                        data.iloc[signal_start:signal_end, data.columns.get_loc('signal')] = 1
+                        # 买入信号 - 在形态位置设置
+                        data.iloc[mapped_index, data.columns.get_loc('signal')] = 1
 
                     elif signal_type in ['bearish', 'sell'] and confidence > 0.7:
                         # 卖出信号
-                        signal_start = max(0, len(data) - int(period_days * 0.3))
-                        signal_end = min(len(data), signal_start + int(period_days * 0.1))
-                        data.iloc[signal_start:signal_end, data.columns.get_loc('signal')] = -1
+                        data.iloc[mapped_index, data.columns.get_loc('signal')] = -1
 
                 except Exception as e:
                     logger.warning(f"处理形态信号失败: {e}")
@@ -1811,7 +1832,7 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
    Alpha: {alpha:.3f}
    Beta: {beta:.3f}
 
-✅ 专业回测完成 | 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+专业回测完成 | 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"""
 
             # 显示结果
@@ -3474,7 +3495,40 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
     # 实现其他必要方法...
     def show_pattern_context_menu(self, position):
         """显示形态右键菜单"""
-        pass
+        try:
+            from optimization.ui_integration import UIIntegration
+            
+            # 获取选中的形态
+            row = self.patterns_table.rowAt(position.y())
+            if row < 0:
+                return
+                
+            # 获取形态名称（第一列）
+            pattern_name_item = self.patterns_table.item(row, 0)
+            if not pattern_name_item:
+                return
+                
+            pattern_name = pattern_name_item.text()
+            
+            # 创建并显示右键菜单
+            ui_integration = UIIntegration(debug_mode=False)
+            menu = ui_integration.create_pattern_context_menu(pattern_name)
+            
+            if menu:
+                menu.exec_(self.patterns_table.viewport().mapToGlobal(position))
+                logger.info(f"已显示形态 '{pattern_name}' 的右键菜单")
+            else:
+                logger.warning(f"无法为形态 '{pattern_name}' 创建右键菜单")
+                
+        except ImportError as e:
+            logger.error(f"导入UIIntegration失败: {e}")
+            QMessageBox.warning(
+                self,
+                "功能不可用",
+                "形态优化功能暂时不可用，请检查相关模块是否已安装。"
+            )
+        except Exception as e:
+            logger.error(f"显示形态右键菜单失败: {e}", exc_info=True)
 
     def show_pattern_detail(self):
         """显示形态详情"""
@@ -3977,8 +4031,8 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
                 
                 # 构建回测结果对象
                 backtest_result = BacktestResult(
-                    stock_code="",  # 需要从上下文中获取股票代码
-                    stock_name="",  # 需要从上下文中获取股票名称
+                    stock_code=getattr(self, 'stock_code', ''),
+                    stock_name=getattr(self, 'stock_name', ''),
                     strategy_name="形态识别策略",
                     backtest_time=time.time(),
                     backtest_results=backtest_results,
@@ -3989,6 +4043,18 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
                 
                 # 添加到回测结果管理器
                 self.backtest_result_manager.add_result(backtest_result)
+                
+                # 发布回测完成事件
+                if hasattr(self, 'event_bus') and self.event_bus:
+                    from core.events import BacktestCompletedEvent
+                    backtest_event = BacktestCompletedEvent(
+                        stock_code=getattr(self, 'stock_code', ''),
+                        stock_name=getattr(self, 'stock_name', ''),
+                        strategy_name='形态识别策略',
+                        backtest_results=backtest_results
+                    )
+                    self.event_bus.publish(backtest_event)
+                    logger.info(f"已发布 BacktestCompletedEvent 事件")
 
             # 完成
             if hasattr(self, 'progress_bar'):
@@ -3999,6 +4065,11 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
 
             # 恢复界面状态
             self.hide_loading()
+
+            # 清理回测线程
+            if hasattr(self, '_backtest_worker') and self._backtest_worker is not None:
+                self._backtest_worker.deleteLater()
+                self._backtest_worker = None
 
             logger.info("回测结果处理完成")
 
@@ -4038,3 +4109,43 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
 
         except Exception as e:
             logger.error(f"处理回测错误失败: {str(e)}")
+
+    def resizeEvent(self, event):
+        """窗口大小改变事件处理"""
+        super().resizeEvent(event)
+        self._update_responsive_layout()
+
+    def _update_responsive_layout(self):
+        """更新响应式布局"""
+        try:
+            window_width = self.width()
+            window_height = self.height()
+
+            logger.debug(f"PatternTabPro 响应式布局更新: {window_width}x{window_height}")
+
+            # 更新工具栏高度
+            toolbar = self.findChild(QFrame, "toolbar")
+            if toolbar:
+                toolbar_height = max(120, int(window_height * 0.2))
+                toolbar.setMinimumHeight(toolbar_height)
+                toolbar.setMaximumHeight(int(window_height * 0.3))
+
+            # 更新状态栏高度
+            status_frame = self.findChild(QFrame, "status_frame")
+            if status_frame:
+                status_height = max(30, int(window_height * 0.05))
+                status_frame.setFixedHeight(status_height)
+
+            # 更新滑块宽度
+            if hasattr(self, 'sensitivity_slider'):
+                slider_width = max(100, int(window_width * 0.15))
+                self.sensitivity_slider.setMinimumWidth(slider_width)
+                self.sensitivity_slider.setMaximumWidth(int(window_width * 0.3))
+
+            # 更新选择框宽度
+            if hasattr(self, 'timeframe_combo'):
+                combo_width = max(60, int(window_width * 0.08))
+                self.timeframe_combo.setFixedWidth(combo_width)
+
+        except Exception as e:
+            logger.error(f"更新响应式布局失败: {e}")

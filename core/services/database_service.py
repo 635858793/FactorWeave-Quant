@@ -597,7 +597,7 @@ class DatabaseService(BaseService):
             # 13. 验证数据库连接
             self._validate_database_connections()
 
-            logger.info("✅ DatabaseService initialized successfully with full database management capabilities")
+            logger.info("DatabaseService initialized successfully with full database management capabilities")
 
         except Exception as e:
             logger.error(f"❌ Failed to initialize DatabaseService: {e}")
@@ -1482,7 +1482,7 @@ class DatabaseService(BaseService):
             # 保存到管理器字典
             self._adaptive_managers[pool_name] = manager
             
-            logger.info(f"✅ 连接池 {pool_name} 的自适应管理器已创建并启动")
+            logger.info(f"连接池 {pool_name} 的自适应管理器已创建并启动")
             return manager
             
         except Exception as e:
@@ -1510,7 +1510,7 @@ class DatabaseService(BaseService):
         if manager:
             manager.stop()
             del self._adaptive_managers[pool_name]
-            logger.info(f"✅ 连接池 {pool_name} 的自适应管理器已停止")
+            logger.info(f"连接池 {pool_name} 的自适应管理器已停止")
         else:
             logger.warning(f"连接池 {pool_name} 没有自适应管理器")
 

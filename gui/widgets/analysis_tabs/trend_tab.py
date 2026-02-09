@@ -339,14 +339,14 @@ class TrendAnalysisTab(BaseAnalysisTab):
     def _create_professional_toolbar(self):
         """创建专业工具栏"""
         toolbar = QFrame()
-        toolbar.setMaximumHeight(200)
+        toolbar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         toolbar.setFrameStyle(QFrame.StyledPanel)
 
         layout = QVBoxLayout(toolbar)
 
         # 快速分析组
         quick_group = QGroupBox("快速分析")
-        quick_group.setFixedHeight(80)
+        quick_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         quick_layout = QHBoxLayout(quick_group)
 
         # 一键趋势分析
@@ -2012,7 +2012,7 @@ class TrendAnalysisTab(BaseAnalysisTab):
             else:
                 df = kdata
 
-            # ✅ 修复：确保输入数据的数值列为数值类型
+            # 修复：确保输入数据的数值列为数值类型
             numeric_cols = ['open', 'high', 'low', 'close', 'volume']
             for col in numeric_cols:
                 if col in df.columns:
@@ -2022,7 +2022,7 @@ class TrendAnalysisTab(BaseAnalysisTab):
             macd_data = calculate_macd(df, fastperiod=12, slowperiod=26, signalperiod=9)
 
             if macd_data is not None and len(macd_data) > 0:
-                # ✅ 修复：使用固定的列名，确保获取正确的数值列
+                # 修复：使用固定的列名，确保获取正确的数值列
                 # calculate_macd返回的列名是：'MACD', 'MACDSignal', 'MACDHist'
                 macd_col = 'MACD' if 'MACD' in macd_data.columns else None
                 signal_col = 'MACDSignal' if 'MACDSignal' in macd_data.columns else None
@@ -2032,12 +2032,12 @@ class TrendAnalysisTab(BaseAnalysisTab):
                     logger.warning("MACD计算结果缺少必要的列")
                     return None
 
-                # ✅ 修复：确保数据类型为数值类型，并处理NaN值
+                # 修复：确保数据类型为数值类型，并处理NaN值
                 recent_macd = pd.to_numeric(macd_data[macd_col], errors='coerce').iloc[-min(period, len(macd_data)):]
                 recent_signal = pd.to_numeric(macd_data[signal_col], errors='coerce').iloc[-min(period, len(macd_data)):]
                 recent_hist = pd.to_numeric(macd_data[hist_col], errors='coerce').iloc[-min(period, len(macd_data)):]
 
-                # ✅ 修复：移除NaN值，确保有有效数据进行计算
+                # 修复：移除NaN值，确保有有效数据进行计算
                 recent_macd = recent_macd.dropna()
                 recent_signal = recent_signal.dropna()
                 recent_hist = recent_hist.dropna()
@@ -2098,7 +2098,7 @@ class TrendAnalysisTab(BaseAnalysisTab):
             else:
                 df = kdata
 
-            # ✅ 修复：确保输入数据的数值列为数值类型
+            # 修复：确保输入数据的数值列为数值类型
             numeric_cols = ['open', 'high', 'low', 'close', 'volume']
             for col in numeric_cols:
                 if col in df.columns:
@@ -2108,15 +2108,15 @@ class TrendAnalysisTab(BaseAnalysisTab):
             rsi_data = calculate_rsi(df, timeperiod=14)
 
             if rsi_data is not None and len(rsi_data) > 0:
-                # ✅ 修复：使用固定的列名，确保获取正确的数值列
+                # 修复：使用固定的列名，确保获取正确的数值列
                 if 'RSI' not in rsi_data.columns:
                     logger.warning("RSI计算结果缺少RSI列")
                     return None
 
-                # ✅ 修复：确保数据类型为数值类型，并处理NaN值
+                # 修复：确保数据类型为数值类型，并处理NaN值
                 recent_rsi = pd.to_numeric(rsi_data['RSI'], errors='coerce').iloc[-min(period, len(rsi_data)):]
 
-                # ✅ 修复：移除NaN值，确保有有效数据进行计算
+                # 修复：移除NaN值，确保有有效数据进行计算
                 recent_rsi = recent_rsi.dropna()
 
                 if len(recent_rsi) < 2:
@@ -2174,7 +2174,7 @@ class TrendAnalysisTab(BaseAnalysisTab):
             else:
                 df = kdata
 
-            # ✅ 修复：确保输入数据的数值列为数值类型
+            # 修复：确保输入数据的数值列为数值类型
             numeric_cols = ['open', 'high', 'low', 'close', 'volume']
             for col in numeric_cols:
                 if col in df.columns:
@@ -2184,7 +2184,7 @@ class TrendAnalysisTab(BaseAnalysisTab):
             kdj_data = calculate_kdj(df, fastk_period=9, slowk_period=3, slowd_period=3)
 
             if kdj_data is not None and len(kdj_data) > 0:
-                # ✅ 修复：使用固定的列名，确保获取正确的数值列
+                # 修复：使用固定的列名，确保获取正确的数值列
                 # calculate_kdj返回的列名是：'K', 'D', 'J'
                 k_col = 'K' if 'K' in kdj_data.columns else None
                 d_col = 'D' if 'D' in kdj_data.columns else None
@@ -2194,12 +2194,12 @@ class TrendAnalysisTab(BaseAnalysisTab):
                     logger.warning("KDJ计算结果缺少必要的列")
                     return None
 
-                # ✅ 修复：确保数据类型为数值类型，并处理NaN值
+                # 修复：确保数据类型为数值类型，并处理NaN值
                 recent_k = pd.to_numeric(kdj_data[k_col], errors='coerce').iloc[-min(period, len(kdj_data)):]
                 recent_d = pd.to_numeric(kdj_data[d_col], errors='coerce').iloc[-min(period, len(kdj_data)):]
                 recent_j = pd.to_numeric(kdj_data[j_col], errors='coerce').iloc[-min(period, len(kdj_data)):]
 
-                # ✅ 修复：移除NaN值，确保有有效数据进行计算
+                # 修复：移除NaN值，确保有有效数据进行计算
                 recent_k = recent_k.dropna()
                 recent_d = recent_d.dropna()
                 recent_j = recent_j.dropna()
@@ -2307,3 +2307,33 @@ class TrendAnalysisTab(BaseAnalysisTab):
         except Exception as e:
             logger.error(f"时间框架{timeframe}分析失败: {e}")
             return None
+
+    def resizeEvent(self, event):
+        """窗口大小改变事件处理"""
+        super().resizeEvent(event)
+        self._update_responsive_layout()
+
+    def _update_responsive_layout(self):
+        """更新响应式布局"""
+        try:
+            window_width = self.width()
+            window_height = self.height()
+
+            logger.debug(f"TrendAnalysisTab 响应式布局更新: {window_width}x{window_height}")
+
+            # 更新工具栏高度
+            toolbar = self.findChild(QFrame)
+            if toolbar and toolbar.objectName() != "":
+                toolbar_height = max(150, int(window_height * 0.3))
+                toolbar.setMinimumHeight(toolbar_height)
+                toolbar.setMaximumHeight(int(window_height * 0.4))
+
+            # 更新快速分析组高度
+            quick_group = self.findChild(QGroupBox, "快速分析")
+            if quick_group:
+                group_height = max(60, int(window_height * 0.12))
+                quick_group.setMinimumHeight(group_height)
+                quick_group.setMaximumHeight(int(window_height * 0.18))
+
+        except Exception as e:
+            logger.error(f"更新响应式布局失败: {e}")

@@ -13,8 +13,23 @@ from core.metrics.app_metrics_service import measure
 from optimization.progressive_loading_manager import load_chart_progressive, get_progressive_loader
 from gui.widgets.async_data_processor import AsyncDataProcessor
 from utils.cache import Cache
-from utils.theme import get_theme_manager
 from utils.config_manager import ConfigManager
+
+# 延迟导入主题管理器，避免在模块级别导入时崩溃
+THEME_MANAGER_AVAILABLE = False
+get_theme_manager = None
+
+def _import_theme_manager():
+    """延迟导入主题管理器"""
+    global THEME_MANAGER_AVAILABLE, get_theme_manager
+    if not THEME_MANAGER_AVAILABLE:
+        try:
+            from utils.theme import get_theme_manager as _get_theme_manager
+            get_theme_manager = _get_theme_manager
+            THEME_MANAGER_AVAILABLE = True
+            logger.info("主题管理器模块导入成功")
+        except Exception as e:
+            logger.warning(f"导入主题管理器失败: {e}")
 from .chart_mixins import (
     BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
     CrosshairMixin, InteractionMixin, ZoomMixin,
@@ -91,7 +106,16 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
             self.coordinator = coordinator
             self.event_bus = coordinator.event_bus if coordinator else None
             self.config_manager = config_manager or ConfigManager()
-            self.theme_manager = theme_manager or get_theme_manager(self.config_manager)
+            
+            # 延迟导入并初始化主题管理器
+            _import_theme_manager()
+            self.theme_manager = None
+            if THEME_MANAGER_AVAILABLE:
+                try:
+                    self.theme_manager = theme_manager or get_theme_manager(self.config_manager)
+                except Exception as e:
+                    logger.warning(f"获取ThemeManager失败: {e}")
+            
             # 纯Loguru架构，移除log_manager依赖
             logger.info("ChartWidget __init__: 开始初始化...")
 
@@ -315,7 +339,7 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
         try:
             # 调用RenderingMixin中的update_chart方法
             super().update_chart(data)
-            logger.debug("✅ 十字光标重置已由rendering_mixin统一处理（性能优化）")
+            logger.debug("十字光标重置已由rendering_mixin统一处理（性能优化）")
 
         except Exception as e:
             if True:  # 使用Loguru日志
@@ -329,12 +353,12 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
             if self.canvas:
                 self.canvas.draw_idle()
 
-            # ✅ 性能优化：延迟十字光标重置 - 避免重复调用
+            # 性能优化：延迟十字光标重置 - 避免重复调用
             # 十字光标重置已在rendering_mixin中统一处理
             # if hasattr(self, 'reset_crosshair'):
             #     self.reset_crosshair()
             #     logger.info("已重置十字光标状态")
-            logger.debug("✅ 十字光标重置已由rendering_mixin统一处理（性能优化）")
+            logger.debug("十字光标重置已由rendering_mixin统一处理（性能优化）")
         except Exception as e:
             if True:  # 使用Loguru日志
                 logger.error(f"更新图表失败: {e}")
@@ -551,7 +575,7 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
                         logger.warning("K线数据为空DataFrame")
                     return
 
-                # ✅ 修复：验证数据顺序（确保按时间升序排列）
+                # 修复：验证数据顺序（确保按时间升序排列）
                 if 'datetime' in kdata.columns:
                     try:
                         datetime_series = pd.to_datetime(kdata['datetime'])
@@ -561,15 +585,15 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
                             logger.warning("⚠️ K线数据未按时间升序排列，正在自动排序...")
                             kdata = kdata.sort_values(by='datetime', ascending=True).reset_index(drop=True)
                             datetime_series = pd.to_datetime(kdata['datetime'])
-                            logger.info("✅ K线数据已按时间升序排序")
+                            logger.info("K线数据已按时间升序排序")
 
-                        # ✅ 修复：输出数据时间范围日志
+                        # 修复：输出数据时间范围日志
                         time_min = datetime_series.min()
                         time_max = datetime_series.max()
                         time_span = time_max - time_min
                         logger.info(f"📊 K线数据时间范围: {time_min.strftime('%Y-%m-%d %H:%M:%S')} ~ {time_max.strftime('%Y-%m-%d %H:%M:%S')} (跨度: {time_span.days}天)")
 
-                        # ✅ 修复：验证数据完整性
+                        # 修复：验证数据完整性
                         missing_count = datetime_series.isna().sum()
                         if missing_count > 0:
                             logger.warning(f"⚠️ K线数据包含 {missing_count} 个缺失的datetime值")
@@ -609,7 +633,7 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
             if True:  # 使用Loguru日志
                 logger.info(f"获取样式: {style}")
 
-            # ✅ 修复：使用datetime作为X轴（如果数据包含datetime列）
+            # 修复：使用datetime作为X轴（如果数据包含datetime列）
             use_datetime_axis = False
             x = None
 
@@ -619,7 +643,7 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
                     datetime_series = pd.to_datetime(self.current_kdata['datetime'])
                     if datetime_series.notna().any():
                         use_datetime_axis = True
-                        logger.info("✅ 使用datetime作为X轴")
+                        logger.info("使用datetime作为X轴")
                     else:
                         logger.warning("⚠️ datetime列全部为空，回退到数字索引X轴")
                 except Exception as e:
@@ -644,7 +668,7 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
             if True:  # 使用Loguru日志
                 logger.info(f"设置Y轴范围: {ymin - margin} - {ymax + margin}")
 
-            # ✅ 修复：X轴范围设置
+            # 修复：X轴范围设置
             if not use_datetime_axis:
                 # 数字索引X轴：手动设置范围
                 self.price_ax.set_xlim(0, len(self.current_kdata) - 1)
@@ -659,7 +683,7 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
                     # 添加2%边距，确保K线图完全可见
                     margin = (x_max - x_min) * 0.04 if x_max > x_min else 1.0
                     self.price_ax.set_xlim(x_min - margin, x_max + margin)
-                    logger.debug(f"✅ datetime X轴范围已设置: {datetime_series.min()} ~ {datetime_series.max()}")
+                    logger.debug(f"datetime X轴范围已设置: {datetime_series.min()} ~ {datetime_series.max()}")
                 except Exception as e:
                     logger.warning(f"⚠️ 设置datetime X轴范围失败: {e}，使用autoscale_view()")
                     # 失败时使用autoscale_view()作为后备
@@ -670,12 +694,12 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
                 logger.info("更新画布")
             self.canvas.draw_idle()
 
-            # ✅ 性能优化：延迟十字光标重置 - 已在rendering_mixin中处理
+            # 性能优化：延迟十字光标重置 - 已在rendering_mixin中处理
             # 不再在这里重复重置，避免重复调用开销
             # if hasattr(self, 'reset_crosshair'):
             #     self.reset_crosshair()
             #     logger.info("已重置十字光标状态")
-            logger.debug("✅ 十字光标重置已由rendering_mixin统一处理（性能优化）")
+            logger.debug("十字光标重置已由rendering_mixin统一处理（性能优化）")
 
             if True:  # 使用Loguru日志
                 logger.info("基础K线数据更新完成")
@@ -714,7 +738,7 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
             # 获取样式
             style = self._get_chart_style()
 
-            # ✅ 修复：使用datetime作为X轴（与K线图保持一致）
+            # 修复：使用datetime作为X轴（与K线图保持一致）
             use_datetime_axis = False
             x = None
 
@@ -723,7 +747,7 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
                     datetime_series = pd.to_datetime(kdata['datetime'])
                     if datetime_series.notna().any():
                         use_datetime_axis = True
-                        logger.debug("✅ 成交量使用datetime作为X轴")
+                        logger.debug("成交量使用datetime作为X轴")
                 except Exception as e:
                     logger.warning(f"⚠️ 成交量datetime列无效: {e}，回退到数字索引X轴")
             else:

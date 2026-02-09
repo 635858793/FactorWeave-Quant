@@ -340,7 +340,7 @@ class UnifiedDataManager:
                     from .stock_service import StockService
                     if self.service_container.is_registered(StockService):
                         stock_service = self.service_container.resolve(StockService)
-                        logger.info("✅ StockService 解析成功")
+                        logger.info("StockService 解析成功")
                 except Exception as e:
                     logger.warning(f"⚠️ StockService 解析失败: {e}")
 
@@ -366,7 +366,7 @@ class UnifiedDataManager:
                 crypto_api_config=crypto_api_config
             )
 
-            logger.info("✅ AssetFallbackLoader 初始化成功")
+            logger.info("AssetFallbackLoader 初始化成功")
 
         except Exception as e:
             logger.warning(f"⚠️ AssetFallbackLoader 初始化失败: {e}")
@@ -493,7 +493,7 @@ class UnifiedDataManager:
 
             if self.service_container and self.service_container.is_registered(StockService):
                 self._stock_service = self.service_container.resolve(StockService)
-                logger.info("✅ StockService从服务容器初始化成功")
+                logger.info("StockService从服务容器初始化成功")
             else:
                 self._stock_service = None
                 logger.debug("StockService未在服务容器中注册，后备机制将无法获取股票列表")
@@ -698,7 +698,7 @@ class UnifiedDataManager:
     def get_kdata(self, stock_code: str, period: str = 'D', count: int = 365,
                   asset_type: AssetType = AssetType.STOCK_A) -> pd.DataFrame:
         """
-        获取K线数据 - 统一接口（✅ 优化：支持多资产类型 + 集成DuckDB智能路由）
+        获取K线数据 - 统一接口（优化：支持多资产类型 + 集成DuckDB智能路由）
 
         Args:
             stock_code: 股票代码（或其他资产代码）
@@ -710,25 +710,25 @@ class UnifiedDataManager:
             K线数据DataFrame
         """
         try:
-            # ✅ 缓存键包含资产类型，避免跨资产混淆
+            # 缓存键包含资产类型，避免跨资产混淆
             cache_key = f"kdata_{asset_type.value}_{stock_code}_{period}_{count}"
 
             # 1. 多级缓存检查（增强缓存策略）
             cached_data = self._get_cached_data(cache_key)
             if cached_data is not None and not cached_data.empty:
-                logger.debug(f"✅ 缓存命中: {stock_code} ({asset_type.value})")
+                logger.debug(f"缓存命中: {stock_code} ({asset_type.value})")
                 return cached_data
 
             # 2. 初始化df变量
             df = pd.DataFrame()
 
-            # 3. ✅ 修复：始终尝试从DuckDB获取数据（支持多资产类型）
+            # 3. 修复：始终尝试从DuckDB获取数据（支持多资产类型）
             if self.duckdb_available:
-                logger.debug(f"✅ 尝试从DuckDB获取K线数据: {stock_code}, period={period}, count={count}, asset_type={asset_type.value}")
+                logger.debug(f"尝试从DuckDB获取K线数据: {stock_code}, period={period}, count={count}, asset_type={asset_type.value}")
                 df = self._get_kdata_from_duckdb(stock_code, period, count, asset_type=asset_type)
 
                 if not df.empty:
-                    logger.info(f"✅ 从DuckDB获取数据成功: {stock_code} ({asset_type.value}), 记录数={len(df)}")
+                    logger.info(f"从DuckDB获取数据成功: {stock_code} ({asset_type.value}), 记录数={len(df)}")
                     self._cache_data(cache_key, df)
                     return df
                 else:
@@ -799,7 +799,7 @@ class UnifiedDataManager:
                     from ..plugin_types import AssetType
                     from datetime import datetime, timedelta
 
-                    # ✅ 优先使用传入的日期范围，如果没有则自动计算
+                    # 优先使用传入的日期范围，如果没有则自动计算
                     if start_date is None or end_date is None:
                         # 计算日期范围（当未提供日期参数时）
                         end_date = datetime.now() if end_date is None else end_date
@@ -814,27 +814,27 @@ class UnifiedDataManager:
                             else:
                                 start_date = end_date - timedelta(days=count)
                     else:
-                        # ✅ 确保 end_date 是 datetime 对象
+                        # 确保 end_date 是 datetime 对象
                         if isinstance(end_date, str):
                             end_date = datetime.strptime(end_date, '%Y-%m-%d')
                         elif end_date is None:
                             end_date = datetime.now()
 
-                        # ✅ 确保 start_date 是 datetime 对象
+                        # 确保 start_date 是 datetime 对象
                         if isinstance(start_date, str):
                             start_date = datetime.strptime(start_date, '%Y-%m-%d')
 
-                    # ✅ 验证日期范围的有效性
+                    # 验证日期范围的有效性
                     if start_date >= end_date:
                         logger.warning(f"日期范围无效: start_date={start_date} >= end_date={end_date}，调整为默认范围")
                         end_date = datetime.now()
                         start_date = end_date - timedelta(days=count * 2)
 
                     # 调用插件管理器获取数据，传递data_source参数
-                    # ✅ 使用传入的资产类型，如果没有则使用默认值A股
+                    # 使用传入的资产类型，如果没有则使用默认值A股
                     final_asset_type = asset_type or AssetType.STOCK_A
 
-                    # ✅ 智能处理count参数：如果指定了时间范围，根据时间段计算实际需要的数据量
+                    # 智能处理count参数：如果指定了时间范围，根据时间段计算实际需要的数据量
                     actual_count = count
                     if start_date and end_date:
                         # 根据日期范围和频率估算需要的数据量（考虑交易日和不同频率）
@@ -862,7 +862,7 @@ class UnifiedDataManager:
                                 # 其他频率：使用默认估算方法
                                 estimated_count = int(days_diff * 0.7)
 
-                            # ✅ 修复：不再强制最小值为800，而是使用实际计算出的数量
+                            # 修复：不再强制最小值为800，而是使用实际计算出的数量
                             # 只有超过上限时才限制，不超过800时就使用实际计算的数量
                             # 上限设置为10000（超过这个值会在Tongdaxin插件中分片）
                             MAX_COUNT_LIMIT = 10000
@@ -891,18 +891,18 @@ class UnifiedDataManager:
 
                     df = self._uni_plugin_manager.get_kline_data(
                         symbol=stock_code,
-                        asset_type=final_asset_type,  # ✅ 使用传入的资产类型
+                        asset_type=final_asset_type,  # 使用传入的资产类型
                         start_date=start_date,
                         end_date=end_date,
                         frequency=frequency,
-                        count=actual_count,  # ✅ 使用智能计算后的count
+                        count=actual_count,  # 使用智能计算后的count
                         data_source=data_source  # 传递指定的数据源
                     )
 
                     if not df.empty:
                         logger.info(f"[数据获取] 原始数据量: {len(df)} 条，时间跨度: {df['datetime'].min() if 'datetime' in df.columns else 'N/A'} ~ {df['datetime'].max() if 'datetime' in df.columns else 'N/A'}")
 
-                        # ✅ 改进：数据截断逻辑 - 仅在明显超量且没有指定日期范围时才截断
+                        # 改进：数据截断逻辑 - 仅在明显超量且没有指定日期范围时才截断
                         # 如果用户指定了日期范围，则不进行截断（尊重用户意图）
                         should_truncate = False
                         if start_date is None or end_date is None:
@@ -910,13 +910,13 @@ class UnifiedDataManager:
                             if len(df) > count * 3:  # 提高阈值到3倍，更宽容
                                 should_truncate = True
 
-                        # ✅ 修复：先进行数据标准化（包含排序），再进行截断
+                        # 修复：先进行数据标准化（包含排序），再进行截断
                         # 确保数据在截断前已经按时间升序排列
                         df = self._standardize_kdata_format(df, stock_code)
 
                         if should_truncate and not df.empty:
                             original_len = len(df)
-                            # ✅ 修复：数据已经标准化并排序（升序），使用tail获取最新的count条数据
+                            # 修复：数据已经标准化并排序（升序），使用tail获取最新的count条数据
                             df = df.tail(count).reset_index(drop=True)
                             logger.warning(f"[数据获取] 未指定日期范围且数据量 {original_len} 超过限制 {count * 3}，截断为 {len(df)} 条（最新数据）")
                         else:
@@ -997,7 +997,7 @@ class UnifiedDataManager:
                 try:
                     asset_list_df = self._get_asset_list_from_duckdb(asset_type_str, market)
                     if asset_list_df is not None and not asset_list_df.empty:
-                        logger.debug(f"✅ DuckDB数据库获取{asset_type_str}资产列表成功: {len(asset_list_df)} 个资产")
+                        logger.debug(f"DuckDB数据库获取{asset_type_str}资产列表成功: {len(asset_list_df)} 个资产")
                         # 缓存结果
                         if self.cache_enabled:
                             self._cache_data(cache_key, asset_list_df)
@@ -1041,7 +1041,7 @@ class UnifiedDataManager:
             try:
                 legacy_assets = self._legacy_get_asset_list(asset_type_enum, market)
                 if not legacy_assets.empty:
-                    logger.info(f"✅ 从传统数据源获取{asset_type_str}资产列表成功: {len(legacy_assets)} 个资产")
+                    logger.info(f"从传统数据源获取{asset_type_str}资产列表成功: {len(legacy_assets)} 个资产")
                     if self.cache_enabled:
                         self._cache_data(cache_key, legacy_assets)
                     return legacy_assets
@@ -1204,7 +1204,7 @@ class UnifiedDataManager:
             return pd.DataFrame()
 
     def _get_kdata_from_duckdb(self, stock_code: str, period: str, count: int, data_source: str = None, asset_type: AssetType = None) -> pd.DataFrame:
-        """✅ 优化：从DuckDB获取K线数据（使用视图自动选择最优质量数据）"""
+        """优化：从DuckDB获取K线数据（使用视图自动选择最优质量数据）"""
         try:
             if not self.duckdb_operations:
                 logger.debug("DuckDB operations不可用")
@@ -1215,7 +1215,7 @@ class UnifiedDataManager:
             database_path = self.asset_manager.get_database_path(final_asset_type)
             logger.debug(f"📊 DuckDB路径: {database_path}, 资产类型: {final_asset_type.value}")
 
-            # ✅ 周期到频率的映射（DuckDB表中的frequency字段）
+            # 周期到频率的映射（DuckDB表中的frequency字段）
             period_to_frequency_map = {
                 'D': '1d', 'W': '1w', 'M': '1M',
                 '1': '1min', '5': '5min', '15': '15min',
@@ -1225,7 +1225,7 @@ class UnifiedDataManager:
             frequency = period_to_frequency_map.get(period, '1d')
             logger.debug(f"📊 周期映射: {period} -> {frequency}")
 
-            # ✅ 优化：在CTE中添加WHERE条件，提前过滤数据，减少JOIN的数据量
+            # 优化：在CTE中添加WHERE条件，提前过滤数据，减少JOIN的数据量
             view_query = f"""
                 WITH ranked_data AS (
                     SELECT 
@@ -1289,11 +1289,11 @@ class UnifiedDataManager:
                         df = pd.DataFrame(result.data)
 
                     if not df.empty:
-                        logger.info(f"✅ [视图查询成功（质量优选）]: {stock_code}, frequency={frequency}, {len(df)} 条记录")
-                        # ✅ 为视图结果添加data_source列，默认值为'best_quality'
+                        logger.info(f"[视图查询成功（质量优选）]: {stock_code}, frequency={frequency}, {len(df)} 条记录")
+                        # 为视图结果添加data_source列，默认值为'best_quality'
                         df['data_source'] = 'best_quality'
                         
-                        # ✅ 缓存质量评分（从查询结果中提取）
+                        # 缓存质量评分（从查询结果中提取）
                         if 'quality_score' in df.columns:
                             for idx, row in df.iterrows():
                                 check_date = row['datetime'].date() if pd.notna(row['datetime']) else datetime.now().date()
@@ -1305,7 +1305,7 @@ class UnifiedDataManager:
                                     score=row.get('quality_score', 0.0)
                                 )
                         
-                        # ✅ 修复：对从DuckDB获取的数据进行标准化和排序
+                        # 修复：对从DuckDB获取的数据进行标准化和排序
                         df = self._standardize_kdata_format(df, stock_code)
                         return df
                     else:
@@ -1348,8 +1348,8 @@ class UnifiedDataManager:
                         df = pd.DataFrame(result.data)
 
                     if not df.empty:
-                        logger.info(f"✅ [基础表查询成功]: {stock_code}, frequency={frequency}, {len(df)} 条记录, 数据源: {df['data_source'].unique().tolist() if 'data_source' in df.columns else '未知'}")
-                        # ✅ 修复：对从DuckDB获取的数据进行标准化和排序
+                        logger.info(f"[基础表查询成功]: {stock_code}, frequency={frequency}, {len(df)} 条记录, 数据源: {df['data_source'].unique().tolist() if 'data_source' in df.columns else '未知'}")
+                        # 修复：对从DuckDB获取的数据进行标准化和排序
                         df = self._standardize_kdata_format(df, stock_code)
                         return df
                     else:
@@ -1463,7 +1463,7 @@ class UnifiedDataManager:
             )
 
             if result.success:
-                logger.info(f"✅ 资产列表持久化成功: {asset_type_value}, {len(prepared_data)} 条记录")
+                logger.info(f"资产列表持久化成功: {asset_type_value}, {len(prepared_data)} 条记录")
             else:
                 logger.warning(f"⚠️ 资产列表持久化失败: {asset_type_value}")
 
@@ -1508,11 +1508,11 @@ class UnifiedDataManager:
                 logger.warning(f"K线数据缺少必要列: {missing_columns}")
                 return pd.DataFrame()
 
-            # ✅ 修复：处理datetime列和索引，避免datetime既是索引又是列
+            # 修复：处理datetime列和索引，避免datetime既是索引又是列
             if 'datetime' not in df.columns:
                 # 如果没有datetime列，尝试从索引或date列获取
                 if isinstance(df.index, pd.DatetimeIndex):
-                    # ✅ 关键修复：将索引转为列后，必须重置索引为数字索引
+                    # 关键修复：将索引转为列后，必须重置索引为数字索引
                     df['datetime'] = df.index
                     df = df.reset_index(drop=True)
                     logger.debug("从DatetimeIndex创建datetime列并重置索引")
@@ -1524,7 +1524,7 @@ class UnifiedDataManager:
             else:
                 # 确保datetime列是datetime类型
                 df['datetime'] = pd.to_datetime(df['datetime'])
-                # ✅ 修复：如果datetime同时是索引名，重置索引避免歧义
+                # 修复：如果datetime同时是索引名，重置索引避免歧义
                 if df.index.name == 'datetime' or isinstance(df.index, pd.DatetimeIndex):
                     df = df.reset_index(drop=True)
                     logger.debug("检测到datetime同时是列和索引，已重置索引")
@@ -1533,7 +1533,7 @@ class UnifiedDataManager:
             df = df.replace([np.inf, -np.inf], np.nan)
             df = df.dropna(subset=['close'])  # 至少要有收盘价
 
-            # ✅ 修复：确保code和symbol字段都存在
+            # 修复：确保code和symbol字段都存在
             if 'code' not in df.columns and 'symbol' not in df.columns:
                 df['code'] = stock_code
                 df['symbol'] = stock_code
@@ -1545,7 +1545,7 @@ class UnifiedDataManager:
                 df['symbol'] = df['code']
                 logger.debug(f"数据已包含code字段，添加symbol字段")
 
-            # ✅ 修复：确保adj_close和adj_factor字段存在（用于复权策略）
+            # 修复：确保adj_close和adj_factor字段存在（用于复权策略）
             if 'adj_close' not in df.columns:
                 df['adj_close'] = df['close']
                 logger.debug("添加adj_close字段，使用close值")
@@ -1563,7 +1563,7 @@ class UnifiedDataManager:
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors='coerce')
 
-            # ✅ 修复：统一按时间升序排序，确保K线图显示顺序正确
+            # 修复：统一按时间升序排序，确保K线图显示顺序正确
             # 这是解决K线数据展示顺序错乱问题的关键修复
             if 'datetime' in df.columns and not df.empty:
                 try:
@@ -1571,7 +1571,7 @@ class UnifiedDataManager:
                     df['datetime'] = pd.to_datetime(df['datetime'])
                     # 按datetime升序排序（时间从旧到新）
                     df = df.sort_values(by='datetime', ascending=True).reset_index(drop=True)
-                    logger.debug(f"✅ K线数据已按时间升序排序: {stock_code}, 记录数={len(df)}, 时间范围={df['datetime'].min()} ~ {df['datetime'].max()}")
+                    logger.debug(f"K线数据已按时间升序排序: {stock_code}, 记录数={len(df)}, 时间范围={df['datetime'].min()} ~ {df['datetime'].max()}")
                 except Exception as sort_error:
                     logger.warning(f"⚠️ K线数据排序失败: {stock_code}, 错误={sort_error}")
                     # 如果排序失败，记录警告但不中断流程
@@ -1941,7 +1941,7 @@ class UnifiedDataManager:
                                 'status': 'active',
                                 'asset_type': asset_type_value
                             })
-                            logger.info(f"✅ 从SectorDataService获取{asset_type_value}资产列表成功: {len(df)} 个")
+                            logger.info(f"从SectorDataService获取{asset_type_value}资产列表成功: {len(df)} 个")
                             return df
                 except Exception as e:
                     logger.warning(f"⚠️ SectorDataService获取板块列表失败: {e}")
@@ -2582,7 +2582,7 @@ class UnifiedDataManager:
     async def request_data(self, stock_code: str, data_type: str = 'kdata',
                            period: str = 'D', time_range: str = "最近1年",
                            asset_type: AssetType = AssetType.STOCK_A, **kwargs) -> Any:
-        """请求数据（✅ 优化：支持多资产类型）
+        """请求数据（优化：支持多资产类型）
 
         Args:
             stock_code: 股票代码（或其他资产代码）
@@ -2635,10 +2635,10 @@ class UnifiedDataManager:
             # 获取天数，默认为365天（约1年）
             count = time_range_map.get(time_range, 365)
 
-            logger.info(f"✅ 请求数据：代码={stock_code}, 类型={data_type}, 周期={actual_period}, 时间范围={count}天, 资产类型={asset_type.value}")
+            logger.info(f"请求数据：代码={stock_code}, 类型={data_type}, 周期={actual_period}, 时间范围={count}天, 资产类型={asset_type.value}")
 
             if data_type == 'kdata':
-                # ✅ 获取K线数据（传递资产类型）
+                # 获取K线数据（传递资产类型）
                 return await self._get_kdata(stock_code, period=actual_period, count=count, asset_type=asset_type)
             elif data_type == 'financial':
                 # 获取财务数据
@@ -2647,7 +2647,7 @@ class UnifiedDataManager:
                 # 获取新闻数据
                 return await self._get_news(stock_code)
             elif data_type == 'all':
-                # ✅ 获取所有数据（传递资产类型）
+                # 获取所有数据（传递资产类型）
                 kdata = await self._get_kdata(stock_code, period=actual_period, count=count, asset_type=asset_type)
                 financial = await self._get_financial_data(stock_code)
                 news = await self._get_news(stock_code)
@@ -2716,7 +2716,7 @@ class UnifiedDataManager:
 
     async def _get_kdata(self, stock_code: str, period: str = 'D', count: int = 365,
                          asset_type: AssetType = AssetType.STOCK_A) -> pd.DataFrame:
-        """获取K线数据（✅ 优化：支持多资产类型）
+        """获取K线数据（优化：支持多资产类型）
 
         Args:
             stock_code: 股票代码（或其他资产代码）
@@ -2728,14 +2728,14 @@ class UnifiedDataManager:
             K线DataFrame
         """
         try:
-            logger.info(f"✅ 获取K线数据: {stock_code}, 周期={period}, 数量={count}, 资产类型={asset_type.value}")
+            logger.info(f"获取K线数据: {stock_code}, 周期={period}, 数量={count}, 资产类型={asset_type.value}")
 
             # 尝试从服务容器解析ChartService
             from core.services.chart_service import ChartService
             chart_service = self.service_container.resolve(ChartService)
 
             if chart_service:
-                # ✅ ChartService支持asset_type参数，传递过去
+                # ChartService支持asset_type参数，传递过去
                 return chart_service.get_kdata(stock_code, period, count, asset_type=asset_type)
 
             # 如果没有ChartService，使用默认数据源
@@ -2743,7 +2743,7 @@ class UnifiedDataManager:
             data_manager = self
 
             if data_manager:
-                # ✅ 传递asset_type参数
+                # 传递asset_type参数
                 return data_manager.get_kdata(stock_code, period, count, asset_type=asset_type)
 
             logger.error("无法获取K线数据：未找到数据服务")
@@ -3244,7 +3244,7 @@ class UnifiedDataManager:
                                 index_details.append(row[0])
                     
                     if index_used:
-                        logger.info(f"✅ 索引使用情况: 已使用索引")
+                        logger.info(f"索引使用情况: 已使用索引")
                         for detail in index_details:
                             logger.info(f"   - {detail}")
                     else:
@@ -3256,11 +3256,11 @@ class UnifiedDataManager:
                     
                     # 检查是否有哈希连接
                     if 'HASH_JOIN' in explain_str or 'hash_join' in explain_str:
-                        logger.info(f"✅ 使用哈希连接（HASH_JOIN）")
+                        logger.info(f"使用哈希连接（HASH_JOIN）")
                     
                     # 检查是否有排序操作
                     if 'ORDER_BY' in explain_str or 'order_by' in explain_str:
-                        logger.info(f"✅ 检测到排序操作（ORDER_BY）")
+                        logger.info(f"检测到排序操作（ORDER_BY）")
                     
                     logger.info("=" * 80)
                     
@@ -3334,7 +3334,7 @@ class UnifiedDataManager:
 
                     if result_df is not None and not result_df.empty:
                         df = result_df
-                        logger.info(f"✅ 批量查询成功: 共 {len(df)} 条记录, {df['code'].nunique()} 只股票")
+                        logger.info(f"批量查询成功: 共 {len(df)} 条记录, {df['code'].nunique()} 只股票")
 
                         # 为视图结果添加data_source列
                         df['data_source'] = 'best_quality'
@@ -3342,7 +3342,7 @@ class UnifiedDataManager:
                         # ========== 数据标准化阶段性能监控 ==========
                         standardization_start = time.time()
                         
-                        # ✅ 缓存质量评分（从查询结果中提取）
+                        # 缓存质量评分（从查询结果中提取）
                         if 'quality_score' in df.columns:
                             cache_start = time.time()
                             for idx, row in df.iterrows():
@@ -3458,7 +3458,7 @@ class UnifiedDataManager:
                         try:
                             restart_success = self.duckdb_manager.restart_pool(database_path)
                             if restart_success:
-                                logger.info("✅ 连接池重启成功，重试查询...")
+                                logger.info("连接池重启成功，重试查询...")
                                 # 重试查询
                                 return await self.get_historical_data_batch(
                                     symbols=symbols,
@@ -3593,7 +3593,7 @@ class UnifiedDataManager:
                     df = pd.DataFrame(result.data)
 
                 if not df.empty:
-                    logger.info(f"✅ 基础表批量查询成功: 共 {len(df)} 条记录, {df['code'].nunique()} 只股票")
+                    logger.info(f"基础表批量查询成功: 共 {len(df)} 条记录, {df['code'].nunique()} 只股票")
 
                     # 如果没有指定日期范围，按symbol分组并取前count条
                     if not start_date and not end_date:
@@ -3688,7 +3688,7 @@ class UnifiedDataManager:
                     try:
                         conn.execute(create_sql)
                         result['created_indexes'].append(index_name)
-                        logger.info(f"✅ 创建索引成功: {index_name}")
+                        logger.info(f"创建索引成功: {index_name}")
                     except Exception as e:
                         result['failed_indexes'].append({'index': index_name, 'error': str(e)})
                         logger.error(f"❌ 创建索引失败: {index_name}, 错误: {e}")
@@ -3708,7 +3708,7 @@ class UnifiedDataManager:
                     try:
                         conn.execute(create_sql)
                         result['created_indexes'].append(index_name)
-                        logger.info(f"✅ 创建索引成功: {index_name}")
+                        logger.info(f"创建索引成功: {index_name}")
                     except Exception as e:
                         result['failed_indexes'].append({'index': index_name, 'error': str(e)})
                         logger.error(f"❌ 创建索引失败: {index_name}, 错误: {e}")
@@ -4149,7 +4149,7 @@ class UnifiedDataManager:
 
             if registered_count > 0:
                 self._plugins_discovered = True
-                logger.info(f"✅ 插件发现和注册完成: 共注册 {registered_count} 个插件")
+                logger.info(f"插件发现和注册完成: 共注册 {registered_count} 个插件")
             else:
                 logger.warning("⚠️ 未注册任何插件，请检查插件管理器状态")
 
@@ -4271,7 +4271,7 @@ class UnifiedDataManager:
                     if success:
                         registered_count += 1
                         plugin_name = metadata.get('name', plugin_id)
-                        logger.info(f"  ✅ 成功注册: {plugin_name} ({plugin_id})")
+                        logger.info(f"  成功注册: {plugin_name} ({plugin_id})")
                     else:
                         logger.warning(f"  ⚠️ 注册失败: {plugin_id}")
 

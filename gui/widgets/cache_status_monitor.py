@@ -118,7 +118,9 @@ class CacheGauge(QWidget):
         self.current_value = 0.0
         self.target_value = 0.0
 
-        self.setFixedSize(140, 140)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.setMinimumSize(140, 140)
+        self.setMaximumSize(140, 140)
 
         # 动画
         self.animation = QPropertyAnimation(self, b"current_value")
@@ -396,7 +398,9 @@ class CacheMemoryChart(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.cache_data: Dict[CacheLevel, Tuple[int, int]] = {}  # (used, total)
-        self.setFixedSize(300, 200)
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        self.setMinimumHeight(200)
+        self.setMaximumHeight(200)
 
     def set_cache_data(self, data: Dict[CacheLevel, Tuple[int, int]]):
         """设置缓存数据"""

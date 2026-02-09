@@ -25,6 +25,13 @@ import matplotlib.patches as patches
 from gui.ui_components import BaseAnalysisPanel
 from core.containers import get_service_container
 
+# 数据管理服务
+try:
+    from core.services.unified_data_manager import UnifiedDataManager
+except ImportError as e:
+    logger.warning(f"UnifiedDataManager导入失败: {e}")
+    UnifiedDataManager = None
+
 # AI选股相关服务
 try:
     from core.services.ai_selection_integration_service import AISelectionIntegrationService
@@ -1061,7 +1068,26 @@ class AIStockSelectionPanel(BaseAnalysisPanel):
             # 存储到 self.explanation_data 供后续使用
             self.explanation_data[stock_code] = exp
         
+        # 获取股票列表以获取股票名称
+        stock_name_map = {}
+        try:
+            container = get_service_container()
+            if UnifiedDataManager:
+                data_manager = container.resolve(UnifiedDataManager)
+                stock_list_df = data_manager.get_stock_list()
+                
+                # 创建股票代码到名称的映射
+                if not stock_list_df.empty and 'code' in stock_list_df.columns and 'name' in stock_list_df.columns:
+                    stock_name_map = dict(zip(stock_list_df['code'], stock_list_df['name']))
+                    logger.info(f"成功获取股票列表，包含 {len(stock_name_map)} 只股票")
+        except Exception as e:
+            logger.warning(f"获取股票列表失败: {e}，股票名称将为空")
+        
         # 转换为UI格式
+        logger.info(f"开始转换选股结果为UI格式，选中的股票数量: {len(selected_stocks)}")
+        logger.info(f"评分数据示例（前5个）: {dict(list(stock_scores.items())[:5])}")
+        logger.info(f"详细评分数据示例（前3个）: {dict(list(detailed_scores.items())[:3])}")
+        
         for stock_code in selected_stocks:
             total_score = stock_scores.get(stock_code, 0)
             
@@ -1078,14 +1104,21 @@ class AIStockSelectionPanel(BaseAnalysisPanel):
                 
                 # 计算风险评分（基于波动性评分）
                 risk_score = 100 - volatility_score
+                
+                logger.debug(f"股票 {stock_code}: 综合评分={total_score:.2f}, 技术评分={technical_score:.2f}, 基本面评分={fundamental_score:.2f}, 风险评分={risk_score:.2f}")
             else:
                 # 回退到基于综合评分的假设
                 technical_score = total_score * 0.4
                 fundamental_score = total_score * 0.4
                 risk_score = 100 - total_score
+                
+                logger.debug(f"股票 {stock_code}（使用回退评分）: 综合评分={total_score:.2f}, 技术评分={technical_score:.2f}, 基本面评分={fundamental_score:.2f}, 风险评分={risk_score:.2f}")
+            
+            # 从股票列表中获取股票名称
+            stock_name = stock_name_map.get(stock_code, "")
             
             stock_data = {
-                "name": "",  # 股票名称需要从数据源获取
+                "name": stock_name,
                 "total_score": total_score,
                 "technical_score": technical_score,
                 "fundamental_score": fundamental_score,
@@ -1100,7 +1133,9 @@ class AIStockSelectionPanel(BaseAnalysisPanel):
             exp = explanations_map.get(stock_code, {})
             if exp:
                 stock_data["reason"] = exp.get("selection_reason", "")
-                stock_data["name"] = exp.get("stock_name", "")
+                # 如果解释中有股票名称且股票列表中没有，使用解释中的名称
+                if not stock_name and exp.get("stock_name"):
+                    stock_data["name"] = exp.get("stock_name", "")
             
             ui_format[stock_code] = stock_data
         
@@ -1366,11 +1401,22 @@ class AIStockSelectionPanel(BaseAnalysisPanel):
                 self.factor_chart.setText("选择股票查看因子贡献分析")
                 return
                 
-            # 显示解释文本
-            if hasattr(explanation, 'summary_text'):
-                self.explain_text.setText(explanation.summary_text)
+            # 显示解释文本（适配后端 SelectionExplanation 格式）
+            if isinstance(explanation, dict):
+                # 字典格式：检查 selection_reason 或 summary_text
+                explanation_text = explanation.get("selection_reason") or explanation.get("summary_text", "")
+                if explanation_text:
+                    self.explain_text.setText(explanation_text)
+                else:
+                    self.explain_text.setText("暂无解释文本")
             else:
-                self.explain_text.setText("解释生成中...")
+                # 对象格式：检查 selection_reason 或 summary_text 属性
+                if hasattr(explanation, 'selection_reason'):
+                    self.explain_text.setText(explanation.selection_reason)
+                elif hasattr(explanation, 'summary_text'):
+                    self.explain_text.setText(explanation.summary_text)
+                else:
+                    self.explain_text.setText("暂无解释文本")
                 
             # 显示因子贡献图表
             self._display_factor_contribution_chart(stock_code, explanation)
@@ -1599,21 +1645,31 @@ class AIStockSelectionPanel(BaseAnalysisPanel):
                 values = list(factor_data.values())
                 colors = plt.cm.Set3(np.linspace(0, 1, len(categories)))
                 
-                # 创建柱状图
-                bars = ax.barh(categories, values, color=colors)
+                # Min-Max 归一化到 [0, 100] 范围，使所有因子都能清晰显示
+                min_val = min(values) if values else 0
+                max_val = max(values) if values else 1
+                
+                if max_val > min_val:
+                    normalized_values = [(v - min_val) / (max_val - min_val) * 100 for v in values]
+                else:
+                    normalized_values = [50.0] * len(values)
+                
+                # 创建柱状图（使用归一化后的值）
+                bars = ax.barh(categories, normalized_values, color=colors)
                 
                 # 设置标签和标题
-                ax.set_xlabel('贡献度', fontsize=10)
+                ax.set_xlabel('贡献度（归一化）', fontsize=10)
                 ax.set_title(f'{stock_code} 因子贡献分析', fontsize=12, fontweight='bold')
-                ax.set_xlim(0, max(values) * 1.1 if values else 1)
+                ax.set_xlim(0, 110)
                 
-                # 添加数值标签
-                for i, (bar, value) in enumerate(zip(bars, values)):
-                    ax.text(value + max(values) * 0.01, bar.get_y() + bar.get_height()/2,
-                           f'{value:.2f}', va='center', fontsize=9)
+                # 添加数值标签（显示原始值）
+                for i, (bar, value, original_value) in enumerate(zip(bars, normalized_values, values)):
+                    label_text = f'{original_value:.2f}' if original_value < 1000 else f'{original_value:.0f}'
+                    ax.text(value + 1, bar.get_y() + bar.get_height()/2,
+                           label_text, va='center', fontsize=9)
                 
                 # 美化图表
-                ax.grid(axis='x', alpha=0.3)
+                ax.grid(axis='x', alpha=0.3, linestyle='--', linewidth=0.5, color='gray', zorder=0, which='major')
                 ax.spines['top'].set_visible(False)
                 ax.spines['right'].set_visible(False)
             
@@ -1634,45 +1690,67 @@ class AIStockSelectionPanel(BaseAnalysisPanel):
             self.factor_chart.draw()
     
     def _extract_factor_contribution_data(self, explanation):
-        """提取因子贡献数据"""
+        """提取因子贡献数据（适配后端 SelectionExplanation 格式）"""
         try:
             factor_data = {}
             
-            # 从解释对象中提取因子数据
-            if hasattr(explanation, 'factor_contributions'):
-                for factor, contribution in explanation.factor_contributions.items():
-                    factor_data[factor] = float(contribution)
+            # 添加调试日志
+            logger.info(f"提取因子贡献数据，解释类型: {type(explanation)}")
             
-            # 如果解释对象包含技术指标评分
-            if hasattr(explanation, 'technical_score'):
-                factor_data['技术指标'] = float(explanation.technical_score)
-            
-            # 如果解释对象包含基本面评分
-            if hasattr(explanation, 'fundamental_score'):
-                factor_data['基本面指标'] = float(explanation.fundamental_score)
-            
-            # 如果解释对象包含风险评分
-            if hasattr(explanation, 'risk_score'):
-                factor_data['风险控制'] = float(explanation.risk_score)
-            
-            # 如果解释对象包含市场情绪评分
-            if hasattr(explanation, 'market_sentiment'):
-                factor_data['市场情绪'] = float(explanation.market_sentiment)
-            
-            # 如果解释对象包含流动性评分
-            if hasattr(explanation, 'liquidity_score'):
-                factor_data['流动性'] = float(explanation.liquidity_score)
-            
-            # 如果因子数据为空，生成模拟数据用于演示
-            if not factor_data:
-                # 生成演示数据
-                factor_data = {
-                    '技术指标': np.random.uniform(0.3, 0.9),
-                    '基本面指标': np.random.uniform(0.2, 0.8),
-                    '风险控制': np.random.uniform(0.1, 0.7),
-                    '市场情绪': np.random.uniform(0.0, 0.6),
-                    '流动性': np.random.uniform(0.2, 0.8)
+            # 适配后端 SelectionExplanation 格式
+            if isinstance(explanation, dict):
+                # 字典格式：从所有信号中提取
+                signals_map = {
+                    '技术': explanation.get("technical_signals", {}),
+                    '基本面': explanation.get("fundamental_signals", {}),
+                    '市场': explanation.get("market_signals", {}),
+                    '风险': explanation.get("risk_signals", {}),
+                    '情绪': explanation.get("sentiment_signals", {})
                 }
+                
+                logger.info(f"字典格式，信号映射: {signals_map}")
+                
+                # 提取所有因子的贡献度
+                for category, signals in signals_map.items():
+                    for factor_name, signal_data in signals.items():
+                        if isinstance(signal_data, dict) and "contribution" in signal_data:
+                            factor_data[f"{category}-{factor_name}"] = float(signal_data["contribution"])
+                        elif isinstance(signal_data, (int, float)):
+                            factor_data[f"{category}-{factor_name}"] = float(signal_data)
+                
+                # 如果有 key_indicators，也可以提取（作为备用）
+                key_indicators = explanation.get("key_indicators", {})
+                for factor_name, value in key_indicators.items():
+                    if not any(f"-{factor_name}" in key for key in factor_data.keys()):
+                        factor_data[factor_name] = float(value) if isinstance(value, (int, float)) else 0.0
+            
+            else:
+                # 对象格式：从所有信号属性中提取
+                signals_map = {
+                    '技术': getattr(explanation, 'technical_signals', {}),
+                    '基本面': getattr(explanation, 'fundamental_signals', {}),
+                    '市场': getattr(explanation, 'market_signals', {}),
+                    '风险': getattr(explanation, 'risk_signals', {}),
+                    '情绪': getattr(explanation, 'sentiment_signals', {})
+                }
+                
+                logger.info(f"对象格式，信号映射: {signals_map}")
+                
+                # 提取所有因子的贡献度
+                for category, signals in signals_map.items():
+                    for factor_name, signal_data in signals.items():
+                        if isinstance(signal_data, dict) and "contribution" in signal_data:
+                            factor_data[f"{category}-{factor_name}"] = float(signal_data["contribution"])
+                        elif isinstance(signal_data, (int, float)):
+                            factor_data[f"{category}-{factor_name}"] = float(signal_data)
+                
+                # 如果有 key_indicators 属性，也可以提取（作为备用）
+                key_indicators = getattr(explanation, 'key_indicators', {})
+                for factor_name, value in key_indicators.items():
+                    if not any(f"-{factor_name}" in key for key in factor_data.keys()):
+                        factor_data[factor_name] = float(value) if isinstance(value, (int, float)) else 0.0
+            
+            logger.info(f"提取的因子贡献数据: {factor_data}")
             
             return factor_data
             

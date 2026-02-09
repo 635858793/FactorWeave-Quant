@@ -8,7 +8,7 @@ import numpy as np
 
 from core.strategy_extensions import (
     IStrategyPlugin, StrategyInfo, StrategyContext, Signal, SignalType,
-    TradeResult, TradeAction, Position, PerformanceMetrics, StrategyType,
+    TradeResult, TradeAction, Position, TradingPerformanceMetrics, StrategyType,
     ParameterDef, RiskLevel, TimeFrame
 )
 from core.events import SignalGeneratedEvent, get_event_bus
@@ -340,9 +340,9 @@ class MeanReversionStrategyPlugin(IStrategyPlugin):
             metadata={}
         )
     
-    def calculate_performance(self, context: StrategyContext) -> PerformanceMetrics:
+    def calculate_performance(self, context: StrategyContext) -> TradingPerformanceMetrics:
         if not self._trade_history:
-            return PerformanceMetrics(
+            return TradingPerformanceMetrics(
                 total_return=0,
                 annual_return=0,
                 sharpe_ratio=0,
@@ -400,7 +400,7 @@ class MeanReversionStrategyPlugin(IStrategyPlugin):
         start_date = self._trade_history[0].timestamp if self._trade_history else datetime.now()
         end_date = self._trade_history[-1].timestamp if self._trade_history else datetime.now()
         
-        return PerformanceMetrics(
+        return TradingPerformanceMetrics(
             total_return=sum(returns) if returns else 0,
             annual_return=annual_return,
             sharpe_ratio=sharpe,

@@ -276,6 +276,44 @@ class PerformanceMetrics:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 @dataclass
+class TradingPerformanceMetrics:
+    """交易性能指标（用于算法优化）"""
+    true_positives: int = 0
+    false_positives: int = 0
+    true_negatives: int = 0
+    false_negatives: int = 0
+    precision: float = 0.0
+    recall: float = 0.0
+    f1_score: float = 0.0
+    accuracy: float = 0.0
+    execution_time: float = 0.0
+    memory_usage: float = 0.0
+    cpu_usage: float = 0.0
+    signal_quality: float = 0.0
+    confidence_avg: float = 0.0
+    confidence_std: float = 0.0
+    patterns_found: int = 0
+    robustness_score: float = 0.0
+    parameter_sensitivity: float = 0.0
+    overall_score: float = 0.0
+    total_return: float = 0.0
+    annual_return: float = 0.0
+    sharpe_ratio: float = 0.0
+    max_drawdown: float = 0.0
+    win_rate: float = 0.0
+    profit_factor: float = 0.0
+    total_trades: int = 0
+    winning_trades: int = 0
+    losing_trades: int = 0
+    avg_win: float = 0.0
+    avg_loss: float = 0.0
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    equity_curve: Optional[pd.Series] = None
+    drawdown_curve: Optional[pd.Series] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+@dataclass
 class StandardMarketData:
     """标准化市场数据格式，支持20字段标准"""
     symbol: str

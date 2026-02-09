@@ -4,7 +4,8 @@ from loguru import logger
 集成到FactorWeave-Quant GUI系统中，提供实时回测监控和数据联动功能
 对标行业专业软件标准
 """
-
+import matplotlib
+matplotlib.use('Agg')
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
@@ -16,6 +17,7 @@ import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
 import threading
+from threading import Lock
 import time
 import queue
 from typing import Dict, List, Optional, Any, Tuple
@@ -28,7 +30,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import matplotlib.dates as mdates
 from matplotlib.animation import FuncAnimation
-import seaborn as sns
+
 
 # 配置中文字体
 try:
@@ -171,7 +173,7 @@ class RealTimeChart(QWidget):
             self.chart_widget.enable_real_time_update(True)
 
         except Exception as e:
-            logger.info(f"图表设置失败: {e}")
+            logger.error(f"图表设置失败: {e}")
 
     def update_charts(self):
         """更新图表"""
@@ -193,7 +195,7 @@ class RealTimeChart(QWidget):
                     self.chart_widget.update_data(df)
 
         except Exception as e:
-            logger.info(f"图表更新失败: {e}")
+            logger.error(f"图表更新失败: {e}")
 
     def add_data(self, data: Dict):
         """添加数据到队列"""
@@ -252,9 +254,9 @@ class MetricsPanel(QWidget):
         layout.addWidget(title)
 
         # 指标表格 - 扩展为更多指标
-        self.metrics_table = QTableWidget(3, 6)  # 3行6列，显示更多指标
-        self.metrics_table.setMaximumHeight(180)  # 进一步增加高度
-        self.metrics_table.setMinimumHeight(160)   # 增加最小高度
+        self.metrics_table = QTableWidget(4, 5)  # 4行5列，重要指标在前
+        self.metrics_table.setMaximumHeight(400)  # 增加高度
+        self.metrics_table.setMinimumHeight(180)   # 增加最小高度
 
         # 设置专业表格样式
         self.metrics_table.setStyleSheet("""
@@ -300,10 +302,10 @@ class MetricsPanel(QWidget):
             }
         """)
 
-        # 设置表头 - 扩展为更多专业指标
-        headers = ["总收益率", "年化收益", "Sharpe比率", "Sortino比率", "最大回撤", "胜率"]
+        # 设置表头 - 重要指标在前
+        headers = ["总收益率", "年化收益", "Sharpe比率", "最大回撤", "胜率"]
         self.metrics_table.setHorizontalHeaderLabels(headers)
-        self.metrics_table.setVerticalHeaderLabels(["主要指标", "风险指标", "交易指标"])
+        self.metrics_table.setVerticalHeaderLabels(["核心指标", "风险指标", "交易指标", "其他指标"])
 
         # 设置表格属性
         self.metrics_table.setEditTriggers(QAbstractItemView.NoEditTriggers)  # 不可编辑
@@ -319,123 +321,47 @@ class MetricsPanel(QWidget):
 
     def init_metrics_table(self):
         """初始化指标表格数据"""
-        # 初始化数据 - 3行6列的专业指标
+        # 初始化数据 - 4行5列，重要指标在前
         initial_data = [
-            # 主要指标行
-            ["0.00%", "0.00%", "0.000", "0.000", "0.00%", "0.00%"],
+            # 核心指标行（最重要）
+            ["0.00%", "0.00%", "0.000", "0.00%", "0.00%"],
             # 风险指标行
-            ["VaR: 0.00%", "β: 0.000", "偏度: 0.00", "峰度: 0.00", "波动率: 0.00%", "α: 0.000"],
+            ["VaR: 0.00%", "β: 0.000", "偏度: 0.00", "峰度: 0.00", "波动率: 0.00%"],
             # 交易指标行
-            ["交易: 0次", "盈亏比: 0.00", "期望: 0.00%", "连胜: 0次", "持仓: 0天", "换手: 0.00%"]
+            ["交易: 0次", "盈亏比: 0.00", "期望: 0.00%", "连胜: 0次", "持仓: 0天"],
+            # 其他指标行
+            ["换手: 0.00%", "α: 0.000", "Sortino: 0.000", "盈利因子: 0.00", "期望收益: 0.00%"]
         ]
 
-        for row in range(3):
-            for col in range(6):
+        for row in range(4):
+            for col in range(5):
                 item = QTableWidgetItem(initial_data[row][col])
                 item.setTextAlignment(Qt.AlignCenter)
 
                 # 设置不同行的样式
-                if row == 0:  # 主要指标行
+                if row == 0:  # 核心指标行
                     item.setForeground(QColor("#ffffff"))
                     font = item.font()
                     font.setBold(True)
-                    font.setPointSize(10)
+                    font.setPointSize(11)
                     item.setFont(font)
                 elif row == 1:  # 风险指标行
                     item.setForeground(QColor("#fbbf24"))  # 黄色
                     font = item.font()
-                    font.setPointSize(9)
+                    font.setPointSize(10)
                     item.setFont(font)
-                else:  # 交易指标行
+                elif row == 2:  # 交易指标行
                     item.setForeground(QColor("#34d399"))  # 绿色
+                    font = item.font()
+                    font.setPointSize(10)
+                    item.setFont(font)
+                else:  # 其他指标行
+                    item.setForeground(QColor("#a0aec0"))  # 灰色
                     font = item.font()
                     font.setPointSize(9)
                     item.setFont(font)
 
                 self.metrics_table.setItem(row, col, item)
-
-    def create_metric_cards(self):
-        """创建指标卡片"""
-        # 总收益率卡片
-        self.return_card = self.create_metric_card(
-            " 总收益率", "0.00%", "年化收益: 0.00%")
-        self.metrics_container.addWidget(self.return_card)
-
-        # Sharpe比率卡片
-        self.sharpe_card = self.create_metric_card(
-            " Sharpe比率", "0.000", "最大回撤: 0.00%")
-        self.metrics_container.addWidget(self.sharpe_card)
-
-        # 胜率卡片
-        self.winrate_card = self.create_metric_card(
-            " 胜率", "0.00%", "盈利因子: 0.00")
-        self.metrics_container.addWidget(self.winrate_card)
-
-        # 风险指标卡片
-        self.risk_card = self.create_metric_card(
-            " 风险指标", "VaR: 0.00%", "波动率: 0.00%")
-        self.metrics_container.addWidget(self.risk_card)
-
-    def create_metric_card(self, title: str, value: str, subtitle: str) -> QFrame:
-        """创建指标卡片"""
-        card = QFrame()
-        card.setStyleSheet("""
-            QFrame {
-                background: linear-gradient(135deg, #1e2329, #2d3748);
-                border: 1px solid #3a4553;
-                border-radius: 6px;
-                margin: 1px;
-                padding: 6px;
-                min-width: 120px;
-                max-width: 160px;
-                min-height: 70px;
-                max-height: 85px;
-            }
-            QFrame:hover {
-                border: 1px solid #4a5568;
-                background: linear-gradient(135deg, #2d3748, #3a4553);
-                transform: translateY(-1px);
-            }
-        """)
-
-        layout = QVBoxLayout(card)
-        layout.setSpacing(2)
-        layout.setContentsMargins(6, 4, 6, 4)
-
-        # 标题
-        title_label = QLabel(title)
-        title_label.setStyleSheet("""
-            color: #a0aec0; 
-            font-size: 10px; 
-            font-weight: 600;
-            margin-bottom: 2px;
-        """)
-        layout.addWidget(title_label)
-
-        # 数值
-        value_label = QLabel(value)
-        value_label.setStyleSheet("""
-            color: #ffffff; 
-            font-size: 14px; 
-            font-weight: bold;
-            margin: 1px 0;
-        """)
-        layout.addWidget(value_label)
-
-        # 副标题
-        subtitle_label = QLabel(subtitle)
-        subtitle_label.setStyleSheet("""
-            color: #718096; 
-            font-size: 9px;
-            margin-top: 1px;
-        """)
-        layout.addWidget(subtitle_label)
-
-        # 存储标签引用
-        setattr(card, 'value_label', value_label)
-        setattr(card, 'subtitle_label', subtitle_label)
-
-        return card
 
     def update_metrics(self, metrics: Dict):
         """更新指标表格"""
@@ -464,36 +390,37 @@ class MetricsPanel(QWidget):
             avg_holding_period = metrics.get('avg_holding_period', 0)
             turnover_rate = metrics.get('turnover_rate', 0)
 
-            # 更新表格数据 - 3行6列
+            # 更新表格数据 - 4行5列，重要指标在前
             table_data = [
-                # 主要指标行
+                # 核心指标行（最重要）
                 [f"{total_return:.2%}", f"{annualized_return:.2%}", f"{sharpe_ratio:.3f}",
-                 f"{sortino_ratio:.3f}", f"{max_drawdown:.2%}", f"{win_rate:.2%}"],
+                 f"{max_drawdown:.2%}", f"{win_rate:.2%}"],
                 # 风险指标行
                 [f"VaR: {var_95:.2%}", f"β: {beta:.3f}", f"偏度: {skew:.2f}",
-                 f"峰度: {kurtosis:.2f}", f"波动率: {volatility:.2%}", f"α: {alpha:.3f}"],
+                 f"峰度: {kurtosis:.2f}", f"波动率: {volatility:.2%}"],
                 # 交易指标行
                 [f"交易: {trade_count}次", f"盈亏比: {profit_loss_ratio:.2f}", f"期望: {expectancy:.2%}",
-                 f"连胜: {max_consecutive_wins}次", f"持仓: {avg_holding_period:.0f}天", f"换手: {turnover_rate:.2%}"]
+                 f"连胜: {max_consecutive_wins}次", f"持仓: {avg_holding_period:.0f}天"],
+                # 其他指标行
+                [f"换手: {turnover_rate:.2%}", f"α: {alpha:.3f}", f"Sortino: {sortino_ratio:.3f}",
+                 f"盈利因子: {profit_loss_ratio:.2f}", f"期望收益: {annualized_return:.2%}"]
             ]
 
-            for row in range(3):
-                for col in range(6):
+            for row in range(4):
+                for col in range(5):
                     item = self.metrics_table.item(row, col)
                     if item:
                         item.setText(table_data[row][col])
 
                         # 根据数值和行设置颜色
-                        if row == 0:  # 主要指标行
+                        if row == 0:  # 核心指标行（重要指标，颜色动态变化）
                             if col == 0:  # 总收益率
                                 color = "#10b981" if total_return >= 0 else "#ef4444"
                             elif col == 1:  # 年化收益
                                 color = "#10b981" if annualized_return >= 0 else "#ef4444"
                             elif col == 2:  # Sharpe比率
                                 color = "#10b981" if sharpe_ratio >= 1.0 else "#f59e0b" if sharpe_ratio >= 0.5 else "#ef4444"
-                            elif col == 3:  # Sortino比率
-                                color = "#10b981" if sortino_ratio >= 1.0 else "#f59e0b" if sortino_ratio >= 0.5 else "#ef4444"
-                            elif col == 4:  # 最大回撤
+                            elif col == 3:  # 最大回撤
                                 color = "#10b981" if max_drawdown <= 0.1 else "#f59e0b" if max_drawdown <= 0.2 else "#ef4444"
                             else:  # 胜率
                                 color = "#10b981" if win_rate >= 0.6 else "#f59e0b" if win_rate >= 0.5 else "#ef4444"
@@ -501,57 +428,29 @@ class MetricsPanel(QWidget):
                             item.setForeground(QColor(color))
                             font = item.font()
                             font.setBold(True)
-                            font.setPointSize(10)
+                            font.setPointSize(11)
                             item.setFont(font)
 
                         elif row == 1:  # 风险指标行
                             item.setForeground(QColor("#fbbf24"))  # 统一黄色
                             font = item.font()
-                            font.setPointSize(9)
+                            font.setPointSize(10)
                             item.setFont(font)
 
-                        else:  # 交易指标行
+                        elif row == 2:  # 交易指标行
                             item.setForeground(QColor("#34d399"))  # 统一绿色
+                            font = item.font()
+                            font.setPointSize(10)
+                            item.setFont(font)
+
+                        else:  # 其他指标行
+                            item.setForeground(QColor("#a0aec0"))  # 统一灰色
                             font = item.font()
                             font.setPointSize(9)
                             item.setFont(font)
 
         except Exception as e:
-            logger.info(f"更新指标表格失败: {e}")
-
-    def _update_card_colors(self, metrics: Dict):
-        """根据指标值更新卡片颜色"""
-        # 总收益率颜色
-        total_return = metrics.get('total_return', 0)
-        color = "#10b981" if total_return >= 0 else "#ef4444"
-        self.return_card.setStyleSheet(f"""
-            QFrame {{
-                background: linear-gradient(135deg, #1e2329, #2d3748);
-                border-left: 4px solid {color};
-                border-radius: 10px;
-                margin: 5px;
-                padding: 15px;
-            }}
-        """)
-
-        # Sharpe比率颜色
-        sharpe_ratio = metrics.get('sharpe_ratio', 0)
-        if sharpe_ratio >= 1.0:
-            color = "#10b981"
-        elif sharpe_ratio >= 0.5:
-            color = "#f59e0b"
-        else:
-            color = "#ef4444"
-
-        self.sharpe_card.setStyleSheet(f"""
-            QFrame {{
-                background: linear-gradient(135deg, #1e2329, #2d3748);
-                border-left: 4px solid {color};
-                border-radius: 10px;
-                margin: 5px;
-                padding: 15px;
-            }}
-        """)
+            logger.error(f"更新指标表格失败: {e}")
 
 
 class ControlPanel(QWidget):
@@ -1003,6 +902,7 @@ class ProfessionalBacktestWidget(QWidget):
         self.monitoring_thread = None
         self.is_monitoring = False
         self.monitoring_data = []
+        self.monitoring_data_lock = Lock()
 
         # 初始化UI
         self.init_ui()
@@ -1096,8 +996,8 @@ class ProfessionalBacktestWidget(QWidget):
 
         # 指标面板
         self.metrics_panel = MetricsPanel()
-        self.metrics_panel.setMaximumHeight(200)  # 进一步增加高度避免遮挡
-        self.metrics_panel.setMinimumHeight(180)  # 设置最小高度
+        # self.metrics_panel.setMaximumHeight(200)  # 进一步增加高度避免遮挡
+        # self.metrics_panel.setMinimumHeight(180)  # 设置最小高度
         right_layout.addWidget(self.metrics_panel)
 
         # 图表区域
@@ -1384,14 +1284,33 @@ class ProfessionalBacktestWidget(QWidget):
             self.error_occurred.emit(f"启动回测失败: {str(e)}")
             self.control_panel.on_stop_backtest()
 
+    def _get_stock_service(self):
+        """获取股票服务"""
+        try:
+            from core.services.stock_service import StockService
+            
+            if hasattr(self, 'service_container') and self.service_container:
+                return self.service_container.resolve(StockService)
+            else:
+                # 通过全局服务容器获取
+                try:
+                    from core.containers import get_service_container
+                    container = get_service_container()
+                    return container.resolve(StockService)
+                except Exception as e:
+                    logger.warning(f"无法从服务容器获取StockService: {e}")
+                    return None
+        except Exception as e:
+            logger.error(f"获取StockService失败: {e}")
+            return None
+
     def _get_stock_data(self, stock_code: str, period: str) -> pd.DataFrame:
         """从系统框架获取真实股票数据"""
         try:
-            from core.services.stock_service import StockService
-            stock_service = StockService()
+            stock_service = self._get_stock_service()
             
-            if not stock_service._initialized:
-                raise RuntimeError("StockService未初始化")
+            if stock_service is None:
+                raise RuntimeError("无法获取StockService实例")
             
             period_map = {
                 "1w": 7, "2w": 14, "1m": 30, "3m": 90,
@@ -1531,12 +1450,13 @@ class ProfessionalBacktestWidget(QWidget):
                                 # 安全的UI更新（使用信号槽机制）
                                 self._safe_update_ui(ui_data)
                                 
-                                # 存储监控数据
-                                self.monitoring_data.append(ui_data)
-                                
-                                # 限制数据长度
-                                if len(self.monitoring_data) > 1000:
-                                    self.monitoring_data = self.monitoring_data[-1000:]
+                                # 存储监控数据（线程安全）
+                                with self.monitoring_data_lock:
+                                    self.monitoring_data.append(ui_data)
+                                    
+                                    # 限制数据长度
+                                    if len(self.monitoring_data) > 1000:
+                                        self.monitoring_data = self.monitoring_data[-1000:]
                         
                         iteration += 1
                         
@@ -1736,32 +1656,33 @@ class ProfessionalBacktestWidget(QWidget):
         """设置K线数据"""
         try:
             if kdata is not None and not kdata.empty:
-                logger.error("接收到K线数据，准备回测")
+                logger.info("接收到K线数据，准备回测")
                 # 这里可以使用真实的K线数据进行回测
 
         except Exception as e:
-            logger.info(f"设置K线数据失败: {e}")
+            logger.error(f"设置K线数据失败: {e}")
 
     def refresh_data(self):
         """刷新数据"""
         try:
             if self.is_monitoring:
-                logger.error("刷新监控数据")
+                logger.info("刷新监控数据")
 
         except Exception as e:
-            logger.info(f"刷新数据失败: {e}")
+            logger.error(f"刷新数据失败: {e}")
 
     def clear_data(self):
         """清除数据"""
         try:
-            self.monitoring_data.clear()
+            with self.monitoring_data_lock:
+                self.monitoring_data.clear()
             self.alerts_panel.clear_alerts()
             self.chart_widget.clear_data()
 
-            logger.error("数据已清除")
+            logger.info("数据已清除")
 
         except Exception as e:
-            logger.info(f"清除数据失败: {e}")
+            logger.error(f"清除数据失败: {e}")
 
 # 便捷函数
 

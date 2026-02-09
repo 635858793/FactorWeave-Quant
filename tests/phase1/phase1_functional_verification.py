@@ -104,7 +104,7 @@ class Phase1FunctionalVerification:
                     self.test_results[test_name] = success
 
                     if success:
-                        logger.info(f"✅ {test_name}: 通过")
+                        logger.info(f"{test_name}: 通过")
                     else:
                         logger.error(f"❌ {test_name}: 失败")
 
@@ -480,7 +480,7 @@ class Phase1FunctionalVerification:
 
         logger.info("\n详细结果:")
         for test_name, result in self.test_results.items():
-            status = "✅ 通过" if result else "❌ 失败"
+            status = "通过" if result else "❌ 失败"
             logger.info(f"  {test_name}: {status}")
 
         if self.error_messages:
@@ -516,9 +516,9 @@ def main():
 
     if success:
         logger.info("🎉 Phase 1 功能验证测试全部通过！")
-        logger.info("✅ 基础服务层实现完整，逻辑正确，功能正常")
-        logger.info("✅ 所有服务使用真实环境和真实数据，无Mock实现")
-        logger.info("✅ 架构精简重构Phase 1完成，可以进入Phase 2")
+        logger.info("基础服务层实现完整，逻辑正确，功能正常")
+        logger.info("所有服务使用真实环境和真实数据，无Mock实现")
+        logger.info("架构精简重构Phase 1完成，可以进入Phase 2")
         exit(0)
     else:
         logger.error("❌ Phase 1 功能验证测试存在失败项")

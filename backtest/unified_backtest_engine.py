@@ -450,10 +450,10 @@ class UnifiedBacktestEngine:
                 )
                 if hasattr(validation_result, 'is_valid'):
                     if not validation_result.is_valid:
-                        self.logger.warning(f"数据验证发现问题: {validation_result.issues}")
+                        self.logger.warning(f"数据验证发现问题: {validation_result.errors}")
                         # 可以选择继续或抛出异常
                         if hasattr(validation_result, 'severity') and validation_result.severity == 'critical':
-                            raise ValueError(f"数据验证失败: {validation_result.issues}")
+                            raise ValueError(f"数据验证失败: {validation_result.errors}")
                     else:
                         self.logger.info("数据验证通过")
                 else:

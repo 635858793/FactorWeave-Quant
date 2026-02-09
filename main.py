@@ -13,14 +13,6 @@ FactorWeave-Quant  主程序入口
 作者: FactorWeave-Quant  Team
 """
 
-from utils.exception_handler import setup_exception_handler
-from utils.warning_suppressor import suppress_warnings
-from core.coordinators import MainWindowCoordinator
-from core.events import EventBus, get_event_bus
-from core.containers import ServiceContainer, get_service_container
-from core.containers.service_registry import ServiceScope
-from core.services.service_bootstrap import bootstrap_services
-from core.graceful_shutdown import shutdown_manager  # 优雅关闭管理器
 import sys
 import asyncio
 import traceback
@@ -33,17 +25,42 @@ from loguru import logger
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-# Qt相关导入
+from utils.exception_handler import setup_exception_handler
+from utils.warning_suppressor import suppress_warnings
+from core.coordinators import MainWindowCoordinator
+from core.events import EventBus, get_event_bus
+from core.containers import ServiceContainer, get_service_container
+from core.containers.service_registry import ServiceScope
+from core.services.service_bootstrap import bootstrap_services
+from core.graceful_shutdown import shutdown_manager  # 优雅关闭管理器
+logger.info("所有模块导入完成")
+logger.info("开始导入Qt相关模块...")
 try:
+    logger.info("导入 PyQt5.QtWidgets...")
     from PyQt5.QtWidgets import QApplication, QMessageBox
+    logger.info("✓ PyQt5.QtWidgets 导入完成")
+    
+    logger.info("导入 PyQt5.QtCore...")
     from PyQt5.QtCore import Qt
+    logger.info("✓ PyQt5.QtCore 导入完成")
+    
+    logger.info("导入 PyQt5.QtGui...")
     from PyQt5.QtGui import QIcon
+    logger.info("✓ PyQt5.QtGui 导入完成")
+    
+    logger.info("导入 qasync...")
     from qasync import QEventLoop
+    logger.info("✓ qasync 导入完成")
+    
+    logger.info("✓ Qt相关模块导入完成")
+    
     # 设置Qt应用程序属性
+    logger.info("设置Qt应用程序属性...")
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
     # 设置OpenGL上下文共享，解决QtWebEngineWidgets问题
     QApplication.setAttribute(Qt.AA_ShareOpenGLContexts, True)
+    logger.info("✓ Qt应用程序属性设置完成")
 
 except ImportError as e:
     logger.info(f"PyQt5导入失败: {e}")
@@ -86,6 +103,7 @@ class FactorWeaveQuantApplication:
 
             # 1.5. 设置Qt日志处理器
             self._setup_qt_logging()
+            logger.info("Qt日志设置完成")
 
             # 2. 抑制警告
             suppress_warnings()
@@ -98,13 +116,17 @@ class FactorWeaveQuantApplication:
 
             # 4. 初始化核心组件
             self._initialize_core_components()
+            logger.info("核心组件初始化完成")
 
             # 5. 注册服务
             if not self._register_services():
+                logger.error("服务注册失败")
                 return False
+            logger.info("服务注册完成")
 
             # 6. 创建主窗口协调器
             self._create_main_window()
+            logger.info("主窗口创建完成")
 
             logger.info("FactorWeave-Quant  2.0 初始化完成")
             return True
@@ -132,7 +154,7 @@ class FactorWeaveQuantApplication:
 
         # 创建应用程序实例
         self.app = QApplication(sys.argv)
-        self.app.setApplicationName("FactorWeave-Quant ")
+        self.app.setApplicationName("FactorWeave-Quant")
         self.app.setApplicationVersion("2.0")
         self.app.setOrganizationName("FactorWeave 团队")
 
@@ -140,6 +162,23 @@ class FactorWeaveQuantApplication:
         icon_path = project_root / "icons" / "logo.png"
         if icon_path.exists():
             self.app.setWindowIcon(QIcon(str(icon_path)))
+
+        # 初始化显示优化管理器（响应式UI支持）
+        try:
+            from gui.utils.display_optimization import setup_high_dpi_support
+            setup_high_dpi_support()
+            logger.info("✓ 显示优化管理器已初始化")
+        except Exception as e:
+            logger.warning(f"显示优化管理器初始化失败: {e}")
+
+        # 初始化全局字体管理器（字体缩放功能）
+        try:
+            from gui.utils.global_font_manager import get_global_font_manager
+            self.font_manager = get_global_font_manager()
+            logger.info(f"✓ 全局字体管理器已初始化，当前字体大小: {self.font_manager.get_font_size()}")
+        except Exception as e:
+            logger.warning(f"全局字体管理器初始化失败: {e}")
+            self.font_manager = None
 
         logger.info("Qt应用程序创建完成")
 
@@ -200,6 +239,18 @@ class FactorWeaveQuantApplication:
             return False
 
         logger.info("所有服务注册完成")
+
+        # 4. 初始化JIT系统
+        logger.info("4. 初始化JIT系统...")
+        try:
+            from backtest.jit_system_initializer import initialize_jit_system
+            if initialize_jit_system():
+                logger.info("JIT系统初始化成功")
+            else:
+                logger.warning("JIT系统初始化失败")
+        except Exception as e:
+            logger.warning(f"JIT系统初始化失败: {e}")
+
         return True
 
     def _create_main_window(self) -> None:
@@ -234,7 +285,10 @@ class FactorWeaveQuantApplication:
             应用程序退出代码
         """
         try:
+            logger.info("开始运行应用程序...")
+            
             if not self.initialize():
+                logger.error("应用程序初始化失败")
                 return 1
 
             logger.info("6. 启动主窗口...")
@@ -242,6 +296,7 @@ class FactorWeaveQuantApplication:
             # 启动主窗口
             self.main_window_coordinator.run()
 
+            logger.info("主窗口已启动")
             logger.info("7. 事件循环将由外部管理...")
             return 0  # 成功
 
@@ -290,9 +345,12 @@ class FactorWeaveQuantApplication:
 def main():
     """主程序入口"""
     try:
+        logger.info("主程序入口开始执行...")
+        
         # 确保日志目录存在
         log_dir = project_root / "logs"
         log_dir.mkdir(exist_ok=True)
+        logger.info("日志目录已创建")
 
         # 注册DuckDB清理到优雅关闭管理器
         try:
@@ -301,14 +359,17 @@ def main():
                 cleanup_duckdb_manager,
                 name="DuckDB连接管理器"
             )
-            logger.info("✅ 已注册DuckDB优雅关闭处理器")
+            logger.info("已注册DuckDB优雅关闭处理器")
         except Exception as e:
             logger.warning(f"注册DuckDB清理失败: {e}")
 
         # 创建并运行应用程序
         if QEventLoop is not None:
+            logger.info("开始创建QApplication实例...")
+            
             # 创建QApplication实例
             app = QApplication(sys.argv)
+            logger.info("QApplication实例创建完成")
             
             # WebGPU硬件加速渲染初始化（在QApplication创建后进行）
             try:
@@ -329,21 +390,28 @@ def main():
                 webgpu_renderer = None
 
             # 创建事件循环
+            logger.info("创建事件循环...")
             event_loop = QEventLoop(app)
             asyncio.set_event_loop(event_loop)
+            logger.info("事件循环创建完成")
             
+            logger.info("创建FactorWeaveQuantApplication实例...")
             factorweave_app = FactorWeaveQuantApplication()
             factorweave_app.app = app  # Pass app instance
+            logger.info("FactorWeaveQuantApplication实例创建完成")
 
             # 优雅地退出
             app.aboutToQuit.connect(event_loop.stop)
 
+            logger.info("开始运行应用程序...")
             if factorweave_app.run() != 0:
                 logger.error("Application setup failed. Exiting.")
                 sys.exit(1)
 
+            logger.info("应用程序运行完成，开始事件循环...")
             event_loop.run_forever()  # 运行事件循环
 
+            logger.info("事件循环结束，开始清理...")
             factorweave_app._cleanup()
             logger.info("Application shutdown complete.")
             sys.exit(0) # Let the application exit naturally

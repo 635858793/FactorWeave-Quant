@@ -189,7 +189,9 @@ class AlertPanelWidget(QFrame):
         if len(self.alerts) > self.max_alerts:
             self.alerts.pop()
         
-        self.update_alert_display()
+        # 使用 QTimer.singleShot 确保在主线程中更新UI
+        from PyQt5.QtCore import QTimer
+        QTimer.singleShot(0, self._update_alert_display_in_main_thread)
         
         # 发送信号
         self.alert_triggered.emit(alert_type, alert_data)
@@ -197,10 +199,12 @@ class AlertPanelWidget(QFrame):
     def clear_alerts(self):
         """清空告警"""
         self.alerts.clear()
-        self.update_alert_display()
+        # 使用 QTimer.singleShot 确保在主线程中更新UI
+        from PyQt5.QtCore import QTimer
+        QTimer.singleShot(0, self._update_alert_display_in_main_thread)
     
-    def update_alert_display(self):
-        """更新告警显示"""
+    def _update_alert_display_in_main_thread(self):
+        """在主线程中更新告警显示"""
         if not self.alerts:
             self.alert_list.setPlainText("暂无告警信息")
             return
@@ -222,6 +226,10 @@ class DeepMonitoringOverviewTab(QWidget):
         
         # 监控器
         self.monitor = None
+        
+        # 监控线程
+        self.monitoring_thread = None
+        self.monitoring_stop_event = None
         
         # 指标图表
         self.charts = {}
@@ -424,13 +432,29 @@ class DeepMonitoringOverviewTab(QWidget):
                 import asyncio
                 import threading
                 
+                # 停止之前的监控线程（如果存在）
+                if self.monitoring_thread and self.monitoring_thread.is_alive():
+                    if self.monitoring_stop_event:
+                        self.monitoring_stop_event.set()
+                    # 不等待线程结束，因为线程是 daemon=True，会自动清理
+                    # 如果使用 join() 会阻塞主线程，导致UI卡顿
+                
+                # 创建新的停止事件
+                self.monitoring_stop_event = threading.Event()
+                
                 def start_async_monitoring():
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
-                    loop.run_until_complete(self.monitor.start_monitoring())
+                    try:
+                        loop.run_until_complete(self.monitor.start_monitoring())
+                    except Exception as e:
+                        logger.error(f"监控线程执行失败: {e}")
+                    finally:
+                        loop.close()
                 
                 # 在新线程中启动异步监控
-                threading.Thread(target=start_async_monitoring, daemon=True).start()
+                self.monitoring_thread = threading.Thread(target=start_async_monitoring, daemon=True)
+                self.monitoring_thread.start()
                 
                 # 更新UI状态
                 self.start_button.setEnabled(False)
@@ -450,6 +474,13 @@ class DeepMonitoringOverviewTab(QWidget):
         try:
             if self.monitor:
                 self.monitor.stop_monitoring()
+            
+            # 停止监控线程
+            if self.monitoring_thread and self.monitoring_thread.is_alive():
+                if self.monitoring_stop_event:
+                    self.monitoring_stop_event.set()
+                # 不等待线程结束，因为线程是 daemon=True，会自动清理
+                # 如果使用 join() 会阻塞主线程，导致UI卡顿
             
             # 更新UI状态
             self.start_button.setEnabled(True)
@@ -526,6 +557,27 @@ class DeepMonitoringOverviewTab(QWidget):
             self.alert_panel.add_alert(alert_type, alert_data)
         except Exception as e:
             print(f"处理告警失败: {e}")
+    
+    def cleanup(self):
+        """清理资源"""
+        try:
+            if hasattr(self, 'monitor') and self.monitor:
+                try:
+                    self.monitor.stop()
+                except Exception as e:
+                    logger.error(f"停止监控器失败: {e}")
+            
+            if hasattr(self, 'charts'):
+                for chart in self.charts.values():
+                    if hasattr(chart, 'cleanup'):
+                        try:
+                            chart.cleanup()
+                        except Exception as e:
+                            logger.error(f"清理图表失败: {e}")
+            
+            logger.info("DeepMonitoringOverviewTab 资源已清理")
+        except Exception as e:
+            logger.error(f"清理 DeepMonitoringOverviewTab 资源失败: {e}")
 
 
 class DeepMonitoringDetailsTab(QWidget):
@@ -620,6 +672,16 @@ class DeepMonitoringDetailsTab(QWidget):
                 
         except Exception as e:
             QMessageBox.critical(self, "导出失败", f"导出数据时发生错误: {str(e)}")
+    
+    def cleanup(self):
+        """清理资源"""
+        try:
+            if hasattr(self, 'stats_table'):
+                self.stats_table.clear()
+            
+            logger.info("DeepMonitoringDetailsTab 资源已清理")
+        except Exception as e:
+            logger.error(f"清理 DeepMonitoringDetailsTab 资源失败: {e}")
 
 
 class DeepMonitoringTab(QWidget):
@@ -674,3 +736,18 @@ class DeepMonitoringTab(QWidget):
         layout.addWidget(self.tab_widget)
         
         print("深度监控标签页初始化完成")
+    
+    def cleanup(self):
+        """清理资源"""
+        try:
+            if hasattr(self, 'overview_tab') and self.overview_tab:
+                if hasattr(self.overview_tab, 'cleanup'):
+                    self.overview_tab.cleanup()
+            
+            if hasattr(self, 'details_tab') and self.details_tab:
+                if hasattr(self.details_tab, 'cleanup'):
+                    self.details_tab.cleanup()
+            
+            logger.info("DeepMonitoringTab 资源已清理")
+        except Exception as e:
+            logger.error(f"清理 DeepMonitoringTab 资源失败: {e}")

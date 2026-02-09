@@ -41,11 +41,11 @@ def _ensure_qt_imports():
             from PyQt5.QtWidgets import QWidget, QMenu, QAction
             from PyQt5.QtCore import QObject, pyqtSignal
         except ImportError:
-            from PyQt6.QtWidgets import QApplication
+            from PyQt5.QtWidgets import QApplication
             if QApplication.instance() is None:
                 return
-            from PyQt6.QtWidgets import QWidget, QMenu, QAction
-            from PyQt6.QtCore import QObject, pyqtSignal
+            from PyQt5.QtWidgets import QWidget, QMenu, QAction
+            from PyQt5.QtCore import QObject, pyqtSignal
 
 
 @dataclass

@@ -721,7 +721,7 @@ class ChartService(CacheableService, ConfigurableService):
     def get_kdata(self, stock_code: str, period: str = 'D', count: int = 365, 
                   asset_type: 'AssetType' = None) -> pd.DataFrame:
         """
-        获取K线数据（✅ 优化：支持多资产类型，委托给股票服务）
+        获取K线数据（优化：支持多资产类型，委托给股票服务）
 
         Args:
             stock_code: 股票代码（或其他资产代码）
@@ -746,7 +746,7 @@ class ChartService(CacheableService, ConfigurableService):
                 logger.error("Stock service not available for get_kdata")
                 return pd.DataFrame()
 
-            # ✅ 委托给股票服务获取数据（传递asset_type）
+            # 委托给股票服务获取数据（传递asset_type）
             kdata = stock_service.get_kdata(stock_code, period, count, asset_type=asset_type)
             if kdata is not None:
                 return kdata
