@@ -874,7 +874,7 @@ class ChartRenderer(QObject):
             up_color = style.get('up_color', '#ff0000')
             down_color = style.get('down_color', '#00ff00')
             alpha = style.get('alpha', 1.0)
-            # ✅ 修复：横坐标处理（支持datetime X轴）
+            # 修复：横坐标处理（支持datetime X轴）
             if x is not None:
                 xvals = x
             elif use_datetime_axis and 'datetime' in data.columns:
@@ -984,7 +984,7 @@ class ChartRenderer(QObject):
 
             view_data = self._get_view_data(data)
             plot_data = self._downsample_data(view_data)
-            # ✅ 修复：直接使用向量化渲染实现
+            # 修复：直接使用向量化渲染实现
             self._render_volume_vectorized(ax, plot_data, style or {}, x, use_datetime_axis)
             self._optimize_display(ax)
         except Exception as e:
@@ -1020,7 +1020,7 @@ class ChartRenderer(QObject):
         else:
             bar_width = 0.3
 
-        # ✅ 性能优化：使用完全向量化的numpy操作，提升10-100倍性能
+        # 性能优化：使用完全向量化的numpy操作，提升10-100倍性能
         # 提取数据为numpy数组（避免iterrows()的性能开销）
         volumes = data['volume'].values
         closes = data['close'].values
@@ -1036,7 +1036,7 @@ class ChartRenderer(QObject):
         up_indices = np.where(is_up)[0]
         down_indices = np.where(~is_up)[0]
 
-        # ✅ 性能优化：完全向量化构建，直接使用numpy数组（PolyCollection支持）
+        # 性能优化：完全向量化构建，直接使用numpy数组（PolyCollection支持）
         def build_volume_verts(indices):
             """批量构建成交量柱状图顶点，返回numpy数组"""
             if len(indices) == 0:
@@ -1055,7 +1055,7 @@ class ChartRenderer(QObject):
 
         verts_up = build_volume_verts(up_indices)
         verts_down = build_volume_verts(down_indices)
-        # ✅ 性能优化：检查数组长度而不是转换为bool（避免numpy警告）
+        # 性能优化：检查数组长度而不是转换为bool（避免numpy警告）
         if len(verts_up) > 0:
             collection_up = PolyCollection(
                 verts_up, facecolor=up_color, edgecolor='none', alpha=alpha)
@@ -1064,7 +1064,7 @@ class ChartRenderer(QObject):
             collection_down = PolyCollection(
                 verts_down, facecolor=down_color, edgecolor='none', alpha=alpha)
             ax.add_collection(collection_down)
-        # ✅ 性能优化：移除autoscale_view()调用，由调用方统一处理
+        # 性能优化：移除autoscale_view()调用，由调用方统一处理
         # ax.autoscale_view()  # 已移除，在rendering_mixin中统一调用
 
     def render_line(self, ax, data: pd.Series, style: Dict[str, Any] = None):

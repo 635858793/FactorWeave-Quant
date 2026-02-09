@@ -189,7 +189,7 @@ class ArchitecturePerformanceOptimizer:
                 'architecture_metrics': self._analyze_architecture_metrics()
             }
 
-            logger.info("✅ Performance metrics collection completed")
+            logger.info("Performance metrics collection completed")
             return metrics
 
         except Exception as e:
@@ -568,7 +568,7 @@ class ArchitecturePerformanceOptimizer:
                 except Exception as e:
                     logger.error(f"Optimization failed: {e}")
 
-            logger.info(f"✅ Completed {len(results)} optimizations")
+            logger.info(f"Completed {len(results)} optimizations")
             return results
 
         except Exception as e:
@@ -877,7 +877,7 @@ class ArchitecturePerformanceOptimizer:
 """
 
             for result in validation_results:
-                status = "✅ PASS" if result.passed else "❌ FAIL"
+                status = "PASS" if result.passed else "❌ FAIL"
                 target = self.performance_targets.get(result.name.replace("", "_").lower())
                 critical = "🔴 CRITICAL" if target and target.critical else "🟡 OPTIONAL"
 
@@ -891,10 +891,10 @@ class ArchitecturePerformanceOptimizer:
                 if result.passed:
                     if result.name in ["Memory Usage Reduction"]:
                         improvement = result.measured_value
-                        report += f"- **Result:** ✅ Target exceeded by {improvement:.1f} {result.unit}\n"
+                        report += f"- **Result:** Target exceeded by {improvement:.1f} {result.unit}\n"
                     else:
                         margin = result.target_value - result.measured_value
-                        report += f"- **Result:** ✅ Target met with {margin:.2f} {result.unit} margin\n"
+                        report += f"- **Result:** Target met with {margin:.2f} {result.unit} margin\n"
                 else:
                     if result.measured_value > 0:
                         excess = result.measured_value - result.target_value
@@ -908,7 +908,7 @@ class ArchitecturePerformanceOptimizer:
             if self.optimization_results:
                 report += "## Applied Optimizations\n\n"
                 for opt in self.optimization_results:
-                    status = "✅" if opt.success else "❌"
+                    status = "✓" if opt.success else "❌"
                     report += f"### {opt.optimization_name} {status}\n\n"
                     report += f"- **Before:** {opt.before_value:.3f}\n"
                     report += f"- **After:** {opt.after_value:.3f}\n"

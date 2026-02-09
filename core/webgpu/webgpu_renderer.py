@@ -119,7 +119,7 @@ class WebGPUContext:
             validated_report = self._validate_compatibility_report(self.compatibility_report)
             
             if validated_report:
-                logger.info(f"✅ 兼容性报告验证通过: 性能评分={validated_report['score']}, 推荐后端={validated_report['backend']}")
+                logger.info(f"兼容性报告验证通过: 性能评分={validated_report['score']}, 推荐后端={validated_report['backend']}")
                 
                 # 检查推荐后端是否为GPU类型
                 backend_value = validated_report['backend'].value if hasattr(validated_report['backend'], 'value') else validated_report['backend']
@@ -131,13 +131,13 @@ class WebGPUContext:
                     
                     # 优先尝试智能推荐后端
                     if self._initialize_smart_backend(validated_report['backend']):
-                        logger.info(f"✅ 智能推荐后端初始化成功")
+                        logger.info(f"智能推荐后端初始化成功")
                         return True
                     else:
                         logger.warning("智能推荐后端初始化失败，强制尝试GPU回退策略")
                         # 即使智能推荐失败，也尝试所有GPU后端
                         if self._initialize_gpu_fallback():
-                            logger.info(f"✅ GPU回退初始化成功")
+                            logger.info(f"GPU回退初始化成功")
                             return True
                         else:
                             logger.warning("所有GPU后端初始化失败，尝试配置后端")
@@ -184,7 +184,7 @@ class WebGPUContext:
             backend = report.recommended_backend
             score = getattr(report, 'performance_score', 0.0)
             
-            logger.info(f"✅ 兼容性报告数据提取成功: backend={backend}, score={score}")
+            logger.info(f"兼容性报告数据提取成功: backend={backend}, score={score}")
             
             # 数据验证
             if score < 0 or score > 100:
@@ -209,7 +209,7 @@ class WebGPUContext:
                 from .compatibility import GPUSupportLevel
                 backend = GPUSupportLevel.WEBGPU
             
-            logger.info(f"✅ 兼容性报告标准化成功: {backend}, score={score}")
+            logger.info(f"兼容性报告标准化成功: {backend}, score={score}")
             
             return {
                 'backend': backend,
@@ -253,7 +253,7 @@ class WebGPUContext:
                 
                 if gpu_backend == GPUBackend.MODERNGL and MODERNGL_AVAILABLE:
                     if self._initialize_moderngl():
-                        logger.info(f"✅ 智能选择成功: {gpu_backend.value}")
+                        logger.info(f"智能选择成功: {gpu_backend.value}")
                         return True
                     else:
                         logger.warning(f"❌ {gpu_backend.value} 初始化失败，尝试下一个")
@@ -261,7 +261,7 @@ class WebGPUContext:
                         
                 elif gpu_backend == GPUBackend.OPENGL and OPENGL_AVAILABLE:
                     if self._initialize_opengl():
-                        logger.info(f"✅ 智能选择成功: {gpu_backend.value}")
+                        logger.info(f"智能选择成功: {gpu_backend.value}")
                         return True
                     else:
                         logger.warning(f"❌ {gpu_backend.value} 初始化失败，尝试下一个")
@@ -269,7 +269,7 @@ class WebGPUContext:
                         
                 elif gpu_backend == GPUBackend.CUDA and CUDA_AVAILABLE:
                     if self._initialize_cuda():
-                        logger.info(f"✅ 智能选择成功: {gpu_backend.value}")
+                        logger.info(f"智能选择成功: {gpu_backend.value}")
                         return True
                     else:
                         logger.warning(f"❌ {gpu_backend.value} 初始化失败，尝试下一个")
@@ -277,7 +277,7 @@ class WebGPUContext:
                         
                 elif gpu_backend == GPUBackend.CPU:
                     if self._initialize_cpu_fallback():
-                        logger.info(f"✅ 智能选择回退: {gpu_backend.value}")
+                        logger.info(f"智能选择回退: {gpu_backend.value}")
                         return True
                     else:
                         logger.error(f"❌ CPU回退也失败了")
@@ -297,7 +297,7 @@ class WebGPUContext:
             if MODERNGL_AVAILABLE:
                 logger.info("🚀 优先使用ModernGL（高性能OpenGL替代方案）")
                 if self._initialize_moderngl():
-                    logger.info("✅ ModernGL高性能初始化成功")
+                    logger.info("ModernGL高性能初始化成功")
                     return True
                 else:
                     logger.warning("⚠️ ModernGL初始化失败，尝试其他后端")
@@ -365,7 +365,7 @@ class WebGPUContext:
                 # 启用高性能渲染特性
                 self._enable_high_performance_features()
                 
-                logger.info("✅ ModernGL高性能WebGPU上下文初始化成功")
+                logger.info("ModernGL高性能WebGPU上下文初始化成功")
                 logger.info(f"   - GPU: {self.device}")
                 logger.info(f"   - 后端类型: ModernGL (高性能离屏渲染)")
                 logger.info(f"   - 分辨率: {self.width}x{self.height}")
@@ -403,7 +403,7 @@ class WebGPUContext:
             # 启用高性能特性
             self._enable_high_performance_features()
             
-            logger.info("✅ ModernGL高性能CPU模拟初始化成功")
+            logger.info("ModernGL高性能CPU模拟初始化成功")
             logger.info(f"   - GPU: ModernGL 高性能CPU模拟")
             logger.info(f"   - 后端类型: ModernGL (高性能CPU)")
             logger.info(f"   - 分辨率: {self.width}x{self.height}")
@@ -451,7 +451,7 @@ class WebGPUContext:
                 }
             """
             
-            logger.debug("✅ 高性能着色器程序创建成功")
+            logger.debug("高性能着色器程序创建成功")
             
         except Exception as e:
             logger.warning(f"高性能着色器创建失败: {e}")
@@ -470,7 +470,7 @@ class WebGPUContext:
             self.vertex_buffer_pool_size = 100  # 顶点缓冲区池
             self.enable_gpu_caching = True  # 启用GPU缓存
             
-            logger.debug("✅ 高性能渲染特性启用成功")
+            logger.debug("高性能渲染特性启用成功")
             
         except Exception as e:
             logger.warning(f"高性能特性启用失败: {e}")
@@ -518,7 +518,7 @@ class WebGPUContext:
                     # 创建OpenGL着色器
                     self._create_opengl_shaders()
                     
-                    logger.info("✅ PyQt5 OpenGL WebGPU上下文初始化成功")
+                    logger.info("PyQt5 OpenGL WebGPU上下文初始化成功")
                     logger.info(f"   - GPU: NVIDIA GeForce GTX 1660")
                     logger.info(f"   - 后端类型: OpenGL (PyQt5)")
                     return True
@@ -541,7 +541,7 @@ class WebGPUContext:
                     # 创建简化的OpenGL着色器
                     self._create_opengl_shaders()
                     
-                    logger.info("✅ 原生OpenGL WebGPU上下文初始化成功")
+                    logger.info("原生OpenGL WebGPU上下文初始化成功")
                     logger.info(f"   - GPU: NVIDIA GeForce GTX 1660 (CPU模拟)")
                     logger.info(f"   - 后端类型: OpenGL (原生)")
                     return True
@@ -557,7 +557,7 @@ class WebGPUContext:
                         # 创建模拟着色器
                         self._create_opengl_shaders()
                         
-                        logger.info("✅ OpenGL无头GPU模拟上下文初始化成功")
+                        logger.info("OpenGL无头GPU模拟上下文初始化成功")
                         logger.info(f"   - GPU: NVIDIA GeForce GTX 1660 (无头GPU模拟)")
                         logger.info(f"   - 后端类型: OpenGL (无头模拟)")
                         return True
@@ -585,7 +585,7 @@ class WebGPUContext:
                 'success': True
             })
             
-            logger.info("✅ CUDA WebGPU上下文初始化成功")
+            logger.info("CUDA WebGPU上下文初始化成功")
             return True
             
         except Exception as e:
@@ -615,7 +615,7 @@ class WebGPUContext:
                 logger.info(f"🎯 尝试GPU回退: {backend.value}")
                 try:
                     if init_func():
-                        logger.info(f"✅ GPU回退成功: {backend.value}")
+                        logger.info(f"GPU回退成功: {backend.value}")
                         return True
                     else:
                         logger.warning(f"❌ GPU回退失败: {backend.value}")
@@ -643,7 +643,7 @@ class WebGPUContext:
                 'success': True
             })
             
-            logger.info("✅ CPU回退WebGPU上下文初始化成功")
+            logger.info("CPU回退WebGPU上下文初始化成功")
             return True
             
         except Exception as e:
@@ -1029,7 +1029,7 @@ class WebGPURenderer(BaseChartRenderer):
         self.initialized = False
         self.backend_type = GPUBackend.CPU
         
-        # ✅ 新增：初始化状态跟踪属性
+        # 新增：初始化状态跟踪属性
         self._moderngl_initialized = False
         self._opengl_initialized = False
         self._cuda_initialized = False
@@ -1053,7 +1053,7 @@ class WebGPURenderer(BaseChartRenderer):
             compatibility_report = config.get('compatibility_report') if config else None
             self.context = WebGPUContext(self.config, compatibility_report)
             
-            # ✅ 新增：等待上下文初始化完成
+            # 新增：等待上下文初始化完成
             if not self._wait_for_context_ready():
                 logger.error("WebGPU上下文初始化超时")
                 return False
@@ -1062,14 +1062,14 @@ class WebGPURenderer(BaseChartRenderer):
                 logger.error("WebGPU上下文初始化失败")
                 return False
             
-            # ✅ 新增：强制同步WebGPUContext的初始化状态到WebGPURenderer
+            # 新增：强制同步WebGPUContext的初始化状态到WebGPURenderer
             self._sync_context_state(force=True)
             
             # 确定使用的后端
             self.backend_type = self._detect_backend()
             
             self.initialized = True
-            logger.info(f"✅ WebGPU渲染器初始化成功，使用后端: {self.backend_type.value}")
+            logger.info(f"WebGPU渲染器初始化成功，使用后端: {self.backend_type.value}")
             return True
             
         except Exception as e:
@@ -1103,14 +1103,14 @@ class WebGPURenderer(BaseChartRenderer):
                     state_value = getattr(self.context, attr_name)
                     setattr(self, attr_name, state_value)
                     if state_value:
-                        logger.info(f"✅ 同步{backend_name}初始化状态: {state_value}")
+                        logger.info(f"同步{backend_name}初始化状态: {state_value}")
                     elif force:
                         logger.debug(f"📋 {backend_name}初始化状态: {state_value}")
             
             # 同步初始化历史
             if hasattr(self.context, '_initialization_history'):
                 self._initialization_history = getattr(self.context, '_initialization_history', [])
-                logger.debug(f"✅ 同步初始化历史: {len(self._initialization_history)} 条记录")
+                logger.debug(f"同步初始化历史: {len(self._initialization_history)} 条记录")
             
             logger.debug("🔄 WebGPUContext状态同步完成")
         except Exception as e:
@@ -1132,7 +1132,7 @@ class WebGPURenderer(BaseChartRenderer):
             
             # 检查关键属性是否已初始化
             if hasattr(self.context, '_moderngl_initialized'):
-                logger.debug(f"✅ WebGPUContext已准备就绪 (尝试 {attempt + 1}/{max_retries})")
+                logger.debug(f"WebGPUContext已准备就绪 (尝试 {attempt + 1}/{max_retries})")
                 return True
             
             # 短暂等待
@@ -1148,19 +1148,19 @@ class WebGPURenderer(BaseChartRenderer):
             if isinstance(self.context, str):
                 logger.debug(f"🔍 检测字符串上下文标识: {self.context}")
                 if self.context == "opengl_context":
-                    logger.debug("✅ 检测到OpenGL上下文标识")
+                    logger.debug("检测到OpenGL上下文标识")
                     return GPUBackend.OPENGL
                 elif self.context == "cuda_context":
-                    logger.debug("✅ 检测到CUDA上下文标识")
+                    logger.debug("检测到CUDA上下文标识")
                     return GPUBackend.CUDA
                 elif self.context == "cpu_fallback":
-                    logger.debug("✅ 检测到CPU回退上下文标识")
+                    logger.debug("检测到CPU回退上下文标识")
                     return GPUBackend.CPU
                 elif self.context == "moderngl_high_performance_cpu":
-                    logger.debug("✅ 检测到ModernGL高性能CPU模拟上下文标识")
+                    logger.debug("检测到ModernGL高性能CPU模拟上下文标识")
                     return GPUBackend.MODERNGL
                 elif self.context == "opengl_headless_context":
-                    logger.debug("✅ 检测到OpenGL无头上下文标识")
+                    logger.debug("检测到OpenGL无头上下文标识")
                     return GPUBackend.OPENGL
                 else:
                     logger.warning(f"⚠️ 未识别的上下文标识: {self.context}")
@@ -1176,16 +1176,16 @@ class WebGPURenderer(BaseChartRenderer):
                     if isinstance(actual_context, str):
                         logger.debug(f"🔍 检测actual_context字符串标识: {actual_context}")
                         if actual_context == "moderngl_high_performance_cpu":
-                            logger.debug("✅ 从actual_context检测到ModernGL高性能CPU模拟上下文")
+                            logger.debug("从actual_context检测到ModernGL高性能CPU模拟上下文")
                             return GPUBackend.MODERNGL
                         elif actual_context == "opengl_context":
-                            logger.debug("✅ 检测到OpenGL上下文标识")
+                            logger.debug("检测到OpenGL上下文标识")
                             return GPUBackend.OPENGL
                         elif actual_context == "cuda_context":
-                            logger.debug("✅ 检测到CUDA上下文标识")
+                            logger.debug("检测到CUDA上下文标识")
                             return GPUBackend.CUDA
                         elif actual_context == "cpu_fallback":
-                            logger.debug("✅ 检测到CPU回退上下文标识")
+                            logger.debug("检测到CPU回退上下文标识")
                             return GPUBackend.CPU
                         else:
                             logger.warning(f"⚠️ 未识别的actual_context标识: {actual_context}")
@@ -1193,7 +1193,7 @@ class WebGPURenderer(BaseChartRenderer):
                     # 检查PyQt5 OpenGL上下文
                     if hasattr(actual_context, 'isValid') and actual_context.isValid():
                         if hasattr(actual_context, 'functions'):
-                            logger.debug("✅ 检测到PyQt5 OpenGL上下文")
+                            logger.debug("检测到PyQt5 OpenGL上下文")
                             return GPUBackend.OPENGL
                         else:
                             logger.debug("⚠️ 检测到PyQt5无效上下文，回退到CPU")
@@ -1201,7 +1201,7 @@ class WebGPURenderer(BaseChartRenderer):
                             
                     # 检查ModernGL上下文对象
                     elif hasattr(actual_context, 'device') and MODERNGL_AVAILABLE:
-                        logger.debug("✅ 检测到ModernGL上下文对象")
+                        logger.debug("检测到ModernGL上下文对象")
                         return GPUBackend.MODERNGL
                     else:
                         logger.debug(f"🔍 actual_context属性检查: device={hasattr(actual_context, 'device')}, moderngl={MODERNGL_AVAILABLE}")
@@ -1213,7 +1213,7 @@ class WebGPURenderer(BaseChartRenderer):
                     # 检查PyQt5 OpenGL上下文
                     if hasattr(self.context, 'isValid') and self.context.isValid():
                         if hasattr(self.context, 'functions'):
-                            logger.debug("✅ 检测到PyQt5 OpenGL上下文（直接）")
+                            logger.debug("检测到PyQt5 OpenGL上下文（直接）")
                             return GPUBackend.OPENGL
                         else:
                             logger.debug("⚠️ 检测到PyQt5无效上下文（直接），回退到CPU")
@@ -1221,12 +1221,12 @@ class WebGPURenderer(BaseChartRenderer):
                             
                     # 检查ModernGL上下文对象
                     elif hasattr(self.context, 'device') and MODERNGL_AVAILABLE:
-                        logger.debug("✅ 检测到ModernGL上下文对象（直接）")
+                        logger.debug("检测到ModernGL上下文对象（直接）")
                         return GPUBackend.MODERNGL
                     
                     # 如果有初始化状态信息，优先考虑ModernGL
                     elif hasattr(self.context, '_moderngl_initialized') and self.context._moderngl_initialized:
-                        logger.debug("✅ 基于WebGPUContext初始化状态检测到ModernGL后端")
+                        logger.debug("基于WebGPUContext初始化状态检测到ModernGL后端")
                         return GPUBackend.MODERNGL
                 
             logger.warning("⚠️ 上下文检测失败，尝试智能回退...")
@@ -1362,7 +1362,7 @@ class WebGPURenderer(BaseChartRenderer):
             
             # 5. 渲染完成
             if any(results):
-                logger.info(f"✅ 批量GPU成交量渲染完成: {total_vertices//4}个柱子")
+                logger.info(f"批量GPU成交量渲染完成: {total_vertices//4}个柱子")
             
             return results
             

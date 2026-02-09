@@ -362,7 +362,7 @@ class NetworkService(BaseService):
             # 6. 验证网络连接
             self._validate_network_connectivity()
 
-            logger.info("✅ NetworkService initialized successfully with comprehensive network management")
+            logger.info("NetworkService initialized successfully with comprehensive network management")
 
         except Exception as e:
             logger.error(f"❌ Failed to initialize NetworkService: {e}")

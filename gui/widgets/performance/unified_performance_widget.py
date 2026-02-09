@@ -234,6 +234,9 @@ class ModernUnifiedPerformanceWidget(QWidget):
         self._trading_controller_cache = None
         self._data_manager_cache = None
 
+        # 设置合理的最小窗口尺寸，确保窗口可以缩放
+        self.setMinimumSize(1000, 600)
+
         self.init_ui()
         self.setup_timer()
 
@@ -325,7 +328,33 @@ class ModernUnifiedPerformanceWidget(QWidget):
         tab_widget.addTab(self.execution_monitor_tab, "执行监控")
 
         # 6. 数据质量监控 - 量化交易数据质量保障
-        self.data_quality_tab = _DataQualityMonitorTab()
+        # 从服务容器获取数据质量相关服务
+        quality_monitor = None
+        report_generator = None
+        try:
+            from core.containers import get_service_container
+            from core.services.enhanced_data_quality_monitor import EnhancedDataQualityMonitor
+            from core.services.quality_report_generator import QualityReportGenerator
+
+            service_container = get_service_container()
+            if service_container.is_registered(EnhancedDataQualityMonitor):
+                quality_monitor = service_container.resolve(EnhancedDataQualityMonitor)
+                logger.info("成功获取 EnhancedDataQualityMonitor 实例")
+            else:
+                logger.warning("EnhancedDataQualityMonitor 未注册")
+
+            if service_container.is_registered(QualityReportGenerator):
+                report_generator = service_container.resolve(QualityReportGenerator)
+                logger.info("成功获取 QualityReportGenerator 实例")
+            else:
+                logger.warning("QualityReportGenerator 未注册")
+        except Exception as e:
+            logger.error(f"获取数据质量服务失败: {e}")
+
+        self.data_quality_tab = _DataQualityMonitorTab(
+            quality_monitor=quality_monitor,
+            report_generator=report_generator
+        )
         tab_widget.addTab(self.data_quality_tab, "数据质量")
 
         # 7. 系统健康检查 - 系统诊断和健康状态
@@ -1248,20 +1277,28 @@ class ModernUnifiedPerformanceWidget(QWidget):
             logger.error(f"清空数据失败: {e}")
 
     def closeEvent(self, event):
-        """关闭事件"""
+        """关闭事件 - 立即关闭，异步清理资源"""
         try:
-            # 调用cleanup方法
-            self.cleanup()
-            logger.info("性能监控窗口已关闭")
+            # 立即接受关闭事件，不等待清理完成
             event.accept()
-            
+            logger.info("性能监控窗口关闭事件已接受")
+
+            # 使用 QTimer.singleShot(0) 异步清理资源，避免阻塞关闭
+            QTimer.singleShot(0, self._async_cleanup)
+
         except Exception as e:
             logger.error(f"关闭性能监控窗口失败: {e}")
             event.accept()  # 即使失败也允许关闭
 
-    def cleanup(self):
-        """清理资源 - 优化性能，避免卡顿"""
+    def _async_cleanup(self):
+        """异步清理资源 - 不阻塞窗口关闭，带超时保护"""
         try:
+            logger.debug("开始异步清理资源...")
+
+            # 添加超时保护，确保清理不会无限期阻塞
+            cleanup_timeout = 2000  # 2秒超时
+            start_time = time.time()
+
             # 停止定时器
             if hasattr(self, 'refresh_timer') and self.refresh_timer.isActive():
                 self.refresh_timer.stop()
@@ -1286,8 +1323,17 @@ class ModernUnifiedPerformanceWidget(QWidget):
                     logger.debug("算法优化标签页定时器已停止")
             if hasattr(self, 'risk_control_tab') and hasattr(self.risk_control_tab, 'enhanced_risk_monitor'):
                 if self.risk_control_tab.enhanced_risk_monitor:
-                    self.risk_control_tab.stop_enhanced_monitoring()
+                    # 使用非阻塞方式停止监控
+                    try:
+                        self.risk_control_tab.stop_enhanced_monitoring()
+                    except Exception as e:
+                        logger.debug(f"停止风险监控失败: {e}")
                     logger.debug("风险控制中心标签页定时器已停止")
+
+            # 检查超时
+            if time.time() - start_time > cleanup_timeout:
+                logger.warning(f"清理过程超时（{cleanup_timeout}ms），强制退出")
+                return
 
             # 断开所有信号槽连接，避免内存泄漏
             if hasattr(self, '_signal_connections'):
@@ -1301,17 +1347,32 @@ class ModernUnifiedPerformanceWidget(QWidget):
                         logger.debug(f"断开信号槽连接失败（可能已自动断开）: {e}")
                 self._signal_connections.clear()
 
+            # 检查超时
+            if time.time() - start_time > cleanup_timeout:
+                logger.warning(f"清理过程超时（{cleanup_timeout}ms），强制退出")
+                return
+
             # 清理所有标签页 - 使用超时机制
             if hasattr(self, 'tab_widget'):
                 tab_count = self.tab_widget.count()
                 for i in range(tab_count):
+                    # 检查超时
+                    if time.time() - start_time > cleanup_timeout:
+                        logger.warning(f"清理过程超时（{cleanup_timeout}ms），强制退出")
+                        return
+                    
                     tab = self.tab_widget.widget(i)
                     if hasattr(tab, 'cleanup'):
                         try:
-                            # 使用 QTimer.singleShot 异步清理，避免阻塞主线程
+                            # 直接调用 cleanup，不使用 QTimer.singleShot
                             tab.cleanup()
                         except Exception as e:
                             logger.debug(f"清理标签页 {i} 失败: {e}")
+
+            # 检查超时
+            if time.time() - start_time > cleanup_timeout:
+                logger.warning(f"清理过程超时（{cleanup_timeout}ms），强制退出")
+                return
 
             # 清理线程池 - 立即清除，不等待，避免卡顿
             if hasattr(self, 'thread_pool'):
@@ -1348,10 +1409,10 @@ class ModernUnifiedPerformanceWidget(QWidget):
             # 注意：performance_monitor 在此组件中从未被 start()，无需停止
             # 如果未来需要启动监控功能，应在此处添加停止逻辑
 
-            logger.debug("ModernUnifiedPerformanceWidget cleanup completed")
+            logger.debug("ModernUnifiedPerformanceWidget async cleanup completed")
 
         except Exception as e:
-            logger.error(f"清理资源失败: {e}")
+            logger.error(f"异步清理资源失败: {e}")
 
     def on_tab_changed(self, index):
         """tab切换时的处理 - 优化性能"""

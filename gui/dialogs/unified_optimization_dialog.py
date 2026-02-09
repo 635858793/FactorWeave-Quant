@@ -721,7 +721,7 @@ class UnifiedOptimizationDialog(QDialog):
         
         if result.get("status") == "success":
             self._update_service_status("运行中", True)
-            self._log_message("✅ 统一优化服务启动成功")
+            self._log_message("统一优化服务启动成功")
         else:
             self._log_message("ℹ️ 操作完成")
             

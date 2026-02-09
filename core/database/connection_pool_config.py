@@ -115,7 +115,7 @@ class ConnectionPoolConfigManager:
             for key, value in default_config.items():
                 self.config_service.set(key, value)
 
-            logger.info("✅ 连接池默认配置已初始化")
+            logger.info("连接池默认配置已初始化")
 
     def load_pool_config(self) -> ConnectionPoolConfig:
         """加载连接池配置"""
@@ -131,7 +131,7 @@ class ConnectionPoolConfigManager:
             raise ValueError(msg)
 
         self.config_service.set('connection_pool', config.to_dict())
-        logger.info(f"✅ 连接池配置已保存: {config}")
+        logger.info(f"连接池配置已保存: {config}")
         return True
 
     def load_optimization_config(self) -> DuckDBOptimizationConfig:
@@ -144,7 +144,7 @@ class ConnectionPoolConfigManager:
     def save_optimization_config(self, config: DuckDBOptimizationConfig) -> bool:
         """保存优化配置"""
         self.config_service.set('duckdb_optimization', config.to_dict())
-        logger.info(f"✅ DuckDB优化配置已保存: {config}")
+        logger.info(f"DuckDB优化配置已保存: {config}")
         return True
 
     def is_auto_optimization_enabled(self) -> bool:
@@ -165,7 +165,7 @@ class ConnectionPoolConfigManager:
             auto_config['workload_type'] = workload_type
 
         self.config_service.set('auto_optimization', auto_config)
-        logger.info(f"✅ 自动优化设置已更新: enabled={enabled}, workload_type={auto_config['workload_type']}")
+        logger.info(f"自动优化设置已更新: enabled={enabled}, workload_type={auto_config['workload_type']}")
         return True
 
     def get_scenario_timeout(self, scenario: str) -> float:
@@ -209,7 +209,7 @@ class ConnectionPoolConfigManager:
     def save_adaptive_config(self, config: Dict[str, Any]) -> bool:
         """保存自适应连接池配置（全局默认）"""
         self.config_service.set('adaptive_connection_pool', config)
-        logger.info(f"✅ 自适应连接池配置已保存")
+        logger.info(f"自适应连接池配置已保存")
         return True
 
     def save_adaptive_pool_config(self, pool_name: str, config: Dict[str, Any]) -> bool:
@@ -221,7 +221,7 @@ class ConnectionPoolConfigManager:
         
         per_pool_config[pool_name] = config
         self.config_service.set('adaptive_pool_per_pool', per_pool_config)
-        logger.info(f"✅ 连接池 {pool_name} 的自适应配置已保存")
+        logger.info(f"连接池 {pool_name} 的自适应配置已保存")
         return True
 
     def is_adaptive_pool_enabled(self, pool_name: str) -> bool:

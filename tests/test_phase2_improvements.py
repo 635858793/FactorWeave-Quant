@@ -298,7 +298,7 @@ if __name__ == '__main__':
     print(f"错误: {len(result.errors)}")
     
     if result.wasSuccessful():
-        print("\n✅ 所有测试通过！【阶段2改进】已验证成功")
+        print("\n所有测试通过！【阶段2改进】已验证成功")
     else:
         print("\n❌ 部分测试失败，请查看上面的错误信息")
     print("="*70 + "\n")

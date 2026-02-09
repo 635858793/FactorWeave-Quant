@@ -136,7 +136,7 @@ class TaskExecutor:
         
         logger.info(f"数据导入任务: {len(symbols)}只股票, 数据源: {data_source}")
         
-        # ✅ 真实实现：调用实际的数据导入逻辑
+        # 真实实现：调用实际的数据导入逻辑
         try:
             # 导入必要的模块
             from core.real_data_provider import RealDataProvider
@@ -181,7 +181,7 @@ class TaskExecutor:
                 except Exception as e:
                     logger.warning(f"导入{symbol}失败: {e}")
             
-            # ✅ 关键：返回数据给主系统（由主系统统一保存）
+            # 关键：返回数据给主系统（由主系统统一保存）
             # 将数据转换为可序列化的格式
             serializable_data = []
             if all_kdata_list:
@@ -199,7 +199,7 @@ class TaskExecutor:
                 "total_records": total_records,
                 "data_source": data_source,
                 "status": "completed",
-                # ✅ 返回实际数据，由主系统保存
+                # 返回实际数据，由主系统保存
                 "kdata": serializable_data,
                 "first_symbol": symbols[0] if symbols else None
             }
@@ -232,7 +232,7 @@ class TaskExecutor:
         analysis_type = task_data.get("analysis_type", "technical")
         
         try:
-            # ✅ 真实分析（如果节点有分析能力）
+            # 真实分析（如果节点有分析能力）
             logger.info(f"节点执行分析: {stock_code}, 类型: {analysis_type}")
             
             # 节点可以调用本地分析库或通过HTTP调用主系统API

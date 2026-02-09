@@ -47,7 +47,7 @@ def test_database_routing():
     for asset_type, name in test_assets:
         db_path = asset_manager.get_database_path(asset_type)
         exists = os.path.exists(db_path)
-        status = "✅ 存在" if exists else "❌ 未创建"
+        status = "存在" if exists else "❌ 未创建"
         logger.info(f"{name:8} ({asset_type.value:10}) → {db_path}")
         logger.info(f"{'':8} 状态: {status}\n")
     
@@ -86,7 +86,7 @@ async def test_kdata_query_with_asset_type():
                 data_type='kdata',
                 period='D',
                 time_range='最近1年',
-                asset_type=asset_type  # ✅ 传递资产类型
+                asset_type=asset_type  # 传递资产类型
             )
             
             # 处理结果
@@ -97,7 +97,7 @@ async def test_kdata_query_with_asset_type():
             
             # 输出结果
             if kline_data is not None and not kline_data.empty:
-                logger.success(f"✅ 查询成功: {len(kline_data)} 条记录")
+                logger.success(f"查询成功: {len(kline_data)} 条记录")
                 logger.info(f"   数据列: {list(kline_data.columns)}")
                 logger.info(f"   时间范围: {kline_data['datetime'].min()} ~ {kline_data['datetime'].max()}")
             else:
@@ -127,7 +127,7 @@ def test_cache_key_isolation():
         cache_key = f"kdata_{asset_type.value}_{code}_D_365"
         logger.info(f"{name:12} → {cache_key}")
     
-    logger.info("\n✅ 结论：不同资产类型的缓存键独立，不会混淆！")
+    logger.info("\n结论：不同资产类型的缓存键独立，不会混淆！")
     logger.info("=" * 80)
 
 
@@ -143,7 +143,7 @@ def test_view_query_logic():
         symbol as code, 
         timestamp as datetime, 
         open, high, low, close, volume, amount
-    FROM unified_best_quality_kline  -- ✅ 使用视图自动质量优选
+    FROM unified_best_quality_kline  -- 使用视图自动质量优选
     WHERE symbol = ? 
       AND frequency = ?
     ORDER BY timestamp DESC 
@@ -151,11 +151,11 @@ def test_view_query_logic():
     """)
     
     logger.info("\n🔍 视图特性：")
-    logger.info("  1. ✅ 自动按质量评分选择最优数据源")
-    logger.info("  2. ✅ 优先级：tushare (65.0) > tongdaxin (60.0) > akshare (55.0)")
-    logger.info("  3. ✅ 每个时间戳只保留最优记录（ROW_NUMBER去重）")
-    logger.info("  4. ✅ 优先选择最新更新的数据（ORDER BY updated_at DESC）")
-    logger.info("  5. ✅ LEFT JOIN data_quality_monitor获取实时质量评分")
+    logger.info("  1. 自动按质量评分选择最优数据源")
+    logger.info("  2. 优先级：tushare (65.0) > tongdaxin (60.0) > akshare (55.0)")
+    logger.info("  3. 每个时间戳只保留最优记录（ROW_NUMBER去重）")
+    logger.info("  4. 优先选择最新更新的数据（ORDER BY updated_at DESC）")
+    logger.info("  5. LEFT JOIN data_quality_monitor获取实时质量评分")
     
     logger.info("\n🔄 降级机制：")
     logger.info("  - 视图查询失败 → 自动降级到基础表 historical_kline_data")
@@ -239,11 +239,11 @@ async def main():
     logger.info("\n")
     
     logger.info("📋 测试总结：")
-    logger.info("  ✅ 数据库自动路由机制正常")
-    logger.info("  ✅ 多资产类型K线查询功能完整")
-    logger.info("  ✅ 缓存键隔离机制有效")
-    logger.info("  ✅ unified_best_quality_kline视图查询逻辑清晰")
-    logger.info("  ✅ 完整数据流路径正确")
+    logger.info("  数据库自动路由机制正常")
+    logger.info("  多资产类型K线查询功能完整")
+    logger.info("  缓存键隔离机制有效")
+    logger.info("  unified_best_quality_kline视图查询逻辑清晰")
+    logger.info("  完整数据流路径正确")
     logger.info("\n")
     logger.info("🎯 结论：UnifiedDataManager已全面支持多资产类型！")
     logger.info("\n")

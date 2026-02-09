@@ -689,16 +689,16 @@ def register_20field_strategies(strategy_service):
             'adj_momentum_v2',
             AdjMomentumPlugin
         )
-        logger.info("✅ 已注册: 复权价格动量策略 (adj_momentum_v2)")
+        logger.info("已注册: 复权价格动量策略 (adj_momentum_v2)")
 
         # 注册VWAP均值回归策略
         strategy_service.register_strategy_plugin(
             'vwap_reversion_v2',
             VWAPReversionPlugin
         )
-        logger.info("✅ 已注册: VWAP均值回归策略 (vwap_reversion_v2)")
+        logger.info("已注册: VWAP均值回归策略 (vwap_reversion_v2)")
 
-        logger.success("✅ 20字段标准策略注册完成！")
+        logger.success("20字段标准策略注册完成！")
 
     except Exception as e:
         logger.error(f"注册20字段策略失败: {e}")
@@ -729,4 +729,4 @@ if __name__ == "__main__":
     print(f"   参数数量: {len(vwap_info.parameters)}")
 
     print("\n" + "=" * 60)
-    print("✅ 策略适配器加载成功")
+    print("策略适配器加载成功")

@@ -9,9 +9,9 @@
 3. 选择动量最强的股票做多
 
 技术要点：
-- ✅ 使用adj_close而非close计算收益率
-- ✅ 正确处理除权除息带来的价格跳空
-- ✅ 基于adj_factor进行数据验证
+- 使用adj_close而非close计算收益率
+- 正确处理除权除息带来的价格跳空
+- 基于adj_factor进行数据验证
 
 作者：FactorWeave-Quant Team
 版本：V2.0.4
@@ -51,7 +51,7 @@ class AdjPriceMomentumStrategy:
         # ❌ 错误示例：使用close计算（除权除息会产生虚假负收益）
         # momentum_wrong = (df['close'] - df['close'].shift(self.lookback_period)) / df['close'].shift(self.lookback_period)
         
-        # ✅ 正确示例：使用adj_close计算真实收益率
+        # 正确示例：使用adj_close计算真实收益率
         momentum = (df['adj_close'] - df['adj_close'].shift(self.lookback_period)) / df['adj_close'].shift(self.lookback_period)
         
         return momentum
@@ -86,7 +86,7 @@ class AdjPriceMomentumStrategy:
             logger.warning("复权因子超出合理范围 [0, 100]")
             return False
         
-        logger.info("✅ 复权数据验证通过")
+        logger.info("复权数据验证通过")
         return True
     
     def generate_signals(self, stocks_data: Dict[str, pd.DataFrame]) -> List[str]:
@@ -118,7 +118,7 @@ class AdjPriceMomentumStrategy:
         sorted_stocks = sorted(momentum_scores.items(), key=lambda x: x[1], reverse=True)
         selected = [symbol for symbol, score in sorted_stocks[:self.top_n]]
         
-        logger.info(f"✅ 选择了 {len(selected)} 只动量股票")
+        logger.info(f"选择了 {len(selected)} 只动量股票")
         for symbol, score in sorted_stocks[:self.top_n]:
             logger.info(f"  {symbol}: 动量={score:.2%}")
         

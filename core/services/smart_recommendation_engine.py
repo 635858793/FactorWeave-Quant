@@ -704,7 +704,7 @@ class SmartRecommendationEngine:
             recommendations.extend(content_recommendations)
             logger.info(f"内容基础推荐数量: {len(content_recommendations)}")
 
-            # ✅ 修复：如果协同过滤和内容推荐都没有结果，降级到热门推荐
+            # 修复：如果协同过滤和内容推荐都没有结果，降级到热门推荐
             if len(recommendations) == 0:
                 logger.warning("协同过滤和内容推荐均无结果，降级到热门推荐")
                 return await self._generate_popular_recommendations(user_id, recommendation_type, count)
@@ -857,7 +857,7 @@ class SmartRecommendationEngine:
             logger.info(f"当前内容项总数: {len(self.content_items)}")
 
             # 按热度排序内容
-            # ✅ 修复：如果所有热度都是0，使用创建时间作为次要排序条件
+            # 修复：如果所有热度都是0，使用创建时间作为次要排序条件
             popular_items = sorted(
                 self.content_items.values(),
                 key=lambda x: (x.view_count + x.like_count * 2 + x.share_count * 3, x.created_at),
@@ -870,7 +870,7 @@ class SmartRecommendationEngine:
                 if recommendation_type and item.item_type != recommendation_type:
                     continue
 
-                # ✅ 修复：计算热度分数，如果热度为0则使用基础分数0.5
+                # 修复：计算热度分数，如果热度为0则使用基础分数0.5
                 heat_value = item.view_count + item.like_count * 2 + item.share_count * 3
                 if heat_value > 0:
                     popularity_score = heat_value / 100

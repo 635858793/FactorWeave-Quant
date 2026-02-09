@@ -39,7 +39,7 @@ class EnhancedDataImportMainWindow(QMainWindow):
 
     def __init__(self, plugin_manager=None):
         super().__init__()
-        self.plugin_manager = plugin_manager  # ✅ 保存plugin_manager
+        self.plugin_manager = plugin_manager  # 保存plugin_manager
         self.setup_ui()
 
     def setup_ui(self):
@@ -52,7 +52,7 @@ class EnhancedDataImportMainWindow(QMainWindow):
 
         # 创建中央部件
         if UI_AVAILABLE:
-            # ✅ 传入plugin_manager
+            # 传入plugin_manager
             central_widget = EnhancedDataImportWidget(plugin_manager=self.plugin_manager)
             self.setCentralWidget(central_widget)
         else:

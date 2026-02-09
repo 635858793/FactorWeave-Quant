@@ -62,10 +62,10 @@ except ImportError:
 class ConnectionPool:
     """通达信连接池管理器，支持多IP并行数据获取（轮询机制 + 动态IP切换 + 故障检测）"""
 
-    def __init__(self, max_connections: int = 20, timeout: int = 15):  # ✅ 优化：默认连接池大小从10增加到20，超时从30秒减少到15秒
+    def __init__(self, max_connections: int = 20, timeout: int = 15):  # 优化：默认连接池大小从10增加到20，超时从30秒减少到15秒
         self.max_connections = max_connections
         self.timeout = timeout
-        # ✅ 改为轮询机制：使用列表存储连接，不再使用FIFO队列
+        # 改为轮询机制：使用列表存储连接，不再使用FIFO队列
         self.connections_list: List[Dict[str, Any]] = []  # 连接列表（支持轮询）
         self.active_servers = []  # 活跃服务器列表
         self.server_stats = {}  # 服务器统计信息
@@ -73,18 +73,18 @@ class ConnectionPool:
         self._last_health_check = 0
         self._health_check_interval = 300  # 5分钟检查一次
 
-        # ✅ 轮询机制：当前连接索引
+        # 轮询机制：当前连接索引
         self._current_index = 0
 
-        # ✅ IP监控统计
+        # IP监控统计
         self.ip_usage_stats: Dict[str, Dict[str, Any]] = {}  # IP使用统计 {server_key: {use_count, success_count, failure_count, last_used, avg_response_time, status}}
 
-        # ✅ 故障IP管理
+        # 故障IP管理
         self.failed_ips: Dict[str, float] = {}  # 故障IP及其恢复时间 {server_key: recovery_time}
         self.failure_threshold = 3  # 连续失败3次标记为故障
         self.failure_recovery_time = 60  # 故障IP恢复时间（秒）
 
-        # ✅ 动态IP切换：IP限流检测
+        # 动态IP切换：IP限流检测
         self.ip_rate_limit: Dict[str, Dict[str, Any]] = {}  # IP限流信息 {server_key: {request_count, window_start, is_limited}}
         self.rate_limit_window = 60  # 限流检测窗口（秒）
         self.rate_limit_threshold = 100  # 限流阈值（每分钟请求数）
@@ -128,7 +128,7 @@ class ConnectionPool:
                 for server in best_servers:
                     if self._create_connection(server):
                         self.active_servers.append(server)
-                        # ✅ 初始化IP使用统计
+                        # 初始化IP使用统计
                         server_key = f"{server[0]}:{server[1]}"
                         self.ip_usage_stats[server_key] = {
                             'use_count': 0,
@@ -216,7 +216,7 @@ class ConnectionPool:
                     'use_count': 0,
                     'server_key': f"{server[0]}:{server[1]}"
                 }
-                # ✅ 改为列表存储，支持轮询
+                # 改为列表存储，支持轮询
                 self.connections_list.append(connection_info)
                 logger.debug(f"成功创建到 {server} 的连接")
                 return True
@@ -234,10 +234,10 @@ class ConnectionPool:
         connection_info = None
         request_start_time = time.time()
         server_key = None
-        request_success = False  # ✅ 标志变量：跟踪请求是否成功
+        request_success = False  # 标志变量：跟踪请求是否成功
 
         try:
-            # ✅ 轮询机制：从连接列表中选择连接
+            # 轮询机制：从连接列表中选择连接
             connection_info = self._get_connection_round_robin()
 
             if connection_info:
@@ -245,7 +245,7 @@ class ConnectionPool:
                 connection_info['last_used'] = time.time()
                 connection_info['use_count'] += 1
 
-                # ✅ 更新IP使用统计
+                # 更新IP使用统计
                 if server_key in self.ip_usage_stats:
                     self.ip_usage_stats[server_key]['use_count'] += 1
                     self.ip_usage_stats[server_key]['last_used'] = time.time()
@@ -262,7 +262,7 @@ class ConnectionPool:
                         server_key = connection_info['server_key']
 
                 yield connection_info['client']
-                request_success = True  # ✅ 请求成功
+                request_success = True  # 请求成功
             else:
                 # 连接池为空，临时创建连接
                 logger.warning("连接池为空，创建临时连接")
@@ -270,14 +270,14 @@ class ConnectionPool:
                 if temp_connection:
                     try:
                         yield temp_connection
-                        request_success = True  # ✅ 请求成功
+                        request_success = True  # 请求成功
                     finally:
                         temp_connection.disconnect()
                 else:
                     raise Exception("无法获取任何可用连接")
 
         except Exception as e:
-            # ✅ 记录失败统计
+            # 记录失败统计
             if server_key and server_key in self.ip_usage_stats:
                 self.ip_usage_stats[server_key]['failure_count'] += 1
                 # 检查是否需要标记为故障
@@ -286,7 +286,7 @@ class ConnectionPool:
             raise e
 
         finally:
-            # ✅ 更新响应时间统计（仅在成功时）
+            # 更新响应时间统计（仅在成功时）
             if connection_info and server_key:
                 if request_success:
                     # 请求成功：更新响应时间和成功计数
@@ -302,10 +302,10 @@ class ConnectionPool:
                             stats['avg_response_time'] = sum(stats['response_times']) / len(stats['response_times'])
                         stats['success_count'] += 1
 
-                        # ✅ 检查IP限流
+                        # 检查IP限流
                         self._check_ip_rate_limit(server_key)
                 else:
-                    # ✅ 修复：请求失败但use_count已增加，需要增加failure_count
+                    # 修复：请求失败但use_count已增加，需要增加failure_count
                     # 注意：如果异常在except块中已经处理并增加了failure_count，这里不会重复增加
                     # 但如果请求在yield之后失败（调用者代码中失败），这里会补充统计
                     if server_key in self.ip_usage_stats:
@@ -351,7 +351,7 @@ class ConnectionPool:
                     if current_time < recovery_time:
                         continue  # 仍在故障期
                     else:
-                        # ✅ 故障期已过，尝试恢复（但不重置failure_count，保留历史记录）
+                        # 故障期已过，尝试恢复（但不重置failure_count，保留历史记录）
                         stats['status'] = 'healthy'
                         # 注意：不重置failure_count，保留历史记录用于分析
                         # 如果IP再次失败，会基于新的失败计数重新标记
@@ -367,14 +367,14 @@ class ConnectionPool:
 
             # 如果有可用连接，使用轮询选择
             if available_connections:
-                # ✅ 修复：从当前索引开始，在原始连接列表中查找对应的可用连接
+                # 修复：从当前索引开始，在原始连接列表中查找对应的可用连接
                 # 这样可以确保轮询顺序的一致性
                 for attempt in range(len(self.connections_list)):
                     # 从当前索引开始查找
                     idx = (self._current_index + attempt) % len(self.connections_list)
                     conn = self.connections_list[idx]
 
-                    # ✅ 使用server_key比较，更明确可靠
+                    # 使用server_key比较，更明确可靠
                     if conn['server_key'] in {c['server_key'] for c in available_connections}:
                         # 更新轮询索引（指向下一个连接）
                         self._current_index = (self._current_index + 1) % len(self.connections_list)
@@ -536,7 +536,7 @@ class ConnectionPool:
             Dict[server_key, stats]: IP使用统计字典
         """
         with self.lock:
-            # ✅ 修复：安全解析server_key，避免IndexError导致数据不完整
+            # 修复：安全解析server_key，避免IndexError导致数据不完整
             result = {}
             for server_key, stats in self.ip_usage_stats.items():
                 if not isinstance(stats, dict):
@@ -563,7 +563,7 @@ class ConnectionPool:
                 success_count = stats.get('success_count', 0) or 0
                 failure_count = stats.get('failure_count', 0) or 0
                 
-                # ✅ 修复：确保failure_count = use_count - success_count（数据一致性检查）
+                # 修复：确保failure_count = use_count - success_count（数据一致性检查）
                 # 如果failure_count小于use_count - success_count，说明有未统计的失败
                 expected_failure_count = max(0, use_count - success_count)
                 if failure_count < expected_failure_count:
@@ -619,14 +619,14 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
         self.DEFAULT_CONFIG = {
             'host': '119.147.212.81',  # 通达信服务器地址
             'port': 7709,              # 通达信服务器端口
-            'timeout': 15,             # ✅ 优化：连接超时时间从30秒减少到15秒，快速失败
-            'max_retries': 2,          # ✅ 优化：最大重试次数从3减少到2，减少延迟累积
+            'timeout': 15,             # 优化：连接超时时间从30秒减少到15秒，快速失败
+            'max_retries': 2,          # 优化：最大重试次数从3减少到2，减少延迟累积
             'cache_duration': 300,     # 缓存持续时间（秒）
             'use_local_data': False,   # 是否使用本地数据文件
             'local_data_path': '',     # 本地数据文件路径
             'auto_select_server': True,  # 是否自动选择最快服务器
             'use_connection_pool': True,  # 是否使用连接池模式
-            'connection_pool_size': 20,  # ✅ 优化：连接池大小从10增加到20，支持更多并发批次
+            'connection_pool_size': 20,  # 优化：连接池大小从10增加到20，支持更多并发批次
             'enable_batch_fetch': True,  # 是否启用分批获取（用于超过800条记录的请求）
             'max_batch_count': 10000,    # 分批获取的最大记录数限制（避免无限制请求）
             'enable_parallel_fetch': True,  # 是否启用并发分批获取（显著提升批量下载速度）
@@ -639,7 +639,7 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
         ]
         self.config = self.DEFAULT_CONFIG.copy()
 
-        # ✅ 修复：在__init__中初始化max_retries和timeout，确保在initialize()调用前也可用
+        # 修复：在__init__中初始化max_retries和timeout，确保在initialize()调用前也可用
         # 这些属性可能在_test_connection()等方法中被调用，而_test_connection()可能在initialize()之前被调用
         self.timeout = int(self.DEFAULT_CONFIG.get('timeout', 15))
         self.max_retries = int(self.DEFAULT_CONFIG.get('max_retries', 2))
@@ -788,7 +788,7 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
             last_activity=self.last_activity,
             connection_params={
                 "server_info": f"{self.current_server[0]}:{self.current_server[1]}" if self.current_server else "未连接",
-                "timeout": self.timeout  # ✅ 修复：使用实例变量，确保配置一致性
+                "timeout": self.timeout  # 修复：使用实例变量，确保配置一致性
             },
             error_message=self.last_error
         )
@@ -943,14 +943,14 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
                 logger.info(f"开始初始化连接池，池大小: {self.connection_pool_size}")
                 self.connection_pool = ConnectionPool(max_connections=self.connection_pool_size)
                 self.connection_pool.initialize(self.server_list)
-                logger.info(f"✅ 连接池初始化完成，池大小: {self.connection_pool_size}")
+                logger.info(f"连接池初始化完成，池大小: {self.connection_pool_size}")
                 # 标记连接池就绪
                 self.pool_ready = True
 
                 # 设置成功状态
                 self.last_success_time = datetime.now()
                 self.plugin_state = PluginLifecycle.CONNECTED
-                logger.info("✅ 通达信插件(连接池模式)连接成功")
+                logger.info("通达信插件(连接池模式)连接成功")
                 return True
             else:
                 # 传统单连接模式
@@ -971,7 +971,7 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
                 # 尝试连接测试（耗时操作）
                 logger.debug(f"开始连接测试，目标服务器: {self.current_server}")
                 if self._test_connection():
-                    logger.info(f"✅ 通达信插件连接成功，服务器: {self.current_server}")
+                    logger.info(f"通达信插件连接成功，服务器: {self.current_server}")
                     self.last_success_time = datetime.now()
                     self.plugin_state = PluginLifecycle.CONNECTED
                     return True
@@ -1176,7 +1176,7 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
 
                 logger.debug(f"尝试连接服务器: {self.current_server}")
 
-                # ✅ 修复：使用配置的重试次数，而不是硬编码
+                # 修复：使用配置的重试次数，而不是硬编码
                 max_retries = self.max_retries
                 for attempt in range(max_retries):
                     try:
@@ -1351,7 +1351,7 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
 
     def _connect_with_traditional_retry(self) -> bool:
         """传统重试连接机制"""
-        # ✅ 修复：使用配置的重试次数，而不是硬编码
+        # 修复：使用配置的重试次数，而不是硬编码
         max_retries = self.max_retries
         retry_delays = [0.5, 1]  # 更短的重试间隔
 
@@ -1816,7 +1816,7 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
         6. 增强的错误处理和重试机制
         7. 修复日期过滤逻辑，避免过度过滤导致数据为空
         """
-        # ✅ 修复：使用配置的重试次数，而不是硬编码
+        # 修复：使用配置的重试次数，而不是硬编码
         max_retries = self.max_retries
         retry_delay = 1.0
 
@@ -1838,7 +1838,7 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
 
                 frequency = period_mapping.get(period, 9)  # 默认日线
 
-                # ✅ 关键修复：pytdx不支持日期范围查询，只支持count
+                # 关键修复：pytdx不支持日期范围查询，只支持count
                 # 当提供了日期范围时，不在API层面传递，而是在返回后过滤
                 logger.debug(f"请求参数: symbol={symbol}, start_date={start_date}, end_date={end_date}, count={count}")
 
@@ -1862,7 +1862,7 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
                                 self.connection_pool = ConnectionPool(max_connections=self.connection_pool_size)
                                 self.connection_pool.initialize(self.server_list)
                                 self.pool_ready = True
-                                logger.info(f"✅ 兜底初始化连接池完成，池大小: {self.connection_pool_size}")
+                                logger.info(f"兜底初始化连接池完成，池大小: {self.connection_pool_size}")
                             except Exception as pool_err2:
                                 self.pool_ready = False
                                 logger.warning(f"兜底初始化连接池失败，将回退单连接: {pool_err2}")
@@ -1892,7 +1892,7 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
                 except Exception as est_err:
                     logger.debug(f"估算条数失败，使用原始count: {est_err}")
 
-                # ✅ 重要限制：pytdx API单次请求最多返回800条记录
+                # 重要限制：pytdx API单次请求最多返回800条记录
                 # 如果请求的count超过800，使用分批获取
                 MAX_COUNT_PER_REQUEST = 800
                 enable_batch_fetch = self.config.get('enable_batch_fetch', True)
@@ -1974,7 +1974,7 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
                     df = self._process_and_validate_kline_data(df, symbol, period)
 
                     if not df.empty:
-                        # ✅ 修复：智能日期过滤逻辑
+                        # 修复：智能日期过滤逻辑
                         # 只有当明确指定了日期范围且该范围是历史范围时才进行过滤
                         # 如果日期范围跨越"今天"或未来，则不过滤（因为pytdx只返回历史数据）
                         if start_date or end_date:
@@ -2100,7 +2100,7 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
         logger.info(f"[并发分批] {symbol} 开始并发分批获取K线数据，目标: {total_count}条，分{num_batches}批")
 
         try:
-            # ✅ 优化：增加并发工作线程数，充分利用连接池
+            # 优化：增加并发工作线程数，充分利用连接池
             # 如果连接池大小足够，使用连接池大小；否则使用min(连接池大小, 批次数)
             base_workers = self.connection_pool_size if self.use_connection_pool else 3
             # 如果批次数很多，允许超过连接池大小（连接池会自动创建临时连接）
@@ -2120,7 +2120,7 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
                     )
                     futures.append(future)
 
-                # ✅ 优化：使用as_completed异步处理结果，避免顺序等待，提升并发效率
+                # 优化：使用as_completed异步处理结果，避免顺序等待，提升并发效率
                 # 创建future到batch_num的映射，以便在失败时也能知道是哪个批次
                 future_to_batch = {futures[i]: i + 1 for i in range(len(futures))}
                 batch_results_dict = {}  # 使用字典存储结果，key为batch_num
@@ -2129,7 +2129,7 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
 
                 # 使用as_completed异步处理，完成一个处理一个
                 try:
-                    for future in as_completed(futures, timeout=60):  # ✅ 优化：总体超时从30秒增加到60秒，但使用异步处理
+                    for future in as_completed(futures, timeout=60):  # 优化：总体超时从30秒增加到60秒，但使用异步处理
                         batch_num = future_to_batch.get(future, completed_count + 1)
                         try:
                             result = future.result()  # 不再需要单独的超时，因为as_completed已有超时
@@ -2619,13 +2619,13 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
             start_dt = parse_date(start_date)
             end_dt = parse_date(end_date)
 
-            # ✅ 关键修复：智能处理end_date
+            # 关键修复：智能处理end_date
             # 如果end_date是今天或未来，将其调整为None（不过滤），因为pytdx只返回历史数据
             if end_dt is not None and end_dt >= pd.Timestamp(today):
                 logger.info(f"[智能过滤] {symbol} end_date({end_date})是今天或未来，调整为不限制end_date（pytdx只返回历史数据）")
                 end_dt = None  # 不限制end_date
 
-            # ✅ 关键修复：如果start_date明显晚于数据中的最新日期，说明请求的是未来数据
+            # 关键修复：如果start_date明显晚于数据中的最新日期，说明请求的是未来数据
             # 允许3天的容差（考虑周末、节假日等情况）
             if start_dt is not None:
                 max_data_date = df['datetime'].max()
@@ -3286,7 +3286,7 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
     def _initialize_servers(self):
         """初始化服务器列表：优先从配置的端点URL获取 → 失败时使用内置清单"""
         try:
-            # ✅ 修复：快速初始化，避免阻塞
+            # 修复：快速初始化，避免阻塞
             # 1) 优先从配置端点获取（例如GitHub/自定义URL提供的hosts）
             # 设置快速超时，避免长时间阻塞插件加载
             import time
@@ -3340,12 +3340,12 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
             if not endpoints:
                 return []
 
-            # ✅ 修复：大幅减少超时时间，避免阻塞插件加载
+            # 修复：大幅减少超时时间，避免阻塞插件加载
             # 从60秒减少到5秒，快速失败，避免卡顿
             fetch_timeout = int(self.config.get('endpoint_fetch_timeout', 5)) if hasattr(self, 'config') else 5
             max_results = int(self.config.get('endpoint_max_results', 200)) if hasattr(self, 'config') else 200
             
-            # ✅ 修复：使用并发请求，而不是串行，提高速度
+            # 修复：使用并发请求，而不是串行，提高速度
             from concurrent.futures import ThreadPoolExecutor, as_completed
             import time
             
@@ -3353,7 +3353,7 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
             # 修正 tuple_pattern 以匹配实际数据结构
             tuple_pattern = re.compile(r"$\s*['\"][^'\"]*['\"]\s*,\s*['\"](\d{1,3}(?:\.\d{1,3}){3})['\"]\s*,\s*(\d{2,5})\s*$")
 
-            # ✅ 修复：并发请求所有endpoint，设置总体超时，快速失败
+            # 修复：并发请求所有endpoint，设置总体超时，快速失败
             start_time = time.time()
             max_total_timeout = 10  # 总体超时10秒，避免长时间阻塞
             
@@ -3450,7 +3450,7 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
                 key = f"{host}:{port}"
                 if key in seen:
                     continue
-                # ✅ 验证IP地址格式
+                # 验证IP地址格式
                 if not self._validate_ip_address(host):
                     logger.debug(f"跳过无效IP地址: {host}:{port}")
                     continue

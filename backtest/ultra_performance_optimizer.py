@@ -162,7 +162,7 @@ class UltraPerformanceOptimizer:
         try:
             # 检查GPU设备
             cp.cuda.Device(0).compute_capability
-            logger.info("✅ CuPy GPU可用")
+            logger.info("CuPy GPU可用")
             return True
         except Exception as e:
             logger.debug(f"GPU检测失败: {e}")

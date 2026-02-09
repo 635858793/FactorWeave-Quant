@@ -76,7 +76,7 @@ def _check_dl_availability():
         # 所有模块导入成功
         DL_AVAILABLE = True
         TENSORFLOW_AVAILABLE = models.deep_learning.TENSORFLOW_AVAILABLE
-        logger.info(f"✅ 深度学习模块检查成功: DL_AVAILABLE={DL_AVAILABLE}, TENSORFLOW_AVAILABLE={TENSORFLOW_AVAILABLE}")
+        logger.info(f"深度学习模块检查成功: DL_AVAILABLE={DL_AVAILABLE}, TENSORFLOW_AVAILABLE={TENSORFLOW_AVAILABLE}")
         return True
         
     except Exception as e:
@@ -238,7 +238,7 @@ class AIPredictionService(BaseService):
         self._predictions_cache = {}
         self._last_update = {}
 
-        # ✅ 添加：缓存统计（用于计算真实的缓存命中率）
+        # 添加：缓存统计（用于计算真实的缓存命中率）
         self._cache_hits = 0
         self._cache_misses = 0
 
@@ -274,7 +274,7 @@ class AIPredictionService(BaseService):
             if gpu_success:
                 self._gpu_enabled = True
                 device = self._gpu_manager.get_device_strategy()
-                logger.info(f"✅ GPU配置成功，设备策略: {device}")
+                logger.info(f"GPU配置成功，设备策略: {device}")
             else:
                 self._gpu_enabled = False
                 logger.warning("⚠️ GPU配置失败，回退到CPU模式")
@@ -895,7 +895,7 @@ class AIPredictionService(BaseService):
             logger.info(f"深度学习模块检查结果: _check_dl_availability()={dl_available}, DL_AVAILABLE={DL_AVAILABLE}, TENSORFLOW_AVAILABLE={TENSORFLOW_AVAILABLE}")
 
             if dl_available and DL_AVAILABLE:
-                logger.info("✅ 深度学习模块可用，初始化AI预测模型")
+                logger.info("深度学习模块可用，初始化AI预测模型")
                 logger.info(f"GPU状态: {'启用' if self._gpu_enabled else '禁用'}")
                 self._load_or_create_models()
             else:
@@ -1139,11 +1139,11 @@ class AIPredictionService(BaseService):
             cache_key = self._generate_cache_key(kdata, "predict_patterns", patterns=len(patterns))
             if cache_key in self._predictions_cache:
                 logger.debug(f"使用缓存的形态预测结果: {cache_key}")
-                # ✅ 添加：统计缓存命中
+                # 添加：统计缓存命中
                 self._cache_hits += 1
                 return self._predictions_cache[cache_key]
 
-            # ✅ 添加：统计缓存未命中
+            # 添加：统计缓存未命中
             self._cache_misses += 1
             prediction = self._generate_pattern_prediction(kdata, patterns)
             self._predictions_cache[cache_key] = prediction
@@ -2296,7 +2296,7 @@ class AIPredictionService(BaseService):
     def _get_model_performance_metrics(self) -> Dict[str, Any]:
         """获取模型性能指标（基于真实数据计算）"""
         try:
-            # ✅ 修复：基于真实的预测缓存数据计算性能指标
+            # 修复：基于真实的预测缓存数据计算性能指标
             total_predictions = len(self._predictions_cache)
             
             # 计算真实的预测统计
@@ -2353,14 +2353,14 @@ class AIPredictionService(BaseService):
                 cache_hit_rate = 0.0
             
             return {
-                'prediction_accuracy': max(0.0, min(1.0, accuracy)),  # ✅ 基于真实数据计算
-                'average_confidence': max(0.0, min(1.0, avg_confidence)),  # ✅ 基于真实数据计算
+                'prediction_accuracy': max(0.0, min(1.0, accuracy)),  # 基于真实数据计算
+                'average_confidence': max(0.0, min(1.0, avg_confidence)),  # 基于真实数据计算
                 'response_time_ms': 150,  # 估算值，实际应该从性能监控获取
                 'cache_hit_rate': max(0.0, min(1.0, cache_hit_rate)),
                 'model_uptime': 0.99,  # 估算值，实际应该从服务监控获取
-                'total_predictions': total_predictions,  # ✅ 真实数据
-                'successful_predictions': successful_count,  # ✅ 基于真实数据计算
-                'failed_predictions': failed_count  # ✅ 基于真实数据计算
+                'total_predictions': total_predictions,  # 真实数据
+                'successful_predictions': successful_count,  # 基于真实数据计算
+                'failed_predictions': failed_count  # 基于真实数据计算
             }
         except Exception as e:
             logger.error(f"获取性能指标失败: {e}")

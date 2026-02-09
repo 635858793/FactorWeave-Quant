@@ -18,7 +18,7 @@ from PyQt5.QtWidgets import (
     QProgressBar, QMessageBox, QFrame, QGroupBox,
     QTableWidget, QTableWidgetItem, QSpinBox,
     QAbstractItemView, QLineEdit,
-    QGridLayout
+    QGridLayout, QSizePolicy
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer, pyqtSlot
 from PyQt5.QtGui import QFont, QColor
@@ -34,7 +34,7 @@ try:
     from gui.widgets.analysis_tabs.technical_tab import TechnicalAnalysisTab
     TECHNICAL_TAB_AVAILABLE = True
 except ImportError as e:
-    # ✅ 修复：只记录实际导入失败的情况，忽略内部依赖模块的缺失
+    # 修复：只记录实际导入失败的情况，忽略内部依赖模块的缺失
     error_msg = str(e)
     # 如果错误信息中包含 enhanced_kline_technical_tab，说明是内部依赖问题，使用 debug 级别
     if 'enhanced_kline_technical_tab' in error_msg:
@@ -53,7 +53,7 @@ try:
     PROFESSIONAL_TABS_AVAILABLE = True
     ENHANCED_SENTIMENT_AVAILABLE = True
 except ImportError as e:
-    # ✅ 修复：只记录实际导入失败的情况，忽略内部依赖模块的缺失
+    # 修复：只记录实际导入失败的情况，忽略内部依赖模块的缺失
     error_msg = str(e)
     # 如果错误信息中包含 enhanced_kline_technical_tab，说明是内部依赖问题，使用 debug 级别
     if 'enhanced_kline_technical_tab' in error_msg:
@@ -67,7 +67,7 @@ except ImportError as e:
 PROFESSIONAL_SENTIMENT_AVAILABLE = False
 
 # 导入K线技术分析标签页
-# ✅ 修复：enhanced_kline_technical_tab模块暂未实现，暂时禁用
+# 修复：enhanced_kline_technical_tab模块暂未实现，暂时禁用
 KLINE_TECHNICAL_AVAILABLE = False
 # try:
 #     from gui.widgets.analysis_tabs.enhanced_kline_technical_tab import EnhancedKLineTechnicalTab
@@ -146,7 +146,7 @@ class RightPanel(BasePanel):
         self._professional_tabs = []
         self._has_basic_tabs = False  # 标记是否创建了基础标签页
 
-        # ✅ 优化2：待更新标签页跟踪（懒加载机制）
+        # 优化2：待更新标签页跟踪（懒加载机制）
         self._pending_tab_updates = {}  # {tab_index: kline_data}
         self._tab_stock_code = {}       # {tab_index: stock_code} 跟踪每个标签页的数据
 
@@ -636,7 +636,7 @@ class RightPanel(BasePanel):
         # 进度条
         progress_bar = QProgressBar()
         progress_bar.setVisible(False)
-        progress_bar.setMaximumHeight(3)
+        progress_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         main_layout.addWidget(progress_bar)
         self.add_widget('progress_bar', progress_bar)
 
@@ -662,7 +662,7 @@ class RightPanel(BasePanel):
 
             # 🔧 修复：连接指标计算完成信号，通知主图更新
             self._technical_tab.indicator_calculated.connect(self._on_indicator_calculated)
-            logger.info("✅ 已连接technical_tab的indicator_calculated信号")
+            logger.info("已连接technical_tab的indicator_calculated信号")
 
         # 专业分析标签页
         if PROFESSIONAL_TABS_AVAILABLE:
@@ -730,7 +730,7 @@ class RightPanel(BasePanel):
             #         logger.error(f" K线技术分析标签页创建失败: {kline_error}")
             #         logger.error(traceback.format_exc())
 
-            # ✅ 修复：板块资金流 - 使用服务容器（缩进修复，应在 if PROFESSIONAL_TABS_AVAILABLE 块内）
+            # 修复：板块资金流 - 使用服务容器（缩进修复，应在 if PROFESSIONAL_TABS_AVAILABLE 块内）
             try:
                 logger.info("开始创建板块资金流标签页...")
                 start_time = time.time()
@@ -919,7 +919,7 @@ class RightPanel(BasePanel):
         # 信号统计文本
         signal_stats_text = QTextEdit()
         signal_stats_text.setReadOnly(True)
-        signal_stats_text.setMaximumHeight(100)
+        signal_stats_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         signal_stats_layout.addWidget(signal_stats_text)
         self.add_widget('signal_stats_text', signal_stats_text)
 
@@ -1009,12 +1009,12 @@ class RightPanel(BasePanel):
         return_layout = QHBoxLayout()
         min_return_filter = QLineEdit()
         min_return_filter.setPlaceholderText("最小")
-        min_return_filter.setMaximumWidth(80)
+        min_return_filter.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         return_layout.addWidget(min_return_filter)
         return_layout.addWidget(QLabel("到"))
         max_return_filter = QLineEdit()
         max_return_filter.setPlaceholderText("最大")
-        max_return_filter.setMaximumWidth(80)
+        max_return_filter.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         return_layout.addWidget(max_return_filter)
         filter_layout.addLayout(return_layout, 1, 1)
         self.add_widget('min_return_filter', min_return_filter)
@@ -1025,12 +1025,12 @@ class RightPanel(BasePanel):
         success_layout = QHBoxLayout()
         min_success_filter = QLineEdit()
         min_success_filter.setPlaceholderText("最小")
-        min_success_filter.setMaximumWidth(80)
+        min_success_filter.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         success_layout.addWidget(min_success_filter)
         success_layout.addWidget(QLabel("到"))
         max_success_filter = QLineEdit()
         max_success_filter.setPlaceholderText("最大")
-        max_success_filter.setMaximumWidth(80)
+        max_success_filter.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         success_layout.addWidget(max_success_filter)
         filter_layout.addLayout(success_layout, 2, 1)
         self.add_widget('min_success_filter', min_success_filter)
@@ -1164,8 +1164,7 @@ class RightPanel(BasePanel):
 
         # 选股条件组
         condition_group = QGroupBox("选股条件")
-        condition_group.setMinimumHeight(150)
-        condition_group.setMaximumHeight(250)
+        condition_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         layout.addWidget(condition_group)
         self.add_widget('ai_condition_group', condition_group)
 
@@ -1174,7 +1173,7 @@ class RightPanel(BasePanel):
         # 自然语言输入
         condition_text = QTextEdit()
         condition_text.setPlaceholderText("请输入选股需求（如：高ROE、低估值、强势资金流等）")
-        condition_text.setMaximumHeight(80)
+        condition_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         condition_layout.addWidget(condition_text)
         self.add_widget('ai_condition_text', condition_text)
 
@@ -1300,7 +1299,7 @@ class RightPanel(BasePanel):
         self.event_bus.subscribe(UIDataReadyEvent, self._on_ui_data_ready)
         logger.debug("RightPanel已订阅UIDataReadyEvent事件")
 
-        # ✅ 优化2：连接标签页切换信号，实现懒加载
+        # 优化2：连接标签页切换信号，实现懒加载
         tab_widget = self.get_widget('tab_widget')
         if tab_widget:
             tab_widget.currentChanged.connect(self._on_tab_changed)
@@ -1411,7 +1410,7 @@ class RightPanel(BasePanel):
             logger.error(traceback.format_exc())
 
     def _update_professional_tabs_with_performance_manager(self, kline_data):
-        """✅ 优化2：使用性能管理器更新专业标签页（懒加载机制）"""
+        """优化2：使用性能管理器更新专业标签页（懒加载机制）"""
         try:
             tab_widget = self.get_widget('tab_widget')
             if not tab_widget:
@@ -1432,7 +1431,7 @@ class RightPanel(BasePanel):
                     logger.debug(f"跳过标签页（skip_kdata=True）: {tab_type}")
                     continue
 
-                # ✅ 懒加载：只更新当前激活的标签页
+                # 懒加载：只更新当前激活的标签页
                 if i == current_index:
                     logger.info(f"立即更新当前激活标签页: {tab_type} (索引{i})")
                     # 使用性能管理器更新数据
@@ -1463,7 +1462,7 @@ class RightPanel(BasePanel):
             self._async_update_professional_tabs(kline_data)
 
     def _on_tab_changed(self, index: int):
-        """✅ 优化2：标签页切换处理器（懒加载触发）"""
+        """优化2：标签页切换处理器（懒加载触发）"""
         try:
             # logger.info(f"标签页切换到索引: {index}")
 
@@ -1504,12 +1503,12 @@ class RightPanel(BasePanel):
             logger.error(traceback.format_exc())
 
     def _async_update_professional_tabs(self, kline_data):
-        """✅ 性能优化：并行更新专业标签页，避免阻塞UI线程"""
+        """性能优化：并行更新专业标签页，避免阻塞UI线程"""
         try:
             from PyQt5.QtCore import QTimer
             from concurrent.futures import ThreadPoolExecutor
 
-            # ✅ 性能优化：使用线程池并行更新标签页
+            # 性能优化：使用线程池并行更新标签页
             if not hasattr(self, '_tab_update_executor'):
                 self._tab_update_executor = ThreadPoolExecutor(max_workers=min(3, len(self._professional_tabs)))
 
@@ -1532,13 +1531,13 @@ class RightPanel(BasePanel):
             self._sync_update_professional_tabs(kline_data)
 
     def _process_next_tab_update(self):
-        """✅ 性能优化：并行处理多个标签页更新"""
+        """性能优化：并行处理多个标签页更新"""
         try:
             if not hasattr(self, '_tab_update_queue') or not self._tab_update_queue:
                 logger.debug("所有专业标签页数据更新完成")
                 return
 
-            # ✅ 性能优化：并行处理多个标签页（最多3个）
+            # 性能优化：并行处理多个标签页（最多3个）
             tabs_to_update = []
             for _ in range(min(3, len(self._tab_update_queue))):
                 if self._tab_update_queue:
@@ -1572,7 +1571,7 @@ class RightPanel(BasePanel):
 
             # 如果还有更多标签页需要处理，调度下一次更新
             if self._tab_update_queue:
-                self._tab_update_timer.start(50)  # ✅ 优化：减少间隔到50ms，提升并行度
+                self._tab_update_timer.start(50)  # 优化：减少间隔到50ms，提升并行度
 
         except Exception as e:
             logger.error(f"处理标签页更新失败: {e}")
@@ -2005,7 +2004,7 @@ class RightPanel(BasePanel):
                 logger.warning("chart_widget没有可用的K线数据，无法更新")
                 return
 
-            logger.info(f"✅ 准备更新主图，K线数据长度: {len(chart_widget.current_kdata)}")
+            logger.info(f"准备更新主图，K线数据长度: {len(chart_widget.current_kdata)}")
 
             # 定义内置指标列表
             builtin_indicators = {
@@ -2049,7 +2048,7 @@ class RightPanel(BasePanel):
                     logger.warning(f"移除无效指标 #{i}: {ind}")
             
             chart_widget.active_indicators = validated_indicators
-            logger.info(f"✅ 设置active_indicators: {[ind['name'] for ind in active_indicators]}")
+            logger.info(f"设置active_indicators: {[ind['name'] for ind in active_indicators]}")
             logger.info(f"指标分组信息: {[(ind['name'], ind['group']) for ind in active_indicators]}")
 
             # 调用update_chart更新图表，传递指标数据
@@ -2057,7 +2056,7 @@ class RightPanel(BasePanel):
                 "kdata": chart_widget.current_kdata,
                 "indicators_data": indicator_results
             })
-            logger.info(f"✅ 主图更新完成")
+            logger.info(f"主图更新完成")
 
         except Exception as e:
             logger.error(f"处理指标计算完成信号失败: {e}")
@@ -2405,4 +2404,46 @@ class RightPanel(BasePanel):
             logger.error(f"导出AI选股结果失败: {e}")
             logger.error(traceback.format_exc())
             QMessageBox.critical(self, "错误", f"导出失败: {str(e)}")
+
+    def resizeEvent(self, event):
+        """窗口大小改变事件处理"""
+        super().resizeEvent(event)
+        self._update_responsive_layout()
+
+    def _update_responsive_layout(self):
+        """更新响应式布局"""
+        try:
+            window_width = self.width()
+            window_height = self.height()
+
+            logger.debug(f"RightPanel 响应式布局更新: {window_width}x{window_height}")
+
+            # 更新收益率范围过滤框宽度
+            min_return_filter = self.get_widget('min_return_filter')
+            if min_return_filter:
+                filter_width = max(60, int(window_width * 0.08))
+                min_return_filter.setMinimumWidth(filter_width)
+                min_return_filter.setMaximumWidth(int(window_width * 0.12))
+
+            max_return_filter = self.get_widget('max_return_filter')
+            if max_return_filter:
+                filter_width = max(60, int(window_width * 0.08))
+                max_return_filter.setMinimumWidth(filter_width)
+                max_return_filter.setMaximumWidth(int(window_width * 0.12))
+
+            # 更新成功率范围过滤框宽度
+            min_success_filter = self.get_widget('min_success_filter')
+            if min_success_filter:
+                filter_width = max(60, int(window_width * 0.08))
+                min_success_filter.setMinimumWidth(filter_width)
+                min_success_filter.setMaximumWidth(int(window_width * 0.12))
+
+            max_success_filter = self.get_widget('max_success_filter')
+            if max_success_filter:
+                filter_width = max(60, int(window_width * 0.08))
+                max_success_filter.setMinimumWidth(filter_width)
+                max_success_filter.setMaximumWidth(int(window_width * 0.12))
+
+        except Exception as e:
+            logger.error(f"更新响应式布局失败: {e}")
 

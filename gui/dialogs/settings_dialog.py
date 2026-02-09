@@ -424,7 +424,7 @@ class SettingsDialog(QDialog):
                 gpu_status = ai_service.get_gpu_status()
 
                 if gpu_status['enabled']:
-                    self.gpu_enabled_label.setText("✅ 已启用")
+                    self.gpu_enabled_label.setText("已启用")
                     self.gpu_enabled_label.setStyleSheet("color: #28a745; font-weight: bold;")
                 else:
                     self.gpu_enabled_label.setText("❌ 未启用")

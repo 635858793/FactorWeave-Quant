@@ -110,7 +110,7 @@ class MarketData:
 
 @dataclass
 class QueryParams:
-    """查询参数（✅ 优化：支持多资产类型）"""
+    """查询参数（优化：支持多资产类型）"""
     stock_code: str
     period: str = 'D'
     start_date: Optional[datetime] = None

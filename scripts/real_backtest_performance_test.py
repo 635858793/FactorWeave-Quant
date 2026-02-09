@@ -130,7 +130,7 @@ class RealBacktestPerformanceTest:
             # 计算回测速度（万条/秒）
             backtest_speed = (data_size / 10000) / execution_time
             
-            logger.info(f"✅ 测试完成")
+            logger.info(f"测试完成")
             logger.info(f"   执行时间: {execution_time:.4f}秒")
             logger.info(f"   回测速度: {backtest_speed:.2f}万条/秒")
             logger.info(f"   结果行数: {len(result)}")
@@ -208,7 +208,7 @@ class RealBacktestPerformanceTest:
             # 计算回测速度（万条/秒）
             backtest_speed = (data_size / 10000) / execution_time
             
-            logger.info(f"✅ 测试完成")
+            logger.info(f"测试完成")
             logger.info(f"   执行时间: {execution_time:.4f}秒")
             logger.info(f"   回测速度: {backtest_speed:.2f}万条/秒")
             logger.info(f"   结果类型: {type(result)}")
@@ -281,7 +281,7 @@ class RealBacktestPerformanceTest:
             # 计算回测速度（万条/秒）
             backtest_speed = (data_size / 10000) / execution_time
             
-            logger.info(f"✅ 测试完成")
+            logger.info(f"测试完成")
             logger.info(f"   执行时间: {execution_time:.4f}秒")
             logger.info(f"   回测速度: {backtest_speed:.2f}万条/秒")
             logger.info(f"   结果长度: {len(capital)}")

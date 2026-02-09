@@ -188,22 +188,22 @@ class DuckDBConnectionPool:
                         # 尝试使用 os.replace 进行快速重命名（不复制）
                         # 这避免了读取损坏文件内容，也不会因为文件锁定而失败
                         os.replace(db_path, backup_path)
-                        logger.info(f"✅ 已将损坏文件重命名为备份: {backup_path}")
+                        logger.info(f"已将损坏文件重命名为备份: {backup_path}")
 
                         # 尝试创建新的数据库
                         conn = duckdb.connect(db_path, read_only=False)
-                        logger.info("✅ 成功创建新数据库文件")
+                        logger.info("成功创建新数据库文件")
 
                     except PermissionError as pe:
                         # 文件被其他进程锁定，尝试直接删除
                         logger.warning(f"⚠️ 无法重命名文件（可能被锁定），尝试直接删除: {pe}")
                         try:
                             db_file.unlink(missing_ok=True)
-                            logger.info("✅ 已删除损坏的数据库文件")
+                            logger.info("已删除损坏的数据库文件")
 
                             # 尝试创建新的数据库
                             conn = duckdb.connect(db_path, read_only=False)
-                            logger.info("✅ 成功创建新数据库文件")
+                            logger.info("成功创建新数据库文件")
 
                         except Exception as delete_error:
                             logger.error(f"❌ 删除损坏文件失败: {delete_error}")
@@ -252,11 +252,11 @@ class DuckDBConnectionPool:
                             logger.info(f"删除WAL共享内存文件: {wal_shm_file}")
                             wal_shm_file.unlink()
 
-                        logger.info("✅ WAL文件清理完成，重新尝试连接...")
+                        logger.info("WAL文件清理完成，重新尝试连接...")
 
                         # 重新尝试连接
                         conn = duckdb.connect(db_path, read_only=False)
-                        logger.info("✅ 成功连接数据库（清理WAL后）")
+                        logger.info("成功连接数据库（清理WAL后）")
 
                     except Exception as wal_error:
                         logger.error(f"❌ 清理WAL文件失败: {wal_error}")
@@ -412,11 +412,11 @@ class DuckDBConnectionPool:
     def health_check(self) -> Dict[str, Any]:
         """健康检查"""
         try:
-            # ✅ 修复：先获取统计信息，再获取连接（避免health_check本身占用连接影响统计）
+            # 修复：先获取统计信息，再获取连接（避免health_check本身占用连接影响统计）
             with self._lock:
                 available_connections = self._pool.qsize()
                 total_connections = self._total_connections
-                # ✅ 修复：活跃连接数 = 总连接数 - 池中可用连接数
+                # 修复：活跃连接数 = 总连接数 - 池中可用连接数
                 # 因为连接要么在池中（可用），要么正在使用（活跃）
                 active_connections = max(0, total_connections - available_connections)
             
@@ -428,7 +428,7 @@ class DuckDBConnectionPool:
                 # 获取数据库信息
                 db_info = conn.execute("PRAGMA database_list").fetchall()
 
-                # ✅ 修复：健康检查完成后，重新获取统计信息（因为get_connection可能改变了连接状态）
+                # 修复：健康检查完成后，重新获取统计信息（因为get_connection可能改变了连接状态）
                 with self._lock:
                     available_connections_after = self._pool.qsize()
                     total_connections_after = self._total_connections
@@ -450,7 +450,7 @@ class DuckDBConnectionPool:
 
         except Exception as e:
             logger.error(f"健康检查失败: {e}")
-            # ✅ 修复：即使健康检查失败，也返回当前的连接池统计信息
+            # 修复：即使健康检查失败，也返回当前的连接池统计信息
             try:
                 with self._lock:
                     available_connections = self._pool.qsize()
@@ -517,7 +517,7 @@ class DuckDBConnectionPool:
                         # 执行checkpoint（合并WAL）
                         try:
                             conn.execute("CHECKPOINT")
-                            logger.debug(f"   ✅ Checkpoint完成")
+                            logger.debug(f"   Checkpoint完成")
                         except Exception as e:
                             logger.warning(f"   ⚠️ Checkpoint失败: {e}")
 
@@ -553,7 +553,7 @@ class DuckDBConnectionPool:
                         logger.error(f"   ❌ 关闭连接 {conn_id} 失败: {e}")
 
                 self._active_connections = 0
-                logger.info(f"   ✅ 已关闭连接: 池={closed_from_pool}, 注册={closed_from_registry}")
+                logger.info(f"   已关闭连接: 池={closed_from_pool}, 注册={closed_from_registry}")
 
         except Exception as e:
             logger.error(f"关闭连接时出错: {e}")
@@ -740,9 +740,9 @@ class DuckDBConnectionManager:
                 )
 
                 self._pools[database_path] = pool
-                logger.info(f"✅ 新连接池已创建: {database_path}")
+                logger.info(f"新连接池已创建: {database_path}")
 
-            logger.info(f"✅ 数据库连接池重启成功: {database_path}")
+            logger.info(f"数据库连接池重启成功: {database_path}")
             return True
 
         except Exception as e:

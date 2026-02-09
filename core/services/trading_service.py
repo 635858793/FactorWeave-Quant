@@ -259,7 +259,7 @@ class TradingService(BaseService):
             # 初始化默认投资组合
             self._initialize_default_portfolio()
 
-            logger.info("✅ TradingService initialized successfully")
+            logger.info("TradingService initialized successfully")
 
         except Exception as e:
             logger.error(f"❌ Failed to initialize TradingService: {e}")

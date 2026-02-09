@@ -54,7 +54,7 @@ def check_fundamental_data_factory_logic():
             if not FundamentalDataFactory.is_supported(asset_type):
                 errors.append(f"资产类型 {asset_type.value} 未注册")
             else:
-                print(f"  ✅ {asset_type.value}")
+                print(f"  {asset_type.value}")
         
         # 测试创建股票基本面数据
         stock_data = {
@@ -73,7 +73,7 @@ def check_fundamental_data_factory_logic():
         if not isinstance(stock_fundamental, StockFundamentalData):
             errors.append("股票基本面数据类型不正确")
         else:
-            print(f"  ✅ 股票基本面数据创建成功: {stock_fundamental}")
+            print(f"  股票基本面数据创建成功: {stock_fundamental}")
         
         # 测试创建期货基本面数据
         futures_data = {
@@ -91,7 +91,7 @@ def check_fundamental_data_factory_logic():
         if not isinstance(futures_fundamental, FuturesFundamentalData):
             errors.append("期货基本面数据类型不正确")
         else:
-            print(f"  ✅ 期货基本面数据创建成功: {futures_fundamental}")
+            print(f"  期货基本面数据创建成功: {futures_fundamental}")
         
         # 测试创建加密货币基本面数据
         crypto_data = {
@@ -109,7 +109,7 @@ def check_fundamental_data_factory_logic():
         if not isinstance(crypto_fundamental, CryptoFundamentalData):
             errors.append("加密货币基本面数据类型不正确")
         else:
-            print(f"  ✅ 加密货币基本面数据创建成功: {crypto_fundamental}")
+            print(f"  加密货币基本面数据创建成功: {crypto_fundamental}")
         
         # 测试不支持的资产类型
         try:
@@ -121,7 +121,7 @@ def check_fundamental_data_factory_logic():
             )
             errors.append("应该抛出异常但不支持的资产类型没有抛出")
         except ValueError:
-            print(f"  ✅ 不支持的资产类型正确抛出异常")
+            print(f"  不支持的资产类型正确抛出异常")
         
         if errors:
             print(f"\n❌ 发现 {len(errors)} 个错误:")
@@ -129,7 +129,7 @@ def check_fundamental_data_factory_logic():
                 print(f"  - {error}")
             return False
         else:
-            print("\n✅ 基本面数据工厂逻辑检查通过")
+            print("\n基本面数据工厂逻辑检查通过")
             return True
     
     except Exception as e:
@@ -246,7 +246,7 @@ def check_fundamental_data_scoring_logic():
                 print(f"  - {error}")
             return False
         else:
-            print("\n✅ 基本面数据评分逻辑检查通过")
+            print("\n基本面数据评分逻辑检查通过")
             return True
     
     except Exception as e:
@@ -387,7 +387,7 @@ def check_selection_strategy_logic():
                 print(f"  - {error}")
             return False
         else:
-            print("\n✅ 选股策略逻辑检查通过")
+            print("\n选股策略逻辑检查通过")
             return True
     
     except Exception as e:
@@ -419,7 +419,7 @@ def main():
     print("=" * 80)
     
     for name, result in results:
-        status = "✅ 通过" if result else "❌ 失败"
+        status = "通过" if result else "❌ 失败"
         print(f"{status} - {name}")
     
     all_passed = all(result for _, result in results)

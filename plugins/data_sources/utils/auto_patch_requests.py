@@ -78,7 +78,7 @@ def get_global_session():
         # 设置Keep-Alive
         _GLOBAL_SESSION.headers.update({'Connection': 'keep-alive'})
         
-        logger.debug(f"✅ 创建全局Session对象（连接池:{AUTO_PATCH_CONFIG['pool_connections']}, "
+        logger.debug(f"创建全局Session对象（连接池:{AUTO_PATCH_CONFIG['pool_connections']}, "
                     f"最大重试:{AUTO_PATCH_CONFIG['max_retries']}, "
                     f"超时:{AUTO_PATCH_CONFIG['timeout']}秒）")
     
@@ -105,11 +105,11 @@ def _smart_request_with_retry(original_func, *args, **kwargs):
             # 创建kwargs的副本，避免修改原始参数
             current_kwargs = kwargs.copy()
             
-            # ✅ 添加默认超时（防止连接挂起）
+            # 添加默认超时（防止连接挂起）
             if 'timeout' not in current_kwargs:
                 current_kwargs['timeout'] = AUTO_PATCH_CONFIG.get('timeout', 30)
             
-            # ✅ 添加连接池配置（复用连接，减少RemoteDisconnected）
+            # 添加连接池配置（复用连接，减少RemoteDisconnected）
             if 'adapter' not in current_kwargs:
                 # 使用Session对象可以复用连接
                 pass  # requests会自动处理连接池
@@ -148,7 +148,7 @@ def _smart_request_with_retry(original_func, *args, **kwargs):
             else:
                 # 非连接错误或重试次数用完
                 if is_connection_error(e):
-                    # ✅ 根据配置的日志级别记录（避免刷屏）
+                    # 根据配置的日志级别记录（避免刷屏）
                     log_level = AUTO_PATCH_CONFIG.get('log_level', 'debug')
                     error_msg = f"连接错误重试失败，已尝试 {attempt + 1} 次: {str(e)[:150]}"
                     
@@ -221,7 +221,7 @@ def patch_requests_globally():
         requests.Session.request = patched_session_request
         
         _PATCH_APPLIED = True
-        logger.info("✅ 已为所有HTTP请求应用反爬虫补丁（requests库）")
+        logger.info("已为所有HTTP请求应用反爬虫补丁（requests库）")
         return True
         
     except Exception as e:

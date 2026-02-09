@@ -133,7 +133,7 @@ class ProductionServer:
         if free_gb < 5:
             logger.warning(f"磁盘空间不足: {free_gb:.1f}GB，建议至少10GB")
 
-        logger.info("✅ 环境检查完成")
+        logger.info("环境检查完成")
 
     async def _load_configuration(self):
         """加载配置"""
@@ -155,7 +155,7 @@ class ProductionServer:
         config_file = project_root / 'deployment' / 'current_config.json'
         self.config.save_config(str(config_file))
 
-        logger.info("✅ 配置加载完成")
+        logger.info("配置加载完成")
 
     def _setup_logging(self):
         """设置日志"""
@@ -163,7 +163,7 @@ class ProductionServer:
 
         try:
             self.config.setup_logging()
-            logger.info("✅ 日志设置完成")
+            logger.info("日志设置完成")
         except Exception as e:
             logger.error(f"日志设置失败: {e}")
             raise
@@ -191,7 +191,7 @@ class ProductionServer:
 
             self.services['database'] = db_manager
 
-            logger.info("✅ 数据库初始化完成")
+            logger.info("数据库初始化完成")
 
         except Exception as e:
             logger.error(f"数据库初始化失败: {e}")
@@ -212,7 +212,7 @@ class ProductionServer:
             if self.config.performance.cache_warmup_enabled:
                 await self._warmup_cache()
 
-            logger.info("✅ 缓存系统初始化完成")
+            logger.info("缓存系统初始化完成")
 
         except Exception as e:
             logger.error(f"缓存系统初始化失败: {e}")
@@ -239,7 +239,7 @@ class ProductionServer:
 
             await cache_system.preload(preload_data, ttl=3600)
 
-            logger.info("✅ 缓存预热完成")
+            logger.info("缓存预热完成")
 
         except Exception as e:
             logger.warning(f"缓存预热失败: {e}")
@@ -267,7 +267,7 @@ class ProductionServer:
 
             self.services['plugin_center'] = plugin_center
 
-            logger.info("✅ 插件系统初始化完成")
+            logger.info("插件系统初始化完成")
 
         except Exception as e:
             logger.error(f"插件系统初始化失败: {e}")
@@ -294,7 +294,7 @@ class ProductionServer:
 
             self.services['service_bootstrap'] = service_bootstrap
 
-            logger.info("✅ 核心服务初始化完成")
+            logger.info("核心服务初始化完成")
 
         except Exception as e:
             logger.error(f"核心服务初始化失败: {e}")
@@ -315,7 +315,7 @@ class ProductionServer:
             )
             self.monitoring_thread.start()
 
-            logger.info("✅ 监控系统启动完成")
+            logger.info("监控系统启动完成")
 
         except Exception as e:
             logger.error(f"监控系统启动失败: {e}")
@@ -364,7 +364,7 @@ class ProductionServer:
             )
             self.health_check_thread.start()
 
-            logger.info("✅ 健康检查启动完成")
+            logger.info("健康检查启动完成")
 
         except Exception as e:
             logger.error(f"健康检查启动失败: {e}")
@@ -466,7 +466,7 @@ class ProductionServer:
                 except Exception as e:
                     logger.error(f"关闭服务 {service_name} 失败: {e}")
 
-            logger.info("✅ 资源清理完成")
+            logger.info("资源清理完成")
 
         except Exception as e:
             logger.error(f"资源清理失败: {e}")

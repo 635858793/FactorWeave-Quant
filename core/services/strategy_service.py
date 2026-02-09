@@ -40,7 +40,7 @@ import numpy as np
 import pandas as pd
 import threading
 
-# ✅ 修复：确保项目根目录在 Python 路径中，以便导入 strategies 模块
+# 修复：确保项目根目录在 Python 路径中，以便导入 strategies 模块
 _project_root = Path(__file__).parent.parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))

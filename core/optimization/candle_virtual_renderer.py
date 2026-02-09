@@ -180,7 +180,7 @@ class CandleVirtualRenderer(QObject):
             self.render_stats['total_render_time_ms'] += render_time * 1000
             self.render_stats['data_points_processed'] += len(data)
             
-            logger.info(f"✅ K线图虚拟滚动渲染完成: {render_time*1000:.2f}ms, 渲染块数量: {len(self.rendered_chunks)}")
+            logger.info(f"K线图虚拟滚动渲染完成: {render_time*1000:.2f}ms, 渲染块数量: {len(self.rendered_chunks)}")
             return success
             
         except Exception as e:
@@ -291,7 +291,7 @@ class CandleVirtualRenderer(QObject):
                 ax.autoscale_view()
                 
                 render_time = time.time() - start_time
-                logger.debug(f"✅ 常规K线图渲染完成: {len(data)}个K线，耗时 {render_time*1000:.2f}ms")
+                logger.debug(f"常规K线图渲染完成: {len(data)}个K线，耗时 {render_time*1000:.2f}ms")
             
             return True
             

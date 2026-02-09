@@ -4,7 +4,7 @@
 参考TradingView设计的指标显示卡片
 """
 
-from PyQt5.QtWidgets import QFrame, QVBoxLayout, QHBoxLayout, QLabel, QGraphicsDropShadowEffect
+from PyQt5.QtWidgets import QFrame, QVBoxLayout, QHBoxLayout, QLabel, QGraphicsDropShadowEffect, QSizePolicy
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont, QColor
 
@@ -65,8 +65,10 @@ class ModernMetricCard(QFrame):
         self.update_theme()
 
     def init_ui(self):
-        # 设置固定大小和阴影效果 - 更紧凑的卡片
-        self.setFixedSize(130, 52)
+        # 设置响应式大小和阴影效果 - 更紧凑的卡片
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        self.setMinimumHeight(52)
+        self.setMaximumHeight(52)
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(10)
         shadow.setOffset(0, 2)

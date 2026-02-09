@@ -109,7 +109,7 @@ def test_gradient_optimization():
         result = optimizer.optimize_algorithm("hammer", config, [test_data])
         optimization_time = time.time() - start_time
         
-        logger.info(f"\n✅ 梯度优化完成，耗时：{optimization_time:.4f}秒")
+        logger.info(f"\n梯度优化完成，耗时：{optimization_time:.4f}秒")
         logger.info(f"优化结果：")
         logger.info(f"  方法：{result.get('method', 'N/A')}")
         logger.info(f"  最佳评分：{result.get('best_score', 0):.3f}")

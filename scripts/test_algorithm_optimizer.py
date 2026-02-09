@@ -113,7 +113,7 @@ def test_algorithm_optimizer():
         
         try:
             from optimization.algorithm_optimizer import AlgorithmOptimizer, OptimizationConfig
-            logger.info("✅ AlgorithmOptimizer导入成功")
+            logger.info("AlgorithmOptimizer导入成功")
         except ImportError as e:
             logger.error(f"❌ AlgorithmOptimizer导入失败：{e}")
             logger.error("AlgorithmOptimizer可能不存在或路径不正确")
@@ -130,7 +130,7 @@ def test_algorithm_optimizer():
         
         try:
             test_data = create_test_data()
-            logger.info(f"✅ 测试数据创建成功：{len(test_data)}条K线数据")
+            logger.info(f"测试数据创建成功：{len(test_data)}条K线数据")
             logger.info(f"数据范围：{test_data['datetime'].min()} 到 {test_data['datetime'].max()}")
             logger.info(f"价格范围：{test_data['close'].min():.2f} 到 {test_data['close'].max():.2f}")
         except Exception as e:
@@ -147,7 +147,7 @@ def test_algorithm_optimizer():
             start_time = time.time()
             optimizer = AlgorithmOptimizer(debug_mode=True)
             init_time = time.time() - start_time
-            logger.info(f"✅ 算法优化器创建成功，耗时：{init_time:.4f}秒")
+            logger.info(f"算法优化器创建成功，耗时：{init_time:.4f}秒")
         except Exception as e:
             logger.error(f"❌ 算法优化器创建失败：{e}")
             logger.error(traceback.format_exc())
@@ -189,7 +189,7 @@ def test_algorithm_optimizer():
                 result = optimizer.optimize_algorithm("hammer", config, [test_data])
                 optimization_time = time.time() - start_time
                 
-                logger.info(f"\n✅ 遗传算法优化完成，耗时：{optimization_time:.4f}秒")
+                logger.info(f"\n遗传算法优化完成，耗时：{optimization_time:.4f}秒")
                 logger.info(f"优化结果：")
                 logger.info(f"  方法：{result.get('method', 'N/A')}")
                 logger.info(f"  最佳评分：{result.get('best_score', 0):.3f}")
@@ -258,7 +258,7 @@ def test_algorithm_optimizer():
                 result = optimizer.optimize_algorithm("hammer", config, [test_data])
                 optimization_time = time.time() - start_time
                 
-                logger.info(f"\n✅ 贝叶斯优化完成，耗时：{optimization_time:.4f}秒")
+                logger.info(f"\n贝叶斯优化完成，耗时：{optimization_time:.4f}秒")
                 logger.info(f"优化结果：")
                 logger.info(f"  方法：{result.get('method', 'N/A')}")
                 logger.info(f"  最佳评分：{result.get('best_score', 0):.3f}")
@@ -326,7 +326,7 @@ def test_algorithm_optimizer():
                 result = optimizer.optimize_algorithm("hammer", config, [test_data])
                 optimization_time = time.time() - start_time
                 
-                logger.info(f"\n✅ 随机搜索优化完成，耗时：{optimization_time:.4f}秒")
+                logger.info(f"\n随机搜索优化完成，耗时：{optimization_time:.4f}秒")
                 logger.info(f"优化结果：")
                 logger.info(f"  方法：{result.get('method', 'N/A')}")
                 logger.info(f"  最佳评分：{result.get('best_score', 0):.3f}")
@@ -394,7 +394,7 @@ def test_algorithm_optimizer():
                 result = optimizer.optimize_algorithm("hammer", config, [test_data])
                 optimization_time = time.time() - start_time
                 
-                logger.info(f"\n✅ 梯度优化完成，耗时：{optimization_time:.4f}秒")
+                logger.info(f"\n梯度优化完成，耗时：{optimization_time:.4f}秒")
                 logger.info(f"优化结果：")
                 logger.info(f"  方法：{result.get('method', 'N/A')}")
                 logger.info(f"  最佳评分：{result.get('best_score', 0):.3f}")

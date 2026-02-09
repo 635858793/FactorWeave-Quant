@@ -183,7 +183,7 @@ class DuckDBOperations:
         # 使用DuckDB的高效批量插入，明确指定列名
         columns = list(batch_data.columns)
 
-        # ✅ 修复：过滤SQL关键字和函数名，并用双引号引用列名
+        # 修复：过滤SQL关键字和函数名，并用双引号引用列名
         sql_keywords = {
             'CURRENT_TIMESTAMP', 'NOW', 'CURRENT_DATE', 'CURRENT_TIME',
             'DEFAULT', 'NULL', 'TRUE', 'FALSE', 'SELECT', 'INSERT', 'UPDATE',
@@ -207,7 +207,7 @@ class DuckDBOperations:
         # 构建upsert SQL
         columns = list(batch_data.columns)
 
-        # ✅ 修复：过滤SQL关键字和函数名，并用双引号引用列名
+        # 修复：过滤SQL关键字和函数名，并用双引号引用列名
         sql_keywords = {
             'CURRENT_TIMESTAMP', 'NOW', 'CURRENT_DATE', 'CURRENT_TIME',
             'DEFAULT', 'NULL', 'TRUE', 'FALSE', 'SELECT', 'INSERT', 'UPDATE',

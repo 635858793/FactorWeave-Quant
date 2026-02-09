@@ -331,7 +331,7 @@ class ProductionDeploymentManager:
             step.completed = success
 
             if success:
-                logger.info(f"✅ Completed: {step.name} ({elapsed_time:.1f}s)")
+                logger.info(f"Completed: {step.name} ({elapsed_time:.1f}s)")
                 self._log_deployment_event(f"Step completed: {step.name}")
             else:
                 logger.error(f"❌ Failed: {step.name}")
@@ -366,7 +366,7 @@ class ProductionDeploymentManager:
             if not self._validate_new_architecture():
                 return False
 
-            logger.info("✅ Deployment readiness validation passed")
+            logger.info("Deployment readiness validation passed")
             return True
 
         except Exception as e:
@@ -394,7 +394,7 @@ class ProductionDeploymentManager:
                 logger.error(f"Low disk space: {100-disk.percent}% free")
                 return False
 
-            logger.info("✅ System resources check passed")
+            logger.info("System resources check passed")
             return True
 
         except Exception as e:
@@ -408,7 +408,7 @@ class ProductionDeploymentManager:
 
             # This would check if current services are running
             # For simulation, we'll assume they are available
-            logger.info("✅ Service availability check passed")
+            logger.info("Service availability check passed")
             return True
 
         except Exception as e:
@@ -422,7 +422,7 @@ class ProductionDeploymentManager:
 
             # This would test actual database connections
             # For simulation, we'll assume they are available
-            logger.info("✅ Database connectivity check passed")
+            logger.info("Database connectivity check passed")
             return True
 
         except Exception as e:
@@ -451,7 +451,7 @@ class ProductionDeploymentManager:
                     logger.error(f"Missing required service: {service}")
                     return False
 
-            logger.info("✅ New architecture validation passed")
+            logger.info("New architecture validation passed")
             return True
 
         except Exception as e:
@@ -496,7 +496,7 @@ class ProductionDeploymentManager:
             with open(backup_dir / "backup_manifest.json", 'w') as f:
                 json.dump(manifest, f, indent=2)
 
-            logger.info("✅ System backup completed")
+            logger.info("System backup completed")
             return True
 
         except Exception as e:
@@ -538,7 +538,7 @@ class ProductionDeploymentManager:
             # Create alert configuration
             self._create_alert_configuration()
 
-            logger.info("✅ Production monitoring setup completed")
+            logger.info("Production monitoring setup completed")
             return True
 
         except Exception as e:
@@ -576,7 +576,7 @@ async def main():
             auto_start=True
         )
         
-        logger.info("✅ Production monitoring started successfully")
+        logger.info("Production monitoring started successfully")
         
         # Keep monitoring running
         while True:
@@ -641,12 +641,12 @@ if __name__ == "__main__":
                 from core.containers.enhanced_service_container import EnhancedServiceContainer
                 from core.services.unified_data_service import UnifiedDataService
                 from .plugin_service import PluginService
-                logger.info("✅ New architecture components verified")
+                logger.info("New architecture components verified")
             except ImportError as e:
                 logger.error(f"Failed to import new architecture: {e}")
                 return False
 
-            logger.info("✅ New version preparation completed")
+            logger.info("New version preparation completed")
             return True
 
         except Exception as e:
@@ -665,7 +665,7 @@ if __name__ == "__main__":
             # - Configuration updates
 
             # For simulation, we'll assume migration succeeds
-            logger.info("✅ Database migration completed")
+            logger.info("Database migration completed")
             return True
 
         except Exception as e:
@@ -697,7 +697,7 @@ if __name__ == "__main__":
             if not self._shutdown_old_services():
                 return False
 
-            logger.info("✅ Gradual service transition completed")
+            logger.info("Gradual service transition completed")
             return True
 
         except Exception as e:
@@ -710,7 +710,7 @@ if __name__ == "__main__":
             # This would start the new services in parallel to existing ones
             # For simulation, we'll assume they start successfully
             time.sleep(2)  # Simulate startup time
-            logger.info("✅ New services started")
+            logger.info("New services started")
             return True
 
         except Exception as e:
@@ -734,7 +734,7 @@ if __name__ == "__main__":
                     logger.error(f"Health check failed at {phase}% redirect")
                     return False
 
-            logger.info("✅ Traffic redirection completed")
+            logger.info("Traffic redirection completed")
             return True
 
         except Exception as e:
@@ -756,7 +756,7 @@ if __name__ == "__main__":
                     return False
                 time.sleep(check_interval)
 
-            logger.info("✅ New service stability verified")
+            logger.info("New service stability verified")
             return True
 
         except Exception as e:
@@ -772,7 +772,7 @@ if __name__ == "__main__":
             # and wait for graceful shutdown
             time.sleep(3)  # Simulate shutdown time
 
-            logger.info("✅ Old services shutdown completed")
+            logger.info("Old services shutdown completed")
             return True
 
         except Exception as e:
@@ -806,7 +806,7 @@ if __name__ == "__main__":
                         all_healthy = False
 
             if all_healthy:
-                logger.info("✅ System health verification passed")
+                logger.info("System health verification passed")
                 return True
             else:
                 logger.error("❌ System health verification failed")
@@ -869,7 +869,7 @@ if __name__ == "__main__":
             # results = optimizer.validate_performance_targets()
             # return all(r.passed for r in results if optimizer.performance_targets[r.name.replace("", "_").lower()].critical)
 
-            logger.info("✅ Production performance validation passed")
+            logger.info("Production performance validation passed")
             return True
 
         except Exception as e:
@@ -894,7 +894,7 @@ if __name__ == "__main__":
             for item in cleanup_candidates:
                 logger.info(f"Would clean up: {item}")
 
-            logger.info("✅ Old version cleanup completed")
+            logger.info("Old version cleanup completed")
             return True
 
         except Exception as e:
@@ -909,7 +909,7 @@ if __name__ == "__main__":
             # Start monitoring services
             # This would start the health monitoring dashboard and alerts
 
-            logger.info("✅ Full monitoring enabled")
+            logger.info("Full monitoring enabled")
             return True
 
         except Exception as e:
@@ -937,7 +937,7 @@ if __name__ == "__main__":
 
             # Verify rollback success
             if self._verify_rollback_success():
-                logger.info("✅ Rollback completed successfully")
+                logger.info("Rollback completed successfully")
                 self._log_deployment_event("Rollback completed successfully")
                 return True
             else:
@@ -990,7 +990,7 @@ if __name__ == "__main__":
 """
 
             for step in self.deployment_steps:
-                status = "✅ SUCCESS" if step.completed else "❌ FAILED"
+                status = "SUCCESS" if step.completed else "❌ FAILED"
                 step_duration = ""
                 if step.started_at and step.completed_at:
                     step_duration = f" ({step.completed_at - step.started_at})"
@@ -1003,7 +1003,7 @@ if __name__ == "__main__":
             if self.health_checks:
                 report += "\n## Health Check Results\n\n"
                 for service_name, health in self.health_checks.items():
-                    status_icon = "✅" if health.status == "healthy" else "⚠️" if health.status == "degraded" else "❌"
+                    status_icon = "✓" if health.status == "healthy" else "⚠️" if health.status == "degraded" else "❌"
                     report += f"- **{service_name}**: {status_icon} {health.status} ({health.response_time_ms:.1f}ms)\n"
 
             # Deployment log

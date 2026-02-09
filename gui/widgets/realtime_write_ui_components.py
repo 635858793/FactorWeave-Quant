@@ -266,7 +266,7 @@ class IPMonitorWidget(QWidget):
         self.ip_stats_table.setColumnWidth(7, 80)   # 状态
         layout.addWidget(self.ip_stats_table)
 
-        # ✅ 修复：初始化时显示提示信息，避免空白
+        # 修复：初始化时显示提示信息，避免空白
         self.ip_stats_table.setRowCount(1)
         init_item = QTableWidgetItem("正在加载IP监控数据...")
         init_item.setForeground(QColor(128, 128, 128))  # 灰色
@@ -357,7 +357,7 @@ class IPMonitorWidget(QWidget):
                         logger.debug(f"IP监控: 跳过非字典类型的ip_stat: {type(ip_stat)}")
                         continue
 
-                    # ✅ 修复：确保所有字段都有有效值，避免显示空白
+                    # 修复：确保所有字段都有有效值，避免显示空白
                     # IP地址
                     ip = ip_stat.get('ip', '') or ''
                     self.ip_stats_table.setItem(row, 0, QTableWidgetItem(str(ip)))
@@ -401,7 +401,7 @@ class IPMonitorWidget(QWidget):
                         status_item.setForeground(QColor(128, 128, 128))  # 灰色
                     self.ip_stats_table.setItem(row, 7, status_item)
 
-                    # ✅ 修复：如果IP有值但其他字段都为空，记录警告日志
+                    # 修复：如果IP有值但其他字段都为空，记录警告日志
                     if ip and not port and use_count == 0:
                         logger.debug(f"IP监控: 检测到不完整的数据行 (IP={ip}, port={port}, use_count={use_count})")
 
@@ -436,7 +436,7 @@ class RealtimeWriteMonitoringWidget(QWidget):
             'errors': []
         }
         self.instance_pool_stats = None
-        # ✅ 修复：用于计算写入速度的数据（基于total_writes）
+        # 修复：用于计算写入速度的数据（基于total_writes）
         self._write_speed_calc_data = {
             'last_time': None,
             'last_total_writes': 0,
@@ -525,7 +525,7 @@ class RealtimeWriteMonitoringWidget(QWidget):
         stats_layout.addStretch()
         layout.addLayout(stats_layout)
 
-        # ✅ 数据库写入队列信息（新增）
+        # 数据库写入队列信息（新增）
         queue_layout = QHBoxLayout()
 
         # 队列深度
@@ -557,7 +557,7 @@ class RealtimeWriteMonitoringWidget(QWidget):
         error_log_header_layout = QHBoxLayout()
         error_log_header_layout.addWidget(QLabel("错误日志:"))
         error_log_header_layout.addStretch()
-        # ✅ 新增：全量重新下载按钮
+        # 新增：全量重新下载按钮
         self.redownload_all_btn = QPushButton("全量重新下载")
         self.redownload_all_btn.setToolTip("重新下载所有记录错误的资产")
         self.redownload_all_btn.setStyleSheet("""
@@ -587,11 +587,11 @@ class RealtimeWriteMonitoringWidget(QWidget):
         self.error_table.setMaximumHeight(180)
         layout.addWidget(self.error_table, stretch=50)
 
-        # ✅ 新增：存储父组件引用和当前任务配置（用于重新下载）
+        # 新增：存储父组件引用和当前任务配置（用于重新下载）
         self.parent_widget = None  # 父组件（EnhancedDataImportWidget）
         self.current_task_config = None  # 当前任务配置
 
-        # ✅ 初始状态：按钮禁用（没有错误时）
+        # 初始状态：按钮禁用（没有错误时）
         self.redownload_all_btn.setEnabled(False)
 
         # 数据源实例池状态（新增，简要概览）
@@ -630,7 +630,7 @@ class RealtimeWriteMonitoringWidget(QWidget):
         config_row.addWidget(self.apply_pool_btn)
         layout.addLayout(config_row)
 
-        # ✅ 新增：数据库连接池配置（DuckDB连接池）
+        # 新增：数据库连接池配置（DuckDB连接池）
         db_pool_group = QHBoxLayout()
         db_pool_group.addWidget(QLabel("数据库连接池:"))
 
@@ -641,7 +641,7 @@ class RealtimeWriteMonitoringWidget(QWidget):
         self.db_pool_size_spin.setToolTip("DuckDB数据库连接池大小（用于元数据保存等数据库操作）")
         db_pool_group.addWidget(self.db_pool_size_spin)
 
-        # ✅ 新增：连接池使用统计显示
+        # 新增：连接池使用统计显示
         db_pool_group.addWidget(QLabel("使用:"))
         self.db_pool_usage_label = QLabel("0/10")
         self.db_pool_usage_label.setStyleSheet("color: #444;")
@@ -663,7 +663,7 @@ class RealtimeWriteMonitoringWidget(QWidget):
 
     def add_error(self, timestamp: str, symbol: str, error_type: str, error_msg: str):
         """添加错误记录"""
-        # ✅ 修复：先检查是否已存在该symbol的错误记录，如果存在则更新，否则添加新记录
+        # 修复：先检查是否已存在该symbol的错误记录，如果存在则更新，否则添加新记录
         existing_row = self._find_error_row_by_symbol(symbol)
 
         if existing_row is not None:
@@ -672,7 +672,7 @@ class RealtimeWriteMonitoringWidget(QWidget):
             self.error_table.setItem(existing_row, 1, QTableWidgetItem(symbol))
             self.error_table.setItem(existing_row, 2, QTableWidgetItem(error_type))
             self.error_table.setItem(existing_row, 3, QTableWidgetItem(error_msg))
-            logger.debug(f"✅ [错误日志] 已更新符号错误记录: {symbol} - {error_msg}")
+            logger.debug(f"[错误日志] 已更新符号错误记录: {symbol} - {error_msg}")
         else:
             # 添加新错误记录
             row = self.error_table.rowCount()
@@ -682,12 +682,12 @@ class RealtimeWriteMonitoringWidget(QWidget):
             self.error_table.setItem(row, 1, QTableWidgetItem(symbol))
             self.error_table.setItem(row, 2, QTableWidgetItem(error_type))
             self.error_table.setItem(row, 3, QTableWidgetItem(error_msg))
-            logger.debug(f"✅ [错误日志] 已添加符号错误记录: {symbol} - {error_msg}")
+            logger.debug(f"[错误日志] 已添加符号错误记录: {symbol} - {error_msg}")
 
-        # ✅ 移除100条限制，允许记录所有错误（用于重新下载功能）
+        # 移除100条限制，允许记录所有错误（用于重新下载功能）
         # 原代码：while self.error_table.rowCount() > 100: self.error_table.removeRow(0)
 
-        # ✅ 更新按钮状态：如果有错误记录，启用按钮
+        # 更新按钮状态：如果有错误记录，启用按钮
         if self.error_table.rowCount() > 0:
             self.redownload_all_btn.setEnabled(True)
 
@@ -704,9 +704,9 @@ class RealtimeWriteMonitoringWidget(QWidget):
         row = self._find_error_row_by_symbol(symbol)
         if row is not None:
             self.error_table.removeRow(row)
-            logger.debug(f"✅ [错误日志] 已清除符号错误记录: {symbol}（导入成功）")
+            logger.debug(f"[错误日志] 已清除符号错误记录: {symbol}（导入成功）")
 
-            # ✅ 更新按钮状态：如果没有错误记录，禁用按钮
+            # 更新按钮状态：如果没有错误记录，禁用按钮
             if self.error_table.rowCount() == 0:
                 self.redownload_all_btn.setEnabled(False)
 
@@ -773,7 +773,7 @@ class RealtimeWriteMonitoringWidget(QWidget):
                 QMessageBox.warning(self, "警告", "未能提取到有效的资产符号")
                 return
 
-            # ✅ 获取父组件的导入引擎和配置管理器
+            # 获取父组件的导入引擎和配置管理器
             if not self.parent_widget:
                 QMessageBox.warning(self, "错误", "无法访问导入引擎，请确保任务正在运行")
                 return
@@ -785,7 +785,7 @@ class RealtimeWriteMonitoringWidget(QWidget):
                 QMessageBox.warning(self, "错误", "导入引擎或配置管理器未初始化")
                 return
 
-            # ✅ 获取当前任务配置（如果存在）
+            # 获取当前任务配置（如果存在）
             task_config = self.current_task_config
 
             # 如果没有当前任务配置，尝试从父组件获取
@@ -801,7 +801,7 @@ class RealtimeWriteMonitoringWidget(QWidget):
                     except Exception as e:
                         logger.warning(f"获取当前任务配置失败: {e}")
 
-            # ✅ 如果仍然没有任务配置，使用默认配置
+            # 如果仍然没有任务配置，使用默认配置
             if not task_config:
                 # 尝试从UI获取配置
                 if hasattr(self.parent_widget, '_get_current_ui_config'):
@@ -852,7 +852,7 @@ class RealtimeWriteMonitoringWidget(QWidget):
                     QMessageBox.warning(self, "错误", "无法获取任务配置，请先创建一个导入任务")
                     return
             else:
-                # ✅ 使用当前任务配置，但替换符号列表
+                # 使用当前任务配置，但替换符号列表
                 from core.importdata.import_config_manager import ImportTaskConfig, DataFrequency, ImportMode
                 from copy import deepcopy
 
@@ -860,7 +860,7 @@ class RealtimeWriteMonitoringWidget(QWidget):
                 new_task_config = ImportTaskConfig(
                     task_id=f"redownload_{int(datetime.now().timestamp())}",
                     name=f"重新下载失败资产_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-                    symbols=failed_symbols,  # ✅ 使用失败的符号列表
+                    symbols=failed_symbols,  # 使用失败的符号列表
                     data_source=task_config.data_source,
                     asset_type=task_config.asset_type,
                     data_type=task_config.data_type,
@@ -879,7 +879,7 @@ class RealtimeWriteMonitoringWidget(QWidget):
                 )
                 task_config = new_task_config
 
-            # ✅ 添加任务到配置管理器并启动
+            # 添加任务到配置管理器并启动
             config_manager.add_import_task(task_config)
 
             if import_engine.start_task(task_config.task_id):
@@ -890,9 +890,9 @@ class RealtimeWriteMonitoringWidget(QWidget):
                     f"资产数量：{len(failed_symbols)}\n"
                     f"任务ID：{task_config.task_id}"
                 )
-                logger.info(f"✅ 全量重新下载任务已创建: {task_config.task_id}, 资产数量: {len(failed_symbols)}")
+                logger.info(f"全量重新下载任务已创建: {task_config.task_id}, 资产数量: {len(failed_symbols)}")
 
-                # ✅ 刷新父组件的任务列表
+                # 刷新父组件的任务列表
                 if hasattr(self.parent_widget, 'refresh_task_list'):
                     self.parent_widget.refresh_task_list()
             else:
@@ -908,7 +908,7 @@ class RealtimeWriteMonitoringWidget(QWidget):
         """更新数据源实例池状态"""
         try:
             self.instance_pool_stats = stats or {}
-            # ✅ 修复：使用total_instances（包括空闲和活跃实例）
+            # 修复：使用total_instances（包括空闲和活跃实例）
             total = self.instance_pool_stats.get('total_instances', 0)
             max_size = self.instance_pool_stats.get('max_pool_size', 0)
 
@@ -920,7 +920,7 @@ class RealtimeWriteMonitoringWidget(QWidget):
                 # 有实例时显示详细信息
                 display_text = f"{total}/{max_size} (空闲:{total_idle}, 活跃:{total_active})"
             else:
-                # ✅ 修复：即使为0也显示，并添加提示
+                # 修复：即使为0也显示，并添加提示
                 if max_size > 0:
                     display_text = f"{total}/{max_size} (未使用)"
                 else:
@@ -932,25 +932,25 @@ class RealtimeWriteMonitoringWidget(QWidget):
             if max_size and self.pool_size_spin.value() != max_size:
                 self.pool_size_spin.setValue(max_size)
 
-            # ✅ 修复：加载数据库连接池大小配置和使用统计
+            # 修复：加载数据库连接池大小配置和使用统计
             try:
                 from core.asset_database_manager import AssetSeparatedDatabaseManager
                 manager = AssetSeparatedDatabaseManager.get_instance()
                 if hasattr(manager, 'config') and hasattr(manager.config, 'pool_size'):
                     db_pool_size = manager.config.pool_size
-                    # ✅ 修复：如果SpinBox有焦点（用户正在输入），不更新值，避免覆盖用户输入
+                    # 修复：如果SpinBox有焦点（用户正在输入），不更新值，避免覆盖用户输入
                     if hasattr(self, 'db_pool_size_spin'):
                         if not self.db_pool_size_spin.hasFocus() and self.db_pool_size_spin.value() != db_pool_size:
                             self.db_pool_size_spin.setValue(db_pool_size)
 
-                    # ✅ 新增：更新数据库连接池使用统计
+                    # 新增：更新数据库连接池使用统计
                     if hasattr(manager, 'get_database_pool_status'):
                         db_pool_status = manager.get_database_pool_status()
                         active_connections = db_pool_status.get('active_connections', 0)
                         total_connections = db_pool_status.get('total_connections', 0)
                         max_pool_size = db_pool_status.get('max_pool_size', db_pool_size)
 
-                        # ✅ 修复：使用实际创建的连接数（total_connections）而不是最大池大小作为分母
+                        # 修复：使用实际创建的连接数（total_connections）而不是最大池大小作为分母
                         # 如果total_connections为0，则使用max_pool_size（连接池还未创建任何连接）
                         denominator = total_connections if total_connections > 0 else max_pool_size
                         if hasattr(self, 'db_pool_usage_label'):
@@ -1059,7 +1059,7 @@ class RealtimeWriteMonitoringWidget(QWidget):
             if message and hasattr(self, 'status_label'):
                 self.status_label.setText(message)
 
-            # ✅ 修复：不再在update_progress中更新速度
+            # 修复：不再在update_progress中更新速度
             # 速度计算已移至update_queue_stats中，基于total_writes计算写入速度
             # 这里只更新进度和状态，速度由update_queue_stats统一管理
             self.write_data['progress'] = progress_percent
@@ -1131,7 +1131,7 @@ class RealtimeWriteMonitoringWidget(QWidget):
                     self.total_writes_label.setText(str(total_writes))
                     self.total_writes_label.setStyleSheet("color: darkgreen;")
 
-            # ✅ 修复：基于total_writes计算写入速度（已写入的数据速度）
+            # 修复：基于total_writes计算写入速度（已写入的数据速度）
             import time
             current_time = time.time()
 
@@ -1199,6 +1199,6 @@ class RealtimeWriteMonitoringWidget(QWidget):
         self.failure_label.setText("0")
         self.memory_label.setText("0 MB")
         self.error_table.setRowCount(0)
-        # ✅ 清空错误日志后，禁用重新下载按钮
+        # 清空错误日志后，禁用重新下载按钮
         self.redownload_all_btn.setEnabled(False)
         self.write_data.clear()

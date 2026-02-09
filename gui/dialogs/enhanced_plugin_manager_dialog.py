@@ -1123,7 +1123,7 @@ class EnhancedPluginManagerDialog(QDialog):
         # 优先从服务容器获取情绪数据服务
         sentiment_service = self.sentiment_service
 
-        # ✅ 情绪数据服务已删除（功能已整合到热点分析）
+        # 情绪数据服务已删除（功能已整合到热点分析）
         self.sentiment_service = None
         logger.debug("情绪数据服务已移除，相关功能已整合到热点分析标签页")
 
@@ -2003,7 +2003,7 @@ class EnhancedPluginManagerDialog(QDialog):
             enabled = config.get('enabled', True)
 
             # 获取情绪数据服务
-            # ✅ 情绪数据服务已删除，跳过插件启用操作
+            # 情绪数据服务已删除，跳过插件启用操作
             sentiment_service = None
             if False:  # 情绪服务已移除，保留代码结构便于理解
                 try:
@@ -2041,7 +2041,7 @@ class EnhancedPluginManagerDialog(QDialog):
         """测试情绪插件"""
         try:
             # 获取情绪数据服务
-            # ✅ 情绪数据服务已删除，跳过插件测试
+            # 情绪数据服务已删除，跳过插件测试
             sentiment_service = None
             if False:  # 情绪服务已移除，保留代码结构便于理解
                 # 执行真实的插件测试

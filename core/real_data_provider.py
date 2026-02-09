@@ -271,7 +271,7 @@ class RealDataProvider:
             total_idle = 0
             total_active = 0
             
-            # ✅ 修复：确保所有数据源都被统计，即使池为空
+            # 修复：确保所有数据源都被统计，即使池为空
             # 合并所有已知的数据源（从pool和active_instances）
             all_data_sources = set(self._data_source_pool.keys()) | set(self._active_instances.keys())
             
@@ -295,7 +295,7 @@ class RealDataProvider:
             status['total_active'] = total_active
             status['total_utilization'] = f"{total_instances}/{self._max_pool_size}"
             
-            # ✅ 修复：添加调试日志，便于排查统计问题
+            # 修复：添加调试日志，便于排查统计问题
             if total_instances == 0:
                 self.logger.debug(f"实例池统计为0: 数据源池={list(self._data_source_pool.keys())}, 活跃实例={dict(self._active_instances)}")
 
@@ -404,7 +404,7 @@ class RealDataProvider:
                 # 使用数据管理器获取真实数据
                 if data_source:
                     # 如果指定了数据源，使用指定的数据源
-                    # ✅ 统一资产类型转换逻辑（支持AssetType对象、枚举值字符串、中文名称）
+                    # 统一资产类型转换逻辑（支持AssetType对象、枚举值字符串、中文名称）
                     final_asset_type = None
                     if asset_type:
                         # 0. 如果已经是AssetType对象，直接使用
@@ -440,7 +440,7 @@ class RealDataProvider:
                         end_date=end_date
                     )
                 else:
-                    # ✅ 修复：即使没有指定data_source，也使用get_kdata_from_source以支持日期参数
+                    # 修复：即使没有指定data_source，也使用get_kdata_from_source以支持日期参数
                     kdata = data_manager_instance.get_kdata_from_source(
                         stock_code=code,
                         period=freq,
@@ -654,7 +654,7 @@ class RealDataProvider:
             if kdata.empty:
                 return kdata
 
-            # ✅ 关键修复：在处理任何数据前，先解决datetime索引/列歧义问题
+            # 关键修复：在处理任何数据前，先解决datetime索引/列歧义问题
             # 如果datetime既是索引又是列，会导致"'datetime' is both an index level and a column label"错误
             if 'datetime' in kdata.columns and (kdata.index.name == 'datetime' or isinstance(kdata.index, pd.DatetimeIndex)):
                 self.logger.debug(f"[{code}] 检测到datetime既是列又是索引，重置索引")
@@ -694,11 +694,11 @@ class RealDataProvider:
             if 'code' not in kdata.columns:
                 kdata['code'] = code
 
-            # ✅ 修复：确保datetime是列而不是索引
+            # 修复：确保datetime是列而不是索引
             # 这样可以避免后续验证时"datetime is both an index level and a column label"错误
             if 'datetime' in kdata.columns:
                 kdata['datetime'] = pd.to_datetime(kdata['datetime'])
-                # ✅ 不设置datetime为索引，保持为列以兼容后续数据验证
+                # 不设置datetime为索引，保持为列以兼容后续数据验证
             elif isinstance(kdata.index, pd.DatetimeIndex):
                 # 如果datetime是索引，转换为列
                 kdata = kdata.reset_index(drop=False)

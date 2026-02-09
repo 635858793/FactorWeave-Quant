@@ -322,36 +322,57 @@ class AlertRuleDialog(QDialog):
         try:
             # 基本信息
             self.rule_name.setText(self.rule_data.get('name', ''))
-            self.rule_type.setCurrentText(self.rule_data.get('type', '系统资源'))
+            self.rule_type.setCurrentText(self.rule_data.get('rule_type', self.rule_data.get('type', '系统资源')))
             self.priority.setCurrentText(self.rule_data.get('priority', '中'))
             self.enabled.setChecked(self.rule_data.get('enabled', True))
             self.description.setText(self.rule_data.get('description', ''))
             self.tags.setText(self.rule_data.get('tags', ''))
 
             # 条件设置
-            conditions = self.rule_data.get('conditions', {})
-            self.metric_type.setCurrentText(conditions.get('metric_type', 'CPU使用率'))
-            self.operator.setCurrentText(conditions.get('operator', '>'))
-            self.threshold_value.setValue(conditions.get('threshold_value', 80.0))
-            self.threshold_unit.setCurrentText(conditions.get('threshold_unit', '%'))
-            self.duration.setValue(conditions.get('duration', 60))
-            self.check_interval.setValue(conditions.get('check_interval', 60))
-            self.silence_period.setValue(conditions.get('silence_period', 300))
-            self.max_alerts.setValue(conditions.get('max_alerts', 10))
+            if 'conditions' in self.rule_data:
+                conditions = self.rule_data.get('conditions', {})
+                self.metric_type.setCurrentText(conditions.get('metric_type', conditions.get('metric_name', 'CPU使用率')))
+                self.operator.setCurrentText(conditions.get('operator', '>'))
+                self.threshold_value.setValue(conditions.get('threshold_value', 80.0))
+                self.threshold_unit.setCurrentText(conditions.get('threshold_unit', '%'))
+                self.duration.setValue(conditions.get('duration', 60))
+                self.check_interval.setValue(conditions.get('check_interval', 60))
+                self.silence_period.setValue(conditions.get('silence_period', 300))
+                self.max_alerts.setValue(conditions.get('max_alerts', 10))
+            else:
+                # 直接从扁平结构加载
+                self.metric_type.setCurrentText(self.rule_data.get('metric_name', 'CPU使用率'))
+                self.operator.setCurrentText(self.rule_data.get('operator', '>'))
+                self.threshold_value.setValue(self.rule_data.get('threshold_value', 80.0))
+                self.threshold_unit.setCurrentText(self.rule_data.get('threshold_unit', '%'))
+                self.duration.setValue(self.rule_data.get('duration', 60))
+                self.check_interval.setValue(self.rule_data.get('check_interval', 60))
+                self.silence_period.setValue(self.rule_data.get('silence_period', 300))
+                self.max_alerts.setValue(self.rule_data.get('max_alerts', 10))
 
             # 通知设置
-            notifications = self.rule_data.get('notifications', {})
-            self.email_notify.setChecked(notifications.get('email_notify', True))
-            self.sms_notify.setChecked(notifications.get('sms_notify', False))
-            self.webhook_notify.setChecked(notifications.get('webhook_notify', False))
-            self.dingtalk_notify.setChecked(notifications.get('dingtalk_notify', False))
-            self.desktop_notify.setChecked(notifications.get('desktop_notify', True))
-            self.sound_notify.setChecked(notifications.get('sound_notify', False))
-            self.email_recipients.setText(notifications.get('email_recipients', ''))
-            self.sms_recipients.setText(notifications.get('sms_recipients', ''))
-            self.webhook_url.setText(notifications.get('webhook_url', ''))
-            self.dingtalk_webhook_url.setText(notifications.get('dingtalk_webhook_url', ''))
-            self.message_template.setText(notifications.get('message_template', ''))
+            if 'notifications' in self.rule_data:
+                notifications = self.rule_data.get('notifications', {})
+                self.email_notify.setChecked(notifications.get('email_notify', notifications.get('email_notification', True)))
+                self.sms_notify.setChecked(notifications.get('sms_notify', notifications.get('sms_notification', False)))
+                self.webhook_notify.setChecked(notifications.get('webhook_notify', notifications.get('webhook_notification', False)))
+                self.dingtalk_notify.setChecked(notifications.get('dingtalk_notify', notifications.get('dingtalk_notification', False)))
+                self.desktop_notify.setChecked(notifications.get('desktop_notify', notifications.get('desktop_notification', True)))
+                self.sound_notify.setChecked(notifications.get('sound_notify', notifications.get('sound_notification', False)))
+                self.email_recipients.setText(notifications.get('email_recipients', ''))
+                self.sms_recipients.setText(notifications.get('sms_recipients', ''))
+                self.webhook_url.setText(notifications.get('webhook_url', ''))
+                self.dingtalk_webhook_url.setText(notifications.get('dingtalk_webhook_url', ''))
+                self.message_template.setText(notifications.get('message_template', ''))
+            else:
+                # 直接从扁平结构加载
+                self.email_notify.setChecked(self.rule_data.get('email_notification', True))
+                self.sms_notify.setChecked(self.rule_data.get('sms_notification', False))
+                self.webhook_notify.setChecked(self.rule_data.get('webhook_notification', False))
+                self.dingtalk_notify.setChecked(self.rule_data.get('dingtalk_notification', False))
+                self.desktop_notify.setChecked(self.rule_data.get('desktop_notification', True))
+                self.sound_notify.setChecked(self.rule_data.get('sound_notification', False))
+                self.message_template.setText(self.rule_data.get('message_template', ''))
 
         except Exception as e:
             logger.error(f"加载规则数据失败: {e}")
@@ -359,14 +380,32 @@ class AlertRuleDialog(QDialog):
     def get_rule_data(self) -> Dict:
         """获取规则数据"""
         return {
+            'id': self.rule_data.get('id'),
             'name': self.rule_name.text(),
-            'type': self.rule_type.currentText(),
+            'rule_type': self.rule_type.currentText(),
+            'type': self.rule_type.currentText(),  # 兼容性字段
             'priority': self.priority.currentText(),
             'enabled': self.enabled.isChecked(),
             'description': self.description.toPlainText(),
             'tags': self.tags.text(),
+            'metric_name': self.metric_type.currentText(),
+            'operator': self.operator.currentText(),
+            'threshold_value': self.threshold_value.value(),
+            'threshold_unit': self.threshold_unit.currentText(),
+            'duration': self.duration.value(),
+            'check_interval': self.check_interval.value(),
+            'silence_period': self.silence_period.value(),
+            'max_alerts': self.max_alerts.value(),
+            'email_notification': self.email_notify.isChecked(),
+            'sms_notification': self.sms_notify.isChecked(),
+            'webhook_notification': self.webhook_notify.isChecked(),
+            'dingtalk_notification': self.dingtalk_notify.isChecked(),
+            'desktop_notification': self.desktop_notify.isChecked(),
+            'sound_notification': self.sound_notify.isChecked(),
+            'message_template': self.message_template.toPlainText(),
             'conditions': {
                 'metric_type': self.metric_type.currentText(),
+                'metric_name': self.metric_type.currentText(),
                 'operator': self.operator.currentText(),
                 'threshold_value': self.threshold_value.value(),
                 'threshold_unit': self.threshold_unit.currentText(),
@@ -377,11 +416,17 @@ class AlertRuleDialog(QDialog):
             },
             'notifications': {
                 'email_notify': self.email_notify.isChecked(),
+                'email_notification': self.email_notify.isChecked(),
                 'sms_notify': self.sms_notify.isChecked(),
+                'sms_notification': self.sms_notify.isChecked(),
                 'webhook_notify': self.webhook_notify.isChecked(),
+                'webhook_notification': self.webhook_notify.isChecked(),
                 'dingtalk_notify': self.dingtalk_notify.isChecked(),
+                'dingtalk_notification': self.dingtalk_notify.isChecked(),
                 'desktop_notify': self.desktop_notify.isChecked(),
+                'desktop_notification': self.desktop_notify.isChecked(),
                 'sound_notify': self.sound_notify.isChecked(),
+                'sound_notification': self.sound_notify.isChecked(),
                 'email_recipients': self.email_recipients.text(),
                 'sms_recipients': self.sms_recipients.text(),
                 'webhook_url': self.webhook_url.text(),

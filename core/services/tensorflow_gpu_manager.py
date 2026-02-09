@@ -94,7 +94,7 @@ class CudaVerificationResult:
             "=" * 60,
             "CUDA环境验证结果",
             "=" * 60,
-            f"✅ 验证状态: {'成功' if self.success else '失败'}",
+            f"验证状态: {'成功' if self.success else '失败'}",
             f"🖥️  操作系统: {self.platform}",
             f"📦 CUDA可用: {'是' if self.cuda_available else '否'}",
             f"📦 cuDNN可用: {'是' if self.cudnn_available else '否'}",
@@ -155,7 +155,7 @@ class TensorFlowGPUManager:
         try:
             # 尝试使用pynvml检测NVIDIA GPU
             import pynvml
-            logger.info("✅ pynvml库加载成功")
+            logger.info("pynvml库加载成功")
             
             pynvml.nvmlInit()
             device_count = pynvml.nvmlDeviceGetCount()
@@ -267,7 +267,7 @@ class TensorFlowGPUManager:
         for lib_name, lib_path in cuda_libs.items():
             if self._load_library(lib_name, lib_path):
                 result.loaded_libraries.append(lib_name)
-                logger.info(f"   ✅ {lib_name} 加载成功")
+                logger.info(f"   {lib_name} 加载成功")
             else:
                 logger.debug(f"   ❌ {lib_name} 加载失败")
         
@@ -320,7 +320,7 @@ class TensorFlowGPUManager:
             result.gpu_devices = self._get_gpu_devices()
             
             if result.gpu_devices:
-                logger.info(f"   ✅ 检测到 {len(result.gpu_devices)} 个GPU设备")
+                logger.info(f"   检测到 {len(result.gpu_devices)} 个GPU设备")
                 for device in result.gpu_devices:
                     logger.info(f"      - {device.get('name', 'Unknown')}")
             else:
@@ -332,7 +332,7 @@ class TensorFlowGPUManager:
         
         logger.info("=" * 60)
         if result.success:
-            logger.info("✅ CUDA环境验证通过")
+            logger.info("CUDA环境验证通过")
         else:
             logger.error("❌ CUDA环境验证失败")
         
@@ -540,7 +540,7 @@ class TensorFlowGPUManager:
                 # 设置显存增长
                 if self.config['allow_memory_growth']:
                     tf.config.experimental.set_memory_growth(gpu, True)
-                    logger.info(f"    ✅ 启用显存增长")
+                    logger.info(f"    启用显存增长")
                 
                 # 设置显存限制
                 if self.config['memory_fraction'] < 1.0:
@@ -552,24 +552,24 @@ class TensorFlowGPUManager:
                         gpu,
                         [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=memory_limit)]
                     )
-                    logger.info(f"    ✅ 设置显存限制: {self.config['memory_fraction']*100}% ({memory_limit}MB)")
+                    logger.info(f"    设置显存限制: {self.config['memory_fraction']*100}% ({memory_limit}MB)")
                 else:
                     logger.info(f"    ℹ️ 使用完整显存: {self.gpu_info.memory_total}MB")
             
             # 3. 配置并行线程
             if self.config['inter_op_threads'] > 0:
                 tf.config.threading.set_inter_op_parallelism_threads(self.config['inter_op_threads'])
-                logger.info(f"    ✅ 设置inter_op_threads: {self.config['inter_op_threads']}")
+                logger.info(f"    设置inter_op_threads: {self.config['inter_op_threads']}")
             
             if self.config['intra_op_threads'] > 0:
                 tf.config.threading.set_intra_op_parallelism_threads(self.config['intra_op_threads'])
-                logger.info(f"    ✅ 设置intra_op_threads: {self.config['intra_op_threads']}")
+                logger.info(f"    设置intra_op_threads: {self.config['intra_op_threads']}")
             
             # 4. 混合精度训练
             if self.config['mixed_precision']:
                 try:
                     tf.keras.mixed_precision.set_global_policy('mixed_float16')
-                    logger.info("    ✅ 启用混合精度训练（加速计算）")
+                    logger.info("    启用混合精度训练（加速计算）")
                 except Exception as e:
                     logger.warning(f"    ⚠️ 混合精度设置失败: {e}")
             
@@ -624,7 +624,7 @@ class TensorFlowGPUManager:
                 history = model.fit(x_train, y_train, epochs=5, verbose=0)
                 gpu_time = time.time() - start_time
                 
-                logger.info(f"✅ GPU训练完成，耗时: {gpu_time:.2f}秒")
+                logger.info(f"GPU训练完成，耗时: {gpu_time:.2f}秒")
                 logger.info(f"📈 最终损失: {history.history['loss'][-1]:.4f}")
             
             # CPU对比测试
@@ -642,7 +642,7 @@ class TensorFlowGPUManager:
                 history = model.fit(x_train, y_train, epochs=5, verbose=0)
                 cpu_time = time.time() - start_time
                 
-                logger.info(f"✅ CPU训练完成，耗时: {cpu_time:.2f}秒")
+                logger.info(f"CPU训练完成，耗时: {cpu_time:.2f}秒")
                 logger.info(f"📈 最终损失: {history.history['loss'][-1]:.4f}")
             
             speedup = cpu_time / gpu_time
@@ -660,7 +660,7 @@ class TensorFlowGPUManager:
                 elif speedup > 2.0:
                     logger.info("👍 良好性能，GPU加速效果明显")
                 else:
-                    logger.info("✅ 一般性能，GPU仍有加速效果")
+                    logger.info("一般性能，GPU仍有加速效果")
                 
                 self.gpu_info.status = GPUStatus.READY
                 return True, speedup
@@ -739,7 +739,7 @@ class TensorFlowGPUManager:
             logger.info(f"⚡ [性能] 加速比: {speedup:.2f}x")
             logger.info(f"💾 [内存] GPU显存: {self.gpu_info.memory_total:,}MB")
             logger.info("=" * 80)
-            logger.info("✅ [就绪] TensorFlow现已使用GPU加速")
+            logger.info("[就绪] TensorFlow现已使用GPU加速")
             
             return True
             
@@ -834,7 +834,7 @@ def print_gpu_status():
     
     # TensorFlow信息
     if status['tensorflow_info']['available']:
-        print(f"✅ TensorFlow版本: {status['tensorflow_info']['version']}")
+        print(f"TensorFlow版本: {status['tensorflow_info']['version']}")
         print(f"⚙️ GPU配置状态: {'已配置' if status['tensorflow_info']['configured'] else '未配置'}")
     else:
         print("❌ TensorFlow未安装")

@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QPushButton,
     QTableWidget, QTableWidgetItem, QAbstractItemView, QComboBox,
     QLabel, QTabWidget, QFrame, QGridLayout, QProgressBar,
-    QTextEdit, QSplitter, QHeaderView
+    QTextEdit, QSplitter, QHeaderView, QSizePolicy
 )
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QColor, QFont
@@ -117,8 +117,7 @@ class ModernTradingExecutionMonitorTab(QWidget):
 
         # 执行指标卡片
         cards_frame = QFrame()
-        cards_frame.setMinimumHeight(120)
-        cards_frame.setMaximumHeight(150)
+        cards_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         cards_layout = QGridLayout(cards_frame)
         cards_layout.setContentsMargins(2, 2, 2, 2)
         cards_layout.setSpacing(2)
@@ -188,7 +187,7 @@ class ModernTradingExecutionMonitorTab(QWidget):
 
         # 分析控制面板
         control_group = QGroupBox("分析控制")
-        control_group.setMaximumHeight(50)  
+        control_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         control_layout = QHBoxLayout()
 
         control_layout.addWidget(QLabel("分析周期:"))
@@ -219,20 +218,16 @@ class ModernTradingExecutionMonitorTab(QWidget):
 
         # 滑点分布图
         self.slippage_chart = ModernPerformanceChart("滑点分布分析", "histogram")
-        self.slippage_chart.setMinimumHeight(250)
         charts_splitter.addWidget(self.slippage_chart)
 
         # 延迟分布图
         self.latency_chart = ModernPerformanceChart("延迟分布分析", "histogram")
-        self.latency_chart.setMinimumHeight(250)
         charts_splitter.addWidget(self.latency_chart)
 
         layout.addWidget(charts_splitter)
 
         # 执行质量趋势图
         self.quality_trend_chart = ModernPerformanceChart("执行质量趋势", "line")
-        self.quality_trend_chart.setMinimumHeight(200)
-        self.quality_trend_chart.setMaximumHeight(250)
         layout.addWidget(self.quality_trend_chart)
 
         return tab
@@ -859,3 +854,42 @@ class ModernTradingExecutionMonitorTab(QWidget):
             
         except Exception as e:
             logger.debug(f"清理资源失败: {e}")
+
+    def resizeEvent(self, event):
+        """窗口大小改变事件处理"""
+        super().resizeEvent(event)
+        self._update_responsive_layout()
+
+    def _update_responsive_layout(self):
+        """更新响应式布局"""
+        try:
+            window_width = self.width()
+            window_height = self.height()
+
+            logger.debug(f"TradingExecutionMonitorTab 响应式布局更新: {window_width}x{window_height}")
+
+            # 更新执行指标卡片高度
+            cards_frames = self.findChildren(QFrame)
+            for frame in cards_frames:
+                if frame.layout() and isinstance(frame.layout(), QGridLayout):
+                    frame_height = max(100, int(window_height * 0.18))
+                    frame.setMinimumHeight(frame_height)
+                    frame.setMaximumHeight(int(window_height * 0.22))
+
+            # 更新滑点分布图高度
+            if hasattr(self, 'slippage_chart'):
+                chart_height = max(120, int(window_height * 0.25))
+                self.slippage_chart.setMinimumHeight(chart_height)
+
+            # 更新延迟分布图高度
+            if hasattr(self, 'latency_chart'):
+                chart_height = max(120, int(window_height * 0.25))
+                self.latency_chart.setMinimumHeight(chart_height)
+
+            # 更新执行质量趋势图高度
+            if hasattr(self, 'quality_trend_chart'):
+                chart_height = max(120, int(window_height * 0.25))
+                self.quality_trend_chart.setMinimumHeight(chart_height)
+
+        except Exception as e:
+            logger.error(f"更新响应式布局失败: {e}")

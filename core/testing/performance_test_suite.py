@@ -66,7 +66,7 @@ class PerformanceTestSuite:
         # 成交量保持正数
         df['volume'] = np.maximum(df['volume'], 0)
         
-        logger.info(f"✅ 测试数据生成完成: {len(df)} 行数据")
+        logger.info(f"测试数据生成完成: {len(df)} 行数据")
         return df
     
     def setup_matplotlib_environment(self) -> Tuple[plt.Figure, plt.Axes]:
@@ -212,7 +212,7 @@ class PerformanceTestSuite:
                     
                     self.test_results.append(result)
                     
-                    logger.info(f"   ✅ 平均渲染时间: {avg_time*1000:.2f}ms (±{std_time*1000:.2f}ms)")
+                    logger.info(f"   平均渲染时间: {avg_time*1000:.2f}ms (±{std_time*1000:.2f}ms)")
                 else:
                     logger.error(f"   ❌ 所有运行都失败")
     
@@ -400,7 +400,7 @@ class PerformanceTestSuite:
         # 保存可视化图表
         self._create_performance_charts(output_path, timestamp)
         
-        logger.info(f"✅ 测试结果已保存到: {output_path}")
+        logger.info(f"测试结果已保存到: {output_path}")
         return str(output_path)
     
     def _create_performance_charts(self, output_path: Path, timestamp: str):
@@ -524,7 +524,7 @@ def main():
             for i, rec in enumerate(analysis['recommendations'][:3], 1):  # 只显示前3条
                 logger.info(f"   {i}. {rec}")
         
-        logger.info("✅ 性能测试完成")
+        logger.info("性能测试完成")
         
     except Exception as e:
         logger.error(f"❌ 性能测试失败: {e}")

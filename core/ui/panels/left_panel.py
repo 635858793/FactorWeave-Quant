@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import (
     QLineEdit, QComboBox, QPushButton, QLabel, QFrame,
     QMenu, QMessageBox, QProgressBar, QSplitter, QGroupBox,
     QScrollArea, QListWidget, QListWidgetItem, QAbstractItemView,
-    QInputDialog
+    QInputDialog, QSizePolicy
 )
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, pyqtSlot
 from PyQt5.QtGui import QIcon, QFont
@@ -413,7 +413,7 @@ class LeftPanel(BasePanel):
 
         # 搜索标签
         search_label = QLabel("搜索:")
-        search_label.setFixedWidth(40)
+        search_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
         # 搜索输入框
         self.search_input = QLineEdit()
@@ -422,11 +422,11 @@ class LeftPanel(BasePanel):
 
         # 搜索按钮
         search_btn = QPushButton("搜索")
-        search_btn.setFixedWidth(60)
+        search_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
         # 高级搜索按钮
         advanced_search_btn = QPushButton("高级搜索")
-        advanced_search_btn.setFixedWidth(80)
+        advanced_search_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         advanced_search_btn.clicked.connect(self._show_advanced_search)
 
         search_layout.addWidget(search_label)
@@ -449,20 +449,20 @@ class LeftPanel(BasePanel):
 
         # 市场筛选
         market_label = QLabel("市场:")
-        market_label.setFixedWidth(40)
+        market_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
         self.market_combo = QComboBox()
         self.market_combo.addItems(["全部", "上海", "深圳", "创业板", "科创板"])
-        self.market_combo.setFixedWidth(80)
+        self.market_combo.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
         # 收藏筛选
         self.favorites_btn = QPushButton("收藏")
         self.favorites_btn.setCheckable(True)
-        self.favorites_btn.setFixedWidth(60)
+        self.favorites_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
         # 刷新按钮
         refresh_btn = QPushButton("刷新")
-        refresh_btn.setFixedWidth(60)
+        refresh_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
         filter_layout.addWidget(market_label)
         filter_layout.addWidget(self.market_combo)
@@ -560,7 +560,7 @@ class LeftPanel(BasePanel):
         # 进度条
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
-        self.progress_bar.setFixedHeight(10)
+        self.progress_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         # 股票数量标签
         self.count_label = QLabel("股票: 0")
@@ -1343,7 +1343,7 @@ class LeftPanel(BasePanel):
             # 构建查询条件
             query_conditions = []
 
-            # ✅ 添加资产类型过滤（确保查询结果与选择的资产类型一致）
+            # 添加资产类型过滤（确保查询结果与选择的资产类型一致）
             if asset_type:
                 query_conditions.append(f"asset_type = '{asset_type.value}'")
 
@@ -1363,7 +1363,7 @@ class LeftPanel(BasePanel):
                 search_condition = f"(code LIKE '%{search_text}%' OR name LIKE '%{search_text}%')"
                 query_conditions.append(search_condition)
 
-            # ✅ 修复：从asset_metadata表查询（这是数据导入时保存资产元数据的表）
+            # 修复：从asset_metadata表查询（这是数据导入时保存资产元数据的表）
             # 字段映射：symbol→code（UI使用code字段）
             # 添加industry和sector字段以支持行业列显示
             base_query = "SELECT symbol as code, name, market, industry, sector, asset_type, updated_at as update_time FROM asset_metadata"
@@ -1427,7 +1427,7 @@ class LeftPanel(BasePanel):
             # 构建查询条件
             query_conditions = []
 
-            # ✅ 添加资产类型过滤
+            # 添加资产类型过滤
             current_asset_type = getattr(self, 'current_asset_type', None)
             if current_asset_type:
                 query_conditions.append(f"asset_type = '{current_asset_type.value}'")
@@ -1448,7 +1448,7 @@ class LeftPanel(BasePanel):
                 search_condition = f"(symbol LIKE '%{search_text}%' OR name LIKE '%{search_text}%')"
                 query_conditions.append(search_condition)
 
-            # ✅ 修复：从asset_metadata表查询，字段映射symbol→code
+            # 修复：从asset_metadata表查询，字段映射symbol→code
             # 添加industry和sector字段以支持行业列显示
             base_query = "SELECT symbol as code, name, market, industry, sector, asset_type, updated_at as update_time FROM asset_metadata"
             if query_conditions:
@@ -1464,7 +1464,7 @@ class LeftPanel(BasePanel):
                 # 注意：调整查询条件中的字段名
                 adjusted_where = " AND ".join(query_conditions).replace('code', 'symbol') if query_conditions else None
 
-                # ✅ 获取当前资产类型的数据库路径
+                # 获取当前资产类型的数据库路径
                 current_asset_type = getattr(self, 'current_asset_type', None)
                 db_path = self._get_stock_database_path(current_asset_type)
 
@@ -1524,7 +1524,7 @@ class LeftPanel(BasePanel):
                 from core.plugin_types import AssetType
                 asset_type = AssetType.STOCK_A  # 默认A股
 
-            # ✅ 使用资产分离数据库管理器获取正确的数据库路径
+            # 使用资产分离数据库管理器获取正确的数据库路径
             from core.asset_database_manager import get_asset_separated_database_manager
             asset_db_manager = get_asset_separated_database_manager()
             db_path = asset_db_manager.get_database_path(asset_type)
@@ -1610,14 +1610,14 @@ class LeftPanel(BasePanel):
 
     async def _async_select_stock(self, stock_code: str, stock_name: str, market: str) -> None:
         """
-        异步执行数据请求和后续处理（✅ 优化：支持多资产类型）
+        异步执行数据请求和后续处理（优化：支持多资产类型）
         """
         try:
-            # ✅ 直接等待数据管理器的异步方法，传递当前资产类型
+            # 直接等待数据管理器的异步方法，传递当前资产类型
             data = await self.data_manager.request_data(
                 stock_code=stock_code,
                 data_type='kdata',
-                asset_type=self.current_asset_type  # ✅ 传递当前选择的资产类型
+                asset_type=self.current_asset_type  # 传递当前选择的资产类型
             )
 
             # 安全地将结果处理调度回主线程
@@ -1651,7 +1651,7 @@ class LeftPanel(BasePanel):
 
             if is_available:
                 logger.info(f"数据加载成功: {stock_code}, 发布StockSelectedEvent（包含K线数据）")
-                # ✅ 优化：将验证过的K线数据直接传递到事件中，避免Coordinator重复查询
+                # 优化：将验证过的K线数据直接传递到事件中，避免Coordinator重复查询
                 event = StockSelectedEvent(
                     stock_code=stock_code,
                     stock_name=stock_name,
@@ -1830,6 +1830,57 @@ class LeftPanel(BasePanel):
         except Exception as e:
             logger.debug(f"Failed to apply theme to LeftPanel widgets: {e}")
 
+    def resizeEvent(self, event):
+        """窗口大小改变事件处理"""
+        super().resizeEvent(event)
+        self._update_responsive_layout()
+
+    def _update_responsive_layout(self):
+        """更新响应式布局"""
+        try:
+            window_width = self.width()
+            window_height = self.height()
+
+            logger.debug(f"LeftPanel 响应式布局更新: {window_width}x{window_height}")
+
+            # 更新进度条高度
+            if hasattr(self, 'progress_bar') and self.progress_bar:
+                progress_height = max(8, int(window_height * 0.015))
+                self.progress_bar.setFixedHeight(progress_height)
+
+            # 更新按钮宽度（基于窗口宽度的百分比）
+            button_width = max(60, int(window_width * 0.15))
+
+            # 更新搜索按钮
+            search_btn = self.findChild(QPushButton, "search_btn")
+            if search_btn:
+                search_btn.setFixedWidth(button_width)
+
+            # 更新高级搜索按钮
+            advanced_search_btn = self.findChild(QPushButton, "advanced_search_btn")
+            if advanced_search_btn:
+                advanced_search_btn.setFixedWidth(int(button_width * 1.3))
+
+            # 更新收藏按钮
+            if hasattr(self, 'favorites_btn') and self.favorites_btn:
+                self.favorites_btn.setFixedWidth(button_width)
+
+            # 更新刷新按钮
+            refresh_btn = self.findChild(QPushButton, "refresh_btn")
+            if refresh_btn:
+                refresh_btn.setFixedWidth(button_width)
+
+            # 更新市场选择框
+            if hasattr(self, 'market_combo') and self.market_combo:
+                self.market_combo.setFixedWidth(int(button_width * 1.3))
+
+            # 更新指标类型选择框
+            if hasattr(self, 'indicator_type_combo') and self.indicator_type_combo:
+                self.indicator_type_combo.setFixedWidth(int(button_width * 1.3))
+
+        except Exception as e:
+            logger.error(f"更新响应式布局失败: {e}")
+
     def _do_dispose(self) -> None:
         """释放资源"""
         try:
@@ -1990,12 +2041,12 @@ class LeftPanel(BasePanel):
 
         # 指标类型筛选
         type_label = QLabel("类型:")
-        type_label.setFixedWidth(30)
+        type_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
         self.indicator_type_combo = QComboBox()
         self.indicator_type_combo.addItems(
             ["全部", "趋势类", "震荡类", "成交量类", "ta-lib"])
-        self.indicator_type_combo.setFixedWidth(80)
+        self.indicator_type_combo.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
         # 指标搜索
         self.indicator_search = QLineEdit()
@@ -2018,7 +2069,7 @@ class LeftPanel(BasePanel):
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll_area.setMaximumHeight(620)
+        scroll_area.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         # 创建指标列表
         self.indicator_list = QListWidget()

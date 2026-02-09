@@ -117,7 +117,7 @@ class WebGPUStatusDialog(QDialog):
             webgpu_manager = get_webgpu_manager()
 
             if webgpu_manager and webgpu_manager._initialized:
-                self.webgpu_enabled_label.setText("✅ 已启用")
+                self.webgpu_enabled_label.setText("已启用")
                 self.webgpu_enabled_label.setStyleSheet("color: #28a745; font-weight: bold;")
                 self.backend_label.setText(webgpu_manager.current_backend)
                 self.renderer_label.setText("WebGPU渲染器")
@@ -166,7 +166,7 @@ class WebGPUStatusDialog(QDialog):
                 # 执行渲染测试
                 success = self._test_webgpu_render()
                 if success:
-                    QMessageBox.information(self, "测试结果", "✅ WebGPU渲染测试成功！")
+                    QMessageBox.information(self, "测试结果", "WebGPU渲染测试成功！")
                 else:
                     QMessageBox.warning(self, "测试结果", "⚠️ WebGPU渲染测试失败，已降级到matplotlib")
             else:

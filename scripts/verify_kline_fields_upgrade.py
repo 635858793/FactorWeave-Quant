@@ -59,7 +59,7 @@ class KlineFieldsVerifier:
                 return False
 
             self.conn = duckdb.connect(str(self.db_path))
-            logger.info(f"✅ 成功连接数据库: {self.db_path}")
+            logger.info(f"成功连接数据库: {self.db_path}")
             return True
 
         except Exception as e:
@@ -116,7 +116,7 @@ class KlineFieldsVerifier:
             for field in new_fields:
                 if field in columns:
                     existing_fields.append(field)
-                    logger.info(f"  ✅ {field}: {columns[field]}")
+                    logger.info(f"  {field}: {columns[field]}")
                 else:
                     missing_fields.append(field)
                     logger.warning(f"  ❌ 缺失字段: {field}")
@@ -141,7 +141,7 @@ class KlineFieldsVerifier:
             }
 
             if verification['is_complete']:
-                logger.success(f"✅ 表结构完整！新字段: {len(existing_fields)}/{len(new_fields)}")
+                logger.success(f"表结构完整！新字段: {len(existing_fields)}/{len(new_fields)}")
             else:
                 logger.warning(f"⚠️  表结构不完整！缺失 {len(missing_fields)} 个新字段")
 
@@ -241,7 +241,7 @@ class KlineFieldsVerifier:
                     logger.info(f"    - 样本值: {stats['sample_values'][:3]}")
 
             # 验证数据合理性
-            logger.info(f"\n✅ 数据合理性验证:")
+            logger.info(f"\n数据合理性验证:")
 
             # 1. 复权价格应该接近原价格
             if not df['adj_close'].isna().all():
@@ -249,7 +249,7 @@ class KlineFieldsVerifier:
                 avg_diff = price_diff.mean()
                 logger.info(f"  adj_close vs close 平均差异: {avg_diff:.2f}%")
                 if avg_diff < 5:
-                    logger.success(f"    ✅ 复权价格合理（差异<5%）")
+                    logger.success(f"    复权价格合理（差异<5%）")
                 else:
                     logger.warning(f"    ⚠️  复权价格差异较大（>{avg_diff:.2f}%）")
 
@@ -259,7 +259,7 @@ class KlineFieldsVerifier:
                 vwap_valid_rate = vwap_valid / len(df[df['vwap'].notna()]) * 100 if len(df[df['vwap'].notna()]) > 0 else 0
                 logger.info(f"  VWAP合理性: {vwap_valid_rate:.2f}% 在[low, high]范围内")
                 if vwap_valid_rate > 90:
-                    logger.success(f"    ✅ VWAP计算合理（>90%）")
+                    logger.success(f"    VWAP计算合理（>90%）")
                 else:
                     logger.warning(f"    ⚠️  VWAP可能有问题（{vwap_valid_rate:.2f}%）")
 
@@ -269,7 +269,7 @@ class KlineFieldsVerifier:
                 high_turnover_rate = high_turnover / len(df[df['turnover_rate'].notna()]) * 100 if len(df[df['turnover_rate'].notna()]) > 0 else 0
                 logger.info(f"  换手率>30%的记录: {high_turnover_rate:.2f}%")
                 if high_turnover_rate < 5:
-                    logger.success(f"    ✅ 换手率分布正常（<5%异常）")
+                    logger.success(f"    换手率分布正常（<5%异常）")
                 else:
                     logger.warning(f"    ⚠️  换手率异常记录较多（{high_turnover_rate:.2f}%）")
 
@@ -299,7 +299,7 @@ class KlineFieldsVerifier:
             for table_name, verification in self.verification_results.items():
                 if 'structure' in verification:
                     struct = verification['structure']
-                    status = "✅ 通过" if struct.get('is_complete') else "❌ 未通过"
+                    status = "通过" if struct.get('is_complete') else "❌ 未通过"
                     report_lines.append(f"表名: {table_name}")
                     report_lines.append(f"  状态: {status}")
                     report_lines.append(f"  总列数: {struct.get('total_columns', 0)}")
@@ -334,7 +334,7 @@ class KlineFieldsVerifier:
             with open(report_path, 'w', encoding='utf-8') as f:
                 f.write(report_text)
 
-            logger.success(f"✅ 验证报告已保存: {report_path}")
+            logger.success(f"验证报告已保存: {report_path}")
 
             return report_text
 
@@ -378,7 +378,7 @@ class KlineFieldsVerifier:
             report = self.generate_report()
 
             logger.info("\n" + "=" * 80)
-            logger.success("✅ 验证完成！")
+            logger.success("验证完成！")
             logger.info("=" * 80)
 
             return True

@@ -319,7 +319,7 @@ class BatchSelectionDialog(QDialog):
                 self.progress_dialog.close()
 
             self.all_items = data
-            logger.info(f"✅ 数据加载完成: {len(self.all_items)} 条记录") if logger else None
+            logger.info(f"数据加载完成: {len(self.all_items)} 条记录") if logger else None
 
             # 更新UI
             self.populate_table(self.all_items)
@@ -400,12 +400,12 @@ class BatchSelectionDialog(QDialog):
                                                 "category": row.get('industry', '其他')
                                             }
                                             stock_list.append(stock_info)
-                                        logger.info(f"✅ 从插件DataFrame获取股票数据: {len(stock_list)} 只") if logger else None
+                                        logger.info(f"从插件DataFrame获取股票数据: {len(stock_list)} 只") if logger else None
                                         return stock_list
                                 else:  # 列表格式
                                     logger.info(f"get_stock_list返回列表: {len(stock_list_data) if stock_list_data else 0} 条数据") if logger else None
                                     if stock_list_data:
-                                        logger.info(f"✅ 直接从插件获取股票数据: {len(stock_list_data)} 只") if logger else None
+                                        logger.info(f"直接从插件获取股票数据: {len(stock_list_data)} 只") if logger else None
                                         return stock_list_data
                             elif hasattr(plugin, 'get_asset_list'):
                                 logger.info("插件有get_asset_list方法") if logger else None
@@ -413,7 +413,7 @@ class BatchSelectionDialog(QDialog):
                                 asset_list_data = plugin.get_asset_list(AssetType.STOCK_A)
                                 logger.info(f"get_asset_list返回: {len(asset_list_data) if asset_list_data else 0} 条数据") if logger else None
                                 if asset_list_data:
-                                    logger.info(f"✅ 从插件获取资产数据: {len(asset_list_data)} 只") if logger else None
+                                    logger.info(f"从插件获取资产数据: {len(asset_list_data)} 只") if logger else None
                                     return asset_list_data
                             else:
                                 logger.warning("插件没有get_stock_list或get_asset_list方法") if logger else None
@@ -484,7 +484,7 @@ class BatchSelectionDialog(QDialog):
                         }
                         stock_list.append(stock_info)
 
-                    logger.info(f"✅ 成功获取股票数据: {len(stock_list)} 只股票") if logger else None
+                    logger.info(f"成功获取股票数据: {len(stock_list)} 只股票") if logger else None
                     return stock_list
                 else:
                     logger.warning("UnifiedDataManager返回空DataFrame") if logger else None
@@ -827,8 +827,8 @@ class EnhancedDataImportWidget(QWidget):
         self.config_manager = None
         self.ui_adapter = None
         self.ui_synchronizer = None
-        self.plugin_manager = plugin_manager  # ✅ 直接保存plugin_manager
-        self.db_manager = None  # ✅ 初始化db_manager以避免AttributeError
+        self.plugin_manager = plugin_manager  # 直接保存plugin_manager
+        self.db_manager = None  # 初始化db_manager以避免AttributeError
 
         # 初始化数据源映射（用于动态加载数据源插件）
         self.data_source_mapping = {}
@@ -865,7 +865,7 @@ class EnhancedDataImportWidget(QWidget):
             self.config_manager = ImportConfigManager()
             self.import_engine = DataImportExecutionEngine(
                 config_manager=self.config_manager,
-                max_workers=8,  # ✅ 优化：默认工作线程数从4增加到8，提升并行性能
+                max_workers=8,  # 优化：默认工作线程数从4增加到8，提升并行性能
                 enable_ai_optimization=True
             )
 
@@ -969,7 +969,7 @@ class EnhancedDataImportWidget(QWidget):
             if not hasattr(self, 'workers_spin'):
                 self.workers_spin = QSpinBox()
                 self.workers_spin.setRange(1, 32)
-                self.workers_spin.setValue(8)  # ✅ 优化：默认工作线程数从4增加到8
+                self.workers_spin.setValue(8)  # 优化：默认工作线程数从4增加到8
                 logger.debug("预创建了workers_spin组件") if logger else None
 
             # 确保日志文本框存在
@@ -1312,7 +1312,7 @@ class EnhancedDataImportWidget(QWidget):
 
         self.workers_spin = QSpinBox()
         self.workers_spin.setRange(1, 32)
-        self.workers_spin.setValue(8)  # ✅ 优化：默认工作线程数从4增加到8，提升并行性能
+        self.workers_spin.setValue(8)  # 优化：默认工作线程数从4增加到8，提升并行性能
         self.workers_spin.setToolTip("并行处理的线程数（建议8-16，可根据CPU核心数调整）")
         resource_layout.addRow("工作线程数:", self.workers_spin)
 
@@ -1325,7 +1325,7 @@ class EnhancedDataImportWidget(QWidget):
 
         self.timeout_spin = QSpinBox()
         self.timeout_spin.setRange(60, 3600)
-        self.timeout_spin.setValue(60)  # ✅ 优化：默认超时从300秒减少到60秒，快速失败避免长时间等待
+        self.timeout_spin.setValue(60)  # 优化：默认超时从300秒减少到60秒，快速失败避免长时间等待
         self.timeout_spin.setSuffix("秒")
         self.timeout_spin.setToolTip("单个请求超时时间（建议60-120秒，快速失败提升响应速度）")
         resource_layout.addRow("超时设置:", self.timeout_spin)
@@ -1454,7 +1454,7 @@ class EnhancedDataImportWidget(QWidget):
         # 添加验证和重置按钮
         button_layout = QHBoxLayout()
 
-        self.validate_config_btn = QPushButton("✅ 验证配置")
+        self.validate_config_btn = QPushButton("验证配置")
         self.validate_config_btn.clicked.connect(self.validate_current_configuration)
         button_layout.addWidget(self.validate_config_btn)
 
@@ -1593,7 +1593,7 @@ class EnhancedDataImportWidget(QWidget):
         # 工作线程数
         self.workers_spin = QSpinBox()
         self.workers_spin.setRange(1, 32)
-        self.workers_spin.setValue(8)  # ✅ 优化：默认工作线程数从4增加到8，提升并行性能
+        self.workers_spin.setValue(8)  # 优化：默认工作线程数从4增加到8，提升并行性能
         self.workers_spin.setToolTip("并行处理的线程数（建议8-16，可根据CPU核心数调整）")
         resource_layout.addRow("工作线程数:", self.workers_spin)
 
@@ -1608,7 +1608,7 @@ class EnhancedDataImportWidget(QWidget):
         # 超时设置
         self.timeout_spin = QSpinBox()
         self.timeout_spin.setRange(60, 3600)
-        self.timeout_spin.setValue(60)  # ✅ 优化：默认超时从300秒减少到60秒，快速失败避免长时间等待
+        self.timeout_spin.setValue(60)  # 优化：默认超时从300秒减少到60秒，快速失败避免长时间等待
         self.timeout_spin.setSuffix("秒")
         self.timeout_spin.setToolTip("单个请求超时时间（建议60-120秒，快速失败提升响应速度）")
         resource_layout.addRow("超时设置:", self.timeout_spin)
@@ -2634,7 +2634,7 @@ class EnhancedDataImportWidget(QWidget):
                             logger.warning(f"数据框中找不到code或symbol列: {asset_df.columns.tolist()}")
                             return []
 
-                        logger.info(f"✅ 成功获取 {len(symbols)} 个{asset_type}符号")
+                        logger.info(f"成功获取 {len(symbols)} 个{asset_type}符号")
                         return symbols
                 except Exception as e:
                     logger.warning(f"从UnifiedDataManager获取{asset_type}列表失败: {e}")
@@ -2670,7 +2670,7 @@ class EnhancedDataImportWidget(QWidget):
 
                         if result:
                             symbols = [row[0] for row in result]
-                            logger.info(f"✅ 从数据库成功获取 {len(symbols)} 个{asset_type}符号")
+                            logger.info(f"从数据库成功获取 {len(symbols)} 个{asset_type}符号")
                             return symbols
                     except Exception as e:
                         logger.debug(f"从asset_metadata查询失败: {e}")
@@ -2695,7 +2695,7 @@ class EnhancedDataImportWidget(QWidget):
 
                         if result:
                             symbols = [row[0] for row in result]
-                            logger.info(f"✅ 从 {table_name} 表成功获取 {len(symbols)} 个{asset_type}符号")
+                            logger.info(f"从 {table_name} 表成功获取 {len(symbols)} 个{asset_type}符号")
                             return symbols
                     except Exception as e:
                         logger.debug(f"从{table_name}查询失败: {e}")
@@ -2727,7 +2727,7 @@ class EnhancedDataImportWidget(QWidget):
             from core.database.duckdb_manager import get_connection_manager
             self.db_manager = get_connection_manager()
             if self.db_manager:
-                logger.info("✅ db_manager初始化成功")
+                logger.info("db_manager初始化成功")
                 return True
             else:
                 logger.error("❌ db_manager初始化失败: get_connection_manager返回None")
@@ -3426,7 +3426,7 @@ class EnhancedDataImportWidget(QWidget):
         self.task_refresh_timer.timeout.connect(self.refresh_task_list)
         self.task_refresh_timer.start(5000)  # 5秒刷新一次任务列表
 
-        # ✅ 数据库写入队列监控定时器（新增）
+        # 数据库写入队列监控定时器（新增）
         self.queue_monitor_timer = QTimer()
         self.queue_monitor_timer.timeout.connect(self.update_queue_stats)
         # 延迟启动，避免UI刚打开时立即执行耗时操作
@@ -3437,7 +3437,7 @@ class EnhancedDataImportWidget(QWidget):
         # IP监控更新计数器，用于降低更新频率
         self._ip_monitor_update_counter = 0
         self._ip_monitor_update_interval = 3  # 每3秒更新一次IP监控（降低频率）
-        # ✅ 修复：初始化IP监控缓存相关变量
+        # 修复：初始化IP监控缓存相关变量
         self._ip_stats_cache = None
         self._ip_stats_cache_time = 0  # 初始化为0，确保第一次会触发更新
         self._ip_stats_cache_ttl = 5.0  # 缓存有效期5秒
@@ -3476,13 +3476,13 @@ class EnhancedDataImportWidget(QWidget):
             # 更新到监控面板
             self.download_monitoring.update_queue_stats(queue_stats)
 
-            # ✅ 更新IP监控信息（使用后台线程，避免阻塞UI）
+            # 更新IP监控信息（使用后台线程，避免阻塞UI）
             if hasattr(self, 'ip_monitor') and self.ip_monitor is not None:
                 self._ip_monitor_update_counter += 1
                 # 每3秒更新一次IP监控（降低频率）
                 if self._ip_monitor_update_counter >= self._ip_monitor_update_interval:
                     self._ip_monitor_update_counter = 0
-                    # ✅ 修复：检查缓存是否已初始化
+                    # 修复：检查缓存是否已初始化
                     if not hasattr(self, '_ip_stats_cache_time') or self._ip_stats_cache_time == 0:
                         # 缓存未初始化，直接获取新数据
                         self._update_ip_stats_in_background()
@@ -3497,7 +3497,7 @@ class EnhancedDataImportWidget(QWidget):
                             # 缓存过期，使用后台线程获取新数据
                             self._update_ip_stats_in_background()
 
-            # ✅ 更新数据源实例池状态（RealDataProvider）
+            # 更新数据源实例池状态（RealDataProvider）
             try:
                 from core.real_data_provider import get_real_data_provider
                 provider = get_real_data_provider()
@@ -3507,7 +3507,7 @@ class EnhancedDataImportWidget(QWidget):
             except Exception:
                 pass
 
-            # ✅ 新增：更新数据库连接池使用统计
+            # 新增：更新数据库连接池使用统计
             try:
                 from core.asset_database_manager import AssetSeparatedDatabaseManager
                 manager = AssetSeparatedDatabaseManager.get_instance()
@@ -3518,7 +3518,7 @@ class EnhancedDataImportWidget(QWidget):
                         total_connections = db_pool_status.get('total_connections', 0)
                         max_pool_size = db_pool_status.get('max_pool_size', manager.config.pool_size if hasattr(manager, 'config') else 10)
 
-                        # ✅ 修复：使用实际创建的连接数（total_connections）而不是最大池大小作为分母
+                        # 修复：使用实际创建的连接数（total_connections）而不是最大池大小作为分母
                         # 如果total_connections为0，则使用max_pool_size（连接池还未创建任何连接）
                         denominator = total_connections if total_connections > 0 else max_pool_size
                         usage_text = f"{active_connections}/{denominator}"
@@ -3553,7 +3553,7 @@ class EnhancedDataImportWidget(QWidget):
             if not hasattr(self, 'ip_monitor') or self.ip_monitor is None:
                 return
 
-            # ✅ 修复：安全检查线程状态，避免访问已删除的对象
+            # 修复：安全检查线程状态，避免访问已删除的对象
             if self._ip_stats_thread is not None:
                 try:
                     if self._ip_stats_thread.isRunning():
@@ -3575,7 +3575,7 @@ class EnhancedDataImportWidget(QWidget):
             self._ip_stats_worker.finished.connect(self._ip_stats_thread.quit)
             self._ip_stats_worker.error.connect(self._on_ip_stats_error)
             self._ip_stats_worker.error.connect(self._ip_stats_thread.quit)
-            # ✅ 修复：线程完成后清空引用，避免访问已删除的对象
+            # 修复：线程完成后清空引用，避免访问已删除的对象
             self._ip_stats_thread.finished.connect(self._on_ip_stats_thread_finished)
 
             # 启动线程
@@ -3642,7 +3642,7 @@ class EnhancedDataImportWidget(QWidget):
     def _on_ip_stats_thread_finished(self):
         """IP统计线程完成回调（在主线程执行）- 线程完成后的清理工作"""
         try:
-            # ✅ 修复：清空引用，避免访问已删除的对象
+            # 修复：清空引用，避免访问已删除的对象
             if self._ip_stats_thread:
                 self._ip_stats_thread.deleteLater()
                 self._ip_stats_thread = None
@@ -3661,6 +3661,7 @@ class EnhancedDataImportWidget(QWidget):
         try:
             # 获取配置
             task_name = self.task_name_edit.text() or f"导入任务_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            task_desc = self.task_desc_edit.toPlainText().strip() if hasattr(self, 'task_desc_edit') else None
             symbols_text = self.symbols_edit.toPlainText().strip()
 
             if not symbols_text:
@@ -3687,6 +3688,9 @@ class EnhancedDataImportWidget(QWidget):
             check_completeness = self.check_completeness_cb.isChecked() if hasattr(self, 'check_completeness_cb') else True
             skip_latest_data = self.skip_latest_data_cb.isChecked() if hasattr(self, 'skip_latest_data_cb') else True
 
+            # 获取数据用途
+            data_usage = self._get_data_usage_value() if hasattr(self, '_get_data_usage_value') else "general"
+
             # 根据下载模式创建不同的任务配置
             if download_mode == "gap_fill":
                 # 间隙填充模式配置
@@ -3695,10 +3699,12 @@ class EnhancedDataImportWidget(QWidget):
                 task_config = ImportTaskConfig(
                     task_id=f"task_{int(datetime.now().timestamp())}",
                     name=task_name,
+                    description=task_desc,
                     symbols=symbols,
                     data_source=self.data_source_combo.currentText(),
                     asset_type=self._get_asset_type_value(),
                     data_type=self.data_type_combo.currentText() if hasattr(self, 'data_type_combo') else "K线数据",
+                    data_usage=data_usage,
                     frequency=freq_map.get(self.frequency_combo.currentText(), DataFrequency.DAILY),
                     mode=ImportMode.MANUAL,  # 使用MANUAL模式，通过config区分功能
                     batch_size=self.batch_size_spin.value(),
@@ -3730,10 +3736,12 @@ class EnhancedDataImportWidget(QWidget):
                 task_config = ImportTaskConfig(
                     task_id=f"task_{int(datetime.now().timestamp())}",
                     name=task_name,
+                    description=task_desc,
                     symbols=symbols,
                     data_source=self.data_source_combo.currentText(),
                     asset_type=self._get_asset_type_value(),
                     data_type=self.data_type_combo.currentText() if hasattr(self, 'data_type_combo') else "K线数据",
+                    data_usage=data_usage,
                     frequency=freq_map.get(self.frequency_combo.currentText(), DataFrequency.DAILY),
                     mode=ImportMode.MANUAL,  # 使用MANUAL模式，通过config区分功能
                     batch_size=self.batch_size_spin.value(),
@@ -3765,10 +3773,12 @@ class EnhancedDataImportWidget(QWidget):
                 task_config = ImportTaskConfig(
                     task_id=f"task_{int(datetime.now().timestamp())}",
                     name=task_name,
+                    description=task_desc,
                     symbols=symbols,
                     data_source=self.data_source_combo.currentText(),
                     asset_type=self._get_asset_type_value(),
                     data_type=self.data_type_combo.currentText() if hasattr(self, 'data_type_combo') else "K线数据",
+                    data_usage=data_usage,
                     frequency=freq_map.get(self.frequency_combo.currentText(), DataFrequency.DAILY),
                     mode=ImportMode.INCREMENTAL,  # 使用INCREMENTAL模式
                     batch_size=self.batch_size_spin.value(),
@@ -3795,10 +3805,12 @@ class EnhancedDataImportWidget(QWidget):
                 task_config = ImportTaskConfig(
                     task_id=f"task_{int(datetime.now().timestamp())}",
                     name=task_name,
+                    description=task_desc,
                     symbols=symbols,
                     data_source=self.data_source_combo.currentText(),
                     asset_type=self._get_asset_type_value(),
                     data_type=self.data_type_combo.currentText() if hasattr(self, 'data_type_combo') else "K线数据",
+                    data_usage=data_usage,
                     frequency=freq_map.get(self.frequency_combo.currentText(), DataFrequency.DAILY),
                     mode=ImportMode.MANUAL,  # 全量下载使用MANUAL模式
                     batch_size=self.batch_size_spin.value(),
@@ -3820,6 +3832,17 @@ class EnhancedDataImportWidget(QWidget):
             self.import_engine.enable_intelligent_caching = self.caching_cb.isChecked()
             self.import_engine.enable_data_quality_monitoring = self.quality_monitoring_cb.isChecked()
 
+            # 更新实时写入配置
+            write_strategy = self.write_strategy_combo.currentText() if hasattr(self, 'write_strategy_combo') else "批量写入"
+            enable_perf_monitor = self.enable_perf_monitor_cb.isChecked() if hasattr(self, 'enable_perf_monitor_cb') else True
+            enable_memory_monitor = self.enable_memory_monitor_cb.isChecked() if hasattr(self, 'enable_memory_monitor_cb') else True
+
+            self.import_engine.update_realtime_write_config(
+                write_strategy=write_strategy,
+                enable_performance_monitoring=enable_perf_monitor,
+                enable_memory_monitoring=enable_memory_monitor
+            )
+
             # 保存配置并启动任化
             self.config_manager.add_import_task(task_config)
 
@@ -3831,7 +3854,7 @@ class EnhancedDataImportWidget(QWidget):
 
                 # 通知监控面板任务已启动
                 if hasattr(self, 'download_monitoring'):
-                    # ✅ 设置当前任务配置（用于重新下载功能）
+                    # 设置当前任务配置（用于重新下载功能）
                     self.download_monitoring.set_current_task_config(task_config)
                     self.download_monitoring.update_progress({
                         'progress': 0.0,
@@ -3870,14 +3893,14 @@ class EnhancedDataImportWidget(QWidget):
             self.progress_label.setText(message)
         self.log_message(f"进度更新: {progress:.1%} - {message}")
 
-        # ✅ 修复：检测并记录符号级错误到错误日志表，成功时清除错误记录
+        # 修复：检测并记录符号级错误到错误日志表，成功时清除错误记录
         if hasattr(self, 'download_monitoring') and self.download_monitoring:
             try:
-                # ✅ 修复：从message中提取错误信息（格式：导入股票数据: SYMBOL (成功数/总数) 或包含错误信息）
+                # 修复：从message中提取错误信息（格式：导入股票数据: SYMBOL (成功数/总数) 或包含错误信息）
                 import re
                 from datetime import datetime
 
-                # ✅ 修复：检查message是否包含错误信息（匹配格式：导入股票数据: SYMBOL (x/y) | SYMBOL失败: 错误信息）
+                # 修复：检查message是否包含错误信息（匹配格式：导入股票数据: SYMBOL (x/y) | SYMBOL失败: 错误信息）
                 error_patterns = [
                     r'(\d{6})失败[:：]\s*(.+)',  # 匹配"SYMBOL失败: 错误信息"格式（新格式）
                     r'(\d{6}).*?失败[:：]\s*(.+)',  # 匹配"SYMBOL...失败: 错误信息"格式
@@ -3903,7 +3926,7 @@ class EnhancedDataImportWidget(QWidget):
                             error_msg = "导入失败"
                         break
 
-                # ✅ 新增：如果检测到错误，添加到错误日志表
+                # 新增：如果检测到错误，添加到错误日志表
                 if is_error and symbol and error_msg:
                     timestamp = datetime.now().strftime('%H:%M:%S')
                     self.download_monitoring.add_error(
@@ -3912,8 +3935,8 @@ class EnhancedDataImportWidget(QWidget):
                         error_type=error_type,
                         error_msg=error_msg
                     )
-                    logger.debug(f"✅ [错误日志] 已记录符号级错误: {symbol} - {error_msg}")
-                # ✅ 新增：如果检测到成功导入（不包含"失败"关键字），清除对应的错误记录
+                    logger.debug(f"[错误日志] 已记录符号级错误: {symbol} - {error_msg}")
+                # 新增：如果检测到成功导入（不包含"失败"关键字），清除对应的错误记录
                 elif not is_error:
                     # 尝试从message中提取symbol（格式：导入股票数据: SYMBOL (x/y)）
                     success_patterns = [
@@ -3926,11 +3949,11 @@ class EnhancedDataImportWidget(QWidget):
                         match = re.search(pattern, message)
                         if match:
                             symbol = match.group(1)
-                            # ✅ 清除该symbol的错误记录（如果存在）
+                            # 清除该symbol的错误记录（如果存在）
                             if hasattr(self.download_monitoring, 'remove_error'):
                                 removed = self.download_monitoring.remove_error(symbol)
                                 if removed:
-                                    logger.debug(f"✅ [错误日志] 已清除符号错误记录: {symbol}（导入成功）")
+                                    logger.debug(f"[错误日志] 已清除符号错误记录: {symbol}（导入成功）")
                             break
 
                 # 解析message获取详细信息
@@ -3950,7 +3973,7 @@ class EnhancedDataImportWidget(QWidget):
             self.progress_bar.setValue(100)
         if hasattr(self, 'progress_label'):
             self.progress_label.setText("任务完成!")
-        self.log_message(f"✅ 任务完成: {task_id}")
+        self.log_message(f"任务完成: {task_id}")
 
         # 通知监控面板任务已完成
         if hasattr(self, 'download_monitoring'):
@@ -4207,7 +4230,7 @@ class EnhancedDataImportWidget(QWidget):
         # 🔧 使用拉伸因子：任务表格占主要空间
         layout.addWidget(self.task_table, stretch=30)
 
-        # ✅ 删除：任务详情面板已移除
+        # 删除：任务详情面板已移除
 
         # K线下载情况监控面板
         if REALTIME_WRITE_UI_AVAILABLE:
@@ -4218,7 +4241,7 @@ class EnhancedDataImportWidget(QWidget):
 
             # 创建监控组件
             self.download_monitoring = RealtimeWriteMonitoringWidget()
-            # ✅ 设置父组件引用和当前任务配置（用于重新下载功能）
+            # 设置父组件引用和当前任务配置（用于重新下载功能）
             self.download_monitoring.set_parent_widget(self)
             download_monitoring_layout.addWidget(self.download_monitoring)
 
@@ -4315,7 +4338,8 @@ class EnhancedDataImportWidget(QWidget):
             # 构建配置字典，包含合并后的高级配置
             config = {
                 'task_id': f"task_{int(datetime.now().timestamp())}",
-                'name': final_task_name,  # ✅ 使用带标记的任务名
+                'name': final_task_name,  # 使用带标记的任务名
+                'description': self.task_desc_edit.toPlainText().strip() if hasattr(self, 'task_desc_edit') else None,  # 添加任务描述字段
                 'data_usage': self._get_data_usage_value() if hasattr(self, '_get_data_usage_value') else "general",  # 🆕 添加数据用途字段
                 'symbols': symbols,
                 'asset_type': self._get_asset_type_value() if hasattr(self, '_get_asset_type_value') else (self.asset_type_combo.currentText() if hasattr(self, 'asset_type_combo') else "股票"),
@@ -4325,9 +4349,9 @@ class EnhancedDataImportWidget(QWidget):
 
                 # 从合并的配置tab中读取高级配置
                 'batch_size': self.batch_size_spin.value() if hasattr(self, 'batch_size_spin') else 1000,
-                'max_workers': self.workers_spin.value() if hasattr(self, 'workers_spin') else 8,  # ✅ 优化：默认工作线程数从4增加到8
+                'max_workers': self.workers_spin.value() if hasattr(self, 'workers_spin') else 8,  # 优化：默认工作线程数从4增加到8
                 'memory_limit': self.memory_limit_spin.value() if hasattr(self, 'memory_limit_spin') else 2048,
-                'timeout': self.timeout_spin.value() if hasattr(self, 'timeout_spin') else 60,  # ✅ 优化：默认超时从300秒减少到60秒
+                'timeout': self.timeout_spin.value() if hasattr(self, 'timeout_spin') else 60,  # 优化：默认超时从300秒减少到60秒
                 'retry_count': self.retry_count_spin.value() if hasattr(self, 'retry_count_spin') else 3,
                 'error_strategy': self.error_strategy_combo.currentText() if hasattr(self, 'error_strategy_combo') else "跳过",
                 'progress_interval': self.progress_interval_spin.value() if hasattr(self, 'progress_interval_spin') else 5,
@@ -4388,10 +4412,12 @@ class EnhancedDataImportWidget(QWidget):
             task_config = ImportTaskConfig(
                 task_id=task_config_dict.get('task_id', f"task_{int(datetime.now().timestamp())}"),
                 name=task_config_dict.get('name', f"导入任务_{datetime.now().strftime('%Y%m%d_%H%M%S')}"),
+                description=task_config_dict.get('description', None),  # 添加任务描述字段
                 symbols=task_config_dict.get('symbols', []),
                 data_source=task_config_dict.get('data_source', ''),
                 asset_type=task_config_dict.get('asset_type', ''),
                 data_type=task_config_dict.get('data_type', 'K线数据'),
+                data_usage=task_config_dict.get('data_usage', 'general'),  # 添加数据用途字段
                 frequency=frequency_enum,
                 mode=ImportMode.MANUAL,
                 batch_size=task_config_dict.get('batch_size', 100),
@@ -4401,7 +4427,7 @@ class EnhancedDataImportWidget(QWidget):
                 retry_count=task_config_dict.get('retry_count', 3),
                 error_strategy=task_config_dict.get('error_strategy', '跳过'),
                 memory_limit=task_config_dict.get('memory_limit', 2048),
-                timeout=task_config_dict.get('timeout', 60),  # ✅ 优化：默认超时从300秒减少到60秒
+                timeout=task_config_dict.get('timeout', 60),  # 优化：默认超时从300秒减少到60秒
                 progress_interval=task_config_dict.get('progress_interval', 5),
                 validate_data=task_config_dict.get('validate_data', True)
             )
@@ -4613,7 +4639,7 @@ class EnhancedDataImportWidget(QWidget):
             if not selected_items:
                 return
 
-            # ✅ 删除：任务详情UI已移除，此方法保留用于未来扩展
+            # 删除：任务详情UI已移除，此方法保留用于未来扩展
             # 可以在这里添加其他选择变化时的处理逻辑
 
         except Exception as e:
@@ -5571,7 +5597,7 @@ class EnhancedDataImportWidget(QWidget):
 
             # 股票代码列表（每行一个代码，方便编辑）
             symbols_text = QTextEdit()
-            symbols_text.setPlainText("\n".join(task.symbols))  # ✅ 使用换行符分隔，更清晰
+            symbols_text.setPlainText("\n".join(task.symbols))  # 使用换行符分隔，更清晰
             symbols_text.setMaximumHeight(100)
             symbols_text.setPlaceholderText("每行一个股票代码，如：\n000001\n000002\n...")
             form_layout.addRow("股票代码:", symbols_text)
@@ -5625,7 +5651,7 @@ class EnhancedDataImportWidget(QWidget):
                     data_usage_value = usage_mapping.get(usage_display, "general")
 
                     # 更新任务配置
-                    task.name = final_task_name  # ✅ 使用带标记的任务名
+                    task.name = final_task_name  # 使用带标记的任务名
                     task.data_source = data_source_combo.currentText()
                     task.asset_type = asset_type_combo.currentText()
                     task.data_type = data_type_combo.currentText()
@@ -5646,7 +5672,7 @@ class EnhancedDataImportWidget(QWidget):
                     # 股票代码（支持换行或逗号分隔）
                     symbols_str = symbols_text.toPlainText().strip()
                     if symbols_str:
-                        # ✅ 修复：先按换行分割，再按逗号分割，支持两种格式
+                        # 修复：先按换行分割，再按逗号分割，支持两种格式
                         symbols = []
                         for line in symbols_str.split('\n'):
                             line = line.strip()
@@ -6009,11 +6035,11 @@ class EnhancedDataImportWidget(QWidget):
                 if hasattr(self, 'batch_size_spin'):
                     self.batch_size_spin.setValue(1000)
                 if hasattr(self, 'workers_spin'):
-                    self.workers_spin.setValue(8)  # ✅ 优化：默认工作线程数从4增加到8
+                    self.workers_spin.setValue(8)  # 优化：默认工作线程数从4增加到8
                 if hasattr(self, 'memory_limit_spin'):
                     self.memory_limit_spin.setValue(2048)
                 if hasattr(self, 'timeout_spin'):
-                    self.timeout_spin.setValue(60)  # ✅ 优化：默认超时从300秒减少到60秒
+                    self.timeout_spin.setValue(60)  # 优化：默认超时从300秒减少到60秒
 
                 # 错误处理配置
                 if hasattr(self, 'retry_count_spin'):
@@ -6277,7 +6303,7 @@ class EnhancedDataImportWidget(QWidget):
             plugin_manager = None
             if hasattr(self, 'plugin_manager') and self.plugin_manager:
                 plugin_manager = self.plugin_manager
-                logger.info("✅ 使用初始化时传入的PluginManager") if logger else None
+                logger.info("使用初始化时传入的PluginManager") if logger else None
 
             # 方案2: 从容器获取
             if not plugin_manager:
@@ -6368,7 +6394,7 @@ class EnhancedDataImportWidget(QWidget):
                         self.data_source_combo.addItem(plugin['display_name'])
                         self.data_source_mapping[plugin['display_name']] = plugin['name']
 
-                    logger.info(f"✅ 成功加载 {len(data_source_plugins)} 个数据源插件到UI") if logger else None
+                    logger.info(f"成功加载 {len(data_source_plugins)} 个数据源插件到UI") if logger else None
                     return True
                 else:
                     logger.warning("PluginManager中没有找到data_sources插件") if logger else None
@@ -6388,10 +6414,10 @@ class EnhancedDataImportWidget(QWidget):
     def _load_default_data_sources(self):
         """加载默认数据源列表（备用）"""
         default_sources = {
-            "AKShare数据源插件": "data_sources.stock.akshare_plugin",  # ✅ 修复：添加stock层级并使用完整名称
-            "东方财富股票数据源插件": "data_sources.stock.eastmoney_plugin",  # ✅ 修复：添加stock层级并使用完整名称
-            "新浪股票数据源": "data_sources.stock.sina_plugin",  # ✅ 修复：添加stock层级
-            "通达信股票数据源": "data_sources.stock.tongdaxin_plugin"  # ✅ 修复：添加stock层级
+            "AKShare数据源插件": "data_sources.stock.akshare_plugin",  # 修复：添加stock层级并使用完整名称
+            "东方财富股票数据源插件": "data_sources.stock.eastmoney_plugin",  # 修复：添加stock层级并使用完整名称
+            "新浪股票数据源": "data_sources.stock.sina_plugin",  # 修复：添加stock层级
+            "通达信股票数据源": "data_sources.stock.tongdaxin_plugin"  # 修复：添加stock层级
         }
 
         self.data_source_combo.clear()
@@ -6437,7 +6463,7 @@ class EnhancedDataImportWidget(QWidget):
     def on_stop_download(self):
         """停止下载"""
         try:
-            # ✅ 根因修复：优先检查import_engine是否可用
+            # 根因修复：优先检查import_engine是否可用
             if not CORE_AVAILABLE or not self.import_engine:
                 QMessageBox.warning(
                     self, "功能不可用",
@@ -6462,7 +6488,7 @@ class EnhancedDataImportWidget(QWidget):
                 try:
                     success = self.import_engine.stop_task(self.current_task_id)
                     if success:
-                        self.log_message(f"✅ 任务 {self.current_task_id} 已停止")
+                        self.log_message(f"任务 {self.current_task_id} 已停止")
                         logger.info(f"K线下载任务已停止: {self.current_task_id}") if logger else None
 
                         # 通知监控面板任务已停止
@@ -6718,7 +6744,7 @@ class EnhancedDataImportWidget(QWidget):
             # 获取UI中选中的资产类型中文名称
             display_name = self.asset_type_combo.currentText()
 
-            # ✅ 使用工具函数将中文名称转换为AssetType枚举
+            # 使用工具函数将中文名称转换为AssetType枚举
             from core.ui_asset_type_utils import parse_asset_type_from_combo
             asset_type_enum = parse_asset_type_from_combo(display_name)
 

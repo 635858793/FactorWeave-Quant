@@ -34,6 +34,7 @@ class NotificationType(Enum):
     SMS = "sms"
     PUSH = "push"
     WEBHOOK = "webhook"
+    DINGTALK = "dingtalk"
     DESKTOP = "desktop"
     SYSTEM = "system"
 
@@ -149,6 +150,7 @@ class NotificationStats:
     sms_sent: int = 0
     push_sent: int = 0
     webhook_sent: int = 0
+    dingtalk_sent: int = 0
     avg_delivery_time: float = 0.0
     last_update: datetime = field(default_factory=datetime.now)
 
@@ -222,7 +224,9 @@ class NotificationService(BaseService):
             "rate_limits": {
                 "email": 100,  # 每分钟最大发送数
                 "sms": 10,
-                "push": 1000
+                "push": 1000,
+                "webhook": 50,
+                "dingtalk": 50
             }
         }
 
@@ -233,6 +237,8 @@ class NotificationService(BaseService):
         self._service_lock = threading.RLock()
         self._processing_thread: Optional[threading.Thread] = None
         self._stop_processing = threading.Event()
+        self._pause_processing = threading.Event()
+        self._pause_processing.set()  # 默认不暂停
 
         logger.info("NotificationService initialized for architecture simplification")
 
@@ -250,7 +256,10 @@ class NotificationService(BaseService):
             # 3. 加载通知配置
             self._load_notification_config()
 
-            # 4. 启动消息处理线程
+            # 4. 加载告警规则
+            self._load_alert_rules()
+
+            # 5. 启动消息处理线程
             self._start_message_processing()
 
             logger.info("NotificationService initialized successfully")
@@ -279,9 +288,29 @@ class NotificationService(BaseService):
                 enabled=False  # 默认禁用，需要配置后启用
             )
 
+            # Webhook渠道
+            webhook_channel = NotificationChannel(
+                channel_id="default_webhook",
+                name="默认Webhook",
+                notification_type=NotificationType.WEBHOOK,
+                config={"webhook_url": ""},
+                enabled=False  # 默认禁用，需要配置后启用
+            )
+
+            # 钉钉渠道
+            dingtalk_channel = NotificationChannel(
+                channel_id="default_dingtalk",
+                name="默认钉钉",
+                notification_type=NotificationType.DINGTALK,
+                config={"webhook_url": "", "secret": "", "at_mobiles": [], "is_at_all": False},
+                enabled=False  # 默认禁用，需要配置后启用
+            )
+
             with self._channel_lock:
                 self._channels["system_log"] = system_channel
                 self._channels["default_email"] = email_channel
+                self._channels["default_webhook"] = webhook_channel
+                self._channels["default_dingtalk"] = dingtalk_channel
 
             logger.info("✓ Default notification channels initialized")
 
@@ -322,11 +351,122 @@ class NotificationService(BaseService):
     def _load_notification_config(self) -> None:
         """加载通知配置"""
         try:
-            # 这里可以从配置服务加载配置
-            logger.info("✓ Notification configuration loaded")
-
+            from db.models.alert_config_models import get_alert_config_database, NotificationConfig
+            
+            # 从数据库加载通知配置
+            db = get_alert_config_database()
+            config = db.load_notification_config()
+            
+            if config:
+                # 更新邮件配置
+                self._notification_config["email_config"].update({
+                    "smtp_server": config.smtp_host or "localhost",
+                    "smtp_port": config.smtp_port or 587,
+                    "use_tls": True,
+                    "username": config.sender_email or "",
+                    "password": config.email_api_key or "",
+                    "from_email": config.sender_email or "",
+                    "from_name": config.sender_name or "FactorWeave-Quant 系统"
+                })
+                
+                # 更新邮件渠道配置
+                if "default_email" in self._channels:
+                    self._channels["default_email"].config = self._notification_config["email_config"]
+                    self._channels["default_email"].enabled = config.email_enabled
+                
+                logger.info(f"✓ Notification configuration loaded from database")
+                logger.info(f"  - Email: {'enabled' if config.email_enabled else 'disabled'}")
+                logger.info(f"  - SMS: {'enabled' if config.sms_enabled else 'disabled'}")
+                logger.info(f"  - Desktop: {'enabled' if config.desktop_enabled else 'disabled'}")
+                logger.info(f"  - Sound: {'enabled' if config.sound_enabled else 'disabled'}")
+            else:
+                logger.info("✓ Using default notification configuration (no config in database)")
+                
         except Exception as e:
             logger.error(f"Failed to load notification config: {e}")
+            logger.info("✓ Using default notification configuration")
+
+    def _load_alert_rules(self) -> None:
+        """从数据库加载告警规则"""
+        try:
+            from db.models.alert_config_models import get_alert_config_database
+            
+            db = get_alert_config_database()
+            rules = db.load_alert_rules()
+            
+            with self._rule_lock:
+                for rule_data in rules:
+                    # 转换 AlertRule 数据对象
+                    rule = AlertRule(
+                        rule_id=str(rule_data.id),
+                        name=rule_data.name,
+                        description=rule_data.description,
+                        metric_name=rule_data.metric_name,
+                        condition=self._parse_condition(rule_data.operator, rule_data.threshold_value),
+                        threshold_value=rule_data.threshold_value,
+                        alert_level=self._parse_alert_level(rule_data.priority),
+                        channels=self._get_channels_from_settings(rule_data),
+                        enabled=rule_data.enabled,
+                        cooldown_minutes=rule_data.silence_period,
+                        metadata={
+                            'email_recipients': rule_data.email_recipients,
+                            'sms_recipients': rule_data.sms_recipients,
+                            'webhook_url': rule_data.webhook_url,
+                            'dingtalk_webhook_url': rule_data.dingtalk_webhook_url,
+                            'message_template': rule_data.message_template
+                        }
+                    )
+                    self._alert_rules[rule.rule_id] = rule
+            
+            logger.info(f"✓ 从数据库加载了 {len(rules)} 条告警规则")
+            
+        except Exception as e:
+            logger.error(f"从数据库加载告警规则失败: {e}")
+
+    def _parse_condition(self, operator: str, threshold_value: float):
+        """解析条件"""
+        from core.services.alert_rule_engine import RuleCondition
+        
+        operator_map = {
+            '>': RuleCondition.GREATER_THAN,
+            '>=': RuleCondition.GREATER_THAN_OR_EQUAL,
+            '<': RuleCondition.LESS_THAN,
+            '<=': RuleCondition.LESS_THAN_OR_EQUAL,
+            '==': RuleCondition.EQUAL,
+            '!=': RuleCondition.NOT_EQUAL
+        }
+        
+        return operator_map.get(operator, RuleCondition.GREATER_THAN)
+
+    def _parse_alert_level(self, priority: str):
+        """解析告警级别"""
+        from core.services.notification_service import AlertLevel
+        
+        level_map = {
+            '低': AlertLevel.INFO,
+            '中': AlertLevel.WARNING,
+            '高': AlertLevel.ERROR,
+            '紧急': AlertLevel.CRITICAL
+        }
+        
+        return level_map.get(priority, AlertLevel.WARNING)
+
+    def _get_channels_from_settings(self, rule_data) -> List[str]:
+        """根据规则设置获取通知渠道列表"""
+        channels = []
+        if rule_data.desktop_notification:
+            channels.append("desktop")
+        if rule_data.sound_notification:
+            channels.append("sound")
+        if rule_data.email_notification:
+            channels.append("default_email")
+        if rule_data.sms_notification:
+            channels.append("sms")
+        if rule_data.webhook_notification:
+            channels.append("default_webhook")
+        if rule_data.dingtalk_notification:
+            channels.append("default_dingtalk")
+        return channels
 
     def _start_message_processing(self) -> None:
         """启动消息处理线程"""
@@ -344,10 +484,51 @@ class NotificationService(BaseService):
         except Exception as e:
             logger.error(f"Failed to start message processing: {e}")
 
+    def pause_notification_service(self) -> bool:
+        """暂停通知服务，停止发送所有通知（防止信息爆炸和费用爆炸）"""
+        try:
+            self._pause_processing.clear()
+            logger.info("Notification service paused - all notifications suspended")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to pause notification service: {e}")
+            return False
+
+    def resume_notification_service(self) -> bool:
+        """恢复通知服务，继续发送通知"""
+        try:
+            self._pause_processing.set()
+            logger.info("Notification service resumed - all notifications enabled")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to resume notification service: {e}")
+            return False
+
+    def is_notification_paused(self) -> bool:
+        """检查通知服务是否已暂停"""
+        return not self._pause_processing.is_set()
+
+    def stop_all_notifications(self) -> bool:
+        """完全停止通知服务（清理待发送队列并暂停）"""
+        try:
+            with self._message_lock:
+                self._pending_messages.clear()
+            self._pause_processing.clear()
+            logger.warning("All notifications stopped - queue cleared and service paused")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to stop all notifications: {e}")
+            return False
+
     def _process_messages(self) -> None:
         """处理待发送消息的后台线程"""
         while not self._stop_processing.is_set():
             try:
+                # 暂停时等待
+                self._pause_processing.wait()
+                if self._stop_processing.is_set():
+                    break
+
                 with self._message_lock:
                     if self._pending_messages:
                         message = self._pending_messages.popleft()
@@ -465,7 +646,8 @@ class NotificationService(BaseService):
     def send_notification(self, title: str, content: str, channels: List[str],
                           alert_level: AlertLevel = AlertLevel.INFO,
                           template_id: Optional[str] = None,
-                          variables: Optional[Dict[str, Any]] = None) -> str:
+                          variables: Optional[Dict[str, Any]] = None,
+                          notification_config: Optional[Dict[str, Any]] = None) -> str:
         """发送通知"""
         try:
             message_id = str(uuid.uuid4())
@@ -476,6 +658,12 @@ class NotificationService(BaseService):
                 if variables:
                     title = template.subject_template.format(**variables)
                     content = template.content_template.format(**variables)
+
+            # 合并配置参数到variables
+            if notification_config:
+                if not variables:
+                    variables = {}
+                variables.update(notification_config)
 
             message = AlertMessage(
                 message_id=message_id,
@@ -536,6 +724,18 @@ class NotificationService(BaseService):
                 title = f"警报：{rule.name}"
                 content = f"规则：{rule.description}\n当前值：{metric_value}\n阈值：{rule.threshold_value}"
 
+                # 准备通知配置参数
+                notification_config = {}
+                if rule.metadata:
+                    # 从规则元数据中提取通知配置
+                    notification_config.update({
+                        'email_recipients': rule.metadata.get('email_recipients', ''),
+                        'sms_recipients': rule.metadata.get('sms_recipients', ''),
+                        'webhook_url': rule.metadata.get('webhook_url', ''),
+                        'dingtalk_webhook_url': rule.metadata.get('dingtalk_webhook_url', ''),
+                        'message_template': rule.metadata.get('message_template', '')
+                    })
+
                 message_id = self.send_notification(
                     title=title,
                     content=content,
@@ -546,7 +746,8 @@ class NotificationService(BaseService):
                         "metric_value": str(metric_value),
                         "threshold": str(rule.threshold_value),
                         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    }
+                    },
+                    notification_config=notification_config
                 )
 
                 return message_id
@@ -643,6 +844,10 @@ class NotificationService(BaseService):
                     self._notification_stats.email_sent += 1
                 if any(ch.notification_type == NotificationType.SMS for ch_id in message.channels for ch in [self.get_channel(ch_id)] if ch):
                     self._notification_stats.sms_sent += 1
+                if any(ch.notification_type == NotificationType.WEBHOOK for ch_id in message.channels for ch in [self.get_channel(ch_id)] if ch):
+                    self._notification_stats.webhook_sent += 1
+                if any(ch.notification_type == NotificationType.DINGTALK for ch_id in message.channels for ch in [self.get_channel(ch_id)] if ch):
+                    self._notification_stats.dingtalk_sent += 1
 
                 logger.info(f"Message sent successfully: {message.message_id}")
                 return True
@@ -689,6 +894,8 @@ class NotificationService(BaseService):
                 return self._send_sms_notification(message, channel)
             elif channel.notification_type == NotificationType.WEBHOOK:
                 return self._send_webhook_notification(message, channel)
+            elif channel.notification_type == NotificationType.DINGTALK:
+                return self._send_dingtalk_notification(message, channel)
             else:
                 logger.warning(f"Unsupported notification type: {channel.notification_type}")
                 return False
@@ -720,11 +927,60 @@ class NotificationService(BaseService):
     def _send_email_notification(self, message: AlertMessage, channel: NotificationChannel) -> bool:
         """发送邮件通知"""
         try:
-            # 简化的邮件发送实现
-            # 在真实环境中会使用SMTP或邮件服务API
-            logger.info(f"Email notification sent: {message.title} to {channel.name}")
-            return True
+            from email.mime.text import MIMEText
+            from email.mime.multipart import MIMEMultipart
+            from email.utils import formataddr
+            import smtplib
 
+            config = channel.config
+            smtp_server = config.get('smtp_server', 'localhost')
+            smtp_port = config.get('smtp_port', 587)
+            username = config.get('username', '')
+            password = config.get('password', '')
+            from_email = config.get('from_email', '')
+            from_name = config.get('from_name', 'FactorWeave-Quant 系统')
+            
+            # 获取收件人（从消息元数据或渠道配置）
+            to_emails = message.metadata.get('email_recipients', config.get('to_emails', ''))
+            if isinstance(to_emails, str):
+                to_emails = [email.strip() for email in to_emails.split(',') if email.strip()]
+            
+            if not to_emails:
+                logger.warning("No email recipients specified")
+                return False
+            
+            # 创建邮件内容
+            msg = MIMEMultipart()
+            msg['From'] = formataddr((from_name, from_email))
+            msg['To'] = ', '.join(to_emails)
+            msg['Subject'] = f"[{message.alert_level.value.upper()}] {message.title}"
+            
+            # 邮件正文
+            body = f"""
+{message.content}
+
+---
+发送时间: {message.created_time.strftime('%Y-%m-%d %H:%M:%S')}
+规则ID: {message.rule_id}
+消息ID: {message.message_id}
+            """.strip()
+            
+            msg.attach(MIMEText(body, 'plain', 'utf-8'))
+            
+            # 发送邮件
+            if smtp_server and username and password:
+                with smtplib.SMTP(smtp_server, smtp_port) as server:
+                    server.starttls()
+                    server.login(username, password)
+                    server.send_message(msg)
+                    server.quit()
+                
+                logger.info(f"Email notification sent: {message.title} to {len(to_emails)} recipients")
+                return True
+            else:
+                logger.warning("Email configuration incomplete, skipping actual send")
+                return True  # 返回True以避免重试
+                
         except Exception as e:
             logger.error(f"Failed to send email notification: {e}")
             return False
@@ -744,13 +1000,141 @@ class NotificationService(BaseService):
     def _send_webhook_notification(self, message: AlertMessage, channel: NotificationChannel) -> bool:
         """发送Webhook通知"""
         try:
-            # 简化的Webhook发送实现
-            # 在真实环境中会发送HTTP请求
-            logger.info(f"Webhook notification sent: {message.title} to {channel.name}")
-            return True
-
+            import urllib.request
+            import json
+            
+            config = channel.config
+            webhook_url = message.metadata.get('webhook_url', config.get('webhook_url', ''))
+            
+            if not webhook_url:
+                logger.warning("Webhook URL not specified")
+                return False
+            
+            # 准备请求数据
+            payload = {
+                'alert_id': message.message_id,
+                'rule_id': message.rule_id,
+                'level': message.alert_level.value,
+                'title': message.title,
+                'content': message.content,
+                'timestamp': message.created_time.isoformat(),
+                'metadata': message.metadata
+            }
+            
+            # 发送HTTP POST请求
+            data = json.dumps(payload).encode('utf-8')
+            req = urllib.request.Request(
+                webhook_url,
+                data=data,
+                headers={
+                    'Content-Type': 'application/json',
+                    'Content-Length': str(len(data))
+                },
+                method='POST'
+            )
+            
+            with urllib.request.urlopen(req, timeout=10) as response:
+                response_code = response.getcode()
+                if 200 <= response_code < 300:
+                    logger.info(f"Webhook notification sent: {message.title} to {webhook_url}")
+                    return True
+                else:
+                    logger.warning(f"Webhook returned status code: {response_code}")
+                    return False
+                
+        except urllib.error.HTTPError as e:
+            logger.error(f"Webhook HTTP error: {e.code} - {e.reason}")
+            return False
+        except urllib.error.URLError as e:
+            logger.error(f"Webhook URL error: {e.reason}")
+            return False
         except Exception as e:
             logger.error(f"Failed to send webhook notification: {e}")
+            return False
+
+    def _send_dingtalk_notification(self, message: AlertMessage, channel: NotificationChannel) -> bool:
+        """发送钉钉通知"""
+        try:
+            import urllib.request
+            import json
+            import hashlib
+            import base64
+            import hmac
+            import time
+            
+            config = channel.config
+            webhook_url = message.metadata.get('dingtalk_webhook_url', config.get('webhook_url', ''))
+            secret = config.get('secret', '')
+            at_mobiles = config.get('at_mobiles', [])
+            is_at_all = config.get('is_at_all', False)
+            
+            if not webhook_url:
+                logger.warning("DingTalk webhook URL not specified")
+                return False
+            
+            # 准备钉钉消息格式
+            dingtalk_message = {
+                "msgtype": "text",
+                "text": {
+                    "content": f"{message.title}\n\n{message.content}"
+                }
+            }
+            
+            # 添加@信息
+            if at_mobiles or is_at_all:
+                dingtalk_message["at"] = {
+                    "atMobiles": at_mobiles,
+                    "isAtAll": is_at_all
+                }
+            
+            # 计算签名（如果有密钥）
+            timestamp = str(int(time.time() * 1000))
+            if secret:
+                secret_enc = secret.encode('utf-8')
+                string_to_sign = f'{timestamp}\n{json.dumps(dingtalk_message)}'
+                string_to_sign_enc = string_to_sign.encode('utf-8')
+                hmac_code = hmac.new(secret_enc, string_to_sign_enc, digestmod=hashlib.sha256).digest()
+                sign = base64.b64encode(hmac_code).decode('utf-8')
+                
+                dingtalk_message["timestamp"] = timestamp
+                dingtalk_message["sign"] = sign
+            
+            # 发送HTTP POST请求
+            data = json.dumps(dingtalk_message).encode('utf-8')
+            req = urllib.request.Request(
+                webhook_url,
+                data=data,
+                headers={
+                    'Content-Type': 'application/json',
+                    'Content-Length': str(len(data))
+                },
+                method='POST'
+            )
+            
+            with urllib.request.urlopen(req, timeout=10) as response:
+                response_code = response.getcode()
+                response_data = response.read().decode('utf-8')
+                
+                if 200 <= response_code < 300:
+                    result = json.loads(response_data)
+                    if result.get('errcode') == 0:
+                        logger.info(f"DingTalk notification sent: {message.title}")
+                        return True
+                    else:
+                        logger.error(f"DingTalk API error: {result.get('errmsg', 'Unknown error')}")
+                        return False
+                else:
+                    logger.warning(f"DingTalk returned status code: {response_code}")
+                    return False
+                
+        except urllib.error.HTTPError as e:
+            logger.error(f"DingTalk HTTP error: {e.code} - {e.reason}")
+            return False
+        except urllib.error.URLError as e:
+            logger.error(f"DingTalk URL error: {e.reason}")
+            return False
+        except Exception as e:
+            logger.error(f"Failed to send dingtalk notification: {e}")
             return False
 
     # 公共接口方法
@@ -841,3 +1225,16 @@ class NotificationService(BaseService):
 
         except Exception as e:
             logger.error(f"Error disposing NotificationService: {e}")
+
+# 全局 NotificationService 实例
+_global_notification_service = None
+
+def get_notification_service() -> Optional['NotificationService']:
+    """获取全局 NotificationService 实例"""
+    return _global_notification_service
+
+def init_notification_service(service_container=None) -> 'NotificationService':
+    """初始化全局 NotificationService 实例"""
+    global _global_notification_service
+    _global_notification_service = NotificationService(service_container)
+    return _global_notification_service

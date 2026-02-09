@@ -148,7 +148,7 @@ class ServiceHealthMonitor(QObject):
             # 启动Web仪表板
             self._start_web_dashboard()
 
-            logger.info("✅ Service health monitoring started")
+            logger.info("Service health monitoring started")
 
     def stop_monitoring(self) -> None:
         """停止健康监控"""
@@ -586,7 +586,7 @@ class ServiceHealthMonitor(QObject):
                     ]
 
                     if not active_alerts:
-                        return "<p>✅ No active alerts.</p>"
+                        return "<p>No active alerts.</p>"
 
                     html = '<div class="alerts">'
                     for alert in sorted(active_alerts, key=lambda a: a.timestamp, reverse=True):

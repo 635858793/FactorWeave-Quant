@@ -134,7 +134,9 @@ class QualityScoreGauge(QWidget):
         self.title = title
         self.score = 0.0
         self.target_score = 0.8
-        self.setFixedSize(120, 120)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.setMinimumSize(120, 120)
+        self.setMaximumSize(120, 120)
 
     def set_score(self, score: float):
         """设置评分"""

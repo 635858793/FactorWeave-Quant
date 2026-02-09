@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (
     QTabWidget, QLabel, QLineEdit, QTextEdit, QTableWidget,
     QTableWidgetItem, QPushButton, QComboBox, QFrame,
     QGroupBox, QMessageBox, QHeaderView, QAbstractItemView,
-    QMenu, QAction, QSplitter, QDoubleSpinBox, QSpinBox, QWidget
+    QMenu, QAction, QSplitter, QDoubleSpinBox, QSpinBox, QWidget, QSizePolicy
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QFont, QColor
@@ -276,12 +276,16 @@ class AccountManagementDialog(QDialog):
 
                 edit_btn = QPushButton("编辑")
                 edit_btn.clicked.connect(self._create_account_edit_handler(account))
-                edit_btn.setFixedWidth(50)
+                edit_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+                edit_btn.setMinimumWidth(50)
+                edit_btn.setMaximumWidth(50)
                 operation_layout.addWidget(edit_btn)
 
                 delete_btn = QPushButton("删除")
                 delete_btn.clicked.connect(self._create_account_delete_handler(account))
-                delete_btn.setFixedWidth(50)
+                delete_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+                delete_btn.setMinimumWidth(50)
+                delete_btn.setMaximumWidth(50)
                 operation_layout.addWidget(delete_btn)
 
                 operation_layout.addStretch()

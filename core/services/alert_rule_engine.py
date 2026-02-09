@@ -640,7 +640,7 @@ def get_alert_rule_engine(dedup_service: AlertDeduplicationService = None) -> Al
     return _alert_rule_engine
 
 
-def initialize_alert_rule_engine(event_bus=None, dedup_service: AlertDeduplicationService = None) -> AlertRuleEngine:
+def initialize_alert_rule_engine(event_bus=None, dedup_service=None) -> AlertRuleEngine:
     """
     初始化告警规则引擎
 

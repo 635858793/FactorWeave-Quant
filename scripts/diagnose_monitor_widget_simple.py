@@ -23,7 +23,7 @@ def diagnose_monitor_widget():
             from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel
             from PyQt5.QtCore import QTimer, pyqtSignal
             from PyQt5.QtGui import QColor
-            logger.info("   ✅ PyQt5 导入成功")
+            logger.info("   PyQt5 导入成功")
         except ImportError as e:
             logger.error(f"   ❌ PyQt5 导入失败: {e}")
             return False
@@ -32,7 +32,7 @@ def diagnose_monitor_widget():
         logger.info("\n2. 检查文件是否存在...")
         file_path = "gui/widgets/adaptive_pool_monitor_widget.py"
         if os.path.exists(file_path):
-            logger.info(f"   ✅ 文件存在: {file_path}")
+            logger.info(f"   文件存在: {file_path}")
         else:
             logger.error(f"   ❌ 文件不存在: {file_path}")
             return False
@@ -41,7 +41,7 @@ def diagnose_monitor_widget():
         logger.info("\n3. 尝试导入模块...")
         try:
             from gui.widgets.adaptive_pool_monitor_widget import AdaptivePoolMonitorWidget
-            logger.info("   ✅ 模块导入成功")
+            logger.info("   模块导入成功")
         except ImportError as e:
             logger.error(f"   ❌ 模块导入失败: {e}")
             import traceback
@@ -65,7 +65,7 @@ def diagnose_monitor_widget():
         logger.info("\n5. 检查 UI 组件导入...")
         try:
             from gui.dialogs.connection_pool_manager_dialog import ConnectionPoolManagerDialog
-            logger.info("   ✅ ConnectionPoolManagerDialog 导入成功")
+            logger.info("   ConnectionPoolManagerDialog 导入成功")
         except ImportError as e:
             logger.error(f"   ❌ ConnectionPoolManagerDialog 导入失败: {e}")
             return False

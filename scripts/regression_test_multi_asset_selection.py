@@ -67,7 +67,7 @@ def test_fundamental_data_abstraction():
             asset_type=AssetType.STOCK_A
         )
 
-        print(f"✅ 股票基本面数据创建成功")
+        print(f"股票基本面数据创建成功")
         print(f"   - 股票代码: {stock_data.symbol}")
         print(f"   - 资产类型: {stock_data.asset_type.value}")
         print(f"   - 评分: {stock_data.get_score():.2f}")
@@ -92,7 +92,7 @@ def test_fundamental_data_abstraction():
             asset_type=AssetType.FUTURES
         )
 
-        print(f"✅ 期货基本面数据创建成功")
+        print(f"期货基本面数据创建成功")
         print(f"   - 期货代码: {futures_data.symbol}")
         print(f"   - 资产类型: {futures_data.asset_type.value}")
         print(f"   - 评分: {futures_data.get_score():.2f}")
@@ -119,7 +119,7 @@ def test_fundamental_data_abstraction():
             asset_type=AssetType.CRYPTO
         )
 
-        print(f"✅ 加密货币基本面数据创建成功")
+        print(f"加密货币基本面数据创建成功")
         print(f"   - 加密货币代码: {crypto_data.symbol}")
         print(f"   - 资产类型: {crypto_data.asset_type.value}")
         print(f"   - 评分: {crypto_data.get_score():.2f}")
@@ -148,9 +148,9 @@ def test_fundamental_data_abstraction():
         ]
 
         fundamental_data_list = FundamentalDataFactory.create_batch(data_list)
-        print(f"✅ 批量创建基本面数据成功: {len(fundamental_data_list)}个")
+        print(f"批量创建基本面数据成功: {len(fundamental_data_list)}个")
 
-        print("\n✅ 基本面数据抽象层测试通过")
+        print("\n基本面数据抽象层测试通过")
         return True
 
     except Exception as e:
@@ -167,7 +167,7 @@ def test_selection_strategies():
     try:
         print("\n[2.1] 测试股票价值策略")
         stock_strategy = StockValueStrategy()
-        print(f"✅ 股票价值策略创建成功")
+        print(f"股票价值策略创建成功")
         print(f"   - 策略描述: {stock_strategy.get_description()}")
 
         # 创建测试数据
@@ -201,7 +201,7 @@ def test_selection_strategies():
         )
 
         result = stock_strategy.select_assets(stock_data_list, criteria)
-        print(f"✅ 股票价值选股成功")
+        print(f"股票价值选股成功")
         print(f"   - 总计资产: {result.metadata['total_assets']}")
         print(f"   - 过滤后资产: {result.metadata['filtered_assets']}")
         print(f"   - 选中资产: {result.metadata['selected_assets']}")
@@ -209,7 +209,7 @@ def test_selection_strategies():
 
         print("\n[2.2] 测试期货动量策略")
         futures_strategy = FuturesMomentumStrategy()
-        print(f"✅ 期货动量策略创建成功")
+        print(f"期货动量策略创建成功")
         print(f"   - 策略描述: {futures_strategy.get_description()}")
 
         # 创建测试数据
@@ -240,7 +240,7 @@ def test_selection_strategies():
         )
 
         result = futures_strategy.select_assets(futures_data_list, criteria)
-        print(f"✅ 期货动量选股成功")
+        print(f"期货动量选股成功")
         print(f"   - 总计资产: {result.metadata['total_assets']}")
         print(f"   - 过滤后资产: {result.metadata['filtered_assets']}")
         print(f"   - 选中资产: {result.metadata['selected_assets']}")
@@ -248,7 +248,7 @@ def test_selection_strategies():
 
         print("\n[2.3] 测试加密货币成长策略")
         crypto_strategy = CryptoGrowthStrategy()
-        print(f"✅ 加密货币成长策略创建成功")
+        print(f"加密货币成长策略创建成功")
         print(f"   - 策略描述: {crypto_strategy.get_description()}")
 
         # 创建测试数据
@@ -281,13 +281,13 @@ def test_selection_strategies():
         )
 
         result = crypto_strategy.select_assets(crypto_data_list, criteria)
-        print(f"✅ 加密货币成长选股成功")
+        print(f"加密货币成长选股成功")
         print(f"   - 总计资产: {result.metadata['total_assets']}")
         print(f"   - 过滤后资产: {result.metadata['filtered_assets']}")
         print(f"   - 选中资产: {result.metadata['selected_assets']}")
         print(f"   - 选中资产列表: {result.selected_assets}")
 
-        print("\n✅ 选股策略测试通过")
+        print("\n选股策略测试通过")
         return True
 
     except Exception as e:
@@ -305,7 +305,7 @@ def test_integration_with_data_manager():
         print("\n[3.1] 测试UniPluginDataManager的新方法")
 
         # 注意：这里只是验证方法存在，不实际调用（因为需要完整的初始化）
-        print("✅ UniPluginDataManager已集成基本面数据抽象层")
+        print("UniPluginDataManager已集成基本面数据抽象层")
         print("   - 新增方法: get_fundamental_data_object()")
         print("   - 新增方法: get_fundamental_data_objects_batch()")
         print("   - 这些方法使用FundamentalDataFactory创建基本面数据对象")
@@ -335,7 +335,7 @@ def test_integration_with_data_manager():
         assert 'ROE' in data_dict['indicators']
         assert 'DEBT_RATIO' in data_dict['indicators']
 
-        print("✅ 数据转换一致性验证通过")
+        print("数据转换一致性验证通过")
         print(f"   - 原始数据: PE_RATIO={raw_data['pe_ratio']}, PB_RATIO={raw_data['pb_ratio']}")
         print(f"   - 转换后数据: PE_RATIO={data_dict['indicators']['PE_RATIO']}, PB_RATIO={data_dict['indicators']['PB_RATIO']}")
 
@@ -344,11 +344,11 @@ def test_integration_with_data_manager():
         score2 = fundamental_data.get_score()
         assert score1 == score2
 
-        print("✅ 评分计算一致性验证通过")
+        print("评分计算一致性验证通过")
         print(f"   - 第一次评分: {score1:.2f}")
         print(f"   - 第二次评分: {score2:.2f}")
 
-        print("\n✅ 与UniPluginDataManager的集成测试通过")
+        print("\n与UniPluginDataManager的集成测试通过")
         return True
 
     except Exception as e:
@@ -388,12 +388,12 @@ def test_end_to_end_workflow():
             )
             stock_data_list.append(stock_data)
 
-        print(f"✅ 创建了 {len(stock_data_list)} 个基本面数据对象")
+        print(f"创建了 {len(stock_data_list)} 个基本面数据对象")
 
         # 步骤2：初始化选股策略
         print("\n步骤2：初始化选股策略")
         strategy = StockValueStrategy()
-        print(f"✅ 初始化选股策略: {strategy.get_description()}")
+        print(f"初始化选股策略: {strategy.get_description()}")
 
         # 步骤3：设置选股标准
         print("\n步骤3：设置选股标准")
@@ -403,12 +403,12 @@ def test_end_to_end_workflow():
             max_assets=10,
             min_score=40.0
         )
-        print(f"✅ 设置选股标准: 最大资产={criteria.max_assets}, 最小评分={criteria.min_score}")
+        print(f"设置选股标准: 最大资产={criteria.max_assets}, 最小评分={criteria.min_score}")
 
         # 步骤4：执行选股
         print("\n步骤4：执行选股")
         result = strategy.select_assets(stock_data_list, criteria)
-        print(f"✅ 选股完成")
+        print(f"选股完成")
         print(f"   - 总计资产: {result.metadata['total_assets']}")
         print(f"   - 过滤后资产: {result.metadata['filtered_assets']}")
         print(f"   - 选中资产: {result.metadata['selected_assets']}")
@@ -417,7 +417,7 @@ def test_end_to_end_workflow():
         print("\n步骤5：验证选股结果")
         assert len(result.selected_assets) <= criteria.max_assets
         assert all(score >= criteria.min_score for score in result.scores.values())
-        print("✅ 选股结果验证通过")
+        print("选股结果验证通过")
 
         # 步骤6：输出选股结果详情
         print("\n步骤6：输出选股结果详情")
@@ -426,7 +426,7 @@ def test_end_to_end_workflow():
             score = result.scores[asset]
             print(f"  - {asset}: {score:.2f}")
 
-        print("\n✅ 端到端工作流程测试通过")
+        print("\n端到端工作流程测试通过")
         return True
 
     except Exception as e:
@@ -489,7 +489,7 @@ def test_multi_asset_selection():
             )
             crypto_data_list.append(crypto_data)
 
-        print(f"✅ 创建了多资产类型的基本面数据")
+        print(f"创建了多资产类型的基本面数据")
         print(f"   - 股票: {len(stock_data_list)}个")
         print(f"   - 期货: {len(futures_data_list)}个")
         print(f"   - 加密货币: {len(crypto_data_list)}个")
@@ -526,12 +526,12 @@ def test_multi_asset_selection():
         )
         crypto_result = crypto_strategy.select_assets(crypto_data_list, crypto_criteria)
 
-        print(f"✅ 多资产类型选股完成")
+        print(f"多资产类型选股完成")
         print(f"   - 股票选股: {stock_result.selected_assets}")
         print(f"   - 期货选股: {futures_result.selected_assets}")
         print(f"   - 加密货币选股: {crypto_result.selected_assets}")
 
-        print("\n✅ 多资产类型选股测试通过")
+        print("\n多资产类型选股测试通过")
         return True
 
     except Exception as e:
@@ -561,7 +561,7 @@ def main():
     total = len(results)
 
     for name, result in results:
-        status = "✅ 通过" if result else "❌ 失败"
+        status = "通过" if result else "❌ 失败"
         print(f"{status} - {name}")
 
     print(f"\n总计: {passed}/{total} 测试通过")

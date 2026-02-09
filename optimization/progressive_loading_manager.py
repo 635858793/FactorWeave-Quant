@@ -64,7 +64,7 @@ class ProgressiveLoadingManager:
         # 加载队列（使用优先级队列）
         self.task_queue = PriorityQueue()
         
-        # ✅ 修复：使用信号机制实现立即唤醒（替代超时轮询）
+        # 修复：使用信号机制实现立即唤醒（替代超时轮询）
         self.task_available = threading.Event()  # 任务可用信号
         self.shutdown_event = threading.Event()  # 关闭信号
 
@@ -171,7 +171,7 @@ class ProgressiveLoadingManager:
 
         self.is_running = False
         
-        # ✅ 修复：使用信号机制唤醒所有工作线程
+        # 修复：使用信号机制唤醒所有工作线程
         self.shutdown_event.set()
         self.task_available.set()  # 唤醒所有等待的线程
 
@@ -214,7 +214,7 @@ class ProgressiveLoadingManager:
         """工作线程主循环 - 使用信号机制实现立即唤醒"""
         while self.is_running:
             try:
-                # ✅ 修复：使用信号机制替代超时轮询，实现立即唤醒
+                # 修复：使用信号机制替代超时轮询，实现立即唤醒
                 # 等待任务可用信号（无超时，实现真正的立即唤醒）
                 # 使用1.0秒安全超时仅用于定期检查is_running状态，防止线程永远阻塞
                 self.task_available.wait(timeout=1.0)
@@ -587,7 +587,7 @@ class ProgressiveLoadingManager:
             # 添加到队列
             self.task_queue.put(task)
             
-            # ✅ 修复：使用信号机制立即唤醒工作线程
+            # 修复：使用信号机制立即唤醒工作线程
             self.task_available.set()
 
             # 更新统计
@@ -708,7 +708,7 @@ class ProgressiveLoadingManager:
                 except Empty:
                     break
             
-            # ✅ 修复：清空队列后清除信号
+            # 修复：清空队列后清除信号
             if cleared_count > 0:
                 self.task_available.clear()
                 logger.info(f"已清空所有阶段的任务队列，清除 {cleared_count} 个任务")
@@ -735,7 +735,7 @@ class ProgressiveLoadingManager:
             # 替换队列
             self.task_queue = new_queue
             
-            # ✅ 修复：如果新队列有任务，设置信号；否则清除信号
+            # 修复：如果新队列有任务，设置信号；否则清除信号
             if not self.task_queue.empty():
                 self.task_available.set()
             else:

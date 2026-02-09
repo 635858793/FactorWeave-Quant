@@ -206,7 +206,7 @@ def retry_on_connection_error(
 
                     result = func(*args, **kwargs)
                     if attempt > 0:
-                        logger.info(f"✅ {log_prefix}成功 (重试{attempt}次后)")
+                        logger.info(f"{log_prefix}成功 (重试{attempt}次后)")
                     return result
 
                 except exceptions as e:
@@ -331,7 +331,7 @@ def batch_retry_wrapper(
     if failed_items:
         logger.warning(f"⚠️  批量处理完成: 成功{len(success_items)}, 失败{len(failed_items)}")
     else:
-        logger.info(f"✅ 批量处理全部成功: {len(success_items)}个{item_name}")
+        logger.info(f"批量处理全部成功: {len(success_items)}个{item_name}")
 
     return success_items, failed_items
 

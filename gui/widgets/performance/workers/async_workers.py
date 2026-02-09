@@ -188,24 +188,28 @@ class AlertHistoryWorker(QRunnable):
             history_data = []
 
             try:
-
                 # 创建或获取告警去重服务实例
-                alert_service = None
-                # 获取最近24小时的告警历史
-                alert_messages = alert_service.get_alert_history(hours=24)
+                from core.services.alert_deduplication_service import get_alert_deduplication_service
+                alert_service = get_alert_deduplication_service()
+                
+                if alert_service is not None:
+                    # 获取最近24小时的告警历史
+                    alert_messages = alert_service.get_alert_history(hours=24)
 
-                # 转换为UI显示格式
-                for alert in alert_messages:
-                    history_item = {
-                        'timestamp': alert.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
-                        'level': self._convert_alert_level(alert.level),
-                        'type': alert.category,
-                        'message': alert.message,
-                        'status': '已解决' if alert.is_resolved else '活跃'
-                    }
-                    history_data.append(history_item)
+                    # 转换为UI显示格式
+                    for alert in alert_messages:
+                        history_item = {
+                            'timestamp': alert.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+                            'level': self._convert_alert_level(alert.level),
+                            'type': alert.category,
+                            'message': alert.message,
+                            'status': '已解决' if alert.is_resolved else '活跃'
+                        }
+                        history_data.append(history_item)
 
-                logger.info(f"从AlertDeduplicationService加载了 {len(history_data)} 条告警记录")
+                    logger.info(f"从AlertDeduplicationService加载了 {len(history_data)} 条告警记录")
+                else:
+                    logger.warning("AlertDeduplicationService 未初始化")
 
             except ImportError as e:
                 logger.warning(f"无法导入AlertDeduplicationService: {e}")

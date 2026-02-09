@@ -915,7 +915,7 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
     def _create_professional_toolbar(self, layout):
         """创建专业工具栏"""
         toolbar = QFrame()
-        toolbar.setFixedHeight(160)  # 减少固定高度以防重叠
+        toolbar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         toolbar.setFrameStyle(QFrame.StyledPanel)
 
         toolbar_layout = QVBoxLayout(toolbar)
@@ -977,12 +977,11 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
         advanced_layout = QHBoxLayout(advanced_group)
 
         lmdQl = QLabel("灵敏度:")
-        lmdQl.setFixedWidth(80)
+        lmdQl.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
         # 灵敏度设置
         advanced_layout.addWidget(lmdQl)
         self.sensitivity_slider = QSlider(Qt.Horizontal)
-        self.sensitivity_slider.setMaximumWidth(200)
-        self.sensitivity_slider.setMinimumWidth(30)
+        self.sensitivity_slider.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.sensitivity_slider.setRange(1, 10)
         self.sensitivity_slider.setValue(5)
         self.sensitivity_slider.setToolTip("调整形态识别的灵敏度\n1=最保守, 10=最激进")
@@ -990,17 +989,17 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
 
         # 时间周期
         zqQl = QLabel("周期:")
-        zqQl.setFixedWidth(80)
+        zqQl.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
         advanced_layout.addWidget(zqQl)
         self.timeframe_combo = QComboBox()
-        self.timeframe_combo.setFixedWidth(80)
+        self.timeframe_combo.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.timeframe_combo.addItems(
             ["日线", "周线", "月线", "60分钟", "30分钟", "15分钟"])
         advanced_layout.addWidget(self.timeframe_combo)
 
         # 实时监控开关
         self.realtime_cb = QCheckBox("实时监控")
-        self.realtime_cb.setFixedWidth(90)
+        self.realtime_cb.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.realtime_cb.setToolTip("启用实时形态监控和预警")
         advanced_layout.addWidget(self.realtime_cb)
 
@@ -1833,7 +1832,7 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
    Alpha: {alpha:.3f}
    Beta: {beta:.3f}
 
-✅ 专业回测完成 | 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+专业回测完成 | 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"""
 
             # 显示结果
@@ -4110,3 +4109,43 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
 
         except Exception as e:
             logger.error(f"处理回测错误失败: {str(e)}")
+
+    def resizeEvent(self, event):
+        """窗口大小改变事件处理"""
+        super().resizeEvent(event)
+        self._update_responsive_layout()
+
+    def _update_responsive_layout(self):
+        """更新响应式布局"""
+        try:
+            window_width = self.width()
+            window_height = self.height()
+
+            logger.debug(f"PatternTabPro 响应式布局更新: {window_width}x{window_height}")
+
+            # 更新工具栏高度
+            toolbar = self.findChild(QFrame, "toolbar")
+            if toolbar:
+                toolbar_height = max(120, int(window_height * 0.2))
+                toolbar.setMinimumHeight(toolbar_height)
+                toolbar.setMaximumHeight(int(window_height * 0.3))
+
+            # 更新状态栏高度
+            status_frame = self.findChild(QFrame, "status_frame")
+            if status_frame:
+                status_height = max(30, int(window_height * 0.05))
+                status_frame.setFixedHeight(status_height)
+
+            # 更新滑块宽度
+            if hasattr(self, 'sensitivity_slider'):
+                slider_width = max(100, int(window_width * 0.15))
+                self.sensitivity_slider.setMinimumWidth(slider_width)
+                self.sensitivity_slider.setMaximumWidth(int(window_width * 0.3))
+
+            # 更新选择框宽度
+            if hasattr(self, 'timeframe_combo'):
+                combo_width = max(60, int(window_width * 0.08))
+                self.timeframe_combo.setFixedWidth(combo_width)
+
+        except Exception as e:
+            logger.error(f"更新响应式布局失败: {e}")

@@ -40,7 +40,7 @@ class StockMetadataEnhancer:
         self.akshare_available = False
         self.tushare_available = False
 
-        # ✅ 缓存机制
+        # 缓存机制
         self._stock_info_cache: Optional[pd.DataFrame] = None  # 缓存全部股票基本信息
         self._stock_info_cache_time: Optional[float] = None  # 缓存时间戳
         self._detailed_info_cache: Dict[str, Dict[str, Any]] = {}  # 缓存每个股票的详细信息
@@ -56,7 +56,7 @@ class StockMetadataEnhancer:
             import akshare as ak
             self.ak = ak
             self.akshare_available = True
-            logger.info("✅ AKShare可用，将用于补充股票元数据（已启用缓存机制）")
+            logger.info("AKShare可用，将用于补充股票元数据（已启用缓存机制）")
         except ImportError:
             logger.warning("AKShare不可用，无法使用AKShare补充元数据")
 
@@ -65,7 +65,7 @@ class StockMetadataEnhancer:
             import tushare as ts
             self.ts = ts
             self.tushare_available = True
-            logger.info("✅ Tushare可用，将用于补充股票元数据")
+            logger.info("Tushare可用，将用于补充股票元数据")
         except ImportError:
             logger.warning("Tushare不可用，无法使用Tushare补充元数据")
 
@@ -115,7 +115,7 @@ class StockMetadataEnhancer:
         result = {}
 
         try:
-            # ✅ 优化：从缓存获取股票基本信息，避免重复请求
+            # 优化：从缓存获取股票基本信息，避免重复请求
             stock_info_df = self._get_stock_info_cached()
 
             if stock_info_df is not None and not stock_info_df.empty:
@@ -135,8 +135,8 @@ class StockMetadataEnhancer:
                         }
 
                         # AKShare的stock_info_a_code_name可能不含行业信息
-                        # ✅ 优化：从缓存获取详细信息，避免重复请求
-                        # ✅ 修复：即使详细信息获取失败，也返回基本信息（至少包含股票名称）
+                        # 优化：从缓存获取详细信息，避免重复请求
+                        # 修复：即使详细信息获取失败，也返回基本信息（至少包含股票名称）
                         try:
                             detailed_info = self._get_detailed_info_akshare_cached(clean_code)
                             if detailed_info:
@@ -150,7 +150,7 @@ class StockMetadataEnhancer:
                         logger.debug(f"AKShare中未找到股票: {symbol}")
 
             if result:
-                logger.info(f"✅ AKShare补充完成，成功获取 {len(result)}/{len(symbols)} 个股票的元数据")
+                logger.info(f"AKShare补充完成，成功获取 {len(result)}/{len(symbols)} 个股票的元数据")
 
         except Exception as e:
             logger.error(f"❌ AKShare批量获取失败: {e}")
@@ -174,7 +174,7 @@ class StockMetadataEnhancer:
                 self._stock_info_cache_time is not None and
                     current_time - self._stock_info_cache_time < self._cache_ttl):
                 # 缓存有效，直接返回
-                logger.debug(f"✅ 使用缓存的股票基本信息（缓存年龄: {int(current_time - self._stock_info_cache_time)}秒）")
+                logger.debug(f"使用缓存的股票基本信息（缓存年龄: {int(current_time - self._stock_info_cache_time)}秒）")
                 return self._stock_info_cache.copy()  # 返回副本，避免外部修改
 
         # 缓存无效或不存在，需要刷新
@@ -197,7 +197,7 @@ class StockMetadataEnhancer:
             stock_info_df = self.ak.stock_info_a_code_name()
 
             if stock_info_df is not None and not stock_info_df.empty:
-                logger.info(f"✅ 获取到 {len(stock_info_df)} 条股票基本信息，已缓存")
+                logger.info(f"获取到 {len(stock_info_df)} 条股票基本信息，已缓存")
 
                 # 更新缓存
                 with self._cache_lock:
@@ -240,7 +240,7 @@ class StockMetadataEnhancer:
                 code in self._detailed_info_cache_time and
                     current_time - self._detailed_info_cache_time[code] < self._detailed_cache_ttl):
                 # 缓存有效，直接返回
-                logger.debug(f"✅ 使用缓存的股票详细信息: {code}（缓存年龄: {int(current_time - self._detailed_info_cache_time[code])}秒）")
+                logger.debug(f"使用缓存的股票详细信息: {code}（缓存年龄: {int(current_time - self._detailed_info_cache_time[code])}秒）")
                 return self._detailed_info_cache[code].copy()  # 返回副本，避免外部修改
 
         # 缓存无效或不存在，需要刷新
@@ -259,7 +259,7 @@ class StockMetadataEnhancer:
 
         # 从API获取（不在锁内，避免阻塞其他线程）
         try:
-            # ✅ 优化：添加超时机制，避免API调用阻塞太久
+            # 优化：添加超时机制，避免API调用阻塞太久
             import threading
             detailed_info = None
             api_error = None
@@ -395,7 +395,7 @@ class StockMetadataEnhancer:
                 self._detailed_info_cache.clear()
                 self._detailed_info_cache_time.clear()
                 self._refreshing_detailed_info.clear()
-            logger.info("✅ 缓存已清除")
+            logger.info("缓存已清除")
 
     def get_cache_stats(self) -> Dict[str, Any]:
         """
@@ -477,7 +477,7 @@ class StockMetadataEnhancer:
                 result_df = conn.execute(query).fetchdf()
 
             if result_df.empty:
-                logger.info("✅ 所有股票都已有行业信息，无需补充")
+                logger.info("所有股票都已有行业信息，无需补充")
                 return 0
 
             logger.info(f"📊 找到 {len(result_df)} 个股票需要补充行业信息")
@@ -498,7 +498,7 @@ class StockMetadataEnhancer:
                     if success:
                         update_count += 1
 
-            logger.info(f"✅ 成功补充 {update_count} 个股票的行业信息")
+            logger.info(f"成功补充 {update_count} 个股票的行业信息")
             return update_count
 
         except Exception as e:

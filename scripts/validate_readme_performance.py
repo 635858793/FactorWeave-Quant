@@ -240,7 +240,7 @@ class READMEPerformanceValidator:
                 notes=f"README声明: {readme_value}s, 实测: {startup_time:.2f}s"
             )
             
-            logger.info(f"✅ 测试完成")
+            logger.info(f"测试完成")
             logger.info(f"   实测启动时间: {startup_time:.2f}s")
             logger.info(f"   README声明: {readme_value}s")
             logger.info(f"   目标值: {target_value}s")
@@ -336,7 +336,7 @@ class READMEPerformanceValidator:
                 notes=f"README声明: {readme_value}MB, 实测: {measured_memory:.1f}MB"
             )
             
-            logger.info(f"✅ 测试完成")
+            logger.info(f"测试完成")
             logger.info(f"   实测内存占用: {measured_memory:.1f}MB")
             logger.info(f"   README声明: {readme_value}MB")
             logger.info(f"   目标值: {target_value}MB")
@@ -421,7 +421,7 @@ class READMEPerformanceValidator:
                 notes=f"README声明: {readme_value}MB, 实测: {measured_memory:.1f}MB"
             )
             
-            logger.info(f"✅ 测试完成")
+            logger.info(f"测试完成")
             logger.info(f"   实测峰值内存: {measured_memory:.1f}MB")
             logger.info(f"   README声明: {readme_value}MB")
             logger.info(f"   目标值: {target_value}MB")
@@ -496,7 +496,7 @@ class READMEPerformanceValidator:
                 notes=f"README声明: {readme_value}%, 实测: {avg_cpu_usage:.1f}%"
             )
             
-            logger.info(f"✅ 测试完成")
+            logger.info(f"测试完成")
             logger.info(f"   实测CPU使用率: {avg_cpu_usage:.1f}%")
             logger.info(f"   README声明: {readme_value}%")
             logger.info(f"   目标值: {target_value}%")
@@ -565,7 +565,7 @@ class READMEPerformanceValidator:
                 notes=f"README声明: {readme_value}个, 实测: {thread_count}个"
             )
             
-            logger.info(f"✅ 测试完成")
+            logger.info(f"测试完成")
             logger.info(f"   实测线程数: {thread_count}个")
             logger.info(f"   README声明: {readme_value}个")
             logger.info(f"   目标值: {target_value}个")
@@ -655,7 +655,7 @@ class READMEPerformanceValidator:
                 notes=f"README声明: {readme_value}ms, 实测: {avg_response_time:.2f}ms"
             )
             
-            logger.info(f"✅ 测试完成")
+            logger.info(f"测试完成")
             logger.info(f"   实测响应时间: {avg_response_time:.2f}ms")
             logger.info(f"   README声明: {readme_value}ms")
             logger.info(f"   目标值: {target_value}ms")
@@ -746,7 +746,7 @@ class READMEPerformanceValidator:
                 notes=f"README声明: {readme_value}万条/秒, 实测: {backtest_speed:.2f}万条/秒"
             )
             
-            logger.info(f"✅ 测试完成")
+            logger.info(f"测试完成")
             logger.info(f"   实测回测速度: {backtest_speed:.2f}万条/秒")
             logger.info(f"   README声明: {readme_value}万条/秒")
             logger.info(f"   目标值: {target_value}万条/秒")
@@ -831,7 +831,7 @@ class READMEPerformanceValidator:
                 notes=f"README声明: {readme_value}ms, 实测: {avg_execution_delay:.2f}ms"
             )
             
-            logger.info(f"✅ 测试完成")
+            logger.info(f"测试完成")
             logger.info(f"   实测执行延迟: {avg_execution_delay:.2f}ms")
             logger.info(f"   README声明: {readme_value}ms")
             logger.info(f"   目标值: {target_value}ms")
@@ -911,7 +911,7 @@ class READMEPerformanceValidator:
                 notes=f"README声明: {readme_value}笔/秒, 实测: {throughput:.0f}笔/秒"
             )
             
-            logger.info(f"✅ 测试完成")
+            logger.info(f"测试完成")
             logger.info(f"   实测吞吐量: {throughput:.0f}笔/秒")
             logger.info(f"   README声明: {readme_value}笔/秒")
             logger.info(f"   目标值: {target_value}笔/秒")
@@ -1001,7 +1001,7 @@ class READMEPerformanceValidator:
                 notes=f"README声明: {readme_value}个, 实测: {successful_tasks}个"
             )
             
-            logger.info(f"✅ 测试完成")
+            logger.info(f"测试完成")
             logger.info(f"   实测并发能力: {successful_tasks}个任务")
             logger.info(f"   README声明: {readme_value}个")
             logger.info(f"   目标值: {target_value}个")
@@ -1121,7 +1121,7 @@ class READMEPerformanceValidator:
                 notes=f"README声明: {readme_value}MB/小时, 实测: {leak_rate:.2f}MB/小时"
             )
             
-            logger.info(f"✅ 测试完成")
+            logger.info(f"测试完成")
             logger.info(f"   实测泄漏率: {leak_rate:.2f}MB/小时")
             logger.info(f"   README声明: {readme_value}MB/小时")
             logger.info(f"   目标值: {target_value}MB/小时")
@@ -1235,7 +1235,7 @@ class READMEPerformanceValidator:
                 notes=f"README声明: {readme_value}%, 实测: {stability:.2f}%"
             )
             
-            logger.info(f"✅ 测试完成")
+            logger.info(f"测试完成")
             logger.info(f"   实测稳定性: {stability:.2f}%")
             logger.info(f"   README声明: {readme_value}%")
             logger.info(f"   目标值: {target_value}%")
@@ -1344,7 +1344,7 @@ class READMEPerformanceValidator:
         failed_count = sum(1 for r in self.test_results if not r.success or r.metrics.status == '未达标')
         
         report_lines.extend([
-            f"✅ 达标/优秀: {passed_count}/{len(self.test_results)} ({passed_count/len(self.test_results)*100:.1f}%)",
+            f"达标/优秀: {passed_count}/{len(self.test_results)} ({passed_count/len(self.test_results)*100:.1f}%)",
             f"🌟 优秀: {excellent_count}/{len(self.test_results)} ({excellent_count/len(self.test_results)*100:.1f}%)",
             f"❌ 未达标/失败: {failed_count}/{len(self.test_results)} ({failed_count/len(self.test_results)*100:.1f}%)",
             ""
@@ -1375,7 +1375,7 @@ class READMEPerformanceValidator:
         if corrections:
             report_lines.extend(corrections)
         else:
-            report_lines.append("✅ 所有指标与README声明一致，无需纠正")
+            report_lines.append("所有指标与README声明一致，无需纠正")
         
         report_lines.extend([
             "",
@@ -1402,7 +1402,7 @@ class READMEPerformanceValidator:
         with open(report_file, 'w', encoding='utf-8') as f:
             f.write(report_content)
         
-        logger.info(f"✅ 测试结果已保存到: {output_dir}")
+        logger.info(f"测试结果已保存到: {output_dir}")
         return str(output_dir)
 
 

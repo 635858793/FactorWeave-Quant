@@ -7,7 +7,7 @@ from enum import Enum
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, 
     QFrame, QProgressBar, QTableWidget, QTableWidgetItem,
-    QHeaderView, QGroupBox
+    QHeaderView, QGroupBox, QSizePolicy
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QFont, QColor, QPainter, QLinearGradient
@@ -142,6 +142,8 @@ class StrategyPerformanceMonitor(QWidget):
         ])
         self.history_table.horizontalHeader().setStretchLastSection(True)
         self.history_table.setRowCount(0)
+        self.history_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.history_table.setMinimumHeight(100)
         self.history_table.setMaximumHeight(150)
         self.history_table.setStyleSheet("""
             QTableWidget {

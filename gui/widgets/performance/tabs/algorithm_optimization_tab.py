@@ -11,7 +11,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFrame, QGridLayout,
-    QGroupBox, QPushButton, QProgressBar, QLabel, QTabWidget
+    QGroupBox, QPushButton, QProgressBar, QLabel, QTabWidget, QSizePolicy
 )
 from PyQt5.QtCore import Qt, QTimer
 from gui.widgets.performance.components.metric_card import ModernMetricCard
@@ -149,8 +149,7 @@ class ModernAlgorithmOptimizationTab(QWidget):
 
         # 算法性能指标卡片
         cards_frame = QFrame()
-        cards_frame.setMinimumHeight(100)
-        cards_frame.setMaximumHeight(120)
+        cards_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         cards_layout = QGridLayout(cards_frame)
         cards_layout.setContentsMargins(2, 2, 2, 2)
         cards_layout.setSpacing(2)
@@ -177,8 +176,7 @@ class ModernAlgorithmOptimizationTab(QWidget):
 
         # 算法性能趋势图
         self.performance_chart = ModernPerformanceChart("算法性能趋势", "line")
-        self.performance_chart.setMinimumHeight(400)
-        # self.performance_chart.setMaximumHeight(300)
+        self.performance_chart.setMinimumHeight(200)  # 减少最小高度，更灵活
         layout.addWidget(self.performance_chart, 1)
 
         return tab
@@ -190,10 +188,8 @@ class ModernAlgorithmOptimizationTab(QWidget):
         layout.setContentsMargins(5, 5, 5, 5)
         layout.setSpacing(5)
 
-        # JIT性能指标卡片 - 一行显示
         cards_frame = QFrame()
-        cards_frame.setMinimumHeight(60)
-        cards_frame.setMaximumHeight(80)
+        cards_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         cards_layout = QGridLayout(cards_frame)
         cards_layout.setContentsMargins(2, 2, 2, 2)
         cards_layout.setSpacing(2)
@@ -208,18 +204,22 @@ class ModernAlgorithmOptimizationTab(QWidget):
             ("缓存命中", "#1abc9c", 0, 5),
             ("优化等级", "#e67e22", 0, 6),
             ("执行效率", "#95a5a6", 0, 7),
-            ("JIT函数数", "#8e44ad", 0, 8),
-            ("JIT调用次数", "#17a2b8", 0, 9),
-            ("最常用函数", "#3498db", 0, 10),
-            ("最近使用", "#27ae60", 0, 11),
+            ("JIT函数数", "#8e44ad", 1, 0),
+            ("JIT调用次数", "#17a2b8", 1, 1),
+            ("AutoJIT函数数", "#9b59b6", 1, 2),
+            ("AutoJIT总调用", "#3498db", 1, 3),
+            ("AutoJIT调用", "#27ae60", 1, 4),
+            ("原始调用", "#e74c3c", 1, 5),
+            ("AutoJIT使用率", "#f39c12", 1, 6),
+            ("AutoJIT状态", "#1abc9c", 1, 7),
         ]
 
         for name, color, row, col in jit_metrics:
             if "时间" in name:
                 unit = "ms"
-            elif "提升" in name or "命中" in name or "效率" in name:
+            elif "提升" in name or "命中" in name or "效率" in name or "使用率" in name:
                 unit = "%"
-            elif "次数" in name or "线程" in name or "等级" in name:
+            elif "次数" in name or "线程" in name or "等级" in name or "调用" in name:
                 unit = ""
             else:
                 unit = ""
@@ -229,38 +229,6 @@ class ModernAlgorithmOptimizationTab(QWidget):
             cards_layout.addWidget(card, row, col)
 
         layout.addWidget(cards_frame)
-
-        # AutoJIT性能指标卡片 - 第二行显示
-        autojit_cards_frame = QFrame()
-        autojit_cards_frame.setMinimumHeight(60)
-        autojit_cards_frame.setMaximumHeight(80)
-        autojit_cards_layout = QGridLayout(autojit_cards_frame)
-        autojit_cards_layout.setContentsMargins(2, 2, 2, 2)
-        autojit_cards_layout.setSpacing(2)
-
-        self.autojit_cards = {}
-        autojit_metrics = [
-            ("AutoJIT函数数", "#9b59b6", 0, 0),
-            ("AutoJIT总调用", "#3498db", 0, 1),
-            ("AutoJIT调用", "#27ae60", 0, 2),
-            ("原始调用", "#e74c3c", 0, 3),
-            ("AutoJIT使用率", "#f39c12", 0, 4),
-            ("AutoJIT状态", "#1abc9c", 0, 5),
-        ]
-
-        for name, color, row, col in autojit_metrics:
-            if "使用率" in name:
-                unit = "%"
-            elif "调用" in name:
-                unit = ""
-            else:
-                unit = ""
-
-            card = ModernMetricCard(name, "0", unit, color)
-            self.autojit_cards[name] = card
-            autojit_cards_layout.addWidget(card, row, col)
-
-        layout.addWidget(autojit_cards_frame)
 
         # JIT控制面板
         control_group = QGroupBox("JIT编译控制")
@@ -286,8 +254,7 @@ class ModernAlgorithmOptimizationTab(QWidget):
 
         # JIT性能趋势图
         self.jit_chart = ModernPerformanceChart("JIT编译性能趋势", "line")
-        self.jit_chart.setMinimumHeight(400)
-        # self.jit_chart.setMaximumHeight(300)
+        self.jit_chart.setMinimumHeight(200)  # 减少最小高度，更灵活
         layout.addWidget(self.jit_chart, 1)
         return tab
 
@@ -300,7 +267,6 @@ class ModernAlgorithmOptimizationTab(QWidget):
 
         # 调优控制面板
         control_group = QGroupBox("调优控制")
-        # control_group.setMaximumHeight(60)
         control_layout = QHBoxLayout()
 
         self.start_tuning_btn = QPushButton("开始调优")
@@ -327,10 +293,9 @@ class ModernAlgorithmOptimizationTab(QWidget):
         control_group.setLayout(control_layout)
         layout.addWidget(control_group)
 
-        # 调优指标卡片
+        # 调优指标卡片 - 一行显示
         cards_frame = QFrame()
-        cards_frame.setMinimumHeight(100)
-        cards_frame.setMaximumHeight(120)
+        cards_frame.setMinimumHeight(50)  # 减少最小高度，更灵活
         cards_layout = QGridLayout(cards_frame)
         cards_layout.setContentsMargins(2, 2, 2, 2)
         cards_layout.setSpacing(2)
@@ -357,8 +322,7 @@ class ModernAlgorithmOptimizationTab(QWidget):
 
         # 调优历史图表
         self.tuning_chart = ModernPerformanceChart("调优历史", "line")
-        self.tuning_chart.setMinimumHeight(400)
-        # self.tuning_chart.setMaximumHeight(300)
+        self.tuning_chart.setMinimumHeight(200)  # 减少最小高度，更灵活
         layout.addWidget(self.tuning_chart, 1)
 
         return tab
@@ -739,44 +703,37 @@ class ModernAlgorithmOptimizationTab(QWidget):
             if data.get('autojit_available', False):
                 autojit_summary = data.get('autojit_summary', {})
                 if autojit_summary:
-                    # 更新AutoJIT函数数
-                    if "AutoJIT函数数" in self.autojit_cards:
+                    if "AutoJIT函数数" in self.jit_cards:
                         total_functions = autojit_summary.get('total_functions', 0)
-                        self.autojit_cards["AutoJIT函数数"].update_value(str(total_functions), "neutral")
+                        self.jit_cards["AutoJIT函数数"].update_value(str(total_functions), "neutral")
 
-                    # 更新AutoJIT总调用
-                    if "AutoJIT总调用" in self.autojit_cards:
+                    if "AutoJIT总调用" in self.jit_cards:
                         total_calls = autojit_summary.get('total_calls', 0)
                         trend = "up" if total_calls > 100 else "neutral"
-                        self.autojit_cards["AutoJIT总调用"].update_value(str(total_calls), trend)
+                        self.jit_cards["AutoJIT总调用"].update_value(str(total_calls), trend)
 
-                    # 更新AutoJIT调用
-                    if "AutoJIT调用" in self.autojit_cards:
+                    if "AutoJIT调用" in self.jit_cards:
                         jit_calls = autojit_summary.get('jit_calls', 0)
-                        self.autojit_cards["AutoJIT调用"].update_value(str(jit_calls), "neutral")
+                        self.jit_cards["AutoJIT调用"].update_value(str(jit_calls), "neutral")
 
-                    # 更新原始调用
-                    if "原始调用" in self.autojit_cards:
+                    if "原始调用" in self.jit_cards:
                         original_calls = autojit_summary.get('original_calls', 0)
-                        self.autojit_cards["原始调用"].update_value(str(original_calls), "neutral")
+                        self.jit_cards["原始调用"].update_value(str(original_calls), "neutral")
 
-                    # 更新AutoJIT使用率
-                    if "AutoJIT使用率" in self.autojit_cards:
+                    if "AutoJIT使用率" in self.jit_cards:
                         usage_rate = autojit_summary.get('jit_usage_rate', 0.0)
                         trend = "up" if usage_rate > 80 else "neutral"
-                        self.autojit_cards["AutoJIT使用率"].update_value(f"{usage_rate:.1f}", trend)
+                        self.jit_cards["AutoJIT使用率"].update_value(f"{usage_rate:.1f}", trend)
 
-                    # 更新AutoJIT状态
-                    if "AutoJIT状态" in self.autojit_cards:
+                    if "AutoJIT状态" in self.jit_cards:
                         enabled = autojit_summary.get('jit_enabled', False)
                         status = "启用" if enabled else "禁用"
-                        self.autojit_cards["AutoJIT状态"].update_value(status, "up" if enabled else "down")
+                        self.jit_cards["AutoJIT状态"].update_value(status, "up" if enabled else "down")
             else:
-                # AutoJIT数据不可用，显示 "--"
                 autojit_metrics = ["AutoJIT函数数", "AutoJIT总调用", "AutoJIT调用", "原始调用", "AutoJIT使用率", "AutoJIT状态"]
                 for metric_name in autojit_metrics:
-                    if metric_name in self.autojit_cards:
-                        self.autojit_cards[metric_name].update_value("--", "neutral")
+                    if metric_name in self.jit_cards:
+                        self.jit_cards[metric_name].update_value("--", "neutral")
 
         except Exception as e:
             logger.error(f"更新JIT统计失败: {e}")
@@ -908,3 +865,37 @@ class ModernAlgorithmOptimizationTab(QWidget):
 
         except Exception as e:
             logger.debug(f"清理算法优化资源失败: {e}")
+
+    def resizeEvent(self, event):
+        """窗口大小改变事件处理"""
+        super().resizeEvent(event)
+        self._update_responsive_layout()
+
+    def _update_responsive_layout(self):
+        """更新响应式布局"""
+        try:
+            window_width = self.width()
+            window_height = self.height()
+
+            logger.debug(f"AlgorithmOptimizationTab 响应式布局更新: {window_width}x{window_height}")
+
+            # 更新算法性能卡片高度
+            cards_frames = self.findChildren(QFrame)
+            for frame in cards_frames:
+                if frame.layout() and isinstance(frame.layout(), QGridLayout):
+                    frame_height = max(80, int(window_height * 0.15))
+                    frame.setMinimumHeight(frame_height)
+                    frame.setMaximumHeight(int(window_height * 0.2))
+
+            # 更新性能图表高度
+            if hasattr(self, 'performance_chart'):
+                chart_height = max(150, int(window_height * 0.3))
+                self.performance_chart.setMinimumHeight(chart_height)
+
+            # 更新JIT图表高度
+            if hasattr(self, 'jit_chart'):
+                chart_height = max(150, int(window_height * 0.3))
+                self.jit_chart.setMinimumHeight(chart_height)
+
+        except Exception as e:
+            logger.error(f"更新响应式布局失败: {e}")

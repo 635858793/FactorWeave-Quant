@@ -134,7 +134,7 @@ class WebGPUChartRenderer(BaseChartRenderer):
 
         # 如果WebGPU渲染失败或未使用，调用父类matplotlib实现
         if not webgpu_success:
-            # ✅ 修复：传递use_datetime_axis参数给父类
+            # 修复：传递use_datetime_axis参数给父类
             super().render_candlesticks(ax, data, style, x, use_datetime_axis)
 
     def render_volume(self, ax, data: pd.DataFrame, style: Dict[str, Any] = None, x: np.ndarray = None, use_datetime_axis: bool = True):

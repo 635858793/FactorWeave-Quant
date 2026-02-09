@@ -84,11 +84,11 @@ def diagnose_connection_pool_issues():
         logger.info("\n4. 检查监控组件...")
         try:
             from gui.widgets.adaptive_pool_monitor_widget import AdaptivePoolMonitorWidget
-            logger.info(f"   ✅ AdaptivePoolMonitorWidget 导入成功")
+            logger.info(f"   AdaptivePoolMonitorWidget 导入成功")
             
             # 尝试创建实例
             monitor_widget = AdaptivePoolMonitorWidget()
-            logger.info(f"   ✅ AdaptivePoolMonitorWidget 实例化成功")
+            logger.info(f"   AdaptivePoolMonitorWidget 实例化成功")
         except ImportError as e:
             logger.error(f"   ❌ AdaptivePoolMonitorWidget 导入失败: {e}")
         except Exception as e:
@@ -100,7 +100,7 @@ def diagnose_connection_pool_issues():
         logger.info("\n5. 检查 UI 组件...")
         try:
             from gui.dialogs.connection_pool_manager_dialog import ConnectionPoolManagerDialog
-            logger.info(f"   ✅ ConnectionPoolManagerDialog 导入成功")
+            logger.info(f"   ConnectionPoolManagerDialog 导入成功")
         except ImportError as e:
             logger.error(f"   ❌ ConnectionPoolManagerDialog 导入失败: {e}")
 

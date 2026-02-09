@@ -900,7 +900,7 @@ class TETDataPipeline:
 
             mapped_data['market'] = mapped_data.apply(infer_market, axis=1)
 
-            # 5. 补全可选字段（✅ 删除了不使用的name_en, full_name, short_name字段）
+            # 5. 补全可选字段（删除了不使用的name_en, full_name, short_name字段）
             optional_fields = {
                 'asset_type': 'stock_a',
                 'exchange': None,
@@ -968,7 +968,7 @@ class TETDataPipeline:
             mapped_data['primary_data_source'] = data_source if data_source else 'unknown'
             mapped_data['last_verified'] = datetime.now()
 
-            self.logger.info(f"✅ 资产列表标准化完成: {len(mapped_data)} 条有效记录")
+            self.logger.info(f"资产列表标准化完成: {len(mapped_data)} 条有效记录")
             self.logger.debug(f"标准化后字段: {list(mapped_data.columns)}")
 
             return mapped_data

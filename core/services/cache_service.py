@@ -571,7 +571,7 @@ class CacheService(BaseService):
             # 5. 验证缓存功能
             self._validate_cache_functionality()
 
-            logger.info("✅ CacheService initialized successfully with multi-level caching capabilities")
+            logger.info("CacheService initialized successfully with multi-level caching capabilities")
 
         except Exception as e:
             logger.error(f"❌ Failed to initialize CacheService: {e}")

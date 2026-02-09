@@ -125,7 +125,7 @@ class AssetSeparatedDatabaseManager:
 
         self.config = config or AssetDatabaseConfig()
 
-        # ✅ 修复：从数据库加载数据库连接池配置
+        # 修复：从数据库加载数据库连接池配置
         try:
             from db.models.plugin_models import get_data_source_config_manager
             config_manager = get_data_source_config_manager()
@@ -640,10 +640,10 @@ class AssetSeparatedDatabaseManager:
             if Path(db_path).exists():
                 self._asset_databases[asset_type] = db_path
 
-                # ✅ 修复：在系统初始化时，100%确保表和视图都存在
+                # 修复：在系统初始化时，100%确保表和视图都存在
                 try:
                     self._initialize_database_schema(asset_type, db_path)
-                    logger.info(f"✅ 数据库架构初始化完成: {asset_type.value}")
+                    logger.info(f"数据库架构初始化完成: {asset_type.value}")
                 except Exception as e:
                     logger.error(f"❌ 数据库架构初始化失败 {asset_type.value}: {e}")
                     import traceback
@@ -657,7 +657,7 @@ class AssetSeparatedDatabaseManager:
 
     def _get_database_path(self, asset_type: AssetType) -> str:
         """获取资产类型对应的数据库路径"""
-        # ✅ 增强：完善资产类型映射逻辑
+        # 增强：完善资产类型映射逻辑
         mapped_asset_type = self._map_asset_type_to_database(asset_type)
 
         base_path = Path(self.config.base_path)
@@ -677,7 +677,7 @@ class AssetSeparatedDatabaseManager:
         """
         # 别名映射规则
         mapping_rules = {
-            # ✅ 移除STOCK映射，因为STOCK类型已被移除
+            # 移除STOCK映射，因为STOCK类型已被移除
             # AssetType.STOCK_A: AssetType.STOCK_A,  # 已移除
 
             # 板块相关资产类型映射到通用板块
@@ -790,7 +790,7 @@ class AssetSeparatedDatabaseManager:
 
                 if auto_create and self.config.auto_create:
                     if Path(db_path).exists():
-                        # ✅ 修复：数据库文件已存在，不需要在这里处理
+                        # 修复：数据库文件已存在，不需要在这里处理
                         # 视图在系统初始化时已经100%创建成功（在_load_existing_databases中）
                         pass
                     else:
@@ -815,7 +815,7 @@ class AssetSeparatedDatabaseManager:
 
     def _initialize_database_schema(self, asset_type: AssetType, db_path: str):
         """
-        ✅ 修复：在系统初始化时，100%确保数据库架构完整（表和视图都存在）
+        修复：在系统初始化时，100%确保数据库架构完整（表和视图都存在）
 
         这个方法在系统启动时调用，确保：
         1. 所有必要的表都存在
@@ -830,7 +830,7 @@ class AssetSeparatedDatabaseManager:
             view_names = ['unified_best_quality_kline', 'kline_with_metadata', 'fundamental_with_metadata']
 
             with self.duckdb_manager.get_connection(db_path) as conn:
-                # ✅ 数据库迁移：为现有的data_quality_monitor表添加frequency字段
+                # 数据库迁移：为现有的data_quality_monitor表添加frequency字段
                 # 只在表已存在且缺少frequency字段时才执行迁移
                 try:
                     # 检查表是否存在
@@ -852,7 +852,7 @@ class AssetSeparatedDatabaseManager:
                         if check_column[0] == 0:
                             # 字段不存在，添加frequency字段
                             conn.execute("ALTER TABLE data_quality_monitor ADD COLUMN frequency VARCHAR DEFAULT '1d'")
-                            logger.info("✅ 数据库迁移：为现有的data_quality_monitor表添加frequency字段")
+                            logger.info("数据库迁移：为现有的data_quality_monitor表添加frequency字段")
                         else:
                             logger.debug("data_quality_monitor表已包含frequency字段，跳过迁移")
                     else:
@@ -876,7 +876,7 @@ class AssetSeparatedDatabaseManager:
                         if not table_exists:
                             # 表不存在，创建表
                             conn.execute(schema_sql)
-                            logger.info(f"✅ 初始化时创建表 {table_name} 成功")
+                            logger.info(f"初始化时创建表 {table_name} 成功")
 
                             # 如果是K线数据表，创建索引
                             if table_name == 'historical_kline_data':
@@ -907,7 +907,7 @@ class AssetSeparatedDatabaseManager:
                         continue
 
                     try:
-                        # ✅ 修复：先尝试删除视图（如果存在），然后创建新视图
+                        # 修复：先尝试删除视图（如果存在），然后创建新视图
                         # 这样可以避免CREATE OR REPLACE VIEW在某些情况下的兼容性问题
                         try:
                             conn.execute(f"DROP VIEW IF EXISTS {view_name}")
@@ -918,17 +918,17 @@ class AssetSeparatedDatabaseManager:
 
                         # 使用CREATE VIEW创建新视图
                         view_sql = self._table_schemas[view_name]
-                        # ✅ 修复：将CREATE OR REPLACE VIEW改为CREATE VIEW（因为已经DROP了）
+                        # 修复：将CREATE OR REPLACE VIEW改为CREATE VIEW（因为已经DROP了）
                         view_sql = view_sql.replace("CREATE OR REPLACE VIEW", "CREATE VIEW")
                         conn.execute(view_sql)
-                        logger.info(f"✅ 初始化时创建/更新视图 {view_name} 成功")
+                        logger.info(f"初始化时创建/更新视图 {view_name} 成功")
                     except Exception as e:
                         error_msg = str(e)
                         # 如果错误是因为表不存在，记录错误并抛出异常
                         if "does not exist" in error_msg.lower() or "table" in error_msg.lower() or "catalog" in error_msg.lower():
                             logger.error(f"❌ 初始化时创建视图 {view_name} 失败: 依赖的表不存在 - {e}")
                             logger.error("这不应该发生，因为表应该已经在上一步创建了")
-                            # ✅ 增强：列出所有应该存在的表，帮助调试
+                            # 增强：列出所有应该存在的表，帮助调试
                             logger.error(f"应该存在的表: historical_kline_data, data_quality_monitor, asset_metadata")
                         else:
                             logger.error(f"❌ 初始化时创建视图 {view_name} 失败: {e}")
@@ -963,7 +963,7 @@ class AssetSeparatedDatabaseManager:
             for index_sql in indexes:
                 conn.execute(index_sql)
             
-            logger.info("✅ orders 表索引创建成功")
+            logger.info("orders 表索引创建成功")
         except Exception as e:
             logger.error(f"❌ 创建 orders 表索引失败: {e}")
             raise
@@ -997,7 +997,7 @@ class AssetSeparatedDatabaseManager:
             )
 
             with self.duckdb_manager.get_connection(db_path, config=duckdb_config) as conn:
-                # ✅ 数据库迁移：为现有的data_quality_monitor表添加frequency字段
+                # 数据库迁移：为现有的data_quality_monitor表添加frequency字段
                 # 只在表已存在且缺少frequency字段时才执行迁移
                 try:
                     # 检查表是否存在
@@ -1019,7 +1019,7 @@ class AssetSeparatedDatabaseManager:
                         if check_column[0] == 0:
                             # 字段不存在，添加frequency字段
                             conn.execute("ALTER TABLE data_quality_monitor ADD COLUMN frequency VARCHAR DEFAULT '1d'")
-                            logger.info("✅ 数据库迁移：为现有的data_quality_monitor表添加frequency字段")
+                            logger.info("数据库迁移：为现有的data_quality_monitor表添加frequency字段")
                         else:
                             logger.debug("data_quality_monitor表已包含frequency字段，跳过迁移")
                     else:
@@ -1057,11 +1057,11 @@ class AssetSeparatedDatabaseManager:
                         # 索引创建失败不中断流程，记录警告即可
 
                 # 第四步：创建所有视图（依赖基础表）
-                # ✅ 修复：确保视图创建100%成功
+                # 修复：确保视图创建100%成功
                 for view_name in view_names:
                     if view_name in self._table_schemas:
                         try:
-                            # ✅ 修复：先尝试删除视图（如果存在），然后创建新视图
+                            # 修复：先尝试删除视图（如果存在），然后创建新视图
                             # 这样可以避免CREATE OR REPLACE VIEW在某些情况下的兼容性问题
                             try:
                                 conn.execute(f"DROP VIEW IF EXISTS {view_name}")
@@ -1072,10 +1072,10 @@ class AssetSeparatedDatabaseManager:
 
                             # 使用CREATE VIEW创建新视图
                             view_sql = self._table_schemas[view_name]
-                            # ✅ 修复：将CREATE OR REPLACE VIEW改为CREATE VIEW（因为已经DROP了）
+                            # 修复：将CREATE OR REPLACE VIEW改为CREATE VIEW（因为已经DROP了）
                             view_sql = view_sql.replace("CREATE OR REPLACE VIEW", "CREATE VIEW")
                             conn.execute(view_sql)
-                            logger.info(f"✅ 创建视图 {view_name} 成功")
+                            logger.info(f"创建视图 {view_name} 成功")
                         except Exception as e:
                             error_msg = str(e)
                             if "does not exist" in error_msg.lower() or "table" in error_msg.lower() or "catalog" in error_msg.lower():
@@ -1115,7 +1115,7 @@ class AssetSeparatedDatabaseManager:
             数据库连接上下文管理器
         """
         db_path = self.get_database_for_asset_type(asset_type, auto_create)
-        # ✅ 修复：使用当前配置的pool_size（支持动态更新）
+        # 修复：使用当前配置的pool_size（支持动态更新）
         return self.duckdb_manager.get_connection(db_path, pool_size=self.config.pool_size)
 
     def update_pool_size(self, new_pool_size: int) -> bool:
@@ -1136,7 +1136,7 @@ class AssetSeparatedDatabaseManager:
             # 更新配置
             self.config.pool_size = new_pool_size
 
-            # ✅ 持久化配置到数据库
+            # 持久化配置到数据库
             try:
                 from db.models.plugin_models import get_data_source_config_manager
                 config_manager = get_data_source_config_manager()
@@ -1152,7 +1152,7 @@ class AssetSeparatedDatabaseManager:
             except Exception as persist_err:
                 logger.warning(f"数据库连接池配置持久化失败（忽略继续）: {persist_err}")
 
-            # ✅ 注意：已创建的连接池不会自动更新，需要重新创建
+            # 注意：已创建的连接池不会自动更新，需要重新创建
             # 这里先更新配置，下次get_pool时会使用新配置
             logger.info(f"数据库连接池大小配置已更新为: {new_pool_size}（将在下次创建新连接池时生效）")
 
@@ -1422,7 +1422,7 @@ class AssetSeparatedDatabaseManager:
             return False
 
         try:
-            # ✅ 防御性类型检查：确保参数是正确的枚举类型
+            # 防御性类型检查：确保参数是正确的枚举类型
             if isinstance(asset_type, str):
                 try:
                     asset_type = AssetType(asset_type)
@@ -1452,7 +1452,7 @@ class AssetSeparatedDatabaseManager:
                 # 插入数据（使用upsert逻辑）
                 rows_affected = self._upsert_data(conn, table_name, data, data_type)
 
-                # ✅ 修复：移除运行时视图检测
+                # 修复：移除运行时视图检测
                 # 视图在系统初始化时已经100%创建成功，运行时不需要检测
 
                 logger.info(f"成功存储 {rows_affected} 行数据到 {asset_type.value}/{table_name}")
@@ -1464,7 +1464,7 @@ class AssetSeparatedDatabaseManager:
 
     def _generate_table_name(self, data_type: DataType, asset_type: AssetType) -> str:
         """生成表名 - 新架构使用统一的表名"""
-        # ✅ 新架构：所有资产类型使用统一的标准表名
+        # 新架构：所有资产类型使用统一的标准表名
         type_mapping = {
             DataType.HISTORICAL_KLINE: "historical_kline_data",  # 统一K线数据表
             DataType.REAL_TIME_QUOTE: "realtime_quotes",
@@ -1499,7 +1499,7 @@ class AssetSeparatedDatabaseManager:
             logger.error(f"创建表 {table_name} 失败: {e}")
             raise
 
-    # ✅ 修复：移除_ensure_views_exist方法
+    # 修复：移除_ensure_views_exist方法
     # 视图在系统初始化时已经100%创建成功，运行时不需要检测
     # 如果需要在运行时创建视图，应该使用_initialize_database_schema方法
 
@@ -1507,7 +1507,7 @@ class AssetSeparatedDatabaseManager:
         """生成创建表的SQL"""
         # 根据数据类型定义标准表结构
         if data_type == DataType.HISTORICAL_KLINE:
-            # ✅ 新架构标准表结构：使用timestamp字段和(symbol, data_source, timestamp, frequency)主键
+            # 新架构标准表结构：使用timestamp字段和(symbol, data_source, timestamp, frequency)主键
             return f"""
                 CREATE TABLE {table_name} (
                     symbol VARCHAR NOT NULL,
@@ -1632,7 +1632,7 @@ class AssetSeparatedDatabaseManager:
                 conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_symbol_timestamp ON {table_name}(symbol, timestamp)")
                 conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_data_source ON {table_name}(data_source)")
 
-                # ✅ 性能优化：添加与ON CONFLICT完全匹配的复合索引
+                # 性能优化：添加与ON CONFLICT完全匹配的复合索引
                 # ON CONFLICT (symbol, data_source, timestamp, frequency) 需要对应的索引
                 conn.execute(f"""
                     CREATE INDEX IF NOT EXISTS idx_{table_name}_conflict_key 
@@ -1640,7 +1640,7 @@ class AssetSeparatedDatabaseManager:
                 """)
                 logger.info(f"为{table_name}创建upsert优化索引")
 
-                # ✅ 优化unified_best_quality_kline视图查询性能
+                # 优化unified_best_quality_kline视图查询性能
                 # 为常用查询条件添加索引：symbol + frequency, symbol + timestamp + frequency
                 conn.execute(f"""
                     CREATE INDEX IF NOT EXISTS idx_{table_name}_symbol_frequency 
@@ -1659,7 +1659,7 @@ class AssetSeparatedDatabaseManager:
             elif data_type == DataType.REAL_TIME_QUOTE:
                 conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_symbol ON {table_name}(symbol)")
                 conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_timestamp ON {table_name}(timestamp)")
-                # ✅ 添加ON CONFLICT匹配索引
+                # 添加ON CONFLICT匹配索引
                 conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_conflict_key ON {table_name}(symbol, timestamp)")
 
             elif data_type == DataType.FUNDAMENTAL:
@@ -1742,7 +1742,7 @@ class AssetSeparatedDatabaseManager:
 
     def _filter_dataframe_columns(self, data: pd.DataFrame, table_columns: list) -> pd.DataFrame:
         """过滤DataFrame，只保留表中存在的列"""
-        # ✅ 新架构：字段名映射（数据字段→表字段）
+        # 新架构：字段名映射（数据字段→表字段）
         field_mapping = {
             'datetime': 'timestamp',  # 关键映射：datetime字段映射到timestamp列
         }
@@ -1780,11 +1780,11 @@ class AssetSeparatedDatabaseManager:
         性能提升10-50倍，确保功能逻辑正确和数据一致性
         """
         try:
-            # ✅ 修复：减少日志输出，避免影响写入性能
+            # 修复：减少日志输出，避免影响写入性能
             logger.debug(f"[数据插入] 准备插入数据到 {table_name}，数据类型: {data_type}, 记录数: {len(data)}")
             logger.debug(f"[数据插入] 输入列: {data.columns.tolist()}")
 
-            # ✅ 检查输入数据中是否包含SQL关键字列名，自动移除
+            # 检查输入数据中是否包含SQL关键字列名，自动移除
             sql_keywords_input_check = {'CURRENT_TIMESTAMP', 'NOW', 'CURRENT_DATE', 'CURRENT_TIME', 'DEFAULT', 'NULL'}
             problematic_input_cols = [col for col in data.columns if col.upper() in sql_keywords_input_check]
             if problematic_input_cols:
@@ -1829,15 +1829,15 @@ class AssetSeparatedDatabaseManager:
                 logger.warning(f"[数据插入] 过滤后没有有效数据可插入")
                 return 0
 
-            # ✅ 优化：使用DuckDB批量INSERT（register方式），全部情况都使用，不使用executemany
-            # ✅ 确保临时表名称唯一性（避免连接池中的名称冲突）
+            # 优化：使用DuckDB批量INSERT（register方式），全部情况都使用，不使用executemany
+            # 确保临时表名称唯一性（避免连接池中的名称冲突）
             temp_table = f"temp_insert_{int(time.time() * 1000000)}_{threading.get_ident()}"
 
-            # ✅ 确保列顺序一致（不能使用SELECT *，必须明确指定列顺序）
-            # ✅ 排除updated_at和created_at，因为这些字段在UPDATE子句中用NOW()设置
+            # 确保列顺序一致（不能使用SELECT *，必须明确指定列顺序）
+            # 排除updated_at和created_at，因为这些字段在UPDATE子句中用NOW()设置
             columns = [col for col in filtered_data.columns if col not in ['updated_at', 'created_at']]
 
-            # ✅ 修复：过滤SQL关键字和函数名，避免与SQL语法冲突
+            # 修复：过滤SQL关键字和函数名，避免与SQL语法冲突
             # SQL关键字和函数名列表（DuckDB常用）
             sql_keywords = {
                 'CURRENT_TIMESTAMP', 'NOW', 'CURRENT_DATE', 'CURRENT_TIME',
@@ -1853,7 +1853,7 @@ class AssetSeparatedDatabaseManager:
 
             columns_str = ', '.join(f'"{col}"' for col in safe_columns)
 
-            # ✅ 修复：如果表中有updated_at列，需要在INSERT时也包含（但值从temp_table获取，如果没有则用DEFAULT）
+            # 修复：如果表中有updated_at列，需要在INSERT时也包含（但值从temp_table获取，如果没有则用DEFAULT）
             # 检查表结构中是否有updated_at列
             table_has_updated_at = 'updated_at' in table_columns
             table_has_created_at = 'created_at' in table_columns
@@ -1867,7 +1867,7 @@ class AssetSeparatedDatabaseManager:
                 # created_at使用DEFAULT值，不需要在INSERT中指定
                 pass
 
-            # ✅ 验证所有列名都在表列中
+            # 验证所有列名都在表列中
             invalid_columns = [col for col in insert_columns if col not in table_columns]
             if invalid_columns:
                 logger.warning(f"[数据插入] 发现无效列名（不在表结构中）: {invalid_columns}，已自动移除")
@@ -1876,7 +1876,7 @@ class AssetSeparatedDatabaseManager:
                     logger.error(f"[数据插入] 移除无效列后没有有效列可插入，跳过插入")
                     return 0
 
-            # ✅ 创建只包含安全列的 DataFrame，确保临时表结构与 SELECT 语句匹配
+            # 创建只包含安全列的 DataFrame，确保临时表结构与 SELECT 语句匹配
             if not insert_columns:
                 logger.error(f"[数据插入] 没有有效列可插入，跳过插入")
                 return 0
@@ -1895,7 +1895,7 @@ class AssetSeparatedDatabaseManager:
 
             safe_data = filtered_data[insert_columns].copy()
 
-            # ✅ 构建insert_columns_str（排除updated_at和created_at，让数据库使用DEFAULT）
+            # 构建insert_columns_str（排除updated_at和created_at，让数据库使用DEFAULT）
             # 使用双引号引用列名，确保DuckDB正确解析列名
             insert_columns_str = ', '.join(f'"{col}"' for col in insert_columns)
 
@@ -1905,16 +1905,16 @@ class AssetSeparatedDatabaseManager:
 
             try:
                 # 注册DataFrame为临时表（零拷贝，高性能）
-                # ✅ 注册临时表
+                # 注册临时表
                 conn.register(temp_table, safe_data)
 
-                # ✅ 使用显式事务确保数据一致性（原子性操作）
+                # 使用显式事务确保数据一致性（原子性操作）
                 conn.execute("BEGIN TRANSACTION")
 
                 try:
                     # 构建批量UPSERT SQL（根据数据类型）
                     if data_type == DataType.HISTORICAL_KLINE:
-                        # ✅ K线数据使用(symbol, data_source, timestamp, frequency)作为复合主键
+                        # K线数据使用(symbol, data_source, timestamp, frequency)作为复合主键
                         # 获取需要更新的字段（排除主键字段和updated_at）
                         update_fields = []
                         exclude_fields = ['symbol', 'data_source', 'timestamp', 'frequency', 'updated_at', 'created_at']
@@ -1922,7 +1922,7 @@ class AssetSeparatedDatabaseManager:
                             if col not in exclude_fields:
                                 update_fields.append(f'"{col}" = EXCLUDED."{col}"')
 
-                        # ✅ 使用NOW()函数而不是CURRENT_TIMESTAMP，避免DuckDB解析错误
+                        # 使用NOW()函数而不是CURRENT_TIMESTAMP，避免DuckDB解析错误
                         if update_fields:
                             update_clause = ', '.join(update_fields)
                             update_clause += ', "updated_at" = NOW()'
@@ -1938,7 +1938,7 @@ class AssetSeparatedDatabaseManager:
                         logger.debug(f"[K线数据批量插入] SQL构建完成，插入列数: {len(insert_columns)}")
 
                     elif data_type == DataType.REAL_TIME_QUOTE:
-                        # ✅ 实时行情使用symbol和timestamp作为唯一键
+                        # 实时行情使用symbol和timestamp作为唯一键
                         # 获取需要更新的字段（排除主键字段和updated_at）
                         update_fields = []
                         exclude_fields = ['symbol', 'timestamp', 'updated_at', 'created_at']
@@ -1962,7 +1962,7 @@ class AssetSeparatedDatabaseManager:
                         logger.debug(f"[实时行情批量插入] ON CONFLICT字段: (symbol, timestamp)")
 
                     elif data_type == DataType.FUNDAMENTAL:
-                        # ✅ 基本面数据使用symbol作为主键
+                        # 基本面数据使用symbol作为主键
                         # 获取需要更新的字段（排除主键字段和updated_at/updated_time）
                         update_fields = []
                         exclude_fields = ['symbol', 'updated_at', 'updated_time', 'created_at']
@@ -1972,7 +1972,7 @@ class AssetSeparatedDatabaseManager:
 
                         if update_fields:
                             update_clause = ', '.join(update_fields)
-                            # ✅ 添加updated_at或updated_time（使用NOW()函数）
+                            # 添加updated_at或updated_time（使用NOW()函数）
                             if 'updated_at' in insert_columns:
                                 update_clause += ', "updated_at" = NOW()'
                             elif 'updated_time' in insert_columns:
@@ -1994,17 +1994,17 @@ class AssetSeparatedDatabaseManager:
                         """
                         logger.debug(f"[基本面数据批量插入] ON CONFLICT字段: (symbol)")
                     else:
-                        # ✅ 其他数据类型的处理：智能检测主键
+                        # 其他数据类型的处理：智能检测主键
                         # 尝试检测常见的主键字段，如果有则使用ON CONFLICT，否则使用简单INSERT
                         # 常见主键字段：symbol, id, record_id, monitor_id, key等
-                        # ✅ 修复：使用 insert_columns 而不是 filtered_data.columns
+                        # 修复：使用 insert_columns 而不是 filtered_data.columns
                         possible_pk_fields = ['symbol', 'id', 'record_id', 'monitor_id', 'key']
                         pk_fields_in_data = [f for f in possible_pk_fields if f in insert_columns]
 
                         if pk_fields_in_data:
                             # 检测到主键字段，使用ON CONFLICT
-                            # ✅ 修复：排除updated_at和updated_time，避免重复赋值
-                            # ✅ 修复：使用 insert_columns 而不是 filtered_data.columns
+                            # 修复：排除updated_at和updated_time，避免重复赋值
+                            # 修复：使用 insert_columns 而不是 filtered_data.columns
                             update_fields = []
                             exclude_fields = pk_fields_in_data + ['updated_at', 'updated_time', 'created_at']
                             for col in insert_columns:  # 使用 insert_columns（已经是 safe_columns）
@@ -2013,7 +2013,7 @@ class AssetSeparatedDatabaseManager:
 
                             if update_fields:
                                 update_clause = ', '.join(update_fields)
-                                # ✅ 添加updated_at或updated_time（使用NOW()函数）
+                                # 添加updated_at或updated_time（使用NOW()函数）
                                 if 'updated_at' in insert_columns:
                                     update_clause += ', "updated_at" = NOW()'
                                 elif 'updated_time' in insert_columns:
@@ -2063,10 +2063,10 @@ class AssetSeparatedDatabaseManager:
                     write_duration = time.time() - write_start
                     write_speed = len(filtered_data) / write_duration if write_duration > 0 else 0
 
-                    # ✅ 提交事务
+                    # 提交事务
                     conn.execute("COMMIT")
 
-                    # ✅ 记录性能日志
+                    # 记录性能日志
                     if write_duration > 1.0:
                         logger.warning(f"[批量插入] 写入较慢: {table_name}, {len(safe_data)}条记录, 耗时: {write_duration:.2f}秒, 速度: {write_speed:.1f}条/秒")
                     else:
@@ -2075,7 +2075,7 @@ class AssetSeparatedDatabaseManager:
                     return len(safe_data)
 
                 except Exception as e:
-                    # ✅ 回滚事务（确保数据一致性）
+                    # 回滚事务（确保数据一致性）
                     try:
                         conn.execute("ROLLBACK")
                         logger.error(f"[批量插入] 事务回滚: {e}")
@@ -2087,7 +2087,7 @@ class AssetSeparatedDatabaseManager:
                 logger.error(f"[批量插入] 插入失败: {e}")
                 raise
             finally:
-                # ✅ 确保清理临时表（即使出错也要清理，避免连接池污染）
+                # 确保清理临时表（即使出错也要清理，避免连接池污染）
                 try:
                     conn.unregister(temp_table)
                     logger.debug(f"[批量插入] 临时表已清理: {temp_table}")
@@ -2377,7 +2377,7 @@ class AssetSeparatedDatabaseManager:
             db_path = self._get_database_path(asset_type)
 
             with self.duckdb_manager.get_pool(db_path).get_connection() as conn:
-                # ✅ 确保asset_metadata表存在
+                # 确保asset_metadata表存在
                 if 'asset_metadata' in self._table_schemas:
                     try:
                         # 检查表是否存在
@@ -2423,7 +2423,7 @@ class AssetSeparatedDatabaseManager:
                     if new_source and new_source not in existing_sources:
                         existing_sources.append(new_source)
 
-                    # ✅ 修复：获取表的实际列名，过滤掉不存在的列（UPDATE逻辑）
+                    # 修复：获取表的实际列名，过滤掉不存在的列（UPDATE逻辑）
                     try:
                         # 使用DuckDB的PRAGMA table_info获取表结构
                         table_info = conn.execute("PRAGMA table_info(asset_metadata)").fetchall()
@@ -2444,29 +2444,29 @@ class AssetSeparatedDatabaseManager:
                     update_fields = []
                     update_params = []
 
-                    # ✅ 定义重要字段：如果新值为None/空，则不更新，保留已有数据
+                    # 定义重要字段：如果新值为None/空，则不更新，保留已有数据
                     important_fields = {'sector', 'industry', 'industry_code', 'listing_date',
                                         'total_shares', 'circulating_shares'}
 
-                    # ✅ 日期字段列表（需要特殊处理）
+                    # 日期字段列表（需要特殊处理）
                     date_fields = {'listing_date', 'delisting_date', 'last_verified', 'created_at', 'updated_at'}
 
                     for key, value in metadata.items():
                         if key in ['symbol', 'created_at']:
                             continue
 
-                        # ✅ 修复：检查列是否在表中存在
+                        # 修复：检查列是否在表中存在
                         if key not in table_columns:
                             logger.debug(f"[upsert_asset_metadata UPDATE] 列'{key}'不在asset_metadata表中，跳过")
                             continue
 
-                        # ✅ 保护重要字段：如果新值为None/空，跳过更新（保留已有值）
+                        # 保护重要字段：如果新值为None/空，跳过更新（保留已有值）
                         if key in important_fields:
                             if value is None or (isinstance(value, str) and not value.strip()):
                                 logger.debug(f"[upsert_asset_metadata UPDATE] 字段'{key}'新值为空，保留已有数据")
                                 continue
 
-                        # ✅ 处理日期字段类型转换
+                        # 处理日期字段类型转换
                         if key in date_fields and value is not None:
                             # 如果是整数（时间戳），跳过（DuckDB不支持INTEGER->DATE转换）
                             if isinstance(value, int):
@@ -2503,7 +2503,7 @@ class AssetSeparatedDatabaseManager:
 
                     sql = f"UPDATE asset_metadata SET {', '.join(update_fields)} WHERE symbol = ?"
                     conn.execute(sql, update_params)
-                    logger.info(f"✅ 更新资产元数据: {symbol}")
+                    logger.info(f"更新资产元数据: {symbol}")
 
                 else:
                     # 插入逻辑
@@ -2511,7 +2511,7 @@ class AssetSeparatedDatabaseManager:
                         logger.error(f"缺少必需字段: {symbol}")
                         return False
 
-                    # JSON字段处理（✅ 修复：使用ensure_ascii=False保留中文）
+                    # JSON字段处理（修复：使用ensure_ascii=False保留中文）
                     if 'data_sources' in metadata:
                         if isinstance(metadata['data_sources'], list):
                             metadata['data_sources'] = json.dumps(metadata['data_sources'], ensure_ascii=False)
@@ -2529,7 +2529,7 @@ class AssetSeparatedDatabaseManager:
                     metadata.setdefault('listing_status', 'active')
                     metadata.setdefault('metadata_version', 1)
 
-                    # ✅ 修复：获取表的实际列名，过滤掉不存在的列
+                    # 修复：获取表的实际列名，过滤掉不存在的列
                     try:
                         # 使用DuckDB的PRAGMA table_info获取表结构
                         table_info = conn.execute("PRAGMA table_info(asset_metadata)").fetchall()
@@ -2548,7 +2548,7 @@ class AssetSeparatedDatabaseManager:
                             'last_verified', 'tags', 'attributes', 'created_at', 'updated_at'
                         ]
 
-                    # ✅ 日期字段列表（需要特殊处理）
+                    # 日期字段列表（需要特殊处理）
                     date_fields = {'listing_date', 'delisting_date', 'last_verified', 'created_at', 'updated_at'}
 
                     # 过滤metadata中不存在的列，并处理日期字段类型
@@ -2557,7 +2557,7 @@ class AssetSeparatedDatabaseManager:
                         if k not in table_columns:
                             continue
 
-                        # ✅ 处理日期字段类型转换
+                        # 处理日期字段类型转换
                         if k in date_fields and v is not None:
                             # 如果是整数（时间戳），跳过（DuckDB不支持INTEGER->DATE转换）
                             if isinstance(v, int):
@@ -2583,7 +2583,7 @@ class AssetSeparatedDatabaseManager:
 
                     sql = f"INSERT INTO asset_metadata ({', '.join(columns)}) VALUES ({', '.join(placeholders)})"
                     conn.execute(sql, values)
-                    logger.info(f"✅ 插入资产元数据: {symbol}")
+                    logger.info(f"插入资产元数据: {symbol}")
 
                 conn.commit()
                 return True

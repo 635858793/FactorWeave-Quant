@@ -257,7 +257,7 @@ class DataService(BaseService):
 
             self._status = DataServiceStatus.READY
 
-            logger.info("✅ DataService initialized successfully with full data management capabilities")
+            logger.info("DataService initialized successfully with full data management capabilities")
 
         except Exception as e:
             self._status = DataServiceStatus.OFFLINE

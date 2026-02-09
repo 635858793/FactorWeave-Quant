@@ -27,7 +27,7 @@ try:
     from core.optimization.bar_virtual_renderer import BarVirtualRenderer
 
     VIRTUAL_SCROLL_ENABLED = True
-    logger.info("✅ 成功导入虚拟滚动渲染器模块")
+    logger.info("成功导入虚拟滚动渲染器模块")
 except ImportError as e:
     VIRTUAL_SCROLL_ENABLED = False
     logger.warning(f"⚠️ 无法导入虚拟滚动渲染器模块: {e}")
@@ -55,7 +55,7 @@ class ChartRenderer(QObject):
         if VIRTUAL_SCROLL_ENABLED:
             try:
                 self._initialize_virtual_renderer()
-                logger.info("✅ 虚拟滚动渲染器初始化完成")
+                logger.info("虚拟滚动渲染器初始化完成")
             except Exception as e:
                 logger.error(f"⚠️ 虚拟滚动渲染器初始化失败: {e}")
                 self._virtual_scroll_enabled = False
@@ -74,7 +74,7 @@ class ChartRenderer(QObject):
         # 启用虚拟滚动
         self._virtual_scroll_enabled = True
 
-        logger.info(f"✅ 虚拟滚动渲染管理器已初始化，注册了 {len(self.virtual_render_manager._renderers)} 种渲染器")
+        logger.info(f"虚拟滚动渲染管理器已初始化，注册了 {len(self.virtual_render_manager._renderers)} 种渲染器")
 
     def setup_figure(self, figure: Figure) -> Tuple[GridSpec, List]:
         """设置图表布局，避免tight_layout警告
@@ -138,7 +138,7 @@ class ChartRenderer(QObject):
 
                 success = self.virtual_render_manager.render('candle', ax, data, virtual_style, x, use_datetime_axis)
                 if success:
-                    logger.info(f"✅ 虚拟滚动渲染K线成功，耗时: {(time.time() - start_time) * 1000:.2f}ms")
+                    logger.info(f"虚拟滚动渲染K线成功，耗时: {(time.time() - start_time) * 1000:.2f}ms")
                 else:
                     logger.warning("⚠️ 虚拟滚动渲染K线失败，降级到传统渲染")
                     # 降级到传统渲染
@@ -151,7 +151,7 @@ class ChartRenderer(QObject):
                 view_data = self._get_view_data(data)
                 plot_data = self._downsample_data(view_data)
                 self._render_candlesticks_efficient(ax, plot_data, style or {}, x, use_datetime_axis)
-                logger.info(f"✅ 传统渲染K线成功，耗时: {(time.time() - start_time) * 1000:.2f}ms")
+                logger.info(f"传统渲染K线成功，耗时: {(time.time() - start_time) * 1000:.2f}ms")
         except Exception as e:
             self.render_error.emit(f"绘制K线失败: {str(e)}")
             logger.error(f"绘制K线失败: {e}", exc_info=True)
@@ -189,7 +189,7 @@ class ChartRenderer(QObject):
             # 数字索引：固定宽度
             candle_width = 0.3
 
-        # ✅ 性能优化：使用完全向量化的numpy操作，提升10-100倍性能
+        # 性能优化：使用完全向量化的numpy操作，提升10-100倍性能
         # 提取数据为numpy数组（避免iterrows()的性能开销）
         opens = data['open'].values
         closes = data['close'].values
@@ -205,7 +205,7 @@ class ChartRenderer(QObject):
         up_indices = np.where(is_up)[0]
         down_indices = np.where(~is_up)[0]
 
-        # ✅ 性能优化：完全向量化构建，直接使用numpy数组（PolyCollection和LineCollection都支持）
+        # 性能优化：完全向量化构建，直接使用numpy数组（PolyCollection和LineCollection都支持）
         def build_candle_verts(indices):
             """批量构建蜡烛图顶点，返回numpy数组"""
             if len(indices) == 0:
@@ -241,7 +241,7 @@ class ChartRenderer(QObject):
         segments_up = build_shadow_segments(up_indices)
         segments_down = build_shadow_segments(down_indices)
 
-        # ✅ 性能优化：检查数组长度而不是转换为bool（避免numpy警告）
+        # 性能优化：检查数组长度而不是转换为bool（避免numpy警告）
         # 修改为空心蜡烛图样式：facecolor透明，只有边框
         if len(verts_up) > 0:
             collection_up = PolyCollection(
@@ -259,7 +259,7 @@ class ChartRenderer(QObject):
             collection_shadow_down = LineCollection(
                 segments_down, colors=down_color, linewidth=0.4, alpha=alpha)
             ax.add_collection(collection_shadow_down)
-        # ✅ 性能优化：移除autoscale_view()调用，由调用方统一处理
+        # 性能优化：移除autoscale_view()调用，由调用方统一处理
         # ax.autoscale_view()  # 已移除，在rendering_mixin中统一调用
 
     def render_volume(self, ax, data: pd.DataFrame, style: Dict[str, Any] = None, x: np.ndarray = None, use_datetime_axis: bool = True):
@@ -290,7 +290,7 @@ class ChartRenderer(QObject):
 
                 success = self.virtual_render_manager.render('volume', ax, data, virtual_style, x, use_datetime_axis)
                 if success:
-                    logger.info(f"✅ 虚拟滚动渲染成交量成功，耗时: {(time.time() - start_time) * 1000:.2f}ms")
+                    logger.info(f"虚拟滚动渲染成交量成功，耗时: {(time.time() - start_time) * 1000:.2f}ms")
                 else:
                     logger.warning("⚠️ 虚拟滚动渲染成交量失败，降级到传统渲染")
                     # 降级到传统渲染
@@ -303,7 +303,7 @@ class ChartRenderer(QObject):
                 view_data = self._get_view_data(data)
                 plot_data = self._downsample_data(view_data)
                 self._render_volume_efficient(ax, plot_data, style or {}, x, use_datetime_axis)
-                logger.info(f"✅ 传统渲染成交量成功，耗时: {(time.time() - start_time) * 1000:.2f}ms")
+                logger.info(f"传统渲染成交量成功，耗时: {(time.time() - start_time) * 1000:.2f}ms")
         except Exception as e:
             self.render_error.emit(f"绘制成交量失败: {str(e)}")
             logger.error(f"绘制成交量失败: {e}", exc_info=True)
@@ -336,7 +336,7 @@ class ChartRenderer(QObject):
         else:
             bar_width = 0.3
 
-        # ✅ 性能优化：使用完全向量化的numpy操作，提升10-100倍性能
+        # 性能优化：使用完全向量化的numpy操作，提升10-100倍性能
         # 提取数据为numpy数组（避免iterrows()的性能开销）
         volumes = data['volume'].values
         closes = data['close'].values
@@ -351,7 +351,7 @@ class ChartRenderer(QObject):
         up_indices = np.where(is_up)[0]
         down_indices = np.where(~is_up)[0]
 
-        # ✅ 性能优化：完全向量化构建，直接使用numpy数组（PolyCollection支持）
+        # 性能优化：完全向量化构建，直接使用numpy数组（PolyCollection支持）
         def build_volume_verts(indices):
             """批量构建成交量柱状图顶点，返回numpy数组"""
             if len(indices) == 0:
@@ -370,7 +370,7 @@ class ChartRenderer(QObject):
 
         verts_up = build_volume_verts(up_indices)
         verts_down = build_volume_verts(down_indices)
-        # ✅ 性能优化：检查数组长度而不是转换为bool（避免numpy警告）
+        # 性能优化：检查数组长度而不是转换为bool（避免numpy警告）
         if len(verts_up) > 0:
             collection_up = PolyCollection(
                 verts_up, facecolor=up_color, edgecolor='none', alpha=alpha)
@@ -379,7 +379,7 @@ class ChartRenderer(QObject):
             collection_down = PolyCollection(
                 verts_down, facecolor=down_color, edgecolor='none', alpha=alpha)
             ax.add_collection(collection_down)
-        # ✅ 性能优化：移除autoscale_view()调用，由调用方统一处理
+        # 性能优化：移除autoscale_view()调用，由调用方统一处理
         # ax.autoscale_view()  # 已移除，在rendering_mixin中统一调用
 
     def render_bar(self, ax, data: pd.DataFrame, style: Dict[str, Any] = None, x: np.ndarray = None, use_datetime_axis: bool = True):
@@ -411,7 +411,7 @@ class ChartRenderer(QObject):
 
                 success = self.virtual_render_manager.render('bar', ax, data, virtual_style, x, use_datetime_axis)
                 if success:
-                    logger.info(f"✅ 虚拟滚动渲染柱状图成功，耗时: {(time.time() - start_time) * 1000:.2f}ms")
+                    logger.info(f"虚拟滚动渲染柱状图成功，耗时: {(time.time() - start_time) * 1000:.2f}ms")
                 else:
                     logger.warning("⚠️ 虚拟滚动渲染柱状图失败，降级到传统渲染")
                     # 降级到传统渲染 - 这里简化处理，使用线图渲染作为 fallback
@@ -420,7 +420,7 @@ class ChartRenderer(QObject):
                 # 使用传统渲染 - 这里简化处理，使用线图渲染作为 fallback
                 logger.info(f"📊 使用传统渲染柱状图，数据量: {len(data)} 个数据点")
                 self.render_line(ax, data.iloc[:, 0], style, x, use_datetime_axis)
-                logger.info(f"✅ 传统渲染柱状图成功，耗时: {(time.time() - start_time) * 1000:.2f}ms")
+                logger.info(f"传统渲染柱状图成功，耗时: {(time.time() - start_time) * 1000:.2f}ms")
 
         except Exception as e:
             self.render_error.emit(f"绘制柱状图失败: {str(e)}")
@@ -482,7 +482,7 @@ class ChartRenderer(QObject):
 
                 success = self.virtual_render_manager.render('line', ax, data, virtual_style, x, use_datetime_axis)
                 if success:
-                    logger.info(f"✅ 虚拟滚动渲染线图成功，耗时: {(time.time() - start_time) * 1000:.2f}ms")
+                    logger.info(f"虚拟滚动渲染线图成功，耗时: {(time.time() - start_time) * 1000:.2f}ms")
                 else:
                     logger.warning("⚠️ 虚拟滚动渲染线图失败，降级到传统渲染")
                     # 降级到传统渲染
@@ -495,7 +495,7 @@ class ChartRenderer(QObject):
                 view_data = self._get_view_data(data.to_frame()).iloc[:, 0] if isinstance(data, pd.Series) else pd.Series(data)
                 plot_data = self._downsample_data(view_data.to_frame()).iloc[:, 0]
                 self._render_line_efficient(ax, plot_data, style or {})
-                logger.info(f"✅ 传统渲染线图成功，耗时: {(time.time() - start_time) * 1000:.2f}ms")
+                logger.info(f"传统渲染线图成功，耗时: {(time.time() - start_time) * 1000:.2f}ms")
         except Exception as e:
             self.render_error.emit(f"绘制线图失败: {str(e)}")
             logger.error(f"绘制线图失败: {e}", exc_info=True)
@@ -536,7 +536,7 @@ class ChartRenderer(QObject):
         # 添加到轴
         ax.add_collection(collection)
 
-        # ✅ 性能优化：移除autoscale_view()调用，由调用方统一处理
+        # 性能优化：移除autoscale_view()调用，由调用方统一处理
         # ax.autoscale_view()  # 已移除，在rendering_mixin中统一调用
 
         # 添加图例
@@ -566,7 +566,7 @@ class ChartRenderer(QObject):
             if days <= 7:
                 # 7天内：显示 月-日 时:分
                 formatter = mdates.DateFormatter('%m-%d %H:%M')
-                # ✅ 修复：优化HourLocator间隔计算
+                # 修复：优化HourLocator间隔计算
                 if days <= 1:
                     locator = mdates.HourLocator(interval=1)  # 每小时一个刻度
                 elif days <= 3:
@@ -576,7 +576,7 @@ class ChartRenderer(QObject):
             elif days <= 30:
                 # 30天内：显示 月-日
                 formatter = mdates.DateFormatter('%m-%d')
-                # ✅ 修复：优化DayLocator间隔计算
+                # 修复：优化DayLocator间隔计算
                 if days <= 14:
                     locator = mdates.DayLocator(interval=1)  # 每天一个刻度（14天内）
                 else:
@@ -585,7 +585,7 @@ class ChartRenderer(QObject):
             elif days <= 365:
                 # 1年内：显示 月-日
                 formatter = mdates.DateFormatter('%m-%d')
-                # ✅ 修复：使用WeekLocator而不是WeekdayLocator（WeekdayLocator用于周几定位，不适用于日线数据）
+                # 修复：使用WeekLocator而不是WeekdayLocator（WeekdayLocator用于周几定位，不适用于日线数据）
                 # 根据数据量自动选择：少于90天用DayLocator，90-365天用WeekLocator
                 if days <= 90:
                     locator = mdates.DayLocator(interval=max(1, days // 15))  # 每15天一个刻度
@@ -667,7 +667,7 @@ class ChartRenderer(QObject):
             ax: matplotlib轴对象
             use_datetime_axis: 是否使用datetime X轴（如果True，不覆盖已设置的格式化器）
         """
-        # ✅ 修复：只有在非datetime X轴或格式化器未设置时才设置日期格式
+        # 修复：只有在非datetime X轴或格式化器未设置时才设置日期格式
         # 避免覆盖智能日期格式化器
         if not use_datetime_axis:
             # 数字索引X轴：不设置日期格式

@@ -255,12 +255,11 @@ class EnhancedRiskMonitor:
         logger.info("增强版风险监控已启动")
 
     def stop_monitoring(self):
-        """停止风险监控"""
+        """停止风险监控 - 非阻塞方式"""
         self.is_monitoring = False
-        if self.monitoring_thread:
-            self.monitoring_thread.join(timeout=5)
-
-        logger.info("增强版风险监控已停止")
+        # 不等待线程结束，因为线程是 daemon=True，会自动清理
+        # 如果使用 join() 会阻塞主线程，导致UI卡顿
+        logger.info("增强版风险监控已停止（非阻塞）")
 
     def _monitoring_loop(self):
         """监控主循环"""

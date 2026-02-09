@@ -487,7 +487,9 @@ class EnhancedAssetSelector(QWidget):
         search_layout.setContentsMargins(0, 0, 0, 0)
         
         search_label = QLabel("搜索:")
-        search_label.setFixedWidth(40)
+        search_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        search_label.setMinimumWidth(40)
+        search_label.setMaximumWidth(40)
         
         self.search_input = QLineEdit()
         asset_display_name = UIAssetTypeUtils.get_display_name(self.current_asset_type)

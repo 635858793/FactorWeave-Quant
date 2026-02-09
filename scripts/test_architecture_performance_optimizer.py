@@ -176,7 +176,7 @@ def test_architecture_performance_optimizer():
             passed_count = 0
             failed_count = 0
             for result in validation_results:
-                status = "✅ 通过" if result.passed else "❌ 失败"
+                status = "通过" if result.passed else "❌ 失败"
                 logger.info(f"\n{result.name}: {status}")
                 logger.info(f"  目标值：{result.target_value:.2f} {result.unit}")
                 logger.info(f"  测量值：{result.measured_value:.2f} {result.unit}")

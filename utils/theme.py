@@ -196,7 +196,7 @@ class ThemeManager(QObject):
                         theme_dict = json.loads(content)
                         self._theme_cache[saved_theme_name.lower()] = theme_dict
 
-                    logger.info(f"✅ 成功恢复主题: {saved_theme_name} ({type_}, base_type={base_type})")
+                    logger.info(f"成功恢复主题: {saved_theme_name} ({type_}, base_type={base_type})")
                 else:
                     logger.warning(f"保存的主题 '{saved_theme_name}' 不存在，使用默认主题")
             else:
@@ -776,7 +776,7 @@ class ThemeManager(QObject):
             # 应用QSS主题内容
             self.apply_qss_theme_content(qss_content)
             
-            logger.info(f"✅ QSS主题异步应用完成: {theme_name} (base_type={base_type})")
+            logger.info(f"QSS主题异步应用完成: {theme_name} (base_type={base_type})")
         except Exception as e:
             logger.error(f"❌ 异步应用QSS主题失败: {e}")
     

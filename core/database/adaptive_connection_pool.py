@@ -303,7 +303,7 @@ class AdaptiveConnectionPoolManager:
         self._thread = threading.Thread(target=self._adjustment_loop, daemon=True, name="AdaptiveManager")
         self._thread.start()
 
-        logger.info(f"✅ 自适应连接池管理已启动 (min={self.config.min_pool_size}, max={self.config.max_pool_size})")
+        logger.info(f"自适应连接池管理已启动 (min={self.config.min_pool_size}, max={self.config.max_pool_size})")
 
     def stop(self):
         """停止自适应管理"""
@@ -330,7 +330,7 @@ class AdaptiveConnectionPoolManager:
                 self._running = True
                 self._thread = threading.Thread(target=self._adjustment_loop, daemon=True, name="AdaptiveManager")
                 self._thread.start()
-                logger.info(f"✅ 自适应管理器已启用")
+                logger.info(f"自适应管理器已启用")
         else:
             if self._running:
                 logger.info("⏸️ 禁用自适应管理器...")
@@ -338,7 +338,7 @@ class AdaptiveConnectionPoolManager:
                 self.collector.stop()
                 if self._thread:
                     self._thread.join(timeout=5)
-                logger.info(f"✅ 自适应管理器已禁用")
+                logger.info(f"自适应管理器已禁用")
 
     def get_enabled(self) -> bool:
         """获取当前启用状态"""
@@ -352,7 +352,7 @@ class AdaptiveConnectionPoolManager:
 
         logger.info("⏸️ 暂停自适应监控...")
         self._running = False
-        logger.info("✅ 自适应监控已暂停")
+        logger.info("自适应监控已暂停")
 
     def resume(self):
         """恢复监控"""
@@ -366,7 +366,7 @@ class AdaptiveConnectionPoolManager:
 
         logger.info("🔄 恢复自适应监控...")
         self._running = True
-        logger.info("✅ 自适应监控已恢复")
+        logger.info("自适应监控已恢复")
 
     def _adjustment_loop(self):
         """调整循环"""
@@ -406,7 +406,7 @@ class AdaptiveConnectionPoolManager:
             success = self.db.reload_pool(new_config)
 
             if success:
-                logger.info(f"✅ 连接池已自动调整: pool_size={new_pool_size}")
+                logger.info(f"连接池已自动调整: pool_size={new_pool_size}")
             else:
                 logger.error(f"❌ 连接池自动调整失败")
 

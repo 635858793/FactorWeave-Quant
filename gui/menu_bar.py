@@ -186,6 +186,24 @@ class MainMenuBar(QMenuBar):
 
             self.view_menu.addSeparator()
 
+            # 字体缩放
+            self.increase_font_action = QAction("增大字体", self)
+            self.increase_font_action.setStatusTip("增大字体大小 (Ctrl++)")
+            self.increase_font_action.setShortcut("Ctrl++")
+            self.view_menu.addAction(self.increase_font_action)
+
+            self.decrease_font_action = QAction("减小字体", self)
+            self.decrease_font_action.setStatusTip("减小字体大小 (Ctrl+-)")
+            self.decrease_font_action.setShortcut("Ctrl+-")
+            self.view_menu.addAction(self.decrease_font_action)
+
+            self.reset_font_action = QAction("重置字体", self)
+            self.reset_font_action.setStatusTip("重置字体大小为默认值 (Ctrl+0)")
+            self.reset_font_action.setShortcut("Ctrl+0")
+            self.view_menu.addAction(self.reset_font_action)
+
+            self.view_menu.addSeparator()
+
             # 刷新
             self.refresh_action = QAction("刷新", self)
             self.refresh_action.setStatusTip("刷新当前数据")
@@ -413,7 +431,7 @@ class MainMenuBar(QMenuBar):
             
             self.tools_menu.addSeparator()
             
-            # ✅ 分布式节点监控
+            # 分布式节点监控
             self.distributed_monitor_action = QAction("🌐 分布式节点监控", self)
             self.distributed_monitor_action.setStatusTip("监控和管理分布式计算节点")
             self.distributed_monitor_action.setShortcut("Ctrl+Shift+N")
@@ -992,6 +1010,9 @@ class MainMenuBar(QMenuBar):
                 # 视图菜单
                 ('toolbar_action', '_on_toggle_toolbar'),
                 ('statusbar_action', '_on_toggle_statusbar'),
+                ('increase_font_action', '_on_increase_font'),
+                ('decrease_font_action', '_on_decrease_font'),
+                ('reset_font_action', '_on_reset_font'),
                 # ('backtest_panel_action', '_on_toggle_backtest_panel'),  # 已合并到专业回测
                 ('refresh_action', '_on_refresh'),
 
@@ -1074,7 +1095,7 @@ class MainMenuBar(QMenuBar):
                 ('sentiment_plugin_action', 'show_sentiment_plugin_manager'),
                 ('plugin_market_action', 'show_plugin_market'),
                 
-                # ✅ 分布式节点监控
+                # 分布式节点监控
                 ('distributed_monitor_action', 'show_distributed_monitor'),
                 ('optimization_dashboard_action', '_on_optimization_dashboard'),
                 ('one_click_optimize_action', '_on_one_click_optimization'),
@@ -1321,7 +1342,7 @@ class MainMenuBar(QMenuBar):
                     except Exception as e:
                         logger.info(f" 获取插件管理器失败: {e}")
 
-            # ✅ 情绪数据服务已删除，传递None保持兼容性
+            # 情绪数据服务已删除，传递None保持兼容性
             # 创建增强版插件管理器对话框
             dialog = EnhancedPluginManagerDialog(
                 plugin_manager=plugin_manager,
@@ -1349,7 +1370,7 @@ class MainMenuBar(QMenuBar):
             # 导入增强版数据导入UI
             from gui.enhanced_data_import_launcher import EnhancedDataImportMainWindow
 
-            # ✅ 获取plugin_manager
+            # 获取plugin_manager
             plugin_manager = None
 
             # 方法1: 从ServiceContainer获取（推荐）
@@ -1360,7 +1381,7 @@ class MainMenuBar(QMenuBar):
                 container = get_service_container()
                 if container and container.is_registered(PluginManager):
                     plugin_manager = container.resolve(PluginManager)
-                    logger.info("✅ 从ServiceContainer获取plugin_manager成功")
+                    logger.info("从ServiceContainer获取plugin_manager成功")
             except Exception as e:
                 logger.debug(f"从ServiceContainer获取失败: {e}")
 

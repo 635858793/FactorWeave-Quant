@@ -153,7 +153,7 @@ class VirtualRenderManager:
         self._performance_stats: Dict[str, Dict[str, Any]] = {}  # 图表类型 -> 性能统计
         self._lock = threading.Lock()
         
-        logger.info("✅ 虚拟滚动渲染管理器初始化完成")
+        logger.info("虚拟滚动渲染管理器初始化完成")
     
     def register_renderer(self, chart_type: str, renderer: IVirtualRenderer, 
                          config: Optional[VirtualizationConfig] = None) -> None:
@@ -601,7 +601,7 @@ class VirtualScrollRenderer(QObject):
             self.gpu_acceleration_toggled.emit(self.gpu_acceleration_enabled)
             
             if self.gpu_acceleration_enabled:
-                logger.info("✅ WebGPU渲染器集成成功，将使用GPU加速渲染")
+                logger.info("WebGPU渲染器集成成功，将使用GPU加速渲染")
             else:
                 logger.warning("⚠️ WebGPU渲染器初始化失败，将使用CPU渲染")
         except Exception as e:

@@ -420,7 +420,7 @@ class LLMConfigDialog(QDialog):
             # 显示结果
             self.test_result_edit.clear()
             if result.get('success'):
-                self.test_result_edit.appendPlainText(f"✅ 连接成功\n")
+                self.test_result_edit.appendPlainText(f"连接成功\n")
                 self.test_result_edit.appendPlainText(f"模型: {result.get('model', 'N/A')}\n")
                 self.test_result_edit.appendPlainText(f"响应: {result.get('response', 'N/A')[:100]}...")
                 QMessageBox.information(self, "成功", "连接测试成功")
@@ -450,7 +450,7 @@ class LLMConfigDialog(QDialog):
         for provider in providers:
             result = self.llm_config_service.test_connection(provider)
             if result.get('success'):
-                self.test_result_edit.appendPlainText(f"✅ {provider.value}: 成功\n")
+                self.test_result_edit.appendPlainText(f"{provider.value}: 成功\n")
                 success_count += 1
             else:
                 self.test_result_edit.appendPlainText(f"❌ {provider.value}: 失败 - {result.get('error', '未知错误')}\n")

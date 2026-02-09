@@ -14,7 +14,7 @@ def test_matplotlib_basic():
         matplotlib.use('Agg')
         import matplotlib.pyplot as plt
 
-        print("✅ matplotlib导入成功")
+        print("matplotlib导入成功")
 
         fig, ax = plt.subplots(figsize=(10, 6))
         categories = ['A', 'B', 'C', 'D']
@@ -39,13 +39,13 @@ def test_matplotlib_basic():
         plt.savefig(file_path, dpi=300, bbox_inches='tight')
         plt.close()
 
-        print(f"✅ 测试图表生成成功: {file_path}")
-        print(f"✅ 文件存在: {os.path.exists(file_path)}")
+        print(f"测试图表生成成功: {file_path}")
+        print(f"文件存在: {os.path.exists(file_path)}")
 
         assert os.path.exists(file_path), "图表文件未生成"
 
         file_size = os.path.getsize(file_path)
-        print(f"✅ 文件大小: {file_size} bytes")
+        print(f"文件大小: {file_size} bytes")
 
         assert file_size > 0, "图表文件大小为0"
 
