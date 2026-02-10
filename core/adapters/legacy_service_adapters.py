@@ -32,7 +32,7 @@ def deprecation_warning(old_class: str, new_service: str, migration_guide: str =
         warning_msg += f" Migration guide: {migration_guide}"
 
     warnings.warn(warning_msg, DeprecationWarning, stacklevel=3)
-    logger.warning(f"🔄 DEPRECATION: {warning_msg}")
+    logger.warning(f"DEPRECATION: {warning_msg}")
 
 
 class LegacyDataManagerAdapter:
@@ -381,13 +381,13 @@ class MigrationGuide:
         """打印完整的迁移指南"""
         guide = """
 ================================================================================
-🔄 ARCHITECTURE REFACTORING MIGRATION GUIDE
+ARCHITECTURE REFACTORING MIGRATION GUIDE
 ================================================================================
 
 FactorWeave-Quant has been refactored from 226+ Manager classes to 15 unified services.
 This guide helps you migrate your code to the new architecture.
 
-🎯 NEW SERVICE ARCHITECTURE:
+NEW SERVICE ARCHITECTURE:
 
 1. UnifiedDataService (replaces multiple data managers)
    - UnifiedDataManager → UnifiedDataService

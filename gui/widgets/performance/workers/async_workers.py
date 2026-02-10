@@ -128,46 +128,6 @@ class AsyncStrategyWorker(QRunnable):
             self.signals.error_occurred.emit(str(e))
 
 
-class SystemHealthCheckThread(QThread):
-    """系统健康检查线程"""
-    health_check_completed = pyqtSignal(dict)
-    health_check_error = pyqtSignal(str)
-
-    def __init__(self, health_checker):
-        super().__init__()
-        self._health_checker = health_checker
-
-    def run(self):
-        """执行健康检查"""
-        try:
-            logger.info("开始执行系统健康检查...")
-
-            #  修复：添加详细的错误处理和日志
-            if not self._health_checker:
-                error_msg = "健康检查器为None，无法执行检查"
-                logger.error(error_msg)
-                self.health_check_error.emit(error_msg)
-                return
-
-            logger.info("健康检查器已准备就绪，开始执行检查...")
-            health_report = self._health_checker.run_comprehensive_check()
-
-            if health_report:
-                logger.info(f" 健康检查完成，报告包含 {len(health_report)} 个项目")
-                self.health_check_completed.emit(health_report)
-            else:
-                error_msg = "健康检查返回了空报告"
-                logger.error(error_msg)
-                self.health_check_error.emit(error_msg)
-
-        except Exception as e:
-            import traceback
-            error_msg = f"系统健康检查错误: {e}"
-            logger.error(error_msg)
-            logger.error(f"详细错误信息: {traceback.format_exc()}")
-            self.health_check_error.emit(error_msg)
-
-
 class AlertHistorySignals(QObject):
     """告警历史信号"""
     finished = pyqtSignal(list)

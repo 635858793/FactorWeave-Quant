@@ -394,7 +394,7 @@ class ArchitectureMigrationGuide:
     def run_migration(self, interactive: bool = True) -> bool:
         """Run the complete migration process"""
         try:
-            logger.info("🚀 Starting Architecture Migration...")
+            logger.info("Starting Architecture Migration...")
             self.migration_config.started_at = datetime.now()
 
             for step in self.migration_config.steps:
@@ -411,7 +411,7 @@ class ArchitectureMigrationGuide:
                         logger.info("❌ Migration cancelled by user")
                         return False
 
-                logger.info(f"🔄 Executing: {step.name}")
+                logger.info(f"Executing: {step.name}")
 
                 # Execute step
                 success = self._execute_migration_step(step)
@@ -656,7 +656,7 @@ For migration issues or questions, contact the architecture team.
                 logger.error(f"Backup path not found: {backup_path}")
                 return False
 
-            logger.info(f"🔄 Rolling back migration from: {backup_path}")
+            logger.info(f"Rolling back migration from: {backup_path}")
 
             # Load backup manifest
             manifest_file = backup_path / "backup_manifest.json"

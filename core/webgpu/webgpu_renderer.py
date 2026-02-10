@@ -127,7 +127,7 @@ class WebGPUContext:
                 
                 # 如果性能评分足够高且推荐后端是GPU后端，强制使用GPU后端
                 if validated_report['score'] >= 60.0 and is_gpu_backend:
-                    logger.info(f"🚀 高性能兼容性报告检测到，强制使用GPU后端初始化")
+                    logger.info(f"高性能兼容性报告检测到，强制使用GPU后端初始化")
                     
                     # 优先尝试智能推荐后端
                     if self._initialize_smart_backend(validated_report['backend']):
@@ -144,7 +144,7 @@ class WebGPUContext:
                             return self._initialize_by_preferred_backend()
                 else:
                     # 兼容性报告评分较低，使用配置后端
-                    logger.info(f"🔄 兼容性报告评分较低，使用配置后端: {self.config.preferred_backend.value}")
+                    logger.info(f"兼容性报告评分较低，使用配置后端: {self.config.preferred_backend.value}")
                     return self._initialize_by_preferred_backend()
             else:
                 # 兼容性报告验证失败，尝试使用配置后端
@@ -154,7 +154,7 @@ class WebGPUContext:
         except Exception as e:
             logger.error(f"WebGPU上下文初始化失败: {e}")
             # 最后的回退策略
-            logger.warning("🔄 所有初始化策略失败，使用CPU回退")
+            logger.warning("所有初始化策略失败，使用CPU回退")
             return self._initialize_cpu_fallback()
     
     def _validate_compatibility_report(self, report):
@@ -167,7 +167,7 @@ class WebGPUContext:
         
         try:
             logger.debug(f"🔍 兼容性报告验证开始: {type(report)}")
-            logger.debug(f"📊 兼容性报告内容: {report}")
+            logger.debug(f"兼容性报告内容: {report}")
             
             # 检查必要的属性
             if not hasattr(report, 'recommended_backend'):
@@ -245,11 +245,11 @@ class WebGPUContext:
             backend_value = recommended_backend.value if hasattr(recommended_backend, 'value') else recommended_backend
             backend_priority = backend_map.get(backend_value, [GPUBackend.CPU])
             
-            logger.info(f"🔄 智能后端选择序列: {recommended_backend} -> {backend_priority}")
+            logger.info(f"智能后端选择序列: {recommended_backend} -> {backend_priority}")
             
             # 按优先级尝试初始化后端
             for gpu_backend in backend_priority:
-                logger.info(f"🎯 尝试初始化后端: {gpu_backend.value}")
+                logger.info(f"尝试初始化后端: {gpu_backend.value}")
                 
                 if gpu_backend == GPUBackend.MODERNGL and MODERNGL_AVAILABLE:
                     if self._initialize_moderngl():
@@ -295,7 +295,7 @@ class WebGPUContext:
         try:
             # 优先尝试ModernGL作为高性能替代方案
             if MODERNGL_AVAILABLE:
-                logger.info("🚀 优先使用ModernGL（高性能OpenGL替代方案）")
+                logger.info("优先使用ModernGL（高性能OpenGL替代方案）")
                 if self._initialize_moderngl():
                     logger.info("ModernGL高性能初始化成功")
                     return True
@@ -304,12 +304,12 @@ class WebGPUContext:
             
             # 如果配置为OpenGL但ModernGL不可用，尝试OpenGL
             if OPENGL_AVAILABLE and self.config.preferred_backend == GPUBackend.OPENGL:
-                logger.info("🔄 尝试传统OpenGL（作为ModernGL的备选）")
+                logger.info("尝试传统OpenGL（作为ModernGL的备选）")
                 return self._initialize_opengl()
             
             # 如果配置为CUDA
             elif self.config.preferred_backend == GPUBackend.CUDA and CUDA_AVAILABLE:
-                logger.info("🔄 尝试CUDA后端")
+                logger.info("尝试CUDA后端")
                 return self._initialize_cuda()
             else:
                 logger.warning("⚠️ 所有GPU后端不可用，使用CPU回退")
@@ -322,7 +322,7 @@ class WebGPUContext:
         """初始化ModernGL后端（高性能OpenGL替代方案）"""
         try:
             # 创建高性能无头上下文
-            logger.info("🚀 初始化ModernGL高性能渲染器...")
+            logger.info("初始化ModernGL高性能渲染器...")
             
             # 尝试创建现代GPU上下文
             try:
@@ -387,7 +387,7 @@ class WebGPUContext:
     def _create_moderngl_fallback(self) -> bool:
         """创建ModernGL回退模式（高性能CPU模拟）"""
         try:
-            logger.info("🔄 启用ModernGL高性能CPU模拟模式...")
+            logger.info("启用ModernGL高性能CPU模拟模式...")
             
             # 创建高性能CPU模拟上下文
             self.context = "moderngl_high_performance_cpu"
@@ -601,7 +601,7 @@ class WebGPUContext:
     
     def _initialize_gpu_fallback(self) -> bool:
         """GPU回退策略 - 尝试所有可用的GPU后端"""
-        logger.info("🔄 执行GPU回退策略...")
+        logger.info("执行GPU回退策略...")
         
         # GPU后端优先级列表
         gpu_backends = [
@@ -612,7 +612,7 @@ class WebGPUContext:
         
         for backend, available, init_func in gpu_backends:
             if available:
-                logger.info(f"🎯 尝试GPU回退: {backend.value}")
+                logger.info(f"尝试GPU回退: {backend.value}")
                 try:
                     if init_func():
                         logger.info(f"GPU回退成功: {backend.value}")
@@ -1089,7 +1089,7 @@ class WebGPURenderer(BaseChartRenderer):
                     if hasattr(self.context, '_moderngl_initialized'):
                         break
                     time.sleep(0.1)
-                logger.debug("🔄 强制同步模式：等待WebGPUContext初始化完成")
+                logger.debug("强制同步模式：等待WebGPUContext初始化完成")
             
             # 同步所有初始化状态
             state_mappings = [
@@ -1112,13 +1112,13 @@ class WebGPURenderer(BaseChartRenderer):
                 self._initialization_history = getattr(self.context, '_initialization_history', [])
                 logger.debug(f"同步初始化历史: {len(self._initialization_history)} 条记录")
             
-            logger.debug("🔄 WebGPUContext状态同步完成")
+            logger.debug("WebGPUContext状态同步完成")
         except Exception as e:
             logger.warning(f"⚠️ 同步WebGPUContext状态失败: {e}")
     
     def _wait_for_context_ready(self, timeout: float = 5.0) -> bool:
         """等待WebGPUContext初始化完成"""
-        logger.debug("🔄 等待WebGPUContext初始化完成...")
+        logger.debug("等待WebGPUContext初始化完成...")
         
         start_time = time.time()
         max_retries = int(timeout * 10)  # 每100ms检查一次
@@ -1239,31 +1239,31 @@ class WebGPURenderer(BaseChartRenderer):
                     if history_entry['success']:
                         backend_name = history_entry['backend']
                         if backend_name == 'moderngl' and self._moderngl_initialized:
-                            logger.info(f"🔄 基于初始化历史恢复ModernGL后端（时间戳: {history_entry['timestamp']}）")
+                            logger.info(f"基于初始化历史恢复ModernGL后端（时间戳: {history_entry['timestamp']}）")
                             return GPUBackend.MODERNGL
                         elif backend_name == 'opengl' and self._opengl_initialized:
-                            logger.info(f"🔄 基于初始化历史恢复OpenGL后端（时间戳: {history_entry['timestamp']}）")
+                            logger.info(f"基于初始化历史恢复OpenGL后端（时间戳: {history_entry['timestamp']}）")
                             return GPUBackend.OPENGL
                         elif backend_name == 'cuda' and self._cuda_initialized:
-                            logger.info(f"🔄 基于初始化历史恢复CUDA后端（时间戳: {history_entry['timestamp']}）")
+                            logger.info(f"基于初始化历史恢复CUDA后端（时间戳: {history_entry['timestamp']}）")
                             return GPUBackend.CUDA
             
             # 智能状态检查：优先保留ModernGL状态
             if self._moderngl_initialized:
-                logger.info("🔄 检测到ModernGL初始化状态，优先保留ModernGL后端")
+                logger.info("检测到ModernGL初始化状态，优先保留ModernGL后端")
                 return GPUBackend.MODERNGL
             
             if self._opengl_initialized:
-                logger.info("🔄 检测到OpenGL初始化状态，保留OpenGL后端")
+                logger.info("检测到OpenGL初始化状态，保留OpenGL后端")
                 return GPUBackend.OPENGL
             
             if self._cuda_initialized:
-                logger.info("🔄 检测到CUDA初始化状态，保留CUDA后端")
+                logger.info("检测到CUDA初始化状态，保留CUDA后端")
                 return GPUBackend.CUDA
             
             # 传统回退策略
             if hasattr(self.context, '_moderngl_initialized') and self.context._moderngl_initialized:
-                logger.info("🔄 检测到WebGPUContext ModernGL初始化状态，优先保留ModernGL后端")
+                logger.info("检测到WebGPUContext ModernGL初始化状态，优先保留ModernGL后端")
                 return GPUBackend.MODERNGL
             
             logger.warning("❌ 所有检测方法失败，回退到CPU")
@@ -1411,7 +1411,7 @@ class WebGPURenderer(BaseChartRenderer):
                           use_datetime_axis: bool = True) -> bool:
         """使用GPU加速渲染K线图"""
         try:
-            logger.info("🎯 使用WebGPURenderer渲染K线图")
+            logger.info("使用WebGPURenderer渲染K线图")
             
             if not self.initialized:
                 logger.warning("WebGPURenderer未初始化，尝试降级渲染")
@@ -1466,7 +1466,7 @@ class WebGPURenderer(BaseChartRenderer):
         标准接口：渲染技术指标
         """
         try:
-            logger.info("📊 WebGPURenderer渲染技术指标")
+            logger.info("WebGPURenderer渲染技术指标")
             # TODO: 实现技术指标GPU渲染
             return False
         except Exception as e:
@@ -1574,7 +1574,7 @@ class WebGPURenderer(BaseChartRenderer):
     def _render_cpu_fallback_candlestick(self, data: pd.DataFrame, style: Dict[str, Any], ax) -> bool:
         """CPU降级渲染K线图"""
         try:
-            logger.info("🔄 使用CPU降级渲染K线图")
+            logger.info("使用CPU降级渲染K线图")
             # 简单的matplotlib渲染
             import matplotlib.pyplot as plt
             

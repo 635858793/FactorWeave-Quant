@@ -97,7 +97,7 @@ class IntelligentModelControlPanel(QWidget):
         
         # 当前策略
         status_layout.addWidget(QLabel("当前策略:"), 1, 1)
-        self.strategy_label = QLabel("📊 智能自适应")
+        self.strategy_label = QLabel("智能自适应")
         self.strategy_label.setFont(QFont("Microsoft YaHei UI", 9, QFont.Bold))
         status_layout.addWidget(self.strategy_label, 1, 2)
         
@@ -249,7 +249,7 @@ class IntelligentModelControlPanel(QWidget):
         control_layout.addWidget(self.enable_button)
         
         # 重置配置按钮
-        self.reset_button = QPushButton("🔄 重置配置")
+        self.reset_button = QPushButton("重置配置")
         self.reset_button.setMinimumHeight(40)
         self.reset_button.clicked.connect(self._on_reset_config)
         control_layout.addWidget(self.reset_button)

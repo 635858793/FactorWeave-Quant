@@ -7,7 +7,6 @@
 # 延迟导入异步工作线程，避免在模块级别导入时卡住
 _AsyncDataWorker = None
 _AsyncStrategyWorker = None
-_SystemHealthCheckThread = None
 _AlertHistoryWorker = None
 _AsyncDataSignals = None
 _AlertHistorySignals = None
@@ -17,7 +16,7 @@ _NotificationTestSignals = None
 
 def _import_async_workers():
     """延迟导入async_workers模块"""
-    global _AsyncDataWorker, _AsyncStrategyWorker, _SystemHealthCheckThread
+    global _AsyncDataWorker, _AsyncStrategyWorker
     global _AlertHistoryWorker, _AsyncDataSignals, _AlertHistorySignals
     global _EmailTestWorker, _SMSTestWorker, _NotificationTestSignals
     
@@ -25,7 +24,6 @@ def _import_async_workers():
         from .workers import (
             AsyncDataWorker,
             AsyncStrategyWorker,
-            SystemHealthCheckThread,
             AlertHistoryWorker,
             AsyncDataSignals,
             AlertHistorySignals,
@@ -35,7 +33,6 @@ def _import_async_workers():
         )
         _AsyncDataWorker = AsyncDataWorker
         _AsyncStrategyWorker = AsyncStrategyWorker
-        _SystemHealthCheckThread = SystemHealthCheckThread
         _AlertHistoryWorker = AlertHistoryWorker
         _AsyncDataSignals = AsyncDataSignals
         _AlertHistorySignals = AlertHistorySignals
@@ -52,11 +49,6 @@ def AsyncStrategyWorker(*args, **kwargs):
     """延迟导入AsyncStrategyWorker"""
     _import_async_workers()
     return _AsyncStrategyWorker(*args, **kwargs)
-
-def SystemHealthCheckThread(*args, **kwargs):
-    """延迟导入SystemHealthCheckThread"""
-    _import_async_workers()
-    return _SystemHealthCheckThread(*args, **kwargs)
 
 def AlertHistoryWorker(*args, **kwargs):
     """延迟导入AlertHistoryWorker"""
@@ -118,12 +110,11 @@ _ModernStrategyPerformanceTab = None
 _ModernAlgorithmOptimizationTab = None
 _ModernRiskControlCenterTab = None
 _ModernTradingExecutionMonitorTab = None
-_ModernSystemHealthTab = None
 
 def _import_tabs():
     """延迟导入标签页组件"""
     global _ModernSystemMonitorTab, _ModernStrategyPerformanceTab, _ModernAlgorithmOptimizationTab
-    global _ModernRiskControlCenterTab, _ModernTradingExecutionMonitorTab, _ModernSystemHealthTab
+    global _ModernRiskControlCenterTab, _ModernTradingExecutionMonitorTab
     
     if _ModernSystemMonitorTab is None:
         from .tabs.system_monitor_tab import ModernSystemMonitorTab
@@ -131,13 +122,11 @@ def _import_tabs():
         from .tabs.algorithm_optimization_tab import ModernAlgorithmOptimizationTab
         from .tabs.risk_control_center_tab import ModernRiskControlCenterTab
         from .tabs.trading_execution_monitor_tab import ModernTradingExecutionMonitorTab
-        from .tabs.system_health_tab import ModernSystemHealthTab
         _ModernSystemMonitorTab = ModernSystemMonitorTab
         _ModernStrategyPerformanceTab = ModernStrategyPerformanceTab
         _ModernAlgorithmOptimizationTab = ModernAlgorithmOptimizationTab
         _ModernRiskControlCenterTab = ModernRiskControlCenterTab
         _ModernTradingExecutionMonitorTab = ModernTradingExecutionMonitorTab
-        _ModernSystemHealthTab = ModernSystemHealthTab
 
 def ModernSystemMonitorTab(*args, **kwargs):
     """延迟导入ModernSystemMonitorTab"""
@@ -164,11 +153,6 @@ def ModernTradingExecutionMonitorTab(*args, **kwargs):
     _import_tabs()
     return _ModernTradingExecutionMonitorTab(*args, **kwargs)
 
-def ModernSystemHealthTab(*args, **kwargs):
-    """延迟导入ModernSystemHealthTab"""
-    _import_tabs()
-    return _ModernSystemHealthTab(*args, **kwargs)
-
 # 延迟导入主要组件
 _ModernUnifiedPerformanceWidget = None
 
@@ -192,7 +176,6 @@ def ModernUnifiedPerformanceWidget(*args, **kwargs):
 __all__ = [
     'AsyncDataWorker',
     'AsyncStrategyWorker',
-    'SystemHealthCheckThread',
     'AlertHistoryWorker',
     'AsyncDataSignals',
     'AlertHistorySignals',
@@ -203,7 +186,6 @@ __all__ = [
     'ModernAlgorithmOptimizationTab',
     'ModernRiskControlCenterTab',
     'ModernTradingExecutionMonitorTab',
-    'ModernSystemHealthTab',
     # 已删除的标签页类名：
     # 'ModernUIOptimizationTab', 'ModernDeepAnalysisTab',
     # 'ModernAlgorithmPerformanceTab', 'ModernAutoTuningTab', 'ModernAlertConfigTab'

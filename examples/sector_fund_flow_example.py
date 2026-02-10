@@ -231,7 +231,7 @@ class SectorFundFlowExample:
 
     def run_all_examples(self):
         """运行所有示例"""
-        logger.info("🚀 开始运行板块资金流功能示例")
+        logger.info("开始运行板块资金流功能示例")
         logger.info("=" * 50)
 
         # 初始化

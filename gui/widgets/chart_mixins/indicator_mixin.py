@@ -67,12 +67,12 @@ class IndicatorMixin:
     def _render_indicators(self, kdata: pd.DataFrame, x=None):
         """渲染技术指标，所有指标与K线对齐，节假日无数据自动跳过，X轴为等距序号。"""
         try:
-            logger.info(f"🎨 _render_indicators开始执行")
+            logger.info(f"_render_indicators开始执行")
             indicators = getattr(self, 'active_indicators', None)
             # 如果active_indicators为None，使用空列表
             if indicators is None:
                 indicators = []
-            logger.info(f"🎨 获取到active_indicators: {len(indicators) if indicators else 0}个指标")
+            logger.info(f"获取到active_indicators: {len(indicators) if indicators else 0}个指标")
             if not indicators:
                 logger.warning(f"❌ active_indicators为空或不存在，_render_indicators直接返回")
                 return

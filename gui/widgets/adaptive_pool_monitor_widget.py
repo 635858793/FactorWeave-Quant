@@ -43,7 +43,7 @@ class AdaptivePoolMonitorWidget(QWidget):
         main_layout.setSpacing(10)
 
         # 标题
-        title_label = QLabel("🔄 自适应连接池监控")
+        title_label = QLabel("自适应连接池监控")
         title_label.setStyleSheet("""
             QLabel {
                 font-size: 16px;
@@ -179,7 +179,7 @@ class AdaptivePoolMonitorWidget(QWidget):
         """创建操作按钮"""
         button_layout = QHBoxLayout()
 
-        self.refresh_button = QPushButton("🔄 立即刷新")
+        self.refresh_button = QPushButton("立即刷新")
         self.refresh_button.clicked.connect(self._update_display)
         button_layout.addWidget(self.refresh_button)
 

@@ -169,13 +169,13 @@ class PerformanceTestSuite:
     
     def run_performance_tests(self) -> List[Dict[str, Any]]:
         """运行性能测试套件"""
-        logger.info("🚀 开始性能测试...")
+        logger.info("开始性能测试...")
         
         for config in self.test_configurations:
             logger.info(f"🔧 测试配置: {config['name']}")
             
             for data_size in self.data_sizes:
-                logger.info(f"   📊 数据大小: {data_size}")
+                logger.info(f"   数据大小: {data_size}")
                 
                 # 生成测试数据
                 test_data = self.generate_test_data(data_size)
@@ -486,14 +486,14 @@ class PerformanceTestSuite:
             plt.savefig(chart_file, dpi=300, bbox_inches='tight')
             plt.close()
             
-            logger.info(f"📊 性能图表已保存: {chart_file}")
+            logger.info(f"性能图表已保存: {chart_file}")
             
         except Exception as e:
             logger.error(f"生成性能图表失败: {e}")
 
 def main():
     """主测试函数"""
-    logger.info("🚀 开始成交量图表渲染性能测试")
+    logger.info("开始成交量图表渲染性能测试")
     
     # 创建测试套件
     test_suite = PerformanceTestSuite()

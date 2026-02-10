@@ -106,7 +106,7 @@ def test_multi_asset_order_query():
         ("查询期权订单", OrderQuery(asset_type=AssetType.OPTION)),
     ]
     
-    logger.info("\n📊 订单查询测试：\n")
+    logger.info("\n订单查询测试：\n")
     
     for query_name, query in test_cases:
         logger.info(f"\n{'—' * 40}")

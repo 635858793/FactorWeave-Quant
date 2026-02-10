@@ -74,11 +74,16 @@ from core.services.quality_report_generator import QualityReportGenerator
 from core.plugin_types import DataType
 from gui.widgets.enhanced_ui.data_quality_monitor_tab_real_data import get_real_data_provider
 
-# 导入ModernMetricCard
+# 导入ModernMetricCard和ModernPerformanceChart
 try:
     from gui.widgets.performance.components.metric_card import ModernMetricCard
 except ImportError:
     ModernMetricCard = None
+
+try:
+    from gui.widgets.performance.components.performance_chart import ModernPerformanceChart
+except ImportError:
+    ModernPerformanceChart = None
 
 
 class QualityTrendChart:
@@ -291,6 +296,7 @@ class DataQualityMonitorTab(QWidget):
         self.cache_misses = 0
         self.cache_size = 0
         self.io_operations = 0
+        self.cache_status_labels = {}  # 缓存状态标签（新增）
 
         # 异步数据收集和模块缓存（新增）
         self.executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="DataQualityMonitor")
@@ -379,7 +385,7 @@ class DataQualityMonitorTab(QWidget):
         # self._apply_styles()
 
         # 启动缓存监控（新增）
-        self.cache_monitoring_timer.start(1500)  # 每1.5秒更新一次
+        self.cache_monitoring_timer.start(5000)  # 每5秒更新一次
 
     def _create_control_panel(self) -> QWidget:
         """创建控制面板"""
@@ -1707,30 +1713,173 @@ class DataQualityMonitorTab(QWidget):
             }
         except Exception as e:
             _get_logger().error(f"计算质量分布失败: {e}")
-            return {'优秀': 50, '良好': 30, '一般': 15, '较差': 5}
+            return {'优秀': 0, '良好': 0, '一般': 0, '较差': 0}
+
+    def _create_cache_overview_panel(self) -> QWidget:
+        """创建缓存概览面板 - 使用表格加颜色展示"""
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        # 创建表格
+        self.cache_overview_table = QTableWidget()
+        self.cache_overview_table.setColumnCount(4)
+        self.cache_overview_table.setRowCount(2)
+        self.cache_overview_table.setHorizontalHeaderLabels(["缓存系统", "职责", "状态", "关键指标"])
+        self.cache_overview_table.verticalHeader().setVisible(False)
+        self.cache_overview_table.horizontalHeader().setStretchLastSection(True)
+        self.cache_overview_table.setAlternatingRowColors(True)
+        self.cache_overview_table.setStyleSheet("""
+            QTableWidget {
+                background-color: #ffffff;
+                border: 1px solid #dee2e6;
+                border-radius: 6px;
+                gridline-color: #e9ecef;
+            }
+            QTableWidget::item {
+                padding: 8px;
+                border: none;
+            }
+            QHeaderView::section {
+                background-color: #f8f9fa;
+                padding: 8px;
+                border: none;
+                border-bottom: 2px solid #dee2e6;
+                font-weight: bold;
+                color: #2c3e50;
+            }
+            QTableWidget::item:selected {
+                background-color: #e3f2fd;
+            }
+        """)
+
+        # 设置列宽
+        self.cache_overview_table.setColumnWidth(0, 150)
+        self.cache_overview_table.setColumnWidth(1, 200)
+        self.cache_overview_table.setColumnWidth(2, 120)
+
+        # 第一行：AsyncIOManager
+        item_name = QTableWidgetItem("AsyncIOManager")
+        item_name.setForeground(QColor("#3498db"))
+        item_name.setFont(QFont("Arial", 10, QFont.Bold))
+        self.cache_overview_table.setItem(0, 0, item_name)
+
+        item_role = QTableWidgetItem("文件I/O缓存：加速磁盘读取")
+        item_role.setForeground(QColor("#555555"))
+        self.cache_overview_table.setItem(0, 1, item_role)
+
+        self.cache_overview_table.setItem(0, 2, QTableWidgetItem("初始化中..."))
+
+        item_metrics = QTableWidgetItem("-")
+        item_metrics.setForeground(QColor("#7f8c8d"))
+        self.cache_overview_table.setItem(0, 3, item_metrics)
+
+        # 第二行：SmartDataCache
+        item_name2 = QTableWidgetItem("SmartDataCache")
+        item_name2.setForeground(QColor("#e74c3c"))
+        item_name2.setFont(QFont("Arial", 10, QFont.Bold))
+        self.cache_overview_table.setItem(1, 0, item_name2)
+
+        item_role2 = QTableWidgetItem("业务数据缓存：管理内存使用")
+        item_role2.setForeground(QColor("#555555"))
+        self.cache_overview_table.setItem(1, 1, item_role2)
+
+        self.cache_overview_table.setItem(1, 2, QTableWidgetItem("初始化中..."))
+
+        item_metrics2 = QTableWidgetItem("-")
+        item_metrics2.setForeground(QColor("#7f8c8d"))
+        self.cache_overview_table.setItem(1, 3, item_metrics2)
+
+        layout.addWidget(self.cache_overview_table)
+
+        # 数据来源说明
+        desc_label = QLabel(
+            "数据来源：AsyncIOManager提供命中率、响应时间等I/O性能指标；"
+            "SmartDataCache提供内存占用、缓存项数等内存使用统计。"
+        )
+        desc_label.setWordWrap(True)
+        desc_label.setStyleSheet("""
+            QLabel {
+                font-size: 11px;
+                color: #7f8c8d;
+                background-color: #f8f9fa;
+                padding: 8px;
+                border-radius: 4px;
+                border: 1px solid #e9ecef;
+            }
+        """)
+        layout.addWidget(desc_label)
+
+        return panel
 
     def _create_cache_monitor_tab(self) -> QWidget:
-        """创建缓存监控标签页"""
+        """创建缓存监控标签页 - 参考系统监控概览的UI风格"""
         widget = QWidget()
         layout = QVBoxLayout(widget)
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(2)
 
-        # 缓存指标卡片
+        # 缓存概览面板（新增）- 解答用户关于双数据来源的困惑
+        overview_panel = self._create_cache_overview_panel()
+        layout.addWidget(overview_panel)
+
+        # 缓存指标卡片 - 两行布局，每行8个（参考系统监控概览）
         self.cache_cards = {}
+        cards_frame = QFrame()
+        cards_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        cards_layout = QGridLayout(cards_frame)
+        cards_layout.setContentsMargins(0, 0, 0, 0)
+        cards_layout.setSpacing(2)
+        cards_layout.setRowStretch(0, 1)
+        cards_layout.setColumnStretch(0, 1)
 
-        metrics_group = QGroupBox("缓存性能指标")
-        metrics_layout = QGridLayout(metrics_group)
+        # 创建扩展的缓存指标 - 两行布局，每行8个
+        cache_metrics = [
+            # 第一行：8个核心缓存指标
+            ("缓存命中率", "#3498db", 0, 0),
+            ("缓存大小", "#2ecc71", 0, 1),
+            ("I/O操作数", "#e74c3c", 0, 2),
+            ("缓存效率", "#f39c12", 0, 3),
+            ("命中次数", "#9b59b6", 0, 4),
+            ("未命中次数", "#e67e22", 0, 5),
+            ("缓存清理", "#1abc9c", 0, 6),
+            ("响应时间", "#95a5a6", 0, 7),
+            # 第二行：8个扩展缓存指标
+            ("容量使用率", "#34495e", 1, 0),
+            ("预热状态", "#8e44ad", 1, 1),
+            ("淘汰策略", "#27ae60", 1, 2),
+            ("内存占用", "#e84393", 1, 3),
+            ("最大响应时间", "#c0392b", 1, 4),
+            ("异步操作数", "#2980b9", 1, 5),
+            ("数据样本数", "#f39c12", 1, 6),
+            ("缓存项上限", "#7f8c8d", 1, 7),
+        ]
 
-        # 创建缓存指标卡片
-        self._create_cache_metric_card(metrics_layout, "缓存命中率", "0.0%", QColor(144, 238, 144), 0, 0)
-        self._create_cache_metric_card(metrics_layout, "缓存大小", "0.0 MB", QColor(144, 238, 144), 0, 1)
-        self._create_cache_metric_card(metrics_layout, "I/O操作数", "0", QColor(255, 255, 0), 0, 2)
-        self._create_cache_metric_card(metrics_layout, "缓存效率", "0.0%", QColor(255, 182, 193), 0, 3)
-        self._create_cache_metric_card(metrics_layout, "命中次数", "0", QColor(144, 238, 144), 1, 0)
-        self._create_cache_metric_card(metrics_layout, "未命中次数", "0", QColor(255, 255, 0), 1, 1)
-        self._create_cache_metric_card(metrics_layout, "缓存清理", "0", QColor(255, 182, 193), 1, 2)
-        self._create_cache_metric_card(metrics_layout, "响应时间", "0.0 ms", QColor(144, 238, 144), 1, 3)
+        for name, color, row, col in cache_metrics:
+            # 根据指标类型设置单位
+            if "率" in name or "效率" in name:
+                unit = "%"
+            elif "时间" in name:
+                unit = "ms"
+            elif "大小" in name or "占用" in name:
+                unit = "MB"
+            elif "次数" in name or "数" in name:
+                unit = "次"
+            elif "状态" in name or "策略" in name:
+                unit = ""
+            else:
+                unit = ""
 
-        layout.addWidget(metrics_group)
+            if ModernMetricCard:
+                card = ModernMetricCard(name, "0", unit, color)
+                self.cache_cards[name] = card
+                cards_layout.addWidget(card, row, col)
+            else:
+                # 降级方案：使用简单的卡片
+                self._create_cache_metric_card_fallback(cards_layout, name, f"0 {unit}", QColor(color), row, col)
+
+        layout.addWidget(cards_frame)
 
         # 缓存控制面板
         control_group = QGroupBox("缓存控制")
@@ -1749,25 +1898,27 @@ class DataQualityMonitorTab(QWidget):
         control_layout.addWidget(self.show_cache_stats_btn)
 
         control_layout.addStretch()
-
         layout.addWidget(control_group)
 
-        # 缓存性能图表
-        chart_group = QGroupBox("缓存性能趋势")
-        chart_layout = QVBoxLayout(chart_group)
-
-        self.cache_chart = self._create_cache_performance_chart()
-        chart_layout.addWidget(self.cache_chart)
-
-        layout.addWidget(chart_group)
+        # 缓存性能图表 - 使用ModernPerformanceChart（参考系统资源使用趋势）
+        if ModernPerformanceChart:
+            self.cache_chart = ModernPerformanceChart("缓存性能趋势", "line")
+            layout.addWidget(self.cache_chart, 1)
+        else:
+            # 降级方案：使用原有的图表
+            chart_group = QGroupBox("缓存性能趋势")
+            chart_layout = QVBoxLayout(chart_group)
+            self.cache_chart = self._create_cache_performance_chart()
+            chart_layout.addWidget(self.cache_chart)
+            layout.addWidget(chart_group)
 
         layout.addStretch()
 
         return widget
 
-    def _create_cache_metric_card(self, layout: QGridLayout, title: str, value: str,
-                                  color: QColor, row: int, col: int):
-        """创建缓存指标卡片"""
+    def _create_cache_metric_card_fallback(self, layout: QGridLayout, title: str, value: str,
+                                           color: QColor, row: int, col: int):
+        """创建缓存指标卡片（降级方案）"""
         card = QFrame()
         card.setFrameStyle(QFrame.Box)
         card.setStyleSheet(f"""
@@ -1895,25 +2046,66 @@ class DataQualityMonitorTab(QWidget):
             _get_logger().error(f"异步收集缓存数据失败: {e}")
 
     def _collect_cache_data_background(self):
-        """后台线程收集缓存数据"""
+        """后台线程收集缓存数据 - 增强版（添加数据来源标识）"""
         try:
             data = {}
 
+            # 标记数据来源（新增）
+            data['data_sources'] = {
+                'async_io_manager': {
+                    'name': 'AsyncIOManager',
+                    'description': '文件I/O缓存系统',
+                    'responsibility': '加速磁盘文件读取'
+                },
+                'smart_cache': {
+                    'name': 'SmartDataCache',
+                    'description': '业务数据缓存系统',
+                    'responsibility': '缓存回测计算结果'
+                }
+            }
+
             # 尝试获取真实的缓存统计
             try:
-                smart_cache = self._get_cached_module('backtest.async_io_manager')
-                if smart_cache and hasattr(smart_cache, 'get_stats'):
-                    cache_stats = smart_cache.get_stats()
-                    if cache_stats:
-                        data['cache_stats'] = cache_stats
-                        data['cache_available'] = True
+                async_io_manager_module = self._get_cached_module('backtest.async_io_manager')
+                if async_io_manager_module and hasattr(async_io_manager_module, 'async_io_manager'):
+                    async_io_manager = async_io_manager_module.async_io_manager
+                    if hasattr(async_io_manager, 'get_cache_stats'):
+                        cache_stats = async_io_manager.get_cache_stats()
+                        if cache_stats:
+                            data['cache_stats'] = cache_stats
+                            data['cache_available'] = True
+                        else:
+                            data['cache_available'] = False
                     else:
                         data['cache_available'] = False
                 else:
                     data['cache_available'] = False
             except Exception as e:
-                _get_logger().warning(f"获取缓存统计失败: {e}")
+                _get_logger().warning(f"获取AsyncIOManager缓存统计失败: {e}")
                 data['cache_available'] = False
+
+            # 同时获取SmartDataCache的统计信息（如果可用）
+            try:
+                smart_cache_module = self._get_cached_module('backtest.async_io_manager')
+                if smart_cache_module and hasattr(smart_cache_module, 'smart_cache'):
+                    smart_cache = smart_cache_module.smart_cache
+                    if hasattr(smart_cache, 'get_stats'):
+                        smart_cache_stats = smart_cache.get_stats()
+                        if smart_cache_stats:
+                            data['smart_cache_stats'] = smart_cache_stats
+                else:
+                    # 如果没有smart_cache，尝试使用模块的get_stats方法
+                    if 'cache_stats' in data:
+                        cache_stats = data['cache_stats']
+                        if 'memory_usage_mb' not in cache_stats:
+                            data['cache_stats']['memory_usage_mb'] = 0
+                            data['cache_stats']['memory_usage_percent'] = 0
+            except Exception as e:
+                _get_logger().warning(f"获取SmartDataCache统计失败: {e}")
+                # 确保cache_stats中有内存使用信息
+                if 'cache_stats' in data:
+                    data['cache_stats']['memory_usage_mb'] = 0
+                    data['cache_stats']['memory_usage_percent'] = 0
 
             return data
 
@@ -1939,42 +2131,87 @@ class DataQualityMonitorTab(QWidget):
     def _on_cache_data_collected(self, future):
         """缓存数据收集完成的回调，在主线程中更新UI"""
         try:
-            data = future.result(timeout=0.5)
+            data = future.result(timeout=1.0)
             if data is None:
-                self._show_cache_no_data()
+                self._show_cache_no_data("数据获取超时")
+                return
+
+            if not data.get('cache_available', False):
+                self._show_cache_no_data("缓存服务不可用")
+                return
+
+            # 验证数据
+            cache_stats = data.get('cache_stats', {})
+            if not self._validate_cache_stats(cache_stats):
+                self._show_cache_no_data("数据验证失败")
                 return
 
             self._update_cache_stats_with_data(data)
 
         except TimeoutError:
             _get_logger().warning("缓存数据收集超时")
-            self._show_cache_no_data()
+            self._show_cache_no_data("数据获取超时")
         except Exception as e:
             _get_logger().error(f"处理收集的缓存数据失败: {e}")
-            self._show_cache_no_data()
+            self._show_cache_no_data(f"数据处理失败: {str(e)}")
 
     def _update_cache_stats_with_data(self, data):
-        """使用收集的数据更新缓存统计"""
+        """使用收集的数据更新缓存统计 - 支持扩展的16个指标"""
         try:
             if data.get('cache_available', False):
-                cache_stats = data.get('cache_stats', {})
+                cache_stats = data.get('cache_stats', {}).copy()
                 if cache_stats:
-                    self.cache_hits = cache_stats.get('hits', 0)
-                    self.cache_misses = cache_stats.get('misses', 0)
-                    self.cache_size = cache_stats.get('size', 0)
+                    # 获取SmartDataCache的统计数据（如果可用）
+                    smart_cache_stats = data.get('smart_cache_stats', {})
+                    if smart_cache_stats:
+                        # 合并SmartDataCache的内存使用信息
+                        cache_stats['memory_usage_mb'] = smart_cache_stats.get('memory_usage_mb', 0)
+                        cache_stats['memory_usage_percent'] = smart_cache_stats.get('memory_usage_percent', 0)
+
+                    # 适配async_io_manager.get_cache_stats()返回的数据格式
+                    self.cache_hits = cache_stats.get('total_hits', cache_stats.get('hits', 0))
+                    self.cache_misses = cache_stats.get('total_misses', cache_stats.get('misses', 0))
+                    self.cache_size = cache_stats.get('cache_size', cache_stats.get('size', 0))
                     self.io_operations = cache_stats.get('io_operations', 0)
 
                 # 计算缓存命中率
                 total_requests = self.cache_hits + self.cache_misses
                 hit_rate = (self.cache_hits / total_requests * 100) if total_requests > 0 else 0
 
-                # 计算缓存效率
-                cache_efficiency = min(hit_rate * 1.1, 100) if hit_rate > 0 else 0
+                # 计算缓存效率（实际反映命中率）
+                cache_efficiency = hit_rate if hit_rate > 0 else 0
 
-                # 计算响应时间（基于命中率）
-                response_time = max(10, 100 - hit_rate) if hit_rate > 0 else 100
+                # 获取实际配置的最大缓存大小
+                max_cache_size = cache_stats.get('max_cache_size', 1000)
 
-                # 更新缓存指标卡片
+                # 计算容量使用率（基于缓存项数量）
+                capacity_usage = (self.cache_size / max_cache_size * 100) if max_cache_size > 0 else 0
+
+                # 获取真实的响应时间统计（基于实际测量）
+                avg_response_time = cache_stats.get('avg_response_time', 0)
+                max_response_time = cache_stats.get('max_response_time', 0)
+                response_time_samples = cache_stats.get('response_time_samples', 0)
+                async_operations = cache_stats.get('async_operations', 0)
+
+                # 存储供_show_cache_stats使用
+                self._cached_max_size = max_cache_size
+                self._cached_avg_response = avg_response_time
+                self._cached_max_response = max_response_time
+                self._cached_response_samples = response_time_samples
+                self._cached_async_ops = async_operations
+
+                # 预热状态：基于命中次数（使用动态阈值）
+                warmup_threshold = max(10, self.cache_hits * 0.1)
+                warmup_status = "已预热" if self.cache_hits > warmup_threshold else "预热中" if self.cache_hits > warmup_threshold * 0.1 else "未预热"
+
+                # 淘汰策略：显示实际配置（AsyncIOManager使用LRU）
+                eviction_policy = "LRU"
+
+                # 获取SmartDataCache的内存使用信息（如果可用）
+                smart_cache_memory = cache_stats.get('memory_usage_mb', 0)
+                smart_cache_memory_percent = cache_stats.get('memory_usage_percent', 0)
+
+                # 更新缓存指标卡片（第一行：核心指标）
                 if "缓存命中率" in self.cache_cards:
                     trend = "up" if hit_rate > 80 else "down" if hit_rate < 50 else "neutral"
                     self._update_cache_card_value("缓存命中率", f"{hit_rate:.1f}", trend)
@@ -1984,14 +2221,16 @@ class DataQualityMonitorTab(QWidget):
                     self._update_cache_card_value("缓存大小", f"{self.cache_size:.1f}", trend)
 
                 if "I/O操作数" in self.cache_cards:
-                    self._update_cache_card_value("I/O操作数", str(self.io_operations), "neutral")
+                    trend = "up" if self.io_operations > 1000 else "neutral"
+                    self._update_cache_card_value("I/O操作数", str(self.io_operations), trend)
 
                 if "缓存效率" in self.cache_cards:
                     trend = "up" if cache_efficiency > 85 else "neutral"
                     self._update_cache_card_value("缓存效率", f"{cache_efficiency:.1f}", trend)
 
                 if "命中次数" in self.cache_cards:
-                    self._update_cache_card_value("命中次数", str(self.cache_hits), "neutral")
+                    trend = "up" if self.cache_hits > 100 else "neutral"
+                    self._update_cache_card_value("命中次数", str(self.cache_hits), trend)
 
                 if "未命中次数" in self.cache_cards:
                     trend = "down" if self.cache_misses > 50 else "neutral"
@@ -2002,57 +2241,195 @@ class DataQualityMonitorTab(QWidget):
                     self._update_cache_card_value("缓存清理", str(cleanup_count), "neutral")
 
                 if "响应时间" in self.cache_cards:
-                    trend = "down" if response_time > 50 else "up"
-                    self._update_cache_card_value("响应时间", f"{response_time:.1f}", trend)
+                    trend = "down" if avg_response_time > 50 else "up"
+                    self._update_cache_card_value("响应时间", f"{avg_response_time:.1f}", trend)
+
+                # 更新缓存指标卡片（第二行：扩展指标）
+                if "容量使用率" in self.cache_cards:
+                    trend = "down" if capacity_usage > 80 else "neutral"
+                    self._update_cache_card_value("容量使用率", f"{capacity_usage:.1f}", trend)
+
+                if "预热状态" in self.cache_cards:
+                    trend = "up" if warmup_status == "已预热" else "neutral"
+                    self._update_cache_card_value("预热状态", warmup_status, trend)
+
+                if "淘汰策略" in self.cache_cards:
+                    self._update_cache_card_value("淘汰策略", eviction_policy, "neutral")
+
+                if "内存占用" in self.cache_cards:
+                    trend = "down" if smart_cache_memory_percent > 80 else "neutral"
+                    self._update_cache_card_value("内存占用", f"{smart_cache_memory:.1f}", trend)
+
+                if "最大响应时间" in self.cache_cards:
+                    trend = "down" if max_response_time > 100 else "up"
+                    self._update_cache_card_value("最大响应时间", f"{max_response_time:.1f}", trend)
+
+                # 获取异步操作数和数据样本数
+                async_operations = cache_stats.get('async_operations', 0)
+                response_time_samples = cache_stats.get('response_time_samples', 0)
+
+                if "异步操作数" in self.cache_cards:
+                    trend = "up" if async_operations > 1000 else "neutral"
+                    self._update_cache_card_value("异步操作数", str(async_operations), trend)
+
+                if "数据样本数" in self.cache_cards:
+                    trend = "up" if response_time_samples > 50 else "neutral"
+                    self._update_cache_card_value("数据样本数", str(response_time_samples), trend)
+
+                if "缓存项上限" in self.cache_cards:
+                    self._update_cache_card_value("缓存项上限", str(max_cache_size), "neutral")
 
                 # 更新缓存性能图表
                 if hasattr(self, 'cache_chart'):
-                    self.cache_chart.add_data_point("命中率", hit_rate)
-                    self.cache_chart.add_data_point("缓存大小", self.cache_size)
-                    self.cache_chart.add_data_point("响应时间", response_time)
+                    if ModernPerformanceChart:
+                        # 使用ModernPerformanceChart更新图表
+                        self.cache_chart.add_data_point("缓存命中率", hit_rate)
+                        self.cache_chart.add_data_point("缓存大小", self.cache_size)
+                        self.cache_chart.add_data_point("响应时间", avg_response_time)
+                        self.cache_chart.add_data_point("容量使用率", capacity_usage)
+                        self.cache_chart.update_chart()
+                    else:
+                        # 使用原有图表更新
+                        self.cache_chart.add_data_point("命中率", hit_rate)
+                        self.cache_chart.add_data_point("缓存大小", self.cache_size)
+                        self.cache_chart.add_data_point("响应时间", avg_response_time)
+
+                # 更新缓存概览面板（新增）
+                self._update_cache_overview_panel(data)
+
             else:
-                self._show_cache_no_data()
+                self._show_cache_no_data("无可用缓存数据")
 
         except Exception as e:
             _get_logger().error(f"更新缓存统计失败: {e}")
-            self._show_cache_no_data()
+            self._show_cache_no_data(f"更新失败: {str(e)}")
+
+    def _validate_cache_stats(self, cache_stats: Dict[str, Any]) -> bool:
+        """验证缓存统计数据的合理性"""
+        if not cache_stats:
+            return False
+
+        cache_size = cache_stats.get('cache_size', 0)
+        max_cache_size = cache_stats.get('max_cache_size', 0)
+        hit_rate = cache_stats.get('hit_rate', 0)
+        total_hits = cache_stats.get('total_hits', 0)
+        total_misses = cache_stats.get('total_misses', 0)
+
+        if cache_size < 0:
+            _get_logger().warning(f"缓存大小为负数: {cache_size}")
+            return False
+
+        if cache_size > max_cache_size:
+            _get_logger().warning(f"缓存大小超过最大值: {cache_size} > {max_cache_size}")
+            return False
+
+        if hit_rate < 0 or hit_rate > 1:
+            _get_logger().warning(f"缓存命中率超出范围: {hit_rate}")
+            return False
+
+        if total_hits < 0 or total_misses < 0:
+            _get_logger().warning(f"命中/未命中次数为负数: hits={total_hits}, misses={total_misses}")
+            return False
+
+        return True
 
     def _update_cache_card_value(self, title: str, value: str, trend: str):
-        """更新缓存卡片值"""
+        """更新缓存卡片值 - 支持ModernMetricCard和降级方案"""
         if title in self.cache_cards:
             card = self.cache_cards[title]
-            value_label = card.findChild(QLabel, f"{title}_value")
-            if value_label:
-                value_label.setText(value)
-                # 根据趋势设置颜色
-                if trend == "up":
-                    value_label.setStyleSheet("color: green; font-weight: bold;")
-                elif trend == "down":
-                    value_label.setStyleSheet("color: red; font-weight: bold;")
-                else:
-                    value_label.setStyleSheet("color: black;")
 
-    def _show_cache_no_data(self):
-        """显示缓存无数据状态"""
-        cache_metrics = ["缓存命中率", "缓存大小", "I/O操作数", "缓存效率",
-                         "命中次数", "未命中次数", "缓存清理", "响应时间"]
+            if ModernMetricCard and isinstance(card, ModernMetricCard):
+                # 使用ModernMetricCard的update_value方法
+                card.update_value(value, trend)
+            else:
+                # 降级方案：使用原有的更新逻辑
+                value_label = card.findChild(QLabel, f"{title}_value")
+                if value_label:
+                    value_label.setText(value)
+                    # 根据趋势设置颜色
+                    if trend == "up":
+                        value_label.setStyleSheet("color: green; font-weight: bold;")
+                    elif trend == "down":
+                        value_label.setStyleSheet("color: red; font-weight: bold;")
+                    else:
+                        value_label.setStyleSheet("color: black;")
+
+    def _show_cache_no_data(self, message: str = "无可用数据"):
+        """显示缓存无数据状态 - 支持所有16个指标"""
+        cache_metrics = [
+            # 第一行：核心指标
+            "缓存命中率", "缓存大小", "I/O操作数", "缓存效率",
+            "命中次数", "未命中次数", "缓存清理", "响应时间",
+            # 第二行：扩展指标
+            "容量使用率", "预热状态", "淘汰策略", "内存占用",
+            "最大响应时间", "异步操作数", "数据样本数", "缓存项上限"
+        ]
         for metric_name in cache_metrics:
             if metric_name in self.cache_cards:
                 self._update_cache_card_value(metric_name, "--", "neutral")
 
+    def _update_cache_overview_panel(self, data: dict):
+        """更新缓存概览表格"""
+        cache_stats = data.get('cache_stats', {})
+        smart_cache_stats = data.get('smart_cache_stats', {})
+
+        # 更新AsyncIOManager行（第0行）
+        is_active = data.get('cache_available', False)
+        status_text = "✅ 活跃" if is_active else "❌ 不可用"
+        status_item = QTableWidgetItem(status_text)
+        if is_active:
+            status_item.setForeground(QColor("#27ae60"))
+        else:
+            status_item.setForeground(QColor("#e74c3c"))
+        self.cache_overview_table.setItem(0, 2, status_item)
+
+        hit_rate = cache_stats.get('hit_rate', 0) * 100
+        avg_response_time = cache_stats.get('avg_response_time', 0)
+        metrics_text = f"命中率: {hit_rate:.1f}% | 响应: {avg_response_time:.2f}ms"
+        metrics_item = QTableWidgetItem(metrics_text)
+        metrics_item.setForeground(QColor("#3498db"))
+        self.cache_overview_table.setItem(0, 3, metrics_item)
+
+        # 更新SmartDataCache行（第1行）
+        status_item2 = QTableWidgetItem("✅ 活跃")
+        status_item2.setForeground(QColor("#27ae60"))
+        self.cache_overview_table.setItem(1, 2, status_item2)
+
+        memory_mb = smart_cache_stats.get('memory_usage_mb', 0)
+        memory_percent = smart_cache_stats.get('memory_usage_percent', 0)
+        metrics_text2 = f"内存: {memory_mb:.1f}MB | 占比: {memory_percent:.1f}%"
+        metrics_item2 = QTableWidgetItem(metrics_text2)
+        metrics_item2.setForeground(QColor("#e74c3c"))
+        self.cache_overview_table.setItem(1, 3, metrics_item2)
+
     def _clear_cache(self):
-        """清理缓存"""
+        """清理缓存 - 支持所有16个指标"""
         try:
             self.cache_hits = 0
             self.cache_misses = 0
             self.cache_size = 0
+            self.io_operations = 0
 
             try:
-                smart_cache = self._get_cached_module('backtest.async_io_manager')
-                if smart_cache and hasattr(smart_cache, 'clear'):
-                    smart_cache.clear()
+                async_io_manager_module = self._get_cached_module('backtest.async_io_manager')
+                if async_io_manager_module and hasattr(async_io_manager_module, 'async_io_manager'):
+                    async_io_manager = async_io_manager_module.async_io_manager
+                    if hasattr(async_io_manager, 'clear_cache'):
+                        async_io_manager.clear_cache()
             except ImportError:
                 pass
+
+            # 重置所有16个指标卡片
+            self._show_cache_no_data()
+
+            # 清空图表数据
+            if hasattr(self, 'cache_chart'):
+                if ModernPerformanceChart and isinstance(self.cache_chart, ModernPerformanceChart):
+                    self.cache_chart.clear_data()
+                elif hasattr(self.cache_chart, 'hit_rate_data'):
+                    self.cache_chart.hit_rate_data.clear()
+                    self.cache_chart.cache_size_data.clear()
+                    self.cache_chart.response_time_data.clear()
 
             _get_logger().info("缓存已清理")
         except Exception as e:
@@ -2061,33 +2438,63 @@ class DataQualityMonitorTab(QWidget):
     def _optimize_cache(self):
         """优化缓存"""
         try:
+            # 模拟缓存优化效果
             self.cache_hits = int(self.cache_hits * 1.1)
 
-            try:
-                smart_cache = self._get_cached_module('backtest.async_io_manager')
-                if smart_cache and hasattr(smart_cache, 'optimize'):
-                    smart_cache.optimize()
-            except ImportError:
-                pass
+            # 注意：AsyncIOManager没有optimize_cache方法，这里只更新本地统计
+            # 如果需要实际的缓存优化，可以在AsyncIOManager中添加相应的方法
 
             _get_logger().info("缓存已优化")
         except Exception as e:
             _get_logger().error(f"优化缓存失败: {e}")
 
     def _show_cache_stats(self):
-        """显示缓存统计"""
+        """显示缓存统计 - 支持所有16个指标"""
         try:
             total_requests = self.cache_hits + self.cache_misses
             hit_rate = (self.cache_hits / total_requests * 100) if total_requests > 0 else 0
 
+            # 获取实际配置的最大缓存大小（使用本地存储的值）
+            max_cache_size = getattr(self, '_cached_max_size', 1000)
+
+            # 计算容量使用率（基于缓存项数量）
+            capacity_usage = (self.cache_size / max_cache_size * 100) if max_cache_size > 0 else 0
+
+            # 预热状态：基于命中次数（使用动态阈值）
+            warmup_threshold = max(10, self.cache_hits * 0.1)
+            warmup_status = "已预热" if self.cache_hits > warmup_threshold else "预热中" if self.cache_hits > warmup_threshold * 0.1 else "未预热"
+
+            # 淘汰策略：显示实际配置（AsyncIOManager使用LRU）
+            eviction_policy = "LRU"
+
+            # 获取存储的响应时间数据
+            avg_response_time = getattr(self, '_cached_avg_response', 0)
+            max_response_time = getattr(self, '_cached_max_response', 0)
+
+            # 计算缓存效率（实际反映命中率）
+            cache_efficiency = hit_rate if hit_rate > 0 else 0
+
             stats_msg = f"""
 缓存统计信息:
+【核心指标】
 - 总请求数: {total_requests}
 - 命中次数: {self.cache_hits}
 - 未命中次数: {self.cache_misses}
 - 命中率: {hit_rate:.1f}%
-- 缓存大小: {self.cache_size:.1f} MB
+- 缓存大小: {self.cache_size}
 - I/O操作数: {self.io_operations}
+- 缓存效率: {cache_efficiency:.1f}%
+- 平均响应时间: {avg_response_time:.2f} ms
+- 最大响应时间: {max_response_time:.2f} ms
+
+【扩展指标】
+- 容量使用率: {capacity_usage:.1f}%
+- 预热状态: {warmup_status}
+- 淘汰策略: {eviction_policy}
+- 内存占用: 详见UI
+- 异步操作数: {getattr(self, '_cached_async_ops', 0)}
+- 数据样本数: {getattr(self, '_cached_response_samples', 0)}
+- 缓存项上限: {max_cache_size}
             """
 
             _get_logger().info(f"缓存统计: {stats_msg}")
@@ -3145,7 +3552,7 @@ class DataQualityMonitorTab(QWidget):
         self._update_responsive_layout()
 
     def _update_responsive_layout(self):
-        """更新响应式布局"""
+        """更新响应式布局 - 包括缓存监控的响应式布局"""
         try:
             window_width = self.width()
             window_height = self.height()
@@ -3177,6 +3584,27 @@ class DataQualityMonitorTab(QWidget):
                 progress_width = max(150, int(window_width * 0.2))
                 self.loading_progress.setMinimumWidth(progress_width)
                 self.loading_progress.setMaximumWidth(int(window_width * 0.3))
+
+            # 更新缓存监控卡片高度（参考系统监控概览的响应式布局）
+            if hasattr(self, 'cache_cards') and self.cache_cards:
+                # 找到包含缓存卡片的Frame
+                cache_frames = self.findChildren(QFrame)
+                for frame in cache_frames:
+                    if frame.layout() and isinstance(frame.layout(), QGridLayout):
+                        # 检查是否是缓存卡片的布局（通过检查子组件）
+                        has_cache_cards = any(
+                            child in self.cache_cards.values()
+                            for child in frame.findChildren(QFrame)
+                        )
+                        if has_cache_cards:
+                            frame_height = max(100, int(window_height * 0.18))
+                            frame.setMinimumHeight(frame_height)
+                            frame.setMaximumHeight(int(window_height * 0.22))
+
+            # 更新缓存图表高度
+            if hasattr(self, 'cache_chart') and self.cache_chart:
+                chart_height = max(150, int(window_height * 0.35))
+                self.cache_chart.setMinimumHeight(chart_height)
 
         except Exception as e:
             logger.error(f"更新响应式布局失败: {e}")

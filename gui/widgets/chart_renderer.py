@@ -127,7 +127,7 @@ class ChartRenderer(QObject):
 
             if use_virtual_scroll:
                 # 使用虚拟滚动渲染K线
-                logger.info(f"📊 使用虚拟滚动渲染K线图，数据量: {len(data)} 个数据点")
+                logger.info(f"使用虚拟滚动渲染K线图，数据量: {len(data)} 个数据点")
 
                 # 准备与传统渲染一致的样式
                 virtual_style = {
@@ -147,7 +147,7 @@ class ChartRenderer(QObject):
                     self._render_candlesticks_efficient(ax, plot_data, style or {}, x, use_datetime_axis)
             else:
                 # 使用传统渲染
-                logger.info(f"📊 使用传统渲染K线图，数据量: {len(data)} 个数据点")
+                logger.info(f"使用传统渲染K线图，数据量: {len(data)} 个数据点")
                 view_data = self._get_view_data(data)
                 plot_data = self._downsample_data(view_data)
                 self._render_candlesticks_efficient(ax, plot_data, style or {}, x, use_datetime_axis)
@@ -279,7 +279,7 @@ class ChartRenderer(QObject):
 
             if use_virtual_scroll:
                 # 使用虚拟滚动渲染成交量
-                logger.info(f"📊 使用虚拟滚动渲染成交量，数据量: {len(data)} 个数据点")
+                logger.info(f"使用虚拟滚动渲染成交量，数据量: {len(data)} 个数据点")
 
                 # 准备与传统渲染一致的样式
                 virtual_style = {
@@ -299,7 +299,7 @@ class ChartRenderer(QObject):
                     self._render_volume_efficient(ax, plot_data, style or {}, x, use_datetime_axis)
             else:
                 # 使用传统渲染
-                logger.info(f"📊 使用传统渲染成交量，数据量: {len(data)} 个数据点")
+                logger.info(f"使用传统渲染成交量，数据量: {len(data)} 个数据点")
                 view_data = self._get_view_data(data)
                 plot_data = self._downsample_data(view_data)
                 self._render_volume_efficient(ax, plot_data, style or {}, x, use_datetime_axis)
@@ -400,7 +400,7 @@ class ChartRenderer(QObject):
 
             if use_virtual_scroll:
                 # 使用虚拟滚动渲染柱状图
-                logger.info(f"📊 使用虚拟滚动渲染柱状图，数据量: {len(data)} 个数据点")
+                logger.info(f"使用虚拟滚动渲染柱状图，数据量: {len(data)} 个数据点")
 
                 # 准备与传统渲染一致的样式
                 virtual_style = {
@@ -418,7 +418,7 @@ class ChartRenderer(QObject):
                     self.render_line(ax, data.iloc[:, 0], style, x, use_datetime_axis)
             else:
                 # 使用传统渲染 - 这里简化处理，使用线图渲染作为 fallback
-                logger.info(f"📊 使用传统渲染柱状图，数据量: {len(data)} 个数据点")
+                logger.info(f"使用传统渲染柱状图，数据量: {len(data)} 个数据点")
                 self.render_line(ax, data.iloc[:, 0], style, x, use_datetime_axis)
                 logger.info(f"传统渲染柱状图成功，耗时: {(time.time() - start_time) * 1000:.2f}ms")
 
@@ -470,7 +470,7 @@ class ChartRenderer(QObject):
 
             if use_virtual_scroll:
                 # 使用虚拟滚动渲染线图
-                logger.info(f"📊 使用虚拟滚动渲染线图，数据量: {len(data)} 个数据点")
+                logger.info(f"使用虚拟滚动渲染线图，数据量: {len(data)} 个数据点")
 
                 # 准备与传统渲染一致的样式
                 virtual_style = {
@@ -491,7 +491,7 @@ class ChartRenderer(QObject):
                     self._render_line_efficient(ax, plot_data, style or {})
             else:
                 # 使用传统渲染
-                logger.info(f"📊 使用传统渲染线图，数据量: {len(data)} 个数据点")
+                logger.info(f"使用传统渲染线图，数据量: {len(data)} 个数据点")
                 view_data = self._get_view_data(data.to_frame()).iloc[:, 0] if isinstance(data, pd.Series) else pd.Series(data)
                 plot_data = self._downsample_data(view_data.to_frame()).iloc[:, 0]
                 self._render_line_efficient(ax, plot_data, style or {})

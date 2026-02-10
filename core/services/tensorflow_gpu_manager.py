@@ -109,7 +109,7 @@ class CudaVerificationResult:
             lines.append(f"📚 已加载库: {', '.join(self.loaded_libraries)}")
         
         if self.gpu_devices:
-            lines.append(f"🎯 GPU设备数量: {len(self.gpu_devices)}")
+            lines.append(f"GPU设备数量: {len(self.gpu_devices)}")
             for i, device in enumerate(self.gpu_devices):
                 lines.append(f"   设备{i}: {device.get('name', 'Unknown')}")
         
@@ -161,7 +161,7 @@ class TensorFlowGPUManager:
             device_count = pynvml.nvmlDeviceGetCount()
             
             if device_count > 0:
-                logger.info(f"🎯 检测到 {device_count} 个NVIDIA GPU设备")
+                logger.info(f"检测到 {device_count} 个NVIDIA GPU设备")
                 logger.info("=" * 60)
                 
                 # 获取第一个GPU的信息
@@ -177,8 +177,8 @@ class TensorFlowGPUManager:
                 gpu_info.memory_free = memory_info.free // 1024 // 1024
                 gpu_info.status = GPUStatus.AVAILABLE
                 
-                logger.info(f"🚀 GPU设备: {name}")
-                logger.info(f"📊 显存总量: {gpu_info.memory_total:,} MB")
+                logger.info(f"GPU设备: {name}")
+                logger.info(f"显存总量: {gpu_info.memory_total:,} MB")
                 logger.info(f"💾 可用显存: {gpu_info.memory_free:,} MB")
                 logger.info(f"📈 当前使用率: {utilization_info.gpu}%")
                 logger.info(f"💿 显存使用率: {utilization_info.memory}%")
@@ -316,7 +316,7 @@ class TensorFlowGPUManager:
         
         # 3. 检查GPU设备（如果detailed=True）
         if detailed and TENSORFLOW_AVAILABLE:
-            logger.info("🎯 [步骤 3/3] 检查GPU设备...")
+            logger.info("[步骤 3/3] 检查GPU设备...")
             result.gpu_devices = self._get_gpu_devices()
             
             if result.gpu_devices:
@@ -515,13 +515,13 @@ class TensorFlowGPUManager:
             logger.info("💡 解决方案：pip install tensorflow")
             return False
         
-        logger.info("🚀 开始配置TensorFlow GPU...")
+        logger.info("开始配置TensorFlow GPU...")
         logger.info("=" * 60)
         
         try:
             # 1. 列出物理设备
             gpus = tf.config.list_physical_devices('GPU')
-            logger.info(f"📊 TensorFlow检测到 {len(gpus)} 个物理GPU设备")
+            logger.info(f"TensorFlow检测到 {len(gpus)} 个物理GPU设备")
             
             if len(gpus) == 0:
                 logger.warning("⚠️ TensorFlow未检测到GPU设备")
@@ -532,7 +532,7 @@ class TensorFlowGPUManager:
                 self.gpu_info.status = GPUStatus.UNAVAILABLE
                 return False
             
-            logger.info("🎯 开始配置GPU设备...")
+            logger.info("开始配置GPU设备...")
             # 2. 配置GPU设备
             for i, gpu in enumerate(gpus):
                 logger.info(f"  ⚙️ 配置GPU设备 {i}: {gpu.name}")
@@ -614,12 +614,12 @@ class TensorFlowGPUManager:
                 model.compile(optimizer='adam', loss='binary_crossentropy')
                 
                 # 生成测试数据
-                logger.info("📊 生成测试数据...")
+                logger.info("生成测试数据...")
                 x_train = tf.random.normal([1000, 100])
                 y_train = tf.random.uniform([1000, 1])
                 
                 # GPU训练测试
-                logger.info("🚀 GPU训练测试开始...")
+                logger.info("GPU训练测试开始...")
                 start_time = time.time()
                 history = model.fit(x_train, y_train, epochs=5, verbose=0)
                 gpu_time = time.time() - start_time
@@ -648,7 +648,7 @@ class TensorFlowGPUManager:
             speedup = cpu_time / gpu_time
             
             logger.info("=" * 60)
-            logger.info("📊 性能测试结果:")
+            logger.info("性能测试结果:")
             logger.info(f"   CPU时间: {cpu_time:.2f}秒")
             logger.info(f"   GPU时间: {gpu_time:.2f}秒")
             logger.info(f"   加速比: {speedup:.2f}x")
@@ -656,7 +656,7 @@ class TensorFlowGPUManager:
             if speedup > 1.2:
                 logger.info("🎉 GPU性能测试通过，显著提升计算速度")
                 if speedup > 5.0:
-                    logger.info("🚀 卓越性能！GPU加速效果优秀")
+                    logger.info("卓越性能！GPU加速效果优秀")
                 elif speedup > 2.0:
                     logger.info("👍 良好性能，GPU加速效果明显")
                 else:
@@ -680,9 +680,9 @@ class TensorFlowGPUManager:
     
     def auto_detect_and_configure(self) -> bool:
         """自动检测和配置GPU"""
-        logger.info("🚀 [TensorFlow GPU管理器] 开始自动检测和配置")
+        logger.info("[TensorFlow GPU管理器] 开始自动检测和配置")
         logger.info("=" * 80)
-        logger.info("🎯 智能GPU管理器 - 正在为您优化TensorFlow性能")
+        logger.info("智能GPU管理器 - 正在为您优化TensorFlow性能")
         logger.info("=" * 80)
         
         try:
@@ -703,7 +703,7 @@ class TensorFlowGPUManager:
                 logger.info(cuda_result.get_summary())
                 
                 if self.auto_fallback_enabled:
-                    logger.info("🔄 [回退] 启用自动回退到CPU模式")
+                    logger.info("[回退] 启用自动回退到CPU模式")
                     self.gpu_info.status = GPUStatus.FALLBACK_CPU
                     return False
                 return False
@@ -715,7 +715,7 @@ class TensorFlowGPUManager:
                 logger.error("❌ [配置失败] TensorFlow GPU配置失败")
                 logger.info("💡 [建议] 请检查GPU驱动和TensorFlow GPU版本")
                 if self.auto_fallback_enabled:
-                    logger.info("🔄 [回退] 启用自动回退到CPU模式")
+                    logger.info("[回退] 启用自动回退到CPU模式")
                     self.gpu_info.status = GPUStatus.FALLBACK_CPU
                     return False
                 return False
@@ -727,7 +727,7 @@ class TensorFlowGPUManager:
                 logger.warning("⚠️ [性能测试] GPU性能测试未通过")
                 logger.info("💡 [原因] GPU可能负载过高或配置不正确")
                 if self.auto_fallback_enabled:
-                    logger.info("🔄 [回退] 启用自动回退到CPU模式")
+                    logger.info("[回退] 启用自动回退到CPU模式")
                     self.gpu_info.status = GPUStatus.FALLBACK_CPU
                     return False
                 return False
@@ -735,7 +735,7 @@ class TensorFlowGPUManager:
             # 成功完成
             logger.info("=" * 80)
             logger.info("🎉 [成功] GPU自动配置完成！")
-            logger.info(f"🚀 [加速] 检测到设备: {self.gpu_info.name}")
+            logger.info(f"[加速] 检测到设备: {self.gpu_info.name}")
             logger.info(f"⚡ [性能] 加速比: {speedup:.2f}x")
             logger.info(f"💾 [内存] GPU显存: {self.gpu_info.memory_total:,}MB")
             logger.info("=" * 80)
@@ -747,7 +747,7 @@ class TensorFlowGPUManager:
             logger.error(f"❌ [异常] 自动GPU配置失败: {e}")
             logger.info("💡 [建议] 请检查系统环境和依赖安装")
             if self.auto_fallback_enabled:
-                logger.info("🔄 [回退] 启用自动回退到CPU模式")
+                logger.info("[回退] 启用自动回退到CPU模式")
                 self.gpu_info.status = GPUStatus.FALLBACK_CPU
             return False
     
@@ -819,12 +819,12 @@ def print_gpu_status():
     status = manager.get_status_info()
     
     print("=" * 80)
-    print("📊 [TensorFlow GPU状态报告]")
+    print("[TensorFlow GPU状态报告]")
     print("=" * 80)
     
     # GPU信息
     if status['gpu_info']['name'] != 'Unknown':
-        print(f"🚀 GPU设备: {status['gpu_info']['name']}")
+        print(f"GPU设备: {status['gpu_info']['name']}")
         print(f"📈 状态: {status['gpu_info']['status']}")
         print(f"💾 显存总量: {status['gpu_info']['memory_total']:,} MB")
         print(f"💿 可用显存: {status['gpu_info']['memory_free']:,} MB")
@@ -842,11 +842,11 @@ def print_gpu_status():
     # 当前策略
     device = status['device_strategy']
     if device == '/GPU:0':
-        print(f"🎯 当前策略: GPU加速模式 ⚡")
+        print(f"当前策略: GPU加速模式 ⚡")
     else:
         print(f"🖥️ 当前策略: CPU模式")
     
-    print(f"🔄 自动回退: {'启用' if status['auto_fallback'] else '禁用'}")
+    print(f"自动回退: {'启用' if status['auto_fallback'] else '禁用'}")
     print("=" * 80)
 
 if __name__ == "__main__":

@@ -143,7 +143,7 @@ class MarketStateMonitor(QWidget):
         
         # 1. 市场概览选项卡
         overview_tab = self._create_overview_tab()
-        self.tab_widget.addTab(overview_tab, "📊 市场概览")
+        self.tab_widget.addTab(overview_tab, "市场概览")
         
         # 2. 波动性分析选项卡
         volatility_tab = self._create_volatility_tab()
@@ -205,7 +205,7 @@ class MarketStateMonitor(QWidget):
     
     def _create_volatility_overview(self) -> QGroupBox:
         """创建波动率概览"""
-        group = QGroupBox("📊 市场波动率")
+        group = QGroupBox("市场波动率")
         layout = QVBoxLayout(group)
         
         # 当前波动率
@@ -349,7 +349,7 @@ class MarketStateMonitor(QWidget):
     
     def _create_regime_overview(self) -> QGroupBox:
         """创建市场阶段概览"""
-        group = QGroupBox("🎯 市场阶段")
+        group = QGroupBox("市场阶段")
         layout = QVBoxLayout(group)
         
         # 当前阶段
@@ -638,7 +638,7 @@ class MarketStateMonitor(QWidget):
         layout.addWidget(self.toggle_monitor_btn)
         
         # 刷新数据按钮
-        self.refresh_btn = QPushButton("🔄 刷新数据")
+        self.refresh_btn = QPushButton("刷新数据")
         self.refresh_btn.setStyleSheet("""
             QPushButton {
                 padding: 8px 16px;

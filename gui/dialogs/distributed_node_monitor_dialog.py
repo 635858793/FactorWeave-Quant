@@ -129,7 +129,7 @@ class DistributedNodeMonitorDialog(QDialog):
         # 操作按钮组
         button_layout = QHBoxLayout()
 
-        self.refresh_btn = QPushButton("🔄 刷新")
+        self.refresh_btn = QPushButton("刷新")
         self.refresh_btn.clicked.connect(self.refresh_nodes)
         button_layout.addWidget(self.refresh_btn)
 

@@ -156,7 +156,7 @@ class VWAPMeanReversionStrategy:
         buy_count = df['buy_signal'].sum()
         sell_count = df['sell_signal'].sum()
         
-        logger.info(f"📊 信号统计:")
+        logger.info(f"信号统计:")
         logger.info(f"  买入信号: {buy_count} 次 ({buy_count/len(df):.1%})")
         logger.info(f"  卖出信号: {sell_count} 次 ({sell_count/len(df):.1%})")
         

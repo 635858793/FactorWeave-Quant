@@ -591,7 +591,7 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
                         time_min = datetime_series.min()
                         time_max = datetime_series.max()
                         time_span = time_max - time_min
-                        logger.info(f"📊 K线数据时间范围: {time_min.strftime('%Y-%m-%d %H:%M:%S')} ~ {time_max.strftime('%Y-%m-%d %H:%M:%S')} (跨度: {time_span.days}天)")
+                        logger.info(f"K线数据时间范围: {time_min.strftime('%Y-%m-%d %H:%M:%S')} ~ {time_max.strftime('%Y-%m-%d %H:%M:%S')} (跨度: {time_span.days}天)")
 
                         # 修复：验证数据完整性
                         missing_count = datetime_series.isna().sum()

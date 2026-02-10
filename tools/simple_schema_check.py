@@ -9,7 +9,7 @@ sys.path.insert(0, str(project_root))
 try:
     from core.database.table_manager import TableType, TableSchemaRegistry
     
-    print("📊 检查表结构定义...")
+    print("检查表结构定义...")
     
     # 列出所有表类型
     all_types = list(TableType)

@@ -170,7 +170,7 @@ class IntelligentModelSelectionDialog(QDialog):
         
         # 2. 增强评估选项卡
         evaluation_tab = self._create_evaluation_tab()
-        self.tab_widget.addTab(evaluation_tab, "📊 增强评估")
+        self.tab_widget.addTab(evaluation_tab, "增强评估")
         
         # 3. 可视化选项卡
         visualization_tab = self._create_visualization_tab()
@@ -257,7 +257,7 @@ class IntelligentModelSelectionDialog(QDialog):
         
         # 评估按钮
         eval_button_layout = QHBoxLayout()
-        self.evaluate_btn = QPushButton("🚀 开始增强评估")
+        self.evaluate_btn = QPushButton("开始增强评估")
         self.evaluate_btn.setMinimumHeight(40)
         self.evaluate_btn.clicked.connect(self._on_evaluate)
         eval_button_layout.addWidget(self.evaluate_btn)
@@ -359,7 +359,7 @@ class IntelligentModelSelectionDialog(QDialog):
         
         # 可视化按钮
         viz_button_layout = QHBoxLayout()
-        self.visualize_btn = QPushButton("📊 生成可视化图表")
+        self.visualize_btn = QPushButton("生成可视化图表")
         self.visualize_btn.setMinimumHeight(40)
         self.visualize_btn.clicked.connect(self._on_visualize)
         viz_button_layout.addWidget(self.visualize_btn)

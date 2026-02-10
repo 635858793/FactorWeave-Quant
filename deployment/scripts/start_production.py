@@ -305,7 +305,7 @@ class ProductionServer:
         if not self.config.monitoring.metrics_enabled:
             return
 
-        logger.info("📊 启动监控系统...")
+        logger.info("启动监控系统...")
 
         try:
             # 启动监控线程
@@ -406,7 +406,7 @@ class ProductionServer:
 
     async def _start_main_application(self):
         """启动主应用"""
-        logger.info("🚀 启动主应用...")
+        logger.info("启动主应用...")
 
         try:
             # 导入主应用
@@ -431,7 +431,7 @@ class ProductionServer:
 
             logger.info(f"🌟 FactorWeave-Quant 生产环境启动成功")
             logger.info(f"📍 访问地址: http://{self.config.ui.host}:{self.config.ui.port}")
-            logger.info(f"📊 监控地址: http://{self.config.ui.host}:{self.config.monitoring.metrics_port}/metrics")
+            logger.info(f"监控地址: http://{self.config.ui.host}:{self.config.monitoring.metrics_port}/metrics")
 
             # 运行服务器
             await server.serve()

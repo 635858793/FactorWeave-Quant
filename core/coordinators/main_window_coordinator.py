@@ -3316,18 +3316,6 @@ FactorWeave-Quant  2.0 (重构版本)
             logger.error(f"启动优化失败: {e}")
             QMessageBox.warning(self._main_window, "错误", f"无法启动优化: {e}")
 
-    def _on_unified_optimization(self) -> None:
-        """打开统一优化服务"""
-        try:
-            # 显示统一优化服务对话框
-            from gui.dialogs.unified_optimization_dialog import UnifiedOptimizationDialog
-            dialog = UnifiedOptimizationDialog(self._main_window)
-            dialog.exec_()
-            logger.info("打开统一优化服务")
-        except Exception as e:
-            logger.error(f"打开统一优化服务失败: {e}")
-            QMessageBox.warning(self._main_window, "错误", f"无法打开统一优化服务: {e}")
-
     def _on_gpu_config(self) -> None:
         """配置GPU加速"""
         try:

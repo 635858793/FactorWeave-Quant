@@ -499,7 +499,7 @@ class DuckDBConnectionPool:
         3. 关闭所有连接
         """
         try:
-            logger.info(f"🔄 关闭DuckDB连接池: {self.database_path}")
+            logger.info(f"关闭DuckDB连接池: {self.database_path}")
             logger.info(f"   活跃连接: {self._active_connections}/{self._total_connections}")
 
             with self._lock:
@@ -719,7 +719,7 @@ class DuckDBConnectionManager:
         database_path = str(Path(database_path).resolve())
 
         try:
-            logger.warning(f"🔄 正在重启数据库连接池: {database_path}")
+            logger.warning(f"正在重启数据库连接池: {database_path}")
 
             with self._lock:
                 # 关闭并移除旧的连接池

@@ -255,7 +255,7 @@ class ProductionDeploymentManager:
     def execute_production_deployment(self, validate_only: bool = False) -> bool:
         """Execute complete production deployment with zero-downtime strategy"""
         try:
-            logger.info(f"🚀 Starting production deployment - ID: {self.deployment_config.deployment_id}")
+            logger.info(f"Starting production deployment - ID: {self.deployment_config.deployment_id}")
             self._log_deployment_event("Deployment started")
 
             if validate_only:
@@ -291,7 +291,7 @@ class ProductionDeploymentManager:
     def _execute_deployment_step(self, step: DeploymentStep) -> bool:
         """Execute individual deployment step"""
         try:
-            logger.info(f"🔄 Executing: {step.name}")
+            logger.info(f"Executing: {step.name}")
             step.started_at = datetime.now()
 
             # Set timeout
@@ -506,7 +506,7 @@ class ProductionDeploymentManager:
     def _setup_production_monitoring(self) -> bool:
         """Setup production monitoring infrastructure"""
         try:
-            logger.info("📊 Setting up production monitoring...")
+            logger.info("Setting up production monitoring...")
 
             # Create monitoring configuration
             monitoring_config = {
@@ -675,7 +675,7 @@ if __name__ == "__main__":
     def _execute_gradual_service_transition(self) -> bool:
         """Execute gradual service transition with zero downtime"""
         try:
-            logger.info("🔄 Executing gradual service transition...")
+            logger.info("Executing gradual service transition...")
 
             # Phase 1: Start new services alongside old ones
             logger.info("Phase 1: Starting new services...")

@@ -169,7 +169,7 @@ def test_multiple_instances():
 
 def main():
     """主函数"""
-    print("🚀 性能监控器功能全面测试")
+    print("性能监控器功能全面测试")
     print("=" * 60)
     
     results = []

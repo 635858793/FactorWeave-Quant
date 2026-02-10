@@ -1469,7 +1469,7 @@ class DataSourcePluginConfigDialog(QDialog):
         # 操作按钮
         button_layout = QHBoxLayout()
 
-        refresh_btn = QPushButton("🔄 刷新查询地址")
+        refresh_btn = QPushButton("刷新查询地址")
         refresh_btn.setToolTip("从插件配置中重新加载联网查询地址")
         refresh_btn.clicked.connect(self._refresh_query_addresses)
         button_layout.addWidget(refresh_btn)

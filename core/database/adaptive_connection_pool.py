@@ -96,7 +96,7 @@ class MetricsCollector:
         self._running = True
         self._thread = threading.Thread(target=self._collect_loop, daemon=True, name="MetricsCollector")
         self._thread.start()
-        logger.info(f"📊 指标收集器已启动，采集间隔={self.interval}秒")
+        logger.info(f"指标收集器已启动，采集间隔={self.interval}秒")
 
     def stop(self):
         """停止指标收集"""
@@ -293,7 +293,7 @@ class AdaptiveConnectionPoolManager:
             logger.warning("自适应管理器已在运行")
             return
 
-        logger.info("🔄 启动自适应连接池管理...")
+        logger.info("启动自适应连接池管理...")
 
         # 启动指标收集
         self.collector.start()
@@ -325,7 +325,7 @@ class AdaptiveConnectionPoolManager:
 
         if enabled:
             if not self._running:
-                logger.info("🔄 启用自适应管理器...")
+                logger.info("启用自适应管理器...")
                 self.collector.start()
                 self._running = True
                 self._thread = threading.Thread(target=self._adjustment_loop, daemon=True, name="AdaptiveManager")
@@ -364,7 +364,7 @@ class AdaptiveConnectionPoolManager:
             logger.warning("自适应管理器已禁用，无法恢复")
             return
 
-        logger.info("🔄 恢复自适应监控...")
+        logger.info("恢复自适应监控...")
         self._running = True
         logger.info("自适应监控已恢复")
 
@@ -396,7 +396,7 @@ class AdaptiveConnectionPoolManager:
         """应用调整"""
         old_size = self.db.pool.pool.size()  # pool.pool是QueuePool实例
 
-        logger.info(f"🔄 自动调整连接池: {old_size} -> {new_pool_size} ({reason})")
+        logger.info(f"自动调整连接池: {old_size} -> {new_pool_size} ({reason})")
 
         try:
             # 创建新配置

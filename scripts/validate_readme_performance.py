@@ -1269,7 +1269,7 @@ class READMEPerformanceValidator:
 
     def run_all_tests(self) -> List[TestResult]:
         """运行所有测试"""
-        logger.info("🚀 开始README性能指标验证")
+        logger.info("开始README性能指标验证")
         logger.info("=" * 80)
         
         # 运行所有测试

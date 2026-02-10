@@ -132,7 +132,7 @@ class ServiceBootstrap:
                 self._registration_attempts[service_type] += 1
 
                 logger.warning(
-                    f"🔄 Service {service_name} already registered in container. "
+                    f"Service {service_name} already registered in container. "
                     f"Duplicate attempt #{self._registration_attempts[service_type]}. "
                     f"Stack trace: {traceback.format_stack()[-3:-1]}"
                 )
@@ -142,7 +142,7 @@ class ServiceBootstrap:
             if service_type in self._initialized_services:
                 self._duplicate_attempts += 1
                 logger.warning(
-                    f"🔄 Service {service_name} already in initialized services list. "
+                    f"Service {service_name} already in initialized services list. "
                     f"Skipping registration."
                 )
                 return False
@@ -151,7 +151,7 @@ class ServiceBootstrap:
             if service_type in self._instance_registered_services:
                 self._duplicate_attempts += 1
                 logger.warning(
-                    f"🔄 Service {service_name} already registered in this bootstrap instance. "
+                    f"Service {service_name} already registered in this bootstrap instance. "
                     f"Skipping registration."
                 )
                 return False
@@ -224,7 +224,7 @@ class ServiceBootstrap:
     def _report_duplicate_attempts(self) -> None:
         """报告重复初始化尝试统计"""
         if self._duplicate_attempts > 0 or self._registration_attempts:
-            logger.warning(f"📊 Duplicate Registration Detection Report:")
+            logger.warning(f"Duplicate Registration Detection Report:")
             logger.warning(f"   Total duplicate attempts prevented: {self._duplicate_attempts}")
 
             if self._registration_attempts:
@@ -1648,7 +1648,7 @@ class ServiceBootstrap:
             logger.error(f"❌ 分布式服务注册失败: {e}")
             logger.error(traceback.format_exc())
 
-        # 🚀 注册5个深度优化功能模块
+        # 注册5个深度优化功能模块
         self._register_optimization_modules()
 
         # 注册通知服务
@@ -1729,7 +1729,7 @@ class ServiceBootstrap:
 
     def _register_optimization_modules(self) -> None:
         """注册5个深度优化功能模块"""
-        logger.info("🚀 开始注册5个深度优化功能模块...")
+        logger.info("开始注册5个深度优化功能模块...")
         
         try:
             # 1. 注册智能缓存管理器
@@ -1954,7 +1954,7 @@ class ServiceBootstrap:
             logger.error(f"❌ 响应式界面适配器注册失败: {e}")
             logger.error(traceback.format_exc())
 
-        # 🚀 注册统一优化服务接口
+        # 注册统一优化服务接口
         self._register_unified_optimization_service()
 
     def _register_unified_optimization_service(self) -> None:

@@ -61,7 +61,7 @@ class ScheduledImportDialog(QDialog):
         # 按钮区域
         button_layout = QHBoxLayout()
         
-        self.refresh_btn = QPushButton("🔄 刷新")
+        self.refresh_btn = QPushButton("刷新")
         self.refresh_btn.clicked.connect(self._load_tasks)
         button_layout.addWidget(self.refresh_btn)
         

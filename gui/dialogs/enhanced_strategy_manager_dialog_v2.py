@@ -362,7 +362,7 @@ class EnhancedStrategyManagerDialogV2(QDialog):
             ('📋 策略库', 'library'),
             ('🔬 回测实验室', 'backtest'),
             ('⚙️ 参数优化', 'optimization'),
-            ('📊 性能分析', 'performance')
+            ('性能分析', 'performance')
         ]
         
         for text, name in nav_items:
