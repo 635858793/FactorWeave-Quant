@@ -1097,7 +1097,7 @@ class EnhancedDataImportWidget(QWidget):
         self.task_desc_edit.setPlaceholderText("输入任务描述（可选）...")
         basic_layout.addRow("任务描述:", self.task_desc_edit)
 
-        # 🎯 数据用途（新增）- 用于智能权重配置
+        # 数据用途（新增）- 用于智能权重配置
         self.data_usage_combo = QComboBox()
         self.data_usage_combo.addItems([
             "通用场景",      # general - 默认
@@ -1113,14 +1113,14 @@ class EnhancedDataImportWidget(QWidget):
             "• 实时行情：提高及时性权重\n"
             "• 实盘交易：最高及时性和准确性权重"
         )
-        basic_layout.addRow("🎯 数据用途:", self.data_usage_combo)
+        basic_layout.addRow("数据用途:", self.data_usage_combo)
 
         # 资产类型
         from core.ui_asset_type_utils import get_asset_type_combo_items
         self.asset_type_combo = QComboBox()
         self.asset_type_combo.addItems(get_asset_type_combo_items())
         self.asset_type_combo.currentTextChanged.connect(self.on_asset_type_changed)
-        basic_layout.addRow("📊 资产类型:", self.asset_type_combo)
+        basic_layout.addRow("资产类型:", self.asset_type_combo)
 
         # 数据类型
         self.data_type_combo = QComboBox()
@@ -1458,7 +1458,7 @@ class EnhancedDataImportWidget(QWidget):
         self.validate_config_btn.clicked.connect(self.validate_current_configuration)
         button_layout.addWidget(self.validate_config_btn)
 
-        self.reset_config_btn = QPushButton("🔄 重置")
+        self.reset_config_btn = QPushButton("重置")
         self.reset_config_btn.clicked.connect(self.reset_configuration)
         button_layout.addWidget(self.reset_config_btn)
 
@@ -4234,7 +4234,7 @@ class EnhancedDataImportWidget(QWidget):
 
         # K线下载情况监控面板
         if REALTIME_WRITE_UI_AVAILABLE:
-            download_monitoring_group = QGroupBox("📊 K线下载情况")
+            download_monitoring_group = QGroupBox("K线下载情况")
             # 🔧 设置最小高度确保内容可见
             download_monitoring_group.setMinimumHeight(350)
             download_monitoring_layout = QVBoxLayout(download_monitoring_group)
@@ -4324,7 +4324,7 @@ class EnhancedDataImportWidget(QWidget):
                 "60分钟": "60m"
             }
 
-            # 🎯 构建任务名称（自动追加数据用途标记）
+            # 构建任务名称（自动追加数据用途标记）
             base_task_name = self.task_name_edit.text().strip() if hasattr(self, 'task_name_edit') and self.task_name_edit.text().strip() else f"导入任务_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             usage_tag = self._get_data_usage_tag() if hasattr(self, '_get_data_usage_tag') else "[通用]"
 
@@ -5481,7 +5481,7 @@ class EnhancedDataImportWidget(QWidget):
             name_edit.setToolTip("任务名称将自动添加用途标记，如：任务名[回测]")
             form_layout.addRow("任务名称:", name_edit)
 
-            # 🎯 数据用途（新增）- 从任务名中提取或使用默认值
+            # 数据用途（新增）- 从任务名中提取或使用默认值
             data_usage_edit_combo = QComboBox()
             data_usage_edit_combo.addItems([
                 "通用场景",      # general
@@ -5512,7 +5512,7 @@ class EnhancedDataImportWidget(QWidget):
                 "选择数据用途后，任务名将自动添加对应标记\n"
                 "系统会根据用途调整质量评分权重"
             )
-            form_layout.addRow("🎯 数据用途:", data_usage_edit_combo)
+            form_layout.addRow("数据用途:", data_usage_edit_combo)
 
             # 数据源
             data_source_combo = QComboBox()
@@ -5623,7 +5623,7 @@ class EnhancedDataImportWidget(QWidget):
 
             def save_changes():
                 try:
-                    # 🎯 构建任务名称（自动追加数据用途标记）
+                    # 构建任务名称（自动追加数据用途标记）
                     base_name = name_edit.text().strip()
 
                     # 获取数据用途标记

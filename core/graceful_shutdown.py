@@ -88,7 +88,7 @@ class GracefulShutdownManager:
             self._is_shutting_down = True
 
         logger.info("=" * 70)
-        logger.info("🔄 开始优雅关闭流程")
+        logger.info("开始优雅关闭流程")
         logger.info("=" * 70)
 
         total_handlers = len(self._cleanup_handlers)

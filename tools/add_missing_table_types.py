@@ -120,7 +120,7 @@ def show_missing_table_types():
         print(f"    关键字段: {', '.join(table_type['fields'][:5])}...")
         print()
 
-    print("📊 优先级分析：")
+    print("优先级分析：")
     high_priority = [t for t in missing_types if t['importance'].startswith('高')]
     medium_priority = [t for t in missing_types if t['importance'].startswith('中')]
 
@@ -247,7 +247,7 @@ def show_datatype_mapping_issues():
 
 def main():
     """主函数"""
-    print("🎯 量化系统表结构深度分析工具")
+    print("量化系统表结构深度分析工具")
     print("基于对现有11种表类型的深度分析，识别量化系统中的缺失和问题")
     print()
 
@@ -266,9 +266,9 @@ def main():
     print("已实现: 11种基础表类型")
     print("❌ 缺失: 约15种量化系统核心表类型")
     print("⚠️ 问题: 现有表结构设计和映射不完整")
-    print("🎯 覆盖率: 约40% (11/26种需求表类型)")
+    print("覆盖率: 约40% (11/26种需求表类型)")
 
-    print("\n🚀 下一步行动建议:")
+    print("\n下一步行动建议:")
     print("1. 优先添加高优先级的缺失表类型")
     print("2. 修复现有表结构的设计问题")
     print("3. 完善DataType到TableType的映射")

@@ -96,7 +96,7 @@ class UnifiedOptimizationService:
     async def initialize(self) -> bool:
         """初始化统一优化服务"""
         try:
-            self.logger.info("🚀 开始初始化统一优化服务...")
+            self.logger.info("开始初始化统一优化服务...")
             
             # 根据配置启用模块
             tasks = []
@@ -198,7 +198,7 @@ class UnifiedOptimizationService:
             return False
         
         try:
-            self.logger.info("🚀 启动统一优化服务...")
+            self.logger.info("启动统一优化服务...")
             self._start_time = time.time()
             
             # 启动所有启用的模块（这些模块通常不需要显式启动）

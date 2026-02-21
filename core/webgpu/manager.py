@@ -127,7 +127,7 @@ class WebGPUManager:
                     )
 
                 # 4. 初始化WebGPU渲染器（主要渲染器）
-                logger.info("🚀 初始化WebGPU渲染器...")
+                logger.info("初始化WebGPU渲染器...")
                 from .webgpu_renderer import WebGPURenderer, GPURendererConfig
                 
                 gpu_config = GPURendererConfig(
@@ -226,7 +226,7 @@ class WebGPUManager:
         try:
             # 优先使用WebGPU渲染器
             if self._webgpu_renderer and self._webgpu_renderer.initialized:
-                logger.info(f"🚀 使用WebGPU渲染器执行: {method_name}")
+                logger.info(f"使用WebGPU渲染器执行: {method_name}")
                 method = getattr(self._webgpu_renderer, method_name)
                 success = method(*args, **kwargs)
                 
@@ -241,7 +241,7 @@ class WebGPUManager:
             
             # 如果WebGPU渲染器不可用或失败，使用降级渲染器
             if self._fallback_renderer:
-                logger.info(f"🔄 使用降级渲染器执行: {method_name}")
+                logger.info(f"使用降级渲染器执行: {method_name}")
                 method = getattr(self._fallback_renderer, method_name)
                 success = method(*args, **kwargs)
                 
@@ -267,7 +267,7 @@ class WebGPUManager:
             
             # 尝试降级
             if self.config.auto_fallback_on_error and self._fallback_renderer:
-                logger.info(f"🔄 尝试降级渲染: {method_name}")
+                logger.info(f"尝试降级渲染: {method_name}")
                 try:
                     method = getattr(self._fallback_renderer, method_name)
                     success = method(*args, **kwargs)

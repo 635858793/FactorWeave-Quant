@@ -40,7 +40,7 @@ class ImportHistoryDialog(QDialog):
         layout = QVBoxLayout(self)
         
         # 标题
-        title_label = QLabel("📊 数据导入历史记录")
+        title_label = QLabel("数据导入历史记录")
         title_label.setStyleSheet("font-size: 16px; font-weight: bold; padding: 10px;")
         layout.addWidget(title_label)
         
@@ -89,7 +89,7 @@ class ImportHistoryDialog(QDialog):
         # 按钮区域
         button_layout = QHBoxLayout()
         
-        self.refresh_btn = QPushButton("🔄 刷新")
+        self.refresh_btn = QPushButton("刷新")
         self.refresh_btn.clicked.connect(self._load_history)
         button_layout.addWidget(self.refresh_btn)
         
@@ -235,7 +235,7 @@ class ImportHistoryDialog(QDialog):
             f"📈 统计：总共 {total} 条记录 | "
             f"成功 {success} | "
             f"❌ 失败 {failed} | "
-            f"📊 成功率 {success_rate:.1f}%"
+            f"成功率 {success_rate:.1f}%"
         )
     
     def _apply_filter(self):

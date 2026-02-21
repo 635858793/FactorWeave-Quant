@@ -43,7 +43,7 @@ def test_database_routing():
         (AssetType.FUND, "基金"),
     ]
     
-    logger.info("\n📊 资产类型 → 数据库路径映射：\n")
+    logger.info("\n资产类型 → 数据库路径映射：\n")
     for asset_type, name in test_assets:
         db_path = asset_manager.get_database_path(asset_type)
         exists = os.path.exists(db_path)
@@ -137,7 +137,7 @@ def test_view_query_logic():
     logger.info("【测试4】unified_best_quality_kline视图查询逻辑")
     logger.info("=" * 80)
     
-    logger.info("\n📊 视图查询SQL（伪代码）：\n")
+    logger.info("\n视图查询SQL（伪代码）：\n")
     logger.info("""
     SELECT 
         symbol as code, 
@@ -157,7 +157,7 @@ def test_view_query_logic():
     logger.info("  4. 优先选择最新更新的数据（ORDER BY updated_at DESC）")
     logger.info("  5. LEFT JOIN data_quality_monitor获取实时质量评分")
     
-    logger.info("\n🔄 降级机制：")
+    logger.info("\n降级机制：")
     logger.info("  - 视图查询失败 → 自动降级到基础表 historical_kline_data")
     logger.info("  - 确保即使视图不存在也能正常工作")
     
@@ -245,7 +245,7 @@ async def main():
     logger.info("  unified_best_quality_kline视图查询逻辑清晰")
     logger.info("  完整数据流路径正确")
     logger.info("\n")
-    logger.info("🎯 结论：UnifiedDataManager已全面支持多资产类型！")
+    logger.info("结论：UnifiedDataManager已全面支持多资产类型！")
     logger.info("\n")
 
 

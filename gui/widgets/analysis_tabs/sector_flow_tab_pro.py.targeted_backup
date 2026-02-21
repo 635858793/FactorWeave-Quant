@@ -2186,7 +2186,7 @@ class SectorFlowTabPro(BaseAnalysisTab):
                         self.error.emit(str(e))
 
             dialog = QDialog(self)
-            dialog.setWindowTitle("📊 板块资金流历史数据下载")
+            dialog.setWindowTitle("板块资金流历史数据下载")
             dialog.setFixedSize(500, 600)
             dialog.setStyleSheet("""
                 QDialog {
@@ -2326,7 +2326,7 @@ class SectorFlowTabPro(BaseAnalysisTab):
             layout.addWidget(options_group)
 
             # 进度显示组
-            progress_group = QGroupBox("📊 下载进度")
+            progress_group = QGroupBox("下载进度")
             progress_layout = QVBoxLayout(progress_group)
 
             progress_bar = QProgressBar()
@@ -2350,7 +2350,7 @@ class SectorFlowTabPro(BaseAnalysisTab):
             # 按钮区域
             button_layout = QHBoxLayout()
 
-            download_btn = QPushButton("🚀 开始下载")
+            download_btn = QPushButton("开始下载")
             cancel_btn = QPushButton("❌ 取消")
             close_btn = QPushButton("关闭")
             close_btn.setEnabled(False)
@@ -2408,8 +2408,8 @@ class SectorFlowTabPro(BaseAnalysisTab):
                 status_label.setText("准备下载...")
                 log_text.append(f"📅 下载范围: {start_date} 至 {end_date}")
                 log_text.append(f"🔗 数据源: {source}")
-                log_text.append(f"📊 数据类型: {'日度' if include_daily else ''}{'、' if include_daily and include_intraday else ''}{'分时' if include_intraday else ''}")
-                log_text.append(f"🔄 重试次数: {retry_count}")
+                log_text.append(f"数据类型: {'日度' if include_daily else ''}{'、' if include_daily and include_intraday else ''}{'分时' if include_intraday else ''}")
+                log_text.append(f"重试次数: {retry_count}")
 
                 # 获取SectorDataService实例
                 sector_service = None
@@ -2431,7 +2431,7 @@ class SectorFlowTabPro(BaseAnalysisTab):
                 def on_progress(value, message):
                     progress_bar.setValue(value)
                     status_label.setText(message)
-                    log_text.append(f"📊 {message}")
+                    log_text.append(f"{message}")
 
                 def on_finished(result):
                     download_btn.setEnabled(True)

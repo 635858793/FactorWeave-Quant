@@ -16,84 +16,6 @@ sys.path.insert(0, project_root)
 from loguru import logger
 
 
-def test_system_health_tab_code():
-    """检查ModernSystemHealthTab代码是否包含增强功能"""
-    logger.info("=" * 60)
-    logger.info("检查1: ModernSystemHealthTab代码")
-    logger.info("=" * 60)
-    
-    try:
-        # 读取ModernSystemHealthTab文件
-        logger.info("读取ModernSystemHealthTab文件...")
-        file_path = os.path.join(project_root, 'gui/widgets/performance/tabs/system_health_tab.py')
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-        
-        logger.info("✓ ModernSystemHealthTab文件读取成功")
-        
-        # 检查是否有新的导入
-        if 'QTabWidget' in content:
-            logger.info("✓ QTabWidget导入已添加")
-        else:
-            logger.warning("⚠ QTabWidget导入未添加")
-        
-        if 'QToolBar' in content:
-            logger.info("✓ QToolBar导入已添加")
-        else:
-            logger.warning("⚠ QToolBar导入未添加")
-        
-        # 检查是否有新的属性
-        if 'self.thresholds' in content:
-            logger.info("✓ thresholds属性已添加")
-        else:
-            logger.warning("⚠ thresholds属性未添加")
-        
-        if 'self.health_history' in content:
-            logger.info("✓ health_history属性已添加")
-        else:
-            logger.warning("⚠ health_history属性未添加")
-        
-        if 'self.update_timer' in content:
-            logger.info("✓ update_timer属性已添加")
-        else:
-            logger.warning("⚠ update_timer属性未添加")
-        
-        # 检查是否有新的方法
-        if 'def create_overview_tab' in content:
-            logger.info("✓ create_overview_tab方法已添加")
-        else:
-            logger.warning("⚠ create_overview_tab方法未添加")
-        
-        if 'def create_metrics_tab' in content:
-            logger.info("✓ create_metrics_tab方法已添加")
-        else:
-            logger.warning("⚠ create_metrics_tab方法未添加")
-        
-        if 'def create_trend_tab' in content:
-            logger.info("✓ create_trend_tab方法已添加")
-        else:
-            logger.warning("⚠ create_trend_tab方法未添加")
-        
-        if 'def create_thresholds_tab' in content:
-            logger.info("✓ create_thresholds_tab方法已添加")
-        else:
-            logger.warning("⚠ create_thresholds_tab方法未添加")
-        
-        if 'def create_history_tab' in content:
-            logger.info("✓ create_history_tab方法已添加")
-        else:
-            logger.warning("⚠ create_history_tab方法未添加")
-        
-        logger.info("✓ ModernSystemHealthTab代码检查完成")
-        return True
-        
-    except Exception as e:
-        logger.error(f"✗ ModernSystemHealthTab代码检查失败: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
-        return False
-
-
 def test_system_monitor_tab_code():
     """检查ModernSystemMonitorTab代码是否包含增强功能"""
     logger.info("=" * 60)
@@ -272,10 +194,6 @@ def main():
     logger.info("=" * 60)
     
     results = []
-    
-    # 检查ModernSystemHealthTab代码
-    result1 = test_system_health_tab_code()
-    results.append(("ModernSystemHealthTab代码", result1))
     
     # 检查ModernSystemMonitorTab代码
     result2 = test_system_monitor_tab_code()

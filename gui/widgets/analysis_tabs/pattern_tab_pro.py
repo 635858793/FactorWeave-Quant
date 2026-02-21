@@ -1792,10 +1792,10 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
             
             # 构建专业回测结果文本
             result_text = f"""━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📊 形态分析专业回测报告
+形态分析专业回测报告
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-🎯 回测信息
+回测信息
    回测引擎: 形态分析专业引擎
    计算时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
    回测期间: {total_days} 个交易日
@@ -1811,24 +1811,24 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
    波动率: {volatility:.2%}
    最大回撤: {max_drawdown:.2%}
    
-🎯 风险调整收益
+风险调整收益
    夏普比率: {sharpe_ratio:.3f}
    Sortino比率: {sortino_ratio:.3f}
    Calmar比率: {calmar_ratio:.3f}
 
-📊 交易统计
+交易统计
    总交易次数: {total_trades}次
    盈利交易: {winning_trades}次
    亏损交易: {losing_trades}次
    胜率: {win_rate:.1%}
    盈亏比: {profit_factor:.2f}:1
 
-🎯 形态效果
+形态效果
    形态成功率: {pattern_success_rate:.1%}
    平均盈利: {avg_win:.2f}
    平均亏损: {avg_loss:.2f}
 
-🎯 基准表现
+基准表现
    Alpha: {alpha:.3f}
    Beta: {beta:.3f}
 

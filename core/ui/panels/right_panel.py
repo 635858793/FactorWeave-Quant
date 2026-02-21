@@ -1832,7 +1832,7 @@ class RightPanel(BasePanel):
             basic_info = backtest_data.get('basic_info', {})
             if basic_info:
                 # 添加分组标题
-                self._add_table_section(table, "📊 回测信息")
+                self._add_table_section(table, "回测信息")
                 self._add_table_row(table, "回测引擎", basic_info.get('engine', 'N/A'))
                 self._add_table_row(table, "计算时间", basic_info.get('timestamp', 'N/A'))
                 self._add_table_row(table, "回测期间", basic_info.get('period_days', 0))
@@ -1851,21 +1851,21 @@ class RightPanel(BasePanel):
 
                 # 风险调整收益
                 risk_adjusted = backtest_data.get('risk_adjusted', {})
-                self._add_table_section(table, "🎯 风险调整收益")
+                self._add_table_section(table, "风险调整收益")
                 self._add_table_row(table, "夏普比率", f"{risk_adjusted.get('sharpe_ratio', 0):.3f}")
                 self._add_table_row(table, "Sortino比率", f"{risk_adjusted.get('sortino_ratio', 0):.3f}")
                 self._add_table_row(table, "Calmar比率", f"{risk_adjusted.get('calmar_ratio', 0):.3f}")
 
                 # 交易统计
                 trading = backtest_data.get('trading_stats', {})
-                self._add_table_section(table, "📊 交易统计")
+                self._add_table_section(table, "交易统计")
                 self._add_table_row(table, "总交易次数", trading.get('total_trades', 0))
                 self._add_table_row(table, "胜率", f"{trading.get('win_rate', 0):.1%}")
                 self._add_table_row(table, "盈亏比", f"{trading.get('profit_factor', 0):.2f}:1")
 
                 # Alpha/Beta
                 benchmark = backtest_data.get('benchmark', {})
-                self._add_table_section(table, "🎯 基准表现")
+                self._add_table_section(table, "基准表现")
                 self._add_table_row(table, "Alpha", f"{benchmark.get('alpha', 0):.3f}")
                 self._add_table_row(table, "Beta", f"{benchmark.get('beta', 1.0):.3f}")
                 
@@ -1954,7 +1954,7 @@ class RightPanel(BasePanel):
             indicator_results: 指标计算结果字典
         """
         try:
-            logger.info(f"🎯 收到指标计算完成信号: type={indicator_type}, results包含{len(indicator_results)}个指标")
+            logger.info(f"收到指标计算完成信号: type={indicator_type}, results包含{len(indicator_results)}个指标")
 
             # 获取中间面板和图表组件
             if not self.coordinator:

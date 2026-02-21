@@ -209,7 +209,7 @@ class ArchitecturePerformanceOptimizer:
     def _measure_startup_performance(self) -> Dict[str, Any]:
         """Measure system startup performance"""
         try:
-            logger.info("📊 Measuring startup performance...")
+            logger.info("Measuring startup performance...")
 
             # Measure import time for core modules
             import_times = {}
@@ -548,7 +548,7 @@ class ArchitecturePerformanceOptimizer:
     def run_performance_optimizations(self) -> List[OptimizationResult]:
         """Run all available performance optimizations"""
         try:
-            logger.info("🚀 Running performance optimizations...")
+            logger.info("Running performance optimizations...")
 
             optimizations = [
                 self._optimize_import_performance,
@@ -683,7 +683,7 @@ class ArchitecturePerformanceOptimizer:
     def _optimize_startup_sequence(self) -> Optional[OptimizationResult]:
         """Optimize startup sequence"""
         try:
-            logger.info("🚀 Optimizing startup sequence...")
+            logger.info("Optimizing startup sequence...")
 
             # This would involve:
             # - Parallel service initialization
@@ -741,7 +741,7 @@ class ArchitecturePerformanceOptimizer:
     def validate_performance_targets(self) -> List[PerformanceResult]:
         """Validate all performance targets against current metrics"""
         try:
-            logger.info("🎯 Validating performance targets...")
+            logger.info("Validating performance targets...")
 
             # Collect current metrics
             current_metrics = self.collect_current_performance_metrics()
@@ -759,7 +759,7 @@ class ArchitecturePerformanceOptimizer:
             total_count = len(results)
             pass_rate = (passed_count / total_count) * 100 if total_count > 0 else 0
 
-            logger.info(f"📊 Performance validation: {passed_count}/{total_count} targets passed ({pass_rate:.1f}%)")
+            logger.info(f"Performance validation: {passed_count}/{total_count} targets passed ({pass_rate:.1f}%)")
 
             return results
 
@@ -993,11 +993,11 @@ class ArchitecturePerformanceOptimizer:
     def run_complete_performance_analysis(self) -> Dict[str, Any]:
         """Run complete performance analysis and optimization"""
         try:
-            logger.info("🎯 Starting complete performance analysis...")
+            logger.info("Starting complete performance analysis...")
 
             # Step 1: Collect baseline if not exists
             if not self.baseline_metrics:
-                logger.info("📊 Collecting initial baseline...")
+                logger.info("Collecting initial baseline...")
                 self.baseline_metrics = self.collect_current_performance_metrics()
                 self._save_baseline_metrics()
 

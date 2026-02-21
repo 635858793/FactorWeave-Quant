@@ -12,6 +12,7 @@ __all__ = [
     'BacktestValidator',
     'JITOptimizer',
     'AsyncIOManager',
+    'SmartDataCache',
     'ResourceManager',
     'UnifiedBacktestEngine',
     'ProfessionalUISystem',
@@ -40,6 +41,9 @@ def __getattr__(name):
     elif name == 'AsyncIOManager':
         from .async_io_manager import AsyncIOManager
         return AsyncIOManager
+    elif name == 'SmartDataCache':
+        from .async_io_manager import SmartDataCache
+        return SmartDataCache
     elif name == 'ResourceManager':
         from .resource_manager import ResourceManager
         return ResourceManager

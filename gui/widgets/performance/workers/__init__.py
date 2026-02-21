@@ -8,7 +8,6 @@
 _AsyncDataSignals = None
 _AsyncDataWorker = None
 _AsyncStrategyWorker = None
-_SystemHealthCheckThread = None
 _AlertHistorySignals = None
 _AlertHistoryWorker = None
 _TabLoadSignals = None
@@ -20,7 +19,7 @@ _SMSTestWorker = None
 def _import_async_workers():
     """延迟导入async_workers模块"""
     global _AsyncDataSignals, _AsyncDataWorker, _AsyncStrategyWorker
-    global _SystemHealthCheckThread, _AlertHistorySignals, _AlertHistoryWorker
+    global _AlertHistorySignals, _AlertHistoryWorker
     global _TabLoadSignals, _TabLoadWorker, _NotificationTestSignals
     global _EmailTestWorker, _SMSTestWorker
     
@@ -29,7 +28,6 @@ def _import_async_workers():
             AsyncDataSignals,
             AsyncDataWorker,
             AsyncStrategyWorker,
-            SystemHealthCheckThread,
             AlertHistorySignals,
             AlertHistoryWorker,
             TabLoadSignals,
@@ -41,7 +39,6 @@ def _import_async_workers():
         _AsyncDataSignals = AsyncDataSignals
         _AsyncDataWorker = AsyncDataWorker
         _AsyncStrategyWorker = AsyncStrategyWorker
-        _SystemHealthCheckThread = SystemHealthCheckThread
         _AlertHistorySignals = AlertHistorySignals
         _AlertHistoryWorker = AlertHistoryWorker
         _TabLoadSignals = TabLoadSignals
@@ -64,11 +61,6 @@ def get_AsyncStrategyWorker(*args, **kwargs):
     """延迟导入AsyncStrategyWorker"""
     _import_async_workers()
     return _AsyncStrategyWorker(*args, **kwargs)
-
-def get_SystemHealthCheckThread(*args, **kwargs):
-    """延迟导入SystemHealthCheckThread"""
-    _import_async_workers()
-    return _SystemHealthCheckThread(*args, **kwargs)
 
 def get_AlertHistorySignals(*args, **kwargs):
     """延迟导入AlertHistorySignals"""
@@ -109,7 +101,6 @@ def get_SMSTestWorker(*args, **kwargs):
 AsyncDataSignals = get_AsyncDataSignals
 AsyncDataWorker = get_AsyncDataWorker
 AsyncStrategyWorker = get_AsyncStrategyWorker
-SystemHealthCheckThread = get_SystemHealthCheckThread
 AlertHistorySignals = get_AlertHistorySignals
 AlertHistoryWorker = get_AlertHistoryWorker
 TabLoadSignals = get_TabLoadSignals
@@ -122,7 +113,6 @@ __all__ = [
     'AsyncDataSignals',
     'AsyncDataWorker',
     'AsyncStrategyWorker',
-    'SystemHealthCheckThread',
     'AlertHistorySignals',
     'AlertHistoryWorker',
     'TabLoadSignals',

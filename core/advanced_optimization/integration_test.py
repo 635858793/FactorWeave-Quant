@@ -142,7 +142,7 @@ class DeepOptimizationTester:
         
     def run_all_tests(self) -> IntegrationTestResult:
         """运行所有测试"""
-        print("🚀 开始深度优化系统集成测试...")
+        print("开始深度优化系统集成测试...")
         print("=" * 60)
         
         # 1. 图表渲染性能测试
@@ -171,7 +171,7 @@ class DeepOptimizationTester:
     
     def _test_rendering_performance(self) -> IntegrationTestResult:
         """测试图表渲染性能"""
-        print("\n📊 1. 图表渲染性能深度优化测试")
+        print("\n1. 图表渲染性能深度优化测试")
         print("-" * 40)
         
         metrics = []
@@ -675,17 +675,17 @@ class DeepOptimizationTester:
     def _print_final_report(self, result: IntegrationTestResult):
         """打印最终报告"""
         print("\n" + "=" * 60)
-        print("🎯 深度优化系统集成测试 - 最终报告")
+        print("深度优化系统集成测试 - 最终报告")
         print("=" * 60)
         
-        print(f"\n📊 测试总览:")
+        print(f"\n测试总览:")
         print(f"   总测试数: {result.total_tests}")
         print(f"   通过测试: {result.passed_tests} ✓")
         print(f"   失败测试: {result.failed_tests} ❌")
         print(f"   整体得分: {result.overall_score:.1f}/100")
         
         if result.performance_metrics:
-            print(f"\n🚀 性能指标:")
+            print(f"\n性能指标:")
             total_throughput = sum(m.throughput for m in result.performance_metrics)
             avg_memory = np.mean([m.memory_usage_mb for m in result.performance_metrics])
             avg_cpu = np.mean([m.cpu_usage_percent for m in result.performance_metrics])

@@ -13,8 +13,6 @@ class HealthStatus(Enum):
 
     合并了以下模块的健康状态定义：
     - core/services/fault_tolerance_manager.py
-    - core/migration/pre_migration_health_check.py
-    - core/health_check_engine.py
     - core/interfaces/data_source.py
 
     状态说明：

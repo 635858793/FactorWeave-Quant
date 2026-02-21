@@ -1,16 +1,6 @@
 #!/usr/bin/env python3
 """
 FactorWeave-Quant  主程序入口
-
-使用重构后的架构：
-- 主窗口协调器 (MainWindowCoordinator)
-- 服务容器 (ServiceContainer)
-- 事件总线 (EventBus)
-- 模块化UI面板
-- WebGPU硬件加速渲染
-
-版本: 2.0 (重构版本)
-作者: FactorWeave-Quant  Team
 """
 
 import sys
