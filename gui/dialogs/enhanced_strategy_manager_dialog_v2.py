@@ -362,7 +362,9 @@ class EnhancedStrategyManagerDialogV2(QDialog):
             ('📋 策略库', 'library'),
             ('🔬 回测实验室', 'backtest'),
             ('⚙️ 参数优化', 'optimization'),
-            ('性能分析', 'performance')
+            ('📊 性能分析', 'performance'),
+            ('💻 代码编辑器', 'editor'),
+            ('🔄 开发工作流', 'workflow')
         ]
         
         for text, name in nav_items:
@@ -407,6 +409,14 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         # 性能分析视图
         self.performance_view = self._create_performance_view()
         self.content_stack.addWidget(self.performance_view)
+        
+        # 代码编辑器视图
+        self.editor_view = self._create_editor_view()
+        self.content_stack.addWidget(self.editor_view)
+        
+        # 开发工作流视图
+        self.workflow_view = self._create_workflow_view()
+        self.content_stack.addWidget(self.workflow_view)
 
     def _create_home_view(self) -> QWidget:
         """创建首页视图"""
@@ -460,8 +470,9 @@ class EnhancedStrategyManagerDialogV2(QDialog):
     def _create_stat_card(self, title: str, value: str, color: str) -> QWidget:
         """创建统计卡片"""
         card = QWidget()
-        card.setFixedHeight(120)
-        card.setFixedWidth(200)
+        card.setMinimumHeight(100)
+        card.setMinimumWidth(150)
+        card.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         
         # 自定义样式（不使用系统主题）
         # card.setStyleSheet(f"""
@@ -923,8 +934,9 @@ class EnhancedStrategyManagerDialogV2(QDialog):
     def _create_metric_card(self, title: str, value: str, metric_type: str) -> QWidget:
         """创建性能指标卡片（自定义渐变样式）"""
         card = QWidget()
-        card.setFixedHeight(100)
-        card.setFixedWidth(200)
+        card.setMinimumHeight(80)
+        card.setMinimumWidth(150)
+        card.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         
         # 使用渐变样式
         gradient = METRIC_CARD_GRADIENTS[metric_type]
@@ -1358,6 +1370,86 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         
         return widget
 
+    def _create_editor_view(self) -> QWidget:
+        """创建代码编辑器视图"""
+        from gui.widgets.strategy_code_editor import StrategyCodeEditor
+        
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        
+        # 创建策略代码编辑器
+        self.code_editor = StrategyCodeEditor()
+        self.code_editor.code_saved.connect(self._on_code_saved)
+        self.code_editor.code_executed.connect(self._on_code_executed)
+        layout.addWidget(self.code_editor)
+        
+        return widget
+
+    def _on_code_saved(self, file_path: str):
+        """代码保存回调"""
+        logger.info(f"策略代码已保存: {file_path}")
+        self._load_strategies()
+
+    def _on_code_executed(self, code: str):
+        """代码执行回调"""
+        logger.info("策略代码执行请求")
+        try:
+            import tempfile
+            import os
+            
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as f:
+                f.write(code)
+                temp_file = f.name
+            
+            try:
+                import importlib.util
+                spec = importlib.util.spec_from_file_location("temp_strategy", temp_file)
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                
+                for name in dir(module):
+                    obj = getattr(module, name)
+                    if isinstance(obj, type) and hasattr(obj, 'generate_signals'):
+                        logger.info(f"发现策略类: {name}")
+                        QMessageBox.information(
+                            self, "执行成功",
+                            f"策略代码执行成功\n发现策略类: {name}"
+                        )
+                        break
+            finally:
+                os.unlink(temp_file)
+                
+        except Exception as e:
+            logger.error(f"策略代码执行失败: {e}")
+            QMessageBox.critical(
+                self, "执行失败",
+                f"策略代码执行失败:\n{str(e)}"
+            )
+
+    def _create_workflow_view(self) -> QWidget:
+        """创建开发工作流视图"""
+        from gui.widgets.strategy_development_workflow import StrategyDevelopmentWorkflow
+        
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.workflow = StrategyDevelopmentWorkflow()
+        self.workflow.workflow_completed.connect(self._on_workflow_completed)
+        layout.addWidget(self.workflow)
+        
+        return widget
+
+    def _on_workflow_completed(self, workflow_data: Dict):
+        """工作流完成回调"""
+        logger.info(f"策略开发工作流完成: {workflow_data.get('name', 'Unknown')}")
+        self._load_strategies()
+        QMessageBox.information(
+            self, "工作流完成",
+            f"策略 '{workflow_data.get('name', 'Unknown')}' 已成功创建并保存！"
+        )
+
     def _create_performance_chart(self) -> QWidget:
         """创建性能图表（使用系统主题背景，自定义金融配色）"""
         widget = FigureCanvas(Figure(figsize=(10, 6)))
@@ -1387,9 +1479,21 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         """切换视图"""
         self.current_view = view_name
         
-        # 更新按钮状态
-        for btn in self.nav_buttons:
-            btn.setChecked(btn.text().lower().find(view_name) >= 0)
+        # 更新按钮状态 - 使用存储的名称映射
+        nav_name_map = {
+            'home': 0,
+            'library': 1,
+            'backtest': 2,
+            'optimization': 3,
+            'performance': 4,
+            'editor': 5,
+            'workflow': 6
+        }
+        
+        if view_name in nav_name_map:
+            idx = nav_name_map[view_name]
+            if idx < len(self.nav_buttons):
+                self.nav_buttons[idx].setChecked(True)
         
         # 切换内容
         view_map = {
@@ -1397,7 +1501,9 @@ class EnhancedStrategyManagerDialogV2(QDialog):
             'library': self.library_view,
             'backtest': self.backtest_view,
             'optimization': self.optimization_view,
-            'performance': self.performance_view
+            'performance': self.performance_view,
+            'editor': self.editor_view,
+            'workflow': self.workflow_view
         }
         
         self.content_stack.setCurrentWidget(view_map.get(view_name, self.home_view))

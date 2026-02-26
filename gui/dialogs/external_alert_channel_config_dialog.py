@@ -404,6 +404,297 @@ class DingTalkChannelConfigWidget(QWidget):
         return True
 
 
+class SoundChannelConfigWidget(QWidget):
+    """声音告警渠道配置组件"""
+
+    def __init__(self, config: Dict = None, parent=None):
+        super().__init__(parent)
+        self.config = config or {}
+        self.init_ui()
+        self.load_config()
+
+    def init_ui(self):
+        """初始化UI"""
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(10)
+
+        basic_group = QGroupBox("基本设置")
+        basic_layout = QFormLayout()
+
+        self.use_system_sound = QCheckBox("使用系统默认声音")
+        self.use_system_sound.setChecked(True)
+        self.use_system_sound.stateChanged.connect(self._on_use_system_sound_changed)
+        basic_layout.addRow("", self.use_system_sound)
+
+        self.volume_slider = QDoubleSpinBox()
+        self.volume_slider.setRange(0.0, 1.0)
+        self.volume_slider.setSingleStep(0.1)
+        self.volume_slider.setValue(0.8)
+        self.volume_slider.setDecimals(1)
+        basic_layout.addRow("音量:", self.volume_slider)
+
+        basic_group.setLayout(basic_layout)
+        layout.addWidget(basic_group)
+
+        sound_type_group = QGroupBox("声音类型")
+        sound_type_layout = QFormLayout()
+
+        self.sound_type = QComboBox()
+        self.sound_type.addItems([
+            "默认提示音",
+            "紧急告警音",
+            "警告提示音",
+            "信息提示音",
+            "自定义声音文件"
+        ])
+        sound_type_layout.addRow("声音类型:", self.sound_type)
+
+        self.custom_sound_path = QLineEdit()
+        self.custom_sound_path.setPlaceholderText("选择自定义声音文件 (.wav, .mp3)")
+        self.custom_sound_path.setEnabled(False)
+        sound_type_layout.addRow("自定义文件:", self.custom_sound_path)
+
+        self.browse_button = QPushButton("浏览...")
+        self.browse_button.setEnabled(False)
+        self.browse_button.clicked.connect(self._browse_sound_file)
+        sound_type_layout.addRow("", self.browse_button)
+
+        sound_type_group.setLayout(sound_type_layout)
+        layout.addWidget(sound_type_group)
+
+        alert_level_group = QGroupBox("告警级别声音配置")
+        alert_level_layout = QFormLayout()
+
+        self.critical_sound = QComboBox()
+        self.critical_sound.addItems(["高频急促音", "双音提示", "持续警报"])
+        alert_level_layout.addRow("严重告警:", self.critical_sound)
+
+        self.error_sound = QComboBox()
+        self.error_sound.addItems(["中频提示音", "单音提示", "短促音"])
+        alert_level_layout.addRow("错误告警:", self.error_sound)
+
+        self.warning_sound = QComboBox()
+        self.warning_sound.addItems(["低频提示音", "柔和提示", "轻微音"])
+        alert_level_layout.addRow("警告告警:", self.warning_sound)
+
+        self.info_sound = QComboBox()
+        self.info_sound.addItems(["轻微提示音", "静音", "默认音"])
+        alert_level_layout.addRow("信息告警:", self.info_sound)
+
+        alert_level_group.setLayout(alert_level_layout)
+        layout.addWidget(alert_level_group)
+
+        test_group = QGroupBox("测试")
+        test_layout = QHBoxLayout()
+
+        self.test_button = QPushButton("🔊 测试声音")
+        self.test_button.clicked.connect(self._test_sound)
+        test_layout.addWidget(self.test_button)
+
+        test_layout.addStretch()
+        test_group.setLayout(test_layout)
+        layout.addWidget(test_group)
+
+        layout.addStretch()
+        
+        self.sound_type.currentTextChanged.connect(self._on_sound_type_changed)
+        self._on_use_system_sound_changed(self.use_system_sound.checkState())
+
+    def _on_use_system_sound_changed(self, state):
+        """系统声音选项变化"""
+        use_system = state == Qt.Checked
+        self.sound_type.setEnabled(not use_system)
+        self.custom_sound_path.setEnabled(not use_system and self.sound_type.currentText() == "自定义声音文件")
+        self.browse_button.setEnabled(not use_system and self.sound_type.currentText() == "自定义声音文件")
+        self.critical_sound.setEnabled(not use_system)
+        self.error_sound.setEnabled(not use_system)
+        self.warning_sound.setEnabled(not use_system)
+        self.info_sound.setEnabled(not use_system)
+
+    def _on_sound_type_changed(self, text):
+        """声音类型变化"""
+        is_custom = text == "自定义声音文件"
+        use_system = self.use_system_sound.isChecked()
+        self.custom_sound_path.setEnabled(is_custom and not use_system)
+        self.browse_button.setEnabled(is_custom and not use_system)
+
+    def _browse_sound_file(self):
+        """浏览声音文件"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "选择声音文件",
+            "",
+            "声音文件 (*.wav *.mp3 *.ogg);;所有文件 (*.*)"
+        )
+        if file_path:
+            self.custom_sound_path.setText(file_path)
+
+    def _test_sound(self):
+        """测试声音"""
+        try:
+            import platform
+            import threading
+            
+            def play_test_sound():
+                try:
+                    system = platform.system()
+                    if system == "Windows":
+                        try:
+                            import winsound
+                            winsound.Beep(1000, 500)
+                        except:
+                            pass
+                    elif system == "Darwin":
+                        import subprocess
+                        subprocess.run(['afplay', '/System/Library/Sounds/Glass.aiff'], check=False)
+                    elif system == "Linux":
+                        import subprocess
+                        subprocess.run(['aplay', '-q', '/usr/share/sounds/alsa/Front_Center.wav'], check=False)
+                except Exception as e:
+                    logger.warning(f"测试声音播放失败: {e}")
+            
+            thread = threading.Thread(target=play_test_sound, daemon=True)
+            thread.start()
+            
+            QMessageBox.information(self, "测试声音", "正在播放测试声音...")
+            
+        except Exception as e:
+            QMessageBox.warning(self, "测试失败", f"播放测试声音失败: {e}")
+
+    def load_config(self):
+        """加载配置"""
+        self.use_system_sound.setChecked(self.config.get('use_system_sound', True))
+        self.volume_slider.setValue(self.config.get('volume', 0.8))
+        self.sound_type.setCurrentText(self.config.get('sound_type', '默认提示音'))
+        self.custom_sound_path.setText(self.config.get('custom_sound_path', ''))
+        self.critical_sound.setCurrentText(self.config.get('critical_sound', '高频急促音'))
+        self.error_sound.setCurrentText(self.config.get('error_sound', '中频提示音'))
+        self.warning_sound.setCurrentText(self.config.get('warning_sound', '低频提示音'))
+        self.info_sound.setCurrentText(self.config.get('info_sound', '轻微提示音'))
+
+    def get_config(self) -> Dict:
+        """获取配置"""
+        return {
+            'use_system_sound': self.use_system_sound.isChecked(),
+            'volume': self.volume_slider.value(),
+            'sound_type': self.sound_type.currentText(),
+            'custom_sound_path': self.custom_sound_path.text().strip(),
+            'critical_sound': self.critical_sound.currentText(),
+            'error_sound': self.error_sound.currentText(),
+            'warning_sound': self.warning_sound.currentText(),
+            'info_sound': self.info_sound.currentText()
+        }
+
+    def validate(self) -> bool:
+        """验证配置"""
+        if self.sound_type.currentText() == "自定义声音文件":
+            if not self.custom_sound_path.text().strip():
+                QMessageBox.warning(self, "验证失败", "请选择自定义声音文件")
+                return False
+        return True
+
+
+class DesktopChannelConfigWidget(QWidget):
+    """桌面通知渠道配置组件"""
+
+    def __init__(self, config: Dict = None, parent=None):
+        super().__init__(parent)
+        self.config = config or {}
+        self.init_ui()
+        self.load_config()
+
+    def init_ui(self):
+        """初始化UI"""
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(10)
+
+        display_group = QGroupBox("显示设置")
+        display_layout = QFormLayout()
+
+        self.show_icon = QCheckBox("显示应用图标")
+        self.show_icon.setChecked(True)
+        display_layout.addRow("", self.show_icon)
+
+        self.auto_dismiss = QCheckBox("自动关闭通知")
+        self.auto_dismiss.setChecked(True)
+        display_layout.addRow("", self.auto_dismiss)
+
+        self.dismiss_timeout = QSpinBox()
+        self.dismiss_timeout.setRange(1, 60)
+        self.dismiss_timeout.setValue(5)
+        self.dismiss_timeout.setSuffix(" 秒")
+        display_layout.addRow("关闭时间:", self.dismiss_timeout)
+
+        display_group.setLayout(display_layout)
+        layout.addWidget(display_group)
+
+        content_group = QGroupBox("内容设置")
+        content_layout = QFormLayout()
+
+        self.show_title = QCheckBox("显示标题")
+        self.show_title.setChecked(True)
+        content_layout.addRow("", self.show_title)
+
+        self.show_content = QCheckBox("显示内容预览")
+        self.show_content.setChecked(True)
+        content_layout.addRow("", self.show_content)
+
+        self.max_content_length = QSpinBox()
+        self.max_content_length.setRange(50, 500)
+        self.max_content_length.setValue(200)
+        self.max_content_length.setSuffix(" 字符")
+        content_layout.addRow("最大内容长度:", self.max_content_length)
+
+        content_group.setLayout(content_layout)
+        layout.addWidget(content_group)
+
+        priority_group = QGroupBox("优先级设置")
+        priority_layout = QFormLayout()
+
+        self.critical_popup = QCheckBox("严重告警弹出窗口")
+        self.critical_popup.setChecked(True)
+        priority_layout.addRow("", self.critical_popup)
+
+        self.sound_with_desktop = QCheckBox("同时播放声音")
+        self.sound_with_desktop.setChecked(True)
+        priority_layout.addRow("", self.sound_with_desktop)
+
+        priority_group.setLayout(priority_layout)
+        layout.addWidget(priority_group)
+
+        layout.addStretch()
+
+    def load_config(self):
+        """加载配置"""
+        self.show_icon.setChecked(self.config.get('show_icon', True))
+        self.auto_dismiss.setChecked(self.config.get('auto_dismiss', True))
+        self.dismiss_timeout.setValue(self.config.get('dismiss_timeout', 5))
+        self.show_title.setChecked(self.config.get('show_title', True))
+        self.show_content.setChecked(self.config.get('show_content', True))
+        self.max_content_length.setValue(self.config.get('max_content_length', 200))
+        self.critical_popup.setChecked(self.config.get('critical_popup', True))
+        self.sound_with_desktop.setChecked(self.config.get('sound_with_desktop', True))
+
+    def get_config(self) -> Dict:
+        """获取配置"""
+        return {
+            'show_icon': self.show_icon.isChecked(),
+            'auto_dismiss': self.auto_dismiss.isChecked(),
+            'dismiss_timeout': self.dismiss_timeout.value(),
+            'show_title': self.show_title.isChecked(),
+            'show_content': self.show_content.isChecked(),
+            'max_content_length': self.max_content_length.value(),
+            'critical_popup': self.critical_popup.isChecked(),
+            'sound_with_desktop': self.sound_with_desktop.isChecked()
+        }
+
+    def validate(self) -> bool:
+        """验证配置"""
+        return True
+
+
 class ExternalAlertChannelConfigDialog(QDialog):
     """外部告警渠道配置对话框"""
 
@@ -451,7 +742,9 @@ class ExternalAlertChannelConfigDialog(QDialog):
             'email': '邮件',
             'sms': '短信',
             'webhook': 'Webhook',
-            'dingtalk': '钉钉'
+            'dingtalk': '钉钉',
+            'sound': '声音通知',
+            'desktop': '桌面通知'
         }
         return names.get(self.channel_type, self.channel_type)
 
@@ -465,6 +758,10 @@ class ExternalAlertChannelConfigDialog(QDialog):
             return WebhookChannelConfigWidget(self.config, self)
         elif self.channel_type == 'dingtalk':
             return DingTalkChannelConfigWidget(self.config, self)
+        elif self.channel_type == 'sound':
+            return SoundChannelConfigWidget(self.config, self)
+        elif self.channel_type == 'desktop':
+            return DesktopChannelConfigWidget(self.config, self)
         else:
             return QWidget()
 
@@ -487,10 +784,49 @@ class ExternalAlertChannelConfigDialog(QDialog):
 
     def accept_config(self):
         """接受配置"""
-        if self.config_widget.validate():
-            config = self.config_widget.get_config()
-            self.channel_configured.emit(self.channel_type, config)
-            self.accept()
+        if not self.config_widget.validate():
+            return
+        
+        config = self.config_widget.get_config()
+        
+        try:
+            from core.services.notification_service import (
+                get_notification_service, NotificationChannel, NotificationType
+            )
+            
+            service = get_notification_service()
+            if service:
+                type_map = {
+                    'email': NotificationType.EMAIL,
+                    'sms': NotificationType.SMS,
+                    'webhook': NotificationType.WEBHOOK,
+                    'dingtalk': NotificationType.DINGTALK,
+                    'sound': NotificationType.SOUND,
+                    'desktop': NotificationType.DESKTOP
+                }
+                
+                channel = NotificationChannel(
+                    channel_id=f"temp_{self.channel_type}",
+                    name=f"临时{self._get_channel_name()}渠道",
+                    notification_type=type_map.get(self.channel_type, NotificationType.EMAIL),
+                    config=config,
+                    enabled=True
+                )
+                
+                errors = service.validate_channel_config(channel)
+                if errors:
+                    error_msg = "\n".join(f"• {error}" for error in errors)
+                    QMessageBox.warning(
+                        self,
+                        "配置验证失败",
+                        f"以下配置问题需要修正：\n\n{error_msg}"
+                    )
+                    return
+        except Exception as e:
+            logger.warning(f"调用NotificationService验证失败，使用本地验证: {e}")
+        
+        self.channel_configured.emit(self.channel_type, config)
+        self.accept()
 
 
 class ExternalAlertChannelManagerDialog(QDialog):
@@ -601,7 +937,9 @@ class ExternalAlertChannelManagerDialog(QDialog):
             ('email', '邮件', '📧'),
             ('sms', '短信', '📱'),
             ('webhook', 'Webhook', '🔗'),
-            ('dingtalk', '钉钉', '💬')
+            ('dingtalk', '钉钉', '💬'),
+            ('sound', '声音通知', '🔊'),
+            ('desktop', '桌面通知', '🖥️')
         ]
 
         for channel_type, channel_name, icon in channels:
@@ -650,11 +988,52 @@ class ExternalAlertChannelManagerDialog(QDialog):
         """渠道配置完成"""
         self.channel_configs[channel_type] = config
 
-        # 保存到持久化
         if self.config_persistence:
             self.config_persistence.save_channel_config(channel_type, config)
+        
+        if channel_type in ['desktop', 'sound']:
+            self._save_to_database(channel_type, config)
 
         self.on_channel_selected(self.channel_list.currentItem())
+    
+    def _save_to_database(self, channel_type: str, config: dict):
+        """保存桌面和声音配置到数据库"""
+        try:
+            from db.models.alert_config_models import get_alert_config_database, NotificationConfig
+            
+            db = get_alert_config_database()
+            current_config = db.load_notification_config()
+            
+            if current_config is None:
+                current_config = NotificationConfig()
+            
+            if channel_type == 'desktop':
+                current_config.desktop_enabled = True
+                current_config.desktop_show_icon = config.get('show_icon', True)
+                current_config.desktop_auto_dismiss = config.get('auto_dismiss', True)
+                current_config.desktop_dismiss_timeout = config.get('dismiss_timeout', 5)
+                current_config.desktop_show_title = config.get('show_title', True)
+                current_config.desktop_show_content = config.get('show_content', True)
+                current_config.desktop_max_content_length = config.get('max_content_length', 200)
+                current_config.desktop_critical_popup = config.get('critical_popup', True)
+                current_config.desktop_sound_with_desktop = config.get('sound_with_desktop', True)
+            
+            elif channel_type == 'sound':
+                current_config.sound_enabled = True
+                current_config.sound_use_system = config.get('use_system_sound', True)
+                current_config.sound_volume = config.get('volume', 0.8)
+                current_config.sound_type = config.get('sound_type', '默认提示音')
+                current_config.sound_custom_path = config.get('custom_sound_path', '')
+                current_config.sound_critical = config.get('critical_sound', '高频急促音')
+                current_config.sound_error = config.get('error_sound', '中频提示音')
+                current_config.sound_warning = config.get('warning_sound', '低频提示音')
+                current_config.sound_info = config.get('info_sound', '轻微提示音')
+            
+            db.save_notification_config(current_config)
+            logger.info(f"已保存 {channel_type} 配置到数据库")
+            
+        except Exception as e:
+            logger.error(f"保存配置到数据库失败: {e}")
 
     def delete_channel(self):
         """删除渠道"""
@@ -675,11 +1054,35 @@ class ExternalAlertChannelManagerDialog(QDialog):
             if channel_type in self.channel_configs:
                 del self.channel_configs[channel_type]
 
-                # 从持久化删除
                 if self.config_persistence:
                     self.config_persistence.delete_channel_config(channel_type)
+                
+                if channel_type in ['desktop', 'sound']:
+                    self._disable_in_database(channel_type)
 
             self.on_channel_selected(current_item)
+    
+    def _disable_in_database(self, channel_type: str):
+        """在数据库中禁用渠道"""
+        try:
+            from db.models.alert_config_models import get_alert_config_database, NotificationConfig
+            
+            db = get_alert_config_database()
+            current_config = db.load_notification_config()
+            
+            if current_config is None:
+                current_config = NotificationConfig()
+            
+            if channel_type == 'desktop':
+                current_config.desktop_enabled = False
+            elif channel_type == 'sound':
+                current_config.sound_enabled = False
+            
+            db.save_notification_config(current_config)
+            logger.info(f"已在数据库中禁用 {channel_type} 渠道")
+            
+        except Exception as e:
+            logger.error(f"禁用渠道失败: {e}")
 
     def export_config(self):
         """导出配置"""

@@ -182,12 +182,17 @@ class UnifiedDataManager:
 
         self._cache_ttl = 300  # 5分钟缓存TTL
 
-        # 初始化缓存管理器
-        # if Cache:  # 已统一使用MultiLevelCacheManager
-        if False:
-            self.cache_manager = Cache()
-        else:
-            self.cache_manager = None
+        self.cache_manager = None
+        try:
+            from core.containers import get_service_container
+            from core.services.cache_service import CacheService
+            
+            container = get_service_container()
+            if container and container.is_registered(CacheService):
+                self.cache_manager = container.resolve(CacheService)
+                logger.info("统一缓存服务已初始化")
+        except Exception as e:
+            logger.warning(f"获取统一缓存服务失败: {e}，将使用延迟初始化")
 
         # 数据库连接
         try:
@@ -379,6 +384,19 @@ class UnifiedDataManager:
             return
 
         logger.info("开始初始化UnifiedDataManager...")
+
+        # 延迟获取统一缓存服务
+        if self.cache_manager is None:
+            try:
+                from core.containers import get_service_container
+                from core.services.cache_service import CacheService
+                
+                container = get_service_container()
+                if container and container.is_registered(CacheService):
+                    self.cache_manager = container.resolve(CacheService)
+                    logger.info("延迟初始化：统一缓存服务已获取")
+            except Exception as e:
+                logger.warning(f"延迟获取统一缓存服务失败: {e}")
 
         # 从服务容器获取已注册的实例，而不是创建新的
         try:
@@ -942,17 +960,15 @@ class UnifiedDataManager:
             return pd.DataFrame()
 
     def _get_cached_data(self, cache_key: str) -> Optional[pd.DataFrame]:
-        """增强缓存获取 - 统一使用MultiLevelCacheManager"""
+        """增强缓存获取 - 统一使用CacheService"""
         try:
-            # 优先从多级缓存获取
             if self.duckdb_available and self.multi_cache:
                 cached_data = self.multi_cache.get(cache_key)
                 if cached_data is not None:
                     return cached_data
 
-            # 回退到传统缓存
             if self.cache_manager:
-                return self.cache_manager.get(cache_key)
+                return self.cache_manager.get(cache_key, namespace='unified_data_manager')
 
             return None
         except Exception as e:
@@ -960,15 +976,15 @@ class UnifiedDataManager:
             return None
 
     def _cache_data(self, cache_key: str, data: pd.DataFrame):
-        """增强缓存存储 - 支持多级缓存"""
+        """增强缓存存储 - 统一使用CacheService"""
         try:
-            # 存储到多级缓存
             if self.duckdb_available and self.multi_cache:
                 self.multi_cache.set(cache_key, data, ttl=self._cache_ttl)
 
-            # 同时存储到传统缓存（向后兼容）
             if self.cache_manager:
-                self.cache_manager.set(cache_key, data)
+                from datetime import timedelta
+                ttl = timedelta(seconds=self._cache_ttl) if self._cache_ttl else None
+                self.cache_manager.set(cache_key, data, ttl=ttl, namespace='unified_data_manager')
 
         except Exception as e:
             logger.warning(f"缓存存储失败: {e}")

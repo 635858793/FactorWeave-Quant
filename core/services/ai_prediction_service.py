@@ -236,6 +236,7 @@ class AIPredictionService(BaseService):
         self._models = {}
         self._model_metadata: Dict[str, Dict[str, Any]] = {}
         self._predictions_cache = {}
+        self._cache_timestamps: Dict[str, float] = {}  # 缓存时间戳
         self._last_update = {}
 
         # 添加：缓存统计（用于计算真实的缓存命中率）
@@ -884,6 +885,40 @@ class AIPredictionService(BaseService):
             logger.warning(f"生成缓存键失败: {e}，使用默认键")
             return f"{method}_default_{datetime.now().timestamp()}"
 
+    def _check_cache_expiry_and_limit(self):
+        """检查并清理过期缓存，强制执行缓存大小限制"""
+        if not self.cache_config.get('enable_cache', True):
+            return
+
+        import time
+        cache_ttl = self.cache_config.get('cache_ttl', 300)
+        max_cache_size = self.cache_config.get('max_cache_size', 1000)
+        current_time = time.time()
+
+        expired_keys = []
+        for key, timestamp in self._cache_timestamps.items():
+            if current_time - timestamp > cache_ttl:
+                expired_keys.append(key)
+
+        for key in expired_keys:
+            if key in self._predictions_cache:
+                del self._predictions_cache[key]
+            if key in self._cache_timestamps:
+                del self._cache_timestamps[key]
+
+        if expired_keys:
+            logger.debug(f"清理了 {len(expired_keys)} 个过期缓存项")
+
+        if len(self._predictions_cache) > max_cache_size:
+            sorted_keys = sorted(self._cache_timestamps.items(), key=lambda x: x[1])
+            keys_to_remove = len(self._predictions_cache) - max_cache_size
+            for key, _ in sorted_keys[:keys_to_remove]:
+                if key in self._predictions_cache:
+                    del self._predictions_cache[key]
+                if key in self._cache_timestamps:
+                    del self._cache_timestamps[key]
+            logger.debug(f"缓存已满，移除了 {keys_to_remove} 个最旧的缓存项")
+
     def _initialize_models(self):
         """初始化预测模型"""
         try:
@@ -1137,16 +1172,17 @@ class AIPredictionService(BaseService):
             logger.info(f"形态数据验证完成，有效形态数量: {len(patterns)}/{len(valid_patterns)}")
 
             cache_key = self._generate_cache_key(kdata, "predict_patterns", patterns=len(patterns))
+            import time
+            self._check_cache_expiry_and_limit()
             if cache_key in self._predictions_cache:
                 logger.debug(f"使用缓存的形态预测结果: {cache_key}")
-                # 添加：统计缓存命中
                 self._cache_hits += 1
                 return self._predictions_cache[cache_key]
 
-            # 添加：统计缓存未命中
             self._cache_misses += 1
             prediction = self._generate_pattern_prediction(kdata, patterns)
             self._predictions_cache[cache_key] = prediction
+            self._cache_timestamps[cache_key] = time.time()
             return prediction
 
         except Exception as e:
@@ -2424,6 +2460,7 @@ class AIPredictionService(BaseService):
     def clear_cache(self):
         """清理预测缓存"""
         self._predictions_cache.clear()
+        self._cache_timestamps.clear()
         logger.info("预测缓存已清理")
 
     def update_config(self, new_config: Dict[str, Any]):

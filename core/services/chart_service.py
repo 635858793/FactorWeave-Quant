@@ -131,7 +131,7 @@ class ChartService(CacheableService, ConfigurableService):
             **kwargs: 其他参数
         """
         # 初始化各个基类
-        super().__init__(**kwargs)
+        CacheableService.__init__(self, cache_size=cache_size, namespace='chart_service', **kwargs)
         ConfigurableService.__init__(self, config=config, **kwargs)
 
         # 移除对unified_data_manager的依赖，改为使用data_standardizer

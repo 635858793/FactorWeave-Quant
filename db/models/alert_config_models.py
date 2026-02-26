@@ -34,9 +34,27 @@ class NotificationConfig:
     sms_api_secret: str = ""
     phone_number: str = ""
 
-    # 其他通知配置
+    # 桌面通知配置
     desktop_enabled: bool = True
+    desktop_show_icon: bool = True
+    desktop_auto_dismiss: bool = True
+    desktop_dismiss_timeout: int = 5
+    desktop_show_title: bool = True
+    desktop_show_content: bool = True
+    desktop_max_content_length: int = 200
+    desktop_critical_popup: bool = True
+    desktop_sound_with_desktop: bool = True
+
+    # 声音通知配置
     sound_enabled: bool = True
+    sound_use_system: bool = True
+    sound_volume: float = 0.8
+    sound_type: str = "默认提示音"
+    sound_custom_path: str = ""
+    sound_critical: str = "高频急促音"
+    sound_error: str = "中频提示音"
+    sound_warning: str = "低频提示音"
+    sound_info: str = "轻微提示音"
 
     # 元数据
     created_at: str = ""
@@ -140,7 +158,6 @@ class AlertConfigDatabase:
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         config_name TEXT UNIQUE NOT NULL DEFAULT 'default',
                         
-                        -- 邮件配置
                         email_enabled BOOLEAN DEFAULT 0,
                         email_provider TEXT DEFAULT 'SMTP',
                         sender_email TEXT DEFAULT '',
@@ -150,18 +167,32 @@ class AlertConfigDatabase:
                         smtp_port INTEGER DEFAULT 587,
                         email_address TEXT DEFAULT '',
                         
-                        -- 短信配置
                         sms_enabled BOOLEAN DEFAULT 0,
                         sms_provider TEXT DEFAULT '云片',
                         sms_api_key TEXT DEFAULT '',
                         sms_api_secret TEXT DEFAULT '',
                         phone_number TEXT DEFAULT '',
                         
-                        -- 其他通知配置
                         desktop_enabled BOOLEAN DEFAULT 1,
-                        sound_enabled BOOLEAN DEFAULT 1,
+                        desktop_show_icon BOOLEAN DEFAULT 1,
+                        desktop_auto_dismiss BOOLEAN DEFAULT 1,
+                        desktop_dismiss_timeout INTEGER DEFAULT 5,
+                        desktop_show_title BOOLEAN DEFAULT 1,
+                        desktop_show_content BOOLEAN DEFAULT 1,
+                        desktop_max_content_length INTEGER DEFAULT 200,
+                        desktop_critical_popup BOOLEAN DEFAULT 1,
+                        desktop_sound_with_desktop BOOLEAN DEFAULT 1,
                         
-                        -- 元数据
+                        sound_enabled BOOLEAN DEFAULT 1,
+                        sound_use_system BOOLEAN DEFAULT 1,
+                        sound_volume REAL DEFAULT 0.8,
+                        sound_type TEXT DEFAULT '默认提示音',
+                        sound_custom_path TEXT DEFAULT '',
+                        sound_critical TEXT DEFAULT '高频急促音',
+                        sound_error TEXT DEFAULT '中频提示音',
+                        sound_warning TEXT DEFAULT '低频提示音',
+                        sound_info TEXT DEFAULT '轻微提示音',
+                        
                         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                         updated_at TEXT DEFAULT CURRENT_TIMESTAMP
                     )
@@ -239,6 +270,40 @@ class AlertConfigDatabase:
                 except sqlite3.OperationalError:
                     pass  # 字段已存在
 
+                # 数据库迁移：添加桌面通知详细配置字段
+                desktop_columns = [
+                    ("desktop_show_icon", "BOOLEAN DEFAULT 1"),
+                    ("desktop_auto_dismiss", "BOOLEAN DEFAULT 1"),
+                    ("desktop_dismiss_timeout", "INTEGER DEFAULT 5"),
+                    ("desktop_show_title", "BOOLEAN DEFAULT 1"),
+                    ("desktop_show_content", "BOOLEAN DEFAULT 1"),
+                    ("desktop_max_content_length", "INTEGER DEFAULT 200"),
+                    ("desktop_critical_popup", "BOOLEAN DEFAULT 1"),
+                    ("desktop_sound_with_desktop", "BOOLEAN DEFAULT 1"),
+                ]
+                for col_name, col_type in desktop_columns:
+                    try:
+                        cursor.execute(f"ALTER TABLE alert_notification_config ADD COLUMN {col_name} {col_type}")
+                    except sqlite3.OperationalError:
+                        pass  # 字段已存在
+
+                # 数据库迁移：添加声音通知详细配置字段
+                sound_columns = [
+                    ("sound_use_system", "BOOLEAN DEFAULT 1"),
+                    ("sound_volume", "REAL DEFAULT 0.8"),
+                    ("sound_type", "TEXT DEFAULT '默认提示音'"),
+                    ("sound_custom_path", "TEXT DEFAULT ''"),
+                    ("sound_critical", "TEXT DEFAULT '高频急促音'"),
+                    ("sound_error", "TEXT DEFAULT '中频提示音'"),
+                    ("sound_warning", "TEXT DEFAULT '低频提示音'"),
+                    ("sound_info", "TEXT DEFAULT '轻微提示音'"),
+                ]
+                for col_name, col_type in sound_columns:
+                    try:
+                        cursor.execute(f"ALTER TABLE alert_notification_config ADD COLUMN {col_name} {col_type}")
+                    except sqlite3.OperationalError:
+                        pass  # 字段已存在
+
                 # 创建风险历史表
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS risk_history (
@@ -298,20 +363,29 @@ class AlertConfigDatabase:
                 if not config.created_at:
                     config.created_at = config.updated_at
 
-                # 使用 INSERT OR REPLACE 来更新或插入配置
                 cursor.execute("""
                     INSERT OR REPLACE INTO alert_notification_config (
                         config_name, email_enabled, email_provider, sender_email, sender_name,
                         email_api_key, smtp_host, smtp_port, email_address,
                         sms_enabled, sms_provider, sms_api_key, sms_api_secret, phone_number,
-                        desktop_enabled, sound_enabled, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        desktop_enabled, desktop_show_icon, desktop_auto_dismiss, desktop_dismiss_timeout,
+                        desktop_show_title, desktop_show_content, desktop_max_content_length,
+                        desktop_critical_popup, desktop_sound_with_desktop,
+                        sound_enabled, sound_use_system, sound_volume, sound_type, sound_custom_path,
+                        sound_critical, sound_error, sound_warning, sound_info,
+                        created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     'default', config.email_enabled, config.email_provider, config.sender_email,
                     config.sender_name, config.email_api_key, config.smtp_host, config.smtp_port,
                     config.email_address, config.sms_enabled, config.sms_provider, config.sms_api_key,
-                    config.sms_api_secret, config.phone_number, config.desktop_enabled,
-                    config.sound_enabled, config.created_at, config.updated_at
+                    config.sms_api_secret, config.phone_number,
+                    config.desktop_enabled, config.desktop_show_icon, config.desktop_auto_dismiss,
+                    config.desktop_dismiss_timeout, config.desktop_show_title, config.desktop_show_content,
+                    config.desktop_max_content_length, config.desktop_critical_popup, config.desktop_sound_with_desktop,
+                    config.sound_enabled, config.sound_use_system, config.sound_volume, config.sound_type,
+                    config.sound_custom_path, config.sound_critical, config.sound_error, config.sound_warning,
+                    config.sound_info, config.created_at, config.updated_at
                 ))
 
                 conn.commit()

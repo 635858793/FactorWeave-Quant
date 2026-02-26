@@ -83,9 +83,10 @@ class UniPluginDataManager:
             "avg_response_time": 0.0
         }
 
-        # 缓存
-        self._cache: Dict[str, Tuple[Any, datetime]] = {}
-        self._cache_ttl = timedelta(minutes=30)
+        # 统一缓存服务（强制）
+        self._unified_cache = None
+        self._cache_namespace = 'uni_plugin_data'
+        self._init_unified_cache()
 
         # 线程池（v2.4性能优化）
         self._executor = ThreadPoolExecutor(max_workers=8)  # 从4增加到8
@@ -98,6 +99,18 @@ class UniPluginDataManager:
         self._asset_db_manager = None
 
         logger.info("UniPluginDataManager构造完成，等待initialize()调用")
+
+    def _init_unified_cache(self) -> None:
+        """初始化统一缓存服务（强制）"""
+        from core.services.cache_service import CacheService
+        from core.containers import get_service_container
+        
+        container = get_service_container()
+        if container and container.is_registered(CacheService):
+            self._unified_cache = container.resolve(CacheService)
+            logger.debug(f"UniPluginDataManager 已连接到统一缓存服务，命名空间: {self._cache_namespace}")
+        else:
+            raise RuntimeError("统一缓存服务未注册，请确保 CacheService 已在服务容器中注册")
 
         logger.info("UniPluginDataManager依赖装配完成")
 
@@ -778,27 +791,19 @@ class UniPluginDataManager:
         return ":".join(key_parts)
 
     def _get_from_cache(self, cache_key: str) -> Optional[Any]:
-        """从缓存获取数据"""
-        if cache_key in self._cache:
-            data, timestamp = self._cache[cache_key]
-            if datetime.now() - timestamp < self._cache_ttl:
-                return data
-            else:
-                # 缓存过期，删除
-                del self._cache[cache_key]
-
-        return None
+        """从缓存获取数据 - 使用统一缓存服务"""
+        if self._unified_cache is None:
+            raise RuntimeError("统一缓存服务未初始化")
+        
+        return self._unified_cache.get(cache_key, namespace=self._cache_namespace)
 
     def _cache_result(self, cache_key: str, result: Any) -> None:
-        """缓存结果"""
+        """缓存结果 - 使用统一缓存服务"""
         try:
-            self._cache[cache_key] = (result, datetime.now())
-
-            # 限制缓存大小
-            if len(self._cache) > 1000:
-                # 删除最旧的缓存项
-                oldest_key = min(self._cache.keys(), key=lambda k: self._cache[k][1])
-                del self._cache[oldest_key]
+            if self._unified_cache is None:
+                raise RuntimeError("统一缓存服务未初始化")
+            
+            self._unified_cache.set(cache_key, result, ttl=self._cache_ttl, namespace=self._cache_namespace)
 
         except Exception as e:
             logger.warning(f"缓存结果失败: {e}")

@@ -181,7 +181,7 @@
                 border-top: 3px solid rgb(150, 150, 150);
         }
 
-        QTabBar::tab:hover: !selected {
+        QTabBar::tab:hover:!selected {
                 background: rgb(220, 220, 220);
         }
 

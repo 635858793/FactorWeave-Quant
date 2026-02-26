@@ -380,7 +380,7 @@ class MainWindowCoordinator(BaseCoordinator):
             logger.info("右侧技术分析面板已创建为 QDockWidget")
 
             # 设置分割器比例（仅包含左侧和中间面板）
-            horizontal_splitter.setSizes([300, 1000])
+            horizontal_splitter.setSizes([300, 900])
 
             # 创建底部面板（日志面板）
             from core.ui.panels.bottom_panel import BottomPanel
@@ -401,10 +401,6 @@ class MainWindowCoordinator(BaseCoordinator):
 
             # 连接面板之间的信号
             self._connect_panel_signals()
-
-            # 修复：增强UI组件的集成已移至异步初始化中
-            # 不再在这里同步集成，避免阻塞主初始化流程
-            # 集成将在 _initialize_enhanced_ui_components_async() 中完成
 
             logger.info("UI panels created successfully")
 
@@ -2290,6 +2286,18 @@ FactorWeave-Quant  2.0 (重构版本)
     def _on_clear_data_cache(self) -> None:
         """清理数据缓存"""
         try:
+            # 清理统一缓存服务
+            try:
+                from core.services.cache_service import CacheService
+                cache_service = self.service_container.get_service(CacheService)
+                if cache_service:
+                    namespaces = cache_service.list_namespaces()
+                    for ns in namespaces:
+                        cache_service.clear_namespace(ns)
+                    logger.info("统一缓存已清理")
+            except Exception as e:
+                logger.warning(f"清理统一缓存失败: {e}")
+
             # 获取股票服务
             stock_service = self.service_container.get_service(StockService)
             if stock_service:
@@ -3966,16 +3974,16 @@ FactorWeave-Quant  2.0 (重构版本)
             if 'middle' in self._panels:
                 middle_panel = self._panels['middle']
                 if hasattr(middle_panel, '_root_frame'):
-                    panel_width = max(300, int(window_width * 0.4))
+                    panel_width = max(500, int(window_width * 0.4))
                     middle_panel._root_frame.setMinimumWidth(panel_width)
 
             # 更新右侧停靠面板宽度
-            dock_widgets = self._main_window.findChildren(QDockWidget)
-            for dock in dock_widgets:
-                if dock.windowTitle() == "技术分析":
-                    dock_width = max(250, int(window_width * 0.25))
-                    dock.setMinimumWidth(dock_width)
-                    dock.setMaximumWidth(int(window_width * 0.4))
+            # dock_widgets = self._main_window.findChildren(QDockWidget)
+            # for dock in dock_widgets:
+            #     if dock.windowTitle() == "技术分析":
+            #         dock_width = max(250, int(window_width * 0.25))
+            #         dock.setMinimumWidth(dock_width)
+            #         dock.setMaximumWidth(int(window_width * 0.4))
 
         except Exception as e:
             logger.error(f"更新响应式布局失败: {e}")

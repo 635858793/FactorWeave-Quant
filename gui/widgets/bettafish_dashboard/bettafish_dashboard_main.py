@@ -96,7 +96,6 @@ class BettaFishDashboard(QWidget):
     def _create_title_bar(self, layout):
         """创建标题栏"""
         title_frame = QFrame()
-        title_frame.setMaximumHeight(60)
         title_frame.setFrameStyle(QFrame.StyledPanel)
         
         title_layout = QHBoxLayout(title_frame)

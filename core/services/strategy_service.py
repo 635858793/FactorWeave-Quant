@@ -1021,6 +1021,10 @@ class StrategyService(BaseService):
         """获取所有策略配置"""
         return list(self._strategy_configs.values())
 
+    def get_all_backtest_tasks(self) -> Dict[str, BacktestTask]:
+        """获取所有回测任务"""
+        return self._backtest_tasks.copy()
+
     def clone_strategy_config(self, source_strategy_id: str, new_strategy_id: str) -> bool:
         """克隆策略配置"""
         try:

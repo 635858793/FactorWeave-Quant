@@ -25,8 +25,6 @@ from core.config import ConfigManager
 from core.events import EventBus
 from core.performance.unified_monitor import UnifiedPerformanceMonitor
 
-# 工具模块导入
-from utils.cache import Cache
 from utils.manager_factory import get_config_manager
 
 logger = logger.bind(module=__name__)
@@ -124,9 +122,12 @@ class SystemOptimizerService(AsyncBaseService):
         super().__init__(event_bus)
         self._config_manager = config_manager
         self._performance_monitor = performance_monitor
-        self._cache = Cache()
+        try:
+            from core.services.unified_cache_provider import get_unified_cache_provider
+            self._cache = get_unified_cache_provider().get_cache_service()
+        except ImportError:
+            self._cache = None
 
-        # 服务状态
         self._project_root = Path(".")
         self._optimization_config = OptimizationConfig()
         self._current_result: Optional[OptimizationResult] = None
@@ -171,8 +172,8 @@ class SystemOptimizerService(AsyncBaseService):
             # 保存优化历史
             await self._save_optimization_history()
 
-            # 清理缓存
-            self._cache.clear()
+            if self._cache:
+                self._cache.clear_namespace("system_optimizer")
 
             logger.info("系统优化器服务已清理")
 
@@ -973,8 +974,8 @@ class SystemOptimizerService(AsyncBaseService):
 
                 logger.info(f"清理了 {len(modules_to_remove)} 个缓存模块")
 
-            # 清理服务缓存
-            self._cache.clear()
+            if self._cache:
+                self._cache.clear_namespace("system_optimizer")
 
         except Exception as e:
             logger.error(f"内存优化失败: {e}")

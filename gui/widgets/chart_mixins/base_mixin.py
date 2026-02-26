@@ -16,13 +16,10 @@ from PyQt5.QtWidgets import QVBoxLayout, QSizePolicy
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
-# 导入必要的管理器
-from utils.cache import Cache
 from core.config import ConfigManager
 from ..async_data_processor import AsyncDataProcessor
 from ..chart_renderer import ChartRenderer
 
-# 延迟导入主题管理器，避免在模块级别导入时崩溃
 THEME_MANAGER_AVAILABLE = False
 get_theme_manager = None
 

@@ -8,18 +8,19 @@ from loguru import logger
 
 from typing import Dict, Any, List, Optional
 from datetime import datetime
+from decimal import Decimal
 import asyncio
 
 from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QFormLayout,
+    QAbstractItemView, QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QFormLayout,
     QPushButton, QLabel, QSpinBox, QDoubleSpinBox, QTableWidget,
     QTableWidgetItem, QHeaderView, QTabWidget, QTextEdit,
-    QMessageBox, QDialog, QDialogButtonBox, QComboBox
+    QMessageBox, QDialog, QDialogButtonBox, QComboBox, QSizePolicy
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QThread, pyqtSlot
 from PyQt5.QtGui import QFont, QColor
 
-from core.services.trading_service import TradingService, Portfolio, Position, TradeRecord
+from core.services.trading_service import OrderSide, OrderStatus, OrderType, TradingService, Portfolio, Position, TradeRecord
 from core.events import EventBus, StockSelectedEvent, TradeExecutedEvent, PositionUpdatedEvent
 # 纯Loguru架构，移除旧的日志导入
 logger = logger
@@ -71,9 +72,6 @@ class TradingPanel(QWidget):
         # 订阅事件
         self._subscribe_events()
 
-        # 启动定时刷新
-        self._setup_refresh_timer()
-
     def _init_ui(self) -> None:
         """初始化用户界面"""
         try:
@@ -91,10 +89,13 @@ class TradingPanel(QWidget):
             # 2. 持仓管理标签页
             self._create_position_tab(tab_widget)
 
-            # 3. 交易历史标签页
+            # 3. 订单状态标签页
+            self._create_orders_tab(tab_widget)
+
+            # 4. 交易历史标签页
             self._create_history_tab(tab_widget)
 
-            # 4. 投资组合标签页
+            # 5. 投资组合标签页
             self._create_portfolio_tab(tab_widget)
 
             logger.info("Trading panel UI initialized successfully")
@@ -110,6 +111,7 @@ class TradingPanel(QWidget):
 
         # 当前股票信息
         stock_group = QGroupBox("当前股票")
+        stock_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         stock_layout = QFormLayout(stock_group)
 
         self.current_stock_label = QLabel("未选择")
@@ -119,11 +121,70 @@ class TradingPanel(QWidget):
         self.current_price_label = QLabel("--")
         stock_layout.addRow("当前价格:", self.current_price_label)
 
+        # CTP连接状态
+        self.ctp_connection_label = QLabel("CTP未连接")
+        self.ctp_connection_label.setStyleSheet("color: red; font-weight: bold;")
+        stock_layout.addRow("连接状态:", self.ctp_connection_label)
+
+        # CTP账户选择和连接按钮
+        ctp_control_layout = QHBoxLayout()
+        
+        from PyQt5.QtWidgets import QComboBox
+        self.ctp_account_combo = QComboBox()
+        self.ctp_account_combo.setMinimumWidth(150)
+        self.ctp_account_combo.setPlaceholderText("选择CTP账户")
+        ctp_control_layout.addWidget(self.ctp_account_combo)
+        
+        self.ctp_connect_btn = QPushButton("连接")
+        self.ctp_connect_btn.setFixedWidth(60)
+        self.ctp_connect_btn.clicked.connect(self._on_ctp_connect_clicked)
+        ctp_control_layout.addWidget(self.ctp_connect_btn)
+        
+        self.ctp_disconnect_btn = QPushButton("断开")
+        self.ctp_disconnect_btn.setFixedWidth(60)
+        self.ctp_disconnect_btn.clicked.connect(self._on_ctp_disconnect_clicked)
+        self.ctp_disconnect_btn.setEnabled(False)
+        ctp_control_layout.addWidget(self.ctp_disconnect_btn)
+        
+        ctp_control_layout.addStretch()
+        stock_layout.addRow("CTP账户:", ctp_control_layout)
+
         layout.addWidget(stock_group)
 
         # 交易操作区
         trade_group = QGroupBox("交易操作")
+        trade_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         trade_layout = QVBoxLayout(trade_group)
+
+        # 订单类型选择
+        order_type_layout = QHBoxLayout()
+        order_type_layout.addWidget(QLabel("订单类型:"))
+
+        from PyQt5.QtWidgets import QComboBox
+        self.order_type_combo = QComboBox()
+        self.order_type_combo.addItems(["市价单", "限价单"])
+        self.order_type_combo.currentIndexChanged.connect(self._on_order_type_changed)
+        order_type_layout.addWidget(self.order_type_combo)
+        order_type_layout.addStretch()
+
+        trade_layout.addLayout(order_type_layout)
+
+        # 价格输入（限价单时使用）
+        self.price_input_layout = QHBoxLayout()
+        self.price_input_layout.addWidget(QLabel("限价:"))
+
+        from PyQt5.QtWidgets import QDoubleSpinBox
+        self.price_spin = QDoubleSpinBox()
+        self.price_spin.setRange(0.01, 999999.99)
+        self.price_spin.setDecimals(2)
+        self.price_spin.setValue(0.00)
+        self.price_spin.setSingleStep(0.01)
+        self.price_spin.setEnabled(False)
+        self.price_spin.setFixedWidth(120)
+        self.price_input_layout.addWidget(self.price_spin)
+        self.price_input_layout.addStretch()
+
+        trade_layout.addLayout(self.price_input_layout)
 
         # 买入区域
         buy_layout = QHBoxLayout()
@@ -215,6 +276,7 @@ class TradingPanel(QWidget):
             "股票代码", "股票名称", "持仓数量", "平均成本",
             "当前价格", "市值", "盈亏", "盈亏比例"
         ])
+        self.position_table.setMinimumHeight(200)
 
         # 设置表格属性
         header = self.position_table.horizontalHeader()
@@ -238,6 +300,47 @@ class TradingPanel(QWidget):
 
         tab_widget.addTab(position_widget, "持仓管理")
 
+    def _create_orders_tab(self, tab_widget: QTabWidget) -> None:
+        """创建订单状态标签页"""
+        orders_widget = QWidget()
+        layout = QVBoxLayout(orders_widget)
+
+        # 订单列表
+        orders_group = QGroupBox("订单列表")
+        orders_layout = QVBoxLayout(orders_group)
+
+        # 订单表格
+        self.orders_table = QTableWidget()
+        self.orders_table.setColumnCount(8)
+        self.orders_table.setHorizontalHeaderLabels([
+            "订单ID", "股票", "类型", "方向", "数量", "价格", "状态", "创建时间"
+        ])
+        self.orders_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.orders_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.orders_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        orders_layout.addWidget(self.orders_table)
+
+        # 操作按钮
+        button_layout = QHBoxLayout()
+        
+        self.refresh_orders_btn = QPushButton("刷新订单")
+        self.refresh_orders_btn.clicked.connect(self._refresh_orders)
+        button_layout.addWidget(self.refresh_orders_btn)
+
+        self.cancel_order_btn = QPushButton("撤销订单")
+        self.cancel_order_btn.clicked.connect(self._on_cancel_order)
+        self.cancel_order_btn.setEnabled(False)
+        button_layout.addWidget(self.cancel_order_btn)
+
+        button_layout.addStretch()
+        orders_layout.addLayout(button_layout)
+
+        layout.addWidget(orders_group)
+        tab_widget.addTab(orders_widget, "订单状态")
+
+        # 连接表格选择信号
+        self.orders_table.itemSelectionChanged.connect(self._on_order_selection_changed)
+
     def _create_history_tab(self, tab_widget: QTabWidget) -> None:
         """创建交易历史标签页"""
         history_widget = QWidget()
@@ -250,6 +353,7 @@ class TradingPanel(QWidget):
             "时间", "交易编号", "股票代码", "股票名称",
             "操作", "价格", "数量", "金额", "状态"
         ])
+        self.history_table.setMinimumHeight(200)
 
         # 设置表格属性
         header = self.history_table.horizontalHeader()
@@ -357,12 +461,6 @@ class TradingPanel(QWidget):
         except Exception as e:
             logger.error(f"Failed to subscribe trading panel events: {e}")
 
-    def _setup_refresh_timer(self) -> None:
-        """设置定时刷新"""
-        self.refresh_timer = QTimer()
-        self.refresh_timer.timeout.connect(self._refresh_data)
-        self.refresh_timer.start(5000)  # 每5秒刷新一次
-
     @pyqtSlot(object)
     def _on_stock_selected(self, event: StockSelectedEvent) -> None:
         """处理股票选择事件"""
@@ -395,8 +493,58 @@ class TradingPanel(QWidget):
 
             quantity = self.buy_quantity_spin.value()
 
-            # 异步执行买入操作
-            self._execute_trade_async('BUY', quantity)
+            # 检查订单类型
+            is_limit_order = (self.order_type_combo.currentIndex() == 1)
+
+            # 获取价格
+            if is_limit_order:
+                # 限价单：使用用户输入的价格
+                current_price = Decimal(str(self.price_spin.value()))
+                if current_price <= 0:
+                    QMessageBox.warning(self, "买入失败", "请输入有效的限价")
+                    return
+            else:
+                # 市价单：获取当前市场价格
+                current_price = self._get_current_price()
+                if not current_price:
+                    QMessageBox.warning(self, "买入失败", "无法获取当前价格")
+                    return
+
+            # 计算预计金额
+            estimated_amount = current_price * quantity
+
+            # 检查可用资金
+            if not self._portfolio:
+                QMessageBox.warning(self, "买入失败", "无法获取投资组合信息")
+                return
+
+            available_cash = self._portfolio.available_cash
+            if estimated_amount > available_cash:
+                QMessageBox.warning(
+                    self, "资金不足",
+                    f"可用资金: ¥{available_cash:,.2f}\n"
+                    f"预计金额: ¥{estimated_amount:,.2f}\n"
+                    f"资金缺口: ¥{estimated_amount - available_cash:,.2f}"
+                )
+                return
+
+            # 显示交易确认对话框
+            order_type_text = "限价单" if is_limit_order else "市价单"
+            reply = QMessageBox.question(
+                self, "确认买入",
+                f"股票: {self._current_stock_name} ({self._current_stock_code})\n"
+                f"订单类型: {order_type_text}\n"
+                f"数量: {quantity}股\n"
+                f"价格: ¥{current_price:.2f}\n"
+                f"预计金额: ¥{estimated_amount:,.2f}\n\n"
+                f"确认买入吗？",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+
+            if reply == QMessageBox.Yes:
+                # 异步执行买入操作
+                self._execute_trade_async('BUY', quantity, current_price, is_limit_order)
 
         except Exception as e:
             logger.error(f"Buy button click failed: {e}")
@@ -412,26 +560,73 @@ class TradingPanel(QWidget):
 
             quantity = self.sell_quantity_spin.value()
 
-            # 异步执行卖出操作
-            self._execute_trade_async('SELL', quantity)
+            # 检查订单类型
+            is_limit_order = (self.order_type_combo.currentIndex() == 1)
+
+            # 获取价格
+            if is_limit_order:
+                # 限价单：使用用户输入的价格
+                current_price = Decimal(str(self.price_spin.value()))
+                if current_price <= 0:
+                    QMessageBox.warning(self, "卖出失败", "请输入有效的限价")
+                    return
+            else:
+                # 市价单：获取当前市场价格
+                current_price = self._get_current_price()
+                if not current_price:
+                    QMessageBox.warning(self, "卖出失败", "无法获取当前价格")
+                    return
+
+            # 检查持仓
+            position = self.trading_service.get_position(self._current_stock_code)
+            if not position or position.quantity < quantity:
+                QMessageBox.warning(
+                    self, "持仓不足",
+                    f"当前持仓: {position.quantity if position else 0}股\n"
+                    f"卖出数量: {quantity}股"
+                )
+                return
+
+            # 计算预计金额
+            estimated_amount = current_price * quantity
+
+            # 显示交易确认对话框
+            order_type_text = "限价单" if is_limit_order else "市价单"
+            reply = QMessageBox.question(
+                self, "确认卖出",
+                f"股票: {self._current_stock_name} ({self._current_stock_code})\n"
+                f"订单类型: {order_type_text}\n"
+                f"数量: {quantity}股\n"
+                f"价格: ¥{current_price:.2f}\n"
+                f"预计金额: ¥{estimated_amount:,.2f}\n\n"
+                f"确认卖出吗？",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+
+            if reply == QMessageBox.Yes:
+                # 异步执行卖出操作
+                self._execute_trade_async('SELL', quantity, current_price, is_limit_order)
 
         except Exception as e:
             logger.error(f"Sell button click failed: {e}")
             self.error_occurred.emit(f"卖出操作失败: {e}")
 
-    def _execute_trade_async(self, action: str, quantity: int) -> None:
+    def _execute_trade_async(self, action: str, quantity: int, current_price: Optional[Decimal] = None, is_limit_order: bool = False) -> None:
         """异步执行交易"""
         class TradeWorker(QThread):
             finished = pyqtSignal(object)
             error = pyqtSignal(str)
 
-            def __init__(self, trading_service, action, stock_code, stock_name, quantity):
+            def __init__(self, trading_service, action, stock_code, stock_name, quantity, current_price=None, is_limit_order=False):
                 super().__init__()
                 self.trading_service = trading_service
                 self.action = action
                 self.stock_code = stock_code
                 self.stock_name = stock_name
                 self.quantity = quantity
+                self.current_price = current_price
+                self.is_limit_order = is_limit_order
 
             def run(self):
                 try:
@@ -441,13 +636,13 @@ class TradingPanel(QWidget):
                     if self.action == 'BUY':
                         result = loop.run_until_complete(
                             self.trading_service.execute_buy_order(
-                                self.stock_code, self.stock_name, self.quantity
+                                self.stock_code, self.stock_name, self.quantity, self.current_price
                             )
                         )
                     else:  # SELL
                         result = loop.run_until_complete(
                             self.trading_service.execute_sell_order(
-                                self.stock_code, self.stock_name, self.quantity
+                                self.stock_code, self.stock_name, self.quantity, self.current_price
                             )
                         )
 
@@ -461,7 +656,7 @@ class TradingPanel(QWidget):
         # 创建并启动工作线程
         self.trade_worker = TradeWorker(
             self.trading_service, action,
-            self._current_stock_code, self._current_stock_name, quantity
+            self._current_stock_code, self._current_stock_name, quantity, current_price, is_limit_order
         )
         self.trade_worker.finished.connect(self._on_trade_finished)
         self.trade_worker.error.connect(self._on_trade_error)
@@ -490,7 +685,7 @@ class TradingPanel(QWidget):
             else:
                 QMessageBox.warning(
                     self, "交易失败",
-                    f"交易失败: {trade_record.notes}"
+                    f"交易失败: 状态={trade_record.status}"
                 )
 
         except Exception as e:
@@ -523,6 +718,181 @@ class TradingPanel(QWidget):
         position = self.trading_service.get_position(self._current_stock_code)
         self.sell_button.setEnabled(position is not None and position.quantity > 0)
 
+    def _load_ctp_accounts(self) -> None:
+        """加载CTP账户列表"""
+        try:
+            from core.trading.account_manager import AccountManager
+            from core.trading.account_models import TradingInterfaceType
+            
+            account_manager = self._service_container.resolve(AccountManager)
+            accounts = account_manager.get_all_accounts()
+            
+            self.ctp_account_combo.clear()
+            ctp_count = 0
+            
+            for account in accounts:
+                if account.trading_interface_type == TradingInterfaceType.CTP:
+                    self.ctp_account_combo.addItem(
+                        f"{account.account_name} ({account.account_id})",
+                        account.account_id
+                    )
+                    ctp_count += 1
+            
+            if ctp_count == 0:
+                self.ctp_account_combo.setPlaceholderText("无CTP账户")
+            
+            logger.info(f"加载CTP账户: {ctp_count} 个")
+            
+        except Exception as e:
+            logger.error(f"加载CTP账户失败: {e}")
+
+    def _on_ctp_connect_clicked(self) -> None:
+        """CTP连接按钮点击事件"""
+        try:
+            account_id = self.ctp_account_combo.currentData()
+            
+            if not account_id:
+                QMessageBox.warning(self, "警告", "请先选择CTP账户")
+                return
+            
+            self.ctp_connect_btn.setEnabled(False)
+            self.ctp_connect_btn.setText("连接中...")
+            
+            success, message = self.trading_service.connect_ctp_account(account_id)
+            
+            if success:
+                QMessageBox.information(self, "成功", message)
+                self.ctp_disconnect_btn.setEnabled(True)
+                self._update_ctp_connection_status()
+            else:
+                QMessageBox.warning(self, "连接失败", message)
+                self.ctp_connect_btn.setEnabled(True)
+                self.ctp_connect_btn.setText("连接")
+                
+        except Exception as e:
+            logger.error(f"CTP连接失败: {e}")
+            QMessageBox.critical(self, "错误", f"CTP连接失败: {e}")
+            self.ctp_connect_btn.setEnabled(True)
+            self.ctp_connect_btn.setText("连接")
+
+    def _on_ctp_disconnect_clicked(self) -> None:
+        """CTP断开按钮点击事件"""
+        try:
+            account_id = self.ctp_account_combo.currentData()
+            
+            if not account_id:
+                return
+            
+            reply = QMessageBox.question(
+                self,
+                "确认断开",
+                f"确定要断开CTP账户 {account_id} 的连接吗？",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if reply == QMessageBox.Yes:
+                success, message = self.trading_service.disconnect_ctp_account(account_id)
+                
+                if success:
+                    QMessageBox.information(self, "成功", message)
+                    self.ctp_connect_btn.setEnabled(True)
+                    self.ctp_connect_btn.setText("连接")
+                    self.ctp_disconnect_btn.setEnabled(False)
+                    self._update_ctp_connection_status()
+                else:
+                    QMessageBox.warning(self, "断开失败", message)
+                    
+        except Exception as e:
+            logger.error(f"CTP断开连接失败: {e}")
+            QMessageBox.critical(self, "错误", f"CTP断开连接失败: {e}")
+
+    def _update_ctp_connection_status(self) -> None:
+        """更新CTP连接状态"""
+        try:
+            # 检查TradingService中是否有CTP接口连接
+            if hasattr(self.trading_service, '_ctp_interfaces'):
+                ctp_interfaces = self.trading_service._ctp_interfaces
+                ctp_market_interfaces = self.trading_service._ctp_market_interfaces
+                
+                if ctp_interfaces or ctp_market_interfaces:
+                    # 有CTP连接
+                    trading_count = len(ctp_interfaces)
+                    market_count = len(ctp_market_interfaces)
+                    
+                    if trading_count > 0 and market_count > 0:
+                        status_text = f"CTP已连接 (交易:{trading_count} 行情:{market_count})"
+                        self.ctp_connection_label.setStyleSheet("color: green; font-weight: bold;")
+                    elif trading_count > 0:
+                        status_text = f"CTP交易已连接 ({trading_count})"
+                        self.ctp_connection_label.setStyleSheet("color: orange; font-weight: bold;")
+                    else:
+                        status_text = f"CTP行情已连接 ({market_count})"
+                        self.ctp_connection_label.setStyleSheet("color: orange; font-weight: bold;")
+                    
+                    self.ctp_connection_label.setText(status_text)
+                else:
+                    # 无CTP连接
+                    self.ctp_connection_label.setText("CTP未连接")
+                    self.ctp_connection_label.setStyleSheet("color: red; font-weight: bold;")
+            else:
+                # TradingService不支持CTP
+                self.ctp_connection_label.setText("CTP不支持")
+                self.ctp_connection_label.setStyleSheet("color: gray; font-weight: bold;")
+                
+        except Exception as e:
+            logger.error(f"更新CTP连接状态失败: {e}")
+            self.ctp_connection_label.setText("CTP状态未知")
+            self.ctp_connection_label.setStyleSheet("color: gray; font-weight: bold;")
+
+    def _get_current_price(self) -> Optional[Decimal]:
+        """
+        获取当前价格
+
+        Returns:
+            当前价格，如果无法获取则返回 None
+        """
+        try:
+            # 1. 尝试从持仓获取当前价格
+            position = self.trading_service.get_position(self._current_stock_code)
+            if position and position.current_price:
+                return position.current_price
+
+            # 2. 尝试从 MarketService 获取实时行情
+            try:
+                from core.services.market_service import MarketService
+                market_service = self.trading_service._service_container.resolve(MarketService)
+                quote = market_service.get_quote(self._current_stock_code)
+                if quote and quote.current_price:
+                    return quote.current_price
+            except Exception as e:
+                logger.warning(f"Failed to get quote from MarketService: {e}")
+
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get current price: {e}")
+            return None
+
+    @pyqtSlot(int)
+    def _on_order_type_changed(self, index: int) -> None:
+        """
+        处理订单类型变化
+
+        Args:
+            index: 订单类型索引（0=市价单，1=限价单）
+        """
+        is_limit_order = (index == 1)
+        self.price_spin.setEnabled(is_limit_order)
+
+        if not is_limit_order:
+            # 市价单时，自动填充当前价格
+            current_price = self._get_current_price()
+            if current_price:
+                self.price_spin.setValue(float(current_price))
+        else:
+            # 切换到限价单时，提示用户输入价格
+            logger.info("Switched to limit order, please input price")
+
     @pyqtSlot()
     def _refresh_data(self) -> None:
         """刷新数据"""
@@ -533,7 +903,14 @@ class TradingPanel(QWidget):
             # 更新UI显示
             self._update_portfolio_display()
             self._refresh_positions()
+            self._refresh_orders()
             self._refresh_history()
+
+            # 加载CTP账户列表
+            self._load_ctp_accounts()
+
+            # 更新CTP连接状态
+            self._update_ctp_connection_status()
 
             # 更新卖出按钮状态
             self._update_sell_button_state()
@@ -614,62 +991,166 @@ class TradingPanel(QWidget):
     def _refresh_history(self) -> None:
         """刷新交易历史表格"""
         try:
-            history = self.trading_service.get_trade_history(50)  # 最近50条记录
+            history = self.trading_service.get_trade_history(limit=100)
             self.history_table.setRowCount(len(history))
 
-            for row, trade in enumerate(history):
-                # 时间
-                time_str = trade.timestamp.strftime("%Y-%m-%d %H:%M:%S")
-                self.history_table.setItem(row, 0, QTableWidgetItem(time_str))
-
-                # 交易编号
-                self.history_table.setItem(row, 1, QTableWidgetItem(trade.trade_id))
+            for row, record in enumerate(history):
+                # 交易ID
+                self.history_table.setItem(row, 0, QTableWidgetItem(record.trade_id[:8]))
 
                 # 股票代码
-                self.history_table.setItem(row, 2, QTableWidgetItem(trade.stock_code))
+                self.history_table.setItem(row, 1, QTableWidgetItem(record.symbol))
 
                 # 股票名称
-                self.history_table.setItem(row, 3, QTableWidgetItem(trade.stock_name))
+                self.history_table.setItem(row, 2, QTableWidgetItem(record.stock_name))
 
-                # 操作
-                action_item = QTableWidgetItem(trade.action)
-                action_color = QColor("red") if trade.action == "BUY" else QColor("green")
-                action_item.setForeground(action_color)
-                self.history_table.setItem(row, 4, action_item)
-
-                # 价格
-                self.history_table.setItem(row, 5, QTableWidgetItem(f"{trade.price:.2f}"))
+                # 操作类型
+                action_text = "买入" if record.action == "buy" else "卖出"
+                self.history_table.setItem(row, 3, QTableWidgetItem(action_text))
 
                 # 数量
-                self.history_table.setItem(row, 6, QTableWidgetItem(str(trade.quantity)))
+                self.history_table.setItem(row, 4, QTableWidgetItem(str(record.quantity)))
+
+                # 价格
+                self.history_table.setItem(row, 5, QTableWidgetItem(f"{record.price:.2f}"))
 
                 # 金额
-                self.history_table.setItem(row, 7, QTableWidgetItem(f"{trade.amount:.2f}"))
+                self.history_table.setItem(row, 6, QTableWidgetItem(f"{record.total_amount:.2f}"))
 
-                # 状态
-                status_item = QTableWidgetItem(trade.status)
-                if trade.status == 'executed':
-                    status_item.setForeground(QColor("green"))
-                elif trade.status == 'failed':
-                    status_item.setForeground(QColor("red"))
-                self.history_table.setItem(row, 8, status_item)
+                # 时间
+                time_str = record.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+                self.history_table.setItem(row, 7, QTableWidgetItem(time_str))
 
         except Exception as e:
             logger.error(f"Failed to refresh history: {e}")
 
+    def _refresh_orders(self) -> None:
+        """刷新订单表格"""
+        try:
+            orders = self.trading_service.get_active_orders()
+            self.orders_table.setRowCount(len(orders))
+
+            for row, order in enumerate(orders):
+                # 订单ID
+                self.orders_table.setItem(row, 0, QTableWidgetItem(order.order_id[:8]))
+
+                # 股票
+                self.orders_table.setItem(row, 1, QTableWidgetItem(f"{order.symbol_name}({order.symbol})"))
+
+                # 订单类型
+                order_type_text = "限价单" if order.order_type == OrderType.LIMIT else "市价单"
+                self.orders_table.setItem(row, 2, QTableWidgetItem(order_type_text))
+
+                # 方向
+                side_text = "买入" if order.side == OrderSide.BUY else "卖出"
+                self.orders_table.setItem(row, 3, QTableWidgetItem(side_text))
+
+                # 数量
+                self.orders_table.setItem(row, 4, QTableWidgetItem(str(order.quantity)))
+
+                # 价格
+                price_text = f"{order.price:.2f}" if order.price else "--"
+                self.orders_table.setItem(row, 5, QTableWidgetItem(price_text))
+
+                # 状态
+                status_text = {
+                    OrderStatus.PENDING: "待成交",
+                    OrderStatus.FILLED: "已成交",
+                    OrderStatus.CANCELLED: "已取消",
+                    OrderStatus.REJECTED: "已拒绝"
+                }.get(order.status, str(order.status))
+                self.orders_table.setItem(row, 6, QTableWidgetItem(status_text))
+
+                # 创建时间
+                time_str = order.created_time.strftime("%Y-%m-%d %H:%M:%S")
+                self.orders_table.setItem(row, 7, QTableWidgetItem(time_str))
+
+        except Exception as e:
+            logger.error(f"Failed to refresh orders: {e}")
+
+    def _on_order_selection_changed(self) -> None:
+        """处理订单选择变化"""
+        try:
+            selected_rows = self.orders_table.selectionModel().selectedRows()
+            has_selection = len(selected_rows) > 0
+            self.cancel_order_btn.setEnabled(has_selection)
+        except Exception as e:
+            logger.error(f"Failed to handle order selection: {e}")
+
+    @pyqtSlot()
+    def _on_cancel_order(self) -> None:
+        """撤销订单"""
+        try:
+            selected_rows = self.orders_table.selectionModel().selectedRows()
+            if not selected_rows:
+                QMessageBox.warning(self, "提示", "请先选择要撤销的订单")
+                return
+
+            # 获取订单ID
+            row = selected_rows[0].row()
+            order_id_item = self.orders_table.item(row, 0)
+            order_id = order_id_item.text()
+
+            # 确认撤销
+            reply = QMessageBox.question(
+                self, "撤销订单",
+                f"确定要撤销订单 {order_id} 吗？",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+
+            if reply == QMessageBox.Yes:
+                success, message = self.trading_service.cancel_order(order_id)
+                
+                if success:
+                    QMessageBox.information(self, "成功", message)
+                    self._refresh_orders()
+                else:
+                    QMessageBox.warning(self, "失败", message)
+
+        except Exception as e:
+            logger.error(f"Failed to cancel order: {e}")
+            QMessageBox.critical(self, "错误", f"撤销订单失败: {e}")
+
     @pyqtSlot()
     def _on_clear_positions(self) -> None:
         """清空持仓"""
-        reply = QMessageBox.question(
-            self, "清空持仓",
-            "确定要清空所有持仓吗？此操作不可撤销！",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
-        )
+        try:
+            # 获取当前持仓
+            positions = self.trading_service.get_all_positions()
+            
+            if not positions:
+                QMessageBox.information(self, "提示", "当前没有持仓")
+                return
 
-        if reply == QMessageBox.Yes:
-            # 这里实现清空持仓的逻辑
-            QMessageBox.information(self, "提示", "清空持仓功能开发中")
+            # 显示持仓列表
+            positions_text = "\n".join([
+                f"  • {pos.symbol_name} ({pos.symbol}): {pos.quantity}股"
+                for pos in positions.values()
+            ])
+
+            reply = QMessageBox.question(
+                self, 
+                "清空持仓",
+                f"确定要清空以下持仓吗？此操作不可撤销！\n\n{positions_text}",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+
+            if reply == QMessageBox.Yes:
+                # 清空持仓
+                success, message = self.trading_service.clear_all_positions()
+                
+                if success:
+                    QMessageBox.information(self, "成功", message)
+                    # 刷新数据
+                    self._refresh_data()
+                else:
+                    QMessageBox.warning(self, "失败", message)
+
+        except Exception as e:
+            logger.error(f"清空持仓失败: {e}")
+            QMessageBox.critical(self, "错误", f"清空持仓失败: {e}")
 
     @pyqtSlot()
     def _on_export_history(self) -> None:
@@ -689,10 +1170,6 @@ class TradingPanel(QWidget):
     def dispose(self) -> None:
         """清理资源"""
         try:
-            # 停止定时器
-            if hasattr(self, 'refresh_timer'):
-                self.refresh_timer.stop()
-
             # 取消事件订阅
             self.event_bus.unsubscribe(StockSelectedEvent, self._on_stock_selected)
             self.event_bus.unsubscribe(TradeExecutedEvent, self._on_trade_executed)

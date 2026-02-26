@@ -43,7 +43,7 @@ class StockService(CacheableService, ConfigurableService):
 
         # 初始化各个基类（不传递service_container）
         filtered_kwargs = {k: v for k, v in kwargs.items() if k != 'service_container'}
-        CacheableService.__init__(self, cache_size=cache_size, **filtered_kwargs)
+        CacheableService.__init__(self, cache_size=cache_size, namespace='stock_service', **filtered_kwargs)
         ConfigurableService.__init__(self, config=config, **filtered_kwargs)
 
         # 使用新的数据访问层

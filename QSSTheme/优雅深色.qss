@@ -259,7 +259,7 @@ QTabBar::tab:hover {
 	margin-right: 1px;
 }
 
-QTabBar::tab: !selected {
+QTabBar::tab:!selected {
 	margin-top: 1px;
 	margin-right: 1px;
 }
@@ -941,7 +941,7 @@ QRadioButton::indicator:checked {
 	background-color: qlineargradient(spread:pad, x1:0.5, y1:0.7, x2:0.5, y2:0.3, stop:0 rgba(87, 97, 106, 255), stop:1 rgba(93, 103, 113, 255));
 }
 
-QRadioButton::indicator: !checked {
+QRadioButton::indicator:!checked {
 	height: 10px;
 	width: 10px;
 	border-style: solid;

@@ -107,6 +107,10 @@ class RiskMetricsCalculator:
             logger.info(f"计算ES时出错: {str(e)}")
             return 0
 
+    def calculate_conditional_var(self, returns: pd.Series, confidence_level: float = 0.95) -> float:
+        """计算条件在险价值(CVaR) - calculate_expected_shortfall的别名"""
+        return self.calculate_expected_shortfall(returns, confidence_level)
+
     def calculate_correlation_risk(self, returns_matrix: pd.DataFrame) -> Dict:
         """计算相关性风险"""
         try:

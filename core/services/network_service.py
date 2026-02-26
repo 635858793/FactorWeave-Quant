@@ -302,10 +302,11 @@ class NetworkService(BaseService):
         self._request_history: Dict[str, NetworkResponse] = {}
         self._request_lock = threading.RLock()
 
-        # 缓存系统
-        self._response_cache: Dict[str, Tuple[NetworkResponse, datetime]] = {}
+        # 缓存系统 - 强制使用统一缓存服务
         self._cache_ttl = timedelta(minutes=5)
-        self._cache_lock = threading.RLock()
+        self._unified_cache = None
+        self._cache_namespace = 'network_service'
+        self._init_unified_cache()
 
         # 重试管理
         self._retry_configs: Dict[str, Dict[str, Any]] = {}
@@ -338,6 +339,16 @@ class NetworkService(BaseService):
         self._last_cleanup = datetime.now()
 
         logger.info("NetworkService initialized for architecture simplification")
+
+    def _init_unified_cache(self) -> None:
+        """初始化统一缓存服务（强制）"""
+        from core.services.cache_service import CacheService
+        
+        if self._service_container and self._service_container.is_registered(CacheService):
+            self._unified_cache = self._service_container.resolve(CacheService)
+            logger.debug(f"NetworkService 已连接到统一缓存服务，命名空间: {self._cache_namespace}")
+        else:
+            raise RuntimeError("统一缓存服务未注册，请确保 CacheService 已在服务容器中注册")
 
     def _do_initialize(self) -> None:
         """执行具体的初始化逻辑"""
@@ -673,19 +684,17 @@ class NetworkService(BaseService):
         return self._circuit_breakers[host]
 
     def _get_from_cache(self, url: str) -> Optional[NetworkResponse]:
-        """从缓存获取响应"""
+        """从缓存获取响应 - 使用统一缓存服务"""
         try:
-            with self._cache_lock:
-                if url in self._response_cache:
-                    response, timestamp = self._response_cache[url]
+            if self._unified_cache is None:
+                raise RuntimeError("统一缓存服务未初始化")
 
-                    # 检查TTL
-                    if datetime.now() - timestamp < self._cache_ttl:
-                        response.is_from_cache = True
-                        return response
-                    else:
-                        # 清理过期缓存
-                        del self._response_cache[url]
+            cached_entry = self._unified_cache.get(url, namespace=self._cache_namespace)
+            if cached_entry is not None:
+                response, timestamp = cached_entry
+                if datetime.now() - timestamp < self._cache_ttl:
+                    response.is_from_cache = True
+                    return response
 
             return None
 
@@ -694,17 +703,13 @@ class NetworkService(BaseService):
             return None
 
     def _update_cache(self, url: str, response: NetworkResponse) -> None:
-        """更新缓存"""
+        """更新缓存 - 使用统一缓存服务"""
         try:
-            with self._cache_lock:
-                self._response_cache[url] = (response, datetime.now())
+            if self._unified_cache is None:
+                raise RuntimeError("统一缓存服务未初始化")
 
-                # 限制缓存大小
-                if len(self._response_cache) > 1000:
-                    # 删除最旧的缓存项
-                    oldest_url = min(self._response_cache.keys(),
-                                     key=lambda k: self._response_cache[k][1])
-                    del self._response_cache[oldest_url]
+            cache_entry = (response, datetime.now())
+            self._unified_cache.set(url, cache_entry, ttl=self._cache_ttl, namespace=self._cache_namespace)
 
         except Exception as e:
             logger.error(f"Error updating cache: {e}")

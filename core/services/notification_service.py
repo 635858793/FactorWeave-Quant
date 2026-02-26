@@ -36,6 +36,7 @@ class NotificationType(Enum):
     WEBHOOK = "webhook"
     DINGTALK = "dingtalk"
     DESKTOP = "desktop"
+    SOUND = "sound"
     SYSTEM = "system"
 
 
@@ -151,8 +152,46 @@ class NotificationStats:
     push_sent: int = 0
     webhook_sent: int = 0
     dingtalk_sent: int = 0
+    desktop_sent: int = 0
+    sound_sent: int = 0
     avg_delivery_time: float = 0.0
     last_update: datetime = field(default_factory=datetime.now)
+
+
+@dataclass
+class NotificationHistoryRecord:
+    """通知历史记录"""
+    record_id: str
+    message_id: str
+    title: str
+    content: str
+    alert_level: AlertLevel
+    channels: List[str]
+    status: AlertStatus
+    created_time: datetime
+    sent_time: Optional[datetime] = None
+    delivered_time: Optional[datetime] = None
+    error_message: Optional[str] = None
+    retry_count: int = 0
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典"""
+        return {
+            'record_id': self.record_id,
+            'message_id': self.message_id,
+            'title': self.title,
+            'content': self.content,
+            'alert_level': self.alert_level.value,
+            'channels': self.channels,
+            'status': self.status.value,
+            'created_time': self.created_time.isoformat() if self.created_time else None,
+            'sent_time': self.sent_time.isoformat() if self.sent_time else None,
+            'delivered_time': self.delivered_time.isoformat() if self.delivered_time else None,
+            'error_message': self.error_message,
+            'retry_count': self.retry_count,
+            'metadata': self.metadata
+        }
 
 
 class NotificationService(BaseService):
@@ -206,6 +245,13 @@ class NotificationService(BaseService):
         self._sent_cache: Dict[str, datetime] = {}  # 发送缓存用于去重
         self._dedup_window = timedelta(minutes=5)  # 去重时间窗口
         self._dedup_lock = threading.RLock()
+        self._dedup_config = {
+            "enabled": True,
+            "window_minutes": 5,
+            "max_cache_size": 10000,
+            "use_content_hash": True,
+            "ignore_level": False  # 是否忽略告警级别进行去重
+        }
 
         # 通知配置
         self._notification_config = {
@@ -232,6 +278,11 @@ class NotificationService(BaseService):
 
         # 服务统计
         self._notification_stats = NotificationStats()
+        
+        # 通知历史记录
+        self._notification_history: List[NotificationHistoryRecord] = []
+        self._history_lock = threading.Lock()
+        self._max_history_size = 1000
 
         # 线程和锁
         self._service_lock = threading.RLock()
@@ -306,13 +357,40 @@ class NotificationService(BaseService):
                 enabled=False  # 默认禁用，需要配置后启用
             )
 
+            # 桌面通知渠道
+            desktop_channel = NotificationChannel(
+                channel_id="default_desktop",
+                name="默认桌面通知",
+                notification_type=NotificationType.DESKTOP,
+                config={
+                    "notification_duration": 5000,  # 5秒
+                    "use_system_tray": True
+                },
+                enabled=True  # 默认启用
+            )
+
+            # 声音通知渠道
+            sound_channel = NotificationChannel(
+                channel_id="default_sound",
+                name="默认声音通知",
+                notification_type=NotificationType.SOUND,
+                config={
+                    "sound_file": "alert.wav",
+                    "volume": 0.8,
+                    "use_system_sound": True
+                },
+                enabled=True  # 默认启用
+            )
+
             with self._channel_lock:
                 self._channels["system_log"] = system_channel
                 self._channels["default_email"] = email_channel
                 self._channels["default_webhook"] = webhook_channel
                 self._channels["default_dingtalk"] = dingtalk_channel
+                self._channels["default_desktop"] = desktop_channel
+                self._channels["default_sound"] = sound_channel
 
-            logger.info("✓ Default notification channels initialized")
+            logger.info("✓ Default notification channels initialized (7 channels)")
 
         except Exception as e:
             logger.error(f"Failed to initialize default channels: {e}")
@@ -353,12 +431,10 @@ class NotificationService(BaseService):
         try:
             from db.models.alert_config_models import get_alert_config_database, NotificationConfig
             
-            # 从数据库加载通知配置
             db = get_alert_config_database()
             config = db.load_notification_config()
             
             if config:
-                # 更新邮件配置
                 self._notification_config["email_config"].update({
                     "smtp_server": config.smtp_host or "localhost",
                     "smtp_port": config.smtp_port or 587,
@@ -369,10 +445,38 @@ class NotificationService(BaseService):
                     "from_name": config.sender_name or "FactorWeave-Quant 系统"
                 })
                 
-                # 更新邮件渠道配置
                 if "default_email" in self._channels:
                     self._channels["default_email"].config = self._notification_config["email_config"]
                     self._channels["default_email"].enabled = config.email_enabled
+                
+                if "default_desktop" in self._channels:
+                    self._channels["default_desktop"].enabled = config.desktop_enabled
+                    self._channels["default_desktop"].config = {
+                        "show_icon": getattr(config, 'desktop_show_icon', True),
+                        "auto_dismiss": getattr(config, 'desktop_auto_dismiss', True),
+                        "dismiss_timeout": getattr(config, 'desktop_dismiss_timeout', 5),
+                        "show_title": getattr(config, 'desktop_show_title', True),
+                        "show_content": getattr(config, 'desktop_show_content', True),
+                        "max_content_length": getattr(config, 'desktop_max_content_length', 200),
+                        "critical_popup": getattr(config, 'desktop_critical_popup', True),
+                        "sound_with_desktop": getattr(config, 'desktop_sound_with_desktop', True),
+                        "notification_duration": getattr(config, 'desktop_dismiss_timeout', 5) * 1000,
+                        "use_system_tray": True
+                    }
+                
+                if "default_sound" in self._channels:
+                    self._channels["default_sound"].enabled = config.sound_enabled
+                    self._channels["default_sound"].config = {
+                        "use_system_sound": getattr(config, 'sound_use_system', True),
+                        "volume": getattr(config, 'sound_volume', 0.8),
+                        "sound_type": getattr(config, 'sound_type', '默认提示音'),
+                        "custom_sound_path": getattr(config, 'sound_custom_path', ''),
+                        "critical_sound": getattr(config, 'sound_critical', '高频急促音'),
+                        "error_sound": getattr(config, 'sound_error', '中频提示音'),
+                        "warning_sound": getattr(config, 'sound_warning', '低频提示音'),
+                        "info_sound": getattr(config, 'sound_info', '轻微提示音'),
+                        "sound_file": "alert.wav"
+                    }
                 
                 logger.info(f"✓ Notification configuration loaded from database")
                 logger.info(f"  - Email: {'enabled' if config.email_enabled else 'disabled'}")
@@ -543,9 +647,48 @@ class NotificationService(BaseService):
 
     # 通知渠道管理接口
 
-    def add_channel(self, channel: NotificationChannel) -> bool:
+    def validate_channel_config(self, channel: NotificationChannel) -> List[str]:
+        """验证通知渠道配置"""
+        errors = []
+        
+        if not channel.channel_id:
+            errors.append("渠道ID不能为空")
+        
+        if not channel.name:
+            errors.append("渠道名称不能为空")
+        
+        if not isinstance(channel.notification_type, NotificationType):
+            errors.append(f"无效的通知类型: {channel.notification_type}")
+        
+        if channel.notification_type == NotificationType.EMAIL:
+            config = channel.config
+            if not config.get("smtp_server"):
+                errors.append("邮件渠道缺少SMTP服务器配置")
+            if not config.get("from_email"):
+                errors.append("邮件渠道缺少发件人邮箱配置")
+        
+        elif channel.notification_type == NotificationType.WEBHOOK:
+            config = channel.config
+            if not config.get("webhook_url"):
+                errors.append("Webhook渠道缺少URL配置")
+        
+        elif channel.notification_type == NotificationType.DINGTALK:
+            config = channel.config
+            if not config.get("webhook_url"):
+                errors.append("钉钉渠道缺少Webhook URL配置")
+        
+        return errors
+
+    def add_channel(self, channel: NotificationChannel, validate: bool = True) -> bool:
         """添加通知渠道"""
         try:
+            if validate:
+                errors = self.validate_channel_config(channel)
+                if errors:
+                    for error in errors:
+                        logger.error(f"渠道配置验证失败: {error}")
+                    return False
+            
             with self._channel_lock:
                 self._channels[channel.channel_id] = channel
 
@@ -779,17 +922,43 @@ class NotificationService(BaseService):
             return False
 
     def _is_duplicate_message(self, message: AlertMessage) -> bool:
-        """检查消息是否重复"""
-        if not self._notification_config["enable_deduplication"]:
+        """检查消息是否重复（增强版）"""
+        if not self._dedup_config["enabled"]:
             return False
 
         try:
-            # 生成去重键
-            dedup_key = f"{message.rule_id}_{message.title}_{message.content}"
+            import hashlib
+            
+            dedup_parts = []
+            
+            if self._dedup_config["use_content_hash"]:
+                content_hash = hashlib.md5(f"{message.title}_{message.content}".encode()).hexdigest()[:16]
+                dedup_parts.append(content_hash)
+            else:
+                dedup_parts.append(message.title)
+                dedup_parts.append(message.content[:100])
+            
+            if not self._dedup_config["ignore_level"]:
+                dedup_parts.append(message.alert_level.value)
+            
+            if message.rule_id:
+                dedup_parts.append(message.rule_id)
+            
+            if hasattr(message, 'source') and message.source:
+                dedup_parts.append(message.source)
+            
+            dedup_key = "_".join(str(p) for p in dedup_parts)
 
             with self._dedup_lock:
-                # 清理过期的缓存
                 current_time = datetime.now()
+                
+                max_size = self._dedup_config["max_cache_size"]
+                if len(self._sent_cache) > max_size:
+                    sorted_items = sorted(self._sent_cache.items(), key=lambda x: x[1])
+                    keys_to_remove = [k for k, _ in sorted_items[:len(self._sent_cache) - max_size // 2]]
+                    for key in keys_to_remove:
+                        del self._sent_cache[key]
+                
                 expired_keys = [
                     key for key, timestamp in self._sent_cache.items()
                     if current_time - timestamp > self._dedup_window
@@ -797,11 +966,11 @@ class NotificationService(BaseService):
                 for key in expired_keys:
                     del self._sent_cache[key]
 
-                # 检查是否重复
                 if dedup_key in self._sent_cache:
+                    last_sent = self._sent_cache[dedup_key]
+                    logger.debug(f"Duplicate message detected: {dedup_key}, last sent at {last_sent}")
                     return True
 
-                # 记录发送时间
                 self._sent_cache[dedup_key] = current_time
 
             return False
@@ -809,6 +978,35 @@ class NotificationService(BaseService):
         except Exception as e:
             logger.error(f"Failed to check duplicate message: {e}")
             return False
+
+    def configure_deduplication(self, enabled: bool = None, window_minutes: int = None,
+                                max_cache_size: int = None, use_content_hash: bool = None,
+                                ignore_level: bool = None) -> None:
+        """配置去重参数"""
+        with self._dedup_lock:
+            if enabled is not None:
+                self._dedup_config["enabled"] = enabled
+            if window_minutes is not None:
+                self._dedup_config["window_minutes"] = window_minutes
+                self._dedup_window = timedelta(minutes=window_minutes)
+            if max_cache_size is not None:
+                self._dedup_config["max_cache_size"] = max_cache_size
+            if use_content_hash is not None:
+                self._dedup_config["use_content_hash"] = use_content_hash
+            if ignore_level is not None:
+                self._dedup_config["ignore_level"] = ignore_level
+            
+            logger.info(f"Deduplication config updated: {self._dedup_config}")
+
+    def get_deduplication_stats(self) -> Dict[str, Any]:
+        """获取去重统计信息"""
+        with self._dedup_lock:
+            return {
+                "enabled": self._dedup_config["enabled"],
+                "window_minutes": self._dedup_config["window_minutes"],
+                "cache_size": len(self._sent_cache),
+                "max_cache_size": self._dedup_config["max_cache_size"]
+            }
 
     def _send_message_internal(self, message: AlertMessage) -> bool:
         """内部消息发送方法"""
@@ -848,6 +1046,13 @@ class NotificationService(BaseService):
                     self._notification_stats.webhook_sent += 1
                 if any(ch.notification_type == NotificationType.DINGTALK for ch_id in message.channels for ch in [self.get_channel(ch_id)] if ch):
                     self._notification_stats.dingtalk_sent += 1
+                if any(ch.notification_type == NotificationType.DESKTOP for ch_id in message.channels for ch in [self.get_channel(ch_id)] if ch):
+                    self._notification_stats.desktop_sent += 1
+                if any(ch.notification_type == NotificationType.SOUND for ch_id in message.channels for ch in [self.get_channel(ch_id)] if ch):
+                    self._notification_stats.sound_sent += 1
+                
+                # 记录历史
+                self._add_to_history(message, success=True)
 
                 logger.info(f"Message sent successfully: {message.message_id}")
                 return True
@@ -855,6 +1060,9 @@ class NotificationService(BaseService):
                 message.status = AlertStatus.FAILED
                 message.retry_count += 1
                 self._notification_stats.total_failed += 1
+                
+                # 记录历史
+                self._add_to_history(message, success=False, error_message="所有渠道发送失败")
 
                 # 重试逻辑
                 if message.retry_count < message.max_retries:
@@ -896,6 +1104,10 @@ class NotificationService(BaseService):
                 return self._send_webhook_notification(message, channel)
             elif channel.notification_type == NotificationType.DINGTALK:
                 return self._send_dingtalk_notification(message, channel)
+            elif channel.notification_type == NotificationType.DESKTOP:
+                return self._send_desktop_notification(message, channel)
+            elif channel.notification_type == NotificationType.SOUND:
+                return self._send_sound_notification(message, channel)
             else:
                 logger.warning(f"Unsupported notification type: {channel.notification_type}")
                 return False
@@ -1137,6 +1349,239 @@ class NotificationService(BaseService):
             logger.error(f"Failed to send dingtalk notification: {e}")
             return False
 
+    def _send_desktop_notification(self, message: AlertMessage, channel: NotificationChannel) -> bool:
+        """发送桌面通知（非阻塞式）"""
+        try:
+            from PyQt5.QtWidgets import QApplication, QSystemTrayIcon
+            from PyQt5.QtGui import QIcon
+            from PyQt5.QtCore import QTimer, QMetaObject, Qt, Q_ARG
+            
+            config = channel.config
+            dismiss_timeout = config.get("dismiss_timeout", config.get("notification_duration", 5000) // 1000)
+            if isinstance(dismiss_timeout, int) and dismiss_timeout < 100:
+                duration = dismiss_timeout * 1000
+            else:
+                duration = dismiss_timeout if isinstance(dismiss_timeout, int) else 5000
+            
+            show_title = config.get("show_title", True)
+            show_content = config.get("show_content", True)
+            max_content_length = config.get("max_content_length", 200)
+            critical_popup = config.get("critical_popup", True)
+            sound_with_desktop = config.get("sound_with_desktop", True)
+            
+            app = QApplication.instance()
+            if not app:
+                logger.warning("QApplication not available for desktop notification")
+                return False
+            
+            def show_notification():
+                try:
+                    tray_icon = None
+                    
+                    if hasattr(app, '_system_tray_icon'):
+                        tray_icon = app._system_tray_icon
+                    
+                    if not tray_icon:
+                        for widget in app.topLevelWidgets():
+                            if hasattr(widget, '_system_tray_icon'):
+                                tray_icon = widget._system_tray_icon
+                                break
+                    
+                    if tray_icon and tray_icon.isVisible():
+                        icon = QSystemTrayIcon.Information
+                        if message.alert_level == AlertLevel.CRITICAL:
+                            icon = QSystemTrayIcon.Critical
+                        elif message.alert_level == AlertLevel.ERROR:
+                            icon = QSystemTrayIcon.Critical
+                        elif message.alert_level == AlertLevel.WARNING:
+                            icon = QSystemTrayIcon.Warning
+                        
+                        notification_title = f"[{message.alert_level.value.upper()}] {message.title}" if show_title else message.title
+                        notification_content = message.content[:max_content_length] if show_content else ""
+                        if len(message.content) > max_content_length:
+                            notification_content += "..."
+                        
+                        tray_icon.showMessage(
+                            notification_title,
+                            notification_content,
+                            icon,
+                            duration
+                        )
+                        logger.info(f"Desktop notification sent: {message.title}")
+                        
+                        if sound_with_desktop:
+                            sound_channel = self.get_channel("default_sound")
+                            if sound_channel and sound_channel.enabled:
+                                self._send_sound_notification(message, sound_channel)
+                        
+                        return True
+                    else:
+                        logger.debug("System tray icon not available, using fallback")
+                        return self._send_desktop_fallback(message, duration)
+                        
+                except Exception as e:
+                    logger.error(f"Failed to show desktop notification: {e}")
+                    return False
+            
+            if QApplication.instance() and QApplication.instance().thread() != threading.current_thread():
+                QTimer.singleShot(0, show_notification)
+            else:
+                show_notification()
+            
+            return True
+            
+        except ImportError:
+            logger.warning("PyQt5 not available for desktop notification")
+            return self._send_desktop_fallback(message, 5000)
+        except Exception as e:
+            logger.error(f"Failed to send desktop notification: {e}")
+            return False
+
+    def _send_desktop_fallback(self, message: AlertMessage, duration: int = 5000) -> bool:
+        """桌面通知回退方案（使用系统通知）"""
+        try:
+            import platform
+            import subprocess
+            
+            system = platform.system()
+            title = f"[{message.alert_level.value.upper()}] {message.title}"
+            content = message.content
+            
+            if system == "Windows":
+                try:
+                    from win10toast import ToastNotifier
+                    toaster = ToastNotifier()
+                    toaster.show_toast(title, content, duration=duration // 1000, threaded=True)
+                    logger.info(f"Windows toast notification sent: {message.title}")
+                    return True
+                except ImportError:
+                    pass
+            elif system == "Darwin":
+                subprocess.run([
+                    'osascript', '-e',
+                    f'display notification "{content}" with title "{title}"'
+                ], check=False)
+                logger.info(f"macOS notification sent: {message.title}")
+                return True
+            elif system == "Linux":
+                subprocess.run([
+                    'notify-send', title, content
+                ], check=False)
+                logger.info(f"Linux notification sent: {message.title}")
+                return True
+            
+            logger.warning(f"No desktop notification method available for {system}")
+            return False
+            
+        except Exception as e:
+            logger.error(f"Failed to send desktop fallback notification: {e}")
+            return False
+
+    def _send_sound_notification(self, message: AlertMessage, channel: NotificationChannel) -> bool:
+        """发送声音通知"""
+        try:
+            import platform
+            import threading
+            
+            config = channel.config
+            use_system_sound = config.get("use_system_sound", True)
+            volume = config.get("volume", 0.8)
+            sound_type = config.get("sound_type", "默认提示音")
+            custom_sound_path = config.get("custom_sound_path", "")
+            critical_sound = config.get("critical_sound", "高频急促音")
+            error_sound = config.get("error_sound", "中频提示音")
+            warning_sound = config.get("warning_sound", "低频提示音")
+            info_sound = config.get("info_sound", "轻微提示音")
+            
+            def get_beep_params(alert_level: AlertLevel) -> tuple:
+                """根据告警级别和配置获取蜂鸣参数"""
+                sound_map = {
+                    "高频急促音": [(1500, 500), (1500, 500), (1500, 500)],
+                    "双音提示": [(1000, 300), (1500, 300)],
+                    "持续警报": [(2000, 2000)],
+                    "中频提示音": [(1200, 400)],
+                    "单音提示": [(1000, 300)],
+                    "短促音": [(800, 200)],
+                    "低频提示音": [(800, 500)],
+                    "柔和提示": [(600, 400)],
+                    "轻微音": [(500, 300)],
+                    "轻微提示音": [(500, 200)],
+                    "静音": [],
+                    "默认音": [(1000, 400)],
+                    "默认提示音": [(1000, 400)],
+                }
+                
+                if alert_level == AlertLevel.CRITICAL:
+                    return sound_map.get(critical_sound, [(1500, 500)])
+                elif alert_level == AlertLevel.ERROR:
+                    return sound_map.get(error_sound, [(1200, 400)])
+                elif alert_level == AlertLevel.WARNING:
+                    return sound_map.get(warning_sound, [(800, 500)])
+                else:
+                    return sound_map.get(info_sound, [(500, 200)])
+            
+            def play_sound():
+                try:
+                    system = platform.system()
+                    
+                    if system == "Windows":
+                        try:
+                            import winsound
+                            
+                            if custom_sound_path and sound_type == "自定义声音文件":
+                                try:
+                                    import winsound
+                                    winsound.PlaySound(custom_sound_path, winsound.SND_FILENAME)
+                                    logger.info(f"Custom sound played: {custom_sound_path}")
+                                    return True
+                                except Exception as e:
+                                    logger.warning(f"Failed to play custom sound: {e}, using default")
+                            
+                            beep_params = get_beep_params(message.alert_level)
+                            for freq, duration in beep_params:
+                                winsound.Beep(freq, duration)
+                            
+                            logger.info(f"Windows sound notification played: {message.title}")
+                            return True
+                        except ImportError:
+                            pass
+                        except Exception as e:
+                            logger.error(f"Windows sound error: {e}")
+                    
+                    elif system == "Darwin":
+                        import subprocess
+                        if custom_sound_path and sound_type == "自定义声音文件":
+                            subprocess.run(['afplay', custom_sound_path], check=False)
+                        else:
+                            subprocess.run(['afplay', '/System/Library/Sounds/Glass.aiff'], check=False)
+                        logger.info(f"macOS sound notification played: {message.title}")
+                        return True
+                    
+                    elif system == "Linux":
+                        import subprocess
+                        if custom_sound_path and sound_type == "自定义声音文件":
+                            subprocess.run(['aplay', '-q', custom_sound_path], check=False)
+                        else:
+                            subprocess.run(['aplay', '-q', '/usr/share/sounds/alsa/Front_Center.wav'], check=False)
+                        logger.info(f"Linux sound notification played: {message.title}")
+                        return True
+                    
+                    logger.warning(f"No sound notification method available for {system}")
+                    return False
+                    
+                except Exception as e:
+                    logger.error(f"Failed to play sound in thread: {e}")
+                    return False
+            
+            sound_thread = threading.Thread(target=play_sound, daemon=True)
+            sound_thread.start()
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to send sound notification: {e}")
+            return False
+
     # 公共接口方法
 
     def get_message(self, message_id: str) -> Optional[AlertMessage]:
@@ -1154,6 +1599,211 @@ class NotificationService(BaseService):
         with self._service_lock:
             self._notification_stats.last_update = datetime.now()
             return self._notification_stats
+
+    def _add_to_history(self, message: AlertMessage, success: bool = True, error_message: str = None):
+        """添加通知到历史记录"""
+        try:
+            import uuid
+            
+            record = NotificationHistoryRecord(
+                record_id=str(uuid.uuid4()),
+                message_id=message.message_id,
+                title=message.title,
+                content=message.content,
+                alert_level=message.alert_level,
+                channels=message.channels,
+                status=message.status,
+                created_time=message.created_time,
+                sent_time=message.sent_time,
+                delivered_time=message.delivered_time,
+                error_message=error_message,
+                retry_count=message.retry_count,
+                metadata=message.metadata
+            )
+            
+            with self._history_lock:
+                self._notification_history.append(record)
+                
+                # 限制历史记录大小
+                if len(self._notification_history) > self._max_history_size:
+                    # 保留最新的记录
+                    self._notification_history = self._notification_history[-self._max_history_size:]
+                    
+        except Exception as e:
+            logger.error(f"Failed to add notification to history: {e}")
+
+    def get_notification_history(self, limit: int = 100, level: str = None, 
+                                  status: str = None, start_time: datetime = None,
+                                  end_time: datetime = None) -> List[NotificationHistoryRecord]:
+        """获取通知历史记录
+        
+        Args:
+            limit: 最大返回数量
+            level: 按告警级别过滤
+            status: 按状态过滤
+            start_time: 开始时间
+            end_time: 结束时间
+            
+        Returns:
+            通知历史记录列表
+        """
+        try:
+            with self._history_lock:
+                records = list(self._notification_history)
+            
+            # 应用过滤条件
+            if level:
+                records = [r for r in records if r.alert_level.value == level]
+            
+            if status:
+                records = [r for r in records if r.status.value == status]
+            
+            if start_time:
+                records = [r for r in records if r.created_time >= start_time]
+            
+            if end_time:
+                records = [r for r in records if r.created_time <= end_time]
+            
+            # 按时间倒序排列，返回最新的记录
+            records.sort(key=lambda x: x.created_time, reverse=True)
+            
+            return records[:limit]
+            
+        except Exception as e:
+            logger.error(f"Failed to get notification history: {e}")
+            return []
+
+    def get_notification_history_stats(self) -> Dict[str, Any]:
+        """获取通知历史统计"""
+        try:
+            with self._history_lock:
+                records = list(self._notification_history)
+            
+            if not records:
+                return {
+                    'total_count': 0,
+                    'success_count': 0,
+                    'failed_count': 0,
+                    'suppressed_count': 0,
+                    'level_distribution': {},
+                    'channel_distribution': {},
+                    'recent_24h_count': 0
+                }
+            
+            # 统计
+            success_count = sum(1 for r in records if r.status == AlertStatus.SENT)
+            failed_count = sum(1 for r in records if r.status == AlertStatus.FAILED)
+            suppressed_count = sum(1 for r in records if r.status == AlertStatus.SUPPRESSED)
+            
+            # 级别分布
+            level_distribution = {}
+            for r in records:
+                level = r.alert_level.value
+                level_distribution[level] = level_distribution.get(level, 0) + 1
+            
+            # 渠道分布
+            channel_distribution = {}
+            for r in records:
+                for ch in r.channels:
+                    channel_distribution[ch] = channel_distribution.get(ch, 0) + 1
+            
+            # 最近24小时
+            recent_24h = datetime.now() - timedelta(hours=24)
+            recent_count = sum(1 for r in records if r.created_time >= recent_24h)
+            
+            return {
+                'total_count': len(records),
+                'success_count': success_count,
+                'failed_count': failed_count,
+                'suppressed_count': suppressed_count,
+                'level_distribution': level_distribution,
+                'channel_distribution': channel_distribution,
+                'recent_24h_count': recent_count
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get notification history stats: {e}")
+            return {}
+
+    def clear_notification_history(self, before_time: datetime = None) -> int:
+        """清理通知历史记录
+        
+        Args:
+            before_time: 清理此时间之前的记录，None则清理所有
+            
+        Returns:
+            清理的记录数量
+        """
+        try:
+            with self._history_lock:
+                if before_time is None:
+                    count = len(self._notification_history)
+                    self._notification_history.clear()
+                    return count
+                
+                original_count = len(self._notification_history)
+                self._notification_history = [
+                    r for r in self._notification_history 
+                    if r.created_time >= before_time
+                ]
+                cleared = original_count - len(self._notification_history)
+                
+                logger.info(f"Cleared {cleared} notification history records")
+                return cleared
+                
+        except Exception as e:
+            logger.error(f"Failed to clear notification history: {e}")
+            return 0
+
+    def export_notification_history(self, file_path: str, format: str = 'json') -> bool:
+        """导出通知历史记录
+        
+        Args:
+            file_path: 导出文件路径
+            format: 导出格式 (json, csv)
+            
+        Returns:
+            是否成功
+        """
+        try:
+            import json
+            import csv
+            
+            with self._history_lock:
+                records = list(self._notification_history)
+            
+            if format == 'json':
+                data = [r.to_dict() for r in records]
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                    
+            elif format == 'csv':
+                with open(file_path, 'w', encoding='utf-8', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow([
+                        'record_id', 'message_id', 'title', 'content', 
+                        'alert_level', 'channels', 'status', 'created_time',
+                        'sent_time', 'delivered_time', 'error_message', 'retry_count'
+                    ])
+                    for r in records:
+                        writer.writerow([
+                            r.record_id, r.message_id, r.title, r.content,
+                            r.alert_level.value, ','.join(r.channels), r.status.value,
+                            r.created_time.isoformat() if r.created_time else '',
+                            r.sent_time.isoformat() if r.sent_time else '',
+                            r.delivered_time.isoformat() if r.delivered_time else '',
+                            r.error_message or '', r.retry_count
+                        ])
+            else:
+                logger.error(f"Unsupported export format: {format}")
+                return False
+            
+            logger.info(f"Exported {len(records)} notification history records to {file_path}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to export notification history: {e}")
+            return False
 
     def clear_expired_messages(self) -> int:
         """清理过期消息"""
@@ -1226,15 +1876,82 @@ class NotificationService(BaseService):
         except Exception as e:
             logger.error(f"Error disposing NotificationService: {e}")
 
-# 全局 NotificationService 实例
 _global_notification_service = None
+_global_notification_service_lock = threading.Lock()
 
 def get_notification_service() -> Optional['NotificationService']:
-    """获取全局 NotificationService 实例"""
-    return _global_notification_service
+    """获取全局 NotificationService 实例（线程安全）"""
+    with _global_notification_service_lock:
+        return _global_notification_service
 
 def init_notification_service(service_container=None) -> 'NotificationService':
-    """初始化全局 NotificationService 实例"""
+    """初始化全局 NotificationService 实例（线程安全，优先使用服务容器）"""
     global _global_notification_service
-    _global_notification_service = NotificationService(service_container)
-    return _global_notification_service
+    with _global_notification_service_lock:
+        if _global_notification_service is not None:
+            return _global_notification_service
+        
+        if service_container is not None:
+            try:
+                from ..containers import ServiceContainer
+                if isinstance(service_container, ServiceContainer):
+                    existing_service = service_container.try_resolve(NotificationService)
+                    if existing_service is not None:
+                        _global_notification_service = existing_service
+                        logger.info("NotificationService obtained from service container")
+                        return _global_notification_service
+            except Exception as e:
+                logger.warning(f"Failed to get NotificationService from container: {e}")
+        
+        _global_notification_service = NotificationService(service_container)
+        _global_notification_service._do_initialize()
+        
+        if service_container is not None:
+            try:
+                from ..containers import ServiceContainer
+                if isinstance(service_container, ServiceContainer):
+                    if not service_container.is_registered(NotificationService):
+                        service_container.register_instance(NotificationService, _global_notification_service)
+                        logger.info("NotificationService registered to service container")
+            except Exception as e:
+                logger.warning(f"Failed to register NotificationService to container: {e}")
+        
+        return _global_notification_service
+
+def get_notification_service_from_container(service_container=None) -> Optional['NotificationService']:
+    """从服务容器获取 NotificationService 实例"""
+    try:
+        if service_container is not None:
+            from ..containers import ServiceContainer
+            if isinstance(service_container, ServiceContainer):
+                return service_container.try_resolve(NotificationService)
+        
+        from ..containers import get_service_container
+        container = get_service_container()
+        if container:
+            return container.try_resolve(NotificationService)
+        
+        return None
+    except Exception as e:
+        logger.warning(f"Failed to get NotificationService from container: {e}")
+        return None
+
+def get_or_create_notification_service(service_container=None) -> 'NotificationService':
+    """获取或创建 NotificationService 实例（统一入口）"""
+    service = get_notification_service()
+    if service is not None:
+        return service
+    
+    service = get_notification_service_from_container(service_container)
+    if service is not None:
+        return service
+    
+    return init_notification_service(service_container)
+
+def dispose_notification_service() -> None:
+    """释放全局 NotificationService 实例（线程安全）"""
+    global _global_notification_service
+    with _global_notification_service_lock:
+        if _global_notification_service is not None:
+            _global_notification_service.dispose()
+            _global_notification_service = None

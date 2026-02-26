@@ -173,8 +173,7 @@ class DataService(BaseService):
         self._source_health: Dict[str, bool] = {}
         self._source_capabilities: Dict[str, Set[DataType]] = {}
 
-        # 缓存系统
-        self._cache: Dict[str, Tuple[Any, datetime, DataQualityLevel]] = {}
+        # 缓存系统 - 强制使用统一缓存服务
         self._cache_metadata: Dict[str, Dict[str, Any]] = {}
         self._cache_ttl_config: Dict[DataType, timedelta] = {
             DataType.REAL_TIME_QUOTE: timedelta(minutes=1),
@@ -185,7 +184,9 @@ class DataService(BaseService):
             DataType.FUND_FLOW: timedelta(minutes=5),
             DataType.TECHNICAL_INDICATORS: timedelta(minutes=10)
         }
-        self._cache_lock = threading.RLock()
+        self._unified_cache = None
+        self._cache_namespace = 'data_service'
+        self._init_unified_cache()
 
         # 请求管理
         self._pending_requests: Dict[str, DataRequest] = {}
@@ -225,6 +226,16 @@ class DataService(BaseService):
         self._performance_samples: List[float] = []
 
         logger.info("DataService initialized for architecture simplification")
+
+    def _init_unified_cache(self) -> None:
+        """初始化统一缓存服务（强制）"""
+        from core.services.cache_service import CacheService
+        
+        if self._service_container and self._service_container.is_registered(CacheService):
+            self._unified_cache = self._service_container.resolve(CacheService)
+            logger.debug(f"DataService 已连接到统一缓存服务，命名空间: {self._cache_namespace}")
+        else:
+            raise RuntimeError("统一缓存服务未注册，请确保 CacheService 已在服务容器中注册")
 
     def _do_initialize(self) -> None:
         """执行具体的初始化逻辑"""
@@ -521,30 +532,26 @@ class DataService(BaseService):
             return error_response
 
     def _get_from_cache(self, request: DataRequest) -> Optional[DataResponse]:
-        """从缓存获取数据"""
+        """从缓存获取数据 - 使用统一缓存服务"""
         try:
             cache_key = self._generate_cache_key(request)
+            ttl = self._cache_ttl_config.get(request.data_type, timedelta(minutes=5))
 
-            with self._cache_lock:
-                if cache_key in self._cache:
-                    data, timestamp, quality = self._cache[cache_key]
+            if self._unified_cache is None:
+                raise RuntimeError("统一缓存服务未初始化")
 
-                    # 检查TTL
-                    ttl = self._cache_ttl_config.get(request.data_type, timedelta(minutes=5))
-                    if datetime.now() - timestamp < ttl:
-                        return DataResponse(
-                            request_id=request.request_id,
-                            data=data,
-                            quality=quality,
-                            cached=True,
-                            timestamp=timestamp,
-                            metadata=self._cache_metadata.get(cache_key, {})
-                        )
-                    else:
-                        # 清理过期缓存
-                        del self._cache[cache_key]
-                        if cache_key in self._cache_metadata:
-                            del self._cache_metadata[cache_key]
+            cached_entry = self._unified_cache.get(cache_key, namespace=self._cache_namespace)
+            if cached_entry is not None:
+                data, timestamp, quality = cached_entry
+                if datetime.now() - timestamp < ttl:
+                    return DataResponse(
+                        request_id=request.request_id,
+                        data=data,
+                        quality=quality,
+                        cached=True,
+                        timestamp=timestamp,
+                        metadata=self._cache_metadata.get(cache_key, {})
+                    )
 
             return None
 
@@ -656,13 +663,17 @@ class DataService(BaseService):
             return DataQualityLevel.UNKNOWN
 
     def _update_cache(self, request: DataRequest, response: DataResponse) -> None:
-        """更新缓存"""
+        """更新缓存 - 使用统一缓存服务"""
         try:
             cache_key = self._generate_cache_key(request)
+            cache_entry = (response.data, response.timestamp, response.quality)
+            ttl = self._cache_ttl_config.get(request.data_type, timedelta(minutes=5))
 
-            with self._cache_lock:
-                self._cache[cache_key] = (response.data, response.timestamp, response.quality)
-                self._cache_metadata[cache_key] = response.metadata.copy()
+            if self._unified_cache is None:
+                raise RuntimeError("统一缓存服务未初始化")
+
+            self._unified_cache.set(cache_key, cache_entry, ttl=ttl, namespace=self._cache_namespace)
+            self._cache_metadata[cache_key] = response.metadata.copy()
 
         except Exception as e:
             logger.error(f"Error updating cache: {e}")
@@ -686,31 +697,16 @@ class DataService(BaseService):
         return "|".join(key_parts)
 
     def _cleanup_expired_cache(self) -> None:
-        """清理过期缓存"""
+        """清理过期缓存 - 统一缓存服务自动管理TTL，此方法保留用于清理元数据"""
         try:
-            with self._cache_lock:
-                current_time = datetime.now()
-                expired_keys = []
+            expired_keys = [k for k in self._cache_metadata.keys() 
+                          if self._unified_cache.get(k, namespace=self._cache_namespace) is None]
+            
+            for key in expired_keys:
+                del self._cache_metadata[key]
 
-                for cache_key, (data, timestamp, quality) in self._cache.items():
-                    # 根据数据类型确定TTL
-                    ttl = timedelta(minutes=5)  # 默认TTL
-                    for data_type, type_ttl in self._cache_ttl_config.items():
-                        if str(data_type.value if hasattr(data_type, 'value') else data_type) in cache_key:
-                            ttl = type_ttl
-                            break
-
-                    if current_time - timestamp > ttl:
-                        expired_keys.append(cache_key)
-
-                # 删除过期项
-                for key in expired_keys:
-                    del self._cache[key]
-                    if key in self._cache_metadata:
-                        del self._cache_metadata[key]
-
-                if expired_keys:
-                    logger.debug(f"Cleaned up {len(expired_keys)} expired cache entries")
+            if expired_keys:
+                logger.debug(f"Cleaned up {len(expired_keys)} expired cache metadata entries")
 
         except Exception as e:
             logger.error(f"Error in cache cleanup: {e}")

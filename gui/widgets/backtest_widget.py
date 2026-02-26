@@ -462,6 +462,7 @@ class ControlPanel(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.parent_widget = parent  # 保存父组件的引用
         self.init_ui()
 
     def init_ui(self):
@@ -545,6 +546,71 @@ class ControlPanel(QWidget):
         ])
         self.performance_level.setCurrentText("ULTRA")
         params_layout.addRow("性能级别:", self.performance_level)
+
+        layout.addWidget(params_group)
+
+        # 策略设置组
+        strategy_group = QGroupBox("策略设置")
+        strategy_group.setStyleSheet(params_group.styleSheet())
+        strategy_layout = QFormLayout(strategy_group)
+
+        # 策略选择
+        self.strategy_combo = QComboBox()
+        self.load_strategies_from_registry()
+        self.strategy_combo.setToolTip("选择要使用的交易策略")
+        strategy_layout.addRow("策略:", self.strategy_combo)
+
+        # 策略参数表格
+        self.params_table = QTableWidget()
+        self.params_table.setColumnCount(2)
+        self.params_table.setHorizontalHeaderLabels(['参数', '值'])
+        self.params_table.setMaximumHeight(120)
+        self.params_table.setStyleSheet("""
+            QTableWidget {
+                background: rgba(30, 35, 45, 0.8);
+                border: 1px solid #4a5568;
+                border-radius: 4px;
+                gridline-color: #4a5568;
+                font-size: 10px;
+            }
+            QTableWidget::item {
+                padding: 4px;
+                border: 1px solid #4a5568;
+            }
+            QHeaderView::section {
+                background: rgba(74, 85, 104, 0.8);
+                color: #e2e8f0;
+                padding: 4px;
+                border: 1px solid #4a5568;
+                font-size: 9px;
+                font-weight: bold;
+            }
+        """)
+        strategy_layout.addRow(self.params_table)
+
+        # 策略预览按钮
+        preview_button = QPushButton("策略预览")
+        preview_button.setStyleSheet("""
+            QPushButton {
+                background: linear-gradient(45deg, #3b82f6, #1d4ed8);
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 6px 12px;
+                font-weight: bold;
+                font-size: 10px;
+            }
+            QPushButton:hover {
+                background: linear-gradient(45deg, #2563eb, #1e40af);
+            }
+            QPushButton:pressed {
+                background: linear-gradient(45deg, #1d4ed8, #1e3a8a);
+            }
+        """)
+        preview_button.clicked.connect(self._preview_strategy)
+        strategy_layout.addRow(preview_button)
+
+        layout.addWidget(strategy_group)
 
         # 时间范围设置组
         time_group = QGroupBox("时间范围设置")
@@ -634,6 +700,7 @@ class ControlPanel(QWidget):
             }
         """)
         self.start_button.clicked.connect(self.on_start_backtest)
+        self.start_button.setToolTip("开始执行回测 (Ctrl+Enter)")
 
         self.stop_button = QPushButton("停止回测")
         self.stop_button.setStyleSheet("""
@@ -655,10 +722,132 @@ class ControlPanel(QWidget):
         """)
         self.stop_button.clicked.connect(self.stop_backtest.emit)
         self.stop_button.setEnabled(False)
+        self.stop_button.setToolTip("停止当前回测 (Ctrl+Esc)")
 
         buttons_layout.addWidget(self.start_button)
         buttons_layout.addWidget(self.stop_button)
         layout.addLayout(buttons_layout)
+
+        # 导出按钮
+        export_layout = QHBoxLayout()
+        export_button = QPushButton("导出结果")
+        export_button.setStyleSheet("""
+            QPushButton {
+                background: linear-gradient(45deg, #10b981, #059669);
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 16px;
+                font-weight: bold;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background: linear-gradient(45deg, #059669, #047857);
+            }
+            QPushButton:pressed {
+                background: linear-gradient(45deg, #047857, #065f46);
+            }
+        """)
+        export_button.clicked.connect(self._export_results)
+        export_layout.addWidget(export_button)
+        layout.addLayout(export_layout)
+
+        # 高级功能分组
+        advanced_group = QGroupBox("高级功能")
+        advanced_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: 500;
+                font-size: 11px;
+                border: 1px solid #4a5568;
+                border-radius: 6px;
+                margin-top: 6px;
+                padding-top: 6px;
+                color: #e2e8f0;
+                background: rgba(45, 55, 72, 0.2);
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 8px;
+                padding: 0 4px 0 4px;
+                color: #cbd5e0;
+                font-size: 10px;
+            }
+        """)
+        advanced_layout = QVBoxLayout(advanced_group)
+
+        # 风险管理按钮
+        risk_management_button = QPushButton("🛡️ 风险管理")
+        risk_management_button.setStyleSheet("""
+            QPushButton {
+                background: linear-gradient(45deg, #f59e0b, #d97706);
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 12px;
+                font-weight: bold;
+                font-size: 11px;
+                text-align: left;
+            }
+            QPushButton:hover {
+                background: linear-gradient(45deg, #d97706, #b45309);
+            }
+            QPushButton:pressed {
+                background: linear-gradient(45deg, #b45309, #92400e);
+            }
+        """)
+        risk_management_button.setToolTip("打开性能监控中心的风险控制标签页")
+        risk_management_button.clicked.connect(self._open_risk_management)
+        advanced_layout.addWidget(risk_management_button)
+
+        # 参数优化按钮
+        parameter_optimization_button = QPushButton("⚙️ 参数优化")
+        parameter_optimization_button.setStyleSheet("""
+            QPushButton {
+                background: linear-gradient(45deg, #8b5cf6, #7c3aed);
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 12px;
+                font-weight: bold;
+                font-size: 11px;
+                text-align: left;
+            }
+            QPushButton:hover {
+                background: linear-gradient(45deg, #7c3aed, #6d28d9);
+            }
+            QPushButton:pressed {
+                background: linear-gradient(45deg, #6d28d9, #5b21b6);
+            }
+        """)
+        parameter_optimization_button.setToolTip("打开策略管理器的参数优化视图")
+        parameter_optimization_button.clicked.connect(self._open_parameter_optimization)
+        advanced_layout.addWidget(parameter_optimization_button)
+
+        # 策略对比按钮
+        strategy_comparison_button = QPushButton("📊 策略对比")
+        strategy_comparison_button.setStyleSheet("""
+            QPushButton {
+                background: linear-gradient(45deg, #06b6d4, #0891b2);
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 12px;
+                font-weight: bold;
+                font-size: 11px;
+                text-align: left;
+            }
+            QPushButton:hover {
+                background: linear-gradient(45deg, #0891b2, #0e7490);
+            }
+            QPushButton:pressed {
+                background: linear-gradient(45deg, #0e7490, #155e75);
+            }
+        """)
+        strategy_comparison_button.setToolTip("打开策略管理器的策略对比功能")
+        strategy_comparison_button.clicked.connect(self._open_strategy_comparison)
+        advanced_layout.addWidget(strategy_comparison_button)
+
+        layout.addWidget(advanced_group)
 
         # 状态显示
         self.status_label = QLabel("状态: 就绪")
@@ -674,7 +863,130 @@ class ControlPanel(QWidget):
         """)
         layout.addWidget(self.status_label)
 
+        # 进度条
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid #4a5568;
+                border-radius: 5px;
+                text-align: center;
+                background-color: #1e2329;
+                color: #e2e8f0;
+                font-size: 10px;
+                height: 20px;
+            }
+            QProgressBar::chunk {
+                background-color: #10b981;
+                border-radius: 4px;
+            }
+        """)
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(True)
+        self.progress_bar.setFormat("%p% - %v")
+        layout.addWidget(self.progress_bar)
+
         layout.addStretch()
+
+    def update_progress(self, progress: int, stage: str, message: str):
+        """更新进度"""
+        try:
+            # 更新进度条
+            self.progress_bar.setValue(progress)
+            self.progress_bar.setFormat(f"{progress}% - {stage}")
+
+            # 更新状态标签
+            self.status_label.setText(f"状态: {stage}")
+            self.status_label.setStyleSheet("""
+                QLabel {
+                    color: #10b981;
+                    font-weight: bold;
+                    padding: 10px;
+                    border: 1px solid #2d3748;
+                    border-radius: 5px;
+                    background-color: #1e2329;
+                }
+            """)
+
+            # 添加进度预警
+            if self.parent_widget and hasattr(self.parent_widget, 'alerts_panel'):
+                self.parent_widget.alerts_panel.add_alert('info', f"{stage}: {message}")
+
+        except Exception as e:
+            logger.error(f"更新进度失败: {e}")
+
+    def reset_progress(self):
+        """重置进度"""
+        try:
+            self.progress_bar.setValue(0)
+            self.progress_bar.setFormat("0% - 就绪")
+            self.status_label.setText("状态: 就绪")
+            self.status_label.setStyleSheet("""
+                QLabel {
+                    color: #10b981;
+                    font-weight: bold;
+                    padding: 10px;
+                    border: 1px solid #2d3748;
+                    border-radius: 5px;
+                    background-color: #1e2329;
+                }
+            """)
+        except Exception as e:
+            logger.error(f"重置进度失败: {e}")
+
+    def load_strategies_from_registry(self):
+        """从策略注册器加载策略列表"""
+        try:
+            from core.containers import get_service_container
+            from core.strategy.strategy_registry import StrategyRegistry
+
+            container = get_service_container()
+            if container.is_registered(StrategyRegistry):
+                registry = container.resolve(StrategyRegistry)
+                strategies = registry.get_all_metadata()
+                strategy_names = list(strategies.keys())
+                if strategy_names:
+                    self.strategy_combo.addItems(strategy_names)
+                    self.strategy_combo.setCurrentIndex(0)
+                    logger.info(f"从策略注册器加载了 {len(strategy_names)} 个策略")
+                else:
+                    logger.warning("策略注册器中没有策略，使用默认策略列表")
+                    self._load_default_strategies()
+            else:
+                logger.warning("StrategyRegistry 未注册，使用默认策略列表")
+                self._load_default_strategies()
+        except Exception as e:
+            logger.error(f"从策略注册器加载策略失败: {e}")
+            self._load_default_strategies()
+
+    def _load_default_strategies(self):
+        """加载默认策略列表"""
+        self.strategy_combo.addItems([
+            "MA策略", "MACD策略", "RSI策略", "KDJ策略",
+            "布林带策略", "形态分析策略"
+        ])
+        self.strategy_combo.setCurrentIndex(0)
+
+    def _preview_strategy(self):
+        """预览策略信号"""
+        try:
+            strategy_name = self.strategy_combo.currentText()
+            logger.info(f"预览策略: {strategy_name}")
+
+            QMessageBox.information(
+                self,
+                "策略预览",
+                f"已选择策略: {strategy_name}\n\n"
+                f"策略参数将根据选择的策略自动配置。\n"
+                f"点击'开始回测'按钮执行回测。"
+            )
+        except Exception as e:
+            logger.error(f"策略预览失败: {e}")
+            QMessageBox.warning(
+                self,
+                "预览失败",
+                f"策略预览失败: {str(e)}"
+            )
 
     def on_start_backtest(self):
         """开始回测"""
@@ -697,7 +1009,14 @@ class ControlPanel(QWidget):
             'professional_level': self.professional_level.currentText(),
             'performance_level': self.performance_level.currentText(),
             'use_vectorized_engine': use_vectorized_engine,
-            'auto_select_engine': auto_select_engine
+            'auto_select_engine': auto_select_engine,
+            'strategy': self.strategy_combo.currentText(),
+            'risk_control': {
+                'max_drawdown_limit': self.parent_widget.risk_panel.max_drawdown_limit.value() if hasattr(self, 'parent_widget') and hasattr(self.parent_widget, 'risk_panel') else 0.20,
+                'stop_loss': self.parent_widget.risk_panel.stop_loss.value() if hasattr(self, 'parent_widget') and hasattr(self.parent_widget, 'risk_panel') else 0.10,
+                'take_profit': self.parent_widget.risk_panel.take_profit.value() if hasattr(self, 'parent_widget') and hasattr(self.parent_widget, 'risk_panel') else 0.20,
+                'max_position_size': self.parent_widget.risk_panel.max_position_size.value() if hasattr(self, 'parent_widget') and hasattr(self.parent_widget, 'risk_panel') else 0.10
+            }
         }
 
         self.start_backtest.emit(params)
@@ -731,6 +1050,162 @@ class ControlPanel(QWidget):
             }
         """)
 
+    def _export_results(self):
+        """导出回测结果"""
+        try:
+            # 检查 openpyxl 是否已安装
+            try:
+                import openpyxl
+            except ImportError:
+                QMessageBox.critical(
+                    self,
+                    "缺少依赖",
+                    "请安装 openpyxl 库来导出 Excel 文件\n\n"
+                    "安装命令: pip install openpyxl"
+                )
+                return
+
+            # 获取父级 ProfessionalBacktestWidget
+            parent_widget = self.parent()
+            while parent_widget and not isinstance(parent_widget, ProfessionalBacktestWidget):
+                parent_widget = parent_widget.parent()
+
+            if not parent_widget:
+                QMessageBox.warning(
+                    self,
+                    "警告",
+                    "无法获取回测组件"
+                )
+                return
+
+            # 检查是否有回测结果
+            if not hasattr(parent_widget, 'current_results') or not parent_widget.current_results:
+                QMessageBox.warning(
+                    self,
+                    "警告",
+                    "没有可导出的回测结果\n\n"
+                    "请先执行回测"
+                )
+                return
+
+            # 选择保存路径
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "导出回测结果",
+                "",
+                "Excel 文件 (*.xlsx);;CSV 文件 (*.csv)"
+            )
+
+            if not file_path:
+                return
+
+            # 导出结果
+            import pandas as pd
+
+            if file_path.endswith('.xlsx'):
+                # 导出 Excel
+                results_df = pd.json_normalize(parent_widget.current_results)
+
+                # 导出交易记录
+                if 'trades' in parent_widget.current_results:
+                    trades_df = pd.DataFrame(parent_widget.current_results['trades'])
+                else:
+                    trades_df = pd.DataFrame()
+
+                # 写入 Excel
+                with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+                    results_df.to_excel(writer, sheet_name='回测结果', index=False)
+                    if not trades_df.empty:
+                        trades_df.to_excel(writer, sheet_name='交易记录', index=False)
+
+                logger.info(f"Excel导出成功: {file_path}")
+
+            elif file_path.endswith('.csv'):
+                # 导出 CSV
+                results_df = pd.json_normalize(parent_widget.current_results)
+                results_df.to_csv(file_path, index=False, encoding='utf-8-sig')
+
+                logger.info(f"CSV导出成功: {file_path}")
+
+            QMessageBox.information(
+                self,
+                "导出成功",
+                f"回测结果已导出到:\n{file_path}"
+            )
+
+        except Exception as e:
+            logger.error(f"导出失败: {e}")
+            QMessageBox.critical(
+                self,
+                "导出失败",
+                f"导出回测结果失败: {str(e)}"
+            )
+
+    def _open_risk_management(self):
+        """打开风险管理功能"""
+        try:
+            from gui.widgets.modern_performance_widget import show_modern_performance_monitor
+            
+            parent_widget = self.parent()
+            while parent_widget and not hasattr(parent_widget, '_main_window'):
+                parent_widget = parent_widget.parent()
+            
+            main_window = parent_widget._main_window if parent_widget else None
+            
+            performance_widget = show_modern_performance_monitor(main_window)
+            
+            if performance_widget is not None:
+                performance_widget.setWindowTitle("FactorWeave-Quant 性能监控中心 - Professional Edition")
+                performance_widget.tab_widget.setCurrentIndex(3)
+                performance_widget.show()
+                logger.info("风险管理功能已打开")
+            else:
+                QMessageBox.warning(self, "错误", "无法打开风险管理功能")
+                
+        except Exception as e:
+            logger.error(f"打开风险管理功能失败: {e}")
+            QMessageBox.warning(self, "错误", f"无法打开风险管理功能: {e}")
+
+    def _open_parameter_optimization(self):
+        """打开参数优化功能"""
+        try:
+            from gui.dialogs.enhanced_strategy_manager_dialog_v2 import EnhancedStrategyManagerDialogV2
+            
+            parent_widget = self.parent()
+            while parent_widget and not hasattr(parent_widget, '_main_window'):
+                parent_widget = parent_widget.parent()
+            
+            main_window = parent_widget._main_window if parent_widget else None
+            
+            dialog = EnhancedStrategyManagerDialogV2(main_window)
+            dialog.tab_widget.setCurrentIndex(3)
+            dialog.show()
+            logger.info("参数优化功能已打开")
+            
+        except Exception as e:
+            logger.error(f"打开参数优化功能失败: {e}")
+            QMessageBox.warning(self, "错误", f"无法打开参数优化功能: {e}")
+
+    def _open_strategy_comparison(self):
+        """打开策略对比功能"""
+        try:
+            from gui.dialogs.enhanced_strategy_manager_dialog_v2 import EnhancedStrategyManagerDialogV2
+            
+            parent_widget = self.parent()
+            while parent_widget and not hasattr(parent_widget, '_main_window'):
+                parent_widget = parent_widget.parent()
+            
+            main_window = parent_widget._main_window if parent_widget else None
+            
+            dialog = EnhancedStrategyManagerDialogV2(main_window)
+            dialog.tab_widget.setCurrentIndex(0)
+            dialog.show()
+            logger.info("策略对比功能已打开")
+            
+        except Exception as e:
+            logger.error(f"打开策略对比功能失败: {e}")
+            QMessageBox.warning(self, "错误", f"无法打开策略对比功能: {e}")
+
 
 class AlertsPanel(QWidget):
     """预警面板"""
@@ -738,13 +1213,14 @@ class AlertsPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.alerts = []
+        self.risk_metrics_history = []
+        self.max_history_points = 50
         self.init_ui()
 
     def init_ui(self):
         """初始化UI"""
         layout = QVBoxLayout(self)
 
-        # 标题
         title = QLabel("监控中心")
         title.setStyleSheet("""
             QLabel {
@@ -760,7 +1236,6 @@ class AlertsPanel(QWidget):
         """)
         layout.addWidget(title)
 
-        # 性能指标显示
         self.performance_group = QGroupBox("性能指标")
         performance_layout = QFormLayout(self.performance_group)
 
@@ -776,7 +1251,18 @@ class AlertsPanel(QWidget):
 
         layout.addWidget(self.performance_group)
 
-        # 预警列表
+        self.risk_chart_group = QGroupBox("风险指标趋势图")
+        risk_chart_layout = QVBoxLayout(self.risk_chart_group)
+        
+        self.risk_figure = Figure(figsize=(5, 3), dpi=80)
+        self.risk_figure.patch.set_facecolor('#1e2329')
+        self.risk_canvas = FigureCanvas(self.risk_figure)
+        self.risk_canvas.setStyleSheet("background-color: #1e2329;")
+        risk_chart_layout.addWidget(self.risk_canvas)
+        
+        self._init_risk_chart()
+        layout.addWidget(self.risk_chart_group)
+
         self.alerts_list = QListWidget()
         self.alerts_list.setStyleSheet("""
             QListWidget {
@@ -795,7 +1281,6 @@ class AlertsPanel(QWidget):
         """)
         layout.addWidget(self.alerts_list)
 
-        # 清除按钮
         clear_button = QPushButton("清除预警")
         clear_button.setStyleSheet("""
             QPushButton {
@@ -812,6 +1297,67 @@ class AlertsPanel(QWidget):
         """)
         clear_button.clicked.connect(self.clear_alerts)
         layout.addWidget(clear_button)
+
+    def _init_risk_chart(self):
+        """初始化风险指标图表"""
+        self.risk_figure.clear()
+        
+        self.risk_ax = self.risk_figure.add_subplot(111)
+        self.risk_ax.set_facecolor('#1e2329')
+        self.risk_ax.tick_params(colors='white')
+        self.risk_ax.spines['bottom'].set_color('white')
+        self.risk_ax.spines['top'].set_color('white')
+        self.risk_ax.spines['left'].set_color('white')
+        self.risk_ax.spines['right'].set_color('white')
+        self.risk_ax.set_xlabel('时间点', color='white')
+        self.risk_ax.set_ylabel('指标值', color='white')
+        self.risk_ax.set_title('风险指标实时趋势', color='white')
+        
+        self.risk_canvas.draw()
+
+    def _update_risk_chart(self):
+        """更新风险指标图表"""
+        if not self.risk_metrics_history:
+            return
+        
+        self.risk_ax.clear()
+        self.risk_ax.set_facecolor('#1e2329')
+        self.risk_ax.tick_params(colors='white')
+        self.risk_ax.spines['bottom'].set_color('white')
+        self.risk_ax.spines['top'].set_color('white')
+        self.risk_ax.spines['left'].set_color('white')
+        self.risk_ax.spines['right'].set_color('white')
+        
+        x = range(len(self.risk_metrics_history))
+        
+        var_values = [m.get('var_95', 0) * 100 for m in self.risk_metrics_history]
+        cvar_values = [m.get('cvar_95', 0) * 100 for m in self.risk_metrics_history]
+        drawdown_values = [m.get('max_drawdown', 0) * 100 for m in self.risk_metrics_history]
+        sharpe_values = [m.get('sharpe_ratio', 0) for m in self.risk_metrics_history]
+        
+        self.risk_ax.plot(x, var_values, 'r-', label='VaR(95%)', linewidth=2)
+        self.risk_ax.plot(x, cvar_values, 'orange', label='CVaR(95%)', linewidth=2)
+        self.risk_ax.plot(x, drawdown_values, 'y-', label='最大回撤', linewidth=2)
+        
+        ax2 = self.risk_ax.twinx()
+        ax2.plot(x, sharpe_values, 'g-', label='夏普比率', linewidth=2)
+        ax2.tick_params(colors='white')
+        ax2.spines['right'].set_color('white')
+        ax2.set_ylabel('夏普比率', color='white')
+        
+        self.risk_ax.set_xlabel('时间点', color='white')
+        self.risk_ax.set_ylabel('风险指标 (%)', color='white')
+        self.risk_ax.set_title('风险指标实时趋势', color='white')
+        
+        lines1, labels1 = self.risk_ax.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        self.risk_ax.legend(lines1 + lines2, labels1 + labels2, loc='upper left', 
+                           facecolor='#2d3748', edgecolor='white', labelcolor='white')
+        
+        self.risk_ax.grid(True, alpha=0.3, color='white')
+        
+        self.risk_figure.tight_layout()
+        self.risk_canvas.draw()
 
     def add_alert(self, level: str, message: str):
         """添加预警"""
@@ -879,6 +1425,57 @@ class AlertsPanel(QWidget):
             self.trade_count_label.setText(f"{trade_count}次")
             self.trade_count_label.setStyleSheet("color: #8b5cf6; font-weight: bold;")
 
+    def update_risk_metrics(self, risk_metrics: Dict):
+        """更新风险指标显示"""
+        try:
+            self.risk_metrics_history.append(risk_metrics.copy())
+            if len(self.risk_metrics_history) > self.max_history_points:
+                self.risk_metrics_history.pop(0)
+            
+            if not hasattr(self, 'risk_group'):
+                self.risk_group = QGroupBox("风险指标")
+                risk_layout = QFormLayout(self.risk_group)
+                
+                self.var_label = QLabel("N/A")
+                self.cvar_label = QLabel("N/A")
+                self.max_drawdown_label = QLabel("N/A")
+                self.volatility_label = QLabel("N/A")
+                self.sharpe_label = QLabel("N/A")
+                
+                risk_layout.addRow("VaR(95%):", self.var_label)
+                risk_layout.addRow("CVaR(95%):", self.cvar_label)
+                risk_layout.addRow("最大回撤:", self.max_drawdown_label)
+                risk_layout.addRow("波动率:", self.volatility_label)
+                risk_layout.addRow("夏普比率:", self.sharpe_label)
+                
+                self.layout().insertWidget(2, self.risk_group)
+            
+            var_95 = risk_metrics.get('var_95', 0)
+            self.var_label.setText(f"{var_95:.2%}")
+            self.var_label.setStyleSheet("color: #ef4444; font-weight: bold;")
+            
+            cvar_95 = risk_metrics.get('cvar_95', 0)
+            self.cvar_label.setText(f"{cvar_95:.2%}")
+            self.cvar_label.setStyleSheet("color: #ef4444; font-weight: bold;")
+            
+            max_drawdown = risk_metrics.get('max_drawdown', 0)
+            self.max_drawdown_label.setText(f"{max_drawdown:.2%}")
+            self.max_drawdown_label.setStyleSheet("color: #f59e0b; font-weight: bold;")
+            
+            volatility = risk_metrics.get('volatility', 0)
+            self.volatility_label.setText(f"{volatility:.2%}")
+            self.volatility_label.setStyleSheet("color: #3b82f6; font-weight: bold;")
+            
+            sharpe_ratio = risk_metrics.get('sharpe_ratio', 0)
+            self.sharpe_label.setText(f"{sharpe_ratio:.3f}")
+            sharpe_color = "#10b981" if sharpe_ratio > 1.0 else "#f59e0b" if sharpe_ratio > 0 else "#ef4444"
+            self.sharpe_label.setStyleSheet(f"color: {sharpe_color}; font-weight: bold;")
+            
+            self._update_risk_chart()
+            
+        except Exception as e:
+            logger.error(f"更新风险指标显示失败: {e}")
+
 
 class ProfessionalBacktestWidget(QWidget):
     """专业级回测UI组件"""
@@ -903,6 +1500,56 @@ class ProfessionalBacktestWidget(QWidget):
         self.is_monitoring = False
         self.monitoring_data = []
         self.monitoring_data_lock = Lock()
+
+        # 回测相关变量
+        self.current_stock_code = None
+        self.current_stock_name = None
+        self.current_strategy = None
+        self.execution_time = 0.0
+        self.current_results = None
+
+        # 缓存相关
+        self.stock_data_cache = {}
+        self.signal_cache = {}
+        self.result_cache = {}
+        self.cache_max_size = 100
+        self.cache_lock = Lock()
+
+        # 状态锁
+        self.state_lock = Lock()
+
+        # 获取 BacktestResultManager
+        try:
+            from core.containers import get_service_container
+            from core.services.backtest_result_manager import BacktestResultManager
+            container = get_service_container()
+            self.backtest_result_manager = container.resolve(BacktestResultManager)
+            logger.info("成功获取BacktestResultManager")
+        except Exception as e:
+            logger.warning(f"无法获取BacktestResultManager: {e}")
+            self.backtest_result_manager = None
+
+        # 初始化风险管理器
+        try:
+            from core.risk_manager import RiskManager
+            from core.risk_metrics import RiskMetricsCalculator
+            self.risk_manager = RiskManager()
+            self.risk_metrics_calculator = RiskMetricsCalculator()
+            logger.info("风险管理器初始化成功")
+        except Exception as e:
+            logger.warning(f"无法初始化风险管理器: {e}")
+            self.risk_manager = None
+            self.risk_metrics_calculator = None
+
+        # 风险监控相关变量
+        self.risk_metrics = {}
+        self.risk_alerts = []
+        self.risk_thresholds = {
+            'var_95': -0.05,
+            'max_drawdown': -0.20,
+            'volatility': 0.30,
+            'sharpe_ratio': 0.5
+        }
 
         # 初始化UI
         self.init_ui()
@@ -1237,15 +1884,49 @@ class ProfessionalBacktestWidget(QWidget):
         try:
             logger.info("开始启动回测")
 
+            # 更新进度
+            self.control_panel.update_progress(0, "开始回测", "正在初始化...")
+
             stock_code = params.get('stock_code', '000001')
             period = params.get('period', '1y')
+            strategy_name = params.get('strategy', 'MA策略')
+
+            # 设置当前回测信息
+            self.current_stock_code = stock_code
+            self.current_stock_name = params.get('stock_name', '未知股票')
+            self.current_strategy = strategy_name
+
+            # 记录开始时间
+            import time
+            self.start_time = time.time()
+
+            # 更新进度
+            self.control_panel.update_progress(10, "获取股票数据", f"正在获取 {stock_code} 的数据...")
 
             stock_data = self._get_stock_data(stock_code, period)
+
+            # 更新进度
+            self.control_panel.update_progress(20, "获取股票数据", f"已获取 {len(stock_data)} 条数据")
+
+            # 生成策略信号
+            try:
+                self.control_panel.update_progress(30, "生成策略信号", f"正在执行 {strategy_name} 策略...")
+                signals = self._generate_strategy_signals(stock_data, strategy_name)
+                stock_data['signal'] = signals
+                logger.info(f"策略信号已添加到数据: {strategy_name}")
+                # 更新进度
+                self.control_panel.update_progress(40, "生成策略信号", f"已生成信号")
+            except Exception as e:
+                logger.warning(f"生成策略信号失败，使用默认信号: {e}")
+                stock_data['signal'] = 0.0
 
             from backtest.unified_backtest_engine import BacktestLevel
 
             use_vectorized = params.get('use_vectorized_engine', True)
             auto_select = params.get('auto_select_engine', True)
+
+            # 更新进度
+            self.control_panel.update_progress(50, "启动监控", "正在初始化回测引擎...")
 
             self.backtest_engine = UnifiedBacktestEngine(
                 backtest_level=BacktestLevel.PROFESSIONAL,
@@ -1283,6 +1964,7 @@ class ProfessionalBacktestWidget(QWidget):
             logger.error(f"启动回测失败: {e}")
             self.error_occurred.emit(f"启动回测失败: {str(e)}")
             self.control_panel.on_stop_backtest()
+            self.control_panel.reset_progress()
 
     def _get_stock_service(self):
         """获取股票服务"""
@@ -1307,45 +1989,417 @@ class ProfessionalBacktestWidget(QWidget):
     def _get_stock_data(self, stock_code: str, period: str) -> pd.DataFrame:
         """从系统框架获取真实股票数据"""
         try:
+            # 检查缓存
+            cache_key = f"{stock_code}_{period}"
+            if cache_key in self.stock_data_cache:
+                logger.info(f"使用缓存的股票数据: {cache_key}")
+                return self.stock_data_cache[cache_key]
+
             stock_service = self._get_stock_service()
-            
+
             if stock_service is None:
                 raise RuntimeError("无法获取StockService实例")
-            
+
             period_map = {
                 "1w": 7, "2w": 14, "1m": 30, "3m": 90,
                 "6m": 180, "1y": 365, "2y": 730, "5y": 1825
             }
             days = period_map.get(period, 365)
-            
+
             kdata = stock_service.get_kdata(stock_code, period='D', count=days)
-            
+
             if kdata is None or kdata.empty:
                 raise RuntimeError(f"无法获取股票 {stock_code} 的K线数据，数据为空")
-            
+
             close_col = 'close' if 'close' in kdata.columns else ('收盘' if '收盘' in kdata.columns else None)
             if close_col is None:
                 raise RuntimeError(f"股票数据缺少价格列")
-            
-            price_data = kdata[close_col].copy()
+
+            price_data = kdata[close_col]
             if hasattr(price_data, 'fillna'):
                 price_data = price_data.fillna(method='ffill').fillna(method='bfill')
-            
+
             kdata = kdata.copy()
             kdata['close'] = price_data
-            kdata['signal'] = 0
-            
+
+            # 缓存股票数据
+            with self.cache_lock:
+                if len(self.stock_data_cache) >= self.cache_max_size:
+                    # 清理最旧的缓存
+                    oldest_key = next(iter(self.stock_data_cache))
+                    del self.stock_data_cache[oldest_key]
+                self.stock_data_cache[cache_key] = kdata
+
             logger.info(f"成功获取股票数据: {stock_code}, {len(kdata)}条记录")
             return kdata
-            
-        except ImportError as e:
-            raise RuntimeError(f"StockService模块导入失败: {e}")
+
         except Exception as e:
-            raise RuntimeError(f"获取股票数据失败: {str(e)}")
+            logger.error(f"获取股票数据失败: {e}")
+            # 尝试使用备用数据源
+            try:
+                logger.info("尝试使用备用数据源...")
+                kdata = self._get_fallback_stock_data(stock_code, period)
+                logger.info(f"备用数据源成功: {len(kdata)}条记录")
+                return kdata
+            except Exception as e2:
+                logger.error(f"备用数据源也失败: {e2}")
+                # 不再使用模拟数据，直接抛出错误
+                raise RuntimeError(f"无法获取股票 {stock_code} 的数据，请检查网络连接或稍后重试")
+
+    def _get_fallback_stock_data(self, stock_code: str, period: str) -> pd.DataFrame:
+        """从备用数据源获取股票数据"""
+        try:
+            import yfinance as yf
+            import datetime
+
+            period_map = {
+                "1w": "1mo", "2w": "1mo", "1m": "1mo", "3m": "3mo",
+                "6m": "6mo", "1y": "1y", "2y": "2y", "5y": "5y"
+            }
+            yf_period = period_map.get(period, "1y")
+
+            ticker = yf.Ticker(f"{stock_code}.SS" if stock_code.startswith('6') else f"{stock_code}.SZ")
+            data = ticker.history(period=yf_period)
+
+            if data is None or data.empty:
+                raise RuntimeError("备用数据源返回空数据")
+
+            data = data.reset_index()
+            data = data.rename(columns={
+                'Date': 'datetime',
+                'Open': 'open',
+                'High': 'high',
+                'Low': 'low',
+                'Close': 'close',
+                'Volume': 'volume'
+            })
+
+            logger.info(f"备用数据源获取成功: {len(data)}条记录")
+            return data
+
+        except ImportError:
+            raise RuntimeError("yfinance未安装")
+        except Exception as e:
+            raise RuntimeError(f"备用数据源失败: {e}")
+
+    def _generate_strategy_signals(self, kdata: pd.DataFrame, strategy_name: str) -> pd.Series:
+        """生成策略信号"""
+        try:
+            # 检查缓存
+            cache_key = f"{strategy_name}_{len(kdata)}"
+            if cache_key in self.signal_cache:
+                logger.info(f"使用缓存的策略信号: {cache_key}")
+                return self.signal_cache[cache_key]
+
+            from core.strategy.base_strategy import SignalType
+            from core.strategy.strategy_engine import get_strategy_engine
+
+            logger.info(f"生成策略信号: {strategy_name}")
+
+            # 获取策略引擎
+            strategy_engine = get_strategy_engine()
+
+            # 执行策略
+            signals_list, execution_info = strategy_engine.execute_strategy(
+                strategy_name,
+                kdata,
+                use_cache=True,
+                save_to_db=False
+            )
+
+            # 转换为数值类型（BUY=1, SELL=-1, HOLD=0）
+            signals = pd.Series(0.0, index=kdata.index, dtype=float)
+            for signal in signals_list:
+                if signal.signal_type == SignalType.BUY:
+                    signals[signal.timestamp] = 1.0
+                elif signal.signal_type == SignalType.SELL:
+                    signals[signal.timestamp] = -1.0
+                else:  # HOLD
+                    signals[signal.timestamp] = 0.0
+
+            # 验证信号格式
+            signals = self._validate_signals(signals, kdata)
+
+            # 缓存策略信号
+            with self.cache_lock:
+                if len(self.signal_cache) >= self.cache_max_size:
+                    # 清理最旧的缓存
+                    oldest_key = next(iter(self.signal_cache))
+                    del self.signal_cache[oldest_key]
+                self.signal_cache[cache_key] = signals
+
+            logger.info(f"生成策略信号成功: {strategy_name}, {len(signals_list)}个信号, 耗时: {execution_info['execution_time']:.3f}s")
+            return signals
+
+        except ImportError as e:
+            logger.error(f"策略模块导入失败: {e}")
+            QMessageBox.warning(
+                self,
+                "策略模块不可用",
+                "策略模块暂时无法使用，回测将使用默认策略（无交易信号）。\n\n"
+                "可能的原因：\n"
+                "• 策略模块未正确安装\n"
+                "• 策略模块配置错误\n\n"
+                "建议：稍后重试或联系技术支持。"
+            )
+            # 返回默认信号（全0）
+            return pd.Series(0.0, index=kdata.index, dtype=float)
+        except Exception as e:
+            logger.error(f"生成策略信号失败: {e}")
+            QMessageBox.warning(
+                self,
+                "策略执行失败",
+                "策略执行过程中发生错误，回测将使用默认策略（无交易信号）。\n\n"
+                "建议：检查策略参数是否正确，或尝试使用其他策略。"
+            )
+            # 返回默认信号（全0）
+            return pd.Series(0.0, index=kdata.index, dtype=float)
+
+    def _validate_signals(self, signals: pd.Series, kdata: pd.DataFrame) -> pd.Series:
+        """验证信号格式"""
+        try:
+            logger.info("验证信号格式...")
+
+            # 验证信号类型
+            if not isinstance(signals, (pd.Series, np.ndarray)):
+                raise ValueError(f"信号类型错误: {type(signals)}，期望 pd.Series 或 np.ndarray")
+
+            # 转换为 pd.Series
+            if isinstance(signals, np.ndarray):
+                signals = pd.Series(signals, index=kdata.index)
+
+            # 验证信号值类型
+            if not pd.api.types.is_numeric_dtype(signals):
+                raise ValueError("信号值必须为数值类型")
+
+            # 验证信号索引
+            if not signals.index.equals(kdata.index):
+                logger.warning("信号索引与数据索引不一致，尝试对齐...")
+                signals = signals.reindex(kdata.index, fill_value=0.0)
+
+            # 验证信号长度
+            if len(signals) != len(kdata):
+                raise ValueError(f"信号长度({len(signals)})与数据长度({len(kdata)})不一致")
+
+            # 验证信号值范围
+            invalid_values = signals[(signals != 1) & (signals != 0) & (signals != -1)]
+            if len(invalid_values) > 0:
+                logger.warning(f"发现{len(invalid_values)}个无效信号值，将被限制在[-1, 1]范围内")
+                signals = signals.clip(-1, 1)
+
+            # 检查 NaN 值
+            if signals.isna().any():
+                nan_count = signals.isna().sum()
+                logger.warning(f"发现{nan_count}个 NaN 信号值，将被替换为 0")
+                signals = signals.fillna(0.0)
+
+            logger.info("信号格式验证通过")
+            return signals
+
+        except Exception as e:
+            logger.error(f"信号格式验证失败: {e}")
+            raise
+
+    def _validate_backtest_results(self, results: Dict) -> Dict:
+        """验证回测结果"""
+        try:
+            logger.info("验证回测结果...")
+
+            # 验证结果类型
+            if not isinstance(results, dict):
+                raise ValueError(f"结果类型错误: {type(results)}，期望 dict")
+
+            # 验证必需字段
+            required_fields = ['total_return', 'max_drawdown', 'sharpe_ratio']
+            for field in required_fields:
+                if field not in results:
+                    logger.warning(f"缺少必需字段: {field}，将使用默认值 0.0")
+                    results[field] = 0.0
+
+            # 验证数值字段
+            numeric_fields = ['total_return', 'max_drawdown', 'sharpe_ratio', 'volatility', 'win_rate', 'profit_factor']
+            for field in numeric_fields:
+                if field in results:
+                    value = results[field]
+                    if pd.isna(value) or np.isinf(value):
+                        logger.warning(f"字段{field}包含无效值: {value}，将使用默认值 0.0")
+                        results[field] = 0.0
+                    elif not isinstance(value, (int, float)):
+                        logger.warning(f"字段{field}类型错误: {type(value)}，将转换为 float")
+                        results[field] = float(value)
+
+            # 验证收益率范围
+            if 'total_return' in results:
+                if results['total_return'] < -1.0 or results['total_return'] > 10.0:
+                    logger.warning(f"收益率异常: {results['total_return']:.2%}，将被限制在[-100%, 1000%]范围内")
+                    results['total_return'] = max(-1.0, min(10.0, results['total_return']))
+
+            # 验证夏普比率范围
+            if 'sharpe_ratio' in results:
+                if results['sharpe_ratio'] < -10.0 or results['sharpe_ratio'] > 10.0:
+                    logger.warning(f"夏普比率异常: {results['sharpe_ratio']}，将被限制在[-10, 10]范围内")
+                    results['sharpe_ratio'] = max(-10.0, min(10.0, results['sharpe_ratio']))
+
+            # 验证最大回撤范围
+            if 'max_drawdown' in results:
+                if results['max_drawdown'] < -1.0 or results['max_drawdown'] > 0.0:
+                    logger.warning(f"最大回撤异常: {results['max_drawdown']:.2%}，将被限制在[-100%, 0%]范围内")
+                    results['max_drawdown'] = max(-1.0, min(0.0, results['max_drawdown']))
+
+            # 验证交易记录
+            if 'trades' in results:
+                if not isinstance(results['trades'], list):
+                    logger.warning("交易记录格式错误，将使用空列表")
+                    results['trades'] = []
+                else:
+                    # 验证每个交易记录
+                    valid_trades = []
+                    for trade in results['trades']:
+                        if isinstance(trade, dict) and 'price' in trade and 'quantity' in trade:
+                            valid_trades.append(trade)
+                        else:
+                            logger.warning(f"交易记录格式错误: {trade}")
+                    results['trades'] = valid_trades
+
+            # 验证资金曲线
+            if 'equity_curve' in results:
+                if not isinstance(results['equity_curve'], (list, np.ndarray, pd.Series)):
+                    logger.warning("资金曲线格式错误，将使用空列表")
+                    results['equity_curve'] = []
+
+            logger.info("回测结果验证通过")
+            return results
+
+        except Exception as e:
+            logger.error(f"回测结果验证失败: {e}")
+            raise
+
+    def _on_backtest_completed(self, results: Dict):
+        """回测完成处理"""
+        try:
+            import time
+
+            # 记录执行时间
+            self.execution_time = time.time() - self.start_time if hasattr(self, 'start_time') else 0.0
+
+            logger.info(f"回测完成，执行时间: {self.execution_time:.2f}s")
+
+            # 更新进度到 100%
+            self.control_panel.update_progress(100, "回测完成", "回测已完成")
+
+            # 保存回测结果
+            if self.backtest_result_manager:
+                try:
+                    from core.services.backtest_result_manager import BacktestResult
+                    self.backtest_result_manager.add_result(
+                        BacktestResult(
+                            stock_code=self.current_stock_code,
+                            stock_name=self.current_stock_name,
+                            strategy_name=self.current_strategy,
+                            backtest_time=time.time(),
+                            backtest_results=results,
+                            trades=results.get('trades', []),
+                            duration=self.execution_time,
+                            is_professional=True
+                        )
+                    )
+                    logger.info("回测结果已保存")
+                except Exception as e:
+                    logger.error(f"保存回测结果失败: {e}")
+                    # 尝试保存到本地文件
+                    try:
+                        self._save_results_to_local_file(results)
+                        logger.warning("回测结果已保存到本地文件")
+                    except Exception as e2:
+                        logger.error(f"保存到本地文件也失败: {e2}")
+            else:
+                # 如果没有 BacktestResultManager，直接保存到本地文件
+                try:
+                    self._save_results_to_local_file(results)
+                    logger.info("回测结果已保存到本地文件")
+                except Exception as e:
+                    logger.error(f"保存到本地文件失败: {e}")
+
+            # 使用线程锁保护共享变量
+            with self.state_lock:
+                self.current_results = results
+
+            # 发布事件通知RightPanel刷新
+            try:
+                from core.events import get_event_bus, AnalysisCompleteEvent
+                event_bus = get_event_bus()
+                event_bus.publish(AnalysisCompleteEvent(
+                    stock_code=self.current_stock_code,
+                    analysis_type="backtest",
+                    results={"backtest": results}
+                ))
+                logger.info("回测完成事件已发布")
+            except Exception as e:
+                logger.warning(f"发布事件失败: {e}")
+
+            # 更新UI显示
+            self.alerts_panel.add_alert('success', f'回测完成: {self.current_stock_code}')
+
+        except Exception as e:
+            logger.error(f"处理回测完成失败: {e}")
+
+    def _save_results_to_local_file(self, results: Dict):
+        """保存回测结果到本地文件"""
+        try:
+            import json
+            import os
+            from datetime import datetime
+
+            # 创建保存目录
+            save_dir = os.path.join(os.getcwd(), 'backtest_results')
+            os.makedirs(save_dir, exist_ok=True)
+
+            # 生成文件名
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"backtest_{self.current_stock_code}_{self.current_strategy}_{timestamp}.json"
+            filepath = os.path.join(save_dir, filename)
+
+            # 准备保存的数据
+            save_data = {
+                'stock_code': self.current_stock_code,
+                'stock_name': self.current_stock_name,
+                'strategy_name': self.current_strategy,
+                'backtest_time': datetime.now().isoformat(),
+                'execution_time': self.execution_time,
+                'results': results
+            }
+
+            # 保存到文件
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(save_data, f, ensure_ascii=False, indent=2, default=str)
+
+            logger.info(f"回测结果已保存到: {filepath}")
+
+        except Exception as e:
+            raise RuntimeError(f"保存到本地文件失败: {e}")
 
     def stop_backtest(self):
         """停止回测"""
         try:
+            # 如果没有正在运行的回测，直接返回
+            if not self.is_monitoring:
+                logger.info("没有正在运行的回测")
+                return
+
+            # 显示确认对话框
+            reply = QMessageBox.question(
+                self,
+                "确认停止",
+                "确定要停止当前回测吗？\n\n"
+                "停止后，当前的回测结果将不会被保存。",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+
+            if reply == QMessageBox.No:
+                logger.info("用户取消停止操作")
+                return
+
             logger.info("正在停止回测...")
             self.is_monitoring = False
 
@@ -1366,7 +2420,8 @@ class ProfessionalBacktestWidget(QWidget):
             # 性能监控已移至性能监控中心
 
             self.control_panel.on_stop_backtest()
-            self.alerts_panel.add_alert('info', '回测已停止')
+            self.control_panel.reset_progress()
+            self.alerts_panel.add_alert('warning', '回测已停止，结果未保存')
 
             logger.info("回测已停止")
 
@@ -1459,13 +2514,25 @@ class ProfessionalBacktestWidget(QWidget):
                                         self.monitoring_data = self.monitoring_data[-1000:]
                         
                         iteration += 1
-                        
+
+                        # 更新进度（50% - 90%）
+                        if hasattr(self, 'current_data') and len(self.current_data) > 0:
+                            total_iterations = len(self.current_data)
+                            progress = min(50 + (iteration / total_iterations) * 40, 90)
+                            if iteration % 10 == 0:  # 每10次迭代更新一次进度
+                                QTimer.singleShot(0, lambda p=progress: self.control_panel.update_progress(
+                                    int(p), "执行回测", f"已处理 {iteration}/{total_iterations} 条数据"
+                                ))
+
                         # 检查预警
                         if hasattr(monitor, 'get_latest_alerts') and monitor.alerts_history:
                             latest_alerts = monitor.get_latest_alerts()
                             if latest_alerts:
                                 for alert in latest_alerts:
                                     QTimer.singleShot(0, lambda a=alert: self._safe_add_alert(a))
+                        
+                        # 应用风险控制规则
+                        self._apply_risk_control_rules(ui_data, params)
                         
                     except Exception as e:
                         logger.error(f"监控循环处理异常: {e}")
@@ -1479,10 +2546,20 @@ class ProfessionalBacktestWidget(QWidget):
                 # 停止监控器
                 try:
                     if 'monitor' in locals():
+                        # 获取最终回测结果
+                        if hasattr(monitor, 'get_final_results'):
+                            final_results = monitor.get_final_results()
+                            if final_results:
+                                # 验证回测结果
+                                final_results = self._validate_backtest_results(final_results)
+                                # 保存最终结果
+                                self.current_results = final_results
+                                # 在主线程中调用回测完成处理
+                                QTimer.singleShot(0, lambda: self._on_backtest_completed(final_results))
                         monitor.stop_monitoring()
                 except Exception as e:
                     logger.error(f"停止监控器失败: {e}")
-                
+
                 logger.info(f"监控循环结束 - 线程: {thread_name}")
                 self.is_monitoring = False
 
@@ -1615,9 +2692,151 @@ class ProfessionalBacktestWidget(QWidget):
                 # 设置颜色
                 color = "red" if pf < 1.0 else "green"
                 self.profit_factor_label.setStyleSheet(f"color: {color};")
+            
+            # 计算并更新风险指标
+            self._calculate_and_update_risk_metrics(data)
                 
         except Exception as e:
             logger.error(f"主线程UI更新失败: {e}")
+
+    def _calculate_and_update_risk_metrics(self, data: Dict):
+        """计算并更新风险指标 - 性能优化版本"""
+        try:
+            if not self.risk_metrics_calculator:
+                return
+            
+            if 'returns' not in data or not data['returns']:
+                return
+            
+            returns = data.get('returns', [])
+            if len(returns) < 10:
+                return
+            
+            returns_tuple = tuple(returns[-100:]) if len(returns) > 100 else tuple(returns)
+            returns_hash = hash(returns_tuple)
+            
+            if hasattr(self, '_last_risk_returns_hash') and self._last_risk_returns_hash == returns_hash:
+                return
+            
+            self._last_risk_returns_hash = returns_hash
+            
+            import pandas as pd
+            import numpy as np
+            returns_series = pd.Series(returns)
+            
+            var_95 = self.risk_metrics_calculator.calculate_value_at_risk(returns_series, 0.95)
+            cvar_95 = self.risk_metrics_calculator.calculate_conditional_var(returns_series, 0.95)
+            max_drawdown = data.get('max_drawdown', 0)
+            volatility = data.get('volatility', 0)
+            sharpe_ratio = data.get('sharpe_ratio', 0)
+            
+            new_metrics = {
+                'var_95': var_95,
+                'cvar_95': cvar_95,
+                'max_drawdown': max_drawdown,
+                'volatility': volatility,
+                'sharpe_ratio': sharpe_ratio
+            }
+            
+            if hasattr(self, 'risk_metrics') and self.risk_metrics == new_metrics:
+                return
+            
+            self.risk_metrics = new_metrics
+            
+            self._check_risk_alerts()
+            
+            if hasattr(self, 'alerts_panel') and self.alerts_panel:
+                self.alerts_panel.update_risk_metrics(self.risk_metrics)
+                
+        except Exception as e:
+            logger.error(f"计算风险指标失败: {e}")
+
+    def _check_risk_alerts(self):
+        """检查风险预警"""
+        try:
+            if not self.risk_metrics:
+                return
+            
+            # 检查VaR预警
+            var_95 = self.risk_metrics.get('var_95', 0)
+            if var_95 < self.risk_thresholds['var_95']:
+                alert_msg = f"⚠️ VaR(95%)风险预警: {var_95:.2%} < {self.risk_thresholds['var_95']:.2%}"
+                if alert_msg not in self.risk_alerts:
+                    self.risk_alerts.append(alert_msg)
+                    if hasattr(self, 'alerts_panel') and self.alerts_panel:
+                        self.alerts_panel.add_alert('critical', alert_msg)
+            
+            # 检查最大回撤预警
+            max_drawdown = self.risk_metrics.get('max_drawdown', 0)
+            if max_drawdown < self.risk_thresholds['max_drawdown']:
+                alert_msg = f"⚠️ 最大回撤风险预警: {max_drawdown:.2%} < {self.risk_thresholds['max_drawdown']:.2%}"
+                if alert_msg not in self.risk_alerts:
+                    self.risk_alerts.append(alert_msg)
+                    if hasattr(self, 'alerts_panel') and self.alerts_panel:
+                        self.alerts_panel.add_alert('critical', alert_msg)
+            
+            # 检查波动率预警
+            volatility = self.risk_metrics.get('volatility', 0)
+            if volatility > self.risk_thresholds['volatility']:
+                alert_msg = f"⚠️ 波动率风险预警: {volatility:.2%} > {self.risk_thresholds['volatility']:.2%}"
+                if alert_msg not in self.risk_alerts:
+                    self.risk_alerts.append(alert_msg)
+                    if hasattr(self, 'alerts_panel') and self.alerts_panel:
+                        self.alerts_panel.add_alert('warning', alert_msg)
+            
+            # 检查夏普比率预警
+            sharpe_ratio = self.risk_metrics.get('sharpe_ratio', 0)
+            if sharpe_ratio < self.risk_thresholds['sharpe_ratio']:
+                alert_msg = f"⚠️ 夏普比率风险预警: {sharpe_ratio:.3f} < {self.risk_thresholds['sharpe_ratio']:.3f}"
+                if alert_msg not in self.risk_alerts:
+                    self.risk_alerts.append(alert_msg)
+                    if hasattr(self, 'alerts_panel') and self.alerts_panel:
+                        self.alerts_panel.add_alert('warning', alert_msg)
+                        
+        except Exception as e:
+            logger.error(f"检查风险预警失败: {e}")
+
+    def _apply_risk_control_rules(self, ui_data: Dict, params: Dict):
+        """应用风险控制规则"""
+        try:
+            risk_control = params.get('risk_control', {})
+            if not risk_control:
+                return
+            
+            max_drawdown_limit = risk_control.get('max_drawdown_limit', 0.20)
+            stop_loss = risk_control.get('stop_loss', 0.10)
+            take_profit = risk_control.get('take_profit', 0.20)
+            max_position_size = risk_control.get('max_position_size', 0.10)
+            
+            current_drawdown = abs(ui_data.get('current_drawdown', 0))
+            cumulative_return = ui_data.get('cumulative_return', 0)
+            
+            if current_drawdown >= max_drawdown_limit:
+                alert_msg = f"🛑 风险控制触发: 最大回撤限制 {current_drawdown:.2%} >= {max_drawdown_limit:.2%}"
+                if alert_msg not in self.risk_alerts:
+                    self.risk_alerts.append(alert_msg)
+                    if hasattr(self, 'alerts_panel') and self.alerts_panel:
+                        self.alerts_panel.add_alert('critical', alert_msg)
+                    logger.warning(f"风险控制触发: 最大回撤限制")
+            
+            if cumulative_return <= -stop_loss:
+                alert_msg = f"🛑 风险控制触发: 止损 {cumulative_return:.2%} <= -{stop_loss:.2%}"
+                if alert_msg not in self.risk_alerts:
+                    self.risk_alerts.append(alert_msg)
+                    if hasattr(self, 'alerts_panel') and self.alerts_panel:
+                        self.alerts_panel.add_alert('critical', alert_msg)
+                    logger.warning(f"风险控制触发: 止损")
+            
+            if cumulative_return >= take_profit:
+                alert_msg = f"✅ 风险控制触发: 止盈 {cumulative_return:.2%} >= {take_profit:.2%}"
+                if alert_msg not in self.risk_alerts:
+                    self.risk_alerts.append(alert_msg)
+                    if hasattr(self, 'alerts_panel') and self.alerts_panel:
+                        self.alerts_panel.add_alert('info', alert_msg)
+                    logger.info(f"风险控制触发: 止盈")
+                        
+        except Exception as e:
+            logger.error(f"应用风险控制规则失败: {e}")
 
     def _safe_add_alert(self, alert_data):
         """安全的添加预警方法 - 在主线程中执行"""

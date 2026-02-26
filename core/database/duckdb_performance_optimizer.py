@@ -25,14 +25,20 @@ class WorkloadType(Enum):
 @dataclass
 class DuckDBConfig:
     """DuckDB配置参数（统一定义，带默认值）"""
-    memory_limit: str = "8GB"              # 内存限制
-    threads: int = 4                       # 线程数
-    max_memory: str = "16GB"              # 最大内存
-    temp_directory: str = "temp"          # 临时目录
-    enable_object_cache: bool = True      # 启用对象缓存
-    enable_progress_bar: bool = False     # 启用进度条（默认关闭避免输出干扰）
-    checkpoint_threshold: str = "16MB"    # 检查点阈值
-    wal_autocheckpoint: int = 10000       # WAL自动检查点
+    memory_limit: str = "8GB"
+    threads: int = 4
+    max_memory: str = "16GB"
+    temp_directory: str = "temp"
+    enable_object_cache: bool = True
+    enable_progress_bar: bool = False
+    checkpoint_threshold: str = "16MB"
+    wal_autocheckpoint: int = 10000
+    enable_optimizer: bool = True
+    enable_profiling: bool = False
+    max_expression_depth: int = 1000
+    enable_external_access: bool = True
+    force_parallelism: bool = True
+    enable_join_order_optimizer: bool = True
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
@@ -44,7 +50,13 @@ class DuckDBConfig:
             'enable_object_cache': self.enable_object_cache,
             'enable_progress_bar': self.enable_progress_bar,
             'checkpoint_threshold': self.checkpoint_threshold,
-            'wal_autocheckpoint': self.wal_autocheckpoint
+            'wal_autocheckpoint': self.wal_autocheckpoint,
+            'enable_optimizer': self.enable_optimizer,
+            'enable_profiling': self.enable_profiling,
+            'max_expression_depth': self.max_expression_depth,
+            'enable_external_access': self.enable_external_access,
+            'force_parallelism': self.force_parallelism,
+            'enable_join_order_optimizer': self.enable_join_order_optimizer
         }
 
 class DuckDBPerformanceOptimizer:
@@ -208,16 +220,19 @@ class DuckDBPerformanceOptimizer:
                 config.checkpoint_threshold = "512MB"
 
             # 应用配置参数
-            # 只应用最关键和稳定的配置
+            # 扩展配置应用范围
             config_commands = [
                 f"SET memory_limit = '{config.memory_limit}'",
                 f"SET threads = {config.threads}",
-                # 以下配置可能导致问题，临时禁用
-                # f"SET temp_directory = '{config.temp_directory}'",  # 可能与memory_limit冲突
-                # f"SET enable_object_cache = {str(config.enable_object_cache).lower()}",
-                # f"SET enable_progress_bar = {str(config.enable_progress_bar).lower()}",
-                # f"SET checkpoint_threshold = '{config.checkpoint_threshold}'",
-                # f"SET wal_autocheckpoint = {config.wal_autocheckpoint}"
+                f"SET enable_object_cache = {str(config.enable_object_cache).lower()}",
+                f"SET enable_progress_bar = {str(config.enable_progress_bar).lower()}",
+                f"SET checkpoint_threshold = '{config.checkpoint_threshold}'",
+                f"SET wal_autocheckpoint = {config.wal_autocheckpoint}",
+                f"SET enable_optimizer = {str(config.enable_optimizer).lower()}",
+                f"SET enable_profiling = {str(config.enable_profiling).lower()}",
+                f"SET max_expression_depth = {config.max_expression_depth}",
+                f"SET force_parallelism = {str(config.force_parallelism).lower()}",
+                f"SET enable_join_order_optimizer = {str(config.enable_join_order_optimizer).lower()}",
             ]
 
             for cmd in config_commands:

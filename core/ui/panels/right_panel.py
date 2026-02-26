@@ -18,7 +18,7 @@ from PyQt5.QtWidgets import (
     QProgressBar, QMessageBox, QFrame, QGroupBox,
     QTableWidget, QTableWidgetItem, QSpinBox,
     QAbstractItemView, QLineEdit,
-    QGridLayout, QSizePolicy
+    QGridLayout, QSizePolicy, QHeaderView
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer, pyqtSlot
 from PyQt5.QtGui import QFont, QColor
@@ -66,15 +66,8 @@ except ImportError as e:
 # 情绪分析标签页已移除（优化性能，避免不必要的网络请求）
 PROFESSIONAL_SENTIMENT_AVAILABLE = False
 
-# 导入K线技术分析标签页
-# 修复：enhanced_kline_technical_tab模块暂未实现，暂时禁用
 KLINE_TECHNICAL_AVAILABLE = False
-# try:
-#     from gui.widgets.analysis_tabs.enhanced_kline_technical_tab import EnhancedKLineTechnicalTab
-#     KLINE_TECHNICAL_AVAILABLE = True
-# except ImportError as e:
-#     logger.warning(f"无法导入K线技术分析标签页: {e}")
-#     KLINE_TECHNICAL_AVAILABLE = False
+
 
 # 导入AnalysisToolsPanel
 try:
@@ -91,9 +84,6 @@ try:
 except ImportError as e:
     logger.warning(f"无法导入TradingPanel: {e}")
     TRADING_PANEL_AVAILABLE = False
-
-
-
 
 
 class RightPanel(BasePanel):
@@ -693,44 +683,8 @@ class RightPanel(BasePanel):
             except Exception as e:
                 logger.error(f"创建波浪分析标签页失败: {e}")
 
-            # 情绪分析标签页已移除（优化性能，避免不必要的网络请求）
-            # 不再创建情绪分析标签页，已被热点分析等功能替代
-            logger.info("情绪分析标签页已优化移除，可使用热点分析等功能")
             import time
-            # K线技术分析 - 使用服务容器
-            # 注释掉整个K线技术分析标签页创建代码，因为enhanced_kline_technical_tab模块暂未实现
-            # if KLINE_TECHNICAL_AVAILABLE:
-            #     try:
-            #         logger.info("开始创建K线技术分析标签页...")
-            #
-            #         start_time = time.time()
-            #
-            #         logger.info("导入K线技术分析标签页模块...")
-            #         logger.info("K线技术分析标签页模块导入成功")
-            #
-            #         logger.info("创建K线技术分析标签页实例...")
-            #         self._kline_technical_tab = EnhancedKLineTechnicalTab(
-            #             config_manager=config_manager
-            #         )
-            #
-            #         create_time = time.time()
-            #         logger.info(f"⏱ K线技术分析标签页实例创建耗时: {(create_time - start_time):.2f}秒")
-            #
-            #         logger.info("添加K线技术分析标签页到UI...")
-            #         tab_widget.addTab(self._kline_technical_tab, "K线技术")
-            #
-            #         # 注册到组件管理
-            #         logger.info("注册K线技术分析标签页到组件管理...")
-            #         self.add_widget('kline_technical_tab', self._kline_technical_tab)
-            #         self._professional_tabs.append(self._kline_technical_tab)
-            #
-            #         end_time = time.time()
-            #         logger.info(f" K线技术分析标签页创建完成，总耗时: {(end_time - start_time):.2f}秒")
-            #     except Exception as kline_error:
-            #         logger.error(f" K线技术分析标签页创建失败: {kline_error}")
-            #         logger.error(traceback.format_exc())
-
-            # 修复：板块资金流 - 使用服务容器（缩进修复，应在 if PROFESSIONAL_TABS_AVAILABLE 块内）
+           
             try:
                 logger.info("开始创建板块资金流标签页...")
                 start_time = time.time()
@@ -904,7 +858,9 @@ class RightPanel(BasePanel):
         # 信号历史表格
         signal_table = QTableWidget(0, 5)
         signal_table.setHorizontalHeaderLabels(['时间', '信号', '价格', '强度', '收益'])
-        signal_table.horizontalHeader().setStretchLastSection(True)
+        header = signal_table.horizontalHeader()
+        header.setStretchLastSection(True)
+        header.setSectionResizeMode(QHeaderView.Stretch)
         signal_table.setAlternatingRowColors(True)
         signal_history_layout.addWidget(signal_table)
         self.add_widget('signal_table', signal_table)
@@ -919,7 +875,8 @@ class RightPanel(BasePanel):
         # 信号统计文本
         signal_stats_text = QTextEdit()
         signal_stats_text.setReadOnly(True)
-        signal_stats_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        signal_stats_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        signal_stats_text.setMinimumHeight(80)
         signal_stats_layout.addWidget(signal_stats_text)
         self.add_widget('signal_stats_text', signal_stats_text)
 
@@ -958,7 +915,9 @@ class RightPanel(BasePanel):
         # 风险指标表格
         risk_table = QTableWidget(0, 2)
         risk_table.setHorizontalHeaderLabels(['指标', '数值'])
-        risk_table.horizontalHeader().setStretchLastSection(True)
+        header = risk_table.horizontalHeader()
+        header.setStretchLastSection(True)
+        header.setSectionResizeMode(QHeaderView.Stretch)
         risk_table.setAlternatingRowColors(True)
         risk_metrics_layout.addWidget(risk_table)
         self.add_widget('risk_table', risk_table)
@@ -973,6 +932,8 @@ class RightPanel(BasePanel):
         # 风险建议文本
         risk_advice_text = QTextEdit()
         risk_advice_text.setReadOnly(True)
+        risk_advice_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        risk_advice_text.setMinimumHeight(80)
         risk_advice_layout.addWidget(risk_advice_text)
         self.add_widget('risk_advice_text', risk_advice_text)
 
@@ -1009,12 +970,14 @@ class RightPanel(BasePanel):
         return_layout = QHBoxLayout()
         min_return_filter = QLineEdit()
         min_return_filter.setPlaceholderText("最小")
-        min_return_filter.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        min_return_filter.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+        min_return_filter.setMinimumHeight(24)
         return_layout.addWidget(min_return_filter)
         return_layout.addWidget(QLabel("到"))
         max_return_filter = QLineEdit()
         max_return_filter.setPlaceholderText("最大")
-        max_return_filter.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        max_return_filter.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+        max_return_filter.setMinimumHeight(24)
         return_layout.addWidget(max_return_filter)
         filter_layout.addLayout(return_layout, 1, 1)
         self.add_widget('min_return_filter', min_return_filter)
@@ -1025,12 +988,14 @@ class RightPanel(BasePanel):
         success_layout = QHBoxLayout()
         min_success_filter = QLineEdit()
         min_success_filter.setPlaceholderText("最小")
-        min_success_filter.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        min_success_filter.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+        min_success_filter.setMinimumHeight(24)
         success_layout.addWidget(min_success_filter)
         success_layout.addWidget(QLabel("到"))
         max_success_filter = QLineEdit()
         max_success_filter.setPlaceholderText("最大")
-        max_success_filter.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        max_success_filter.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+        max_success_filter.setMinimumHeight(24)
         success_layout.addWidget(max_success_filter)
         filter_layout.addLayout(success_layout, 2, 1)
         self.add_widget('min_success_filter', min_success_filter)
@@ -1051,7 +1016,9 @@ class RightPanel(BasePanel):
         # 回测结果列表
         results_table = QTableWidget(0, 5)
         results_table.setHorizontalHeaderLabels(['股票代码', '策略名称', '回测时间', '收益率', '成功率'])
-        results_table.horizontalHeader().setStretchLastSection(True)
+        header = results_table.horizontalHeader()
+        header.setStretchLastSection(True)
+        header.setSectionResizeMode(QHeaderView.Stretch)
         results_table.setAlternatingRowColors(True)
         results_table.setSelectionMode(QAbstractItemView.SingleSelection)
         results_table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -1132,7 +1099,9 @@ class RightPanel(BasePanel):
         # 回测结果表格
         backtest_table = QTableWidget(0, 2)
         backtest_table.setHorizontalHeaderLabels(['指标', '数值'])
-        backtest_table.horizontalHeader().setStretchLastSection(True)
+        header = backtest_table.horizontalHeader()
+        header.setStretchLastSection(True)
+        header.setSectionResizeMode(QHeaderView.Stretch)
         backtest_table.setAlternatingRowColors(True)
         backtest_results_layout.addWidget(backtest_table)
         self.add_widget('backtest_table', backtest_table)
@@ -1147,7 +1116,9 @@ class RightPanel(BasePanel):
         # 交易记录表格
         trade_table = QTableWidget(0, 5)
         trade_table.setHorizontalHeaderLabels(['日期', '操作', '价格', '数量', '收益'])
-        trade_table.horizontalHeader().setStretchLastSection(True)
+        header = trade_table.horizontalHeader()
+        header.setStretchLastSection(True)
+        header.setSectionResizeMode(QHeaderView.Stretch)
         trade_table.setAlternatingRowColors(True)
         trade_records_layout.addWidget(trade_table)
         self.add_widget('trade_table', trade_table)
@@ -1253,7 +1224,9 @@ class RightPanel(BasePanel):
         # 行业信息表格
         overview_table = QTableWidget(0, 2)
         overview_table.setHorizontalHeaderLabels(['指标', '数值'])
-        overview_table.horizontalHeader().setStretchLastSection(True)
+        header = overview_table.horizontalHeader()
+        header.setStretchLastSection(True)
+        header.setSectionResizeMode(QHeaderView.Stretch)
         overview_table.setAlternatingRowColors(True)
         overview_layout.addWidget(overview_table)
         self.add_widget('industry_overview_table', overview_table)
@@ -1269,7 +1242,9 @@ class RightPanel(BasePanel):
         performance_table = QTableWidget(0, 4)
         performance_table.setHorizontalHeaderLabels(
             ['板块', '涨跌幅', '成交额', '领涨股'])
-        performance_table.horizontalHeader().setStretchLastSection(True)
+        header = performance_table.horizontalHeader()
+        header.setStretchLastSection(True)
+        header.setSectionResizeMode(QHeaderView.Stretch)
         performance_table.setAlternatingRowColors(True)
         performance_layout.addWidget(performance_table)
         self.add_widget('industry_performance_table', performance_table)
@@ -1284,6 +1259,8 @@ class RightPanel(BasePanel):
         # 热点文本
         hotspot_text = QTextEdit()
         hotspot_text.setReadOnly(True)
+        hotspot_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        hotspot_text.setMinimumHeight(80)
         hotspot_layout.addWidget(hotspot_text)
         self.add_widget('industry_hotspot_text', hotspot_text)
 

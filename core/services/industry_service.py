@@ -39,7 +39,7 @@ class IndustryService(CacheableService, ConfigurableService):
         logger.info("Initializing IndustryService...")
 
         # 分别初始化父类
-        CacheableService.__init__(self, cache_size=cache_size, **kwargs)
+        CacheableService.__init__(self, cache_size=cache_size, namespace='industry_service', **kwargs)
         ConfigurableService.__init__(self, config=config, **kwargs)
 
         self._industry_manager = None

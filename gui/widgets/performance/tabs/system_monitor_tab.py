@@ -555,10 +555,18 @@ class ModernSystemMonitorTab(QWidget):
     def _collect_data_async(self):
         """异步收集数据，避免UI卡死"""
         try:
+            # 检查线程池是否已关闭
+            if self.executor is None or self.executor._shutdown:
+                return
             # 提交后台任务
             future = self.executor.submit(self._collect_memory_data)
             # 设置回调，在主线程中更新UI
             future.add_done_callback(self._on_data_collected)
+        except RuntimeError as e:
+            if "shutdown" in str(e):
+                logger.debug("线程池已关闭，跳过数据收集")
+            else:
+                logger.error(f"提交异步数据收集任务失败: {e}")
         except Exception as e:
             logger.error(f"提交异步数据收集任务失败: {e}")
 
@@ -839,3 +847,38 @@ class ModernSystemMonitorTab(QWidget):
 
         except Exception as e:
             logger.error(f"更新响应式布局失败: {e}")
+
+    def cleanup(self):
+        """清理资源，正确关闭线程池"""
+        try:
+            logger.info("开始清理 ModernSystemMonitorTab 资源...")
+
+            # 停止定时器
+            if hasattr(self, 'monitoring_timer'):
+                self.monitoring_timer.stop()
+                logger.debug("监控定时器已停止")
+
+            # 关闭线程池
+            if hasattr(self, 'executor') and self.executor is not None:
+                self.executor.shutdown(wait=False)
+                logger.debug("线程池已关闭")
+
+            # 清理性能监控器
+            if hasattr(self, 'performance_monitor') and self.performance_monitor is not None:
+                try:
+                    self.performance_monitor.stop_monitoring()
+                    logger.debug("性能监控器已停止")
+                except Exception as e:
+                    logger.debug(f"停止性能监控器失败: {e}")
+
+            # 清理增强风险监控
+            if hasattr(self, 'enhanced_risk_monitor') and self.enhanced_risk_monitor is not None:
+                try:
+                    self.enhanced_risk_monitor.cleanup()
+                    logger.debug("增强风险监控已清理")
+                except Exception as e:
+                    logger.debug(f"清理增强风险监控失败: {e}")
+
+            logger.info("ModernSystemMonitorTab 资源清理完成")
+        except Exception as e:
+            logger.error(f"清理 ModernSystemMonitorTab 资源失败: {e}")

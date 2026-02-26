@@ -1,390 +1,546 @@
 """
-遗留缓存适配器
-将utils.cache.Cache包装为符合ICache接口的实现，用于渐进式迁移，避免破坏现有代码
+遗留缓存适配器模块
+
+为现有缓存实现提供适配器，使其可以透明地使用统一的CacheService。
+支持平滑迁移，保持向后兼容性。
 """
 
-import asyncio
-from typing import Any, Dict, List, Optional
-from datetime import datetime
+from abc import ABC, abstractmethod
+from typing import Any, Dict, Optional, List
+from datetime import timedelta
+import threading
+import time
 
-from core.interfaces.cache import ICache, CacheLevel, CacheStats, CacheError
+from loguru import logger
+
+from core.services.cache_service import CacheService
 
 
-class LegacyCacheAdapter(ICache):
+class LegacyCacheAdapter(ABC):
     """
-    遗留缓存适配器
+    遗留缓存适配器基类
     
-    将utils.cache.Cache包装为符合ICache接口的实现
-    支持同步和异步操作
+    提供统一的适配器接口，将遗留缓存实现桥接到CacheService。
     """
-    
-    def __init__(self, legacy_cache, level: CacheLevel = CacheLevel.L3_DISK):
+
+    def __init__(self, cache_service: CacheService, namespace: str):
         """
         初始化适配器
         
         Args:
-            legacy_cache: utils.cache.Cache实例
-            level: 缓存级别
+            cache_service: 统一缓存服务实例
+            namespace: 命名空间（用于隔离不同模块的缓存）
         """
-        self._legacy_cache = legacy_cache
-        self._level = level
-        self._stats = CacheStats(
-            max_size=legacy_cache.get_size() if hasattr(legacy_cache, 'get_size') else 1000
-        )
+        self._cache_service = cache_service
+        self._namespace = namespace
+        self._lock = threading.RLock()
         
-    @property
-    def level(self) -> CacheLevel:
-        """缓存级别"""
-        return self._level
-    
-    async def get(self, key: str) -> Optional[Any]:
+        if not self._cache_service:
+            raise ValueError("CacheService instance is required")
+        
+        if not self._namespace:
+            raise ValueError("Namespace is required")
+
+    @abstractmethod
+    def get(self, key: str) -> Optional[Any]:
         """获取缓存值"""
-        try:
-            value = self._legacy_cache.get(key)
-            if value is not None:
-                self._stats.hits += 1
-            else:
-                self._stats.misses += 1
-            return value
-        except Exception as e:
-            raise CacheError(f"Failed to get cache value: {e}", self._level)
-    
-    async def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
+        pass
+
+    @abstractmethod
+    def put(self, key: str, value: Any, ttl: Optional[int] = None) -> None:
         """设置缓存值"""
-        try:
-            self._legacy_cache.set(key, value, ttl)
-            self._stats.sets += 1
-            self._stats.current_size = self._legacy_cache.get_size()
-            return True
-        except Exception as e:
-            raise CacheError(f"Failed to set cache value: {e}", self._level)
-    
-    async def delete(self, key: str) -> bool:
-        """删除缓存"""
-        try:
-            self._legacy_cache.delete(key)
-            self._stats.deletes += 1
-            self._stats.current_size = self._legacy_cache.get_size()
-            return True
-        except Exception as e:
-            raise CacheError(f"Failed to delete cache value: {e}", self._level)
-    
-    async def exists(self, key: str) -> bool:
-        """检查缓存是否存在"""
-        try:
-            return self._legacy_cache.exists(key)
-        except Exception as e:
-            raise CacheError(f"Failed to check cache existence: {e}", self._level)
-    
-    async def clear(self) -> bool:
+        pass
+
+    @abstractmethod
+    def delete(self, key: str) -> bool:
+        """删除缓存值"""
+        pass
+
+    @abstractmethod
+    def clear(self) -> None:
         """清空缓存"""
-        try:
-            self._legacy_cache.clear()
-            self._stats.current_size = 0
-            return True
-        except Exception as e:
-            raise CacheError(f"Failed to clear cache: {e}", self._level)
-    
-    async def get_stats(self) -> CacheStats:
-        """获取缓存统计信息"""
-        try:
-            legacy_stats = self._legacy_cache.get_stats()
-            
-            # 处理diskcache.stats()返回的tuple (hits, misses)
-            hits = self._stats.hits
-            misses = self._stats.misses
-            size = self._stats.current_size
-            
-            if isinstance(legacy_stats, dict):
-                hits = legacy_stats.get('hits', hits)
-                misses = legacy_stats.get('misses', misses)
-                size = legacy_stats.get('size', size)
-            elif isinstance(legacy_stats, tuple) and len(legacy_stats) >= 2:
-                # diskcache.stats()返回 (hits, misses)
-                hits = legacy_stats[0]
-                misses = legacy_stats[1]
-                size = self._legacy_cache.get_size()
-            
-            stats = CacheStats(
-                hits=hits,
-                misses=misses,
-                sets=self._stats.sets,
-                deletes=self._stats.deletes,
-                current_size=size,
-                max_size=self._stats.max_size,
-                start_time=self._stats.start_time,
-                last_reset_time=self._stats.last_reset_time
-            )
-            
-            return stats
-        except Exception as e:
-            raise CacheError(f"Failed to get cache stats: {e}", self._level)
-    
-    async def get_many(self, keys: List[str]) -> Dict[str, Any]:
-        """批量获取缓存值"""
-        try:
-            result = {}
-            for key in keys:
-                value = self._legacy_cache.get(key)
-                if value is not None:
-                    result[key] = value
-                    self._stats.hits += 1
-                else:
-                    self._stats.misses += 1
-            return result
-        except Exception as e:
-            raise CacheError(f"Failed to get multiple cache values: {e}", self._level)
-    
-    async def set_many(self, items: Dict[str, Any], ttl: Optional[int] = None) -> int:
-        """批量设置缓存值"""
-        try:
-            success_count = 0
-            for key, value in items.items():
-                self._legacy_cache.set(key, value, ttl)
-                success_count += 1
-                self._stats.sets += 1
-            self._stats.current_size = self._legacy_cache.get_size()
-            return success_count
-        except Exception as e:
-            raise CacheError(f"Failed to set multiple cache values: {e}", self._level)
-    
-    async def delete_many(self, keys: List[str]) -> int:
-        """批量删除缓存"""
-        try:
-            success_count = 0
-            for key in keys:
-                self._legacy_cache.delete(key)
-                success_count += 1
-                self._stats.deletes += 1
-            self._stats.current_size = self._legacy_cache.get_size()
-            return success_count
-        except Exception as e:
-            raise CacheError(f"Failed to delete multiple cache values: {e}", self._level)
-    
-    async def get_ttl(self, key: str) -> Optional[int]:
-        """获取缓存TTL"""
-        try:
-            if hasattr(self._legacy_cache, 'get_ttl'):
-                return self._legacy_cache.get_ttl(key)
-            return None
-        except Exception as e:
-            raise CacheError(f"Failed to get cache TTL: {e}", self._level)
-    
-    async def expire(self, key: str, ttl: int) -> bool:
-        """设置缓存过期时间"""
-        try:
-            if hasattr(self._legacy_cache, 'expire'):
-                self._legacy_cache.expire(key, ttl)
-                return True
-            else:
-                value = self._legacy_cache.get(key)
-                if value is not None:
-                    self._legacy_cache.set(key, value, ttl)
-                    return True
-            return False
-        except Exception as e:
-            raise CacheError(f"Failed to set cache expire: {e}", self._level)
+        pass
+
+    @abstractmethod
+    def get_stats(self) -> Dict[str, Any]:
+        """获取统计信息"""
+        pass
 
 
-class AsyncLegacyCacheAdapter(ICache):
+class SmartDataCacheAdapter(LegacyCacheAdapter):
     """
-    异步遗留缓存适配器
+    SmartDataCache适配器
     
-    将utils.cache.Cache包装为符合ICache接口的实现
-    支持异步操作
+    将SmartDataCache接口适配到CacheService。
+    保持与原SmartDataCache完全兼容的接口。
     """
-    
-    def __init__(self, legacy_cache, level: CacheLevel = CacheLevel.L3_DISK):
+
+    def __init__(self, cache_service: CacheService, 
+                 namespace: str = "backtest",
+                 max_memory_mb: int = 1000):
         """
-        初始化适配器
+        初始化SmartDataCache适配器
         
         Args:
-            legacy_cache: utils.cache.Cache实例（异步模式）
-            level: 缓存级别
+            cache_service: 统一缓存服务实例
+            namespace: 命名空间（默认backtest）
+            max_memory_mb: 最大内存（MB），用于兼容性，实际由CacheService管理
         """
-        self._legacy_cache = legacy_cache
-        self._level = level
-        self._stats = CacheStats(
-            max_size=legacy_cache.get_size() if hasattr(legacy_cache, 'get_size') else 1000
-        )
+        super().__init__(cache_service, namespace)
+        self._max_memory_mb = max_memory_mb
+        self._stats = {
+            'hits': 0,
+            'misses': 0,
+            'puts': 0,
+            'deletes': 0
+        }
+
+    def get(self, key: str) -> Optional[Any]:
+        """
+        从缓存获取数据
         
-    @property
-    def level(self) -> CacheLevel:
-        """缓存级别"""
-        return self._level
-    
-    async def get(self, key: str) -> Optional[Any]:
-        """获取缓存值"""
-        try:
-            value = await self._legacy_cache.get_async(key)
+        Args:
+            key: 缓存键
+            
+        Returns:
+            缓存值或None
+        """
+        with self._lock:
+            value = self._cache_service.get(key, namespace=self._namespace)
+            
             if value is not None:
-                self._stats.hits += 1
+                self._stats['hits'] += 1
             else:
-                self._stats.misses += 1
+                self._stats['misses'] += 1
+            
             return value
-        except Exception as e:
-            raise CacheError(f"Failed to get cache value: {e}", self._level)
-    
-    async def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
-        """设置缓存值"""
-        try:
-            await self._legacy_cache.set_async(key, value, ttl)
-            self._stats.sets += 1
-            self._stats.current_size = await self._get_size_async()
-            return True
-        except Exception as e:
-            raise CacheError(f"Failed to set cache value: {e}", self._level)
-    
-    async def delete(self, key: str) -> bool:
-        """删除缓存"""
-        try:
-            self._legacy_cache.delete(key)
-            self._stats.deletes += 1
-            self._stats.current_size = await self._get_size_async()
-            return True
-        except Exception as e:
-            raise CacheError(f"Failed to delete cache value: {e}", self._level)
-    
-    async def exists(self, key: str) -> bool:
-        """检查缓存是否存在"""
-        try:
-            return self._legacy_cache.exists(key)
-        except Exception as e:
-            raise CacheError(f"Failed to check cache existence: {e}", self._level)
-    
-    async def clear(self) -> bool:
+
+    def put(self, key: str, data: Any, ttl: Optional[int] = None):
+        """
+        存入缓存
+        
+        Args:
+            key: 缓存键
+            data: 缓存数据
+            ttl: 过期时间（秒）
+        """
+        with self._lock:
+            ttl_delta = timedelta(seconds=ttl) if ttl else None
+            
+            self._cache_service.set(
+                key, data, 
+                ttl=ttl_delta, 
+                namespace=self._namespace,
+                group="smart_cache"
+            )
+            self._stats['puts'] += 1
+
+    def delete(self, key: str) -> bool:
+        """
+        删除缓存项
+        
+        Args:
+            key: 缓存键
+            
+        Returns:
+            是否删除成功
+        """
+        with self._lock:
+            result = self._cache_service.delete(key, namespace=self._namespace)
+            if result:
+                self._stats['deletes'] += 1
+            return result
+
+    def clear(self):
         """清空缓存"""
-        try:
-            self._legacy_cache.clear()
-            self._stats.current_size = 0
-            return True
-        except Exception as e:
-            raise CacheError(f"Failed to clear cache: {e}", self._level)
+        with self._lock:
+            self._cache_service.clear_namespace(self._namespace)
+            self._stats = {'hits': 0, 'misses': 0, 'puts': 0, 'deletes': 0}
+
+    clear_cache = clear
+
+    def get_stats(self) -> Dict[str, Any]:
+        """
+        获取缓存统计
+        
+        Returns:
+            统计信息字典
+        """
+        with self._lock:
+            ns_stats = self._cache_service.get_namespace_stats(self._namespace)
+            
+            return {
+                'cache_size': ns_stats.get('key_count', 0),
+                'memory_usage_mb': 0,
+                'max_memory_mb': self._max_memory_mb,
+                'memory_usage_percent': 0,
+                'hits': self._stats['hits'],
+                'misses': self._stats['misses'],
+                'puts': self._stats['puts'],
+                'deletes': self._stats['deletes'],
+                'hit_rate': self._stats['hits'] / (self._stats['hits'] + self._stats['misses']) 
+                    if (self._stats['hits'] + self._stats['misses']) > 0 else 0
+            }
+
+
+class StrategyCacheAdapter(LegacyCacheAdapter):
+    """
+    StrategyCache适配器
     
-    async def get_stats(self) -> CacheStats:
-        """获取缓存统计信息"""
-        try:
-            legacy_stats = self._legacy_cache.get_stats()
+    将StrategyCache接口适配到CacheService。
+    支持策略分组和优先级管理。
+    """
+
+    def __init__(self, cache_service: CacheService,
+                 namespace: str = "strategy",
+                 max_size: int = 1000,
+                 ttl_seconds: int = 3600):
+        """
+        初始化StrategyCache适配器
+        
+        Args:
+            cache_service: 统一缓存服务实例
+            namespace: 命名空间（默认strategy）
+            max_size: 最大缓存条目数（兼容性）
+            ttl_seconds: 默认TTL（秒）
+        """
+        super().__init__(cache_service, namespace)
+        self._max_size = max_size
+        self._default_ttl = ttl_seconds
+        self._strategy_groups: Dict[str, List[str]] = {}
+        self._stats = {
+            'hits': 0,
+            'misses': 0,
+            'evictions': 0
+        }
+
+    def get(self, key: str) -> Optional[Any]:
+        """获取缓存值"""
+        with self._lock:
+            value = self._cache_service.get(key, namespace=self._namespace)
             
-            # 处理diskcache.stats()返回的tuple (hits, misses)
-            hits = self._stats.hits
-            misses = self._stats.misses
-            size = self._stats.current_size
+            if value is not None:
+                self._stats['hits'] += 1
+            else:
+                self._stats['misses'] += 1
             
-            if isinstance(legacy_stats, dict):
-                hits = legacy_stats.get('hits', hits)
-                misses = legacy_stats.get('misses', misses)
-                size = legacy_stats.get('size', size)
-            elif isinstance(legacy_stats, tuple) and len(legacy_stats) >= 2:
-                # diskcache.stats()返回 (hits, misses)
-                hits = legacy_stats[0]
-                misses = legacy_stats[1]
-                size = await self._get_size_async()
+            return value
+
+    def put(self, key: str, value: Any, ttl: Optional[int] = None,
+            strategy_name: str = None, priority: int = 5) -> None:
+        """
+        设置缓存值
+        
+        Args:
+            key: 缓存键
+            value: 缓存值
+            ttl: 过期时间（秒）
+            strategy_name: 策略名称（用于分组）
+            priority: 优先级（0-10）
+        """
+        with self._lock:
+            ttl_delta = timedelta(seconds=ttl or self._default_ttl)
+            group = strategy_name if strategy_name else None
             
-            stats = CacheStats(
-                hits=hits,
-                misses=misses,
-                sets=self._stats.sets,
-                deletes=self._stats.deletes,
-                current_size=size,
-                max_size=self._stats.max_size,
-                start_time=self._stats.start_time,
-                last_reset_time=self._stats.last_reset_time
+            self._cache_service.set(
+                key, value,
+                ttl=ttl_delta,
+                namespace=self._namespace,
+                group=group,
+                priority=priority
             )
             
-            return stats
-        except Exception as e:
-            raise CacheError(f"Failed to get cache stats: {e}", self._level)
-    
-    async def get_many(self, keys: List[str]) -> Dict[str, Any]:
-        """批量获取缓存值"""
-        try:
-            result = {}
-            for key in keys:
-                value = await self._legacy_cache.get_async(key)
-                if value is not None:
-                    result[key] = value
-                    self._stats.hits +=1
-                else:
-                    self._stats.misses += 1
-            return result
-        except Exception as e:
-            raise CacheError(f"Failed to get multiple cache values: {e}", self._level)
-    
-    async def set_many(self, items: Dict[str, Any], ttl: Optional[int] = None) -> int:
-        """批量设置缓存值"""
-        try:
-            success_count = 0
-            for key, value in items.items():
-                await self._legacy_cache.set_async(key, value, ttl)
-                success_count += 1
-                self._stats.sets += 1
-            self._stats.current_size = await self._get_size_async()
-            return success_count
-        except Exception as e:
-            raise CacheError(f"Failed to set multiple cache values: {e}", self._level)
-    
-    async def delete_many(self, keys: List[str]) -> int:
-        """批量删除缓存"""
-        try:
-            success_count = 0
-            for key in keys:
-                self._legacy_cache.delete(key)
-                success_count += 1
-                self._stats.deletes += 1
-                self._stats.current_size = await self._get_size_async()
-            return success_count
-        except Exception as e:
-            raise CacheError(f"Failed to delete multiple cache values: {e}", self._level)
-    
-    async def get_ttl(self, key: str) -> Optional[int]:
-        """获取缓存TTL"""
-        try:
-            if hasattr(self._legacy_cache, 'get_ttl'):
-                return self._legacy_cache.get_ttl(key)
-            return None
-        except Exception as e:
-            raise CacheError(f"Failed to get cache TTL: {e}", self._level)
-    
-    async def expire(self, key: str, ttl: int) -> bool:
-        """设置缓存过期时间"""
-        try:
-            if hasattr(self._legacy_cache, 'expire'):
-                self._legacy_cache.expire(key, ttl)
-                return True
-            else:
-                value = await self._legacy_cache.get_async(key)
-                if value is not None:
-                    await self._legacy_cache.set_async(key, value, ttl)
-                    return True
-            return False
-        except Exception as e:
-            raise CacheError(f"Failed to set cache expire: {e}", self._level)
-    
-    async def _get_size_async(self) -> int:
-        """异步获取缓存大小"""
-        try:
-            if hasattr(self._legacy_cache, 'get_size'):
-                return self._legacy_cache.get_size()
-            return 0
-        except Exception:
-            return 0
+            if strategy_name:
+                if strategy_name not in self._strategy_groups:
+                    self._strategy_groups[strategy_name] = []
+                if key not in self._strategy_groups[strategy_name]:
+                    self._strategy_groups[strategy_name].append(key)
+
+    def delete(self, key: str) -> bool:
+        """删除缓存值"""
+        with self._lock:
+            return self._cache_service.delete(key, namespace=self._namespace)
+
+    def clear(self) -> None:
+        """清空缓存"""
+        with self._lock:
+            self._cache_service.clear_namespace(self._namespace)
+            self._strategy_groups.clear()
+            self._stats = {'hits': 0, 'misses': 0, 'evictions': 0}
+
+    def clear_strategy(self, strategy_name: str) -> int:
+        """
+        清空指定策略的缓存
+        
+        Args:
+            strategy_name: 策略名称
+            
+        Returns:
+            清除的条目数
+        """
+        with self._lock:
+            return self._cache_service.clear_group(self._namespace, strategy_name)
+
+    def get_stats(self) -> Dict[str, Any]:
+        """获取统计信息"""
+        with self._lock:
+            ns_stats = self._cache_service.get_namespace_stats(self._namespace)
+            
+            return {
+                'cache_size': ns_stats.get('key_count', 0),
+                'max_size': self._max_size,
+                'strategy_count': len(self._strategy_groups),
+                'strategies': list(self._strategy_groups.keys()),
+                'hits': self._stats['hits'],
+                'misses': self._stats['misses'],
+                'evictions': self._stats['evictions'],
+                'hit_rate': self._stats['hits'] / (self._stats['hits'] + self._stats['misses'])
+                    if (self._stats['hits'] + self._stats['misses']) > 0 else 0
+            }
+
+    def get_strategy_stats(self, strategy_name: str) -> Dict[str, Any]:
+        """
+        获取指定策略的统计信息
+        
+        Args:
+            strategy_name: 策略名称
+            
+        Returns:
+            统计信息
+        """
+        with self._lock:
+            group_data = self._cache_service.get_by_group(self._namespace, strategy_name)
+            
+            return {
+                'strategy_name': strategy_name,
+                'key_count': len(group_data),
+                'keys': list(group_data.keys())
+            }
 
 
-def create_legacy_cache_adapter(legacy_cache, async_mode: bool = False, 
-                                level: CacheLevel = CacheLevel.L3_DISK) -> ICache:
+class AsyncIOManagerAdapter:
     """
-    创建遗留缓存适配器
+    AsyncIOManager适配器
+    
+    为AsyncIOManager提供缓存相关的适配。
+    主要适配HDF5异步读写功能，缓存部分使用CacheService。
+    """
+
+    def __init__(self, cache_service: CacheService,
+                 namespace: str = "async_io"):
+        """
+        初始化AsyncIOManager适配器
+        
+        Args:
+            cache_service: 统一缓存服务实例
+            namespace: 命名空间
+        """
+        self._cache_service = cache_service
+        self._namespace = namespace
+        self._lock = threading.RLock()
+        self._stats = {
+            'reads': 0,
+            'writes': 0,
+            'cache_hits': 0,
+            'cache_misses': 0
+        }
+
+    def get_cached_data(self, key: str) -> Optional[Any]:
+        """
+        获取缓存数据
+        
+        Args:
+            key: 缓存键
+            
+        Returns:
+            缓存数据或None
+        """
+        with self._lock:
+            value = self._cache_service.get(key, namespace=self._namespace)
+            
+            if value is not None:
+                self._stats['cache_hits'] += 1
+            else:
+                self._stats['cache_misses'] += 1
+            
+            return value
+
+    def cache_data(self, key: str, data: Any, ttl: Optional[int] = None) -> None:
+        """
+        缓存数据
+        
+        Args:
+            key: 缓存键
+            data: 数据
+            ttl: 过期时间（秒）
+        """
+        with self._lock:
+            ttl_delta = timedelta(seconds=ttl) if ttl else None
+            
+            self._cache_service.set(
+                key, data,
+                ttl=ttl_delta,
+                namespace=self._namespace,
+                group="async_io_cache"
+            )
+            self._stats['writes'] += 1
+
+    def invalidate_cache(self, key: str) -> bool:
+        """
+        使缓存失效
+        
+        Args:
+            key: 缓存键
+            
+        Returns:
+            是否成功
+        """
+        with self._lock:
+            return self._cache_service.delete(key, namespace=self._namespace)
+
+    def get_stats(self) -> Dict[str, Any]:
+        """获取统计信息"""
+        with self._lock:
+            ns_stats = self._cache_service.get_namespace_stats(self._namespace)
+            
+            return {
+                'cache_size': ns_stats.get('key_count', 0),
+                'reads': self._stats['reads'],
+                'writes': self._stats['writes'],
+                'cache_hits': self._stats['cache_hits'],
+                'cache_misses': self._stats['cache_misses'],
+                'hit_rate': self._stats['cache_hits'] / (self._stats['cache_hits'] + self._stats['cache_misses'])
+                    if (self._stats['cache_hits'] + self._stats['cache_misses']) > 0 else 0
+            }
+
+    def read_hdf5_async(self, file_path, dataset_name):
+        """
+        异步读取HDF5文件
+        
+        Args:
+            file_path: 文件路径
+            dataset_name: 数据集名称
+            
+        Returns:
+            numpy数组
+        """
+        import hashlib
+        from pathlib import Path
+        
+        cache_key = hashlib.md5(f"{file_path}:{dataset_name}".encode()).hexdigest()
+        
+        cached_data = self.get_cached_data(cache_key)
+        if cached_data is not None:
+            return cached_data
+        
+        try:
+            import h5py
+            import numpy as np
+            
+            with h5py.File(file_path, 'r') as f:
+                data = f[dataset_name][:]
+            
+            self.cache_data(cache_key, data, ttl=3600)
+            self._stats['reads'] += 1
+            return data
+            
+        except Exception as e:
+            logger.error(f"读取HDF5文件失败 {file_path}: {e}")
+            raise
+
+    def write_hdf5_async(self, file_path, dataset_name, data):
+        """
+        异步写入HDF5文件
+        
+        Args:
+            file_path: 文件路径
+            dataset_name: 数据集名称
+            data: 数据
+            
+        Returns:
+            Future对象
+        """
+        from concurrent.futures import Future
+        from pathlib import Path
+        import hashlib
+        
+        def _write():
+            try:
+                import h5py
+                
+                Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+                
+                with h5py.File(file_path, 'a') as f:
+                    if dataset_name in f:
+                        del f[dataset_name]
+                    f.create_dataset(dataset_name, data=data)
+                
+                cache_key = hashlib.md5(f"{file_path}:{dataset_name}".encode()).hexdigest()
+                self.cache_data(cache_key, data, ttl=3600)
+                self._stats['writes'] += 1
+                
+                return True
+                
+            except Exception as e:
+                logger.error(f"写入HDF5文件失败 {file_path}: {e}")
+                raise
+        
+        future = Future()
+        try:
+            result = _write()
+            future.set_result(result)
+        except Exception as e:
+            future.set_exception(e)
+        
+        return future
+
+
+def create_smart_cache_adapter(cache_service: CacheService, 
+                                namespace: str = "backtest",
+                                **kwargs) -> SmartDataCacheAdapter:
+    """
+    创建SmartDataCache适配器的工厂函数
     
     Args:
-        legacy_cache: utils.cache.Cache实例
-        async_mode: 是否为异步模式
-        level: 缓存级别
-    
+        cache_service: 统一缓存服务实例
+        namespace: 命名空间
+        **kwargs: 额外参数
+        
     Returns:
-        ICache: 缓存适配器实例
+        SmartDataCacheAdapter实例
     """
-    if async_mode:
-        return AsyncLegacyCacheAdapter(legacy_cache, level)
-    else:
-        return LegacyCacheAdapter(legacy_cache, level)
+    return SmartDataCacheAdapter(cache_service, namespace, **kwargs)
+
+
+def create_strategy_cache_adapter(cache_service: CacheService,
+                                   namespace: str = "strategy",
+                                   **kwargs) -> StrategyCacheAdapter:
+    """
+    创建StrategyCache适配器的工厂函数
+    
+    Args:
+        cache_service: 统一缓存服务实例
+        namespace: 命名空间
+        **kwargs: 额外参数
+        
+    Returns:
+        StrategyCacheAdapter实例
+    """
+    return StrategyCacheAdapter(cache_service, namespace, **kwargs)
+
+
+def create_async_io_adapter(cache_service: CacheService,
+                             namespace: str = "async_io",
+                             **kwargs) -> AsyncIOManagerAdapter:
+    """
+    创建AsyncIOManager适配器的工厂函数
+    
+    Args:
+        cache_service: 统一缓存服务实例
+        namespace: 命名空间
+        **kwargs: 额外参数
+        
+    Returns:
+        AsyncIOManagerAdapter实例
+    """
+    return AsyncIOManagerAdapter(cache_service, namespace, **kwargs)
