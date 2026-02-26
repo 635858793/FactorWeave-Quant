@@ -965,7 +965,7 @@ class AISelectionBacktestService:
             # 基础信息
             report = f"""
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📊 AI选股策略回测报告
+AI选股策略回测报告
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 📋 基本信息
@@ -1002,7 +1002,7 @@ class AISelectionBacktestService:
             
             # 交易统计
             report += f"""
-📊 交易统计
+交易统计
    总交易次数: {getattr(metrics, 'total_trades', 0)}次
    胜率: {metrics.win_rate:.1%}
    盈亏比: {metrics.profit_factor:.2f}:1
@@ -1011,7 +1011,7 @@ class AISelectionBacktestService:
             
             # 相对指标
             report += f"""
-🎯 相对指标
+相对指标
    Beta系数: {metrics.beta:.3f}
    Alpha收益: {metrics.alpha:+.2%}
    信息比率: {metrics.information_ratio:.3f}
@@ -1046,7 +1046,7 @@ class AISelectionBacktestService:
             if result.selection_accuracy:
                 accuracy = result.selection_accuracy
                 report += f"""
-🎯 选股准确性
+选股准确性
    总信号数: {accuracy.get('total_signals', 0)}个
    信号准确率: {accuracy.get('signal_accuracy', 0):.1%}
    精确率: {accuracy.get('precision', 0):.1%}
@@ -1069,7 +1069,7 @@ class AISelectionBacktestService:
             if result.monte_carlo_results:
                 mc_results = result.monte_carlo_results
                 report += f"""
-🔄 蒙特卡洛模拟 ({mc_results.get('simulations_count', 0)}次)
+蒙特卡洛模拟 ({mc_results.get('simulations_count', 0)}次)
    收益均值: {mc_results.get('return_statistics', {}).get('mean', 0):+.2%}
    收益标准差: {mc_results.get('return_statistics', {}).get('std', 0):.2%}
    5%分位数: {mc_results.get('return_statistics', {}).get('percentile_5', 0):+.2%}

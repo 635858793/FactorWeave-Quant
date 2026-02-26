@@ -191,7 +191,6 @@ class AnalysisService(BaseService):
         # 指标管理
         self._indicators: Dict[str, IndicatorConfig] = {}
         self._indicator_values: Dict[str, Dict[str, IndicatorValue]] = defaultdict(dict)
-        self._indicator_cache: Dict[str, Any] = {}
         self._indicator_lock = threading.RLock()
 
         # 信号管理
@@ -202,12 +201,16 @@ class AnalysisService(BaseService):
 
         # 分析结果管理
         self._analysis_results: Dict[str, AnalysisResult] = {}
-        self._analysis_cache: Dict[str, Any] = {}
         self._analysis_lock = threading.RLock()
 
         # 市场数据缓存
         self._market_data: Dict[str, Dict[TimeFrame, List[MarketData]]] = defaultdict(lambda: defaultdict(list))
         self._market_data_lock = threading.RLock()
+
+        # 统一缓存服务（强制）
+        self._unified_cache = None
+        self._cache_namespace = 'analysis_service'
+        self._init_unified_cache()
 
         # 分析配置
         self._analysis_config = {
@@ -227,6 +230,39 @@ class AnalysisService(BaseService):
         self._service_lock = threading.RLock()
 
         logger.info("AnalysisService initialized for architecture simplification")
+
+    def _init_unified_cache(self) -> None:
+        """初始化统一缓存服务（强制）"""
+        from core.services.cache_service import CacheService
+        
+        if self._service_container and self._service_container.is_registered(CacheService):
+            self._unified_cache = self._service_container.resolve(CacheService)
+            logger.debug(f"AnalysisService 已连接到统一缓存服务，命名空间: {self._cache_namespace}")
+        else:
+            raise RuntimeError("统一缓存服务未注册，请确保 CacheService 已在服务容器中注册")
+
+    def _get_from_cache(self, key: str, cache_type: str = 'indicator') -> Optional[Any]:
+        """从缓存获取数据 - 使用统一缓存服务"""
+        if self._unified_cache is None:
+            raise RuntimeError("统一缓存服务未初始化")
+        
+        namespaced_key = f"{cache_type}:{key}"
+        return self._unified_cache.get(namespaced_key, namespace=self._cache_namespace)
+
+    def _put_to_cache(self, key: str, value: Any, cache_type: str = 'indicator', ttl: Optional[Any] = None) -> None:
+        """将数据放入缓存 - 使用统一缓存服务"""
+        if self._unified_cache is None:
+            raise RuntimeError("统一缓存服务未初始化")
+        
+        from datetime import timedelta
+        namespaced_key = f"{cache_type}:{key}"
+        ttl_delta = None
+        if ttl is not None:
+            if isinstance(ttl, (int, float)):
+                ttl_delta = timedelta(seconds=ttl)
+            elif isinstance(ttl, timedelta):
+                ttl_delta = ttl
+        self._unified_cache.set(namespaced_key, value, ttl=ttl_delta, namespace=self._cache_namespace)
 
     def _do_initialize(self) -> None:
         """执行具体的初始化逻辑"""
@@ -339,10 +375,9 @@ class AnalysisService(BaseService):
 
             # 缓存结果
             cache_key = f"{indicator_id}_{symbol}_{timeframe.value}"
-            with self._indicator_lock:
-                self._indicator_cache[cache_key] = values
-                for value in values:
-                    self._indicator_values[indicator_id][f"{symbol}_{timeframe.value}_{value.timestamp}"] = value
+            self._put_to_cache(cache_key, values, cache_type='indicator')
+            for value in values:
+                self._indicator_values[indicator_id][f"{symbol}_{timeframe.value}_{value.timestamp}"] = value
 
             self._analysis_metrics.calculated_indicators += 1
             logger.info(f"Calculated indicator {indicator_id} for {symbol}")
@@ -732,13 +767,14 @@ class AnalysisService(BaseService):
     def _do_health_check(self) -> Dict[str, Any]:
         """执行健康检查"""
         try:
+            cache_stats = self._unified_cache.get_namespace_stats(self._cache_namespace) if self._unified_cache else {}
             return {
                 "status": "healthy",
                 "total_indicators": len(self._indicators),
                 "active_indicators": self._analysis_metrics.active_indicators,
                 "total_signals": len(self._signals),
                 "active_signals": len(self._active_signals),
-                "cached_results": len(self._indicator_cache),
+                "cache_stats": cache_stats,
             }
 
         except Exception as e:
@@ -752,7 +788,6 @@ class AnalysisService(BaseService):
             with self._indicator_lock:
                 self._indicators.clear()
                 self._indicator_values.clear()
-                self._indicator_cache.clear()
 
             with self._signal_lock:
                 self._signals.clear()
@@ -760,10 +795,12 @@ class AnalysisService(BaseService):
 
             with self._analysis_lock:
                 self._analysis_results.clear()
-                self._analysis_cache.clear()
 
             with self._market_data_lock:
                 self._market_data.clear()
+
+            if self._unified_cache:
+                self._unified_cache.clear_namespace(self._cache_namespace)
 
             logger.info("AnalysisService disposed successfully")
 

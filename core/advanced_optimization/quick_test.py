@@ -47,7 +47,7 @@ def test_basic_functionality():
     print("\n🔧 测试基本功能...")
     
     # 1. 测试数据处理性能
-    print("  📊 数据处理性能测试...")
+    print("  数据处理性能测试...")
     start_time = time.time()
     data = np.random.rand(50000, 5)
     processed = data * 2
@@ -97,7 +97,7 @@ def test_basic_functionality():
 
 def main():
     """主函数"""
-    print("🚀 FactorWeave 深度优化功能快速验证")
+    print("FactorWeave 深度优化功能快速验证")
     print("=" * 50)
     
     # 测试模块导入

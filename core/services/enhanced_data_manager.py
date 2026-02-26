@@ -554,7 +554,7 @@ class DataQualityMonitor:
         # 及时性检查
         scores['timeliness'] = self._check_timeliness(data)
 
-        # 🎯 智能权重配置：根据数据用途动态调整
+        # 智能权重配置：根据数据用途动态调整
         weights = self._get_dynamic_weights(data_usage)
         
         # 计算基础评分
@@ -847,7 +847,7 @@ class DataQualityMonitor:
             consistency = self._check_consistency(data, data_type)
             timeliness = self._check_timeliness(data)
             
-            # 🎯 使用智能权重计算综合评分
+            # 使用智能权重计算综合评分
             overall_score = self.calculate_quality_score(
                 data, data_type, 
                 data_usage=data_usage, 

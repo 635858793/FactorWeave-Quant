@@ -181,7 +181,7 @@ class FactorWeaveAnalyticsDB:
             bool: 是否成功
         """
         try:
-            logger.info("🔄 开始热重载连接池...")
+            logger.info("开始热重载连接池...")
 
             # 1. 关闭当前连接池
             if hasattr(self, 'pool') and self.pool:

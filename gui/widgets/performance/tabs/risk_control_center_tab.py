@@ -850,12 +850,96 @@ class ModernRiskControlCenterTab(QWidget):
             logger.error(f"检查风险规则失败: {e}")
 
     def _handle_risk_alert(self, alert):
-        """处理风险告警"""
+        """处理风险告警 - 使用NotificationService统一接口"""
         try:
             logger.warning(f"风险告警: {alert.message}")
 
             self._save_risk_alert_history(alert)
 
+            from core.services.notification_service import get_notification_service, AlertLevel
+            service = get_notification_service()
+            
+            if not service:
+                logger.warning("通知服务未初始化，使用回退方式发送通知")
+                self._handle_risk_alert_fallback(alert)
+                self._update_alert_display(alert)
+                return
+
+            channels = []
+            notification_config = {}
+            
+            if getattr(alert, 'desktop_notification', True):
+                channels.append('default_desktop')
+            
+            if getattr(alert, 'sound_notification', True):
+                channels.append('default_sound')
+            
+            if getattr(alert, 'email_notification', False):
+                channels.append('default_email')
+                email_recipients = getattr(alert, 'email_recipients', '')
+                if email_recipients:
+                    notification_config['email_recipients'] = email_recipients
+            
+            if getattr(alert, 'sms_notification', False):
+                channels.append('sms')
+                sms_recipients = getattr(alert, 'sms_recipients', '')
+                if sms_recipients:
+                    notification_config['sms_recipients'] = sms_recipients
+            
+            if getattr(alert, 'webhook_notification', False):
+                channels.append('default_webhook')
+                webhook_url = getattr(alert, 'webhook_url', '')
+                if webhook_url:
+                    notification_config['webhook_url'] = webhook_url
+            
+            if getattr(alert, 'dingtalk_notification', False):
+                channels.append('default_dingtalk')
+                dingtalk_webhook_url = getattr(alert, 'dingtalk_webhook_url', '')
+                if dingtalk_webhook_url:
+                    notification_config['dingtalk_webhook_url'] = dingtalk_webhook_url
+
+            alert_level_map = {
+                'CRITICAL': AlertLevel.CRITICAL,
+                'ERROR': AlertLevel.ERROR,
+                'WARNING': AlertLevel.WARNING,
+                'INFO': AlertLevel.INFO,
+                'critical': AlertLevel.CRITICAL,
+                'error': AlertLevel.ERROR,
+                'warning': AlertLevel.WARNING,
+                'info': AlertLevel.INFO
+            }
+            alert_level = alert_level_map.get(alert.alert_level, AlertLevel.WARNING)
+
+            if channels:
+                service.send_notification(
+                    title=f"[{alert.alert_level}] {alert.rule_name}",
+                    content=alert.message,
+                    channels=channels,
+                    alert_level=alert_level,
+                    notification_config=notification_config,
+                    metadata={
+                        'rule_id': alert.rule_id,
+                        'metric_name': alert.metric_name,
+                        'metric_value': alert.metric_value,
+                        'threshold_value': alert.threshold_value
+                    }
+                )
+                logger.info(f"通知已通过NotificationService发送: {channels}")
+            else:
+                logger.warning("未配置任何通知渠道")
+
+            self._update_alert_display(alert)
+
+        except Exception as e:
+            logger.error(f"处理风险告警失败: {e}")
+            self._handle_risk_alert_fallback(alert)
+            self._update_alert_display(alert)
+
+    def _handle_risk_alert_fallback(self, alert):
+        """风险告警回退处理（当NotificationService不可用时）"""
+        try:
+            logger.warning("使用回退方式处理风险告警")
+            
             if getattr(alert, 'desktop_notification', True):
                 self._send_desktop_notification(alert)
 
@@ -873,11 +957,9 @@ class ModernRiskControlCenterTab(QWidget):
 
             if getattr(alert, 'dingtalk_notification', False):
                 self._send_dingtalk_notification(alert)
-
-            self._update_alert_display(alert)
-
+                
         except Exception as e:
-            logger.error(f"处理风险告警失败: {e}")
+            logger.error(f"回退处理风险告警失败: {e}")
 
     def _save_risk_alert_history(self, alert):
         """保存风险告警历史到数据库"""

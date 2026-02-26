@@ -389,7 +389,7 @@ QRadioButton::indicator:checked {
 	background-color: qradialgradient(cx:0.5, cy:0.5, radius:0.4, fx:0.5, fy:0.5, stop:0 #4fa08b, stop:1 #1e282c);
 }
 
-QRadioButton::indicator: !checked {
+QRadioButton::indicator:!checked {
 	height: 18px;
 	width: 18px;
 	border-style: solid;

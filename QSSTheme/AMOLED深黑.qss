@@ -401,7 +401,7 @@ QRadioButton::indicator:checked {
 	background-color: #e67e22;
 }
 
-QRadioButton::indicator: !checked {
+QRadioButton::indicator:!checked {
 	height: 18px;
 	width: 18px;
 	border-style: solid;
@@ -459,7 +459,7 @@ QComboBox QAbstractItemView {
 	selection-background-color: #000000;
 }
 
-QComboBox: !editable:on,
+QComboBox:!editable:on,
 QComboBox::drop-down:editable:on {
 	color: #a9b7c6;
 	background: #1e1d23;
@@ -988,7 +988,7 @@ QTreeWidget::branch {
 	background-color: #000000;
 }
 
-QTreeWidget::branch:has-siblings: !adjoins-item {
+QTreeWidget::branch:has-siblings:!adjoins-item {
 	background-color: #000000;
 }
 
@@ -996,16 +996,16 @@ QTreeWidget::branch:has-siblings:adjoins-item {
 	background-color: #000000;
 }
 
-QTreeWidget::branch: !has-children: !has-siblings:adjoins-item {
+QTreeWidget::branch:!has-children:!has-siblings:adjoins-item {
 	background-color: #000000;
 }
 
-QTreeWidget::branch:has-children: !has-siblings:closed,
+QTreeWidget::branch:has-children:!has-siblings:closed,
 QTreeWidget::branch:closed:has-children:has-siblings {
 	image: url(qss/branch-closed.png);
 }
 
-QTreeWidget::branch:open:has-children: !has-siblings,
+QTreeWidget::branch:open:has-children:!has-siblings,
 QTreeWidget::branch:open:has-children:has-siblings {
 	image: url(qss/branch-open.png);
 }

@@ -45,14 +45,14 @@ QPushButton,QToolButton{
     min-height: 25px;
 }
 
-QPushButton::hover,QToolButton::hover{
+QPushButton:hover,QToolButton:hover{
     background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
                                  stop: 0 #758385, stop: 0.5 #122C39,
                                  stop: 1.0 #0E7788);
     border-color: #11505C;
 }
 
-QPushButton::pressed,QToolButton::pressed{
+QPushButton:pressed,QToolButton:pressed{
     background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
                                  stop: 0 #969B9C, stop: 0.5 #16354B,
                                  stop: 1.0 #244F76);
@@ -77,19 +77,19 @@ QDialogButtonBox QPushButton,QDialogButtonBox QToolButton{
     padding: 1px;
     min-height: 25px;
 }
-QDialogButtonBox QPushButton::hover,QDialogButtonBox QToolButton::hover{
+QDialogButtonBox QPushButton:hover,QDialogButtonBox QToolButton:hover{
     background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
                                  stop: 0 #758385, stop: 0.5 #122C39,
                                  stop: 1.0 #0E7788);
     border-color: #11505C;
 }
-QDialogButtonBox QPushButton::pressed,QDialogButtonBox QToolButton::pressed{
+QDialogButtonBox QPushButton:pressed,QDialogButtonBox QToolButton:pressed{
     background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
                                  stop: 0 #969B9C, stop: 0.5 #16354B,
                                  stop: 1.0 #244F76);
     border-color: #11505C;
 }
-QDialogButtonBox QPushButton::disabled,QDialogButtonBox QToolButton::disabled{
+QDialogButtonBox QPushButton:disabled,QDialogButtonBox QToolButton:disabled{
     background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
                                  stop: 0 #5B5F5F, stop: 0.5 #0C2436,
                                  stop: 1.0 #27405A);
@@ -103,7 +103,7 @@ QDialogButtonBox QPushButton::default,QDialogButtonBox QToolButton::default{
     border-color: #11505C;
 }
 
-QPushButton::disabled,QToolButton::disabled{
+QPushButton:disabled,QToolButton:disabled{
     background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
                                  stop: 0 #282B2C, stop: 0.5 #09121A,
                                  stop: 1.0 #111D29);
@@ -193,7 +193,7 @@ QPlainTextEdit {
     selection-background-color: #0A246A;
 }
 
-QLineEdit::hover{
+QLineEdit:hover{
   border-color:#5D8B9E;
 }
 
@@ -272,7 +272,7 @@ QComboBox {
      padding: 1px 18px 1px 3px;
      min-width: 6em;
  }
-QComboBox::hover{
+QComboBox:hover{
   border-color:#5D8B9E;
 }
 
@@ -509,7 +509,7 @@ QListView{
      height: 18px;
  }
 
- QRadioButton::indicator::unchecked {
+ QRadioButton::indicator:unchecked {
      image: url(qss/radiobutton_unchecked.png);
  }
 
@@ -521,7 +521,7 @@ QListView{
      image: url(qss/radiobutton_unchecked_pressed.png);
  }
 
- QRadioButton::indicator::checked {
+ QRadioButton::indicator:checked {
      image: url(qss/radiobutton_checked.png);
  }
 
@@ -686,7 +686,7 @@ QSpinBox,QDateTimeEdit {
      background:qlineargradient(x1:0, y1:0, x2:0, y2:1,
                                        stop:0 #080B10, stop:1 #212C3F);
  }
- QSpinBox::hover,QDateTimeEdit::hover{
+ QSpinBox:hover,QDateTimeEdit:hover{
     border-color:#5D8B9E;
  }
 
@@ -836,14 +836,14 @@ QWidget#TranslucentWidget QPushButton {
     background-color: rgba( 255, 255, 255, 100 );
 }
 
-QWidget#TranslucentWidget QPushButton::hover{
+QWidget#TranslucentWidget QPushButton:hover{
     background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
                                  stop: 0 #758385, stop: 0.5 #122C39,
                                  stop: 1.0 #0E7788);
     border-color: #11505C;
 }
 
-QWidget#TranslucentWidget QPushButton::pressed{
+QWidget#TranslucentWidget QPushButton:pressed{
     background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
                                  stop: 0 #969B9C, stop: 0.5 #16354B,
                                  stop: 1.0 #244F76);
@@ -870,20 +870,20 @@ QWidget#GroupChatingWidget QFrame#mainFrame
 
 
 
-QWidget#GroupChatingWidget QPushButton::hover,QWidget#GroupChatingWidget QToolButton::hover{
+QWidget#GroupChatingWidget QPushButton:hover,QWidget#GroupChatingWidget QToolButton:hover{
     background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
                                  stop: 0 #758385, stop: 0.5 #122C39,
                                  stop: 1.0 #0E7788);
     border-color: #11505C;
 }
 
-QWidget#GroupChatingWidget QPushButton::pressed,QWidget#GroupChatingWidget QToolButton::pressed{
+QWidget#GroupChatingWidget QPushButton:pressed,QWidget#GroupChatingWidget QToolButton:pressed{
     background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
                                  stop: 0 #969B9C, stop: 0.5 #16354B,
                                  stop: 1.0 #244F76);
     border-color: #11505C;
 }
-QWidget#GroupChatingWidget QPushButton::disabled,QWidget#GroupChatingWidget QToolButton::disabled{
+QWidget#GroupChatingWidget QPushButton:disabled,QWidget#GroupChatingWidget QToolButton:disabled{
     background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
                                  stop: 0 #282B2C, stop: 0.5 #09121A,
                                  stop: 1.0 #111D29);
@@ -908,20 +908,20 @@ QWidget#GroupChatinSingleWidget QLabel
 {
     background: transparent;
 }
-QWidget#GroupChatingWidget QPushButton::hover,QWidget#GroupChatingWidget QToolButton::hover{
+QWidget#GroupChatingWidget QPushButton:hover,QWidget#GroupChatingWidget QToolButton:hover{
     background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
                                  stop: 0 #758385, stop: 0.5 #122C39,
                                  stop: 1.0 #0E7788);
     border-color: #11505C;
 }
 
-QWidget#GroupChatingWidget QPushButton::pressed,QWidget#GroupChatingWidget QToolButton::pressed{
+QWidget#GroupChatingWidget QPushButton:pressed,QWidget#GroupChatingWidget QToolButton:pressed{
     background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
                                  stop: 0 #969B9C, stop: 0.5 #16354B,
                                  stop: 1.0 #244F76);
     border-color: #11505C;
 }
-QWidget#GroupChatingWidget QPushButton::disabled,QWidget#GroupChatingWidget QToolButton::disabled{
+QWidget#GroupChatingWidget QPushButton:disabled,QWidget#GroupChatingWidget QToolButton:disabled{
     background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
                                  stop: 0 #282B2C, stop: 0.5 #09121A,
                                  stop: 1.0 #111D29);
@@ -1279,7 +1279,7 @@ QDoubleSpinBox {
 	background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #080B10, stop:1 #212C3F);
 	color: white;
 }
-QDoubleSpinBox::hover {
+QDoubleSpinBox:hover {
 	border-color: #5D8B9E;
 }
 
@@ -1291,7 +1291,7 @@ QDateEdit {
 	background: qlineargradient(x1:0, y1:0, x2:0, y2=1, stop:0 #080B10, stop:1 #212C3F);
 	color: white;
 }
-QDateEdit::hover {
+QDateEdit:hover {
 	border-color: #5D8B9E;
 }
 QDateEdit::down-arrow {
@@ -1313,7 +1313,7 @@ QTimeEdit {
 	background: qlineargradient(x1:0, y1:0, x2:0, y2=1, stop:0 #080B10, stop:1 #212C3F);
 	color: white;
 }
-QTimeEdit::hover {
+QTimeEdit:hover {
 	border-color: #5D8B9E;
 }
 
@@ -1324,7 +1324,7 @@ QTextBrowser {
 	background: qlineargradient(x1:0, y1:0, x2:0, y2=1, stop:0 #080B10, stop:1 #212C3F);
 	color: white;
 }
-QTextBrowser::hover {
+QTextBrowser:hover {
 	border-color: #5D8B9E;
 }
 

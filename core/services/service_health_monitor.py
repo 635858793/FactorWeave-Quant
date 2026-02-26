@@ -529,7 +529,7 @@ class ServiceHealthMonitor(QObject):
                             <p>Last Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
                         </div>
                         
-                        <h2>📊 Service Status</h2>
+                        <h2>Service Status</h2>
                         {self._generate_services_html()}
                         
                         <h2>🚨 Active Alerts</h2>

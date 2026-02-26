@@ -141,7 +141,7 @@ class AdjPriceMomentumStrategy:
         dividend_events = df[df['adj_factor_change'].abs() > 0.005].copy()
         
         if not dividend_events.empty:
-            logger.info(f"📊 检测到 {len(dividend_events)} 次除权除息事件:")
+            logger.info(f"检测到 {len(dividend_events)} 次除权除息事件:")
             for idx, row in dividend_events.iterrows():
                 logger.info(f"  {row['datetime']}: adj_factor={row['adj_factor']:.4f}, 变化={row['adj_factor_change']:.2%}")
         

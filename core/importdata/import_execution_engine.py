@@ -297,7 +297,7 @@ class DatabaseWriterThread(threading.Thread):
                 combined_data = pd.concat(data_list, ignore_index=True, sort=False)
 
             record_count = len(combined_data)
-            logger.info(f"📊 [写入线程] 写入: {buffer_key}, {record_count}条记录 (合并{len(data_list)}个DataFrame)")
+            logger.info(f"[写入线程] 写入: {buffer_key}, {record_count}条记录 (合并{len(data_list)}个DataFrame)")
 
             # 优化：使用复用的AssetSeparatedDatabaseManager实例
             write_start_time = time.time()
@@ -1858,7 +1858,7 @@ class DataImportExecutionEngine(QObject):
             else:
                 data['datetime'] = pd.to_datetime(data['datetime'])
 
-            # 🎯 智能识别数据用途（一次性调用，避免重复计算）
+            # 智能识别数据用途（一次性调用，避免重复计算）
             # 这个值将被用于质量评分计算和后续的记录质量指标
             data_usage = self._infer_data_usage(data, task_id)
 
@@ -3884,7 +3884,7 @@ class DataImportExecutionEngine(QObject):
                 changed_mask = original_frequencies != df['frequency']
                 if changed_mask.any():
                     change_count = changed_mask.sum()
-                    logger.info(f"📊 [频率规范化统计] 共{change_count}条记录的频率被规范化")
+                    logger.info(f"[频率规范化统计] 共{change_count}条记录的频率被规范化")
                     logger.debug(f"   原始频率分布: {original_frequencies.value_counts().to_dict()}")
                     logger.debug(f"   规范化后频率分布: {df['frequency'].value_counts().to_dict()}")
 
@@ -3961,7 +3961,7 @@ class DataImportExecutionEngine(QObject):
 
             logger.info(f"数据字段标准化完成，字段数: {len(df.columns)}, 记录数: {len(df)}")
             logger.debug(f"📋 标准化后的列: {df.columns.tolist()}")
-            logger.debug(f"📊 频率分布: {df['frequency'].value_counts().to_dict() if 'frequency' in df.columns else '无频率列'}")
+            logger.debug(f"频率分布: {df['frequency'].value_counts().to_dict() if 'frequency' in df.columns else '无频率列'}")
             return df
 
         except Exception as e:
@@ -4158,16 +4158,16 @@ class DataImportExecutionEngine(QObject):
             # 记录任务描述和数据用途
             if task_config.description:
                 logger.debug(f"📝 [任务描述] {task_config.description}")
-            logger.debug(f"🎯 [数据用途] {task_config.data_usage}")
+            logger.debug(f"[数据用途] {task_config.data_usage}")
             
             # 根据数据用途调整数据验证策略
             strict_validation = False
             if task_config.data_usage == "backtest":
                 strict_validation = True
-                logger.debug(f"🎯 [验证策略] 回测用途：启用严格验证")
+                logger.debug(f"[验证策略] 回测用途：启用严格验证")
             elif task_config.data_usage == "live_trading":
                 strict_validation = True
-                logger.debug(f"🎯 [验证策略] 实盘用途：启用严格验证")
+                logger.debug(f"[验证策略] 实盘用途：启用严格验证")
 
             # 1. 从真实数据提供者获取K线数据（关键监控点1：网络请求）
             network_start = time.time()
@@ -4209,7 +4209,7 @@ class DataImportExecutionEngine(QObject):
                 return {'symbol': symbol, 'success': False, 'record_count': 0, 'error': '数据格式无效'}
 
             logger.info(f"[数据获取成功] {symbol} | 条数:{len(kdata)} | 列数:{len(kdata.columns)} | 耗时:{network_elapsed:.2f}秒")
-            logger.debug(f"📊 [数据字段] {kdata.columns.tolist()}")
+            logger.debug(f"[数据字段] {kdata.columns.tolist()}")
 
             # 2. 数据质量验证
             if self.enable_data_quality_monitoring or strict_validation:
@@ -4285,8 +4285,8 @@ class DataImportExecutionEngine(QObject):
             max_workers = min(task_config.max_workers, len(symbols)) if hasattr(task_config, 'max_workers') else 1
 
             if max_workers > 1:
-                logger.info(f"📊 [并行模式] 开始导入: {len(symbols)}个股票，max_workers={max_workers}")
-                logger.info(f"📊 [任务队列] 已提交{len(symbols)}个任务到线程池，等待执行...")
+                logger.info(f"[并行模式] 开始导入: {len(symbols)}个股票，max_workers={max_workers}")
+                logger.info(f"[任务队列] 已提交{len(symbols)}个任务到线程池，等待执行...")
 
                 from concurrent.futures import ThreadPoolExecutor, as_completed
                 import threading
@@ -4303,7 +4303,7 @@ class DataImportExecutionEngine(QObject):
                         for i, symbol in enumerate(symbols)
                     }
 
-                    logger.info(f"📊 [线程池状态] 已提交所有任务，开始执行...")
+                    logger.info(f"[线程池状态] 已提交所有任务，开始执行...")
 
                     # 收集结果
                     completed_count = 0
@@ -4351,7 +4351,7 @@ class DataImportExecutionEngine(QObject):
                             avg_time = elapsed / completed_count if completed_count > 0 else 0
                             eta = avg_time * (len(symbols) - completed_count) if completed_count > 0 else 0
 
-                            logger.info(f"📊 [进度] {completed_count}/{len(symbols)} | 成功:{result.processed_records} 失败:{result.failed_records} | 平均耗时:{avg_time:.2f}s | 预计剩余:{eta:.1f}s")
+                            logger.info(f"[进度] {completed_count}/{len(symbols)} | 成功:{result.processed_records} 失败:{result.failed_records} | 平均耗时:{avg_time:.2f}s | 预计剩余:{eta:.1f}s")
 
                             # 修复：在进度消息中包含错误信息（如果失败），以便UI可以提取并记录到错误表
                             if import_result['success']:
@@ -4380,7 +4380,7 @@ class DataImportExecutionEngine(QObject):
                                 processed_symbols_set.add(symbol)  # 异常也记录
 
                 total_elapsed = time.time() - batch_start_time
-                logger.info(f"📊 [并行完成] 总耗时:{total_elapsed:.2f}秒 | 成功:{result.processed_records} 失败:{result.failed_records}")
+                logger.info(f"[并行完成] 总耗时:{total_elapsed:.2f}秒 | 成功:{result.processed_records} 失败:{result.failed_records}")
 
                 # 修复：将已处理股票列表设置到result中
                 result.processed_symbols_list = list(processed_symbols_set)
@@ -4521,7 +4521,7 @@ class DataImportExecutionEngine(QObject):
             task_config: 任务配置
         """
         try:
-            logger.debug(f"📊 [基本面] {symbol} | 开始下载基本面数据...")
+            logger.debug(f"[基本面] {symbol} | 开始下载基本面数据...")
 
             # 获取基本面数据（使用指定的数据源）
             fundamental_data = self.data_manager.get_fundamental_data(

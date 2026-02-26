@@ -319,22 +319,17 @@ class UnifiedChartService(QObject):
         self.service_container = service_container
         self.config_manager = config_manager or ConfigManager()
         self.theme_manager = theme_manager or get_theme_manager()
-        # LogManager已移除，使用Loguru
         self.data_source = data_source
 
-        # 初始化缓存
         try:
-            from utils.cache import Cache
-            self.cache = Cache(max_size=100)  # 缓存100个图表数据
-        except (ImportError, TypeError):
-            # 如果Cache不可用或参数不匹配，创建简单的字典缓存
-            self.cache = {}
+            from core.services.unified_cache_provider import get_unified_cache_provider
+            self.cache = get_unified_cache_provider().get_cache_service()
+        except ImportError:
+            self.cache = None
 
-        # 数据加载器
         self.data_loader = None
 
-        # 活跃的图表控件
-        self._charts = {}  # chart_id -> ChartWidget
+        self._charts = {}
 
         logger.info("统一图表服务初始化完成")
 
@@ -400,18 +395,13 @@ class UnifiedChartService(QObject):
                 logger.warning(f"指标列表为空，将使用默认指标 ['MA']")
                 # indicators = ['MA']
 
-            # 检查缓存
             cache_key = f"{stock_code}_{period}_{'-'.join(indicators or [])}"
-            if isinstance(self.cache, dict):
-                cached_data = self.cache.get(cache_key)
-            elif hasattr(self.cache, 'get'):
-                cached_data = self.cache.get(cache_key)
-            else:
-                cached_data = None
-            if cached_data:
-                logger.debug(f"从缓存获取图表数据: {stock_code}")
-                self.chart_updated.emit(stock_code, cached_data)
-                return
+            if self.cache:
+                cached_data = self.cache.get(cache_key, namespace="chart_service")
+                if cached_data:
+                    logger.debug(f"从缓存获取图表数据: {stock_code}")
+                    self.chart_updated.emit(stock_code, cached_data)
+                    return
 
             # 停止之前的加载
             if self.data_loader and self.data_loader.isRunning():
@@ -504,40 +494,33 @@ class UnifiedChartService(QObject):
 
     def clear_cache(self) -> None:
         """清空缓存"""
-        self.cache.clear()
+        if self.cache:
+            self.cache.clear_namespace("chart_service")
         logger.info("图表缓存已清空")
 
     def get_cache_stats(self) -> Dict[str, Any]:
         """获取缓存统计信息"""
         try:
-            if isinstance(self.cache, dict):
+            if self.cache:
+                ns_stats = self.cache.get_namespace_stats("chart_service")
                 return {
-                    'size': len(self.cache),
+                    'size': ns_stats.get('key_count', 0),
                     'max_size': 'unlimited',
-                    'hits': 0,
-                    'misses': 0,
-                    'type': 'dict'
+                    'hits': ns_stats.get('hits', 0),
+                    'misses': ns_stats.get('misses', 0),
+                    'type': 'CacheService'
                 }
-            elif hasattr(self.cache, '_cache'):
-                return {
-                    'size': len(self.cache._cache),
-                    'max_size': getattr(self.cache, 'max_size', 'unknown'),
-                    'hits': getattr(self.cache, 'hits', 0),
-                    'misses': getattr(self.cache, 'misses', 0),
-                    'type': type(self.cache).__name__
-                }
-            else:
-                return {
-                    'size': len(self.cache) if hasattr(self.cache, '__len__') else 0,
-                    'max_size': 'unknown',
-                    'hits': 0,
-                    'misses': 0,
-                    'type': type(self.cache).__name__
-                }
+            return {
+                'size': 0,
+                'max_size': 0,
+                'hits': 0,
+                'misses': 0,
+                'type': 'none'
+            }
         except Exception as e:
             return {
                 'error': str(e),
-                'type': type(self.cache).__name__
+                'type': 'error'
             }
 
     @pyqtSlot(dict)
@@ -567,12 +550,9 @@ class UnifiedChartService(QObject):
                         indicator_data, '__len__') else 0
                     logger.debug(f"指标 {indicator_name} 数据长度: {data_len}")
 
-            # 缓存数据
-            if cache_key and self.cache is not None:
-                if isinstance(self.cache, dict):
-                    self.cache[cache_key] = data
-                elif hasattr(self.cache, 'put'):
-                    self.cache.put(cache_key, data)
+            if cache_key and self.cache:
+                from datetime import timedelta
+                self.cache.set(cache_key, data, namespace="chart_service", ttl=timedelta(minutes=30))
 
             # 更新图表
             self.chart_updated.emit(stock_code, data)

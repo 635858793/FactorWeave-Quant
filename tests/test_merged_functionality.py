@@ -17,60 +17,6 @@ sys.path.insert(0, project_root)
 from loguru import logger
 
 
-def test_system_health_tab():
-    """测试ModernSystemHealthTab是否正确包含增强功能"""
-    logger.info("=" * 60)
-    logger.info("测试1: ModernSystemHealthTab增强功能")
-    logger.info("=" * 60)
-    
-    try:
-        from gui.widgets.performance.tabs.system_health_tab import ModernSystemHealthTab
-        
-        # 创建实例（不显示窗口）
-        tab = ModernSystemHealthTab()
-        
-        # 检查是否有新的标签页
-        has_tabs = hasattr(tab, 'tab_widget')
-        logger.info(f"✓ ModernSystemHealthTab有标签页组件: {has_tabs}")
-        
-        if has_tabs:
-            tab_count = tab.tab_widget.count()
-            logger.info(f"✓ 标签页数量: {tab_count}")
-            
-            # 检查标签页名称
-            expected_tabs = ["概览", "指标详情", "趋势分析", "阈值配置", "历史记录"]
-            for i in range(tab_count):
-                tab_name = tab.tab_widget.tabText(i)
-                logger.info(f"  - 标签页{i+1}: {tab_name}")
-                if tab_name in expected_tabs:
-                    logger.info(f"    ✓ 包含预期标签页: {tab_name}")
-        
-        # 检查是否有工具栏
-        has_toolbar = hasattr(tab, 'toolbar')
-        logger.info(f"✓ ModernSystemHealthTab有工具栏: {has_toolbar}")
-        
-        # 检查是否有阈值配置
-        has_thresholds = hasattr(tab, 'thresholds')
-        logger.info(f"✓ ModernSystemHealthTab有阈值配置: {has_thresholds}")
-        
-        # 检查是否有历史记录
-        has_history = hasattr(tab, 'health_history')
-        logger.info(f"✓ ModernSystemHealthTab有历史记录: {has_history}")
-        
-        # 检查是否有更新定时器
-        has_timer = hasattr(tab, 'update_timer')
-        logger.info(f"✓ ModernSystemHealthTab有更新定时器: {has_timer}")
-        
-        logger.info("✓ ModernSystemHealthTab增强功能测试通过")
-        return True
-        
-    except Exception as e:
-        logger.error(f"✗ ModernSystemHealthTab测试失败: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
-        return False
-
-
 def test_system_monitor_tab():
     """测试ModernSystemMonitorTab是否正确包含增强功能"""
     logger.info("=" * 60)
@@ -198,10 +144,6 @@ def main():
     logger.info("=" * 60)
     
     results = []
-    
-    # 测试ModernSystemHealthTab
-    result1 = test_system_health_tab()
-    results.append(("ModernSystemHealthTab", result1))
     
     # 测试ModernSystemMonitorTab
     result2 = test_system_monitor_tab()

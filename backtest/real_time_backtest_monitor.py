@@ -260,39 +260,38 @@ class RealTimeBacktestMonitor:
                 logger.info("监控线程对象为 None，无需停止")
                 return
 
-            # 再次检查线程是否存活，避免竞态条件
+            # 保存线程引用，避免竞态条件
+            thread_to_stop = self.monitor_thread
+            self.monitor_thread = None
+
+            # 检查线程是否存活
             try:
-                if not self.monitor_thread.is_alive():
-                    logger.info(f"监控线程已结束 - 线程ID: {self.monitor_thread.ident}")
-                    self.monitor_thread = None
+                if not thread_to_stop.is_alive():
+                    logger.info(f"监控线程已结束 - 线程ID: {thread_to_stop.ident}")
                     return
-            except AttributeError:
-                logger.warning("监控线程对象已失效，清理引用")
-                self.monitor_thread = None
+            except (AttributeError, Exception) as e:
+                logger.warning(f"检查线程状态失败: {e}")
                 return
 
-            logger.info(f"等待监控线程结束 - 线程ID: {self.monitor_thread.ident}")
+            logger.info(f"等待监控线程结束 - 线程ID: {thread_to_stop.ident}")
 
-            # 检查是否是当前线程，如果是则跳过 join
+            # 检查是否是当前线程
             current_thread = threading.current_thread()
-            if self.monitor_thread is current_thread:
+            if thread_to_stop is current_thread:
                 logger.info("当前线程为监控线程，跳过 join 操作")
             else:
-                # 给线程更多时间优雅退出
-                self.monitor_thread.join(timeout=10.0)
+                # 等待线程结束
+                thread_to_stop.join(timeout=10.0)
 
-                # 再次检查线程状态，确保线程对象仍然有效
-                if self.monitor_thread is not None:
-                    try:
-                        if self.monitor_thread.is_alive():
-                            logger.warning(f"监控线程未能在10秒内结束 - 线程ID: {self.monitor_thread.ident}")
-                        else:
-                            logger.info("监控线程已正常结束")
-                    except AttributeError:
-                        logger.warning("监控线程对象在 join 后已失效")
+                # 再次检查线程状态
+                try:
+                    if thread_to_stop.is_alive():
+                        logger.warning(f"监控线程未能在10秒内结束 - 线程ID: {thread_to_stop.ident}")
+                    else:
+                        logger.info("监控线程已正常结束")
+                except (AttributeError, Exception) as e:
+                    logger.warning(f"检查线程状态失败: {e}")
 
-            # 清理线程引用
-            self.monitor_thread = None
             logger.info("监控已停止")
 
         except Exception as e:
@@ -548,31 +547,31 @@ class RealTimeBacktestMonitor:
             # 检查最大回撤
             alerts.extend(self._check_metric_alert(
                 "max_drawdown", metrics.max_drawdown, "风险管理",
-                "最大回撤超过阈值", lambda x: x > self.alert_thresholds["max_drawdown"][x]
+                "最大回撤超过阈值", lambda cv, th: cv > th
             ))
 
             # 检查Sharpe比率
             alerts.extend(self._check_metric_alert(
                 "sharpe_ratio", metrics.sharpe_ratio, "收益质量",
-                "Sharpe比率低于阈值", lambda x: x < self.alert_thresholds["sharpe_ratio"][x]
+                "Sharpe比率低于阈值", lambda cv, th: cv < th
             ))
 
             # 检查VaR
             alerts.extend(self._check_metric_alert(
                 "var_95", metrics.var_95, "风险管理",
-                "VaR风险超过阈值", lambda x: x < self.alert_thresholds["var_95"][x]
+                "VaR风险超过阈值", lambda cv, th: cv < th
             ))
 
             # 检查波动率
             alerts.extend(self._check_metric_alert(
                 "volatility", metrics.volatility, "风险管理",
-                "波动率超过阈值", lambda x: x > self.alert_thresholds["volatility"][x]
+                "波动率超过阈值", lambda cv, th: cv > th
             ))
 
             # 检查胜率
             alerts.extend(self._check_metric_alert(
                 "win_rate", metrics.win_rate, "交易质量",
-                "胜率低于阈值", lambda x: x < self.alert_thresholds["win_rate"][x]
+                "胜率低于阈值", lambda cv, th: cv < th
             ))
 
         except Exception as e:
@@ -588,7 +587,7 @@ class RealTimeBacktestMonitor:
         thresholds = self.alert_thresholds.get(metric_name, {})
 
         for level_name, threshold in thresholds.items():
-            if condition_func(threshold) and abs(current_value) >= abs(threshold):
+            if condition_func(current_value, threshold) and abs(current_value) >= abs(threshold):
                 level = AlertLevel(level_name)
 
                 alert = AlertMessage(

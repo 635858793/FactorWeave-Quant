@@ -416,21 +416,39 @@ class CacheableService(BaseService):
     可缓存服务基类
 
     需要缓存功能的服务应该继承此类。
+    强制使用统一的 CacheService，不提供独立缓存回退。
     """
 
-    def __init__(self, cache_size: int = 100, event_bus: Optional[EventBus] = None):
+    def __init__(self, cache_size: int = 100, event_bus: Optional[EventBus] = None,
+                 namespace: Optional[str] = None):
         """
         初始化可缓存服务
 
         Args:
-            cache_size: 缓存大小
+            cache_size: 缓存大小（已废弃，保留参数兼容性）
             event_bus: 事件总线
+            namespace: 缓存命名空间（用于统一缓存服务）
         """
         super().__init__(event_bus)
         self._cache_size = cache_size
-        self._cache: Dict[str, Any] = {}
         self._cache_hits = 0
         self._cache_misses = 0
+        self._namespace = namespace or self.__class__.__name__.lower().replace('service', '')
+        self._unified_cache = None
+
+        self._init_unified_cache()
+
+    def _init_unified_cache(self) -> None:
+        """初始化统一缓存服务（强制）"""
+        from core.containers import get_service_container
+        from core.services.cache_service import CacheService
+        
+        container = get_service_container()
+        if container and container.is_registered(CacheService):
+            self._unified_cache = container.resolve(CacheService)
+            logger.debug(f"{self.__class__.__name__} 已连接到统一缓存服务，命名空间: {self._namespace}")
+        else:
+            raise RuntimeError(f"统一缓存服务未注册，请确保 CacheService 已在服务容器中注册")
 
     def get_from_cache(self, key: str) -> Optional[Any]:
         """
@@ -442,32 +460,46 @@ class CacheableService(BaseService):
         Returns:
             缓存的数据或None
         """
-        if key in self._cache:
+        if self._unified_cache is None:
+            raise RuntimeError("统一缓存服务未初始化")
+        
+        value = self._unified_cache.get(key, namespace=self._namespace)
+        if value is not None:
             self._cache_hits += 1
-            return self._cache[key]
+            return value
         else:
             self._cache_misses += 1
             return None
 
-    def put_to_cache(self, key: str, value: Any) -> None:
+    def put_to_cache(self, key: str, value: Any, ttl: Optional[Any] = None) -> None:
         """
         将数据放入缓存
 
         Args:
             key: 缓存键
             value: 缓存值
+            ttl: 生存时间（可选）
         """
-        if len(self._cache) >= self._cache_size:
-            # 简单的LRU：删除第一个元素
-            first_key = next(iter(self._cache))
-            del self._cache[first_key]
-
-        self._cache[key] = value
+        if self._unified_cache is None:
+            raise RuntimeError("统一缓存服务未初始化")
+        
+        from datetime import timedelta
+        ttl_delta = None
+        if ttl is not None:
+            if isinstance(ttl, (int, float)):
+                ttl_delta = timedelta(seconds=ttl)
+            elif isinstance(ttl, timedelta):
+                ttl_delta = ttl
+        
+        self._unified_cache.set(key, value, ttl=ttl_delta, namespace=self._namespace)
 
     def clear_cache(self) -> None:
         """清空缓存"""
-        self._cache.clear()
-        logger.debug(f"Cache cleared for service {self._name}")
+        if self._unified_cache is None:
+            raise RuntimeError("统一缓存服务未初始化")
+        
+        self._unified_cache.clear_namespace(self._namespace)
+        logger.debug(f"统一缓存命名空间 {self._namespace} 已清空")
 
     def get_cache_stats(self) -> Dict[str, Any]:
         """
@@ -479,13 +511,22 @@ class CacheableService(BaseService):
         total_requests = self._cache_hits + self._cache_misses
         hit_rate = self._cache_hits / total_requests if total_requests > 0 else 0
 
-        return {
-            'cache_size': len(self._cache),
-            'max_cache_size': self._cache_size,
+        stats = {
             'cache_hits': self._cache_hits,
             'cache_misses': self._cache_misses,
-            'hit_rate': hit_rate
+            'hit_rate': hit_rate,
+            'namespace': self._namespace,
         }
+
+        if self._unified_cache:
+            try:
+                ns_stats = self._unified_cache.get_namespace_stats(self._namespace)
+                if ns_stats:
+                    stats['unified_cache_stats'] = ns_stats
+            except Exception as e:
+                logger.debug(f"获取统一缓存统计失败: {e}")
+
+        return stats
 
     def _do_dispose(self) -> None:
         """清理缓存资源"""

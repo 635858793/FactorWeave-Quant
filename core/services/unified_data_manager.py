@@ -182,12 +182,17 @@ class UnifiedDataManager:
 
         self._cache_ttl = 300  # 5分钟缓存TTL
 
-        # 初始化缓存管理器
-        # if Cache:  # 已统一使用MultiLevelCacheManager
-        if False:
-            self.cache_manager = Cache()
-        else:
-            self.cache_manager = None
+        self.cache_manager = None
+        try:
+            from core.containers import get_service_container
+            from core.services.cache_service import CacheService
+            
+            container = get_service_container()
+            if container and container.is_registered(CacheService):
+                self.cache_manager = container.resolve(CacheService)
+                logger.info("统一缓存服务已初始化")
+        except Exception as e:
+            logger.warning(f"获取统一缓存服务失败: {e}，将使用延迟初始化")
 
         # 数据库连接
         try:
@@ -379,6 +384,19 @@ class UnifiedDataManager:
             return
 
         logger.info("开始初始化UnifiedDataManager...")
+
+        # 延迟获取统一缓存服务
+        if self.cache_manager is None:
+            try:
+                from core.containers import get_service_container
+                from core.services.cache_service import CacheService
+                
+                container = get_service_container()
+                if container and container.is_registered(CacheService):
+                    self.cache_manager = container.resolve(CacheService)
+                    logger.info("延迟初始化：统一缓存服务已获取")
+            except Exception as e:
+                logger.warning(f"延迟获取统一缓存服务失败: {e}")
 
         # 从服务容器获取已注册的实例，而不是创建新的
         try:
@@ -942,17 +960,15 @@ class UnifiedDataManager:
             return pd.DataFrame()
 
     def _get_cached_data(self, cache_key: str) -> Optional[pd.DataFrame]:
-        """增强缓存获取 - 统一使用MultiLevelCacheManager"""
+        """增强缓存获取 - 统一使用CacheService"""
         try:
-            # 优先从多级缓存获取
             if self.duckdb_available and self.multi_cache:
                 cached_data = self.multi_cache.get(cache_key)
                 if cached_data is not None:
                     return cached_data
 
-            # 回退到传统缓存
             if self.cache_manager:
-                return self.cache_manager.get(cache_key)
+                return self.cache_manager.get(cache_key, namespace='unified_data_manager')
 
             return None
         except Exception as e:
@@ -960,15 +976,15 @@ class UnifiedDataManager:
             return None
 
     def _cache_data(self, cache_key: str, data: pd.DataFrame):
-        """增强缓存存储 - 支持多级缓存"""
+        """增强缓存存储 - 统一使用CacheService"""
         try:
-            # 存储到多级缓存
             if self.duckdb_available and self.multi_cache:
                 self.multi_cache.set(cache_key, data, ttl=self._cache_ttl)
 
-            # 同时存储到传统缓存（向后兼容）
             if self.cache_manager:
-                self.cache_manager.set(cache_key, data)
+                from datetime import timedelta
+                ttl = timedelta(seconds=self._cache_ttl) if self._cache_ttl else None
+                self.cache_manager.set(cache_key, data, ttl=ttl, namespace='unified_data_manager')
 
         except Exception as e:
             logger.warning(f"缓存存储失败: {e}")
@@ -1213,7 +1229,7 @@ class UnifiedDataManager:
             # 使用asset-separated架构的数据库
             final_asset_type = asset_type or AssetType.STOCK_A
             database_path = self.asset_manager.get_database_path(final_asset_type)
-            logger.debug(f"📊 DuckDB路径: {database_path}, 资产类型: {final_asset_type.value}")
+            logger.debug(f"DuckDB路径: {database_path}, 资产类型: {final_asset_type.value}")
 
             # 周期到频率的映射（DuckDB表中的frequency字段）
             period_to_frequency_map = {
@@ -1223,7 +1239,7 @@ class UnifiedDataManager:
                 'daily': '1d', 'weekly': '1w', 'monthly': '1M'
             }
             frequency = period_to_frequency_map.get(period, '1d')
-            logger.debug(f"📊 周期映射: {period} -> {frequency}")
+            logger.debug(f"周期映射: {period} -> {frequency}")
 
             # 优化：在CTE中添加WHERE条件，提前过滤数据，减少JOIN的数据量
             view_query = f"""
@@ -1272,7 +1288,7 @@ class UnifiedDataManager:
                 LIMIT ?
             """
 
-            logger.debug(f"📊 [视图查询] database={database_path}, symbol={stock_code}, frequency={frequency}, limit={count}")
+            logger.debug(f"[视图查询] database={database_path}, symbol={stock_code}, frequency={frequency}, limit={count}")
 
             try:
                 # 先尝试质量优选视图
@@ -1333,7 +1349,7 @@ class UnifiedDataManager:
                     LIMIT ?
                 """
 
-                logger.info(f"📊 [基础表查询] 尝试使用基础表获取数据...")
+                logger.info(f"[基础表查询] 尝试使用基础表获取数据...")
 
                 result = self.duckdb_operations.execute_query(
                     database_path=database_path,
@@ -1884,7 +1900,7 @@ class UnifiedDataManager:
 
         try:
             asset_type_value = asset_type.value if hasattr(asset_type, 'value') else str(asset_type)
-            logger.debug(f"🔄 从传统数据源获取{asset_type_value}资产列表")
+            logger.debug(f"从传统数据源获取{asset_type_value}资产列表")
 
             if asset_type in [AssetType.SECTOR, AssetType.INDUSTRY_SECTOR,
                               AssetType.CONCEPT_SECTOR, AssetType.STYLE_SECTOR,
@@ -2169,7 +2185,7 @@ class UnifiedDataManager:
                 logger.info("降级到传统数据源模式")
 
         # 重定向到新的统一资产列表方法（DuckDB优先）
-        logger.info("🔄 重定向到DuckDB优先的资产列表方法")
+        logger.info("重定向到DuckDB优先的资产列表方法")
         asset_type_str = asset_type.value.lower()
         df = self.get_asset_list(asset_type=asset_type_str, market=market)
 
@@ -3226,7 +3242,7 @@ class UnifiedDataManager:
                     explain_result = conn.execute(explain_query, query_params).fetchall()
                     
                     logger.info("=" * 80)
-                    logger.info("📊 查询执行计划分析")
+                    logger.info("查询执行计划分析")
                     logger.info("=" * 80)
                     
                     for i, row in enumerate(explain_result, 1):
@@ -3429,7 +3445,7 @@ class UnifiedDataManager:
                         total_end = time.time()
                         total_time = total_end - start_time
                         logger.info("=" * 80)
-                        logger.info("📊 批量查询性能汇总")
+                        logger.info("批量查询性能汇总")
                         logger.info("=" * 80)
                         logger.info(f"总耗时: {total_time:.3f}秒")
                         logger.info(f"查询股票数: {len(symbols)}")
@@ -3717,7 +3733,7 @@ class UnifiedDataManager:
                 result['message'] = f"成功创建 {len(result['created_indexes'])} 个索引，失败 {len(result['failed_indexes'])} 个"
 
                 logger.info("=" * 80)
-                logger.info("📊 索引创建完成")
+                logger.info("索引创建完成")
                 logger.info(f"成功: {len(result['created_indexes'])} 个")
                 logger.info(f"失败: {len(result['failed_indexes'])} 个")
                 logger.info("=" * 80)
@@ -4279,7 +4295,7 @@ class UnifiedDataManager:
                     logger.error(f"  ❌ 注册插件异常 {plugin_id}: {e}")
                     continue
 
-            logger.info(f"📊 插件注册统计: 成功 {registered_count}/{len(data_source_plugins)}")
+            logger.info(f"插件注册统计: 成功 {registered_count}/{len(data_source_plugins)}")
             return registered_count
 
         except Exception as e:

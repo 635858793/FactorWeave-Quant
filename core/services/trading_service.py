@@ -1,4 +1,4 @@
-"""
+﻿"""
 统一交易服务 - 架构精简重构版本
 
 整合所有交易管理器功能，提供统一的交易执行和风险控制接口。
@@ -20,7 +20,7 @@ from collections import defaultdict, deque
 from loguru import logger
 
 from .base_service import BaseService
-from ..events import EventBus, get_event_bus
+from ..events import EventBus, get_event_bus, TradeExecutedEvent, PositionUpdatedEvent
 from ..containers import ServiceContainer, get_service_container
 from ..strategy_extensions import StrategyLifecycle
 
@@ -218,6 +218,12 @@ class TradingService(BaseService):
         # 依赖注入
         self._service_container = service_container or get_service_container()
 
+        # 事件总线
+        self._event_bus = get_event_bus()
+
+        # 延迟初始化 MarketService（避免循环依赖）
+        self._market_service = None
+
         # 订单管理
         self._orders: Dict[str, TradingOrder] = {}
         self._active_orders: Dict[str, TradingOrder] = {}
@@ -249,6 +255,11 @@ class TradingService(BaseService):
         # 线程和锁
         self._service_lock = threading.RLock()
 
+        # CTP接口管理
+        self._ctp_interfaces: Dict[str, Any] = {}
+        self._ctp_market_interfaces: Dict[str, Any] = {}
+        self._ctp_lock = threading.RLock()
+
         logger.info("TradingService initialized for architecture simplification")
 
     def _do_initialize(self) -> None:
@@ -258,6 +269,14 @@ class TradingService(BaseService):
 
             # 初始化默认投资组合
             self._initialize_default_portfolio()
+
+            # 初始化 MarketService
+            try:
+                from .market_service import MarketService
+                self._market_service = self._service_container.resolve(MarketService)
+                logger.info("✓ MarketService initialized in TradingService")
+            except Exception as e:
+                logger.warning(f"Failed to initialize MarketService: {e}, will use fallback pricing")
 
             logger.info("TradingService initialized successfully")
 
@@ -311,7 +330,7 @@ class TradingService(BaseService):
             logger.error(f"Failed to create order: {e}")
             return False, f"Order creation failed: {e}"
 
-    async def execute_buy_order(self, stock_code: str, stock_name: str, quantity: int) -> TradeRecord:
+    async def execute_buy_order(self, stock_code: str, stock_name: str, quantity: int, price: Optional[Decimal] = None) -> TradeRecord:
         """
         执行买入订单
 
@@ -319,19 +338,25 @@ class TradingService(BaseService):
             stock_code: 股票代码
             stock_name: 股票名称
             quantity: 买入数量
+            price: 限价（可选），如果不提供则使用市价
 
         Returns:
             交易记录
         """
         try:
-            # 获取当前价格（模拟）
-            current_price = Decimal("100.00")
+            # 获取当前价格
+            if price is None:
+                current_price = self._get_current_price(stock_code, stock_name)
+                order_type = OrderType.MARKET
+            else:
+                current_price = price
+                order_type = OrderType.LIMIT
 
-            # 创建市价买入订单
+            # 创建买入订单
             success, order_id = self.create_order(
                 symbol=stock_code,
                 symbol_name=stock_name,
-                order_type=OrderType.MARKET,
+                order_type=order_type,
                 side=OrderSide.BUY,
                 quantity=quantity,
                 price=current_price
@@ -367,7 +392,7 @@ class TradingService(BaseService):
             logger.error(f"Failed to execute buy order: {e}")
             raise
 
-    async def execute_sell_order(self, stock_code: str, stock_name: str, quantity: int) -> TradeRecord:
+    async def execute_sell_order(self, stock_code: str, stock_name: str, quantity: int, price: Optional[Decimal] = None) -> TradeRecord:
         """
         执行卖出订单
 
@@ -375,6 +400,7 @@ class TradingService(BaseService):
             stock_code: 股票代码
             stock_name: 股票名称
             quantity: 卖出数量
+            price: 限价（可选），如果不提供则使用市价
 
         Returns:
             交易记录
@@ -385,14 +411,19 @@ class TradingService(BaseService):
             if not position or position.quantity < quantity:
                 raise Exception(f"Insufficient position for {stock_code}")
 
-            # 获取当前价格（模拟）
-            current_price = Decimal("100.00")
+            # 获取当前价格
+            if price is None:
+                current_price = self._get_current_price(stock_code, stock_name)
+                order_type = OrderType.MARKET
+            else:
+                current_price = price
+                order_type = OrderType.LIMIT
 
-            # 创建市价卖出订单
+            # 创建卖出订单
             success, order_id = self.create_order(
                 symbol=stock_code,
                 symbol_name=stock_name,
-                order_type=OrderType.MARKET,
+                order_type=order_type,
                 side=OrderSide.SELL,
                 quantity=quantity,
                 price=current_price
@@ -464,6 +495,20 @@ class TradingService(BaseService):
             # 更新持仓
             self._update_position_from_trade(order, filled_price, commission)
 
+            # 发布交易执行事件
+            self._event_bus.publish(
+                TradeExecutedEvent(
+                    order_id=order_id,
+                    symbol=order.symbol,
+                    symbol_name=order.symbol_name,
+                    side=str(order.side),
+                    quantity=order.quantity,
+                    price=float(filled_price),
+                    commission=float(commission),
+                    timestamp=datetime.now()
+                )
+            )
+
             logger.info(f"Order executed: {order_id} - {order.quantity}@{filled_price}")
             return True, "Order executed successfully"
 
@@ -504,6 +549,17 @@ class TradingService(BaseService):
                             del self._positions[order.symbol]
                             self._trading_metrics.total_positions -= 1
 
+            # 发布持仓更新事件
+            self._event_bus.publish(
+                PositionUpdatedEvent(
+                    symbol=order.symbol,
+                    symbol_name=order.symbol_name,
+                    quantity=self._positions.get(order.symbol, Position(symbol=order.symbol, symbol_name=order.symbol_name, quantity=0)).quantity,
+                    cost_price=float(self._positions.get(order.symbol, Position(symbol=order.symbol, symbol_name=order.symbol_name, quantity=0, cost_price=Decimal('0'))).cost_price),
+                    timestamp=datetime.now()
+                )
+            )
+
         except Exception as e:
             logger.error(f"Failed to update position from trade: {e}")
 
@@ -521,6 +577,46 @@ class TradingService(BaseService):
         """获取持仓信息"""
         with self._position_lock:
             return self._positions.get(symbol)
+
+    def _get_current_price(self, stock_code: str, stock_name: str) -> Decimal:
+        """
+        获取当前价格
+
+        优先级：
+        1. 从 MarketService 获取实时行情
+        2. 从持仓获取当前价格
+        3. 抛出异常（不使用模拟数据）
+
+        Args:
+            stock_code: 股票代码
+            stock_name: 股票名称
+
+        Returns:
+            当前价格
+
+        Raises:
+            ValueError: 无法获取价格时抛出
+        """
+        # 1. 尝试从 MarketService 获取实时行情
+        if self._market_service:
+            try:
+                quote = self._market_service.get_quote(stock_code)
+                if quote and quote.current_price:
+                    logger.debug(f"Got real-time price for {stock_code}: {quote.current_price}")
+                    return quote.current_price
+            except Exception as e:
+                logger.warning(f"Failed to get quote from MarketService: {e}")
+
+        # 2. 尝试从持仓获取当前价格
+        position = self.get_position(stock_code)
+        if position and position.current_price:
+            logger.debug(f"Got position price for {stock_code}: {position.current_price}")
+            return position.current_price
+
+        # 3. 无法获取价格，抛出异常
+        error_msg = f"无法获取 {stock_code}({stock_name}) 的实时行情，请确保行情系统正常运行"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
 
     def get_all_positions(self) -> Dict[str, Position]:
         """获取所有持仓"""
@@ -698,6 +794,80 @@ class TradingService(BaseService):
         except Exception as e:
             logger.error(f"清空交易历史失败: {e}")
 
+    def clear_all_positions(self) -> Tuple[bool, str]:
+        """
+        清空所有持仓
+
+        Returns:
+            (success, message) 成功标志和消息
+        """
+        try:
+            with self._position_lock:
+                if not self._positions:
+                    return False, "没有持仓需要清空"
+
+                # 获取所有持仓信息用于日志
+                positions_info = [
+                    f"{pos.symbol_name}({pos.symbol}): {pos.quantity}股"
+                    for pos in self._positions.values()
+                ]
+
+                # 清空持仓
+                self._positions.clear()
+                self._trading_metrics.total_positions = 0
+
+                # 更新投资组合
+                portfolio = self.get_portfolio()
+                if portfolio:
+                    portfolio.total_market_value = Decimal('0')
+                    portfolio.total_cost = Decimal('0')
+                    portfolio.total_profit_loss = Decimal('0')
+                    portfolio.total_profit_loss_ratio = 0.0
+                    portfolio._recalculate()
+
+                logger.info(f"已清空所有持仓: {', '.join(positions_info)}")
+                return True, f"已清空 {len(positions_info)} 个持仓"
+
+        except Exception as e:
+            logger.error(f"清空持仓失败: {e}")
+            return False, f"清空持仓失败: {e}"
+
+    def cancel_order(self, order_id: str) -> Tuple[bool, str]:
+        """
+        撤销订单
+
+        Args:
+            order_id: 订单ID
+
+        Returns:
+            (success, message) 成功标志和消息
+        """
+        try:
+            with self._order_lock:
+                if order_id not in self._orders:
+                    return False, f"订单 {order_id} 不存在"
+
+                order = self._orders[order_id]
+
+                if not order.is_active:
+                    return False, f"订单 {order_id} 状态为 {order.status}，无法撤销"
+
+                # 更新订单状态为已取消
+                order.status = OrderStatus.CANCELLED
+
+                if order_id in self._active_orders:
+                    del self._active_orders[order_id]
+
+                self._trading_metrics.cancelled_orders += 1
+                self._trading_metrics.active_orders = len(self._active_orders)
+
+                logger.info(f"订单已撤销: {order_id}")
+                return True, f"订单 {order_id} 已成功撤销"
+
+        except Exception as e:
+            logger.error(f"撤销订单失败: {e}")
+            return False, f"撤销订单失败: {e}"
+
     def get_portfolio(self, portfolio_id: Optional[str] = None) -> Optional[Portfolio]:
         """
         获取投资组合
@@ -817,3 +987,187 @@ class TradingService(BaseService):
                 'strategy_id': strategy_id,
                 'error': str(e)
             }
+
+
+    # ==================== CTP接口管理 ====================
+
+    def connect_ctp_account(self, account_id: str) -> Tuple[bool, str]:
+        """
+        连接CTP账户
+        
+        Args:
+            account_id: 账户ID
+            
+        Returns:
+            (success, message) 成功标志和消息
+        """
+        try:
+            from core.trading.account_manager import AccountManager
+            from core.trading.interfaces.ctp_trading_interface import CTPTradingInterface
+            from core.trading.interfaces.ctp_market_interface import CTPMarketInterface
+            from core.trading.interfaces.ctp_config import CTPConfig
+            from core.trading.account_models import TradingInterfaceType
+            
+            account_manager = self._service_container.resolve(AccountManager)
+            account = account_manager.get_account(account_id)
+            
+            if not account:
+                return False, f"账户不存在: {account_id}"
+            
+            if account.trading_interface_type != TradingInterfaceType.CTP:
+                return False, f"账户不是CTP类型: {account_id}"
+            
+            is_simulation = account.account_id.startswith("simnow_")
+            
+            config = CTPConfig(
+                trade_front=account.ctp_trade_front,
+                quote_front=account.ctp_quote_front,
+                broker_id=account.ctp_broker_id,
+                investor_id=account.ctp_investor_id,
+                password=account.ctp_password,
+                app_id=account.ctp_app_id,
+                auth_code=account.ctp_auth_code,
+                product_info=account.ctp_product_info,
+                use_simulation=is_simulation
+            )
+            
+            ctp_interface = CTPTradingInterface(config, self._event_bus)
+            
+            if not ctp_interface.connect():
+                return False, f"CTP交易接口连接失败: {account_id}，请确保CTP SDK已安装"
+            
+            if not ctp_interface.login():
+                return False, f"CTP交易接口登录失败: {account_id}，请检查账户配置"
+            
+            ctp_market_interface = CTPMarketInterface(config, self._event_bus)
+            
+            if not ctp_market_interface.connect():
+                logger.warning(f"CTP行情接口连接失败: {account_id}，将继续使用交易接口")
+            else:
+                if not ctp_market_interface.login():
+                    logger.warning(f"CTP行情接口登录失败: {account_id}，将继续使用交易接口")
+            
+            with self._ctp_lock:
+                self._ctp_interfaces[account_id] = ctp_interface
+                self._ctp_market_interfaces[account_id] = ctp_market_interface
+            
+            env_type = "SimNow模拟环境" if is_simulation else "实盘环境"
+            logger.info(f"CTP账户连接成功: {account_id} ({env_type})")
+            return True, f"CTP账户连接成功: {account_id} ({env_type})"
+            
+        except Exception as e:
+            logger.error(f"连接CTP账户失败: {e}")
+            return False, f"连接CTP账户失败: {e}"
+
+    def disconnect_ctp_account(self, account_id: str) -> Tuple[bool, str]:
+        """
+        断开CTP账户连接
+        
+        Args:
+            account_id: 账户ID
+            
+        Returns:
+            (success, message) 成功标志和消息
+        """
+        try:
+            with self._ctp_lock:
+                if account_id in self._ctp_interfaces:
+                    ctp_interface = self._ctp_interfaces[account_id]
+                    ctp_interface.disconnect()
+                    del self._ctp_interfaces[account_id]
+                
+                if account_id in self._ctp_market_interfaces:
+                    ctp_market_interface = self._ctp_market_interfaces[account_id]
+                    ctp_market_interface.disconnect()
+                    del self._ctp_market_interfaces[account_id]
+            
+            logger.info(f"CTP账户已断开: {account_id}")
+            return True, f"CTP账户已断开: {account_id}"
+            
+        except Exception as e:
+            logger.error(f"断开CTP账户失败: {e}")
+            return False, f"断开CTP账户失败: {e}"
+
+    def get_ctp_connection_status(self, account_id: str) -> dict:
+        """
+        获取CTP连接状态
+        
+        Args:
+            account_id: 账户ID
+            
+        Returns:
+            dict: 连接状态信息
+        """
+        try:
+            with self._ctp_lock:
+                trading_connected = account_id in self._ctp_interfaces
+                market_connected = account_id in self._ctp_market_interfaces
+                
+                return {
+                    'account_id': account_id,
+                    'trading_connected': trading_connected,
+                    'market_connected': market_connected,
+                    'fully_connected': trading_connected and market_connected
+                }
+                
+        except Exception as e:
+            logger.error(f"获取CTP连接状态失败: {e}")
+            return {
+                'account_id': account_id,
+                'trading_connected': False,
+                'market_connected': False,
+                'fully_connected': False,
+                'error': str(e)
+            }
+
+    def subscribe_ctp_quote(self, account_id: str, symbols: List[str]) -> Tuple[bool, str]:
+        """
+        订阅CTP行情
+        
+        Args:
+            account_id: 账户ID
+            symbols: 合约代码列表
+            
+        Returns:
+            (success, message) 成功标志和消息
+        """
+        try:
+            with self._ctp_lock:
+                if account_id not in self._ctp_market_interfaces:
+                    return False, f"CTP行情接口未连接: {account_id}"
+                
+                ctp_market_interface = self._ctp_market_interfaces[account_id]
+                success = ctp_market_interface.subscribe_quote(symbols)
+                
+                if success:
+                    return True, f"订阅CTP行情成功: {len(symbols)} 个合约"
+                else:
+                    return False, "订阅CTP行情失败"
+                    
+        except Exception as e:
+            logger.error(f"订阅CTP行情失败: {e}")
+            return False, f"订阅CTP行情失败: {e}"
+
+    def get_ctp_quote(self, account_id: str, symbol: str) -> Optional[Any]:
+        """
+        获取CTP行情数据
+        
+        Args:
+            account_id: 账户ID
+            symbol: 合约代码
+            
+        Returns:
+            行情数据，如果不存在则返回 None
+        """
+        try:
+            with self._ctp_lock:
+                if account_id not in self._ctp_market_interfaces:
+                    logger.warning(f"CTP行情接口未连接: {account_id}")
+                    return None
+                
+                ctp_market_interface = self._ctp_market_interfaces[account_id]
+                return ctp_market_interface.get_quote(symbol)
+                
+        except Exception as e:
+            logger.error(f"获取CTP行情数据失败: {e}")
+            return None

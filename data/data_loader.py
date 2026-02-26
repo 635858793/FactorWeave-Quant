@@ -14,9 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from utils.cache import Cache
 
-# 配置日志
 logger = logger
 
 @dataclass
@@ -177,8 +175,16 @@ class DataSourceValidator:
             logger.error(f"{context}强制数值转换失败: {str(e)}")
             return df
 
-# 创建全局缓存实例
-data_cache = Cache(cache_dir=".cache/data", default_ttl=30*60)
+def _get_data_cache():
+    """获取数据缓存实例（延迟加载）"""
+    try:
+        from core.services.unified_cache_provider import get_unified_cache_provider
+        provider = get_unified_cache_provider()
+        return provider.get_cache_service()
+    except ImportError:
+        return None
+
+data_cache = _get_data_cache()
 
 def retry_on_failure(max_retries: int = 3, delay_seconds: int = 1):
     """重试装饰器"""
@@ -211,14 +217,12 @@ def fetch_fundamental_data(stock, use_cache: bool = True) -> pd.DataFrame:
         DataFrame: 包含基本面数据的DataFrame
     """
     try:
-        # 检查缓存
         cache_key = f"fundamental_{stock.code}"
-        if use_cache:
-            cached_data = data_cache.get(cache_key)
+        if use_cache and data_cache:
+            cached_data = data_cache.get(cache_key, namespace="data_loader")
             if cached_data is not None:
                 return cached_data
 
-        # 获取数据
         df = create_simulated_fundamental_data()
         
         # 使用数据源验证器预防重复字符串
@@ -229,12 +233,11 @@ def fetch_fundamental_data(stock, use_cache: bool = True) -> pd.DataFrame:
         if not validation.is_valid:
             raise DataLoadError(f"基本面数据验证失败: {validation.errors}")
 
-        # 处理异常值
         df = handle_outliers(df)
 
-        # 缓存数据
-        if use_cache:
-            data_cache.set(cache_key, df)
+        if use_cache and data_cache:
+            from datetime import timedelta
+            data_cache.set(cache_key, df, namespace="data_loader", ttl=timedelta(minutes=30))
 
         return df
 
@@ -309,30 +312,25 @@ def handle_outliers(df: pd.DataFrame, method: str = 'zscore', threshold: float =
 def fetch_macroeconomic_data(use_cache: bool = True) -> pd.DataFrame:
     """获取宏观经济数据"""
     try:
-        # 检查缓存
         cache_key = "macroeconomic"
-        if use_cache:
-            cached_data = data_cache.get(cache_key)
+        if use_cache and data_cache:
+            cached_data = data_cache.get(cache_key, namespace="data_loader")
             if cached_data is not None:
                 return cached_data
 
-        # 获取数据
         df = create_simulated_macroeconomic_data()
         
-        # 使用数据源验证器预防重复字符串
         df = DataSourceValidator.validate_and_clean_data(df, "宏观经济数据")
 
-        # 验证数据
         validation = validate_macroeconomic_data(df)
         if not validation.is_valid:
             raise DataLoadError(f"宏观经济数据验证失败: {validation.errors}")
 
-        # 处理异常值
         df = handle_outliers(df)
 
-        # 缓存数据
-        if use_cache:
-            data_cache.set(cache_key, df)
+        if use_cache and data_cache:
+            from datetime import timedelta
+            data_cache.set(cache_key, df, namespace="data_loader", ttl=timedelta(minutes=30))
 
         return df
 

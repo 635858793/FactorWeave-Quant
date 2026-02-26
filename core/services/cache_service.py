@@ -15,7 +15,7 @@ import pickle
 import json
 import os
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
@@ -58,6 +58,37 @@ class CacheOperation(Enum):
     INVALIDATE = "invalidate"
 
 
+class CacheType(Enum):
+    """缓存类型"""
+    DATA = "data"                  # 数据缓存
+    COMPUTATION = "computation"    # 计算结果缓存
+    UI = "ui"                     # UI组件缓存
+    PERFORMANCE = "performance"    # 性能监控缓存
+    TEMPORARY = "temporary"        # 临时缓存
+
+
+class CachePriority(Enum):
+    """缓存优先级"""
+    CRITICAL = 1    # 关键缓存（不可清理）
+    HIGH = 2        # 高优先级
+    MEDIUM = 3      # 中等优先级
+    LOW = 4         # 低优先级
+    DISPOSABLE = 5  # 可丢弃缓存
+
+
+@dataclass
+class NamespaceMetadata:
+    """命名空间元数据"""
+    name: str
+    created_at: datetime = field(default_factory=datetime.now)
+    keys: Set[str] = field(default_factory=set)
+    groups: Dict[str, Set[str]] = field(default_factory=lambda: defaultdict(set))
+    priority: int = 5
+    max_size: Optional[int] = None
+    default_ttl: Optional[timedelta] = None
+    description: str = ""
+
+
 @dataclass
 class CacheEntry(Generic[T]):
     """缓存条目"""
@@ -69,12 +100,19 @@ class CacheEntry(Generic[T]):
     ttl: Optional[timedelta] = None
     size: int = 0
     metadata: Dict[str, Any] = field(default_factory=dict)
+    priority: int = 5
+    group: Optional[str] = None
+    namespace: str = "default"
 
     def is_expired(self) -> bool:
         """检查是否过期"""
         if self.ttl is None:
             return False
         return datetime.now() - self.created_at > self.ttl
+
+    def get_created_timestamp(self) -> float:
+        """获取创建时间戳，用于FIFO排序"""
+        return self.created_at.timestamp()
 
     def update_access(self) -> None:
         """更新访问信息"""
@@ -133,6 +171,44 @@ class CacheMetrics:
     peak_memory_usage: int = 0
     last_cleanup: datetime = field(default_factory=datetime.now)
     last_update: datetime = field(default_factory=datetime.now)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class CacheConfiguration:
+    """缓存配置"""
+    name: str
+    cache_type: CacheType = CacheType.DATA
+    strategy: CacheStrategy = CacheStrategy.LRU
+    priority: CachePriority = CachePriority.MEDIUM
+    max_size: int = 1000
+    max_memory_mb: int = 100
+    max_disk_mb: int = 1000
+    default_ttl_minutes: int = 30
+    cleanup_interval_minutes: int = 10
+    enable_compression: bool = False
+    enable_encryption: bool = False
+    enable_statistics: bool = True
+    enable_prediction: bool = False
+    enable_preloading: bool = False
+    enable_adaptive_sizing: bool = True
+
+
+@dataclass
+class CacheRecommendation:
+    """缓存优化建议"""
+    cache_name: str
+    recommendation_type: str
+    description: str
+    impact_score: float
+    implementation_cost: str
+    expected_improvement: str
+    timestamp: datetime = field(default_factory=datetime.now)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
 
 
 class MemoryCache:
@@ -244,8 +320,12 @@ class MemoryCache:
                 # 驱逐使用频率最低的
                 key_to_evict = min(self._cache.keys(),
                                    key=lambda k: self._cache[k].access_count)
+            elif self.config.strategy == CacheStrategy.FIFO:
+                # 驱逐最早创建的
+                key_to_evict = min(self._cache.keys(),
+                                   key=lambda k: self._cache[k].get_created_timestamp())
             else:
-                # 默认FIFO
+                # 默认LRU
                 key_to_evict = next(iter(self._cache))
 
             entry = self._cache[key_to_evict]
@@ -527,6 +607,14 @@ class CacheService(BaseService):
         self._hot_keys: Set[str] = set()
         self._cold_keys: Set[str] = set()
 
+        # 命名空间管理
+        self._namespaces: Dict[str, NamespaceMetadata] = {}
+        self._default_namespace = "default"
+        self._namespace_lock = threading.RLock()
+
+        # 优先级队列（用于优先级驱逐）
+        self._priority_queue: Dict[int, Set[str]] = defaultdict(set)
+
         # 线程和锁
         self._service_lock = threading.RLock()
         self._pattern_lock = threading.RLock()
@@ -671,52 +759,51 @@ class CacheService(BaseService):
             logger.error(f"Cache functionality validation failed: {e}")
             raise
 
-    def get(self, key: str, default: Any = None) -> Any:
+    def get(self, key: str, default: Any = None, namespace: str = None) -> Any:
         """
         获取缓存值
 
         Args:
             key: 缓存键
             default: 默认值
+            namespace: 命名空间（默认使用default命名空间）
 
         Returns:
             缓存值或默认值
         """
         start_time = time.time()
+        namespace = namespace or self._default_namespace
+        namespaced_key = f"{namespace}:{key}"
 
         try:
-            # 记录访问模式
-            self._record_access_pattern(key)
+            self._record_access_pattern(namespaced_key)
 
-            # 尝试L1缓存
             if self._l1_cache:
-                value = self._l1_cache.get(key)
+                value = self._l1_cache.get(namespaced_key)
                 if value is not None:
                     self._update_metrics(CacheLevel.L1_MEMORY, CacheOperation.GET, True, start_time)
                     return value
 
-            # 尝试L2缓存
             if self._l2_cache:
-                value = self._l2_cache.get(key)
+                value = self._l2_cache.get(namespaced_key)
                 if value is not None:
-                    # 提升到L1缓存
                     if self._l1_cache:
-                        self._l1_cache.set(key, value)
+                        self._l1_cache.set(namespaced_key, value)
 
                     self._update_metrics(CacheLevel.L2_DISK, CacheOperation.GET, True, start_time)
                     return value
 
-            # 缓存未命中
             self._update_metrics(CacheLevel.L1_MEMORY, CacheOperation.GET, False, start_time)
             return default
 
         except Exception as e:
-            logger.error(f"Error getting cache key {key}: {e}")
+            logger.error(f"Error getting cache key {namespaced_key}: {e}")
             self._update_metrics(CacheLevel.L1_MEMORY, CacheOperation.GET, False, start_time)
             return default
 
     def set(self, key: str, value: Any, ttl: Optional[timedelta] = None,
-            level: CacheLevel = CacheLevel.L1_MEMORY) -> None:
+            level: CacheLevel = CacheLevel.L1_MEMORY, namespace: str = None,
+            group: str = None, priority: int = 5) -> None:
         """
         设置缓存值
 
@@ -725,66 +812,91 @@ class CacheService(BaseService):
             value: 缓存值
             ttl: 生存时间
             level: 缓存级别
+            namespace: 命名空间（默认使用default命名空间）
+            group: 分组名称（可选）
+            priority: 优先级（0-10，值越大优先级越高，默认5）
         """
         start_time = time.time()
+        namespace = namespace or self._default_namespace
+        namespaced_key = f"{namespace}:{key}"
+        priority = max(0, min(10, priority))
 
         try:
-            # 记录访问模式
-            self._record_access_pattern(key)
+            self._record_access_pattern(namespaced_key)
+
+            with self._namespace_lock:
+                if namespace not in self._namespaces:
+                    self._namespaces[namespace] = NamespaceMetadata(name=namespace)
+                
+                ns_meta = self._namespaces[namespace]
+                ns_meta.keys.add(namespaced_key)
+                
+                if group:
+                    ns_meta.groups[group].add(namespaced_key)
+
+            with self._service_lock:
+                self._priority_queue[priority].add(namespaced_key)
 
             if level == CacheLevel.L1_MEMORY and self._l1_cache:
-                self._l1_cache.set(key, value, ttl)
+                self._l1_cache.set(namespaced_key, value, ttl)
                 self._update_metrics(CacheLevel.L1_MEMORY, CacheOperation.SET, True, start_time)
 
             elif level == CacheLevel.L2_DISK and self._l2_cache:
-                self._l2_cache.set(key, value, ttl)
+                self._l2_cache.set(namespaced_key, value, ttl)
                 self._update_metrics(CacheLevel.L2_DISK, CacheOperation.SET, True, start_time)
 
             else:
-                # 默认设置到L1，然后异步设置到L2
                 if self._l1_cache:
-                    self._l1_cache.set(key, value, ttl)
+                    self._l1_cache.set(namespaced_key, value, ttl)
                     self._update_metrics(CacheLevel.L1_MEMORY, CacheOperation.SET, True, start_time)
 
                 if self._l2_cache:
-                    # 使用较长的TTL存储到L2
                     l2_ttl = ttl or self._l2_config.default_ttl
-                    self._l2_cache.set(key, value, l2_ttl)
+                    self._l2_cache.set(namespaced_key, value, l2_ttl)
                     self._update_metrics(CacheLevel.L2_DISK, CacheOperation.SET, True, start_time)
 
         except Exception as e:
-            logger.error(f"Error setting cache key {key}: {e}")
+            logger.error(f"Error setting cache key {namespaced_key}: {e}")
             self._update_metrics(level, CacheOperation.SET, False, start_time)
 
-    def delete(self, key: str) -> bool:
+    def delete(self, key: str, namespace: str = None) -> bool:
         """
         删除缓存值
 
         Args:
             key: 缓存键
+            namespace: 命名空间（默认使用default命名空间）
 
         Returns:
             是否删除成功
         """
         start_time = time.time()
+        namespace = namespace or self._default_namespace
+        namespaced_key = f"{namespace}:{key}"
         success = False
 
         try:
-            # 从所有级别删除
             if self._l1_cache:
-                l1_success = self._l1_cache.delete(key)
+                l1_success = self._l1_cache.delete(namespaced_key)
                 success = success or l1_success
                 self._update_metrics(CacheLevel.L1_MEMORY, CacheOperation.DELETE, l1_success, start_time)
 
             if self._l2_cache:
-                l2_success = self._l2_cache.delete(key)
+                l2_success = self._l2_cache.delete(namespaced_key)
                 success = success or l2_success
                 self._update_metrics(CacheLevel.L2_DISK, CacheOperation.DELETE, l2_success, start_time)
+
+            with self._namespace_lock:
+                if namespace in self._namespaces:
+                    ns_meta = self._namespaces[namespace]
+                    ns_meta.keys.discard(namespaced_key)
+                    for group_keys in ns_meta.groups.values():
+                        group_keys.discard(namespaced_key)
 
             return success
 
         except Exception as e:
-            logger.error(f"Error deleting cache key {key}: {e}")
+            logger.error(f"Error deleting cache key {namespaced_key}: {e}")
             return False
 
     def clear(self, level: Optional[CacheLevel] = None) -> None:
@@ -1202,6 +1314,473 @@ class CacheService(BaseService):
             combined_metrics['total_size'] += cache_metrics.stats.total_size
 
         return combined_metrics
+
+    def create_namespace(self, name: str, max_size: Optional[int] = None,
+                         default_ttl: Optional[timedelta] = None,
+                         priority: int = 5, description: str = "") -> bool:
+        """
+        创建命名空间
+
+        Args:
+            name: 命名空间名称
+            max_size: 最大缓存条目数（可选）
+            default_ttl: 默认TTL（可选）
+            priority: 命名空间优先级（0-10）
+            description: 命名空间描述
+
+        Returns:
+            是否创建成功
+        """
+        try:
+            with self._namespace_lock:
+                if name in self._namespaces:
+                    logger.warning(f"Namespace '{name}' already exists")
+                    return False
+
+                self._namespaces[name] = NamespaceMetadata(
+                    name=name,
+                    max_size=max_size,
+                    default_ttl=default_ttl,
+                    priority=max(0, min(10, priority)),
+                    description=description
+                )
+
+                logger.info(f"Created namespace '{name}' with priority {priority}")
+                return True
+
+        except Exception as e:
+            logger.error(f"Error creating namespace '{name}': {e}")
+            return False
+
+    def delete_namespace(self, name: str) -> bool:
+        """
+        删除命名空间及其所有缓存条目
+
+        Args:
+            name: 命名空间名称
+
+        Returns:
+            是否删除成功
+        """
+        try:
+            if name == self._default_namespace:
+                logger.warning("Cannot delete default namespace")
+                return False
+
+            with self._namespace_lock:
+                if name not in self._namespaces:
+                    return False
+
+                ns_meta = self._namespaces[name]
+
+                for key in ns_meta.keys:
+                    if self._l1_cache:
+                        self._l1_cache.delete(key)
+                    if self._l2_cache:
+                        self._l2_cache.delete(key)
+
+                del self._namespaces[name]
+
+                logger.info(f"Deleted namespace '{name}' with {len(ns_meta.keys)} keys")
+                return True
+
+        except Exception as e:
+            logger.error(f"Error deleting namespace '{name}': {e}")
+            return False
+
+    def get_namespace_stats(self, name: str) -> Dict[str, Any]:
+        """
+        获取命名空间统计信息
+
+        Args:
+            name: 命名空间名称
+
+        Returns:
+            统计信息
+        """
+        try:
+            with self._namespace_lock:
+                if name not in self._namespaces:
+                    return {}
+
+                ns_meta = self._namespaces[name]
+
+                return {
+                    "name": ns_meta.name,
+                    "created_at": ns_meta.created_at.isoformat(),
+                    "key_count": len(ns_meta.keys),
+                    "group_count": len(ns_meta.groups),
+                    "groups": {g: len(keys) for g, keys in ns_meta.groups.items()},
+                    "priority": ns_meta.priority,
+                    "max_size": ns_meta.max_size,
+                    "description": ns_meta.description
+                }
+
+        except Exception as e:
+            logger.error(f"Error getting namespace stats for '{name}': {e}")
+            return {}
+
+    def list_namespaces(self) -> List[str]:
+        """
+        列出所有命名空间
+
+        Returns:
+            命名空间名称列表
+        """
+        with self._namespace_lock:
+            return list(self._namespaces.keys())
+
+    def clear_namespace(self, name: str) -> int:
+        """
+        清空命名空间中的所有缓存
+
+        Args:
+            name: 命名空间名称
+
+        Returns:
+            清除的条目数
+        """
+        try:
+            with self._namespace_lock:
+                if name not in self._namespaces:
+                    return 0
+
+                ns_meta = self._namespaces[name]
+                cleared_count = 0
+
+                for key in list(ns_meta.keys):
+                    if self._l1_cache:
+                        self._l1_cache.delete(key)
+                    if self._l2_cache:
+                        self._l2_cache.delete(key)
+                    cleared_count += 1
+
+                ns_meta.keys.clear()
+                for group_keys in ns_meta.groups.values():
+                    group_keys.clear()
+
+                logger.info(f"Cleared {cleared_count} entries from namespace '{name}'")
+                return cleared_count
+
+        except Exception as e:
+            logger.error(f"Error clearing namespace '{name}': {e}")
+            return 0
+
+    def get_by_group(self, namespace: str, group: str) -> Dict[str, Any]:
+        """
+        获取分组中的所有缓存条目
+
+        Args:
+            namespace: 命名空间
+            group: 分组名称
+
+        Returns:
+            键值对字典
+        """
+        try:
+            with self._namespace_lock:
+                if namespace not in self._namespaces:
+                    return {}
+
+                ns_meta = self._namespaces[namespace]
+                if group not in ns_meta.groups:
+                    return {}
+
+                result = {}
+                for namespaced_key in ns_meta.groups[group]:
+                    value = None
+                    if self._l1_cache:
+                        value = self._l1_cache.get(namespaced_key)
+                    if value is None and self._l2_cache:
+                        value = self._l2_cache.get(namespaced_key)
+
+                    if value is not None:
+                        original_key = namespaced_key.split(":", 1)[1] if ":" in namespaced_key else namespaced_key
+                        result[original_key] = value
+
+                return result
+
+        except Exception as e:
+            logger.error(f"Error getting group '{group}' from namespace '{namespace}': {e}")
+            return {}
+
+    def clear_group(self, namespace: str, group: str) -> int:
+        """
+        清空分组中的所有缓存
+
+        Args:
+            namespace: 命名空间
+            group: 分组名称
+
+        Returns:
+            清除的条目数
+        """
+        try:
+            with self._namespace_lock:
+                if namespace not in self._namespaces:
+                    return 0
+
+                ns_meta = self._namespaces[namespace]
+                if group not in ns_meta.groups:
+                    return 0
+
+                cleared_count = 0
+                for namespaced_key in list(ns_meta.groups[group]):
+                    if self._l1_cache:
+                        self._l1_cache.delete(namespaced_key)
+                    if self._l2_cache:
+                        self._l2_cache.delete(namespaced_key)
+
+                    ns_meta.keys.discard(namespaced_key)
+                    cleared_count += 1
+
+                ns_meta.groups[group].clear()
+
+                logger.info(f"Cleared {cleared_count} entries from group '{group}' in namespace '{namespace}'")
+                return cleared_count
+
+        except Exception as e:
+            logger.error(f"Error clearing group '{group}' from namespace '{namespace}': {e}")
+            return 0
+
+    def evict_by_priority(self, min_priority: int = 0, max_priority: int = 5) -> int:
+        """
+        按优先级驱逐缓存条目
+
+        Args:
+            min_priority: 最小优先级（包含）
+            max_priority: 最大优先级（包含）
+
+        Returns:
+            驱逐的条目数
+        """
+        try:
+            evicted_count = 0
+
+            with self._service_lock:
+                for priority in range(min_priority, max_priority + 1):
+                    if priority not in self._priority_queue:
+                        continue
+
+                    for namespaced_key in list(self._priority_queue[priority]):
+                        if self._l1_cache:
+                            self._l1_cache.delete(namespaced_key)
+                        if self._l2_cache:
+                            self._l2_cache.delete(namespaced_key)
+
+                        evicted_count += 1
+
+                    self._priority_queue[priority].clear()
+
+            logger.info(f"Evicted {evicted_count} entries with priority {min_priority}-{max_priority}")
+            return evicted_count
+
+        except Exception as e:
+            logger.error(f"Error evicting by priority: {e}")
+            return 0
+
+    def get_unified_stats(self) -> Dict[str, Any]:
+        """
+        获取统一缓存统计信息（包含命名空间信息）
+
+        Returns:
+            统一统计信息
+        """
+        try:
+            base_stats = self.get_stats()
+
+            with self._namespace_lock:
+                namespace_stats = {}
+                for name, ns_meta in self._namespaces.items():
+                    namespace_stats[name] = {
+                        "key_count": len(ns_meta.keys),
+                        "group_count": len(ns_meta.groups),
+                        "priority": ns_meta.priority,
+                        "created_at": ns_meta.created_at.isoformat()
+                    }
+
+            base_stats["namespaces"] = namespace_stats
+            base_stats["namespace_count"] = len(self._namespaces)
+
+            priority_distribution = {}
+            with self._service_lock:
+                for priority, keys in self._priority_queue.items():
+                    if keys:
+                        priority_distribution[priority] = len(keys)
+            base_stats["priority_distribution"] = priority_distribution
+
+            return base_stats
+
+        except Exception as e:
+            logger.error(f"Error getting unified stats: {e}")
+            return {}
+
+    def get_optimization_recommendations(self) -> List[Dict[str, Any]]:
+        """
+        获取缓存优化建议
+
+        Returns:
+            优化建议列表
+        """
+        recommendations = []
+
+        try:
+            stats = self.get_stats()
+            hit_rate = stats.get("hit_rate", 0)
+
+            if hit_rate < 0.6:
+                recommendations.append({
+                    "type": "resize",
+                    "description": "命中率较低，建议增加缓存容量",
+                    "impact_score": 1.0 - hit_rate,
+                    "implementation_cost": "low"
+                })
+
+            if len(self._hot_keys) > 0 and len(self._cold_keys) > 0:
+                recommendations.append({
+                    "type": "cleanup",
+                    "description": f"发现 {len(self._cold_keys)} 个冷键，建议清理释放空间",
+                    "impact_score": 0.5,
+                    "implementation_cost": "low"
+                })
+
+            for ns_name, ns_meta in self._namespaces.items():
+                if ns_meta.max_size and len(ns_meta.keys) >= ns_meta.max_size * 0.9:
+                    recommendations.append({
+                        "type": "resize",
+                        "description": f"命名空间 '{ns_name}' 容量接近上限",
+                        "impact_score": 0.7,
+                        "implementation_cost": "medium"
+                    })
+
+        except Exception as e:
+            logger.error(f"Error generating recommendations: {e}")
+
+        return recommendations
+
+    def get_statistics(self) -> Dict[str, Any]:
+        """
+        获取缓存统计信息（向后兼容接口）
+
+        Returns:
+            包含 utilization 等字段的统计信息字典
+        """
+        try:
+            stats = self.get_stats()
+            l1_stats = stats.get('l1_memory', {})
+            l2_stats = stats.get('l2_disk', {})
+
+            total_hits = l1_stats.get('hits', 0) + l2_stats.get('hits', 0)
+            total_misses = l1_stats.get('misses', 0) + l2_stats.get('misses', 0)
+            total_requests = total_hits + total_misses
+
+            hit_rate = (total_hits / total_requests) if total_requests > 0 else 0
+            entry_count = l1_stats.get('entry_count', 0) + l2_stats.get('entry_count', 0)
+            max_size = self._l1_config.max_size + self._l2_config.max_size
+
+            return {
+                'utilization': (entry_count / max_size) if max_size > 0 else 0,
+                'hit_rate': hit_rate,
+                'total_hits': total_hits,
+                'total_misses': total_misses,
+                'entry_count': entry_count,
+                'l1_entry_count': l1_stats.get('entry_count', 0),
+                'l2_entry_count': l2_stats.get('entry_count', 0),
+                'l1_hit_rate': l1_stats.get('hit_rate', 0),
+                'l2_hit_rate': l2_stats.get('hit_rate', 0),
+                'namespace_count': len(self._namespaces)
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting statistics: {e}")
+            return {
+                'utilization': 0,
+                'hit_rate': 0,
+                'total_hits': 0,
+                'total_misses': 0,
+                'entry_count': 0
+            }
+
+    def load_config_from_db(self, config_name: str = 'default') -> bool:
+        """从数据库加载配置"""
+        try:
+            from db.models.cache_config_models import CacheConfigManager
+            config_manager = CacheConfigManager()
+            config = config_manager.get_config(config_name)
+            
+            if config:
+                if self._l1_cache:
+                    self._l1_cache._max_size = config.get('max_size', 5000)
+                if self._l2_cache:
+                    self._l2_cache._max_size = config.get('max_size', 50000)
+                
+                logger.info(f"已从数据库加载缓存配置: {config_name}")
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"从数据库加载配置失败: {e}")
+            return False
+
+    def save_config_to_db(self, config_name: str = 'default', changed_by: str = "user") -> bool:
+        """保存配置到数据库"""
+        try:
+            from db.models.cache_config_models import CacheConfigManager
+            config_manager = CacheConfigManager()
+            
+            config = {
+                'strategy': self._l1_config.strategy.name if hasattr(self._l1_config.strategy, 'name') else 'LRU',
+                'max_size': self._l1_config.max_size,
+                'max_memory_mb': self._l1_config.max_memory_mb,
+                'max_disk_mb': self._l2_config.max_size,
+                'default_ttl_minutes': int(self._l1_config.default_ttl.total_seconds() / 60) if self._l1_config.default_ttl else 30,
+                'cleanup_interval_minutes': 10,
+                'enable_compression': False,
+                'enable_statistics': True,
+                'enable_adaptive': True,
+                'hit_rate_threshold': 0.7,
+                'adjustment_interval': 300
+            }
+            
+            result = config_manager.save_config(config, config_name, changed_by)
+            if result:
+                logger.info(f"缓存配置已保存到数据库: {config_name}")
+            return result
+        except Exception as e:
+            logger.error(f"保存配置到数据库失败: {e}")
+            return False
+
+    def update_config(self, config: Dict[str, Any]) -> bool:
+        """动态更新缓存配置"""
+        try:
+            if 'max_size' in config and self._l1_cache:
+                self._l1_cache._max_size = config['max_size']
+                self._l1_config.max_size = config['max_size']
+            if 'max_size_l2' in config and self._l2_cache:
+                self._l2_config.max_size = config['max_size_l2']
+            if 'strategy' in config:
+                strategy = CacheStrategy[config['strategy'].upper()]
+                self._l1_config.strategy = strategy
+                self._l2_config.strategy = strategy
+            if 'default_ttl_minutes' in config:
+                self._l1_config.default_ttl = timedelta(minutes=config['default_ttl_minutes'])
+            
+            logger.info(f"缓存配置已动态更新: {config}")
+            return True
+        except Exception as e:
+            logger.error(f"更新缓存配置失败: {e}")
+            return False
+
+    def get_current_config(self) -> Dict[str, Any]:
+        """获取当前缓存配置"""
+        return {
+            'strategy': self._l1_config.strategy.name if hasattr(self._l1_config.strategy, 'name') else 'LRU',
+            'max_size_l1': self._l1_config.max_size,
+            'max_size_l2': self._l2_config.max_size if self._l2_config else 0,
+            'max_memory_mb': self._l1_config.max_memory_mb,
+            'default_ttl_minutes': int(self._l1_config.default_ttl.total_seconds() / 60) if self._l1_config.default_ttl else 30,
+            'strategy_l1': self._l1_config.strategy.name if hasattr(self._l1_config.strategy, 'name') else 'LRU',
+            'strategy_l2': self._l2_config.strategy.name if hasattr(self._l2_config.strategy, 'name') else 'LRU'
+        }
 
 
 # 便利函数

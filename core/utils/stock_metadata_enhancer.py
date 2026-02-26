@@ -480,7 +480,7 @@ class StockMetadataEnhancer:
                 logger.info("所有股票都已有行业信息，无需补充")
                 return 0
 
-            logger.info(f"📊 找到 {len(result_df)} 个股票需要补充行业信息")
+            logger.info(f"找到 {len(result_df)} 个股票需要补充行业信息")
 
             # 2. 批量获取元数据
             symbols = result_df['symbol'].tolist()

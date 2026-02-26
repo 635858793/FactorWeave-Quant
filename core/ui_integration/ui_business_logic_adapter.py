@@ -46,7 +46,7 @@ try:
     from core.ai.user_behavior_learner import UserBehaviorLearner
     from core.ai.config_recommendation_engine import ConfigRecommendationEngine
     from core.ai.config_impact_analyzer import ConfigImpactAnalyzer
-    from core.performance.intelligent_cache_coordinator import IntelligentCacheCoordinator
+    from core.services.cache_service import CacheService
     # EnhancedDistributedService 不存在，使用 DistributedService
     from core.services.distributed_service import DistributedService as EnhancedDistributedService
     from core.ai.data_anomaly_detector import DataAnomalyDetector
@@ -208,7 +208,7 @@ class UIBusinessLogicAdapter(QObject):
                 'behavior_learner': UserBehaviorLearner,
                 'config_recommendation': ConfigRecommendationEngine,
                 'config_impact_analyzer': ConfigImpactAnalyzer,
-                'cache_coordinator': IntelligentCacheCoordinator,
+                'cache_service': CacheService,
                 'distributed_service': EnhancedDistributedService,
                 'anomaly_detector': DataAnomalyDetector
             }
@@ -218,7 +218,7 @@ class UIBusinessLogicAdapter(QObject):
                 'unified_import_engine', 'task_status_manager',
                 'performance_coordinator', 'quality_monitor',
                 'behavior_learner', 'config_recommendation',
-                'config_impact_analyzer', 'cache_coordinator',
+                'config_impact_analyzer', 'cache_service',
                 'distributed_service', 'anomaly_detector'
             }
 

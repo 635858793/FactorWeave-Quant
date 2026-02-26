@@ -133,7 +133,7 @@ class PredictionResultsPanel(QWidget):
         layout.addStretch()
         
         # 控制按钮
-        self.refresh_btn = QPushButton("🔄 刷新")
+        self.refresh_btn = QPushButton("刷新")
         self.refresh_btn.setStyleSheet("""
             QPushButton {
                 padding: 6px 12px;
@@ -149,7 +149,7 @@ class PredictionResultsPanel(QWidget):
         """)
         layout.addWidget(self.refresh_btn)
         
-        self.export_btn = QPushButton("📊 导出")
+        self.export_btn = QPushButton("导出")
         self.export_btn.setStyleSheet("""
             QPushButton {
                 padding: 6px 12px;
@@ -203,7 +203,7 @@ class PredictionResultsPanel(QWidget):
         
         # 3. 模型贡献度选项卡
         contribution_tab = self._create_contribution_tab()
-        self.tab_widget.addTab(contribution_tab, "🎯 模型贡献")
+        self.tab_widget.addTab(contribution_tab, "模型贡献")
         
         # 4. 准确性跟踪选项卡
         accuracy_tab = self._create_accuracy_tab()
@@ -221,7 +221,7 @@ class PredictionResultsPanel(QWidget):
         left_layout = QVBoxLayout(left_panel)
         
         # 当前预测结果
-        current_group = QGroupBox("🎯 当前预测结果")
+        current_group = QGroupBox("当前预测结果")
         current_layout = QVBoxLayout(current_group)
         
         # 预测概览信息
@@ -260,7 +260,7 @@ class PredictionResultsPanel(QWidget):
         right_layout = QVBoxLayout(right_panel)
         
         # 关键指标卡片
-        metrics_group = QGroupBox("📊 关键指标")
+        metrics_group = QGroupBox("关键指标")
         metrics_layout = QGridLayout(metrics_group)
         
         # 创建指标卡片
@@ -482,7 +482,7 @@ class PredictionResultsPanel(QWidget):
         analysis_panel = QWidget()
         analysis_layout = QVBoxLayout(analysis_panel)
         
-        analysis_chart_group = QGroupBox("📊 分析图表")
+        analysis_chart_group = QGroupBox("分析图表")
         analysis_chart_layout = QVBoxLayout(analysis_chart_group)
         
         self.analysis_chart_frame = QFrame()
@@ -512,7 +512,7 @@ class PredictionResultsPanel(QWidget):
         layout = QVBoxLayout(tab)
         
         # 模型贡献度概览
-        overview_group = QGroupBox("🎯 模型贡献度概览")
+        overview_group = QGroupBox("模型贡献度概览")
         overview_layout = QHBoxLayout(overview_group)
         
         # 贡献度环形图
@@ -638,7 +638,7 @@ class PredictionResultsPanel(QWidget):
         layout = QVBoxLayout(tab)
         
         # 总体准确性概览
-        overview_group = QGroupBox("📊 总体准确性概览")
+        overview_group = QGroupBox("总体准确性概览")
         overview_layout = QGridLayout(overview_group)
         
         # 总体统计
@@ -666,7 +666,7 @@ class PredictionResultsPanel(QWidget):
         layout.addWidget(overview_group)
         
         # 按模型分析
-        model_group = QGroupBox("🎯 各模型准确性分析")
+        model_group = QGroupBox("各模型准确性分析")
         model_layout = QVBoxLayout(model_group)
         
         self.model_accuracy_table = QTableWidget(0, 5)

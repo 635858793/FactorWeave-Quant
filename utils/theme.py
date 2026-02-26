@@ -817,7 +817,29 @@ class ThemeManager(QObject):
         if not app:
             logger.warning("QApplication not available, cannot apply QSS theme")
             return
-        app.setStyleSheet(qss + '\n' + scrollbar_qss)
+        
+        # 合并QSS内容
+        full_qss = qss + '\n' + scrollbar_qss
+        
+        # 检查QSS内容是否为空或无效
+        if not full_qss or not full_qss.strip():
+            logger.warning("QSS内容为空，跳过应用")
+            return
+        
+        # 记录QSS内容长度用于调试
+        logger.debug(f"应用QSS主题，内容长度: {len(full_qss)} 字符")
+        
+        # 尝试应用QSS，捕获可能的解析错误
+        try:
+            app.setStyleSheet(full_qss)
+        except Exception as e:
+            logger.error(f"应用QSS样式表时发生错误: {e}")
+            # 尝试只应用滚动条样式作为回退
+            try:
+                app.setStyleSheet(scrollbar_qss)
+                logger.warning("已回退到仅滚动条样式")
+            except Exception as e2:
+                logger.error(f"回退样式也失败: {e2}")
 
     def clear_qss_theme(self):
         """清除QSS主题样式表"""

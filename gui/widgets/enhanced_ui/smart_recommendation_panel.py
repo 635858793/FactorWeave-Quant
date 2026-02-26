@@ -406,7 +406,6 @@ class SmartRecommendationPanel(QWidget):
     def _create_control_panel(self) -> QWidget:
         """创建控制面板"""
         panel = QFrame(self)
-        panel.setMaximumHeight(60)
 
         layout = QHBoxLayout(panel)
 
@@ -462,7 +461,7 @@ class SmartRecommendationPanel(QWidget):
 
         # 混合推荐
         hybrid_tab = self._create_hybrid_recommendations_tab()
-        rec_tabs.addTab(hybrid_tab, "🚀 混合推荐")
+        rec_tabs.addTab(hybrid_tab, "混合推荐")
 
         # 股票推荐
         stock_tab = self._create_stock_recommendations_tab()
@@ -2216,16 +2215,16 @@ class SmartRecommendationPanel(QWidget):
 
                 def run(self):
                     try:
-                        logger.info(f"🔄 Worker线程开始执行，user_id={self.user_id}, count={self.count}, asset_type={self.asset_type}")
+                        logger.info(f"Worker线程开始执行，user_id={self.user_id}, count={self.count}, asset_type={self.asset_type}")
 
                         import asyncio
                         # 在线程中创建新的事件循环
                         loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(loop)
-                        logger.info("🔄 Worker线程：事件循环已创建")
+                        logger.info("Worker线程：事件循环已创建")
 
                         # 执行异步获取推荐
-                        logger.info("🔄 Worker线程：开始调用get_recommendations")
+                        logger.info("Worker线程：开始调用get_recommendations")
                         
                         # 准备参数
                         kwargs = {
@@ -2249,10 +2248,10 @@ class SmartRecommendationPanel(QWidget):
                         recommendations = loop.run_until_complete(
                             self.engine.get_recommendations(**kwargs)
                         )
-                        logger.info(f"🔄 Worker线程：get_recommendations返回，结果数量={len(recommendations)}")
+                        logger.info(f"Worker线程：get_recommendations返回，结果数量={len(recommendations)}")
 
                         loop.close()
-                        logger.info("🔄 Worker线程：发送finished信号")
+                        logger.info("Worker线程：发送finished信号")
                         self.finished.emit(recommendations)
                         logger.info("Worker线程：finished信号已发送")
 

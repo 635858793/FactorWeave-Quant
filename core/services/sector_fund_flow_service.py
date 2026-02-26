@@ -64,10 +64,10 @@ class SectorFundFlowService(QObject):
         self.config = config or SectorFlowConfig()
         # 纯Loguru架构，移除log_manager依赖
 
-        # 缓存管理
-        self._cache: Dict[str, Any] = {}
-        self._cache_timestamps: Dict[str, datetime] = {}
-        self._cache_lock = threading.RLock()
+        # 缓存管理 - 强制使用统一缓存服务
+        self._unified_cache = None
+        self._cache_namespace = 'sector_fund_flow'
+        self._init_unified_cache()
 
         # 异步执行器
         self._executor = ThreadPoolExecutor(max_workers=self.config.max_concurrent_requests)
@@ -79,6 +79,18 @@ class SectorFundFlowService(QObject):
         self._current_source = None
         self._available_sources = {}  # 可用数据源注册表
         self._optimal_sources = []    # 最优数据源列表
+
+    def _init_unified_cache(self) -> None:
+        """初始化统一缓存服务（强制）"""
+        from core.services.cache_service import CacheService
+        from core.containers import get_service_container
+        
+        container = get_service_container()
+        if container and container.is_registered(CacheService):
+            self._unified_cache = container.resolve(CacheService)
+            logger.debug(f"SectorFundFlowService 已连接到统一缓存服务，命名空间: {self._cache_namespace}")
+        else:
+            raise RuntimeError("统一缓存服务未注册，请确保 CacheService 已在服务容器中注册")
 
     def _ensure_refresh_timer(self):
         """确保刷新定时器已初始化"""
@@ -342,36 +354,41 @@ class SectorFundFlowService(QObject):
             return df
 
     def _is_cache_valid(self, cache_key: str) -> bool:
-        """检查缓存是否有效"""
+        """检查缓存是否有效 - 使用统一缓存服务"""
         if not self.config.enable_cache:
             return False
 
-        with self._cache_lock:
-            if cache_key not in self._cache_timestamps:
-                return False
+        if self._unified_cache is None:
+            raise RuntimeError("统一缓存服务未初始化")
 
-            cache_time = self._cache_timestamps[cache_key]
-            cache_duration = timedelta(minutes=self.config.cache_duration_minutes)
-
-            return datetime.now() - cache_time < cache_duration
+        cached_data = self._unified_cache.get(cache_key, namespace=self._cache_namespace)
+        return cached_data is not None
 
     def _get_from_cache(self, cache_key: str) -> Any:
-        """从缓存获取数据"""
-        with self._cache_lock:
-            return self._cache.get(cache_key)
+        """从缓存获取数据 - 使用统一缓存服务"""
+        if self._unified_cache is None:
+            raise RuntimeError("统一缓存服务未初始化")
+
+        return self._unified_cache.get(cache_key, namespace=self._cache_namespace)
 
     def _update_cache(self, cache_key: str, data: Any) -> None:
-        """更新缓存"""
-        if self.config.enable_cache:
-            with self._cache_lock:
-                self._cache[cache_key] = data
-                self._cache_timestamps[cache_key] = datetime.now()
+        """更新缓存 - 使用统一缓存服务"""
+        if not self.config.enable_cache:
+            return
+
+        if self._unified_cache is None:
+            raise RuntimeError("统一缓存服务未初始化")
+
+        from datetime import timedelta
+        ttl = timedelta(minutes=self.config.cache_duration_minutes)
+        self._unified_cache.set(cache_key, data, ttl=ttl, namespace=self._cache_namespace)
 
     def _clear_cache(self) -> None:
         """清理缓存"""
-        with self._cache_lock:
-            self._cache.clear()
-            self._cache_timestamps.clear()
+        if self._unified_cache is None:
+            raise RuntimeError("统一缓存服务未初始化")
+
+        self._unified_cache.clear_namespace(self._cache_namespace)
         logger.info("缓存已清理")
 
     def _start_auto_refresh(self) -> None:

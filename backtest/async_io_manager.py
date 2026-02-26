@@ -1,8 +1,66 @@
+"""
+异步I/O与智能缓存模块
+======================
+
+架构设计
+--------
+本模块提供两个独立的缓存系统，采用分层架构设计：
+
+Layer 1: AsyncIOManager (文件I/O层)
+    职责：加速磁盘文件读取操作
+    数据：HDF5数据集、Zarr数组、二进制文件
+    统计：命中率、响应时间、I/O操作数
+
+Layer 2: SmartDataCache (业务数据层)
+    职责：管理业务计算结果的内存缓存
+    数据：回测结果DataFrame、策略信号
+    统计：内存占用、缓存项数量
+
+调用链示例
+----------
+回测场景下的协作流程：
+
+1. 加载数据阶段
+   AsyncIOManager.read_hdf5_async()
+   → 检查内部缓存
+   → 命中则直接返回
+   → 未命中则从磁盘读取并缓存
+
+2. 计算阶段
+   执行回测计算逻辑
+
+3. 结果缓存阶段  
+   SmartDataCache.put(cache_key, result, ttl=3600)
+   → 计算内存占用
+   → 检查是否需要淘汰旧数据
+   → 存入缓存并设置过期时间
+
+4. 后续访问
+   SmartDataCache.get(cache_key)
+   → 检查是否过期
+   → 返回缓存结果或None
+
+监控集成
+--------
+数据质量监控面板(data_quality_monitor_tab.py)从两个系统收集数据：
+
+- AsyncIOManager.get_cache_stats()
+  → 收集：命中率、I/O操作数、响应时间
+  → 用途：监控文件I/O性能
+
+- SmartDataCache.get_stats()
+  → 收集：内存占用、缓存项数量
+  → 用途：监控内存使用状况
+
+注意事项
+--------
+1. 两个缓存系统独立运作，不共享数据
+2. AsyncIOManager基于缓存项数量管理(LRU)
+3. SmartDataCache基于实际内存占用管理
+4. 清理时需分别调用clear_cache方法
+"""
+
 from loguru import logger
-"""
-异步I/O管理器
-实现异步文件操作和智能缓存机制，提升I/O性能
-"""
 
 import asyncio
 try:
@@ -55,6 +113,10 @@ class AsyncIOManager:
             'io_operations': 0,
             'async_operations': 0
         }
+
+        # 响应时间跟踪
+        self.response_times = []
+        self.max_response_times = 100  # 保留最近100次响应时间
 
     async def read_file_async(self, file_path: Union[str, Path],
                               cache_key: Optional[str] = None) -> bytes:
@@ -246,11 +308,23 @@ class AsyncIOManager:
 
     def _get_from_cache(self, key: str) -> Optional[Any]:
         """从缓存获取数据"""
+        start_time = time.time()
         with self.cache_lock:
             if key in self.cache:
+                self.stats['io_operations'] += 1
                 self.cache_access_times[key] = time.time()
-                return self.cache[key]
-            return None
+                result = self.cache[key]
+            else:
+                result = None
+        
+        # 计算响应时间（仅命中时计算）
+        if result is not None:
+            response_time = (time.time() - start_time) * 1000  # 转换为毫秒
+            self.response_times.append(response_time)
+            if len(self.response_times) > self.max_response_times:
+                self.response_times.pop(0)
+        
+        return result
 
     def _put_to_cache(self, key: str, data: Any):
         """存入缓存"""
@@ -264,12 +338,14 @@ class AsyncIOManager:
 
             self.cache[key] = data
             self.cache_access_times[key] = time.time()
+            self.stats['io_operations'] += 1
 
     def clear_cache(self):
         """清理缓存"""
         with self.cache_lock:
             self.cache.clear()
             self.cache_access_times.clear()
+            self.stats['io_operations'] = 0
 
     def get_cache_stats(self) -> Dict[str, Any]:
         """获取缓存统计信息"""
@@ -279,6 +355,13 @@ class AsyncIOManager:
             if total_requests > 0:
                 hit_rate = self.stats['cache_hits'] / total_requests
 
+            # 计算响应时间统计
+            avg_response_time = 0
+            max_response_time = 0
+            if self.response_times:
+                avg_response_time = sum(self.response_times) / len(self.response_times)
+                max_response_time = max(self.response_times)
+
             return {
                 'cache_size': len(self.cache),
                 'max_cache_size': self.cache_size,
@@ -286,7 +369,10 @@ class AsyncIOManager:
                 'total_hits': self.stats['cache_hits'],
                 'total_misses': self.stats['cache_misses'],
                 'io_operations': self.stats['io_operations'],
-                'async_operations': self.stats['async_operations']
+                'async_operations': self.stats['async_operations'],
+                'avg_response_time': avg_response_time,
+                'max_response_time': max_response_time,
+                'response_time_samples': len(self.response_times)
             }
 
     def cleanup(self):
@@ -388,11 +474,14 @@ class SmartDataCache:
             del self.cache_info[key]
 
     def clear(self):
-        """清空缓存"""
+        """清空缓存（别名：clear_cache）"""
         with self.lock:
             self.cache.clear()
             self.cache_info.clear()
             self.current_memory_usage = 0
+
+    # 统一命名接口（与AsyncIOManager保持一致）
+    clear_cache = clear
 
     def get_stats(self) -> Dict[str, Any]:
         """获取缓存统计"""
@@ -404,6 +493,171 @@ class SmartDataCache:
                 'memory_usage_percent': (self.current_memory_usage / self.max_memory_bytes) * 100
             }
 
-# 全局实例
-async_io_manager = AsyncIOManager()
-smart_cache = SmartDataCache()
+# 全局实例 - 使用统一缓存服务的适配器
+# 为了向后兼容，保留原有类定义，但全局实例使用统一缓存服务
+
+def _get_unified_cache_adapter():
+    """获取统一缓存适配器（延迟加载）"""
+    try:
+        from core.services.unified_cache_provider import get_smart_cache
+        return get_smart_cache()
+    except ImportError:
+        return None
+
+def _get_unified_async_io_adapter():
+    """获取统一异步I/O缓存适配器（延迟加载）"""
+    try:
+        from core.services.unified_cache_provider import get_async_io_cache
+        return get_async_io_cache()
+    except ImportError:
+        return None
+
+# 原始类实例（用于向后兼容和独立使用）
+_async_io_manager_instance = None
+_smart_cache_instance = None
+
+def get_async_io_manager() -> 'AsyncIOManager':
+    """
+    获取AsyncIOManager实例（单例）
+    
+    优先使用统一缓存服务，如果不可用则使用本地实例
+    """
+    global _async_io_manager_instance
+    
+    if _async_io_manager_instance is None:
+        _async_io_manager_instance = AsyncIOManager()
+    
+    return _async_io_manager_instance
+
+def get_smart_data_cache() -> 'SmartDataCache':
+    """
+    获取SmartDataCache实例（单例）
+    
+    优先使用统一缓存服务，如果不可用则使用本地实例
+    """
+    global _smart_cache_instance
+    
+    if _smart_cache_instance is None:
+        _smart_cache_instance = SmartDataCache()
+    
+    return _smart_cache_instance
+
+# 向后兼容的全局实例访问
+class _AsyncIOManagerProxy:
+    """AsyncIOManager代理类，支持延迟加载和统一缓存集成"""
+    
+    def __init__(self):
+        self._instance = None
+    
+    def _get_instance(self):
+        if self._instance is None:
+            self._instance = AsyncIOManager()
+        return self._instance
+    
+    def __getattr__(self, name):
+        return getattr(self._get_instance(), name)
+
+
+class _SmartCacheProxy:
+    """SmartDataCache代理类，支持延迟加载和统一缓存集成"""
+    
+    def __init__(self):
+        self._instance = None
+    
+    def _get_instance(self):
+        if self._instance is None:
+            self._instance = SmartDataCache()
+        return self._instance
+    
+    def __getattr__(self, name):
+        return getattr(self._get_instance(), name)
+
+
+# 全局实例（使用代理实现延迟加载）
+async_io_manager = _AsyncIOManagerProxy()
+smart_cache = _SmartCacheProxy()
+
+# 缓存系统状态追踪
+_CACHE_SYSTEMS = {
+    'async_io_manager': {
+        'getter': get_async_io_manager,
+        'name': 'AsyncIOManager',
+        'type': 'file_io',
+        'stats_method': 'get_cache_stats'
+    },
+    'smart_cache': {
+        'getter': get_smart_data_cache,
+        'name': 'SmartDataCache',
+        'type': 'business_data',
+        'stats_method': 'get_stats'
+    }
+}
+
+def get_all_cache_stats() -> Dict[str, Dict]:
+    """
+    获取所有缓存系统的统计信息
+
+    Returns:
+        Dict: 包含两个缓存系统的统计信息
+    """
+    result = {}
+    for key, system in _CACHE_SYSTEMS.items():
+        instance = system['getter']()
+        stats_method = getattr(instance, system['stats_method'])
+        result[key] = {
+            'name': system['name'],
+            'type': system['type'],
+            'stats': stats_method()
+        }
+    return result
+
+def clear_all_caches():
+    """清空所有缓存"""
+    for key, system in _CACHE_SYSTEMS.items():
+        instance = system['getter']()
+        if hasattr(instance, 'clear_cache'):
+            instance.clear_cache()
+        elif hasattr(instance, 'clear'):
+            instance.clear()
+
+
+# 统一缓存服务集成
+def get_unified_cache_service():
+    """
+    获取统一缓存服务实例
+    
+    Returns:
+        CacheService实例，如果不可用则返回None
+    """
+    try:
+        from core.services.unified_cache_provider import get_unified_cache_provider
+        provider = get_unified_cache_provider()
+        return provider.get_cache_service()
+    except ImportError:
+        return None
+
+
+def migrate_to_unified_cache():
+    """
+    迁移到统一缓存服务
+    
+    将现有的缓存数据迁移到统一缓存服务中
+    """
+    from loguru import logger
+    
+    try:
+        from core.services.unified_cache_provider import get_unified_cache_provider
+        
+        provider = get_unified_cache_provider()
+        cache_service = provider.get_cache_service()
+        
+        # 创建命名空间
+        cache_service.create_namespace("backtest", description="回测模块缓存")
+        cache_service.create_namespace("async_io", description="异步I/O缓存")
+        
+        logger.info("成功迁移到统一缓存服务")
+        return True
+        
+    except Exception as e:
+        logger.warning(f"迁移到统一缓存服务失败: {e}")
+        return False

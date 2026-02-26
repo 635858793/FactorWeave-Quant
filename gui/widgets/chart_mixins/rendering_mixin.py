@@ -104,7 +104,7 @@ class RenderingMixin:
             return "default_hash"
     
     def _batch_precompute_indicators(self, kdata: pd.DataFrame, indicators: List[Dict]) -> Dict:
-        """🚀 批量预计算所有需要的指标（包含custom指标优化）"""
+        """批量预计算所有需要的指标（包含custom指标优化）"""
         precomputed = {}
         
         # 收集需要计算的指标类型
@@ -113,7 +113,7 @@ class RenderingMixin:
         required_boll_params = set()
         required_ma_periods = set()
         
-        # 🚀 收集custom指标信息
+        # 收集custom指标信息
         required_custom_indicators = []
         
         for indicator in indicators:
@@ -189,7 +189,7 @@ class RenderingMixin:
             ma = kdata['close'].rolling(period).mean()
             precomputed[f'MA_{period}'] = ma.dropna()
         
-        # 🚀 智能并行计算custom指标（重要优化）
+        # 智能并行计算custom指标（重要优化）
         if required_custom_indicators:
             # 🧠 智能判断是否使用并行计算
             data_size = len(kdata)
@@ -199,15 +199,15 @@ class RenderingMixin:
             use_parallel = self._should_use_parallel_computation(data_size, indicator_count)
             
             if use_parallel:
-                # 🚀 并行计算路径
-                logger.debug(f"🚀 使用并行计算: {data_size}条数据, {indicator_count}个指标")
+                # 并行计算路径
+                logger.debug(f"使用并行计算: {data_size}条数据, {indicator_count}个指标")
                 precomputed.update(self._parallel_compute_custom_indicators(kdata, required_custom_indicators))
             else:
                 # 📋 顺序计算路径（避免不必要的开销）
-                logger.debug(f"🚀 使用顺序计算: {data_size}条数据, {indicator_count}个指标")
+                logger.debug(f"使用顺序计算: {data_size}条数据, {indicator_count}个指标")
                 precomputed.update(self._sequential_compute_custom_indicators(kdata, required_custom_indicators))
         else:
-            logger.debug("🚀 没有需要计算的custom指标")
+            logger.debug("没有需要计算的custom指标")
         
         return precomputed
     
@@ -249,7 +249,7 @@ class RenderingMixin:
         return precomputed
     
     def _parallel_compute_custom_indicators(self, kdata: pd.DataFrame, required_custom_indicators: List[Dict]) -> Dict:
-        """🚀 并行计算custom指标（适用于大数据量、多指标情况）- 优化版本"""
+        """并行计算custom指标（适用于大数据量、多指标情况）- 优化版本"""
         precomputed = {}
         
         def calculate_single_custom_indicator(kdata_copy, custom_indicator):
@@ -257,18 +257,18 @@ class RenderingMixin:
             name = custom_indicator['name']
             formula = custom_indicator['formula']
             try:
-                # 🚀 优化：使用共享的pandas.eval调用，避免重复创建变量字典
+                # 优化：使用共享的pandas.eval调用，避免重复创建变量字典
                 arr = pd.eval(formula, local_dict=kdata_copy)
                 arr = arr.dropna()
                 return (name, arr, None)
             except Exception as e:
-                logger.warning(f"🚀 并行预计算custom指标 {name} 失败: {str(e)}")
+                logger.warning(f"并行预计算custom指标 {name} 失败: {str(e)}")
                 return (name, pd.Series(dtype=float), str(e))
         
-        # 🚀 核心优化：预构建变量字典，避免在线程中重复创建
+        # 核心优化：预构建变量字典，避免在线程中重复创建
         local_vars = {col: kdata[col] for col in kdata.columns}
         
-        # 🚀 核心优化：使用ThreadPoolExecutor并行计算所有custom指标
+        # 核心优化：使用ThreadPoolExecutor并行计算所有custom指标
         max_workers = min(4, len(required_custom_indicators))  # 限制线程数，避免过载
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             # 提交所有计算任务，传递共享变量字典
@@ -282,11 +282,11 @@ class RenderingMixin:
                 name, arr, error = future.result()
                 precomputed[f'CUSTOM_{name}'] = arr
                 if error:
-                    logger.warning(f"🚀 并行预计算custom指标 {name} 失败: {error}")
+                    logger.warning(f"并行预计算custom指标 {name} 失败: {error}")
                 else:
-                    logger.debug(f"🚀 并行预计算custom指标 {name} 完成")
+                    logger.debug(f"并行预计算custom指标 {name} 完成")
         
-        logger.info(f"🚀 并行计算 {len(required_custom_indicators)} 个custom指标完成")
+        logger.info(f"并行计算 {len(required_custom_indicators)} 个custom指标完成")
         return precomputed
     
     def _get_optimized_indicator_style(self, name: str, index: int = 0) -> Dict[str, Any]:
@@ -554,9 +554,9 @@ class RenderingMixin:
                 active_inds = validated_inds
                 self.active_indicators = active_inds  # 更新为验证后的列表
             
-            logger.info(f"📊 准备调用_render_indicators，active_indicators状态: {len(active_inds) if active_inds else 0}个指标")
+            logger.info(f"准备调用_render_indicators，active_indicators状态: {len(active_inds) if active_inds else 0}个指标")
             # if active_inds:
-            #     logger.info(f"📊 active_indicators内容: {[ind.get('name', 'unknown') for ind in active_inds]}")
+            #     logger.info(f"active_indicators内容: {[ind.get('name', 'unknown') for ind in active_inds]}")
 
             self._render_indicators(kdata, x=x)
 
@@ -708,7 +708,7 @@ class RenderingMixin:
     def _render_indicator_data(self, indicators_data, kdata, x=None):
         """渲染从indicators_data传递的指标数据"""
         try:
-            logger.info(f"🎨 _render_indicator_data开始执行")
+            logger.info(f"_render_indicator_data开始执行")
             if not indicators_data:
                 logger.warning(f"❌ indicators_data为空，直接返回")
                 return
@@ -716,10 +716,10 @@ class RenderingMixin:
             if x is None:
                 x = np.arange(len(kdata))
 
-            logger.info(f"🎨 准备遍历indicators_data，指标数量: {len(indicators_data)}")
+            logger.info(f"准备遍历indicators_data，指标数量: {len(indicators_data)}")
             # 遍历所有指标
             for i, (indicator_name, indicator_data) in enumerate(indicators_data.items()):
-                logger.info(f"🎨 处理指标 {i+1}/{len(indicators_data)}: {indicator_name}, 数据类型: {type(indicator_data)}")
+                logger.info(f"处理指标 {i+1}/{len(indicators_data)}: {indicator_name}, 数据类型: {type(indicator_data)}")
                 # 处理MA指标
                 if indicator_name == 'MA':
                     for j, (period, values) in enumerate(indicator_data.items()):
@@ -816,18 +816,18 @@ class RenderingMixin:
             logger.error(f"渲染指标数据失败: {str(e)}")
 
     def _render_indicators(self, kdata: pd.DataFrame, x=None):
-        """🚀 优化的技术指标渲染 - 使用缓存和批量计算"""
+        """优化的技术指标渲染 - 使用缓存和批量计算"""
         try:
             start_time = time.time()
             indicators = getattr(self, 'active_indicators', [])
             if not indicators:
-                logger.debug("🚀 指标列表为空，跳过渲染")
+                logger.debug("指标列表为空，跳过渲染")
                 return
             
             if x is None:
                 x = np.arange(len(kdata))
             
-            logger.info(f"🚀 开始优化渲染 {len(indicators)} 个指标")
+            logger.info(f"开始优化渲染 {len(indicators)} 个指标")
             
             # 🔥 关键优化1: 批量预计算所有指标
             kdata_hash = self._get_kdata_hash(kdata)
@@ -838,7 +838,7 @@ class RenderingMixin:
                 precomputed = {}
             
             render_time = (time.time() - start_time) * 1000
-            logger.info(f"🚀 批量预计算完成，耗时: {render_time:.2f}ms")
+            logger.info(f"批量预计算完成，耗时: {render_time:.2f}ms")
             
             start_time = time.time()
             
@@ -883,7 +883,7 @@ class RenderingMixin:
                         ind_params = {}
                     
                     if ind_type == 'MA':
-                        # 🚀 优化的MA指标渲染
+                        # 优化的MA指标渲染
                         period = ind_params.get('period', 20)
                         cache_key = f'MA_{period}'
                         if cache_key in precomputed:
@@ -892,7 +892,7 @@ class RenderingMixin:
                                 plot_commands.append(('plot', self.price_ax, x[-len(ma):], ma.values, 
                                                      style['color'], style['linewidth'], style['alpha'], name))                    
                     elif ind_type == 'MACD':
-                        # 🚀 优化的MACD指标渲染
+                        # 优化的MACD指标渲染
                         cache_key = 'MACD'
                         if cache_key in precomputed:
                             macd_data = precomputed[cache_key]
@@ -918,7 +918,7 @@ class RenderingMixin:
                                                                  hist_colors, 0.5, None, None))
                     
                     elif ind_type == 'RSI':
-                        # 🚀 优化的RSI指标渲染
+                        # 优化的RSI指标渲染
                         period = ind_params.get('period', 14)
                         cache_key = f'RSI_{period}'
                         if cache_key in precomputed:
@@ -928,7 +928,7 @@ class RenderingMixin:
                                                      style['color'], style['linewidth'], style['alpha'], 'RSI'))
                     
                     elif ind_type == 'BOLL':
-                        # 🚀 优化的BOLL指标渲染
+                        # 优化的BOLL指标渲染
                         # 修复1: 确保参数类型一致，使用整数和浮点数
                         n = int(params.get('n', 20))
                         p = float(params.get('p', 2))
@@ -963,7 +963,7 @@ class RenderingMixin:
                 
                 elif group == 'talib':
                     try:
-                        # 🚀 使用优化的talib处理
+                        # 使用优化的talib处理
                         if self._performance_optimizer.talib:
                             # 如果name是中文名称，需要转换为英文名称
                             english_name = get_indicator_english_name(name)
@@ -1047,7 +1047,7 @@ class RenderingMixin:
                 
                 elif group == 'custom' and formula:
                     try:
-                        # 🚀 使用预计算结果，避免重复计算
+                        # 使用预计算结果，避免重复计算
                         cache_key = f'CUSTOM_{name}'
                         if cache_key in precomputed:
                             arr = precomputed[cache_key]
@@ -1056,7 +1056,7 @@ class RenderingMixin:
                                                      style['color'], style['linewidth'], style['alpha'], name))
                         else:
                             # 兜底：没有预计算结果时才执行计算
-                            logger.warning(f"🚀 Custom指标 {name} 缺少预计算结果，执行兜底计算")
+                            logger.warning(f"Custom指标 {name} 缺少预计算结果，执行兜底计算")
                             local_vars = {col: kdata[col] for col in kdata.columns}
                             arr = pd.eval(formula, local_dict=local_vars)
                             arr = arr.dropna()
@@ -1084,18 +1084,18 @@ class RenderingMixin:
                 logger.debug("没有绘图命令需要执行")
                 
             render_time = (time.time() - start_time) * 1000
-            logger.info(f"🚀 指标渲染完成，总耗时: {render_time:.2f}ms")
+            logger.info(f"指标渲染完成，总耗时: {render_time:.2f}ms")
             
         except Exception as e:
             error_msg = f"渲染指标失败: {str(e)}"
             self.error_occurred.emit(error_msg)
-            logger.error(f"🚀 {error_msg}")
+            logger.error(f"{error_msg}")
             # 记录详细错误信息
             import traceback
-            logger.error(f"🚀 指标渲染失败详细信息: {traceback.format_exc()}")
+            logger.error(f"指标渲染失败详细信息: {traceback.format_exc()}")
     
     def _execute_batch_plots(self, plot_commands: List[Tuple]):
-        """🚀 批量执行绘图命令，减少matplotlib调用次数"""
+        """批量执行绘图命令，减少matplotlib调用次数"""
         try:
             for cmd in plot_commands:
                 # 验证命令格式
@@ -1139,7 +1139,7 @@ class RenderingMixin:
                 else:
                     logger.warning(f"未知绘图命令类型: {plot_type}")
                     
-            logger.debug(f"🚀 批量执行了 {len(plot_commands)} 个绘图命令")
+            logger.debug(f"批量执行了 {len(plot_commands)} 个绘图命令")
         except Exception as e:
             logger.error(f"批量绘图执行失败: {e}")
             # 回退到逐个执行
@@ -1165,12 +1165,12 @@ class RenderingMixin:
                     logger.error(f"单个绘图命令失败: {e2}")
     
     def clear_performance_cache(self):
-        """🚀 清除性能优化缓存"""
+        """清除性能优化缓存"""
         self._performance_optimizer.clear_cache()
-        logger.info("🚀 性能优化缓存已清除")
+        logger.info("性能优化缓存已清除")
     
     def get_performance_stats(self) -> Dict[str, Any]:
-        """🚀 获取性能统计信息"""
+        """获取性能统计信息"""
         return {
             'precomputed_count': len(self._performance_optimizer._precomputed_indicators),
             'style_cache_count': len(self._performance_optimizer._style_cache),

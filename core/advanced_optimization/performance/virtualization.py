@@ -217,7 +217,7 @@ class VirtualRenderManager:
         renderer = self.get_renderer(chart_type)
         if renderer:
             renderer.set_data_source(data)
-            logger.info(f"📊 已为{chart_type}图表设置数据源，包含{len(data)}个数据点")
+            logger.info(f"已为{chart_type}图表设置数据源，包含{len(data)}个数据点")
             return True
         logger.warning(f"❌ 无法找到{chart_type}图表的虚拟滚动渲染器")
         return False
@@ -251,7 +251,7 @@ class VirtualRenderManager:
                 stats['last_render_time_ms'] = render_time * 1000
                 self._performance_stats[chart_type] = stats
             
-            logger.info(f"🎨 {chart_type}图表虚拟滚动渲染{'成功' if result else '失败'}，耗时{render_time*1000:.2f}ms")
+            logger.info(f"{chart_type}图表虚拟滚动渲染{'成功' if result else '失败'}，耗时{render_time*1000:.2f}ms")
             return result
         logger.warning(f"❌ 无法找到{chart_type}图表的虚拟滚动渲染器，渲染失败")
         return False

@@ -34,7 +34,7 @@ def main():
         TableType.TECHNICAL_INDICATOR
     ]
     
-    print(f"📊 系统定义了 {len(all_table_types)} 种表类型")
+    print(f"系统定义了 {len(all_table_types)} 种表类型")
     print()
     
     missing_schemas = []
@@ -64,7 +64,7 @@ def main():
         has_data_source_index = any('data_source' in idx.get('columns', []) for idx in schema.indexes)
         
         print(f"  Schema定义: 存在")
-        print(f"  📊 字段数量: {len(schema.columns)}")
+        print(f"  字段数量: {len(schema.columns)}")
         print(f"  🔑 主键: {schema.primary_key if has_primary_key else '❌ 缺失'}")
         print(f"  📇 索引数量: {len(schema.indexes)}")
         print(f"  🏷️ 数据源索引: {'存在' if has_data_source_index else '❌ 缺失'}")
@@ -125,7 +125,7 @@ def main():
     
     # 计算成功率
     success_rate = len(complete_schemas) / len(all_table_types) * 100
-    print(f"🎯 整体完整性: {success_rate:.1f}%")
+    print(f"整体完整性: {success_rate:.1f}%")
     
     if success_rate == 100:
         print("🎉 所有表结构配置完整！")

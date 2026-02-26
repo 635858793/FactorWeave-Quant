@@ -77,7 +77,6 @@ class TradingSignalPanel(QWidget):
     def _create_title(self, layout):
         """创建标题"""
         title_frame = QFrame()
-        title_frame.setMaximumHeight(50)
         title_frame.setFrameStyle(QFrame.StyledPanel)
         
         title_layout = QHBoxLayout(title_frame)

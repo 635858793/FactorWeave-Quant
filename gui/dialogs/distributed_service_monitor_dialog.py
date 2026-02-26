@@ -244,7 +244,7 @@ class DistributedServiceMonitorDialog(QDialog):
 
         button_layout = QHBoxLayout()
 
-        self.refresh_nodes_btn = QPushButton("🔄 刷新")
+        self.refresh_nodes_btn = QPushButton("刷新")
         self.refresh_nodes_btn.clicked.connect(self.refresh_nodes)
         button_layout.addWidget(self.refresh_nodes_btn)
 
@@ -296,7 +296,7 @@ class DistributedServiceMonitorDialog(QDialog):
 
         button_layout = QHBoxLayout()
 
-        self.refresh_tasks_btn = QPushButton("🔄 刷新")
+        self.refresh_tasks_btn = QPushButton("刷新")
         self.refresh_tasks_btn.clicked.connect(self.refresh_tasks)
         button_layout.addWidget(self.refresh_tasks_btn)
 
@@ -343,7 +343,7 @@ class DistributedServiceMonitorDialog(QDialog):
 
         button_layout = QHBoxLayout()
 
-        self.refresh_queue_btn = QPushButton("🔄 刷新")
+        self.refresh_queue_btn = QPushButton("刷新")
         self.refresh_queue_btn.clicked.connect(self.refresh_queue)
         button_layout.addWidget(self.refresh_queue_btn)
 

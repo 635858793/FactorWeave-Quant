@@ -187,7 +187,7 @@ class AdaptivePoolConfigWidget(QWidget):
         button_layout.addWidget(self.save_button)
 
         # 重置按钮
-        self.reset_button = QPushButton("🔄 重置为默认")
+        self.reset_button = QPushButton("重置为默认")
         self.reset_button.setObjectName("reset_button")
         self.reset_button.clicked.connect(self._reset_config)
         button_layout.addWidget(self.reset_button)

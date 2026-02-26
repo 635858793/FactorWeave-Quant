@@ -128,7 +128,7 @@ class ModelPerformancePanel(QWidget):
         layout.addStretch()
         
         # 控制按钮
-        self.refresh_btn = QPushButton("🔄 刷新")
+        self.refresh_btn = QPushButton("刷新")
         self.refresh_btn.setStyleSheet("""
             QPushButton {
                 padding: 6px 12px;
@@ -144,7 +144,7 @@ class ModelPerformancePanel(QWidget):
         """)
         layout.addWidget(self.refresh_btn)
         
-        self.export_btn = QPushButton("📊 导出")
+        self.export_btn = QPushButton("导出")
         self.export_btn.setStyleSheet("""
             QPushButton {
                 padding: 6px 12px;
@@ -236,7 +236,7 @@ class ModelPerformancePanel(QWidget):
         layout.addWidget(metrics_frame)
         
         # 性能趋势图表区域
-        trend_frame = QGroupBox("📊 性能趋势")
+        trend_frame = QGroupBox("性能趋势")
         trend_layout = QVBoxLayout(trend_frame)
         
         # 图表类型选择
@@ -332,7 +332,7 @@ class ModelPerformancePanel(QWidget):
         right_layout = QVBoxLayout(right_panel)
         
         # 分布分析图表
-        distribution_group = QGroupBox("📊 分布分析")
+        distribution_group = QGroupBox("分布分析")
         distribution_layout = QVBoxLayout(distribution_group)
         
         self.distribution_chart_frame = QFrame()
@@ -381,7 +381,7 @@ class ModelPerformancePanel(QWidget):
         layout = QVBoxLayout(tab)
         
         # 模型选择控制
-        selection_frame = QGroupBox("🎯 选择对比模型")
+        selection_frame = QGroupBox("选择对比模型")
         selection_layout = QHBoxLayout(selection_frame)
         
         selection_layout.addWidget(QLabel("主模型:"))
@@ -413,7 +413,7 @@ class ModelPerformancePanel(QWidget):
         layout.addWidget(selection_frame)
         
         # 对比结果表格
-        comparison_group = QGroupBox("📊 对比结果")
+        comparison_group = QGroupBox("对比结果")
         comparison_layout = QVBoxLayout(comparison_group)
         
         self.comparison_table = QTableWidget(8, 4)
@@ -509,7 +509,7 @@ class ModelPerformancePanel(QWidget):
         control_layout.addStretch()
         
         # 开始检测按钮
-        self.start_detection_btn = QPushButton("🎯 开始检测")
+        self.start_detection_btn = QPushButton("开始检测")
         self.start_detection_btn.setStyleSheet("""
             QPushButton {
                 padding: 8px 16px;
@@ -559,7 +559,7 @@ class ModelPerformancePanel(QWidget):
         layout.addWidget(anomaly_group)
         
         # 异常分析图表
-        analysis_group = QGroupBox("📊 异常分析")
+        analysis_group = QGroupBox("异常分析")
         analysis_layout = QVBoxLayout(analysis_group)
         
         self.anomaly_chart_frame = QFrame()
@@ -816,7 +816,7 @@ class ModelPerformancePanel(QWidget):
     
     def toggle_anomaly_detection(self):
         """切换异常检测"""
-        if self.start_detection_btn.text() == "🎯 开始检测":
+        if self.start_detection_btn.text() == "开始检测":
             self.start_detection_btn.setText("⏹️ 停止检测")
             self.start_detection_btn.setStyleSheet("""
                 QPushButton {
@@ -833,7 +833,7 @@ class ModelPerformancePanel(QWidget):
             """)
             logger.info("开始异常检测")
         else:
-            self.start_detection_btn.setText("🎯 开始检测")
+            self.start_detection_btn.setText("开始检测")
             self.start_detection_btn.setStyleSheet("""
                 QPushButton {
                     padding: 8px 16px;

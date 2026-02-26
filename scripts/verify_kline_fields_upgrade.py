@@ -78,7 +78,7 @@ class KlineFieldsVerifier:
             result = self.conn.execute(query).fetchall()
             tables = [row[0] for row in result]
 
-            logger.info(f"📊 发现 {len(tables)} 个K线表")
+            logger.info(f"发现 {len(tables)} 个K线表")
             for table in tables:
                 logger.info(f"  - {table}")
 
@@ -176,7 +176,7 @@ class KlineFieldsVerifier:
                 logger.warning("⚠️  表中没有数据")
                 return {'has_data': False}
 
-            logger.info(f"📊 查询到 {len(df)} 条最新记录")
+            logger.info(f"查询到 {len(df)} 条最新记录")
 
             # 数据质量检查
             quality_report = {

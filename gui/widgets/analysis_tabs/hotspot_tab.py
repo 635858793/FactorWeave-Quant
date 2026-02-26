@@ -67,20 +67,25 @@ class HotspotAnalysisTab(BaseAnalysisTab):
         layout = QVBoxLayout(self)
 
         # 热点类型选择区域
-        types_group = self.create_types_section()
-        layout.addWidget(types_group)
+        self.types_group = self.create_types_section()
+        layout.addWidget(self.types_group)
 
         # 参数配置区域
-        params_group = self.create_params_section()
-        layout.addWidget(params_group)
+        self.params_group = self.create_params_section()
+        layout.addWidget(self.params_group)
 
         # 分析控制区域
-        control_group = self.create_control_section()
-        layout.addWidget(control_group)
+        self.control_group = self.create_control_section()
+        layout.addWidget(self.control_group)
 
         # 结果显示区域
-        results_group = self.create_results_section()
-        layout.addWidget(results_group)
+        self.results_group = self.create_results_section()
+        layout.addWidget(self.results_group)
+
+    def _setup_responsive_constraints(self):
+        """设置响应式布局约束"""
+        self._register_responsive_component('control_group', self.control_group)
+        self._register_responsive_component('scroll_area', self.results_group)
 
     def create_types_section(self):
         """创建热点类型选择区域"""
@@ -303,6 +308,10 @@ class HotspotAnalysisTab(BaseAnalysisTab):
         self.sector_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.sector_table.setAlternatingRowColors(True)
         self.sector_table.setSortingEnabled(True)
+        
+        header = self.sector_table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Stretch)
+        header.setStretchLastSection(False)
 
         layout.addWidget(self.sector_table)
         return tab
@@ -321,6 +330,10 @@ class HotspotAnalysisTab(BaseAnalysisTab):
         self.leading_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.leading_table.setAlternatingRowColors(True)
         self.leading_table.setSortingEnabled(True)
+        
+        header = self.leading_table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Stretch)
+        header.setStretchLastSection(False)
 
         layout.addWidget(self.leading_table)
         return tab
@@ -339,6 +352,10 @@ class HotspotAnalysisTab(BaseAnalysisTab):
         self.theme_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.theme_table.setAlternatingRowColors(True)
         self.theme_table.setSortingEnabled(True)
+        
+        header = self.theme_table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Stretch)
+        header.setStretchLastSection(False)
 
         layout.addWidget(self.theme_table)
         return tab
@@ -357,6 +374,10 @@ class HotspotAnalysisTab(BaseAnalysisTab):
         self.flow_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.flow_table.setAlternatingRowColors(True)
         self.flow_table.setSortingEnabled(True)
+        
+        header = self.flow_table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Stretch)
+        header.setStretchLastSection(False)
 
         layout.addWidget(self.flow_table)
         return tab

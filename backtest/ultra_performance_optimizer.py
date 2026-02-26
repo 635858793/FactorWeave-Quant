@@ -479,41 +479,37 @@ class UltraPerformanceOptimizer:
     def _memory_mapped_backtest(self, data: pd.DataFrame, **kwargs) -> pd.DataFrame:
         """内存映射回测（处理大数据集）"""
         from .resource_manager import managed_backtest_resources
-        from .async_io_manager import async_io_manager, smart_cache
+        from core.services.unified_cache_provider import get_smart_cache, get_async_io_cache
+
+        smart_cache = get_smart_cache()
+        async_io_cache = get_async_io_cache()
 
         with managed_backtest_resources() as resource_manager:
             try:
-                # 生成数据缓存键
                 data_hash = hashlib.md5(str(data.values.tobytes()).encode()).hexdigest()
                 cache_key = f"backtest_data_{data_hash}"
 
-                # 尝试从缓存获取数据
                 cached_result = smart_cache.get(cache_key)
                 if cached_result is not None:
                     logger.info("使用缓存的回测数据")
                     return cached_result
 
-                # 创建临时文件
                 temp_file = Path("temp/backtest_data.h5")
                 temp_file.parent.mkdir(exist_ok=True)
 
-                # 注册临时文件到资源管理器
                 resource_manager.register_temp_file(temp_file)
 
-                # 异步写入HDF5数据
                 prices_data = data['close'].values.astype(np.float64)
                 signals_data = data['signal'].values.astype(np.float64)
 
-                # 使用异步I/O管理器
-                future_write = async_io_manager.write_hdf5_async(temp_file, 'prices', prices_data)
-                future_write.result()  # 等待写入完成
+                future_write = async_io_cache.write_hdf5_async(temp_file, 'prices', prices_data)
+                future_write.result()
 
-                future_write = async_io_manager.write_hdf5_async(temp_file, 'signals', signals_data)
-                future_write.result()  # 等待写入完成
+                future_write = async_io_cache.write_hdf5_async(temp_file, 'signals', signals_data)
+                future_write.result()
 
-                # 异步读取数据
-                prices = async_io_manager.read_hdf5_async(temp_file, 'prices')
-                signals = async_io_manager.read_hdf5_async(temp_file, 'signals')
+                prices = async_io_cache.read_hdf5_async(temp_file, 'prices')
+                signals = async_io_cache.read_hdf5_async(temp_file, 'signals')
 
                 # 执行回测
                 positions, capital, returns = self._ultra_fast_backtest_core(

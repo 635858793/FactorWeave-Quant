@@ -431,7 +431,21 @@ class KlineRepository(BaseRepository):
         self.asset_service = asset_service
         self.uni_plugin_manager = uni_plugin_manager
         self.data_manager = None  # 备用兼容
-        self._cache = {}
+        self._unified_cache = None
+        self._cache_namespace = 'kline_repository'
+        self._init_unified_cache()
+
+    def _init_unified_cache(self) -> None:
+        """初始化统一缓存服务（强制）"""
+        from core.services.cache_service import CacheService
+        from core.containers import get_service_container
+        
+        container = get_service_container()
+        if container and container.is_registered(CacheService):
+            self._unified_cache = container.resolve(CacheService)
+            self.logger.debug(f"KlineRepository 已连接到统一缓存服务，命名空间: {self._cache_namespace}")
+        else:
+            raise RuntimeError("统一缓存服务未注册，请确保 CacheService 已在服务容器中注册")
 
     def connect(self) -> bool:
         """连接数据源（TET模式优先）"""
@@ -519,9 +533,10 @@ class KlineRepository(BaseRepository):
             cache_key = f"{asset_type.value}_{params.stock_code}_{params.period}_{params.start_date}_{params.end_date}_{params.count}"
 
             # 检查缓存
-            if cache_key in self._cache:
+            cached_data = self._unified_cache.get(cache_key, namespace=self._cache_namespace)
+            if cached_data is not None:
                 self.logger.debug(f"缓存命中: {params.stock_code} ({asset_type.value})")
-                return self._cache[cache_key]
+                return cached_data
 
             if not self.is_connected():
                 self.connect()
@@ -617,7 +632,8 @@ class KlineRepository(BaseRepository):
             )
 
             # 缓存结果
-            self._cache[cache_key] = kline_data
+            from datetime import timedelta
+            self._unified_cache.set(cache_key, kline_data, ttl=timedelta(minutes=5), namespace=self._cache_namespace)
             return kline_data
 
         except Exception as e:
@@ -654,9 +670,10 @@ class KlineRepository(BaseRepository):
                 return False
 
             cache_key = f"default_{stock_code}_{period}_None_None_None"
-            existing = self._cache.get(cache_key)
+            existing = self._unified_cache.get(cache_key, namespace=self._cache_namespace)
             if existing:
                 existing.data = data
+                self._unified_cache.set(cache_key, existing, namespace=self._cache_namespace)
                 self.logger.debug(f"K线数据已更新（缓存）: {stock_code} {period}")
                 return True
 

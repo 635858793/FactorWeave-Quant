@@ -50,7 +50,7 @@ from PyQt5.QtGui import (
 
 # 导入核心缓存组件
 try:
-    from core.performance.intelligent_cache_coordinator import IntelligentCacheCoordinator
+    from core.services.cache_service import CacheService
     from core.performance.adaptive_cache_strategy import AdaptiveCacheStrategy
     from core.ui_integration.ui_business_logic_adapter import get_ui_adapter
     from loguru import logger
@@ -725,14 +725,17 @@ class CacheStatusMonitor(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.ui_adapter = None
-        self.cache_coordinator = None
+        self.cache_service = None
         self.adaptive_strategy = None
 
         # 初始化核心服务
         if CORE_AVAILABLE:
             try:
                 self.ui_adapter = get_ui_adapter()
-                self.cache_coordinator = IntelligentCacheCoordinator()
+                from core.containers import get_service_container
+                container = get_service_container()
+                if container and container.is_registered(CacheService):
+                    self.cache_service = container.resolve(CacheService)
                 self.adaptive_strategy = AdaptiveCacheStrategy()
             except Exception as e:
                 logger.warning(f"核心缓存服务初始化失败: {e}")
@@ -741,6 +744,38 @@ class CacheStatusMonitor(QWidget):
         self.setup_connections()
         self.setup_timers()
         self.load_sample_data()
+        self._load_cache_config()
+
+    def _load_cache_config(self):
+        """从数据库加载缓存配置"""
+        try:
+            if self.cache_service:
+                self.cache_service.load_config_from_db('default')
+                self._refresh_strategy_status()
+        except Exception as e:
+            logger.warning(f"加载缓存配置失败: {e}")
+
+    def _refresh_strategy_status(self):
+        """刷新策略状态显示"""
+        try:
+            if self.cache_service:
+                config = self.cache_service.get_current_config()
+                if hasattr(self, 'l1_strategy_combo'):
+                    idx = self.l1_strategy_combo.findText(config.get('strategy_l1', 'LRU'))
+                    if idx >= 0:
+                        self.l1_strategy_combo.setCurrentIndex(idx)
+                if hasattr(self, 'l2_strategy_combo'):
+                    idx = self.l2_strategy_combo.findText(config.get('strategy_l2', 'LRU'))
+                    if idx >= 0:
+                        self.l2_strategy_combo.setCurrentIndex(idx)
+                if hasattr(self, 'max_size_spin'):
+                    self.max_size_spin.setValue(config.get('max_size_l1', 5000))
+                if hasattr(self, 'max_size_l2_spin'):
+                    self.max_size_l2_spin.setValue(config.get('max_size_l2', 50000))
+                if hasattr(self, 'ttl_spin'):
+                    self.ttl_spin.setValue(config.get('default_ttl_minutes', 120))
+        except Exception as e:
+            logger.warning(f"刷新策略状态失败: {e}")
 
     def setup_ui(self):
         """设置UI"""
@@ -952,16 +987,42 @@ class CacheStatusMonitor(QWidget):
         current_layout = QFormLayout(current_group)
 
         # L1策略
-        self.l1_strategy_label = QLabel("智能LRU")
-        current_layout.addRow("L1内存策略:", self.l1_strategy_label)
+        self.l1_strategy_combo = QComboBox()
+        self.l1_strategy_combo.addItems(["LRU", "LFU", "FIFO", "TTL"])
+        current_layout.addRow("L1内存策略:", self.l1_strategy_combo)
 
         # L2策略
-        self.l2_strategy_label = QLabel("自适应LFU")
-        current_layout.addRow("L2磁盘策略:", self.l2_strategy_label)
+        self.l2_strategy_combo = QComboBox()
+        self.l2_strategy_combo.addItems(["LRU", "LFU", "FIFO", "TTL"])
+        current_layout.addRow("L2磁盘策略:", self.l2_strategy_combo)
+
+        # 缓存大小配置
+        size_layout = QHBoxLayout()
+        self.max_size_spin = QSpinBox()
+        self.max_size_spin.setRange(100, 50000)
+        self.max_size_spin.setValue(5000)
+        self.max_size_spin.setSuffix(" 条")
+        size_layout.addWidget(QLabel("L1:"))
+        size_layout.addWidget(self.max_size_spin)
+
+        self.max_size_l2_spin = QSpinBox()
+        self.max_size_l2_spin.setRange(1000, 500000)
+        self.max_size_l2_spin.setValue(50000)
+        self.max_size_l2_spin.setSuffix(" 条")
+        size_layout.addWidget(QLabel("L2:"))
+        size_layout.addWidget(self.max_size_l2_spin)
+        current_layout.addRow("缓存容量:", size_layout)
+
+        # TTL配置
+        self.ttl_spin = QSpinBox()
+        self.ttl_spin.setRange(1, 1440)
+        self.ttl_spin.setValue(120)
+        self.ttl_spin.setSuffix(" 分钟")
+        current_layout.addRow("默认TTL:", self.ttl_spin)
 
         # 自适应状态
         self.adaptive_status_label = QLabel("启用")
-        current_layout.addRow("自适应优化:", self.adaptive_status_status_label)
+        current_layout.addRow("自适应优化:", self.adaptive_status_label)
 
         layout.addWidget(current_group)
 
@@ -1193,9 +1254,11 @@ class CacheStatusMonitor(QWidget):
 
         if reply == QMessageBox.Yes:
             try:
-                if self.cache_coordinator:
-                    # 调用实际的缓存清除逻辑
-                    pass
+                if self.cache_service:
+                    # 清除所有命名空间的缓存
+                    namespaces = self.cache_service.list_namespaces()
+                    for ns in namespaces:
+                        self.cache_service.clear_namespace(ns)
 
                 QMessageBox.information(self, "清除完成", "缓存已成功清除")
                 logger.info("用户手动清除了缓存")
@@ -1221,23 +1284,31 @@ class CacheStatusMonitor(QWidget):
     def apply_strategy_config(self):
         """应用策略配置"""
         try:
-            # 获取配置
-            adaptive_enabled = self.adaptive_enabled_check.isChecked()
-            adjustment_interval = self.adjustment_interval_spin.value()
-            hit_rate_threshold = self.hit_rate_threshold_spin.value()
-            memory_limit = self.memory_limit_spin.value() * 1024 * 1024  # 转换为字节
+            if not self.cache_service:
+                QMessageBox.warning(self, "警告", "缓存服务未初始化")
+                return
 
-            # 应用配置（这里可以调用实际的配置应用逻辑）
+            l1_strategy = self.l1_strategy_combo.currentText()
+            l2_strategy = self.l2_strategy_combo.currentText()
+            max_size = self.max_size_spin.value()
+            max_size_l2 = self.max_size_l2_spin.value()
+            ttl_minutes = self.ttl_spin.value()
+
             config = {
-                'adaptive_enabled': adaptive_enabled,
-                'adjustment_interval': adjustment_interval,
-                'hit_rate_threshold': hit_rate_threshold,
-                'memory_limit': memory_limit
+                'strategy': l1_strategy,
+                'max_size': max_size,
+                'max_size_l2': max_size_l2,
+                'default_ttl_minutes': ttl_minutes
             }
 
-            logger.info(f"应用缓存策略配置: {config}")
-
-            QMessageBox.information(self, "配置成功", "缓存策略配置已成功应用")
+            success = self.cache_service.update_config(config)
+            if success:
+                self.cache_service.save_config_to_db('default', 'ui_user')
+                QMessageBox.information(self, "配置成功", "缓存策略配置已成功应用并保存")
+                logger.info(f"应用缓存策略配置: {config}")
+                self._refresh_strategy_status()
+            else:
+                QMessageBox.warning(self, "配置失败", "缓存配置更新失败")
 
         except Exception as e:
             QMessageBox.critical(self, "配置失败", f"策略配置应用失败: {e}")
@@ -1245,10 +1316,26 @@ class CacheStatusMonitor(QWidget):
 
     def reset_strategy_config(self):
         """重置策略配置"""
+        self.l1_strategy_combo.setCurrentIndex(0)
+        self.l2_strategy_combo.setCurrentIndex(0)
+        self.max_size_spin.setValue(5000)
+        self.max_size_l2_spin.setValue(50000)
+        self.ttl_spin.setValue(120)
+        self.adaptive_enabled_check.setChecked(True)
         self.adaptive_enabled_check.setChecked(True)
         self.adjustment_interval_spin.setValue(300)
         self.hit_rate_threshold_spin.setValue(0.7)
         self.memory_limit_spin.setValue(2048)
+
+        if self.cache_service:
+            default_config = {
+                'strategy': 'LRU',
+                'max_size': 5000,
+                'max_size_l2': 50000,
+                'default_ttl_minutes': 120
+            }
+            self.cache_service.update_config(default_config)
+            self.cache_service.save_config_to_db('default', 'ui_reset')
 
         QMessageBox.information(self, "重置完成", "策略配置已重置为默认值")
 

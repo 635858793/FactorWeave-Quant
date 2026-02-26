@@ -57,12 +57,11 @@ _ModernAlgorithmOptimizationTab = None
 _ModernRiskControlCenterTab = None
 _ModernTradingExecutionMonitorTab = None
 _DataQualityMonitorTab = None
-_ModernSystemHealthTab = None
 
 def _import_tabs():
     """延迟导入标签页组件"""
     global _ModernSystemMonitorTab, _ModernStrategyPerformanceTab, _ModernAlgorithmOptimizationTab
-    global _ModernRiskControlCenterTab, _ModernTradingExecutionMonitorTab, _DataQualityMonitorTab, _ModernSystemHealthTab
+    global _ModernRiskControlCenterTab, _ModernTradingExecutionMonitorTab, _DataQualityMonitorTab
     
     if _ModernSystemMonitorTab is None:
         from gui.widgets.performance import (
@@ -70,8 +69,7 @@ def _import_tabs():
             ModernStrategyPerformanceTab,
             ModernAlgorithmOptimizationTab,
             ModernRiskControlCenterTab,
-            ModernTradingExecutionMonitorTab,
-            ModernSystemHealthTab
+            ModernTradingExecutionMonitorTab
         )
         from gui.widgets.enhanced_ui.data_quality_monitor_tab import DataQualityMonitorTab
         _ModernSystemMonitorTab = ModernSystemMonitorTab
@@ -80,16 +78,6 @@ def _import_tabs():
         _ModernRiskControlCenterTab = ModernRiskControlCenterTab
         _ModernTradingExecutionMonitorTab = ModernTradingExecutionMonitorTab
         _DataQualityMonitorTab = DataQualityMonitorTab
-        _ModernSystemHealthTab = ModernSystemHealthTab
-
-# 深度优化模块导入
-try:
-    from core.advanced_optimization.unified_optimization_service import UnifiedOptimizationService
-    from core.containers.service_container import ServiceContainer
-    DEEP_OPTIMIZATION_AVAILABLE = True
-except ImportError:
-    DEEP_OPTIMIZATION_AVAILABLE = False
-    logger.warning("深度优化模块不可用")
 
 class StatusMessageCallback(QObject):
     """状态消息回调包装类，避免lambda函数导致的内存泄漏"""
@@ -174,7 +162,7 @@ class StrategyDataCallback(QObject):
 class ModernUnifiedPerformanceWidget(QWidget):
     """现代化统一性能监控组件 - 专业交易软件风格"""
 
-    def __init__(self, event_bus: EventBus = None, health_checker=None, parent=None):
+    def __init__(self, event_bus: EventBus = None, parent=None):
         super().__init__(parent)
 
         # 设置窗口标志
@@ -186,7 +174,6 @@ class ModernUnifiedPerformanceWidget(QWidget):
         
         self.monitor = _get_performance_monitor()
         self._event_bus = event_bus
-        self._health_checker = health_checker
         self.current_tab_index = 0  # 添加当前tab跟踪
         self._data_cache = {}  # 添加数据缓存
         self._last_update_time = {}  # 添加更新时间跟踪
@@ -204,12 +191,7 @@ class ModernUnifiedPerformanceWidget(QWidget):
         # 初始化性能监控器
         self.performance_monitor = _UnifiedPerformanceMonitor()
         logger.info("性能监控器初始化完成")
-        
-        # 初始化深度优化服务
-        self.optimization_service = None
-        # 延迟初始化深度优化服务，避免启动时阻塞
-        # self._init_deep_optimization_service()  # 延迟到首次使用时初始化
-        
+
         self.performance_integrator = None
         self._has_smart_monitoring = False
 
@@ -356,23 +338,6 @@ class ModernUnifiedPerformanceWidget(QWidget):
             report_generator=report_generator
         )
         tab_widget.addTab(self.data_quality_tab, "数据质量")
-
-        # 7. 系统健康检查 - 系统诊断和健康状态
-        self.health_tab = _ModernSystemHealthTab(self._health_checker)
-        tab_widget.addTab(self.health_tab, "健康检查")
-
-        # 8. 深度优化控制面板 - 集成已注册的深度优化模块
-        if DEEP_OPTIMIZATION_AVAILABLE:
-            try:
-                from gui.widgets.performance.tabs.deep_optimization_tab import DeepOptimizationTab
-                self.deep_optimization_tab = DeepOptimizationTab(
-                    self.optimization_service,
-                    event_bus=self._event_bus
-                )
-                tab_widget.addTab(self.deep_optimization_tab, "🚀 深度优化")
-                logger.info("深度优化标签页添加成功")
-            except ImportError as e:
-                logger.warning(f"无法创建深度优化标签页: {e}")
 
         return tab_widget
 
@@ -1010,8 +975,19 @@ class ModernUnifiedPerformanceWidget(QWidget):
                                 utilization = cache_stats.get('utilization', 0)
                                 quality_metrics['uniqueness'] = utilization
                         else:
-                            logger.warning("缓存管理器未初始化，使用默认值")
-                            quality_metrics['uniqueness'] = 0.95
+                            try:
+                                from core.containers import get_service_container
+                                from core.services.cache_service import CacheService
+                                container = get_service_container()
+                                if container and container.is_registered(CacheService):
+                                    cache_service = container.resolve(CacheService)
+                                    if cache_service:
+                                        stats = cache_service.get_statistics()
+                                        quality_metrics['uniqueness'] = stats.get('utilization', 0.95)
+                                        logger.info(f"从CacheService获取缓存统计: {stats}")
+                            except Exception as cs_err:
+                                logger.warning(f"获取CacheService失败: {cs_err}")
+                                quality_metrics['uniqueness'] = 0.95
 
                     except Exception as e:
                         logger.error(f"统一数据管理器质量数据获取失败: {e}")
@@ -1384,28 +1360,6 @@ class ModernUnifiedPerformanceWidget(QWidget):
             self._data_manager_cache = None
             logger.debug("外部服务缓存已清理")
 
-            # 清理优化服务 - 使用非阻塞方式
-            if hasattr(self, 'optimization_service') and self.optimization_service:
-                if hasattr(self.optimization_service, 'stop'):
-                    try:
-                        # 使用非阻塞方式启动停止任务
-                        import asyncio
-                        loop = asyncio.get_event_loop()
-                        if loop.is_running():
-                            asyncio.create_task(self.optimization_service.stop())
-                        else:
-                            # 不等待完成，直接启动任务
-                            asyncio.ensure_future(self.optimization_service.stop())
-                        logger.debug("深度优化服务停止任务已启动")
-                    except Exception as e:
-                        logger.debug(f"启动优化服务停止失败: {e}")
-                        self.optimization_service = None
-                elif hasattr(self.optimization_service, 'cleanup'):
-                    try:
-                        self.optimization_service.cleanup()
-                    except Exception as e:
-                        logger.debug(f"清理优化服务失败: {e}")
-
             # 注意：performance_monitor 在此组件中从未被 start()，无需停止
             # 如果未来需要启动监控功能，应在此处添加停止逻辑
 
@@ -1506,101 +1460,3 @@ class ModernUnifiedPerformanceWidget(QWidget):
 
         except Exception as e:
             logger.error(f"检查样式表时出错: {e}")
-
-    def _init_deep_optimization_service(self):
-        """初始化深度优化服务 - 使用事件驱动方式"""
-        if DEEP_OPTIMIZATION_AVAILABLE:
-            try:
-                from core.advanced_optimization.unified_optimization_service import OptimizationConfig, OptimizationMode
-                
-                # 创建优化配置
-                config = OptimizationConfig(
-                    mode=OptimizationMode.BALANCED,
-                    enable_cache=True,
-                    enable_virtual_scroll=False,
-                    enable_realtime_data=True,
-                    enable_ai_recommendation=True,
-                    enable_responsive_ui=True,
-                    cache_size_mb=2048,
-                    cache_ttl_seconds=3600,
-                    chunk_size=100,
-                    preload_threshold=5,
-                    max_connections=100,
-                    buffer_size=1024,
-                    recommendation_count=5,
-                    learning_window_days=30,
-                    screen_adaptation=True,
-                    touch_optimization=True
-                )
-                
-                # 初始化统一优化服务（同步初始化，避免异步事件循环冲突）
-                self.optimization_service = UnifiedOptimizationService(config)
-                
-                # 使用事件总线发布优化服务初始化事件
-                if self._event_bus:
-                    from core.events.types import OptimizationServiceInitializedEvent
-                    event = OptimizationServiceInitializedEvent(
-                        service=self.optimization_service,
-                        config=config
-                    )
-                    self._event_bus.publish(event)
-                    logger.info("深度优化服务初始化事件已发布")
-                
-                # 注意：深度优化服务在此处未调用 initialize() 和 start()
-                # 因此 _performance_monitor_task 从未创建，metrics 是默认值
-                # 禁用优化服务监控定时器，避免访问未初始化的 metrics
-                logger.info("深度优化服务已创建但未启动，监控定时器已禁用")
-                # self._setup_optimization_monitor()  # 注释掉，避免问题
-                
-                logger.info("深度优化服务初始化成功（事件驱动模式）")
-                
-            except Exception as e:
-                logger.error(f"深度优化服务初始化失败: {e}")
-                self.optimization_service = None
-                logger.warning("将使用基础性能优化功能")
-    
-    def _setup_optimization_monitor(self):
-        """设置优化服务监控定时器 - 已禁用，因为优化服务未启动"""
-        logger.info("优化服务监控定时器已禁用（优化服务未启动）")
-        # 不启动定时器，避免不必要的资源消耗
-    
-    def _update_optimization_metrics(self):
-        """更新优化服务指标 - 事件驱动方式"""
-        try:
-            if not self.optimization_service:
-                return
-            
-            # 使用事件总线发布指标更新事件
-            if self._event_bus:
-                from core.events.types import OptimizationMetricsUpdatedEvent
-                
-                # 获取优化服务指标
-                metrics = {
-                    'cache_hit_rate': self.optimization_service.metrics.cache_hit_rate if hasattr(self.optimization_service, 'metrics') else 0.0,
-                    'scroll_performance': self.optimization_service.metrics.scroll_performance if hasattr(self.optimization_service, 'metrics') else 0.0,
-                    'data_throughput': self.optimization_service.metrics.data_throughput if hasattr(self.optimization_service, 'metrics') else 0.0,
-                    'network_latency_ms': self.optimization_service.metrics.network_latency_ms if hasattr(self.optimization_service, 'metrics') else 0.0,
-                    'timestamp': time.time()
-                }
-                
-                event = OptimizationMetricsUpdatedEvent(metrics=metrics)
-                self._event_bus.publish(event)
-                
-                logger.debug(f"优化服务指标已更新: {metrics}")
-                
-        except Exception as e:
-            logger.error(f"更新优化服务指标失败: {e}")
-    
-    def _on_optimization_init_finished(self, success):
-        """深度优化服务初始化完成回调 - 已废弃，使用事件驱动方式"""
-        logger.warning("_on_optimization_init_finished 已废弃，请使用事件驱动方式")
-
-    def start_immediate_update(self):
-        """启动立即更新"""
-        # 立即执行一次更新
-        self.update_current_tab_data_async()
-
-        # 重启定时器
-        if hasattr(self, 'refresh_timer'):
-            self.refresh_timer.stop()
-            self.refresh_timer.start(3000)

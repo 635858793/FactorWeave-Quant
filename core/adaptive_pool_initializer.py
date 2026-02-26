@@ -45,7 +45,7 @@ def initialize_adaptive_pool() -> Optional[AdaptiveConnectionPoolManager]:
     global _adaptive_manager
 
     try:
-        logger.info("🔄 初始化自适应连接池管理（旧版本）...")
+        logger.info("初始化自适应连接池管理（旧版本）...")
 
         # 获取ConfigService
         try:
@@ -109,7 +109,7 @@ def initialize_adaptive_pools_by_config() -> Optional[AdaptiveConnectionPoolMana
     global _adaptive_manager
 
     try:
-        logger.info("🔄 初始化所有连接池的自适应管理...")
+        logger.info("初始化所有连接池的自适应管理...")
 
         # 获取ConfigService
         try:

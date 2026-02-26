@@ -29,10 +29,29 @@ except ImportError:
     logger.warning("AI预测服务不可用，自适应缓存将使用简化策略")
 
 # 导入缓存相关组件
-from .intelligent_cache_coordinator import (
-    CacheStrategy, CacheType, CachePriority, CacheConfiguration,
-    CacheMetrics, CacheRecommendation, CacheAccessPattern
-)
+try:
+    from core.services.cache_service import (
+        CacheStrategy, CacheType, CachePriority,
+        CacheConfiguration, CacheMetrics, CacheRecommendation
+    )
+    CACHE_SERVICE_AVAILABLE = True
+except ImportError:
+    CACHE_SERVICE_AVAILABLE = False
+    CacheStrategy = None
+    CacheType = None
+    CachePriority = None
+    CacheConfiguration = None
+    CacheMetrics = None
+    CacheRecommendation = None
+    logger.warning("CacheService 不可用，自适应缓存将使用简化模式")
+
+# 简化的 CacheAccessPattern（不需要 ICC）
+class CacheAccessPattern:
+    """简化的缓存访问模式（无需 ICC）"""
+    def __init__(self):
+        self.hot_keys = []
+        self.cold_keys = []
+        self.access_frequency = {}
 
 # 机器学习库
 try:
