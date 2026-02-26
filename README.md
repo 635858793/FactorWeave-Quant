@@ -1006,7 +1006,7 @@ tail -f logs/performance_stats.log
 
 | 📱 微信 | 📧 QQ | 🪐 知识星球 |
 | :---: | :---: | :---: |
-| ![微信二维码](docs/images/wechat.png) | ![QQ二维码](docs/images/qq.png) | ![知识星球二维码](docs/images/zsxq.png) |
+| ![微信二维码](docs/images/wechat-me.png) | ![QQ二维码](docs/images/qq.png) | ![知识星球二维码](docs/images/zsxq.png) |
 
 ## 📄 许可证
 
