@@ -85,6 +85,9 @@ class SettingsDialog(QDialog):
         # 创建GPU配置选项卡
         self._create_gpu_config_tab()
 
+        # 创建AI预测配置选项卡
+        self._create_ai_prediction_config_tab()
+
         # 创建按钮
         self._create_buttons(main_layout)
 
@@ -410,6 +413,130 @@ class SettingsDialog(QDialog):
 
         # 初始化GPU状态
         self._detect_gpu()
+
+    def _create_ai_prediction_config_tab(self) -> None:
+        """创建AI预测配置选项卡"""
+        ai_tab = QWidget()
+        ai_layout = QVBoxLayout(ai_tab)
+        ai_layout.setContentsMargins(10, 10, 10, 10)
+        ai_layout.setSpacing(10)
+
+        info_group = QGroupBox("AI预测缓存配置")
+        info_layout = QVBoxLayout(info_group)
+
+        info_label = QLabel(
+            "此选项卡用于配置AI预测系统的缓存策略。\n"
+            "包括：启用缓存、缓存有效期(TTL)、最大缓存条目数等。\n\n"
+            "点击下方按钮打开详细配置界面。"
+        )
+        info_label.setWordWrap(True)
+        info_layout.addWidget(info_label)
+
+        button_group = QGroupBox("操作")
+        button_layout = QVBoxLayout(button_group)
+
+        self.open_ai_config_btn = QPushButton("打开AI预测配置")
+        self.open_ai_config_btn.clicked.connect(self._open_ai_prediction_config)
+        button_layout.addWidget(self.open_ai_config_btn)
+
+        self.clear_ai_cache_btn = QPushButton("清理AI预测缓存")
+        self.clear_ai_cache_btn.clicked.connect(self._clear_ai_prediction_cache)
+        button_layout.addWidget(self.clear_ai_cache_btn)
+
+        self.reload_ai_config_btn = QPushButton("重新加载配置")
+        self.reload_ai_config_btn.clicked.connect(self._reload_ai_prediction_config)
+        button_layout.addWidget(self.reload_ai_config_btn)
+
+        info_layout.addWidget(button_group)
+        ai_layout.addWidget(info_group)
+
+        self.ai_status_label = QLabel("就绪")
+        self.ai_status_label.setStyleSheet("color: #6c757d;")
+        ai_layout.addWidget(self.ai_status_label)
+
+        ai_layout.addStretch()
+        self.tab_widget.addTab(ai_tab, "AI预测配置")
+
+    def _open_ai_prediction_config(self) -> None:
+        """打开AI预测配置对话框"""
+        try:
+            from gui.dialogs.ai_prediction_config_dialog import AIPredictionConfigDialog
+
+            dialog = AIPredictionConfigDialog(self)
+            dialog.config_changed.connect(self._on_ai_config_changed_from_settings)
+            dialog.exec_()
+            self._reload_ai_prediction_config()
+
+        except Exception as e:
+            logger.error(f"打开AI预测配置失败: {e}")
+            QMessageBox.critical(self, "错误", f"无法打开AI预测配置: {e}")
+
+    def _on_ai_config_changed_from_settings(self, config_key: str, config_value: dict):
+        """从设置对话框处理AI配置变更"""
+        try:
+            from core.services.ai_prediction_service import AIPredictionService
+            from core.containers import get_service_container
+
+            container = get_service_container()
+            ai_service = container.get_service(AIPredictionService)
+
+            if ai_service:
+                ai_service.reload_config()
+                logger.info(f"AI预测配置已更新并重新加载: {config_key}")
+                self.ai_status_label.setText(f"配置已更新: {config_key}")
+            else:
+                self.ai_status_label.setText("AI预测服务未启动")
+
+        except Exception as e:
+            logger.error(f"处理AI配置变更失败: {e}")
+            self.ai_status_label.setText(f"更新失败: {e}")
+
+    def _clear_ai_prediction_cache(self) -> None:
+        """清理AI预测缓存"""
+        try:
+            from core.services.ai_prediction_service import AIPredictionService
+            from core.containers import get_service_container
+
+            container = get_service_container()
+            ai_service = container.get_service(AIPredictionService)
+
+            if ai_service:
+                ai_service.clear_cache()
+                QMessageBox.information(self, "成功", "AI预测缓存已清理")
+                self.ai_status_label.setText("缓存已清理")
+            else:
+                QMessageBox.warning(self, "警告", "AI预测服务未启动")
+
+        except Exception as e:
+            logger.error(f"清理AI预测缓存失败: {e}")
+            QMessageBox.critical(self, "错误", f"清理缓存失败: {e}")
+
+    def _reload_ai_prediction_config(self) -> None:
+        """重新加载AI预测配置"""
+        try:
+            from core.services.ai_prediction_service import AIPredictionService
+            from core.containers import get_service_container
+
+            container = get_service_container()
+            ai_service = container.get_service(AIPredictionService)
+
+            if ai_service:
+                ai_service.reload_config()
+                config = ai_service.get_current_config()
+                cache_config = config.get('cache_config', {})
+
+                status_text = (
+                    f"缓存: {'启用' if cache_config.get('enable_cache', True) else '禁用'} | "
+                    f"TTL: {cache_config.get('cache_ttl', 300)}秒 | "
+                    f"最大条目: {cache_config.get('max_cache_size', 1000)}"
+                )
+                self.ai_status_label.setText(status_text)
+            else:
+                self.ai_status_label.setText("AI预测服务未启动")
+
+        except Exception as e:
+            logger.error(f"重新加载AI预测配置失败: {e}")
+            self.ai_status_label.setText(f"加载失败: {e}")
 
     def _detect_gpu(self) -> None:
         """检测GPU状态"""
@@ -1039,8 +1166,27 @@ class SettingsDialog(QDialog):
             self.theme_service.set_theme(theme_name)
             self.theme_changed.emit(theme_name)
 
+        # 应用缓存配置到CacheService（统一缓存）
+        self._apply_cache_config(settings.get('data', {}))
+
         # 发送设置应用信号
         self.settings_applied.emit(settings)
+
+    def _apply_cache_config(self, data_config: dict) -> None:
+        """应用缓存配置到CacheService"""
+        try:
+            from core.containers import get_service_container
+            from core.services.cache_service import CacheService
+            
+            container = get_service_container()
+            if container and container.is_registered(CacheService):
+                cache_service = container.resolve(CacheService)
+                cache_size_mb = data_config.get('cache_size', 1000)
+                cache_size = int(cache_size_mb * 1024 * 1024 / 1024)
+                cache_service.update_config({'max_size': cache_size})
+                logger.info(f"缓存配置已应用: {cache_size} 条目")
+        except Exception as e:
+            logger.warning(f"应用缓存配置失败: {e}")
 
         logger.info("Settings applied successfully")
 

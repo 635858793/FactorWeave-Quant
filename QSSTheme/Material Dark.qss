@@ -389,7 +389,7 @@ QRadioButton::indicator:checked {
 	background-color: #04b97f;
 }
 
-QRadioButton::indicator: !checked {
+QRadioButton::indicator:!checked {
 	height: 18px;
 	width: 18px;
 	border-style: solid;
@@ -447,7 +447,7 @@ QComboBox QAbstractItemView {
 	selection-background-color: #1e1d23;
 }
 
-QComboBox: !editable:on,
+QComboBox:!editable:on,
 QComboBox::drop-down:editable:on {
 	color: #a9b7c6;
 	background: #1e1d23;

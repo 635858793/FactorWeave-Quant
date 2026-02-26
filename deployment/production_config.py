@@ -24,6 +24,7 @@ from typing import Dict, List, Any, Optional
 from pathlib import Path
 from dataclasses import dataclass, field
 from enum import Enum
+from loguru import logger
 
 try:
     from loguru import logger
@@ -358,6 +359,7 @@ class ProductionConfig:
             self.security.api_key_required = False
             self.cache.l3_enabled = False
             self.monitoring.prometheus_enabled = False
+            self.monitoring.alerting_enabled = False
 
         elif self.environment == Environment.TESTING:
             # 测试环境配置调整
@@ -479,16 +481,30 @@ class ProductionConfig:
         try:
             from loguru import logger as loguru_logger
 
+            print("DEBUG: 开始设置日志配置...")
+
             # 移除默认处理器
+            print("DEBUG: 移除默认处理器...")
             loguru_logger.remove()
+            print("DEBUG: 处理器移除完成")
+
+            # 获取日志配置
+            loguru_config = self.logging.get_loguru_config()
+            print(f"DEBUG: 获取到 {len(loguru_config)} 个日志处理器配置")
 
             # 添加配置的处理器
-            for handler_config in self.logging.get_loguru_config():
+            for i, handler_config in enumerate(loguru_config):
+                print(f"DEBUG: 添加处理器 {i}: {handler_config.get('sink', 'unknown')}")
                 loguru_logger.add(**handler_config)
+                print(f"DEBUG: 处理器 {i} 添加完成")
 
-            logger.info("日志配置已应用")
+            print("DEBUG: 日志配置完成")
 
-        except ImportError:
+        except Exception as e:
+            print(f"ERROR: 设置日志配置失败: {e}")
+            import traceback
+            traceback.print_exc()
+
             # 如果没有loguru，使用标准logging
             import logging
 

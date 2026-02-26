@@ -406,7 +406,6 @@ class SmartRecommendationPanel(QWidget):
     def _create_control_panel(self) -> QWidget:
         """创建控制面板"""
         panel = QFrame(self)
-        panel.setMaximumHeight(60)
 
         layout = QHBoxLayout(panel)
 

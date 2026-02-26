@@ -137,7 +137,6 @@ class MultiAgentStatusPanel(QWidget):
     def _create_control_panel(self, layout):
         """创建控制面板"""
         control_frame = QFrame()
-        control_frame.setMaximumHeight(60)
         control_frame.setFrameStyle(QFrame.StyledPanel)
         
         control_layout = QHBoxLayout(control_frame)

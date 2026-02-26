@@ -13,18 +13,27 @@ import time
 import traceback
 from datetime import datetime
 from utils.config_manager import ConfigManager
-from utils.cache import Cache
 from utils.trace_context import get_trace_id, set_trace_id
 from core.performance import measure_performance
 
 class BaseAnalysisTab(QWidget):
     """分析标签页基类 - 增强版"""
 
-    # 定义信号
     analysis_completed = pyqtSignal(dict)
     error_occurred = pyqtSignal(str)
-    data_updated = pyqtSignal(dict)  # 新增：数据更新信号
-    progress_updated = pyqtSignal(int, str)  # 新增：进度更新信号
+    data_updated = pyqtSignal(dict)
+    progress_updated = pyqtSignal(int, str)
+
+    COMPONENT_HEIGHT_RATIOS = {
+        'toolbar': {'min': 0.15, 'max': 0.25},
+        'control_group': {'min': 0.20, 'max': 0.30},
+        'status_bar': {'min': 0.03, 'max': 0.05},
+        'button': {'min': 0.035, 'max': 0.05},
+        'combo': {'min': 0.035, 'max': 0.05},
+        'scroll_area': {'min': 0.10, 'max': 0.40},
+        'info_group': {'min': 0.05, 'max': 0.10},
+        'export_group': {'min': 0.03, 'max': 0.06},
+    }
 
     def __init__(self, config_manager: Optional[ConfigManager] = None):
         """初始化基类
@@ -34,25 +43,22 @@ class BaseAnalysisTab(QWidget):
         """
         super().__init__()
 
-        # 使用统一的管理器工厂
         from utils.manager_factory import get_config_manager
         self.config_manager = config_manager or get_config_manager()
-        # 纯Loguru架构，移除log_manager依赖
 
-        self.data_cache = Cache(cache_dir=".cache/data", default_ttl=30*60)
+        try:
+            from core.services.unified_cache_provider import get_unified_cache_provider
+            self.data_cache = get_unified_cache_provider().get_cache_service()
+        except ImportError:
+            self.data_cache = None
 
-        # 数据状态
         self.current_kdata = None
         self.last_update_time = None
-        self.data_hash = None  # 用于检测数据变化
+        self.data_hash = None
 
         # 运行状态
         self.is_loading = False
         self.is_initialized = False
-
-        # 初始化安全错误处理（但不自动连接）
-        # 子类可以调用 self._init_safe_error_handling() 来启用
-        self.analysis_count = 0  # 分析次数统计
 
         # 性能监控
         self.performance_stats = {
@@ -61,10 +67,15 @@ class BaseAnalysisTab(QWidget):
             'last_analysis_time': 0.0,
             'error_count': 0
         }
+        self.analysis_count = 0
+
+        # 布局约束缓存 - 避免resizeEvent中重复查找
+        self._responsive_components = {}
 
         # 安全初始化UI
         try:
             self.create_ui()
+            self._setup_responsive_constraints()
             self.is_initialized = True
             logger.debug(f"{self.__class__.__name__} 初始化成功")
         except Exception as e:
@@ -739,6 +750,55 @@ class BaseAnalysisTab(QWidget):
         for col, width in enumerate(widths):
             if col < table.columnCount():
                 table.setColumnWidth(col, width)
+
+    # 统一响应式布局约束方法
+    def _setup_responsive_constraints(self):
+        """子类重写此方法以注册需要响应式调整的组件
+
+        示例:
+            self._register_responsive_component('toolbar', self.toolbar_frame)
+            self._register_responsive_component('control_group', self.control_group)
+        """
+        pass
+
+    def _register_responsive_component(self, ratio_key: str, component):
+        """注册需要响应式调整的组件
+
+        Args:
+            ratio_key: 组件类型，对应COMPONENT_HEIGHT_RATIOS中的键
+            component: Qt组件实例
+        """
+        if component is not None:
+            self._responsive_components[ratio_key] = component
+
+    def _apply_height_constraint(self, component, ratio_key: str):
+        """应用统一的高度约束
+
+        Args:
+            component: 组件实例
+            ratio_key: 组件类型，对应COMPONENT_HEIGHT_RATIOS中的键
+        """
+        if component is None:
+            return
+        ratios = self.COMPONENT_HEIGHT_RATIOS.get(ratio_key, {'min': 0.1, 'max': 0.2})
+        window_height = self.height()
+        min_h = max(30, int(window_height * ratios['min']))
+        max_h = int(window_height * ratios['max'])
+        component.setMinimumHeight(min_h)
+        component.setMaximumHeight(max_h)
+
+    def resizeEvent(self, event):
+        """统一的响应式布局更新 - 子类无需重写"""
+        super().resizeEvent(event)
+        self._update_responsive_constraints()
+
+    def _update_responsive_constraints(self):
+        """更新所有注册组件的响应式约束"""
+        if not self._responsive_components:
+            return
+        window_height = self.height()
+        for ratio_key, component in self._responsive_components.items():
+            self._apply_height_constraint(component, ratio_key)
 
     # 统一状态栏操作方法
     def create_standard_status_bar(self, parent_layout=None) -> QFrame:

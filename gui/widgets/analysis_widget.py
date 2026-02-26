@@ -65,7 +65,6 @@ def _import_theme_manager():
             logger.warning(f"导入主题管理器失败: {e}")
 # 已移除 hikyuu 依赖 - 替换为新指标系统导入
 from core.indicator_service import calculate_indicator, get_indicator_metadata, get_all_indicators_metadata
-from utils.cache import Cache
 import requests
 from bs4 import BeautifulSoup
 from analysis.pattern_recognition import PatternRecognizer
@@ -90,10 +89,18 @@ class AnalysisWidget(QWidget):
     # 定义信号
     indicator_changed = pyqtSignal(str)  # 指标变更信号
     analysis_completed = pyqtSignal(dict)
-    error_occurred = pyqtSignal(str)  # 新增错误信号
-    pattern_selected = pyqtSignal(int)  # 新增信号，用于传递信号索引
+    error_occurred = pyqtSignal(str)
+    pattern_selected = pyqtSignal(int)
 
-    data_cache = Cache(cache_dir=".cache/data", default_ttl=30*60)
+    @staticmethod
+    def _get_data_cache():
+        try:
+            from core.services.unified_cache_provider import get_unified_cache_provider
+            return get_unified_cache_provider().get_cache_service()
+        except ImportError:
+            return None
+
+    data_cache = _get_data_cache.__func__()
 
     def __init__(self, config_manager: Optional[ConfigManager] = None, service_container=None):
         """初始化分析控件
@@ -144,8 +151,8 @@ class AnalysisWidget(QWidget):
         self.loading_overlay = None
         self.progress_bar = None
         self.cancel_button = None
-        self.data_cache = Cache(cache_dir=".cache/data", default_ttl=30*60)
-        self.is_loading = False  # 初始化加载状态
+        self.data_cache = self._get_data_cache()
+        self.is_loading = False
 
         # 缓存各种信号数据
         self._all_pattern_signals = []

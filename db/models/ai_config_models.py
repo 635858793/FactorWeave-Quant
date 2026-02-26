@@ -11,20 +11,26 @@ import json
 from datetime import datetime
 from typing import Dict, Any, Optional
 from pathlib import Path
+import os
 
 logger = logger
 
 class AIPredictionConfigManager:
     """AI预测配置管理器"""
 
-    def __init__(self, db_path: str = "data/factorweave_system.sqlite"):
+    def __init__(self, db_path: str = None):
         """
         初始化配置管理器
 
         Args:
             db_path: 数据库路径
         """
+        if db_path is None:
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            db_path = os.path.join(base_dir, "data", "factorweave_system.sqlite")
+        
         self.db_path = db_path
+        logger.info(f"AI配置数据库路径: {self.db_path}")
         self._init_database()
 
     def _init_database(self):
@@ -67,7 +73,6 @@ class AIPredictionConfigManager:
             logger.warning("🗄️ AI配置数据库文件缺失或无法访问，这是正常的初次运行状态")
             logger.info("💡 系统将使用默认配置运行，功能完全正常")
             logger.info("📁 数据库文件将在首次使用时自动创建")
-            raise
 
     def load_default_config(self):
         """加载默认配置到数据库"""

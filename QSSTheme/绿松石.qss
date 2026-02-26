@@ -185,7 +185,7 @@ QPlainTextEdit {
     selection-background-color: #0A246A;
 }
 
-QLineEdit::hover{
+QLineEdit:hover{
   border-color:#5D8B9E;				/*外边框的颜色*/
 }
 
@@ -245,19 +245,19 @@ QDialogButtonBox QPushButton{
     padding: 1px;
     min-height: 25px;
 }
-QDialogButtonBox QPushButton::hover{
+QDialogButtonBox QPushButton:hover{
     background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
                                  stop: 0 #5B5F5F, stop: 0.5 #0C2436,
                                  stop: 1.0 #27405A);
     border-color: #11223F;
 }
-QDialogButtonBox QPushButton::pressed{
+QDialogButtonBox QPushButton:pressed{
     background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
                                  stop: 0 #969B9C, stop: 0.5 #16354B,
                                  stop: 1.0 #244F76);
     border-color: #11505C;
 }
-QDialogButtonBox QPushButton::disabled{
+QDialogButtonBox QPushButton:disabled{
     background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
                                  stop: 0 #5B5F5F, stop: 0.5 #0C2436,
                                  stop: 1.0 #27405A);
@@ -271,7 +271,7 @@ QDialogButtonBox QPushButton::default{
     border-color: #11223F;
 }
 
-QPushButton::hover{
+QPushButton:hover{
     background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
                                  stop: 0 #5B5F5F, stop: 0.5 #0C2436,
                                  stop: 1.0 #27405A);
@@ -279,13 +279,13 @@ QPushButton::hover{
     
 }
 
-QPushButton::pressed{
+QPushButton:pressed{
     background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
                                  stop: 0 #969B9C, stop: 0.5 #16354B,
                                  stop: 1.0 #244F76);
     border-color: #11505C;
 }
-QPushButton::disabled{
+QPushButton:disabled{
     background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
                                  stop: 0 #282B2C, stop: 0.5 #09121A,
                                  stop: 1.0 #111D29);
@@ -321,7 +321,7 @@ QComboBox {
     border-radius: 1px;
     padding: 1px;
  }
-QComboBox::hover{
+QComboBox:hover{
   border-color:#5D8B9E;
 }
 
@@ -453,7 +453,7 @@ QCheckBox {
      background:transparent;
  }
 
- QRadioButton::indicator::unchecked {
+ QRadioButton::indicator:unchecked {
      image: url(qss/radiobutton_unchecked.png);
  }
 
@@ -465,7 +465,7 @@ QCheckBox {
      image: url(qss/radiobutton_unchecked_pressed.png);
  }
 
- QRadioButton::indicator::checked {
+ QRadioButton::indicator:checked {
      image: url(qss/radiobutton_checked.png);
  }
 

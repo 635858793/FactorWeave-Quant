@@ -5,7 +5,7 @@
 """
 
 from typing import Dict, List, Optional, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 import pandas as pd
 from loguru import logger
 
@@ -31,11 +31,23 @@ class FundingRateAnalysisService(BaseService):
         self.service_container = service_container
         self.data_access = DataAccess(service_container)
         
-        self._cache: Dict[str, pd.DataFrame] = {}
         self._cache_ttl = 300
+        self._unified_cache = None
+        self._cache_namespace = 'funding_rate'
+        self._init_unified_cache()
         
         self.add_dependency('DataAccess')
         self.add_dependency('KlineRepository')
+
+    def _init_unified_cache(self) -> None:
+        """初始化统一缓存服务（强制）"""
+        from core.services.cache_service import CacheService
+        
+        if self.service_container and self.service_container.is_registered(CacheService):
+            self._unified_cache = self.service_container.resolve(CacheService)
+            logger.debug(f"FundingRateAnalysisService 已连接到统一缓存服务，命名空间: {self._cache_namespace}")
+        else:
+            raise RuntimeError("统一缓存服务未注册，请确保 CacheService 已在服务容器中注册")
 
     def _do_initialize(self) -> None:
         """初始化服务"""
@@ -58,9 +70,10 @@ class FundingRateAnalysisService(BaseService):
             self.increment_operation_count()
 
             cache_key = f"{symbol}_{interval}_{count}"
-            if cache_key in self._cache:
+            cached_data = self._unified_cache.get(cache_key, namespace=self._cache_namespace)
+            if cached_data is not None:
                 logger.debug(f"从缓存获取资金费率数据: {cache_key}")
-                return self._cache[cache_key]
+                return cached_data
 
             params = QueryParams(
                 stock_code=symbol,
@@ -72,7 +85,7 @@ class FundingRateAnalysisService(BaseService):
             
             if kline_data and kline_data.data is not None:
                 df = kline_data.data
-                self._cache[cache_key] = df
+                self._unified_cache.set(cache_key, df, ttl=timedelta(seconds=self._cache_ttl), namespace=self._cache_namespace)
                 logger.info(f"获取资金费率数据成功: {symbol}, {len(df)} 条")
                 return df
             
@@ -261,12 +274,16 @@ class FundingRateAnalysisService(BaseService):
 
     def clear_cache(self) -> None:
         """清空缓存"""
-        self._cache.clear()
+        if self._unified_cache:
+            self._unified_cache.clear_namespace(self._cache_namespace)
         logger.debug("资金费率数据缓存已清空")
 
     def _do_health_check(self) -> Optional[Dict[str, Any]]:
         """自定义健康检查"""
+        cache_stats = {}
+        if self._unified_cache:
+            cache_stats = self._unified_cache.get_namespace_stats(self._cache_namespace) or {}
         return {
-            'cache_size': len(self._cache),
+            'cache_stats': cache_stats,
             'cache_ttl': self._cache_ttl
         }

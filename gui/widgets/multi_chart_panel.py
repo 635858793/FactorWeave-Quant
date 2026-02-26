@@ -87,7 +87,6 @@ class MultiChartPanel(QWidget):
         try:
             self.control_panel = QFrame()
             self.control_panel.setFrameStyle(QFrame.StyledPanel)
-            self.control_panel.setMaximumHeight(50)
 
             layout = QHBoxLayout(self.control_panel)
             layout.setContentsMargins(10, 5, 10, 5)

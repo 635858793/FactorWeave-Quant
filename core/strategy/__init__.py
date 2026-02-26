@@ -21,7 +21,7 @@ from .strategy_registry import (
     StrategyRegistry, get_strategy_registry, register_strategy
 )
 from .strategy_engine import (
-    StrategyEngine, StrategyCache, get_strategy_engine, initialize_strategy_engine
+    StrategyEngine, get_strategy_engine, initialize_strategy_engine
 )
 from .strategy_factory import (
     StrategyFactory, get_strategy_factory
@@ -372,7 +372,7 @@ def evaluate_strategy_performance(strategy_name: str, signals: List[StrategySign
 __all__ = [
     # 核心类
     'BaseStrategy', 'StrategySignal', 'StrategyParameter', 'StrategyType', 'SignalType',
-    'StrategyRegistry', 'StrategyEngine', 'StrategyCache', 'StrategyFactory',
+    'StrategyRegistry', 'StrategyEngine', 'StrategyFactory',
     'StrategyParameterManager', 'ParameterValidator', 'StrategyPerformanceEvaluator',
     'StrategyLifecycleManager', 'StrategyDatabaseManager',
 

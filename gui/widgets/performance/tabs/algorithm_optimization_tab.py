@@ -535,10 +535,18 @@ class ModernAlgorithmOptimizationTab(QWidget):
     def _collect_jit_data_async(self):
         """异步收集JIT数据，避免UI卡死"""
         try:
+            # 检查线程池是否已关闭
+            if self.executor is None or self.executor._shutdown:
+                return
             # 提交后台任务
             future = self.executor.submit(self._collect_jit_data)
             # 设置回调，在主线程中更新UI
             future.add_done_callback(self._on_jit_data_collected)
+        except RuntimeError as e:
+            if "shutdown" in str(e):
+                logger.debug("线程池已关闭，跳过JIT数据收集")
+            else:
+                logger.error(f"提交异步JIT数据收集任务失败: {e}")
         except Exception as e:
             logger.error(f"提交异步JIT数据收集任务失败: {e}")
 
@@ -849,9 +857,13 @@ class ModernAlgorithmOptimizationTab(QWidget):
     def cleanup(self):
         """清理资源 - 优化性能，避免卡顿"""
         try:
+            logger.info("开始清理 ModernAlgorithmOptimizationTab 资源...")
+
+            # 停止JIT监控定时器
             if hasattr(self, 'jit_monitoring_timer') and self.jit_monitoring_timer:
                 try:
                     self.jit_monitoring_timer.stop()
+                    logger.debug("JIT监控定时器已停止")
                 except Exception as e:
                     logger.debug(f"停止JIT监控定时器失败: {e}")
 
@@ -863,8 +875,14 @@ class ModernAlgorithmOptimizationTab(QWidget):
                 except Exception as e:
                     logger.debug(f"关闭线程池失败: {e}")
 
+            # 清理模块缓存
+            if hasattr(self, '_module_cache'):
+                self._module_cache.clear()
+                logger.debug("模块缓存已清理")
+
+            logger.info("ModernAlgorithmOptimizationTab 资源清理完成")
         except Exception as e:
-            logger.debug(f"清理算法优化资源失败: {e}")
+            logger.error(f"清理算法优化资源失败: {e}")
 
     def resizeEvent(self, event):
         """窗口大小改变事件处理"""

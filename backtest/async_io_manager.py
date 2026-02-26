@@ -493,20 +493,100 @@ class SmartDataCache:
                 'memory_usage_percent': (self.current_memory_usage / self.max_memory_bytes) * 100
             }
 
-# 全局实例
-async_io_manager = AsyncIOManager()
-smart_cache = SmartDataCache()
+# 全局实例 - 使用统一缓存服务的适配器
+# 为了向后兼容，保留原有类定义，但全局实例使用统一缓存服务
+
+def _get_unified_cache_adapter():
+    """获取统一缓存适配器（延迟加载）"""
+    try:
+        from core.services.unified_cache_provider import get_smart_cache
+        return get_smart_cache()
+    except ImportError:
+        return None
+
+def _get_unified_async_io_adapter():
+    """获取统一异步I/O缓存适配器（延迟加载）"""
+    try:
+        from core.services.unified_cache_provider import get_async_io_cache
+        return get_async_io_cache()
+    except ImportError:
+        return None
+
+# 原始类实例（用于向后兼容和独立使用）
+_async_io_manager_instance = None
+_smart_cache_instance = None
+
+def get_async_io_manager() -> 'AsyncIOManager':
+    """
+    获取AsyncIOManager实例（单例）
+    
+    优先使用统一缓存服务，如果不可用则使用本地实例
+    """
+    global _async_io_manager_instance
+    
+    if _async_io_manager_instance is None:
+        _async_io_manager_instance = AsyncIOManager()
+    
+    return _async_io_manager_instance
+
+def get_smart_data_cache() -> 'SmartDataCache':
+    """
+    获取SmartDataCache实例（单例）
+    
+    优先使用统一缓存服务，如果不可用则使用本地实例
+    """
+    global _smart_cache_instance
+    
+    if _smart_cache_instance is None:
+        _smart_cache_instance = SmartDataCache()
+    
+    return _smart_cache_instance
+
+# 向后兼容的全局实例访问
+class _AsyncIOManagerProxy:
+    """AsyncIOManager代理类，支持延迟加载和统一缓存集成"""
+    
+    def __init__(self):
+        self._instance = None
+    
+    def _get_instance(self):
+        if self._instance is None:
+            self._instance = AsyncIOManager()
+        return self._instance
+    
+    def __getattr__(self, name):
+        return getattr(self._get_instance(), name)
+
+
+class _SmartCacheProxy:
+    """SmartDataCache代理类，支持延迟加载和统一缓存集成"""
+    
+    def __init__(self):
+        self._instance = None
+    
+    def _get_instance(self):
+        if self._instance is None:
+            self._instance = SmartDataCache()
+        return self._instance
+    
+    def __getattr__(self, name):
+        return getattr(self._get_instance(), name)
+
+
+# 全局实例（使用代理实现延迟加载）
+async_io_manager = _AsyncIOManagerProxy()
+smart_cache = _SmartCacheProxy()
 
 # 缓存系统状态追踪
 _CACHE_SYSTEMS = {
     'async_io_manager': {
-        'instance': async_io_manager,
+        'getter': get_async_io_manager,
         'name': 'AsyncIOManager',
         'type': 'file_io',
         'stats_method': 'get_cache_stats'
     },
     'smart_cache': {
-        'instance': smart_cache,
+        'getter': get_smart_data_cache,
         'name': 'SmartDataCache',
         'type': 'business_data',
         'stats_method': 'get_stats'
@@ -522,7 +602,7 @@ def get_all_cache_stats() -> Dict[str, Dict]:
     """
     result = {}
     for key, system in _CACHE_SYSTEMS.items():
-        instance = system['instance']
+        instance = system['getter']()
         stats_method = getattr(instance, system['stats_method'])
         result[key] = {
             'name': system['name'],
@@ -534,8 +614,50 @@ def get_all_cache_stats() -> Dict[str, Dict]:
 def clear_all_caches():
     """清空所有缓存"""
     for key, system in _CACHE_SYSTEMS.items():
-        instance = system['instance']
+        instance = system['getter']()
         if hasattr(instance, 'clear_cache'):
             instance.clear_cache()
         elif hasattr(instance, 'clear'):
             instance.clear()
+
+
+# 统一缓存服务集成
+def get_unified_cache_service():
+    """
+    获取统一缓存服务实例
+    
+    Returns:
+        CacheService实例，如果不可用则返回None
+    """
+    try:
+        from core.services.unified_cache_provider import get_unified_cache_provider
+        provider = get_unified_cache_provider()
+        return provider.get_cache_service()
+    except ImportError:
+        return None
+
+
+def migrate_to_unified_cache():
+    """
+    迁移到统一缓存服务
+    
+    将现有的缓存数据迁移到统一缓存服务中
+    """
+    from loguru import logger
+    
+    try:
+        from core.services.unified_cache_provider import get_unified_cache_provider
+        
+        provider = get_unified_cache_provider()
+        cache_service = provider.get_cache_service()
+        
+        # 创建命名空间
+        cache_service.create_namespace("backtest", description="回测模块缓存")
+        cache_service.create_namespace("async_io", description="异步I/O缓存")
+        
+        logger.info("成功迁移到统一缓存服务")
+        return True
+        
+    except Exception as e:
+        logger.warning(f"迁移到统一缓存服务失败: {e}")
+        return False

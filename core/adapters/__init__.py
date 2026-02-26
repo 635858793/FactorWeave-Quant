@@ -5,12 +5,20 @@
 
 from .legacy_cache_adapter import (
     LegacyCacheAdapter,
-    AsyncLegacyCacheAdapter,
-    create_legacy_cache_adapter
+    SmartDataCacheAdapter,
+    StrategyCacheAdapter,
+    AsyncIOManagerAdapter,
+    create_smart_cache_adapter,
+    create_strategy_cache_adapter,
+    create_async_io_adapter
 )
 
 __all__ = [
     'LegacyCacheAdapter',
-    'AsyncLegacyCacheAdapter',
-    'create_legacy_cache_adapter'
+    'SmartDataCacheAdapter',
+    'StrategyCacheAdapter',
+    'AsyncIOManagerAdapter',
+    'create_smart_cache_adapter',
+    'create_strategy_cache_adapter',
+    'create_async_io_adapter'
 ]

@@ -255,6 +255,10 @@ class TrendAnalysisTab(BaseAnalysisTab):
         except Exception as e:
             logger.error(f" 信号连接失败: {e}")
 
+    def _setup_responsive_constraints(self):
+        """使用统一的响应式约束系统注册组件"""
+        pass
+
     def _on_advanced_option_changed(self):
         """高级选项变化时保存到数据库"""
         try:
@@ -315,8 +319,8 @@ class TrendAnalysisTab(BaseAnalysisTab):
         """创建专业级趋势分析UI"""
         layout = QVBoxLayout(self)
         # 专业工具栏
-        toolbar = self._create_professional_toolbar()
-        layout.addWidget(toolbar)
+        self._create_professional_toolbar()
+        layout.addWidget(self.toolbar)
 
         # 主要分析区域
         main_splitter = QSplitter(Qt.Horizontal)
@@ -338,16 +342,15 @@ class TrendAnalysisTab(BaseAnalysisTab):
 
     def _create_professional_toolbar(self):
         """创建专业工具栏"""
-        toolbar = QFrame()
-        toolbar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        toolbar.setFrameStyle(QFrame.StyledPanel)
+        self.toolbar = QFrame()
+        self.toolbar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.toolbar.setFrameStyle(QFrame.StyledPanel)
 
-        layout = QVBoxLayout(toolbar)
+        layout = QVBoxLayout(self.toolbar)
 
         # 快速分析组
-        quick_group = QGroupBox("快速分析")
-        quick_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        quick_layout = QHBoxLayout(quick_group)
+        self.quick_group = QGroupBox("快速分析")
+        quick_layout = QHBoxLayout(self.quick_group)
 
         # 一键趋势分析
         trend_btn = QPushButton("趋势分析")
@@ -355,7 +358,7 @@ class TrendAnalysisTab(BaseAnalysisTab):
         trend_btn.clicked.connect(self.comprehensive_trend_analysis)
 
         # 多时间框架分析
-        multi_tf_btn = QPushButton("[TIME] 多时间框架")
+        multi_tf_btn = QPushButton("多时间框架")
         multi_tf_btn.setStyleSheet(self._get_button_style('#17a2b8'))
         multi_tf_btn.clicked.connect(self.multi_timeframe_analysis)
 
@@ -367,7 +370,7 @@ class TrendAnalysisTab(BaseAnalysisTab):
         quick_layout.addWidget(trend_btn)
         quick_layout.addWidget(multi_tf_btn)
         quick_layout.addWidget(alert_btn)
-        layout.addWidget(quick_group)
+        layout.addWidget(self.quick_group)
 
         # 高级功能组
         advanced_group = QGroupBox("高级功能")
@@ -388,7 +391,7 @@ class TrendAnalysisTab(BaseAnalysisTab):
         layout.addWidget(advanced_group)
 
         layout.addStretch()
-        return toolbar
+        return self.toolbar
 
     def _get_button_style(self, color):
         """获取按钮样式 - 使用基类统一方法"""
@@ -2309,31 +2312,9 @@ class TrendAnalysisTab(BaseAnalysisTab):
             return None
 
     def resizeEvent(self, event):
-        """窗口大小改变事件处理"""
+        """窗口大小改变事件处理 - 使用基类统一响应式系统"""
         super().resizeEvent(event)
-        self._update_responsive_layout()
 
     def _update_responsive_layout(self):
-        """更新响应式布局"""
-        try:
-            window_width = self.width()
-            window_height = self.height()
-
-            logger.debug(f"TrendAnalysisTab 响应式布局更新: {window_width}x{window_height}")
-
-            # 更新工具栏高度
-            toolbar = self.findChild(QFrame)
-            if toolbar and toolbar.objectName() != "":
-                toolbar_height = max(150, int(window_height * 0.3))
-                toolbar.setMinimumHeight(toolbar_height)
-                toolbar.setMaximumHeight(int(window_height * 0.4))
-
-            # 更新快速分析组高度
-            quick_group = self.findChild(QGroupBox, "快速分析")
-            if quick_group:
-                group_height = max(60, int(window_height * 0.12))
-                quick_group.setMinimumHeight(group_height)
-                quick_group.setMaximumHeight(int(window_height * 0.18))
-
-        except Exception as e:
-            logger.error(f"更新响应式布局失败: {e}")
+        """更新响应式布局 - 已集成到基类统一系统"""
+        pass

@@ -12,7 +12,6 @@ import time
 from core.metrics.app_metrics_service import measure
 from optimization.progressive_loading_manager import load_chart_progressive, get_progressive_loader
 from gui.widgets.async_data_processor import AsyncDataProcessor
-from utils.cache import Cache
 from utils.config_manager import ConfigManager
 
 # 延迟导入主题管理器，避免在模块级别导入时崩溃
@@ -158,8 +157,14 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
             else:
                 logger.warning("ChartWidget __init__: 十字光标未启用，跳过调用 enable_crosshair()")
 
-            # 6. 初始化其余组件和状态
-            self.cache_manager = Cache()
+            def _get_cache():
+                try:
+                    from core.services.unified_cache_provider import get_unified_cache_provider
+                    return get_unified_cache_provider().get_cache_service()
+                except ImportError:
+                    return None
+            
+            self.cache_manager = _get_cache()
             self.setAttribute(Qt.WA_OpaquePaintEvent)
             self.setAttribute(Qt.WA_NoSystemBackground)
             self.setAutoFillBackground(True)
@@ -369,9 +374,8 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
         """重新加载图表数据"""
         try:
             logger.info("重新加载图表数据")
-            # 清除缓存
-            self.cache_manager.clear()
-            # 重新加载数据
+            if self.cache_manager:
+                self.cache_manager.clear_namespace("chart_widget")
             self.load_data(self.current_stock_code, self.current_period)
         except Exception as e:
             logger.error(f"重新加载图表数据失败: {str(e)}")

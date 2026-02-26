@@ -258,7 +258,8 @@ class IntegratedSignalAggregatorService(CacheableService, ConfigurableService):
     """集成的智能信号聚合服务（TET模式）"""
 
     def __init__(self):
-        super().__init__()
+        CacheableService.__init__(self, namespace='signal_aggregator')
+        ConfigurableService.__init__(self)
 
         # TET框架组件
         self.unified_data_manager: Optional[UnifiedDataManager] = None

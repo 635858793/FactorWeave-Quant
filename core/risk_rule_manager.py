@@ -35,8 +35,8 @@ class RiskRule:
     silence_period: int = 300
     max_alerts: int = 10
 
-    # 通知设置
-    email_notification: bool = True
+    # 通知设置（默认值：桌面和声音通知启用，其他禁用）
+    email_notification: bool = False
     sms_notification: bool = False
     desktop_notification: bool = True
     sound_notification: bool = True
@@ -411,8 +411,16 @@ class RiskRuleManager:
         try:
             last_triggered = datetime.fromisoformat(rule.last_triggered)
             silence_end = last_triggered + timedelta(seconds=rule.silence_period)
-            return datetime.now() < silence_end
-        except:
+            is_in_silence = datetime.now() < silence_end
+            if is_in_silence:
+                remaining = (silence_end - datetime.now()).total_seconds()
+                logger.debug(f"规则 {rule.name} 在静默期内，剩余 {remaining:.0f} 秒")
+            return is_in_silence
+        except (ValueError, TypeError) as e:
+            logger.error(f"解析时间失败: {e}, last_triggered={rule.last_triggered}")
+            return False
+        except Exception as e:
+            logger.error(f"检查静默期失败: {e}")
             return False
 
     def _create_alert(self, rule: RiskRule, risk_metrics: Dict[str, float]) -> Optional[RiskAlert]:

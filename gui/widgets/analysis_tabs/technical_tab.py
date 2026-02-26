@@ -40,15 +40,31 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
 
         super().__init__(config_manager)
 
+    def _setup_responsive_constraints(self):
+        """使用统一的响应式约束系统注册组件"""
+        # 从create_ui保存的组件引用中注册
+        if hasattr(self, 'control_group'):
+            self._register_responsive_component('control_group', self.control_group)
+        if hasattr(self, 'category_combo'):
+            self._register_responsive_component('combo', self.category_combo)
+        if hasattr(self, 'indicator_combo'):
+            self._register_responsive_component('combo', self.indicator_combo)
+        if hasattr(self, 'calc_btn'):
+            self._register_responsive_component('button', self.calc_btn)
+        if hasattr(self, 'clear_indicators_btn'):
+            self._register_responsive_component('button', self.clear_indicators_btn)
+        if hasattr(self, 'cache_btn'):
+            self._register_responsive_component('button', self.cache_btn)
+
     def create_ui(self):
         """创建用户界面 - 修复版，解决UI重叠问题"""
         layout = QVBoxLayout(self)
-        layout.setSpacing(2)  # 设置合适的间距
+        layout.setSpacing(2)
 
-        # 指标选择和控制区域 - 使用更灵活的高度设置
-        control_group = QGroupBox("指标控制")
-        control_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        control_layout = QHBoxLayout(control_group)
+        # 指标选择和控制区域
+        self.control_group = QGroupBox("指标控制")
+        self.control_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        control_layout = QHBoxLayout(self.control_group)
         control_layout.setSpacing(2)
 
         # 左侧：指标选择 - 更紧凑的布局
@@ -63,7 +79,7 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
         category_layout.setSpacing(4)
         category_layout.addWidget(QLabel("分类:"))
         self.category_combo = QComboBox()
-        self.category_combo.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        # self.category_combo.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         category_indicators = get_all_indicators_by_category(use_chinese=True)
         categories = ["全部"] + list(category_indicators.keys())
         self.category_combo.addItems(categories)
@@ -73,8 +89,8 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
 
         # 指标选择组合框 - 显示所有ta-lib指标
         self.indicator_combo = QComboBox()
-        self.indicator_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.indicator_combo.setEditable(True)
+        # self.indicator_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.indicator_combo.setEditable(False)
         self.indicator_combo.setInsertPolicy(QComboBox.NoInsert)
         self.populate_indicators("全部")
         self.indicator_combo.currentTextChanged.connect(self.on_indicator_changed)
@@ -100,17 +116,15 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
 
         # 计算按钮 - 紧凑布局
         button_layout = QHBoxLayout()
-        button_layout.setSpacing(4)
+        button_layout.setSpacing(5)
 
-        self.calc_btn = QPushButton("计算指标")
-        self.calc_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        self.calc_btn.setStyleSheet(
+        calc_btn = QPushButton("计算指标")
+        calc_btn.setStyleSheet(
             "QPushButton { background-color: #007bff; color: white; font-weight: bold; padding: 4px 8px; height: 20px; }")
-        self.calc_btn.clicked.connect(self.calculate_indicators)
-        self.calc_btn.setToolTip("根据当前设置计算选定的技术指标\n快捷键：Ctrl+Enter")
+        calc_btn.clicked.connect(self.calculate_indicators)
+        calc_btn.setToolTip("根据当前设置计算选定的技术指标\n快捷键：Ctrl+Enter")
 
         clear_indicators_btn = QPushButton("清除")
-        clear_indicators_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         clear_indicators_btn.setStyleSheet(
             "QPushButton { background-color: #6c757d; color: white; font-weight: bold; padding: 4px 8px; height: 20px; }")
         clear_indicators_btn.clicked.connect(self.clear_indicators)
@@ -118,24 +132,21 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
 
         # 新增：缓存管理按钮
         cache_btn = QPushButton("清缓存")
-        cache_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         cache_btn.setStyleSheet(
             "QPushButton { background-color: #ffc107; color: black; font-weight: bold; padding: 4px 8px; height: 20px; }")
         cache_btn.clicked.connect(self.clear_cache)
         cache_btn.setToolTip("清除指标计算缓存")
 
-        button_layout.addWidget(self.calc_btn)
+        button_layout.addWidget(calc_btn)
         button_layout.addWidget(clear_indicators_btn)
         button_layout.addWidget(cache_btn)
         indicator_layout.addLayout(button_layout)
 
         control_layout.addWidget(indicator_card, stretch=2)
 
-        # 右侧：动态参数设置 - 优化布局以防止重叠
+        # 右侧：动态参数设置 - 使用统一响应式约束
         params_card = QFrame()
         params_card.setFrameStyle(QFrame.StyledPanel)
-        params_card.setMinimumHeight(180)  # 设置最小高度
-        params_card.setMaximumHeight(250)  # 设置最大高度以防重叠
 
         # 使用滚动区域来确保所有参数都能显示
         params_scroll_area = QScrollArea()
@@ -143,7 +154,6 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
         params_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         params_scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         params_scroll_area.setFrameStyle(QFrame.NoFrame)
-        params_scroll_area.setMaximumHeight(240)  # 限制滚动区域高度
 
         # 参数容器
         params_container = QWidget()
@@ -157,7 +167,6 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
         preset_layout.addWidget(QLabel("预设:"))
         self.preset_combo = QComboBox()
         self.preset_combo.setFixedWidth(100)
-        self.preset_combo.setMaximumHeight(28)
         self.preset_combo.addItems(["自定义", "短期交易", "中期投资", "长期投资"])
         self.preset_combo.currentTextChanged.connect(self.apply_preset_params)
         preset_layout.addWidget(self.preset_combo)
@@ -171,9 +180,8 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
         self.dynamic_params_layout.setContentsMargins(0, 0, 0, 0)
         self.params_layout.addWidget(self.dynamic_params_widget)
 
-        # 参数信息显示区域 - 限制高度
+        # 参数信息显示区域 - 使用统一约束
         info_group = QGroupBox("参数信息")
-        info_group.setMaximumHeight(80)  # 减少高度以防重叠
         info_layout = QVBoxLayout(info_group)
         info_layout.setContentsMargins(4, 4, 4, 4)
 
@@ -206,7 +214,7 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
             self.update_parameter_interface()
 
         control_layout.addWidget(params_card, stretch=3)
-        layout.addWidget(control_group)
+        layout.addWidget(self.control_group)
 
         # 结果显示区域 - 使用伸缩布局
         results_group = QGroupBox("计算结果")
@@ -236,14 +244,10 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
 
         # 高级筛选按钮
         self.advanced_filter_btn = QPushButton("筛选")
-        self.advanced_filter_btn.setMaximumHeight(25)
-
         self.advanced_filter_btn.clicked.connect(self.show_advanced_filter_dialog)
 
         # 清除筛选按钮
         self.clear_filter_btn = QPushButton("清除")
-        self.clear_filter_btn.setMaximumHeight(25)
-
         self.clear_filter_btn.clicked.connect(self.clear_table_filters)
         self.clear_filter_btn.setEnabled(False)
 
@@ -278,9 +282,8 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
 
         results_layout.addWidget(self.technical_table, stretch=1)  # 表格占用剩余空间
 
-        # 导出按钮 - 简化
+        # 导出按钮 - 使用统一约束
         export_group = self.create_export_section()
-        export_group.setMaximumHeight(60)  # 限制导出区域高度
         results_layout.addWidget(export_group)
 
         layout.addWidget(results_group, stretch=1)  # 结果区域占用剩余空间
@@ -497,7 +500,8 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
                 if param_name in ["matype", "fastmatype", "slowmatype", "signalmatype", "slowk_matype", "slowd_matype", "fastd_matype"]:
                     # MA类型选择
                     control = QComboBox()
-                    control.setMaximumHeight(24)
+                    control.setMinimumHeight(20)
+                    control.setMaximumHeight(32)
                     ma_types = ["SMA", "EMA", "WMA", "DEMA",
                                 "TEMA", "TRIMA", "KAMA", "MAMA", "T3"]
                     control.addItems(ma_types)
@@ -507,7 +511,8 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
                 elif isinstance(param_config.get("default"), float):
                     # 浮点数参数
                     control = QDoubleSpinBox()
-                    control.setMaximumHeight(24)
+                    control.setMinimumHeight(20)
+                    control.setMaximumHeight(32)
                     control.setRange(param_config.get("min", 0.0),
                                      param_config.get("max", 100.0))
                     control.setValue(param_config.get("default", 1.0))
@@ -517,7 +522,8 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
                 else:
                     # 整数参数
                     control = QSpinBox()
-                    control.setMaximumHeight(24)
+                    control.setMinimumHeight(20)
+                    control.setMaximumHeight(32)
                     control.setRange(param_config.get("min", 1),
                                      param_config.get("max", 1000))
                     control.setValue(param_config.get("default", 14))
@@ -588,14 +594,16 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
                         # 参数控件
                         if isinstance(param_value, float):
                             control = QDoubleSpinBox()
-                            control.setMaximumHeight(24)
+                            control.setMinimumHeight(20)
+                            control.setMaximumHeight(32)
                             control.setRange(0.0, 1.0)
                             control.setValue(param_value)
                             control.setSingleStep(0.01)
                             control.setDecimals(3)
                         else:
                             control = QSpinBox()
-                            control.setMaximumHeight(24)
+                            control.setMinimumHeight(20)
+                            control.setMaximumHeight(32)
                             control.setRange(1, 100)
                             control.setValue(int(param_value) if isinstance(param_value, (int, str)) else 14)
 
@@ -2653,7 +2661,8 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
 
         # 导出按钮
         export_btn = QPushButton("导出技术分析结果")
-        export_btn.setFixedHeight(24)
+        export_btn.setMinimumHeight(20)
+        export_btn.setMaximumHeight(32)
         export_btn.setStyleSheet(
             "QPushButton { background-color: #17a2b8; font-size: 10px; color: white; }")
         export_btn.clicked.connect(self.export_technical_data)
@@ -3159,52 +3168,9 @@ class AdvancedFilterDialog(QDialog):
                 controls['end_date'].setDateTime(QDateTime.currentDateTime())
 
     def resizeEvent(self, event):
-        """窗口大小改变事件处理"""
+        """窗口大小改变事件处理 - 使用基类统一响应式系统"""
         super().resizeEvent(event)
-        self._update_responsive_layout()
 
     def _update_responsive_layout(self):
-        """更新响应式布局"""
-        try:
-            window_width = self.width()
-            window_height = self.height()
-
-            logger.debug(f"TechnicalAnalysisTab 响应式布局更新: {window_width}x{window_height}")
-
-            # 更新控制组高度
-            control_group = self.findChild(QGroupBox, "指标控制")
-            if control_group:
-                group_height = max(150, int(window_height * 0.25))
-                control_group.setMinimumHeight(group_height)
-                control_group.setMaximumHeight(int(window_height * 0.35))
-
-            # 更新分类选择框高度
-            if hasattr(self, 'category_combo'):
-                combo_height = max(24, int(window_height * 0.04))
-                self.category_combo.setMinimumHeight(combo_height)
-                self.category_combo.setMaximumHeight(int(window_height * 0.06))
-
-            # 更新指标选择框高度
-            if hasattr(self, 'indicator_combo'):
-                combo_height = max(24, int(window_height * 0.04))
-                self.indicator_combo.setMinimumHeight(combo_height)
-                self.indicator_combo.setMaximumHeight(int(window_height * 0.06))
-
-            # 更新按钮高度
-            if hasattr(self, 'calc_btn'):
-                btn_height = max(24, int(window_height * 0.04))
-                self.calc_btn.setMinimumHeight(btn_height)
-                self.calc_btn.setMaximumHeight(int(window_height * 0.06))
-
-            if hasattr(self, 'clear_indicators_btn'):
-                btn_height = max(24, int(window_height * 0.04))
-                self.clear_indicators_btn.setMinimumHeight(btn_height)
-                self.clear_indicators_btn.setMaximumHeight(int(window_height * 0.06))
-
-            if hasattr(self, 'cache_btn'):
-                btn_height = max(24, int(window_height * 0.04))
-                self.cache_btn.setMinimumHeight(btn_height)
-                self.cache_btn.setMaximumHeight(int(window_height * 0.06))
-
-        except Exception as e:
-            logger.error(f"更新响应式布局失败: {e}")
+        """更新响应式布局 - 已集成到基类统一系统"""
+        pass

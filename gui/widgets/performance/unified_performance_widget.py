@@ -975,8 +975,19 @@ class ModernUnifiedPerformanceWidget(QWidget):
                                 utilization = cache_stats.get('utilization', 0)
                                 quality_metrics['uniqueness'] = utilization
                         else:
-                            logger.warning("缓存管理器未初始化，使用默认值")
-                            quality_metrics['uniqueness'] = 0.95
+                            try:
+                                from core.containers import get_service_container
+                                from core.services.cache_service import CacheService
+                                container = get_service_container()
+                                if container and container.is_registered(CacheService):
+                                    cache_service = container.resolve(CacheService)
+                                    if cache_service:
+                                        stats = cache_service.get_statistics()
+                                        quality_metrics['uniqueness'] = stats.get('utilization', 0.95)
+                                        logger.info(f"从CacheService获取缓存统计: {stats}")
+                            except Exception as cs_err:
+                                logger.warning(f"获取CacheService失败: {cs_err}")
+                                quality_metrics['uniqueness'] = 0.95
 
                     except Exception as e:
                         logger.error(f"统一数据管理器质量数据获取失败: {e}")

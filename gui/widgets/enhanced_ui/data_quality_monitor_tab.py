@@ -1716,7 +1716,7 @@ class DataQualityMonitorTab(QWidget):
             return {'优秀': 0, '良好': 0, '一般': 0, '较差': 0}
 
     def _create_cache_overview_panel(self) -> QWidget:
-        """创建缓存概览面板 - 使用表格加颜色展示"""
+        """创建缓存概览面板 - 使用表格加颜色展示（支持统一缓存管理器）"""
         panel = QWidget()
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -1725,7 +1725,7 @@ class DataQualityMonitorTab(QWidget):
         # 创建表格
         self.cache_overview_table = QTableWidget()
         self.cache_overview_table.setColumnCount(4)
-        self.cache_overview_table.setRowCount(2)
+        self.cache_overview_table.setRowCount(3)
         self.cache_overview_table.setHorizontalHeaderLabels(["缓存系统", "职责", "状态", "关键指标"])
         self.cache_overview_table.verticalHeader().setVisible(False)
         self.cache_overview_table.horizontalHeader().setStretchLastSection(True)
@@ -1759,13 +1759,13 @@ class DataQualityMonitorTab(QWidget):
         self.cache_overview_table.setColumnWidth(1, 200)
         self.cache_overview_table.setColumnWidth(2, 120)
 
-        # 第一行：AsyncIOManager
-        item_name = QTableWidgetItem("AsyncIOManager")
-        item_name.setForeground(QColor("#3498db"))
+        # 第一行：统一缓存管理器
+        item_name = QTableWidgetItem("CacheService")
+        item_name.setForeground(QColor("#27ae60"))
         item_name.setFont(QFont("Arial", 10, QFont.Bold))
         self.cache_overview_table.setItem(0, 0, item_name)
 
-        item_role = QTableWidgetItem("文件I/O缓存：加速磁盘读取")
+        item_role = QTableWidgetItem("统一缓存管理：L1内存+L2磁盘")
         item_role.setForeground(QColor("#555555"))
         self.cache_overview_table.setItem(0, 1, item_role)
 
@@ -1775,13 +1775,13 @@ class DataQualityMonitorTab(QWidget):
         item_metrics.setForeground(QColor("#7f8c8d"))
         self.cache_overview_table.setItem(0, 3, item_metrics)
 
-        # 第二行：SmartDataCache
-        item_name2 = QTableWidgetItem("SmartDataCache")
-        item_name2.setForeground(QColor("#e74c3c"))
+        # 第二行：L1内存缓存
+        item_name2 = QTableWidgetItem("L1 Memory Cache")
+        item_name2.setForeground(QColor("#3498db"))
         item_name2.setFont(QFont("Arial", 10, QFont.Bold))
         self.cache_overview_table.setItem(1, 0, item_name2)
 
-        item_role2 = QTableWidgetItem("业务数据缓存：管理内存使用")
+        item_role2 = QTableWidgetItem("高速内存缓存：热数据存储")
         item_role2.setForeground(QColor("#555555"))
         self.cache_overview_table.setItem(1, 1, item_role2)
 
@@ -1791,12 +1791,41 @@ class DataQualityMonitorTab(QWidget):
         item_metrics2.setForeground(QColor("#7f8c8d"))
         self.cache_overview_table.setItem(1, 3, item_metrics2)
 
+        # 第三行：L2磁盘缓存
+        item_name3 = QTableWidgetItem("L2 Disk Cache")
+        item_name3.setForeground(QColor("#e74c3c"))
+        item_name3.setFont(QFont("Arial", 10, QFont.Bold))
+        self.cache_overview_table.setItem(2, 0, item_name3)
+
+        item_role3 = QTableWidgetItem("持久化缓存：大容量存储")
+        item_role3.setForeground(QColor("#555555"))
+        self.cache_overview_table.setItem(2, 1, item_role3)
+
+        self.cache_overview_table.setItem(2, 2, QTableWidgetItem("初始化中..."))
+
+        item_metrics3 = QTableWidgetItem("-")
+        item_metrics3.setForeground(QColor("#7f8c8d"))
+        self.cache_overview_table.setItem(2, 3, item_metrics3)
+
         layout.addWidget(self.cache_overview_table)
 
-        # 数据来源说明
+        self.namespace_stats_label = QLabel("命名空间统计：加载中...")
+        self.namespace_stats_label.setWordWrap(True)
+        self.namespace_stats_label.setStyleSheet("""
+            QLabel {
+                font-size: 11px;
+                color: #2c3e50;
+                background-color: #e8f4f8;
+                padding: 8px;
+                border-radius: 4px;
+                border: 1px solid #b8daff;
+            }
+        """)
+        layout.addWidget(self.namespace_stats_label)
+
         desc_label = QLabel(
-            "数据来源：AsyncIOManager提供命中率、响应时间等I/O性能指标；"
-            "SmartDataCache提供内存占用、缓存项数等内存使用统计。"
+            "数据来源：CacheService统一管理L1内存缓存和L2磁盘缓存，"
+            "支持命名空间隔离、分组管理和优先级控制。"
         )
         desc_label.setWordWrap(True)
         desc_label.setStyleSheet("""
@@ -2046,66 +2075,103 @@ class DataQualityMonitorTab(QWidget):
             _get_logger().error(f"异步收集缓存数据失败: {e}")
 
     def _collect_cache_data_background(self):
-        """后台线程收集缓存数据 - 增强版（添加数据来源标识）"""
+        """后台线程收集缓存数据 - 增强版（使用统一缓存管理器）"""
         try:
             data = {}
 
-            # 标记数据来源（新增）
-            data['data_sources'] = {
-                'async_io_manager': {
-                    'name': 'AsyncIOManager',
-                    'description': '文件I/O缓存系统',
-                    'responsibility': '加速磁盘文件读取'
-                },
-                'smart_cache': {
-                    'name': 'SmartDataCache',
-                    'description': '业务数据缓存系统',
-                    'responsibility': '缓存回测计算结果'
-                }
-            }
-
-            # 尝试获取真实的缓存统计
+            # 优先使用统一缓存服务
             try:
-                async_io_manager_module = self._get_cached_module('backtest.async_io_manager')
-                if async_io_manager_module and hasattr(async_io_manager_module, 'async_io_manager'):
-                    async_io_manager = async_io_manager_module.async_io_manager
-                    if hasattr(async_io_manager, 'get_cache_stats'):
-                        cache_stats = async_io_manager.get_cache_stats()
-                        if cache_stats:
-                            data['cache_stats'] = cache_stats
-                            data['cache_available'] = True
-                        else:
-                            data['cache_available'] = False
-                    else:
-                        data['cache_available'] = False
+                from core.containers import get_service_container
+                from core.services.cache_service import CacheService
+                
+                service_container = get_service_container()
+                cache_service = service_container.resolve(CacheService)
+                
+                if cache_service:
+                    unified_stats = cache_service.get_unified_stats()
+                    
+                    data['unified_cache'] = {
+                        'available': True,
+                        'stats': unified_stats
+                    }
+                    
+                    # 获取命名空间统计
+                    namespaces = cache_service.list_namespaces()
+                    namespace_stats = {}
+                    for ns in namespaces:
+                        ns_stats = cache_service.get_namespace_stats(ns)
+                        if ns_stats:
+                            namespace_stats[ns] = ns_stats
+                    
+                    data['namespace_stats'] = namespace_stats
+                    
+                    # 合并L1/L2统计
+                    l1_stats = unified_stats.get('l1_memory', {})
+                    l2_stats = unified_stats.get('l2_disk', {})
+                    
+                    data['cache_stats'] = {
+                        'total_hits': l1_stats.get('hits', 0) + l2_stats.get('hits', 0),
+                        'total_misses': l1_stats.get('misses', 0) + l2_stats.get('misses', 0),
+                        'cache_size': l1_stats.get('entry_count', 0) + l2_stats.get('entry_count', 0),
+                        'max_cache_size': 55000,
+                        'io_operations': l1_stats.get('sets', 0) + l2_stats.get('sets', 0),
+                        'avg_response_time': l1_stats.get('avg_access_time', 0) * 1000,
+                        'memory_usage_mb': l1_stats.get('total_size', 0) / (1024 * 1024),
+                        'memory_usage_percent': 0,
+                        'namespace_count': len(namespaces),
+                        'priority_distribution': unified_stats.get('priority_distribution', {})
+                    }
+                    data['cache_available'] = True
+                    data['data_sources'] = {
+                        'unified_cache': {
+                            'name': 'CacheService',
+                            'description': '统一缓存管理器',
+                            'responsibility': '管理所有缓存层级和命名空间'
+                        }
+                    }
                 else:
                     data['cache_available'] = False
             except Exception as e:
-                _get_logger().warning(f"获取AsyncIOManager缓存统计失败: {e}")
+                _get_logger().warning(f"获取统一缓存服务失败: {e}，尝试使用遗留缓存")
                 data['cache_available'] = False
 
-            # 同时获取SmartDataCache的统计信息（如果可用）
-            try:
-                smart_cache_module = self._get_cached_module('backtest.async_io_manager')
-                if smart_cache_module and hasattr(smart_cache_module, 'smart_cache'):
-                    smart_cache = smart_cache_module.smart_cache
-                    if hasattr(smart_cache, 'get_stats'):
-                        smart_cache_stats = smart_cache.get_stats()
-                        if smart_cache_stats:
-                            data['smart_cache_stats'] = smart_cache_stats
-                else:
-                    # 如果没有smart_cache，尝试使用模块的get_stats方法
-                    if 'cache_stats' in data:
-                        cache_stats = data['cache_stats']
-                        if 'memory_usage_mb' not in cache_stats:
-                            data['cache_stats']['memory_usage_mb'] = 0
-                            data['cache_stats']['memory_usage_percent'] = 0
-            except Exception as e:
-                _get_logger().warning(f"获取SmartDataCache统计失败: {e}")
-                # 确保cache_stats中有内存使用信息
-                if 'cache_stats' in data:
-                    data['cache_stats']['memory_usage_mb'] = 0
-                    data['cache_stats']['memory_usage_percent'] = 0
+            # 如果统一缓存不可用，回退到遗留缓存
+            if not data.get('cache_available', False):
+                data['data_sources'] = {
+                    'async_io_manager': {
+                        'name': 'AsyncIOManager',
+                        'description': '文件I/O缓存系统',
+                        'responsibility': '加速磁盘文件读取'
+                    },
+                    'smart_cache': {
+                        'name': 'SmartDataCache',
+                        'description': '业务数据缓存系统',
+                        'responsibility': '缓存回测计算结果'
+                    }
+                }
+
+                try:
+                    async_io_manager_module = self._get_cached_module('backtest.async_io_manager')
+                    if async_io_manager_module and hasattr(async_io_manager_module, 'async_io_manager'):
+                        async_io_manager = async_io_manager_module.async_io_manager
+                        if hasattr(async_io_manager, 'get_cache_stats'):
+                            cache_stats = async_io_manager.get_cache_stats()
+                            if cache_stats:
+                                data['cache_stats'] = cache_stats
+                                data['cache_available'] = True
+                except Exception as e:
+                    _get_logger().warning(f"获取AsyncIOManager缓存统计失败: {e}")
+
+                try:
+                    smart_cache_module = self._get_cached_module('backtest.async_io_manager')
+                    if smart_cache_module and hasattr(smart_cache_module, 'smart_cache'):
+                        smart_cache = smart_cache_module.smart_cache
+                        if hasattr(smart_cache, 'get_stats'):
+                            smart_cache_stats = smart_cache.get_stats()
+                            if smart_cache_stats:
+                                data['smart_cache_stats'] = smart_cache_stats
+                except Exception as e:
+                    _get_logger().warning(f"获取SmartDataCache统计失败: {e}")
 
             return data
 
@@ -2369,41 +2435,80 @@ class DataQualityMonitorTab(QWidget):
                 self._update_cache_card_value(metric_name, "--", "neutral")
 
     def _update_cache_overview_panel(self, data: dict):
-        """更新缓存概览表格"""
+        """更新缓存概览表格 - 支持统一缓存架构"""
+        unified_cache = data.get('unified_cache', {})
         cache_stats = data.get('cache_stats', {})
-        smart_cache_stats = data.get('smart_cache_stats', {})
+        namespace_stats = data.get('namespace_stats', {})
 
-        # 更新AsyncIOManager行（第0行）
-        is_active = data.get('cache_available', False)
-        status_text = "✅ 活跃" if is_active else "❌ 不可用"
-        status_item = QTableWidgetItem(status_text)
-        if is_active:
+        if unified_cache.get('available', False):
+            stats = unified_cache.get('stats', {})
+            l1_stats = stats.get('l1_memory', {})
+            l2_stats = stats.get('l2_disk', {})
+
+            total_hits = l1_stats.get('hits', 0) + l2_stats.get('hits', 0)
+            total_misses = l1_stats.get('misses', 0) + l2_stats.get('misses', 0)
+            total_requests = total_hits + total_misses
+            overall_hit_rate = (total_hits / total_requests * 100) if total_requests > 0 else 0
+
+            status_item = QTableWidgetItem("✅ 活跃")
             status_item.setForeground(QColor("#27ae60"))
+            self.cache_overview_table.setItem(0, 2, status_item)
+
+            namespace_count = stats.get('namespace_count', len(namespace_stats))
+            metrics_text = f"命中率: {overall_hit_rate:.1f}% | 命名空间: {namespace_count}"
+            metrics_item = QTableWidgetItem(metrics_text)
+            metrics_item.setForeground(QColor("#3498db"))
+            self.cache_overview_table.setItem(0, 3, metrics_item)
+
+            l1_hit_rate = l1_stats.get('hit_rate', 0) * 100
+            l1_entry_count = l1_stats.get('entry_count', 0)
+            l1_status = "✅ 活跃" if l1_entry_count > 0 or l1_stats.get('hits', 0) > 0 else "⚠️ 空闲"
+            status_item1 = QTableWidgetItem(l1_status)
+            status_item1.setForeground(QColor("#27ae60") if "活跃" in l1_status else QColor("#f39c12"))
+            self.cache_overview_table.setItem(1, 2, status_item1)
+
+            l1_metrics = f"命中率: {l1_hit_rate:.1f}% | 条目: {l1_entry_count}"
+            l1_metrics_item = QTableWidgetItem(l1_metrics)
+            l1_metrics_item.setForeground(QColor("#3498db"))
+            self.cache_overview_table.setItem(1, 3, l1_metrics_item)
+
+            l2_hit_rate = l2_stats.get('hit_rate', 0) * 100
+            l2_entry_count = l2_stats.get('entry_count', 0)
+            l2_status = "✅ 活跃" if l2_entry_count > 0 or l2_stats.get('hits', 0) > 0 else "⚠️ 空闲"
+            status_item2 = QTableWidgetItem(l2_status)
+            status_item2.setForeground(QColor("#27ae60") if "活跃" in l2_status else QColor("#f39c12"))
+            self.cache_overview_table.setItem(2, 2, status_item2)
+
+            l2_metrics = f"命中率: {l2_hit_rate:.1f}% | 条目: {l2_entry_count}"
+            l2_metrics_item = QTableWidgetItem(l2_metrics)
+            l2_metrics_item.setForeground(QColor("#e74c3c"))
+            self.cache_overview_table.setItem(2, 3, l2_metrics_item)
+
+            if namespace_stats:
+                ns_parts = []
+                for ns_name, ns_data in namespace_stats.items():
+                    key_count = ns_data.get('key_count', 0)
+                    group_count = ns_data.get('group_count', 0)
+                    priority = ns_data.get('priority', 5)
+                    ns_parts.append(f"{ns_name}({key_count}键/{group_count}组/P{priority})")
+                namespace_text = "命名空间统计：" + " | ".join(ns_parts)
+            else:
+                namespace_text = "命名空间统计：暂无命名空间"
+            
+            if hasattr(self, 'namespace_stats_label'):
+                self.namespace_stats_label.setText(namespace_text)
         else:
-            status_item.setForeground(QColor("#e74c3c"))
-        self.cache_overview_table.setItem(0, 2, status_item)
-
-        hit_rate = cache_stats.get('hit_rate', 0) * 100
-        avg_response_time = cache_stats.get('avg_response_time', 0)
-        metrics_text = f"命中率: {hit_rate:.1f}% | 响应: {avg_response_time:.2f}ms"
-        metrics_item = QTableWidgetItem(metrics_text)
-        metrics_item.setForeground(QColor("#3498db"))
-        self.cache_overview_table.setItem(0, 3, metrics_item)
-
-        # 更新SmartDataCache行（第1行）
-        status_item2 = QTableWidgetItem("✅ 活跃")
-        status_item2.setForeground(QColor("#27ae60"))
-        self.cache_overview_table.setItem(1, 2, status_item2)
-
-        memory_mb = smart_cache_stats.get('memory_usage_mb', 0)
-        memory_percent = smart_cache_stats.get('memory_usage_percent', 0)
-        metrics_text2 = f"内存: {memory_mb:.1f}MB | 占比: {memory_percent:.1f}%"
-        metrics_item2 = QTableWidgetItem(metrics_text2)
-        metrics_item2.setForeground(QColor("#e74c3c"))
-        self.cache_overview_table.setItem(1, 3, metrics_item2)
+            for row in range(3):
+                status_item = QTableWidgetItem("❌ 不可用")
+                status_item.setForeground(QColor("#e74c3c"))
+                self.cache_overview_table.setItem(row, 2, status_item)
+                self.cache_overview_table.setItem(row, 3, QTableWidgetItem("-"))
+            
+            if hasattr(self, 'namespace_stats_label'):
+                self.namespace_stats_label.setText("命名空间统计：缓存服务不可用")
 
     def _clear_cache(self):
-        """清理缓存 - 支持所有16个指标"""
+        """清理缓存 - 使用统一缓存服务"""
         try:
             self.cache_hits = 0
             self.cache_misses = 0
@@ -2411,18 +2516,28 @@ class DataQualityMonitorTab(QWidget):
             self.io_operations = 0
 
             try:
-                async_io_manager_module = self._get_cached_module('backtest.async_io_manager')
-                if async_io_manager_module and hasattr(async_io_manager_module, 'async_io_manager'):
-                    async_io_manager = async_io_manager_module.async_io_manager
-                    if hasattr(async_io_manager, 'clear_cache'):
-                        async_io_manager.clear_cache()
-            except ImportError:
-                pass
+                from core.containers import get_service_container
+                from core.services.cache_service import CacheService
+                
+                service_container = get_service_container()
+                cache_service = service_container.resolve(CacheService)
+                
+                if cache_service:
+                    cache_service.clear()
+                    _get_logger().info("统一缓存已清理")
+            except Exception as e:
+                _get_logger().warning(f"清理统一缓存失败: {e}，尝试清理遗留缓存")
+                try:
+                    async_io_manager_module = self._get_cached_module('backtest.async_io_manager')
+                    if async_io_manager_module and hasattr(async_io_manager_module, 'async_io_manager'):
+                        async_io_manager = async_io_manager_module.async_io_manager
+                        if hasattr(async_io_manager, 'clear_cache'):
+                            async_io_manager.clear_cache()
+                except ImportError:
+                    pass
 
-            # 重置所有16个指标卡片
             self._show_cache_no_data()
 
-            # 清空图表数据
             if hasattr(self, 'cache_chart'):
                 if ModernPerformanceChart and isinstance(self.cache_chart, ModernPerformanceChart):
                     self.cache_chart.clear_data()

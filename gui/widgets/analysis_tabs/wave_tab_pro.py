@@ -89,31 +89,38 @@ class WaveAnalysisTabPro(BaseAnalysisTab):
         layout = QVBoxLayout(self)
 
         # 专业工具栏
-        self._create_professional_toolbar(layout)
+        self.toolbar = self._create_professional_toolbar(layout)
 
         # 主要分析区域
-        main_splitter = QSplitter(Qt.Horizontal)
+        self.main_splitter = QSplitter(Qt.Horizontal)
 
         # 左侧：波浪分析控制面板
         left_panel = self._create_control_panel()
-        main_splitter.addWidget(left_panel)
+        self.main_splitter.addWidget(left_panel)
 
         # 右侧：结果展示区域
         right_panel = self._create_results_panel()
-        main_splitter.addWidget(right_panel)
+        self.main_splitter.addWidget(right_panel)
 
-        main_splitter.setSizes([350, 650])
-        layout.addWidget(main_splitter)
+        self.main_splitter.setSizes([350, 650])
+        layout.addWidget(self.main_splitter)
 
         # 底部状态栏
         self._create_status_bar(layout)
 
+    def _setup_responsive_constraints(self):
+        """设置响应式布局约束"""
+        pass
+
     def _create_professional_toolbar(self, layout):
         """创建专业工具栏"""
         toolbar = QFrame()
-        toolbar.setMaximumHeight(200)
+        toolbar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         toolbar.setFrameStyle(QFrame.StyledPanel)
+
         toolbar_layout = QVBoxLayout(toolbar)
+        toolbar_layout.setSpacing(4)
+        toolbar_layout.setContentsMargins(4, 4, 4, 4)
 
         # 快速分析组
         quick_group = QGroupBox("快速分析")

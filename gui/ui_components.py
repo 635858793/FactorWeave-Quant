@@ -6,7 +6,7 @@ This module contains reusable UI components for the trading system.
 
 from loguru import logger
 from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
+    QSizePolicy, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
     QPushButton, QLineEdit, QProgressBar, QTextEdit,
     QGroupBox, QFormLayout, QSpinBox, QDoubleSpinBox,
     QListWidget, QTableWidget, QTableWidgetItem, QDialog, QCheckBox,
@@ -56,6 +56,8 @@ class BaseAnalysisPanel(QWidget):
 
         # 创建主布局
         self.main_layout = QVBoxLayout()
+        self.main_layout.setSpacing(10)
+        self.main_layout.setContentsMargins(10, 10, 10, 10)
         self.setLayout(self.main_layout)
 
         # 初始化状态栏
@@ -250,7 +252,10 @@ class AnalysisToolsPanel(BaseAnalysisPanel, EnhancedBatchAnalysisMixin):
 
             # 策略选择区域
             strategy_group = QGroupBox("策略选择")
+            strategy_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             strategy_layout = QVBoxLayout()
+            strategy_layout.setSpacing(4)
+            strategy_layout.setContentsMargins(4, 4, 4, 4)
             self.strategy_combo = QComboBox()
 
             # 使用新的策略管理系统获取策略列表

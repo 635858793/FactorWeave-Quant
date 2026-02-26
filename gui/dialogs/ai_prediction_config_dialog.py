@@ -43,60 +43,66 @@ class AIPredictionConfigDialog(QDialog):
             from db.models.ai_config_models import get_ai_config_manager
             self.config_manager = get_ai_config_manager()
         except Exception as e:
-            logger.error(f"初始化配置管理器失败: {e}")
-            QMessageBox.critical(self, "错误", f"无法连接配置数据库: {e}")
+            logger.warning(f"配置管理器初始化失败，对话框将使用默认配置: {e}")
+            self.config_manager = None
 
     def setup_ui(self):
         """设置用户界面"""
-        self.setWindowTitle("AI预测系统配置管理")
-        self.setMinimumSize(1050, 700)
-        self.setModal(True)
+        try:
+            self.setWindowTitle("AI预测系统配置管理")
+            self.setMinimumSize(1050, 700)
+            self.setModal(True)
 
-        # 主布局
-        main_layout = QVBoxLayout(self)
+            # 主布局
+            main_layout = QVBoxLayout(self)
 
-        # 标题
-        title_label = QLabel("AI预测系统配置管理")
-        title_label.setFixedHeight(30)
-        title_font = QFont()
-        title_font.setPointSize(16)
-        title_font.setBold(True)
-        title_label.setFont(title_font)
-        title_label.setAlignment(Qt.AlignCenter)
-        main_layout.addWidget(title_label)
+            # 标题
+            title_label = QLabel("AI预测系统配置管理")
+            title_label.setFixedHeight(30)
+            title_font = QFont()
+            title_font.setPointSize(16)
+            title_font.setBold(True)
+            title_label.setFont(title_font)
+            title_label.setAlignment(Qt.AlignCenter)
+            main_layout.addWidget(title_label)
 
-        # 分割器
-        splitter = QSplitter(Qt.Horizontal)
-        main_layout.addWidget(splitter)
+            # 分割器
+            splitter = QSplitter(Qt.Horizontal)
+            main_layout.addWidget(splitter)
 
-        # 左侧：配置编辑区域
-        config_widget = self.create_config_widget()
-        splitter.addWidget(config_widget)
+            # 左侧：配置编辑区域
+            config_widget = self.create_config_widget()
+            splitter.addWidget(config_widget)
 
-        # 右侧：历史和操作区域
-        history_widget = self.create_history_widget()
-        splitter.addWidget(history_widget)
+            # 右侧：历史和操作区域
+            history_widget = self.create_history_widget()
+            splitter.addWidget(history_widget)
 
-        # 设置分割器比例
-        splitter.setSizes([500, 550])
+            # 设置分割器比例
+            splitter.setSizes([500, 550])
 
-        # 底部按钮
-        button_layout = self.create_button_layout()
-        main_layout.addLayout(button_layout)
+            # 底部按钮
+            button_layout = self.create_button_layout()
+            main_layout.addLayout(button_layout)
 
-        # 状态标签
-        self.status_label = QLabel("就绪")
-        main_layout.addWidget(self.status_label)
+            # 状态标签
+            self.status_label = QLabel("就绪")
+            main_layout.addWidget(self.status_label)
+
+        except Exception as e:
+            logger.error(f"设置UI失败: {e}")
+            raise
 
     def create_config_widget(self) -> QWidget:
         """创建配置编辑区域"""
         widget = QWidget()
-        widget.setFixedHeight(600)
         widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
 
         # 配置标签页
         self.config_tabs = QTabWidget()
+        self.config_tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout.addWidget(self.config_tabs)
 
         # 模型配置标签页
@@ -404,17 +410,59 @@ class AIPredictionConfigDialog(QDialog):
 
     def load_current_configs(self):
         """加载当前配置"""
-        if not self.config_manager:
-            return
-
         try:
-            self.current_configs = self.config_manager.get_all_configs()
+            if self.config_manager:
+                self.current_configs = self.config_manager.get_all_configs()
+            
+            if not self.current_configs:
+                logger.info("未找到配置，使用默认配置")
+                self.current_configs = self._get_default_configs()
+            
             self.populate_ui_from_configs()
             self.load_history()
 
         except Exception as e:
             logger.error(f"加载配置失败: {e}")
-            self.status_label.setText(f" 加载配置失败: {e}")
+            self.current_configs = self._get_default_configs()
+            self.populate_ui_from_configs()
+            self.status_label.setText(f" 使用默认配置: {e}")
+
+    def _get_default_configs(self) -> dict:
+        """获取默认配置"""
+        return {
+            'model_config': {
+                'enabled': True,
+                'model_type': 'ensemble',
+                'confidence_threshold': 0.7,
+                'prediction_horizon': 5,
+                'feature_window': 20,
+                'cache_size': 1000,
+                'model_update_interval': 24
+            },
+            'validation': {
+                'min_data_points': 10,
+                'max_prediction_horizon': 30,
+                'max_data_rows': 10000,
+                'required_columns': ['open', 'high', 'low', 'close']
+            },
+            'feature_config': {
+                'technical_indicators': True,
+                'pattern_features': True,
+                'volume_features': True,
+                'price_features': True,
+                'volatility_features': True
+            },
+            'cache_config': {
+                'enable_cache': True,
+                'cache_ttl': 300,
+                'max_cache_size': 1000
+            },
+            'logging': {
+                'log_predictions': True,
+                'log_level': 'INFO',
+                'detailed_errors': True
+            }
+        }
 
     def populate_ui_from_configs(self):
         """从配置填充UI"""
@@ -625,11 +673,22 @@ class AIPredictionConfigDialog(QDialog):
 
     def load_history(self):
         """加载配置历史"""
-        if not self.config_manager:
-            return
-
         try:
+            if not self.config_manager:
+                self.history_table.setRowCount(1)
+                self.history_table.setItem(0, 0, QTableWidgetItem("无配置管理器"))
+                self.history_table.setItem(0, 1, QTableWidgetItem("-"))
+                self.history_table.setItem(0, 2, QTableWidgetItem("-"))
+                return
+
             history = self.config_manager.get_config_history(limit=20)
+
+            if not history:
+                self.history_table.setRowCount(1)
+                self.history_table.setItem(0, 0, QTableWidgetItem("暂无历史记录"))
+                self.history_table.setItem(0, 1, QTableWidgetItem("-"))
+                self.history_table.setItem(0, 2, QTableWidgetItem("-"))
+                return
 
             self.history_table.setRowCount(len(history))
             for row, (config_key, old_value, new_value, changed_by, changed_at) in enumerate(history):

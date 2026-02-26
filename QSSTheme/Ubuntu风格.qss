@@ -64,7 +64,7 @@ QComboBox QAbstractItemView {
 	selection-background-color: rgb(246, 134, 86);
 }
 
-QComboBox: !editable:on,
+QComboBox:!editable:on,
 QComboBox::drop-down:editable:on {
 	color: #1e1d23;
 	background: #ffffff;
@@ -333,7 +333,7 @@ QRadioButton::indicator:checked {
 	background-color: rgba(246, 134, 86, 255);
 }
 
-QRadioButton::indicator: !checked {
+QRadioButton::indicator:!checked {
 	height: 18px;
 	width: 18px;
 	border-style: solid;
@@ -683,7 +683,7 @@ QTabBar::tab:hover {
 	margin-right: 1px;
 }
 
-QTabBar::tab: !selected {
+QTabBar::tab:!selected {
 	margin-top: 1px;
 	margin-right: 1px;
 }

@@ -24,7 +24,7 @@ from core.services.backtest_result_manager import BacktestResultManager, Backtes
 logger = logger
 
 
-class AnalysisThread(QThread, QApplication):
+class AnalysisThread(QThread):
     """高性能分析线程 - 异步执行形态识别"""
 
     progress_updated = pyqtSignal(int, str)  # 进度更新信号
@@ -46,7 +46,7 @@ class AnalysisThread(QThread, QApplication):
         self.selected_patterns = selected_patterns if selected_patterns is not None else []
         self.ai_prediction_service = ai_prediction_service  # 添加AI预测服务
         self.prediction_days = prediction_days  # 添加预测天数
-        print(f"[AnalysisThread-INIT] 探针: 线程已初始化，接收到 {len(self.selected_patterns)} 个待识别形态: {self.selected_patterns}")
+        logger.debug(f"AnalysisThread: 线程已初始化，接收到 {len(self.selected_patterns)} 个待识别形态")
 
         # 注意：_connect_main_chart_signals 方法属于 PatternAnalysisTabPro 类，不在 AnalysisThread 中
         # 主图信号连接应该在 PatternAnalysisTabPro 的初始化中完成
@@ -55,11 +55,11 @@ class AnalysisThread(QThread, QApplication):
         """执行分析任务"""
         try:
             if self.kdata is None or len(self.kdata) < 20:  # 至少需要20个数据点
-                print(f"[AnalysisThread] 错误：K线数据不足或为空，无法进行分析。数据点: {len(self.kdata) if self.kdata is not None else 'None'}")
+                logger.warning(f"K线数据不足，数据点: {len(self.kdata) if self.kdata is not None else 'None'}")
                 self.error_occurred.emit("K线数据不足，无法分析")
                 return
 
-            print(f"[AnalysisThread] 开始分析，K线数据长度: {len(self.kdata)}, 时间范围: {self.kdata.index[0]} - {self.kdata.index[-1]}")
+            logger.info(f"开始分析，K线数据长度: {len(self.kdata)}, 时间范围: {self.kdata.index[0]} - {self.kdata.index[-1]}")
 
             results = {
                 'patterns': [],
@@ -71,13 +71,13 @@ class AnalysisThread(QThread, QApplication):
             # 步骤1: 形态识别 (40%)
             self.progress_updated.emit(10, "正在识别形态...")
             patterns = self._detect_patterns()
-            print(f"[AnalysisThread] _detect_patterns 返回了 {len(patterns)} 个原始形态")
+            logger.debug(f"形态识别完成，返回 {len(patterns)} 个原始形态")
 
             # 应用筛选
             filtered_patterns = self._filter_patterns(patterns)
 
             results['patterns'] = filtered_patterns
-            print(f"[AnalysisThread] 形态识别完成，识别到 {len(patterns)} 个形态, 筛选后剩余 {len(filtered_patterns)} 个")
+            logger.info(f"形态识别完成，识别到 {len(patterns)} 个形态, 筛选后剩余 {len(filtered_patterns)} 个")
             self.progress_updated.emit(40, f"识别到 {len(filtered_patterns)} 个形态")
 
             # 步骤2: 机器学习预测 (30%)
@@ -108,14 +108,14 @@ class AnalysisThread(QThread, QApplication):
                 results['historical_analysis'] = historical_data
 
             self.progress_updated.emit(100, "分析完成")
-            print(f"[AnalysisThread] 准备发射analysis_completed信号，结果: {list(results.keys())}")
+            logger.debug(f"准备发射analysis_completed信号，结果: {list(results.keys())}")
             self.analysis_completed.emit(results)
-            print(f"[AnalysisThread] analysis_completed信号已发射")
+            logger.debug("analysis_completed信号已发射")
 
         except Exception as e:
             error_msg = f"分析过程中发生错误: {str(e)}"
-            print(f"[AnalysisThread] {error_msg}")
-            print(f"[AnalysisThread] 错误详情: {traceback.format_exc()}")
+            logger.error(error_msg)
+            logger.error(f"错误详情: {traceback.format_exc()}")
             self.error_occurred.emit(error_msg)
             # 确保信号被发射
             import time
@@ -140,14 +140,14 @@ class AnalysisThread(QThread, QApplication):
             # 置信度检查
             confidence = p.get('confidence', 0.5)
             if not (confidence >= min_conf - epsilon and confidence <= max_conf + epsilon):
-                print(f"[FilterDebug] 过滤掉形态 '{p.get('pattern_name', 'N/A')}': "
+                logger.debug(f"过滤掉形态 '{p.get('pattern_name', 'N/A')}': "
                       f"置信度 {confidence:.2f} 不在 [{min_conf:.2f}, {max_conf:.2f}] 范围内。")
                 continue
 
             # 成功率检查
             success_rate = p.get('success_rate', 0.7)
             if not (success_rate >= min_succ - epsilon and success_rate <= max_succ + epsilon):
-                print(f"[FilterDebug] 过滤掉形态 '{p.get('pattern_name', 'N/A')}': "
+                logger.debug(f"过滤掉形态 '{p.get('pattern_name', 'N/A')}': "
                       f"成功率 {success_rate:.2f} 不在 [{min_succ:.2f}, {max_succ:.2f}] 范围内。")
                 continue
 
@@ -157,7 +157,7 @@ class AnalysisThread(QThread, QApplication):
                 expected_risk = risk_map.get(risk_level)
                 pattern_risk = str(p.get('risk_level', '')).lower()
                 if expected_risk and pattern_risk != expected_risk:
-                    print(f"[FilterDebug] 过滤掉形态 '{p.get('pattern_name', 'N/A')}': "
+                    logger.debug(f"过滤掉形态 '{p.get('pattern_name', 'N/A')}': "
                           f"风险等级 '{pattern_risk}' 不匹配筛选条件 '{expected_risk}'。")
                     continue
 
@@ -174,7 +174,7 @@ class AnalysisThread(QThread, QApplication):
             # 使用增强的形态识别器
             recognizer = EnhancedPatternRecognizer(debug_mode=True)
 
-            print(f"[AnalysisThread-DETECT] 一键分析模式：即将调用identify_patterns，识别列表: {self.selected_patterns}")
+            logger.debug(f"一键分析模式：即将调用identify_patterns，识别列表: {self.selected_patterns}")
 
             #  一键分析特点：
             # 1. 只识别用户选择的形态类型
@@ -183,7 +183,7 @@ class AnalysisThread(QThread, QApplication):
 
             # 数据采样：一键分析使用最近的数据进行快速识别
             kdata_sample = self.kdata.tail(min(len(self.kdata), 200))  # 最近200个交易日
-            print(f"[一键分析] 使用最近 {len(kdata_sample)} 个交易日的数据进行快速分析")
+            logger.debug(f"使用最近 {len(kdata_sample)} 个交易日的数据进行快速分析")
 
             # 执行形态识别
             patterns = recognizer.identify_patterns(
@@ -214,12 +214,12 @@ class AnalysisThread(QThread, QApplication):
             # 转换成列表，并按置信度排序
             pattern_dicts.sort(key=lambda x: x.get('confidence', 0), reverse=True)
 
-            print(f"[一键分析] 快速扫描完成，检测到 {len(pattern_dicts)} 个形态")
+            logger.info(f"快速扫描完成，检测到 {len(pattern_dicts)} 个形态")
             return pattern_dicts
 
         except Exception as e:
-            print(f"[AnalysisThread] 形态识别出错: {e}")
-            print(f"[AnalysisThread] 错误详情: {traceback.format_exc()}")
+            logger.error(f"形态识别出错: {e}")
+            logger.error(f"错误详情: {traceback.format_exc()}")
             return []
 
     def _validate_and_clean_pattern(self, pattern: Dict) -> None:
@@ -446,7 +446,7 @@ class AnalysisThread(QThread, QApplication):
             return statistics
 
         except Exception as e:
-            print(f"[AnalysisThread] 统计计算失败: {e}")
+            logger.error(f"统计计算失败: {e}")
             return {}
 
     def _generate_alerts(self, patterns: List[Dict]) -> List[Dict]:
@@ -501,7 +501,7 @@ class AnalysisThread(QThread, QApplication):
             return alerts
 
         except Exception as e:
-            print(f"[AnalysisThread] 预警生成失败: {e}")
+            logger.error(f"预警生成失败: {e}")
             return []
 
     def _perform_historical_analysis(self, patterns: List[Dict]) -> Dict:
@@ -577,7 +577,7 @@ class AnalysisThread(QThread, QApplication):
             return historical_data
 
         except Exception as e:
-            print(f"[AnalysisThread] 历史分析失败: {e}")
+            logger.error(f"历史分析失败: {e}")
             return {
                 'error': str(e),
                 'summary': '历史分析失败'
@@ -794,6 +794,11 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
 
         # 初始化AI预测服务
         self._initialize_ai_service()
+
+    def _setup_responsive_constraints(self):
+        """使用统一的响应式约束系统注册组件"""
+        if hasattr(self, 'status_frame'):
+            self._register_responsive_component('status_bar', self.status_frame)
 
     def _connect_parent_signals(self):
         """连接父组件信号 - 修复专业扫描无响应问题"""
@@ -1147,11 +1152,6 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
         header = self.patterns_table.horizontalHeader()
         header.setStretchLastSection(True)
         header.setSectionResizeMode(QHeaderView.Interactive)
-
-        # 设置固定列宽
-        column_widths = [120, 80, 70, 70, 60, 90, 70, 60, 60, 70]
-        for i, width in enumerate(column_widths):
-            self.patterns_table.setColumnWidth(i, width)
 
         # 添加表格到布局
         layout.addWidget(self.patterns_table, 1)
@@ -1929,11 +1929,10 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
         return widget
 
     def _create_status_bar(self, layout):
-        """创建结果状态栏"""
-        status_frame = QFrame()
-        status_frame.setFixedHeight(35)
-        status_frame.setFrameStyle(QFrame.StyledPanel)
-        status_layout = QHBoxLayout(status_frame)
+        """创建结果状态栏 - 使用统一响应式约束"""
+        self.status_frame = QFrame()
+        self.status_frame.setFrameStyle(QFrame.StyledPanel)
+        status_layout = QHBoxLayout(self.status_frame)
 
         self.status_label = QLabel("就绪")
         self.progress_bar = QProgressBar()
@@ -1943,7 +1942,7 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
         status_layout.addStretch()
         status_layout.addWidget(self.progress_bar)
 
-        layout.addWidget(status_frame)
+        layout.addWidget(self.status_frame)
 
     def _populate_pattern_tree(self):
         """从数据库动态填充形态树"""
@@ -2059,7 +2058,7 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
 
             # 从UI收集用户勾选的形态
             selected_patterns = self._get_selected_patterns()
-            print(f"[UI-one_click_analysis] 探针: 从UI收集到 {len(selected_patterns)} 个待识别形态: {selected_patterns}")
+            logger.debug(f"从UI收集到 {len(selected_patterns)} 个待识别形态")
 
             if not selected_patterns:
                 QMessageBox.warning(self, "提示", "请至少在'形态分类'列表中选择一种要分析的形态。")
@@ -2676,7 +2675,7 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
             return alerts
 
         except Exception as e:
-            print(f"[AnalysisThread] 预警生成失败: {e}")
+            logger.error(f"预警生成失败: {e}")
             return []
 
     def _get_pattern_start_date(self):
@@ -4111,41 +4110,9 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
             logger.error(f"处理回测错误失败: {str(e)}")
 
     def resizeEvent(self, event):
-        """窗口大小改变事件处理"""
+        """窗口大小改变事件处理 - 使用基类统一响应式系统"""
         super().resizeEvent(event)
-        self._update_responsive_layout()
 
     def _update_responsive_layout(self):
-        """更新响应式布局"""
-        try:
-            window_width = self.width()
-            window_height = self.height()
-
-            logger.debug(f"PatternTabPro 响应式布局更新: {window_width}x{window_height}")
-
-            # 更新工具栏高度
-            toolbar = self.findChild(QFrame, "toolbar")
-            if toolbar:
-                toolbar_height = max(120, int(window_height * 0.2))
-                toolbar.setMinimumHeight(toolbar_height)
-                toolbar.setMaximumHeight(int(window_height * 0.3))
-
-            # 更新状态栏高度
-            status_frame = self.findChild(QFrame, "status_frame")
-            if status_frame:
-                status_height = max(30, int(window_height * 0.05))
-                status_frame.setFixedHeight(status_height)
-
-            # 更新滑块宽度
-            if hasattr(self, 'sensitivity_slider'):
-                slider_width = max(100, int(window_width * 0.15))
-                self.sensitivity_slider.setMinimumWidth(slider_width)
-                self.sensitivity_slider.setMaximumWidth(int(window_width * 0.3))
-
-            # 更新选择框宽度
-            if hasattr(self, 'timeframe_combo'):
-                combo_width = max(60, int(window_width * 0.08))
-                self.timeframe_combo.setFixedWidth(combo_width)
-
-        except Exception as e:
-            logger.error(f"更新响应式布局失败: {e}")
+        """更新响应式布局 - 已集成到基类统一系统"""
+        pass

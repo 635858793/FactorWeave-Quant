@@ -5,7 +5,6 @@
 
 from loguru import logger
 
-# 延迟导入，避免循环依赖和提高启动速度
 __all__ = [
     'UltraPerformanceOptimizer',
     'BacktestOptimizer',
@@ -17,6 +16,10 @@ __all__ = [
     'UnifiedBacktestEngine',
     'ProfessionalUISystem',
     'RealTimeBacktestMonitor',
+    'get_async_io_manager',
+    'get_smart_data_cache',
+    'get_unified_cache_service',
+    'migrate_to_unified_cache',
 ]
 
 
@@ -56,5 +59,17 @@ def __getattr__(name):
     elif name == 'RealTimeBacktestMonitor':
         from .real_time_backtest_monitor import RealTimeBacktestMonitor
         return RealTimeBacktestMonitor
+    elif name == 'get_async_io_manager':
+        from .async_io_manager import get_async_io_manager
+        return get_async_io_manager
+    elif name == 'get_smart_data_cache':
+        from .async_io_manager import get_smart_data_cache
+        return get_smart_data_cache
+    elif name == 'get_unified_cache_service':
+        from .async_io_manager import get_unified_cache_service
+        return get_unified_cache_service
+    elif name == 'migrate_to_unified_cache':
+        from .async_io_manager import migrate_to_unified_cache
+        return migrate_to_unified_cache
 
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 账户管理对话框
@@ -98,6 +98,11 @@ class AccountManagementDialog(QDialog):
             create_btn = QPushButton("创建账户")
             create_btn.clicked.connect(self.show_create_account_dialog)
             toolbar_layout.addWidget(create_btn)
+
+            simnow_btn = QPushButton("快速配置SimNow账户")
+            simnow_btn.clicked.connect(self.show_simnow_config_dialog)
+            simnow_btn.setStyleSheet("background-color: #4CAF50; color: white;")
+            toolbar_layout.addWidget(simnow_btn)
 
             refresh_btn = QPushButton("刷新")
             refresh_btn.clicked.connect(self.load_accounts)
@@ -1784,3 +1789,147 @@ class EditAccountDialog(QDialog):
         except Exception as e:
             logger.error(f"更新账户失败: {e}")
             QMessageBox.critical(self, '错误', f'更新账户失败: {str(e)}')
+
+
+    def show_simnow_config_dialog(self):
+        """显示SimNow快速配置对话框"""
+        try:
+            dialog = SimNowConfigDialog(self)
+            if dialog.exec_() == QDialog.Accepted:
+                investor_id = dialog.investor_id_input.text().strip()
+                password = dialog.password_input.text().strip()
+                environment = dialog.environment_combo.currentData()
+                account_name = dialog.account_name_input.text().strip()
+                
+                if not investor_id or not password:
+                    QMessageBox.warning(self, "错误", "请填写SimNow账号和密码")
+                    return
+                
+                from core.trading.simnow_config import SimNowAccountCreator
+                
+                account = SimNowAccountCreator.create_simnow_account(
+                    investor_id=investor_id,
+                    password=password,
+                    environment=environment,
+                    account_name=account_name
+                )
+                
+                success = self.account_manager.add_account(account)
+                
+                if success:
+                    QMessageBox.information(self, "成功", f"SimNow账户创建成功: {account.account_id}\n\n请前往SimNow官网激活账户后使用")
+                    self.load_accounts()
+                else:
+                    QMessageBox.warning(self, "失败", "SimNow账户创建失败，请检查配置")
+                    
+        except Exception as e:
+            logger.error(f"显示SimNow配置对话框失败: {e}")
+            QMessageBox.critical(self, "错误", f"显示SimNow配置对话框失败: {e}")
+
+
+class SimNowConfigDialog(QDialog):
+    """SimNow快速配置对话框"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("SimNow快速配置")
+        self.setMinimumSize(500, 400)
+        self._setup_ui()
+    
+    def _setup_ui(self):
+        """设置UI"""
+        layout = QVBoxLayout(self)
+        
+        info_label = QLabel(
+            "SimNow是上期技术提供的CTP模拟交易环境\n"
+            "使用前请先在SimNow官网注册账号并激活\n"
+            "官网地址: www.simnow.com.cn"
+        )
+        info_label.setStyleSheet("color: #666; padding: 10px; background-color: #f0f0f0; border-radius: 5px;")
+        layout.addWidget(info_label)
+        
+        form_layout = QGridLayout()
+        
+        row = 0
+        
+        form_layout.addWidget(QLabel("SimNow账号*:"), row, 0)
+        self.investor_id_input = QLineEdit()
+        self.investor_id_input.setPlaceholderText("在SimNow官网注册的账号")
+        form_layout.addWidget(self.investor_id_input, row, 1)
+        row += 1
+        
+        form_layout.addWidget(QLabel("密码*:"), row, 0)
+        self.password_input = QLineEdit()
+        self.password_input.setEchoMode(QLineEdit.Password)
+        self.password_input.setPlaceholderText("SimNow登录密码")
+        form_layout.addWidget(self.password_input, row, 1)
+        row += 1
+        
+        form_layout.addWidget(QLabel("环境:"), row, 0)
+        self.environment_combo = QComboBox()
+        from core.trading.simnow_config import SimNowEnvironment, SimNowEnvironmentInfo
+        
+        for env in SimNowEnvironment:
+            info = SimNowEnvironmentInfo.get_environment_info(env)
+            self.environment_combo.addItem(info.get('name', env.value), env)
+        
+        self.environment_combo.currentIndexChanged.connect(self._on_environment_changed)
+        form_layout.addWidget(self.environment_combo, row, 1)
+        row += 1
+        
+        self.env_info_label = QLabel()
+        self.env_info_label.setWordWrap(True)
+        self.env_info_label.setStyleSheet("color: #666; padding: 5px;")
+        form_layout.addWidget(self.env_info_label, row, 0, 1, 2)
+        row += 1
+        
+        form_layout.addWidget(QLabel("账户名称:"), row, 0)
+        self.account_name_input = QLineEdit()
+        self.account_name_input.setText("SimNow期货账户")
+        form_layout.addWidget(self.account_name_input, row, 1)
+        row += 1
+        
+        layout.addLayout(form_layout)
+        
+        config_label = QLabel(
+            "默认配置:\n"
+            "  BrokerID: 9999\n"
+            "  AppID: simnow_client_test\n"
+            "  AuthCode: 0000000000000000\n"
+            "  初始资金: 两千万"
+        )
+        config_label.setStyleSheet("color: #888; padding: 10px; background-color: #fafafa; border-radius: 5px;")
+        layout.addWidget(config_label)
+        
+        button_box = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        )
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+        
+        self._on_environment_changed(0)
+    
+    def _on_environment_changed(self, index):
+        """环境改变事件"""
+        try:
+            from core.trading.simnow_config import SimNowEnvironment, SimNowEnvironmentInfo
+            
+            env = self.environment_combo.currentData()
+            info = SimNowEnvironmentInfo.get_environment_info(env)
+            
+            if info:
+                text = f"说明: {info.get('description', '')}\n"
+                text += f"交易时间: {info.get('trading_hours', '')}"
+                
+                notes = info.get('notes', [])
+                if notes:
+                    text += "\n注意事项:\n"
+                    for note in notes:
+                        text += f"  - {note}\n"
+                
+                self.env_info_label.setText(text)
+                self.account_name_input.setText(f"SimNow-{info.get('name', env.value)}")
+                
+        except Exception as e:
+            logger.error(f"环境改变事件处理失败: {e}")

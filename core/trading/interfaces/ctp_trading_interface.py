@@ -47,7 +47,7 @@ class CTPTradingInterface(TradingInterface):
         self._orders: Dict[str, Order] = {}
         self._exchange_order_map: Dict[str, str] = {}
 
-        logger.info(f"初始化CTP交易接口: {self.config.broker_id}/{self.config.investor_id} (模拟模式: {self.config.use_simulation})")
+        logger.info(f"初始化CTP交易接口: {self.config.broker_id}/{self.config.investor_id} (模拟环境: {self.config.use_simulation})")
 
     def connect(self) -> bool:
         """
@@ -59,15 +59,13 @@ class CTPTradingInterface(TradingInterface):
         try:
             logger.info("正在连接CTP服务器...")
 
-            if self.config.use_simulation:
-                logger.info("使用模拟模式连接CTP服务器")
-                self._connected = True
-                return True
+            if not CTP_AVAILABLE:
+                logger.error("CTP SDK未安装，无法连接CTP服务器，请安装CTP SDK")
+                return False
 
             if not self.config.trade_front:
-                logger.warning("CTP交易前置地址未配置，使用模拟模式")
-                self._connected = True
-                return True
+                logger.error("CTP交易前置地址未配置")
+                return False
 
             logger.info(f"连接CTP交易前置: {self.config.trade_front}")
 
@@ -94,17 +92,13 @@ class CTPTradingInterface(TradingInterface):
                 logger.error("未连接到CTP服务器")
                 return False
 
-            if self.config.use_simulation:
-                logger.info("使用模拟模式登录CTP账户")
-                self._logged_in = True
-                self._authenticated = True
-                return True
+            if not CTP_AVAILABLE:
+                logger.error("CTP SDK未安装，无法登录CTP账户，请安装CTP SDK")
+                return False
 
             if not self.config.broker_id or not self.config.investor_id or not self.config.password:
-                logger.warning("CTP账户信息未配置，使用模拟模式")
-                self._logged_in = True
-                self._authenticated = True
-                return True
+                logger.error("CTP账户信息未配置")
+                return False
 
             logger.info(f"登录CTP账户: {self.config.broker_id}/{self.config.investor_id}")
 

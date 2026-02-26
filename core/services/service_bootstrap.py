@@ -584,6 +584,21 @@ class ServiceBootstrap:
             logger.error(f"❌ AI选股回测服务注册失败: {e}")
             logger.error(traceback.format_exc())
 
+        # 回测结果管理器
+        try:
+            from ..services.backtest_result_manager import BacktestResultManager
+            if not self._is_service_registered(BacktestResultManager):
+                self.service_container.register(
+                    BacktestResultManager,
+                    scope=ServiceScope.SINGLETON,
+                    factory=lambda: BacktestResultManager()
+                )
+            backtest_result_manager = self.service_container.resolve(BacktestResultManager)
+            logger.info("回测结果管理器注册完成")
+        except Exception as e:
+            logger.error(f"❌ 回测结果管理器注册失败: {e}")
+            logger.error(traceback.format_exc())
+
         # AI选股风险控制服务
         try:
             from .ai_selection_risk_control_service import AISelectionRiskControlService
@@ -1732,8 +1747,8 @@ class ServiceBootstrap:
         logger.info("开始注册5个深度优化功能模块...")
         
         try:
-            # 1. 注册智能缓存管理器
-            self._register_intelligent_cache()
+            # 1. 注册统一缓存管理器（使用 CacheService 替代 IntelligentCache）
+            self._register_unified_cache()
             
             # 2. 注册组件虚拟化
             self._register_component_virtualization()
@@ -1753,49 +1768,44 @@ class ServiceBootstrap:
             logger.error(f"❌ 深度优化模块注册失败: {e}")
             logger.error(traceback.format_exc())
 
-    def _register_intelligent_cache(self) -> None:
-        """注册智能缓存管理器"""
+    def _register_unified_cache(self) -> None:
+        """注册统一缓存管理器（CacheService）"""
         try:
-            from core.advanced_optimization.cache.intelligent_cache import IntelligentCache
+            from core.services.cache_service import CacheService
             
-            def create_intelligent_cache():
-                """创建智能缓存服务实例"""
-                cache = IntelligentCache(
-                    max_memory_mb=512,
-                    default_ttl=3600,
-                    enable_ml_prediction=True
-                )
+            def create_cache_service():
+                """创建统一缓存服务实例"""
+                cache = CacheService()
+                cache._do_initialize()
+                cache.load_config_from_db('default')
                 return cache
             
-            # 按类型注册（主注册）
             self.service_container.register_factory(
-                IntelligentCache,
-                create_intelligent_cache,
+                CacheService,
+                create_cache_service,
                 scope=ServiceScope.SINGLETON
             )
             
-            # 添加名称注册，方便UI按名称访问
             self.service_container.register_factory(
-                IntelligentCache,
-                create_intelligent_cache,
+                CacheService,
+                create_cache_service,
                 scope=ServiceScope.SINGLETON,
-                name='intelligent_cache'
+                name='unified_cache'
             )
             
-            # 添加常用名称
             self.service_container.register_factory(
-                IntelligentCache,
-                create_intelligent_cache,
+                CacheService,
+                create_cache_service,
                 scope=ServiceScope.SINGLETON,
-                name='cache_manager'
+                name='cache_service'
             )
             
-            logger.info("智能缓存管理器注册完成（类型 + 名称 'intelligent_cache' + 'cache_manager'）")
+            logger.info("统一缓存管理器注册完成（CacheService）")
             
         except ImportError as e:
-            logger.warning(f"智能缓存模块不可用，跳过注册: {e}")
+            logger.warning(f"统一缓存模块不可用，跳过注册: {e}")
         except Exception as e:
-            logger.error(f"❌ 智能缓存管理器注册失败: {e}")
+            logger.error(f"❌ 统一缓存管理器注册失败: {e}")
             logger.error(traceback.format_exc())
 
     def _register_component_virtualization(self) -> None:
