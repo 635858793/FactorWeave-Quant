@@ -478,8 +478,10 @@ class SentimentMonitorPanel(QWidget):
 
     def _update_alert_threshold(self, value):
         """更新告警阈值"""
-        # TODO: 实现告警阈值更新逻辑
-        pass
+        threshold = value / 100.0
+        logger.info(f"更新告警阈值: {threshold}")
+        self._sentiment_data['alert_threshold'] = threshold
+        self._check_sentiment_alerts()
 
     def closeEvent(self, event):
         """关闭事件处理"""

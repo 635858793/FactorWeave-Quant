@@ -42,7 +42,7 @@ import numpy as np
 from decimal import Decimal
 
 # 导入服务和数据结构
-from core.services.trading_service import TradingService, TradeRecord, Portfolio, StrategyState
+from core.services.trading_service import TradingService, TradeRecord, Portfolio
 from core.services.strategy_service import StrategyService
 from core.strategy_extensions import Signal, SignalType, Position
 

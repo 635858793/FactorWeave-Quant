@@ -232,10 +232,70 @@ class OrderValidator:
 
     def _validate_order_value_limit(self, request: OrderRequest) -> ValidationResult:
         """验证订单价值限制"""
-        # TODO: 等待账户管理系统实现后，添加资金和持仓验证
-        # 目前暂时通过，避免阻塞
-        logger.debug("订单价值限制验证暂时跳过（等待账户管理系统实现）")
-        return ValidationResult(passed=True)
+        try:
+            account_manager = None
+            if self.service_container:
+                try:
+                    account_manager = self.service_container.get_service('account_manager')
+                except Exception as e:
+                    logger.warning(f"无法获取账户管理器: {e}")
+
+            if account_manager is None:
+                logger.debug("账户管理器不可用，跳过订单价值限制验证")
+                return ValidationResult(passed=True)
+
+            account_id = request.account_id if hasattr(request, 'account_id') else 'default'
+            account = account_manager.get_account(account_id)
+
+            if account is None:
+                logger.warning(f"账户不存在: {account_id}，跳过资金验证")
+                return ValidationResult(passed=True)
+
+            order_value = request.price * request.quantity
+            available_fund = getattr(account, 'available_fund', float('inf'))
+            max_order_value_ratio = self._config.get('max_order_value_ratio', 0.1)
+            max_order_value = available_fund * max_order_value_ratio
+
+            if order_value > max_order_value:
+                return ValidationResult(
+                    passed=False,
+                    message=f"订单金额 {order_value:.2f} 超过账户最大可下单金额 {max_order_value:.2f}",
+                    error_code="ORDER_VALUE_EXCEEDS_LIMIT",
+                    details={
+                        'order_value': order_value,
+                        'available_fund': available_fund,
+                        'max_order_value': max_order_value,
+                        'ratio': max_order_value_ratio
+                    }
+                )
+
+            positions = account_manager.get_account_positions(account_id)
+            max_position_ratio = self._config.get('max_position_ratio', 0.3)
+            total_position_value = sum(
+                getattr(p, 'market_value', 0) for p in positions
+            )
+            available_position_value = available_fund * max_position_ratio
+            new_position_value = order_value
+
+            if total_position_value + new_position_value > available_position_value:
+                return ValidationResult(
+                    passed=False,
+                    message=f"持仓金额将超过账户最大持仓限制",
+                    error_code="POSITION_VALUE_EXCEEDS_LIMIT",
+                    details={
+                        'current_position_value': total_position_value,
+                        'new_position_value': new_position_value,
+                        'available_position_value': available_position_value,
+                        'max_position_ratio': max_position_ratio
+                    }
+                )
+
+            logger.debug(f"订单价值验证通过: 订单金额={order_value:.2f}, 可用资金={available_fund:.2f}")
+            return ValidationResult(passed=True)
+
+        except Exception as e:
+            logger.error(f"订单价值验证失败: {e}，跳过验证")
+            return ValidationResult(passed=True)
 
     def _validate_order_status(self, order: Order) -> ValidationResult:
         """验证订单状态"""

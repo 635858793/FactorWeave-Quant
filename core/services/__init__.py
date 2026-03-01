@@ -6,6 +6,9 @@
 
 from .base_service import BaseService, AsyncBaseService, ConfigurableService, CacheableService
 from .stock_service import StockService
+from .index_service import IndexService
+from .fund_service import FundService
+from .bond_service import BondService
 from .chart_service import ChartService
 from .analysis_service import AnalysisService
 from .config_service import ConfigService
@@ -20,6 +23,9 @@ __all__ = [
     'ConfigurableService',
     'CacheableService',
     'StockService',
+    'IndexService',
+    'FundService',
+    'BondService',
     'ChartService',
     'AnalysisService',
     'ConfigService',

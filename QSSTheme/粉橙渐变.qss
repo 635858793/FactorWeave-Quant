@@ -581,7 +581,7 @@ QDateTimeEdit {
 QDateTimeEdit::drop-down {
         width: 20px;
         background: yellowgreen;
-}}
+}
 
 /**********工具提示**********/
 QToolTip {

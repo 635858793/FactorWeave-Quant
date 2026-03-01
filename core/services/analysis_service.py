@@ -23,6 +23,7 @@ from loguru import logger
 from .base_service import BaseService
 from ..events import EventBus, get_event_bus
 from ..containers import ServiceContainer, get_service_container
+from core.indicator_service import calculate_indicator, batch_calculate_indicators
 
 
 class IndicatorType(Enum):
@@ -445,72 +446,131 @@ class AnalysisService(BaseService):
         return values
 
     def _calculate_rsi(self, market_data: List[MarketData], period: int) -> List[IndicatorValue]:
-        """计算RSI"""
+        """计算RSI - 使用统一指标服务"""
         values = []
         if len(market_data) < period + 1:
             return values
 
-        prices = [float(data.close_price) for data in market_data]
-        gains = []
-        losses = []
-
-        for i in range(1, len(prices)):
-            change = prices[i] - prices[i-1]
-            gains.append(max(change, 0))
-            losses.append(max(-change, 0))
-
-        for i in range(period - 1, len(gains)):
-            avg_gain = sum(gains[i - period + 1:i + 1]) / period
-            avg_loss = sum(losses[i - period + 1:i + 1]) / period
-
-            if avg_loss == 0:
-                rsi = 100
-            else:
-                rs = avg_gain / avg_loss
-                rsi = 100 - (100 / (1 + rs))
-
-            values.append(IndicatorValue(
-                indicator_id="rsi",
-                symbol=market_data[i + 1].symbol,
-                timestamp=market_data[i + 1].timestamp,
-                value=rsi,
-                timeframe=TimeFrame.DAILY
-            ))
-
-        return values
-
-    def _calculate_macd(self, market_data: List[MarketData], fast: int, slow: int, signal: int) -> List[IndicatorValue]:
-        """计算MACD"""
-        values = []
-        prices = [float(data.close_price) for data in market_data]
-
-        # 简化的MACD计算
-        if len(prices) < slow:
+        try:
+            df = pd.DataFrame([{
+                'close': float(data.close_price),
+                'high': float(data.high_price) if hasattr(data, 'high_price') else float(data.close_price),
+                'low': float(data.low_price) if hasattr(data, 'low_price') else float(data.close_price),
+                'volume': float(data.volume) if hasattr(data, 'volume') else 0
+            } for data in market_data])
+            
+            result = calculate_indicator('RSI', df, timeperiod=period)
+            
+            if isinstance(result, pd.DataFrame) and 'RSI' in result.columns:
+                rsi_values = result['RSI'].values
+                for i, rsi_val in enumerate(rsi_values):
+                    if not np.isnan(rsi_val) and i < len(market_data):
+                        values.append(IndicatorValue(
+                            indicator_id="rsi",
+                            symbol=market_data[i].symbol,
+                            timestamp=market_data[i].timestamp,
+                            value=rsi_val,
+                            timeframe=TimeFrame.DAILY
+                        ))
             return values
+        except Exception as e:
+            logger.warning(f"统一服务计算RSI失败，使用本地计算: {e}")
+            prices = [float(data.close_price) for data in market_data]
+            gains = []
+            losses = []
 
-        # 计算EMA
-        ema_fast = self._calculate_ema(prices, fast)
-        ema_slow = self._calculate_ema(prices, slow)
+            for i in range(1, len(prices)):
+                change = prices[i] - prices[i-1]
+                gains.append(max(change, 0))
+                losses.append(max(-change, 0))
 
-        macd_line = [fast_val - slow_val for fast_val, slow_val in zip(ema_fast, ema_slow)]
-        signal_line = self._calculate_ema(macd_line, signal)
-        histogram = [macd - sig for macd, sig in zip(macd_line, signal_line)]
+            for i in range(period - 1, len(gains)):
+                avg_gain = sum(gains[i - period + 1:i + 1]) / period
+                avg_loss = sum(losses[i - period + 1:i + 1]) / period
 
-        for i, data in enumerate(market_data):
-            if i < len(macd_line) and i < len(signal_line) and i < len(histogram):
+                if avg_loss == 0:
+                    rsi = 100
+                else:
+                    rs = avg_gain / avg_loss
+                    rsi = 100 - (100 / (1 + rs))
+
                 values.append(IndicatorValue(
-                    indicator_id="macd",
-                    symbol=data.symbol,
-                    timestamp=data.timestamp,
-                    value={
-                        "macd": macd_line[i],
-                        "signal": signal_line[i],
-                        "histogram": histogram[i]
-                    },
+                    indicator_id="rsi",
+                    symbol=market_data[i + 1].symbol,
+                    timestamp=market_data[i + 1].timestamp,
+                    value=rsi,
                     timeframe=TimeFrame.DAILY
                 ))
 
-        return values
+            return values
+
+    def _calculate_macd(self, market_data: List[MarketData], fast: int, slow: int, signal: int) -> List[IndicatorValue]:
+        """计算MACD - 使用统一指标服务"""
+        values = []
+        
+        try:
+            df = pd.DataFrame([{
+                'close': float(data.close_price),
+                'high': float(data.high_price) if hasattr(data, 'high_price') else float(data.close_price),
+                'low': float(data.low_price) if hasattr(data, 'low_price') else float(data.close_price),
+                'volume': float(data.volume) if hasattr(data, 'volume') else 0
+            } for data in market_data])
+            
+            result = calculate_indicator('MACD', df, fastperiod=fast, slowperiod=slow, signalperiod=signal)
+            
+            if isinstance(result, pd.DataFrame):
+                macd_values = result.get('MACD', pd.Series())
+                signal_values = result.get('MACDSignal', pd.Series())
+                hist_values = result.get('MACDHist', pd.Series())
+                
+                for i in range(len(market_data)):
+                    if i < len(macd_values) and i < len(signal_values) and i < len(hist_values):
+                        macd_val = macd_values.iloc[i] if i < len(macd_values) else np.nan
+                        signal_val = signal_values.iloc[i] if i < len(signal_values) else np.nan
+                        hist_val = hist_values.iloc[i] if i < len(hist_values) else np.nan
+                        
+                        if not (np.isnan(macd_val) or np.isnan(signal_val) or np.isnan(hist_val)):
+                            values.append(IndicatorValue(
+                                indicator_id="macd",
+                                symbol=market_data[i].symbol,
+                                timestamp=market_data[i].timestamp,
+                                value={
+                                    "macd": float(macd_val),
+                                    "signal": float(signal_val),
+                                    "histogram": float(hist_val)
+                                },
+                                timeframe=TimeFrame.DAILY
+                            ))
+            return values
+        except Exception as e:
+            logger.warning(f"统一服务计算MACD失败，使用本地计算: {e}")
+            prices = [float(data.close_price) for data in market_data]
+
+            if len(prices) < slow:
+                return values
+
+            ema_fast = self._calculate_ema(prices, fast)
+            ema_slow = self._calculate_ema(prices, slow)
+
+            macd_line = [fast_val - slow_val for fast_val, slow_val in zip(ema_fast, ema_slow)]
+            signal_line = self._calculate_ema(macd_line, signal)
+            histogram = [macd - sig for macd, sig in zip(macd_line, signal_line)]
+
+            for i, data in enumerate(market_data):
+                if i < len(macd_line) and i < len(signal_line) and i < len(histogram):
+                    values.append(IndicatorValue(
+                        indicator_id="macd",
+                        symbol=data.symbol,
+                        timestamp=data.timestamp,
+                        value={
+                            "macd": macd_line[i],
+                            "signal": signal_line[i],
+                            "histogram": histogram[i]
+                        },
+                        timeframe=TimeFrame.DAILY
+                    ))
+
+            return values
 
     def _calculate_ema(self, prices: List[float], period: int) -> List[float]:
         """计算指数移动平均"""

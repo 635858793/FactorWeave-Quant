@@ -565,16 +565,56 @@ class StockScreenerWidget(BaseAnalysisPanel):
         QMessageBox.critical(self, "错误", f"筛选失败: {error}")
 
     def get_technical_params(self):
-        # TODO: 从UI获取技术指标参数
-        return {}
+        params = {}
+        try:
+            if hasattr(self, 'ma_type') and hasattr(self, 'ma_condition'):
+                params['ma_type'] = self.ma_type.currentText()
+                params['ma_condition'] = self.ma_condition.currentText()
+            if hasattr(self, 'macd_condition'):
+                params['macd_condition'] = self.macd_condition.currentText()
+            if hasattr(self, 'rsi_period') and hasattr(self, 'rsi_condition'):
+                params['rsi_period'] = self.rsi_period.value()
+                params['rsi_condition'] = self.rsi_condition.currentText()
+            if hasattr(self, 'kdj_k') and hasattr(self, 'kdj_condition'):
+                params['kdj_k'] = self.kdj_k.value()
+                params['kdj_d'] = self.kdj_d.value()
+                params['kdj_condition'] = self.kdj_condition.currentText()
+            if hasattr(self, 'boll_period') and hasattr(self, 'boll_condition'):
+                params['boll_period'] = self.boll_period.value()
+                params['boll_condition'] = self.boll_condition.currentText()
+        except Exception as e:
+            logger.error(f"获取技术指标参数失败: {e}")
+        return params
 
     def get_fundamental_params(self):
-        # TODO: 从UI获取基本面参数
-        return {}
+        params = {}
+        try:
+            if hasattr(self, 'pe_ratio') and hasattr(self, 'pe_condition'):
+                params['pe_ratio'] = self.pe_ratio.value()
+                params['pe_condition'] = self.pe_condition.currentText()
+            if hasattr(self, 'pb_ratio') and hasattr(self, 'pb_condition'):
+                params['pb_ratio'] = self.pb_ratio.value()
+                params['pb_condition'] = self.pb_condition.currentText()
+            if hasattr(self, 'market_cap'):
+                params['market_cap'] = self.market_cap.value()
+            if hasattr(self, 'revenue_growth'):
+                params['revenue_growth'] = self.revenue_growth.value()
+        except Exception as e:
+            logger.error(f"获取基本面参数失败: {e}")
+        return params
 
     def get_capital_params(self):
-        # TODO: 从UI获取资金流向参数
-        return {}
+        params = {}
+        try:
+            if hasattr(self, 'net_inflow'):
+                params['net_inflow'] = self.net_inflow.value()
+            if hasattr(self, 'turnover_rate'):
+                params['turnover_rate'] = self.turnover_rate.value()
+            if hasattr(self, 'cap_weight'):
+                params['cap_weight'] = self.cap_weight.value()
+        except Exception as e:
+            logger.error(f"获取资金流向参数失败: {e}")
+        return params
 
     def on_stock_selected(self):
         """Handle stock selection in result table"""

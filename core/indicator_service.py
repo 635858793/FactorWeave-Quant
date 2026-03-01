@@ -132,9 +132,14 @@ class IndicatorService:
         """计算形态识别"""
         return self.unified_service.calculate_pattern(name, data, **params)
 
-    def batch_calculate_indicators(self, indicators: List[str], data: pd.DataFrame, params_dict: Optional[Dict[str, Dict]] = None) -> Dict[str, Any]:
+    def batch_calculate_indicators(self, indicators: List[str], data: pd.DataFrame, params_dict: Optional[Dict[str, Dict]] = None) -> pd.DataFrame:
         """批量计算指标"""
-        return self.unified_service.batch_calculate_indicators(indicators, data, params_dict)
+        indicator_tuples = []
+        params_dict = params_dict or {}
+        for indicator in indicators:
+            params = params_dict.get(indicator, {})
+            indicator_tuples.append((indicator, params))
+        return self.unified_service.batch_calculate_indicators(indicator_tuples, data)
 
     def get_indicator_metadata(self, name: str) -> Optional[Dict[str, Any]]:
         """获取指标元数据（兼容性方法）"""
@@ -207,7 +212,7 @@ except ImportError:
 # 批量计算函数
 
 
-def batch_calculate_indicators(indicators: List[str], data: pd.DataFrame, params_dict: Optional[Dict[str, Dict]] = None) -> Dict[str, Any]:
+def batch_calculate_indicators(indicators: List[str], data: pd.DataFrame, params_dict: Optional[Dict[str, Dict]] = None) -> pd.DataFrame:
     """批量计算指标（兼容性函数）"""
     service = get_indicator_service()
     return service.batch_calculate_indicators(indicators, data, params_dict)

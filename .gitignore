@@ -36,8 +36,9 @@ logs/*
 *.sqlite
 *.sqlite-journal
 .vscode/*
-data/strategy.db-wal
-data/strategy.db-shm
+*.sqlite-wal
+*.db-wal
+*.db-shm
 .gitignore
 performance_reports/*
 *.md

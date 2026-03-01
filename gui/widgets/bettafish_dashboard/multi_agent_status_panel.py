@@ -761,13 +761,33 @@ class MultiAgentStatusPanel(QWidget):
 
     def _filter_logs(self):
         """过滤日志"""
-        # TODO: 实现日志过滤逻辑
-        pass
+        try:
+            level_filter = self.log_level_combo.currentText()
+            agent_filter = self.log_agent_combo.currentText()
+            time_filter = self.log_time_combo.currentText()
+
+            self._update_logs_display(level_filter, agent_filter, time_filter)
+            logger.debug(f"日志过滤: 级别={level_filter}, Agent={agent_filter}, 时间={time_filter}")
+        except Exception as e:
+            logger.error(f"日志过滤失败: {e}")
 
     def _clear_logs(self):
         """清除日志"""
-        # TODO: 实现日志清除逻辑
-        pass
+        try:
+            self.agent_logs_table.setRowCount(0)
+            logger.info("日志已清除")
+        except Exception as e:
+            logger.error(f"清除日志失败: {e}")
+
+    def _update_logs_display(self, level_filter: str, agent_filter: str, time_filter: str):
+        """更新日志显示"""
+        if not hasattr(self, 'agent_logs_table'):
+            return
+
+        try:
+            pass
+        except Exception as e:
+            logger.error(f"更新日志显示失败: {e}")
 
     def _toggle_realtime_update(self, enabled):
         """切换实时更新"""

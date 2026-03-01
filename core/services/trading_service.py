@@ -1,4 +1,4 @@
-﻿"""
+"""
 统一交易服务 - 架构精简重构版本
 
 整合所有交易管理器功能，提供统一的交易执行和风险控制接口。
@@ -22,10 +22,7 @@ from loguru import logger
 from .base_service import BaseService
 from ..events import EventBus, get_event_bus, TradeExecutedEvent, PositionUpdatedEvent
 from ..containers import ServiceContainer, get_service_container
-from ..strategy_extensions import StrategyLifecycle
 
-# 为了向后兼容，将 StrategyLifecycle 重命名为 StrategyState
-StrategyState = StrategyLifecycle
 
 
 class OrderType(Enum):

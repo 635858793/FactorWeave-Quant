@@ -67,27 +67,52 @@ from core.events import (
     SignalGeneratedEvent, EventType, EventPriority, EventFilter
 )
 
-# 导入图表库（带错误处理）
-try:
-    import matplotlib.pyplot as plt
-    from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-    from matplotlib.figure import Figure
-    import matplotlib.dates as mdates
-    from utils.matplotlib_font_config import configure_matplotlib_chinese_font
-    configure_matplotlib_chinese_font()
-    MATPLOTLIB_AVAILABLE = True
-except ImportError as e:
-    logger.warning(f"matplotlib 不可用: {e}")
-    MATPLOTLIB_AVAILABLE = False
+# 导入图表库（带错误处理）- 延迟导入避免QApplication问题
+MATPLOTLIB_AVAILABLE = False
+PLOTLY_AVAILABLE = False
+plt = None
+FigureCanvas = None
+Figure = None
+mdates = None
+go = None
+make_subplots = None
+px = None
 
-try:
-    import plotly.graph_objects as go
-    from plotly.subplots import make_subplots
-    import plotly.express as px
-    PLOTLY_AVAILABLE = True
-except ImportError as e:
-    logger.warning(f"plotly 不可用: {e}")
-    PLOTLY_AVAILABLE = False
+def _init_matplotlib():
+    """延迟初始化matplotlib"""
+    global MATPLOTLIB_AVAILABLE, plt, FigureCanvas, Figure, mdates
+    if not MATPLOTLIB_AVAILABLE:
+        try:
+            import matplotlib.pyplot as _plt
+            from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as _FigureCanvas
+            from matplotlib.figure import Figure as _Figure
+            import matplotlib.dates as _mdates
+            from utils.matplotlib_font_config import configure_matplotlib_chinese_font
+            configure_matplotlib_chinese_font()
+            plt = _plt
+            FigureCanvas = _FigureCanvas
+            Figure = _Figure
+            mdates = _mdates
+            MATPLOTLIB_AVAILABLE = True
+            logger.info("matplotlib 初始化成功")
+        except ImportError as e:
+            logger.warning(f"matplotlib 不可用: {e}")
+
+def _init_plotly():
+    """延迟初始化plotly"""
+    global PLOTLY_AVAILABLE, go, make_subplots, px
+    if not PLOTLY_AVAILABLE:
+        try:
+            import plotly.graph_objects as _go
+            from plotly.subplots import make_subplots as _make_subplots
+            import plotly.express as _px
+            go = _go
+            make_subplots = _make_subplots
+            px = _px
+            PLOTLY_AVAILABLE = True
+            logger.info("plotly 初始化成功")
+        except ImportError as e:
+            logger.warning(f"plotly 不可用: {e}")
 
 # 行业标准金融配色
 FINANCIAL_COLORS = {
@@ -117,7 +142,7 @@ METRIC_CARD_GRADIENTS = {
     'win_rate': 'qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #F59E0B, stop:1 #D97706)'
 }
 
-class EnhancedStrategyManagerDialogV2(QDialog):
+class EnhancedStrategyManagerDialog(QDialog):
     """增强策略管理对话框 V2 - 对标行业软件，集成系统主题管理"""
 
     # 信号
@@ -135,7 +160,9 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         """
         super().__init__(parent)
 
-        # 延迟导入并获取系统主题管理器
+        _init_matplotlib()
+        _init_plotly()
+
         _import_theme_manager()
         self.theme_manager = None
         if THEME_MANAGER_AVAILABLE:
@@ -347,24 +374,25 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         self._switch_view('home')
 
     def _create_navigation_bar(self) -> QWidget:
-        """创建导航栏"""
+        """创建导航栏（主题感知）"""
         widget = QWidget()
         layout = QHBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        layout.setSpacing(10)
         
-        # 导航按钮组
+        widget.setFixedHeight(50)
+        
         self.nav_button_group = QButtonGroup(self)
         self.nav_buttons = []
         
         nav_items = [
-            ('🏠 首页', 'home'),
-            ('📋 策略库', 'library'),
-            ('🔬 回测实验室', 'backtest'),
-            ('⚙️ 参数优化', 'optimization'),
-            ('📊 性能分析', 'performance'),
-            ('💻 代码编辑器', 'editor'),
-            ('🔄 开发工作流', 'workflow')
+            ('首页', 'home'),
+            ('策略库', 'library'),
+            ('回测实验室', 'backtest'),
+            ('参数优化', 'optimization'),
+            ('性能分析', 'performance'),
+            ('代码编辑器', 'editor'),
+            ('开发工作流', 'workflow')
         ]
         
         for text, name in nav_items:
@@ -372,21 +400,58 @@ class EnhancedStrategyManagerDialogV2(QDialog):
             btn.setCheckable(True)
             btn.clicked.connect(lambda checked, n=name: self._switch_view(n))
             btn.setAutoExclusive(True)
-            
-            # 设置按钮样式
             btn.setObjectName("nav_button")
+            btn.setCursor(Qt.PointingHandCursor)
             
             self.nav_button_group.addButton(btn)
             layout.addWidget(btn)
             self.nav_buttons.append(btn)
         
-        # 默认选中首页
         self.nav_buttons[0].setChecked(True)
         
-        # 添加弹性空间
         layout.addStretch()
         
+        self._apply_nav_bar_style(widget)
+        
         return widget
+
+    def _apply_nav_bar_style(self, widget: QWidget):
+        """应用导航栏样式（主题感知）"""
+        if not self.theme_manager:
+            return
+            
+        colors = self.theme_manager.get_theme_colors()
+        bg_color = colors.get('background', '#f7f9fa')
+        text_color = colors.get('text', '#222b45')
+        highlight_color = colors.get('highlight', '#1976d2')
+        hover_color = colors.get('hover', '#e3f2fd')
+        border_color = colors.get('border', '#e0e0e0')
+        
+        widget.setStyleSheet(f"""
+            QWidget {{
+                background-color: {bg_color};
+                border-bottom: 1px solid {border_color};
+            }}
+            
+            QPushButton#nav_button {{
+                background-color: transparent;
+                color: {text_color};
+                border: none;
+                border-radius: 6px;
+                padding: 8px 16px;
+                font-size: 13px;
+                font-weight: 500;
+            }}
+            
+            QPushButton#nav_button:hover {{
+                background-color: {hover_color};
+            }}
+            
+            QPushButton#nav_button:checked {{
+                background-color: {highlight_color};
+                color: white;
+            }}
+        """)
 
     def _create_views(self):
         """创建各个视图"""
@@ -422,27 +487,39 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         """创建首页视图"""
         widget = QWidget()
         layout = QVBoxLayout(widget)
+        layout.setContentsMargins(10, 10, 10, 10)
         
         # 统计卡片区域
         stats_layout = QHBoxLayout()
+        stats_layout.setSpacing(15)
         
         # 策略总数卡片
-        total_card = self._create_stat_card("策略总数", "25", FINANCIAL_COLORS['primary'])
-        stats_layout.addWidget(total_card)
+        self.total_strategy_card = self._create_stat_card("策略总数", "0", FINANCIAL_COLORS['primary'], 'total')
+        stats_layout.addWidget(self.total_strategy_card)
         
         # 运行中卡片
-        running_card = self._create_stat_card("运行中", "5", STATUS_COLORS['running'])
-        stats_layout.addWidget(running_card)
+        self.running_strategy_card = self._create_stat_card("运行中", "0", STATUS_COLORS['running'], 'running')
+        stats_layout.addWidget(self.running_strategy_card)
         
         # 已配置卡片
-        configured_card = self._create_stat_card("已配置", "18", STATUS_COLORS['configured'])
-        stats_layout.addWidget(configured_card)
+        self.configured_strategy_card = self._create_stat_card("已配置", "0", STATUS_COLORS['configured'], 'configured')
+        stats_layout.addWidget(self.configured_strategy_card)
         
         # 错误卡片
-        error_card = self._create_stat_card("错误", "2", STATUS_COLORS['error'])
-        stats_layout.addWidget(error_card)
+        self.error_strategy_card = self._create_stat_card("错误", "0", STATUS_COLORS['error'], 'error')
+        stats_layout.addWidget(self.error_strategy_card)
         
         layout.addLayout(stats_layout)
+        
+        # 使用ScrollArea包裹内容以支持自适应高度
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        
+        scroll_content = QWidget()
+        scroll_layout = QVBoxLayout(scroll_content)
+        scroll_layout.setContentsMargins(0, 0, 0, 0)
         
         # 性能趋势图
         trend_group = QGroupBox("性能趋势（最近30天）")
@@ -454,7 +531,7 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         else:
             trend_layout.addWidget(QLabel("图表功能需要安装 matplotlib 库"))
         
-        layout.addWidget(trend_group)
+        scroll_layout.addWidget(trend_group)
         
         # 策略排行榜
         ranking_group = QGroupBox("策略性能排行榜")
@@ -463,52 +540,98 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         self.ranking_table = self._create_ranking_table()
         ranking_layout.addWidget(self.ranking_table)
         
-        layout.addWidget(ranking_group)
+        scroll_layout.addWidget(ranking_group)
+        
+        scroll_area.setWidget(scroll_content)
+        layout.addWidget(scroll_area)
         
         return widget
 
-    def _create_stat_card(self, title: str, value: str, color: str) -> QWidget:
-        """创建统计卡片"""
-        card = QWidget()
+    def _create_stat_card(self, title: str, value: str, color: str, card_id: str = None) -> QWidget:
+        """创建统计卡片（主题感知）
+        
+        Args:
+            title: 卡片标题
+            value: 卡片值
+            color: 卡片颜色
+            card_id: 卡片标识符，用于后续更新
+        """
+        card = QFrame()
         card.setMinimumHeight(100)
         card.setMinimumWidth(150)
         card.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-        
-        # 自定义样式（不使用系统主题）
-        # card.setStyleSheet(f"""
-        #     QWidget {{
-        #         background: qlineargradient(x1:0, y1:0, x2:1, y2:1, 
-        #             stop:0 rgba(41, 98, 255, 0.1), 
-        #             stop:1 rgba(41, 98, 255, 0.2));
-        #         border-radius: 8px;
-        #         border: 1px solid rgba(41, 98, 255, 0.3);
-        #     }}
-        #     QLabel {{
-        #         color: #FFFFFF;
-        #         font-size: 12px;
-        #         font-weight: bold;
-        #     }}
-        #     .value_label {{
-        #         color: #FFFFFF;
-        #         font-size: 24px;
-        #         font-weight: bold;
-        #     }}
-        # """)
+        if card_id:
+            card.setObjectName(card_id)
         
         layout = QVBoxLayout(card)
         layout.setAlignment(Qt.AlignCenter)
+        layout.setSpacing(8)
+        layout.setContentsMargins(16, 12, 16, 12)
         
         title_label = QLabel(title)
-        title_label.setStyleSheet("color: rgba(155, 215, 55, 0.8); font-size: 22px;")
+        title_label.setAlignment(Qt.AlignCenter)
+        title_label.setObjectName("card_title")
         
-        value_label = QLabel(value, alignment=Qt.AlignCenter)
-        value_label.setStyleSheet("font-size: 15px;")
+        value_label = QLabel(value)
+        value_label.setAlignment(Qt.AlignCenter)
         value_label.setObjectName("value_label")
         
         layout.addWidget(title_label)
         layout.addWidget(value_label)
         
+        card.value_label = value_label
+        card.title_label = title_label
+        card._accent_color = color
+        
+        self._apply_stat_card_style(card, color)
+        
         return card
+
+    def _apply_stat_card_style(self, card: QFrame, accent_color: str):
+        """应用统计卡片样式（主题感知）"""
+        if not self.theme_manager:
+            card.setStyleSheet(f"""
+                QFrame {{
+                    background-color: #f7f9fa;
+                    border: 1px solid #e0e0e0;
+                    border-radius: 8px;
+                    border-left: 4px solid {accent_color};
+                }}
+                QLabel#card_title {{
+                    color: #6b7280;
+                    font-size: 12px;
+                }}
+                QLabel#value_label {{
+                    color: {accent_color};
+                    font-size: 24px;
+                    font-weight: bold;
+                }}
+            """)
+            return
+            
+        colors = self.theme_manager.get_theme_colors()
+        bg_color = colors.get('card', '#ffffff')
+        border_color = colors.get('border', '#e0e0e0')
+        text_color = colors.get('text', '#222b45')
+        secondary_text = colors.get('text_secondary', '#6b7280')
+        
+        card.setStyleSheet(f"""
+            QFrame {{
+                background-color: {bg_color};
+                border: 1px solid {border_color};
+                border-radius: 8px;
+                border-left: 4px solid {accent_color};
+            }}
+            QLabel#card_title {{
+                color: {secondary_text};
+                font-size: 12px;
+            }}
+            QLabel#value_label {{
+                color: {accent_color};
+                font-size: 24px;
+                font-weight: bold;
+            }}
+        """)
 
     def _create_trend_chart(self) -> QWidget:
         """创建性能趋势图（使用系统主题背景，自定义金融配色）"""
@@ -518,7 +641,8 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         self._cached_charts.append(widget)
         
         # 应用系统主题到图表背景
-        self.theme_manager.apply_chart_theme(widget.figure)
+        if self.theme_manager:
+            self.theme_manager.apply_chart_theme(widget.figure)
         
         ax = widget.figure.add_subplot(111)
         ax.set_title("性能趋势（最近30天）", fontsize=12, fontweight='bold')
@@ -676,13 +800,17 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         """创建策略库视图"""
         widget = QWidget()
         layout = QVBoxLayout(widget)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(10)
         
-        # 工具栏
+        # 工具栏 - 设置固定高度
         toolbar = self._create_library_toolbar()
+        # toolbar.setFixedHeight(50)
         layout.addWidget(toolbar)
         
-        # 策略表格
+        # 策略表格 - 使用自适应高度
         self.strategy_table = self._create_strategy_table()
+        self.strategy_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout.addWidget(self.strategy_table)
         
         return widget
@@ -691,6 +819,7 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         """创建策略库工具栏"""
         widget = QWidget()
         layout = QHBoxLayout(widget)
+        layout.setContentsMargins(5, 5, 5, 5)
         
         # 按钮组
         create_btn = QPushButton("新建策略")
@@ -783,13 +912,21 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         """创建回测实验室视图"""
         widget = QWidget()
         layout = QHBoxLayout(widget)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(10)
         
-        # 左侧：配置面板
+        # 左侧：配置面板 - 添加滚动区域
+        config_scroll = QScrollArea()
+        config_scroll.setWidgetResizable(True)
+        config_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        
         config_panel = self._create_backtest_config_panel()
-        layout.addWidget(config_panel, 1)
+        config_scroll.setWidget(config_panel)
+        layout.addWidget(config_scroll, 1)
         
-        # 右侧：结果面板
+        # 右侧：结果面板 - 使用自适应高度
         result_panel = self._create_backtest_result_panel()
+        result_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout.addWidget(result_panel, 2)
         
         return widget
@@ -932,46 +1069,33 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         return panel
 
     def _create_metric_card(self, title: str, value: str, metric_type: str) -> QWidget:
-        """创建性能指标卡片（自定义渐变样式）"""
-        card = QWidget()
+        """创建性能指标卡片（主题感知）"""
+        card = QFrame()
         card.setMinimumHeight(80)
         card.setMinimumWidth(150)
         card.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         
-        # 使用渐变样式
-        gradient = METRIC_CARD_GRADIENTS[metric_type]
-        card.setStyleSheet(f"""
-            QWidget {{
-                background: {gradient};
-                border-radius: 8px;
-                border: 1px solid rgba(255, 255, 255, 0.1);
-            }}
-            QLabel {{
-                color: #FFFFFF;
-                font-size: 12px;
-                font-weight: bold;
-            }}
-            .value_label {{
-                color: #FFFFFF;
-                font-size: 24px;
-                font-weight: bold;
-            }}
-        """)
-        
         layout = QVBoxLayout(card)
         layout.setAlignment(Qt.AlignCenter)
+        layout.setSpacing(4)
+        layout.setContentsMargins(12, 8, 12, 8)
         
         title_label = QLabel(title)
-        title_label.setStyleSheet("color: rgba(255, 255, 255, 0.8); font-size: 12px;")
+        title_label.setAlignment(Qt.AlignCenter)
+        title_label.setObjectName("card_title")
         
         value_label = QLabel(value)
+        value_label.setAlignment(Qt.AlignCenter)
         value_label.setObjectName("value_label")
         
         layout.addWidget(title_label)
         layout.addWidget(value_label)
         
-        # 保存 value_label 引用，避免使用 findChild
         card.value_label = value_label
+        card.title_label = title_label
+        card._gradient_type = metric_type
+        
+        self._apply_metric_card_style(card, metric_type)
         
         return card
 
@@ -983,7 +1107,8 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         self._cached_charts.append(widget)
         
         # 应用系统主题到图表背景
-        self.theme_manager.apply_chart_theme(widget.figure)
+        if self.theme_manager:
+            self.theme_manager.apply_chart_theme(widget.figure)
         
         ax = widget.figure.add_subplot(111)
         ax.set_title("策略权益曲线", fontsize=14, fontweight='bold')
@@ -1008,7 +1133,8 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         self._cached_charts.append(widget)
         
         # 应用系统主题到图表背景
-        self.theme_manager.apply_chart_theme(widget.figure)
+        if self.theme_manager:
+            self.theme_manager.apply_chart_theme(widget.figure)
         
         ax = widget.figure.add_subplot(111)
         ax.set_title("策略回撤分析", fontsize=14, fontweight='bold')
@@ -1033,7 +1159,8 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         self._cached_charts.append(widget)
         
         # 应用系统主题到图表背景
-        self.theme_manager.apply_chart_theme(widget.figure)
+        if self.theme_manager:
+            self.theme_manager.apply_chart_theme(widget.figure)
         
         ax = widget.figure.add_subplot(111)
         ax.set_title("交易记录分析", fontsize=14, fontweight='bold')
@@ -1053,13 +1180,21 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         """创建参数优化视图"""
         widget = QWidget()
         layout = QHBoxLayout(widget)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(10)
         
-        # 左侧：参数范围配置（使用系统主题）
+        # 左侧：参数范围配置 - 添加滚动区域
+        param_scroll = QScrollArea()
+        param_scroll.setWidgetResizable(True)
+        param_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        
         param_panel = self._create_optimization_param_panel()
-        layout.addWidget(param_panel, 1)
+        param_scroll.setWidget(param_panel)
+        layout.addWidget(param_scroll, 1)
         
-        # 右侧：优化结果（使用系统主题）
+        # 右侧：优化结果 - 使用自适应高度
         result_panel = self._create_optimization_result_panel()
+        result_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout.addWidget(result_panel, 2)
         
         return widget
@@ -1267,7 +1402,8 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         self._cached_charts.append(widget)
         
         # 应用系统主题到图表背景
-        self.theme_manager.apply_chart_theme(widget.figure)
+        if self.theme_manager:
+            self.theme_manager.apply_chart_theme(widget.figure)
         
         ax = widget.figure.add_subplot(111)
         ax.set_title("优化曲线", fontsize=14, fontweight='bold')
@@ -1287,34 +1423,53 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         """创建性能分析视图"""
         widget = QWidget()
         layout = QVBoxLayout(widget)
+        layout.setContentsMargins(10, 10, 10, 10)
+        
+        # 使用ScrollArea包裹所有内容
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        
+        scroll_content = QWidget()
+        scroll_layout = QVBoxLayout(scroll_content)
+        scroll_layout.setContentsMargins(0, 0, 0, 0)
+        scroll_layout.setSpacing(15)
         
         # 性能概览
         overview_group = QGroupBox("性能概览")
         overview_layout = QGridLayout(overview_group)
         
-        # 添加性能指标
-        metrics = [
-            ("总收益率", "+15.8%", FINANCIAL_COLORS['profit']),
-            ("年化收益率", "+18.5%", FINANCIAL_COLORS['profit']),
-            ("夏普比率", "1.65", FINANCIAL_COLORS['primary']),
-            ("最大回撤", "-8.3%", FINANCIAL_COLORS['loss']),
-            ("胜率", "58.5%", FINANCIAL_COLORS['warning']),
-            ("盈亏比", "1.35", FINANCIAL_COLORS['auxiliary_1']),
-            ("平均持仓天数", "5.2", FINANCIAL_COLORS['auxiliary_2'])
+        # 性能指标 - 存储引用以便后续更新
+        self.performance_metric_labels = {}
+        
+        # 添加性能指标（使用动态获取）
+        metrics_definitions = [
+            ("total_return", "总收益率", FINANCIAL_COLORS['profit']),
+            ("annual_return", "年化收益率", FINANCIAL_COLORS['profit']),
+            ("sharpe_ratio", "夏普比率", FINANCIAL_COLORS['primary']),
+            ("max_drawdown", "最大回撤", FINANCIAL_COLORS['loss']),
+            ("win_rate", "胜率", FINANCIAL_COLORS['warning']),
+            ("profit_loss_ratio", "盈亏比", FINANCIAL_COLORS['auxiliary_1']),
+            ("avg_holding_days", "平均持仓天数", FINANCIAL_COLORS['auxiliary_2'])
         ]
         
-        for i, (name, value, color) in enumerate(metrics):
+        for i, (metric_key, name, color) in enumerate(metrics_definitions):
             label = QLabel(f"{name}:")
-            value_label = QLabel(value)
-            
-            # 设置颜色
-            label.setStyleSheet(f"color: {color}; font-weight: bold;")
+            value_label = QLabel("--")
             value_label.setStyleSheet(f"color: {color}; font-size: 16px; font-weight: bold;")
+            
+            # 保存引用以便后续更新
+            self.performance_metric_labels[metric_key] = value_label
             
             overview_layout.addWidget(label, i // 4, i % 4)
             overview_layout.addWidget(value_label, i // 4, i % 4)
         
-        layout.addWidget(overview_group)
+        scroll_layout.addWidget(overview_group)
+        
+        # 加载性能数据按钮
+        load_perf_btn = QPushButton("加载性能数据")
+        load_perf_btn.clicked.connect(self._load_performance_data)
+        overview_layout.addWidget(load_perf_btn, 3, 1)
         
         # 策略对比
         comparison_group = QGroupBox("策略对比")
@@ -1351,7 +1506,7 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         self.comparison_table.setAlternatingRowColors(True)
         comparison_layout.addWidget(self.comparison_table)
         
-        layout.addWidget(comparison_group)
+        scroll_layout.addWidget(comparison_group)
         
         # 性能图表
         chart_group = QGroupBox("性能图表")
@@ -1363,10 +1518,14 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         else:
             chart_layout.addWidget(QLabel("图表功能需要安装 matplotlib 库"))
         
-        layout.addWidget(chart_group)
+        scroll_layout.addWidget(chart_group)
         
         # 加载策略列表到对比下拉框
         self._load_comparison_strategies()
+        
+        # 设置scroll_area
+        scroll_area.setWidget(scroll_content)
+        layout.addWidget(scroll_area)
         
         return widget
 
@@ -1458,7 +1617,8 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         self._cached_charts.append(widget)
         
         # 应用系统主题到图表背景
-        self.theme_manager.apply_chart_theme(widget.figure)
+        if self.theme_manager:
+            self.theme_manager.apply_chart_theme(widget.figure)
         
         ax = widget.figure.add_subplot(111)
         ax.set_title("策略性能分析", fontsize=14, fontweight='bold')
@@ -1512,26 +1672,34 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         """主题变化事件"""
         logger.info(f"主题已切换: {theme}")
         
-        # 系统主题管理器会自动应用主题到所有控件
-        # 这里只需要更新自定义样式的组件
+        if not self.theme_manager:
+            return
         
-        # 更新图表主题
+        self._apply_nav_bar_style(self.findChild(QWidget, "nav_bar"))
+        
+        stat_cards = [
+            self.total_strategy_card,
+            self.running_strategy_card,
+            self.configured_strategy_card,
+            self.error_strategy_card
+        ]
+        for card in stat_cards:
+            if card and hasattr(card, '_accent_color'):
+                self._apply_stat_card_style(card, card._accent_color)
+        
         self._update_chart_themes()
         
-        # 更新状态指示器
         self._update_status_indicators()
         
-        # 更新性能指标卡片
-        self._update_metric_cards()
+        self._update_metric_cards_theme()
         
-        # 更新统计卡片
-        self._update_stat_cards()
-        
-        # 重新绘制所有图表
         self._refresh_all_charts()
 
     def _update_chart_themes(self):
         """更新图表主题（使用缓存的图表引用）"""
+        if not self.theme_manager:
+            return
+            
         try:
             # 使用缓存的图表引用，避免遍历整个控件树
             for chart in self._cached_charts:
@@ -1551,6 +1719,9 @@ class EnhancedStrategyManagerDialogV2(QDialog):
 
     def _apply_chart_line_colors(self, figure):
         """应用自定义图表线条颜色（金融配色）"""
+        if not self.theme_manager:
+            return
+            
         try:
             # 获取当前主题
             current_theme = self.theme_manager.current_theme
@@ -1597,25 +1768,60 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         except Exception as e:
             logger.error(f"更新状态指示器失败: {e}")
 
-    def _update_metric_cards(self):
-        """更新性能指标卡片（自定义渐变样式）"""
+    def _update_metric_cards_theme(self):
+        """更新性能指标卡片主题"""
         try:
-            # 性能指标卡片使用固定的渐变样式，不随主题变化
-            # 这里可以添加动态调整的逻辑
-            pass
+            metric_cards = [
+                self.total_return_card,
+                self.sharpe_ratio_card,
+                self.max_drawdown_card,
+                self.win_rate_card
+            ]
             
+            for card in metric_cards:
+                if card and hasattr(card, '_gradient_type'):
+                    self._apply_metric_card_style(card, card._gradient_type)
+                    
         except Exception as e:
             logger.error(f"更新性能指标卡片失败: {e}")
 
-    def _update_stat_cards(self):
-        """更新统计卡片"""
-        try:
-            # 统计卡片使用固定的渐变样式，不随主题变化
-            # 这里可以添加动态调整的逻辑
-            pass
+    def _apply_metric_card_style(self, card: QFrame, gradient_type: str):
+        """应用性能指标卡片样式"""
+        gradient = METRIC_CARD_GRADIENTS.get(gradient_type, METRIC_CARD_GRADIENTS['return'])
+        
+        if not self.theme_manager:
+            card.setStyleSheet(f"""
+                QFrame {{
+                    background: {gradient};
+                    border-radius: 8px;
+                    padding: 12px;
+                }}
+                QLabel {{
+                    color: white;
+                }}
+                QLabel#value_label {{
+                    font-size: 20px;
+                    font-weight: bold;
+                }}
+            """)
+            return
             
-        except Exception as e:
-            logger.error(f"更新统计卡片失败: {e}")
+        colors = self.theme_manager.get_theme_colors()
+        
+        card.setStyleSheet(f"""
+            QFrame {{
+                background: {gradient};
+                border-radius: 8px;
+                padding: 12px;
+            }}
+            QLabel {{
+                color: white;
+            }}
+            QLabel#value_label {{
+                font-size: 20px;
+                font-weight: bold;
+            }}
+        """)
 
     def _refresh_all_charts(self):
         """刷新所有图表（使用缓存的图表引用）"""
@@ -1710,6 +1916,9 @@ class EnhancedStrategyManagerDialogV2(QDialog):
             # 更新全选复选框状态
             if hasattr(self, 'select_all_checkbox'):
                 self._update_select_all_checkbox_state()
+            
+            # 更新首页统计卡片
+            self._update_home_stats(strategies)
                     
             logger.info(f"成功加载 {len(strategies)} 个策略（新增: {len(to_add)}, 删除: {len(to_remove)}, 更新: {len(to_update)}）")
                     
@@ -1845,11 +2054,11 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         button_layout.setSpacing(5)
         
         edit_button = QPushButton("编辑")
-        edit_button.setMaximumSize(50, 25)
+        # edit_button.setMaximumSize(50, 25)
         edit_button.clicked.connect(lambda checked, sid=strategy.strategy_id: self._edit_strategy(sid))
         
         delete_button = QPushButton("删除")
-        delete_button.setMaximumSize(50, 25)
+        # delete_button.setMaximumSize(50, 25)
         delete_button.clicked.connect(lambda checked, sid=strategy.strategy_id: self._delete_strategy(sid))
         
         button_layout.addWidget(edit_button)
@@ -2018,6 +2227,84 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         except Exception as e:
             logger.error(f"加载对比策略列表失败: {e}")
 
+    def _load_performance_data(self):
+        """加载性能数据"""
+        try:
+            if not self.strategy_service:
+                QMessageBox.warning(self, "警告", "策略服务不可用")
+                return
+            
+            # 获取所有回测任务
+            backtest_tasks = self.strategy_service.get_all_backtest_tasks()
+            
+            # 查找最新完成的回测结果
+            latest_result = None
+            latest_completed = None
+            
+            for task_id, task in backtest_tasks.items():
+                if task.status.value == 'completed' and task.result:
+                    if latest_completed is None or (task.completed_at and task.completed_at > latest_completed):
+                        latest_completed = task.completed_at
+                        latest_result = task.result
+            
+            if not latest_result:
+                QMessageBox.information(self, "提示", "暂无回测结果数据，请先运行回测")
+                return
+            
+            # 更新性能指标显示
+            self._update_performance_metrics(latest_result)
+            
+        except Exception as e:
+            logger.error(f"加载性能数据失败: {e}")
+            QMessageBox.critical(self, "错误", f"加载性能数据失败: {e}")
+    
+    def _update_performance_metrics(self, result):
+        """更新性能指标显示
+        
+        Args:
+            result: 回测结果对象
+        """
+        try:
+            # 总收益率
+            total_return = getattr(result, 'total_return', None)
+            if total_return is not None:
+                self.performance_metric_labels['total_return'].setText(f"{total_return*100:.2f}%")
+            
+            # 年化收益率
+            annual_return = getattr(result, 'annual_return', None)
+            if annual_return is not None:
+                self.performance_metric_labels['annual_return'].setText(f"{annual_return*100:.2f}%")
+            
+            # 夏普比率
+            sharpe_ratio = getattr(result, 'sharpe_ratio', None)
+            if sharpe_ratio is not None:
+                self.performance_metric_labels['sharpe_ratio'].setText(f"{sharpe_ratio:.2f}")
+            
+            # 最大回撤
+            max_drawdown = getattr(result, 'max_drawdown', None)
+            if max_drawdown is not None:
+                self.performance_metric_labels['max_drawdown'].setText(f"{max_drawdown*100:.2f}%")
+            
+            # 胜率
+            win_rate = getattr(result, 'win_rate', None)
+            if win_rate is not None:
+                self.performance_metric_labels['win_rate'].setText(f"{win_rate*100:.1f}%")
+            
+            # 盈亏比
+            profit_loss_ratio = getattr(result, 'profit_loss_ratio', None)
+            if profit_loss_ratio is not None:
+                self.performance_metric_labels['profit_loss_ratio'].setText(f"{profit_loss_ratio:.2f}")
+            
+            # 平均持仓天数
+            avg_holding_days = getattr(result, 'avg_holding_days', None)
+            if avg_holding_days is not None:
+                self.performance_metric_labels['avg_holding_days'].setText(f"{avg_holding_days:.1f}")
+            
+            logger.info("性能指标已更新")
+            
+        except Exception as e:
+            logger.error(f"更新性能指标失败: {e}")
+
     def _compare_strategies(self):
         """对比策略"""
         try:
@@ -2130,6 +2417,72 @@ class EnhancedStrategyManagerDialogV2(QDialog):
             self.select_all_checkbox.setCheckState(Qt.Checked)
         else:
             self.select_all_checkbox.setCheckState(Qt.PartiallyChecked)
+
+    def _update_home_stats(self, strategies: List[StrategyConfig] = None):
+        """更新首页统计卡片
+        
+        Args:
+            strategies: 策略配置列表，如果为None则重新获取
+        """
+        try:
+            if strategies is None:
+                if self.strategy_service:
+                    strategies = self.strategy_service.get_all_strategy_configs()
+                else:
+                    strategies = []
+            
+            # 统计策略数量
+            total_count = len(strategies)
+            
+            # 统计运行中的策略数量（通过回测任务状态判断）
+            running_count = 0
+            configured_count = 0
+            error_count = 0
+            
+            if self.strategy_service:
+                backtest_tasks = self.strategy_service.get_all_backtest_tasks()
+                for task_id, task in backtest_tasks.items():
+                    if task.status.value == 'running':
+                        running_count += 1
+            
+            # 统计已配置的策略（检查是否有默认账号）
+            for strategy in strategies:
+                default_account = strategy.metadata.get('default_account_id')
+                if default_account and default_account != '':
+                    configured_count += 1
+            
+            # 统计错误的策略（通过回测任务状态判断）
+            for task_id, task in backtest_tasks.items():
+                if task.status.value == 'failed':
+                    error_count += 1
+            
+            # 更新卡片显示值
+            self._update_card_value(self.total_strategy_card, str(total_count))
+            self._update_card_value(self.running_strategy_card, str(running_count))
+            self._update_card_value(self.configured_strategy_card, str(configured_count))
+            self._update_card_value(self.error_strategy_card, str(error_count))
+            
+            logger.debug(f"首页统计已更新: 总数={total_count}, 运行中={running_count}, 已配置={configured_count}, 错误={error_count}")
+            
+        except Exception as e:
+            logger.error(f"更新首页统计失败: {e}")
+    
+    def _update_card_value(self, card: QWidget, value: str):
+        """更新统计卡片的值
+        
+        Args:
+            card: 卡片widget
+            value: 新的值
+        """
+        try:
+            if card is None:
+                return
+            # 查找value_label子控件
+            value_label = card.findChild(QLabel, "value_label")
+            if value_label:
+                value_label.setText(value)
+        except Exception as e:
+            logger.warning(f"更新卡片值失败: {e}")
 
     def _get_selected_strategy_rows(self):
         """获取选中的策略行号列表"""
@@ -3761,6 +4114,21 @@ class EnhancedStrategyManagerDialogV2(QDialog):
         
         event.accept()
         logger.info("策略管理器对话框已关闭")
+
+    def resizeEvent(self, event):
+        """窗口大小改变事件 - 自适应内容高度"""
+        super().resizeEvent(event)
+        
+        # 根据窗口高度调整内容
+        if hasattr(self, 'content_stack'):
+            window_height = self.height()
+            nav_height = 50 if hasattr(self, 'nav_buttons') else 0
+            
+            # 最小内容高度
+            min_content_height = max(400, window_height - nav_height - 40)
+            
+            # 调整content_stack的最小高度
+            self.content_stack.setMinimumHeight(min_content_height)
 
 
 class OptimizationParamDialog(QDialog):

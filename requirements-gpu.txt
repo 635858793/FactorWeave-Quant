@@ -47,7 +47,7 @@ akshare>=1.16.31
 pytdx>=1.72
 ta-lib>=0.4.28
 mplfinance>=0.12.10b0
-
+ctpbee>=0.1.0
 # 数据库
 duckdb>=0.10.0
 SQLAlchemy>=2.0.0
