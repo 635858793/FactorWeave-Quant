@@ -1345,6 +1345,7 @@ class AIFeaturesControlPanel(QWidget):
     def __init__(self, ui_adapter=None, parent=None):
         super().__init__(parent)
         self.ui_adapter = ui_adapter
+        self.ai_prediction_service = None
 
         # 初始化适配器
         if CORE_AVAILABLE:
@@ -1354,8 +1355,21 @@ class AIFeaturesControlPanel(QWidget):
             except Exception as e:
                 logger.warning(f"UI适配器初始化失败: {e}")
 
+        # 初始化AI预测服务
+        self._init_ai_prediction_service()
+
         self.setup_ui()
         self.setup_connections()
+
+    def _init_ai_prediction_service(self):
+        """初始化AI预测服务"""
+        if CORE_AVAILABLE:
+            try:
+                self.ai_prediction_service = AIPredictionService()
+                logger.info("AI预测服务已初始化")
+            except Exception as e:
+                logger.warning(f"AI预测服务初始化失败: {e}")
+                self.ai_prediction_service = None
 
     def setup_ui(self):
         """设置UI"""
@@ -1413,6 +1427,10 @@ class AIFeaturesControlPanel(QWidget):
         # AI选股策略管理选项卡
         strategy_tab = self.create_strategy_management_tab()
         self.tab_widget.addTab(strategy_tab, "策略管理")
+
+        # AI缓存配置选项卡
+        cache_config_tab = self.create_cache_config_tab()
+        self.tab_widget.addTab(cache_config_tab, "⚙️ 缓存配置")
 
         layout.addWidget(self.tab_widget)
 
@@ -1496,6 +1514,206 @@ class AIFeaturesControlPanel(QWidget):
         self.current_recommendations = []
 
         return widget
+
+    def create_cache_config_tab(self) -> QWidget:
+        """创建AI缓存配置选项卡"""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+
+        # 缓存配置说明
+        info_group = QGroupBox("💾 AI预测缓存配置")
+        info_layout = QVBoxLayout(info_group)
+
+        info_text = QLabel(
+            "配置AI预测结果的缓存策略：\n"
+            "• 启用缓存：开启后可重复使用相同数据的预测结果\n"
+            "• 缓存有效期：预测结果的有效时间（秒）\n"
+            "• 最大缓存条目：缓存的最大数量"
+        )
+        info_text.setWordWrap(True)
+        info_layout.addWidget(info_text)
+
+        layout.addWidget(info_group)
+
+        # 缓存开关
+        cache_switch_group = QGroupBox("缓存开关")
+        cache_switch_layout = QHBoxLayout(cache_switch_group)
+
+        self.ai_cache_enabled_check = QCheckBox("启用AI预测缓存")
+        self.ai_cache_enabled_check.setChecked(True)
+        self.ai_cache_enabled_check.setStyleSheet("""
+            QCheckBox {
+                font-size: 14px;
+                font-weight: bold;
+            }
+        """)
+        cache_switch_layout.addWidget(self.ai_cache_enabled_check)
+        cache_switch_layout.addStretch()
+
+        layout.addWidget(cache_switch_group)
+
+        # 缓存参数配置
+        params_group = QGroupBox("缓存参数")
+        params_layout = QFormLayout(params_group)
+
+        self.ai_cache_ttl_spin = QSpinBox()
+        self.ai_cache_ttl_spin.setRange(60, 3600)
+        self.ai_cache_ttl_spin.setValue(300)
+        self.ai_cache_ttl_spin.setSuffix(" 秒")
+        params_layout.addRow("缓存有效期:", self.ai_cache_ttl_spin)
+
+        self.ai_cache_max_size_spin = QSpinBox()
+        self.ai_cache_max_size_spin.setRange(100, 10000)
+        self.ai_cache_max_size_spin.setValue(1000)
+        params_layout.addRow("最大缓存条目:", self.ai_cache_max_size_spin)
+
+        layout.addWidget(params_group)
+
+        # 缓存统计
+        stats_group = QGroupBox("缓存统计")
+        stats_layout = QGridLayout(stats_group)
+
+        self.ai_cache_hits_label = QLabel("0")
+        self.ai_cache_misses_label = QLabel("0")
+        self.ai_cache_size_label = QLabel("0")
+        self.ai_cache_hit_rate_label = QLabel("0%")
+
+        stats_layout.addWidget(QLabel("命中次数:"), 0, 0)
+        stats_layout.addWidget(self.ai_cache_hits_label, 0, 1)
+        stats_layout.addWidget(QLabel("未命中次数:"), 1, 0)
+        stats_layout.addWidget(self.ai_cache_misses_label, 1, 1)
+        stats_layout.addWidget(QLabel("当前条目:"), 2, 0)
+        stats_layout.addWidget(self.ai_cache_size_label, 2, 1)
+        stats_layout.addWidget(QLabel("命中率:"), 3, 0)
+        stats_layout.addWidget(self.ai_cache_hit_rate_label, 3, 1)
+
+        layout.addWidget(stats_group)
+
+        # 按钮区域
+        button_layout = QHBoxLayout()
+
+        apply_cache_btn = QPushButton("应用配置")
+        apply_cache_btn.setMinimumHeight(40)
+        apply_cache_btn.setStyleSheet("""
+            QPushButton {
+                font-size: 14px;
+                font-weight: bold;
+                background-color: #27ae60;
+                color: white;
+                border: none;
+                border-radius: 5px;
+                padding: 8px;
+            }
+            QPushButton:hover {
+                background-color: #219a52;
+            }
+        """)
+        apply_cache_btn.clicked.connect(self.apply_ai_cache_config)
+        button_layout.addWidget(apply_cache_btn)
+
+        clear_cache_btn = QPushButton("清理缓存")
+        clear_cache_btn.setMinimumHeight(40)
+        clear_cache_btn.setStyleSheet("""
+            QPushButton {
+                font-size: 14px;
+                font-weight: bold;
+                background-color: #e74c3c;
+                color: white;
+                border: none;
+                border-radius: 5px;
+                padding: 8px;
+            }
+            QPushButton:hover {
+                background-color: #c0392b;
+            }
+        """)
+        clear_cache_btn.clicked.connect(self.clear_ai_cache)
+        button_layout.addWidget(clear_cache_btn)
+
+        refresh_stats_btn = QPushButton("刷新统计")
+        refresh_stats_btn.setMinimumHeight(40)
+        refresh_stats_btn.clicked.connect(self.refresh_ai_cache_stats)
+        button_layout.addWidget(refresh_stats_btn)
+
+        layout.addLayout(button_layout)
+
+        # 初始化时加载当前配置
+        self.load_ai_cache_config()
+
+        return widget
+
+    def load_ai_cache_config(self):
+        """加载AI缓存配置"""
+        try:
+            if self.ai_prediction_service:
+                cache_config = getattr(self.ai_prediction_service, 'cache_config', None)
+                if cache_config:
+                    self.ai_cache_enabled_check.setChecked(cache_config.get('enable_cache', True))
+                    self.ai_cache_ttl_spin.setValue(cache_config.get('cache_ttl', 300))
+                    self.ai_cache_max_size_spin.setValue(cache_config.get('max_cache_size', 1000))
+
+            self.refresh_ai_cache_stats()
+
+        except Exception as e:
+            logger.warning(f"加载AI缓存配置失败: {e}")
+
+    def apply_ai_cache_config(self):
+        """应用AI缓存配置"""
+        try:
+            if not self.ai_prediction_service:
+                QMessageBox.warning(self, "警告", "AI预测服务未初始化")
+                return
+
+            new_config = {
+                'enable_cache': self.ai_cache_enabled_check.isChecked(),
+                'cache_ttl': self.ai_cache_ttl_spin.value(),
+                'max_cache_size': self.ai_cache_max_size_spin.value()
+            }
+
+            self.ai_prediction_service.cache_config = new_config
+
+            QMessageBox.information(self, "成功", "AI缓存配置已应用")
+            logger.info(f"AI缓存配置已更新: {new_config}")
+
+            self.refresh_ai_cache_stats()
+
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"应用配置失败: {e}")
+            logger.error(f"应用AI缓存配置失败: {e}")
+
+    def clear_ai_cache(self):
+        """清理AI缓存"""
+        try:
+            if self.ai_prediction_service:
+                self.ai_prediction_service.clear_cache()
+                QMessageBox.information(self, "成功", "AI缓存已清理")
+                logger.info("AI预测缓存已清理")
+                self.refresh_ai_cache_stats()
+            else:
+                QMessageBox.warning(self, "警告", "AI预测服务未初始化")
+
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"清理缓存失败: {e}")
+            logger.error(f"清理AI缓存失败: {e}")
+
+    def refresh_ai_cache_stats(self):
+        """刷新AI缓存统计"""
+        try:
+            if self.ai_prediction_service:
+                cache_hits = getattr(self.ai_prediction_service, '_cache_hits', 0)
+                cache_misses = getattr(self.ai_prediction_service, '_cache_misses', 0)
+                cache_size = len(getattr(self.ai_prediction_service, '_predictions_cache', {}))
+
+                total = cache_hits + cache_misses
+                hit_rate = (cache_hits / total * 100) if total > 0 else 0
+
+                self.ai_cache_hits_label.setText(str(cache_hits))
+                self.ai_cache_misses_label.setText(str(cache_misses))
+                self.ai_cache_size_label.setText(str(cache_size))
+                self.ai_cache_hit_rate_label.setText(f"{hit_rate:.1f}%")
+
+        except Exception as e:
+            logger.warning(f"刷新AI缓存统计失败: {e}")
 
     def create_strategy_management_tab(self) -> QWidget:
         """创建AI选股策略管理选项卡"""

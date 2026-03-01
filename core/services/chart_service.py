@@ -8,6 +8,7 @@ from core.plugin_types import AssetType
 """
 
 import pandas as pd
+import numpy as np
 import uuid
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
@@ -15,6 +16,7 @@ from typing import Dict, List, Optional, Any, Tuple, TYPE_CHECKING
 from .base_service import CacheableService, ConfigurableService
 from ..events import ChartUpdateEvent, StockSelectedEvent, EventBus
 from ..utils.data_standardizer import DataStandardizer
+from core.indicator_service import calculate_indicator, batch_calculate_indicators
 
 if TYPE_CHECKING:
     from .unified_data_manager import UnifiedDataManager
@@ -439,7 +441,7 @@ class ChartService(CacheableService, ConfigurableService):
 
     def _calculate_indicators(self, kline_data: pd.DataFrame, indicators: List[str]) -> Dict[str, Any]:
         """
-        计算技术指标
+        计算技术指标 - 使用统一指标服务
 
         Args:
             kline_data: K线数据
@@ -454,69 +456,119 @@ class ChartService(CacheableService, ConfigurableService):
             return indicators_data
 
         try:
-            close_prices = kline_data['close']
-            high_prices = kline_data['high']
-            low_prices = kline_data['low']
             volume = kline_data['volume']
 
+            indicator_params = {}
+            indicator_names = []
+
             for indicator in indicators:
-                if indicator.startswith('MA') and not indicator.startswith('MACD'):
-                    # 移动平均线
-                    try:
-                        period = int(indicator[2:]) if len(
-                            indicator) > 2 else 5
-                        ma_values = close_prices.rolling(window=period).mean()
-                        indicators_data[indicator] = ma_values.fillna(
-                            0).tolist()
-                    except ValueError:
-                        # 如果无法解析周期，跳过该指标
-                        logger.warning(
-                            f"Cannot parse period from indicator: {indicator}")
-                        continue
-
-                elif indicator == 'VOL':
-                    # 成交量
+                if indicator == 'VOL':
                     indicators_data[indicator] = volume.tolist()
+                    continue
 
-                elif indicator == 'MACD':
-                    # MACD指标（简化计算）
-                    ema12 = close_prices.ewm(span=12).mean()
-                    ema26 = close_prices.ewm(span=26).mean()
-                    dif = ema12 - ema26
-                    dea = dif.ewm(span=9).mean()
-                    macd = (dif - dea) * 2
+                if indicator.startswith('MA') and not indicator.startswith('MACD'):
+                    period = 5
+                    try:
+                        period = int(indicator[2:]) if len(indicator) > 2 else 5
+                    except ValueError:
+                        logger.warning(f"Cannot parse period from indicator: {indicator}")
+                        period = 5
+                    
+                    indicator_names.append('MA')
+                    indicator_params['MA'] = {'timeperiod': period}
+                    continue
 
-                    indicators_data['MACD'] = {
-                        'DIF': dif.fillna(0).tolist(),
-                        'DEA': dea.fillna(0).tolist(),
-                        'MACD': macd.fillna(0).tolist()
+                if indicator == 'MACD':
+                    indicator_names.append('MACD')
+                    indicator_params['MACD'] = {
+                        'fastperiod': 12,
+                        'slowperiod': 26,
+                        'signalperiod': 9
                     }
+                    continue
 
-                elif indicator == 'RSI':
-                    # RSI指标（简化计算）
-                    delta = close_prices.diff()
-                    gain = (delta.where(delta > 0, 0)
-                            ).rolling(window=14).mean()
-                    loss = (-delta.where(delta < 0, 0)
-                            ).rolling(window=14).mean()
-                    rs = gain / loss
-                    rsi = 100 - (100 / (1 + rs))
-                    indicators_data[indicator] = rsi.fillna(50).tolist()
+                if indicator == 'RSI':
+                    indicator_names.append('RSI')
+                    indicator_params['RSI'] = {'timeperiod': 14}
+                    continue
 
-                elif indicator == 'BOLL':
-                    # 布林带
-                    ma20 = close_prices.rolling(window=20).mean()
-                    std20 = close_prices.rolling(window=20).std()
-                    upper = ma20 + (std20 * 2)
-                    lower = ma20 - (std20 * 2)
-
-                    indicators_data['BOLL'] = {
-                        'UPPER': upper.fillna(0).tolist(),
-                        'MID': ma20.fillna(0).tolist(),
-                        'LOWER': lower.fillna(0).tolist()
+                if indicator == 'BOLL':
+                    indicator_names.append('BBANDS')
+                    indicator_params['BBANDS'] = {
+                        'timeperiod': 20,
+                        'nbdevup': 2,
+                        'nbdevdn': 2
                     }
+                    continue
 
-                # 其他指标可以在这里继续添加...
+                indicator_names.append(indicator)
+                indicator_params[indicator] = {}
+
+            if indicator_names:
+                try:
+                    result_df = batch_calculate_indicators(indicator_names, kline_data, indicator_params)
+                    
+                    for indicator in indicators:
+                        if indicator == 'VOL':
+                            continue
+
+                        if indicator.startswith('MA') and not indicator.startswith('MACD'):
+                            period = 5
+                            try:
+                                period = int(indicator[2:]) if len(indicator) > 2 else 5
+                            except ValueError:
+                                period = 5
+                            
+                            if 'MA' in result_df.columns:
+                                ma_values = result_df['MA'].values
+                                indicators_data[indicator] = np.nan_to_num(ma_values, nan=0.0).tolist()
+                            continue
+
+                        if indicator == 'MACD':
+                            if all(col in result_df.columns for col in ['MACD', 'MACDSignal', 'MACDHist']):
+                                indicators_data['MACD'] = {
+                                    'DIF': np.nan_to_num(result_df['MACD'].values, nan=0.0).tolist(),
+                                    'DEA': np.nan_to_num(result_df['MACDSignal'].values, nan=0.0).tolist(),
+                                    'MACD': np.nan_to_num(result_df['MACDHist'].values, nan=0.0).tolist()
+                                }
+                            continue
+
+                        if indicator == 'RSI':
+                            if 'RSI' in result_df.columns:
+                                rsi_values = result_df['RSI'].values
+                                indicators_data[indicator] = np.nan_to_num(rsi_values, nan=50.0).tolist()
+                            continue
+
+                        if indicator == 'BOLL':
+                            if all(col in result_df.columns for col in ['BBMiddle', 'BBUpper', 'BBLower']):
+                                indicators_data['BOLL'] = {
+                                    'UPPER': np.nan_to_num(result_df['BBUpper'].values, nan=0.0).tolist(),
+                                    'MID': np.nan_to_num(result_df['BBMiddle'].values, nan=0.0).tolist(),
+                                    'LOWER': np.nan_to_num(result_df['BBLower'].values, nan=0.0).tolist()
+                                }
+                            continue
+
+                        for col in result_df.columns:
+                            if col not in ['open', 'high', 'low', 'close', 'volume', 'datetime']:
+                                if col not in indicators_data:
+                                    indicators_data[col] = np.nan_to_num(result_df[col].values, nan=0.0).tolist()
+
+                except Exception as e:
+                    logger.error(f"Failed to calculate indicators using unified service: {e}")
+                    logger.info("Falling back to individual indicator calculation")
+                    
+                    for indicator in indicators:
+                        if indicator == 'VOL':
+                            continue
+                        try:
+                            params = indicator_params.get(indicator, {})
+                            result = calculate_indicator(indicator, kline_data, **params)
+                            if isinstance(result, pd.DataFrame):
+                                for col in result.columns:
+                                    if col not in ['open', 'high', 'low', 'close', 'volume', 'datetime']:
+                                        indicators_data[col] = np.nan_to_num(result[col].values, nan=0.0).tolist()
+                        except Exception as ie:
+                            logger.error(f"Failed to calculate indicator {indicator}: {ie}")
 
         except Exception as e:
             logger.error(f"Failed to calculate indicators: {e}")

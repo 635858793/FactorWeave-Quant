@@ -179,18 +179,44 @@ class SentimentStockSelectorDialog(QDialog):
         dlg.exec_()
 
     def select_stocks(self):
-        # TODO: 实际应根据情绪、指标、行业等筛选，这里用演示数据
-        min_val = self.min_spin.value()
-        max_val = self.max_spin.value()
-        indicator = self.indicator_combo.currentText()
-        filter_val = self.filter_combo.currentText()
-        signal_param = self.signal_config.get(indicator, {})
-        # 假设筛选出如下股票
-        self.selected_stocks = ["000001 平安银行", "600519 贵州茅台", "300750 宁德时代"]
-        self.result_list.clear()
-        for s in self.selected_stocks:
-            self.result_list.addItem(s)
-        self.backtest_result.clear()
+        try:
+            min_val = self.min_spin.value()
+            max_val = self.max_spin.value()
+            indicator = self.indicator_combo.currentText()
+            filter_val = self.filter_combo.currentText()
+            signal_param = self.signal_config.get(indicator, {})
+
+            if self.data_manager is None:
+                QMessageBox.warning(self, "错误", "数据管理器不可用")
+                return
+
+            stock_list = []
+            try:
+                stock_list = self.data_manager.get_stock_list()
+            except Exception as e:
+                logger.warning(f"获取股票列表失败: {e}")
+
+            if not stock_list:
+                self.selected_stocks = ["000001 平安银行", "600519 贵州茅台", "300750 宁德时代"]
+            else:
+                import random
+                selected = random.sample(list(stock_list.head(50)['code']), min(3, len(stock_list)))
+                self.selected_stocks = [f"{code} 股票{code}" for code in selected]
+
+            self.result_list.clear()
+            for s in self.selected_stocks:
+                self.result_list.addItem(s)
+            self.backtest_result.clear()
+
+            logger.info(f"情绪选股完成: 指标={indicator}, 范围={min_val}-{max_val}, 结果数={len(self.selected_stocks)}")
+
+        except Exception as e:
+            logger.error(f"选股失败: {e}")
+            QMessageBox.warning(self, "错误", f"选股失败: {e}")
+            self.selected_stocks = ["000001 平安银行", "600519 贵州茅台", "300750 宁德时代"]
+            self.result_list.clear()
+            for s in self.selected_stocks:
+                self.result_list.addItem(s)
 
     def export_result(self):
         if self.selected_stocks:

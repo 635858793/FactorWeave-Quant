@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import (
     QLineEdit, QComboBox, QPushButton, QLabel, QFrame,
     QMenu, QMessageBox, QProgressBar, QSplitter, QGroupBox,
     QScrollArea, QListWidget, QListWidgetItem, QAbstractItemView,
-    QInputDialog, QSizePolicy
+    QInputDialog, QSizePolicy, QTableWidget, QTableWidgetItem
 )
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, pyqtSlot
 from PyQt5.QtGui import QIcon, QFont
@@ -94,11 +94,19 @@ class LeftPanel(BasePanel):
         # 当前选择的资产类型
         self.current_asset_type = AssetType.STOCK_A
         self.current_market = None
+        self._current_selected_stock = None
+        self._current_selected_name = None
 
         # 添加防抖相关属性
         self._selection_timer = None
         self._pending_selection = None
-        self._no_data_cache = set()  # 缓存没有数据的股票
+        # 缓存没有数据的股票（有上限，防止内存泄漏）
+        self._no_data_cache = set()
+        self._no_data_cache_max_size = 2000  # 最大缓存2000条
+        # 启动定时清理
+        self._cache_cleanup_timer = QTimer()
+        self._cache_cleanup_timer.timeout.connect(self._cleanup_no_data_cache)
+        self._cache_cleanup_timer.start(300000)  # 每5分钟清理一次
 
         self.current_stocks = []
         self.favorites = set()
@@ -121,12 +129,16 @@ class LeftPanel(BasePanel):
         from core.events.types import MultiScreenToggleEvent
         self.event_bus.subscribe(MultiScreenToggleEvent, self.on_multi_screen_toggled)
 
+        # 注册资产类型变更事件处理（确保LeftPanel自身也能响应）
+        from core.events.types import AssetTypeChangedEvent
+        self.event_bus.subscribe(AssetTypeChangedEvent, self._on_own_asset_type_changed)
+
     def _create_widgets(self) -> None:
         """创建UI组件"""
         # 创建主布局
         main_layout = QVBoxLayout(self._root_frame)
         main_layout.setContentsMargins(10, 10, 10, 10)
-        main_layout.setSpacing(10)
+        # main_layout.setSpacing(10)
 
         # 创建资产类型选择区域（如果启用多资产支持）
         if self.multi_asset_enabled:
@@ -192,7 +204,7 @@ class LeftPanel(BasePanel):
             logger.error(f"创建资产类型选择器失败: {e}")
 
     def _on_asset_type_changed(self, text: str) -> None:
-        """资产类型变更处理"""
+        """资产类型变更处理（UI控件触发）"""
         try:
             # 获取选中的资产类型
             selected_data = self.asset_type_combo.currentData()
@@ -201,6 +213,10 @@ class LeftPanel(BasePanel):
                 self.current_asset_type = selected_data
 
                 logger.info(f"资产类型切换: {old_type.value} → {self.current_asset_type.value}")
+
+                # 清空当前选中的股票（资产类型不同，股票也不同）
+                self._current_selected_stock = None
+                self._current_selected_name = None
 
                 # 发布资产类型变更事件
                 event = AssetTypeChangedEvent(
@@ -217,14 +233,81 @@ class LeftPanel(BasePanel):
                 # 重新加载资产列表
                 self._reload_asset_list()
 
+                # 同步指标状态到 MiddlePanel
+                self._sync_indicators_to_panel()
+
         except Exception as e:
             logger.error(f"资产类型变更处理失败: {e}")
+
+    def _sync_indicators_to_panel(self) -> None:
+        """同步当前指标状态到 MiddlePanel"""
+        try:
+            selected_indicators = self.get_selected_indicators()
+            if selected_indicators:
+                logger.info(f"同步指标到MiddlePanel: {selected_indicators}")
+                from core.events import IndicatorChangedEvent
+                event = IndicatorChangedEvent(
+                    selected_indicators=selected_indicators
+                )
+                event.data['selected_indicators'] = selected_indicators
+                self.event_bus.publish(event)
+                logger.debug(f"指标同步事件已发布: {selected_indicators}")
+        except Exception as e:
+            logger.error(f"同步指标失败: {e}")
+
+    def _on_own_asset_type_changed(self, event: 'AssetTypeChangedEvent') -> None:
+        """处理资产类型变更事件（响应其他组件发布的事件）"""
+        try:
+            # 忽略自己发布的事件（避免重复处理）
+            if event.source == "left_panel":
+                return
+
+            # 同步UI控件状态
+            new_type = event.new_asset_type
+            old_type = event.old_asset_type
+
+            logger.info(f"收到资产类型变更事件: {old_type.value} → {new_type.value} (来源: {event.source})")
+
+            # 阻塞资产类型选择器信号，防止触发额外处理
+            self.asset_type_combo.blockSignals(True)
+
+            # 更新当前资产类型
+            self.current_asset_type = new_type
+
+            # 同步更新资产类型选择器UI
+            if hasattr(self, 'asset_type_combo'):
+                for i in range(self.asset_type_combo.count()):
+                    if self.asset_type_combo.itemData(i) == new_type:
+                        self.asset_type_combo.setCurrentIndex(i)
+                        break
+
+            # 解除信号阻塞
+            self.asset_type_combo.blockSignals(False)
+
+            # 清空当前选中的股票
+            self._current_selected_stock = None
+            self._current_selected_name = None
+
+            # 更新市场过滤器
+            self._update_market_filters()
+
+            # 重新加载资产列表
+            self._reload_asset_list()
+
+            # 同步指标状态到 MiddlePanel
+            self._sync_indicators_to_panel()
+
+        except Exception as e:
+            logger.error(f"处理资产类型变更事件失败: {e}")
 
     def _update_market_filters(self) -> None:
         """根据资产类型更新市场过滤器"""
         try:
             if not hasattr(self, 'market_combo'):
                 return
+
+            # 阻止市场选择器信号，防止触发额外加载
+            self.market_combo.blockSignals(True)
 
             # 定义不同资产类型的市场选项
             market_options = {
@@ -242,23 +325,18 @@ class LeftPanel(BasePanel):
             self.market_combo.clear()
             self.market_combo.addItems(options)
 
+            # 解除信号阻塞
+            self.market_combo.blockSignals(False)
+
             logger.debug(f"市场过滤器已更新: {options}")
 
         except Exception as e:
             logger.error(f"更新市场过滤器失败: {e}")
 
     def _reload_asset_list(self) -> None:
-        """重新加载资产列表"""
+        """重新加载资产列表（统一入口，支持所有资产类型）"""
         try:
-            if not self.asset_service:
-                # 如果没有资产服务，且不是股票类型，则显示空列表
-                if self.current_asset_type != AssetType.STOCK_A:
-                    self._clear_asset_list()
-                    return
-                else:
-                    # 股票类型使用传统加载方式
-                    self._load_stock_list_legacy()
-                    return
+            logger.info(f"开始重新加载资产列表，资产类型: {self.current_asset_type.value}")
 
             # 获取当前市场过滤
             market = None
@@ -267,18 +345,22 @@ class LeftPanel(BasePanel):
                 if market_text != "全部":
                     market = market_text
 
-            # 使用统一数据管理器加载数据
+            logger.debug(f"当前市场过滤: {market}")
+
+            # 优先使用统一数据管理器加载数据（支持所有资产类型）
             from core.services.unified_data_manager import get_unified_data_manager
             data_manager = get_unified_data_manager()
 
             if data_manager:
                 # 转换资产类型为字符串
                 asset_type_str = self.current_asset_type.value.lower()
+                logger.debug(f"调用 get_asset_list，asset_type={asset_type_str}, market={market}")
                 asset_df = data_manager.get_asset_list(asset_type=asset_type_str, market=market)
+                logger.debug(f"返回的DataFrame: {len(asset_df)} 行")
 
-                # 转换DataFrame为资产列表格式
-                assets = []
                 if not asset_df.empty:
+                    # 转换DataFrame为资产列表格式
+                    assets = []
                     for _, row in asset_df.iterrows():
                         assets.append({
                             'symbol': row.get('code', ''),
@@ -289,14 +371,19 @@ class LeftPanel(BasePanel):
                             'sector': row.get('sector', ''),
                             'status': row.get('status', 'active')
                         })
+                    self._populate_asset_table(assets)
+                    self._update_status(f"已加载 {len(assets)} 个{self.current_asset_type.value}资产")
+                else:
+                    self._clear_asset_list()
+                    self._update_status(f"暂无{self.current_asset_type.value}资产数据")
             else:
-                assets = []
-
-            # 更新UI显示
-            self._populate_asset_table(assets)
-
-            # 更新状态
-            self._update_status(f"已加载 {len(assets)} 个{self.current_asset_type.value}资产")
+                # 降级：尝试使用传统方式
+                logger.warning("统一数据管理器不可用，尝试传统加载方式")
+                if self.current_asset_type == AssetType.STOCK_A:
+                    self._load_stock_list_legacy()
+                else:
+                    self._clear_asset_list()
+                    self._update_status("数据管理器不可用")
 
         except Exception as e:
             logger.error(f"重新加载资产列表失败: {e}")
@@ -560,7 +647,7 @@ class LeftPanel(BasePanel):
         # 进度条
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
-        self.progress_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        # self.progress_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         # 股票数量标签
         self.count_label = QLabel("股票: 0")
@@ -712,16 +799,16 @@ class LeftPanel(BasePanel):
             logger.info(f"选择资产: {symbol} ({name}) - 类型: {self.current_asset_type.value}")
 
             # 发送资产选择事件
+            # 修复：始终传递正确的 asset_type，确保多资产类型支持
             if self.current_asset_type == AssetType.STOCK_A:
-                # 向后兼容：股票类型同时发送两种事件
                 stock_event = StockSelectedEvent(
                     stock_code=symbol,
                     stock_name=name,
-                    market=market
+                    market=market,
+                    asset_type=self.current_asset_type  # 传递正确的资产类型
                 )
                 self.event_bus.publish(stock_event)
 
-                # 同时发送新的通用事件
                 asset_event = AssetSelectedEvent(
                     symbol=symbol,
                     name=name,
@@ -731,7 +818,6 @@ class LeftPanel(BasePanel):
                 self.event_bus.publish(asset_event)
 
             else:
-                # 非股票类型只发送通用事件
                 asset_event = AssetSelectedEvent(
                     symbol=symbol,
                     name=name,
@@ -768,65 +854,65 @@ class LeftPanel(BasePanel):
         # 查看详情
         action = menu.addAction("查看详情")
         action.triggered.connect(
-            lambda: self._show_stock_details(stock_code, stock_name))
+            lambda c=stock_code, n=stock_name: self._show_stock_details(c, n))
 
         # 添加到收藏/取消收藏
         if stock_code in self.favorites:
             action = menu.addAction("从收藏移除")
             action.triggered.connect(
-                lambda: self._remove_from_favorites(stock_code))
+                lambda c=stock_code: self._remove_from_favorites(c))
         else:
             action = menu.addAction("添加到收藏")
             action.triggered.connect(
-                lambda: self._add_to_favorites(stock_code, stock_name))
+                lambda c=stock_code, n=stock_name: self._add_to_favorites(c, n))
 
         menu.addSeparator()
 
         # 导出数据
         action = menu.addAction("导出数据")
         action.triggered.connect(
-            lambda: self._export_stock_data(stock_code, stock_name))
+            lambda c=stock_code, n=stock_name: self._export_stock_data(c, n))
 
         menu.addSeparator()
 
         # 添加到自选股
         action = menu.addAction("添加到自选股")
         action.triggered.connect(
-            lambda: self._add_to_watchlist(stock_code, stock_name))
+            lambda c=stock_code, n=stock_name: self._add_to_watchlist(c, n))
 
         # 添加到投资组合
         action = menu.addAction("添加到投资组合")
         action.triggered.connect(
-            lambda: self._add_to_portfolio(stock_code, stock_name))
+            lambda c=stock_code, n=stock_name: self._add_to_portfolio(c, n))
 
         menu.addSeparator()
 
         # 分析功能
         action = menu.addAction("技术分析")
         action.triggered.connect(
-            lambda: self._analyze_stock(stock_code, stock_name))
+            lambda c=stock_code, n=stock_name: self._analyze_stock(c, n))
 
         action = menu.addAction("策略回测")
         action.triggered.connect(
-            lambda: self._backtest_stock(stock_code, stock_name))
+            lambda c=stock_code, n=stock_name: self._backtest_stock(c, n))
 
         menu.addSeparator()
 
         # 管理功能
         action = menu.addAction("历史数据管理")
         action.triggered.connect(
-            lambda: self._manage_history_data(stock_code, stock_name))
+            lambda c=stock_code, n=stock_name: self._manage_history_data(c, n))
 
         action = menu.addAction("策略管理")
         action.triggered.connect(
-            lambda: self._manage_strategy(stock_code, stock_name))
+            lambda c=stock_code, n=stock_name: self._manage_strategy(c, n))
 
         menu.addSeparator()
 
         # 工具功能
         action = menu.addAction("数据质量检查")
         action.triggered.connect(
-            lambda: self._check_data_quality(stock_code, stock_name))
+            lambda c=stock_code, n=stock_name: self._check_data_quality(c, n))
 
         action = menu.addAction("计算器")
         action.triggered.connect(lambda: self._show_calculator())
@@ -1065,22 +1151,14 @@ class LeftPanel(BasePanel):
     def _backtest_stock(self, stock_code: str, stock_name: str) -> None:
         """策略回测"""
         try:
-            # 简化导入路径
             from gui.dialogs.enhanced_strategy_manager_dialog import EnhancedStrategyManagerDialog
 
-            # 获取主窗口作为父窗口
             main_window = self.coordinator.get_main_window() if self.coordinator else None
 
-            # 创建策略管理对话框，并切换到回测选项卡
             dialog = EnhancedStrategyManagerDialog(main_window)
-            # 切换到回测选项卡
-            if hasattr(dialog, 'tab_widget'):
-                for i in range(dialog.tab_widget.count()):
-                    if '回测' in dialog.tab_widget.tabText(i):
-                        dialog.tab_widget.setCurrentIndex(i)
-                        break
+            if hasattr(dialog, '_switch_view'):
+                dialog._switch_view('backtest')
 
-            # 居中显示
             if self.coordinator:
                 self.coordinator.center_dialog(dialog, main_window)
 
@@ -1130,16 +1208,12 @@ class LeftPanel(BasePanel):
     def _manage_strategy(self, stock_code: str, stock_name: str) -> None:
         """策略管理"""
         try:
-            # 简化导入路径
             from gui.dialogs.enhanced_strategy_manager_dialog import EnhancedStrategyManagerDialog
 
-            # 获取主窗口作为父窗口
             main_window = self.coordinator.get_main_window() if self.coordinator else None
 
-            # 创建策略管理对话框
             dialog = EnhancedStrategyManagerDialog(main_window)
 
-            # 居中显示
             if self.coordinator:
                 self.coordinator.center_dialog(dialog, main_window)
 
@@ -1344,8 +1418,9 @@ class LeftPanel(BasePanel):
             query_conditions = []
 
             # 添加资产类型过滤（确保查询结果与选择的资产类型一致）
+            # 使用参数化查询防止SQL注入
             if asset_type:
-                query_conditions.append(f"asset_type = '{asset_type.value}'")
+                query_conditions.append("asset_type = ?")
 
             if market:
                 # 根据市场名称映射到数据库中的market字段
@@ -1357,18 +1432,27 @@ class LeftPanel(BasePanel):
                     "北交所": "bj"
                 }
                 db_market = market_mapping.get(market, market.lower())
-                query_conditions.append(f"market = '{db_market}'")
+                query_conditions.append("market = ?")
+
+            # 准备查询参数
+            query_params = []
+            if asset_type:
+                query_params.append(asset_type.value)
+            if market:
+                query_params.append(db_market)
 
             if search_text:
-                search_condition = f"(code LIKE '%{search_text}%' OR name LIKE '%{search_text}%')"
+                safe_search = search_text.replace('%', '\\%').replace('_', '\\_')
+                search_condition = "(symbol LIKE '%' || ? || '%' ESCAPE '\\' OR name LIKE '%' || ? || '%' ESCAPE '\\')"
                 query_conditions.append(search_condition)
+                query_params.extend([safe_search, safe_search])
 
             # 修复：从asset_metadata表查询（这是数据导入时保存资产元数据的表）
             # 字段映射：symbol→code（UI使用code字段）
             # 添加industry和sector字段以支持行业列显示
             base_query = "SELECT symbol as code, name, market, industry, sector, asset_type, updated_at as update_time FROM asset_metadata"
+                
             if query_conditions:
-                # 注意：查询条件中的code需要改为symbol
                 adjusted_conditions = []
                 for condition in query_conditions:
                     adjusted_condition = condition.replace('code', 'symbol')
@@ -1388,8 +1472,11 @@ class LeftPanel(BasePanel):
                     logger.debug("asset_metadata表不存在，可能尚未导入数据")
                     return pd.DataFrame()
 
-                # 执行股票查询
-                result = conn.execute(query).df()
+                # 执行参数化查询
+                if query_params:
+                    result = conn.execute(query, query_params).df()
+                else:
+                    result = conn.execute(query).df()
                 logger.info(f"从asset_metadata表查询成功，返回 {len(result)} 条记录")
                 return result
 
@@ -1401,7 +1488,13 @@ class LeftPanel(BasePanel):
             return pd.DataFrame()
 
     def _query_stocks_from_duckdb(self, uni_manager, market: str = None, search_text: str = None) -> pd.DataFrame:
-        """从DuckDB查询股票数据"""
+        """
+        从DuckDB查询股票数据（已废弃，推荐使用 _direct_query_duckdb_stocks）
+        
+        注意：此方法存在SQL注入风险（asset_type、market参数使用字符串插值），
+        建议使用 _direct_query_duckdb_stocks 方法
+        """
+        logger.warning("_query_stocks_from_duckdb 方法已废弃，请使用 _direct_query_duckdb_stocks")
         try:
             # 获取DuckDB操作接口 - 尝试多种可能的路径
             duckdb_ops = None
@@ -1445,7 +1538,8 @@ class LeftPanel(BasePanel):
                 query_conditions.append(f"market = '{db_market}'")
 
             if search_text:
-                search_condition = f"(symbol LIKE '%{search_text}%' OR name LIKE '%{search_text}%')"
+                safe_search = search_text.replace('%', '\\%').replace('_', '\\_')
+                search_condition = "(symbol LIKE '%' || ? || '%' ESCAPE '\\' OR name LIKE '%' || ? || '%' ESCAPE '\\')"
                 query_conditions.append(search_condition)
 
             # 修复：从asset_metadata表查询，字段映射symbol→code
@@ -1595,6 +1689,10 @@ class LeftPanel(BasePanel):
 
         logger.info(f"开始处理股票选择: {stock_code} - {stock_name}")
 
+        # 更新当前选中的股票
+        self._current_selected_stock = stock_code
+        self._current_selected_name = stock_name
+
         # 检查是否在无数据缓存中
         if stock_code in self._no_data_cache:
             self.show_message(f"'{stock_name}' 之前已确认无可用数据。", 'warning')
@@ -1651,24 +1749,40 @@ class LeftPanel(BasePanel):
 
             if is_available:
                 logger.info(f"数据加载成功: {stock_code}, 发布StockSelectedEvent（包含K线数据）")
-                # 优化：将验证过的K线数据直接传递到事件中，避免Coordinator重复查询
                 event = StockSelectedEvent(
                     stock_code=stock_code,
                     stock_name=stock_name,
                     market=market,
-                    kline_data=kline_data  # 传递K线数据
+                    kline_data=kline_data,
+                    asset_type=self.current_asset_type  # 传递正确的资产类型，支持多资产
                 )
                 self.event_bus.publish(event)
                 self.status_label.setText(f"已选择: {stock_name}")
                 logger.debug(f"事件已发布，K线数据行数: {len(kline_data) if hasattr(kline_data, '__len__') else 'N/A'}")
             else:
                 logger.warning(f"数据加载成功但无数据: {stock_code}")
-                self.show_message(f"'{stock_name}' 暂无可用K线数据。", 'warning')
-                self._no_data_cache.add(stock_code)
+                self.show_message(f"'{stock_name}' 暂无可用K线数据。", "warning")
+                self._add_to_no_data_cache(stock_code)
                 self.status_label.setText(f"数据加载失败: {stock_name}")
 
         finally:
             self._show_loading(False)
+
+    def _add_to_no_data_cache(self, stock_code: str) -> None:
+        """添加到无数据缓存（有上限控制）"""
+        if len(self._no_data_cache) >= self._no_data_cache_max_size:
+            # 缓存已满，清空一半（删除最早的）
+            cache_list = list(self._no_data_cache)
+            self._no_data_cache = set(cache_list[:len(cache_list) // 2])
+            logger.debug(f"无数据缓存已满，已清理至 {len(self._no_data_cache)} 条")
+        self._no_data_cache.add(stock_code)
+
+    def _cleanup_no_data_cache(self) -> None:
+        """清理无数据缓存"""
+        if self._no_data_cache:
+            original_size = len(self._no_data_cache)
+            self._no_data_cache.clear()
+            logger.debug(f"无数据缓存已清理，释放 {original_size} 条记录")
 
     def _handle_data_error(self, error: Exception, stock_name: str) -> None:
         """在主线程中处理错误"""
@@ -1895,6 +2009,13 @@ class LeftPanel(BasePanel):
             if hasattr(self, '_selection_timer') and self._selection_timer:
                 self._selection_timer.stop()
 
+            if hasattr(self, '_cache_cleanup_timer') and self._cache_cleanup_timer:
+                self._cache_cleanup_timer.stop()
+
+            # 清理缓存
+            if hasattr(self, '_no_data_cache') and self._no_data_cache:
+                self._no_data_cache.clear()
+
             # 调用父类清理
             super()._do_dispose()
 
@@ -2064,16 +2185,49 @@ class LeftPanel(BasePanel):
         self.add_widget('indicator_search', self.indicator_search)
 
     def _create_indicator_list(self, parent_layout: QVBoxLayout) -> None:
-        """创建指标列表"""
+        """创建指标列表（多行6列网格布局）"""
         # 创建滚动区域
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll_area.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
-        # 创建指标列表
-        self.indicator_list = QListWidget()
+        # 创建指标表格（6列网格布局）
+        self.indicator_list = QTableWidget()
+        self.indicator_list.setColumnCount(6)
         self.indicator_list.setSelectionMode(QAbstractItemView.MultiSelection)
+        self.indicator_list.setSelectionBehavior(QAbstractItemView.SelectItems)
+        self.indicator_list.setShowGrid(True)
+        self.indicator_list.setGridStyle(Qt.SolidLine)
+        self.indicator_list.verticalHeader().setVisible(False)
+        self.indicator_list.horizontalHeader().setVisible(False)
+        self.indicator_list.setFocusPolicy(Qt.NoFocus)
+        
+        # 设置行高和列宽
+        self.indicator_list.verticalHeader().setDefaultSectionSize(28)
+        for col in range(6):
+            self.indicator_list.setColumnWidth(col, 70)
+        
+        # 设置边框样式
+        # self.indicator_list.setStyleSheet("""
+        #     QTableWidget {
+        #         border: 1px solid #888888;
+        #         gridline-color: #CCCCCC;
+        #         background-color: #FFFFFF;
+        #     }
+        #     QTableWidget::item {
+        #         padding: 2px;
+        #         border: 1px solid #DDDDDD;
+        #     }
+        #     QTableWidget::item:selected {
+        #         background-color: #4A90D9;
+        #         color: white;
+        #     }
+        #     QTableWidget::item:hover {
+        #         background-color: #E8F4FC;
+        #     }
+        # """)
+        
         scroll_area.setWidget(self.indicator_list)
 
         parent_layout.addWidget(scroll_area)
@@ -2173,18 +2327,40 @@ class LeftPanel(BasePanel):
             logger.error(f"Failed to initialize indicators: {e}")
 
     def _populate_indicator_list(self) -> None:
-        """填充指标列表"""
+        """填充指标列表（多行6列网格布局）"""
         try:
+            self.indicator_list.setRowCount(0)
             self.indicator_list.clear()
 
-            for ind in self.all_indicators:
-                item = QListWidgetItem(ind["name"])
+            # 计算需要的行数（每行6列）
+            cols = 6
+            total = len(self.all_indicators)
+            rows = (total + cols - 1) // cols  # 向上取整
+
+            self.indicator_list.setRowCount(rows)
+
+            for idx, ind in enumerate(self.all_indicators):
+                row = idx // cols
+                col = idx % cols
+
+                item = QTableWidgetItem(ind["name"])
                 item.setData(Qt.UserRole, ind["type"])
-                self.indicator_list.addItem(item)
+                item.setTextAlignment(Qt.AlignCenter)
+                item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                self.indicator_list.setItem(row, col, item)
 
                 # 默认选中MA指标
                 if ind["name"] == "MA":
                     item.setSelected(True)
+
+            # 默认选中MA指标（如果存在）
+            if not any(item.text() == "MA" for item in self.indicator_list.selectedItems()):
+                for row in range(self.indicator_list.rowCount()):
+                    for col in range(self.indicator_list.columnCount()):
+                        item = self.indicator_list.item(row, col)
+                        if item and item.text() == "MA":
+                            item.setSelected(True)
+                            break
 
         except Exception as e:
             logger.error(f"Failed to populate indicator list: {e}")
@@ -2224,43 +2400,31 @@ class LeftPanel(BasePanel):
             logger.error(f"Failed to handle indicator search change: {e}")
 
     def _filter_indicator_list(self, search_text: str = "") -> None:
-        """过滤指标列表"""
+        """过滤指标列表（表格布局版本）"""
         try:
             indicator_type = self.indicator_type_combo.currentText()
 
-            # 先移除所有"无可用指标"项
-            for i in reversed(range(self.indicator_list.count())):
-                item = self.indicator_list.item(i)
-                if item.text() == "无可用指标":
-                    self.indicator_list.takeItem(i)
-
-            # 先全部设为可见
             visible_count = 0
-            for i in range(self.indicator_list.count()):
-                item = self.indicator_list.item(i)
-                indicator_name = item.text()
-                ind_type = item.data(Qt.UserRole)
+            for row in range(self.indicator_list.rowCount()):
+                for col in range(self.indicator_list.columnCount()):
+                    item = self.indicator_list.item(row, col)
+                    if not item:
+                        continue
+                    
+                    indicator_name = item.text()
+                    if not indicator_name:
+                        continue
+                        
+                    ind_type = item.data(Qt.UserRole)
 
-                # 类型筛选
-                type_match = (indicator_type ==
-                              "全部" or ind_type == indicator_type)
+                    type_match = (indicator_type == "全部" or ind_type == indicator_type)
+                    text_match = (not search_text or search_text.lower() in indicator_name.lower())
 
-                # 搜索文本筛选
-                text_match = (not search_text or search_text.lower()
-                              in indicator_name.lower())
+                    should_show = type_match and text_match
+                    item.setHidden(not should_show)
 
-                # 显示/隐藏项目
-                should_show = type_match and text_match
-                item.setHidden(not should_show)
-
-                if should_show:
-                    visible_count += 1
-
-            # 如果没有可见项，添加提示
-            if visible_count == 0:
-                no_item = QListWidgetItem("无可用指标")
-                no_item.setFlags(Qt.NoItemFlags)
-                self.indicator_list.addItem(no_item)
+                    if should_show:
+                        visible_count += 1
 
             logger.debug(
                 f"Filtered indicators: type={indicator_type}, search={search_text}, visible={visible_count}")
@@ -2274,7 +2438,7 @@ class LeftPanel(BasePanel):
         try:
             selected_items = self.indicator_list.selectedItems()
             selected_indicators = [
-                item.text() for item in selected_items if item.text() != "无可用指标"]
+                item.text() for item in selected_items if item.text() and item.text() != "无可用指标"]
 
             logger.debug(f"Selected indicators changed: {selected_indicators}")
 
@@ -2283,11 +2447,12 @@ class LeftPanel(BasePanel):
                 logger.warning("没有选择任何指标，使用默认指标 MA")
                 selected_indicators = ["MA"]
                 # 自动选择MA指标
-                for i in range(self.indicator_list.count()):
-                    item = self.indicator_list.item(i)
-                    if item and item.text() == "MA":
-                        item.setSelected(True)
-                        break
+                for row in range(self.indicator_list.rowCount()):
+                    for col in range(self.indicator_list.columnCount()):
+                        item = self.indicator_list.item(row, col)
+                        if item and item.text() == "MA":
+                            item.setSelected(True)
+                            break
 
             # 触发指标更新事件
             if self.coordinator and self.coordinator.event_bus:
@@ -2446,13 +2611,17 @@ class LeftPanel(BasePanel):
                     for indicator in indicators:
                         indicator_name = indicator.get('name', '')
                         if indicator_name:
-                            for i in range(self.indicator_list.count()):
-                                item = self.indicator_list.item(i)
-                                if item.text() == indicator_name:
-                                    item.setSelected(True)
-                                    break
+                            for row in range(self.indicator_list.rowCount()):
+                                for col in range(self.indicator_list.columnCount()):
+                                    item = self.indicator_list.item(row, col)
+                                    if item and item.text() == indicator_name:
+                                        item.setSelected(True)
+                                        break
 
                     logger.info(f"Loaded indicator combination: {name}")
+
+                    # 手动触发指标选择变化事件，刷新中间面板
+                    self._on_indicators_changed()
 
                 except Exception as e:
                     logger.error(f"Failed to apply combination selection: {e}")
@@ -2557,7 +2726,7 @@ class LeftPanel(BasePanel):
         """获取当前选中的指标列表"""
         try:
             selected_items = self.indicator_list.selectedItems()
-            return [item.text() for item in selected_items if item.text() != "无可用指标"]
+            return [item.text() for item in selected_items if item.text() and item.text() != "无可用指标"]
         except Exception as e:
             logger.error(f"Failed to get selected indicators: {e}")
             return []

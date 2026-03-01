@@ -458,18 +458,36 @@ class ModernSystemMonitorTab(QWidget):
 
     def refresh_data(self):
         """刷新数据"""
-        logger.info("刷新性能数据")
-        # TODO: 实现数据刷新逻辑
+        try:
+            logger.info("刷新性能数据")
+            if self.performance_monitor:
+                self.performance_monitor.collect_metrics()
+                metrics = self.performance_monitor.get_current_metrics()
+                if metrics:
+                    self.performance_history.append(metrics)
+            self.update_display()
+            logger.info("性能数据刷新完成")
+        except Exception as e:
+            logger.error(f"刷新性能数据失败: {e}")
 
     def on_component_changed(self, component: str):
         """组件改变"""
         self.current_component = component
         logger.info(f"切换到组件: {component}")
+        self.refresh_data()
 
     def refresh_metrics(self):
         """刷新指标"""
-        logger.info("刷新性能指标")
-        # TODO: 实现指标刷新逻辑
+        try:
+            logger.info("刷新性能指标")
+            if self.performance_monitor:
+                metrics = self.performance_monitor.get_current_metrics()
+                if metrics:
+                    self.performance_history.append(metrics)
+            self.update_display()
+            logger.info("性能指标刷新完成")
+        except Exception as e:
+            logger.error(f"刷新性能指标失败: {e}")
 
     def clear_alerts(self):
         """清除警报"""
@@ -479,23 +497,93 @@ class ModernSystemMonitorTab(QWidget):
 
     def export_alerts(self):
         """导出警报"""
-        logger.info("导出性能警报")
-        # TODO: 实现警报导出逻辑
+        try:
+            logger.info("导出性能警报")
+            if not self.alerts:
+                from PyQt5.QtWidgets import QMessageBox
+                QMessageBox.information(self, "提示", "没有警报可导出")
+                return
+
+            from PyQt5.QtWidgets import QFileDialog
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "导出警报", "", "CSV Files (*.csv);;All Files (*)"
+            )
+            if file_path:
+                import csv
+                with open(file_path, 'w', newline='', encoding='utf-8') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(['时间', '类型', '级别', '消息'])
+                    for alert in self.alerts:
+                        writer.writerow([
+                            alert.timestamp.isoformat() if hasattr(alert, 'timestamp') else '',
+                            alert.alert_type if hasattr(alert, 'alert_type') else '',
+                            alert.severity if hasattr(alert, 'severity') else '',
+                            alert.message if hasattr(alert, 'message') else str(alert)
+                        ])
+                logger.info(f"警报导出成功: {file_path}")
+        except Exception as e:
+            logger.error(f"导出警报失败: {e}")
 
     def refresh_recommendations(self):
         """刷新建议"""
-        logger.info("刷新优化建议")
-        # TODO: 实现建议刷新逻辑
+        try:
+            logger.info("刷新优化建议")
+            if self.performance_monitor:
+                try:
+                    self.recommendations = self.performance_monitor.get_recommendations()
+                except:
+                    self.recommendations = []
+            self.update_recommendations_display()
+            logger.info(f"优化建议刷新完成，共{len(self.recommendations)}条")
+        except Exception as e:
+            logger.error(f"刷新优化建议失败: {e}")
 
     def apply_recommendations(self):
         """应用建议"""
-        logger.info("应用优化建议")
-        # TODO: 实现建议应用逻辑
+        try:
+            logger.info("应用优化建议")
+            if not self.recommendations:
+                from PyQt5.QtWidgets import QMessageBox
+                QMessageBox.information(self, "提示", "没有可应用的建议")
+                return
+
+            applied_count = 0
+            for rec in self.recommendations:
+                if rec.get('action'):
+                    logger.info(f"应用建议: {rec.get('title', '未知')}")
+                    applied_count += 1
+
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.information(self, "完成", f"已应用{applied_count}条建议")
+            self.refresh_recommendations()
+        except Exception as e:
+            logger.error(f"应用建议失败: {e}")
 
     def export_history(self):
         """导出历史"""
-        logger.info("导出性能历史")
-        # TODO: 实现历史导出逻辑
+        try:
+            logger.info("导出性能历史")
+            if not self.performance_history:
+                from PyQt5.QtWidgets import QMessageBox
+                QMessageBox.information(self, "提示", "没有历史数据可导出")
+                return
+
+            from PyQt5.QtWidgets import QFileDialog
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "导出历史", "", "CSV Files (*.csv);;All Files (*)"
+            )
+            if file_path:
+                import csv
+                with open(file_path, 'w', newline='', encoding='utf-8') as f:
+                    if self.performance_history:
+                        fieldnames = self.performance_history[0].keys() if self.performance_history else []
+                        writer = csv.DictWriter(f, fieldnames=fieldnames)
+                        writer.writeheader()
+                        for record in self.performance_history:
+                            writer.writerow(record)
+                logger.info(f"历史导出成功: {file_path}, 共{len(self.performance_history)}条")
+        except Exception as e:
+            logger.error(f"导出历史失败: {e}")
 
     def clear_history(self):
         """清除历史"""

@@ -415,7 +415,31 @@ class DatabaseMaintenanceEngine:
             except Exception as e:
                 issues.append(f"无法检查碎片化程度: {e}")
 
-            # 完整性检查（仅在full_check时执行）
+            # 尝试获取上次vacuum时间
+            last_vacuum = None
+            try:
+                # 尝试从元数据表获取
+                metadata_result = conn.execute("""
+                    SELECT last_vacuum FROM system_metadata 
+                    WHERE table_name = 'main' LIMIT 1
+                """).fetchone()
+                if metadata_result:
+                    last_vacuum = datetime.fromisoformat(metadata_result[0])
+            except Exception as e:
+                # 元数据表不存在或查询失败，尝试从vacuum记录表获取
+                try:
+                    vacuum_result = conn.execute("""
+                        SELECT MAX(completed_at) FROM maintenance_tasks 
+                        WHERE task_type = 'vacuum'
+                    """).fetchone()
+                    if vacuum_result and vacuum_result[0]:
+                        last_vacuum = vacuum_result[0]
+                except Exception:
+                    pass
+
+            # 如果都无法获取，记录警告
+            if last_vacuum is None:
+                logger.debug(f"无法获取 {asset_type.value} 数据库的上次vacuum时间")
             if full_check:
                 try:
                     integrity_result = conn.execute("PRAGMA integrity_check").fetchone()
@@ -441,7 +465,7 @@ class DatabaseMaintenanceEngine:
             table_count=table_count,
             record_count=record_count,
             index_count=index_count,
-            last_vacuum=None,  # TODO: 从元数据中获取
+            last_vacuum=last_vacuum,
             fragmentation_ratio=fragmentation_ratio,
             performance_score=performance_score,
             issues=issues,

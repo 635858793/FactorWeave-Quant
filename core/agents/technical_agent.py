@@ -14,6 +14,7 @@ from enum import Enum
 import logging
 
 from core.services.base_service import BaseService
+from core.indicator_service import calculate_indicator
 
 logger = logging.getLogger(__name__)
 
@@ -276,22 +277,38 @@ class TechnicalAnalysisAgent(BaseService):
             return []
 
     def _calculate_moving_averages(self, close: pd.Series) -> List[TechnicalIndicator]:
-        """计算移动平均线"""
+        """计算移动平均线 - 使用统一指标服务"""
         indicators = []
         
         for period in self.config["ma_periods"]:
-            ma = close.rolling(window=period).mean()
-            current_ma = ma.iloc[-1]
+            try:
+                price_data = pd.DataFrame({'close': close})
+                result = calculate_indicator('MA', price_data, timeperiod=period)
+                
+                if isinstance(result, pd.DataFrame) and 'MA' in result.columns:
+                    current_ma = result['MA'].iloc[-1]
+                elif isinstance(result, pd.Series):
+                    current_ma = result.iloc[-1]
+                else:
+                    ma = close.rolling(window=period).mean()
+                    current_ma = ma.iloc[-1]
+            except Exception as e:
+                logger.warning(f"统一服务计算MA{period}失败，使用本地计算: {e}")
+                ma = close.rolling(window=period).mean()
+                current_ma = ma.iloc[-1]
+            
+            if pd.isna(current_ma):
+                continue
+            
             current_price = close.iloc[-1]
             
-            # 判断信号
-            if current_price > current_ma * 1.02:  # 2%以上
+            if current_price > current_ma * 1.02:
                 signal = TechnicalSignal.BUY
                 confidence = 0.7
             elif current_price > current_ma:
                 signal = TechnicalSignal.HOLD
                 confidence = 0.6
-            elif current_price < current_ma * 0.98:  # 2%以下
+            elif current_price < current_ma * 0.98:
                 signal = TechnicalSignal.SELL
                 confidence = 0.7
             else:
@@ -310,18 +327,37 @@ class TechnicalAnalysisAgent(BaseService):
         return indicators
 
     def _calculate_rsi(self, close: pd.Series) -> Optional[TechnicalIndicator]:
-        """计算RSI"""
+        """计算RSI - 使用统一指标服务"""
         try:
             period = self.config["rsi_period"]
-            delta = close.diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
             
-            rs = gain / loss
-            rsi = 100 - (100 / (1 + rs))
-            current_rsi = rsi.iloc[-1]
+            try:
+                price_data = pd.DataFrame({'close': close})
+                result = calculate_indicator('RSI', price_data, timeperiod=period)
+                
+                if isinstance(result, pd.DataFrame) and 'RSI' in result.columns:
+                    current_rsi = result['RSI'].iloc[-1]
+                elif isinstance(result, pd.Series):
+                    current_rsi = result.iloc[-1]
+                else:
+                    delta = close.diff()
+                    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+                    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+                    rs = gain / loss
+                    rsi = 100 - (100 / (1 + rs))
+                    current_rsi = rsi.iloc[-1]
+            except Exception as e:
+                logger.warning(f"统一服务计算RSI失败，使用本地计算: {e}")
+                delta = close.diff()
+                gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+                loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+                rs = gain / loss
+                rsi = 100 - (100 / (1 + rs))
+                current_rsi = rsi.iloc[-1]
             
-            # 判断信号
+            if pd.isna(current_rsi):
+                return None
+            
             if current_rsi > 70:
                 signal = TechnicalSignal.SELL
                 confidence = 0.8
@@ -352,23 +388,57 @@ class TechnicalAnalysisAgent(BaseService):
             return None
 
     def _calculate_macd(self, close: pd.Series) -> Optional[TechnicalIndicator]:
-        """计算MACD"""
+        """计算MACD - 使用统一指标服务"""
         try:
             fast = self.config["macd_params"]["fast"]
             slow = self.config["macd_params"]["slow"]
             signal_period = self.config["macd_params"]["signal"]
             
-            ema_fast = close.ewm(span=fast).mean()
-            ema_slow = close.ewm(span=slow).mean()
-            macd_line = ema_fast - ema_slow
-            signal_line = macd_line.ewm(span=signal_period).mean()
-            histogram = macd_line - signal_line
+            try:
+                price_data = pd.DataFrame({'close': close})
+                result = calculate_indicator('MACD', price_data, 
+                                           fastperiod=fast, 
+                                           slowperiod=slow, 
+                                           signalperiod=signal_period)
+                
+                if isinstance(result, pd.DataFrame):
+                    if 'MACD' in result.columns:
+                        macd_line = result['MACD']
+                        current_macd = macd_line.iloc[-1]
+                    else:
+                        current_macd = None
+                    
+                    if 'MACDSignal' in result.columns:
+                        signal_line = result['MACDSignal']
+                        current_signal = signal_line.iloc[-1]
+                    else:
+                        current_signal = None
+                    
+                    if 'MACDHist' in result.columns:
+                        histogram = result['MACDHist']
+                        current_histogram = histogram.iloc[-1]
+                    else:
+                        current_histogram = None
+                    
+                    if current_macd is None or current_signal is None or current_histogram is None:
+                        raise ValueError("MACD计算结果不完整")
+                else:
+                    raise ValueError("MACD计算结果格式不正确")
+            except Exception as e:
+                logger.warning(f"统一服务计算MACD失败，使用本地计算: {e}")
+                ema_fast = close.ewm(span=fast).mean()
+                ema_slow = close.ewm(span=slow).mean()
+                macd_line = ema_fast - ema_slow
+                signal_line = macd_line.ewm(span=signal_period).mean()
+                histogram = macd_line - signal_line
+                
+                current_macd = macd_line.iloc[-1]
+                current_signal = signal_line.iloc[-1]
+                current_histogram = histogram.iloc[-1]
             
-            current_macd = macd_line.iloc[-1]
-            current_signal = signal_line.iloc[-1]
-            current_histogram = histogram.iloc[-1]
+            if pd.isna(current_histogram):
+                return None
             
-            # 判断信号
             if current_macd > current_signal and current_histogram > 0:
                 signal = TechnicalSignal.BUY
                 confidence = 0.7
@@ -395,27 +465,59 @@ class TechnicalAnalysisAgent(BaseService):
             return None
 
     def _calculate_bollinger_bands(self, close: pd.Series) -> List[TechnicalIndicator]:
-        """计算布林带"""
+        """计算布林带 - 使用统一指标服务"""
         indicators = []
         
         try:
             period = self.config["bollinger_period"]
-            std_dev = close.rolling(window=period).std()
-            middle_band = close.rolling(window=period).mean()
-            upper_band = middle_band + (std_dev * 2)
-            lower_band = middle_band - (std_dev * 2)
+            
+            try:
+                price_data = pd.DataFrame({'close': close})
+                result = calculate_indicator('BBANDS', price_data, 
+                                           timeperiod=period,
+                                           nbdevup=2,
+                                           nbdevdn=2)
+                
+                if isinstance(result, pd.DataFrame):
+                    if 'BBUpper' in result.columns:
+                        current_upper = result['BBUpper'].iloc[-1]
+                    else:
+                        current_upper = None
+                    
+                    if 'BBMiddle' in result.columns:
+                        current_middle = result['BBMiddle'].iloc[-1]
+                    else:
+                        current_middle = None
+                    
+                    if 'BBLower' in result.columns:
+                        current_lower = result['BBLower'].iloc[-1]
+                    else:
+                        current_lower = None
+                    
+                    if current_upper is None or current_middle is None or current_lower is None:
+                        raise ValueError("布林带计算结果不完整")
+                else:
+                    raise ValueError("布林带计算结果格式不正确")
+            except Exception as e:
+                logger.warning(f"统一服务计算布林带失败，使用本地计算: {e}")
+                std_dev = close.rolling(window=period).std()
+                middle_band = close.rolling(window=period).mean()
+                upper_band = middle_band + (std_dev * 2)
+                lower_band = middle_band - (std_dev * 2)
+                
+                current_upper = upper_band.iloc[-1]
+                current_lower = lower_band.iloc[-1]
+                current_middle = middle_band.iloc[-1]
             
             current_price = close.iloc[-1]
-            current_upper = upper_band.iloc[-1]
-            current_lower = lower_band.iloc[-1]
-            current_middle = middle_band.iloc[-1]
             
-            # 上轨突破
+            if pd.isna(current_upper) or pd.isna(current_lower):
+                return []
+            
             if current_price > current_upper:
                 signal = TechnicalSignal.BUY
                 confidence = 0.7
                 description = "价格突破布林带上轨，可能继续上涨"
-            # 下轨支撑
             elif current_price < current_lower:
                 signal = TechnicalSignal.BUY
                 confidence = 0.7
@@ -425,7 +527,6 @@ class TechnicalAnalysisAgent(BaseService):
                 confidence = 0.5
                 description = "价格在布林带区间内震荡"
             
-            # 上轨指标
             upper_indicator = TechnicalIndicator(
                 name="BB_Upper",
                 value=current_upper,
@@ -435,7 +536,6 @@ class TechnicalAnalysisAgent(BaseService):
             )
             indicators.append(upper_indicator)
             
-            # 下轨指标
             lower_indicator = TechnicalIndicator(
                 name="BB_Lower",
                 value=current_lower,

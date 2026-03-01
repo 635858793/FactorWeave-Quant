@@ -429,8 +429,8 @@ class TestDialogIntegration(unittest.TestCase):
     def test_dialog_has_code_editor_view(self):
         """测试对话框包含代码编辑器视图"""
         methods = self._get_methods_from_source(
-            'gui/dialogs/enhanced_strategy_manager_dialog_v2.py',
-            'EnhancedStrategyManagerDialogV2'
+            'gui/dialogs/enhanced_strategy_manager_dialog.py',
+            'EnhancedStrategyManagerDialog'
         )
         self.assertIn('_create_editor_view', methods,
                      "应有创建编辑器视图方法")
@@ -438,8 +438,8 @@ class TestDialogIntegration(unittest.TestCase):
     def test_dialog_has_workflow_view(self):
         """测试对话框包含工作流视图"""
         methods = self._get_methods_from_source(
-            'gui/dialogs/enhanced_strategy_manager_dialog_v2.py',
-            'EnhancedStrategyManagerDialogV2'
+            'gui/dialogs/enhanced_strategy_manager_dialog.py',
+            'EnhancedStrategyManagerDialog'
         )
         self.assertIn('_create_workflow_view', methods,
                      "应有创建工作流视图方法")
@@ -447,8 +447,8 @@ class TestDialogIntegration(unittest.TestCase):
     def test_dialog_has_backtest_view(self):
         """测试对话框包含回测视图"""
         methods = self._get_methods_from_source(
-            'gui/dialogs/enhanced_strategy_manager_dialog_v2.py',
-            'EnhancedStrategyManagerDialogV2'
+            'gui/dialogs/enhanced_strategy_manager_dialog.py',
+            'EnhancedStrategyManagerDialog'
         )
         self.assertIn('_create_backtest_view', methods,
                      "应有创建回测视图方法")
@@ -456,8 +456,8 @@ class TestDialogIntegration(unittest.TestCase):
     def test_dialog_has_code_execution_callback(self):
         """测试对话框包含代码执行回调"""
         methods = self._get_methods_from_source(
-            'gui/dialogs/enhanced_strategy_manager_dialog_v2.py',
-            'EnhancedStrategyManagerDialogV2'
+            'gui/dialogs/enhanced_strategy_manager_dialog.py',
+            'EnhancedStrategyManagerDialog'
         )
         self.assertIn('_on_code_executed', methods,
                      "应有代码执行回调方法")
@@ -465,8 +465,8 @@ class TestDialogIntegration(unittest.TestCase):
     def test_dialog_has_backtest_method(self):
         """测试对话框包含回测方法"""
         methods = self._get_methods_from_source(
-            'gui/dialogs/enhanced_strategy_manager_dialog_v2.py',
-            'EnhancedStrategyManagerDialogV2'
+            'gui/dialogs/enhanced_strategy_manager_dialog.py',
+            'EnhancedStrategyManagerDialog'
         )
         self.assertIn('_run_backtest', methods,
                      "应有运行回测方法")

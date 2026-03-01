@@ -1843,9 +1843,9 @@ FactorWeave-Quant  2.0 (重构版本)
                 self._strategy_manager_dialog = None
 
         try:
-            from gui.dialogs.enhanced_strategy_manager_dialog_v2 import EnhancedStrategyManagerDialogV2
+            from gui.dialogs.enhanced_strategy_manager_dialog import EnhancedStrategyManagerDialog
 
-            self._strategy_manager_dialog = EnhancedStrategyManagerDialogV2(self._main_window)
+            self._strategy_manager_dialog = EnhancedStrategyManagerDialog(self._main_window)
 
             self._strategy_manager_dialog.finished.connect(self._on_strategy_manager_dialog_closed)
 
@@ -1853,7 +1853,7 @@ FactorWeave-Quant  2.0 (重构版本)
             self._strategy_manager_dialog.show()
 
         except ImportError as e:
-            logger.error(f"EnhancedStrategyManagerDialogV2不可用: {e}")
+            logger.error(f"EnhancedStrategyManagerDialog不可用: {e}")
             QMessageBox.critical(self._main_window, "错误",
                                  f"策略管理功能不可用: {str(e)}")
             if hasattr(self, '_strategy_manager_dialog'):
@@ -2772,16 +2772,57 @@ FactorWeave-Quant  2.0 (重构版本)
     def _on_import_strategy(self) -> None:
         """导入策略"""
         try:
+            from core.services.strategy_service import StrategyService
+            from core.services.database_service import DatabaseService
+
             file_path, _ = QFileDialog.getOpenFileName(
                 self._main_window,
                 "导入策略文件",
                 "",
-                "策略文件 (*.json *.py);;所有文件 (*)"
+                "策略文件 (*.json);;所有文件 (*)"
             )
             if file_path:
-                # TODO: 实现策略导入逻辑
-                QMessageBox.information(self._main_window, "提示", "策略导入功能正在开发中")
-                logger.info(f"导入策略: {file_path}")
+                import json
+                from datetime import datetime
+
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    strategy_data = json.load(f)
+
+                strategy_service = None
+                try:
+                    strategy_service = self.service_container.resolve(StrategyService)
+                except Exception as e:
+                    logger.warning(f"无法获取StrategyService: {e}")
+
+                if strategy_service is None:
+                    QMessageBox.warning(self._main_window, "错误", "策略服务不可用")
+                    return
+
+                strategy_id = strategy_data.get('strategy_id')
+                plugin_type = strategy_data.get('plugin_type')
+                parameters = strategy_data.get('parameters', {})
+                metadata = strategy_data.get('metadata', {})
+
+                if not strategy_id or not plugin_type:
+                    QMessageBox.warning(self._main_window, "错误", "策略文件格式错误，缺少必要字段")
+                    return
+
+                strategy_config = strategy_service.create_strategy_config(
+                    strategy_id=strategy_id,
+                    plugin_type=plugin_type,
+                    parameters=parameters,
+                    metadata=metadata
+                )
+
+                if strategy_config:
+                    QMessageBox.information(self._main_window, "成功", f"策略导入成功: {strategy_id}")
+                    logger.info(f"策略导入成功: {file_path} -> {strategy_id}")
+                else:
+                    QMessageBox.warning(self._main_window, "错误", "策略导入失败")
+
+        except json.JSONDecodeError as e:
+            logger.error(f"策略文件JSON解析失败: {e}")
+            QMessageBox.warning(self._main_window, "错误", f"策略文件格式错误: {e}")
         except Exception as e:
             logger.error(f"导入策略失败: {e}")
             QMessageBox.warning(self._main_window, "错误", f"无法导入策略: {e}")
@@ -2789,16 +2830,57 @@ FactorWeave-Quant  2.0 (重构版本)
     def _on_export_strategy(self) -> None:
         """导出策略"""
         try:
+            from core.services.strategy_service import StrategyService
+
+            strategy_service = None
+            try:
+                strategy_service = self.service_container.resolve(StrategyService)
+            except Exception as e:
+                logger.warning(f"无法获取StrategyService: {e}")
+
+            if strategy_service is None:
+                QMessageBox.warning(self._main_window, "错误", "策略服务不可用")
+                return
+
+            all_configs = strategy_service.get_all_strategy_configs()
+
+            if not all_configs:
+                QMessageBox.information(self._main_window, "提示", "没有可导出的策略")
+                return
+
+            strategy_list = []
+            for config in all_configs:
+                strategy_list.append({
+                    'strategy_id': config.strategy_id,
+                    'plugin_type': config.plugin_type,
+                    'parameters': config.parameters,
+                    'metadata': config.metadata,
+                    'enabled': config.enabled,
+                    'created_at': config.created_at.isoformat() if config.created_at else None,
+                    'updated_at': config.updated_at.isoformat() if config.updated_at else None
+                })
+
             file_path, _ = QFileDialog.getSaveFileName(
                 self._main_window,
                 "导出策略文件",
                 "",
-                "策略文件 (*.json *.py);;所有文件 (*)"
+                "策略文件 (*.json);;所有文件 (*)"
             )
             if file_path:
-                # TODO: 实现策略导出逻辑
-                QMessageBox.information(self._main_window, "提示", "策略导出功能正在开发中")
-                logger.info(f"导出策略: {file_path}")
+                import json
+
+                export_data = {
+                    'version': '1.0',
+                    'export_time': datetime.now().isoformat(),
+                    'strategies': strategy_list
+                }
+
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(export_data, f, ensure_ascii=False, indent=2)
+
+                QMessageBox.information(self._main_window, "成功", f"策略导出成功，共导出{len(strategy_list)}个策略")
+                logger.info(f"策略导出成功: {file_path}, 导出数量: {len(strategy_list)}")
+
         except Exception as e:
             logger.error(f"导出策略失败: {e}")
             QMessageBox.warning(self._main_window, "错误", f"无法导出策略: {e}")
@@ -2808,8 +2890,8 @@ FactorWeave-Quant  2.0 (重构版本)
         try:
             # 使用增强版策略管理对话框V2（包含完整回测功能）
             try:
-                from gui.dialogs.enhanced_strategy_manager_dialog_v2 import EnhancedStrategyManagerDialogV2
-                dialog = EnhancedStrategyManagerDialogV2(self._main_window)
+                from gui.dialogs.enhanced_strategy_manager_dialog import EnhancedStrategyManagerDialog
+                dialog = EnhancedStrategyManagerDialog(self._main_window)
                 # 直接切换到回测视图
                 if hasattr(dialog, 'current_view'):
                     dialog.current_view = 'backtest'
@@ -2827,8 +2909,8 @@ FactorWeave-Quant  2.0 (重构版本)
         """策略优化"""
         try:
             try:
-                from gui.dialogs.enhanced_strategy_manager_dialog_v2 import EnhancedStrategyManagerDialogV2
-                dialog = EnhancedStrategyManagerDialogV2(self._main_window)
+                from gui.dialogs.enhanced_strategy_manager_dialog import EnhancedStrategyManagerDialog
+                dialog = EnhancedStrategyManagerDialog(self._main_window)
                 # 直接切换到优化视图
                 if hasattr(dialog, 'current_view'):
                     dialog.current_view = 'optimization'
@@ -2845,16 +2927,58 @@ FactorWeave-Quant  2.0 (重构版本)
     def _on_import_data(self) -> None:
         """导入数据"""
         try:
+            from core.services.database_service import DatabaseService
+            import pandas as pd
+
             file_path, _ = QFileDialog.getOpenFileName(
                 self._main_window,
                 "导入数据文件",
                 "",
-                "数据文件 (*.csv *.xlsx *.json);;所有文件 (*)"
+                "数据文件 (*.csv *.xlsx);;所有文件 (*)"
             )
             if file_path:
-                # TODO: 实现数据导入逻辑
-                QMessageBox.information(self._main_window, "提示", "数据导入功能正在开发中")
-                logger.info(f"导入数据: {file_path}")
+                db_service = None
+                try:
+                    db_service = self.service_container.resolve(DatabaseService)
+                except Exception as e:
+                    logger.warning(f"无法获取DatabaseService: {e}")
+
+                try:
+                    if file_path.endswith('.csv'):
+                        df = pd.read_csv(file_path)
+                    elif file_path.endswith('.xlsx'):
+                        df = pd.read_excel(file_path)
+                    else:
+                        QMessageBox.warning(self._main_window, "错误", "不支持的文件格式")
+                        return
+
+                    columns = df.columns.tolist()
+                    logger.info(f"导入数据: {file_path}, 行数: {len(df)}, 列: {columns}")
+
+                    if db_service:
+                        table_name = "imported_data"
+                        with db_service.get_connection("data_duckdb") as conn:
+                            conn.execute(f"CREATE TABLE IF NOT EXISTS {table_name} (idx INTEGER)")
+                            for col in columns:
+                                col_safe = col.replace(' ', '_').replace('(', '').replace(')', '')
+                                try:
+                                    conn.execute(f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS \"{col_safe}\" TEXT")
+                                except:
+                                    pass
+
+                            for i, row in df.iterrows():
+                                values = [f"'{str(v)}'" if pd.notna(v) else 'NULL' for v in row.values]
+                                conn.execute(f"INSERT INTO {table_name} VALUES ({i}, {','.join(values)})")
+
+                        QMessageBox.information(self._main_window, "成功", f"数据导入成功: {len(df)}行")
+                        logger.info(f"数据导入成功: {file_path}, {len(df)}行")
+                    else:
+                        QMessageBox.information(self._main_window, "提示", f"数据加载成功: {len(df)}行，但数据库服务不可用")
+
+                except Exception as e:
+                    logger.error(f"数据导入失败: {e}")
+                    QMessageBox.warning(self._main_window, "错误", f"数据导入失败: {e}")
+
         except Exception as e:
             logger.error(f"导入数据失败: {e}")
             QMessageBox.warning(self._main_window, "错误", f"无法导入数据: {e}")

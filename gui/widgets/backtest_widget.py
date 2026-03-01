@@ -1169,7 +1169,7 @@ class ControlPanel(QWidget):
     def _open_parameter_optimization(self):
         """打开参数优化功能"""
         try:
-            from gui.dialogs.enhanced_strategy_manager_dialog_v2 import EnhancedStrategyManagerDialogV2
+            from gui.dialogs.enhanced_strategy_manager_dialog import EnhancedStrategyManagerDialog
             
             parent_widget = self.parent()
             while parent_widget and not hasattr(parent_widget, '_main_window'):
@@ -1177,7 +1177,7 @@ class ControlPanel(QWidget):
             
             main_window = parent_widget._main_window if parent_widget else None
             
-            dialog = EnhancedStrategyManagerDialogV2(main_window)
+            dialog = EnhancedStrategyManagerDialog(main_window)
             dialog.tab_widget.setCurrentIndex(3)
             dialog.show()
             logger.info("参数优化功能已打开")
@@ -1189,7 +1189,7 @@ class ControlPanel(QWidget):
     def _open_strategy_comparison(self):
         """打开策略对比功能"""
         try:
-            from gui.dialogs.enhanced_strategy_manager_dialog_v2 import EnhancedStrategyManagerDialogV2
+            from gui.dialogs.enhanced_strategy_manager_dialog import EnhancedStrategyManagerDialog
             
             parent_widget = self.parent()
             while parent_widget and not hasattr(parent_widget, '_main_window'):
@@ -1197,7 +1197,7 @@ class ControlPanel(QWidget):
             
             main_window = parent_widget._main_window if parent_widget else None
             
-            dialog = EnhancedStrategyManagerDialogV2(main_window)
+            dialog = EnhancedStrategyManagerDialog(main_window)
             dialog.tab_widget.setCurrentIndex(0)
             dialog.show()
             logger.info("策略对比功能已打开")
