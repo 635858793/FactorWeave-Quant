@@ -22,21 +22,66 @@ from datetime import datetime
 import json
 
 
+class BatchCalculateWorker(QThread):
+    """后台批量计算工作线程"""
+    progress = pyqtSignal(int, str)
+    finished = pyqtSignal(object, float)
+    error = pyqtSignal(str)
+    
+    def __init__(self, indicators: List[str], kdata: pd.DataFrame, params_map: Dict, parent=None):
+        super().__init__(parent)
+        self.indicators = indicators
+        self.kdata = kdata
+        self.params_map = params_map
+        self._is_cancelled = False
+    
+    def run(self):
+        try:
+            from core.indicator_service import IndicatorService
+            service = IndicatorService()
+            
+            start_time = time.time()
+            self.progress.emit(10, "正在初始化批量计算...")
+            
+            indicator_tuples = [(name, self.params_map.get(name, {})) for name in self.indicators]
+            
+            self.progress.emit(20, f"正在计算 {len(self.indicators)} 个指标...")
+            
+            batch_result = service.batch_calculate_indicators(
+                self.indicators,
+                self.kdata.copy(),
+                {name: self.params_map.get(name, {}) for name in self.indicators}
+            )
+            
+            if self._is_cancelled:
+                return
+            
+            self.progress.emit(90, "计算完成，正在处理结果...")
+            
+            end_time = time.time()
+            calculation_time = end_time - start_time
+            
+            self.finished.emit(batch_result, calculation_time)
+            
+        except Exception as e:
+            self.error.emit(str(e))
+    
+    def cancel(self):
+        self._is_cancelled = True
+
+
 class TechnicalAnalysisTab(BaseAnalysisTab):
     """技术分析标签页 - 增强版"""
 
-    # 新增信号
-    indicator_calculated = pyqtSignal(str, dict)  # 指标计算完成信号
+    indicator_calculated = pyqtSignal(str, dict)
 
     def __init__(self, config_manager=None):
         """初始化技术分析标签页"""
-        # 指标缓存
         self.indicator_cache = {}
         self.indicator_results = {}
-
-        # 批量计算配置
         self.batch_indicators = []
         self.auto_calculate = True
+        self._calculation_worker = None
 
         super().__init__(config_manager)
 
@@ -1235,13 +1280,10 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
         return super()._validate_kdata(kdata)
 
     def calculate_indicators(self):
-        """技术指标分析 - 增强版"""
+        """技术指标分析 - 增强版（异步批量计算）"""
         try:
-            # 开始计算技术指标
-
             logger.info("开始计算技术指标...")
 
-            # 验证数据 - 使用继承自BaseAnalysisTab的统一验证
             if not self._validate_kdata(self.current_kdata):
                 logger.warning("无有效K线数据，无法进行技术分析")
                 QMessageBox.warning(self, "提示", "无有效K线数据，无法进行技术分析\n请先加载股票数据")
@@ -1249,132 +1291,243 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
 
             logger.info(f"K线数据验证通过，数据长度: {len(self.current_kdata)}")
 
-            self.show_loading("正在计算技术指标...")
-            start_time = time.time()
-
-            # 清空之前的结果
             self.technical_table.setRowCount(0)
             self.indicator_results.clear()
-            logger.info("已清空之前的计算结果")
 
-            # 确定要计算的指标
             indicators_to_calculate = []
             if self.batch_checkbox.isChecked() and self.batch_indicators:
                 indicators_to_calculate = self.batch_indicators
-                logger.info(
-                    f"批量计算模式，选择了 {len(self.batch_indicators)} 个指标")
+                logger.info(f"批量计算模式，选择了 {len(self.batch_indicators)} 个指标")
             else:
                 current_indicator = self.indicator_combo.currentText()
                 if current_indicator:
                     indicators_to_calculate = [current_indicator]
-                    logger.info(
-                        f"单个指标计算模式，选择指标: {current_indicator}")
+                    logger.info(f"单个指标计算模式，选择指标: {current_indicator}")
 
             if not indicators_to_calculate:
-                self.hide_loading()
                 QMessageBox.warning(self, "提示", "请选择要计算的指标")
                 return
 
-            logger.info(
-                f"准备计算 {len(indicators_to_calculate)} 个指标: {indicators_to_calculate}")
+            self._indicators_to_calculate = indicators_to_calculate
+            self._start_time = time.time()
 
-            # 批量计算指标
-            total_indicators = len(indicators_to_calculate)
-            calculated_count = 0
-            error_count = 0
-
-            for i, indicator_name in enumerate(indicators_to_calculate):
-                try:
-                    # 更新进度
-                    progress = int((i / total_indicators) * 100)
-                    self.update_loading_progress(
-                        f"正在计算 {indicator_name}...", progress)
-                    logger.info(
-                        f"开始计算指标 {i+1}/{total_indicators}: {indicator_name}")
-
-                    # 计算单个指标
-                    result = self._calculate_single_indicator_with_params(
-                        indicator_name)
-                    if result is not None and (
-                        isinstance(result, dict) and result.get('values') or
-                        hasattr(result, 'empty') and not result.empty
-                    ):
-                        self.indicator_results[indicator_name] = result
-                        calculated_count += 1
-                        logger.info(f"指标 {indicator_name} 计算成功")
-
-                        # 添加到结果表格
-                        self._add_indicator_to_table(indicator_name, result)
-                        logger.info(f"指标 {indicator_name} 已添加到结果表格")
-                    else:
-                        error_count += 1
-                        logger.warning(
-                            f"指标 {indicator_name} 计算失败，结果为空")
-
-                except Exception as e:
-                    error_count += 1
-                    logger.error(
-                        f"计算指标 {indicator_name} 时出错: {str(e)}")
-                    logger.error(f"详细错误信息: {traceback.format_exc()}")
-                    continue
-
-            # 计算完成
-            end_time = time.time()
-            calculation_time = end_time - start_time
-
-            # 更新统计信息
-            stats_text = f"统计信息: 已计算 {calculated_count}/{total_indicators} 个指标"
-            if error_count > 0:
-                stats_text += f"，失败 {error_count} 个"
-
-            self.stats_label.setText(stats_text)
-            self.stats_label.setStyleSheet(
-                "QLabel { font-weight: bold; color: #495057; }")
-
-            self.performance_label.setText(f"性能: 计算耗时 {calculation_time:.2f}秒")
-
-            self.hide_loading()
-
-            # 记录计算时间
-            if indicators_to_calculate:
-                # 删除分析时间标签更新
-                pass
-
-            # 显示计算结果摘要
-            result_message = f"计算完成！\n成功: {calculated_count} 个指标\n错误: {error_count} 个指标"
-            if error_count > 0:
-                result_message += f"\n部分指标计算失败，请检查日志获取详细信息"
-
-            # 记录计算完成信息
-            logger.info(result_message)
-
-            if calculated_count > 0:
-                # 发送指标计算完成信号
-                self.indicator_calculated.emit("batch", self.indicator_results)
-
-                # 强制刷新表格显示
-                self.technical_table.viewport().update()
-                self.technical_table.repaint()
-
-                # 自动滚动到表格顶部
-                if self.technical_table.rowCount() > 0:
-                    self.technical_table.scrollToTop()
-                    self.technical_table.selectRow(0)
+            if len(indicators_to_calculate) > 3:
+                self._start_batch_calculation_async(indicators_to_calculate)
             else:
-                error_msg = "没有成功计算任何指标，请检查：\n"
-                error_msg += "1. 数据是否有效\n"
-                error_msg += "2. 参数设置是否正确\n"
-                error_msg += "3. ta-lib库是否正确安装"
-                # 使用信号发送错误，避免阻塞UI
-                self.error_occurred.emit(error_msg)
+                self._calculate_indicators_sync(indicators_to_calculate)
 
         except Exception as e:
             self.hide_loading()
             error_msg = f"技术指标计算过程出错: {str(e)}"
             logger.error(error_msg)
-            logger.error(f"详细错误信息: {traceback.format_exc()}")
-            # 使用信号发送错误，避免阻塞UI
             self.error_occurred.emit(error_msg)
+
+    def _start_batch_calculation_async(self, indicators: List[str]):
+        """启动异步批量计算"""
+        if self._calculation_worker and self._calculation_worker.isRunning():
+            self._calculation_worker.cancel()
+            self._calculation_worker.wait()
+
+        params_map = {}
+        for indicator_name in indicators:
+            params_map[indicator_name] = self._get_indicator_params(indicator_name)
+
+        self.show_loading("正在初始化批量计算...")
+        
+        self._calculation_worker = BatchCalculateWorker(
+            indicators, 
+            self.current_kdata.copy(), 
+            params_map,
+            self
+        )
+        self._calculation_worker.progress.connect(self._on_batch_progress)
+        self._calculation_worker.finished.connect(self._on_batch_finished)
+        self._calculation_worker.error.connect(self._on_batch_error)
+        self._calculation_worker.start()
+
+    def _on_batch_progress(self, progress: int, message: str):
+        """批量计算进度回调"""
+        self.update_loading_progress(message, progress)
+
+    def _on_batch_finished(self, batch_result, calculation_time: float):
+        """批量计算完成回调"""
+        try:
+            self.update_loading_progress("正在处理计算结果...", 95)
+            
+            calculated_count = 0
+            error_count = 0
+            
+            if batch_result is not None and not batch_result.empty:
+                for indicator_name in self._indicators_to_calculate:
+                    try:
+                        processed_result = self._extract_indicator_from_batch(
+                            indicator_name, batch_result
+                        )
+                        
+                        if processed_result and processed_result.get('values'):
+                            self.indicator_results[indicator_name] = processed_result
+                            calculated_count += 1
+                            self._add_indicator_to_table(indicator_name, processed_result)
+                        else:
+                            error_count += 1
+                    except Exception as e:
+                        error_count += 1
+                        logger.error(f"提取指标 {indicator_name} 失败: {e}")
+            else:
+                error_count = len(self._indicators_to_calculate)
+            
+            self._finish_calculation(calculated_count, error_count, calculation_time)
+            
+        except Exception as e:
+            logger.error(f"处理批量计算结果失败: {e}")
+            self._finish_calculation(0, len(self._indicators_to_calculate), calculation_time)
+
+    def _on_batch_error(self, error_msg: str):
+        """批量计算错误回调"""
+        logger.error(f"批量计算失败: {error_msg}")
+        self._calculate_indicators_sync(self._indicators_to_calculate)
+
+    def _calculate_indicators_sync(self, indicators: List[str]):
+        """同步计算指标（用于少量指标或回退）"""
+        self.show_loading("正在计算技术指标...")
+        start_time = time.time()
+        
+        total_indicators = len(indicators)
+        calculated_count = 0
+        error_count = 0
+
+        for i, indicator_name in enumerate(indicators):
+            try:
+                progress = int((i / total_indicators) * 100)
+                self.update_loading_progress(f"正在计算 {indicator_name}...", progress)
+                
+                result = self._calculate_single_indicator_with_params(indicator_name)
+                if result is not None and result.get('values'):
+                    self.indicator_results[indicator_name] = result
+                    calculated_count += 1
+                    self._add_indicator_to_table(indicator_name, result)
+                else:
+                    error_count += 1
+            except Exception as e:
+                error_count += 1
+                logger.error(f"计算指标 {indicator_name} 时出错: {str(e)}")
+
+        calculation_time = time.time() - start_time
+        self._finish_calculation(calculated_count, error_count, calculation_time)
+
+    def _finish_calculation(self, calculated_count: int, error_count: int, calculation_time: float):
+        """完成计算，更新UI"""
+        total_indicators = len(self._indicators_to_calculate) if hasattr(self, '_indicators_to_calculate') else (calculated_count + error_count)
+        
+        stats_text = f"统计信息: 已计算 {calculated_count}/{total_indicators} 个指标"
+        if error_count > 0:
+            stats_text += f"，失败 {error_count} 个"
+
+        self.stats_label.setText(stats_text)
+        self.stats_label.setStyleSheet("QLabel { font-weight: bold; color: #495057; }")
+
+        self.performance_label.setText(f"性能: 计算耗时 {calculation_time:.2f}秒")
+
+        self.hide_loading()
+
+        logger.info(f"计算完成！成功: {calculated_count}，错误: {error_count}")
+
+        if calculated_count > 0:
+            self.indicator_calculated.emit("batch", self.indicator_results)
+            self.technical_table.viewport().update()
+            self.technical_table.repaint()
+
+            if self.technical_table.rowCount() > 0:
+                self.technical_table.scrollToTop()
+                self.technical_table.selectRow(0)
+        else:
+            error_msg = "没有成功计算任何指标，请检查：\n1. 数据是否有效\n2. 参数设置是否正确\n3. ta-lib库是否正确安装"
+            self.error_occurred.emit(error_msg)
+
+    def _get_indicator_params(self, indicator_name: str) -> Dict[str, Any]:
+        """获取指定指标的参数"""
+        try:
+            english_name = get_indicator_english_name(indicator_name)
+            if not english_name:
+                return {}
+            
+            params_config = get_indicator_params_config(english_name)
+            if not params_config:
+                return {}
+            
+            params = {}
+            for param_name, param_info in params_config.items():
+                if param_name in self.param_controls:
+                    control = self.param_controls[param_name]
+                    if isinstance(control, QSpinBox):
+                        params[param_name] = control.value()
+                    elif isinstance(control, QDoubleSpinBox):
+                        params[param_name] = control.value()
+                    elif isinstance(control, QComboBox):
+                        params[param_name] = control.currentText()
+            
+            return params
+        except Exception as e:
+            logger.debug(f"指标 {indicator_name} 无参数配置: {e}")
+            return {}
+
+    def _extract_indicator_from_batch(self, indicator_name: str, batch_result: pd.DataFrame) -> Optional[Dict[str, Any]]:
+        """从批量计算结果中提取单个指标的结果"""
+        try:
+            english_name = get_indicator_english_name(indicator_name)
+            english_lower = english_name.lower() if english_name else indicator_name.lower()
+            
+            processed = {
+                "name": indicator_name,
+                "timestamp": datetime.now(),
+                "values": {},
+                "signals": [],
+                "summary": {}
+            }
+            
+            original_columns = {'open', 'high', 'low', 'close', 'volume', 'date', 'datetime'}
+            
+            for col in batch_result.columns:
+                col_lower = col.lower()
+                if col_lower not in original_columns:
+                    if english_lower in col_lower or col_lower.startswith(english_lower[:3]):
+                        col_data = batch_result[col]
+                        if isinstance(col_data, pd.Series):
+                            valid_data = col_data.dropna()
+                            if len(valid_data) > 0:
+                                processed["values"][col] = col_data
+            
+            if not processed["values"]:
+                for col in batch_result.columns:
+                    col_lower = col.lower()
+                    if col_lower not in original_columns:
+                        col_data = batch_result[col]
+                        if isinstance(col_data, pd.Series):
+                            valid_data = col_data.dropna()
+                            if len(valid_data) > 0:
+                                processed["values"][col] = col_data
+            
+            if processed["values"]:
+                summary_stats = {}
+                for col_name, col_data in processed["values"].items():
+                    if pd.api.types.is_numeric_dtype(col_data):
+                        valid_data = col_data.dropna()
+                        if len(valid_data) > 0:
+                            summary_stats[col_name] = {
+                                'mean': float(valid_data.mean()),
+                                'std': float(valid_data.std()),
+                                'min': float(valid_data.min()),
+                                'max': float(valid_data.max()),
+                                'last': float(valid_data.iloc[-1]),
+                                'count': len(valid_data)
+                            }
+                processed["summary"] = summary_stats
+            
+            return processed
+            
+        except Exception as e:
+            logger.error(f"从批量结果提取指标 {indicator_name} 失败: {e}")
+            return None
 
     def _calculate_single_indicator_with_params(self, indicator_name: str) -> Optional[Dict[str, Any]]:
         """计算单个指标，包含参数处理和错误处理"""
@@ -2661,10 +2814,8 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
 
         # 导出按钮
         export_btn = QPushButton("导出技术分析结果")
-        export_btn.setMinimumHeight(20)
-        export_btn.setMaximumHeight(32)
         export_btn.setStyleSheet(
-            "QPushButton { background-color: #17a2b8; font-size: 10px; color: white; }")
+            "QPushButton { background-color: #17a2b8; color: white; }")
         export_btn.clicked.connect(self.export_technical_data)
         export_layout.addWidget(export_btn)
 

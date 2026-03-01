@@ -13,9 +13,13 @@ import sqlite3
 import numpy as np
 import pandas as pd
 import importlib
+import asyncio
+import multiprocessing
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from typing import Dict, List, Any, Optional, Union, Tuple, Callable
 from functools import lru_cache
 from datetime import datetime
+from threading import Lock
 
 # 添加项目根目录到Python路径
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -36,6 +40,200 @@ except ImportError:
     talib = None
     TALIB_AVAILABLE = False
     logger.warning("TA-Lib 未安装或无法导入，将使用自定义实现")
+
+
+def _worker_calculate_indicator(args: Tuple) -> pd.DataFrame:
+    """
+    进程池工作函数 - 用于多进程计算指标
+    
+    Args:
+        args: (indicator_name, df_pickle, params, db_path)
+    
+    Returns:
+        pd.DataFrame: 计算结果
+    """
+    import pickle
+    import pandas as pd
+    
+    indicator_name, df_bytes, params, db_path = args
+    
+    try:
+        df = pickle.loads(df_bytes)
+        
+        service = UnifiedIndicatorService(db_path)
+        result = service.calculate_indicator(indicator_name, df, params)
+        
+        return result
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+def _worker_batch_calculate(args: Tuple) -> pd.DataFrame:
+    """
+    进程池工作函数 - 用于多进程批量计算
+    
+    Args:
+        args: (indicators, df_pickle, db_path)
+    
+    Returns:
+        pd.DataFrame: 计算结果
+    """
+    import pickle
+    
+    indicators, df_bytes, db_path = args
+    
+    try:
+        df = pickle.loads(df_bytes)
+        
+        service = UnifiedIndicatorService(db_path)
+        result = service.batch_calculate_indicators(indicators, df)
+        
+        return result
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+class IndicatorProcessPool:
+    """指标计算进程池管理器"""
+    
+    _instance = None
+    _lock = Lock()
+    
+    def __new__(cls, max_workers: int = None):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._initialized = False
+        return cls._instance
+    
+    def __init__(self, max_workers: int = None):
+        if self._initialized:
+            return
+            
+        self._max_workers = max_workers or multiprocessing.cpu_count()
+        self._process_pool = None
+        self._thread_pool = None
+        self._initialized = True
+        self._db_path = UNIFIED_DB_PATH
+        
+        logger.info(f"指标进程池初始化: max_workers={self._max_workers}")
+    
+    def _ensure_pools(self):
+        """确保进程池和线程池已创建"""
+        if self._process_pool is None:
+            self._process_pool = ProcessPoolExecutor(max_workers=self._max_workers)
+        if self._thread_pool is None:
+            self._thread_pool = ThreadPoolExecutor(max_workers=self._max_workers * 2)
+    
+    def calculate_parallel(self, indicators: List[Tuple[str, Dict]], df: pd.DataFrame, use_multiprocess: bool = True) -> pd.DataFrame:
+        """
+        并行计算多个指标
+        
+        Args:
+            indicators: 指标列表 [(名称, 参数), ...]
+            df: 输入数据
+            use_multiprocess: 是否使用多进程（False则使用多线程）
+        
+        Returns:
+            pd.DataFrame: 合并后的结果
+        """
+        import pickle
+        
+        self._ensure_pools()
+        
+        df_bytes = pickle.dumps(df)
+        
+        tasks = []
+        for indicator_name, params in indicators:
+            tasks.append((indicator_name, df_bytes, params or {}, self._db_path))
+        
+        if use_multiprocess:
+            futures = [self._process_pool.submit(_worker_calculate_indicator, task) for task in tasks]
+        else:
+            futures = [self._thread_pool.submit(_worker_calculate_indicator, task) for task in tasks]
+        
+        result_df = df.copy()
+        for future in futures:
+            try:
+                result = future.result(timeout=30)
+                if result is not None:
+                    for col in result.columns:
+                        if col not in result_df.columns:
+                            result_df[col] = result[col]
+            except Exception as e:
+                logger.warning(f"并行计算任务失败: {e}")
+        
+        return result_df
+    
+    async def calculate_async(self, indicator_name: str, df: pd.DataFrame, params: Dict = None) -> pd.DataFrame:
+        """
+        异步计算单个指标
+        
+        Args:
+            indicator_name: 指标名称
+            df: 输入数据
+            params: 参数
+        
+        Returns:
+            pd.DataFrame: 计算结果
+        """
+        import pickle
+        
+        self._ensure_pools()
+        
+        df_bytes = pickle.dumps(df)
+        task = (indicator_name, df_bytes, params or {}, self._db_path)
+        
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            self._thread_pool,
+            _worker_calculate_indicator,
+            task
+        )
+        
+        return result
+    
+    async def batch_calculate_async(self, indicators: List[Tuple[str, Dict]], df: pd.DataFrame) -> pd.DataFrame:
+        """
+        异步批量计算指标
+        
+        Args:
+            indicators: 指标列表
+            df: 输入数据
+        
+        Returns:
+            pd.DataFrame: 计算结果
+        """
+        import pickle
+        
+        self._ensure_pools()
+        
+        df_bytes = pickle.dumps(df)
+        task = (indicators, df_bytes, self._db_path)
+        
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            self._process_pool,
+            _worker_batch_calculate,
+            task
+        )
+        
+        return result
+    
+    def shutdown(self):
+        """关闭进程池"""
+        if self._process_pool:
+            self._process_pool.shutdown(wait=True)
+            self._process_pool = None
+        if self._thread_pool:
+            self._thread_pool.shutdown(wait=True)
+            self._thread_pool = None
+        logger.info("指标进程池已关闭")
 
 
 class UnifiedIndicatorService:
@@ -67,6 +265,10 @@ class UnifiedIndicatorService:
         self._async_calculation_enabled = False  # 异步计算支持
         self._max_cache_size = 1000  # 最大缓存条目数
         self._cache_ttl_seconds = 3600  # 缓存生存时间（秒）
+        
+        # 多进程支持
+        self._process_pool: Optional[IndicatorProcessPool] = None
+        self._multiprocess_enabled = False
 
         self._init_connection()
 
@@ -845,7 +1047,7 @@ class UnifiedIndicatorService:
 
     def batch_calculate_indicators(self, indicators: List[Tuple[str, Dict[str, Any]]], df: pd.DataFrame) -> pd.DataFrame:
         """
-        批量计算指标
+        批量计算指标 - 优化版本，减少数据复制
 
         Args:
             indicators: 指标列表 [(指标名称, 参数), ...]
@@ -857,25 +1059,46 @@ class UnifiedIndicatorService:
         result_df = df.copy()
 
         try:
-            # 1. 尝试使用插件批量计算
-            plugin_results = self._batch_calculate_with_plugins(indicators, df)
-
-            # 2. 合并插件结果
-            for indicator_name, plugin_result in plugin_results.items():
-                if plugin_result and not plugin_result.data.empty:
-                    for col in plugin_result.data.columns:
-                        result_df[col] = plugin_result.data[col]
-
-            # 3. 对于插件未处理的指标，使用传统方法
-            processed_indicators = set(plugin_results.keys())
-            for indicator_name, params in indicators:
-                if indicator_name not in processed_indicators:
+            if not TALIB_AVAILABLE:
+                for indicator_name, params in indicators:
                     try:
                         indicator_result = self.calculate_indicator(indicator_name, result_df, params)
-                        result_df = indicator_result
+                        if indicator_result is not None:
+                            for col in indicator_result.columns:
+                                if col not in df.columns:
+                                    result_df[col] = indicator_result[col]
                     except Exception as e:
-                        logger.error(f"传统方法计算指标失败 {indicator_name}: {e}")
+                        logger.error(f"计算指标失败 {indicator_name}: {e}")
+                return result_df
 
+            for indicator_name, params in indicators:
+                params = params or {}
+                
+                indicator = self.get_indicator(indicator_name)
+                if not indicator:
+                    continue
+                
+                impl = self._get_best_implementation(indicator)
+                if not impl:
+                    continue
+                
+                try:
+                    if impl['engine'] == 'talib':
+                        result_df = self._calculate_talib_indicator(indicator_name, result_df, impl, params, indicator)
+                    else:
+                        indicator_result = self.calculate_indicator(indicator_name, result_df, params)
+                        if indicator_result is not None:
+                            for col in indicator_result.columns:
+                                if col not in result_df.columns:
+                                    result_df[col] = indicator_result[col]
+                except Exception as e:
+                    logger.warning(f"批量计算指标 {indicator_name} 失败: {e}")
+                    continue
+
+            return result_df
+
+        except Exception as e:
+            logger.error(f"批量计算指标失败: {e}")
             return result_df
 
         except Exception as e:
@@ -1374,6 +1597,92 @@ class UnifiedIndicatorService:
             logger.error(f"搜索失败: {str(e)}")
             return result
 
+    def enable_multiprocess(self, enabled: bool = True, max_workers: int = None) -> None:
+        """
+        启用或禁用多进程计算
+        
+        Args:
+            enabled: 是否启用
+            max_workers: 最大进程数，默认为CPU核心数
+        """
+        self._multiprocess_enabled = enabled
+        
+        if enabled:
+            if self._process_pool is None:
+                self._process_pool = IndicatorProcessPool(max_workers=max_workers)
+            logger.info(f"多进程计算已启用，进程数: {self._process_pool._max_workers}")
+        else:
+            if self._process_pool:
+                self._process_pool.shutdown()
+                self._process_pool = None
+            logger.info("多进程计算已禁用")
+
+    def calculate_parallel(self, indicators: List[Tuple[str, Dict]], df: pd.DataFrame, use_multiprocess: bool = None) -> pd.DataFrame:
+        """
+        并行计算多个指标 - 智能选择最优执行方式
+        
+        智能选择策略：
+        - 小数据量(< 10000行): 使用同步计算（TA-Lib已经足够快）
+        - 大数据量(>= 10000行) + 显式启用多进程: 使用进程池
+        - 异步模式启用: 使用线程池
+        
+        Args:
+            indicators: 指标列表 [(名称, 参数), ...]
+            df: 输入数据
+            use_multiprocess: 是否使用多进程（None则自动选择）
+        
+        Returns:
+            pd.DataFrame: 计算结果
+        """
+        data_size = len(df)
+        indicator_count = len(indicators)
+        
+        if use_multiprocess is None:
+            if data_size < 10000:
+                use_multiprocess = False
+            else:
+                use_multiprocess = self._multiprocess_enabled
+        
+        if use_multiprocess and self._process_pool and data_size >= 10000:
+            return self._process_pool.calculate_parallel(indicators, df, use_multiprocess=True)
+        elif self._async_calculation_enabled and self._process_pool:
+            return self._process_pool.calculate_parallel(indicators, df, use_multiprocess=False)
+        else:
+            return self.batch_calculate_indicators(indicators, df)
+
+    async def calculate_indicator_async(self, name: str, df: pd.DataFrame, params: Optional[Dict[str, Any]] = None) -> pd.DataFrame:
+        """
+        异步计算单个指标
+        
+        Args:
+            name: 指标名称
+            df: 输入数据
+            params: 参数
+        
+        Returns:
+            pd.DataFrame: 计算结果
+        """
+        if self._process_pool is None:
+            self._process_pool = IndicatorProcessPool()
+        
+        return await self._process_pool.calculate_async(name, df, params)
+
+    async def batch_calculate_async(self, indicators: List[Tuple[str, Dict]], df: pd.DataFrame) -> pd.DataFrame:
+        """
+        异步批量计算指标
+        
+        Args:
+            indicators: 指标列表
+            df: 输入数据
+        
+        Returns:
+            pd.DataFrame: 计算结果
+        """
+        if self._process_pool is None:
+            self._process_pool = IndicatorProcessPool()
+        
+        return await self._process_pool.batch_calculate_async(indicators, df)
+
 
 # ==================== 全局实例和便捷函数 ====================
 
@@ -1511,6 +1820,81 @@ class UnifiedIndicatorServiceEnhanced(UnifiedIndicatorService):
         """启用或禁用异步计算"""
         self._async_calculation_enabled = enabled
         logger.info(f"异步计算已{'启用' if enabled else '禁用'}")
+
+    def enable_multiprocess(self, enabled: bool = True, max_workers: int = None) -> None:
+        """
+        启用或禁用多进程计算
+        
+        Args:
+            enabled: 是否启用
+            max_workers: 最大进程数，默认为CPU核心数
+        """
+        self._multiprocess_enabled = enabled
+        
+        if enabled:
+            if self._process_pool is None:
+                self._process_pool = IndicatorProcessPool(max_workers=max_workers)
+            logger.info(f"多进程计算已启用，进程数: {self._process_pool._max_workers}")
+        else:
+            if self._process_pool:
+                self._process_pool.shutdown()
+                self._process_pool = None
+            logger.info("多进程计算已禁用")
+
+    def calculate_parallel(self, indicators: List[Tuple[str, Dict]], df: pd.DataFrame, use_multiprocess: bool = None) -> pd.DataFrame:
+        """
+        并行计算多个指标
+        
+        Args:
+            indicators: 指标列表 [(名称, 参数), ...]
+            df: 输入数据
+            use_multiprocess: 是否使用多进程（None则自动选择）
+        
+        Returns:
+            pd.DataFrame: 计算结果
+        """
+        if use_multiprocess is None:
+            use_multiprocess = self._multiprocess_enabled
+        
+        if use_multiprocess and self._process_pool:
+            return self._process_pool.calculate_parallel(indicators, df, use_multiprocess=True)
+        elif self._async_calculation_enabled and self._process_pool:
+            return self._process_pool.calculate_parallel(indicators, df, use_multiprocess=False)
+        else:
+            return self.batch_calculate_indicators(indicators, df)
+
+    async def calculate_indicator_async(self, name: str, df: pd.DataFrame, params: Optional[Dict[str, Any]] = None) -> pd.DataFrame:
+        """
+        异步计算单个指标
+        
+        Args:
+            name: 指标名称
+            df: 输入数据
+            params: 参数
+        
+        Returns:
+            pd.DataFrame: 计算结果
+        """
+        if self._process_pool is None:
+            self._process_pool = IndicatorProcessPool()
+        
+        return await self._process_pool.calculate_async(name, df, params)
+
+    async def batch_calculate_async(self, indicators: List[Tuple[str, Dict]], df: pd.DataFrame) -> pd.DataFrame:
+        """
+        异步批量计算指标
+        
+        Args:
+            indicators: 指标列表
+            df: 输入数据
+        
+        Returns:
+            pd.DataFrame: 计算结果
+        """
+        if self._process_pool is None:
+            self._process_pool = IndicatorProcessPool()
+        
+        return await self._process_pool.batch_calculate_async(indicators, df)
 
     def set_cache_config(self, max_size: int = 1000, ttl_seconds: int = 3600) -> None:
         """

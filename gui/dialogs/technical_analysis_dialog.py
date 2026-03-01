@@ -18,6 +18,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QFont
+from core.indicator_service import calculate_indicator
 
 logger = logger
 
@@ -28,17 +29,19 @@ class TechnicalAnalysisDialog(QDialog):
     analysis_completed = pyqtSignal(dict)
     indicator_calculated = pyqtSignal(str, dict)
 
-    def __init__(self, parent=None, stock_code=None, analysis_service=None):
+    def __init__(self, parent=None, stock_code=None, stock_name=None, analysis_service=None):
         """
         初始化技术分析对话框
 
         Args:
             parent: 父窗口
             stock_code: 股票代码
+            stock_name: 股票名称
             analysis_service: 分析服务
         """
         super().__init__(parent)
         self.stock_code = stock_code
+        self.stock_name = stock_name or stock_code or ''
         self.analysis_service = analysis_service
         self.current_data = None
         self.indicators_data = {}
@@ -47,7 +50,8 @@ class TechnicalAnalysisDialog(QDialog):
 
     def _setup_ui(self) -> None:
         """设置UI"""
-        self.setWindowTitle(f"技术分析 - {self.stock_code or '未选择股票'}")
+        display_name = f"{self.stock_name} ({self.stock_code})" if self.stock_name and self.stock_code else (self.stock_code or '未选择股票')
+        self.setWindowTitle(f"技术分析 - {display_name}")
         self.setModal(True)
         self.resize(1000, 700)
 
@@ -182,29 +186,46 @@ class TechnicalAnalysisDialog(QDialog):
         return pd.DataFrame(data)
 
     def _calculate_indicators(self) -> None:
-        """计算技术指标"""
+        """计算技术指标 - 使用统一指标服务"""
         try:
             if self.current_data is None or self.current_data.empty:
                 QMessageBox.warning(self, "警告", "没有数据可供计算")
                 return
 
-            # 计算各种技术指标
             self.indicators_data = {}
 
-            # 移动平均线
+            kline_data = self.current_data.copy()
+            if 'date' in kline_data.columns:
+                kline_data = kline_data.set_index('date')
+
             ma_period = self.ma_period_spin.value()
-            self.indicators_data['MA'] = self.current_data['close'].rolling(
-                window=ma_period).mean()
+            try:
+                ma_result = calculate_indicator('MA', kline_data, timeperiod=ma_period)
+                if isinstance(ma_result, pd.DataFrame) and 'MA' in ma_result.columns:
+                    self.indicators_data['MA'] = ma_result['MA']
+                elif isinstance(ma_result, pd.Series):
+                    self.indicators_data['MA'] = ma_result
+                else:
+                    self.indicators_data['MA'] = kline_data['close'].rolling(window=ma_period).mean()
+            except Exception as e:
+                logger.warning(f"统一服务计算MA失败，使用本地计算: {e}")
+                self.indicators_data['MA'] = kline_data['close'].rolling(window=ma_period).mean()
 
-            # RSI
             rsi_period = self.rsi_period_spin.value()
-            self.indicators_data['RSI'] = self._calculate_rsi(
-                self.current_data['close'], rsi_period)
+            try:
+                rsi_result = calculate_indicator('RSI', kline_data, timeperiod=rsi_period)
+                if isinstance(rsi_result, pd.DataFrame) and 'RSI' in rsi_result.columns:
+                    self.indicators_data['RSI'] = rsi_result['RSI']
+                elif isinstance(rsi_result, pd.Series):
+                    self.indicators_data['RSI'] = rsi_result
+                else:
+                    self.indicators_data['RSI'] = self._calculate_rsi(kline_data['close'], rsi_period)
+            except Exception as e:
+                logger.warning(f"统一服务计算RSI失败，使用本地计算: {e}")
+                self.indicators_data['RSI'] = self._calculate_rsi(kline_data['close'], rsi_period)
 
-            # 显示指标结果
             self._display_indicators()
 
-            # 生成分析报告
             self._generate_analysis_report()
 
             logger.info("技术指标计算完成")

@@ -586,25 +586,31 @@ class SettingsDialog(QDialog):
             container = get_service_container()
             ai_service = container.get_service(AIPredictionService)
 
-            if ai_service and ai_service._gpu_manager:
-                mode = self.gpu_mode_combo.currentText()
-                memory_fraction = self.memory_fraction_spin.value()
-                inter_op_threads = self.inter_op_threads_spin.value()
-                intra_op_threads = self.intra_op_threads_spin.value()
-                mixed_precision = self.mixed_precision_checkbox.isChecked()
+            mode = self.gpu_mode_combo.currentText()
+            memory_fraction = self.memory_fraction_spin.value()
+            inter_op_threads = self.inter_op_threads_spin.value()
+            intra_op_threads = self.intra_op_threads_spin.value()
+            mixed_precision = self.mixed_precision_checkbox.isChecked()
 
-                # 更新GPU管理器配置
+            if self.config_service:
+                self.config_service.set('gpu.mode', mode)
+                self.config_service.set('gpu.memory_fraction', memory_fraction)
+                self.config_service.set('gpu.inter_op_threads', inter_op_threads)
+                self.config_service.set('gpu.intra_op_threads', intra_op_threads)
+                self.config_service.set('gpu.mixed_precision', mixed_precision)
+                logger.info("GPU配置已保存到配置服务")
+
+            if ai_service and ai_service._gpu_manager:
                 ai_service._gpu_manager.device_preference = mode.lower()
                 ai_service._gpu_manager.config['memory_fraction'] = memory_fraction
                 ai_service._gpu_manager.config['inter_op_threads'] = inter_op_threads
                 ai_service._gpu_manager.config['intra_op_threads'] = intra_op_threads
                 ai_service._gpu_manager.config['mixed_precision'] = mixed_precision
 
-                # 重新配置GPU
                 success = ai_service._gpu_manager.configure_tensorflow_gpu()
 
                 if success:
-                    self.gpu_status_label.setText("状态: 配置已应用")
+                    self.gpu_status_label.setText("状态: 配置已应用并保存")
                     self.gpu_status_label.setStyleSheet("""
                         QLabel {
                             background-color: #d1ecf1;
@@ -617,7 +623,7 @@ class SettingsDialog(QDialog):
                     """)
                     logger.info(f"GPU配置已应用: 模式={mode}, 显存分配={memory_fraction}")
                 else:
-                    self.gpu_status_label.setText("状态: 配置失败")
+                    self.gpu_status_label.setText("状态: 运行时配置失败")
                     self.gpu_status_label.setStyleSheet("""
                         QLabel {
                             background-color: #f8d7da;
@@ -629,7 +635,8 @@ class SettingsDialog(QDialog):
                         }
                     """)
             else:
-                QMessageBox.warning(self, "警告", "GPU管理器未初始化，无法应用配置")
+                self.gpu_status_label.setText("状态: 已保存（GPU管理器未初始化）")
+                logger.warning("GPU管理器未初始化，配置仅保存到配置服务")
 
         except Exception as e:
             logger.error(f"应用GPU配置失败: {e}")
@@ -654,26 +661,20 @@ class SettingsDialog(QDialog):
     def _apply_quick_duckdb_config(self) -> None:
         """应用快速DuckDB配置"""
         try:
-            # 获取快速配置参数
             mode = self.performance_mode_combo.currentText()
             memory_gb = self.memory_limit_spin.value()
             threads = self.thread_count_spin.value()
 
-            # 根据模式调整参数
-            if "高性能模式" in mode:
-                memory_gb = min(memory_gb * 2, 32)  # 增加内存
-                threads = min(threads * 2, 16)     # 增加线程
-            elif "内存节约模式" in mode:
-                memory_gb = max(memory_gb // 2, 2)  # 减少内存
-                threads = max(threads // 2, 2)     # 减少线程
+            if self.config_service:
+                self.config_service.set('duckdb.performance_mode', mode)
+                self.config_service.set('duckdb.memory_limit_gb', memory_gb)
+                self.config_service.set('duckdb.thread_count', threads)
+                logger.info("DuckDB配置已保存到配置服务")
 
-            # 应用配置到DuckDB性能优化器
             from core.database.duckdb_performance_optimizer import DuckDBPerformanceOptimizer, WorkloadType
 
-            # 创建临时优化器来应用配置
             optimizer = DuckDBPerformanceOptimizer("data/factorweave_analytics.duckdb")
 
-            # 根据模式选择工作负载类型
             if "高性能模式" in mode:
                 workload = WorkloadType.OLAP
             elif "内存节约模式" in mode:
@@ -681,24 +682,29 @@ class SettingsDialog(QDialog):
             else:
                 workload = WorkloadType.MIXED
 
-            # 应用优化配置
-            optimizer.optimize_for_workload(workload)
-            logger.info(f"已应用DuckDB优化配置: {workload.value}")
+            success = optimizer.apply_custom_config(
+                memory_limit_gb=memory_gb,
+                threads=threads,
+                workload_type=workload
+            )
 
-            # 更新状态
-            self.duckdb_status_label.setText(f"状态: 已应用 {mode} (工作负载: {workload.value})")
-            self.duckdb_status_label.setStyleSheet("""
-                QLabel {
-                    background-color: #d1ecf1;
-                    color: #0c5460;
-                    border: 1px solid #bee5eb;
-                    padding: 8px;
-                    border-radius: 5px;
-                    font-weight: bold;
-                }
-            """)
-
-            QMessageBox.information(self, "成功", f"DuckDB配置已应用:\n模式: {mode}\n内存: {memory_gb}GB\n线程: {threads}")
+            if success:
+                self.duckdb_status_label.setText(f"状态: 已应用并保存 {mode} (内存: {memory_gb}GB, 线程: {threads})")
+                self.duckdb_status_label.setStyleSheet("""
+                    QLabel {
+                        background-color: #d1ecf1;
+                        color: #0c5460;
+                        border: 1px solid #bee5eb;
+                        padding: 8px;
+                        border-radius: 5px;
+                        font-weight: bold;
+                    }
+                """)
+                logger.info(f"DuckDB配置已应用: 内存={memory_gb}GB, 线程={threads}, 模式={workload.value}")
+                QMessageBox.information(self, "成功", f"DuckDB配置已应用并保存:\n模式: {mode}\n内存: {memory_gb}GB\n线程: {threads}")
+            else:
+                self.duckdb_status_label.setText("状态: 配置应用失败")
+                QMessageBox.warning(self, "警告", "DuckDB配置应用失败，请检查日志")
 
         except Exception as e:
             logger.error(f"应用DuckDB快速配置失败: {e}")
@@ -707,25 +713,43 @@ class SettingsDialog(QDialog):
     def _reset_duckdb_config(self) -> None:
         """重置DuckDB配置为默认值"""
         try:
-            # 重置UI控件
-            self.performance_mode_combo.setCurrentIndex(0)  # 自动优化
+            self.performance_mode_combo.setCurrentIndex(0)
             self.memory_limit_spin.setValue(8)
             self.thread_count_spin.setValue(4)
 
-            # 更新状态
-            self.duckdb_status_label.setText("状态: 已重置为默认配置")
-            self.duckdb_status_label.setStyleSheet("""
-                QLabel {
-                    background-color: #fff3cd;
-                    color: #856404;
-                    border: 1px solid #ffeaa7;
-                    padding: 8px;
-                    border-radius: 5px;
-                    font-weight: bold;
-                }
-            """)
+            if self.config_service:
+                self.config_service.set('duckdb.performance_mode', '自动优化 (推荐)')
+                self.config_service.set('duckdb.memory_limit_gb', 8)
+                self.config_service.set('duckdb.thread_count', 4)
+                logger.info("DuckDB默认配置已保存到配置服务")
 
-            QMessageBox.information(self, "成功", "DuckDB配置已重置为默认值")
+            from core.database.duckdb_performance_optimizer import DuckDBPerformanceOptimizer, WorkloadType
+
+            optimizer = DuckDBPerformanceOptimizer("data/factorweave_analytics.duckdb")
+
+            success = optimizer.apply_custom_config(
+                memory_limit_gb=8,
+                threads=4,
+                workload_type=WorkloadType.MIXED
+            )
+
+            if success:
+                self.duckdb_status_label.setText("状态: 已重置并应用默认配置 (内存: 8GB, 线程: 4)")
+                self.duckdb_status_label.setStyleSheet("""
+                    QLabel {
+                        background-color: #fff3cd;
+                        color: #856404;
+                        border: 1px solid #ffeaa7;
+                        padding: 8px;
+                        border-radius: 5px;
+                        font-weight: bold;
+                    }
+                """)
+                logger.info("DuckDB配置已重置并应用: 内存=8GB, 线程=4")
+                QMessageBox.information(self, "成功", "DuckDB配置已重置为默认值并应用:\n内存: 8GB\n线程: 4")
+            else:
+                self.duckdb_status_label.setText("状态: 重置失败")
+                QMessageBox.warning(self, "警告", "DuckDB配置重置失败，请检查日志")
 
         except Exception as e:
             logger.error(f"重置DuckDB配置失败: {e}")
@@ -854,6 +878,23 @@ class SettingsDialog(QDialog):
                         duckdb_config.get('memory_limit_gb', 8))
                     self.thread_count_spin.setValue(
                         duckdb_config.get('thread_count', 4))
+
+                # 加载GPU配置
+                gpu_config = config.get('gpu', {})
+                if hasattr(self, 'gpu_mode_combo'):
+                    gpu_mode = gpu_config.get('mode', '自动')
+                    gpu_index = self.gpu_mode_combo.findText(gpu_mode)
+                    if gpu_index >= 0:
+                        self.gpu_mode_combo.setCurrentIndex(gpu_index)
+
+                    self.memory_fraction_spin.setValue(
+                        gpu_config.get('memory_fraction', 0.8))
+                    self.inter_op_threads_spin.setValue(
+                        gpu_config.get('inter_op_threads', 4))
+                    self.intra_op_threads_spin.setValue(
+                        gpu_config.get('intra_op_threads', 4))
+                    self.mixed_precision_checkbox.setChecked(
+                        gpu_config.get('mixed_precision', False))
 
         except Exception as e:
             logger.error(f"Failed to load current settings: {e}")
@@ -1138,7 +1179,6 @@ class SettingsDialog(QDialog):
         if not self.config_service:
             return
 
-        # 收集设置
         settings = {
             'appearance': {
                 'theme': self.theme_combo.currentText(),
@@ -1152,24 +1192,34 @@ class SettingsDialog(QDialog):
             'data': {
                 'update_interval': self.update_interval_spin.value(),
                 'cache_size': self.cache_size_spin.value()
+            },
+            'duckdb': {
+                'performance_mode': self.performance_mode_combo.currentText(),
+                'memory_limit_gb': self.memory_limit_spin.value(),
+                'thread_count': self.thread_count_spin.value()
+            },
+            'gpu': {
+                'mode': self.gpu_mode_combo.currentText(),
+                'memory_fraction': self.memory_fraction_spin.value(),
+                'inter_op_threads': self.inter_op_threads_spin.value(),
+                'intra_op_threads': self.intra_op_threads_spin.value(),
+                'mixed_precision': self.mixed_precision_checkbox.isChecked()
             }
         }
 
-        # 保存设置
         for category, config in settings.items():
             for key, value in config.items():
                 self.config_service.set(f'{category}.{key}', value)
 
-        # 应用主题
         if self.theme_service:
             theme_name = self.theme_combo.currentText()
             self.theme_service.set_theme(theme_name)
             self.theme_changed.emit(theme_name)
 
-        # 应用缓存配置到CacheService（统一缓存）
         self._apply_cache_config(settings.get('data', {}))
 
-        # 发送设置应用信号
+        self._apply_runtime_configs(settings)
+
         self.settings_applied.emit(settings)
 
     def _apply_cache_config(self, data_config: dict) -> None:
@@ -1177,7 +1227,7 @@ class SettingsDialog(QDialog):
         try:
             from core.containers import get_service_container
             from core.services.cache_service import CacheService
-            
+
             container = get_service_container()
             if container and container.is_registered(CacheService):
                 cache_service = container.resolve(CacheService)
@@ -1187,6 +1237,71 @@ class SettingsDialog(QDialog):
                 logger.info(f"缓存配置已应用: {cache_size} 条目")
         except Exception as e:
             logger.warning(f"应用缓存配置失败: {e}")
+
+    def _apply_runtime_configs(self, settings: dict) -> None:
+        """应用运行时配置（DuckDB和GPU）"""
+        self._apply_duckdb_runtime_config(settings.get('duckdb', {}))
+        self._apply_gpu_runtime_config(settings.get('gpu', {}))
+        logger.info("运行时配置已应用")
+
+    def _apply_duckdb_runtime_config(self, duckdb_config: dict) -> None:
+        """应用DuckDB运行时配置"""
+        try:
+            mode = duckdb_config.get('performance_mode', '自动优化 (推荐)')
+            memory_gb = duckdb_config.get('memory_limit_gb', 8)
+            threads = duckdb_config.get('thread_count', 4)
+
+            from core.database.duckdb_performance_optimizer import DuckDBPerformanceOptimizer, WorkloadType
+
+            optimizer = DuckDBPerformanceOptimizer("data/factorweave_analytics.duckdb")
+
+            if "高性能模式" in mode:
+                workload = WorkloadType.OLAP
+            elif "内存节约模式" in mode:
+                workload = WorkloadType.OLTP
+            else:
+                workload = WorkloadType.MIXED
+
+            success = optimizer.apply_custom_config(
+                memory_limit_gb=memory_gb,
+                threads=threads,
+                workload_type=workload
+            )
+
+            if success:
+                logger.info(f"DuckDB运行时配置已应用: 内存={memory_gb}GB, 线程={threads}, 模式={workload.value}")
+            else:
+                logger.warning(f"DuckDB运行时配置应用失败")
+
+        except Exception as e:
+            logger.warning(f"应用DuckDB运行时配置失败: {e}")
+
+    def _apply_gpu_runtime_config(self, gpu_config: dict) -> None:
+        """应用GPU运行时配置"""
+        try:
+            from core.services.ai_prediction_service import AIPredictionService
+            from core.containers import get_service_container
+
+            container = get_service_container()
+            ai_service = container.get_service(AIPredictionService)
+
+            if ai_service and ai_service._gpu_manager:
+                mode = gpu_config.get('mode', '自动')
+                memory_fraction = gpu_config.get('memory_fraction', 0.8)
+                inter_op_threads = gpu_config.get('inter_op_threads', 4)
+                intra_op_threads = gpu_config.get('intra_op_threads', 4)
+                mixed_precision = gpu_config.get('mixed_precision', False)
+
+                ai_service._gpu_manager.device_preference = mode.lower()
+                ai_service._gpu_manager.config['memory_fraction'] = memory_fraction
+                ai_service._gpu_manager.config['inter_op_threads'] = inter_op_threads
+                ai_service._gpu_manager.config['intra_op_threads'] = intra_op_threads
+                ai_service._gpu_manager.config['mixed_precision'] = mixed_precision
+
+                ai_service._gpu_manager.configure_tensorflow_gpu()
+                logger.info(f"GPU运行时配置已应用: 模式={mode}")
+        except Exception as e:
+            logger.warning(f"应用GPU运行时配置失败: {e}")
 
         logger.info("Settings applied successfully")
 

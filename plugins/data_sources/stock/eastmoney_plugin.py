@@ -466,8 +466,30 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
     def get_real_time_quotes(self, symbols: list) -> pd.DataFrame:
         """获取实时行情数据 - 抽象方法实现"""
         try:
-            # TODO: 实现实时行情获取逻辑
-            logger.warning("东方财富实时行情功能尚未实现")
+            if not symbols:
+                return pd.DataFrame()
+
+            base_url = self.config.get('base_url', DEFAULT_CONFIG['base_url'])
+            api = self.config.get('api_urls', DEFAULT_CONFIG['api_urls'])
+            url = f"{base_url}{api['realtime']}"
+
+            secids = ','.join([f"1.{s}" if not s.startswith(('0', '3', '6')) else f"0.{s}" if s.startswith('0') else f"1.{s}" for s in symbols])
+
+            params = {
+                'fltt': '2',
+                'fields': 'f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13,f14,f15,f16,f17,f18',
+                'secids': secids,
+                '_': str(int(time.time() * 1000))
+            }
+
+            response = self.session.get(url, params=params, timeout=self.timeout)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('data') and data['data'].get('diff'):
+                    df = pd.DataFrame(data['data']['diff'])
+                    return df
+
+            logger.warning("东方财富实时行情获取失败")
             return pd.DataFrame()
         except Exception as e:
             logger.error(f"东方财富获取实时行情失败: {str(e)}")

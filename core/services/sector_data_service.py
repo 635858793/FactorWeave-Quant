@@ -506,23 +506,21 @@ class SectorDataService:
             logger.info(f"使用直接数据源导入: {source}")
 
             if source.lower() == "akshare":
-                from ..akshare_data_source import AkshareDataSource
+                from plugins.data_sources.stock.akshare_plugin import AKSharePlugin
+                from core.plugin_types import AssetType
 
-                # 创建AkShare数据源实例
-                akshare_source = AkshareDataSource()
+                akshare_plugin = AKSharePlugin()
+                akshare_plugin.initialize()
 
-                # 获取板块资金流排行数据
-                # AkShare支持 "今日", "3日", "5日", "10日", "20日"
                 periods = ["今日", "3日", "5日", "10日", "20日"]
                 total_processed = 0
 
                 for period in periods:
                     try:
                         logger.info(f"获取{period}板块资金流数据...")
-                        df = akshare_source.get_stock_sector_fund_flow_rank(indicator=period)
+                        df = akshare_plugin.get_sector_fund_flow_data(data_type=period)
 
-                        if not df.empty:
-                            # 数据处理和入库
+                        if df is not None and not df.empty:
                             processed_count = self._process_and_store_sector_data(df, period, start_date, end_date)
                             total_processed += processed_count
                             logger.info(f"{period}数据处理完成: {processed_count} 条")

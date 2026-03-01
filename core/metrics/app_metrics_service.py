@@ -99,7 +99,7 @@ class ApplicationMetricsService:
                     return func(*args, **kwargs)
 
                 name = operation_name or func.__qualname__
-                start_time = time.time()
+                start_time = time.perf_counter()
                 error = None
 
                 try:
@@ -108,7 +108,7 @@ class ApplicationMetricsService:
                     error = e
                     raise
                 finally:
-                    end_time = time.time()
+                    end_time = time.perf_counter()
                     duration = end_time - start_time
                     self.record_operation(name, duration, error is None)
             return wrapper

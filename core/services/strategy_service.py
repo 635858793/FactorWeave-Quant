@@ -224,6 +224,11 @@ class StrategyService(BaseService):
         # 服务状态 - 基于系统资源的动态并发控制
         self._max_concurrent_backtests = 3
         self._max_concurrent_optimizations = 1
+        
+        # 超时控制配置
+        self._backtest_timeout_seconds = self._config.get('backtest_timeout_seconds', 300)
+        self._optimization_timeout_seconds = self._config.get('optimization_timeout_seconds', 600)
+        
         # 初始更新并发限制
         self._update_concurrent_limits()
 
@@ -375,22 +380,6 @@ class StrategyService(BaseService):
                 self._plugin_factories['custom'] = lambda: CustomStrategyPlugin()
             except ImportError:
                 logger.warning("自定义策略插件不可用")
-            
-            # 复权价格动量策略插件
-            try:
-                from plugins.strategies.adj_momentum_plugin import AdjMomentumPlugin
-                self._plugin_factories['adj_momentum'] = lambda: AdjMomentumPlugin()
-                logger.info("复权价格动量策略插件已注册")
-            except ImportError:
-                logger.warning("复权价格动量策略插件不可用")
-            
-            # VWAP均值回归策略插件
-            try:
-                from plugins.strategies.vwap_reversion_plugin import VWAPReversionPlugin
-                self._plugin_factories['vwap_reversion'] = lambda: VWAPReversionPlugin()
-                logger.info("VWAP均值回归策略插件已注册")
-            except ImportError:
-                logger.warning("VWAP均值回归策略插件不可用")
 
             # 均值回归策略插件
             try:
@@ -1084,9 +1073,21 @@ class StrategyService(BaseService):
 
             self._backtest_tasks[task_id] = backtest_task
 
-            # 启动回测任务
-            async_task = asyncio.create_task(self._execute_backtest(task_id))
-            self._running_backtests[task_id] = async_task
+            # 启动回测任务（带超时控制）
+            try:
+                async_task = asyncio.create_task(
+                    asyncio.wait_for(
+                        self._execute_backtest(task_id),
+                        timeout=self._backtest_timeout_seconds
+                    )
+                )
+                self._running_backtests[task_id] = async_task
+            except asyncio.TimeoutError:
+                backtest_task.status = BacktestStatus.FAILED
+                backtest_task.error_message = f"回测任务超时，已超过 {self._backtest_timeout_seconds} 秒"
+                backtest_task.completed_at = datetime.now()
+                logger.error(f"回测任务超时: {task_id}, 超时时间: {self._backtest_timeout_seconds}秒")
+                raise ValueError(backtest_task.error_message)
 
             logger.info(f"回测任务已启动: {task_id}, 策略: {strategy_id}, 市场数据: {market_data.symbol}, 时间范围: {context.start_date} 至 {context.end_date}")
             return task_id
@@ -1462,9 +1463,21 @@ class StrategyService(BaseService):
 
             self._optimization_tasks[task_id] = optimization_task
 
-            # 启动优化任务
-            async_task = asyncio.create_task(self._execute_optimization(task_id))
-            self._running_optimizations[task_id] = async_task
+            # 启动优化任务（带超时控制）
+            try:
+                async_task = asyncio.create_task(
+                    asyncio.wait_for(
+                        self._execute_optimization(task_id),
+                        timeout=self._optimization_timeout_seconds
+                    )
+                )
+                self._running_optimizations[task_id] = async_task
+            except asyncio.TimeoutError:
+                optimization_task.status = OptimizationStatus.FAILED
+                optimization_task.error_message = f"优化任务超时，已超过 {self._optimization_timeout_seconds} 秒"
+                optimization_task.completed_at = datetime.now()
+                logger.error(f"优化任务超时: {task_id}, 超时时间: {self._optimization_timeout_seconds}秒")
+                raise ValueError(optimization_task.error_message)
 
             logger.info(f"优化任务已启动: {task_id}")
             return task_id

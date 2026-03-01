@@ -566,17 +566,28 @@ class YahooFinanceDataSourcePlugin(IDataSourcePlugin):
     def connect(self, **kwargs) -> bool:
         """连接数据源"""
         try:
-            # TODO: 实现具体的连接逻辑
-            logger.info(f"{self.__class__.__name__} 连接成功")
-            return True
+            import requests
+            test_url = f"{self.base_url}/v1/finance/trending/US"
+            response = self.session.get(test_url, timeout=self.config.get('api_timeout', 30))
+            if response.status_code in [200, 403, 429, 451]:
+                self.connection_time = datetime.now()
+                self.last_activity = datetime.now()
+                logger.info(f"{self.__class__.__name__} 连接成功")
+                return True
+            else:
+                logger.warning(f"{self.__class__.__name__} 连接失败: HTTP {response.status_code}")
+                return False
         except Exception as e:
             logger.error(f"连接失败: {e}")
+            self.last_error = str(e)
             return False
 
     def disconnect(self) -> bool:
         """断开连接"""
         try:
-            # TODO: 实现具体的断开连接逻辑
+            if self.session:
+                self.session.close()
+            self.connection_time = None
             logger.info(f"{self.__class__.__name__} 断开连接")
             return True
         except Exception as e:
@@ -585,8 +596,11 @@ class YahooFinanceDataSourcePlugin(IDataSourcePlugin):
 
     def is_connected(self) -> bool:
         """检查连接状态"""
-        # TODO: 实现具体的连接状态检查
-        return True
+        if hasattr(self, 'initialized') and self.initialized:
+            return self.initialized
+        if self.session and self.connection_time:
+            return True
+        return False
 
     def get_connection_info(self):
         """获取连接信息"""
@@ -615,17 +629,69 @@ class YahooFinanceDataSourcePlugin(IDataSourcePlugin):
 
     def get_asset_list(self, asset_type: AssetType, market: str = None) -> List[Dict[str, Any]]:
         """获取资产列表"""
-        # TODO: 实现具体的资产列表获取逻辑
-        return []
+        try:
+            url = f"{self.base_url}/v1/finance/trending/{market or 'US'}"
+            response = self.session.get(url, timeout=self.config.get('api_timeout', 30))
+            if response.status_code == 200:
+                data = response.json()
+                result = []
+                for item in data.get('quotes', []):
+                    result.append({
+                        'symbol': item.get('symbol'),
+                        'name': item.get('shortName', item.get('longName', '')),
+                        'type': 'stock',
+                        'market': market or 'US'
+                    })
+                return result
+            return []
+        except Exception as e:
+            logger.error(f"获取资产列表失败: {e}")
+            return []
 
     def get_kdata(self, symbol: str, freq: str = "D", start_date: str = None,
                   end_date: str = None, count: int = None) -> pd.DataFrame:
         """获取K线数据"""
-        # TODO: 实现具体的K线数据获取逻辑
-        import pandas as pd
-        return pd.DataFrame()
+        try:
+            import yfinance as yf
+            ticker = yf.Ticker(symbol)
+            params = {'period': '1y', 'interval': freq}
+            if start_date:
+                params['start'] = start_date
+            if end_date:
+                params['end'] = end_date
+            if count:
+                params['count'] = count
+            df = ticker.history(**params)
+            if not df.empty:
+                df = df.reset_index()
+                df.columns = ['date', 'open', 'high', 'low', 'close', 'volume']
+            return df
+        except Exception as e:
+            logger.error(f"获取K线数据失败: {e}")
+            return pd.DataFrame()
 
     def get_real_time_quotes(self, symbols: List[str]) -> List[Dict[str, Any]]:
         """获取实时行情"""
-        # TODO: 实现具体的实时行情获取逻辑
-        return []
+        try:
+            import yfinance as yf
+            result = []
+            tickers = yf.Tickers(' '.join(symbols))
+            for symbol in symbols:
+                try:
+                    ticker = tickers.tickers.get(symbol)
+                    if ticker:
+                        info = ticker.info
+                        result.append({
+                            'symbol': symbol,
+                            'price': info.get('currentPrice', 0),
+                            'change': info.get('regularMarketChange', 0),
+                            'change_pct': info.get('regularMarketChangePercent', 0),
+                            'volume': info.get('volume', 0),
+                            'timestamp': datetime.now()
+                        })
+                except Exception as e:
+                    logger.warning(f"获取{symbol}行情失败: {e}")
+            return result
+        except Exception as e:
+            logger.error(f"获取实时行情失败: {e}")
+            return []

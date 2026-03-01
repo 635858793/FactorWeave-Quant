@@ -349,9 +349,41 @@ class UnifiedDataManager:
                 except Exception as e:
                     logger.warning(f"⚠️ StockService 解析失败: {e}")
 
-                # 注意：IndexService, FundService, BondService 尚未实现
-                # 这些服务将在未来版本中添加，目前保持为 None
-                logger.info("ℹ️ IndexService, FundService, BondService 尚未实现，跳过")
+                try:
+                    from .index_service import IndexService
+                    if self.service_container.is_registered(IndexService):
+                        index_service = self.service_container.resolve(IndexService)
+                        logger.info("IndexService 解析成功")
+                    else:
+                        from .index_service import get_index_service
+                        index_service = get_index_service()
+                        logger.info("IndexService 实例获取成功")
+                except Exception as e:
+                    logger.warning(f"⚠️ IndexService 解析失败: {e}")
+
+                try:
+                    from .fund_service import FundService
+                    if self.service_container.is_registered(FundService):
+                        fund_service = self.service_container.resolve(FundService)
+                        logger.info("FundService 解析成功")
+                    else:
+                        from .fund_service import get_fund_service
+                        fund_service = get_fund_service()
+                        logger.info("FundService 实例获取成功")
+                except Exception as e:
+                    logger.warning(f"⚠️ FundService 解析失败: {e}")
+
+                try:
+                    from .bond_service import BondService
+                    if self.service_container.is_registered(BondService):
+                        bond_service = self.service_container.resolve(BondService)
+                        logger.info("BondService 解析成功")
+                    else:
+                        from .bond_service import get_bond_service
+                        bond_service = get_bond_service()
+                        logger.info("BondService 实例获取成功")
+                except Exception as e:
+                    logger.warning(f"⚠️ BondService 解析失败: {e}")
 
             # 加密货币 API 配置
             crypto_api_config = {

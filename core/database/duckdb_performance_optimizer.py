@@ -98,10 +98,8 @@ class DuckDBPerformanceOptimizer:
         try:
             logger.info(f"为{workload_type.value}工作负载优化DuckDB配置")
 
-            # 生成优化配置
             config = self._generate_config_for_workload(workload_type)
 
-            # 应用配置
             success = self._apply_config(config)
 
             if success:
@@ -114,6 +112,91 @@ class DuckDBPerformanceOptimizer:
 
         except Exception as e:
             logger.error(f"工作负载优化失败: {e}")
+            return False
+
+    def apply_custom_config(self, memory_limit_gb: float = None, threads: int = None,
+                            workload_type: WorkloadType = None) -> bool:
+        """应用用户自定义配置
+
+        Args:
+            memory_limit_gb: 内存限制(GB)，None则自动计算
+            threads: 线程数，None则自动计算
+            workload_type: 工作负载类型，用于确定其他优化参数
+
+        Returns:
+            bool: 是否应用成功
+        """
+        try:
+            logger.info("应用用户自定义DuckDB配置")
+
+            if not hasattr(self, 'system_memory_gb') or self.system_memory_gb <= 0:
+                self.system_memory_gb = 16.0
+
+            if not hasattr(self, 'cpu_cores') or self.cpu_cores <= 0:
+                self.cpu_cores = 4
+
+            if memory_limit_gb is None:
+                memory_limit_gb = max(2.0, self.system_memory_gb * 0.7)
+            else:
+                memory_limit_gb = max(1.0, min(memory_limit_gb, self.system_memory_gb * 0.9))
+
+            if threads is None:
+                if workload_type == WorkloadType.OLAP:
+                    threads = min(self.cpu_cores, 16)
+                elif workload_type == WorkloadType.OLTP:
+                    threads = min(self.cpu_cores // 2, 8)
+                else:
+                    threads = min(self.cpu_cores, 12)
+            else:
+                threads = max(1, min(threads, self.cpu_cores * 2))
+
+            max_memory_gb = max(memory_limit_gb * 1.2, 4.0)
+
+            try:
+                temp_dir = str(self.db_path.parent / "temp")
+                Path(temp_dir).mkdir(exist_ok=True, parents=True)
+            except Exception as e:
+                logger.warning(f"创建临时目录失败: {e}，使用默认路径")
+                temp_dir = "temp"
+
+            if workload_type == WorkloadType.OLAP:
+                checkpoint_threshold = "1GB"
+                wal_autocheckpoint = 10000
+            elif workload_type == WorkloadType.OLTP:
+                checkpoint_threshold = "256MB"
+                wal_autocheckpoint = 1000
+            else:
+                checkpoint_threshold = "512MB"
+                wal_autocheckpoint = 5000
+
+            memory_limit_str = f"{memory_limit_gb:.1f}GB"
+            max_memory_str = f"{max_memory_gb:.1f}GB"
+
+            config = DuckDBConfig(
+                memory_limit=memory_limit_str,
+                threads=threads,
+                max_memory=max_memory_str,
+                temp_directory=temp_dir,
+                enable_object_cache=True,
+                enable_progress_bar=True,
+                checkpoint_threshold=checkpoint_threshold,
+                wal_autocheckpoint=wal_autocheckpoint
+            )
+
+            logger.info(f"用户自定义配置: 内存={memory_limit_str}, 线程={threads}")
+
+            success = self._apply_config(config)
+
+            if success:
+                self.current_config = config
+                logger.info("用户自定义DuckDB配置应用成功")
+            else:
+                logger.error("用户自定义DuckDB配置应用失败")
+
+            return success
+
+        except Exception as e:
+            logger.error(f"应用用户自定义配置失败: {e}")
             return False
 
     def _generate_config_for_workload(self, workload_type: WorkloadType) -> DuckDBConfig:

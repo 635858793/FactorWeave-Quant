@@ -316,11 +316,14 @@ class StockSelectedEvent(AssetSelectedEvent):
 
     def __init__(self, stock_code: str = "", stock_name: str = "",
                  market: str = "", period: str = "", time_range: str = "",
-                 chart_type: str = "", kline_data: Optional[Any] = None, **kwargs):
+                 chart_type: str = "", kline_data: Optional[Any] = None, 
+                 asset_type: AssetType = None, **kwargs):
+        # 支持传入 asset_type 参数，默认为 STOCK_A 以保持向后兼容
+        effective_asset_type = asset_type if asset_type is not None else AssetType.STOCK_A
         super().__init__(
             symbol=stock_code,
             name=stock_name,
-            asset_type=AssetType.STOCK_A,
+            asset_type=effective_asset_type,
             market=market,
             period=period,
             time_range=time_range,

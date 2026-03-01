@@ -153,15 +153,6 @@ class TradeStatus(Enum):
     REJECTED = "rejected"
     ERROR = "error"
 
-class StrategyLifecycle(Enum):
-    """策略生命周期"""
-    CREATED = "created"
-    INITIALIZED = "initialized"
-    RUNNING = "running"
-    PAUSED = "paused"
-    STOPPED = "stopped"
-    ERROR = "error"
-
 class RiskLevel(Enum):
     """风险等级"""
     LOW = "low"

@@ -18,6 +18,7 @@ import numpy as np
 
 from ..data.models import StockInfo, KlineData, QueryParams
 from ..data.data_access import DataAccess
+from core.indicator_service import calculate_indicator
 
 
 @dataclass
@@ -186,20 +187,42 @@ class AnalysisManager:
             return None
 
     def _calculate_ma_signals(self, df: pd.DataFrame, stock_code: str) -> List[TechnicalSignal]:
-        """计算移动平均线信号"""
+        """计算移动平均线信号 - 使用统一指标服务"""
         signals = []
         try:
-            # 计算5日、20日、60日移动平均线
-            df['ma5'] = df['close'].rolling(window=5).mean()
-            df['ma20'] = df['close'].rolling(window=20).mean()
-            df['ma60'] = df['close'].rolling(window=60).mean()
+            try:
+                ma5_result = calculate_indicator('MA', df, timeperiod=5)
+                ma20_result = calculate_indicator('MA', df, timeperiod=20)
+                ma60_result = calculate_indicator('MA', df, timeperiod=60)
+                
+                if isinstance(ma5_result, pd.DataFrame) and 'MA' in ma5_result.columns:
+                    df['ma5'] = ma5_result['MA']
+                else:
+                    df['ma5'] = df['close'].rolling(window=5).mean()
+                
+                if isinstance(ma20_result, pd.DataFrame) and 'MA' in ma20_result.columns:
+                    df['ma20'] = ma20_result['MA']
+                else:
+                    df['ma20'] = df['close'].rolling(window=20).mean()
+                
+                if isinstance(ma60_result, pd.DataFrame) and 'MA' in ma60_result.columns:
+                    df['ma60'] = ma60_result['MA']
+                else:
+                    df['ma60'] = df['close'].rolling(window=60).mean()
+            except Exception as e:
+                self.logger.warning(f"统一服务计算MA失败，使用本地计算: {e}")
+                df['ma5'] = df['close'].rolling(window=5).mean()
+                df['ma20'] = df['close'].rolling(window=20).mean()
+                df['ma60'] = df['close'].rolling(window=60).mean()
 
             current_price = df['close'].iloc[-1]
             ma5 = df['ma5'].iloc[-1]
             ma20 = df['ma20'].iloc[-1]
             ma60 = df['ma60'].iloc[-1]
 
-            # 金叉死叉判断
+            if pd.isna(ma5) or pd.isna(ma20) or pd.isna(ma60):
+                return signals
+
             if ma5 > ma20 > ma60:
                 signals.append(TechnicalSignal(
                     signal_type='buy',
@@ -219,7 +242,6 @@ class AnalysisManager:
                     price=current_price
                 ))
 
-            # 价格与均线关系
             if current_price > ma20:
                 signals.append(TechnicalSignal(
                     signal_type='buy',
@@ -236,18 +258,32 @@ class AnalysisManager:
         return signals
 
     def _calculate_rsi_signals(self, df: pd.DataFrame, stock_code: str) -> List[TechnicalSignal]:
-        """计算RSI信号"""
+        """计算RSI信号 - 使用统一指标服务"""
         signals = []
         try:
-            # 计算RSI
-            delta = df['close'].diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-            rs = gain / loss
-            df['rsi'] = 100 - (100 / (1 + rs))
+            try:
+                result = calculate_indicator('RSI', df, timeperiod=14)
+                if isinstance(result, pd.DataFrame) and 'RSI' in result.columns:
+                    df['rsi'] = result['RSI']
+                else:
+                    delta = df['close'].diff()
+                    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+                    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+                    rs = gain / loss
+                    df['rsi'] = 100 - (100 / (1 + rs))
+            except Exception as e:
+                self.logger.warning(f"统一服务计算RSI失败，使用本地计算: {e}")
+                delta = df['close'].diff()
+                gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+                loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+                rs = gain / loss
+                df['rsi'] = 100 - (100 / (1 + rs))
 
             current_rsi = df['rsi'].iloc[-1]
             current_price = df['close'].iloc[-1]
+
+            if pd.isna(current_rsi):
+                return signals
 
             if current_rsi < 30:
                 signals.append(TechnicalSignal(
@@ -274,15 +310,28 @@ class AnalysisManager:
         return signals
 
     def _calculate_macd_signals(self, df: pd.DataFrame, stock_code: str) -> List[TechnicalSignal]:
-        """计算MACD信号"""
+        """计算MACD信号 - 使用统一指标服务"""
         signals = []
         try:
-            # 计算MACD
-            exp1 = df['close'].ewm(span=12).mean()
-            exp2 = df['close'].ewm(span=26).mean()
-            df['macd'] = exp1 - exp2
-            df['macd_signal'] = df['macd'].ewm(span=9).mean()
-            df['macd_histogram'] = df['macd'] - df['macd_signal']
+            try:
+                result = calculate_indicator('MACD', df, fastperiod=12, slowperiod=26, signalperiod=9)
+                if isinstance(result, pd.DataFrame):
+                    if 'MACD' in result.columns:
+                        df['macd'] = result['MACD']
+                    if 'MACDSignal' in result.columns:
+                        df['macd_signal'] = result['MACDSignal']
+                    if 'MACDHist' in result.columns:
+                        df['macd_histogram'] = result['MACDHist']
+                
+                if 'macd' not in df.columns or 'macd_signal' not in df.columns:
+                    raise ValueError("MACD计算结果不完整")
+            except Exception as e:
+                self.logger.warning(f"统一服务计算MACD失败，使用本地计算: {e}")
+                exp1 = df['close'].ewm(span=12).mean()
+                exp2 = df['close'].ewm(span=26).mean()
+                df['macd'] = exp1 - exp2
+                df['macd_signal'] = df['macd'].ewm(span=9).mean()
+                df['macd_histogram'] = df['macd'] - df['macd_signal']
 
             current_macd = df['macd'].iloc[-1]
             current_signal = df['macd_signal'].iloc[-1]
@@ -290,7 +339,9 @@ class AnalysisManager:
             prev_signal = df['macd_signal'].iloc[-2]
             current_price = df['close'].iloc[-1]
 
-            # MACD金叉死叉
+            if pd.isna(current_macd) or pd.isna(current_signal):
+                return signals
+
             if current_macd > current_signal and prev_macd <= prev_signal:
                 signals.append(TechnicalSignal(
                     signal_type='buy',
@@ -316,18 +367,34 @@ class AnalysisManager:
         return signals
 
     def _calculate_bollinger_signals(self, df: pd.DataFrame, stock_code: str) -> List[TechnicalSignal]:
-        """计算布林带信号"""
+        """计算布林带信号 - 使用统一指标服务"""
         signals = []
         try:
-            # 计算布林带
-            df['bb_middle'] = df['close'].rolling(window=20).mean()
-            bb_std = df['close'].rolling(window=20).std()
-            df['bb_upper'] = df['bb_middle'] + (bb_std * 2)
-            df['bb_lower'] = df['bb_middle'] - (bb_std * 2)
+            try:
+                result = calculate_indicator('BBANDS', df, timeperiod=20, nbdevup=2, nbdevdn=2)
+                if isinstance(result, pd.DataFrame):
+                    if 'BBMiddle' in result.columns:
+                        df['bb_middle'] = result['BBMiddle']
+                    if 'BBUpper' in result.columns:
+                        df['bb_upper'] = result['BBUpper']
+                    if 'BBLower' in result.columns:
+                        df['bb_lower'] = result['BBLower']
+                
+                if 'bb_upper' not in df.columns or 'bb_lower' not in df.columns:
+                    raise ValueError("布林带计算结果不完整")
+            except Exception as e:
+                self.logger.warning(f"统一服务计算布林带失败，使用本地计算: {e}")
+                df['bb_middle'] = df['close'].rolling(window=20).mean()
+                bb_std = df['close'].rolling(window=20).std()
+                df['bb_upper'] = df['bb_middle'] + (bb_std * 2)
+                df['bb_lower'] = df['bb_middle'] - (bb_std * 2)
 
             current_price = df['close'].iloc[-1]
             bb_upper = df['bb_upper'].iloc[-1]
             bb_lower = df['bb_lower'].iloc[-1]
+
+            if pd.isna(bb_upper) or pd.isna(bb_lower):
+                return signals
 
             if current_price <= bb_lower:
                 signals.append(TechnicalSignal(
