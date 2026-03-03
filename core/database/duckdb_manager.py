@@ -389,6 +389,13 @@ class DuckDBConnectionPool:
             # 归还连接到池中
             if conn:
                 try:
+                    # 关键修复：清理事务状态，防止事务污染
+                    # 在归还连接前，确保回滚任何未完成的事务
+                    try:
+                        conn.execute("ROLLBACK")
+                    except Exception:
+                        pass  # 没有活跃事务，忽略错误
+                    
                     # 检查连接是否仍然有效
                     if self._is_connection_valid(conn):
                         self._pool.put(conn)

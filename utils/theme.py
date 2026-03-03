@@ -211,21 +211,18 @@ class ThemeManager(QObject):
         for qss_file in glob.glob(os.path.join(self.qss_theme_dir, '*.qss')):
             name = os.path.splitext(os.path.basename(qss_file))[0]
             content = safe_read_file(qss_file)
-            # 跳过已存在的主题
-            cur = self.conn.cursor()
-            cur.execute('SELECT id FROM themes WHERE name=?', (name,))
-            if cur.fetchone():
-                continue
-            self._upsert_theme(name, 'qss', content, 'file')
+            # 智能检测主题类型
+            base_type = self._detect_base_type(name, 'qss', content)
+            # 使用upsert插入或更新主题
+            self._upsert_theme(name, 'qss', content, 'file', base_type)
         # 导入JSON主题
         for t in self._theme_data.keys():
             name = t.capitalize()
             content = json.dumps(self._theme_data[t], ensure_ascii=False)
-            cur = self.conn.cursor()
-            cur.execute('SELECT id FROM themes WHERE name=?', (name,))
-            if cur.fetchone():
-                continue
-            self._upsert_theme(name, 'json', content, 'file')
+            # 智能检测主题类型
+            base_type = self._detect_base_type(name, 'json', content)
+            # 使用upsert插入或更新主题
+            self._upsert_theme(name, 'json', content, 'file', base_type)
 
     def _detect_base_type(self, theme_name: str, theme_type: str, content: str) -> str:
         """智能检测主题的基础类型
@@ -402,6 +399,10 @@ class ThemeManager(QObject):
             
             # 使用异步方式应用QSS主题，避免阻塞UI
             QTimer.singleShot(0, lambda: self._apply_qss_theme_async(theme_name, content, base_type))
+            
+            # 异步刷新所有窗口组件（确保QSS已应用后再刷新）
+            # 延迟100ms确保QSS主题已完全应用
+            QTimer.singleShot(100, self._refresh_all_widgets)
             
             logger.info(f"QSS主题切换: {theme_name} (base_type={base_type}, 异步应用...)")
         else:

@@ -97,18 +97,6 @@ except ImportError as e:
     logger.warning(f"任务依赖可视化器导入失败: {e}") if logger else None
     DEPENDENCY_VISUALIZER_AVAILABLE = False
 
-# 导入实时写入UI组件（仅监控面板，配置和控制已融入左侧面板）
-try:
-    from gui.widgets.realtime_write_ui_components import RealtimeWriteMonitoringWidget, IPMonitorWidget
-    REALTIME_WRITE_UI_AVAILABLE = True
-    logger.info("实时写入监控组件已加载") if logger else None
-except ImportError as e:
-    logger.warning(f"实时写入监控组件导入失败: {e}") if logger else None
-    REALTIME_WRITE_UI_AVAILABLE = False
-    RealtimeWriteMonitoringWidget = None
-    IPMonitorWidget = None
-
-
 class IPStatsWorker(QObject):
     """IP统计信息获取工作线程（避免阻塞UI）"""
     finished = pyqtSignal(dict)  # 获取完成信号
@@ -879,7 +867,6 @@ class EnhancedDataImportWidget(QWidget):
 
         self.setup_ui()
         self.setup_responsive_layout()
-        self._register_write_event_handlers()
         self.setup_connections()
         self.setup_timers()
 
@@ -1417,34 +1404,6 @@ class EnhancedDataImportWidget(QWidget):
         realtime_label.setStyleSheet("font-weight: bold; color: #0066cc;")
         ai_layout.addWidget(realtime_label)
 
-        realtime_row = QHBoxLayout()
-
-        # 启用性能监控
-        self.enable_perf_monitor_cb = QCheckBox("性能监控")
-        self.enable_perf_monitor_cb.setChecked(True)
-        self.enable_perf_monitor_cb.setToolTip("启用性能监控，实时显示写入速度和资源使用情况")
-        realtime_row.addWidget(self.enable_perf_monitor_cb)
-
-        # 启用内存监控
-        self.enable_memory_monitor_cb = QCheckBox("内存监控")
-        self.enable_memory_monitor_cb.setChecked(True)
-        self.enable_memory_monitor_cb.setToolTip("启用内存使用监控")
-        realtime_row.addWidget(self.enable_memory_monitor_cb)
-
-        ai_layout.addLayout(realtime_row)
-
-        # 写入策略选择
-        strategy_layout = QHBoxLayout()
-        strategy_layout.addWidget(QLabel("写入策略:"))
-        self.write_strategy_combo = QComboBox()
-        self.write_strategy_combo.addItems(["禁用写入", "批量写入", "实时写入", "自适应"])
-        self.write_strategy_combo.setCurrentText("禁用写入")
-        self.write_strategy_combo.setToolTip("禁用写入：不执行数据写入\n批量写入：累积到批量大小后写入\n实时写入：单条数据立即写入\n自适应：根据系统负载自动选择")
-        self.write_strategy_combo.currentTextChanged.connect(self.on_write_strategy_changed)
-        strategy_layout.addWidget(self.write_strategy_combo)
-        strategy_layout.addStretch()
-        ai_layout.addLayout(strategy_layout)
-
         content_layout.addWidget(ai_features_group)
 
         # 设置内容widget到滚动区域
@@ -1745,7 +1704,6 @@ class EnhancedDataImportWidget(QWidget):
         self.new_task_btn.setStyleSheet("""
             QPushButton {
                 background-color: #007bff;
-                color: white;
                 border: none;
                 padding: 10px 20px;
                 border-radius: 5px;
@@ -3832,18 +3790,7 @@ class EnhancedDataImportWidget(QWidget):
             self.import_engine.enable_intelligent_caching = self.caching_cb.isChecked()
             self.import_engine.enable_data_quality_monitoring = self.quality_monitoring_cb.isChecked()
 
-            # 更新实时写入配置
-            write_strategy = self.write_strategy_combo.currentText() if hasattr(self, 'write_strategy_combo') else "批量写入"
-            enable_perf_monitor = self.enable_perf_monitor_cb.isChecked() if hasattr(self, 'enable_perf_monitor_cb') else True
-            enable_memory_monitor = self.enable_memory_monitor_cb.isChecked() if hasattr(self, 'enable_memory_monitor_cb') else True
-
-            self.import_engine.update_realtime_write_config(
-                write_strategy=write_strategy,
-                enable_performance_monitoring=enable_perf_monitor,
-                enable_memory_monitoring=enable_memory_monitor
-            )
-
-            # 保存配置并启动任化
+            # 保存配置并启动任务
             self.config_manager.add_import_task(task_config)
 
             if self.import_engine.start_task(task_config.task_id):
@@ -4366,12 +4313,7 @@ class EnhancedDataImportWidget(QWidget):
 
                 # 时间范围配置
                 'start_date': self.start_date.date().toString("yyyy-MM-dd") if hasattr(self, 'start_date') else None,
-                'end_date': self.end_date.date().toString("yyyy-MM-dd") if hasattr(self, 'end_date') else None,
-
-                # 实时写入配置
-                'write_strategy': self.write_strategy_combo.currentText() if hasattr(self, 'write_strategy_combo') else "禁用写入",
-                'enable_perf_monitor': self.enable_perf_monitor_cb.isChecked() if hasattr(self, 'enable_perf_monitor_cb') else True,
-                'enable_memory_monitor': self.enable_memory_monitor_cb.isChecked() if hasattr(self, 'enable_memory_monitor_cb') else True
+                'end_date': self.end_date.date().toString("yyyy-MM-dd") if hasattr(self, 'end_date') else None
             }
 
             return config
@@ -5995,11 +5937,6 @@ class EnhancedDataImportWidget(QWidget):
     - 分布式执行: {'启用' if self.distributed_cb.isChecked() else '[ERROR] 禁用'}
     - 智能缓存: {'启用' if self.caching_cb.isChecked() else '[ERROR] 禁用'}
     - 数据质量监控: {'启用' if self.quality_monitoring_cb.isChecked() else '[ERROR] 禁用'}
-
-    实时写入:
-    - 写入策略: {self.write_strategy_combo.currentText() if hasattr(self, 'write_strategy_combo') else '禁用写入'}
-    - 性能监控: {'启用' if (hasattr(self, 'enable_perf_monitor_cb') and self.enable_perf_monitor_cb.isChecked()) else '禁用'}
-    - 内存监控: {'启用' if (hasattr(self, 'enable_memory_monitor_cb') and self.enable_memory_monitor_cb.isChecked()) else '禁用'}
     """
             QMessageBox.information(self, "配置验证", result_text)
 
@@ -6062,14 +5999,6 @@ class EnhancedDataImportWidget(QWidget):
                     self.caching_cb.setChecked(True)
                 if hasattr(self, 'quality_monitoring_cb'):
                     self.quality_monitoring_cb.setChecked(True)
-
-                # 重置实时写入配置
-                if hasattr(self, 'write_strategy_combo'):
-                    self.write_strategy_combo.setCurrentText("禁用写入")
-                if hasattr(self, 'enable_perf_monitor_cb'):
-                    self.enable_perf_monitor_cb.setChecked(True)
-                if hasattr(self, 'enable_memory_monitor_cb'):
-                    self.enable_memory_monitor_cb.setChecked(True)
 
                 QMessageBox.information(self, "重置成功", "配置已重置到默认值")
 
@@ -6517,46 +6446,6 @@ class EnhancedDataImportWidget(QWidget):
             logger.error(f"停止下载失败: {e}") if logger else None
             QMessageBox.critical(self, "错误", f"停止失败: {str(e)}")
 
-    def on_write_strategy_changed(self, strategy):
-        """写入策略变更处理"""
-        try:
-            logger.info(f"写入策略已变更: {strategy}") if logger else None
-
-            # 根据策略启用/禁用相关控制
-            if strategy == "禁用写入":
-                # 禁用所有写入相关控制
-                if hasattr(self, 'realtime_pause_btn'):
-                    self.realtime_pause_btn.setEnabled(False)
-                if hasattr(self, 'realtime_resume_btn'):
-                    self.realtime_resume_btn.setEnabled(False)
-                if hasattr(self, 'realtime_cancel_btn'):
-                    self.realtime_cancel_btn.setEnabled(False)
-                if hasattr(self, 'enable_perf_monitor_cb'):
-                    self.enable_perf_monitor_cb.setEnabled(False)
-                if hasattr(self, 'enable_memory_monitor_cb'):
-                    self.enable_memory_monitor_cb.setEnabled(False)
-                if hasattr(self, 'realtime_status_label'):
-                    self.realtime_status_label.setText("状态: 禁用")
-                    self.realtime_status_label.setStyleSheet("color: gray; font-weight: bold;")
-            else:
-                # 启用写入相关控制（在未运行时仍然禁用按钮，但启用监控选项）
-                if hasattr(self, 'enable_perf_monitor_cb'):
-                    self.enable_perf_monitor_cb.setEnabled(True)
-                if hasattr(self, 'enable_memory_monitor_cb'):
-                    self.enable_memory_monitor_cb.setEnabled(True)
-                if hasattr(self, 'realtime_status_label'):
-                    if strategy == "实时写入":
-                        self.realtime_status_label.setText("状态: 实时模式（未运行）")
-                        self.realtime_status_label.setStyleSheet("color: navy; font-weight: bold;")
-                    elif strategy == "批量写入":
-                        self.realtime_status_label.setText("状态: 批量模式（未运行）")
-                        self.realtime_status_label.setStyleSheet("color: navy; font-weight: bold;")
-                    elif strategy == "自适应":
-                        self.realtime_status_label.setText("状态: 自适应模式（未运行）")
-                        self.realtime_status_label.setStyleSheet("color: navy; font-weight: bold;")
-        except Exception as e:
-            logger.error(f"处理写入策略变更失败: {e}") if logger else None
-
     def _on_mode_button_clicked(self, button):
         """处理下载模式单选按钮点击"""
         try:
@@ -6652,91 +6541,6 @@ class EnhancedDataImportWidget(QWidget):
 
         except Exception as e:
             logger.error(f"处理下载模式变更失败: {e}") if logger else None
-
-    def _register_write_event_handlers(self):
-        """注册实时写入事件处理器【修复】"""
-        try:
-            from core.events import get_event_bus
-            from core.events.realtime_write_events import (
-                WriteStartedEvent, WriteProgressEvent, WriteCompletedEvent, WriteErrorEvent
-            )
-            from core.services.realtime_write_event_handlers import get_write_event_handlers
-            from datetime import datetime
-
-            event_bus = get_event_bus()
-            write_handlers = get_write_event_handlers()
-
-            if not event_bus or not write_handlers:
-                return
-
-            def on_ui_update(event_type, event):
-                """【修复】实现实时UI更新回调（使用融合后的按钮）"""
-                try:
-                    if event_type == 'write_started':
-                        logger.info(f"[UI] 写入开始") if logger else None
-                        # 更新左侧控制按钮状态
-                        if hasattr(self, 'realtime_pause_btn'):
-                            self.realtime_pause_btn.setEnabled(True)
-                        if hasattr(self, 'realtime_cancel_btn'):
-                            self.realtime_cancel_btn.setEnabled(True)
-                        if hasattr(self, 'realtime_status_label'):
-                            self.realtime_status_label.setText("状态: 运行中")
-                            self.realtime_status_label.setStyleSheet("color: blue; font-weight: bold;")
-
-                    elif event_type == 'write_progress':
-                        # 【修复】更新监控面板的进度信息
-                        if hasattr(self, 'realtime_monitoring') and self.realtime_monitoring:
-                            # 更新进度条
-                            self.realtime_monitoring.progress_bar.setValue(int(event.progress))
-
-                            # 更新速度标签
-                            self.realtime_monitoring.speed_label.setText(f"{event.write_speed:.0f} 条/秒")
-
-                            # 更新成功计数
-                            self.realtime_monitoring.success_label.setText(str(event.success_count))
-
-                            # 更新失败计数
-                            self.realtime_monitoring.failure_label.setText(str(event.failure_count))
-
-                            logger.debug(f"[UI] 更新进度: {event.progress:.1f}%, 速度: {event.write_speed:.0f}条/秒") if logger else None
-
-                    elif event_type == 'write_completed':
-                        logger.info(f"[UI] 写入完成") if logger else None
-                        # 更新左侧控制按钮状态
-                        if hasattr(self, 'realtime_pause_btn'):
-                            self.realtime_pause_btn.setEnabled(False)
-                        if hasattr(self, 'realtime_resume_btn'):
-                            self.realtime_resume_btn.setEnabled(False)
-                        if hasattr(self, 'realtime_cancel_btn'):
-                            self.realtime_cancel_btn.setEnabled(False)
-                        if hasattr(self, 'realtime_status_label'):
-                            self.realtime_status_label.setText("状态: 已完成")
-                            self.realtime_status_label.setStyleSheet("color: green; font-weight: bold;")
-
-                    elif event_type == 'write_error':
-                        # 【修复】添加错误到错误日志表
-                        if hasattr(self, 'realtime_monitoring') and self.realtime_monitoring:
-                            timestamp = datetime.now().strftime('%H:%M:%S')
-                            self.realtime_monitoring.add_error(
-                                timestamp=timestamp,
-                                symbol=event.symbol,
-                                error_type=event.error_type,
-                                error_msg=event.error
-                            )
-                            logger.warning(f"[UI] 错误已添加: {event.symbol} - {event.error_type}") if logger else None
-
-                except Exception as e:
-                    logger.error(f"[UI] 回调处理失败: {e}") if logger else None
-
-            write_handlers.ui_callback = on_ui_update
-            event_bus.subscribe(WriteStartedEvent, write_handlers.on_write_started)
-            event_bus.subscribe(WriteProgressEvent, write_handlers.on_write_progress)
-            event_bus.subscribe(WriteCompletedEvent, write_handlers.on_write_completed)
-            event_bus.subscribe(WriteErrorEvent, write_handlers.on_write_error)
-
-            logger.info("实时写入事件处理器已注册") if logger else None
-        except Exception as e:
-            logger.warning(f"注册实时写入事件处理器失败: {e}") if logger else None
 
     def _get_asset_type_value(self):
         """获取资产类型值"""

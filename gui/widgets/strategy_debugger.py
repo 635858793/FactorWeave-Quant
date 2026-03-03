@@ -582,14 +582,6 @@ class StrategyDebugger(QWidget):
         layout.setSpacing(0)
 
         toolbar = QToolBar()
-        toolbar.setStyleSheet("""
-            QToolBar {
-                background-color: #2d2d2d;
-                border-bottom: 1px solid #3c3c3c;
-                spacing: 4px;
-                padding: 4px;
-            }
-        """)
 
         start_action = QAction('开始调试', self)
         start_action.triggered.connect(self._start_debug)
@@ -616,15 +608,7 @@ class StrategyDebugger(QWidget):
         self.code_editor = QPlainTextEdit()
         self.code_editor.setFont(QFont('Consolas', 10))
         self.code_editor.setLineWrapMode(QPlainTextEdit.NoWrap)
-        self.code_editor.setStyleSheet("""
-            QPlainTextEdit {
-                background-color: #1e1e1e;
-                border: none;
-                color: #d4d4d4;
-                font-family: Consolas;
-                font-size: 11px;
-            }
-        """)
+
         self.code_editor.mousePressEvent = self._on_code_click
         left_layout.addWidget(self.code_editor)
 
@@ -677,16 +661,9 @@ class StrategyDebugger(QWidget):
 
         layout.addWidget(splitter)
 
-        self.status_bar = QStatusBar()
-        self.status_bar.setStyleSheet("""
-            QStatusBar {
-                background-color: #007acc;
-                color: white;
-                font-size: 11px;
-            }
-        """)
-        self.status_bar.showMessage('就绪')
-        layout.addWidget(self.status_bar)
+        status_bar = QStatusBar()
+        status_bar.showMessage('就绪')
+        layout.addWidget(status_bar)
 
         self.debug_controller.set_debugging_state(False)
 

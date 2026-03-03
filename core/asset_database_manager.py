@@ -149,6 +149,10 @@ class AssetSeparatedDatabaseManager:
 
         # 线程锁
         self._db_lock = threading.RLock()
+        
+        # 关键修复：数据库级别写入锁，防止并发写入导致DuckDB ART索引冲突
+        # DuckDB不支持真正的并发写入，必须串行化写入操作
+        self._write_lock = threading.Lock()
 
         # 标准表结构定义
         self._table_schemas = self._initialize_table_schemas()
@@ -1444,19 +1448,22 @@ class AssetSeparatedDatabaseManager:
             if not table_name:
                 table_name = self._generate_table_name(data_type, asset_type)
 
-            # 获取数据库连接并存储数据
-            with self.duckdb_manager.get_connection(db_path) as conn:
-                # 创建表结构（如果不存在）
-                self._ensure_table_exists(conn, table_name, data, data_type)
+            # 关键修复：使用写入锁保护数据库写入操作
+            # DuckDB不支持真正的并发写入，必须串行化写入操作以避免ART索引冲突
+            with self._write_lock:
+                # 获取数据库连接并存储数据
+                with self.duckdb_manager.get_connection(db_path) as conn:
+                    # 创建表结构（如果不存在）
+                    self._ensure_table_exists(conn, table_name, data, data_type)
 
-                # 插入数据（使用upsert逻辑）
-                rows_affected = self._upsert_data(conn, table_name, data, data_type)
+                    # 插入数据（使用upsert逻辑）
+                    rows_affected = self._upsert_data(conn, table_name, data, data_type)
 
-                # 修复：移除运行时视图检测
-                # 视图在系统初始化时已经100%创建成功，运行时不需要检测
+                    # 修复：移除运行时视图检测
+                    # 视图在系统初始化时已经100%创建成功，运行时不需要检测
 
-                logger.info(f"成功存储 {rows_affected} 行数据到 {asset_type.value}/{table_name}")
-                return True
+                    logger.info(f"成功存储 {rows_affected} 行数据到 {asset_type.value}/{table_name}")
+                    return True
 
         except Exception as e:
             logger.error(f"存储标准化数据失败: {e}")
@@ -1908,8 +1915,22 @@ class AssetSeparatedDatabaseManager:
                 # 注册临时表
                 conn.register(temp_table, safe_data)
 
-                # 使用显式事务确保数据一致性（原子性操作）
-                conn.execute("BEGIN TRANSACTION")
+                # 关键修复：检测是否已有活跃事务，避免嵌套事务
+                # DuckDB不支持真正的嵌套事务，需要检测当前事务状态
+                has_active_transaction = False
+                try:
+                    # 尝试执行一个简单查询来检测事务状态
+                    # 如果在事务中，某些操作会有不同的行为
+                    result = conn.execute("SELECT current_setting('autocommit')").fetchone()
+                    if result and result[0] == 'false':
+                        has_active_transaction = True
+                except Exception:
+                    # 如果无法检测，假设没有活跃事务
+                    pass
+                
+                # 只有在没有活跃事务时才开始新事务
+                if not has_active_transaction:
+                    conn.execute("BEGIN TRANSACTION")
 
                 try:
                     # 构建批量UPSERT SQL（根据数据类型）
@@ -2063,8 +2084,9 @@ class AssetSeparatedDatabaseManager:
                     write_duration = time.time() - write_start
                     write_speed = len(filtered_data) / write_duration if write_duration > 0 else 0
 
-                    # 提交事务
-                    conn.execute("COMMIT")
+                    # 只有在开启了事务的情况下才提交
+                    if not has_active_transaction:
+                        conn.execute("COMMIT")
 
                     # 记录性能日志
                     if write_duration > 1.0:
@@ -2076,11 +2098,13 @@ class AssetSeparatedDatabaseManager:
 
                 except Exception as e:
                     # 回滚事务（确保数据一致性）
-                    try:
-                        conn.execute("ROLLBACK")
-                        logger.error(f"[批量插入] 事务回滚: {e}")
-                    except Exception as rollback_error:
-                        logger.error(f"[批量插入] 回滚失败: {rollback_error}")
+                    # 只有在开启了事务的情况下才回滚
+                    if not has_active_transaction:
+                        try:
+                            conn.execute("ROLLBACK")
+                            logger.error(f"[批量插入] 事务回滚: {e}")
+                        except Exception as rollback_error:
+                            logger.error(f"[批量插入] 回滚失败: {rollback_error}")
                     raise
 
             except Exception as e:
