@@ -379,6 +379,13 @@ class UniPluginDataManager:
         Returns:
             pd.DataFrame: K线数据
         """
+        # 参数类型检查和转换
+        if isinstance(asset_type, str):
+            try:
+                asset_type = AssetType(asset_type)
+            except ValueError:
+                asset_type = AssetType.STOCK_A
+
         context = RequestContext(
             asset_type=asset_type,
             data_type=DataType.HISTORICAL_KLINE,
@@ -409,6 +416,13 @@ class UniPluginDataManager:
         Returns:
             pd.DataFrame: 实时数据
         """
+        # 参数类型检查和转换
+        if isinstance(asset_type, str):
+            try:
+                asset_type = AssetType(asset_type)
+            except ValueError:
+                asset_type = AssetType.STOCK_A
+
         context = RequestContext(
             asset_type=asset_type,
             data_type=DataType.REAL_TIME_QUOTE
@@ -435,6 +449,13 @@ class UniPluginDataManager:
         Returns:
             Dict[str, Any]: 基本面数据
         """
+        # 参数类型检查和转换
+        if isinstance(asset_type, str):
+            try:
+                asset_type = AssetType(asset_type)
+            except ValueError:
+                asset_type = AssetType.STOCK_A
+
         context = RequestContext(
             asset_type=asset_type,
             data_type=DataType.FUNDAMENTAL,
@@ -462,6 +483,13 @@ class UniPluginDataManager:
         Returns:
             Dict[symbol, Dict[str, Any]]: 基本面数据字典
         """
+        # 参数类型检查和转换
+        if isinstance(asset_type, str):
+            try:
+                asset_type = AssetType(asset_type)
+            except ValueError:
+                asset_type = AssetType.STOCK_A
+
         result = {}
         
         # 检查缓存

@@ -862,9 +862,17 @@ class EnhancedDataImportWidget(QWidget):
             self.config_manager = ImportConfigManager()
             self.import_engine = DataImportExecutionEngine(
                 config_manager=self.config_manager,
-                max_workers=8,  # 优化：默认工作线程数从4增加到8，提升并行性能
+                max_workers=8,
                 enable_ai_optimization=True
             )
+
+            try:
+                from core.services.scheduled_task_executor import start_scheduled_task_executor
+                self.scheduled_executor = start_scheduled_task_executor(self.import_engine)
+                logger.info("定时任务执行器已启动") if logger else None
+            except Exception as e:
+                logger.warning(f"定时任务执行器启动失败: {e}") if logger else None
+                self.scheduled_executor = None
 
             # 初始化UI适配器和同步化
             try:
@@ -1824,7 +1832,10 @@ class EnhancedDataImportWidget(QWidget):
         try:
             if hasattr(self, 'incremental_update_history'):
                 # 刷新历史组件数据
-                self.incremental_update_history.refresh_history()
+                if hasattr(self.incremental_update_history, 'refresh_records'):
+                    self.incremental_update_history.refresh_records()
+                elif hasattr(self.incremental_update_history, 'load_records'):
+                    self.incremental_update_history.load_records()
                 logger.info(f"已更新增量更新历史记录") if logger else None
         except Exception as e:
             logger.warning(f"更新历史记录失败: {e}") if logger else None
@@ -4108,6 +4119,24 @@ class EnhancedDataImportWidget(QWidget):
         refresh_btn.clicked.connect(self.refresh_task_list)
         toolbar_layout.addWidget(refresh_btn)
 
+        # 定时任务按钮
+        schedule_task_btn = QPushButton("⏰ 定时任务")
+        schedule_task_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #6f42c1;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #5a32a3;
+            }
+        """)
+        schedule_task_btn.clicked.connect(self.open_scheduled_task_dialog)
+        toolbar_layout.addWidget(schedule_task_btn)
+
         # 批量操作按钮
         batch_start_btn = QPushButton("▶️ 批量启动")
         batch_start_btn.setStyleSheet("""
@@ -4750,8 +4779,7 @@ class EnhancedDataImportWidget(QWidget):
                         else:
                             item.setBackground(QColor("#ffffff"))
 
-            # 🔧 性能优化：只更新这一行，不触发整个表格重绘
-            self.task_table.updateRow(row_index)
+            self.task_table.viewport().update()
 
         except Exception as e:
             logger.error(f"刷新单个任务失败: {e}") if logger else None
@@ -5014,6 +5042,31 @@ class EnhancedDataImportWidget(QWidget):
         except Exception as e:
             logger.error(f"批量启动任务失败: {e}") if logger else None
             QMessageBox.critical(self, "错误", f"批量启动任务失败: {e}")
+
+    def open_scheduled_task_dialog(self):
+        """打开定时任务配置对话框"""
+        try:
+            from gui.dialogs.scheduled_task_dialog import ScheduledTaskDialog
+
+            if not self.config_manager:
+                QMessageBox.warning(self, "错误", "配置管理器未初始化")
+                return
+
+            dialog = ScheduledTaskDialog(
+                config_manager=self.config_manager,
+                import_engine=self.import_engine,
+                parent=self
+            )
+
+            if dialog.exec_() == QDialog.Accepted:
+                self.refresh_task_list()
+
+        except ImportError as e:
+            logger.warning(f"定时任务对话框导入失败: {e}") if logger else None
+            QMessageBox.warning(self, "提示", "定时任务功能正在开发中")
+        except Exception as e:
+            logger.error(f"打开定时任务对话框失败: {e}") if logger else None
+            QMessageBox.critical(self, "错误", f"打开定时任务对话框失败: {e}")
 
     def batch_pause_tasks(self):
         """批量暂停任务"""
