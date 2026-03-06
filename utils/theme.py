@@ -59,12 +59,77 @@ def parse_color(color_str: str) -> Union[str, tuple]:
                 b = int(parts[2].strip())
                 a = float(parts[3].strip())
                 
-                # 返回Qt可识别的格式
+                # 返回Qt可识别的格式 (r, g, b, a)
                 return (r, g, b, a)
         except (ValueError, IndexError) as e:
             logger.warning(f"解析rgba颜色失败: {color_str}, 错误: {e}")
             
     return color_str
+
+
+def parse_color_for_matplotlib(color_value) -> str:
+    """解析颜色值，用于matplotlib兼容的格式
+    
+    Args:
+        color_value: 颜色值，可以是字符串或元组
+        
+    Returns:
+        str: matplotlib兼容的颜色字符串（hex格式）
+    """
+    if not color_value:
+        return '#ffffff'
+    
+    if isinstance(color_value, (int, float)):
+        return color_value
+    
+    if isinstance(color_value, tuple) and len(color_value) >= 4:
+        r, g, b, a = color_value[:4]
+        hex_color = '#{:02x}{:02x}{:02x}'.format(
+            int(r), int(g), int(b)
+        )
+        return hex_color
+    
+    if isinstance(color_value, str):
+        if color_value.startswith('rgba(') and color_value.endswith(')'):
+            try:
+                rgba_content = color_value[5:-1]
+                parts = [part.strip() for part in rgba_content.split(',')]
+                if len(parts) >= 3:
+                    r, g, b = int(parts[0]), int(parts[1]), int(parts[2])
+                    hex_color = '#{:02x}{:02x}{:02x}'.format(r, g, b)
+                    return hex_color
+            except (ValueError, IndexError):
+                pass
+        return color_value
+    
+    return str(color_value)
+
+
+def get_alpha_value(colors: dict, key: str, default: float = 1.0) -> float:
+    """从颜色字典中提取 alpha 值
+    
+    Args:
+        colors: 主题颜色字典
+        key: alpha 值的键名
+        default: 默认值
+        
+    Returns:
+        float: alpha 透明度值
+    """
+    value = colors.get(key, default)
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            if value.startswith('rgba(') and value.endswith(')'):
+                rgba_content = value[5:-1]
+                parts = [p.strip() for p in rgba_content.split(',')]
+                if len(parts) >= 4:
+                    return float(parts[3])
+            return float(value)
+        except (ValueError, IndexError):
+            return default
+    return default
 
 DB_PATH = os.path.join(os.path.dirname(
     os.path.dirname(__file__)), 'data', 'factorweave_system.sqlite')
@@ -211,21 +276,18 @@ class ThemeManager(QObject):
         for qss_file in glob.glob(os.path.join(self.qss_theme_dir, '*.qss')):
             name = os.path.splitext(os.path.basename(qss_file))[0]
             content = safe_read_file(qss_file)
-            # 跳过已存在的主题
-            cur = self.conn.cursor()
-            cur.execute('SELECT id FROM themes WHERE name=?', (name,))
-            if cur.fetchone():
-                continue
-            self._upsert_theme(name, 'qss', content, 'file')
+            # 智能检测主题类型
+            base_type = self._detect_base_type(name, 'qss', content)
+            # 使用upsert插入或更新主题
+            self._upsert_theme(name, 'qss', content, 'file', base_type)
         # 导入JSON主题
         for t in self._theme_data.keys():
             name = t.capitalize()
             content = json.dumps(self._theme_data[t], ensure_ascii=False)
-            cur = self.conn.cursor()
-            cur.execute('SELECT id FROM themes WHERE name=?', (name,))
-            if cur.fetchone():
-                continue
-            self._upsert_theme(name, 'json', content, 'file')
+            # 智能检测主题类型
+            base_type = self._detect_base_type(name, 'json', content)
+            # 使用upsert插入或更新主题
+            self._upsert_theme(name, 'json', content, 'file', base_type)
 
     def _detect_base_type(self, theme_name: str, theme_type: str, content: str) -> str:
         """智能检测主题的基础类型
@@ -402,6 +464,10 @@ class ThemeManager(QObject):
             
             # 使用异步方式应用QSS主题，避免阻塞UI
             QTimer.singleShot(0, lambda: self._apply_qss_theme_async(theme_name, content, base_type))
+            
+            # 异步刷新所有窗口组件（确保QSS已应用后再刷新）
+            # 延迟100ms确保QSS主题已完全应用
+            QTimer.singleShot(100, self._refresh_all_widgets)
             
             logger.info(f"QSS主题切换: {theme_name} (base_type={base_type}, 异步应用...)")
         else:

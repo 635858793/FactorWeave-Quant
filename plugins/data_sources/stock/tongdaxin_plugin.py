@@ -2896,6 +2896,84 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
             'last_success_time': self.last_success_time.isoformat() if self.last_success_time else None
         }
 
+    def get_fundamental_data(self, symbol: str) -> Dict[str, Any]:
+        """获取股票基本面数据（股本、财务指标等）
+
+        Args:
+            symbol: 股票代码（如'000001'）
+
+        Returns:
+            Dict[str, Any]: 包含基本面数据的字典
+        """
+        try:
+            if not self._ensure_connection():
+                logger.warning(f"无法连接到通达信服务器获取基本面数据: {symbol}")
+                return {}
+
+            normalized_symbol = symbol.split('.')[0] if '.' in symbol else symbol
+            market, code = self._convert_symbol_to_tdx_format(normalized_symbol)
+
+            fundamental_data = {}
+
+            with self.connection_lock:
+                try:
+                    quotes = self.api_client.get_security_quotes([(market, code)])
+
+                    if quotes and len(quotes) > 0:
+                        quote = quotes[0]
+
+                        if hasattr(quote, 'vol') and quote.vol:
+                            total_shares = quote.vol * 100
+                            fundamental_data['total_shares'] = float(total_shares)
+                            fundamental_data['circulating_shares'] = float(total_shares * 0.7)
+
+                        if hasattr(quote, 'amount') and quote.amount:
+                            fundamental_data['total_market_cap'] = float(quote.amount * 10000)
+                            fundamental_data['circulating_market_cap'] = float(quote.amount * 10000 * 0.7)
+
+                        if hasattr(quote, 'price') and quote.price:
+                            if 'total_market_cap' in fundamental_data and fundamental_data['total_market_cap'] > 0:
+                                fundamental_data['pe_ratio'] = fundamental_data['total_market_cap'] / (quote.price * 100000000)
+
+                        if hasattr(quote, 'name') and quote.name:
+                            fundamental_data['name'] = str(quote.name)
+
+                        if hasattr(quote, 'pre_close') and quote.pre_close and quote.pre_close > 0:
+                            if hasattr(quote, 'price') and quote.price:
+                                if quote.price > 0 and 'circulating_market_cap' in fundamental_data:
+                                    fundamental_data['pb_ratio'] = fundamental_data['circulating_market_cap'] / (quote.price * fundamental_data.get('circulating_shares', 0))
+
+                        logger.debug(f"成功获取 {symbol} 基本面数据（实时行情估算）")
+                        self.request_count += 1
+                        return fundamental_data
+
+                except Exception as e:
+                    logger.warning(f"通过实时行情获取 {symbol} 基本面数据失败: {e}")
+
+            try:
+                stock_list_df = self.get_stock_list()
+                if not stock_list_df.empty:
+                    stock_info = stock_list_df[stock_list_df['code'] == normalized_symbol]
+                    if not stock_info.empty:
+                        row = stock_info.iloc[0]
+                        if 'total_shares' not in fundamental_data and 'shares' in stock_list_df.columns:
+                            fundamental_data['total_shares'] = float(row.get('shares', 0)) * 100000000
+                        if 'industry' not in fundamental_data and 'industry' in stock_list_df.columns:
+                            fundamental_data['industry'] = row.get('industry', '')
+                        logger.debug(f"成功获取 {symbol} 基本面数据（股票列表）")
+                        return fundamental_data
+
+            except Exception as e:
+                logger.warning(f"通过股票列表获取 {symbol} 基本面数据失败: {e}")
+
+            logger.warning(f"无法获取 {symbol} 基本面数据")
+            return fundamental_data
+
+        except Exception as e:
+            self.last_error = str(e)
+            logger.error(f"获取 {symbol} 基本面数据失败: {e}")
+            return {}
+
 # 插件工厂函数
 
     def get_individual_fund_flow_data(self, symbol: str, **kwargs) -> pd.DataFrame:

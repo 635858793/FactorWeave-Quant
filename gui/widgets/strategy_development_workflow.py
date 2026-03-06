@@ -176,7 +176,7 @@ class ModernStageCard(QFrame):
         self.is_active = False
         self.is_completed = False
         self._setup_ui()
-        self._apply_theme()
+        # self._apply_theme()
 
     def _setup_ui(self):
         self.setCursor(Qt.PointingHandCursor)
@@ -266,15 +266,15 @@ class ModernStageCard(QFrame):
             }}
         """)
 
-        self.index_label.setStyleSheet(f"""
-            QLabel {{
-                background-color: {index_bg};
-                color: {index_text};
-                border-radius: 18px;
-                font-weight: bold;
-                font-size: 14px;
-            }}
-        """)
+        # self.index_label.setStyleSheet(f"""
+        #     QLabel {{
+        #         background-color: {index_bg};
+        #         color: {index_text};
+        #         border-radius: 18px;
+        #         font-weight: bold;
+        #         font-size: 14px;
+        #     }}
+        # """)
 
         if self.is_completed:
             self.status_icon.setText('✓')
@@ -388,7 +388,7 @@ class StrategyDevelopmentWorkflow(QWidget):
         footer = self._create_footer()
         layout.addWidget(footer)
 
-        self._apply_theme()
+        # self._apply_theme()
         self._update_navigation()
         self._update_button_states()
 

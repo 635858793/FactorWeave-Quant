@@ -53,13 +53,12 @@ class IndicatorService:
         self._custom_functions = {}  # 存储自定义函数
 
     def close(self):
-        """关闭数据库连接"""
-        if hasattr(self, 'unified_service') and self.unified_service:
-            self.unified_service.close()
+        """关闭数据库连接（线程本地实例不需要关闭）"""
+        pass
 
     def __del__(self):
-        """析构函数，确保数据库连接被关闭"""
-        self.close()
+        """析构函数"""
+        pass
 
     def __enter__(self):
         """上下文管理器入口"""

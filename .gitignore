@@ -37,6 +37,7 @@ logs/*
 *.sqlite-journal
 .vscode/*
 *.sqlite-wal
+*.sqlite-shm
 *.db-wal
 *.db-shm
 .gitignore
@@ -44,3 +45,4 @@ performance_reports/*
 *.md
 !README.md
 web/*
+

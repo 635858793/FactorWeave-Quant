@@ -149,6 +149,10 @@ class AssetSeparatedDatabaseManager:
 
         # 线程锁
         self._db_lock = threading.RLock()
+        
+        # 关键修复：数据库级别写入锁，防止并发写入导致DuckDB ART索引冲突
+        # DuckDB不支持真正的并发写入，必须串行化写入操作
+        self._write_lock = threading.Lock()
 
         # 标准表结构定义
         self._table_schemas = self._initialize_table_schemas()
@@ -1444,19 +1448,22 @@ class AssetSeparatedDatabaseManager:
             if not table_name:
                 table_name = self._generate_table_name(data_type, asset_type)
 
-            # 获取数据库连接并存储数据
-            with self.duckdb_manager.get_connection(db_path) as conn:
-                # 创建表结构（如果不存在）
-                self._ensure_table_exists(conn, table_name, data, data_type)
+            # 关键修复：使用写入锁保护数据库写入操作
+            # DuckDB不支持真正的并发写入，必须串行化写入操作以避免ART索引冲突
+            with self._write_lock:
+                # 获取数据库连接并存储数据
+                with self.duckdb_manager.get_connection(db_path) as conn:
+                    # 创建表结构（如果不存在）
+                    self._ensure_table_exists(conn, table_name, data, data_type)
 
-                # 插入数据（使用upsert逻辑）
-                rows_affected = self._upsert_data(conn, table_name, data, data_type)
+                    # 插入数据（使用upsert逻辑）
+                    rows_affected = self._upsert_data(conn, table_name, data, data_type)
 
-                # 修复：移除运行时视图检测
-                # 视图在系统初始化时已经100%创建成功，运行时不需要检测
+                    # 修复：移除运行时视图检测
+                    # 视图在系统初始化时已经100%创建成功，运行时不需要检测
 
-                logger.info(f"成功存储 {rows_affected} 行数据到 {asset_type.value}/{table_name}")
-                return True
+                    logger.info(f"成功存储 {rows_affected} 行数据到 {asset_type.value}/{table_name}")
+                    return True
 
         except Exception as e:
             logger.error(f"存储标准化数据失败: {e}")
@@ -1908,147 +1915,75 @@ class AssetSeparatedDatabaseManager:
                 # 注册临时表
                 conn.register(temp_table, safe_data)
 
-                # 使用显式事务确保数据一致性（原子性操作）
-                conn.execute("BEGIN TRANSACTION")
+                # 关键修复：检测是否已有活跃事务，避免嵌套事务
+                # DuckDB不支持真正的嵌套事务，需要检测当前事务状态
+                has_active_transaction = False
+                try:
+                    # 尝试执行一个简单查询来检测事务状态
+                    # 如果在事务中，某些操作会有不同的行为
+                    result = conn.execute("SELECT current_setting('autocommit')").fetchone()
+                    if result and result[0] == 'false':
+                        has_active_transaction = True
+                except Exception:
+                    # 如果无法检测，假设没有活跃事务
+                    pass
+                
+                # 只有在没有活跃事务时才开始新事务
+                if not has_active_transaction:
+                    conn.execute("BEGIN TRANSACTION")
 
                 try:
                     # 构建批量UPSERT SQL（根据数据类型）
+                    # 修复：使用 INSERT OR REPLACE 替代 ON CONFLICT DO UPDATE
+                    # 避免 DuckDB ART 索引的唯一性检查过严问题（DELETE + INSERT 内部实现）
                     if data_type == DataType.HISTORICAL_KLINE:
                         # K线数据使用(symbol, data_source, timestamp, frequency)作为复合主键
-                        # 获取需要更新的字段（排除主键字段和updated_at）
-                        update_fields = []
-                        exclude_fields = ['symbol', 'data_source', 'timestamp', 'frequency', 'updated_at', 'created_at']
-                        for col in insert_columns:  # 使用 insert_columns（已经是 safe_columns）
-                            if col not in exclude_fields:
-                                update_fields.append(f'"{col}" = EXCLUDED."{col}"')
-
-                        # 使用NOW()函数而不是CURRENT_TIMESTAMP，避免DuckDB解析错误
-                        if update_fields:
-                            update_clause = ', '.join(update_fields)
-                            update_clause += ', "updated_at" = NOW()'
-                        else:
-                            update_clause = '"updated_at" = NOW()'
-
+                        # 使用 INSERT OR REPLACE 避免 ART 索引冲突
+                        # 获取需要插入的字段（排除updated_at，使用数据库默认值）
+                        insert_fields = [col for col in insert_columns if col not in ['updated_at', 'created_at']]
+                        
                         sql = f"""
-                            INSERT INTO {table_name} ({insert_columns_str})
-                            SELECT {insert_columns_str} FROM {temp_table}
-                            ON CONFLICT ("symbol", "data_source", "timestamp", "frequency") DO UPDATE SET
-                            {update_clause}
+                            INSERT OR REPLACE INTO {table_name} ({', '.join(f'"{col}"' for col in insert_fields)})
+                            SELECT {', '.join(f'"{col}"' for col in insert_fields)} FROM {temp_table}
                         """
-                        logger.debug(f"[K线数据批量插入] SQL构建完成，插入列数: {len(insert_columns)}")
+                        logger.debug(f"[K线数据批量插入] 使用 INSERT OR REPLACE，插入列数: {len(insert_fields)}")
 
                     elif data_type == DataType.REAL_TIME_QUOTE:
                         # 实时行情使用symbol和timestamp作为唯一键
-                        # 获取需要更新的字段（排除主键字段和updated_at）
-                        update_fields = []
-                        exclude_fields = ['symbol', 'timestamp', 'updated_at', 'created_at']
-                        for col in insert_columns:  # 使用 insert_columns（已经是 safe_columns）
-                            if col not in exclude_fields:
-                                update_fields.append(f'"{col}" = EXCLUDED."{col}"')
-
-                        if update_fields:
-                            update_clause = ', '.join(update_fields)
-                            update_clause += ', "updated_at" = NOW()'
-                        else:
-                            # 默认更新字段（如果没有其他字段）
-                            update_clause = '"updated_at" = NOW()'
-
+                        # 使用 INSERT OR REPLACE 避免 ART 索引冲突
+                        insert_fields = [col for col in insert_columns if col not in ['updated_at', 'created_at']]
+                        
                         sql = f"""
-                            INSERT INTO {table_name} ({insert_columns_str})
-                            SELECT {insert_columns_str} FROM {temp_table}
-                            ON CONFLICT ("symbol", "timestamp") DO UPDATE SET
-                            {update_clause}
+                            INSERT OR REPLACE INTO {table_name} ({', '.join(f'"{col}"' for col in insert_fields)})
+                            SELECT {', '.join(f'"{col}"' for col in insert_fields)} FROM {temp_table}
                         """
-                        logger.debug(f"[实时行情批量插入] ON CONFLICT字段: (symbol, timestamp)")
+                        logger.debug(f"[实时行情批量插入] 使用 INSERT OR REPLACE")
 
                     elif data_type == DataType.FUNDAMENTAL:
                         # 基本面数据使用symbol作为主键
-                        # 获取需要更新的字段（排除主键字段和updated_at/updated_time）
-                        update_fields = []
-                        exclude_fields = ['symbol', 'updated_at', 'updated_time', 'created_at']
-                        for col in insert_columns:  # 使用 insert_columns（已经是 safe_columns）
-                            if col not in exclude_fields:
-                                update_fields.append(f'"{col}" = EXCLUDED."{col}"')
-
-                        if update_fields:
-                            update_clause = ', '.join(update_fields)
-                            # 添加updated_at或updated_time（使用NOW()函数）
-                            if 'updated_at' in insert_columns:
-                                update_clause += ', "updated_at" = NOW()'
-                            elif 'updated_time' in insert_columns:
-                                update_clause += ', "updated_time" = NOW()'
-                        else:
-                            # 如果没有其他字段，至少更新updated_at或updated_time
-                            if 'updated_at' in insert_columns:
-                                update_clause = '"updated_at" = NOW()'
-                            elif 'updated_time' in insert_columns:
-                                update_clause = '"updated_time" = NOW()'
-                            else:
-                                update_clause = '"updated_at" = NOW()'  # 默认使用updated_at
-
+                        # 使用 INSERT OR REPLACE 避免 ART 索引冲突
+                        insert_fields = [col for col in insert_columns if col not in ['updated_at', 'updated_time', 'created_at']]
+                        
                         sql = f"""
-                            INSERT INTO {table_name} ({insert_columns_str})
-                            SELECT {insert_columns_str} FROM {temp_table}
-                            ON CONFLICT ("symbol") DO UPDATE SET
-                            {update_clause}
+                            INSERT OR REPLACE INTO {table_name} ({', '.join(f'"{col}"' for col in insert_fields)})
+                            SELECT {', '.join(f'"{col}"' for col in insert_fields)} FROM {temp_table}
                         """
-                        logger.debug(f"[基本面数据批量插入] ON CONFLICT字段: (symbol)")
+                        logger.debug(f"[基本面数据批量插入] 使用 INSERT OR REPLACE")
                     else:
                         # 其他数据类型的处理：智能检测主键
-                        # 尝试检测常见的主键字段，如果有则使用ON CONFLICT，否则使用简单INSERT
-                        # 常见主键字段：symbol, id, record_id, monitor_id, key等
-                        # 修复：使用 insert_columns 而不是 filtered_data.columns
+                        # 尝试检测常见的主键字段，如果有则使用 INSERT OR REPLACE
                         possible_pk_fields = ['symbol', 'id', 'record_id', 'monitor_id', 'key']
                         pk_fields_in_data = [f for f in possible_pk_fields if f in insert_columns]
 
                         if pk_fields_in_data:
-                            # 检测到主键字段，使用ON CONFLICT
-                            # 修复：排除updated_at和updated_time，避免重复赋值
-                            # 修复：使用 insert_columns 而不是 filtered_data.columns
-                            update_fields = []
-                            exclude_fields = pk_fields_in_data + ['updated_at', 'updated_time', 'created_at']
-                            for col in insert_columns:  # 使用 insert_columns（已经是 safe_columns）
-                                if col not in exclude_fields:
-                                    update_fields.append(f'"{col}" = EXCLUDED."{col}"')
-
-                            if update_fields:
-                                update_clause = ', '.join(update_fields)
-                                # 添加updated_at或updated_time（使用NOW()函数）
-                                if 'updated_at' in insert_columns:
-                                    update_clause += ', "updated_at" = NOW()'
-                                elif 'updated_time' in insert_columns:
-                                    update_clause += ', "updated_time" = NOW()'
-                            else:
-                                # 如果没有其他字段，至少更新updated_at（如果存在）
-                                if 'updated_at' in insert_columns:
-                                    update_clause = '"updated_at" = NOW()'
-                                elif 'updated_time' in insert_columns:
-                                    update_clause = '"updated_time" = NOW()'
-                                else:
-                                    # 如果连updated_at都没有，至少更新第一个非主键字段
-                                    non_pk_cols = [col for col in insert_columns if col not in pk_fields_in_data]
-                                    if non_pk_cols:
-                                        update_clause = f'"{non_pk_cols[0]}" = EXCLUDED."{non_pk_cols[0]}"'
-                                    else:
-                                        # 如果只有主键字段，使用简单INSERT（不会有冲突）
-                                        update_clause = None
-
-                            if update_clause:
-                                pk_clause = ', '.join(f'"{col}"' for col in pk_fields_in_data)
-                                sql = f"""
-                                    INSERT INTO {table_name} ({insert_columns_str})
-                                    SELECT {insert_columns_str} FROM {temp_table}
-                                    ON CONFLICT ({pk_clause}) DO UPDATE SET
-                                    {update_clause}
-                                """
-                                logger.debug(f"[其他数据类型批量插入] ON CONFLICT字段: ({pk_clause})")
-                            else:
-                                # 只有主键字段，使用简单INSERT
-                                sql = f"""
-                                    INSERT INTO {table_name} ({insert_columns_str})
-                                    SELECT {insert_columns_str} FROM {temp_table}
-                                """
-                                logger.debug(f"[其他数据类型批量插入] 简单插入模式（只有主键字段）")
+                            # 检测到主键字段，使用 INSERT OR REPLACE 避免 ART 索引冲突
+                            insert_fields = [col for col in insert_columns if col not in ['updated_at', 'updated_time', 'created_at']]
+                            
+                            sql = f"""
+                                INSERT OR REPLACE INTO {table_name} ({', '.join(f'"{col}"' for col in insert_fields)})
+                                SELECT {', '.join(f'"{col}"' for col in insert_fields)} FROM {temp_table}
+                            """
+                            logger.debug(f"[其他数据类型批量插入] 使用 INSERT OR REPLACE")
                         else:
                             # 没有检测到主键字段，使用简单INSERT
                             sql = f"""
@@ -2063,8 +1998,9 @@ class AssetSeparatedDatabaseManager:
                     write_duration = time.time() - write_start
                     write_speed = len(filtered_data) / write_duration if write_duration > 0 else 0
 
-                    # 提交事务
-                    conn.execute("COMMIT")
+                    # 只有在开启了事务的情况下才提交
+                    if not has_active_transaction:
+                        conn.execute("COMMIT")
 
                     # 记录性能日志
                     if write_duration > 1.0:
@@ -2076,11 +2012,13 @@ class AssetSeparatedDatabaseManager:
 
                 except Exception as e:
                     # 回滚事务（确保数据一致性）
-                    try:
-                        conn.execute("ROLLBACK")
-                        logger.error(f"[批量插入] 事务回滚: {e}")
-                    except Exception as rollback_error:
-                        logger.error(f"[批量插入] 回滚失败: {rollback_error}")
+                    # 只有在开启了事务的情况下才回滚
+                    if not has_active_transaction:
+                        try:
+                            conn.execute("ROLLBACK")
+                            logger.error(f"[批量插入] 事务回滚: {e}")
+                        except Exception as rollback_error:
+                            logger.error(f"[批量插入] 回滚失败: {rollback_error}")
                     raise
 
             except Exception as e:

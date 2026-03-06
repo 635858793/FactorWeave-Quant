@@ -15,6 +15,7 @@ import pandas as pd
 import importlib
 import asyncio
 import multiprocessing
+import threading
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from typing import Dict, List, Any, Optional, Union, Tuple, Callable
 from functools import lru_cache
@@ -1688,10 +1689,18 @@ class UnifiedIndicatorService:
 
 # 创建全局实例
 _unified_service = None
+_thread_local = threading.local()
 
 
 def get_unified_service() -> UnifiedIndicatorService:
-    """获取全局统一服务实例"""
+    """获取线程本地的统一服务实例（每个线程创建独立实例）"""
+    if not hasattr(_thread_local, 'service'):
+        _thread_local.service = UnifiedIndicatorService()
+    return _thread_local.service
+
+
+def get_main_service() -> UnifiedIndicatorService:
+    """获取主线程的全局服务实例（仅用于主线程）"""
     global _unified_service
     if _unified_service is None:
         _unified_service = UnifiedIndicatorService()

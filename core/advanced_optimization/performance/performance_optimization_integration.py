@@ -191,7 +191,7 @@ class PerformanceOptimizer:
                 logger.error(f"优化循环异常: {e}")
                 time.sleep(2.0)
     
-    def _optimize_based_on_current_metrics(self, current_metrics: UnifiedPerformanceMetrics):
+    def _optimize_based_on_current_metrics(self, current_metrics):
         """基于当前性能指标优化 - 简化版本"""
         try:
             current_time = time.time()
@@ -200,23 +200,33 @@ class PerformanceOptimizer:
             if current_time - self.last_adjustment_time < self.config.adjustment_cooldown:
                 return
             
+            # 处理不同类型的返回值
+            metrics_dict = {}
+            if isinstance(current_metrics, list) and len(current_metrics) > 0:
+                # 从列表中提取最新的指标字典
+                latest_metric = current_metrics[-1] if isinstance(current_metrics[-1], dict) else {}
+                metrics_dict = latest_metric if isinstance(latest_metric, dict) else {}
+            elif isinstance(current_metrics, dict):
+                metrics_dict = current_metrics
+            
             # 简化的性能检查 - 只检查严重性能问题
             critical_issues = []
             
             # GPU监控功能已移除
             
-            # 检查内存使用率  
-            if current_metrics.memory_metrics:
-                memory_util = current_metrics.memory_metrics.system_memory_usage_percent / 100.0
-                if memory_util > 0.9:  # 极度严重的内存使用率
-                    critical_issues.append("内存使用率过高")
+            # 检查内存使用率
+            memory_util = metrics_dict.get('memory_usage_percent', 0) or metrics_dict.get('system_memory_usage_percent', 0) or 0
+            if memory_util > 90:  # 极度严重的内存使用率
+                critical_issues.append("内存使用率过高")
             
             # 检查FPS
-            if current_metrics.rendering_fps > 0 and current_metrics.rendering_fps < 20:  # 严重低FPS
+            rendering_fps = metrics_dict.get('rendering_fps', 60) or metrics_dict.get('fps', 60)
+            if rendering_fps > 0 and rendering_fps < 20:  # 严重低FPS
                 critical_issues.append("FPS严重过低")
             
             # 检查延迟
-            if current_metrics.rendering_latency_ms > 200:  # 严重高延迟
+            rendering_latency = metrics_dict.get('rendering_latency_ms', 0) or metrics_dict.get('latency_ms', 0)
+            if rendering_latency > 200:  # 严重高延迟
                 critical_issues.append("渲染延迟过高")
             
             # 如果发现严重问题，执行简单调整
@@ -251,11 +261,21 @@ class PerformanceOptimizer:
             performance_metrics = {}
             current_metrics = self.coordinator.get_current_metrics()
             
+            # 处理不同类型的返回值
+            metrics_dict = {}
+            if isinstance(current_metrics, list) and len(current_metrics) > 0:
+                latest_metric = current_metrics[-1] if isinstance(current_metrics[-1], dict) else {}
+                metrics_dict = latest_metric if isinstance(latest_metric, dict) else {}
+            elif isinstance(current_metrics, dict):
+                metrics_dict = current_metrics
+            
             # GPU监控功能已移除
-            if current_metrics.memory_metrics:
-                performance_metrics['memory_utilization'] = current_metrics.memory_metrics.system_memory_usage_percent / 100.0
-            performance_metrics['fps'] = current_metrics.rendering_fps
-            performance_metrics['latency_ms'] = current_metrics.rendering_latency_ms
+            memory_util = metrics_dict.get('memory_usage_percent', 0) or metrics_dict.get('system_memory_usage_percent', 0) or 0
+            if memory_util:
+                performance_metrics['memory_utilization'] = memory_util / 100.0 if memory_util > 1 else memory_util
+            
+            performance_metrics['fps'] = metrics_dict.get('rendering_fps', 60) or metrics_dict.get('fps', 60)
+            performance_metrics['latency_ms'] = metrics_dict.get('rendering_latency_ms', 0) or metrics_dict.get('latency_ms', 0)
             
             # 创建反馈信息
             feedback = OptimizationFeedback(

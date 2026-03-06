@@ -120,7 +120,12 @@ def run_backtest(params: Dict[str, Any]):
             'price_col': str,        # 价格列名，默认'close'
             'initial_capital': float,# 初始资金，默认100000
             'commission_pct': float, # 手续费比例，默认0.001
-            'slippage_pct': float,   # 滑点比例，默认0.001
+            'slippage_pct': float,  # 滑点比例，默认0.001
+            'stop_loss_pct': float,  # 止损比例（可选）
+            'take_profit_pct': float,# 止盈比例（可选）
+            'max_holding_periods': int,  # 最大持有期（可选）
+            'use_vectorized_engine': bool,  # 是否使用向量化引擎
+            'auto_select_engine': bool,     # 是否自动选择引擎
         }
     返回：
         dict，包含回测结果和性能指标
@@ -148,11 +153,15 @@ def run_backtest(params: Dict[str, Any]):
         initial_capital = params.get('initial_capital', 100000)
         commission_pct = params.get('commission_pct', 0.001)
         slippage_pct = params.get('slippage_pct', 0.001)
+        
+        stop_loss_pct = params.get('stop_loss_pct')
+        take_profit_pct = params.get('take_profit_pct')
+        max_holding_periods = params.get('max_holding_periods')
 
         engine = UnifiedBacktestEngine(
             backtest_level=BacktestLevel.PROFESSIONAL if BacktestLevel else None,
-            use_vectorized_engine=True,
-            auto_select_engine=True
+            use_vectorized_engine=params.get('use_vectorized_engine', True),
+            auto_select_engine=params.get('auto_select_engine', True)
         )
 
         result = engine.run_backtest(
@@ -161,7 +170,10 @@ def run_backtest(params: Dict[str, Any]):
             price_col=price_col,
             initial_capital=initial_capital,
             commission_pct=commission_pct,
-            slippage_pct=slippage_pct
+            slippage_pct=slippage_pct,
+            stop_loss_pct=stop_loss_pct,
+            take_profit_pct=take_profit_pct,
+            max_holding_periods=max_holding_periods
         )
 
         logger.info(f"回测完成，结果: {list(result.keys()) if isinstance(result, dict) else '非dict'}")

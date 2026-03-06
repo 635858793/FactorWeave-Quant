@@ -7,21 +7,25 @@ import os
 import re
 import sys
 import threading
+import queue
 from typing import Dict, List, Optional, Tuple, Any
 from loguru import logger
+from concurrent.futures import ThreadPoolExecutor
+import time
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPlainTextEdit, QLabel,
     QPushButton, QToolBar, QAction, QStatusBar, QFileDialog,
     QMessageBox, QSplitter, QListWidget, QListWidgetItem, QTabWidget,
     QComboBox, QSpinBox, QGroupBox, QFormLayout, QDialog, QTextEdit,
-    QFrame, QSizePolicy, QMenu, QShortcut, QApplication
+    QFrame, QSizePolicy, QMenu, QShortcut, QApplication, QListView,
+    QAbstractItemView, QStyledItemDelegate, QStyleOptionViewItem, QStyle
 )
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QRegExp, QRect, QSize, QPoint
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QRegExp, QRect, QSize, QPoint, QStringListModel, QEvent, QThread, QMutex
 from PyQt5.QtGui import (
     QFont, QTextCharFormat, QSyntaxHighlighter, QColor, QTextCursor,
     QKeySequence, QIcon, QPainter, QTextBlock, QPen, QBrush, QLinearGradient,
-    QFontMetrics
+    QFontMetrics, QStandardItemModel, QStandardItem
 )
 
 try:
@@ -31,6 +35,429 @@ try:
 except ImportError as e:
     logger.warning(f"主题模块导入失败: {e}")
     THEME_AVAILABLE = False
+
+
+class AsyncCompletionWorker(QThread):
+    """异步补全工作线程 - 完全独立的线程处理补全请求"""
+    
+    completion_ready = pyqtSignal(int, list, str, str)  # request_id, completions, prefix, trigger_type
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._request_queue = queue.Queue()
+        self._running = True
+        self._current_request_id = 0
+        self._mutex = QMutex()
+        
+        self._init_completion_data()
+        
+    def _init_completion_data(self):
+        """初始化补全数据"""
+        self._python_keywords = [
+            'and', 'as', 'assert', 'async', 'await', 'break', 'class',
+            'continue', 'def', 'del', 'elif', 'else', 'except', 'False',
+            'finally', 'for', 'from', 'global', 'if', 'import', 'in',
+            'is', 'lambda', 'None', 'nonlocal', 'not', 'or', 'pass',
+            'raise', 'return', 'True', 'try', 'while', 'with', 'yield'
+        ]
+        self._python_builtins = [
+            'abs', 'all', 'any', 'bin', 'bool', 'bytearray', 'bytes',
+            'callable', 'chr', 'classmethod', 'compile', 'complex',
+            'delattr', 'dict', 'dir', 'divmod', 'enumerate', 'eval',
+            'exec', 'filter', 'float', 'format', 'frozenset', 'getattr',
+            'globals', 'hasattr', 'hash', 'help', 'hex', 'id', 'input',
+            'int', 'isinstance', 'issubclass', 'iter', 'len', 'list',
+            'locals', 'map', 'max', 'memoryview', 'min', 'next', 'object',
+            'oct', 'open', 'ord', 'pow', 'print', 'property', 'range',
+            'repr', 'reversed', 'round', 'set', 'setattr', 'slice',
+            'sorted', 'staticmethod', 'str', 'sum', 'super', 'tuple',
+            'type', 'vars', 'zip'
+        ]
+        self._hikyuu_api = [
+            'Stock', 'Query', 'KQuery', 'TimeLine', 'TransList', 
+            'Block', 'BlockList', 'StockManager', 'StockType',
+            'Parameter', 'PriceList', 'Datetime', 'TimeDelta',
+            'Strategy', 'System', 'TradeManager', 'TradeRecord',
+            'PositionRecord', 'FundsRecord', 'CostRecord',
+            'Indicator', 'KData', 'PriceList', 'DatetimeList',
+            'MA', 'EMA', 'SMA', 'MACD', 'KDJ', 'RSI', 'BOLL',
+            'ATR', 'ADX', 'OBV', 'VOL', 'VOLUME', 'CLOSE', 'OPEN',
+            'HIGH', 'LOW', 'AMO', 'K', 'D', 'J',
+            'CVAL', 'REF', 'HHV', 'LLV', 'SUM', 'COUNT', 'IF',
+            'CROSS', 'ABS', 'MAX', 'MIN', 'STD', 'VAR',
+            'get_stock', 'get_trading_calendar', 'get_version',
+            'hku_config_init', 'hku_init', 'set_config',
+            'get_context', 'set_context', 'run_strategy',
+        ]
+        self._system_strategy_api = [
+            'BaseStrategy', 'StrategyType', 'StrategyStatus', 'StrategySignal',
+            'StrategyParameter', 'StrategyInfo', 'StrategyRegistry', 'StrategyFactory',
+            'StrategyEngine', 'StrategyDatabaseManager', 'StrategyHotReloader',
+            'StrategyDependencyManager', 'StrategyParameterManager', 'StrategyLifecycleManager',
+            'create_strategy', 'execute_strategy', 'list_strategies', 'list_available_strategies',
+            'get_strategy_info', 'optimize_strategy_parameters', 'evaluate_strategy_performance',
+            'initialize_strategy_system', 'get_system_managers', 'get_system_stats',
+            'shutdown_strategy_system', 'get_strategy_registry', 'get_strategy_factory',
+            'get_strategy_engine', 'get_strategy_database_manager', 'get_strategy_hot_reloader',
+            'get_strategy_dependency_manager', 'get_parameter_manager', 'get_lifecycle_manager',
+            'initialize_strategy_factory', 'initialize_strategy_engine', 'initialize_strategy_database',
+            'initialize_parameter_manager', 'initialize_lifecycle_manager',
+            'register_strategy', 'process_pending_registrations',
+            'publish_strategy_event', 'subscribe_event', 'unsubscribe_event',
+            'create_strategy_started_event', 'create_strategy_stopped_event',
+            'create_signal_generated_event', 'create_strategy_error_event',
+            'get_event_metrics', 'reset_event_metrics', 'get_strategy_event_types',
+        ]
+        self._system_service_api = [
+            'get_strategy_service', 'get_database_service', 'get_event_bus',
+            'get_data_service', 'get_config_service', 'get_cache_service',
+            'get_logger', 'get_config', 'set_config',
+            'DatabaseService', 'EventBus', 'DataService', 'ConfigService',
+            'CacheService', 'LoggerService',
+        ]
+        self._strategy_base_methods = [
+            'generate_signals', '_init_default_parameters', 'add_parameter',
+            'set_parameter', 'get_parameter', 'get_parameters_dict',
+            'validate_parameters', 'start', 'stop', 'reset',
+            'get_strategy_info', 'get_performance_metrics', 'update_performance_metrics',
+            'publish_event', 'subscribe_event', 'unsubscribe_event',
+            '_generate_signals_with_event', '_start_with_event', '_stop_with_event',
+            '_trigger_signal_generated_event', '_trigger_strategy_started_event',
+            '_trigger_strategy_stopped_event', '_trigger_strategy_error_event',
+            '_clear_cache', '_get_event_bus',
+        ]
+        self._numpy_attrs = [
+            'array', 'zeros', 'ones', 'empty', 'arange', 'linspace',
+            'reshape', 'transpose', 'dot', 'matmul', 'sum', 'mean',
+            'std', 'var', 'min', 'max', 'argmin', 'argmax', 'sort',
+            'concatenate', 'stack', 'split', 'vstack', 'hstack',
+            'sin', 'cos', 'tan', 'exp', 'log', 'sqrt', 'abs',
+            'floor', 'ceil', 'round', 'clip', 'where', 'select',
+            'random', 'linalg', 'fft', 'polynomial', 'testing',
+            'ndarray', 'dtype', 'int32', 'int64', 'float32', 'float64',
+            'inf', 'nan', 'pi', 'e', 'newaxis', 's_', 'ix_', 'r_', 'c_',
+        ]
+        self._pandas_attrs = [
+            'DataFrame', 'Series', 'read_csv', 'read_excel', 'read_sql',
+            'to_csv', 'to_excel', 'concat', 'merge', 'join', 'groupby',
+            'pivot_table', 'melt', 'crosstab', 'cut', 'qcut',
+            'to_datetime', 'to_timedelta', 'date_range', 'bdate_range',
+            'isna', 'isnull', 'notna', 'notnull', 'fillna', 'dropna',
+            'drop_duplicates', 'sort_values', 'sort_index', 'reset_index',
+            'set_index', 'apply', 'applymap', 'map', 'agg', 'transform',
+            'rolling', 'expanding', 'ewm', 'shift', 'diff', 'pct_change',
+            'plot', 'hist', 'boxplot', 'scatter_matrix',
+        ]
+        self._matplotlib_attrs = [
+            'plot', 'scatter', 'bar', 'barh', 'hist', 'pie', 'boxplot',
+            'subplot', 'subplots', 'figure', 'axes', 'xlabel', 'ylabel',
+            'title', 'legend', 'grid', 'xlim', 'ylim', 'xticks', 'yticks',
+            'savefig', 'show', 'close', 'clf', 'cla', 'tight_layout',
+            'imshow', 'colorbar', 'contour', 'contourf', 'pcolor', 'pcolormesh',
+            'annotate', 'text', 'arrow', 'axhline', 'axvline', 'hlines', 'vlines',
+        ]
+        
+        self._module_map = {
+            'np': self._numpy_attrs,
+            'numpy': self._numpy_attrs,
+            'pd': self._pandas_attrs,
+            'pandas': self._pandas_attrs,
+            'plt': self._matplotlib_attrs,
+            'matplotlib.pyplot': self._matplotlib_attrs,
+            'hku': self._hikyuu_api,
+            'hikyuu': self._hikyuu_api,
+            'core.strategy': self._system_strategy_api,
+            'core.services': self._system_service_api,
+            'BaseStrategy': self._strategy_base_methods,
+        }
+        
+    def request_completion(self, code: str, line: int, column: int, prefix: str, trigger_type: str):
+        """请求补全 - 线程安全"""
+        self._mutex.lock()
+        self._current_request_id += 1
+        request_id = self._current_request_id
+        self._mutex.unlock()
+        
+        self._request_queue.put((request_id, code, line, column, prefix, trigger_type))
+        return request_id
+        
+    def stop(self):
+        """停止工作线程"""
+        self._running = False
+        self._request_queue.put((None, None, None, None, None, None))
+        
+    def run(self):
+        """工作线程主循环"""
+        while self._running:
+            try:
+                request = self._request_queue.get(timeout=0.1)
+                if request[0] is None:
+                    break
+                    
+                request_id, code, line, column, prefix, trigger_type = request
+                
+                completions = self._compute_completions(code, line, column, prefix)
+                
+                self.completion_ready.emit(request_id, completions, prefix, trigger_type)
+                
+            except queue.Empty:
+                continue
+            except Exception as e:
+                logger.debug(f"Completion worker error: {e}")
+                
+    def _compute_completions(self, code: str, line: int, column: int, prefix: str) -> List[str]:
+        """计算补全项 - 在工作线程中执行"""
+        completions = []
+        prefix_lower = prefix.lower() if prefix else ''
+        
+        text_before = self._get_text_before_cursor(code, line, column)
+        
+        if '.' in text_before:
+            module_completions = self._get_module_completions(text_before, prefix)
+            completions.extend(module_completions)
+        
+        for word in self._python_keywords:
+            if not prefix_lower or word.lower().startswith(prefix_lower):
+                if word not in completions:
+                    completions.append(word)
+                    
+        for word in self._python_builtins:
+            if not prefix_lower or word.lower().startswith(prefix_lower):
+                if word not in completions:
+                    completions.append(word)
+                    
+        for word in self._hikyuu_api:
+            if not prefix_lower or word.lower().startswith(prefix_lower):
+                if word not in completions:
+                    completions.append(word)
+                    
+        for word in self._system_strategy_api:
+            if not prefix_lower or word.lower().startswith(prefix_lower):
+                if word not in completions:
+                    completions.append(word)
+                    
+        for word in self._system_service_api:
+            if not prefix_lower or word.lower().startswith(prefix_lower):
+                if word not in completions:
+                    completions.append(word)
+                    
+        try:
+            import jedi
+            script = jedi.Script(code=code)
+            jedi_completions = script.complete(line, column)
+            for c in jedi_completions[:20]:
+                if c.name not in completions:
+                    if not prefix_lower or c.name.lower().startswith(prefix_lower):
+                        completions.append(c.name)
+        except Exception:
+            pass
+            
+        words_in_code = set(re.findall(r'\b[a-zA-Z_][a-zA-Z0-9_]*\b', code))
+        for word in words_in_code:
+            if not prefix_lower or word.lower().startswith(prefix_lower):
+                if word not in completions and len(word) > 2:
+                    completions.append(word)
+        
+        return completions[:50]
+        
+    def _get_text_before_cursor(self, code: str, line: int, column: int) -> str:
+        """获取光标前的文本"""
+        lines = code.split('\n')
+        if line <= len(lines):
+            return lines[line - 1][:column]
+        return ''
+        
+    def _get_module_completions(self, text_before: str, prefix: str) -> List[str]:
+        """获取模块属性补全"""
+        match = re.search(r'(\w+(?:\.\w+)*)\.$', text_before)
+        if match:
+            module_name = match.group(1)
+            attrs = self._module_map.get(module_name, [])
+            prefix_lower = prefix.lower() if prefix else ''
+            return [attr for attr in attrs if not prefix_lower or attr.lower().startswith(prefix_lower)]
+        return []
+
+
+class CompletionPopup(QWidget):
+    """代码补全弹窗组件 - 轻量级实现"""
+    
+    completion_selected = pyqtSignal(str)
+    
+    def __init__(self, parent=None, theme_manager=None):
+        super().__init__(parent)
+        self.theme_manager = theme_manager
+        
+        self.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground, False)
+        self.setFocusPolicy(Qt.NoFocus)
+        
+        self._items = []
+        self._current_index = -1
+        self._min_width = 280
+        self._max_visible_items = 10
+        self._item_height = 24
+        self._is_visible = False
+        
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(0)
+        
+        self._list_widget = QListWidget(self)
+        self._list_widget.setFocusPolicy(Qt.NoFocus)
+        self._list_widget.setSelectionMode(QAbstractItemView.SingleSelection)
+        self._list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._list_widget.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self._list_widget.itemClicked.connect(self._on_item_clicked)
+        self._list_widget.itemDoubleClicked.connect(self._on_item_double_clicked)
+        self._layout.addWidget(self._list_widget)
+        
+        self._apply_theme()
+        
+    def _apply_theme(self):
+        if self.theme_manager:
+            colors = self.theme_manager.get_theme_colors()
+            bg_color = colors.get('sidebar_bg', colors.get('background', '#2d2d2d'))
+            text_color = colors.get('text', '#d4d4d4')
+            selected_bg = colors.get('selected_bg', '#264f78')
+            border_color = colors.get('border', '#3c3c3c')
+            highlight_color = colors.get('highlight', '#1976d2')
+        else:
+            bg_color = '#2d2d2d'
+            text_color = '#d4d4d4'
+            selected_bg = '#264f78'
+            border_color = '#3c3c3c'
+            highlight_color = '#1976d2'
+            
+        self.setStyleSheet(f"""
+            QWidget {{
+                background-color: {bg_color};
+                border: 1px solid {border_color};
+                border-radius: 4px;
+            }}
+        """)
+        
+        self._list_widget.setStyleSheet(f"""
+            QListWidget {{
+                background-color: {bg_color};
+                border: none;
+                outline: none;
+                color: {text_color};
+                font-family: 'Segoe UI', Consolas;
+                font-size: 12px;
+            }}
+            QListWidget::item {{
+                padding: 4px 12px;
+                min-height: 20px;
+            }}
+            QListWidget::item:hover {{
+                background-color: {selected_bg};
+            }}
+            QListWidget::item:selected {{
+                background-color: {highlight_color};
+                color: white;
+            }}
+            QScrollBar:vertical {{
+                background-color: {bg_color};
+                width: 8px;
+                border-radius: 4px;
+            }}
+            QScrollBar::handle:vertical {{
+                background-color: {border_color};
+                border-radius: 4px;
+                min-height: 20px;
+            }}
+        """)
+        
+    def set_completions(self, completions: List[Dict]):
+        self._items = []
+        self._list_widget.clear()
+        for item in completions:
+            name = item.get('name', '')
+            item_type = item.get('type', 'unknown')
+            
+            icon_map = {
+                'function': '𝑓',
+                'class': 'ℂ',
+                'module': '📦',
+                'keyword': '🔑',
+                'instance': '📌',
+                'statement': '📝',
+                'param': '⚙️',
+            }
+            icon = icon_map.get(item_type, '•')
+            display_text = f"{icon} {name}"
+            
+            list_item = QListWidgetItem(display_text, self._list_widget)
+            list_item.setData(Qt.UserRole, name)
+            self._items.append(name)
+            
+        self._update_size()
+        
+    def set_simple_completions(self, words: List[str]):
+        self._items = []
+        self._list_widget.clear()
+        for word in words:
+            list_item = QListWidgetItem(word, self._list_widget)
+            list_item.setData(Qt.UserRole, word)
+            self._items.append(word)
+        self._update_size()
+        
+    def _update_size(self):
+        count = len(self._items)
+        visible_count = min(count, self._max_visible_items)
+        height = visible_count * self._item_height + 10
+        self.setFixedSize(self._min_width, height)
+        
+    def show_popup(self, pos: QPoint):
+        if len(self._items) > 0:
+            self._current_index = 0
+            self._list_widget.setCurrentRow(0)
+            self.move(pos)
+            self._is_visible = True
+            self.show()
+            
+    def hide_popup(self):
+        try:
+            self._current_index = -1
+            self._is_visible = False
+            self._items = []
+            self._list_widget.clear()
+            self.setVisible(False)
+        except Exception as e:
+            logger.debug(f"Hide popup error: {e}")
+        
+    def is_popup_visible(self):
+        return self._is_visible and self.isVisible()
+        
+    def select_next(self):
+        if len(self._items) == 0:
+            return
+        self._current_index = min(self._current_index + 1, len(self._items) - 1)
+        self._list_widget.setCurrentRow(self._current_index)
+        
+    def select_previous(self):
+        if len(self._items) == 0:
+            return
+        self._current_index = max(self._current_index - 1, 0)
+        self._list_widget.setCurrentRow(self._current_index)
+        
+    def get_current_text(self) -> Optional[str]:
+        if 0 <= self._current_index < len(self._items):
+            return self._items[self._current_index]
+        return None
+        
+    def _on_item_clicked(self, item):
+        pass
+        
+    def _on_item_double_clicked(self, item):
+        text = item.data(Qt.UserRole)
+        if text:
+            self.completion_selected.emit(text)
+        self.hide_popup()
+        
+    def update_theme(self, theme_manager):
+        self.theme_manager = theme_manager
+        self._apply_theme()
 
 
 class LineNumberArea(QWidget):
@@ -49,7 +476,13 @@ class LineNumberArea(QWidget):
     def paintEvent(self, event):
         if self.editor is None:
             painter = QPainter(self)
-            painter.fillRect(self.rect(), QColor('#2d2d2d'))
+            theme_manager = self._get_theme_manager() if hasattr(self, '_get_theme_manager') else None
+            if theme_manager:
+                colors = theme_manager.get_theme_colors()
+                bg_color = colors.get('sidebar_bg', colors.get('background', '#2d2d2d'))
+            else:
+                bg_color = '#2d2d2d'
+            painter.fillRect(self.rect(), QColor(bg_color))
             painter.end()
             return
         try:
@@ -99,7 +532,13 @@ class MinimapWidget(QWidget):
     def paintEvent(self, event):
         if self.editor is None:
             painter = QPainter(self)
-            painter.fillRect(self.rect(), QColor('#1e1e1e'))
+            theme_manager = self._get_theme_manager()
+            if theme_manager:
+                colors = theme_manager.get_theme_colors()
+                bg_color = colors.get('chart_background', colors.get('background', '#1e1e1e'))
+            else:
+                bg_color = '#1e1e1e'
+            painter.fillRect(self.rect(), QColor(bg_color))
             painter.end()
             return
             
@@ -109,7 +548,7 @@ class MinimapWidget(QWidget):
         theme_manager = self._get_theme_manager()
         if theme_manager:
             colors = theme_manager.get_theme_colors()
-            bg_color = colors.get('chart_background', '#1e1e1e')
+            bg_color = colors.get('chart_background', colors.get('background', '#1e1e1e'))
             text_color = colors.get('text', '#d4d4d4')
             highlight_color = colors.get('highlight', '#1976d2')
         else:
@@ -310,13 +749,25 @@ class CodeEditor(QPlainTextEdit):
         self._cached_code_hash = None
         self._cached_completions = None
         self._last_completion_position = None
-        self._debounce_interval = 800
+        self._debounce_interval = 300
         self._error_check_interval = 2000
+        
+        self._completion_popup = CompletionPopup(self, theme_manager)
+        self._completion_popup.completion_selected.connect(self._insert_completion)
+        self._completion_popup.hide()
+        
+        self._async_worker = AsyncCompletionWorker(self)
+        self._async_worker.completion_ready.connect(self._on_completion_ready)
+        self._async_worker.start()
+        
+        self._current_request_id = 0
+        self._pending_prefix = ''
+        self._suppress_completion = False
 
     def _init_theme(self):
         if self.theme_manager:
             colors = self.theme_manager.get_theme_colors()
-            bg_color = colors.get('chart_background', '#1e1e1e')
+            bg_color = colors.get('chart_background', colors.get('background', '#1e1e1e'))
             text_color = colors.get('text', '#d4d4d4')
             selection_color = colors.get('selected_bg', '#264f78')
             
@@ -329,17 +780,6 @@ class CodeEditor(QPlainTextEdit):
                     font-size: 11px;
                     selection-background-color: {selection_color};
                 }}
-            """)
-        else:
-            self.setStyleSheet("""
-                QPlainTextEdit {
-                    background-color: #1e1e1e;
-                    border: none;
-                    color: #d4d4d4;
-                    font-family: Consolas;
-                    font-size: 11px;
-                    selection-background-color: #264f78;
-                }
             """)
 
     def line_number_area_width(self):
@@ -386,7 +826,7 @@ class CodeEditor(QPlainTextEdit):
         try:
             if self.theme_manager:
                 colors = self.theme_manager.get_theme_colors()
-                bg_color = colors.get('sidebar_bg', '#252526')
+                bg_color = colors.get('sidebar_bg', colors.get('background', '#252526'))
                 text_color = colors.get('text', '#d4d4d4')
                 highlight_color = colors.get('highlight', '#1976d2')
                 breakpoint_color = colors.get('error', '#ef4444')
@@ -439,18 +879,53 @@ class CodeEditor(QPlainTextEdit):
             painter.end()
 
     def _on_text_changed(self):
+        if self._suppress_completion:
+            return
         self.completion_timer.start(self._debounce_interval)
         self.error_timer.start(self._error_check_interval)
 
     def _trigger_completion(self):
-        if self.completion_callback:
-            cursor = self.textCursor()
-            line = cursor.blockNumber()
-            column = cursor.columnNumber()
-            text_before_cursor = cursor.block().text()[:column]
+        if self._suppress_completion:
+            return
+        cursor = self.textCursor()
+        line = cursor.blockNumber() + 1
+        column = cursor.columnNumber()
+        text_before_cursor = cursor.block().text()[:column]
+        
+        if not text_before_cursor:
+            self._completion_popup.hide_popup()
+            return
             
+        word_match = re.search(r'[\w.]+$', text_before_cursor)
+        if not word_match:
+            self._completion_popup.hide_popup()
+            return
+            
+        current_word = word_match.group()
+        
+        if current_word.endswith('.'):
+            prefix = ''
+            trigger_type = 'dot'
+        elif '.' in current_word:
+            prefix = current_word.split('.')[-1]
+            trigger_type = 'dot'
+        else:
+            prefix = current_word
+            trigger_type = 'normal'
+            
+        if len(prefix) < 1 and trigger_type == 'normal':
+            self._completion_popup.hide_popup()
+            return
+            
+        self._pending_prefix = prefix
+        code = self.toPlainText()
+        
+        self._current_request_id = self._async_worker.request_completion(
+            code, line, column, prefix, trigger_type
+        )
+            
+        if self.completion_callback:
             current_position = (line, column)
-            code = self.toPlainText()
             code_hash = hash(code)
             
             if (self._cached_code_hash == code_hash and 
@@ -461,8 +936,127 @@ class CodeEditor(QPlainTextEdit):
             self._cached_code_hash = code_hash
             self._last_completion_position = current_position
             self.completion_callback(text_before_cursor, line, column)
+            
+    def _on_completion_ready(self, request_id: int, completions: List[str], prefix: str, trigger_type: str):
+        """处理异步补全结果 - 在主线程中执行"""
+        if request_id != self._current_request_id:
+            return
+            
+        if not completions:
+            self._completion_popup.hide_popup()
+            return
+            
+        self._completion_popup.set_simple_completions(completions)
+        cursor_rect = self.cursorRect()
+        cursor_rect.setWidth(self._completion_popup.width())
+        popup_pos = self.mapToGlobal(cursor_rect.bottomLeft())
+        self._completion_popup.show_popup(popup_pos)
+        
+    def _insert_completion(self, text: str):
+        try:
+            self._completion_popup.hide_popup()
+            
+            cursor = self.textCursor()
+            
+            cursor.movePosition(QTextCursor.StartOfWord, QTextCursor.KeepAnchor)
+            
+            selected = cursor.selectedText()
+            if selected and selected.endswith('.'):
+                cursor.movePosition(QTextCursor.Left, QTextCursor.KeepAnchor)
+                selected = cursor.selectedText()
+            
+            if selected:
+                cursor.removeSelectedText()
+            
+            cursor.insertText(text)
+            self.setTextCursor(cursor)
+            
+        except Exception as e:
+            logger.debug(f"Insert completion error: {e}")
+            self._completion_popup.hide_popup()
+        
+    def keyPressEvent(self, event):
+        key = event.key()
+        modifiers = event.modifiers()
+        
+        if self._completion_popup.is_popup_visible():
+            if key == Qt.Key_Escape:
+                self._completion_popup.hide_popup()
+                return
+            elif key == Qt.Key_Up:
+                self._completion_popup.select_previous()
+                return
+            elif key == Qt.Key_Down:
+                self._completion_popup.select_next()
+                return
+            elif key in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Tab):
+                text = self._completion_popup.get_current_text()
+                if text:
+                    self._completion_popup.hide_popup()
+                    self._suppress_completion = True
+                    try:
+                        self._do_insert_completion(text)
+                    finally:
+                        self._suppress_completion = False
+                else:
+                    self._completion_popup.hide_popup()
+                return
+            elif key in (Qt.Key_Backspace, Qt.Key_Delete):
+                self._completion_popup.hide_popup()
+            elif key == Qt.Key_Space:
+                self._completion_popup.hide_popup()
+                
+        if key == Qt.Key_Tab:
+            cursor = self.textCursor()
+            cursor.insertText('    ')
+            return
+        elif key == Qt.Key_Return:
+            cursor = self.textCursor()
+            line = cursor.block().text()
+            indent = ''
+            for char in line:
+                if char in ' \t':
+                    indent += char
+                else:
+                    break
+            super().keyPressEvent(event)
+            cursor.insertText(indent)
+            return
+        elif key == Qt.Key_Backspace:
+            cursor = self.textCursor()
+            if cursor.columnNumber() >= 4:
+                cursor.movePosition(QTextCursor.Left, QTextCursor.KeepAnchor, 4)
+                if cursor.selectedText() == '    ':
+                    cursor.removeSelectedText()
+                    return
+        elif key == Qt.Key_Period:
+            super().keyPressEvent(event)
+            QTimer.singleShot(100, self._trigger_completion)
+            return
+        elif key == Qt.Key_Space and modifiers == Qt.ControlModifier:
+            self._trigger_completion()
+            return
+
+        super().keyPressEvent(event)
+        
+    def _do_insert_completion(self, text: str):
+        """执行补全插入 - 直接操作，不触发信号"""
+        cursor = self.textCursor()
+        cursor.beginEditBlock()
+        try:
+            cursor.movePosition(QTextCursor.StartOfWord, QTextCursor.KeepAnchor)
+            selected = cursor.selectedText()
+            if selected and selected.endswith('.'):
+                cursor.movePosition(QTextCursor.Left, QTextCursor.KeepAnchor)
+            cursor.removeSelectedText()
+            cursor.insertText(text)
+        finally:
+            cursor.endEditBlock()
+        self.setTextCursor(cursor)
 
     def _check_errors(self):
+        if self._completion_popup.is_popup_visible():
+            return
         if self.error_callback:
             code = self.toPlainText()
             code_hash = hash(code)
@@ -478,33 +1072,6 @@ class CodeEditor(QPlainTextEdit):
         self._cached_completions = None
         self._last_completion_position = None
 
-    def keyPressEvent(self, event):
-        if event.key() == Qt.Key_Tab:
-            cursor = self.textCursor()
-            cursor.insertText('    ')
-            return
-        elif event.key() == Qt.Key_Return:
-            cursor = self.textCursor()
-            line = cursor.block().text()
-            indent = ''
-            for char in line:
-                if char in ' \t':
-                    indent += char
-                else:
-                    break
-            super().keyPressEvent(event)
-            cursor.insertText(indent)
-            return
-        elif event.key() == Qt.Key_Backspace:
-            cursor = self.textCursor()
-            if cursor.columnNumber() >= 4:
-                cursor.movePosition(QTextCursor.Left, QTextCursor.KeepAnchor, 4)
-                if cursor.selectedText() == '    ':
-                    cursor.removeSelectedText()
-                    return
-
-        super().keyPressEvent(event)
-
     def update_theme(self, theme_manager):
         self.theme_manager = theme_manager
         self._init_theme()
@@ -512,6 +1079,8 @@ class CodeEditor(QPlainTextEdit):
         self.line_number_area.update()
         if hasattr(self, 'minimap') and self.minimap:
             self.minimap.update()
+        if hasattr(self, '_completion_popup') and self._completion_popup:
+            self._completion_popup.update_theme(theme_manager)
 
 
 class ErrorListWidget(QWidget):
@@ -559,11 +1128,11 @@ class ErrorListWidget(QWidget):
     def _apply_theme(self):
         if self.theme_manager:
             colors = self.theme_manager.get_theme_colors()
-            bg_color = colors.get('chart_background', '#1e1e1e')
+            bg_color = colors.get('chart_background', colors.get('background', '#1e1e1e'))
             border_color = colors.get('border', '#3c3c3c')
             text_color = colors.get('text', '#d4d4d4')
             selected_bg = colors.get('selected_bg', '#264f78')
-            header_bg = colors.get('sidebar_bg', '#2d2d2d')
+            header_bg = colors.get('sidebar_bg', colors.get('background', '#2d2d2d'))
             error_color = colors.get('error', '#f44336')
             warning_color = colors.get('warning', '#ff9800')
             
@@ -602,24 +1171,6 @@ class ErrorListWidget(QWidget):
                 QListWidget::item:selected {{
                     background-color: {selected_bg};
                 }}
-            """)
-        else:
-            self.setStyleSheet("""
-                QListWidget {
-                    background-color: #1e1e1e;
-                    border: 1px solid #3c3c3c;
-                    border-radius: 4px;
-                    color: #d4d4d4;
-                    font-family: Consolas;
-                    font-size: 11px;
-                }
-                QListWidget::item {
-                    padding: 4px;
-                    border-bottom: 1px solid #3c3c3c;
-                }
-                QListWidget::item:selected {
-                    background-color: #264f78;
-                }
             """)
 
     def update_errors(self, errors: List[Dict]):
@@ -709,8 +1260,6 @@ class CodeOutlineWidget(QWidget):
 
         self.outline_tree = QListWidget()
         self.outline_tree.itemClicked.connect(self._on_item_clicked)
-        self.outline_tree.setIndentation(16)
-        self.outline_tree.setRootIsDecorated(False)
         layout.addWidget(self.outline_tree)
 
         self.setMinimumWidth(200)
@@ -720,11 +1269,11 @@ class CodeOutlineWidget(QWidget):
     def _apply_theme(self):
         if self.theme_manager:
             colors = self.theme_manager.get_theme_colors()
-            bg_color = colors.get('chart_background', '#1e1e1e')
+            bg_color = colors.get('chart_background', colors.get('background', '#1e1e1e'))
             border_color = colors.get('border', '#3c3c3c')
             text_color = colors.get('text', '#d4d4d4')
             selected_bg = colors.get('selected_bg', '#264f78')
-            header_bg = colors.get('sidebar_bg', '#2d2d2d')
+            header_bg = colors.get('sidebar_bg', colors.get('background', '#2d2d2d'))
             accent_color = colors.get('highlight', '#007acc')
             
             self.setStyleSheet(f"""
@@ -757,26 +1306,6 @@ class CodeOutlineWidget(QWidget):
                     background-color: {selected_bg};
                     border-left: 3px solid {accent_color};
                 }}
-            """)
-        else:
-            self.setStyleSheet("""
-                QListWidget {
-                    background-color: #1e1e1e;
-                    border: none;
-                    color: #d4d4d4;
-                    font-family: Consolas;
-                    font-size: 11px;
-                }
-                QListWidget::item {
-                    padding: 4px 8px;
-                    border-bottom: 1px solid #2d2d2d;
-                }
-                QListWidget::item:hover {
-                    background-color: #2d2d2d;
-                }
-                QListWidget::item:selected {
-                    background-color: #264f78;
-                }
             """)
 
     def update_outline(self, code: str):
@@ -1150,7 +1679,8 @@ class StrategyCodeEditor(QWidget):
                 background-color: #007acc;
                 color: white;
                 font-size: 11px;
-                min-height: 22px;
+                min-height: 24px;
+                max-height: 24px;
                 padding: 0 4px;
             }
             QStatusBar::item {
@@ -1160,30 +1690,37 @@ class StrategyCodeEditor(QWidget):
                 color: white;
                 padding: 0 12px;
                 border-left: 1px solid rgba(255,255,255,0.3);
+                line-height: 24px;
             }
             QStatusBar QLabel:first-child {
                 border-left: none;
             }
         """)
+        status_bar.setSizeGripEnabled(False)
         
         self._status_label = QLabel("就绪")
         self._status_label.setObjectName("status_label")
+        self._status_label.setFixedHeight(24)
         status_bar.addWidget(self._status_label)
         
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        spacer.setFixedHeight(24)
         status_bar.addWidget(spacer, 1)
         
         self._line_col_label = QLabel("行 1, 列 1")
         self._line_col_label.setObjectName("status_label")
+        self._line_col_label.setFixedHeight(24)
         status_bar.addPermanentWidget(self._line_col_label)
         
         self._encoding_label = QLabel("UTF-8")
         self._encoding_label.setObjectName("status_label")
+        self._encoding_label.setFixedHeight(24)
         status_bar.addPermanentWidget(self._encoding_label)
         
         self._language_label = QLabel("Python")
         self._language_label.setObjectName("status_label")
+        self._language_label.setFixedHeight(24)
         status_bar.addPermanentWidget(self._language_label)
         
         return status_bar
@@ -1191,13 +1728,13 @@ class StrategyCodeEditor(QWidget):
     def _apply_theme(self):
         if self.theme_manager:
             colors = self.theme_manager.get_theme_colors()
-            bg_color = colors.get('sidebar_bg', '#2d2d2d')
+            bg_color = colors.get('sidebar_bg', colors.get('background', '#2d2d2d'))
             text_color = colors.get('text', '#d4d4d4')
             border_color = colors.get('border', '#3c3c3c')
             highlight_color = colors.get('highlight', '#1976d2')
             button_bg = colors.get('button_bg', '#3c3c3c')
             button_hover = colors.get('button_hover', '#5a5a5a')
-            accent_color = colors.get('accent', '#007acc')
+            accent_color = colors.get('highlight', '#007acc')
             
             self.setStyleSheet(f"""
                 QToolBar#editor_toolbar {{
@@ -1225,7 +1762,8 @@ class StrategyCodeEditor(QWidget):
                     background-color: {accent_color};
                     color: white;
                     font-size: 11px;
-                    min-height: 22px;
+                    min-height: 24px;
+                    max-height: 24px;
                     padding: 0 4px;
                 }}
                 QStatusBar QLabel#status_label {{
@@ -1239,35 +1777,6 @@ class StrategyCodeEditor(QWidget):
                 QSplitter::handle:hover {{
                     background-color: {accent_color};
                 }}
-            """)
-        else:
-            self.setStyleSheet("""
-                QToolBar {
-                    background-color: #2d2d2d;
-                    border-bottom: 1px solid #3c3c3c;
-                    spacing: 4px;
-                    padding: 4px 8px;
-                }
-                QToolBar QToolButton {
-                    background-color: transparent;
-                    border: 1px solid transparent;
-                    border-radius: 4px;
-                    padding: 6px 12px;
-                    color: #d4d4d4;
-                    font-size: 12px;
-                }
-                QToolBar QToolButton:hover {
-                    background-color: #3c3c3c;
-                    border: 1px solid #5a5a5a;
-                }
-                QToolBar QToolButton:pressed {
-                    background-color: #264f78;
-                }
-                QStatusBar {
-                    background-color: #007acc;
-                    color: white;
-                    font-size: 11px;
-                }
             """)
 
     def _init_code_completion(self):
