@@ -3122,21 +3122,25 @@ FactorWeave-Quant  2.0 (重构版本)
     def _on_scheduled_import(self) -> None:
         """定时导入任务管理"""
         try:
-            from gui.dialogs.scheduled_import_dialog import ScheduledImportDialog
+            from gui.dialogs.scheduled_task_dialog import ScheduledTaskDialog
+            from core.importdata.import_config_manager import ImportConfigManager
 
-            dialog = ScheduledImportDialog(self._main_window)
+            config_manager = ImportConfigManager()
+            dialog = ScheduledTaskDialog(
+                config_manager=config_manager,
+                parent=self._main_window
+            )
             self.center_dialog(dialog)
             dialog.exec_()
 
-            logger.info("打开定时导入任务管理")
+            logger.info("打开定时任务配置对话框")
 
-        except ImportError:
-            # 如果对话框不存在，显示开发中提示
-            QMessageBox.information(self._main_window, "提示", "定时导入任务管理功能正在开发中")
-            logger.info("定时导入任务管理功能正在开发中")
+        except ImportError as e:
+            logger.error(f"导入定时任务对话框失败: {e}")
+            QMessageBox.information(self._main_window, "提示", "定时任务配置功能不可用")
         except Exception as e:
-            logger.error(f"打开定时导入任务管理失败: {e}")
-            QMessageBox.warning(self._main_window, "错误", f"无法打开定时导入任务管理: {e}")
+            logger.error(f"打开定时任务配置失败: {e}")
+            QMessageBox.warning(self._main_window, "错误", f"无法打开定时任务配置: {e}")
 
     def _on_import_history(self) -> None:
         """查看导入历史记录"""

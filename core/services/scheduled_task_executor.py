@@ -154,19 +154,28 @@ class ScheduledTaskExecutor(QObject):
         try:
             tasks = self.config_manager.get_import_tasks()
             checked_count = 0
+            scheduled_count = 0
+            disabled_count = 0
+            no_cron_count = 0
             now = datetime.now()
 
             for task in tasks:
                 checked_count += 1
 
                 if not task.enabled:
+                    disabled_count += 1
                     continue
 
                 if not hasattr(task, 'schedule_cron') or not task.schedule_cron:
+                    no_cron_count += 1
                     continue
 
+                scheduled_count += 1
                 if self._should_execute(task.schedule_cron, task.task_id, now):
                     self._execute_task(task.task_id)
+
+            if scheduled_count > 0:
+                logger.info(f"定时任务检查: 共{checked_count}个任务, {scheduled_count}个定时任务, {disabled_count}个已禁用, {no_cron_count}个无定时配置")
 
             self.schedule_checked.emit(checked_count)
 
