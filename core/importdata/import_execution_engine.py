@@ -467,35 +467,45 @@ class DataImportExecutionEngine(QObject):
         self.real_data_provider = None
         self._real_data_provider_initialized = False
 
-        # AI预测服务 - 智能优化导入过程
+        # AI预测服务 - 延迟初始化以避免阻塞
         self.enable_ai_optimization = enable_ai_optimization
         self.ai_prediction_service = None
         self._ai_service_initialized = False
-        if enable_ai_optimization:
-            self._init_ai_service()
+        # 优化：不在构造函数中初始化AI服务，改为懒加载
+        # if enable_ai_optimization:
+        #     self._init_ai_service()
 
-        # 深度分析服务 - 性能监控和异常检测
-        self.deep_analysis_service = DeepAnalysisService()
-        self.performance_integrator = FactorWeavePerformanceIntegrator()
+        # 深度分析服务 - 延迟初始化以避免阻塞
+        self.deep_analysis_service = None
+        self._deep_analysis_initialized = False
+        self.performance_integrator = None
+        self._performance_integrator_initialized = False
 
-        # 增强版性能数据桥接系统
+        # 增强版性能数据桥接系统 - 延迟初始化
         self.enable_enhanced_performance_bridge = enable_enhanced_performance_bridge
         self.enhanced_performance_bridge = None
-        if enable_enhanced_performance_bridge:
-            self._init_enhanced_performance_bridge()
+        self._enhanced_performance_bridge_initialized = False
+        # 优化：不在构造函数中初始化，改为懒加载
+        # if enable_enhanced_performance_bridge:
+        #     self._init_enhanced_performance_bridge()
 
-        # 增强版风险监控系统
+        # 增强版风险监控系统 - 延迟初始化
         self.enable_enhanced_risk_monitoring = enable_enhanced_risk_monitoring
         self.enhanced_risk_monitor = None
-        if enable_enhanced_risk_monitoring:
-            self._init_enhanced_risk_monitor()
+        self._enhanced_risk_monitor_initialized = False
+        # 优化：不在构造函数中初始化，改为懒加载
+        # if enable_enhanced_risk_monitoring:
+        #     self._init_enhanced_risk_monitor()
 
-        # 多级缓存系统
-        self.cache_manager = self._init_cache_manager()
+        # 多级缓存系统 - 延迟初始化
+        self.cache_manager = None
+        self._cache_manager_initialized = False
 
-        # 分布式服务系统
-        self.distributed_service = self._init_distributed_service()
-        self.node_discovery = self._init_node_discovery()
+        # 分布式服务系统 - 延迟初始化
+        self.distributed_service = None
+        self._distributed_service_initialized = False
+        self.node_discovery = None
+        self._node_discovery_initialized = False
 
         # 监控配置
         self.enable_performance_monitoring = True
@@ -511,11 +521,13 @@ class DataImportExecutionEngine(QObject):
         self.executor = ThreadPoolExecutor(max_workers=max_workers,
                                            thread_name_prefix="ImportEngine")
 
-        # 自动调优系统（需要在线程池初始化之后）
-        self.auto_tuner = self._init_auto_tuner()
+        # 自动调优系统 - 延迟初始化
+        self.auto_tuner = None
+        self._auto_tuner_initialized = False
 
-        # 数据质量监控系统
-        self.data_quality_monitor = self._init_data_quality_monitor()
+        # 数据质量监控系统 - 延迟初始化
+        self.data_quality_monitor = None
+        self._data_quality_monitor_initialized = False
 
         # 数据库写入线程（单线程模式，解决DuckDB并发写入死锁）
         self.db_writer_thread = DatabaseWriterThread()
@@ -533,14 +545,21 @@ class DataImportExecutionEngine(QObject):
         self._quality_score_cache = {}  # key: f"{data_source}_{date}", value: score
         self._quality_cache_ttl = 3600  # 缓存1小时
 
-        self.event_bus = self._init_event_bus()
+        # 事件总线 - 延迟初始化
+        self.event_bus = None
+        self._event_bus_initialized = False
 
-        self.enhanced_async_manager = self._init_enhanced_async_manager()
+        # 增强异步管理器 - 延迟初始化
+        self.enhanced_async_manager = None
+        self._enhanced_async_manager_initialized = False
 
         # 任务管理
         self._running_tasks: Dict[str, Future] = {}
         self._task_results: Dict[str, TaskExecutionResult] = {}
         self._task_lock = threading.RLock()
+        
+        # 懒加载线程锁（确保线程安全的延迟初始化）
+        self._lazy_init_lock = threading.RLock()
 
         # AI优化统计
         self._ai_optimization_stats = {
@@ -555,7 +574,95 @@ class DataImportExecutionEngine(QObject):
         self.progress_timer.timeout.connect(self._update_progress)
         self.progress_timer.start(1000)  # 每秒更新一次进度
 
-        logger.info(f"数据导入执行引擎初始化完成 (AI优化: {'启用' if enable_ai_optimization else '禁用'})")
+        logger.info(f"数据导入执行引擎初始化完成 (AI优化: {'启用' if enable_ai_optimization else '禁用'}, 懒加载模式)")
+
+    def _ensure_ai_service(self):
+        """确保AI服务已初始化（懒加载，线程安全）"""
+        with self._lazy_init_lock:
+            if not self._ai_service_initialized and self.enable_ai_optimization:
+                self._init_ai_service()
+
+    def _ensure_deep_analysis_service(self):
+        """确保深度分析服务已初始化（懒加载，线程安全）"""
+        with self._lazy_init_lock:
+            if not self._deep_analysis_initialized:
+                try:
+                    self.deep_analysis_service = DeepAnalysisService()
+                    self._deep_analysis_initialized = True
+                    logger.info("深度分析服务初始化成功")
+                except Exception as e:
+                    logger.warning(f"深度分析服务初始化失败: {e}")
+
+    def _ensure_performance_integrator(self):
+        """确保性能集成器已初始化（懒加载，线程安全）"""
+        with self._lazy_init_lock:
+            if not self._performance_integrator_initialized:
+                try:
+                    self.performance_integrator = FactorWeavePerformanceIntegrator()
+                    self._performance_integrator_initialized = True
+                    logger.info("性能集成器初始化成功")
+                except Exception as e:
+                    logger.warning(f"性能集成器初始化失败: {e}")
+
+    def _ensure_enhanced_performance_bridge(self):
+        """确保增强性能桥接已初始化（懒加载，线程安全）"""
+        with self._lazy_init_lock:
+            if not self._enhanced_performance_bridge_initialized and self.enable_enhanced_performance_bridge:
+                self._init_enhanced_performance_bridge()
+
+    def _ensure_enhanced_risk_monitor(self):
+        """确保增强风险监控已初始化（懒加载，线程安全）"""
+        with self._lazy_init_lock:
+            if not self._enhanced_risk_monitor_initialized and self.enable_enhanced_risk_monitoring:
+                self._init_enhanced_risk_monitor()
+
+    def _ensure_cache_manager(self):
+        """确保缓存管理器已初始化（懒加载，线程安全）"""
+        with self._lazy_init_lock:
+            if not self._cache_manager_initialized:
+                self.cache_manager = self._init_cache_manager()
+
+    def _ensure_distributed_service(self):
+        """确保分布式服务已初始化（懒加载，线程安全）"""
+        with self._lazy_init_lock:
+            if not self._distributed_service_initialized:
+                self.distributed_service = self._init_distributed_service()
+                self._distributed_service_initialized = True
+
+    def _ensure_node_discovery(self):
+        """确保节点发现已初始化（懒加载，线程安全）"""
+        with self._lazy_init_lock:
+            if not self._node_discovery_initialized:
+                self.node_discovery = self._init_node_discovery()
+                self._node_discovery_initialized = True
+
+    def _ensure_auto_tuner(self):
+        """确保自动调优器已初始化（懒加载，线程安全）"""
+        with self._lazy_init_lock:
+            if not self._auto_tuner_initialized:
+                self.auto_tuner = self._init_auto_tuner()
+                self._auto_tuner_initialized = True
+
+    def _ensure_data_quality_monitor(self):
+        """确保数据质量监控已初始化（懒加载，线程安全）"""
+        with self._lazy_init_lock:
+            if not self._data_quality_monitor_initialized:
+                self.data_quality_monitor = self._init_data_quality_monitor()
+                self._data_quality_monitor_initialized = True
+
+    def _ensure_event_bus(self):
+        """确保事件总线已初始化（懒加载，线程安全）"""
+        with self._lazy_init_lock:
+            if not self._event_bus_initialized:
+                self.event_bus = self._init_event_bus()
+                self._event_bus_initialized = True
+
+    def _ensure_enhanced_async_manager(self):
+        """确保增强异步管理器已初始化（懒加载，线程安全）"""
+        with self._lazy_init_lock:
+            if not self._enhanced_async_manager_initialized:
+                self.enhanced_async_manager = self._init_enhanced_async_manager()
+                self._enhanced_async_manager_initialized = True
 
     def _init_ai_service(self):
         """初始化AI预测服务"""
@@ -570,7 +677,12 @@ class DataImportExecutionEngine(QObject):
 
     def _predict_execution_time(self, task_config: ImportTaskConfig) -> Optional[float]:
         """使用AI预测任务执行时间"""
-        if not self.enable_ai_optimization or not self._ai_service_initialized:
+        if not self.enable_ai_optimization:
+            return None
+        
+        # 确保AI服务已初始化
+        self._ensure_ai_service()
+        if not self._ai_service_initialized:
             return None
 
         try:
@@ -585,10 +697,11 @@ class DataImportExecutionEngine(QObject):
             }
 
             # 调用AI预测服务
-            prediction_result = self.ai_prediction_service.predict(
-                PredictionType.EXECUTION_TIME,
-                prediction_data
-            )
+            if self.ai_prediction_service:
+                prediction_result = self.ai_prediction_service.predict(
+                    PredictionType.EXECUTION_TIME,
+                    prediction_data
+                )
 
             if prediction_result and prediction_result.get('success'):
                 predicted_time = prediction_result.get('predicted_time', 0)
@@ -603,14 +716,19 @@ class DataImportExecutionEngine(QObject):
 
     def _optimize_task_parameters(self, task_config: ImportTaskConfig) -> ImportTaskConfig:
         """使用AI优化任务参数"""
-        if not self.enable_ai_optimization or not self._ai_service_initialized:
+        if not self.enable_ai_optimization:
+            return task_config
+        
+        # 确保AI服务已初始化
+        self._ensure_ai_service()
+        if not self._ai_service_initialized:
             return task_config
 
         try:
             # 获取历史执行数据用于优化
             historical_data = self._get_historical_execution_data(task_config)
 
-            if historical_data:
+            if historical_data and self.ai_prediction_service:
                 # 使用AI预测最优参数
                 optimization_result = self.ai_prediction_service.predict(
                     PredictionType.PARAMETER_OPTIMIZATION,
@@ -686,6 +804,9 @@ class DataImportExecutionEngine(QObject):
         try:
             cache_key = f"task_{task_id}_{data_type}"
 
+            # 确保缓存管理器已初始化
+            self._ensure_cache_manager()
+            
             # 使用多级缓存存储
             if self.cache_manager:
                 success = self.cache_manager.set(cache_key, data)
@@ -706,6 +827,9 @@ class DataImportExecutionEngine(QObject):
         try:
             cache_key = f"task_{task_id}_{data_type}"
 
+            # 确保缓存管理器已初始化
+            self._ensure_cache_manager()
+            
             # 优先从多级缓存获取
             if self.cache_manager:
                 data = self.cache_manager.get(cache_key)
@@ -740,6 +864,9 @@ class DataImportExecutionEngine(QObject):
                 'cached_at': datetime.now().isoformat()
             }
 
+            # 确保缓存管理器已初始化
+            self._ensure_cache_manager()
+            
             if self.cache_manager:
                 return self.cache_manager.set(cache_key, cache_data)
 
@@ -760,6 +887,9 @@ class DataImportExecutionEngine(QObject):
 
             cache_key = f"config_{config_hash}"
 
+            # 确保缓存管理器已初始化
+            self._ensure_cache_manager()
+            
             if self.cache_manager:
                 return self.cache_manager.get(cache_key)
 
@@ -792,6 +922,9 @@ class DataImportExecutionEngine(QObject):
                                        priority: str = "normal") -> Optional[str]:
         """提交分布式导入任务"""
         try:
+            # 确保分布式服务已初始化
+            self._ensure_distributed_service()
+            
             if not self.distributed_service:
                 logger.warning("分布式服务未初始化，无法提交分布式任务")
                 return None
@@ -851,6 +984,9 @@ class DataImportExecutionEngine(QObject):
     def get_distributed_service_status(self) -> Dict[str, Any]:
         """获取分布式服务状态"""
         try:
+            # 确保分布式服务已初始化
+            self._ensure_distributed_service()
+            
             if not self.distributed_service:
                 return {"error": "分布式服务未初始化"}
 
@@ -961,6 +1097,9 @@ class DataImportExecutionEngine(QObject):
             return False
 
         try:
+            # 确保分布式服务已初始化
+            self._ensure_distributed_service()
+            
             # 使用真实的DistributedService检查节点
             if not self.distributed_service:
                 logger.debug("分布式服务未初始化")
@@ -997,6 +1136,9 @@ class DataImportExecutionEngine(QObject):
             return False
 
         try:
+            # 确保分布式服务已初始化
+            self._ensure_distributed_service()
+            
             # 使用真实的DistributedService提交任务
             logger.info(f"开始分布式执行任务: {task_config.task_id}")
 
@@ -1222,6 +1364,9 @@ class DataImportExecutionEngine(QObject):
                                    resource_requirements: ResourceRequirement = None,
                                    **kwargs) -> Optional[str]:
         """提交增强版异步任务"""
+        # 确保增强异步管理器已初始化
+        self._ensure_enhanced_async_manager()
+        
         if not self.enable_enhanced_async_management or not self.enhanced_async_manager:
             logger.warning("增强版异步管理器未启用或未初始化")
             return None
@@ -1249,6 +1394,9 @@ class DataImportExecutionEngine(QObject):
                              priority: EventPriority = EventPriority.NORMAL,
                              correlation_id: str = None):
         """发布导入相关事件"""
+        # 确保事件总线已初始化
+        self._ensure_event_bus()
+        
         if not self.enable_enhanced_event_processing or not self.event_bus:
             return
 
@@ -1265,9 +1413,13 @@ class DataImportExecutionEngine(QObject):
         """获取增强版处理统计信息"""
         stats = {}
 
+        # 确保事件总线已初始化
+        self._ensure_event_bus()
         if self.event_bus:
             stats['event_bus'] = self.event_bus.get_stats()
 
+        # 确保增强异步管理器已初始化
+        self._ensure_enhanced_async_manager()
         if self.enhanced_async_manager:
             stats['async_manager'] = self.enhanced_async_manager.get_stats()
 
@@ -1737,6 +1889,9 @@ class DataImportExecutionEngine(QObject):
         }
 
         try:
+            # 确保自动调优器已初始化
+            self._ensure_auto_tuner()
+            
             if self.auto_tuner:
                 # 获取调优器状态
                 tuner_status = self.auto_tuner.get_status()
@@ -2287,15 +2442,22 @@ class DataImportExecutionEngine(QObject):
             return
 
         try:
+            # 确保深度分析服务已初始化
+            self._ensure_deep_analysis_service()
+            # 确保性能集成器已初始化
+            self._ensure_performance_integrator()
+            
             # 记录任务开始时的系统状态
-            self.deep_analysis_service.record_metric(
-                f"task_start_{task_id}",
-                time.time(),
-                "import_task"
-            )
+            if self.deep_analysis_service:
+                self.deep_analysis_service.record_metric(
+                    f"task_start_{task_id}",
+                    time.time(),
+                    "import_task"
+                )
 
             # 启动性能集成器监控
-            self.performance_integrator.start_monitoring()
+            if self.performance_integrator:
+                self.performance_integrator.start_monitoring()
 
             logger.info(f"任务 {task_id} 性能监控已启动")
 
@@ -2308,25 +2470,29 @@ class DataImportExecutionEngine(QObject):
             return
 
         try:
+            # 确保深度分析服务已初始化
+            self._ensure_deep_analysis_service()
+            
             # 记录任务执行时间
-            self.deep_analysis_service.record_operation_timing(
-                f"import_task_{task_id}",
-                execution_time
-            )
+            if self.deep_analysis_service:
+                self.deep_analysis_service.record_operation_timing(
+                    f"import_task_{task_id}",
+                    execution_time
+                )
 
-            # 记录任务完成时的系统状态
-            self.deep_analysis_service.record_metric(
-                f"task_end_{task_id}",
-                time.time(),
-                "import_task"
-            )
+                # 记录任务完成时的系统状态
+                self.deep_analysis_service.record_metric(
+                    f"task_end_{task_id}",
+                    time.time(),
+                    "import_task"
+                )
 
-            # 分析性能瓶颈
-            bottlenecks = self.deep_analysis_service.analyze_bottlenecks()
-            if bottlenecks:
-                logger.info(f"任务 {task_id} 性能瓶颈分析: {len(bottlenecks)} 个瓶颈点")
-                for bottleneck in bottlenecks[:3]:  # 显示前3个瓶颈
-                    logger.info(f"  - {bottleneck.component}: {bottleneck.avg_duration:.2f}ms ({bottleneck.severity})")
+                # 分析性能瓶颈
+                bottlenecks = self.deep_analysis_service.analyze_bottlenecks()
+                if bottlenecks:
+                    logger.info(f"任务 {task_id} 性能瓶颈分析: {len(bottlenecks)} 个瓶颈点")
+                    for bottleneck in bottlenecks[:3]:  # 显示前3个瓶颈
+                        logger.info(f"  - {bottleneck.component}: {bottleneck.avg_duration:.2f}ms ({bottleneck.severity})")
 
             logger.info(f"任务 {task_id} 性能监控已停止")
 
@@ -2339,14 +2505,20 @@ class DataImportExecutionEngine(QObject):
             return []
 
         try:
-            anomalies = self.deep_analysis_service.detect_anomalies()
+            # 确保深度分析服务已初始化
+            self._ensure_deep_analysis_service()
+            
+            if self.deep_analysis_service:
+                anomalies = self.deep_analysis_service.detect_anomalies()
 
-            if anomalies:
-                logger.warning(f"任务 {task_id} 检测到 {len(anomalies)} 个异常:")
-                for anomaly in anomalies:
-                    logger.warning(f"  - {anomaly.metric_name}: {anomaly.description} (严重程度: {anomaly.severity})")
+                if anomalies:
+                    logger.warning(f"任务 {task_id} 检测到 {len(anomalies)} 个异常:")
+                    for anomaly in anomalies:
+                        logger.warning(f"  - {anomaly.metric_name}: {anomaly.description} (严重程度: {anomaly.severity})")
 
-            return anomalies
+                return anomalies
+            
+            return []
 
         except Exception as e:
             logger.error(f"异常检测失败: {e}")
@@ -2357,11 +2529,15 @@ class DataImportExecutionEngine(QObject):
         try:
             # 记录进度指标
             if self.enable_performance_monitoring:
-                self.deep_analysis_service.record_metric(
-                    f"task_progress_{task_id}",
-                    progress,
-                    "import_progress"
-                )
+                # 确保深度分析服务已初始化
+                self._ensure_deep_analysis_service()
+                
+                if self.deep_analysis_service:
+                    self.deep_analysis_service.record_metric(
+                        f"task_progress_{task_id}",
+                        progress,
+                        "import_progress"
+                    )
 
             # 检测进度异常
             if self.enable_anomaly_detection:
@@ -2391,34 +2567,42 @@ class DataImportExecutionEngine(QObject):
             }
 
             if self.enable_performance_monitoring:
-                # 获取性能统计
-                bottlenecks = self.deep_analysis_service.analyze_bottlenecks()
-                report['bottlenecks'] = [
-                    {
-                        'component': b.component,
-                        'avg_duration': b.avg_duration,
-                        'call_count': b.call_count,
-                        'severity': b.severity
-                    } for b in bottlenecks[:5]
-                ]
+                # 确保深度分析服务已初始化
+                self._ensure_deep_analysis_service()
+                
+                if self.deep_analysis_service:
+                    # 获取性能统计
+                    bottlenecks = self.deep_analysis_service.analyze_bottlenecks()
+                    report['bottlenecks'] = [
+                        {
+                            'component': b.component,
+                            'avg_duration': b.avg_duration,
+                            'call_count': b.call_count,
+                            'severity': b.severity
+                        } for b in bottlenecks[:5]
+                    ]
 
-                # 获取系统指标
-                system_metrics = self.deep_analysis_service.get_system_metrics()
-                report['system_metrics'] = system_metrics
+                    # 获取系统指标
+                    system_metrics = self.deep_analysis_service.get_system_metrics()
+                    report['system_metrics'] = system_metrics
 
             if self.enable_anomaly_detection:
-                # 获取异常信息
-                anomalies = self.deep_analysis_service.detect_anomalies()
-                report['anomalies'] = [
-                    {
-                        'metric_name': a.metric_name,
-                        'value': a.value,
-                        'threshold': a.threshold,
-                        'severity': a.severity,
-                        'description': a.description,
-                        'timestamp': a.timestamp.isoformat()
-                    } for a in anomalies
-                ]
+                # 确保深度分析服务已初始化
+                self._ensure_deep_analysis_service()
+                
+                if self.deep_analysis_service:
+                    # 获取异常信息
+                    anomalies = self.deep_analysis_service.detect_anomalies()
+                    report['anomalies'] = [
+                        {
+                            'metric_name': a.metric_name,
+                            'value': a.value,
+                            'threshold': a.threshold,
+                            'severity': a.severity,
+                            'description': a.description,
+                            'timestamp': a.timestamp.isoformat()
+                        } for a in anomalies
+                    ]
 
             return report
 
@@ -4765,9 +4949,13 @@ class DataImportExecutionEngine(QObject):
             return
 
         try:
+            # 确保深度分析服务已初始化
+            self._ensure_deep_analysis_service()
+            
             # 通过深度分析服务记录指标，增强桥接系统会自动收集
-            self.deep_analysis_service.record_metric(metric_name, value, category)
-            logger.debug(f"记录自定义性能指标: {metric_name} = {value}")
+            if self.deep_analysis_service:
+                self.deep_analysis_service.record_metric(metric_name, value, category)
+                logger.debug(f"记录自定义性能指标: {metric_name} = {value}")
         except Exception as e:
             logger.error(f"记录自定义性能指标失败: {e}")
 

@@ -19,6 +19,7 @@
 import sys
 import json
 import time
+import threading
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime, timedelta
 from dataclasses import dataclass
@@ -128,6 +129,74 @@ class IPStatsWorker(QObject):
         except Exception as e:
             logger.error(f"获取IP统计信息失败: {e}", exc_info=True)
             self.error.emit(str(e))
+
+
+class InitializationWorker(QThread):
+    """核心组件初始化工作线程"""
+    progress = pyqtSignal(str, int)  # (阶段消息, 进度百分比)
+    finished = pyqtSignal()  # 初始化完成
+    error = pyqtSignal(str)  # 错误消息
+
+    def __init__(self, parent_widget):
+        super().__init__()
+        self.parent_widget = parent_widget
+
+    def run(self):
+        """在后台线程执行初始化"""
+        try:
+            # 阶段1：初始化导入引擎（使用QMetaObject.invokeMethod在主线程中创建）
+            self.progress.emit("正在初始化导入引擎...", 20)
+            if not self.parent_widget._engine_initialized:
+                # 注意：DataImportExecutionEngine是QObject派生类，需要在主线程中创建
+                # 这里我们使用信号槽机制在主线程中创建
+                self._create_engine_in_main_thread()
+            
+            # 阶段2：初始化定时任务执行器
+            self.progress.emit("正在初始化定时任务执行器...", 50)
+            try:
+                from core.services.scheduled_task_executor import start_scheduled_task_executor
+                self.parent_widget.scheduled_executor = start_scheduled_task_executor(
+                    self.parent_widget.import_engine
+                )
+            except Exception as e:
+                logger.warning(f"定时任务执行器启动失败: {e}") if logger else None
+                self.parent_widget.scheduled_executor = None
+            
+            # 阶段3：初始化UI适配器
+            self.progress.emit("正在初始化UI适配器...", 80)
+            try:
+                self.parent_widget.ui_adapter = initialize_ui_adapter()
+                self.parent_widget.ui_synchronizer = initialize_ui_synchronizer(
+                    self.parent_widget.ui_adapter
+                )
+            except Exception as e:
+                logger.warning(f"UI适配器初始化失败: {e}") if logger else None
+            
+            # 完成
+            self.progress.emit("初始化完成", 100)
+            self.finished.emit()
+            
+        except Exception as e:
+            error_msg = f"初始化失败: {str(e)}"
+            logger.error(error_msg) if logger else None
+            import traceback
+            logger.error(traceback.format_exc()) if logger else None
+            self.error.emit(error_msg)
+    
+    def _create_engine_in_main_thread(self):
+        """在主线程中创建引擎（使用QTimer.singleShot）"""
+        # 由于QThread的限制，我们直接在这里创建引擎
+        # 但需要确保线程安全
+        try:
+            self.parent_widget.import_engine = DataImportExecutionEngine(
+                config_manager=self.parent_widget.config_manager,
+                max_workers=8,
+                enable_ai_optimization=True
+            )
+            self.parent_widget._engine_initialized = True
+        except Exception as e:
+            logger.error(f"创建引擎失败: {e}") if logger else None
+            raise
 
 
 class DataLoadWorker(QThread):
@@ -829,6 +898,18 @@ class EnhancedDataImportWidget(QWidget):
 
         # 初始化数据源映射（用于动态加载数据源插件）
         self.data_source_mapping = {}
+        
+        # 数据源加载标志（防止重复加载）
+        self._data_sources_loaded = False
+        self._data_source_loading = False
+        
+        # 引擎初始化标志和线程锁（线程安全）
+        self._engine_initialized = False
+        self._engine_initializing = False
+        self._engine_lock = threading.RLock()
+        
+        # 初始化工作线程
+        self._init_worker = None
 
         # 初始化主题系统
         self.theme_manager = None
@@ -858,32 +939,22 @@ class EnhancedDataImportWidget(QWidget):
             except Exception as e:
                 logger.error(f"性能优化组件初始化失败: {e}") if logger else None
 
-        if CORE_AVAILABLE:
-            self.config_manager = ImportConfigManager()
-            self.import_engine = DataImportExecutionEngine(
-                config_manager=self.config_manager,
-                max_workers=8,
-                enable_ai_optimization=True
-            )
-
-            try:
-                from core.services.scheduled_task_executor import start_scheduled_task_executor
-                self.scheduled_executor = start_scheduled_task_executor(self.import_engine)
-                logger.info("定时任务执行器已启动") if logger else None
-            except Exception as e:
-                logger.warning(f"定时任务执行器启动失败: {e}") if logger else None
-                self.scheduled_executor = None
-
-            # 初始化UI适配器和同步化
-            try:
-                self.ui_adapter = initialize_ui_adapter()
-                self.ui_synchronizer = initialize_ui_synchronizer(self.ui_adapter)
-                logger.info("UI适配器和同步器初始化成功") if logger else None
-            except Exception as e:
-                logger.error(f"UI适配器初始化失败: {e}") if logger else None
-
+        # 优化：先创建UI（快速显示）
         self.setup_ui()
         self.setup_responsive_layout()
+        
+        # 优化：延迟初始化核心组件（避免阻塞UI）
+        if CORE_AVAILABLE:
+            # 先创建配置管理器（快速）
+            self.config_manager = ImportConfigManager()
+            
+            # 显示加载状态
+            self._show_initialization_status("正在初始化系统...")
+            
+            # 延迟初始化引擎（使用QTimer.singleShot避免阻塞UI）
+            # 注意：DataImportExecutionEngine是QObject派生类，必须在主线程中创建
+            QTimer.singleShot(100, self._delayed_init_engine)
+
         self.setup_connections()
         self.setup_timers()
 
@@ -895,6 +966,130 @@ class EnhancedDataImportWidget(QWidget):
 
         # 应用性能优化
         self.apply_performance_optimization()
+
+    def _show_initialization_status(self, message: str):
+        """显示初始化状态"""
+        try:
+            if hasattr(self, 'progress_label'):
+                self.progress_label.setText(message)
+            logger.info(message) if logger else None
+        except Exception as e:
+            logger.debug(f"显示初始化状态失败: {e}") if logger else None
+
+    def _delayed_init_engine(self):
+        """延迟初始化引擎（在主线程中执行，避免阻塞UI）"""
+        try:
+            # 检查是否已经在初始化
+            if self._engine_initializing or self._engine_initialized:
+                logger.debug("引擎已在初始化或已初始化，跳过") if logger else None
+                return
+            
+            self._engine_initializing = True
+            self._show_initialization_status("正在初始化导入引擎...")
+            logger.info("开始延迟初始化核心组件...") if logger else None
+            
+            # 创建引擎（在主线程中）
+            try:
+                self.import_engine = DataImportExecutionEngine(
+                    config_manager=self.config_manager,
+                    max_workers=8,
+                    enable_ai_optimization=True
+                )
+                self._engine_initialized = True
+                self._show_initialization_status("导入引擎初始化完成")
+                logger.info("导入引擎初始化成功") if logger else None
+                
+                # 连接引擎信号
+                self._connect_engine_signals()
+                
+                # 初始化定时任务执行器
+                try:
+                    from core.services.scheduled_task_executor import start_scheduled_task_executor
+                    self.scheduled_executor = start_scheduled_task_executor(self.import_engine)
+                    logger.info("定时任务执行器已启动") if logger else None
+                except Exception as e:
+                    logger.warning(f"定时任务执行器启动失败: {e}") if logger else None
+                    self.scheduled_executor = None
+                
+                # 初始化UI适配器
+                try:
+                    self.ui_adapter = initialize_ui_adapter()
+                    self.ui_synchronizer = initialize_ui_synchronizer(self.ui_adapter)
+                    logger.info("UI适配器和同步器初始化成功") if logger else None
+                except Exception as e:
+                    logger.warning(f"UI适配器初始化失败: {e}") if logger else None
+                
+                # 加载数据源（只加载一次）
+                if not self._data_sources_loaded:
+                    self._load_available_data_sources_async()
+                
+                self._show_initialization_status("系统初始化完成")
+                logger.info("核心组件延迟初始化完成") if logger else None
+                
+            except Exception as e:
+                logger.error(f"创建导入引擎失败: {e}") if logger else None
+                self._show_initialization_status(f"初始化失败: {str(e)}")
+                # 回退：简化版引擎初始化
+                self._fallback_init_engine()
+            
+        except Exception as e:
+            logger.error(f"延迟初始化失败: {e}") if logger else None
+            self._engine_initializing = False
+        finally:
+            self._engine_initializing = False
+
+    def _connect_engine_signals(self):
+        """连接引擎信号（在引擎创建后调用）"""
+        try:
+            if self.import_engine:
+                self.import_engine.task_started.connect(self.on_task_started)
+                self.import_engine.task_progress.connect(self.on_task_progress)
+                self.import_engine.task_completed.connect(self.on_task_completed)
+                self.import_engine.task_failed.connect(self.on_task_failed)
+                logger.info("引擎信号连接成功") if logger else None
+        except Exception as e:
+            logger.error(f"连接引擎信号失败: {e}") if logger else None
+
+    def _fallback_init_engine(self):
+        """回退：简化版引擎初始化"""
+        try:
+            logger.info("使用简化版引擎初始化...") if logger else None
+            self.import_engine = DataImportExecutionEngine(
+                config_manager=self.config_manager,
+                max_workers=4,
+                enable_ai_optimization=False
+            )
+            self._engine_initialized = True
+            self._connect_engine_signals()
+        except Exception as e:
+            logger.error(f"简化版引擎初始化失败: {e}") if logger else None
+
+    def _load_available_data_sources_async(self):
+        """异步加载数据源（只加载一次）"""
+        try:
+            if self._data_sources_loaded or self._data_source_loading:
+                logger.debug("数据源已加载或正在加载，跳过") if logger else None
+                return
+            
+            self._data_source_loading = True
+            self._show_initialization_status("正在加载数据源...")
+            
+            # 使用QTimer.singleShot异步加载
+            QTimer.singleShot(50, self._do_load_data_sources)
+        except Exception as e:
+            logger.error(f"启动异步数据源加载失败: {e}") if logger else None
+            self._data_source_loading = False
+
+    def _do_load_data_sources(self):
+        """执行数据源加载（内部方法）"""
+        try:
+            self._load_available_data_sources()
+            self._data_sources_loaded = True
+            self._data_source_loading = False
+            self._show_initialization_status("数据源加载完成")
+        except Exception as e:
+            logger.error(f"加载数据源失败: {e}") if logger else None
+            self._data_source_loading = False
 
     def apply_performance_optimization(self):
         """应用性能优化"""
@@ -1144,7 +1339,9 @@ class EnhancedDataImportWidget(QWidget):
 
         # 数据源选择 - 动态加载已注册的数据源插件
         self.data_source_combo = QComboBox()
-        self._load_available_data_sources()
+        # 优化：不在UI创建时同步加载，改为在初始化完成后异步加载
+        # self._load_available_data_sources()
+        self.data_source_combo.addItem("正在加载数据源...")
         datasource_layout.addRow("数据源:", self.data_source_combo)
 
         # 数据时间范围
@@ -1531,7 +1728,9 @@ class EnhancedDataImportWidget(QWidget):
 
         # 数据源选择 - 动态加载已注册的数据源插件
         self.data_source_combo = QComboBox()
-        self._load_available_data_sources()
+        # 优化：不在UI创建时同步加载，改为在初始化完成后异步加载
+        # self._load_available_data_sources()
+        self.data_source_combo.addItem("正在加载数据源...")
         datasource_layout.addRow("数据源:", self.data_source_combo)
 
         # 数据范围
@@ -1674,7 +1873,9 @@ class EnhancedDataImportWidget(QWidget):
 
         # 数据源选择 - 动态加载已注册的数据源插件
         self.data_source_combo = QComboBox()
-        self._load_available_data_sources()
+        # 优化：不在UI创建时同步加载，改为在初始化完成后异步加载
+        # self._load_available_data_sources()
+        self.data_source_combo.addItem("正在加载数据源...")
         layout.addRow("🔌 数据源:", self.data_source_combo)
 
         # 数据范围
@@ -4120,8 +4321,8 @@ class EnhancedDataImportWidget(QWidget):
         toolbar_layout.addWidget(refresh_btn)
 
         # 定时任务按钮
-        schedule_task_btn = QPushButton("⏰ 定时任务")
-        schedule_task_btn.setStyleSheet("""
+        self.schedule_task_btn = QPushButton("⏰ 定时任务")
+        self.schedule_task_btn.setStyleSheet("""
             QPushButton {
                 background-color: #6f42c1;
                 color: white;
@@ -4133,9 +4334,13 @@ class EnhancedDataImportWidget(QWidget):
             QPushButton:hover {
                 background-color: #5a32a3;
             }
+            QPushButton:disabled {
+                background-color: #cccccc;
+                color: #888888;
+            }
         """)
-        schedule_task_btn.clicked.connect(self.open_scheduled_task_dialog)
-        toolbar_layout.addWidget(schedule_task_btn)
+        self.schedule_task_btn.clicked.connect(self.open_scheduled_task_dialog)
+        toolbar_layout.addWidget(self.schedule_task_btn)
 
         # 批量操作按钮
         batch_start_btn = QPushButton("▶️ 批量启动")
@@ -4212,7 +4417,7 @@ class EnhancedDataImportWidget(QWidget):
         # 设置表格
         columns = [
             "任务名称", "状态", "进度", "数据源", "资产类型", "数据类型",
-            "频率", "下载数量", "开始时间", "结束时间", "运行时间", "成功数", "失败数"
+            "频率", "下载数量", "开始时间", "结束时间", "运行时间", "成功数", "失败数", "定时任务"
         ]
         self.task_table.setColumnCount(len(columns))
         self.task_table.setHorizontalHeaderLabels(columns)
@@ -4235,11 +4440,11 @@ class EnhancedDataImportWidget(QWidget):
         header.setSectionResizeMode(10, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(11, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(12, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(13, QHeaderView.ResizeToContents)
 
         main_splitter.addWidget(self.task_table)
 
-        # 连接表格选择信号
-        self.task_table.itemSelectionChanged.connect(self.on_task_selection_changed)
+        # 连接表格双击信号
         self.task_table.itemDoubleClicked.connect(self._on_task_double_clicked)
 
         # K线下载情况监控面板
@@ -4569,6 +4774,12 @@ class EnhancedDataImportWidget(QWidget):
                             success_count = task_status.success_count
                             failure_count = getattr(task_status, 'failure_count', 0)
 
+                    # 定时任务状态
+                    schedule_status = ""
+                    if hasattr(task, 'schedule_cron') and task.schedule_cron:
+                        enabled = getattr(task, 'enabled', True)
+                        schedule_status = "✓ 启用" if enabled else "○ 禁用"
+
                     items = [
                         task.name,
                         status_text,
@@ -4582,7 +4793,8 @@ class EnhancedDataImportWidget(QWidget):
                         end_time,
                         runtime,
                         str(success_count),
-                        str(failure_count)
+                        str(failure_count),
+                        schedule_status
                     ]
 
                     # 🔧 如果任务存在，更新单元格内容而非重建整行
@@ -4606,6 +4818,13 @@ class EnhancedDataImportWidget(QWidget):
                                             item.setBackground(QColor("#fff3cd"))
                                         else:
                                             item.setBackground(QColor("#ffffff"))
+                                    
+                                    # 定时任务列颜色
+                                    if col == 13:
+                                        if "启用" in str(item_text):
+                                            item.setForeground(QColor("#28a745"))
+                                        elif "禁用" in str(item_text):
+                                            item.setForeground(QColor("#6c757d"))
                     else:
                         # 🔧 新任务：添加新行
                         row = self.task_table.rowCount()
@@ -4624,6 +4843,13 @@ class EnhancedDataImportWidget(QWidget):
                                     item.setBackground(QColor("#f8d7da"))
                                 elif "暂停" in item_text:
                                     item.setBackground(QColor("#fff3cd"))
+                            
+                            # 定时任务列颜色
+                            if col == 13:
+                                if "启用" in str(item_text):
+                                    item.setForeground(QColor("#28a745"))
+                                elif "禁用" in str(item_text):
+                                    item.setForeground(QColor("#6c757d"))
 
                             self.task_table.setItem(row, col, item)
 
@@ -4742,6 +4968,12 @@ class EnhancedDataImportWidget(QWidget):
                     success_count = task_status.success_count
                     failure_count = getattr(task_status, 'failure_count', 0)
 
+            # 定时任务状态
+            schedule_status = ""
+            if hasattr(task, 'schedule_cron') and task.schedule_cron:
+                enabled = getattr(task, 'enabled', True)
+                schedule_status = "✓ 启用" if enabled else "○ 禁用"
+
             items = [
                 task.name,
                 status_text,
@@ -4755,7 +4987,8 @@ class EnhancedDataImportWidget(QWidget):
                 end_time,
                 runtime,
                 str(success_count),
-                str(failure_count)
+                str(failure_count),
+                schedule_status
             ]
 
             # 🔧 局部更新：只更新指定行的单元格
@@ -4783,16 +5016,6 @@ class EnhancedDataImportWidget(QWidget):
 
         except Exception as e:
             logger.error(f"刷新单个任务失败: {e}") if logger else None
-
-    def on_task_selection_changed(self):
-        """任务选择变化处理（任务详情UI已删除，此方法保留用于未来扩展）"""
-        try:
-            selected_items = self.task_table.selectedItems()
-            if not selected_items:
-                return
-
-        except Exception as e:
-            logger.error(f"处理任务选择变化失败: {e}") if logger else None
 
     def _adjust_task_refresh_interval(self, tasks):
         """智能调整任务列表刷新频率
@@ -5046,16 +5269,21 @@ class EnhancedDataImportWidget(QWidget):
     def open_scheduled_task_dialog(self):
         """打开定时任务配置对话框"""
         try:
+            # 获取选中的任务ID（可选，用于预选）
+            selected_task_ids = self.get_selected_task_ids()
+
             from gui.dialogs.scheduled_task_dialog import ScheduledTaskDialog
 
             if not self.config_manager:
                 QMessageBox.warning(self, "错误", "配置管理器未初始化")
                 return
 
+            # 不传递 parent，让对话框独立存在
             dialog = ScheduledTaskDialog(
                 config_manager=self.config_manager,
                 import_engine=self.import_engine,
-                parent=self
+                parent=None,  # 不传递 parent，避免生命周期问题
+                preselected_task_ids=selected_task_ids  # 可以为空列表
             )
 
             if dialog.exec_() == QDialog.Accepted:
@@ -6634,10 +6862,10 @@ class EnhancedDataImportWidget(QWidget):
         super().showEvent(event)
 
         try:
-            # 只在首次显示时加载，避免重复加载
-            if not hasattr(self, '_data_sources_loaded'):
-                logger.info("UI首次显示，重新加载数据源插件列表") if logger else None
-                self._load_available_data_sources()
+            # 优化：使用新的标志位，避免重复加载
+            if not self._data_sources_loaded and not self._data_source_loading:
+                logger.info("UI显示，异步加载数据源插件列表") if logger else None
+                self._load_available_data_sources_async()
                 self._data_sources_loaded = True
         except Exception as e:
             logger.error(f"showEvent加载数据源失败: {e}") if logger else None
