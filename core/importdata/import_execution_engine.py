@@ -3369,6 +3369,8 @@ class DataImportExecutionEngine(QObject):
         Returns:
             str: YYYY-MM-DD格式的日期字符串，失败返回None
         """
+        from datetime import date as datetime_date
+
         if date_value is None:
             return None
 
@@ -3406,7 +3408,7 @@ class DataImportExecutionEngine(QObject):
                     return parsed_date.strftime('%Y-%m-%d')
 
             # 如果是日期对象
-            elif isinstance(date_value, datetime.date):
+            elif isinstance(date_value, datetime_date):
                 return date_value.strftime('%Y-%m-%d')
 
             # 如果是datetime对象

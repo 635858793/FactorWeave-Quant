@@ -1915,24 +1915,16 @@ class AssetSeparatedDatabaseManager:
                 # 注册临时表
                 conn.register(temp_table, safe_data)
 
-                # 关键修复：检测是否已有活跃事务，避免嵌套事务
-                # DuckDB不支持真正的嵌套事务，需要检测当前事务状态
-                has_active_transaction = False
-                try:
-                    # 尝试执行一个简单查询来检测事务状态
-                    # 如果在事务中，某些操作会有不同的行为
-                    result = conn.execute("SELECT current_setting('autocommit')").fetchone()
-                    if result and result[0] == 'false':
-                        has_active_transaction = True
-                except Exception:
-                    # 如果无法检测，假设没有活跃事务
-                    pass
+                # 关键修复：使用更可靠的事务管理策略
+                # 策略：始终使用显式事务，确保数据一致性
+                # 不依赖不可靠的事务状态检测
+                started_transaction = False
                 
-                # 只有在没有活跃事务时才开始新事务
-                if not has_active_transaction:
-                    conn.execute("BEGIN TRANSACTION")
-
                 try:
+                    # 开始事务
+                    conn.execute("BEGIN TRANSACTION")
+                    started_transaction = True
+
                     # 构建批量UPSERT SQL（根据数据类型）
                     # 修复：使用 INSERT OR REPLACE 替代 ON CONFLICT DO UPDATE
                     # 避免 DuckDB ART 索引的唯一性检查过严问题（DELETE + INSERT 内部实现）
@@ -1998,8 +1990,8 @@ class AssetSeparatedDatabaseManager:
                     write_duration = time.time() - write_start
                     write_speed = len(filtered_data) / write_duration if write_duration > 0 else 0
 
-                    # 只有在开启了事务的情况下才提交
-                    if not has_active_transaction:
+                    # 提交事务
+                    if started_transaction:
                         conn.execute("COMMIT")
 
                     # 记录性能日志
@@ -2012,8 +2004,7 @@ class AssetSeparatedDatabaseManager:
 
                 except Exception as e:
                     # 回滚事务（确保数据一致性）
-                    # 只有在开启了事务的情况下才回滚
-                    if not has_active_transaction:
+                    if started_transaction:
                         try:
                             conn.execute("ROLLBACK")
                             logger.error(f"[批量插入] 事务回滚: {e}")
