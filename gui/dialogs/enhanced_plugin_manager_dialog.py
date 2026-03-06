@@ -68,53 +68,57 @@ class TablePopulationWorker(QThread):
     population_completed = pyqtSignal()        # 完成信号
     population_failed = pyqtSignal(str)        # 错误信息
 
-    def __init__(self, data_sources: dict, chinese_map: dict, parent=None, metrics: dict = None):
+    def __init__(self, data_sources: dict, chinese_map: dict, parent=None, metrics: dict = None, use_cache: bool = True):
         super().__init__(parent)
         self.data_sources = data_sources
         self.chinese_map = chinese_map  # 资产类型中文映射
         self._is_running = False
         self.dialog = parent  # 保持向后兼容
         self.metrics = metrics or {}
+        self.use_cache = use_cache  # 快速模式：优先使用缓存
 
     def run(self):
-        """异步填充表格数据"""
+        """异步填充表格数据 - 使用并行处理优化"""
         self._is_running = True
         try:
             logger.info(f" 开始异步填充表格数据，数据源数量: {len(self.data_sources)}")
 
             total_count = len(self.data_sources)
+            if total_count == 0:
+                self.population_completed.emit()
+                return
 
-            for row, (source_id, adapter) in enumerate(self.data_sources.items()):
-                if not self._is_running:
-                    break
+            # 使用线程池并行处理所有插件
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, total_count)) as executor:
+                # 提交所有任务
+                future_to_source = {}
+                for row, (source_id, adapter) in enumerate(self.data_sources.items()):
+                    if not self._is_running:
+                        break
+                    future = executor.submit(self._get_row_data, source_id, adapter, row)
+                    future_to_source[future] = (row, source_id)
 
-                try:
-                    logger.info(f"    异步处理数据源 {row + 1}/{total_count}: {source_id}")
+                # 收集结果
+                for future in concurrent.futures.as_completed(future_to_source):
+                    if not self._is_running:
+                        break
 
-                    # 在工作线程中获取所有数据
-                    row_data = self._get_row_data(source_id, adapter, row)
-
-                    # 发送行数据到主线程
-                    self.row_populated.emit(row, row_data)
-
-                    # 发送进度更新
-                    self.population_progress.emit(row + 1, total_count, source_id)
-
-                    # 短暂休眠，让出CPU时间
-                    self.msleep(10)
-
-                except Exception as e:
-                    logger.error(f"    异步处理数据源 {source_id} 失败: {e}")
-                    # 发送错误行数据
-                    error_row_data = {
-                        'name': str(source_id),
-                        'status': " 错误",
-                        'assets': "-",
-                        'health_score': "-",
-                        'priority': str(row + 1),
-                        'source_id': source_id
-                    }
-                    self.row_populated.emit(row, error_row_data)
+                    row, source_id = future_to_source[future]
+                    try:
+                        row_data = future.result()
+                        self.row_populated.emit(row, row_data)
+                        self.population_progress.emit(row + 1, total_count, source_id)
+                    except Exception as e:
+                        logger.error(f"    异步处理数据源 {source_id} 失败: {e}")
+                        error_row_data = {
+                            'name': str(source_id),
+                            'status': " 错误",
+                            'assets': "-",
+                            'health_score': "-",
+                            'priority': str(row + 1),
+                            'source_id': source_id
+                        }
+                        self.row_populated.emit(row, error_row_data)
 
             if self._is_running:
                 self.population_completed.emit()
@@ -125,7 +129,10 @@ class TablePopulationWorker(QThread):
             logger.error(f" 异步表格填充失败: {e}")
 
     def _get_row_data(self, source_id: str, adapter, row: int) -> dict:
-        """获取单行数据（在工作线程中）"""
+        """获取单行数据（在工作线程中）
+
+        优化：快速模式下优先使用缓存状态，避免每个插件都执行网络请求
+        """
         try:
             # 获取插件信息
             plugin_info = adapter.get_plugin_info()
@@ -133,77 +140,72 @@ class TablePopulationWorker(QThread):
             # 插件名称
             name = getattr(plugin_info, 'name', source_id)
 
-            # 状态（严格检查，只有真正连接成功才显示活跃）
-            try:
-                is_connected = False
-                status_message = "未连接"
+            # 状态判断：快速模式使用缓存，避免网络请求
+            is_connected = False
+            status_message = "未连接"
 
-                # 严格的连接状态检查：只有所有条件都满足才认为是活跃状态
-                plugin_instance = getattr(adapter, 'plugin', None)
-                if plugin_instance:
-                    # 1. 检查插件是否已初始化
-                    plugin_initialized = getattr(plugin_instance, 'initialized', False)
-                    if not plugin_initialized:
-                        status_message = "插件未初始化"
-                        logger.info(f" 插件 {source_id} 未初始化")
-                    else:
-                        # 2. 检查插件连接状态
-                        if hasattr(plugin_instance, 'is_connected'):
-                            try:
-                                plugin_connected = bool(plugin_instance.is_connected())
-                                if not plugin_connected:
-                                    status_message = "插件未连接"
-                                    logger.info(f" 插件 {source_id} is_connected() 返回 False")
-                                else:
-                                    # 3. 执行健康检查（与手动测试保持一致）
-                                    try:
+            # 优先从路由器获取缓存的连接状态
+            router_cached_healthy = None
+            try:
+                from core.services.unified_data_manager import get_unified_data_manager
+                unified_manager = get_unified_data_manager()
+                router = getattr(unified_manager, 'data_source_router', None) if unified_manager else None
+
+                if router and hasattr(router, 'metrics'):
+                    router_metrics = router.metrics.get(source_id)
+                    if router_metrics and hasattr(router_metrics, 'health_score'):
+                        router_cached_healthy = router_metrics.health_score > 0.5
+            except Exception:
+                pass
+
+            # 快速模式：使用缓存状态，避免网络请求
+            if self.use_cache and router_cached_healthy is not None:
+                is_connected = router_cached_healthy
+                status_message = "活跃" if is_connected else "缓存判定未连接"
+                logger.debug(f" 插件 {source_id} 使用缓存状态: {status_message}")
+            else:
+                # 非快速模式或无缓存：执行完整检查（原有逻辑）
+                try:
+                    plugin_instance = getattr(adapter, 'plugin', None)
+                    if plugin_instance:
+                        plugin_initialized = getattr(plugin_instance, 'initialized', False)
+                        if not plugin_initialized:
+                            status_message = "插件未初始化"
+                        else:
+                            if hasattr(plugin_instance, 'is_connected'):
+                                try:
+                                    plugin_connected = bool(plugin_instance.is_connected())
+                                    if not plugin_connected:
+                                        status_message = "插件未连接"
+                                    else:
                                         health_result = adapter.health_check()
                                         if hasattr(health_result, 'is_healthy') and health_result.is_healthy:
-                                            # 健康检查通过即认为连接正常
                                             is_connected = True
                                             status_message = "活跃"
-                                            logger.info(f" 插件 {source_id} 健康检查通过，状态活跃")
                                         else:
                                             error_msg = getattr(health_result, 'error_message', '健康检查失败')
                                             status_message = error_msg
-                                            logger.info(f" 插件 {source_id} 健康检查失败: {error_msg}")
-                                    except Exception as e:
-                                        status_message = f"健康检查异常: {str(e)}"
-                                        logger.info(f" 插件 {source_id} 健康检查异常: {e}")
-                            except Exception as e:
-                                status_message = f"连接检查失败: {str(e)}"
-                                logger.info(f" 调用插件is_connected失败 {source_id}: {e}")
-                        else:
-                            # 插件不支持is_connected方法，直接进行健康检查
-                            try:
+                                except Exception as e:
+                                    status_message = f"连接检查失败: {str(e)}"
+                            else:
                                 health_result = adapter.health_check()
                                 if hasattr(health_result, 'is_healthy') and health_result.is_healthy:
                                     is_connected = True
                                     status_message = "活跃"
-                                    logger.info(f" 插件 {source_id} 健康检查通过（无is_connected方法）")
                                 else:
                                     error_msg = getattr(health_result, 'error_message', '健康检查失败')
                                     status_message = error_msg
-                                    logger.info(f" 插件 {source_id} 健康检查失败: {error_msg}")
-                            except Exception as e:
-                                status_message = f"健康检查异常: {str(e)}"
-                                logger.info(f" 插件 {source_id} 健康检查异常: {e}")
-                else:
-                    status_message = "插件实例不存在"
-                    logger.info(f" 插件 {source_id} 实例不存在")
+                    else:
+                        status_message = "插件实例不存在"
+                except Exception as e:
+                    logger.error(f"检查插件状态失败 {source_id}: {e}")
+                    status_message = "未知"
 
-                # 如果还没有连接，检查适配器错误状态以提供更详细的错误信息
-                if not is_connected and hasattr(adapter, 'last_error') and adapter.last_error:
-                    status_message = adapter.last_error
+            # 如果还没有连接，检查适配器错误状态
+            if not is_connected and hasattr(adapter, 'last_error') and adapter.last_error:
+                status_message = adapter.last_error
 
-                status = " 活跃" if is_connected else " 未连接"
-                logger.info(f" 最终状态 {source_id}: {status} ({status_message})")
-
-            except Exception as e:
-                logger.error(f"检查插件状态失败 {source_id}: {e}")
-                import traceback
-                traceback.print_exc()
-                status = " 未知"
+            status = " 活跃" if is_connected else " 未连接"
 
             # 支持资产
             try:
@@ -2721,14 +2723,23 @@ class EnhancedPluginManagerDialog(QDialog):
     def refresh_data_source_plugins(self):
         """刷新数据源插件列表（单一路径：从路由器读取）。"""
         try:
-            logger.info("刷新数据源插件列表（router 单一来源）...")
+            t_start = time.time()
+            logger.info(f"刷新数据源插件列表（router 单一来源）...")
+            
             # 清空现有数据
             self.data_source_table.setRowCount(0)
+            logger.info(f"  清空表格耗时: {time.time() - t_start:.2f}s")
+            
+            t1 = time.time()
 
             # 获取路由器
             from core.services.unified_data_manager import get_unified_data_manager
             unified_manager = get_unified_data_manager()
+            logger.info(f"  获取unified_manager耗时: {time.time() - t1:.2f}s")
+            
+            t2 = time.time()
             router = getattr(unified_manager, 'data_source_router', None) if unified_manager else None
+            logger.info(f"  获取router耗时: {time.time() - t2:.2f}s")
             adapters = {}
             if router and hasattr(router, 'data_sources'):
                 adapters = router.data_sources or {}
@@ -2736,8 +2747,10 @@ class EnhancedPluginManagerDialog(QDialog):
             # 若路由器为空，尝试强制加载并注册
             if not adapters and self.plugin_manager:
                 logger.info("路由器暂无数据源，尝试强制重新加载插件并注册...")
+                t_load = time.time()
                 try:
                     self.plugin_manager.load_all_plugins()
+                    logger.info(f"  load_all_plugins() 完成，耗时: {time.time() - t_load:.2f}s")
                 except Exception as e:
                     logger.error(f" 重新加载插件失败: {e}")
                 # 重新读取
@@ -2827,6 +2840,7 @@ class EnhancedPluginManagerDialog(QDialog):
     def _populate_data_source_table(self, data_sources: dict, router=None):
         """填充数据源表格 - 异步处理防止UI卡死"""
         try:
+            t0 = time.time()
             logger.info(f" 开始异步填充数据源表格，数据源数量: {len(data_sources)}")
 
             # 立即设置表格行数并显示加载状态
@@ -2840,12 +2854,15 @@ class EnhancedPluginManagerDialog(QDialog):
                 for col in range(1, 6):
                     self.data_source_table.setItem(row, col, QTableWidgetItem(""))
 
+            logger.info(f"  表格初始化完成，耗时: {time.time() - t0:.2f}s")
+
             # 检查是否有正在运行的表格填充线程
             if hasattr(self, 'table_worker') and self.table_worker.isRunning():
                 self.table_worker.stop()
                 self.table_worker.wait(1000)
 
             # 创建异步表格填充工作线程（带路由器指标，避免在行构建中做重型调用）
+            t1 = time.time()
             try:
                 metrics = {}
                 from core.services.unified_data_manager import get_unified_data_manager
@@ -2855,8 +2872,11 @@ class EnhancedPluginManagerDialog(QDialog):
                     metrics = _router.get_all_metrics() or {}
             except Exception:
                 metrics = {}
+            logger.info(f"  获取路由器指标完成，耗时: {time.time() - t1:.2f}s")
 
-            self.table_worker = TablePopulationWorker(data_sources, self.asset_type_chinese_map, self, metrics)
+            t2 = time.time()
+            self.table_worker = TablePopulationWorker(data_sources, self.asset_type_chinese_map, self, metrics, use_cache=True)
+            logger.info(f"  创建Worker完成，耗时: {time.time() - t2:.2f}s")
 
             # 连接信号
             self.table_worker.row_populated.connect(self._on_row_populated)
@@ -2918,11 +2938,24 @@ class EnhancedPluginManagerDialog(QDialog):
 
     def _on_table_population_progress(self, current: int, total: int, plugin_name: str):
         """表格填充进度更新回调"""
-        # 这里可以更新状态栏或进度条
-        QApplication.processEvents()  # 保持UI响应
+        try:
+            progress_text = f"加载中... ({current}/{total}) {plugin_name}"
+            self.status_label.setText(progress_text)
+            QApplication.processEvents()
+        except Exception as e:
+            pass
 
     def _on_table_population_completed(self):
         """表格填充完成回调"""
+        try:
+            self.status_label.setText("加载完成")
+            total = self.data_source_table.rowCount()
+            active_count = sum(1 for row in range(total) 
+                             if self.data_source_table.item(row, 1) and 
+                             self.data_source_table.item(row, 1).text().strip() == "活跃")
+            self.active_count_label.setText(f"活跃插件: {active_count}")
+        except Exception:
+            pass
         logger.info("异步表格填充完成")
 
     def _on_table_population_failed(self, error_message: str):

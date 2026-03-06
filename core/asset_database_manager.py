@@ -1934,142 +1934,56 @@ class AssetSeparatedDatabaseManager:
 
                 try:
                     # 构建批量UPSERT SQL（根据数据类型）
+                    # 修复：使用 INSERT OR REPLACE 替代 ON CONFLICT DO UPDATE
+                    # 避免 DuckDB ART 索引的唯一性检查过严问题（DELETE + INSERT 内部实现）
                     if data_type == DataType.HISTORICAL_KLINE:
                         # K线数据使用(symbol, data_source, timestamp, frequency)作为复合主键
-                        # 获取需要更新的字段（排除主键字段和updated_at）
-                        update_fields = []
-                        exclude_fields = ['symbol', 'data_source', 'timestamp', 'frequency', 'updated_at', 'created_at']
-                        for col in insert_columns:  # 使用 insert_columns（已经是 safe_columns）
-                            if col not in exclude_fields:
-                                update_fields.append(f'"{col}" = EXCLUDED."{col}"')
-
-                        # 使用NOW()函数而不是CURRENT_TIMESTAMP，避免DuckDB解析错误
-                        if update_fields:
-                            update_clause = ', '.join(update_fields)
-                            update_clause += ', "updated_at" = NOW()'
-                        else:
-                            update_clause = '"updated_at" = NOW()'
-
+                        # 使用 INSERT OR REPLACE 避免 ART 索引冲突
+                        # 获取需要插入的字段（排除updated_at，使用数据库默认值）
+                        insert_fields = [col for col in insert_columns if col not in ['updated_at', 'created_at']]
+                        
                         sql = f"""
-                            INSERT INTO {table_name} ({insert_columns_str})
-                            SELECT {insert_columns_str} FROM {temp_table}
-                            ON CONFLICT ("symbol", "data_source", "timestamp", "frequency") DO UPDATE SET
-                            {update_clause}
+                            INSERT OR REPLACE INTO {table_name} ({', '.join(f'"{col}"' for col in insert_fields)})
+                            SELECT {', '.join(f'"{col}"' for col in insert_fields)} FROM {temp_table}
                         """
-                        logger.debug(f"[K线数据批量插入] SQL构建完成，插入列数: {len(insert_columns)}")
+                        logger.debug(f"[K线数据批量插入] 使用 INSERT OR REPLACE，插入列数: {len(insert_fields)}")
 
                     elif data_type == DataType.REAL_TIME_QUOTE:
                         # 实时行情使用symbol和timestamp作为唯一键
-                        # 获取需要更新的字段（排除主键字段和updated_at）
-                        update_fields = []
-                        exclude_fields = ['symbol', 'timestamp', 'updated_at', 'created_at']
-                        for col in insert_columns:  # 使用 insert_columns（已经是 safe_columns）
-                            if col not in exclude_fields:
-                                update_fields.append(f'"{col}" = EXCLUDED."{col}"')
-
-                        if update_fields:
-                            update_clause = ', '.join(update_fields)
-                            update_clause += ', "updated_at" = NOW()'
-                        else:
-                            # 默认更新字段（如果没有其他字段）
-                            update_clause = '"updated_at" = NOW()'
-
+                        # 使用 INSERT OR REPLACE 避免 ART 索引冲突
+                        insert_fields = [col for col in insert_columns if col not in ['updated_at', 'created_at']]
+                        
                         sql = f"""
-                            INSERT INTO {table_name} ({insert_columns_str})
-                            SELECT {insert_columns_str} FROM {temp_table}
-                            ON CONFLICT ("symbol", "timestamp") DO UPDATE SET
-                            {update_clause}
+                            INSERT OR REPLACE INTO {table_name} ({', '.join(f'"{col}"' for col in insert_fields)})
+                            SELECT {', '.join(f'"{col}"' for col in insert_fields)} FROM {temp_table}
                         """
-                        logger.debug(f"[实时行情批量插入] ON CONFLICT字段: (symbol, timestamp)")
+                        logger.debug(f"[实时行情批量插入] 使用 INSERT OR REPLACE")
 
                     elif data_type == DataType.FUNDAMENTAL:
                         # 基本面数据使用symbol作为主键
-                        # 获取需要更新的字段（排除主键字段和updated_at/updated_time）
-                        update_fields = []
-                        exclude_fields = ['symbol', 'updated_at', 'updated_time', 'created_at']
-                        for col in insert_columns:  # 使用 insert_columns（已经是 safe_columns）
-                            if col not in exclude_fields:
-                                update_fields.append(f'"{col}" = EXCLUDED."{col}"')
-
-                        if update_fields:
-                            update_clause = ', '.join(update_fields)
-                            # 添加updated_at或updated_time（使用NOW()函数）
-                            if 'updated_at' in insert_columns:
-                                update_clause += ', "updated_at" = NOW()'
-                            elif 'updated_time' in insert_columns:
-                                update_clause += ', "updated_time" = NOW()'
-                        else:
-                            # 如果没有其他字段，至少更新updated_at或updated_time
-                            if 'updated_at' in insert_columns:
-                                update_clause = '"updated_at" = NOW()'
-                            elif 'updated_time' in insert_columns:
-                                update_clause = '"updated_time" = NOW()'
-                            else:
-                                update_clause = '"updated_at" = NOW()'  # 默认使用updated_at
-
+                        # 使用 INSERT OR REPLACE 避免 ART 索引冲突
+                        insert_fields = [col for col in insert_columns if col not in ['updated_at', 'updated_time', 'created_at']]
+                        
                         sql = f"""
-                            INSERT INTO {table_name} ({insert_columns_str})
-                            SELECT {insert_columns_str} FROM {temp_table}
-                            ON CONFLICT ("symbol") DO UPDATE SET
-                            {update_clause}
+                            INSERT OR REPLACE INTO {table_name} ({', '.join(f'"{col}"' for col in insert_fields)})
+                            SELECT {', '.join(f'"{col}"' for col in insert_fields)} FROM {temp_table}
                         """
-                        logger.debug(f"[基本面数据批量插入] ON CONFLICT字段: (symbol)")
+                        logger.debug(f"[基本面数据批量插入] 使用 INSERT OR REPLACE")
                     else:
                         # 其他数据类型的处理：智能检测主键
-                        # 尝试检测常见的主键字段，如果有则使用ON CONFLICT，否则使用简单INSERT
-                        # 常见主键字段：symbol, id, record_id, monitor_id, key等
-                        # 修复：使用 insert_columns 而不是 filtered_data.columns
+                        # 尝试检测常见的主键字段，如果有则使用 INSERT OR REPLACE
                         possible_pk_fields = ['symbol', 'id', 'record_id', 'monitor_id', 'key']
                         pk_fields_in_data = [f for f in possible_pk_fields if f in insert_columns]
 
                         if pk_fields_in_data:
-                            # 检测到主键字段，使用ON CONFLICT
-                            # 修复：排除updated_at和updated_time，避免重复赋值
-                            # 修复：使用 insert_columns 而不是 filtered_data.columns
-                            update_fields = []
-                            exclude_fields = pk_fields_in_data + ['updated_at', 'updated_time', 'created_at']
-                            for col in insert_columns:  # 使用 insert_columns（已经是 safe_columns）
-                                if col not in exclude_fields:
-                                    update_fields.append(f'"{col}" = EXCLUDED."{col}"')
-
-                            if update_fields:
-                                update_clause = ', '.join(update_fields)
-                                # 添加updated_at或updated_time（使用NOW()函数）
-                                if 'updated_at' in insert_columns:
-                                    update_clause += ', "updated_at" = NOW()'
-                                elif 'updated_time' in insert_columns:
-                                    update_clause += ', "updated_time" = NOW()'
-                            else:
-                                # 如果没有其他字段，至少更新updated_at（如果存在）
-                                if 'updated_at' in insert_columns:
-                                    update_clause = '"updated_at" = NOW()'
-                                elif 'updated_time' in insert_columns:
-                                    update_clause = '"updated_time" = NOW()'
-                                else:
-                                    # 如果连updated_at都没有，至少更新第一个非主键字段
-                                    non_pk_cols = [col for col in insert_columns if col not in pk_fields_in_data]
-                                    if non_pk_cols:
-                                        update_clause = f'"{non_pk_cols[0]}" = EXCLUDED."{non_pk_cols[0]}"'
-                                    else:
-                                        # 如果只有主键字段，使用简单INSERT（不会有冲突）
-                                        update_clause = None
-
-                            if update_clause:
-                                pk_clause = ', '.join(f'"{col}"' for col in pk_fields_in_data)
-                                sql = f"""
-                                    INSERT INTO {table_name} ({insert_columns_str})
-                                    SELECT {insert_columns_str} FROM {temp_table}
-                                    ON CONFLICT ({pk_clause}) DO UPDATE SET
-                                    {update_clause}
-                                """
-                                logger.debug(f"[其他数据类型批量插入] ON CONFLICT字段: ({pk_clause})")
-                            else:
-                                # 只有主键字段，使用简单INSERT
-                                sql = f"""
-                                    INSERT INTO {table_name} ({insert_columns_str})
-                                    SELECT {insert_columns_str} FROM {temp_table}
-                                """
-                                logger.debug(f"[其他数据类型批量插入] 简单插入模式（只有主键字段）")
+                            # 检测到主键字段，使用 INSERT OR REPLACE 避免 ART 索引冲突
+                            insert_fields = [col for col in insert_columns if col not in ['updated_at', 'updated_time', 'created_at']]
+                            
+                            sql = f"""
+                                INSERT OR REPLACE INTO {table_name} ({', '.join(f'"{col}"' for col in insert_fields)})
+                                SELECT {', '.join(f'"{col}"' for col in insert_fields)} FROM {temp_table}
+                            """
+                            logger.debug(f"[其他数据类型批量插入] 使用 INSERT OR REPLACE")
                         else:
                             # 没有检测到主键字段，使用简单INSERT
                             sql = f"""

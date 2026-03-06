@@ -2470,7 +2470,7 @@ class DataImportExecutionEngine(QObject):
         """获取指定的数据源插件实例"""
         try:
             # 从插件管理器获取插件实例
-            from ..plugin_manager import get_plugin_manager
+            from utils.singleton_helper import get_plugin_manager
             plugin_manager = get_plugin_manager()
 
             if plugin_manager:
@@ -3405,6 +3405,10 @@ class DataImportExecutionEngine(QObject):
                     parsed_date = pd.to_datetime(date_str)
                     return parsed_date.strftime('%Y-%m-%d')
 
+            # 如果是日期对象
+            elif isinstance(date_value, datetime.date):
+                return date_value.strftime('%Y-%m-%d')
+
             # 如果是datetime对象
             elif isinstance(date_value, (datetime, pd.Timestamp)):
                 return pd.to_datetime(date_value).strftime('%Y-%m-%d')
@@ -4265,10 +4269,18 @@ class DataImportExecutionEngine(QObject):
             symbol: 股票代码
             task_config: 任务配置
         """
+        self._ensure_data_manager()
+
+        if self.data_manager is None:
+            logger.warning(f"⚠️  [基本面] {symbol} | 数据管理器未初始化，尝试降级获取...")
+            fundamental_data = self._get_fundamental_data_fallback(symbol, task_config)
+            if fundamental_data:
+                self._save_fundamental_data_to_database(symbol, fundamental_data, task_config)
+            return
+
         try:
             logger.debug(f"[基本面] {symbol} | 开始下载基本面数据...")
 
-            # 获取基本面数据（使用指定的数据源）
             fundamental_data = self.data_manager.get_fundamental_data(
                 symbol,
                 asset_type=task_config.asset_type,
@@ -4276,11 +4288,9 @@ class DataImportExecutionEngine(QObject):
             )
 
             if fundamental_data and len(fundamental_data) > 0:
-                # 转换为DataFrame
                 import pandas as pd
                 fund_df = pd.DataFrame([fundamental_data])
 
-                # 保存到数据库
                 self._save_fundamental_data_to_database(
                     symbol,
                     fund_df,
@@ -4289,12 +4299,21 @@ class DataImportExecutionEngine(QObject):
 
                 logger.info(f"[基本面] {symbol} | 数据已保存到数据库")
             else:
-                logger.debug(f"⚠️  [基本面] {symbol} | 未获取到基本面数据")
+                logger.debug(f"⚠️  [基本面] {symbol} | 未获取到基本面数据，尝试降级获取...")
+                fundamental_data = self._get_fundamental_data_fallback(symbol, task_config)
+                if fundamental_data is not None:
+                    self._save_fundamental_data_to_database(symbol, fundamental_data, task_config)
 
         except Exception as e:
-            logger.error(f"❌ [基本面] {symbol} | 下载失败: {e}")
+            logger.error(f"❌ [基本面] {symbol} | 下载失败: {e}，尝试降级获取...")
             import traceback
             logger.debug(traceback.format_exc())
+            try:
+                fundamental_data = self._get_fundamental_data_fallback(symbol, task_config)
+                if fundamental_data is not None:
+                    self._save_fundamental_data_to_database(symbol, fundamental_data, task_config)
+            except Exception as fallback_error:
+                logger.error(f"❌ [基本面] {symbol} | 降级获取也失败: {fallback_error}")
 
     def _save_fundamental_data_to_database(self, symbol: str, fund_df: 'pd.DataFrame', task_config: ImportTaskConfig):
         """保存基本面数据到数据库（使用写入队列）
@@ -4331,6 +4350,49 @@ class DataImportExecutionEngine(QObject):
             logger.error(f"❌ [基本面] {symbol} | 保存到数据库失败: {e}")
             import traceback
             logger.debug(traceback.format_exc())
+
+    def _get_fundamental_data_fallback(self, symbol: str, task_config: ImportTaskConfig):
+        """降级获取基本面数据 - 尝试其他数据源插件
+
+        Args:
+            symbol: 股票代码
+            task_config: 任务配置
+
+        Returns:
+            DataFrame or None: 基本面数据DataFrame
+        """
+        import pandas as pd
+
+        fallback_plugins = [
+            'eastmoney_stock_data_source',
+            'akshare_stock_data_source',
+            'tushare_stock_data_source',
+            'tongdaxin_stock_plugin'
+        ]
+
+        for plugin_id in fallback_plugins:
+            try:
+                logger.info(f"[基本面降级] {symbol} | 尝试数据源: {plugin_id}")
+                plugin = self._get_data_source_plugin(plugin_id)
+
+                if plugin is None:
+                    continue
+
+                if hasattr(plugin, 'get_fundamental_data'):
+                    data = plugin.get_fundamental_data(symbol)
+                    if data and isinstance(data, dict) and len(data) > 0:
+                        fund_df = pd.DataFrame([data])
+                        logger.info(f"[基本面降级] {symbol} | 从 {plugin_id} 获取成功")
+                        return fund_df
+                    else:
+                        logger.debug(f"[基本面降级] {symbol} | {plugin_id} 返回空数据")
+
+            except Exception as e:
+                logger.debug(f"[基本面降级] {symbol} | {plugin_id} 获取失败: {e}")
+                continue
+
+        logger.warning(f"[基本面降级] {symbol} | 所有降级数据源均失败")
+        return None
 
     def _standardize_fundamental_data_fields(self, fund_df: 'pd.DataFrame', data_source: str) -> 'pd.DataFrame':
         """标准化基本面数据字段，确保与数据库表结构匹配

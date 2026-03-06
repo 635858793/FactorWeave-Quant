@@ -17,6 +17,7 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
 from core.config import ConfigManager
+from utils.theme import parse_color_for_matplotlib
 from ..async_data_processor import AsyncDataProcessor
 from ..chart_renderer import ChartRenderer
 
@@ -105,6 +106,10 @@ class BaseMixin:
             else:
                 theme = self.theme_manager.current_theme
                 colors = self.theme_manager.get_theme_colors(theme)
+                # 处理 rgba 颜色转换为 matplotlib 兼容格式
+                for key in ['chart_background', 'chart_grid', 'chart_text']:
+                    if key in colors:
+                        colors[key] = parse_color_for_matplotlib(colors[key])
             
             self.figure.patch.set_facecolor(
                 colors.get('chart_background', '#181c24'))

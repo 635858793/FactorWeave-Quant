@@ -306,40 +306,40 @@ class DuckDBConnectionPool:
         try:
             config_dict = self.config.to_dict()
 
-            # 设置内存限制
             conn.execute(f"SET memory_limit='{config_dict['memory_limit']}'")
 
-            # 设置线程数
             if config_dict['threads'] != 'auto':
                 conn.execute(f"SET threads={config_dict['threads']}")
 
-            # 设置最大内存使用
             conn.execute(f"SET max_memory='{config_dict['max_memory']}'")
 
-            # 设置检查点阈值
-            conn.execute(f"SET checkpoint_threshold='{config_dict['checkpoint_threshold']}'")
+            try:
+                conn.execute(f"PRAGMA checkpoint_threshold='{config_dict['checkpoint_threshold']}'")
+            except Exception as e:
+                logger.warning(f"checkpoint_threshold配置失败: {e}")
 
-            # 启用进度条
             if config_dict['enable_progress_bar']:
-                conn.execute("SET enable_progress_bar=1")
+                try:
+                    conn.execute("SET enable_progress_bar=1")
+                except Exception as e:
+                    logger.warning(f"enable_progress_bar配置失败: {e}")
 
-            # 启用性能分析
             if config_dict['enable_profiling']:
-                conn.execute("SET enable_profiling='json'")
+                try:
+                    conn.execute("SET enable_profiling='no_output'")
+                except Exception as e:
+                    logger.warning(f"enable_profiling配置失败: {e}")
 
-            # 设置插入顺序保持
-            conn.execute(f"SET preserve_insertion_order={str(config_dict['preserve_insertion_order']).lower()}")
+            try:
+                conn.execute(f"SET preserve_insertion_order={str(config_dict['preserve_insertion_order']).lower()}")
+            except Exception as e:
+                logger.warning(f"preserve_insertion_order配置失败: {e}")
 
-            # 启用外部访问（注意：此设置不能在数据库运行时更改）
-            # if config_dict['enable_external_access']:
-            #     conn.execute("SET enable_external_access=true")
-
-            # 启用FSST字符串压缩
             if config_dict['enable_fsst_vectors']:
-                conn.execute("SET enable_fsst_vectors=true")
-
-            # 设置默认压缩（DuckDB不支持default_compression参数）
-            # conn.execute(f"SET default_compression='{config_dict['compression']}'")
+                try:
+                    conn.execute("SET enable_fsst_vectors=true")
+                except Exception as e:
+                    logger.warning(f"enable_fsst_vectors配置失败: {e}")
 
             logger.debug("DuckDB配置应用完成")
 
@@ -389,19 +389,26 @@ class DuckDBConnectionPool:
             # 归还连接到池中
             if conn:
                 try:
-                    # 关键修复：清理事务状态，防止事务污染
-                    # 在归还连接前，确保回滚任何未完成的事务
+                    # 关键修复：增强事务状态清理，防止事务污染
+                    # 1. 先尝试 COMMIT 提交任何未提交的事务
+                    # 2. 再尝试 ROLLBACK 回滚任何剩余的事务
+                    # 3. 检查连接是否仍然有效
+                    try:
+                        conn.execute("COMMIT")
+                    except Exception:
+                        pass  # 没有待提交的事务，忽略错误
+                    
                     try:
                         conn.execute("ROLLBACK")
                     except Exception:
                         pass  # 没有活跃事务，忽略错误
                     
-                    # 检查连接是否仍然有效
+                    # 验证连接有效性
                     if self._is_connection_valid(conn):
                         self._pool.put(conn)
                     else:
-                        # 连接无效，创建新连接替换
-                        logger.warning("连接无效，创建新连接替换")
+                        # 连接无效，丢弃并创建新连接
+                        logger.warning("连接无效，丢弃并创建新连接")
                         new_conn = self._create_connection()
                         if new_conn:
                             self._pool.put(new_conn)

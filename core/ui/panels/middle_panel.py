@@ -20,7 +20,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QThread, pyqtSlot, QDateTime, QDate, QTime
 from PyQt5.QtGui import QFont, QIcon
 from .base_panel import BasePanel
-from core.events import StockSelectedEvent, ChartUpdateEvent, IndicatorChangedEvent, UIDataReadyEvent, MultiScreenToggleEvent
+from core.events import StockSelectedEvent, ChartUpdateEvent, IndicatorChangedEvent, UIDataReadyEvent, MultiScreenToggleEvent, ThemeChangedEvent
 from core.services.unified_chart_service import get_unified_chart_service, create_chart_widget, ChartDataLoader, ChartWidget
 from optimization.progressive_loading_manager import get_progressive_loader, LoadingStage
 from optimization.update_throttler import get_update_throttler
@@ -839,8 +839,10 @@ class MiddlePanel(BasePanel):
                         IndicatorChangedEvent, self.on_indicator_changed)
                     self.event_bus.subscribe(
                         UIDataReadyEvent, self._on_ui_data_ready)
+                    self.event_bus.subscribe(
+                        ThemeChangedEvent, self.on_theme_changed)
                     logger.info(
-                        "已订阅StockSelectedEvent, IndicatorChangedEvent, UIDataReadyEvent事件")
+                        "已订阅StockSelectedEvent, IndicatorChangedEvent, UIDataReadyEvent, ThemeChangedEvent事件")
                 except Exception as e:
                     logger.error(f"订阅事件失败: {e}")
 
@@ -1507,6 +1509,112 @@ class MiddlePanel(BasePanel):
         """处理股票选择事件"""
         # 调用内部方法处理股票选择事件
         self._on_stock_selected(event)
+
+    def on_theme_changed(self, event: ThemeChangedEvent) -> None:
+        """处理主题变化事件"""
+        try:
+            if hasattr(event, 'theme_config') and event.theme_config:
+                self.apply_theme(event.theme_config)
+                logger.info(f"MiddlePanel主题已更新: {event.theme_name}")
+            elif hasattr(event, 'theme'):
+                self.apply_theme(event.theme)
+        except Exception as e:
+            logger.error(f"MiddlePanel主题更新失败: {e}")
+
+    def _apply_theme_to_widgets(self, theme: Dict[str, Any]) -> None:
+        """应用主题到组件
+        
+        支持两种数据结构：
+        1. 嵌套结构: {'colors': {'background': '...', 'foreground': '...'}}
+        2. 扁平结构: {'background': '...', 'foreground': '...'}
+        """
+        try:
+            colors = theme.get('colors', theme)
+            
+            if not colors or not isinstance(colors, dict):
+                colors = theme
+            
+            bg_color = colors.get('chart_panel_bg', colors.get('background', '#ffffff'))
+            fg_color = colors.get('chart_text', colors.get('foreground', '#000000'))
+            
+            if isinstance(bg_color, str) and bg_color.startswith('rgba(') and bg_color.endswith(')'):
+                try:
+                    rgba_content = bg_color[5:-1]
+                    parts = [p.strip() for p in rgba_content.split(',')]
+                    if len(parts) >= 4:
+                        r, g, b, a = int(parts[0]), int(parts[1]), int(parts[2]), float(parts[3])
+                        bg_color = f'rgba({r},{g},{b},{a})'
+                except (ValueError, IndexError):
+                    pass
+            elif isinstance(bg_color, tuple) and len(bg_color) >= 4:
+                r, g, b, a = bg_color[:4]
+                bg_color = f'rgba({int(r)},{int(g)},{int(b)},{a})'
+            
+            if isinstance(fg_color, str) and fg_color.startswith('rgba(') and fg_color.endswith(')'):
+                try:
+                    rgba_content = fg_color[5:-1]
+                    parts = [p.strip() for p in rgba_content.split(',')]
+                    if len(parts) >= 4:
+                        r, g, b, a = int(parts[0]), int(parts[1]), int(parts[2]), float(parts[3])
+                        fg_color = f'rgba({r},{g},{b},{a})'
+                except (ValueError, IndexError):
+                    pass
+            elif isinstance(fg_color, tuple) and len(fg_color) >= 4:
+                r, g, b, a = fg_color[:4]
+                fg_color = f'rgba({int(r)},{int(g)},{int(b)},{a})'
+
+            if self._root_frame:
+                self._root_frame.setStyleSheet(f"""
+                    QFrame {{
+                        background-color: {bg_color};
+                        color: {fg_color};
+                    }}
+                """)
+            
+            self._apply_theme_to_chart_widget(colors)
+            
+            logger.debug(f"MiddlePanel主题已应用到组件: bg={bg_color}, fg={fg_color}")
+            
+        except Exception as e:
+            logger.error(f"应用主题到组件失败: {e}")
+
+    def _apply_theme_to_chart_widget(self, colors: Dict[str, Any]) -> None:
+        """应用主题到图表控件"""
+        try:
+            chart_canvas = self.get_widget('chart_canvas')
+            if chart_canvas and hasattr(chart_canvas, 'apply_theme'):
+                try:
+                    chart_canvas.apply_theme()
+                except Exception as e:
+                    logger.warning(f"ChartCanvas主题应用失败: {e}")
+            
+            if hasattr(self, 'chart_widget') and self.chart_widget:
+                chart_widget = self.chart_widget
+                if hasattr(chart_widget, 'apply_theme'):
+                    try:
+                        chart_widget.apply_theme()
+                    except Exception as e:
+                        logger.warning(f"ChartWidget主题应用失败: {e}")
+                    
+        except Exception as e:
+            logger.warning(f"应用主题到图表控件失败: {e}")
+
+    def _on_theme_changed(self, theme) -> None:
+        """处理来自 MainWindowCoordinator 的主题变化通知"""
+        try:
+            if hasattr(self, '_theme_manager') and self._theme_manager:
+                theme_config = self._theme_manager.get_theme_colors()
+                self.apply_theme(theme_config)
+                logger.info("MiddlePanel主题已更新(来自Coordinator)")
+            elif hasattr(theme, 'name'):
+                from utils.theme import get_theme_manager
+                theme_manager = get_theme_manager()
+                if theme_manager:
+                    theme_config = theme_manager.get_theme_colors(theme)
+                    self.apply_theme(theme_config)
+                    logger.info("MiddlePanel主题已更新(来自Coordinator-Theme)")
+        except Exception as e:
+            logger.error(f"MiddlePanel主题更新失败: {e}")
 
     def get_current_stock(self) -> str:
         """获取当前股票代码"""

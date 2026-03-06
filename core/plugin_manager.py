@@ -249,6 +249,16 @@ class PluginManager:
                 self._plugin_error = pyqtSignal(str, str)
         return self._plugin_error
 
+    def _emit_signal(self, signal_property, *args):
+        """安全地发送信号"""
+        signal = signal_property
+        if signal is not None and hasattr(signal, 'emit'):
+            signal.emit(*args)
+        elif signal is None:
+            logger.debug(f"信号未初始化，跳过emit")
+        else:
+            logger.warning(f"信号对象无效（可能PluginManager未继承QObject），跳过emit")
+
     def __init__(self,
                  plugin_dir: str = "plugins",
                  main_window=None,
@@ -1476,7 +1486,7 @@ class PluginManager:
                             logger.info(f"数据源插件 {plugin_id} 已启动异步连接")
 
                 # 发送启用信号
-                self.plugin_enabled.emit(plugin_id)
+                self._emit_signal(self.plugin_enabled, plugin_id)
 
                 logger.info(f"数据源插件已启用: {plugin_id}")
                 return True
@@ -1512,7 +1522,7 @@ class PluginManager:
                     adapter.disconnect()
 
                 # 发送禁用信号
-                self.plugin_disabled.emit(plugin_id)
+                self._emit_signal(self.plugin_disabled, plugin_id)
 
                 logger.info(f"数据源插件已禁用: {plugin_id}")
                 return True
@@ -2450,7 +2460,7 @@ class PluginManager:
                         self.enhanced_plugins[plugin_name].enabled = False
                         self._update_plugin_status_in_db(plugin_name, PluginStatus.ERROR, f"启用失败: {str(enable_error)}")
 
-                    self.plugin_error.emit(plugin_name, str(enable_error))
+                    self._emit_signal(self.plugin_error, plugin_name, str(enable_error))
                     return False
 
             # 更新插件状态
@@ -2462,7 +2472,7 @@ class PluginManager:
                 self._update_plugin_status_in_db(plugin_name, PluginStatus.ENABLED, "用户启用")
 
             # 发送启用信号
-            self.plugin_enabled.emit(plugin_name)
+            self._emit_signal(self.plugin_enabled, plugin_name)
 
             logger.info(f"插件已启用: {plugin_name}")
             return True
@@ -2475,7 +2485,7 @@ class PluginManager:
                 self.enhanced_plugins[plugin_name].enabled = False
                 self._update_plugin_status_in_db(plugin_name, PluginStatus.ERROR, f"启用失败: {str(e)}")
 
-            self.plugin_error.emit(plugin_name, str(e))
+            self._emit_signal(self.plugin_error, plugin_name, str(e))
             return False
 
     def disable_plugin(self, plugin_name: str) -> bool:
@@ -2508,14 +2518,14 @@ class PluginManager:
                 self._update_plugin_status_in_db(plugin_name, PluginStatus.DISABLED, "用户禁用")
 
             # 发送禁用信号
-            self.plugin_disabled.emit(plugin_name)
+            self._emit_signal(self.plugin_disabled, plugin_name)
 
             logger.info(f"插件已禁用: {plugin_name}")
             return True
 
         except Exception as e:
             logger.error(f"禁用插件失败 {plugin_name}: {e}")
-            self.plugin_error.emit(plugin_name, str(e))
+            self._emit_signal(self.plugin_error, plugin_name, str(e))
             return False
 
     def update_plugin_config(self, plugin_name: str, config: Dict[str, Any]) -> bool:

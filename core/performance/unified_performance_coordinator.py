@@ -532,7 +532,11 @@ class UnifiedPerformanceCoordinator:
         """收集性能指标"""
         try:
             # 从性能监控器获取最新指标
-            current_metrics = self.performance_monitor.get_current_metrics()
+            try:
+                current_metrics = self.performance_monitor.get_current_metrics()
+            except AttributeError:
+                # 使用备用方法 get_recent_metrics
+                current_metrics = self.performance_monitor.get_recent_metrics() or []
 
             # 添加到缓冲区
             for metric in current_metrics:

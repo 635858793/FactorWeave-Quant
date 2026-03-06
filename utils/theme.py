@@ -59,12 +59,77 @@ def parse_color(color_str: str) -> Union[str, tuple]:
                 b = int(parts[2].strip())
                 a = float(parts[3].strip())
                 
-                # 返回Qt可识别的格式
+                # 返回Qt可识别的格式 (r, g, b, a)
                 return (r, g, b, a)
         except (ValueError, IndexError) as e:
             logger.warning(f"解析rgba颜色失败: {color_str}, 错误: {e}")
             
     return color_str
+
+
+def parse_color_for_matplotlib(color_value) -> str:
+    """解析颜色值，用于matplotlib兼容的格式
+    
+    Args:
+        color_value: 颜色值，可以是字符串或元组
+        
+    Returns:
+        str: matplotlib兼容的颜色字符串（hex格式）
+    """
+    if not color_value:
+        return '#ffffff'
+    
+    if isinstance(color_value, (int, float)):
+        return color_value
+    
+    if isinstance(color_value, tuple) and len(color_value) >= 4:
+        r, g, b, a = color_value[:4]
+        hex_color = '#{:02x}{:02x}{:02x}'.format(
+            int(r), int(g), int(b)
+        )
+        return hex_color
+    
+    if isinstance(color_value, str):
+        if color_value.startswith('rgba(') and color_value.endswith(')'):
+            try:
+                rgba_content = color_value[5:-1]
+                parts = [part.strip() for part in rgba_content.split(',')]
+                if len(parts) >= 3:
+                    r, g, b = int(parts[0]), int(parts[1]), int(parts[2])
+                    hex_color = '#{:02x}{:02x}{:02x}'.format(r, g, b)
+                    return hex_color
+            except (ValueError, IndexError):
+                pass
+        return color_value
+    
+    return str(color_value)
+
+
+def get_alpha_value(colors: dict, key: str, default: float = 1.0) -> float:
+    """从颜色字典中提取 alpha 值
+    
+    Args:
+        colors: 主题颜色字典
+        key: alpha 值的键名
+        default: 默认值
+        
+    Returns:
+        float: alpha 透明度值
+    """
+    value = colors.get(key, default)
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            if value.startswith('rgba(') and value.endswith(')'):
+                rgba_content = value[5:-1]
+                parts = [p.strip() for p in rgba_content.split(',')]
+                if len(parts) >= 4:
+                    return float(parts[3])
+            return float(value)
+        except (ValueError, IndexError):
+            return default
+    return default
 
 DB_PATH = os.path.join(os.path.dirname(
     os.path.dirname(__file__)), 'data', 'factorweave_system.sqlite')

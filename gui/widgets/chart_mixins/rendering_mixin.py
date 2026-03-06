@@ -14,6 +14,7 @@ import threading
 
 # 替换旧的指标系统导入
 from core.indicator_adapter import get_indicator_english_name
+from utils.theme import parse_color_for_matplotlib
 
 
 class IndicatorPerformanceOptimizer:
@@ -86,6 +87,15 @@ class RenderingMixin:
         self._ma_pattern = re.compile(r'^MA(\d+)?$')
         # 内置指标集合（用于快速匹配）
         self._builtin_indicators = {'MA', 'MACD', 'RSI', 'BOLL'}
+
+    def _get_theme_colors(self):
+        """获取主题颜色，自动处理rgba格式"""
+        colors = self.theme_manager.get_theme_colors() if hasattr(self, 'theme_manager') else {}
+        # 处理 rgba 颜色转换为 matplotlib 兼容格式
+        for key in ['chart_background', 'chart_grid', 'chart_text', 'chart_positive', 'chart_negative']:
+            if key in colors:
+                colors[key] = parse_color_for_matplotlib(colors[key])
+        return colors
 
     def _get_kdata_hash(self, kdata: pd.DataFrame) -> str:
         """获取kdata的唯一标识符，用于缓存"""
@@ -291,21 +301,19 @@ class RenderingMixin:
     
     def _get_optimized_indicator_style(self, name: str, index: int = 0) -> Dict[str, Any]:
         """优化的指标样式获取方法，使用缓存"""
-        # 使用主题版本作为缓存键的一部分
         try:
             theme_version = hash(str(getattr(self, 'theme_manager', {}).get_theme_colors() if hasattr(self.theme_manager, 'get_theme_colors') else {}))
         except:
             theme_version = 0
         
-        # 尝试从缓存获取
         cached_style = self._performance_optimizer.get_cached_style(name, index, theme_version)
         if cached_style:
             return cached_style
         
-        # 计算样式
         colors = self.theme_manager.get_theme_colors() if hasattr(self, 'theme_manager') else {}
-        indicator_colors = colors.get('indicator_colors', [
+        indicator_colors_raw = colors.get('indicator_colors', [
             '#fbc02d', '#ab47bc', '#1976d2', '#43a047', '#e53935', '#00bcd4', '#ff9800'])
+        indicator_colors = [parse_color_for_matplotlib(c) for c in indicator_colors_raw]
         
         style = {
             'color': indicator_colors[index % len(indicator_colors)],
@@ -314,7 +322,6 @@ class RenderingMixin:
             'label': name
         }
         
-        # 缓存结果
         self._performance_optimizer.cache_style(name, index, theme_version, style)
         return style
     
@@ -650,8 +657,8 @@ class RenderingMixin:
             else:
                 info_str = ''
             colors = self.theme_manager.get_theme_colors()
-            text_color = colors.get('chart_text', '#222b45')
-            bg_color = colors.get('chart_background', '#ffffff')
+            text_color = parse_color_for_matplotlib(colors.get('chart_text', '#222b45'))
+            bg_color = parse_color_for_matplotlib(colors.get('chart_background', '#ffffff'))
             self._stock_info_text = self.price_ax.text(
                 0.01, 0.99, info_str,  # y坐标0.98
                 transform=self.price_ax.transAxes,
@@ -1183,23 +1190,13 @@ class RenderingMixin:
         try:
             colors = self.theme_manager.get_theme_colors()
             
-            # 处理颜色格式，确保rgba格式被正确解析
             processed_colors = {}
             for key, value in colors.items():
-                if isinstance(value, str) and value.startswith('rgba('):
-                    # 解析rgba格式
-                    try:
-                        rgba_content = value[5:-1]  # 去掉 "rgba(" 和 ")"
-                        parts = [part.strip() for part in rgba_content.split(',')]
-                        if len(parts) >= 4:
-                            r, g, b = int(parts[0].strip()), int(parts[1].strip()), int(parts[2].strip())
-                            processed_colors[key] = (r, g, b)
-                        else:
-                            processed_colors[key] = value
-                    except (ValueError, IndexError):
-                        processed_colors[key] = value
-                else:
-                    processed_colors[key] = value
+                processed_colors[key] = parse_color_for_matplotlib(value)
+            
+            from utils.theme import get_alpha_value
+            volume_alpha = get_alpha_value(colors, 'volume_alpha', 0.5)
+            k_alpha = get_alpha_value(colors, 'alpha', 1.0)
                     
             return {
                 'up_color': processed_colors.get('k_up', '#e74c3c'),
@@ -1207,7 +1204,8 @@ class RenderingMixin:
                 'edge_color': processed_colors.get('k_edge', '#2c3140'),
                 'volume_up_color': processed_colors.get('volume_up', '#e74c3c'),
                 'volume_down_color': processed_colors.get('volume_down', '#27ae60'),
-                'volume_alpha': processed_colors.get('volume_alpha', 0.5),
+                'volume_alpha': volume_alpha,
+                'alpha': k_alpha,
                 'grid_color': processed_colors.get('chart_grid', '#e0e0e0'),
                 'background_color': processed_colors.get('chart_background', '#ffffff'),
                 'text_color': processed_colors.get('chart_text', '#222b45'),
@@ -1222,8 +1220,9 @@ class RenderingMixin:
     def _get_indicator_style(self, name: str, index: int = 0) -> Dict[str, Any]:
         """获取指标样式，颜色从theme_manager.get_theme_colors获取"""
         colors = self.theme_manager.get_theme_colors()
-        indicator_colors = colors.get('indicator_colors', [
+        indicator_colors_raw = colors.get('indicator_colors', [
             '#fbc02d', '#ab47bc', '#1976d2', '#43a047', '#e53935', '#00bcd4', '#ff9800'])
+        indicator_colors = [parse_color_for_matplotlib(c) for c in indicator_colors_raw]
         return {
             'color': indicator_colors[index % len(indicator_colors)],
             'linewidth': 0.7,
@@ -1337,48 +1336,37 @@ class RenderingMixin:
 
             colors = self.theme_manager.get_theme_colors()
             
-            # 处理颜色格式，确保rgba格式被正确解析
             processed_colors = {}
             for key, value in colors.items():
-                if isinstance(value, str) and value.startswith('rgba('):
-                    # 解析rgba格式
-                    try:
-                        rgba_content = value[5:-1]  # 去掉 "rgba(" 和 ")"
-                        parts = [part.strip() for part in rgba_content.split(',')]
-                        if len(parts) >= 4:
-                            r, g, b = int(parts[0].strip()), int(parts[1].strip()), int(parts[2].strip())
-                            processed_colors[key] = (r, g, b)
-                        else:
-                            processed_colors[key] = value
-                    except (ValueError, IndexError):
-                        processed_colors[key] = value
-                else:
-                    processed_colors[key] = value
+                processed_colors[key] = parse_color_for_matplotlib(value)
             
             bg_color = processed_colors.get('chart_background', '#ffffff')
-            
-            # 处理背景色格式
-            if isinstance(bg_color, tuple) and len(bg_color) >= 3:
-                bg_color = bg_color[:3]  # 使用RGB部分
+            if isinstance(bg_color, tuple):
+                bg_color = '#{:02x}{:02x}{:02x}'.format(
+                    int(bg_color[0]), int(bg_color[1]), int(bg_color[2])
+                ) if len(bg_color) >= 3 else '#ffffff'
 
-            # 设置图表背景色
             self.figure.patch.set_facecolor(bg_color)
 
-            # 设置各子图背景色
             for ax in [self.price_ax, self.volume_ax, self.indicator_ax]:
                 ax.set_facecolor(bg_color)
 
-                # 设置网格样式
                 grid_color = processed_colors.get('chart_grid', '#e0e0e0')
+                if isinstance(grid_color, tuple):
+                    grid_color = '#{:02x}{:02x}{:02x}'.format(
+                        int(grid_color[0]), int(grid_color[1]), int(grid_color[2])
+                    ) if len(grid_color) >= 3 else '#e0e0e0'
                 ax.grid(True, color=grid_color, alpha=0.3, linewidth=0.5)
 
-                # 设置刻度和标签颜色
                 text_color = processed_colors.get('chart_text', '#222b45')
+                if isinstance(text_color, tuple):
+                    text_color = '#{:02x}{:02x}{:02x}'.format(
+                        int(text_color[0]), int(text_color[1]), int(text_color[2])
+                    ) if len(text_color) >= 3 else '#222b45'
                 ax.tick_params(colors=text_color)
                 ax.xaxis.label.set_color(text_color)
                 ax.yaxis.label.set_color(text_color)
 
-            # 重新绘制
             self.canvas.draw()
 
         except Exception as e:
@@ -1516,8 +1504,8 @@ class RenderingMixin:
 
                 # 获取主题颜色
                 colors = self.theme_manager.get_theme_colors()
-                grid_color = colors.get('chart_grid', '#e0e0e0')
-                text_color = colors.get('chart_text', '#222b45')
+                grid_color = parse_color_for_matplotlib(colors.get('chart_grid', '#e0e0e0'))
+                text_color = parse_color_for_matplotlib(colors.get('chart_text', '#222b45'))
 
                 # 设置网格
                 ax.grid(True, linestyle='--', alpha=0.3, color=grid_color)

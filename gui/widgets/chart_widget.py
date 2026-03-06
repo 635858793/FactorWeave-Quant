@@ -414,31 +414,38 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
     def _init_performance_optimizer(self):
         """初始化高级性能优化器"""
         try:
-            # 导入性能优化模块
-            from core.advanced_optimization.performance.performance_optimization_integration import (
-                PerformanceOptimizer, RenderOptimizationConfig, RenderOptimizationLevel
-            )
-            from core.advanced_optimization.performance.unified_performance_coordinator import (
-                UnifiedPerformanceCoordinator
-            )
-            from core.advanced_optimization.performance.advanced_performance_analytics import (
-                AdvancedPerformanceAnalytics
-            )
+            # 使用统一入口（推荐方式）
+            from core.services import get_performance_coordinator, get_advanced_analytics
             
-            # 创建性能监控组件
-            self.performance_coordinator = UnifiedPerformanceCoordinator()
+            # 从统一入口获取性能协调器（完整版）
+            self.performance_coordinator = get_performance_coordinator()
             
-            # 初始化监控器
-            if self.performance_coordinator.initialize_monitors():
-                logger.info("性能监控器初始化成功")
-                
-                # 启动性能监控
-                self.performance_coordinator.start_monitoring(interval=1.0)
-                
-                # 创建高级性能分析器
-                self.performance_analytics = AdvancedPerformanceAnalytics(self.performance_coordinator)
-                
-                # 创建高级性能优化器（使用不同的属性名避免冲突）
+            # 检查是否已经启动监控（避免重复启动）
+            already_running = False
+            if hasattr(self.performance_coordinator, 'monitor_thread'):
+                already_running = getattr(self.performance_coordinator, 'monitor_thread', None) is not None
+            
+            # 初始化监控器（只在未启动时）
+            if not already_running and hasattr(self.performance_coordinator, 'initialize_monitors'):
+                if self.performance_coordinator.initialize_monitors():
+                    logger.info("性能监控器初始化成功")
+                    
+                    # 启动性能监控
+                    if hasattr(self.performance_coordinator, 'start_monitoring'):
+                        self.performance_coordinator.start_monitoring(interval=1.0)
+                else:
+                    logger.warning("性能监控器初始化失败")
+            elif already_running:
+                logger.info("性能监控器已运行，跳过重复启动")
+            
+            # 从统一入口获取高级性能分析器
+            self.performance_analytics = get_advanced_analytics()
+            
+            # 创建高级性能优化器（使用不同的属性名避免冲突）
+            try:
+                from core.advanced_optimization.performance.performance_optimization_integration import (
+                    PerformanceOptimizer, RenderOptimizationConfig, RenderOptimizationLevel
+                )
                 self._advanced_performance_optimizer = PerformanceOptimizer(
                     coordinator=self.performance_coordinator,
                     analytics=self.performance_analytics,
@@ -459,15 +466,13 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
                 # 启动性能优化
                 self._advanced_performance_optimizer.start_optimization()
                 
-                logger.info("高级性能优化器集成成功")
-            else:
-                logger.warning("性能监控器初始化失败，跳过性能优化器")
+                logger.info("高级性能优化器集成成功（使用统一入口）")
+            except ImportError as e:
+                logger.warning(f"性能优化模块不可用，跳过: {e}")
                 self._advanced_performance_optimizer = None
-                self.performance_analytics = None
-                self.performance_coordinator = None
                 
         except ImportError as e:
-            logger.warning(f"性能优化模块不可用，跳过性能优化器集成: {e}")
+            logger.warning(f"深度分析框架不可用，跳过性能优化器集成: {e}")
             self._advanced_performance_optimizer = None
             self.performance_analytics = None
             self.performance_coordinator = None

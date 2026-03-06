@@ -25,15 +25,33 @@ from core.events import EventBus
 _get_performance_monitor = None
 _UnifiedPerformanceMonitor = None
 
+# 延迟导入深度分析框架
+_get_advanced_analytics = None
+_DeepAnalysisFramework = None
+_get_performance_coordinator = None
+
 def _import_performance_monitor():
     """延迟导入性能监控模块"""
-    global _get_performance_monitor, _UnifiedPerformanceMonitor
+    global _get_performance_monitor, _UnifiedPerformanceMonitor, _get_performance_coordinator
     
     if _get_performance_monitor is None:
         from core.performance import get_performance_monitor
         from core.performance.unified_monitor import UnifiedPerformanceMonitor
+        from core.services import get_performance_coordinator
         _get_performance_monitor = get_performance_monitor
         _UnifiedPerformanceMonitor = UnifiedPerformanceMonitor
+        _get_performance_coordinator = get_performance_coordinator
+
+def _import_deep_analysis():
+    """延迟导入深度分析框架"""
+    global _get_advanced_analytics, _DeepAnalysisFramework
+    
+    if _get_advanced_analytics is None:
+        try:
+            from core.services import get_advanced_analytics
+            _get_advanced_analytics = get_advanced_analytics
+        except ImportError:
+            logger.warning("深度分析框架不可用")
 
 # 延迟导入异步工作线程
 _AsyncDataWorker = None
@@ -191,6 +209,25 @@ class ModernUnifiedPerformanceWidget(QWidget):
         # 初始化性能监控器
         self.performance_monitor = _UnifiedPerformanceMonitor()
         logger.info("性能监控器初始化完成")
+
+        # 初始化完整版性能协调器（用于高级功能）
+        self.performance_coordinator = None
+        if _get_performance_coordinator is not None:
+            try:
+                self.performance_coordinator = _get_performance_coordinator()
+                logger.info("完整版性能协调器集成成功")
+            except Exception as e:
+                logger.warning(f"性能协调器初始化失败: {e}")
+
+        # 初始化深度分析框架
+        _import_deep_analysis()
+        self.advanced_analytics = None
+        if _get_advanced_analytics is not None:
+            try:
+                self.advanced_analytics = _get_advanced_analytics()
+                logger.info("深度分析框架集成成功")
+            except Exception as e:
+                logger.warning(f"深度分析框架初始化失败: {e}")
 
         self.performance_integrator = None
         self._has_smart_monitoring = False
