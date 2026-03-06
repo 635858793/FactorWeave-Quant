@@ -51,6 +51,8 @@ from PyQt5.QtGui import (
 
 # 导入核心性能监控组件
 try:
+    # 使用统一入口
+    from core.services import get_performance_coordinator
     from core.performance.unified_performance_coordinator import UnifiedPerformanceCoordinator
     from core.services.ai_prediction_service import AIPredictionService
     from core.ui_integration.ui_business_logic_adapter import get_ui_adapter
@@ -628,7 +630,8 @@ class EnhancedPerformanceDashboard(QWidget):
         if CORE_AVAILABLE:
             try:
                 self.ui_adapter = get_ui_adapter()
-                self.performance_coordinator = UnifiedPerformanceCoordinator()
+                # 使用统一入口获取性能协调器（单例）
+                self.performance_coordinator = get_performance_coordinator()
             except Exception as e:
                 logger.warning(f"核心服务初始化失败: {e}")
 

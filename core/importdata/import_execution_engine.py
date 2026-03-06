@@ -517,13 +517,6 @@ class DataImportExecutionEngine(QObject):
         # 数据质量监控系统
         self.data_quality_monitor = self._init_data_quality_monitor()
 
-        # 实时写入服务系统
-        self.realtime_write_service = None
-        self.enable_realtime_write = True
-        self._batch_write_buffer = {}  # {symbol: DataFrame} 批量写入缓冲区
-        self._batch_write_lock = threading.Lock()
-        self._init_realtime_write_service()
-
         # 数据库写入线程（单线程模式，解决DuckDB并发写入死锁）
         self.db_writer_thread = DatabaseWriterThread()
         self.db_writer_thread.start()
@@ -684,34 +677,6 @@ class DataImportExecutionEngine(QObject):
             import traceback
             logger.error(f"详细错误: {traceback.format_exc()}")
             return None
-
-    def _init_realtime_write_service(self, realtime_config=None):
-        """初始化实时写入服务"""
-        try:
-            from ..services.realtime_write_service import RealtimeWriteService
-            from ..services.realtime_write_config import RealtimeWriteConfig, WriteStrategy
-
-            if realtime_config is None:
-                # 创建默认配置
-                config = RealtimeWriteConfig(
-                    enabled=True,
-                    write_strategy=WriteStrategy.BATCH,  # 默认批量模式
-                    batch_size=100,
-                    concurrency=4,
-                    max_retries=3,
-                    enable_performance_monitoring=True
-                )
-            else:
-                # 使用传入的配置
-                config = realtime_config
-
-            self.realtime_write_service = RealtimeWriteService(config)
-            logger.info(f"实时写入服务初始化成功，策略: {config.write_strategy.value}")
-
-        except Exception as e:
-            logger.warning(f"实时写入服务初始化失败: {e}，将使用直接写入模式")
-            self.realtime_write_service = None
-            self.enable_realtime_write = False
 
     def _cache_task_data(self, task_id: str, data_type: str, data: Any) -> bool:
         """缓存任务数据"""
@@ -2505,7 +2470,7 @@ class DataImportExecutionEngine(QObject):
         """获取指定的数据源插件实例"""
         try:
             # 从插件管理器获取插件实例
-            from ..plugin_manager import get_plugin_manager
+            from utils.singleton_helper import get_plugin_manager
             plugin_manager = get_plugin_manager()
 
             if plugin_manager:
@@ -3035,19 +3000,31 @@ class DataImportExecutionEngine(QObject):
             self.task_failed.emit(task_config.task_id, str(e))
 
         finally:
-            # 任务结束时等待写入队列清空（DatabaseWriterThread会自动处理）
             if hasattr(self, 'db_writer_thread'):
                 queue_size = self.db_writer_thread.write_queue.qsize()
                 if queue_size > 0:
                     logger.info(f"任务结束，等待队列清空: {task_config.task_id}, 队列剩余:{queue_size}个任务")
-                    # 等待队列清空（最多30秒）
                     import time
                     start_time = time.time()
                     while self.db_writer_thread.write_queue.qsize() > 0 and (time.time() - start_time) < 30:
                         time.sleep(0.5)
                     logger.info(f"队列已清空，耗时:{time.time()-start_time:.2f}秒")
 
-            # 清理运行中的任务
+                stats = self.db_writer_thread.get_stats()
+                merge_buffer_size = stats.get('merge_buffer_size', 0)
+                if merge_buffer_size > 0:
+                    logger.info(f"等待合并缓冲区刷新: {merge_buffer_size}个DataFrame")
+                    import time
+                    buffer_start_time = time.time()
+                    while stats.get('merge_buffer_size', 0) > 0 and (time.time() - buffer_start_time) < 5:
+                        time.sleep(0.2)
+                        stats = self.db_writer_thread.get_stats()
+                    final_buffer_size = stats.get('merge_buffer_size', 0)
+                    if final_buffer_size == 0:
+                        logger.info(f"合并缓冲区已刷新，耗时:{time.time()-buffer_start_time:.2f}秒")
+                    else:
+                        logger.warning(f"合并缓冲区刷新超时，剩余:{final_buffer_size}个DataFrame（将由超时机制自动刷新）")
+
             with self._task_lock:
                 if task_config.task_id in self._running_tasks:
                     del self._running_tasks[task_config.task_id]
@@ -3428,6 +3405,10 @@ class DataImportExecutionEngine(QObject):
                     parsed_date = pd.to_datetime(date_str)
                     return parsed_date.strftime('%Y-%m-%d')
 
+            # 如果是日期对象
+            elif isinstance(date_value, datetime.date):
+                return date_value.strftime('%Y-%m-%d')
+
             # 如果是datetime对象
             elif isinstance(date_value, (datetime, pd.Timestamp)):
                 return pd.to_datetime(date_value).strftime('%Y-%m-%d')
@@ -3509,238 +3490,6 @@ class DataImportExecutionEngine(QObject):
         except Exception as e:
             logger.error(f"立即写入数据失败: {e}")
             return False
-
-    def _add_to_batch_buffer(self, symbol: str, kdata: 'pd.DataFrame', asset_type, task_config: ImportTaskConfig) -> bool:
-        """将数据加入批量写入缓冲区"""
-        try:
-            with self._batch_write_lock:
-                buffer_key = f"{asset_type.value}_{task_config.task_id}"
-
-                if buffer_key not in self._batch_write_buffer:
-                    self._batch_write_buffer[buffer_key] = {
-                        'data': [],
-                        'asset_type': asset_type,
-                        'task_config': task_config,
-                        'count': 0
-                    }
-
-                self._batch_write_buffer[buffer_key]['data'].append(kdata)
-                self._batch_write_buffer[buffer_key]['count'] += len(kdata)
-
-                logger.debug(f"数据加入缓冲区: {symbol}, 当前缓冲区大小: {self._batch_write_buffer[buffer_key]['count']}")
-
-                # 检查是否达到批量阈值
-                batch_size = self.realtime_write_service.config.batch_size if self.realtime_write_service else 100
-                if self._batch_write_buffer[buffer_key]['count'] >= batch_size:
-                    logger.info(f"缓冲区达到阈值({batch_size})，触发批量写入")
-                    return self._flush_batch_buffer(buffer_key)
-
-                return True
-
-        except Exception as e:
-            logger.error(f"加入批量缓冲区失败: {symbol}, {e}")
-            return False
-
-    def _flush_batch_buffer(self, buffer_key: str = None) -> bool:
-        """刷新批量写入缓冲区到数据库"""
-        try:
-            # 修复死锁：分两步操作，先取数据（持有锁），再写入（释放锁）
-            buffers_to_write = []
-
-            # 第一步：快速持有锁，取出数据并清空缓冲区
-            with self._batch_write_lock:
-                keys_to_flush = [buffer_key] if buffer_key else list(self._batch_write_buffer.keys())
-
-                for key in keys_to_flush:
-                    if key not in self._batch_write_buffer:
-                        continue
-
-                    buffer_data = self._batch_write_buffer[key]
-                    if not buffer_data['data']:
-                        continue
-
-                    # 复制数据到临时列表
-                    buffers_to_write.append({
-                        'key': key,
-                        'data': buffer_data['data'].copy(),  # 复制列表
-                        'asset_type': buffer_data['asset_type']
-                    })
-
-                    # 立即清空缓冲区，允许新数据写入
-                    del self._batch_write_buffer[key]
-                    logger.debug(f"缓冲区已清空，准备写入: {key}, {len(buffer_data['data'])}个DataFrame")
-
-            # 第二步：释放锁后执行耗时的数据库IO操作
-            import pandas as pd
-            from ..asset_database_manager import AssetSeparatedDatabaseManager
-            from ..plugin_types import DataType
-
-            for buffer_info in buffers_to_write:
-                key = buffer_info['key']
-                data_list = buffer_info['data']
-                asset_type = buffer_info['asset_type']
-
-                # 合并所有DataFrame
-                combined_data = pd.concat(data_list, ignore_index=True)
-                logger.info(f"开始批量写入: {key}, {len(combined_data)}条记录")
-
-                # 写入数据库（不持有锁）
-                asset_manager = AssetSeparatedDatabaseManager()
-                success = asset_manager.store_standardized_data(
-                    data=combined_data,
-                    asset_type=asset_type,
-                    data_type=DataType.HISTORICAL_KLINE
-                )
-
-                if success:
-                    logger.info(f"批量刷新成功: {key}, {len(combined_data)}条记录")
-                else:
-                    logger.error(f"❌ 批量刷新失败: {key}")
-                    return False
-
-            return True
-
-        except Exception as e:
-            logger.error(f"刷新批量缓冲区失败: {e}")
-            import traceback
-            logger.error(f"详细错误: {traceback.format_exc()}")
-            return False
-
-    def flush_all_buffers(self):
-        """刷新所有批量写入缓冲区（任务结束时调用）"""
-        logger.info("开始刷新所有批量写入缓冲区...")
-        try:
-            success = self._flush_batch_buffer()  # 不传参数，刷新所有
-            if success:
-                logger.info("所有批量缓冲区刷新完成")
-            else:
-                logger.warning("部分批量缓冲区刷新失败")
-            return success
-        except Exception as e:
-            logger.error(f"刷新所有缓冲区失败: {e}")
-            return False
-
-    def update_write_strategy(self, strategy: str):
-        """
-        更新写入策略
-
-        Args:
-            strategy: 写入策略 ('realtime', 'batch', 'adaptive')
-        """
-        try:
-            if not self.realtime_write_service:
-                logger.warning("实时写入服务未启用，无法更新策略")
-                return False
-
-            from ..services.realtime_write_config import WriteStrategy
-
-            strategy_map = {
-                'realtime': WriteStrategy.REALTIME,
-                'batch': WriteStrategy.BATCH,
-                'adaptive': WriteStrategy.ADAPTIVE
-            }
-
-            if strategy.lower() in strategy_map:
-                old_strategy = self.realtime_write_service.config.write_strategy
-                self.realtime_write_service.config.write_strategy = strategy_map[strategy.lower()]
-                logger.info(f"写入策略已更新: {old_strategy.value} -> {strategy.lower()}")
-
-                # 如果从批量模式切换，先刷新缓冲区
-                if old_strategy == WriteStrategy.BATCH:
-                    logger.info("从批量模式切换，刷新现有缓冲区")
-                    self.flush_all_buffers()
-
-                return True
-            else:
-                logger.warning(f"未知的写入策略: {strategy}")
-                return False
-
-        except Exception as e:
-            logger.error(f"更新写入策略失败: {e}")
-            return False
-
-    def update_realtime_write_config(self, write_strategy: str = None,
-                                    enable_performance_monitoring: bool = None,
-                                    enable_memory_monitoring: bool = None):
-        """
-        更新实时写入配置
-
-        Args:
-            write_strategy: 写入策略 ('realtime', 'batch', 'adaptive', '禁用写入')
-            enable_performance_monitoring: 启用性能监控
-            enable_memory_monitoring: 启用内存监控
-        """
-        try:
-            if not self.realtime_write_service:
-                logger.warning("实时写入服务未启用，无法更新配置")
-                return False
-
-            config = self.realtime_write_service.config
-
-            if write_strategy is not None:
-                from ..services.realtime_write_config import WriteStrategy
-
-                strategy_map = {
-                    '实时写入': WriteStrategy.REALTIME,
-                    '批量写入': WriteStrategy.BATCH,
-                    '自适应写入': WriteStrategy.ADAPTIVE,
-                    '禁用写入': None
-                }
-
-                if write_strategy in strategy_map:
-                    new_strategy = strategy_map[write_strategy]
-                    if new_strategy is None:
-                        config.enabled = False
-                        logger.info("实时写入已禁用")
-                    else:
-                        config.enabled = True
-                        old_strategy = config.write_strategy
-                        config.write_strategy = new_strategy
-                        logger.info(f"写入策略已更新: {old_strategy.value} -> {new_strategy.value}")
-                else:
-                    logger.warning(f"未知的写入策略: {write_strategy}")
-
-            if enable_performance_monitoring is not None:
-                config.enable_performance_monitoring = enable_performance_monitoring
-                logger.info(f"性能监控已{'启用' if enable_performance_monitoring else '禁用'}")
-
-            if enable_memory_monitoring is not None:
-                config.enable_memory_monitoring = enable_memory_monitoring
-                logger.info(f"内存监控已{'启用' if enable_memory_monitoring else '禁用'}")
-
-            return True
-
-        except Exception as e:
-            logger.error(f"更新实时写入配置失败: {e}")
-            return False
-
-    def get_write_strategy(self) -> str:
-        """获取当前写入策略"""
-        if self.realtime_write_service:
-            return self.realtime_write_service.config.write_strategy.value
-        return "direct"
-
-    def get_buffer_status(self) -> Dict[str, Any]:
-        """获取缓冲区状态信息"""
-        try:
-            with self._batch_write_lock:
-                status = {
-                    'buffer_count': len(self._batch_write_buffer),
-                    'total_records': sum(buf['count'] for buf in self._batch_write_buffer.values()),
-                    'buffers': []
-                }
-
-                for key, buf in self._batch_write_buffer.items():
-                    status['buffers'].append({
-                        'key': key,
-                        'record_count': buf['count'],
-                        'dataframe_count': len(buf['data'])
-                    })
-
-                return status
-        except Exception as e:
-            logger.error(f"获取缓冲区状态失败: {e}")
-            return {'buffer_count': 0, 'total_records': 0, 'buffers': []}
 
     def _standardize_kline_data_fields(self, df, data_source: str = None) -> 'pd.DataFrame':
         """标准化K线数据字段，确保与表结构匹配"""
@@ -4520,10 +4269,18 @@ class DataImportExecutionEngine(QObject):
             symbol: 股票代码
             task_config: 任务配置
         """
+        self._ensure_data_manager()
+
+        if self.data_manager is None:
+            logger.warning(f"⚠️  [基本面] {symbol} | 数据管理器未初始化，尝试降级获取...")
+            fundamental_data = self._get_fundamental_data_fallback(symbol, task_config)
+            if fundamental_data:
+                self._save_fundamental_data_to_database(symbol, fundamental_data, task_config)
+            return
+
         try:
             logger.debug(f"[基本面] {symbol} | 开始下载基本面数据...")
 
-            # 获取基本面数据（使用指定的数据源）
             fundamental_data = self.data_manager.get_fundamental_data(
                 symbol,
                 asset_type=task_config.asset_type,
@@ -4531,11 +4288,9 @@ class DataImportExecutionEngine(QObject):
             )
 
             if fundamental_data and len(fundamental_data) > 0:
-                # 转换为DataFrame
                 import pandas as pd
                 fund_df = pd.DataFrame([fundamental_data])
 
-                # 保存到数据库
                 self._save_fundamental_data_to_database(
                     symbol,
                     fund_df,
@@ -4544,12 +4299,21 @@ class DataImportExecutionEngine(QObject):
 
                 logger.info(f"[基本面] {symbol} | 数据已保存到数据库")
             else:
-                logger.debug(f"⚠️  [基本面] {symbol} | 未获取到基本面数据")
+                logger.debug(f"⚠️  [基本面] {symbol} | 未获取到基本面数据，尝试降级获取...")
+                fundamental_data = self._get_fundamental_data_fallback(symbol, task_config)
+                if fundamental_data is not None:
+                    self._save_fundamental_data_to_database(symbol, fundamental_data, task_config)
 
         except Exception as e:
-            logger.error(f"❌ [基本面] {symbol} | 下载失败: {e}")
+            logger.error(f"❌ [基本面] {symbol} | 下载失败: {e}，尝试降级获取...")
             import traceback
             logger.debug(traceback.format_exc())
+            try:
+                fundamental_data = self._get_fundamental_data_fallback(symbol, task_config)
+                if fundamental_data is not None:
+                    self._save_fundamental_data_to_database(symbol, fundamental_data, task_config)
+            except Exception as fallback_error:
+                logger.error(f"❌ [基本面] {symbol} | 降级获取也失败: {fallback_error}")
 
     def _save_fundamental_data_to_database(self, symbol: str, fund_df: 'pd.DataFrame', task_config: ImportTaskConfig):
         """保存基本面数据到数据库（使用写入队列）
@@ -4586,6 +4350,49 @@ class DataImportExecutionEngine(QObject):
             logger.error(f"❌ [基本面] {symbol} | 保存到数据库失败: {e}")
             import traceback
             logger.debug(traceback.format_exc())
+
+    def _get_fundamental_data_fallback(self, symbol: str, task_config: ImportTaskConfig):
+        """降级获取基本面数据 - 尝试其他数据源插件
+
+        Args:
+            symbol: 股票代码
+            task_config: 任务配置
+
+        Returns:
+            DataFrame or None: 基本面数据DataFrame
+        """
+        import pandas as pd
+
+        fallback_plugins = [
+            'eastmoney_stock_data_source',
+            'akshare_stock_data_source',
+            'tushare_stock_data_source',
+            'tongdaxin_stock_plugin'
+        ]
+
+        for plugin_id in fallback_plugins:
+            try:
+                logger.info(f"[基本面降级] {symbol} | 尝试数据源: {plugin_id}")
+                plugin = self._get_data_source_plugin(plugin_id)
+
+                if plugin is None:
+                    continue
+
+                if hasattr(plugin, 'get_fundamental_data'):
+                    data = plugin.get_fundamental_data(symbol)
+                    if data and isinstance(data, dict) and len(data) > 0:
+                        fund_df = pd.DataFrame([data])
+                        logger.info(f"[基本面降级] {symbol} | 从 {plugin_id} 获取成功")
+                        return fund_df
+                    else:
+                        logger.debug(f"[基本面降级] {symbol} | {plugin_id} 返回空数据")
+
+            except Exception as e:
+                logger.debug(f"[基本面降级] {symbol} | {plugin_id} 获取失败: {e}")
+                continue
+
+        logger.warning(f"[基本面降级] {symbol} | 所有降级数据源均失败")
+        return None
 
     def _standardize_fundamental_data_fields(self, fund_df: 'pd.DataFrame', data_source: str) -> 'pd.DataFrame':
         """标准化基本面数据字段，确保与数据库表结构匹配

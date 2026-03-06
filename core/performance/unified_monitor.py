@@ -1042,6 +1042,19 @@ class UnifiedPerformanceMonitor:
 
         return filtered_metrics
 
+    def get_current_metrics(self) -> List[PerformanceMetric]:
+        """获取当前最新的性能指标（供外部协调器使用）"""
+        if not self.metrics_history:
+            return []
+        
+        latest_metrics = {}
+        for metric in self.metrics_history:
+            key = (metric.name, metric.category)
+            if key not in latest_metrics or metric.timestamp > latest_metrics[key].timestamp:
+                latest_metrics[key] = metric
+        
+        return list(latest_metrics.values())
+
     def get_system_info(self) -> Dict[str, Any]:
         """获取系统信息"""
         return self.system_monitor.get_system_info()

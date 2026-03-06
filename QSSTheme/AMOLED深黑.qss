@@ -1015,7 +1015,7 @@ QTreeView {
 	color: #a9b7c6;
 	background-color: #000000;
 	border: 1px solid #3a3a3a;
-	alternating-row-colors: true;
+	alternate-background-color: #0a0a0a;
 }
 
 QTreeView::item {
@@ -1058,7 +1058,7 @@ QListView {
 	color: #a9b7c6;
 	background-color: #000000;
 	border: 1px solid #3a3a3a;
-	alternating-row-colors: true;
+	alternate-background-color: #0a0a0a;
 	selection-background-color: #1a3a4a;
 	selection-color: #FFFFFF;
 }

@@ -858,12 +858,19 @@ class DistributedTaskScheduler:
                 signal_generator = SignalGenerator()
                 kdata = signal_generator.generate_signals(kdata, strategy, strategy_params)
 
+                stop_loss_pct = task.task_data.get('stop_loss_pct')
+                take_profit_pct = task.task_data.get('take_profit_pct')
+                max_holding_periods = task.task_data.get('max_holding_periods')
+
                 engine = UnifiedBacktestEngine()
                 backtest_result = engine.run_backtest(
                     data=kdata,
                     signal_col='signal',
                     price_col='close',
-                    initial_capital=initial_capital
+                    initial_capital=initial_capital,
+                    stop_loss_pct=stop_loss_pct,
+                    take_profit_pct=take_profit_pct,
+                    max_holding_periods=max_holding_periods
                 )
 
                 metrics_summary = engine.get_metrics_summary() if hasattr(engine, 'get_metrics_summary') else {}

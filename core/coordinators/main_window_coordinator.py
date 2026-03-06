@@ -3688,11 +3688,8 @@ FactorWeave-Quant  2.0 (重构版本)
     def _on_data_usage_terms(self) -> None:
         """数据使用条款"""
         try:
-            QMessageBox.information(
-                self._main_window,
-                "数据使用条款",
-                "数据使用条款功能正在开发中，敬请期待！"
-            )
+            from gui.dialogs import DataUsageTermsDialog
+            DataUsageTermsDialog.show_terms(self._main_window)
             logger.info("查看数据使用条款")
         except Exception as e:
             logger.error(f"数据使用条款失败: {e}")

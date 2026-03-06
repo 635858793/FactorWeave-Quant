@@ -1015,7 +1015,8 @@ class ControlPanel(QWidget):
                 'max_drawdown_limit': self.parent_widget.risk_panel.max_drawdown_limit.value() if hasattr(self, 'parent_widget') and hasattr(self.parent_widget, 'risk_panel') else 0.20,
                 'stop_loss': self.parent_widget.risk_panel.stop_loss.value() if hasattr(self, 'parent_widget') and hasattr(self.parent_widget, 'risk_panel') else 0.10,
                 'take_profit': self.parent_widget.risk_panel.take_profit.value() if hasattr(self, 'parent_widget') and hasattr(self.parent_widget, 'risk_panel') else 0.20,
-                'max_position_size': self.parent_widget.risk_panel.max_position_size.value() if hasattr(self, 'parent_widget') and hasattr(self.parent_widget, 'risk_panel') else 0.10
+                'max_position_size': self.parent_widget.risk_panel.max_position_size.value() if hasattr(self, 'parent_widget') and hasattr(self.parent_widget, 'risk_panel') else 0.10,
+                'max_holding_periods': self.parent_widget.risk_panel.max_holding_periods.value() if hasattr(self, 'parent_widget') and hasattr(self.parent_widget, 'risk_panel') else 0
             }
         }
 
@@ -1739,6 +1740,14 @@ class ProfessionalBacktestWidget(QWidget):
         self.max_position_size.setValue(0.10)
         self.max_position_size.setSuffix("%")
         layout.addRow("单笔最大仓位:", self.max_position_size)
+        
+        # 最大持有期设置
+        self.max_holding_periods = QSpinBox()
+        self.max_holding_periods.setRange(0, 365)
+        self.max_holding_periods.setSingleStep(1)
+        self.max_holding_periods.setValue(0)
+        self.max_holding_periods.setToolTip("0表示不限制持有期")
+        layout.addRow("最大持有期(天):", self.max_holding_periods)
 
         return group
 
@@ -2450,23 +2459,39 @@ class ProfessionalBacktestWidget(QWidget):
                 else:
                     raise RuntimeError("无法获取回测数据，请先启动回测")
                 
+                # 获取风控配置参数
+                risk_control = params.get('risk_control', {})
+                stop_loss = risk_control.get('stop_loss', 0.10)  # 默认10%
+                take_profit = risk_control.get('take_profit', 0.20)  # 默认20%
+                
+                # 转换为引擎需要的格式（小数）
+                stop_loss_pct = stop_loss / 100 if stop_loss > 1 else stop_loss
+                take_profit_pct = take_profit / 100 if take_profit > 1 else take_profit
+                
+                # 获取引擎配置
+                use_vectorized = params.get('use_vectorized_engine', True)
+                auto_select = params.get('auto_select_engine', True)
+                
                 # 创建真实回测引擎
                 from backtest.unified_backtest_engine import BacktestLevel
                 backtest_engine = UnifiedBacktestEngine(
                     backtest_level=BacktestLevel.PROFESSIONAL,
-                    use_vectorized_engine=True,
-                    auto_select_engine=True
+                    use_vectorized_engine=use_vectorized,
+                    auto_select_engine=auto_select
                 )
                 
                 # 创建真实监控器
                 monitor = RealTimeBacktestMonitor(monitoring_level=MonitoringLevel.REAL_TIME)
                 
-                # 启动监控
+                # 启动监控（传递风控参数）
                 monitor.start_monitoring(
                     backtest_engine=backtest_engine,
                     data=data,
-                    initial_capital=100000,
-                    engine_type="unified"
+                    initial_capital=params.get('initial_capital', 100000),
+                    engine_type="unified",
+                    stop_loss_pct=stop_loss_pct,
+                    take_profit_pct=take_profit_pct,
+                    max_holding_periods=risk_control.get('max_holding_periods')
                 )
                 
                 # 监控循环：等待监控器数据并更新UI

@@ -303,19 +303,12 @@ class DuckDBPerformanceOptimizer:
                 config.checkpoint_threshold = "512MB"
 
             # 应用配置参数
-            # 扩展配置应用范围
+            # 根据DuckDB官方文档(2024)配置有效参数
+            # 参考: https://duckdb.org/docs/stable/configuration/overview
             config_commands = [
                 f"SET memory_limit = '{config.memory_limit}'",
                 f"SET threads = {config.threads}",
-                f"SET enable_object_cache = {str(config.enable_object_cache).lower()}",
-                f"SET enable_progress_bar = {str(config.enable_progress_bar).lower()}",
-                f"SET checkpoint_threshold = '{config.checkpoint_threshold}'",
-                f"SET wal_autocheckpoint = {config.wal_autocheckpoint}",
-                f"SET enable_optimizer = {str(config.enable_optimizer).lower()}",
-                f"SET enable_profiling = {str(config.enable_profiling).lower()}",
-                f"SET max_expression_depth = {config.max_expression_depth}",
-                f"SET force_parallelism = {str(config.force_parallelism).lower()}",
-                f"SET enable_join_order_optimizer = {str(config.enable_join_order_optimizer).lower()}",
+                f"SET max_temp_directory_size = '8GB'",
             ]
 
             for cmd in config_commands:
@@ -323,8 +316,35 @@ class DuckDBPerformanceOptimizer:
                     conn.execute(cmd)
                     logger.debug(f"应用配置: {cmd}")
                 except Exception as e:
-                    # 某些配置可能不被支持，记录警告但继续
                     logger.warning(f"配置应用失败: {cmd} - {e}")
+
+            try:
+                if config.checkpoint_threshold:
+                    conn.execute(f"PRAGMA checkpoint_threshold = '{config.checkpoint_threshold}'")
+            except Exception as e:
+                logger.warning(f"配置应用失败: checkpoint_threshold - {e}")
+
+            try:
+                wal_size = config.wal_autocheckpoint
+                if isinstance(wal_size, int):
+                    wal_size = f"{wal_size // 1000}GB"
+                conn.execute(f"PRAGMA wal_autocheckpoint = '{wal_size}'")
+            except Exception as e:
+                logger.warning(f"配置应用失败: wal_autocheckpoint - {e}")
+
+            try:
+                if config.enable_optimizer:
+                    conn.execute("SET disabled_optimizers = ''")
+                else:
+                    conn.execute("SET disabled_optimizers = 'all'")
+            except Exception as e:
+                logger.warning(f"配置应用失败: enable_optimizer - {e}")
+
+            try:
+                if config.enable_profiling:
+                    conn.execute("SET enable_profiling = 'no_output'")
+            except Exception as e:
+                logger.warning(f"配置应用失败: enable_profiling - {e}")
 
             # 验证关键配置
             try:

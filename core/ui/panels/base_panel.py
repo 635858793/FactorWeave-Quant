@@ -131,15 +131,22 @@ class BasePanel(QObject, ABC, metaclass=QObjectMeta):
                 f"Failed to apply theme to {self.__class__.__name__}: {e}")
 
     def _apply_theme_to_widgets(self, theme: Dict[str, Any]) -> None:
-        """应用主题到组件（子类可重写）"""
-        # 获取主题配置
-        colors = theme.get('colors', {})
+        """应用主题到组件（子类可重写）
+        
+        支持两种数据结构：
+        1. 嵌套结构: {'colors': {'background': '...', 'foreground': '...'}}
+        2. 扁平结构: {'background': '...', 'foreground': '...'}
+        """
+        colors = theme.get('colors', theme)
+        
+        if not colors or not isinstance(colors, dict):
+            colors = theme
+        
         fonts = theme.get('fonts', {})
 
-        # 应用到根框架
         if self._root_frame:
-            bg_color = colors.get('background', '#ffffff')
-            fg_color = colors.get('foreground', '#000000')
+            bg_color = colors.get('chart_panel_bg', colors.get('background', '#ffffff'))
+            fg_color = colors.get('chart_text', colors.get('foreground', '#000000'))
 
             try:
                 self._root_frame.setStyleSheet(f"""

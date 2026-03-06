@@ -293,9 +293,11 @@ class IndicatorMixin:
 
     def _get_indicator_style(self, name: str, index: int = 0) -> Dict[str, Any]:
         """获取指标样式，颜色从theme_manager.get_theme_colors获取"""
+        from utils.theme import parse_color_for_matplotlib
         colors = self.theme_manager.get_theme_colors()
-        indicator_colors = colors.get('indicator_colors', [
+        indicator_colors_raw = colors.get('indicator_colors', [
             '#fbc02d', '#ab47bc', '#1976d2', '#43a047', '#e53935', '#00bcd4', '#ff9800'])
+        indicator_colors = [parse_color_for_matplotlib(c) for c in indicator_colors_raw]
         return {
             'color': indicator_colors[index % len(indicator_colors)],
             'linewidth': 0.7,
@@ -525,10 +527,10 @@ class IndicatorMixin:
                         indicator_names.append(name)
             indicator_str = ', '.join(indicator_names)
             if indicator_str:
-                # 获取主题颜色
+                from utils.theme import parse_color_for_matplotlib
                 colors = self.theme_manager.get_theme_colors()
-                text_color = colors.get('chart_text', '#222b45')
-                bg_color = colors.get('chart_background', '#ffffff')
+                text_color = parse_color_for_matplotlib(colors.get('chart_text', '#222b45'))
+                bg_color = parse_color_for_matplotlib(colors.get('chart_background', '#ffffff'))
 
                 self._indicator_info_text = self.price_ax.text(
                     0.01, 0.9, indicator_str,
@@ -554,12 +556,11 @@ class IndicatorMixin:
     def draw_overview(self, ax, kdata):
         """绘制缩略图（mini map/overview），所有K线与主图对齐，节假日无数据自动跳过，X轴为等距序号。"""
         try:
+            from utils.theme import parse_color_for_matplotlib
             colors = self.theme_manager.get_theme_colors()
-            k_up = colors.get('overview_k_up', colors.get('k_up', '#d32f2f'))
-            k_down = colors.get('overview_k_down',
-                                colors.get('k_down', '#388e3c'))
-            bg = colors.get('overview_background', colors.get(
-                'chart_background', '#fafdff'))
+            k_up = parse_color_for_matplotlib(colors.get('overview_k_up', colors.get('k_up', '#d32f2f')))
+            k_down = parse_color_for_matplotlib(colors.get('overview_k_down', colors.get('k_down', '#388e3c')))
+            bg = parse_color_for_matplotlib(colors.get('overview_background', colors.get('chart_background', '#fafdff')))
             ax.set_facecolor(bg)
             opens = kdata['open']
             closes = kdata['close']

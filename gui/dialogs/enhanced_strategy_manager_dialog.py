@@ -380,7 +380,7 @@ class EnhancedStrategyManagerDialog(QDialog):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
         
-        widget.setFixedHeight(50)
+        widget.setFixedHeight(30)
         
         self.nav_button_group = QButtonGroup(self)
         self.nav_buttons = []
@@ -410,48 +410,8 @@ class EnhancedStrategyManagerDialog(QDialog):
         self.nav_buttons[0].setChecked(True)
         
         layout.addStretch()
-        
-        self._apply_nav_bar_style(widget)
-        
+                
         return widget
-
-    def _apply_nav_bar_style(self, widget: QWidget):
-        """应用导航栏样式（主题感知）"""
-        if not self.theme_manager:
-            return
-            
-        colors = self.theme_manager.get_theme_colors()
-        bg_color = colors.get('background', '#f7f9fa')
-        text_color = colors.get('text', '#222b45')
-        highlight_color = colors.get('highlight', '#1976d2')
-        hover_color = colors.get('hover', '#e3f2fd')
-        border_color = colors.get('border', '#e0e0e0')
-        
-        widget.setStyleSheet(f"""
-            QWidget {{
-                background-color: {bg_color};
-                border-bottom: 1px solid {border_color};
-            }}
-            
-            QPushButton#nav_button {{
-                background-color: transparent;
-                color: {text_color};
-                border: none;
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-size: 13px;
-                font-weight: 500;
-            }}
-            
-            QPushButton#nav_button:hover {{
-                background-color: {hover_color};
-            }}
-            
-            QPushButton#nav_button:checked {{
-                background-color: {highlight_color};
-                color: white;
-            }}
-        """)
 
     def _create_views(self):
         """创建各个视图"""
@@ -1674,9 +1634,7 @@ class EnhancedStrategyManagerDialog(QDialog):
         
         if not self.theme_manager:
             return
-        
-        self._apply_nav_bar_style(self.findChild(QWidget, "nav_bar"))
-        
+                
         stat_cards = [
             self.total_strategy_card,
             self.running_strategy_card,
@@ -1730,9 +1688,9 @@ class EnhancedStrategyManagerDialog(QDialog):
             for ax in figure.axes:
                 # 设置网格颜色
                 if current_theme == Theme.DARK:
-                    ax.grid(True, alpha=0.2, color='gray')
+                    ax.grid(True, alpha=0.2, color='lightgray')
                 else:
-                    ax.grid(True, alpha=0.3, color='lightgray')
+                    ax.grid(True, alpha=0.3, color='gray')
                 
                 # 设置坐标轴颜色
                 ax.xaxis.label.set_color('white' if current_theme == Theme.DARK else 'black')

@@ -25,7 +25,7 @@ import json
 class BatchCalculateWorker(QThread):
     """后台批量计算工作线程"""
     progress = pyqtSignal(int, str)
-    finished = pyqtSignal(object, float)
+    finished = pyqtSignal(list, float, int, int)
     error = pyqtSignal(str)
     
     def __init__(self, indicators: List[str], kdata: pd.DataFrame, params_map: Dict, parent=None):
@@ -43,8 +43,6 @@ class BatchCalculateWorker(QThread):
             start_time = time.time()
             self.progress.emit(10, "正在初始化批量计算...")
             
-            indicator_tuples = [(name, self.params_map.get(name, {})) for name in self.indicators]
-            
             self.progress.emit(20, f"正在计算 {len(self.indicators)} 个指标...")
             
             batch_result = service.batch_calculate_indicators(
@@ -56,18 +54,312 @@ class BatchCalculateWorker(QThread):
             if self._is_cancelled:
                 return
             
-            self.progress.emit(90, "计算完成，正在处理结果...")
+            self.progress.emit(60, "正在提取计算结果...")
+            
+            processed_results = {}
+            calculated_count = 0
+            error_count = 0
+            
+            if batch_result is not None and not batch_result.empty:
+                for indicator_name in self.indicators:
+                    try:
+                        processed_result = self._extract_indicator_from_batch(
+                            indicator_name, batch_result
+                        )
+                        
+                        if processed_result and processed_result.get('values'):
+                            processed_results[indicator_name] = processed_result
+                            calculated_count += 1
+                        else:
+                            error_count += 1
+                    except Exception as e:
+                        error_count += 1
+            else:
+                error_count = len(self.indicators)
+            
+            self.progress.emit(80, "正在准备表格数据...")
+            
+            table_rows = self._prepare_table_rows(processed_results)
+            
+            self.progress.emit(95, "计算完成...")
             
             end_time = time.time()
             calculation_time = end_time - start_time
             
-            self.finished.emit(batch_result, calculation_time)
+            self.finished.emit(table_rows, calculation_time, calculated_count, error_count)
             
         except Exception as e:
             self.error.emit(str(e))
     
     def cancel(self):
         self._is_cancelled = True
+    
+    def _extract_indicator_from_batch(self, indicator_name: str, batch_result: pd.DataFrame) -> Optional[Dict[str, Any]]:
+        """从批量计算结果中提取单个指标的结果"""
+        try:
+            english_name = get_indicator_english_name(indicator_name)
+            english_lower = english_name.lower() if english_name else indicator_name.lower()
+            
+            processed = {
+                "name": indicator_name,
+                "timestamp": datetime.now(),
+                "values": {},
+                "signals": [],
+                "summary": {}
+            }
+            
+            original_columns = {'open', 'high', 'low', 'close', 'volume', 'date', 'datetime'}
+            
+            for col in batch_result.columns:
+                col_lower = col.lower()
+                if col_lower not in original_columns:
+                    if english_lower in col_lower or col_lower.startswith(english_lower[:3]):
+                        col_data = batch_result[col]
+                        if isinstance(col_data, pd.Series):
+                            valid_data = col_data.dropna()
+                            if len(valid_data) > 0:
+                                processed["values"][col] = col_data
+            
+            if not processed["values"]:
+                for col in batch_result.columns:
+                    col_lower = col.lower()
+                    if col_lower not in original_columns:
+                        col_data = batch_result[col]
+                        if isinstance(col_data, pd.Series):
+                            valid_data = col_data.dropna()
+                            if len(valid_data) > 0:
+                                processed["values"][col] = col_data
+            
+            if processed["values"]:
+                summary_stats = {}
+                for col_name, col_data in processed["values"].items():
+                    if pd.api.types.is_numeric_dtype(col_data):
+                        valid_data = col_data.dropna()
+                        if len(valid_data) > 0:
+                            summary_stats[col_name] = {
+                                'mean': float(valid_data.mean()),
+                                'std': float(valid_data.std()),
+                                'min': float(valid_data.min()),
+                                'max': float(valid_data.max()),
+                                'last': float(valid_data.iloc[-1]),
+                                'count': len(valid_data)
+                            }
+                processed["summary"] = summary_stats
+            
+            return processed
+            
+        except Exception as e:
+            return None
+    
+    def _prepare_table_rows(self, processed_results: Dict) -> List[Dict]:
+        """在后台线程准备表格行数据"""
+        table_rows = []
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
+        
+        for indicator_name, result in processed_results.items():
+            values = result.get("values", {})
+            summary = result.get("summary", {})
+            
+            if not values:
+                table_rows.append({
+                    'time': current_time,
+                    'name': indicator_name,
+                    'value': "无数据",
+                    'signal': "",
+                    'strength': "",
+                    'trend': "",
+                    'advice': "计算完成但无返回值",
+                    'note': "请检查参数设置"
+                })
+                continue
+            
+            for value_name, value_data in values.items():
+                try:
+                    current_value, trend_info, strength_info = self._analyze_value_data(value_data)
+                    
+                    if current_value is not None:
+                        display_name = self._get_display_name(indicator_name, value_name)
+                        value_str = self._format_value(current_value)
+                        signal_info, advice = self._generate_signal_advice(
+                            indicator_name, value_name, current_value, trend_info)
+                        
+                        note = f"周期: {len(value_data) if hasattr(value_data, '__len__') else 'N/A'}"
+                        
+                        table_rows.append({
+                            'time': current_time,
+                            'name': display_name,
+                            'value': value_str,
+                            'signal': signal_info,
+                            'strength': strength_info,
+                            'trend': trend_info,
+                            'advice': advice,
+                            'note': note
+                        })
+                except Exception as e:
+                    table_rows.append({
+                        'time': current_time,
+                        'name': f"{indicator_name}-{value_name}",
+                        'value': "错误",
+                        'signal': "",
+                        'strength': "",
+                        'trend': "",
+                        'advice': str(e),
+                        'note': ""
+                    })
+        
+        return table_rows
+    
+    def _analyze_value_data(self, value_data) -> Tuple[Any, str, str]:
+        """分析数值数据，返回(当前值, 趋势, 强度)"""
+        current_value = None
+        trend_info = ""
+        strength_info = ""
+        
+        if isinstance(value_data, np.ndarray):
+            if len(value_data) > 0 and np.issubdtype(value_data.dtype, np.number):
+                valid_indices = ~np.isnan(value_data)
+                if np.any(valid_indices):
+                    valid_data = value_data[valid_indices]
+                    current_value = valid_data[-1]
+                    
+                    if len(valid_data) >= 2:
+                        if valid_data[-1] > valid_data[-2]:
+                            trend_info = "上升 ↑"
+                        elif valid_data[-1] < valid_data[-2]:
+                            trend_info = "下降 ↓"
+                        else:
+                            trend_info = "持平 →"
+                        
+                        if valid_data[-2] != 0:
+                            change_pct = abs((valid_data[-1] - valid_data[-2]) / valid_data[-2] * 100)
+                            if change_pct > 5:
+                                strength_info = "强"
+                            elif change_pct > 2:
+                                strength_info = "中"
+                            else:
+                                strength_info = "弱"
+        
+        elif isinstance(value_data, pd.Series):
+            if len(value_data) > 0:
+                valid_data = value_data.dropna()
+                if len(valid_data) > 0:
+                    current_value = valid_data.iloc[-1]
+                    
+                    if pd.api.types.is_numeric_dtype(valid_data) and len(valid_data) >= 2:
+                        prev_value = valid_data.iloc[-2]
+                        if valid_data.iloc[-1] > prev_value:
+                            trend_info = "上升 ↑"
+                        elif valid_data.iloc[-1] < prev_value:
+                            trend_info = "下降 ↓"
+                        else:
+                            trend_info = "持平 →"
+                        
+                        if prev_value != 0:
+                            change_pct = abs((valid_data.iloc[-1] - prev_value) / prev_value * 100)
+                            if change_pct > 5:
+                                strength_info = "强"
+                            elif change_pct > 2:
+                                strength_info = "中"
+                            else:
+                                strength_info = "弱"
+        
+        elif isinstance(value_data, (int, float)):
+            if not np.isnan(value_data):
+                current_value = value_data
+                if abs(current_value) > 50:
+                    strength_info = "强"
+                elif abs(current_value) > 20:
+                    strength_info = "中"
+                else:
+                    strength_info = "弱"
+        
+        return current_value, trend_info, strength_info
+    
+    def _get_display_name(self, indicator_name: str, value_name: str) -> str:
+        """获取显示名称"""
+        if value_name == "main" or value_name == indicator_name:
+            return indicator_name
+        
+        name_mappings = {
+            "MACD指标": {"MACD_1": "MACD线", "MACD_2": "信号线", "MACD_3": "柱状图"},
+            "布林带": {"BBANDS_1": "上轨", "BBANDS_2": "中轨", "BBANDS_3": "下轨"},
+            "随机指标": {"STOCH_1": "%K线", "STOCH_2": "%D线"},
+            "KDJ指标": {"STOCH_1": "K值", "STOCH_2": "D值", "STOCH_3": "J值"},
+        }
+        
+        if indicator_name in name_mappings and value_name in name_mappings[indicator_name]:
+            return f"{indicator_name}-{name_mappings[indicator_name][value_name]}"
+        return f"{indicator_name}-{value_name}"
+    
+    def _format_value(self, value) -> str:
+        """格式化数值显示"""
+        try:
+            if isinstance(value, (int, float)):
+                if abs(value) >= 1000000:
+                    return f"{value/1000000:.2f}M"
+                elif abs(value) >= 1000:
+                    return f"{value/1000:.2f}K"
+                elif abs(value) >= 1:
+                    return f"{value:.2f}"
+                else:
+                    return f"{value:.4f}"
+            return str(value)
+        except:
+            return str(value)
+    
+    def _generate_signal_advice(self, indicator_name: str, value_name: str, 
+                                 current_value: float, trend_info: str) -> Tuple[str, str]:
+        """生成信号和建议"""
+        signal_info = ""
+        advice = "N/A"
+        
+        indicator_lower = indicator_name.lower()
+        
+        if 'rsi' in indicator_lower:
+            if current_value > 80:
+                signal_info = "超买"
+                advice = "考虑卖出"
+            elif current_value < 20:
+                signal_info = "超卖"
+                advice = "考虑买入"
+            else:
+                signal_info = "中性"
+                advice = "观望"
+        
+        elif 'macd' in indicator_lower:
+            if trend_info == "上升 ↑":
+                signal_info = "多头"
+                advice = "趋势向上"
+            elif trend_info == "下降 ↓":
+                signal_info = "空头"
+                advice = "趋势向下"
+            else:
+                signal_info = "震荡"
+                advice = "方向不明"
+        
+        elif 'kdj' in indicator_lower or 'stoch' in indicator_lower:
+            if current_value > 80:
+                signal_info = "超买"
+                advice = "注意回调"
+            elif current_value < 20:
+                signal_info = "超卖"
+                advice = "可能反弹"
+            else:
+                signal_info = "正常"
+                advice = "观望"
+        
+        else:
+            if trend_info == "上升 ↑":
+                signal_info = "上升"
+                advice = "关注"
+            elif trend_info == "下降 ↓":
+                signal_info = "下降"
+                advice = "谨慎"
+            else:
+                signal_info = "平稳"
+                advice = "N/A"
+        
+        return signal_info, advice
 
 
 class TechnicalAnalysisTab(BaseAnalysisTab):
@@ -1349,32 +1641,35 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
         """批量计算进度回调"""
         self.update_loading_progress(message, progress)
 
-    def _on_batch_finished(self, batch_result, calculation_time: float):
-        """批量计算完成回调"""
+    def _on_batch_finished(self, table_rows: list, calculation_time: float, calculated_count: int, error_count: int):
+        """批量计算完成回调 - 直接使用后台线程准备好的表格数据"""
         try:
-            self.update_loading_progress("正在处理计算结果...", 95)
+            self.update_loading_progress("正在更新表格...", 98)
             
-            calculated_count = 0
-            error_count = 0
+            self.technical_table.setUpdatesEnabled(False)
+            self.technical_table.setSortingEnabled(False)
             
-            if batch_result is not None and not batch_result.empty:
-                for indicator_name in self._indicators_to_calculate:
-                    try:
-                        processed_result = self._extract_indicator_from_batch(
-                            indicator_name, batch_result
-                        )
-                        
-                        if processed_result and processed_result.get('values'):
-                            self.indicator_results[indicator_name] = processed_result
-                            calculated_count += 1
-                            self._add_indicator_to_table(indicator_name, processed_result)
-                        else:
-                            error_count += 1
-                    except Exception as e:
-                        error_count += 1
-                        logger.error(f"提取指标 {indicator_name} 失败: {e}")
-            else:
-                error_count = len(self._indicators_to_calculate)
+            try:
+                start_row = self.technical_table.rowCount()
+                self.technical_table.setRowCount(start_row + len(table_rows))
+                
+                for i, row_data in enumerate(table_rows):
+                    row = start_row + i
+                    
+                    self.technical_table.setItem(row, 0, QTableWidgetItem(row_data['time']))
+                    self.technical_table.setItem(row, 1, QTableWidgetItem(row_data['name']))
+                    self.technical_table.setItem(row, 2, QTableWidgetItem(row_data['value']))
+                    self.technical_table.setItem(row, 3, QTableWidgetItem(row_data['signal']))
+                    self.technical_table.setItem(row, 4, QTableWidgetItem(row_data['strength']))
+                    self.technical_table.setItem(row, 5, QTableWidgetItem(row_data['trend']))
+                    self.technical_table.setItem(row, 6, QTableWidgetItem(row_data['advice']))
+                    self.technical_table.setItem(row, 7, QTableWidgetItem(row_data['note']))
+                    
+                    self._set_row_color(row, row_data['signal'])
+                
+            finally:
+                self.technical_table.setSortingEnabled(True)
+                self.technical_table.setUpdatesEnabled(True)
             
             self._finish_calculation(calculated_count, error_count, calculation_time)
             

@@ -17,6 +17,17 @@ from .unified_data_manager import UnifiedDataManager
 from .asset_service import AssetService
 from .service_bootstrap import ServiceBootstrap, bootstrap_services
 
+# 深度分析框架
+from .deep_analysis_framework import (
+    DeepAnalysisFramework,
+    get_deep_analysis_framework,
+    get_performance_coordinator,
+    get_advanced_analytics,
+    get_deep_analysis_service,
+    initialize_deep_analysis_framework,
+    get_framework_status,
+)
+
 __all__ = [
     'BaseService',
     'AsyncBaseService',
@@ -33,5 +44,13 @@ __all__ = [
     'UnifiedDataManager',
     'AssetService',
     'ServiceBootstrap',
-    'bootstrap_services'
+    'bootstrap_services',
+    # 深度分析框架
+    'DeepAnalysisFramework',
+    'get_deep_analysis_framework',
+    'get_performance_coordinator',
+    'get_advanced_analytics',
+    'get_deep_analysis_service',
+    'initialize_deep_analysis_framework',
+    'get_framework_status',
 ]

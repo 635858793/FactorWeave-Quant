@@ -97,17 +97,14 @@ except ImportError as e:
     logger.warning(f"任务依赖可视化器导入失败: {e}") if logger else None
     DEPENDENCY_VISUALIZER_AVAILABLE = False
 
-# 导入实时写入UI组件（仅监控面板，配置和控制已融入左侧面板）
 try:
     from gui.widgets.realtime_write_ui_components import RealtimeWriteMonitoringWidget, IPMonitorWidget
     REALTIME_WRITE_UI_AVAILABLE = True
-    logger.info("实时写入监控组件已加载") if logger else None
 except ImportError as e:
     logger.warning(f"实时写入监控组件导入失败: {e}") if logger else None
     REALTIME_WRITE_UI_AVAILABLE = False
     RealtimeWriteMonitoringWidget = None
     IPMonitorWidget = None
-
 
 class IPStatsWorker(QObject):
     """IP统计信息获取工作线程（避免阻塞UI）"""
@@ -879,7 +876,6 @@ class EnhancedDataImportWidget(QWidget):
 
         self.setup_ui()
         self.setup_responsive_layout()
-        self._register_write_event_handlers()
         self.setup_connections()
         self.setup_timers()
 
@@ -1417,34 +1413,6 @@ class EnhancedDataImportWidget(QWidget):
         realtime_label.setStyleSheet("font-weight: bold; color: #0066cc;")
         ai_layout.addWidget(realtime_label)
 
-        realtime_row = QHBoxLayout()
-
-        # 启用性能监控
-        self.enable_perf_monitor_cb = QCheckBox("性能监控")
-        self.enable_perf_monitor_cb.setChecked(True)
-        self.enable_perf_monitor_cb.setToolTip("启用性能监控，实时显示写入速度和资源使用情况")
-        realtime_row.addWidget(self.enable_perf_monitor_cb)
-
-        # 启用内存监控
-        self.enable_memory_monitor_cb = QCheckBox("内存监控")
-        self.enable_memory_monitor_cb.setChecked(True)
-        self.enable_memory_monitor_cb.setToolTip("启用内存使用监控")
-        realtime_row.addWidget(self.enable_memory_monitor_cb)
-
-        ai_layout.addLayout(realtime_row)
-
-        # 写入策略选择
-        strategy_layout = QHBoxLayout()
-        strategy_layout.addWidget(QLabel("写入策略:"))
-        self.write_strategy_combo = QComboBox()
-        self.write_strategy_combo.addItems(["禁用写入", "批量写入", "实时写入", "自适应"])
-        self.write_strategy_combo.setCurrentText("禁用写入")
-        self.write_strategy_combo.setToolTip("禁用写入：不执行数据写入\n批量写入：累积到批量大小后写入\n实时写入：单条数据立即写入\n自适应：根据系统负载自动选择")
-        self.write_strategy_combo.currentTextChanged.connect(self.on_write_strategy_changed)
-        strategy_layout.addWidget(self.write_strategy_combo)
-        strategy_layout.addStretch()
-        ai_layout.addLayout(strategy_layout)
-
         content_layout.addWidget(ai_features_group)
 
         # 设置内容widget到滚动区域
@@ -1745,7 +1713,6 @@ class EnhancedDataImportWidget(QWidget):
         self.new_task_btn.setStyleSheet("""
             QPushButton {
                 background-color: #007bff;
-                color: white;
                 border: none;
                 padding: 10px 20px;
                 border-radius: 5px;
@@ -3832,18 +3799,7 @@ class EnhancedDataImportWidget(QWidget):
             self.import_engine.enable_intelligent_caching = self.caching_cb.isChecked()
             self.import_engine.enable_data_quality_monitoring = self.quality_monitoring_cb.isChecked()
 
-            # 更新实时写入配置
-            write_strategy = self.write_strategy_combo.currentText() if hasattr(self, 'write_strategy_combo') else "批量写入"
-            enable_perf_monitor = self.enable_perf_monitor_cb.isChecked() if hasattr(self, 'enable_perf_monitor_cb') else True
-            enable_memory_monitor = self.enable_memory_monitor_cb.isChecked() if hasattr(self, 'enable_memory_monitor_cb') else True
-
-            self.import_engine.update_realtime_write_config(
-                write_strategy=write_strategy,
-                enable_performance_monitoring=enable_perf_monitor,
-                enable_memory_monitoring=enable_memory_monitor
-            )
-
-            # 保存配置并启动任化
+            # 保存配置并启动任务
             self.config_manager.add_import_task(task_config)
 
             if self.import_engine.start_task(task_config.task_id):
@@ -3882,8 +3838,8 @@ class EnhancedDataImportWidget(QWidget):
         if hasattr(self, 'progress_label'):
             self.progress_label.setText("任务已开始..")
         self.log_message(f"任务开始: {task_id}")
-        # 刷新任务列表以更新状态
-        self.refresh_task_list()
+        # 性能优化：使用局部刷新，只更新指定任务行
+        self.refresh_single_task(task_id)
 
     def on_task_progress(self, task_id: str, progress: float, message: str):
         """任务进度回调"""
@@ -3967,6 +3923,9 @@ class EnhancedDataImportWidget(QWidget):
             except Exception as e:
                 logger.error(f"更新下载监控失败: {e}") if logger else None
 
+        # 性能优化：使用局部刷新，只更新指定任务行
+        self.refresh_single_task(task_id)
+
     def on_task_completed(self, task_id: str, result):
         """任务完成回调"""
         if hasattr(self, 'progress_bar'):
@@ -3988,8 +3947,8 @@ class EnhancedDataImportWidget(QWidget):
         if hasattr(self, 'current_task_id') and self.current_task_id == task_id:
             self.current_task_id = None
 
-        # 刷新任务列表以更新状态
-        self.refresh_task_list()
+        # 性能优化：使用局部刷新，只更新指定任务行
+        self.refresh_single_task(task_id)
 
     def on_task_failed(self, task_id: str, error_message: str):
         """任务失败回调"""
@@ -4010,8 +3969,8 @@ class EnhancedDataImportWidget(QWidget):
         if hasattr(self, 'current_task_id') and self.current_task_id == task_id:
             self.current_task_id = None
 
-        # 刷新任务列表以更新状态
-        self.refresh_task_list()
+        # 性能优化：使用局部刷新，只更新指定任务行
+        self.refresh_single_task(task_id)
 
     def update_status(self):
         """更新状态显化"""
@@ -4198,9 +4157,21 @@ class EnhancedDataImportWidget(QWidget):
 
         layout.addWidget(toolbar_frame)
 
+        # 创建垂直分割器 - 支持用户手动调整布局比例
+        main_splitter = QSplitter(Qt.Vertical)
+        main_splitter.setStyleSheet("""
+            QSplitter::handle {
+                background-color: #bdc3c7;
+                height: 4px;
+            }
+            QSplitter::handle:pressed {
+                background-color: #3498db;
+            }
+        """)
+
         # 任务列表表格
         self.task_table = QTableWidget()
-        self.task_table.setMinimumHeight(200)
+        self.task_table.setMinimumHeight(300)
         self.task_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.task_table.setSelectionMode(QTableWidget.ExtendedSelection)
         self.task_table.setAlternatingRowColors(True)
@@ -4217,57 +4188,90 @@ class EnhancedDataImportWidget(QWidget):
         self.task_table.setColumnCount(len(columns))
         self.task_table.setHorizontalHeaderLabels(columns)
 
-        # 设置表格属性
+        # 设置表格属性 - 使用ResizeToContents策略优化列宽
         header = self.task_table.horizontalHeader()
-        header.setStretchLastSection(True)
-        header.setSectionResizeMode(0, QHeaderView.Stretch)  # 任务名称列自动拉伸
+        header.setStretchLastSection(False)
 
-        # 设置列宽
-        column_widths = [200, 80, 100, 100, 80, 80, 80, 80, 140, 140, 100, 60, 60]
-        for i, width in enumerate(column_widths[1:], 1):  # 跳过第一列（自动拉伸）
-            self.task_table.setColumnWidth(i, width)
+        # 任务名称列自动拉伸，其他列使用自适应
+        header.setSectionResizeMode(0, QHeaderView.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(6, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(7, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(8, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(9, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(10, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(11, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(12, QHeaderView.ResizeToContents)
 
-        # 🔧 使用拉伸因子：任务表格占主要空间
-        layout.addWidget(self.task_table, stretch=30)
-
-        # 删除：任务详情面板已移除
-
-        # K线下载情况监控面板
-        if REALTIME_WRITE_UI_AVAILABLE:
-            download_monitoring_group = QGroupBox("K线下载情况")
-            # 🔧 设置最小高度确保内容可见
-            download_monitoring_group.setMinimumHeight(350)
-            download_monitoring_layout = QVBoxLayout(download_monitoring_group)
-
-            # 创建监控组件
-            self.download_monitoring = RealtimeWriteMonitoringWidget()
-            # 设置父组件引用和当前任务配置（用于重新下载功能）
-            self.download_monitoring.set_parent_widget(self)
-            download_monitoring_layout.addWidget(self.download_monitoring)
-
-            # 🔧 给予一定的拉伸权重，确保可见
-            layout.addWidget(download_monitoring_group, stretch=3)
-            logger.info("K线下载情况监控面板已添加到任务详情区域") if logger else None
-
-        # IP使用监控（通达信）- 独立组件
-        if REALTIME_WRITE_UI_AVAILABLE and IPMonitorWidget is not None:
-            ip_monitor_group = QGroupBox("🌐 IP使用监控（通达信）")
-            ip_monitor_group.setMinimumHeight(300)
-            ip_monitor_layout = QVBoxLayout(ip_monitor_group)
-
-            # 创建IP监控组件
-            self.ip_monitor = IPMonitorWidget()
-            ip_monitor_layout.addWidget(self.ip_monitor)
-
-            # 添加到布局，与K线下载情况平级
-            layout.addWidget(ip_monitor_group, stretch=1)
-            logger.info("IP使用监控面板已添加到任务详情区域") if logger else None
-        else:
-            self.ip_monitor = None
+        main_splitter.addWidget(self.task_table)
 
         # 连接表格选择信号
         self.task_table.itemSelectionChanged.connect(self.on_task_selection_changed)
         self.task_table.itemDoubleClicked.connect(self._on_task_double_clicked)
+
+        # K线下载情况监控面板
+        download_monitor_added = False
+        if REALTIME_WRITE_UI_AVAILABLE:
+            download_monitoring_group = QGroupBox("K线下载情况")
+            download_monitoring_group.setMinimumHeight(200)
+            download_monitoring_layout = QVBoxLayout(download_monitoring_group)
+
+            self.download_monitoring = RealtimeWriteMonitoringWidget()
+            self.download_monitoring.set_parent_widget(self)
+            download_monitoring_layout.addWidget(self.download_monitoring)
+
+            main_splitter.addWidget(download_monitoring_group)
+            download_monitor_added = True
+            logger.info("K线下载情况监控面板已添加到任务详情区域") if logger else None
+
+        # IP使用监控（通达信）- 独立组件
+        ip_monitor_added = False
+        if REALTIME_WRITE_UI_AVAILABLE and IPMonitorWidget is not None:
+            ip_monitor_group = QGroupBox("🌐 IP使用监控（通达信）")
+            ip_monitor_group.setMinimumHeight(150)
+            ip_monitor_layout = QVBoxLayout(ip_monitor_group)
+
+            self.ip_monitor = IPMonitorWidget()
+            ip_monitor_layout.addWidget(self.ip_monitor)
+
+            main_splitter.addWidget(ip_monitor_group)
+            ip_monitor_added = True
+            logger.info("IP使用监控面板已添加到任务详情区域") if logger else None
+        else:
+            self.ip_monitor = None
+
+        # 设置分割器权重和初始大小 - 根据实际组件数量动态设置
+        component_count = main_splitter.count()
+        if component_count >= 2:
+            # 使用 sizeHint 获取推荐尺寸，然后按比例设置
+            sizes = []
+            for i in range(component_count):
+                widget = main_splitter.widget(i)
+                if widget:
+                    hint = widget.sizeHint().height()
+                    if hint <= 0:
+                        hint = 200
+                    sizes.append(hint)
+
+            # 调整比例：任务表格占主要空间
+            if component_count == 3:
+                # 任务表格:下载监控:IP监控 = 60%:25%:15%
+                main_splitter.setStretchFactor(0, 60)
+                main_splitter.setStretchFactor(1, 25)
+                main_splitter.setStretchFactor(2, 15)
+            elif component_count == 2:
+                # 任务表格:监控面板 = 70%:30%
+                main_splitter.setStretchFactor(0, 70)
+                main_splitter.setStretchFactor(1, 30)
+
+            # 设置初始大小，基于 sizeHint 和比例
+            main_splitter.setSizes(sizes)
+
+        layout.addWidget(main_splitter)
 
         # 初始化任务列表
         self.refresh_task_list()
@@ -4366,12 +4370,7 @@ class EnhancedDataImportWidget(QWidget):
 
                 # 时间范围配置
                 'start_date': self.start_date.date().toString("yyyy-MM-dd") if hasattr(self, 'start_date') else None,
-                'end_date': self.end_date.date().toString("yyyy-MM-dd") if hasattr(self, 'end_date') else None,
-
-                # 实时写入配置
-                'write_strategy': self.write_strategy_combo.currentText() if hasattr(self, 'write_strategy_combo') else "禁用写入",
-                'enable_perf_monitor': self.enable_perf_monitor_cb.isChecked() if hasattr(self, 'enable_perf_monitor_cb') else True,
-                'enable_memory_monitor': self.enable_memory_monitor_cb.isChecked() if hasattr(self, 'enable_memory_monitor_cb') else True
+                'end_date': self.end_date.date().toString("yyyy-MM-dd") if hasattr(self, 'end_date') else None
             }
 
             return config
@@ -4607,6 +4606,9 @@ class EnhancedDataImportWidget(QWidget):
                 self.task_table.blockSignals(False)
                 self.task_table.setSortingEnabled(True)
 
+                # 🔧 智能刷新频率：根据任务状态动态调整
+                self._adjust_task_refresh_interval(tasks)
+
         except Exception as e:
             logger.error(f"刷新任务列表失败: {e}") if logger else None
             import traceback
@@ -4632,6 +4634,128 @@ class EnhancedDataImportWidget(QWidget):
         except Exception as e:
             logger.error(f"过滤任务列表失败: {e}") if logger else None
 
+    def refresh_single_task(self, task_id: str):
+        """刷新单个任务（局部刷新，性能优化）
+
+        只更新指定任务ID的行，不刷新整个表格，避免UI闪烁和性能问题。
+        用于任务状态变化时的增量更新。
+
+        Args:
+            task_id: 要刷新的任务ID
+        """
+        try:
+            if not self.config_manager or not hasattr(self, 'task_table'):
+                return
+
+            # 查找任务所在行
+            row_index = -1
+            for row in range(self.task_table.rowCount()):
+                item = self.task_table.item(row, 0)
+                if item and item.data(Qt.UserRole) == task_id:
+                    row_index = row
+                    break
+
+            # 如果任务行不存在，忽略
+            if row_index < 0:
+                return
+
+            # 获取任务配置
+            task = self.config_manager.get_import_task(task_id)
+            if not task:
+                return
+
+            # 获取任务状态
+            task_status = None
+            if self.import_engine:
+                task_status = self.import_engine.get_task_status(task_id)
+
+            # 准备任务数据
+            start_time = task_status.start_time.strftime("%Y-%m-%d %H:%M:%S") if task_status and hasattr(task_status, 'start_time') and task_status.start_time else "未开始"
+            end_time = task_status.end_time.strftime("%Y-%m-%d %H:%M:%S") if task_status and hasattr(task_status, 'end_time') and task_status.end_time else "未结束"
+
+            # 计算运行时间
+            runtime = "未开始"
+            if task_status and hasattr(task_status, 'start_time') and task_status.start_time:
+                if hasattr(task_status, 'end_time') and task_status.end_time:
+                    delta = task_status.end_time - task_status.start_time
+                    runtime = str(delta).split('.')[0]
+                else:
+                    from datetime import datetime
+                    delta = datetime.now() - task_status.start_time
+                    runtime = str(delta).split('.')[0]
+
+            # 状态中文映射
+            status_map = {
+                'pending': '待执行',
+                'running': '运行中',
+                'completed': '已完成',
+                'failed': '失败',
+                'cancelled': '已取消',
+                'paused': '已暂停'
+            }
+
+            if task_status:
+                status_value = task_status.status.value if hasattr(task_status.status, 'value') else str(task_status.status)
+                status_text = status_map.get(status_value.lower(), status_value)
+            else:
+                status_text = "未开始"
+
+            # 计算成功数和失败数
+            success_count = 0
+            failure_count = 0
+            if task_status:
+                if hasattr(task_status, 'processed_records'):
+                    total_processed = task_status.processed_records
+                    failed = getattr(task_status, 'failed_records', 0)
+                    success_count = total_processed - failed
+                    failure_count = failed
+                elif hasattr(task_status, 'success_count'):
+                    success_count = task_status.success_count
+                    failure_count = getattr(task_status, 'failure_count', 0)
+
+            items = [
+                task.name,
+                status_text,
+                f"{task_status.progress:.1f}%" if task_status and hasattr(task_status, 'progress') else "0%",
+                task.data_source,
+                task.asset_type,
+                task.data_type,
+                task.frequency.value if hasattr(task.frequency, 'value') else str(task.frequency),
+                str(len(task.symbols)),
+                start_time,
+                end_time,
+                runtime,
+                str(success_count),
+                str(failure_count)
+            ]
+
+            # 🔧 局部更新：只更新指定行的单元格
+            for col, item_text in enumerate(items):
+                item = self.task_table.item(row_index, col)
+                if item:
+                    # 只在内容变化时更新
+                    if item.text() != str(item_text):
+                        item.setText(str(item_text))
+
+                    # 根据状态设置颜色（只更新状态列）
+                    if col == 1:
+                        if "运行中" in item_text:
+                            item.setBackground(QColor("#d4edda"))
+                        elif "完成" in item_text:
+                            item.setBackground(QColor("#cce5ff"))
+                        elif "失败" in item_text or "错误" in item_text:
+                            item.setBackground(QColor("#f8d7da"))
+                        elif "暂停" in item_text:
+                            item.setBackground(QColor("#fff3cd"))
+                        else:
+                            item.setBackground(QColor("#ffffff"))
+
+            # 🔧 性能优化：只更新这一行，不触发整个表格重绘
+            self.task_table.updateRow(row_index)
+
+        except Exception as e:
+            logger.error(f"刷新单个任务失败: {e}") if logger else None
+
     def on_task_selection_changed(self):
         """任务选择变化处理（任务详情UI已删除，此方法保留用于未来扩展）"""
         try:
@@ -4639,11 +4763,48 @@ class EnhancedDataImportWidget(QWidget):
             if not selected_items:
                 return
 
-            # 删除：任务详情UI已移除，此方法保留用于未来扩展
-            # 可以在这里添加其他选择变化时的处理逻辑
-
         except Exception as e:
             logger.error(f"处理任务选择变化失败: {e}") if logger else None
+
+    def _adjust_task_refresh_interval(self, tasks):
+        """智能调整任务列表刷新频率
+
+        根据任务状态动态调整刷新间隔：
+        - 有运行中任务：2秒刷新（实时响应）
+        - 无运行中任务但有任务：5秒刷新（正常监控）
+        - 无任何任务：10秒刷新（低功耗模式）
+        """
+        try:
+            if not hasattr(self, 'task_refresh_timer') or not self.task_refresh_timer:
+                return
+
+            has_running = False
+            has_tasks = len(tasks) > 0
+
+            for task in tasks:
+                if self.import_engine:
+                    task_status = self.import_engine.get_task_status(task.task_id)
+                    if task_status and hasattr(task_status, 'status'):
+                        status_value = task_status.status.value if hasattr(task_status.status, 'value') else str(task_status.status)
+                        if status_value.lower() == 'running':
+                            has_running = True
+                            break
+
+            if has_running:
+                if self.task_refresh_timer.interval() != 2000:
+                    self.task_refresh_timer.setInterval(2000)
+                    logger.debug("任务刷新频率调整为2秒（运行中任务）") if logger else None
+            elif has_tasks:
+                if self.task_refresh_timer.interval() != 5000:
+                    self.task_refresh_timer.setInterval(5000)
+                    logger.debug("任务刷新频率调整为5秒（监控模式）") if logger else None
+            else:
+                if self.task_refresh_timer.interval() != 10000:
+                    self.task_refresh_timer.setInterval(10000)
+                    logger.debug("任务刷新频率调整为10秒（低功耗模式）") if logger else None
+
+        except Exception as e:
+            logger.debug(f"调整刷新频率失败: {e}") if logger else None
 
     def show_task_context_menu(self, position):
         """显示任务右键菜单"""
@@ -5995,11 +6156,6 @@ class EnhancedDataImportWidget(QWidget):
     - 分布式执行: {'启用' if self.distributed_cb.isChecked() else '[ERROR] 禁用'}
     - 智能缓存: {'启用' if self.caching_cb.isChecked() else '[ERROR] 禁用'}
     - 数据质量监控: {'启用' if self.quality_monitoring_cb.isChecked() else '[ERROR] 禁用'}
-
-    实时写入:
-    - 写入策略: {self.write_strategy_combo.currentText() if hasattr(self, 'write_strategy_combo') else '禁用写入'}
-    - 性能监控: {'启用' if (hasattr(self, 'enable_perf_monitor_cb') and self.enable_perf_monitor_cb.isChecked()) else '禁用'}
-    - 内存监控: {'启用' if (hasattr(self, 'enable_memory_monitor_cb') and self.enable_memory_monitor_cb.isChecked()) else '禁用'}
     """
             QMessageBox.information(self, "配置验证", result_text)
 
@@ -6062,14 +6218,6 @@ class EnhancedDataImportWidget(QWidget):
                     self.caching_cb.setChecked(True)
                 if hasattr(self, 'quality_monitoring_cb'):
                     self.quality_monitoring_cb.setChecked(True)
-
-                # 重置实时写入配置
-                if hasattr(self, 'write_strategy_combo'):
-                    self.write_strategy_combo.setCurrentText("禁用写入")
-                if hasattr(self, 'enable_perf_monitor_cb'):
-                    self.enable_perf_monitor_cb.setChecked(True)
-                if hasattr(self, 'enable_memory_monitor_cb'):
-                    self.enable_memory_monitor_cb.setChecked(True)
 
                 QMessageBox.information(self, "重置成功", "配置已重置到默认值")
 
@@ -6517,46 +6665,6 @@ class EnhancedDataImportWidget(QWidget):
             logger.error(f"停止下载失败: {e}") if logger else None
             QMessageBox.critical(self, "错误", f"停止失败: {str(e)}")
 
-    def on_write_strategy_changed(self, strategy):
-        """写入策略变更处理"""
-        try:
-            logger.info(f"写入策略已变更: {strategy}") if logger else None
-
-            # 根据策略启用/禁用相关控制
-            if strategy == "禁用写入":
-                # 禁用所有写入相关控制
-                if hasattr(self, 'realtime_pause_btn'):
-                    self.realtime_pause_btn.setEnabled(False)
-                if hasattr(self, 'realtime_resume_btn'):
-                    self.realtime_resume_btn.setEnabled(False)
-                if hasattr(self, 'realtime_cancel_btn'):
-                    self.realtime_cancel_btn.setEnabled(False)
-                if hasattr(self, 'enable_perf_monitor_cb'):
-                    self.enable_perf_monitor_cb.setEnabled(False)
-                if hasattr(self, 'enable_memory_monitor_cb'):
-                    self.enable_memory_monitor_cb.setEnabled(False)
-                if hasattr(self, 'realtime_status_label'):
-                    self.realtime_status_label.setText("状态: 禁用")
-                    self.realtime_status_label.setStyleSheet("color: gray; font-weight: bold;")
-            else:
-                # 启用写入相关控制（在未运行时仍然禁用按钮，但启用监控选项）
-                if hasattr(self, 'enable_perf_monitor_cb'):
-                    self.enable_perf_monitor_cb.setEnabled(True)
-                if hasattr(self, 'enable_memory_monitor_cb'):
-                    self.enable_memory_monitor_cb.setEnabled(True)
-                if hasattr(self, 'realtime_status_label'):
-                    if strategy == "实时写入":
-                        self.realtime_status_label.setText("状态: 实时模式（未运行）")
-                        self.realtime_status_label.setStyleSheet("color: navy; font-weight: bold;")
-                    elif strategy == "批量写入":
-                        self.realtime_status_label.setText("状态: 批量模式（未运行）")
-                        self.realtime_status_label.setStyleSheet("color: navy; font-weight: bold;")
-                    elif strategy == "自适应":
-                        self.realtime_status_label.setText("状态: 自适应模式（未运行）")
-                        self.realtime_status_label.setStyleSheet("color: navy; font-weight: bold;")
-        except Exception as e:
-            logger.error(f"处理写入策略变更失败: {e}") if logger else None
-
     def _on_mode_button_clicked(self, button):
         """处理下载模式单选按钮点击"""
         try:
@@ -6652,91 +6760,6 @@ class EnhancedDataImportWidget(QWidget):
 
         except Exception as e:
             logger.error(f"处理下载模式变更失败: {e}") if logger else None
-
-    def _register_write_event_handlers(self):
-        """注册实时写入事件处理器【修复】"""
-        try:
-            from core.events import get_event_bus
-            from core.events.realtime_write_events import (
-                WriteStartedEvent, WriteProgressEvent, WriteCompletedEvent, WriteErrorEvent
-            )
-            from core.services.realtime_write_event_handlers import get_write_event_handlers
-            from datetime import datetime
-
-            event_bus = get_event_bus()
-            write_handlers = get_write_event_handlers()
-
-            if not event_bus or not write_handlers:
-                return
-
-            def on_ui_update(event_type, event):
-                """【修复】实现实时UI更新回调（使用融合后的按钮）"""
-                try:
-                    if event_type == 'write_started':
-                        logger.info(f"[UI] 写入开始") if logger else None
-                        # 更新左侧控制按钮状态
-                        if hasattr(self, 'realtime_pause_btn'):
-                            self.realtime_pause_btn.setEnabled(True)
-                        if hasattr(self, 'realtime_cancel_btn'):
-                            self.realtime_cancel_btn.setEnabled(True)
-                        if hasattr(self, 'realtime_status_label'):
-                            self.realtime_status_label.setText("状态: 运行中")
-                            self.realtime_status_label.setStyleSheet("color: blue; font-weight: bold;")
-
-                    elif event_type == 'write_progress':
-                        # 【修复】更新监控面板的进度信息
-                        if hasattr(self, 'realtime_monitoring') and self.realtime_monitoring:
-                            # 更新进度条
-                            self.realtime_monitoring.progress_bar.setValue(int(event.progress))
-
-                            # 更新速度标签
-                            self.realtime_monitoring.speed_label.setText(f"{event.write_speed:.0f} 条/秒")
-
-                            # 更新成功计数
-                            self.realtime_monitoring.success_label.setText(str(event.success_count))
-
-                            # 更新失败计数
-                            self.realtime_monitoring.failure_label.setText(str(event.failure_count))
-
-                            logger.debug(f"[UI] 更新进度: {event.progress:.1f}%, 速度: {event.write_speed:.0f}条/秒") if logger else None
-
-                    elif event_type == 'write_completed':
-                        logger.info(f"[UI] 写入完成") if logger else None
-                        # 更新左侧控制按钮状态
-                        if hasattr(self, 'realtime_pause_btn'):
-                            self.realtime_pause_btn.setEnabled(False)
-                        if hasattr(self, 'realtime_resume_btn'):
-                            self.realtime_resume_btn.setEnabled(False)
-                        if hasattr(self, 'realtime_cancel_btn'):
-                            self.realtime_cancel_btn.setEnabled(False)
-                        if hasattr(self, 'realtime_status_label'):
-                            self.realtime_status_label.setText("状态: 已完成")
-                            self.realtime_status_label.setStyleSheet("color: green; font-weight: bold;")
-
-                    elif event_type == 'write_error':
-                        # 【修复】添加错误到错误日志表
-                        if hasattr(self, 'realtime_monitoring') and self.realtime_monitoring:
-                            timestamp = datetime.now().strftime('%H:%M:%S')
-                            self.realtime_monitoring.add_error(
-                                timestamp=timestamp,
-                                symbol=event.symbol,
-                                error_type=event.error_type,
-                                error_msg=event.error
-                            )
-                            logger.warning(f"[UI] 错误已添加: {event.symbol} - {event.error_type}") if logger else None
-
-                except Exception as e:
-                    logger.error(f"[UI] 回调处理失败: {e}") if logger else None
-
-            write_handlers.ui_callback = on_ui_update
-            event_bus.subscribe(WriteStartedEvent, write_handlers.on_write_started)
-            event_bus.subscribe(WriteProgressEvent, write_handlers.on_write_progress)
-            event_bus.subscribe(WriteCompletedEvent, write_handlers.on_write_completed)
-            event_bus.subscribe(WriteErrorEvent, write_handlers.on_write_error)
-
-            logger.info("实时写入事件处理器已注册") if logger else None
-        except Exception as e:
-            logger.warning(f"注册实时写入事件处理器失败: {e}") if logger else None
 
     def _get_asset_type_value(self):
         """获取资产类型值"""

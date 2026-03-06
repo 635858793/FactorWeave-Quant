@@ -1663,6 +1663,40 @@ class ServiceBootstrap:
             logger.error(f"❌ 分布式服务注册失败: {e}")
             logger.error(traceback.format_exc())
 
+        # 深度分析框架服务
+        try:
+            from core.services.deep_analysis_framework import (
+                DeepAnalysisFramework,
+                get_deep_analysis_framework,
+                get_performance_coordinator,
+                get_advanced_analytics
+            )
+            
+            def create_deep_analysis_framework():
+                """创建深度分析框架实例"""
+                return get_deep_analysis_framework()
+            
+            self.service_container.register_factory(
+                DeepAnalysisFramework,
+                create_deep_analysis_framework,
+                scope=ServiceScope.SINGLETON
+            )
+            
+            self.service_container.register_factory(
+                DeepAnalysisFramework,
+                create_deep_analysis_framework,
+                scope=ServiceScope.SINGLETON,
+                name='deep_analysis_framework'
+            )
+            
+            logger.info("深度分析框架注册完成（类型 + 名称 'deep_analysis_framework'）")
+            
+        except ImportError as e:
+            logger.warning(f"深度分析框架模块不可用，跳过注册: {e}")
+        except Exception as e:
+            logger.error(f"❌ 深度分析框架注册失败: {e}")
+            logger.error(traceback.format_exc())
+
         # 注册5个深度优化功能模块
         self._register_optimization_modules()
 

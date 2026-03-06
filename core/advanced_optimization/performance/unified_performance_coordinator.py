@@ -647,3 +647,21 @@ def get_unified_performance_coordinator() -> UnifiedPerformanceCoordinator:
     if _global_performance_coordinator is None:
         _global_performance_coordinator = UnifiedPerformanceCoordinator()
     return _global_performance_coordinator
+
+
+# 兼容重定向：优先使用完整版（core/performance）
+# 如果需要使用完整版，推荐直接导入:
+# from core.performance.unified_performance_coordinator import get_performance_coordinator
+def get_performance_coordinator():
+    """
+    获取统一性能协调器（兼容重定向）
+    
+    此函数保留用于向后兼容。
+    推荐直接使用 core.performance.unified_performance_coordinator.get_performance_coordinator()
+    """
+    try:
+        from core.performance.unified_performance_coordinator import get_performance_coordinator as _get_coord
+        return _get_coord()
+    except ImportError:
+        # 降级到简化版
+        return get_unified_performance_coordinator()

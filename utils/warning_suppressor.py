@@ -30,6 +30,10 @@ def suppress_warnings():
         # 抑制Qt警告
         os.environ['QT_LOGGING_RULES'] = '*.debug=false;qt.qpa.*=false'
 
+        # 抑制libpng sRGB警告
+        os.environ['LIBPNG_WARN'] = '0'
+        os.environ['PNG_SKIP_sRGB_CHECK_PROFILE'] = '1'
+
         # 抑制hikyuu相关警告
         warnings.filterwarnings('ignore', message='.*hikyuu.*')
 

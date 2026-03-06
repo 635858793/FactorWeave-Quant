@@ -370,28 +370,14 @@ class UnifiedBacktestEngine:
             )
 
             if selected_engine == "vectorized":
-                # 使用向量化引擎（高性能）
+                # 使用向量化引擎（JIT极速）
                 self.logger.info("选择向量化引擎执行回测")
                 results = self._run_vectorized_backtest(
                     processed_data, signal_col, price_col, initial_capital,
                     position_size, commission_pct, slippage_pct, min_commission
                 )
-            elif selected_engine == "memory_optimized":
-                # 使用内存优化引擎（超大数据集）
-                self.logger.info("选择内存优化引擎执行回测")
-                results = self._run_memory_optimized_backtest(
-                    processed_data, signal_col, price_col, initial_capital,
-                    position_size, commission_pct, slippage_pct, min_commission
-                )
-            elif selected_engine == "professional_optimizer":
-                # 使用专业优化器（综合优化）
-                self.logger.info("选择专业优化器执行回测")
-                results = self._run_professional_optimized_backtest(
-                    processed_data, signal_col, price_col, initial_capital,
-                    position_size, commission_pct, slippage_pct, min_commission
-                )
             else:
-                # 使用标准引擎（功能完整）
+                # 使用标准引擎（支持止损/止盈/持有期）
                 self.logger.info("选择标准引擎执行回测")
                 results = self._run_core_backtest(
                     processed_data, signal_col, price_col, initial_capital,
@@ -478,6 +464,10 @@ class UnifiedBacktestEngine:
         """
         智能选择最优回测引擎
 
+        基于功能需求选择引擎，而非数据量：
+        - 需要高级功能（止损/止盈/持有期）：使用标准引擎
+        - 无高级功能需求：使用向量化引擎（JIT极速）
+
         Args:
             data: 回测数据
             stop_loss_pct: 止损比例
@@ -485,7 +475,7 @@ class UnifiedBacktestEngine:
             max_holding_periods: 最大持有期
 
         Returns:
-            str: "vectorized", "memory_optimized", "professional_optimizer", 或 "standard"
+            str: "vectorized" 或 "standard"
         """
         # 如果禁用自动选择，使用用户设置
         if not self.auto_select_engine:
@@ -496,33 +486,16 @@ class UnifiedBacktestEngine:
             self.logger.info("优化引擎不可用，选择标准引擎")
             return "standard"
 
-        # 如果需要高级功能（止损、止盈、最大持有期），使用标准引擎
+        # 如果需要高级功能（止损、期），使用标准止盈、最大持有引擎
+        # 标准引擎支持完整的交易逻辑（止损/止盈/持有期检查）
         if stop_loss_pct or take_profit_pct or max_holding_periods:
-            self.logger.info("检测到高级功能需求，选择标准引擎")
+            self.logger.info("检测到高级功能需求（止损/止盈/持有期），选择标准引擎")
             return "standard"
 
-        # 根据数据大小和系统资源选择最优引擎
-        data_size = len(data)
-
-        # 超大数据集（>10000条）：使用内存优化引擎
-        if data_size > 10000 and self.memory_optimized_engine:
-            self.logger.info(f"超大数据集({data_size}条)，选择内存优化引擎")
-            return "memory_optimized"
-
-        # 大数据集（1000-10000条）：使用专业优化器
-        elif data_size >= 1000 and self.professional_optimizer:
-            self.logger.info(f"大数据集({data_size}条)，选择专业优化器")
-            return "professional_optimizer"
-
-        # 中等数据集（100-1000条）：使用向量化引擎
-        elif data_size >= 100 and self.vectorized_engine:
-            self.logger.info(f"中等数据集({data_size}条)，选择向量化引擎")
-            return "vectorized"
-
-        # 小数据集（<100条）：使用标准引擎
-        else:
-            self.logger.info(f"小数据集({data_size}条)，选择标准引擎")
-            return "standard"
+        # 无高级功能需求，始终使用向量化引擎
+        # 向量化引擎使用JIT编译，性能极致（100万条数据约68ms）
+        self.logger.info("无高级功能需求，选择向量化引擎（JIT极速）")
+        return "vectorized"
 
     def _run_vectorized_backtest(self, data: pd.DataFrame, signal_col: str, price_col: str,
                                  initial_capital: float, position_size: float,
