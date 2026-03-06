@@ -73,8 +73,14 @@ class DataSourceConfig:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'DataSourceConfig':
-        """从字典创建"""
-        return cls(**data)
+        """从字典创建（容错处理）"""
+        try:
+            valid_fields = {f.name for f in cls.__dataclass_fields__.values()}
+            filtered_data = {k: v for k, v in data.items() if k in valid_fields}
+            return cls(**filtered_data)
+        except Exception as e:
+            logger.error(f"从字典创建DataSourceConfig失败: {e}")
+            raise
 
 
 @dataclass
@@ -122,29 +128,33 @@ class ImportTaskConfig:
     def from_dict(cls, data: Dict[str, Any]) -> 'ImportTaskConfig':
         """从字典创建（容错处理）"""
         try:
+            # 获取dataclass的字段名，过滤掉不存在的参数
+            valid_fields = {f.name for f in cls.__dataclass_fields__.values()}
+            filtered_data = {k: v for k, v in data.items() if k in valid_fields}
+
             # 处理frequency字段（可能是字符串或枚举值）
-            freq_value = data.get('frequency')
+            freq_value = filtered_data.get('frequency')
             if isinstance(freq_value, str):
                 try:
-                    data['frequency'] = DataFrequency(freq_value)
+                    filtered_data['frequency'] = DataFrequency(freq_value)
                 except (ValueError, KeyError):
                     logger.warning(f"无效的频率值 '{freq_value}'，使用默认值 DAILY")
-                    data['frequency'] = DataFrequency.DAILY
-            elif not isinstance(freq_value, DataFrequency):
-                data['frequency'] = DataFrequency.DAILY
+                    filtered_data['frequency'] = DataFrequency.DAILY
+            elif freq_value and not isinstance(freq_value, DataFrequency):
+                filtered_data['frequency'] = DataFrequency.DAILY
 
             # 处理mode字段（可能是字符串或枚举值）
-            mode_value = data.get('mode')
+            mode_value = filtered_data.get('mode')
             if isinstance(mode_value, str):
                 try:
-                    data['mode'] = ImportMode(mode_value)
+                    filtered_data['mode'] = ImportMode(mode_value)
                 except (ValueError, KeyError):
                     logger.warning(f"无效的导入模式 '{mode_value}'，使用默认值 MANUAL")
-                    data['mode'] = ImportMode.MANUAL
-            elif not isinstance(mode_value, ImportMode):
-                data['mode'] = ImportMode.MANUAL
+                    filtered_data['mode'] = ImportMode.MANUAL
+            elif mode_value and not isinstance(mode_value, ImportMode):
+                filtered_data['mode'] = ImportMode.MANUAL
 
-            return cls(**data)
+            return cls(**filtered_data)
         except Exception as e:
             logger.error(f"从字典创建ImportTaskConfig失败: {e}")
             raise
@@ -191,12 +201,18 @@ class ImportProgress:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'ImportProgress':
-        """从字典创建"""
-        data['status'] = ImportStatus(data['status'])
-        # 修复：处理processed_symbols_list字段（兼容旧数据）
-        if 'processed_symbols_list' not in data:
-            data['processed_symbols_list'] = []
-        return cls(**data)
+        """从字典创建（容错处理）"""
+        try:
+            valid_fields = {f.name for f in cls.__dataclass_fields__.values()}
+            filtered_data = {k: v for k, v in data.items() if k in valid_fields}
+
+            if 'status' in filtered_data:
+                if isinstance(filtered_data['status'], str):
+                    filtered_data['status'] = ImportStatus(filtered_data['status'])
+            return cls(**filtered_data)
+        except Exception as e:
+            logger.error(f"从字典创建ImportProgress失败: {e}")
+            raise
 
 
 class ImportConfigManager:
