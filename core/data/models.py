@@ -138,7 +138,9 @@ class QueryParams:
         original_period = self.period
         self.period = self._normalize_period(self.period)
 
-        if self.period not in ['1m', '5m', '15m', '30m', '1H', 'D', 'W', 'M']:
+        from core.plugin_types import Period
+        valid_periods = [p.value for p in Period]
+        if self.period not in valid_periods:
             self._validation_errors.append(f"无效的周期参数: '{original_period}' -> '{self.period}'")
             return False
 
@@ -161,32 +163,6 @@ class QueryParams:
                 f"asset_type={self.asset_type})")
 
     def _normalize_period(self, period: str) -> str:
-        """标准化期间参数"""
-        period_mapping = {
-            '日线': 'D',
-            '日': 'D',
-            'D': 'D',
-            '1d': 'D',
-            '周线': 'W',
-            '周': 'W',
-            'W': 'W',
-            '月线': 'M',
-            '月': 'M',
-            'M': 'M',
-            '1分钟': '1m',
-            '1分': '1m',
-            '1m': '1m',
-            '5分钟': '5m',
-            '5分': '5m',
-            '5m': '5m',
-            '15分钟': '15m',
-            '15分': '15m',
-            '15m': '15m',
-            '30分钟': '30m',
-            '30分': '30m',
-            '30m': '30m',
-            '1小时': '1H',
-            '小时': '1H',
-            '1H': '1H'
-        }
-        return period_mapping.get(period, period)
+        """标准化期间参数 - 使用统一的 Period 枚举类"""
+        from core.plugin_types import Period
+        return Period.normalize(period)

@@ -46,3 +46,4 @@ performance_reports/*
 !README.md
 web/*
 
+.memory/memory.jsonl

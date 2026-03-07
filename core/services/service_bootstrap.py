@@ -1086,12 +1086,24 @@ class ServiceBootstrap:
             # 5. 注册增量更新调度器
             logger.info("注册增量更新调度器...")
             from ..services.incremental_update_scheduler import IncrementalUpdateScheduler
-            scheduler = IncrementalUpdateScheduler()
+            scheduler = IncrementalUpdateScheduler(
+                analyzer=incremental_analyzer,
+                downloader=enhanced_downloader,
+                recorder=update_recorder,
+                event_bus=event_bus
+            )
             self.service_container.register_instance(
                 IncrementalUpdateScheduler,
                 scheduler
             )
             logger.info("增量更新调度器注册完成")
+            
+            # 自动启动增量更新调度器
+            try:
+                scheduler.start_scheduler()
+                logger.info("增量更新调度器已自动启动")
+            except Exception as start_e:
+                logger.warning(f"增量更新调度器自动启动失败: {start_e}")
 
             # 6. 注册断点续传管理器
             logger.info("注册断点续传管理器...")

@@ -806,6 +806,41 @@ class UnifiedDataManager:
             logger.error(f"获取K线数据失败: {stock_code} ({asset_type.value}) - {e}")
             return pd.DataFrame()
 
+    def get_kline_data(self, stock_code: str, period: str = 'D', count: int = 365,
+                       asset_type=None, **kwargs) -> pd.DataFrame:
+        """
+        获取K线数据（别名方法，兼容其他服务调用）
+
+        Args:
+            stock_code: 股票代码
+            period: 周期
+            count: 数据条数
+            asset_type: 资产类型（可以是字符串或AssetType枚举）
+            **kwargs: 其他参数（忽略）
+
+        Returns:
+            K线数据DataFrame
+        """
+        from core.plugin_types import AssetType as AT
+        if asset_type is None:
+            final_asset_type = AT.STOCK_A
+        elif isinstance(asset_type, str):
+            type_map = {
+                'stock_a': AT.STOCK_A,
+                'stock': AT.STOCK_A,
+                'index': AT.INDEX,
+                'fund': AT.FUND,
+                'bond': AT.BOND,
+                'futures': AT.FUTURES,
+                'option': AT.OPTION,
+                'etf': AT.ETF
+            }
+            final_asset_type = type_map.get(asset_type.lower(), AT.STOCK_A)
+        else:
+            final_asset_type = asset_type
+
+        return self.get_kdata(stock_code, period, count, asset_type=final_asset_type)
+
     def get_kdata_from_source(self, stock_code: str, period: str = 'D', count: int = 365,
                               data_source: str = None, asset_type: AssetType = None,
                               start_date=None, end_date=None) -> pd.DataFrame:
@@ -825,15 +860,8 @@ class UnifiedDataManager:
             K线数据DataFrame
         """
         try:
-            # 标准化周期格式
-            period_map = {
-                'D': 'daily', 'daily': 'daily',
-                'W': 'weekly', 'weekly': 'weekly',
-                'M': 'monthly', 'monthly': 'monthly',
-                '1': '1min', '5': '5min', '15': '15min',
-                '30': '30min', '60': '60min'
-            }
-            frequency = period_map.get(period, period)
+            from core.plugin_types import Period
+            frequency = Period.to_frequency(period)
 
             cache_key = f"kdata_{stock_code}_{period}_{count}_{data_source}"
 
@@ -985,7 +1013,7 @@ class UnifiedDataManager:
 
             # 3. 降级到默认get_kdata方法
             logger.warning(f"从指定数据源 {data_source} 获取失败，降级到默认方法")
-            return self.get_kdata(stock_code, period, count)
+            return self.get_kdata(stock_code, period, count, asset_type=asset_type)
 
         except Exception as e:
             logger.error(f"从数据源 {data_source} 获取K线数据失败: {stock_code} - {e}")
@@ -1204,11 +1232,9 @@ class UnifiedDataManager:
                 ORDER BY symbol
                 """
 
-            # 执行查询 - 使用query_data方法
             import sys
             import io
 
-            # 捕获所有输出
             old_stdout = sys.stdout
             old_stderr = sys.stderr
             captured_stdout = io.StringIO()
@@ -1227,14 +1253,13 @@ class UnifiedDataManager:
                 sys.stdout = old_stdout
                 sys.stderr = old_stderr
 
-                # 检查是否有输出
                 stdout_content = captured_stdout.getvalue()
                 stderr_content = captured_stderr.getvalue()
 
-                if stdout_content:
-                    logger.warning(f"[CAPTURED STDOUT] query_data produced stdout output: {stdout_content!r}")
-                if stderr_content:
-                    logger.warning(f"[CAPTURED STDERR] query_data produced stderr output: {stderr_content!r}")
+                if stdout_content and len(stdout_content) < 500:
+                    logger.debug(f"[CAPTURED STDOUT] query_data: {stdout_content!r}")
+                if stderr_content and len(stderr_content) < 500 and 'recursion' not in stderr_content.lower():
+                    logger.debug(f"[CAPTURED STDERR] query_data: {stderr_content!r}")
 
             # DEBUG: 检查result对象
             logger.debug(f"[DEBUG] query_data returned: type={type(result)}, success={result.success if result else 'None'}")
@@ -1264,13 +1289,8 @@ class UnifiedDataManager:
             logger.debug(f"DuckDB路径: {database_path}, 资产类型: {final_asset_type.value}")
 
             # 周期到频率的映射（DuckDB表中的frequency字段）
-            period_to_frequency_map = {
-                'D': '1d', 'W': '1w', 'M': '1M',
-                '1': '1min', '5': '5min', '15': '15min',
-                '30': '30min', '60': '60min',
-                'daily': '1d', 'weekly': '1w', 'monthly': '1M'
-            }
-            frequency = period_to_frequency_map.get(period, '1d')
+            from core.plugin_types import Period
+            frequency = Period.to_duckdb_frequency(period)
             logger.debug(f"周期映射: {period} -> {frequency}")
 
             # 优化：在CTE中添加WHERE条件，提前过滤数据，减少JOIN的数据量
@@ -1535,8 +1555,9 @@ class UnifiedDataManager:
             Optional[pd.DataFrame]: 历史数据
         """
         try:
-            # 对于股票数据，直接使用get_kdata方法
-            return self.get_kdata(symbol, period, count)
+            from core.plugin_types import AssetType
+            final_asset_type = asset_type if asset_type else AssetType.STOCK_A
+            return self.get_kdata(symbol, period, count, asset_type=final_asset_type)
         except Exception as e:
             logger.error(f"获取历史数据失败 {symbol}: {e}")
             return None
@@ -2249,10 +2270,8 @@ class UnifiedDataManager:
         """
         try:
             if asset_type == AssetType.STOCK_A:
-                # 对于股票，使用get_kdata方法
-                return self.get_kdata(symbol, period, count)
+                return self.get_kdata(symbol, period, count, asset_type=asset_type)
             else:
-                # 对于其他资产类型，使用get_asset_data方法
                 return self.get_asset_data(symbol, asset_type, DataType.HISTORICAL_KLINE, period, **kwargs)
         except Exception as e:
             logger.error(f"获取历史数据失败 {symbol}: {e}")
@@ -2579,13 +2598,12 @@ class UnifiedDataManager:
                 'error': str(e)
             }
 
-    def _legacy_get_stock_data(self, symbol: str, period: str = "D", **kwargs) -> Optional[pd.DataFrame]:
+    def _legacy_get_stock_data(self, symbol: str, period: str = "D", asset_type=None, **kwargs) -> Optional[pd.DataFrame]:
         """传统方式获取股票数据"""
         try:
-            # 使用现有的股票数据获取逻辑
             from ..data.data_access import DataAccess
             data_access = DataAccess()
-            return data_access.get_kdata(symbol, period)
+            return data_access.get_kdata(symbol, period, asset_type=asset_type)
         except Exception as e:
             logger.error(f"传统方式获取股票数据失败: {e}")
             return None
@@ -2652,20 +2670,9 @@ class UnifiedDataManager:
             # 清理股票代码
             stock_code = str(stock_code).strip()
 
-            # 处理周期映射
-            period_map = {
-                '分时': 'min',
-                '日线': 'D',
-                '周线': 'W',
-                '月线': 'M',
-                '5分钟': '5',
-                '15分钟': '15',
-                '30分钟': '30',
-                '60分钟': '60'
-            }
-
-            # 如果period是中文描述，转换为对应代码
-            actual_period = period_map.get(period, period)
+            # 处理周期映射（使用统一的 Period 枚举类）
+            from core.plugin_types import Period
+            actual_period = Period.normalize(period)
 
             # 处理时间范围映射（转换为天数）
             time_range_map = {
@@ -3143,14 +3150,9 @@ class UnifiedDataManager:
         try:
             logger.info(f"开始批量查询历史数据: {len(symbols)} 只股票, period={period}, asset_type={asset_type.value}")
 
-            # 周期到频率的映射
-            period_to_frequency_map = {
-                'D': '1d', 'W': '1w', 'M': '1M',
-                '1': '1min', '5': '5min', '15': '15min',
-                '30': '30min', '60': '60min',
-                'daily': '1d', 'weekly': '1w', 'monthly': '1M'
-            }
-            frequency = period_to_frequency_map.get(period, '1d')
+            # 周期到频率的映射（使用统一的 Period 枚举类）
+            from core.plugin_types import Period
+            frequency = Period.to_duckdb_frequency(period)
 
             # 获取数据库路径
             database_path = self.asset_manager.get_database_path(asset_type)
@@ -4031,7 +4033,7 @@ class UnifiedDataManager:
             from .stock_service import StockService
             stock_service = self.service_container.resolve(StockService)
             return stock_service.get_stock_data(
-                request.stock_code, request.period, request.time_range
+                request.stock_code, request.period, request.time_range, asset_type=request.asset_type
             )
         except Exception as e:
             logger.error(f"Failed to load kdata: {e}")

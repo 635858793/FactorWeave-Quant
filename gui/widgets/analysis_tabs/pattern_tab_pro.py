@@ -998,8 +998,8 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
         advanced_layout.addWidget(zqQl)
         self.timeframe_combo = QComboBox()
         self.timeframe_combo.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        self.timeframe_combo.addItems(
-            ["日线", "周线", "月线", "60分钟", "30分钟", "15分钟"])
+        from core.plugin_types import Period
+        self.timeframe_combo.addItems(Period.all_periods())
         advanced_layout.addWidget(self.timeframe_combo)
 
         # 实时监控开关

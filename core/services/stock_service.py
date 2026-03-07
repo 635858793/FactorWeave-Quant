@@ -203,7 +203,7 @@ class StockService(CacheableService, ConfigurableService):
             return []
 
     def get_stock_data(self, stock_code: str, period: str = 'D',
-                       count: int = 365) -> Optional[pd.DataFrame]:
+                       count: int = 365, asset_type=None) -> Optional[pd.DataFrame]:
         """
         获取股票数据
 
@@ -211,13 +211,13 @@ class StockService(CacheableService, ConfigurableService):
             stock_code: 股票代码
             period: 周期 (D/W/M)
             count: 数据条数
+            asset_type: 资产类型（可选）
 
         Returns:
             股票K线数据
         """
         self._ensure_initialized()
 
-        # 检查负缓存
         if stock_code in self._no_data_cache:
             logger.debug(
                 f"Stock {stock_code} is in no-data cache, returning None")
@@ -228,26 +228,22 @@ class StockService(CacheableService, ConfigurableService):
         if cached_result is not None:
             return cached_result
 
-        # 检查查询频率限制（仅在缓存未命中时应用）
         current_time = time.time()
         last_query_key = f"{stock_code}_{period}_{count}"
         if last_query_key in self._last_query_time:
             time_diff = current_time - self._last_query_time[last_query_key]
-            if time_diff < 0.1:  # 100ms内不重复查询（减少限制时间）
+            if time_diff < 0.1:
                 logger.debug(f"Query too frequent for {stock_code}, skipping")
                 return None
 
         self._last_query_time[last_query_key] = current_time
 
         try:
-            # 使用数据访问层获取K线数据
-            kdata = self._data_access.get_kdata(stock_code, period, count)
+            kdata = self._data_access.get_kdata(stock_code, period, count, asset_type=asset_type)
 
             if kdata is not None and not kdata.empty:
-                # 缓存结果
                 self.put_to_cache(cache_key, kdata)
 
-                # 发布数据更新事件
                 event = DataUpdateEvent(
                     data_type="stock_data",
                     update_info={
@@ -260,7 +256,6 @@ class StockService(CacheableService, ConfigurableService):
 
                 return kdata
             else:
-                # 添加到负缓存
                 self._no_data_cache.add(stock_code)
                 logger.debug(
                     f"No data for {stock_code}, added to no-data cache")
@@ -268,7 +263,6 @@ class StockService(CacheableService, ConfigurableService):
 
         except Exception as e:
             logger.error(f"Failed to get stock data for {stock_code}: {e}")
-            # 查询失败也加入负缓存，避免重复失败查询
             self._no_data_cache.add(stock_code)
             return None
 
@@ -302,14 +296,13 @@ class StockService(CacheableService, ConfigurableService):
                     return pd.DataFrame()
 
         # 股票资产或未指定类型，使用传统方法
-        stock_data = self.get_stock_data(stock_code, period, count)
+        stock_data = self.get_stock_data(stock_code, period, count, asset_type=asset_type)
         if stock_data is not None:
             return stock_data
 
-        # 返回空DataFrame保持兼容性
         return pd.DataFrame()
 
-    def get_kline_data(self, stock_code: str, period: str = 'D', count: int = 365) -> pd.DataFrame:
+    def get_kline_data(self, stock_code: str, period: str = 'D', count: int = 365, asset_type=None) -> pd.DataFrame:
         """
         获取K线数据（别名方法）
 
@@ -317,11 +310,12 @@ class StockService(CacheableService, ConfigurableService):
             stock_code: 股票代码
             period: 周期 (D/W/M)
             count: 数据条数
+            asset_type: 资产类型（可选）
 
         Returns:
             K线数据DataFrame
         """
-        return self.get_kdata(stock_code, period, count)
+        return self.get_kdata(stock_code, period, count, asset_type=asset_type)
 
     def select_stock(self, stock_code: str) -> bool:
         """

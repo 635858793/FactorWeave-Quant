@@ -364,7 +364,7 @@ class UniPluginDataManager:
 
     def get_kline_data(self, symbol: str, asset_type: AssetType,
                        start_date: datetime = None, end_date: datetime = None,
-                       frequency: str = "1d", **params) -> pd.DataFrame:
+                       frequency: str = None, **params) -> pd.DataFrame:
         """
         获取K线数据 - 统一入口
 
@@ -373,12 +373,15 @@ class UniPluginDataManager:
             asset_type: 资产类型
             start_date: 开始日期
             end_date: 结束日期
-            frequency: 数据频率
+            frequency: 数据频率（默认使用Period.DAY.value）
             **params: 其他参数
 
         Returns:
             pd.DataFrame: K线数据
         """
+        from core.plugin_types import Period
+        if frequency is None:
+            frequency = Period.DAY.value
         # 参数类型检查和转换
         if isinstance(asset_type, str):
             try:

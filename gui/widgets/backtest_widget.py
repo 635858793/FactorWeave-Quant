@@ -630,8 +630,9 @@ class ControlPanel(QWidget):
         time_layout.addRow("结束日期:", self.end_date)
 
         # 数据频率
+        from core.plugin_types import Period
         self.data_frequency = QComboBox()
-        self.data_frequency.addItems(["日线", "小时线", "30分钟", "15分钟", "5分钟", "1分钟"])
+        self.data_frequency.addItems(Period.all_periods())
         self.data_frequency.setCurrentText("日线")
         time_layout.addRow("数据频率:", self.data_frequency)
 
@@ -1679,8 +1680,9 @@ class ProfessionalBacktestWidget(QWidget):
         layout.addRow("结束日期:", self.end_date)
 
         # 数据频率
+        from core.plugin_types import Period
         self.data_frequency = QComboBox()
-        self.data_frequency.addItems(["日线", "小时线", "30分钟", "15分钟", "5分钟", "1分钟"])
+        self.data_frequency.addItems(Period.all_periods())
         self.data_frequency.setCurrentText("日线")
         layout.addRow("数据频率:", self.data_frequency)
 

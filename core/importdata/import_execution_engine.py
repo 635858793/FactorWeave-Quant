@@ -13,13 +13,15 @@ import hashlib
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Any, Optional, Callable, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from concurrent.futures import ThreadPoolExecutor, Future
 from dataclasses import dataclass, field
 from enum import Enum
 from queue import Queue, Empty
 from PyQt5.QtCore import QObject, pyqtSignal, QTimer
 
+from .models import WriteTask, TaskExecutionStatus, TaskExecutionResult
+from .database_writer import DatabaseWriterThread
 from .import_config_manager import ImportConfigManager, ImportTaskConfig, ImportProgress, ImportStatus
 from .intelligent_config_manager import (
     IntelligentConfigManager,
@@ -44,383 +46,6 @@ from ..data_validator import ValidationLevel, ValidationResult
 from ..events import EventBus, get_event_bus, EventPriority
 from ..async_management.enhanced_async_manager import TaskPriority, ResourceRequirement
 from ..performance.cache_manager import MultiLevelCacheManager, CacheLevel
-
-
-@dataclass
-class WriteTask:
-    """数据库写入任务"""
-    buffer_key: str  # 缓冲区键（asset_type_task_id）
-    data: pd.DataFrame  # 待写入数据
-    asset_type: Any  # 资产类型
-    data_type: Any  # 数据类型
-    priority: int = 0  # 优先级（暂未使用）
-
-
-class DatabaseWriterThread(threading.Thread):
-    """
-    数据库写入线程（单线程模式）
-
-    解决DuckDB并发写入死锁问题：
-    - 所有工作线程将数据放入无锁队列
-    - 本线程单独消费队列，串行写入数据库
-    - 完全避免写锁竞争
-    """
-
-    def __init__(self):
-        super().__init__(name="DatabaseWriter", daemon=True)
-
-        # 无锁队列
-        self.write_queue = Queue(maxsize=5000)  # 限制队列大小防止内存溢出
-
-        # 批量合并缓冲区（相同buffer_key的数据合并后一次写入）
-        self._merge_buffer: Dict[str, List[pd.DataFrame]] = {}
-        self._merge_lock = threading.RLock()
-
-        # 控制标志
-        self._stop_event = threading.Event()
-        self._stopped = False
-
-        # 统计信息
-        self._total_writes = 0
-        self._failed_writes = 0
-        self._queue_peak = 0
-        self._stats_lock = threading.RLock()
-
-        # 优化：批量合并配置（动态调整以加快写入速度）
-        self._batch_threshold_normal = 5  # 正常批量阈值：5个DataFrame（提高批量写入效率）
-        self._batch_threshold_medium = 3  # 中等批量阈值：3个DataFrame
-        self._batch_threshold_urgent = 1  # 紧急批量阈值：队列积压时立即写入
-        self._queue_size_threshold_urgent = 100  # 紧急阈值触发点：超过此值使用紧急阈值
-        self._queue_size_threshold_medium = 50  # 中等阈值触发点：超过此值使用中等阈值
-        self._flush_timeout_normal = 2.0  # 正常超时刷新时间（秒）
-        self._flush_timeout_medium = 1.0  # 中等超时刷新时间（秒）
-        self._flush_timeout_urgent = 0.5  # 紧急超时刷新时间（秒）：队列积压时快速刷新
-        self._buffer_timestamps: Dict[str, float] = {}  # 缓冲区时间戳，用于超时刷新
-
-        # 优化：复用AssetSeparatedDatabaseManager实例，避免重复创建
-        from ..asset_database_manager import AssetSeparatedDatabaseManager
-        self._asset_manager = AssetSeparatedDatabaseManager()
-
-        logger.info("DatabaseWriterThread 初始化完成")
-
-    def put_write_task(self, task: WriteTask, timeout: float = 5.0) -> bool:
-        """
-        放入写入任务到队列
-
-        Args:
-            task: 写入任务
-            timeout: 超时时间（秒）
-
-        Returns:
-            是否成功放入队列
-        """
-        try:
-            # 优化：记录队列状态，便于性能分析
-            queue_size_before = self.write_queue.qsize()
-            put_start_time = time.time()
-
-            # 优化：如果队列接近满载，记录警告
-            if queue_size_before > self.write_queue.maxsize * 0.8:  # 队列容量5000，超过4000警告
-                logger.warning(f"⚠️  [队列接近满载] 当前队列大小: {queue_size_before}/{self.write_queue.maxsize}，可能影响写入性能")
-
-            self.write_queue.put(task, timeout=timeout)
-
-            put_duration = time.time() - put_start_time
-            queue_size_after = self.write_queue.qsize()
-
-            # 优化：如果入队耗时较长，记录警告（说明队列积压严重）
-            if put_duration > 0.5:
-                logger.warning(f"⚠️  [队列阻塞] 入队耗时:{put_duration:.2f}秒 | 队列大小:{queue_size_before}→{queue_size_after} | buffer_key:{task.buffer_key}")
-
-            # 更新统计
-            with self._stats_lock:
-                current_size = self.write_queue.qsize()
-                if current_size > self._queue_peak:
-                    self._queue_peak = current_size
-
-            return True
-        except Exception as e:
-            logger.error(f"放入写入任务失败: {e} | 队列大小:{self.write_queue.qsize()}")
-            return False
-
-    def run(self):
-        """线程主循环"""
-        logger.info("DatabaseWriterThread 启动")
-
-        # 优化：记录最后检查超时缓冲区的时间
-        last_timeout_check = time.time()
-
-        while not self._stop_event.is_set() or not self.write_queue.empty():
-            try:
-                # 优化：根据队列大小动态调整检查频率（队列积压时更频繁检查）
-                current_time = time.time()
-                queue_size = self.write_queue.qsize()
-                # 队列积压时每0.5秒检查一次，正常时每1秒检查一次
-                check_interval = 0.5 if queue_size > self._queue_size_threshold_urgent else 1.0
-                if current_time - last_timeout_check >= check_interval:
-                    self._check_and_flush_timeout_buffers()
-                    last_timeout_check = current_time
-
-                # 从队列获取任务（带超时，避免阻塞关闭）
-                try:
-                    # 优化：减少超时时间，加快响应速度
-                    task = self.write_queue.get(timeout=1.0)
-                except Empty:
-                    # 优化：队列为空时，检查是否有超时缓冲区需要刷新
-                    self._check_and_flush_timeout_buffers()
-                    last_timeout_check = time.time()
-                    continue
-
-                # 执行写入
-                success = self._write_task_to_database(task)
-
-                # 更新统计
-                with self._stats_lock:
-                    if success:
-                        self._total_writes += 1
-                    else:
-                        self._failed_writes += 1
-
-                # 标记任务完成
-                self.write_queue.task_done()
-
-            except Exception as e:
-                logger.error(f"DatabaseWriterThread 执行错误: {e}")
-                import traceback
-                logger.error(traceback.format_exc())
-
-        # 线程退出前处理剩余合并缓冲区
-        self._flush_merge_buffer()
-
-        logger.info(f"DatabaseWriterThread 停止 (总写入:{self._total_writes}, 失败:{self._failed_writes})")
-        self._stopped = True
-
-    def _check_and_flush_timeout_buffers(self):
-        """检查并刷新超时的缓冲区"""
-        try:
-            current_time = time.time()
-            # 优化：根据队列大小动态调整超时刷新时间
-            queue_size = self.write_queue.qsize()
-            if queue_size > self._queue_size_threshold_urgent:
-                flush_timeout = self._flush_timeout_urgent  # 紧急：0.5秒
-            elif queue_size > self._queue_size_threshold_medium:
-                flush_timeout = self._flush_timeout_medium  # 中等：1秒
-            else:
-                flush_timeout = self._flush_timeout_normal  # 正常：2秒
-
-            with self._merge_lock:
-                buffers_to_flush = []
-                for buffer_key, timestamp in list(self._buffer_timestamps.items()):
-                    if current_time - timestamp >= flush_timeout:
-                        if buffer_key in self._merge_buffer and self._merge_buffer[buffer_key]:
-                            buffers_to_flush.append(buffer_key)
-
-                # 刷新超时的缓冲区
-                for buffer_key in buffers_to_flush:
-                    try:
-                        # 从buffer_key解析asset_type和data_type
-                        parts = buffer_key.split('_', 1)
-                        if len(parts) >= 1:
-                            from ..plugin_types import AssetType, DataType
-                            asset_type_str = parts[0]
-                            asset_type = AssetType(asset_type_str)
-                            data_type = DataType.HISTORICAL_KLINE  # 默认K线数据
-
-                            self._flush_buffer_key(buffer_key, asset_type, data_type)
-                            if buffer_key in self._buffer_timestamps:
-                                del self._buffer_timestamps[buffer_key]
-                    except Exception as e:
-                        logger.debug(f"刷新超时缓冲区失败: {buffer_key}, {e}")
-        except Exception as e:
-            logger.debug(f"检查超时缓冲区失败: {e}")
-
-    def _write_task_to_database(self, task: WriteTask) -> bool:
-        """
-        写入单个任务到数据库
-
-        采用批量合并策略：
-        - 相同buffer_key的数据先放入合并缓冲区
-        - 达到阈值或超时时批量写入
-        - 队列积压时使用紧急阈值，立即写入
-        """
-        try:
-            # 优化：根据队列大小动态调整批量阈值（三级阈值）
-            queue_size = self.write_queue.qsize()
-            if queue_size > self._queue_size_threshold_urgent:
-                current_batch_threshold = self._batch_threshold_urgent  # 紧急：立即写入
-            elif queue_size > self._queue_size_threshold_medium:
-                current_batch_threshold = self._batch_threshold_medium  # 中等：3个DataFrame
-            else:
-                current_batch_threshold = self._batch_threshold_normal  # 正常：5个DataFrame（提高批量写入效率）
-
-            with self._merge_lock:
-                # 放入合并缓冲区
-                if task.buffer_key not in self._merge_buffer:
-                    self._merge_buffer[task.buffer_key] = []
-                    self._buffer_timestamps[task.buffer_key] = time.time()
-
-                self._merge_buffer[task.buffer_key].append(task.data)
-
-                # 优化：更新缓冲区时间戳（每次添加数据时重置）
-                self._buffer_timestamps[task.buffer_key] = time.time()
-
-                # 优化：检查是否需要刷新（达到批量阈值，队列积压时使用紧急阈值）
-                if len(self._merge_buffer[task.buffer_key]) >= current_batch_threshold:
-                    result = self._flush_buffer_key(task.buffer_key, task.asset_type, task.data_type)
-                    # 清除时间戳
-                    if task.buffer_key in self._buffer_timestamps:
-                        del self._buffer_timestamps[task.buffer_key]
-                    return result
-
-            return True
-
-        except Exception as e:
-            logger.error(f"写入任务失败: {task.buffer_key}, {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-            return False
-
-    def _flush_buffer_key(self, buffer_key: str, asset_type: Any, data_type: Any) -> bool:
-        """刷新指定buffer_key的数据到数据库"""
-        try:
-            if buffer_key not in self._merge_buffer or not self._merge_buffer[buffer_key]:
-                return True
-
-            # 合并所有DataFrame
-            data_list = self._merge_buffer[buffer_key]
-
-            # 优化：如果只有一个DataFrame，直接使用，避免concat开销
-            if len(data_list) == 1:
-                combined_data = data_list[0]
-            else:
-                # 优化：使用sort=False提高合并性能，因为数据已经按时间排序
-                combined_data = pd.concat(data_list, ignore_index=True, sort=False)
-
-            record_count = len(combined_data)
-            logger.info(f"[写入线程] 写入: {buffer_key}, {record_count}条记录 (合并{len(data_list)}个DataFrame)")
-
-            # 优化：使用复用的AssetSeparatedDatabaseManager实例
-            write_start_time = time.time()
-            success = self._asset_manager.store_standardized_data(
-                data=combined_data,
-                asset_type=asset_type,
-                data_type=data_type
-            )
-            write_duration = time.time() - write_start_time
-
-            if success:
-                # 优化：记录写入性能
-                write_speed = record_count / write_duration if write_duration > 0 else 0
-                logger.info(f"[写入线程] 写入成功: {buffer_key}, {record_count}条记录, 耗时: {write_duration:.2f}秒, 速度: {write_speed:.1f}条/秒")
-                # 清空已写入的缓冲区
-                del self._merge_buffer[buffer_key]
-            else:
-                logger.error(f"❌ [写入线程] 写入失败: {buffer_key}")
-
-            return success
-
-        except Exception as e:
-            logger.error(f"刷新缓冲区失败: {buffer_key}, {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-            return False
-
-    def _flush_merge_buffer(self):
-        """刷新所有合并缓冲区（线程结束时调用）"""
-        logger.info("刷新所有合并缓冲区...")
-
-        with self._merge_lock:
-            for buffer_key in list(self._merge_buffer.keys()):
-                if self._merge_buffer[buffer_key]:
-                    # 需要asset_type和data_type，从buffer_key解析
-                    try:
-                        parts = buffer_key.split('_', 1)
-                        if len(parts) >= 1:
-                            from ..plugin_types import AssetType, DataType
-                            asset_type_str = parts[0]
-                            asset_type = AssetType(asset_type_str)
-                            data_type = DataType.HISTORICAL_KLINE  # 默认K线数据
-
-                            self._flush_buffer_key(buffer_key, asset_type, data_type)
-                    except Exception as e:
-                        logger.error(f"刷新缓冲区失败: {buffer_key}, {e}")
-
-    def stop(self, wait: bool = True, timeout: float = 30.0):
-        """
-        停止写入线程
-
-        Args:
-            wait: 是否等待队列清空
-            timeout: 最大等待时间（秒）
-        """
-        logger.info(f"停止DatabaseWriterThread (wait={wait}, queue_size={self.write_queue.qsize()})")
-
-        self._stop_event.set()
-
-        if wait:
-            # 等待队列清空
-            try:
-                start_time = time.time()
-                while not self.write_queue.empty() and (time.time() - start_time) < timeout:
-                    logger.debug(f"等待队列清空... ({self.write_queue.qsize()}个任务)")
-                    time.sleep(0.5)
-
-                # 等待线程结束
-                self.join(timeout=5.0)
-            except Exception as e:
-                logger.error(f"停止写入线程失败: {e}")
-
-    def get_stats(self) -> Dict[str, Any]:
-        """获取统计信息"""
-        with self._stats_lock:
-            # 修复：merge_buffer_size应该是所有缓冲区中DataFrame的总数，而不是缓冲区数量
-            merge_buffer_size = sum(len(buffer_list) for buffer_list in self._merge_buffer.values())
-
-            return {
-                'queue_size': self.write_queue.qsize(),
-                'queue_peak': self._queue_peak,
-                'total_writes': self._total_writes,
-                'failed_writes': self._failed_writes,
-                'merge_buffer_size': merge_buffer_size,  # 所有缓冲区中DataFrame的总数
-                'is_stopped': self._stopped
-            }
-
-
-class TaskExecutionStatus(Enum):
-    """任务执行状态"""
-    PENDING = "pending"
-    RUNNING = "running"
-    PAUSED = "paused"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
-
-
-@dataclass
-class TaskExecutionResult:
-    """任务执行结果"""
-    task_id: str
-    status: TaskExecutionStatus
-    total_records: int = 0
-    processed_records: int = 0
-    failed_records: int = 0
-    start_time: Optional[datetime] = None
-    end_time: Optional[datetime] = None
-    error_message: Optional[str] = None
-    execution_time: float = 0.0
-    processed_symbols_list: List[str] = field(default_factory=list)  # 修复：已处理的股票列表（用于恢复）
-
-    @property
-    def progress(self) -> float:
-        """进度百分比（0-100）- UI兼容性"""
-        if self.total_records == 0:
-            return 0.0
-        return (self.processed_records / self.total_records) * 100
-
-    @property
-    def progress_percentage(self) -> float:
-        """进度百分比（向后兼容）"""
-        return self.progress
 
 
 class DataImportExecutionEngine(QObject):
@@ -1983,7 +1608,6 @@ class DataImportExecutionEngine(QObject):
             data_usage = self._infer_data_usage(data, task_id)
 
             # 优化2&3：检查缓存（相同数据源+日期）
-            from datetime import datetime
             cache_key = f"{data_source}_{datetime.now().date().isoformat()}"
 
             if cache_key in self._quality_score_cache:
@@ -2048,7 +1672,6 @@ class DataImportExecutionEngine(QObject):
             try:
                 from ..asset_database_manager import get_asset_separated_database_manager
                 from ..plugin_types import AssetType
-                from datetime import date
 
                 # 优化1：批量写入质量评分（提升性能）
                 if 'symbol' in data.columns:
@@ -3553,14 +3176,11 @@ class DataImportExecutionEngine(QObject):
         Returns:
             str: YYYY-MM-DD格式的日期字符串，失败返回None
         """
-        from datetime import date as datetime_date
-
         if date_value is None:
             return None
 
         try:
             import pandas as pd
-            from datetime import datetime
 
             # 如果是整数（YYYYMMDD格式）
             if isinstance(date_value, (int, float)):
@@ -3592,7 +3212,7 @@ class DataImportExecutionEngine(QObject):
                     return parsed_date.strftime('%Y-%m-%d')
 
             # 如果是日期对象
-            elif isinstance(date_value, datetime_date):
+            elif isinstance(date_value, date):
                 return date_value.strftime('%Y-%m-%d')
 
             # 如果是datetime对象
@@ -4592,7 +4212,6 @@ class DataImportExecutionEngine(QObject):
         """
         try:
             import pandas as pd
-            from datetime import datetime
 
             # 确保symbol字段存在
             if 'symbol' not in fund_df.columns:

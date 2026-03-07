@@ -22,26 +22,31 @@ class LogHandler:
 
     def __init__(self, log_widget):
         self.log_widget = log_widget
-        # 注册到Loguru作为自定义sink
         self.current_level = "INFO"
+        self._processing = False
         self.handler_id = logger.add(self._loguru_sink, level="INFO")
 
     def _loguru_sink(self, message):
         """Loguru自定义sink"""
+        if self._processing:
+            return
+        self._processing = True
         try:
-            # 解析Loguru消息
             record = message.record
             log_level = record["level"].name
             msg = record["message"]
             timestamp = record["time"].strftime("%H:%M:%S.%f")[:-3]
 
-            # 发送到UI
             if hasattr(self.log_widget, 'add_log'):
                 self.log_widget.add_log(timestamp, log_level, msg)
             elif hasattr(self.log_widget, 'append_log'):
                 self.log_widget.append_log(msg, log_level)
         except Exception as e:
-            logger.error(f"UI日志处理错误: {e}")
+            import sys
+            sys.stderr.write(f"[LogHandler] UI日志处理错误: {e}\n")
+            sys.stderr.flush()
+        finally:
+            self._processing = False
 
     def remove_handler(self):
         """移除处理器"""
