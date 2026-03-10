@@ -446,18 +446,6 @@ class PatternAnalysisTab(PatternAnalysisTabPro):
                                     self.parent_tab.backtest_result_manager.add_result(backtest_result)
                                     logger.info(f"回测结果已保存到 BacktestResultManager")
 
-                                # 发布回测完成事件
-                                if hasattr(self.parent_tab, 'event_bus') and self.parent_tab.event_bus:
-                                    from core.events import BacktestCompletedEvent
-                                    backtest_event = BacktestCompletedEvent(
-                                        stock_code=getattr(self.parent_tab, 'stock_code', ''),
-                                        stock_name=getattr(self.parent_tab, 'stock_name', ''),
-                                        strategy_name='形态识别策略',
-                                        backtest_results=final_results
-                                    )
-                                    self.parent_tab.event_bus.publish(backtest_event)
-                                    logger.info(f"回测完成事件已发布")
-
                             except Exception as save_error:
                                 logger.warning(f"保存回测结果失败: {save_error}")
 
@@ -588,18 +576,6 @@ class PatternAnalysisTab(PatternAnalysisTabPro):
                     if hasattr(self, 'backtest_result_manager'):
                         self.backtest_result_manager.add_result(backtest_result)
                         logger.info(f"回测结果已保存到 BacktestResultManager")
-                    
-                    # 发布回测完成事件
-                    if hasattr(self, 'event_bus') and self.event_bus:
-                        from core.events import BacktestCompletedEvent
-                        backtest_event = BacktestCompletedEvent(
-                            stock_code=getattr(self, 'stock_code', ''),
-                            stock_name=getattr(self, 'stock_name', ''),
-                            strategy_name='形态识别策略',
-                            backtest_results=final_results
-                        )
-                        self.event_bus.publish(backtest_event)
-                        logger.info(f"已发布 BacktestCompletedEvent 事件")
                 except Exception as save_error:
                     logger.warning(f"保存回测结果失败: {save_error}")
 

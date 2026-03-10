@@ -798,14 +798,26 @@ class LeftPanel(BasePanel):
         try:
             logger.info(f"选择资产: {symbol} ({name}) - 类型: {self.current_asset_type.value}")
 
-            # 发送资产选择事件
-            # 修复：始终传递正确的 asset_type，确保多资产类型支持
+            period = ''
+            time_range = ''
+            chart_type = ''
+            if self.coordinator:
+                middle_panel = self.coordinator.get_panel('middle')
+                if middle_panel:
+                    period = getattr(middle_panel, '_current_period', '')
+                    time_range = getattr(middle_panel, '_current_time_range', '')
+                    chart_type = getattr(middle_panel, '_current_chart_type', '')
+                    logger.debug(f"从MiddlePanel获取筛选条件: period={period}, time_range={time_range}, chart_type={chart_type}")
+
             if self.current_asset_type == AssetType.STOCK_A:
                 stock_event = StockSelectedEvent(
                     stock_code=symbol,
                     stock_name=name,
                     market=market,
-                    asset_type=self.current_asset_type  # 传递正确的资产类型
+                    asset_type=self.current_asset_type,
+                    period=period,
+                    time_range=time_range,
+                    chart_type=chart_type
                 )
                 self.event_bus.publish(stock_event)
 
@@ -813,7 +825,10 @@ class LeftPanel(BasePanel):
                     symbol=symbol,
                     name=name,
                     asset_type=self.current_asset_type,
-                    market=market
+                    market=market,
+                    period=period,
+                    time_range=time_range,
+                    chart_type=chart_type
                 )
                 self.event_bus.publish(asset_event)
 
@@ -822,11 +837,13 @@ class LeftPanel(BasePanel):
                     symbol=symbol,
                     name=name,
                     asset_type=self.current_asset_type,
-                    market=market
+                    market=market,
+                    period=period,
+                    time_range=time_range,
+                    chart_type=chart_type
                 )
                 self.event_bus.publish(asset_event)
 
-            # 更新状态显示
             self._update_status(f"已选择: {symbol} ({name})")
 
         except Exception as e:
@@ -1678,83 +1695,96 @@ class LeftPanel(BasePanel):
         """
         处理股票选择，启动一个异步任务来验证数据并发布事件
         """
-        # 添加股票代码验证
         if not stock_code or not str(stock_code).strip():
             logger.error(f"无效的股票代码: {stock_code}")
             self.show_message(f"'{stock_name}' 股票代码无效。", 'error')
             return
 
-        # 清理股票代码
         stock_code = str(stock_code).strip()
 
         logger.info(f"开始处理股票选择: {stock_code} - {stock_name}")
 
-        # 更新当前选中的股票
         self._current_selected_stock = stock_code
         self._current_selected_name = stock_name
 
-        # 检查是否在无数据缓存中
         if stock_code in self._no_data_cache:
             self.show_message(f"'{stock_name}' 之前已确认无可用数据。", 'warning')
             return
 
-        # UI反馈：显示加载状态
         self.status_label.setText(f"正在加载 {stock_name} 数据...")
         self._show_loading(True)
 
-        # 启动异步任务
-        asyncio.create_task(self._async_select_stock(
-            stock_code, stock_name, market))
+        period = ''
+        time_range = ''
+        if self.coordinator:
+            middle_panel = self.coordinator.get_panel('middle')
+            if middle_panel:
+                period = getattr(middle_panel, '_current_period', '')
+                time_range = getattr(middle_panel, '_current_time_range', '')
+                logger.info(f"[筛选条件] 从MiddlePanel获取: period={period}, time_range={time_range}")
 
-    async def _async_select_stock(self, stock_code: str, stock_name: str, market: str) -> None:
+        asyncio.create_task(self._async_select_stock(
+            stock_code, stock_name, market, period, time_range))
+
+    async def _async_select_stock(self, stock_code: str, stock_name: str, market: str, period: str = '', time_range: str = '') -> None:
         """
         异步执行数据请求和后续处理（优化：支持多资产类型）
         """
         try:
-            # 直接等待数据管理器的异步方法，传递当前资产类型
             data = await self.data_manager.request_data(
                 stock_code=stock_code,
                 data_type='kdata',
-                asset_type=self.current_asset_type  # 传递当前选择的资产类型
+                asset_type=self.current_asset_type,
+                period=period,
+                time_range=time_range
             )
 
-            # 安全地将结果处理调度回主线程
-            QTimer.singleShot(0, lambda data=data: self._handle_data_result(
-                data, stock_code, stock_name, market))
+            QTimer.singleShot(0, lambda data=data, p=period, tr=time_range: self._handle_data_result(
+                data, stock_code, stock_name, market, p, tr))
 
         except Exception as e:
             logger.error(f"处理资产选择时发生异常: {stock_code} ({self.current_asset_type.value}): {e}", exc_info=True)
-            # 同样在主线程中处理错误UI
             QTimer.singleShot(
                 0, lambda e=e: self._handle_data_error(e, stock_name))
 
-    def _handle_data_result(self, data: Optional[Dict[str, Any]], stock_code: str, stock_name: str, market: str) -> None:
+    def _handle_data_result(self, data: Optional[Dict[str, Any]], stock_code: str, stock_name: str, market: str, period: str = '', time_range: str = '') -> None:
         """在主线程中处理数据结果"""
         try:
-            # 适应新的数据结构：data可能是字典或直接是DataFrame
             kline_data = None
             if isinstance(data, dict):
-                # 新结构：从字典中获取K线数据
                 kline_data = data.get('kline_data')
                 logger.debug(f"从字典中获取K线数据: {type(kline_data)}")
             else:
-                # 旧结构：直接使用data作为K线数据
                 kline_data = data
                 logger.debug(f"直接使用data作为K线数据: {type(kline_data)}")
 
-            # 检查数据有效性
             is_available = kline_data is not None
             if hasattr(kline_data, 'empty'):
                 is_available = is_available and not kline_data.empty
 
             if is_available:
                 logger.info(f"数据加载成功: {stock_code}, 发布StockSelectedEvent（包含K线数据）")
+
+                chart_type = ''
+                if self.coordinator:
+                    middle_panel = self.coordinator.get_panel('middle')
+                    if middle_panel:
+                        chart_type = getattr(middle_panel, '_current_chart_type', '')
+                        if not period:
+                            period = getattr(middle_panel, '_current_period', '')
+                        if not time_range:
+                            time_range = getattr(middle_panel, '_current_time_range', '')
+                        logger.info(f"[筛选条件] 发布事件: period={period}, time_range={time_range}, chart_type={chart_type}")
+
                 event = StockSelectedEvent(
                     stock_code=stock_code,
                     stock_name=stock_name,
                     market=market,
                     kline_data=kline_data,
-                    asset_type=self.current_asset_type  # 传递正确的资产类型，支持多资产
+                    asset_type=self.current_asset_type,
+                    period=period,
+                    time_range=time_range,
+                    chart_type=chart_type
                 )
                 self.event_bus.publish(event)
                 self.status_label.setText(f"已选择: {stock_name}")

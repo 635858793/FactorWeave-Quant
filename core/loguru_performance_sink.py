@@ -100,8 +100,8 @@ class LoguruPerformanceSink:
     def __init__(self):
         self.data_store = PerformanceDataStore()
         self.alert_callbacks: List[Callable[[str], None]] = []
+        self._processing = False
         
-        # 性能类别定义
         self.performance_categories = {
             "SYSTEM": ["CPU_USAGE", "MEMORY_USAGE", "DISK_IO", "NETWORK_IO"],
             "UI": ["RESPONSE_TIME", "RENDER_TIME", "EVENT_PROCESSING"],
@@ -115,41 +115,46 @@ class LoguruPerformanceSink:
     
     def setup_sink(self):
         """设置Loguru性能监控sink"""
+        _self = self
         
         def performance_sink(message):
             """性能监控专用sink"""
-            record = message.record
-            extra = record.get("extra", {})
-            
-            # 只处理性能相关的日志
-            if not extra.get("performance", False):
+            if _self._processing:
                 return
-            
-            # 提取性能数据
-            metric = self._extract_performance_metric(record, extra)
-            if metric:
-                self.data_store.add_metric(metric)
+            _self._processing = True
+            try:
+                record = message.record
+                extra = record.get("extra", {})
                 
-                # 检查警报
-                alert_message = self.data_store.check_alerts(metric)
-                if alert_message:
-                    self._trigger_alert(alert_message)
+                if not extra.get("performance", False):
+                    return
                 
-                # 写入性能日志文件
-                self._write_performance_log(metric)
+                metric = _self._extract_performance_metric(record, extra)
+                if metric:
+                    _self.data_store.add_metric(metric)
+                    
+                    alert_message = _self.data_store.check_alerts(metric)
+                    if alert_message:
+                        _self._trigger_alert(alert_message)
+                    
+                    _self._write_performance_log(metric)
+            except Exception as e:
+                import sys
+                sys.stderr.write(f"[PerformanceSink] 错误: {e}\n")
+                sys.stderr.flush()
+            finally:
+                _self._processing = False
         
-        # 添加性能监控sink
         self.sink_id = logger.add(
             performance_sink,
             level="DEBUG",
-            enqueue=True,  # 异步处理性能数据
-            catch=True     # 捕获异常，避免影响主流程
+            enqueue=True,
+            catch=True
         )
     
     def _extract_performance_metric(self, record, extra: Dict[str, Any]) -> Optional[PerformanceMetric]:
         """从日志记录中提取性能指标"""
         try:
-            # 必需字段
             category = extra.get("category", "UNKNOWN")
             metric_type = extra.get("metric_type", "UNKNOWN")
             value = extra.get("value")
@@ -157,7 +162,6 @@ class LoguruPerformanceSink:
             if value is None:
                 return None
             
-            # 可选字段
             service = extra.get("service", record.get("name", ""))
             operation = extra.get("operation", record.get("function", ""))
             
@@ -172,7 +176,9 @@ class LoguruPerformanceSink:
                            if k not in ["performance", "category", "metric_type", "value", "service", "operation"]}
             )
         except Exception as e:
-            logger.error(f"提取性能指标失败: {e}")
+            import sys
+            sys.stderr.write(f"[PerformanceSink] 提取性能指标失败: {e}\n")
+            sys.stderr.flush()
             return None
     
     def _write_performance_log(self, metric: PerformanceMetric):
@@ -192,15 +198,16 @@ class LoguruPerformanceSink:
     
     def _trigger_alert(self, alert_message: str):
         """触发性能警报"""
-        # 记录警报日志
-        logger.warning(alert_message)
+        import sys
+        sys.stderr.write(f"[PerformanceSink] 性能警报: {alert_message}\n")
+        sys.stderr.flush()
         
-        # 调用警报回调
         for callback in self.alert_callbacks:
             try:
                 callback(alert_message)
             except Exception as e:
-                logger.error(f"性能警报回调失败: {e}")
+                sys.stderr.write(f"[PerformanceSink] 警报回调失败: {e}\n")
+                sys.stderr.flush()
     
     def add_alert_callback(self, callback: Callable[[str], None]):
         """添加警报回调函数"""

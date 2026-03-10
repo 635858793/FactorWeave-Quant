@@ -14,8 +14,9 @@ from .import_config_manager import (
     DataSourceConfig
 )
 
-from .import_execution_engine import (
-    DataImportExecutionEngine,
+from .import_execution_engine import DataImportExecutionEngine
+from .models import (
+    WriteTask,
     TaskExecutionStatus,
     TaskExecutionResult
 )
@@ -29,6 +30,7 @@ __all__ = [
     'ImportStatus',
     'DataSourceConfig',
     'DataImportExecutionEngine',
+    'WriteTask',
     'TaskExecutionStatus',
     'TaskExecutionResult'
 ]

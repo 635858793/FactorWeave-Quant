@@ -7,6 +7,7 @@ from loguru import logger
 import sqlite3
 import os
 import json
+import threading
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 import pandas as pd
@@ -19,14 +20,33 @@ from analysis.pattern_base import (
 
 class PatternManager:
     """形态管理器 - 增强版，支持数据库算法和统一接口"""
+    
+    _instance: Optional['PatternManager'] = None
+    _lock = threading.Lock()
+
+    def __new__(cls, db_path: Optional[str] = None):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._initialized = False
+        return cls._instance
+
+    @classmethod
+    def get_instance(cls, db_path: Optional[str] = None) -> 'PatternManager':
+        """获取单例实例"""
+        return cls(db_path)
+    
+    @classmethod
+    def reset_instance(cls):
+        """重置单例实例（仅用于测试）"""
+        with cls._lock:
+            cls._instance = None
 
     def __init__(self, db_path: Optional[str] = None):
-        """
-        初始化形态管理器
-
-        Args:
-            db_path: 数据库路径，默认使用项目数据库
-        """
+        if self._initialized:
+            return
+            
         if db_path is None:
             self.db_path = os.path.join(os.path.dirname(
                 __file__), '..', 'data', 'factorweave_system.sqlite')
@@ -35,11 +55,18 @@ class PatternManager:
 
         self.pattern_recognizer = PatternRecognizer()
         self._patterns_cache: Optional[List[PatternConfig]] = None
+        self._cache_lock = threading.Lock()
         self._ensure_database_schema()
+        self._initialized = True
 
     def _get_db_connection(self):
         """获取数据库连接"""
-        return sqlite3.connect(self.db_path)
+        import time
+        logger.info(f"[DEBUG] _get_db_connection 开始，db_path={self.db_path}")
+        start = time.time()
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
+        logger.info(f"[DEBUG] _get_db_connection 完成，耗时: {time.time() - start:.2f}秒")
+        return conn
 
     def _ensure_database_schema(self):
         """确保数据库表结构正确"""
@@ -105,8 +132,7 @@ class PatternManager:
         except sqlite3.Error as e:
             logger.info(f"数据库 schema 检查失败: {e}")
 
-    def get_pattern_configs(self, category: Optional[str] = None,
-                            signal_type: Optional[str] = None,
+    def get_pattern_configs(self, category: Optional[str] = None, signal_type: Optional[str] = None,
                             active_only: bool = True) -> List[PatternConfig]:
         """
         获取形态配置列表
@@ -119,77 +145,89 @@ class PatternManager:
         Returns:
             形态配置列表
         """
-        if self._patterns_cache is None:
-            self._load_all_patterns_from_db()
+        import time
+        logger.info("[DEBUG] PatternManager.get_pattern_configs 开始...")
+        
+        with self._cache_lock:
+            logger.info(f"[DEBUG] _patterns_cache 是 None? {self._patterns_cache is None}")
+            if self._patterns_cache is None:
+                logger.info("[DEBUG] 调用 _load_all_patterns_from_db()...")
+                start = time.time()
+                self._load_all_patterns_from_db()
+                logger.info(f"[DEBUG] _load_all_patterns_from_db() 完成，耗时: {time.time() - start:.2f}秒")
 
-        # 从缓存中筛选
-        filtered_patterns = self._patterns_cache
-        if filtered_patterns is None:
-            return []
+            logger.info(f"[DEBUG] 缓存中有 {len(self._patterns_cache) if self._patterns_cache else 0} 条")
 
-        if active_only:
-            filtered_patterns = [p for p in filtered_patterns if p.is_active]
+            filtered_patterns = self._patterns_cache
+            if filtered_patterns is None:
+                return []
 
-        if category:
-            filtered_patterns = [
-                p for p in filtered_patterns if p.category == category]
+            if active_only:
+                filtered_patterns = [p for p in filtered_patterns if p.is_active]
 
-        if signal_type:
-            filtered_patterns = [
-                p for p in filtered_patterns if p.signal_type.value == signal_type]
+            if category:
+                filtered_patterns = [
+                    p for p in filtered_patterns if p.category == category]
 
-        return filtered_patterns
+            if signal_type:
+                filtered_patterns = [
+                    p for p in filtered_patterns if p.signal_type.value == signal_type]
+
+            return filtered_patterns
 
     def _load_all_patterns_from_db(self):
-        """从数据库加载所有形态并缓存"""
+        """从数据库加载所有形态并缓存（注意：此方法由get_pattern_configs调用，已持有锁）"""
+        import time
         try:
-            with self._get_db_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT * FROM pattern_types ORDER BY category, name")
-                rows = cursor.fetchall()
+            logger.info("[DEBUG] 开始连接数据库...")
+            start = time.time()
+            conn = self._get_db_connection()
+            logger.info(f"[DEBUG] 数据库连接完成，耗时: {time.time() - start:.2f}秒")
+            
+            cursor = conn.cursor()
+            logger.info("[DEBUG] 执行SQL查询...")
+            start = time.time()
+            cursor.execute("SELECT * FROM pattern_types ORDER BY category, name")
+            rows = cursor.fetchall()
+            logger.info(f"[DEBUG] SQL查询完成，耗时: {time.time() - start:.2f}秒，返回 {len(rows)} 条")
 
-                patterns = []
-                logger.info(f"[_load_all_patterns_from_db] 从数据库加载了 {len(rows)} 条形态配置。")
+            patterns = []
+            logger.info(f"[_load_all_patterns_from_db] 从数据库加载了 {len(rows)} 条形态配置。")
 
-                for row in rows:
-                    try:
-                        raw_category = row[3]
-                        # 解析参数
-                        parameters_raw = row[13] if len(row) > 13 and row[13] else '{}'
-                        if isinstance(parameters_raw, str):
-                            parameters = json.loads(parameters_raw)
-                        elif isinstance(parameters_raw, (int, float)):
-                            # 如果是数字，转换为字符串再解析
-                            parameters = json.loads(str(parameters_raw)) if str(parameters_raw).strip() else {}
-                        else:
-                            parameters = parameters_raw if isinstance(parameters_raw, dict) else {}
+            for row in rows:
+                try:
+                    raw_category = row[3]
+                    parameters_raw = row[13] if len(row) > 13 and row[13] else '{}'
+                    if isinstance(parameters_raw, str):
+                        parameters = json.loads(parameters_raw)
+                    elif isinstance(parameters_raw, (int, float)):
+                        parameters = json.loads(str(parameters_raw)) if str(parameters_raw).strip() else {}
+                    else:
+                        parameters = parameters_raw if isinstance(parameters_raw, dict) else {}
 
-                        # 转换枚举类型
-                        signal_enum = SignalType.from_string(row[4])
+                    signal_enum = SignalType.from_string(row[4])
 
-                        patterns.append(PatternConfig(
-                            id=row[0],
-                            name=row[1],
-                            english_name=row[2],
-                            category=raw_category,  # 直接使用字符串
-                            signal_type=signal_enum,
-                            description=row[5],
-                            min_periods=row[6],
-                            max_periods=row[7],
-                            confidence_threshold=row[8],
-                            algorithm_code=row[12] if len(row) > 12 else "",
-                            parameters=parameters,
-                            is_active=bool(row[9]),
-                            success_rate=row[15] if len(
-                                row) > 15 and row[15] is not None else 0.7,
-                            risk_level=row[16] if len(
-                                row) > 16 and row[16] is not None else 'medium'
-                        ))
-                    except (ValueError, json.JSONDecodeError) as e:
-                        logger.info(f"解析形态配置失败 (ID: {row[0]} 名称: {row[1]}): {e}")
-                        continue
-                self._patterns_cache = patterns
-                logger.info(f"[_load_all_patterns_from_db] 成功解析并缓存了 {len(patterns)} 条形态配置。")
+                    patterns.append(PatternConfig(
+                        id=row[0],
+                        name=row[1],
+                        english_name=row[2],
+                        category=raw_category,
+                        signal_type=signal_enum,
+                        description=row[5],
+                        min_periods=row[6],
+                        max_periods=row[7],
+                        confidence_threshold=row[8],
+                        algorithm_code=row[12] if len(row) > 12 else "",
+                        parameters=parameters,
+                        is_active=bool(row[9]),
+                        success_rate=row[15] if len(row) > 15 and row[15] is not None else 0.7,
+                        risk_level=row[16] if len(row) > 16 and row[16] is not None else 'medium'
+                    ))
+                except Exception as e:
+                    logger.warning(f"解析形态配置失败: {e}")
+                    continue
+            self._patterns_cache = patterns
+            logger.info(f"[_load_all_patterns_from_db] 成功解析并缓存了 {len(patterns)} 条形态配置。")
         except sqlite3.Error as e:
             logger.info(f"从数据库加载形态配置失败: {e}")
             self._patterns_cache = []
@@ -223,18 +261,19 @@ class PatternManager:
         Returns:
             如果找到，则返回PatternConfig对象，否则返回None。
         """
-        if self._patterns_cache is None:
-            self._load_all_patterns_from_db()
+        with self._cache_lock:
+            if self._patterns_cache is None:
+                self._load_all_patterns_from_db()
 
-        normalized_type = pattern_type.strip().lower().replace('_', ' ')
+            normalized_type = pattern_type.strip().lower().replace('_', ' ')
 
-        for config in self._patterns_cache:
-            if config.english_name and config.english_name.lower().replace('_', ' ') == normalized_type:
-                return config
-            if config.name.lower() == normalized_type:
-                return config
+            for config in self._patterns_cache:
+                if config.english_name and config.english_name.lower().replace('_', ' ') == normalized_type:
+                    return config
+                if config.name.lower() == normalized_type:
+                    return config
 
-        return None
+            return None
 
     def get_patterns_by_category(self, category: str) -> List[PatternConfig]:
         """
@@ -246,31 +285,34 @@ class PatternManager:
         Returns:
             形态配置列表
         """
-        if self._patterns_cache is None:
-            self._load_all_patterns_from_db()
+        with self._cache_lock:
+            if self._patterns_cache is None:
+                self._load_all_patterns_from_db()
 
-        return [
-            config for config in self._patterns_cache
-            if config.category == category
-        ]
+            return [
+                config for config in self._patterns_cache
+                if config.category == category
+            ]
 
     def get_categories(self) -> List[str]:
         """获取所有形态类别"""
-        if self._patterns_cache is None:
-            self._load_all_patterns_from_db()
+        with self._cache_lock:
+            if self._patterns_cache is None:
+                self._load_all_patterns_from_db()
 
-        if self._patterns_cache:
-            return sorted(list(set(p.category for p in self._patterns_cache if p.is_active)))
-        return []
+            if self._patterns_cache:
+                return sorted(list(set(p.category for p in self._patterns_cache if p.is_active)))
+            return []
 
     def get_signal_types(self) -> List[str]:
         """获取所有信号类型"""
-        if self._patterns_cache is None:
-            self._load_all_patterns_from_db()
+        with self._cache_lock:
+            if self._patterns_cache is None:
+                self._load_all_patterns_from_db()
 
-        if self._patterns_cache:
-            return sorted(list(set(p.signal_type.value for p in self._patterns_cache if p.is_active)))
-        return []
+            if self._patterns_cache:
+                return sorted(list(set(p.signal_type.value for p in self._patterns_cache if p.is_active)))
+            return []
 
     def add_pattern_config(self, name: str, english_name: str, category: str,
                            signal_type: str, description: str,
@@ -754,4 +796,5 @@ for i in range(len(kdata)):
 
     def invalidate_cache(self):
         """使缓存失效"""
-        self._patterns_cache = None
+        with self._cache_lock:
+            self._patterns_cache = None

@@ -2,6 +2,7 @@
 # 安全工具函数 - 自动生成
 import psutil
 import time
+import random
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 from numba import jit, njit
 import numba
@@ -197,7 +198,8 @@ class UnifiedBacktestEngine:
                  backtest_level: BacktestLevel = BacktestLevel.PROFESSIONAL,
                  risk_management_level: RiskManagementLevel = RiskManagementLevel.PROFESSIONAL,
                  use_vectorized_engine: bool = True,
-                 auto_select_engine: bool = True):
+                 auto_select_engine: bool = True,
+                 execution_model: str = 'fixed'):
         """
         初始化统一回测引擎
 
@@ -206,11 +208,13 @@ class UnifiedBacktestEngine:
             risk_management_level: 风险管理级别
             use_vectorized_engine: 是否使用向量化引擎（提升3-5倍性能）
             auto_select_engine: 是否自动选择最优引擎
+            execution_model: 成交模型 ('fixed', 'vwap', 'random')
         """
         self.backtest_level = backtest_level
         self.risk_management_level = risk_management_level
         self.use_vectorized_engine = use_vectorized_engine
         self.auto_select_engine = auto_select_engine
+        self._execution_model = execution_model
         self.logger = logger
 
         # 根据级别配置参数
@@ -315,7 +319,8 @@ class UnifiedBacktestEngine:
                      take_profit_pct: Optional[float] = None,
                      max_holding_periods: Optional[int] = None,
                      enable_compound: bool = True,
-                     benchmark_data: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
+                     benchmark_data: Optional[pd.DataFrame] = None,
+                     execution_model: str = 'fixed') -> Dict[str, Any]:
         """
         运行统一回测
 
@@ -333,13 +338,16 @@ class UnifiedBacktestEngine:
             max_holding_periods: 最大持有期
             enable_compound: 是否启用复利
             benchmark_data: 基准数据
+            execution_model: 成交模型 ('fixed', 'vwap', 'random')
 
         Returns:
             包含回测结果的Dict
         """
         try:
             engine_type = "向量化引擎" if self.use_vectorized_engine and self.vectorized_engine else "标准引擎"
-            self.logger.info(f"开始统一回测，级别: {self.backtest_level.value}，引擎: {engine_type}")
+            self.logger.info(f"开始统一回测，级别: {self.backtest_level.value}，引擎: {engine_type}，成交模型: {execution_model}")
+            
+            self._execution_model = execution_model
 
             # 启动实时监控（如果可用）
             if self.real_time_monitor:
@@ -865,6 +873,139 @@ class UnifiedBacktestEngine:
         if trade_state['position'] == 0:
             return False, ''
 
+    def _calculate_execution_price(self, results: pd.DataFrame, i: int, 
+                                   base_price: float, is_buy: bool, 
+                                   slippage_pct: float = 0.001) -> float:
+        """
+        计算实际成交价格（P0-3修复：支持多种成交模型）
+        
+        Args:
+            results: 回测结果DataFrame
+            i: 当前索引
+            base_price: 基准价格
+            is_buy: 是否买入
+            slippage_pct: 滑点比例
+            
+        Returns:
+            float: 实际成交价格
+        """
+        execution_model = getattr(self, '_execution_model', 'fixed')
+        
+        if execution_model == 'vwap':
+            return self._calculate_vwap_price(results, i, base_price, is_buy, slippage_pct)
+        elif execution_model == 'random':
+            return self._calculate_random_price(results, i, base_price, is_buy, slippage_pct)
+        else:
+            if is_buy:
+                return base_price * (1 + slippage_pct)
+            else:
+                return base_price * (1 - slippage_pct)
+    
+    def _calculate_vwap_price(self, results: pd.DataFrame, i: int,
+                              base_price: float, is_buy: bool,
+                              slippage_pct: float = 0.001) -> float:
+        """
+        计算VWAP成交价格（成交量加权平均价格）
+        
+        基于当日高低价和成交量模拟真实市场成交
+        
+        Args:
+            results: 回测结果DataFrame
+            i: 当前索引
+            base_price: 基准价格
+            is_buy: 是否买入
+            slippage_pct: 滑点比例
+            
+        Returns:
+            float: VWAP成交价格
+        """
+        try:
+            row = results.iloc[i]
+            
+            high = row.get('high', base_price * 1.02)
+            low = row.get('low', base_price * 0.98)
+            volume = row.get('volume', 1000000)
+            
+            if pd.isna(high) or high <= 0:
+                high = base_price * 1.02
+            if pd.isna(low) or low <= 0:
+                low = base_price * 0.98
+            if pd.isna(volume) or volume <= 0:
+                volume = 1000000
+            
+            typical_price = (high + low + base_price) / 3.0
+            
+            volume_factor = min(volume / 10000000.0, 1.0)
+            vwap_price = typical_price * (1 - 0.001 * volume_factor)
+            
+            random.seed(int(i) + hash(str(results.index[i])))
+            intraday_variation = random.uniform(-0.002, 0.002)
+            vwap_price *= (1 + intraday_variation)
+            
+            if is_buy:
+                vwap_price *= (1 + slippage_pct * 0.5)
+            else:
+                vwap_price *= (1 - slippage_pct * 0.5)
+            
+            self.logger.debug(f"VWAP成交价: 基准价={base_price:.2f}, VWAP={vwap_price:.2f}, "
+                            f"最高={high:.2f}, 最低={low:.2f}")
+            
+            return vwap_price
+            
+        except Exception as e:
+            self.logger.warning(f"VWAP计算失败，使用固定价格: {e}")
+            if is_buy:
+                return base_price * (1 + slippage_pct)
+            else:
+                return base_price * (1 - slippage_pct)
+    
+    def _calculate_random_price(self, results: pd.DataFrame, i: int,
+                                base_price: float, is_buy: bool,
+                                slippage_pct: float = 0.001) -> float:
+        """
+        计算随机成交价格（模拟日内波动成交）
+        
+        Args:
+            results: 回测结果DataFrame
+            i: 当前索引
+            base_price: 基准价格
+            is_buy: 是否买入
+            slippage_pct: 滑点比例
+            
+        Returns:
+            float: 随机成交价格
+        """
+        try:
+            row = results.iloc[i]
+            
+            high = row.get('high', base_price * 1.02)
+            low = row.get('low', base_price * 0.98)
+            
+            if pd.isna(high) or high <= 0:
+                high = base_price * 1.02
+            if pd.isna(low) or low <= 0:
+                low = base_price * 0.98
+            
+            random.seed(int(i) + hash(str(results.index[i])))
+            
+            random_price = random.uniform(low, high)
+            
+            if is_buy:
+                random_price = max(random_price, base_price)
+            else:
+                random_price = min(random_price, base_price)
+            
+            self.logger.debug(f"随机成交价: 基准价={base_price:.2f}, 随机价={random_price:.2f}")
+            
+            return random_price
+            
+        except Exception as e:
+            self.logger.warning(f"随机价格计算失败，使用固定价格: {e}")
+            if is_buy:
+                return base_price * (1 + slippage_pct)
+            else:
+                return base_price * (1 - slippage_pct)
+
         # 止损检查
         if stop_loss_pct is not None:
             if (trade_state['position'] > 0 and
@@ -915,12 +1056,11 @@ class UnifiedBacktestEngine:
         """执行开仓"""
         current_date = results.index[i]
 
-        # 计算实际交易价格
-        if signal > 0:  # 买入
-            actual_price = price * (1 + slippage_pct)
+        actual_price = self._calculate_execution_price(results, i, price, signal > 0, slippage_pct)
+        
+        if signal > 0:
             trade_state['position'] = 1
-        else:  # 卖出
-            actual_price = price * (1 - slippage_pct)
+        else:
             trade_state['position'] = -1
 
         # 复利计算：使用当前总权益计算仓位
@@ -992,14 +1132,11 @@ class UnifiedBacktestEngine:
 
         current_date = results.index[i]
 
-        trade_value = trade_state['shares'] * price
+        is_sell = trade_state['position'] > 0
+        actual_price = self._calculate_execution_price(results, i, price, not is_sell, slippage_pct)
+        
+        trade_value = trade_state['shares'] * actual_price
         commission = max(trade_value * commission_pct, min_commission)
-
-        # 计算实际交易价格
-        if trade_state['position'] > 0:  # 卖出平多
-            actual_price = price * (1 - slippage_pct)
-        else:  # 买入平空
-            actual_price = price * (1 + slippage_pct)
 
         # 计算交易收益
         if trade_state['position'] > 0:

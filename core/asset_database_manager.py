@@ -1484,7 +1484,7 @@ class AssetSeparatedDatabaseManager:
         return type_mapping.get(data_type, data_type.value.lower())
 
     def _ensure_table_exists(self, conn, table_name: str, data: pd.DataFrame, data_type: DataType):
-        """确保表存在，如果不存在则创建"""
+        """确保表存在，如果不存在则创建；如已存在则检查并迁移表结构"""
         try:
             # 检查表是否存在 - 使用duckdb_tables()更高效
             table_exists = conn.execute(f"""
@@ -1501,10 +1501,37 @@ class AssetSeparatedDatabaseManager:
 
                 # 创建索引
                 self._create_table_indexes(conn, table_name, data_type)
+            else:
+                # 表已存在，检查并迁移表结构（添加缺失的复权字段）
+                self._migrate_table_schema(conn, table_name)
 
         except Exception as e:
             logger.error(f"创建表 {table_name} 失败: {e}")
             raise
+
+    def _migrate_table_schema(self, conn, table_name: str):
+        """迁移表结构，添加缺失的复权字段"""
+        try:
+            # 获取当前表的所有列
+            current_columns = conn.execute(f"DESCRIBE {table_name}").fetchall()
+            column_names = {col[0] for col in current_columns}
+
+            # 需要添加的复权字段
+            migration_columns = {
+                'adj_type': 'VARCHAR(10)',
+                'adj_source': 'VARCHAR(20)'
+            }
+
+            # 检查并添加缺失的字段
+            for column_name, column_type in migration_columns.items():
+                if column_name not in column_names:
+                    # 添加新列
+                    alter_sql = f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"
+                    conn.execute(alter_sql)
+                    logger.info(f"[表结构迁移] {table_name} 添加字段: {column_name} {column_type}")
+
+        except Exception as e:
+            logger.warning(f"表结构迁移失败 {table_name}: {e}")
 
     # 修复：移除_ensure_views_exist方法
     # 视图在系统初始化时已经100%创建成功，运行时不需要检测
@@ -1530,6 +1557,8 @@ class AssetSeparatedDatabaseManager:
                     turnover DOUBLE,
                     adj_close DOUBLE,
                     adj_factor DOUBLE DEFAULT 1.0,
+                    adj_type VARCHAR(10),    -- 复权类型 (qfq/hfq/none)
+                    adj_source VARCHAR(20),  -- 复权数据来源 (plugin/calculated)
                     turnover_rate DOUBLE,
                     vwap DOUBLE,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

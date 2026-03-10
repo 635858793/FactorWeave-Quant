@@ -454,8 +454,9 @@ class QuickConfigPage(QWizardPage):
         self.data_type_combo = QComboBox()
         self.data_type_combo.addItems(["K线数据", "财务数据", "实时行情", "自定义"])
 
+        from core.plugin_types import Period
         self.frequency_combo = QComboBox()
-        self.frequency_combo.addItems(["日线", "周线", "月线", "分钟线", "tick"])
+        self.frequency_combo.addItems(Period.all_periods() + ["tick"])
 
         self.encoding_combo = QComboBox()
         self.encoding_combo.addItems(["UTF-8", "GBK", "GB2312", "自动检测"])

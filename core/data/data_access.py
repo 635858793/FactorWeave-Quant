@@ -129,19 +129,21 @@ class DataAccess:
         return self.stock_repo.search_stocks(keyword)
 
     # K线数据相关方法
-    def get_kline_data(self, stock_code: str, period: str = 'D',
+    def get_kline_data(self, stock_code, period: str = 'D',
                        count: Optional[int] = None,
                        start_date: Optional[datetime] = None,
-                       end_date: Optional[datetime] = None) -> Optional[KlineData]:
+                       end_date: Optional[datetime] = None,
+                       asset_type=None) -> Optional[KlineData]:
         """
         获取K线数据
 
         Args:
-            stock_code: 股票代码
+            stock_code: 股票代码或QueryParams对象
             period: 周期（1m/5m/15m/30m/1H/D/W/M）
             count: 数据条数
             start_date: 开始日期
             end_date: 结束日期
+            asset_type: 资产类型（可选）
 
         Returns:
             K线数据对象或None
@@ -149,13 +151,18 @@ class DataAccess:
         if not self._connected:
             self.connect()
 
-        params = QueryParams(
-            stock_code=stock_code,
-            period=period,
-            count=count,
-            start_date=start_date,
-            end_date=end_date
-        )
+        from .models import QueryParams as QP
+        if isinstance(stock_code, QP):
+            params = stock_code
+        else:
+            params = QueryParams(
+                stock_code=stock_code,
+                period=period,
+                count=count,
+                start_date=start_date,
+                end_date=end_date,
+                asset_type=asset_type
+            )
 
         return self.kline_repo.get_kline_data(params)
 
@@ -175,7 +182,7 @@ class DataAccess:
         return self.kline_repo.get_latest_price(stock_code)
 
     # 兼容性方法（保持与原有接口一致）
-    def get_kdata(self, stock_code: str, period: str = 'D', count: int = 365) -> pd.DataFrame:
+    def get_kdata(self, stock_code: str, period: str = 'D', count: int = 365, asset_type=None) -> pd.DataFrame:
         """
         获取K线数据（兼容性方法）
 
@@ -183,15 +190,21 @@ class DataAccess:
             stock_code: 股票代码
             period: 周期
             count: 数据条数
+            asset_type: 资产类型（可选）
 
         Returns:
             K线数据DataFrame
         """
-        kline_data = self.get_kline_data(stock_code, period, count)
+        params = QueryParams(
+            stock_code=stock_code,
+            period=period,
+            count=count,
+            asset_type=asset_type
+        )
+        kline_data = self.kline_repo.get_kline_data(params)
         if kline_data and kline_data.data is not None:
             return kline_data.data
 
-        # 返回空DataFrame保持兼容性
         return pd.DataFrame()
 
     # 市场数据相关方法

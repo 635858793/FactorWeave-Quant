@@ -135,8 +135,9 @@ class DataSourceRecommendationWidget(QWidget):
         config_layout.addRow("结束日期:", self.end_date)
 
         # 数据频率
+        from core.plugin_types import Period
         self.frequency_combo = QComboBox()
-        self.frequency_combo.addItems(["日线", "周线", "月线", "分钟线"])
+        self.frequency_combo.addItems(Period.all_periods())
         config_layout.addRow("数据频率:", self.frequency_combo)
 
         layout.addWidget(config_group)

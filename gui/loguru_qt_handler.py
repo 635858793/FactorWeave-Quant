@@ -14,18 +14,17 @@ from typing import Dict, Any, Optional
 class LoguruQtHandler(QObject):
     """纯Loguru的Qt UI处理器 - 替代BaseLogManager的Qt信号"""
 
-    # 保持与原有系统兼容的信号接口
-    log_received = pyqtSignal(str, str, str)  # message, level, timestamp
-    error_occurred = pyqtSignal(str, str)     # error_message, traceback
-    performance_alert = pyqtSignal(str)       # alert_message
+    log_received = pyqtSignal(str, str, str)
+    error_occurred = pyqtSignal(str, str)
+    performance_alert = pyqtSignal(str)
 
     def __init__(self):
         super().__init__()
         self.message_queue = queue.Queue(maxsize=10000)
         self.is_active = True
         self._mutex = QMutex()
+        self._processing = False
 
-        # 统计信息
         self.stats = {
             "messages_processed": 0,
             "messages_dropped": 0,
@@ -34,59 +33,62 @@ class LoguruQtHandler(QObject):
         }
 
         self.setup_loguru_sink()
-        # 延迟定时器设置，等待QApplication和事件循环准备好
         self.timer = None
 
     def setup_loguru_sink(self):
         """设置Loguru sink用于UI显示"""
+        _self = self
 
         def ui_sink(message):
             """UI专用sink - 将消息放入队列异步处理"""
-            if not self.is_active:
+            if _self._processing:
                 return
-
-            record = message.record
-
-            # 过滤掉性能日志，避免UI刷屏
-            if "performance" in record.get("extra", {}):
-                # 只处理性能警报
-                if record["level"].name in ["WARNING", "ERROR"]:
-                    self._handle_performance_alert(record)
-                return
-
-            # 准备UI消息数据
-            ui_message = {
-                "message": record["message"],
-                "level": record["level"].name,
-                "timestamp": record["time"].strftime("%H:%M:%S.%f")[:-3],  # 毫秒精度
-                "module": record.get("name", ""),
-                "function": record.get("function", ""),
-                "line": record.get("line", ""),
-                "extra": record.get("extra", {})
-            }
-
-            # 特殊处理错误信息
-            if record["level"].name == "ERROR":
-                self._handle_error_message(ui_message, record)
-
-            # 将消息加入队列
+            _self._processing = True
             try:
-                self.message_queue.put_nowait(ui_message)
-            except queue.Full:
-                # 队列满时丢弃最旧的消息
-                try:
-                    self.message_queue.get_nowait()
-                    self.message_queue.put_nowait(ui_message)
-                    self.stats["queue_overflows"] += 1
-                except queue.Empty:
-                    pass
+                if not _self.is_active:
+                    return
 
-        # 添加UI专用sink
+                record = message.record
+
+                if "performance" in record.get("extra", {}):
+                    if record["level"].name in ["WARNING", "ERROR"]:
+                        _self._handle_performance_alert(record)
+                    return
+
+                ui_message = {
+                    "message": record["message"],
+                    "level": record["level"].name,
+                    "timestamp": record["time"].strftime("%H:%M:%S.%f")[:-3],
+                    "module": record.get("name", ""),
+                    "function": record.get("function", ""),
+                    "line": record.get("line", ""),
+                    "extra": record.get("extra", {})
+                }
+
+                if record["level"].name == "ERROR":
+                    _self._handle_error_message(ui_message, record)
+
+                try:
+                    _self.message_queue.put_nowait(ui_message)
+                except queue.Full:
+                    try:
+                        _self.message_queue.get_nowait()
+                        _self.message_queue.put_nowait(ui_message)
+                        _self.stats["queue_overflows"] += 1
+                    except queue.Empty:
+                        pass
+            except Exception as e:
+                import sys
+                sys.stderr.write(f"[LoguruQtHandler] 错误: {e}\n")
+                sys.stderr.flush()
+            finally:
+                _self._processing = False
+
         self.sink_id = logger.add(
             ui_sink,
             level="DEBUG",
-            enqueue=False,  # UI更新需要同步处理
-            catch=False     # 不捕获异常，让其传播
+            enqueue=False,
+            catch=False
         )
 
     def _handle_performance_alert(self, record):

@@ -895,6 +895,7 @@ class EnhancedDataImportWidget(QWidget):
         self.ui_synchronizer = None
         self.plugin_manager = plugin_manager  # 直接保存plugin_manager
         self.db_manager = None  # 初始化db_manager以避免AttributeError
+        self.download_service = None  # 初始化增量下载服务
 
         # 初始化数据源映射（用于动态加载数据源插件）
         self.data_source_mapping = {}
@@ -1010,6 +1011,22 @@ class EnhancedDataImportWidget(QWidget):
                 except Exception as e:
                     logger.warning(f"定时任务执行器启动失败: {e}") if logger else None
                     self.scheduled_executor = None
+                
+                # 初始化增量下载服务
+                try:
+                    from core.containers import get_service_container
+                    from core.services.enhanced_duckdb_data_downloader import EnhancedDuckDBDataDownloader
+                    
+                    container = get_service_container()
+                    if container and container.is_registered(EnhancedDuckDBDataDownloader):
+                        self.download_service = container.resolve(EnhancedDuckDBDataDownloader)
+                        logger.info("增量下载服务初始化成功") if logger else None
+                    else:
+                        logger.warning("EnhancedDuckDBDataDownloader 未注册到服务容器") if logger else None
+                        self.download_service = None
+                except Exception as e:
+                    logger.warning(f"初始化增量下载服务失败: {e}") if logger else None
+                    self.download_service = None
                 
                 # 初始化UI适配器
                 try:
@@ -1327,8 +1344,9 @@ class EnhancedDataImportWidget(QWidget):
         basic_layout.addRow("📈 数据类型:", self.data_type_combo)
 
         # 数据频率
+        from core.plugin_types import Period
         self.frequency_combo = QComboBox()
-        self.frequency_combo.addItems(["日线", "周线", "月线", "5分钟", "15分钟", "30分钟", "60分钟"])
+        self.frequency_combo.addItems(Period.all_periods())
         basic_layout.addRow("⏱️ 数据频率:", self.frequency_combo)
 
         content_layout.addWidget(basic_info_group)
@@ -1671,8 +1689,9 @@ class EnhancedDataImportWidget(QWidget):
         layout.addRow("数据类型:", self.data_type_combo)
 
         # 数据频率
+        from core.plugin_types import Period
         self.frequency_combo = QComboBox()
-        self.frequency_combo.addItems(["日线", "周线", "月线", "5分钟", "15分钟", "30分钟", "60分钟"])
+        self.frequency_combo.addItems(Period.all_periods())
         layout.addRow("⏱️ 数据频率:", self.frequency_combo)
 
         # 股票代码输入区域（整合批量选择功能化
@@ -1963,6 +1982,10 @@ class EnhancedDataImportWidget(QWidget):
         history_tab = self.create_incremental_update_history_tab()
         self.monitor_tabs.addTab(history_tab, "更新历史")
 
+        # 增量更新调度器配置选项卡
+        scheduler_config_tab = self.create_incremental_scheduler_config_tab()
+        self.monitor_tabs.addTab(scheduler_config_tab, "定时更新")
+
         # AI功能控制面板选项卡
         ai_control_tab = self.create_ai_control_panel_tab()
         self.monitor_tabs.addTab(ai_control_tab, "AI控制面板")
@@ -1981,6 +2004,39 @@ class EnhancedDataImportWidget(QWidget):
 
         layout.addWidget(self.monitor_tabs)
 
+        return widget
+
+    def create_incremental_scheduler_config_tab(self) -> QWidget:
+        """创建增量更新调度器配置选项卡"""
+        try:
+            from gui.widgets.incremental_scheduler_config_widget import IncrementalSchedulerConfigWidget
+            
+            scheduler_config = IncrementalSchedulerConfigWidget()
+            
+            self.incremental_scheduler_config = scheduler_config
+            
+            logger.info("增量更新调度器配置组件创建成功") if logger else None
+            
+            return scheduler_config
+            
+        except ImportError as e:
+            logger.warning(f"增量更新调度器配置组件导入失败: {e}") if logger else None
+            return self._create_basic_scheduler_config_tab()
+    
+    def _create_basic_scheduler_config_tab(self) -> QWidget:
+        """创建基础调度器配置选项卡（回退版本）"""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        
+        info_label = QLabel("增量更新调度器配置")
+        info_label.setStyleSheet("font-size: 16px; font-weight: bold; padding: 10px;")
+        layout.addWidget(info_label)
+        
+        scheduler_text = QTextEdit()
+        scheduler_text.setPlainText("增量更新调度器配置功能暂不可用，请检查相关组件。")
+        scheduler_text.setReadOnly(True)
+        layout.addWidget(scheduler_text)
+        
         return widget
 
     def create_incremental_update_history_tab(self) -> QWidget:
@@ -2982,20 +3038,47 @@ class EnhancedDataImportWidget(QWidget):
             from datetime import datetime
             from core.services.incremental_data_analyzer import DownloadStrategy
 
-            if hasattr(self, 'download_service'):
+            if self.download_service is not None:
                 # 设置间隙填充策略
                 self.download_service.set_download_strategy(DownloadStrategy.GAP_FILL)
 
-                # 开始下载
-                future = asyncio.get_event_loop().run_until_complete(
-                    self.download_service.download_incremental_data(
-                        symbols=symbols_to_fix,
-                        end_date=datetime.now(),
-                        strategy=DownloadStrategy.GAP_FILL,
-                        skip_weekends=True,
-                        skip_holidays=True
+                # 开始下载（使用异步方式，避免阻塞UI）
+                import asyncio
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        # 如果事件循环正在运行，创建任务
+                        asyncio.create_task(
+                            self.download_service.download_incremental_data(
+                                symbols=symbols_to_fix,
+                                end_date=datetime.now(),
+                                strategy=DownloadStrategy.GAP_FILL,
+                                skip_weekends=True,
+                                skip_holidays=True
+                            )
+                        )
+                    else:
+                        # 如果事件循环未运行，直接运行
+                        loop.run_until_complete(
+                            self.download_service.download_incremental_data(
+                                symbols=symbols_to_fix,
+                                end_date=datetime.now(),
+                                strategy=DownloadStrategy.GAP_FILL,
+                                skip_weekends=True,
+                                skip_holidays=True
+                            )
+                        )
+                except RuntimeError:
+                    # 没有事件循环，创建新的
+                    asyncio.run(
+                        self.download_service.download_incremental_data(
+                            symbols=symbols_to_fix,
+                            end_date=datetime.now(),
+                            strategy=DownloadStrategy.GAP_FILL,
+                            skip_weekends=True,
+                            skip_holidays=True
+                        )
                     )
-                )
 
                 self.data_status_info.append("缺口修复任务已启动，请查看进度监控标签页")
             else:
@@ -3042,20 +3125,44 @@ class EnhancedDataImportWidget(QWidget):
             from datetime import datetime
             from core.services.incremental_data_analyzer import DownloadStrategy
 
-            if hasattr(self, 'download_service'):
+            if self.download_service is not None:
                 # 设置最新数据策略
                 self.download_service.set_download_strategy(DownloadStrategy.LATEST_ONLY)
 
-                # 开始下载
-                future = asyncio.get_event_loop().run_until_complete(
-                    self.download_service.download_incremental_data(
-                        symbols=[symbol],
-                        end_date=datetime.now(),
-                        strategy=DownloadStrategy.LATEST_ONLY,
-                        skip_weekends=True,
-                        skip_holidays=True
+                # 开始下载（使用异步方式，避免阻塞UI）
+                import asyncio
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        asyncio.create_task(
+                            self.download_service.download_incremental_data(
+                                symbols=[symbol],
+                                end_date=datetime.now(),
+                                strategy=DownloadStrategy.LATEST_ONLY,
+                                skip_weekends=True,
+                                skip_holidays=True
+                            )
+                        )
+                    else:
+                        loop.run_until_complete(
+                            self.download_service.download_incremental_data(
+                                symbols=[symbol],
+                                end_date=datetime.now(),
+                                strategy=DownloadStrategy.LATEST_ONLY,
+                                skip_weekends=True,
+                                skip_holidays=True
+                            )
+                        )
+                except RuntimeError:
+                    asyncio.run(
+                        self.download_service.download_incremental_data(
+                            symbols=[symbol],
+                            end_date=datetime.now(),
+                            strategy=DownloadStrategy.LATEST_ONLY,
+                            skip_weekends=True,
+                            skip_holidays=True
+                        )
                     )
-                )
 
                 self.data_status_info.append(f"已启动 {symbol} 的增量更新任务")
             else:
@@ -3852,16 +3959,20 @@ class EnhancedDataImportWidget(QWidget):
             # 获取当前选择的下载模式
             download_mode = getattr(self, 'current_download_mode', 'full')
 
-            # 创建基础配置
+            # 创建基础配置（使用统一的 Period 枚举类）
+            from core.plugin_types import Period
+            from core.importdata.import_config_manager import DataFrequency
             freq_map = {
-                "日线": DataFrequency.DAILY,
-                "周线": DataFrequency.WEEKLY,
-                "月线": DataFrequency.MONTHLY,
-                "5分钟": DataFrequency.MINUTE_5,
-                "15分钟": DataFrequency.MINUTE_15,
-                "30分钟": DataFrequency.MINUTE_30,
-                "60分钟": DataFrequency.HOUR_1
+                Period.DAY.value: DataFrequency.DAILY,
+                Period.WEEK.value: DataFrequency.WEEKLY,
+                Period.MONTH.value: DataFrequency.MONTHLY,
+                Period.MIN5.value: DataFrequency.MINUTE_5,
+                Period.MIN15.value: DataFrequency.MINUTE_15,
+                Period.MIN30.value: DataFrequency.MINUTE_30,
+                Period.MIN60.value: DataFrequency.HOUR_1
             }
+            period_value = Period.normalize(self.frequency_combo.currentText())
+            frequency = freq_map.get(period_value, DataFrequency.DAILY)
 
             # 获取复选框状态
             check_completeness = self.check_completeness_cb.isChecked() if hasattr(self, 'check_completeness_cb') else True
@@ -3884,7 +3995,7 @@ class EnhancedDataImportWidget(QWidget):
                     asset_type=self._get_asset_type_value(),
                     data_type=self.data_type_combo.currentText() if hasattr(self, 'data_type_combo') else "K线数据",
                     data_usage=data_usage,
-                    frequency=freq_map.get(self.frequency_combo.currentText(), DataFrequency.DAILY),
+                    frequency=frequency,
                     mode=ImportMode.MANUAL,  # 使用MANUAL模式，通过config区分功能
                     batch_size=self.batch_size_spin.value(),
                     max_workers=self.workers_spin.value(),
@@ -3921,7 +4032,7 @@ class EnhancedDataImportWidget(QWidget):
                     asset_type=self._get_asset_type_value(),
                     data_type=self.data_type_combo.currentText() if hasattr(self, 'data_type_combo') else "K线数据",
                     data_usage=data_usage,
-                    frequency=freq_map.get(self.frequency_combo.currentText(), DataFrequency.DAILY),
+                    frequency=frequency,
                     mode=ImportMode.MANUAL,  # 使用MANUAL模式，通过config区分功能
                     batch_size=self.batch_size_spin.value(),
                     max_workers=self.workers_spin.value(),
@@ -3958,7 +4069,7 @@ class EnhancedDataImportWidget(QWidget):
                     asset_type=self._get_asset_type_value(),
                     data_type=self.data_type_combo.currentText() if hasattr(self, 'data_type_combo') else "K线数据",
                     data_usage=data_usage,
-                    frequency=freq_map.get(self.frequency_combo.currentText(), DataFrequency.DAILY),
+                    frequency=frequency,
                     mode=ImportMode.INCREMENTAL,  # 使用INCREMENTAL模式
                     batch_size=self.batch_size_spin.value(),
                     max_workers=self.workers_spin.value(),
@@ -3990,7 +4101,7 @@ class EnhancedDataImportWidget(QWidget):
                     asset_type=self._get_asset_type_value(),
                     data_type=self.data_type_combo.currentText() if hasattr(self, 'data_type_combo') else "K线数据",
                     data_usage=data_usage,
-                    frequency=freq_map.get(self.frequency_combo.currentText(), DataFrequency.DAILY),
+                    frequency=frequency,
                     mode=ImportMode.MANUAL,  # 全量下载使用MANUAL模式
                     batch_size=self.batch_size_spin.value(),
                     max_workers=self.workers_spin.value(),
@@ -4551,16 +4662,9 @@ class EnhancedDataImportWidget(QWidget):
                         if code:
                             symbols.append(code)
 
-            # 频率映射
-            freq_map = {
-                "日线": "1d",
-                "周线": "1w",
-                "月线": "1m",
-                "5分钟": "5m",
-                "15分钟": "15m",
-                "30分钟": "30m",
-                "60分钟": "60m"
-            }
+            # 频率映射（使用统一的 Period 枚举类）
+            from core.plugin_types import Period
+            freq_map = {name: Period.to_duckdb_frequency(name) for name in Period.all_periods()}
 
             # 构建任务名称（自动追加数据用途标记）
             base_task_name = self.task_name_edit.text().strip() if hasattr(self, 'task_name_edit') and self.task_name_edit.text().strip() else f"导入任务_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -5993,16 +6097,12 @@ class EnhancedDataImportWidget(QWidget):
             form_layout.addRow("数据类型:", data_type_combo)
 
             # 频率
+            from core.plugin_types import Period
             frequency_combo = QComboBox()
-            frequency_items = ["日线", "周线", "月线", "5分钟", "15分钟", "30分钟", "60分钟"]
-            frequency_combo.addItems(frequency_items)
+            frequency_combo.addItems(Period.all_periods())
             # 尝试匹配当前频率
             freq_value = task.frequency.value if hasattr(task.frequency, 'value') else str(task.frequency)
-            freq_map_reverse = {
-                "daily": "日线", "weekly": "周线", "monthly": "月线",
-                "5min": "5分钟", "15min": "15分钟", "30min": "30分钟", "60min": "60分钟"
-            }
-            freq_display = freq_map_reverse.get(freq_value, "日线")
+            freq_display = Period.get_display_name(freq_value)
             index = frequency_combo.findText(freq_display)
             if index >= 0:
                 frequency_combo.setCurrentIndex(index)
@@ -6098,14 +6198,20 @@ class EnhancedDataImportWidget(QWidget):
                     task.asset_type = asset_type_combo.currentText()
                     task.data_type = data_type_combo.currentText()
 
-                    # 频率映射
-                    freq_map = {
-                        "日线": "daily", "周线": "weekly", "月线": "monthly",
-                        "5分钟": "5min", "15分钟": "15min", "30分钟": "30min", "60分钟": "60min"
-                    }
+                    # 频率映射（使用统一的 Period 枚举类）
+                    from core.plugin_types import Period
                     from core.importdata.import_config_manager import DataFrequency
-                    freq_value = freq_map.get(frequency_combo.currentText(), "daily")
-                    task.frequency = DataFrequency(freq_value) if hasattr(DataFrequency, freq_value.upper()) else DataFrequency.DAILY
+                    period_to_data_freq = {
+                        Period.DAY.value: DataFrequency.DAILY,
+                        Period.WEEK.value: DataFrequency.WEEKLY,
+                        Period.MONTH.value: DataFrequency.MONTHLY,
+                        Period.MIN5.value: DataFrequency.MINUTE_5,
+                        Period.MIN15.value: DataFrequency.MINUTE_15,
+                        Period.MIN30.value: DataFrequency.MINUTE_30,
+                        Period.MIN60.value: DataFrequency.HOUR_1
+                    }
+                    period_value = Period.normalize(frequency_combo.currentText())
+                    task.frequency = period_to_data_freq.get(period_value, DataFrequency.DAILY)
 
                     # 日期
                     task.start_date = start_date_edit.date().toString("yyyy-MM-dd")

@@ -630,8 +630,9 @@ class ControlPanel(QWidget):
         time_layout.addRow("结束日期:", self.end_date)
 
         # 数据频率
+        from core.plugin_types import Period
         self.data_frequency = QComboBox()
-        self.data_frequency.addItems(["日线", "小时线", "30分钟", "15分钟", "5分钟", "1分钟"])
+        self.data_frequency.addItems(Period.all_periods())
         self.data_frequency.setCurrentText("日线")
         time_layout.addRow("数据频率:", self.data_frequency)
 
@@ -674,6 +675,15 @@ class ControlPanel(QWidget):
         self.auto_select.setChecked(True)
         self.auto_select.setToolTip("根据数据大小和功能需求自动选择最优引擎")
         engine_layout.addRow("", self.auto_select)
+
+        # 成交模型选择
+        self.execution_model = QComboBox()
+        self.execution_model.addItems([
+            "固定滑点(默认)", "VWAP模型", "随机价格模型"
+        ])
+        self.execution_model.setCurrentText("固定滑点(默认)")
+        self.execution_model.setToolTip("固定滑点(默认)：按固定比例计算滑点\nVWAP模型：成交量加权平均价格模型，更真实\n随机价格模型：模拟价格随机波动")
+        engine_layout.addRow("成交模型:", self.execution_model)
 
         layout.addWidget(params_group)
         layout.addWidget(engine_group)
@@ -1010,6 +1020,7 @@ class ControlPanel(QWidget):
             'performance_level': self.performance_level.currentText(),
             'use_vectorized_engine': use_vectorized_engine,
             'auto_select_engine': auto_select_engine,
+            'execution_model': self.execution_model.currentText(),
             'strategy': self.strategy_combo.currentText(),
             'risk_control': {
                 'max_drawdown_limit': self.parent_widget.risk_panel.max_drawdown_limit.value() if hasattr(self, 'parent_widget') and hasattr(self.parent_widget, 'risk_panel') else 0.20,
@@ -1679,8 +1690,9 @@ class ProfessionalBacktestWidget(QWidget):
         layout.addRow("结束日期:", self.end_date)
 
         # 数据频率
+        from core.plugin_types import Period
         self.data_frequency = QComboBox()
-        self.data_frequency.addItems(["日线", "小时线", "30分钟", "15分钟", "5分钟", "1分钟"])
+        self.data_frequency.addItems(Period.all_periods())
         self.data_frequency.setCurrentText("日线")
         layout.addRow("数据频率:", self.data_frequency)
 
@@ -1933,6 +1945,13 @@ class ProfessionalBacktestWidget(QWidget):
 
             use_vectorized = params.get('use_vectorized_engine', True)
             auto_select = params.get('auto_select_engine', True)
+            execution_model_text = params.get('execution_model', '固定滑点(默认)')
+            execution_model_map = {
+                '固定滑点(默认)': 'fixed',
+                'VWAP模型': 'vwap',
+                '随机价格模型': 'random'
+            }
+            execution_model = execution_model_map.get(execution_model_text, 'fixed')
 
             # 更新进度
             self.control_panel.update_progress(50, "启动监控", "正在初始化回测引擎...")
@@ -1940,10 +1959,11 @@ class ProfessionalBacktestWidget(QWidget):
             self.backtest_engine = UnifiedBacktestEngine(
                 backtest_level=BacktestLevel.PROFESSIONAL,
                 use_vectorized_engine=use_vectorized,
-                auto_select_engine=auto_select
+                auto_select_engine=auto_select,
+                execution_model=execution_model
             )
 
-            engine_info = f"向量化: {use_vectorized}, 自动选择: {auto_select}"
+            engine_info = f"向量化: {use_vectorized}, 自动选择: {auto_select}, 成交模型: {execution_model}"
             logger.info(f"回测引擎创建成功 - {engine_info}")
 
             try:
@@ -2471,13 +2491,21 @@ class ProfessionalBacktestWidget(QWidget):
                 # 获取引擎配置
                 use_vectorized = params.get('use_vectorized_engine', True)
                 auto_select = params.get('auto_select_engine', True)
+                execution_model_text = params.get('execution_model', '固定滑点(默认)')
+                execution_model_map = {
+                    '固定滑点(默认)': 'fixed',
+                    'VWAP模型': 'vwap',
+                    '随机价格模型': 'random'
+                }
+                execution_model = execution_model_map.get(execution_model_text, 'fixed')
                 
                 # 创建真实回测引擎
                 from backtest.unified_backtest_engine import BacktestLevel
                 backtest_engine = UnifiedBacktestEngine(
                     backtest_level=BacktestLevel.PROFESSIONAL,
                     use_vectorized_engine=use_vectorized,
-                    auto_select_engine=auto_select
+                    auto_select_engine=auto_select,
+                    execution_model=execution_model
                 )
                 
                 # 创建真实监控器

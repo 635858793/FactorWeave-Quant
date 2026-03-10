@@ -139,8 +139,8 @@ class HistoryDataDialog(QDialog):
 
         selection_layout.addWidget(QLabel("数据周期:"))
         self.period_combo = QComboBox()
-        self.period_combo.addItems(
-            ["日线", "周线", "月线", "5分钟", "15分钟", "30分钟", "60分钟"])
+        from core.plugin_types import Period
+        self.period_combo.addItems(Period.all_periods())
         self.period_combo.currentTextChanged.connect(self._on_period_changed)
         selection_layout.addWidget(self.period_combo)
 
@@ -295,8 +295,9 @@ class HistoryDataDialog(QDialog):
         update_layout.addRow("指定股票:", self.specified_stocks_edit)
 
         # 更新周期
+        from core.plugin_types import Period
         self.update_period_combo = QComboBox()
-        self.update_period_combo.addItems(["日线", "周线", "月线", "分钟线"])
+        self.update_period_combo.addItems(Period.all_periods())
         update_layout.addRow("更新周期:", self.update_period_combo)
 
         # 更新模式

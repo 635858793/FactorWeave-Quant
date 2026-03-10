@@ -143,6 +143,96 @@ class BasePatternRecognizer(ABC):
         else:
             return '低'
 
+    def analyze_trend(self, kdata: pd.DataFrame, period: int = 20) -> Dict[str, Any]:
+        """
+        分析趋势 - 识别当前趋势方向和强度
+        
+        Args:
+            kdata: K线数据
+            period: 分析周期，默认20根K线
+            
+        Returns:
+            趋势信息字典: {
+                'trend': 'uptrend'|'downtrend'|'sideways',  # 趋势方向
+                'strength': float,  # 趋势强度 0-1
+                'slope': float,  # 斜率
+                'sma20': float,  # 20日均线
+                'sma60': float,  # 60日均线(如果有)
+            }
+        """
+        if kdata is None or len(kdata) < period:
+            return {'trend': 'sideways', 'strength': 0.0, 'slope': 0.0, 'sma20': 0.0, 'sma60': 0.0}
+        
+        close = kdata['close'].values
+        
+        sma20 = np.mean(close[-period:]) if len(close) >= period else np.mean(close)
+        
+        sma60 = np.mean(close[-60:]) if len(close) >= 60 else sma20
+        
+        slope = 0.0
+        if len(close) >= period:
+            x = np.arange(period)
+            y = close[-period:]
+            slope = np.polyfit(x, y, 1)[0]
+        
+        max_price = np.max(close[-period:])
+        min_price = np.min(close[-period:])
+        price_range = max_price - min_price
+        strength = abs(slope) / price_range if price_range > 0 else 0.0
+        
+        current_price = close[-1]
+        
+        if current_price > sma20 * 1.02:
+            trend = 'uptrend'
+        elif current_price < sma20 * 0.98:
+            trend = 'downtrend'
+        else:
+            trend = 'sideways'
+        
+        return {
+            'trend': trend,
+            'strength': min(strength * 10, 1.0),
+            'slope': slope,
+            'sma20': sma20,
+            'sma60': sma60,
+            'current_price': current_price
+        }
+
+    def is_trend_compatible(self, pattern_signal: str, trend: Dict[str, Any]) -> Tuple[bool, str]:
+        """
+        判断形态信号是否与当前趋势兼容
+        
+        Args:
+            pattern_signal: 形态信号类型 ('buy', 'sell', 'bullish', 'bearish', 'neutral')
+            trend: 趋势分析结果
+            
+        Returns:
+            (是否兼容, 原因)
+        """
+        pattern_signal = pattern_signal.lower().strip()
+        trend_type = trend.get('trend', 'sideways')
+        
+        bullish_patterns = ['buy', 'bullish', '上升', '看涨']
+        bearish_patterns = ['sell', 'bearish', '下降', '看跌']
+        
+        if pattern_signal in bullish_patterns:
+            if trend_type == 'uptrend':
+                return True, '形态出现在上涨趋势中，符合预期'
+            elif trend_type == 'downtrend':
+                return False, '形态出现在下跌趋势中，看涨信号可信度降低'
+            else:
+                return True, '形态出现在横盘震荡中'
+        
+        if pattern_signal in bearish_patterns:
+            if trend_type == 'downtrend':
+                return True, '形态出现在下跌趋势中，符合预期'
+            elif trend_type == 'uptrend':
+                return False, '形态出现在上涨趋势中，看跌信号可信度降低'
+            else:
+                return True, '形态出现在横盘震荡中'
+        
+        return True, '中性形态无需趋势判断'
+
     def create_result(self, pattern_type: str, signal_type: SignalType,
                       confidence: float, index: int, price: float,
                       datetime_val: Optional[str] = None,
@@ -177,12 +267,15 @@ class PatternAlgorithmFactory:
 
     @classmethod
     def create(cls, config: 'PatternConfig') -> 'BasePatternRecognizer':
-        # 如果config有recognizer_type属性，使用指定的识别器，否则使用默认识别器
+        from .pattern_recognition import PatternRecognizer
+        
         recognizer_type = getattr(config, 'recognizer_type', 'default')
-        recognizer_class = cls._recognizers.get(recognizer_type, cls._recognizers.get('default'))
+        recognizer_class = cls._recognizers.get(recognizer_type)
 
         if recognizer_class is None:
-            raise ValueError(f"找不到识别器类型 '{recognizer_type}'，且没有默认识别器")
+            if recognizer_type == 'default' or recognizer_type == 'basic':
+                return PatternRecognizer(config)
+            raise ValueError(f"找不到识别器类型 '{recognizer_type}'")
 
         return recognizer_class(config)
 

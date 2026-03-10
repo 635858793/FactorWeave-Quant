@@ -290,6 +290,19 @@ class IDataSourcePlugin(ABC):
         """
         return []
 
+    def get_supported_adjustment_types(self) -> List[str]:
+        """
+        获取支持的复权类型列表
+
+        Returns:
+            List[str]: 支持的复权类型
+                - 'qfq': 前复权
+                - 'hfq': 后复权
+                - 'none': 不复权
+                - 'both': 前复权和后复权都支持
+        """
+        return ['none']
+
     def validate_symbol(self, symbol: str, asset_type: AssetType = None) -> bool:
         """
         验证交易代码是否有效
