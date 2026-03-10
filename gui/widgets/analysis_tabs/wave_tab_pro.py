@@ -385,29 +385,122 @@ class WaveAnalysisTabPro(BaseAnalysisTab):
         """检测艾略特波浪"""
         waves = []
 
-        # 简化的艾略特波浪检测算法
+        if self.current_kdata is None or len(self.current_kdata) == 0:
+            return waves
+
         high_prices = self.current_kdata['high'].values
         low_prices = self.current_kdata['low'].values
         close_prices = self.current_kdata['close'].values
 
-        # 寻找极值点
         extremes = self._find_extremes(high_prices, low_prices)
 
-        # 识别波浪模式
+        if len(extremes) < 2:
+            return waves
+
+        confidence_threshold = self.confidence_spin.value() if hasattr(self, 'confidence_spin') else 0.7
+        min_wave_amplitude = self.min_wave_spin.value() / 100.0 if hasattr(self, 'min_wave_spin') else 0.05
+        precision = self.precision_slider.value() if hasattr(self, 'precision_slider') else 5
+        use_fractal = self.fractal_analysis_cb.isChecked() if hasattr(self, 'fractal_analysis_cb') else True
+
+        if use_fractal:
+            fractal_periods = self.algorithm_config['fractal_analysis']['fractal_periods']
+            extremes = self._apply_fractal_analysis(extremes, high_prices, low_prices, fractal_periods)
+
+        wave_type_pattern = [1, 2, 3, 4, 5, 'A', 'B', 'C']
         for i in range(len(extremes) - 1):
+            start_extreme = extremes[i]
+            end_extreme = extremes[i + 1]
+
+            amplitude = abs(end_extreme['price'] - start_extreme['price']) / start_extreme['price']
+
+            if amplitude < min_wave_amplitude:
+                continue
+
+            wave_num = i % len(wave_type_pattern)
+            wave_type = '推动浪' if wave_type_pattern[wave_num] in [1, 2, 3, 4, 5] else '调整浪'
+
+            confidence = self._calculate_wave_confidence(
+                start_extreme, end_extreme, amplitude, precision, high_prices, low_prices
+            )
+
+            status = '确认' if confidence >= confidence_threshold else '待确认'
+
+            time_days = (end_extreme['date'] - start_extreme['date']).days if hasattr(end_extreme['date'], 'days') else 0
+
             wave = {
-                'wave': f"第{i+1}浪",
-                'type': '推动浪' if (i+1) <= 5 else '调整浪',
-                'start': extremes[i],
-                'end': extremes[i+1],
-                'amplitude': abs(extremes[i+1]['price'] - extremes[i]['price']) / extremes[i]['price'],
-                'time': extremes[i+1]['date'] - extremes[i]['date'],
-                'confidence': np.random.uniform(0.6, 0.9),
-                'status': '确认' if np.random.random() > 0.3 else '待确认'
+                'wave': f"第{wave_type_pattern[wave_num]}浪",
+                'type': wave_type,
+                'start': start_extreme,
+                'end': end_extreme,
+                'amplitude': amplitude,
+                'time': time_days,
+                'confidence': confidence,
+                'status': status
             }
             waves.append(wave)
 
         return waves
+
+    def _apply_fractal_analysis(self, extremes, high_prices, low_prices, fractal_periods):
+        """应用分形分析增强极值点检测"""
+        if not extremes or len(high_prices) < 20:
+            return extremes
+
+        filtered_extremes = []
+        fractal_threshold = self.algorithm_config['fractal_analysis']['fractal_strength']
+
+        for i, extreme in enumerate(extremes):
+            idx = extreme['index']
+            price = extreme['price']
+            extreme_type = extreme['type']
+
+            if extreme_type == 'high':
+                left_range = high_prices[max(0, idx-5):idx]
+                right_range = high_prices[idx+1:min(len(high_prices), idx+6)]
+
+                if len(left_range) > 0 and len(right_range) > 0:
+                    left_max = np.max(left_range)
+                    right_max = np.max(right_range)
+                    fractal_strength = (price - max(left_max, right_max)) / price if price > 0 else 0
+
+                    if fractal_strength >= fractal_threshold * 0.01:
+                        filtered_extremes.append(extreme)
+            else:
+                left_range = low_prices[max(0, idx-5):idx]
+                right_range = low_prices[idx+1:min(len(low_prices), idx+6)]
+
+                if len(left_range) > 0 and len(right_range) > 0:
+                    left_min = np.min(left_range)
+                    right_min = np.min(right_range)
+                    fractal_strength = (min(left_min, right_min) - price) / price if price > 0 else 0
+
+                    if fractal_strength >= fractal_threshold * 0.01:
+                        filtered_extremes.append(extreme)
+
+        return filtered_extremes if filtered_extremes else extremes
+
+    def _calculate_wave_confidence(self, start_extreme, end_extreme, amplitude, precision, high_prices, low_prices):
+        """计算波浪置信度"""
+        confidence = 0.5
+
+        price_range = np.max(high_prices) - np.min(low_prices)
+        if price_range > 0:
+            relative_amplitude = amplitude / (price_range / np.min(low_prices) if np.min(low_prices) > 0 else 1)
+            amplitude_score = min(relative_amplitude * 10, 0.3)
+            confidence += amplitude_score
+
+        fib_ratios = self.elliott_config['fibonacci_ratios']
+        for ratio in fib_ratios:
+            if 0.3 <= ratio <= 1.0 and abs(amplitude - ratio) < 0.1:
+                confidence += 0.15
+                break
+
+        precision_score = precision / 20.0
+        confidence += precision_score
+
+        confidence = max(0.5, min(0.95, confidence))
+
+        return confidence
 
     def _find_extremes(self, high_prices, low_prices):
         """寻找极值点"""
@@ -459,17 +552,23 @@ class WaveAnalysisTabPro(BaseAnalysisTab):
         """计算江恩水平"""
         levels = []
 
+        if self.current_kdata is None or len(self.current_kdata) == 0:
+            return levels
+
         high_prices = self.current_kdata['high'].values
         low_prices = self.current_kdata['low'].values
+        close_prices = self.current_kdata['close'].values
 
-        recent_high = np.max(high_prices[-50:])
-        recent_low = np.min(low_prices[-50:])
+        if len(high_prices) < 10:
+            return levels
+
+        recent_high = np.max(high_prices[-50:]) if len(high_prices) >= 50 else np.max(high_prices)
+        recent_low = np.min(low_prices[-50:]) if len(low_prices) >= 50 else np.min(low_prices)
+        price_range = recent_high - recent_low
+        mid_price = (recent_high + recent_low) / 2
 
         for angle_name, config in self.gann_config['angles'].items():
-            # 计算支撑阻力位
-            level_price = recent_low + \
-                (recent_high - recent_low) * (config['angle'] / 90)
-
+            level_price = recent_low + price_range * (config['angle'] / 90)
             levels.append({
                 'type': f"江恩{angle_name}",
                 'angle': config['angle'],
@@ -478,6 +577,45 @@ class WaveAnalysisTabPro(BaseAnalysisTab):
                 'strength': config['strength'],
                 'status': '有效'
             })
+
+        center_price = recent_low + price_range * 0.5
+        levels.append({
+            'type': '江恩50%',
+            'angle': 50.0,
+            'price': center_price,
+            'time': datetime.now().strftime('%Y-%m-%d'),
+            'strength': 'very_strong',
+            'status': '有效'
+        })
+
+        for ratio in [0.25, 0.33, 0.67, 0.75]:
+            level_price = recent_low + price_range * ratio
+            levels.append({
+                'type': f'江恩{ratio*100:.0f}%',
+                'angle': ratio * 90,
+                'price': level_price,
+                'time': datetime.now().strftime('%Y-%m-%d'),
+                'strength': 'strong' if ratio in [0.33, 0.67] else 'medium',
+                'status': '有效'
+            })
+
+        if self.multi_timeframe_cb.isChecked() if hasattr(self, 'multi_timeframe_cb') else False:
+            time_cycles = self.gann_config['time_cycles']
+            if len(self.current_kdata) >= max(time_cycles):
+                dates = self.current_kdata.index
+                for cycle in time_cycles:
+                    if len(dates) >= cycle:
+                        cycle_date = dates[-cycle]
+                        cycle_high = high_prices[-cycle]
+                        cycle_low = low_prices[-cycle]
+                        levels.append({
+                            'type': f'时间周期{cycle}日',
+                            'angle': 0,
+                            'price': (cycle_high + cycle_low) / 2,
+                            'time': str(cycle_date)[:10],
+                            'strength': 'time_cycle',
+                            'status': '有效'
+                        })
 
         return levels
 
@@ -501,31 +639,49 @@ class WaveAnalysisTabPro(BaseAnalysisTab):
         """计算斐波那契水平"""
         levels = []
 
+        if self.current_kdata is None or len(self.current_kdata) == 0:
+            return levels
+
         high_prices = self.current_kdata['high'].values
         low_prices = self.current_kdata['low'].values
 
-        recent_high = np.max(high_prices[-50:])
-        recent_low = np.min(low_prices[-50:])
+        if len(high_prices) < 10:
+            return levels
+
+        recent_high = np.max(high_prices[-50:]) if len(high_prices) >= 50 else np.max(high_prices)
+        recent_low = np.min(low_prices[-50:]) if len(low_prices) >= 50 else np.min(low_prices)
         price_range = recent_high - recent_low
 
+        if price_range <= 0:
+            return levels
+
+        current_price = close_prices[-1] if 'close_prices' in dir() else high_prices[-1]
+
         for ratio in self.elliott_config['fibonacci_ratios']:
-            # 回调位
             retracement_level = recent_high - price_range * ratio
+
+            if recent_low <= retracement_level <= recent_high:
+                strength = '强' if ratio in [0.382, 0.618] else '中'
+            else:
+                strength = '弱'
+
             levels.append({
                 'ratio': f"{ratio:.3f}",
                 'price': retracement_level,
                 'type': '回调位',
-                'strength': '强' if ratio in [0.382, 0.618] else '中',
+                'strength': strength,
                 'validity': '有效'
             })
 
-            # 扩展位
             extension_level = recent_high + price_range * ratio
+
+            strength_ext = '强' if ratio in [1.618, 2.618] else '中'
+
             levels.append({
                 'ratio': f"{ratio:.3f}",
                 'price': extension_level,
                 'type': '扩展位',
-                'strength': '强' if ratio in [1.618, 2.618] else '中',
+                'strength': strength_ext,
                 'validity': '有效'
             })
 

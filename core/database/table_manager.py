@@ -57,6 +57,9 @@ class TableType(Enum):
     SECTOR_FUND_FLOW_DAILY = "sector_fund_flow_daily"
     SECTOR_FUND_FLOW_INTRADAY = "sector_fund_flow_intraday"
 
+    # 回测结果相关表
+    BACKTEST_RESULTS = "backtest_results"  # 回测结果存储
+
 
 @dataclass
 class TableSchema:
@@ -140,6 +143,8 @@ class TableSchemaRegistry:
                 'amount': 'DECIMAL(20,2)',
                 'adj_close': 'DECIMAL(10,4)',
                 'adj_factor': 'DECIMAL(10,6)',
+                'adj_type': 'VARCHAR(10)',    # 复权类型 (qfq/hfq/none)
+                'adj_source': 'VARCHAR(20)',  # 复权数据来源 (plugin/calculated)
                 'vwap': 'DECIMAL(10,4)',
                 'bid_price': 'DECIMAL(10,4)',
                 'ask_price': 'DECIMAL(10,4)',

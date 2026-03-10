@@ -38,12 +38,14 @@ class AnalysisThread(QThread):
         self.kdata = kdata
         self.current_kdata = kdata  # 添加current_kdata别名
         self.sensitivity = sensitivity
+        logger.info(f"[AnalysisThread] 初始化: sensitivity={self.sensitivity}")
         self.enable_ml = enable_ml
         self.enable_alerts = enable_alerts
         self.enable_historical = enable_historical
         self.config_manager = config_manager
         self.filters = filters if filters is not None else {}
         self.selected_patterns = selected_patterns if selected_patterns is not None else []
+        logger.info(f"AnalysisThread: 接收到的 selected_patterns = {self.selected_patterns}")
         self.ai_prediction_service = ai_prediction_service  # 添加AI预测服务
         self.prediction_days = prediction_days  # 添加预测天数
         logger.debug(f"AnalysisThread: 线程已初始化，接收到 {len(self.selected_patterns)} 个待识别形态")
@@ -181,16 +183,35 @@ class AnalysisThread(QThread):
             # 2. 使用较高的置信度阈值，确保结果质量
             # 3. 数据采样优化，提升分析速度
 
-            # 数据采样：一键分析使用最近的数据进行快速识别
-            kdata_sample = self.kdata.tail(min(len(self.kdata), 200))  # 最近200个交易日
-            logger.debug(f"使用最近 {len(kdata_sample)} 个交易日的数据进行快速分析")
+            # 数据采样：根据K线总长度动态调整采样范围
+            total_len = len(self.kdata)
+            if total_len <= 100:
+                sample_ratio = 1.0
+            elif total_len <= 300:
+                sample_ratio = 0.8
+            elif total_len <= 500:
+                sample_ratio = 0.6
+            else:
+                sample_ratio = 0.4
+            
+            sample_size = max(100, int(total_len * sample_ratio))
+            kdata_sample = self.kdata.tail(sample_size)
+            logger.debug(f"使用最近 {len(kdata_sample)} / {total_len} 根K线 ({sample_ratio*100:.0f}%)")
 
             # 执行形态识别
+            # 使用线程启动时传入的 sensitivity 参数
+            sensitivity = self.sensitivity
+            slider_value = int(sensitivity * 100)
+            threshold = max(0.1, 0.1 + (1 - sensitivity) * 0.5)
+            logger.info(f"开始形态识别，滑块值={slider_value}%, sensitivity={sensitivity:.0%}, threshold={threshold:.0%}")
             patterns = recognizer.identify_patterns(
                 kdata_sample,
-                confidence_threshold=max(0.6, self.sensitivity * 0.7),  # 一键分析使用较高阈值
+                confidence_threshold=threshold,  # 阈值 = 1 - 灵敏度
                 pattern_types=self.selected_patterns  # 使用从UI传递过来的列表
             )
+            logger.info(f"原始识别结果: {len(patterns)} 个形态")
+            if len(patterns) == 0:
+                logger.warning("[DEBUG] 没有识别到形态，请检查算法和参数")
 
             # 转换为字典格式并进行数据清理
             pattern_dicts = []
@@ -245,10 +266,10 @@ class AnalysisThread(QThread):
             pattern['confidence'] = max(0, min(pattern['confidence'], 1))
 
         # 确保必要的额外字段
-        if 'success_rate' not in pattern:
+        if 'success_rate' not in pattern or pattern.get('success_rate') is None:
             pattern['success_rate'] = 0.7
 
-        if 'risk_level' not in pattern:
+        if 'risk_level' not in pattern or pattern.get('risk_level') is None:
             pattern['risk_level'] = 'medium'
 
         if 'category' not in pattern and 'pattern_category' in pattern:
@@ -743,6 +764,11 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
 
     def __init__(self, config_manager=None, event_bus=None, stock_code=None, stock_name=None):
         """初始化专业级形态分析"""
+        import time
+        start_total = time.time()
+        
+        logger.info("[DEBUG] PatternAnalysisTabPro __init__ 开始...")
+        
         # 初始化K线数据属性
         self.stock_code = stock_code or ''
         self.stock_name = stock_name or ''
@@ -750,13 +776,22 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
         self.current_kdata = None
 
         # 初始化 PatternManager
+        logger.info("[DEBUG] 开始初始化 PatternManager...")
+        start = time.time()
         self.pattern_manager = PatternManager()
+        logger.info(f"[DEBUG] PatternManager 初始化完成，耗时: {time.time() - start:.2f}秒")
 
-        # 初始化回测结果管理器
-        self.backtest_result_manager = BacktestResultManager()
+        # 初始化回测结果管理器 - 从服务容器获取单例
+        logger.info("[DEBUG] 开始获取 BacktestResultManager...")
+        start = time.time()
+        self.backtest_result_manager = self._get_backtest_result_manager()
+        logger.info(f"[DEBUG] BacktestResultManager 获取完成，耗时: {time.time() - start:.2f}秒")
 
         # 初始化专业级形态数据结构
+        logger.info("[DEBUG] 开始初始化专业形态数据...")
+        start = time.time()
         self._initialize_professional_patterns()
+        logger.info(f"[DEBUG] 专业形态数据初始化完成，耗时: {time.time() - start:.2f}秒")
 
         # 机器学习模型配置
         self.ml_config = {
@@ -784,7 +819,11 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
         # AI预测服务
         self.ai_prediction_service = None
 
+        logger.info("[DEBUG] 调用 super().__init__() 之前...")
+        import time
+        start = time.time()
         super().__init__(config_manager)
+        logger.info(f"[DEBUG] super().__init__() 完成，耗时: {time.time() - start:.2f}秒")
 
         # 确保kdata属性在父类初始化后再次设置
         if not hasattr(self, 'kdata'):
@@ -828,21 +867,38 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
         self.stock_name = stock_name or ''
         logger.info(f"更新股票信息: {self.stock_name} ({self.stock_code})")
 
+    def _get_backtest_result_manager(self):
+        """从服务容器获取 BacktestResultManager 单例"""
+        try:
+            from core.containers import get_service_container
+            from core.services.backtest_result_manager import BacktestResultManager
+            container = get_service_container()
+            return container.resolve(BacktestResultManager)
+        except Exception as e:
+            logger.warning(f"无法从服务容器获取BacktestResultManager，回退到直接创建: {e}")
+            return BacktestResultManager()
+
     def _initialize_professional_patterns(self):
         """初始化专业级形态数据结构"""
+        import time
         try:
+            logger.info("[DEBUG] _initialize_professional_patterns 开始...")
+            
             # 从PatternManager获取所有形态配置
+            logger.info("[DEBUG] 调用 get_all_patterns...")
+            start = time.time()
             all_patterns = self.pattern_manager.get_all_patterns(active_only=True)
-
+            logger.info(f"[DEBUG] get_all_patterns 完成，耗时: {time.time() - start:.2f}秒，返回 {len(all_patterns)} 条")
+            
             # 按类别组织形态数据
             self.professional_patterns = {}
-
+            
+            logger.info("[DEBUG] 开始组织形态数据...")
             for pattern_config in all_patterns:
                 category = pattern_config.category
                 if category not in self.professional_patterns:
                     self.professional_patterns[category] = {}
 
-                # 将PatternConfig转换为字典格式
                 pattern_info = {
                     'name': pattern_config.name,
                     'english_name': pattern_config.english_name,
@@ -856,6 +912,8 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
                 }
 
                 self.professional_patterns[category][pattern_config.name] = pattern_info
+
+            logger.info(f"[DEBUG] 形态数据组织完成，共 {len(self.professional_patterns)} 个类别")
 
             logger.info(f" 已加载 {len(all_patterns)} 个专业形态，分为 {len(self.professional_patterns)} 个类别")
 
@@ -981,41 +1039,78 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
         advanced_group = QGroupBox("高级设置")
         advanced_layout = QHBoxLayout(advanced_group)
 
-        lmdQl = QLabel("灵敏度:")
-        lmdQl.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
         # 灵敏度设置
+        lmdQl = QLabel("灵敏度:")
+        lmdQl.setFixedWidth(45)
+        lmdQl.setStyleSheet("padding: 2px 0;")
         advanced_layout.addWidget(lmdQl)
+        
         self.sensitivity_slider = QSlider(Qt.Horizontal)
-        self.sensitivity_slider.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.sensitivity_slider.setRange(1, 10)
-        self.sensitivity_slider.setValue(5)
-        self.sensitivity_slider.setToolTip("调整形态识别的灵敏度\n1=最保守, 10=最激进")
+        self.sensitivity_slider.setFixedSize(200, 16)  # 宽度200，高度减半
+        self.sensitivity_slider.setRange(0, 100)
+        self.sensitivity_slider.setValue(70)
+        
+        # 使用setToolTip设置纯文本tooltip
+        tooltip_text = (
+            "形态识别灵敏度\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            "较低 (0-30%):  信号少而精准，适合长线\n"
+            "中等 (40-70%): 平衡模式，推荐默认\n"
+            "较高 (80-100%): 信号多而杂，适合激进短线\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            "实际阈值 = 1.0 - 灵敏度%"
+        )
+        self.sensitivity_slider.setToolTip(tooltip_text)
         advanced_layout.addWidget(self.sensitivity_slider)
-
-        # 时间周期
-        zqQl = QLabel("周期:")
-        zqQl.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
-        advanced_layout.addWidget(zqQl)
-        self.timeframe_combo = QComboBox()
-        self.timeframe_combo.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        self.timeframe_combo.addItems(
-            ["日线", "周线", "月线", "60分钟", "30分钟", "15分钟"])
-        advanced_layout.addWidget(self.timeframe_combo)
-
+        
+        self.sensitivity_label = QLabel("70%")
+        self.sensitivity_label.setFixedWidth(35)
+        self.sensitivity_label.setStyleSheet("padding: 2px 0;")
+        self.sensitivity_label.setToolTip("当前灵敏度对应的识别阈值")
+        advanced_layout.addWidget(self.sensitivity_label)
+        
+        self.sensitivity_slider.valueChanged.connect(self._on_sensitivity_changed)
+        
+        toolbar_layout.addWidget(advanced_group)
+        
         # 实时监控开关
         self.realtime_cb = QCheckBox("实时监控")
         self.realtime_cb.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.realtime_cb.setToolTip("启用实时形态监控和预警")
         advanced_layout.addWidget(self.realtime_cb)
 
-        toolbar_layout.addWidget(advanced_group)
-
         layout.addWidget(toolbar)
 
     def _create_control_panel(self):
         """创建控制面板"""
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setStyleSheet("""
+            QScrollArea {
+                border: none;
+                background: transparent;
+            }
+            QScrollBar:vertical {
+                background: rgba(45, 55, 72, 0.3);
+                width: 8px;
+                border-radius: 4px;
+            }
+            QScrollBar::handle:vertical {
+                background: rgba(66, 153, 225, 0.6);
+                border-radius: 4px;
+                min-height: 30px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: rgba(66, 153, 225, 0.8);
+            }
+        """)
+
         panel = QWidget()
         layout = QVBoxLayout(panel)
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(8)
 
         # 形态类型选择
         type_layout = QVBoxLayout()
@@ -1039,7 +1134,7 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
         self.min_confidence = QDoubleSpinBox()
         self.min_confidence.setRange(0.0, 1.0)
         self.min_confidence.setSingleStep(0.01)
-        self.min_confidence.setValue(0.6)
+        self.min_confidence.setValue(0.3)
 
         self.max_confidence = QDoubleSpinBox()
         self.max_confidence.setRange(0.0, 1.0)
@@ -1056,7 +1151,7 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
         self.min_success = QDoubleSpinBox()
         self.min_success.setRange(0.0, 1.0)
         self.min_success.setSingleStep(0.01)
-        self.min_success.setValue(0.5)
+        self.min_success.setValue(0.3)
 
         self.max_success = QDoubleSpinBox()
         self.max_success.setRange(0.0, 1.0)
@@ -1093,7 +1188,8 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
         layout.addWidget(advanced_group)
         layout.addStretch()
 
-        return panel
+        scroll_area.setWidget(panel)
+        return scroll_area
 
     def _create_results_panel(self):
         """创建结果展示面板"""
@@ -1287,6 +1383,14 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
 
         except Exception as e:
             logger.warning(f"从数据库加载UI配置失败，使用默认值: {e}")
+
+    def _on_sensitivity_changed(self, value):
+        """灵敏度滑块值变更处理"""
+        sensitivity = value / 100.0
+        threshold = max(0.1, 0.1 + (1 - sensitivity) * 0.5)
+        self.sensitivity_label.setText(f"{value}%")
+        self.sensitivity_label.setToolTip(f"当前识别阈值: {threshold:.0%}\n信号数量与灵敏度成正比")
+        logger.debug(f"灵敏度已调整为: {value}% (阈值: {threshold:.0%})")
 
     def _on_prediction_days_changed(self, value):
         """预测天数变更处理"""
@@ -1953,14 +2057,14 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
             category_item = QTreeWidgetItem([category_name])  # 直接使用中文名
             category_item.setData(0, Qt.UserRole, category_name)
             category_item.setFlags(category_item.flags() | Qt.ItemIsUserCheckable)
-            category_item.setCheckState(0, Qt.Checked)
+            category_item.setCheckState(0, Qt.Unchecked)
 
             patterns = self.pattern_manager.get_pattern_configs(category=category_name)
             for pattern_config in patterns:
                 pattern_item = QTreeWidgetItem([f"{pattern_config.name} ({pattern_config.success_rate:.1%})"])
                 pattern_item.setData(0, Qt.UserRole, pattern_config.english_name)
                 pattern_item.setFlags(pattern_item.flags() | Qt.ItemIsUserCheckable)
-                pattern_item.setCheckState(0, Qt.Checked)
+                pattern_item.setCheckState(0, Qt.Unchecked)
                 category_item.addChild(pattern_item)
 
             self.pattern_tree.addTopLevelItem(category_item)
@@ -2042,7 +2146,10 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
                     self.kdata = self.current_kdata
 
             # 获取分析参数
-            sensitivity = self.sensitivity_slider.value() / 100.0
+            slider_value = self.sensitivity_slider.value()
+            logger.info(f"[DEBUG] 滑块值: {slider_value}")
+            sensitivity = slider_value / 100.0
+            confidence_threshold = max(0.1, 0.1 + (1 - sensitivity) * 0.5)
             enable_ml = self.enable_ml_cb.isChecked()
             enable_alerts = self.enable_alerts_cb.isChecked()
             enable_historical = self.historical_analysis_cb.isChecked()
@@ -2055,10 +2162,11 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
                 'max_success_rate': self.max_success.value(),
                 'risk_level': self.risk_combo.currentText()
             }
+            logger.info(f"[DEBUG] 筛选参数: min_conf={filters['min_confidence']}, min_success={filters['min_success_rate']}")
 
             # 从UI收集用户勾选的形态
             selected_patterns = self._get_selected_patterns()
-            logger.debug(f"从UI收集到 {len(selected_patterns)} 个待识别形态")
+            logger.info(f"从UI收集到 {len(selected_patterns)} 个待识别形态: {selected_patterns}")
 
             if not selected_patterns:
                 QMessageBox.warning(self, "提示", "请至少在'形态分类'列表中选择一种要分析的形态。")
@@ -2231,8 +2339,9 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
             recognizer = EnhancedPatternRecognizer(debug_mode=True)
 
             # 获取灵敏度参数
-            sensitivity = self.sensitivity_slider.value() / 100.0 if hasattr(self, 'sensitivity_slider') else 0.7
-            confidence_threshold = max(0.1, sensitivity * 0.3)  # 专业扫描使用更低阈值，检测更多形态
+            slider_value = self.sensitivity_slider.value() if hasattr(self, 'sensitivity_slider') else 70
+            sensitivity = slider_value / 100.0
+            confidence_threshold = max(0.1, 0.1 + (1 - sensitivity) * 0.5)
 
             logger.info(f" 专业扫描模式：执行深度形态识别，置信度阈值: {confidence_threshold}")
 
@@ -2302,7 +2411,7 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
         logger.warning("使用模拟数据生成形态（仅用于演示）")
 
         patterns = []
-        sensitivity = self.sensitivity_slider.value() / 10.0 if hasattr(self, 'sensitivity_slider') else 0.5
+        sensitivity = self.sensitivity_slider.value() / 100.0 if hasattr(self, 'sensitivity_slider') else 0.5
 
         # 生成少量模拟形态，并明确标记
         simulated_patterns = [
@@ -3657,6 +3766,13 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
             sharpe = walk_forward.get('sharpe')
             max_drawdown = walk_forward.get('max_drawdown')
             win_rate = walk_forward.get('win_rate')
+            
+            has_valid_metrics = all(isinstance(v, (int, float)) for v in [net_return, sharpe, max_drawdown, win_rate, avg_trades] if v is not None)
+            if not has_valid_metrics:
+                model_missing_hint = "\n⚠️ 模型绩效数据缺失，请前往【AI模型训练】模块训练模型后重新预测"
+            else:
+                model_missing_hint = ""
+            
             net_return_text = f"{net_return*100:.2f}%" if isinstance(net_return, (int, float)) else "N/A"
             sharpe_text = f"{sharpe:.2f}" if isinstance(sharpe, (int, float)) else "N/A"
             drawdown_text = f"{max_drawdown:.4f}" if isinstance(max_drawdown, (int, float)) else "N/A"
@@ -3690,7 +3806,7 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
 │  价格信号: {price_pred.get('direction', 'N/A'):<8} 置信度: {price_pred.get('confidence', 0)*100:.1f}% 
 └─────────────────────────────────────────────┘
 
- 模型绩效
+ 模型绩效{model_missing_hint}
 ┌─────────────────────────────────────────────┐
 │  净收益: {net_return_text:<10}   Sharpe: {sharpe_text:<8} 
 │  最大回撤: {drawdown_text:<10}  胜率: {win_rate_text:<8} 
@@ -4042,18 +4158,6 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
                 
                 # 添加到回测结果管理器
                 self.backtest_result_manager.add_result(backtest_result)
-                
-                # 发布回测完成事件
-                if hasattr(self, 'event_bus') and self.event_bus:
-                    from core.events import BacktestCompletedEvent
-                    backtest_event = BacktestCompletedEvent(
-                        stock_code=getattr(self, 'stock_code', ''),
-                        stock_name=getattr(self, 'stock_name', ''),
-                        strategy_name='形态识别策略',
-                        backtest_results=backtest_results
-                    )
-                    self.event_bus.publish(backtest_event)
-                    logger.info(f"已发布 BacktestCompletedEvent 事件")
 
             # 完成
             if hasattr(self, 'progress_bar'):

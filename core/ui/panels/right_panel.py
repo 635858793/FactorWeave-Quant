@@ -7,9 +7,9 @@ from loguru import logger
 2. 基础功能组件NoneType错误
 3. 数据更新时的组件访问问题
 """
-
+import time
 import traceback
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from datetime import datetime
 
 from PyQt5.QtWidgets import (
@@ -93,9 +93,8 @@ class RightPanel(BasePanel):
     功能：
     1. 技术指标分析
     2. 买卖信号分析
-    3. 风险评估
-    4. 历史回测结果
-    5. 热点分析与资金流向（情绪分析已优化移除）
+    3. 历史回测结果（完整风险功能请使用：性能监控中心 → 风险控制）
+    4. 热点分析与资金流向（情绪分析已优化移除）
     """
 
     # 定义信号
@@ -117,11 +116,17 @@ class RightPanel(BasePanel):
         """
         # 通过服务容器获取分析服务
         self.analysis_service = None
+        self.industry_service = None
         if coordinator and hasattr(coordinator, 'service_container') and coordinator.service_container:
             try:
                 self.analysis_service = coordinator.service_container.resolve(AnalysisService)
             except Exception as e:
                 logger.warning(f"无法获取AnalysisService: {e}")
+            try:
+                from core.services.industry_service import IndustryService
+                self.industry_service = coordinator.service_container.resolve(IndustryService)
+            except Exception as e:
+                logger.warning(f"无法获取IndustryService: {e}")
         self.width = width
 
         # 当前状态
@@ -143,8 +148,8 @@ class RightPanel(BasePanel):
         # 性能优化管理器
         self._performance_manager = None
         
-        # 回测结果管理器
-        self._backtest_result_manager = BacktestResultManager()
+        # 回测结果管理器 - 从服务容器获取单例
+        self._backtest_result_manager = self._get_backtest_result_manager()
 
         super().__init__(parent, coordinator, **kwargs)
         
@@ -213,6 +218,11 @@ class RightPanel(BasePanel):
             export_ai_btn = self.get_widget('export_ai_btn')
             if export_ai_btn:
                 export_ai_btn.clicked.connect(self._on_export_ai_results)
+            
+            # 行业分析刷新按钮点击事件
+            refresh_industry_btn = self.get_widget('refresh_industry_btn')
+            if refresh_industry_btn:
+                refresh_industry_btn.clicked.connect(self._on_refresh_industry_clicked)
             
             logger.info("UI事件连接初始化完成")
         except Exception as e:
@@ -361,10 +371,10 @@ class RightPanel(BasePanel):
             strategy_name = strategy_filter.text() if strategy_filter else None
             
             # 转换数值过滤条件
-            min_return = float(min_return_filter.text()) if min_return_filter and min_return_filter.text() else None
-            max_return = float(max_return_filter.text()) if max_return_filter and max_return_filter.text() else None
-            min_success_rate = float(min_success_filter.text()) if min_success_filter and min_success_filter.text() else None
-            max_success_rate = float(max_success_filter.text()) if max_success_filter and max_success_filter.text() else None
+            min_return = self._safe_float_convert(min_return_filter.text()) if min_return_filter else None
+            max_return = self._safe_float_convert(max_return_filter.text()) if max_return_filter else None
+            min_success_rate = self._safe_float_convert(min_success_filter.text()) if min_success_filter else None
+            max_success_rate = self._safe_float_convert(max_success_filter.text()) if max_success_filter else None
             
             # 导出回测结果
             success = self._backtest_result_manager.export_results(
@@ -401,10 +411,10 @@ class RightPanel(BasePanel):
             
             # 提取过滤条件
             strategy_name = strategy_filter.text() if strategy_filter else None
-            min_return = float(min_return_filter.text()) if min_return_filter and min_return_filter.text() else None
-            max_return = float(max_return_filter.text()) if max_return_filter and max_return_filter.text() else None
-            min_success_rate = float(min_success_filter.text()) if min_success_filter and min_success_filter.text() else None
-            max_success_rate = float(max_success_filter.text()) if max_success_filter and max_success_filter.text() else None
+            min_return = self._safe_float_convert(min_return_filter.text()) if min_return_filter else None
+            max_return = self._safe_float_convert(max_return_filter.text()) if max_return_filter else None
+            min_success_rate = self._safe_float_convert(min_success_filter.text()) if min_success_filter else None
+            max_success_rate = self._safe_float_convert(max_success_filter.text()) if max_success_filter else None
             
             # 获取当前页的回测结果
             current_page_results, _ = self._backtest_result_manager.get_filtered_results(
@@ -506,10 +516,10 @@ class RightPanel(BasePanel):
             
             # 提取过滤条件
             strategy_name = strategy_filter.text() if strategy_filter else None
-            min_return = float(min_return_filter.text()) if min_return_filter and min_return_filter.text() else None
-            max_return = float(max_return_filter.text()) if max_return_filter and max_return_filter.text() else None
-            min_success_rate = float(min_success_filter.text()) if min_success_filter and min_success_filter.text() else None
-            max_success_rate = float(max_success_filter.text()) if max_success_filter and max_success_filter.text() else None
+            min_return = self._safe_float_convert(min_return_filter.text()) if min_return_filter else None
+            max_return = self._safe_float_convert(max_return_filter.text()) if max_return_filter else None
+            min_success_rate = self._safe_float_convert(min_success_filter.text()) if min_success_filter else None
+            max_success_rate = self._safe_float_convert(max_success_filter.text()) if max_success_filter else None
             
             # 获取过滤后的回测结果（带分页）
             results, total = self._backtest_result_manager.get_filtered_results(
@@ -658,32 +668,45 @@ class RightPanel(BasePanel):
         if PROFESSIONAL_TABS_AVAILABLE:
             # 形态分析 - 异步初始化
             try:
+                logger.info("[DEBUG] 开始创建形态分析标签页...")
+                start_time = time.time()
                 self._pattern_tab = PatternAnalysisTab(config_manager, event_bus=self.coordinator.event_bus)
+                logger.info(f"[DEBUG] 形态分析标签页创建完成，耗时: {time.time() - start_time:.2f}秒")
                 tab_widget.addTab(self._pattern_tab, "形态分析")
                 self.add_widget('pattern_tab', self._pattern_tab)
                 self._professional_tabs.append(self._pattern_tab)
             except Exception as e:
                 logger.error(f"创建形态分析标签页失败: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
 
             # 趋势分析 - 异步初始化
             try:
+                logger.info("[DEBUG] 开始创建趋势分析标签页...")
+                start_time = time.time()
                 self._trend_tab = TrendAnalysisTab(config_manager)
+                logger.info(f"[DEBUG] 趋势分析标签页创建完成，耗时: {time.time() - start_time:.2f}秒")
                 tab_widget.addTab(self._trend_tab, "趋势分析")
                 self.add_widget('trend_tab', self._trend_tab)
                 self._professional_tabs.append(self._trend_tab)
             except Exception as e:
                 logger.error(f"创建趋势分析标签页失败: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
 
             # 波浪分析 - 异步初始化
             try:
+                logger.info("[DEBUG] 开始创建波浪分析标签页...")
+                start_time = time.time()
                 self._wave_tab = WaveAnalysisTab(config_manager)
+                logger.info(f"[DEBUG] 波浪分析标签页创建完成，耗时: {time.time() - start_time:.2f}秒")
                 tab_widget.addTab(self._wave_tab, "波浪分析")
                 self.add_widget('wave_tab', self._wave_tab)
                 self._professional_tabs.append(self._wave_tab)
             except Exception as e:
                 logger.error(f"创建波浪分析标签页失败: {e}")
-
-            import time
+                import traceback
+                logger.error(traceback.format_exc())
            
             try:
                 logger.info("开始创建板块资金流标签页...")
@@ -735,7 +758,6 @@ class RightPanel(BasePanel):
         # 基础功能标签页（如果专业标签页不可用时的后备方案，或者总是创建）
         # 修复：总是创建基础标签页，但只有在需要时才显示
         self._create_signal_tab(tab_widget)
-        self._create_risk_tab(tab_widget)
         self._create_backtest_tab(tab_widget)
         # 注释掉普通AI选股tab，使用增强AI选股面板
         # self._create_ai_stock_tab(tab_widget)
@@ -745,13 +767,12 @@ class RightPanel(BasePanel):
         # 初始化UI事件连接 - 移到组件创建之后
         self._init_ui_events()
 
-        # 如果有专业标签页，隐藏基础标签页
+        # 如果有专业标签页，隐藏被完全替代的基础标签页
         if PROFESSIONAL_TABS_AVAILABLE:
-            # 隐藏基础标签页（将它们移到不可见状态，但保持组件存在）
-            for i in range(tab_widget.count()):
-                if tab_widget.tabText(i) in ["买卖信号", "风险评估", "历史回测", "AI选股", "行业分析"]:
+            tabs_to_remove = ["买卖信号", "历史回测", "AI选股", "行业分析"]
+            for i in range(tab_widget.count() - 1, -1, -1):
+                if tab_widget.tabText(i) in tabs_to_remove:
                     tab_widget.removeTab(i)
-                    break
 
         # 批量分析工具标签页
         if ANALYSIS_TOOLS_AVAILABLE:
@@ -879,63 +900,6 @@ class RightPanel(BasePanel):
         signal_stats_text.setMinimumHeight(80)
         signal_stats_layout.addWidget(signal_stats_text)
         self.add_widget('signal_stats_text', signal_stats_text)
-
-    def _create_risk_tab(self, parent: QTabWidget) -> None:
-        """创建风险评估标签页"""
-        risk_widget = QWidget()
-        parent.addTab(risk_widget, "风险评估")
-        self.add_widget('risk_widget', risk_widget)
-
-        layout = QVBoxLayout(risk_widget)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(10)
-
-        # 风险等级组
-        risk_level_group = QGroupBox("风险等级")
-        layout.addWidget(risk_level_group)
-        self.add_widget('risk_level_group', risk_level_group)
-
-        risk_level_layout = QVBoxLayout(risk_level_group)
-
-        # 风险等级标签
-        risk_level_label = QLabel("未知\n风险评分: --")
-        risk_level_label.setStyleSheet(
-            "font-size: 18px; font-weight: bold; color: #6c757d; padding: 15px;")
-        risk_level_label.setAlignment(Qt.AlignCenter)
-        risk_level_layout.addWidget(risk_level_label)
-        self.add_widget('risk_level_label', risk_level_label)
-
-        # 风险指标组
-        risk_metrics_group = QGroupBox("风险指标")
-        layout.addWidget(risk_metrics_group)
-        self.add_widget('risk_metrics_group', risk_metrics_group)
-
-        risk_metrics_layout = QVBoxLayout(risk_metrics_group)
-
-        # 风险指标表格
-        risk_table = QTableWidget(0, 2)
-        risk_table.setHorizontalHeaderLabels(['指标', '数值'])
-        header = risk_table.horizontalHeader()
-        header.setStretchLastSection(True)
-        header.setSectionResizeMode(QHeaderView.Stretch)
-        risk_table.setAlternatingRowColors(True)
-        risk_metrics_layout.addWidget(risk_table)
-        self.add_widget('risk_table', risk_table)
-
-        # 风险建议组
-        risk_advice_group = QGroupBox("风险建议")
-        layout.addWidget(risk_advice_group)
-        self.add_widget('risk_advice_group', risk_advice_group)
-
-        risk_advice_layout = QVBoxLayout(risk_advice_group)
-
-        # 风险建议文本
-        risk_advice_text = QTextEdit()
-        risk_advice_text.setReadOnly(True)
-        risk_advice_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
-        risk_advice_text.setMinimumHeight(80)
-        risk_advice_layout.addWidget(risk_advice_text)
-        self.add_widget('risk_advice_text', risk_advice_text)
 
     def _create_backtest_tab(self, parent: QTabWidget) -> None:
         """创建历史回测标签页"""
@@ -1337,6 +1301,26 @@ class RightPanel(BasePanel):
         # 初始状态下显示提示信息
         self._update_status("请在左侧选择一只股票以开始分析")
 
+    def _get_backtest_result_manager(self):
+        """从服务容器获取 BacktestResultManager 单例"""
+        try:
+            from core.containers import get_service_container
+            from core.services.backtest_result_manager import BacktestResultManager
+            container = get_service_container()
+            return container.resolve(BacktestResultManager)
+        except Exception as e:
+            logger.warning(f"无法从服务容器获取BacktestResultManager，回退到直接创建: {e}")
+            return BacktestResultManager()
+
+    def _safe_float_convert(self, value_str: str, default=None) -> Optional[float]:
+        """安全地将字符串转换为 float"""
+        try:
+            if value_str and value_str.strip():
+                return float(value_str.strip())
+            return default
+        except (ValueError, TypeError):
+            return default
+
     @pyqtSlot(UIDataReadyEvent)
     def _on_ui_data_ready(self, event: UIDataReadyEvent) -> None:
         """处理UI数据就绪事件，使用性能管理器优化加载"""
@@ -1589,13 +1573,26 @@ class RightPanel(BasePanel):
             
             # 如果是回测结果，更新回测显示
             if event.analysis_type == "backtest" and event.results and "backtest" in event.results:
-                self._update_backtest_results_safe(event.results["backtest"])
-                # 刷新回测结果列表
-                self._refresh_results_table()
+                # 使用 QMetaObject.invokeMethod 确保在主线程中更新 UI
+                from PyQt5.QtCore import QMetaObject, Qt
+                QMetaObject.invokeMethod(
+                    self,
+                    "_safe_update_backtest_results",
+                    Qt.QueuedConnection,
+                    event.results["backtest"]
+                )
             
         except Exception as e:
             logger.error(f"处理分析完成事件失败: {e}")
             logger.error(traceback.format_exc())
+    
+    def _safe_update_backtest_results(self, backtest_data: Dict[str, Any]) -> None:
+        """安全更新回测结果（在主线程中执行）"""
+        try:
+            self._update_backtest_results_safe(backtest_data)
+            self._refresh_results_table()
+        except Exception as e:
+            logger.error(f"安全更新回测结果失败: {e}")
     
     def _update_analysis_display(self, analysis_data: Dict[str, Any]) -> None:
         """更新分析数据显示"""
@@ -1603,10 +1600,6 @@ class RightPanel(BasePanel):
             # 更新信号分析（安全检查）
             if 'signals' in analysis_data:
                 self._update_signal_analysis_safe(analysis_data['signals'])
-
-            # 更新风险评估（安全检查）
-            if 'risk' in analysis_data:
-                self._update_risk_analysis_safe(analysis_data['risk'])
 
             # 更新回测结果（安全检查）
             if 'backtest' in analysis_data:
@@ -1683,53 +1676,6 @@ class RightPanel(BasePanel):
 
         except Exception as e:
             logger.error(f"Failed to update signal analysis: {e}")
-
-    def _update_risk_analysis_safe(self, risk_data: Dict[str, Any]) -> None:
-        """安全更新风险评估"""
-        try:
-            # 更新风险等级
-            risk_level_label = self.get_widget('risk_level_label')
-            if risk_level_label:
-                risk_level = risk_data.get('level', 'unknown')
-                risk_score = risk_data.get('score', 0)
-
-                risk_level_label.setText(
-                    f"{risk_level.upper()}\n风险评分: {risk_score}")
-
-                # 设置风险等级颜色
-                if risk_level == 'low':
-                    risk_level_label.setStyleSheet(
-                        "font-size: 18px; font-weight: bold; color: #28a745; padding: 15px;")
-                elif risk_level == 'medium':
-                    risk_level_label.setStyleSheet(
-                        "font-size: 18px; font-weight: bold; color: #ffc107; padding: 15px;")
-                elif risk_level == 'high':
-                    risk_level_label.setStyleSheet(
-                        "font-size: 18px; font-weight: bold; color: #dc3545; padding: 15px;")
-                else:
-                    risk_level_label.setStyleSheet(
-                        "font-size: 18px; font-weight: bold; color: #6c757d; padding: 15px;")
-
-            # 更新风险指标表格
-            risk_table = self.get_widget('risk_table')
-            if risk_table:
-                risk_table.setRowCount(0)
-
-                metrics = risk_data.get('metrics', {})
-                for metric_name, metric_value in metrics.items():
-                    row = risk_table.rowCount()
-                    risk_table.insertRow(row)
-                    risk_table.setItem(row, 0, QTableWidgetItem(metric_name))
-                    risk_table.setItem(row, 1, QTableWidgetItem(str(metric_value)))
-
-            # 更新风险建议
-            risk_advice_text = self.get_widget('risk_advice_text')
-            if risk_advice_text:
-                advice = risk_data.get('advice', '暂无风险建议')
-                risk_advice_text.setPlainText(advice)
-
-        except Exception as e:
-            logger.error(f"Failed to update risk analysis: {e}")
 
     def _clear_backtest_results(self) -> None:
         """清空回测结果显示"""
@@ -2381,6 +2327,136 @@ class RightPanel(BasePanel):
             logger.error(f"导出AI选股结果失败: {e}")
             logger.error(traceback.format_exc())
             QMessageBox.critical(self, "错误", f"导出失败: {str(e)}")
+
+    def _on_refresh_industry_clicked(self) -> None:
+        """处理行业数据刷新按钮点击事件"""
+        try:
+            logger.info("行业数据刷新按钮被点击")
+            
+            if not self.industry_service:
+                logger.warning("IndustryService 未初始化")
+                QMessageBox.warning(self, "警告", "行业服务未初始化")
+                return
+            
+            refresh_btn = self.get_widget('refresh_industry_btn')
+            if refresh_btn:
+                refresh_btn.setEnabled(False)
+                refresh_btn.setText("加载中...")
+            
+            from concurrent.futures import ThreadPoolExecutor
+            if not hasattr(self, '_industry_executor'):
+                self._industry_executor = ThreadPoolExecutor(max_workers=1)
+            
+            self._industry_executor.submit(self._fetch_industry_data)
+            
+        except Exception as e:
+            logger.error(f"刷新行业数据失败: {e}")
+            logger.error(traceback.format_exc())
+            QMessageBox.critical(self, "错误", f"刷新失败: {str(e)}")
+            
+            refresh_btn = self.get_widget('refresh_industry_btn')
+            if refresh_btn:
+                refresh_btn.setEnabled(True)
+                refresh_btn.setText("刷新行业数据")
+
+    def _fetch_industry_data(self) -> None:
+        """在后台线程获取行业数据"""
+        try:
+            if not self.industry_service:
+                logger.warning("IndustryService 未初始化")
+                self._update_industry_ui({})
+                return
+            
+            result = {
+                'industries': [],
+                'performance': {},
+                'rotation': {}
+            }
+            
+            industries = self.industry_service.get_industry_list(source="eastmoney")
+            result['industries'] = industries if industries else []
+            
+            if self.industry_service._industry_manager:
+                try:
+                    performance = self.industry_service._industry_manager.get_industry_performance(period="1d")
+                    result['performance'] = performance if performance else {}
+                except Exception as e:
+                    logger.warning(f"获取行业表现数据失败: {e}")
+                
+                try:
+                    rotation = self.industry_service._industry_manager.get_industry_rotation_signals()
+                    result['rotation'] = rotation if rotation else {}
+                except Exception as e:
+                    logger.warning(f"获取行业轮动信号失败: {e}")
+            
+            from PyQt5.QtCore import QMetaObject, Qt, Q_ARG
+            QMetaObject.invokeMethod(
+                self,
+                "_update_industry_ui",
+                Qt.QueuedConnection,
+                Q_ARG('dict', result)
+            )
+            
+        except Exception as e:
+            logger.error(f"获取行业数据失败: {e}")
+            logger.error(traceback.format_exc())
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "错误", f"获取数据失败: {str(e)}")
+            
+            refresh_btn = self.get_widget('refresh_industry_btn')
+            if refresh_btn:
+                refresh_btn.setEnabled(True)
+                refresh_btn.setText("刷新行业数据")
+
+    @pyqtSlot(dict)
+    def _update_industry_ui(self, result: dict) -> None:
+        """在主线程更新UI（由后台线程调用）"""
+        try:
+            overview_table = self.get_widget('industry_overview_table')
+            performance_table = self.get_widget('industry_performance_table')
+            hotspot_text = self.get_widget('industry_hotspot_text')
+            refresh_btn = self.get_widget('refresh_industry_btn')
+            
+            if refresh_btn:
+                refresh_btn.setEnabled(True)
+                refresh_btn.setText("刷新行业数据")
+            
+            industries = result.get('industries', [])
+            if industries and overview_table:
+                overview_table.setRowCount(len(industries[:20]))
+                for i, ind in enumerate(industries[:20]):
+                    overview_table.setItem(i, 0, QTableWidgetItem(str(ind.get('name', ''))))
+                    overview_table.setItem(i, 1, QTableWidgetItem(str(ind.get('code', ''))))
+                logger.info(f"已更新行业概况表格，共 {len(industries[:20])} 条数据")
+            
+            performance = result.get('performance', {})
+            if performance and performance.get('sectors') and performance_table:
+                sectors = performance['sectors'][:20]
+                performance_table.setRowCount(len(sectors))
+                for i, sector in enumerate(sectors):
+                    performance_table.setItem(i, 0, QTableWidgetItem(str(sector.get('name', ''))))
+                    performance_table.setItem(i, 1, QTableWidgetItem(f"{sector.get('change_pct', 0):.2f}%"))
+                    performance_table.setItem(i, 2, QTableWidgetItem(str(sector.get('amount', ''))))
+                    performance_table.setItem(i, 3, QTableWidgetItem(str(sector.get('leading_stock', ''))))
+                logger.info(f"已更新板块表现表格，共 {len(sectors)} 条数据")
+            
+            if hotspot_text:
+                rotation = result.get('rotation', {})
+                if rotation and rotation.get('summary'):
+                    hotspot_text.setText(f"行业轮动信号:\n{rotation.get('summary', '暂无')}")
+                else:
+                    hotspot_text.setText("暂无热点分析数据")
+            
+            logger.info("行业数据UI更新完成")
+            
+        except Exception as e:
+            logger.error(f"更新行业数据UI失败: {e}")
+            logger.error(traceback.format_exc())
+            
+            refresh_btn = self.get_widget('refresh_industry_btn')
+            if refresh_btn:
+                refresh_btn.setEnabled(True)
+                refresh_btn.setText("刷新行业数据")
 
     def resizeEvent(self, event):
         """窗口大小改变事件处理"""

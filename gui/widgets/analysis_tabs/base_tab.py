@@ -41,6 +41,9 @@ class BaseAnalysisTab(QWidget):
         Args:
             config_manager: 配置管理器
         """
+        import time
+        logger.info(f"[DEBUG] {self.__class__.__name__} __init__ 开始...")
+        
         super().__init__()
 
         from utils.manager_factory import get_config_manager
@@ -74,12 +77,22 @@ class BaseAnalysisTab(QWidget):
 
         # 安全初始化UI
         try:
+            logger.info(f"[DEBUG] {self.__class__.__name__} 开始调用 create_ui()...")
+            start = time.time()
             self.create_ui()
+            logger.info(f"[DEBUG] {self.__class__.__name__} create_ui() 完成，耗时: {time.time() - start:.2f}秒")
+            
+            logger.info(f"[DEBUG] {self.__class__.__name__} 开始调用 _setup_responsive_constraints()...")
+            start = time.time()
             self._setup_responsive_constraints()
+            logger.info(f"[DEBUG] {self.__class__.__name__} _setup_responsive_constraints() 完成，耗时: {time.time() - start:.2f}秒")
+            
             self.is_initialized = True
-            logger.debug(f"{self.__class__.__name__} 初始化成功")
+            logger.info(f"[DEBUG] {self.__class__.__name__} 初始化成功")
         except Exception as e:
+            import traceback
             logger.error(f"{self.__class__.__name__} 初始化失败: {e}")
+            logger.error(traceback.format_exc())
             self.error_occurred.emit(f"初始化失败: {str(e)}")
 
     def create_ui(self):

@@ -84,24 +84,10 @@ class UtilityMixin:
             period: 周期名称
         """
         try:
-            # 转换周期
-            period_map = {
-                '分时': 'min',
-                '日线': 'D',
-                '周线': 'W',
-                '月线': 'M',
-                '5分钟': '5',
-                '15分钟': '15',
-                '30分钟': '30',
-                '60分钟': '60'
-            }
+            from core.plugin_types import Period
 
-            # 如果输入的是中文周期名称，转换为代码
-            if period in period_map:
-                self.current_period = period_map[period]
-            else:
-                # 否则直接使用输入的周期
-                self.current_period = period
+            # 使用统一的 Period 枚举类转换周期
+            self.current_period = Period.normalize(period)
 
             # 发出周期变更信号
             self.period_changed.emit(self.current_period)

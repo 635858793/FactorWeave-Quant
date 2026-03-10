@@ -42,13 +42,16 @@ class TradingController(QObject):
         self._trading_service = None
         self._trading_engine = None
         self._unified_data_manager = None
-        self._backtest_result_manager = BacktestResultManager()
+        self._backtest_result_manager = None
 
         self.current_strategy = None
         self.order_queue = []
 
         # 初始化服务
         self._initialize_services()
+        
+        # 获取 BacktestResultManager 单例
+        self._backtest_result_manager = self._get_backtest_result_manager()
 
     def _initialize_services(self):
         """初始化服务依赖"""
@@ -69,6 +72,15 @@ class TradingController(QObject):
 
         except Exception as e:
             logger.error(f"交易控制器服务依赖初始化失败: {e}")
+
+    def _get_backtest_result_manager(self):
+        """从服务容器获取 BacktestResultManager 单例"""
+        try:
+            from core.services.backtest_result_manager import BacktestResultManager
+            return self.service_container.resolve(BacktestResultManager)
+        except Exception as e:
+            logger.warning(f"无法从服务容器获取BacktestResultManager，回退到直接创建: {e}")
+            return BacktestResultManager()
 
     def initialize(self):
         """Initialize the trading controller"""

@@ -6,11 +6,12 @@ This module contains reusable UI components for the trading system.
 
 from loguru import logger
 from PyQt5.QtWidgets import (
-    QSizePolicy, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
+    QDateEdit, QGridLayout, QListWidgetItem, QSizePolicy, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
     QPushButton, QLineEdit, QProgressBar, QTextEdit,
     QGroupBox, QFormLayout, QSpinBox, QDoubleSpinBox,
     QListWidget, QTableWidget, QTableWidgetItem, QDialog, QCheckBox,
-    QHeaderView, QInputDialog, QAbstractItemView, QMessageBox
+    QHeaderView, QInputDialog, QAbstractItemView, QMessageBox,
+    QTabWidget
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QDate
 from PyQt5.QtGui import QIcon, QColor, QBrush
@@ -206,15 +207,25 @@ class AnalysisToolsPanel(BaseAnalysisPanel, EnhancedBatchAnalysisMixin):
         self.enhanced_batch_analysis_config = {}
         self.enhanced_batch_results = []
         self.enhanced_batch_worker = None
+        self._batch_results_lock = threading.Lock()
+        self._batch_parallel_workers = 4
+        self._last_ui_update_time = 0
+        self._ui_update_interval = 500
+        self._kline_cache = {}
+        self._kline_cache_timeout = 300
 
         try:
 
             logger.info("初始化策略回测UI组件")
             super().__init__(parent)
-            # 集成TradingWidget实例（仅作分析逻辑调用，不显示UI）
-            from gui.widgets.trading_widget import TradingWidget
-            self.trading_widget = TradingWidget()
-            # 初始化UI
+
+            self.trading_widget = None
+            try:
+                from gui.widgets.trading_widget import TradingWidget
+                self.trading_widget = TradingWidget()
+            except Exception as tw_error:
+                logger.warning(f"TradingWidget初始化失败: {tw_error}")
+
             try:
                 self.init_ui()
             except Exception as e:
@@ -303,6 +314,8 @@ class AnalysisToolsPanel(BaseAnalysisPanel, EnhancedBatchAnalysisMixin):
                 }
             """)
             layout.addWidget(self.analyze_btn)
+
+            self._create_batch_analysis_ui(layout)
 
             logger.info("分析工具面板UI初始化完成")
 
@@ -453,7 +466,251 @@ class AnalysisToolsPanel(BaseAnalysisPanel, EnhancedBatchAnalysisMixin):
 
             logger.info("增强批量分析资源清理完成")
         except Exception as e:
-            logger.error(f"增强批量分析资源清理失败: {str(e)}")
+            logger.error(f"增强批量分析资源清理失败: {e}")
+
+    def _create_batch_analysis_ui(self, parent_layout):
+        """创建批量分析UI组件"""
+        try:
+            logger.info("创建批量分析UI组件")
+
+            batch_group = QGroupBox("批量分析")
+            batch_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            batch_layout = QVBoxLayout()
+            batch_layout.setSpacing(4)
+            batch_layout.setContentsMargins(4, 4, 4, 4)
+
+            stock_selection_layout = QHBoxLayout()
+            stock_selection_layout.addWidget(QLabel("股票选择:"))
+            self.batch_stock_selection_combo = QComboBox()
+            self.batch_stock_selection_combo.addItems(["默认股票", "全部股票", "高级筛选条件"])
+            self.batch_stock_selection_combo.currentTextChanged.connect(
+                self._on_batch_stock_selection_changed)
+            stock_selection_layout.addWidget(self.batch_stock_selection_combo)
+            stock_selection_layout.addStretch()
+            batch_layout.addLayout(stock_selection_layout)
+
+            self.batch_stock_list = QListWidget()
+            self.batch_stock_list.setMinimumHeight(80)
+            self.batch_stock_list.setMaximumHeight(120)
+            self.batch_stock_list.setSelectionMode(QAbstractItemView.MultiSelection)
+            batch_layout.addWidget(QLabel("股票列表:"))
+            batch_layout.addWidget(self.batch_stock_list)
+
+            stock_buttons_layout = QHBoxLayout()
+            select_all_btn = QPushButton("全选")
+            select_all_btn.clicked.connect(self._batch_select_all_stocks)
+            stock_buttons_layout.addWidget(select_all_btn)
+
+            select_none_btn = QPushButton("全不选")
+            select_none_btn.clicked.connect(self._batch_select_no_stocks)
+            stock_buttons_layout.addWidget(select_none_btn)
+
+            import_btn = QPushButton("导入")
+            import_btn.clicked.connect(self._batch_import_stock_list)
+            stock_buttons_layout.addWidget(import_btn)
+
+            stock_buttons_layout.addStretch()
+            batch_layout.addLayout(stock_buttons_layout)
+
+            batch_layout.addWidget(QLabel("策略列表:"))
+            self.batch_strategy_list = QListWidget()
+            self.batch_strategy_list.setMinimumHeight(60)
+            self.batch_strategy_list.setMaximumHeight(80)
+            self.batch_strategy_list.setSelectionMode(QAbstractItemView.MultiSelection)
+
+            default_strategies = ["MA策略", "MACD策略", "RSI策略", "KDJ策略", "布林带策略"]
+            for strategy in default_strategies:
+                item = QListWidgetItem(strategy)
+                item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+                item.setCheckState(Qt.Checked)
+                self.batch_strategy_list.addItem(item)
+            batch_layout.addWidget(self.batch_strategy_list)
+
+            param_layout = QGridLayout()
+            param_layout.addWidget(QLabel("起始日期:"), 0, 0)
+            self.batch_start_date = QDateEdit()
+            self.batch_start_date.setCalendarPopup(True)
+            self.batch_start_date.setDate(QDate.currentDate().addMonths(-1))
+            param_layout.addWidget(self.batch_start_date, 0, 1)
+
+            param_layout.addWidget(QLabel("结束日期:"), 0, 2)
+            self.batch_end_date = QDateEdit()
+            self.batch_end_date.setCalendarPopup(True)
+            self.batch_end_date.setDate(QDate.currentDate())
+            param_layout.addWidget(self.batch_end_date, 0, 3)
+
+            param_layout.addWidget(QLabel("初始资金:"), 1, 0)
+            self.batch_initial_capital_spin = QSpinBox()
+            self.batch_initial_capital_spin.setRange(10000, 100000000)
+            self.batch_initial_capital_spin.setValue(100000)
+            self.batch_initial_capital_spin.setSuffix(" 元")
+            param_layout.addWidget(self.batch_initial_capital_spin, 1, 1)
+
+            param_layout.addWidget(QLabel("手续费:"), 1, 2)
+            self.batch_commission_spin = QDoubleSpinBox()
+            self.batch_commission_spin.setRange(0, 10)
+            self.batch_commission_spin.setValue(0.3)
+            self.batch_commission_spin.setSuffix(" ‰")
+            param_layout.addWidget(self.batch_commission_spin, 1, 3)
+
+            param_layout.addWidget(QLabel("滑点:"), 2, 0)
+            self.batch_slippage_spin = QDoubleSpinBox()
+            self.batch_slippage_spin.setRange(0, 5)
+            self.batch_slippage_spin.setValue(0.1)
+            self.batch_slippage_spin.setSuffix(" ‰")
+            param_layout.addWidget(self.batch_slippage_spin, 2, 1)
+
+            param_layout.setColumnStretch(1, 1)
+            param_layout.setColumnStretch(3, 1)
+            batch_layout.addLayout(param_layout)
+
+            control_layout = QHBoxLayout()
+            self.batch_start_btn = QPushButton("开始批量分析")
+            self.batch_start_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #2196F3;
+                    color: white;
+                    border: none;
+                    padding: 8px 16px;
+                    border-radius: 4px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #1976D2;
+                }
+            """)
+            self.batch_start_btn.clicked.connect(self.start_enhanced_batch_analysis)
+            control_layout.addWidget(self.batch_start_btn)
+
+            self.batch_stop_btn = QPushButton("停止")
+            self.batch_stop_btn.setEnabled(False)
+            self.batch_stop_btn.clicked.connect(self.stop_enhanced_batch_analysis)
+            control_layout.addWidget(self.batch_stop_btn)
+
+            export_btn = QPushButton("导出结果")
+            export_btn.clicked.connect(self.export_batch_results)
+            control_layout.addWidget(export_btn)
+
+            control_layout.addStretch()
+            batch_layout.addLayout(control_layout)
+
+            progress_layout = QHBoxLayout()
+            progress_layout.addWidget(QLabel("进度:"))
+            self.batch_overall_progress = QProgressBar()
+            self.batch_overall_progress.setMaximum(100)
+            progress_layout.addWidget(self.batch_overall_progress)
+            progress_layout.addWidget(QLabel("已完成:"))
+            self.batch_completed_tasks_label = QLabel("0")
+            progress_layout.addWidget(self.batch_completed_tasks_label)
+            progress_layout.addWidget(QLabel("/"))
+            self.batch_total_tasks_label = QLabel("0")
+            progress_layout.addWidget(self.batch_total_tasks_label)
+            progress_layout.addWidget(QLabel("剩余:"))
+            self.batch_remaining_tasks_label = QLabel("0")
+            progress_layout.addWidget(self.batch_remaining_tasks_label)
+            batch_layout.addLayout(progress_layout)
+
+            self.batch_tabs = QTabWidget()
+            self.batch_tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+            tasks_tab = QWidget()
+            tasks_layout = QVBoxLayout(tasks_tab)
+            self.batch_tasks_table = QTableWidget(0, 6)
+            self.batch_tasks_table.setHorizontalHeaderLabels(
+                ["股票代码", "股票名称", "策略", "状态", "进度", "完成时间"])
+            self.batch_tasks_table.horizontalHeader().setStretchLastSection(True)
+            self.batch_tasks_table.setAlternatingRowColors(True)
+            tasks_layout.addWidget(self.batch_tasks_table)
+            self.batch_tabs.addTab(tasks_tab, "任务列表")
+
+            results_tab = QWidget()
+            results_layout = QVBoxLayout(results_tab)
+            stats_layout = QGridLayout()
+
+            stats_layout.addWidget(QLabel("总组合数:"), 0, 0)
+            self.batch_total_combinations_label = QLabel("0")
+            stats_layout.addWidget(self.batch_total_combinations_label, 0, 1)
+
+            stats_layout.addWidget(QLabel("盈利组合:"), 0, 2)
+            self.batch_profitable_combinations_label = QLabel("0")
+            stats_layout.addWidget(self.batch_profitable_combinations_label, 0, 3)
+
+            stats_layout.addWidget(QLabel("最高收益:"), 1, 0)
+            self.batch_best_return_label = QLabel("0%")
+            stats_layout.addWidget(self.batch_best_return_label, 1, 1)
+
+            stats_layout.addWidget(QLabel("最低收益:"), 1, 2)
+            self.batch_worst_return_label = QLabel("0%")
+            stats_layout.addWidget(self.batch_worst_return_label, 1, 3)
+
+            stats_layout.addWidget(QLabel("平均收益:"), 2, 0)
+            self.batch_avg_return_label = QLabel("0%")
+            stats_layout.addWidget(self.batch_avg_return_label, 2, 1)
+
+            stats_layout.addWidget(QLabel("最佳夏普:"), 2, 2)
+            self.batch_best_sharpe_label = QLabel("0")
+            stats_layout.addWidget(self.batch_best_sharpe_label, 2, 3)
+
+            results_layout.addLayout(stats_layout)
+
+            self.batch_results_table = QTableWidget(0, 8)
+            self.batch_results_table.setHorizontalHeaderLabels(
+                ["股票代码", "股票名称", "策略", "收益率", "夏普比率", "最大回撤", "胜率", "交易次数"])
+            self.batch_results_table.horizontalHeader().setStretchLastSection(True)
+            self.batch_results_table.setAlternatingRowColors(True)
+            results_layout.addWidget(self.batch_results_table)
+
+            results_buttons_layout = QHBoxLayout()
+            sort_return_btn = QPushButton("按收益率排序")
+            sort_return_btn.clicked.connect(lambda: self._sort_batch_results('return_rate'))
+            results_buttons_layout.addWidget(sort_return_btn)
+
+            sort_sharpe_btn = QPushButton("按夏普排序")
+            sort_sharpe_btn.clicked.connect(lambda: self._sort_batch_results('sharpe_ratio'))
+            results_buttons_layout.addWidget(sort_sharpe_btn)
+
+            filter_profitable_btn = QPushButton("仅显示盈利")
+            filter_profitable_btn.clicked.connect(self._filter_profitable_batch_results)
+            results_buttons_layout.addWidget(filter_profitable_btn)
+
+            results_buttons_layout.addStretch()
+            results_layout.addLayout(results_buttons_layout)
+
+            self.batch_tabs.addTab(results_tab, "分析结果")
+
+            log_tab = QWidget()
+            log_layout = QVBoxLayout(log_tab)
+            self.batch_log_text = QTextEdit()
+            self.batch_log_text.setReadOnly(True)
+            self.batch_log_text.setMaximumHeight(150)
+            log_layout.addWidget(self.batch_log_text)
+
+            log_buttons_layout = QHBoxLayout()
+            clear_log_btn = QPushButton("清空日志")
+            clear_log_btn.clicked.connect(self._clear_batch_log)
+            log_buttons_layout.addWidget(clear_log_btn)
+
+            save_log_btn = QPushButton("保存日志")
+            save_log_btn.clicked.connect(self._save_batch_log)
+            log_buttons_layout.addWidget(save_log_btn)
+
+            log_buttons_layout.addStretch()
+            log_layout.addLayout(log_buttons_layout)
+
+            self.batch_tabs.addTab(log_tab, "分析日志")
+
+            batch_layout.addWidget(self.batch_tabs)
+
+            batch_group.setLayout(batch_layout)
+            parent_layout.addWidget(batch_group)
+
+            self._load_default_batch_stocks()
+
+            logger.info("批量分析UI组件创建完成")
+
+        except Exception as e:
+            logger.error(f"创建批量分析UI失败: {str(e)}")
+            logger.error(traceback.format_exc())
 
     def __del__(self):
         """析构函数"""

@@ -512,7 +512,7 @@ class IncrementalUpdateRecorder:
                 id=row[0],
                 task_name=row[2],
                 update_type=row[3],
-                symbols_count=len(eval(row[4])),  # Parse JSON symbols
+                symbols_count=len(eval(row[4])),
                 success_count=row[7],
                 failed_count=row[8],
                 skipped_count=row[9],
@@ -524,6 +524,18 @@ class IncrementalUpdateRecorder:
             history_items.append(history_item)
 
         return history_items
+
+    def get_all_update_history(self, limit: int = 500) -> List[UpdateHistoryItem]:
+        """
+        Get all update history records
+
+        Args:
+            limit: Maximum number of records to return (default: 500)
+
+        Returns:
+            List of UpdateHistoryItem objects containing all update history
+        """
+        return self.get_task_history(limit=limit)
 
     def get_task_statistics(self, days: int = 30) -> Dict[str, Any]:
         """
@@ -671,3 +683,29 @@ class IncrementalUpdateRecorder:
                 task.success_symbols, task.failed_symbols, task.skipped_symbols,
                 error_messages_json, execution_time, task.created_at, datetime.now()
             ))
+
+
+_recorder_instance: Optional[IncrementalUpdateRecorder] = None
+
+
+def get_incremental_update_recorder() -> IncrementalUpdateRecorder:
+    """
+    Get the singleton instance of IncrementalUpdateRecorder.
+    
+    This function provides backward compatibility for code that uses
+    the factory pattern. New code should use dependency injection.
+    
+    Returns:
+        IncrementalUpdateRecorder: The singleton recorder instance
+    """
+    global _recorder_instance
+    
+    if _recorder_instance is None:
+        from ..database.duckdb_manager import get_connection_manager
+        from ..events.event_bus import get_event_bus
+        
+        db_manager = get_connection_manager()
+        event_bus = get_event_bus()
+        _recorder_instance = IncrementalUpdateRecorder(db_manager, event_bus)
+    
+    return _recorder_instance

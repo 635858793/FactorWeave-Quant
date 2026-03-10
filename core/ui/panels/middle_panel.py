@@ -712,8 +712,8 @@ class MiddlePanel(BasePanel):
         # 周期选择
         toolbar.addWidget(QLabel("周期:"))
         period_combo = QComboBox()
-        period_combo.addItems(
-            ["分时", "5分钟", "15分钟", "30分钟", "60分钟", "日线", "周线", "月线"])
+        from core.plugin_types import Period
+        period_combo.addItems(Period.all_periods())
         period_combo.setCurrentText("日线")
         toolbar.addWidget(period_combo)
         self.add_widget('period_combo', period_combo)
@@ -1079,6 +1079,8 @@ class MiddlePanel(BasePanel):
             if not event or not event.stock_code:
                 return
 
+            logger.info(f"[MiddlePanel] 收到事件: period={event.period}, time_range={event.time_range}, chart_type={event.chart_type}")
+
             # 更新当前股票信息
             self._current_stock_code = event.stock_code
             self._current_stock_name = event.stock_name
@@ -1093,6 +1095,8 @@ class MiddlePanel(BasePanel):
 
             if event.chart_type:
                 self._current_chart_type = event.chart_type
+
+            logger.info(f"[MiddlePanel] 当前状态: period={self._current_period}, time_range={self._current_time_range}, chart_type={self._current_chart_type}")
 
             # 更新UI组件显示
             period_combo = self.get_widget('period_combo')
@@ -1317,15 +1321,18 @@ class MiddlePanel(BasePanel):
             bool: 是否兼容
         """
         try:
+            from core.plugin_types import Period
+
             # 对于分钟级别的数据，时间范围不应该太长
-            if period in ['分时', '5分钟', '15分钟', '30分钟', '60分钟']:
+            if Period.is_intraday(period):
                 long_ranges = ['最近2年', '最近3年', '最近5年', '全部']
                 if time_range in long_ranges:
                     logger.warning(f"分钟级数据 {period} 与长时间范围 {time_range} 可能不兼容，数据量会很大")
                     return False
 
             # 对于短时间范围，周线和月线可能数据点太少
-            if period in ['周线', '月线']:
+            normalized_period = Period.normalize(period)
+            if normalized_period in [Period.WEEK.value, Period.MONTH.value]:
                 short_ranges = ['最近7天', '最近30天']
                 if time_range in short_ranges:
                     logger.warning(f"长周期数据 {period} 与短时间范围 {time_range} 可能不兼容，数据点太少")

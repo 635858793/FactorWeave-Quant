@@ -20,6 +20,14 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QThread, pyqtSlot
 from PyQt5.QtGui import QFont, QColor
 
+try:
+    from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+    from matplotlib.figure import Figure
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:
+    MATPLOTLIB_AVAILABLE = False
+    logger.warning("matplotlib 未安装，持仓分布图表将不显示")
+
 from core.services.trading_service import OrderSide, OrderStatus, OrderType, TradingService, Portfolio, Position, TradeRecord
 from core.events import EventBus, StockSelectedEvent, TradeExecutedEvent, PositionUpdatedEvent
 # 纯Loguru架构，移除旧的日志导入
@@ -402,21 +410,28 @@ class TradingPanel(QWidget):
 
         layout.addWidget(overview_group)
 
-        # 持仓分布图表区域（预留）
+        # 持仓分布图表区域
         chart_group = QGroupBox("持仓分布")
         chart_layout = QVBoxLayout(chart_group)
 
-        self.chart_placeholder = QLabel("持仓分布图表\n（功能开发中）")
-        self.chart_placeholder.setAlignment(Qt.AlignCenter)
-        self.chart_placeholder.setStyleSheet("""
-            QLabel {
-                border: 2px dashed #cccccc;
-                border-radius: 8px;
-                padding: 20px;
-                color: #666666;
-            }
-        """)
-        chart_layout.addWidget(self.chart_placeholder)
+        if MATPLOTLIB_AVAILABLE:
+            self.portfolio_figure = Figure(figsize=(4, 3))
+            self.portfolio_canvas = FigureCanvas(self.portfolio_figure)
+            chart_layout.addWidget(self.portfolio_canvas)
+            self._portfolio_chart_initialized = True
+        else:
+            self.chart_placeholder = QLabel("持仓分布图表\n（matplotlib未安装）")
+            self.chart_placeholder.setAlignment(Qt.AlignCenter)
+            self.chart_placeholder.setStyleSheet("""
+                QLabel {
+                    border: 2px dashed #cccccc;
+                    border-radius: 8px;
+                    padding: 20px;
+                    color: #666666;
+                }
+            """)
+            chart_layout.addWidget(self.chart_placeholder)
+            self._portfolio_chart_initialized = False
 
         layout.addWidget(chart_group)
 
@@ -943,8 +958,58 @@ class TradingPanel(QWidget):
             self.profit_loss_pct_label.setText(profit_loss_pct_text)
             self.profit_loss_pct_label.setStyleSheet(f"color: {color}; font-weight: bold;")
 
+            # 更新持仓分布图表
+            self._update_portfolio_chart()
+
         except Exception as e:
             logger.error(f"Failed to update portfolio display: {e}")
+
+    def _update_portfolio_chart(self) -> None:
+        """更新持仓分布图表"""
+        if not hasattr(self, '_portfolio_chart_initialized') or not self._portfolio_chart_initialized:
+            return
+
+        try:
+            if not self._portfolio or not self._portfolio.positions:
+                self.portfolio_figure.clear()
+                ax = self.portfolio_figure.add_subplot(111)
+                ax.text(0.5, 0.5, '暂无持仓数据', ha='center', va='center', fontsize=12, color='#666666')
+                self.portfolio_canvas.draw()
+                return
+
+            positions = self._portfolio.positions
+            labels = []
+            sizes = []
+            colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F']
+
+            for symbol, position in positions.items():
+                mv = float(position.market_value) if position.market_value else 0.0
+                labels.append(f"{symbol}\n{position.symbol_name}")
+                sizes.append(mv)
+
+            if not sizes or sum(sizes) == 0:
+                self.portfolio_figure.clear()
+                ax = self.portfolio_figure.add_subplot(111)
+                ax.text(0.5, 0.5, '持仓市值为空', ha='center', va='center', fontsize=12, color='#666666')
+                self.portfolio_canvas.draw()
+                return
+
+            self.portfolio_figure.clear()
+            ax = self.portfolio_figure.add_subplot(111)
+            wedges, texts, autotexts = ax.pie(
+                sizes,
+                labels=labels,
+                autopct='%1.1f%%',
+                colors=colors[:len(sizes)],
+                startangle=90,
+                pctdistance=0.75
+            )
+            ax.set_title('持仓分布', fontsize=12, fontweight='bold')
+            self.portfolio_canvas.draw()
+            logger.debug("Portfolio chart updated")
+
+        except Exception as e:
+            logger.error(f"Failed to update portfolio chart: {e}")
 
     def _refresh_positions(self) -> None:
         """刷新持仓表格"""
@@ -953,9 +1018,10 @@ class TradingPanel(QWidget):
 
         try:
             positions = self._portfolio.positions
-            self.position_table.setRowCount(len(positions))
+            position_list = list(positions.values())
+            self.position_table.setRowCount(len(position_list))
 
-            for row, position in enumerate(positions):
+            for row, position in enumerate(position_list):
                 # 股票代码
                 self.position_table.setItem(row, 0, QTableWidgetItem(position.stock_code))
 

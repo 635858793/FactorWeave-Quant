@@ -86,6 +86,7 @@ class UniPluginDataManager:
         # 统一缓存服务（强制）
         self._unified_cache = None
         self._cache_namespace = 'uni_plugin_data'
+        self._cache_ttl = 300  # 缓存TTL: 5分钟
         self._init_unified_cache()
 
         # 线程池（v2.4性能优化）
@@ -364,7 +365,7 @@ class UniPluginDataManager:
 
     def get_kline_data(self, symbol: str, asset_type: AssetType,
                        start_date: datetime = None, end_date: datetime = None,
-                       frequency: str = "1d", **params) -> pd.DataFrame:
+                       frequency: str = None, **params) -> pd.DataFrame:
         """
         获取K线数据 - 统一入口
 
@@ -373,12 +374,15 @@ class UniPluginDataManager:
             asset_type: 资产类型
             start_date: 开始日期
             end_date: 结束日期
-            frequency: 数据频率
+            frequency: 数据频率（默认使用Period.DAY.value）
             **params: 其他参数
 
         Returns:
             pd.DataFrame: K线数据
         """
+        from core.plugin_types import Period
+        if frequency is None:
+            frequency = Period.DAY.value
         # 参数类型检查和转换
         if isinstance(asset_type, str):
             try:
@@ -811,6 +815,7 @@ class UniPluginDataManager:
         # 添加参数hash
         if params:
             # 排序参数以确保一致性
+            # 重要：将 adjustment 参数加入 hash 计算，确保不同复权类型缓存独立
             sorted_params = sorted(params.items())
             param_str = str(sorted_params)
             param_hash = hashlib.md5(param_str.encode()).hexdigest()[:8]

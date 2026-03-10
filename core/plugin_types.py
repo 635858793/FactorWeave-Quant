@@ -196,6 +196,190 @@ class PluginPriority(Enum):
     LOW = 4                              # 低优先级
     BACKGROUND = 5                       # 后台优先级
 
+
+class Period(Enum):
+    """
+    周期枚举类 - 统一管理所有周期相关的映射
+
+    提供统一的周期转换和映射功能，避免在多个地方重复定义周期映射。
+    支持中文、英文、缩写等多种格式的周期表示。
+    """
+    MIN1 = "1m"
+    MIN5 = "5m"
+    MIN15 = "15m"
+    MIN30 = "30m"
+    MIN60 = "1H"
+    DAY = "D"
+    WEEK = "W"
+    MONTH = "M"
+
+    @classmethod
+    def normalize(cls, period: str) -> str:
+        """
+        将各种周期格式标准化为统一格式
+
+        Args:
+            period: 周期字符串，支持中文、英文、缩写等格式
+
+        Returns:
+            标准化后的周期字符串 (1m/5m/15m/30m/1H/D/W/M)
+        """
+        period_mapping = {
+            '日线': cls.DAY.value,
+            '日': cls.DAY.value,
+            'D': cls.DAY.value,
+            '1d': cls.DAY.value,
+            'daily': cls.DAY.value,
+
+            '周线': cls.WEEK.value,
+            '周': cls.WEEK.value,
+            'W': cls.WEEK.value,
+            'weekly': cls.WEEK.value,
+            '1w': cls.WEEK.value,
+
+            '月线': cls.MONTH.value,
+            '月': cls.MONTH.value,
+            'M': cls.MONTH.value,
+            'monthly': cls.MONTH.value,
+            '1M': cls.MONTH.value,
+
+            '分时': cls.MIN1.value,
+            'min': cls.MIN1.value,
+            '分钟': cls.MIN1.value,
+            '1分钟': cls.MIN1.value,
+            '1分': cls.MIN1.value,
+            '1m': cls.MIN1.value,
+            '1min': cls.MIN1.value,
+            '1': cls.MIN1.value,
+
+            '5分钟': cls.MIN5.value,
+            '5分': cls.MIN5.value,
+            '5m': cls.MIN5.value,
+            '5min': cls.MIN5.value,
+            '5': cls.MIN5.value,
+
+            '15分钟': cls.MIN15.value,
+            '15分': cls.MIN15.value,
+            '15m': cls.MIN15.value,
+            '15min': cls.MIN15.value,
+            '15': cls.MIN15.value,
+
+            '30分钟': cls.MIN30.value,
+            '30分': cls.MIN30.value,
+            '30m': cls.MIN30.value,
+            '30min': cls.MIN30.value,
+            '30': cls.MIN30.value,
+
+            '60分钟': cls.MIN60.value,
+            '60分': cls.MIN60.value,
+            '60': cls.MIN60.value,
+            '1小时': cls.MIN60.value,
+            '小时': cls.MIN60.value,
+            '1H': cls.MIN60.value,
+            '1h': cls.MIN60.value,
+            'hourly': cls.MIN60.value,
+            '60min': cls.MIN60.value,
+        }
+        return period_mapping.get(period, period)
+
+    @classmethod
+    def to_frequency(cls, period: str) -> str:
+        """
+        将周期转换为 UniPluginDataManager 使用的频率格式
+
+        Args:
+            period: 周期字符串
+
+        Returns:
+            频率字符串 (daily/weekly/monthly/1min/5min/15min/30min/60min)
+        """
+        normalized = cls.normalize(period)
+        frequency_mapping = {
+            cls.DAY.value: 'daily',
+            cls.WEEK.value: 'weekly',
+            cls.MONTH.value: 'monthly',
+            cls.MIN1.value: '1min',
+            cls.MIN5.value: '5min',
+            cls.MIN15.value: '15min',
+            cls.MIN30.value: '30min',
+            cls.MIN60.value: '60min',
+        }
+        return frequency_mapping.get(normalized, normalized)
+
+    @classmethod
+    def to_duckdb_frequency(cls, period: str) -> str:
+        """
+        将周期转换为 DuckDB 表中的 frequency 字段格式
+
+        Args:
+            period: 周期字符串
+
+        Returns:
+            DuckDB 频率字符串 (1d/1w/1M/1min/5min/15min/30min/60min)
+        """
+        normalized = cls.normalize(period)
+        duckdb_mapping = {
+            cls.DAY.value: '1d',
+            cls.WEEK.value: '1w',
+            cls.MONTH.value: '1M',
+            cls.MIN1.value: '1min',
+            cls.MIN5.value: '5min',
+            cls.MIN15.value: '15min',
+            cls.MIN30.value: '30min',
+            cls.MIN60.value: '60min',
+        }
+        return duckdb_mapping.get(normalized, '1d')
+
+    @classmethod
+    def get_display_name(cls, period: str) -> str:
+        """
+        获取周期的中文显示名称
+
+        Args:
+            period: 周期字符串
+
+        Returns:
+            中文显示名称
+        """
+        normalized = cls.normalize(period)
+        display_mapping = {
+            cls.MIN1.value: '分时',
+            cls.MIN5.value: '5分钟',
+            cls.MIN15.value: '15分钟',
+            cls.MIN30.value: '30分钟',
+            cls.MIN60.value: '60分钟',
+            cls.DAY.value: '日线',
+            cls.WEEK.value: '周线',
+            cls.MONTH.value: '月线',
+        }
+        return display_mapping.get(normalized, period)
+
+    @classmethod
+    def is_intraday(cls, period: str) -> bool:
+        """
+        判断是否为日内周期
+
+        Args:
+            period: 周期字符串
+
+        Returns:
+            是否为日内周期
+        """
+        normalized = cls.normalize(period)
+        return normalized in [cls.MIN1.value, cls.MIN5.value, cls.MIN15.value,
+                              cls.MIN30.value, cls.MIN60.value]
+
+    @classmethod
+    def all_periods(cls) -> list:
+        """
+        获取所有支持的周期列表（用于UI下拉框等）
+
+        Returns:
+            周期列表
+        """
+        return ['分时', '5分钟', '15分钟', '30分钟', '60分钟', '日线', '周线', '月线']
+
+
 @dataclass
 class PluginTypeInfo:
     """

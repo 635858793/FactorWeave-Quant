@@ -22,7 +22,6 @@ from loguru import logger
 try:
     CORE_AVAILABLE = True
     from core.services.incremental_update_recorder import get_incremental_update_recorder, UpdateRecord, UpdateTask
-    from core.services.incremental_update_scheduler import get_incremental_update_scheduler, ScheduledTask
     from core.services.breakpoint_resume_manager import get_breakpoint_resume_manager, BreakpointState
     from core.plugin_types import AssetType, DataType
 except ImportError as e:

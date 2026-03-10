@@ -202,16 +202,10 @@ class ContextMenuManager(QObject):
             period_menu.setIcon(QIcon(":/icons/period.png"))
 
             period_group = QActionGroup(period_menu)
-            periods = [
-                ("1分钟", "1min"),
-                ("5分钟", "5min"),
-                ("15分钟", "15min"),
-                ("30分钟", "30min"),
-                ("60分钟", "60min"),
-                ("日线", "D"),
-                ("周线", "W"),
-                ("月线", "M")
-            ]
+            
+            # 使用统一的 Period 枚举类
+            from core.plugin_types import Period
+            periods = [(name, Period.normalize(name)) for name in Period.all_periods()]
 
             for name, period_code in periods:
                 action = QAction(name, period_menu)

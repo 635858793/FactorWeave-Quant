@@ -301,6 +301,23 @@ class RealDataProvider:
 
             return status
 
+    def _get_plugin_adjustment_types(self, data_source: str = None) -> List[str]:
+        """获取插件支持的复权类型"""
+        try:
+            data_manager = self._get_pooled_data_manager(data_source)
+            
+            if hasattr(data_manager, '_uni_plugin_manager') and data_manager._uni_plugin_manager:
+                plugin = data_manager._uni_plugin_manager._get_plugin_for_asset(
+                    data_source or '通达信'
+                )
+                if plugin and hasattr(plugin, 'get_supported_adjustment_types'):
+                    return plugin.get_supported_adjustment_types()
+            
+            return ['none']
+        except Exception as e:
+            self.logger.debug(f"获取插件复权类型失败: {e}")
+            return ['none']
+
     def check_data_exists(self, code: str, freq: str = 'D',
                           start_date: Optional[str] = None,
                           end_date: Optional[str] = None) -> Dict[str, Any]:
@@ -373,7 +390,8 @@ class RealDataProvider:
                        end_date: Optional[str] = None,
                        count: int = 250,
                        data_source: Optional[str] = None,
-                       asset_type: Optional[str] = None) -> pd.DataFrame:
+                       asset_type: Optional[str] = None,
+                       adjustment: str = 'none') -> pd.DataFrame:
         """获取真实K线数据
 
         Args:
@@ -382,6 +400,9 @@ class RealDataProvider:
             start_date: 开始日期 (YYYY-MM-DD)
             end_date: 结束日期 (YYYY-MM-DD)
             count: 数据条数（当未指定日期时使用）
+            data_source: 数据源名称
+            asset_type: 资产类型
+            adjustment: 复权类型 ('qfq', 'hfq', 'none')
 
         Returns:
             真实K线数据DataFrame
@@ -437,18 +458,19 @@ class RealDataProvider:
                         data_source=data_source,
                         asset_type=final_asset_type,
                         start_date=start_date,
-                        end_date=end_date
+                        end_date=end_date,
+                        adjustment=adjustment
                     )
                 else:
-                    # 修复：即使没有指定data_source，也使用get_kdata_from_source以支持日期参数
                     kdata = data_manager_instance.get_kdata_from_source(
                         stock_code=code,
                         period=freq,
                         count=count,
-                        data_source=None,  # 使用默认数据源
+                        data_source=None,
                         asset_type=final_asset_type,
                         start_date=start_date,
-                        end_date=end_date
+                        end_date=end_date,
+                        adjustment=adjustment
                     )
             finally:
                 # 将实例返回连接池

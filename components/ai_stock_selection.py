@@ -339,11 +339,10 @@ class AIStockSelectionPanel(BaseAnalysisPanel):
             "最近1个月", "最近3个月", "最近6个月", "最近1年"
         ])
         
+        from core.plugin_types import Period
         self.data_period_combo = QComboBox()
-        self.data_period_combo.addItems([
-            "日线", "周线", "月线", "1分钟", "5分钟", "15分钟", "30分钟", "60分钟"
-        ])
-        self.data_period_combo.setCurrentText("日线")
+        self.data_period_combo.addItems(Period.all_periods())
+        self.data_period_combo.setCurrentText(Period.get_display_name(Period.DAY.value))
         
         # 2行3列布局
         for i, (label_text, widget_name) in enumerate(config_items):
@@ -777,18 +776,9 @@ class AIStockSelectionPanel(BaseAnalysisPanel):
             }
             criteria.time_period = timeframe_map[self.timeframe_combo.currentText()]
             
-            # 数据周期
-            data_period_map = {
-                "日线": "D",
-                "周线": "W",
-                "月线": "M",
-                "1分钟": "1",
-                "5分钟": "5",
-                "15分钟": "15",
-                "30分钟": "30",
-                "60分钟": "60"
-            }
-            criteria.data_period = data_period_map[self.data_period_combo.currentText()]
+            # 数据周期（使用统一的 Period 枚举类）
+            from core.plugin_types import Period
+            criteria.data_period = Period.normalize(self.data_period_combo.currentText())
             
             # 技术指标权重 - 将具体指标映射到评分维度
             criteria.technical_indicators = {}

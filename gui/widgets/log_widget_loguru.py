@@ -15,15 +15,15 @@ import os
 class LoguruLogWidget(QWidget):
     """纯Loguru日志控件类"""
 
-    # Qt信号
-    log_received = pyqtSignal(str, str, str)  # level, message, timestamp
+    log_received = pyqtSignal(str, str, str)
 
     def __init__(self, parent=None):
         """初始化日志控件"""
         super().__init__(parent)
-        self.all_logs = []  # 存储所有日志条目
+        self.all_logs = []
         self.is_paused = False
         self.auto_scroll = True
+        self._processing = False
         
         self.init_ui()
         self.setup_loguru_sink()
@@ -103,25 +103,35 @@ class LoguruLogWidget(QWidget):
 
     def setup_loguru_sink(self):
         """设置Loguru自定义Sink"""
+        _self = self
+        
         def qt_sink(message):
             """Qt专用sink函数"""
-            if self.is_paused:
+            if _self._processing:
                 return
+            _self._processing = True
+            try:
+                if _self.is_paused:
+                    return
+                    
+                record = message.record
+                level = record["level"].name
+                msg = record["message"]
+                timestamp = record["time"].strftime("%H:%M:%S.%f")[:-3]
                 
-            record = message.record
-            level = record["level"].name
-            msg = record["message"]
-            timestamp = record["time"].strftime("%H:%M:%S.%f")[:-3]
-            
-            # 发射信号到主线程
-            self.log_received.emit(level, msg, timestamp)
+                _self.log_received.emit(level, msg, timestamp)
+            except Exception as e:
+                import sys
+                sys.stderr.write(f"[LoguruLogWidget] 错误: {e}\n")
+                sys.stderr.flush()
+            finally:
+                _self._processing = False
 
-        # 添加自定义sink
         self.sink_id = logger.add(
             qt_sink,
             level="DEBUG",
             format="{message}",
-            enqueue=False,  # Qt更新需要在主线程
+            enqueue=False,
             catch=False
         )
 
