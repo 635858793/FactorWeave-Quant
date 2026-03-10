@@ -86,6 +86,7 @@ class UniPluginDataManager:
         # 统一缓存服务（强制）
         self._unified_cache = None
         self._cache_namespace = 'uni_plugin_data'
+        self._cache_ttl = 300  # 缓存TTL: 5分钟
         self._init_unified_cache()
 
         # 线程池（v2.4性能优化）
@@ -814,6 +815,7 @@ class UniPluginDataManager:
         # 添加参数hash
         if params:
             # 排序参数以确保一致性
+            # 重要：将 adjustment 参数加入 hash 计算，确保不同复权类型缓存独立
             sorted_params = sorted(params.items())
             param_str = str(sorted_params)
             param_hash = hashlib.md5(param_str.encode()).hexdigest()[:8]

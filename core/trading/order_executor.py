@@ -397,6 +397,87 @@ class OrderExecutor:
             logger.error(f"错误堆栈:\n{traceback.format_exc()}")
             return None
 
+    def _pre_trade_risk_check(self, order: Order) -> Dict[str, Any]:
+        """
+        交易前风控预检查（P0-2修复）
+        
+        在订单提交前进行风控检查，确保符合风控规则
+        
+        Args:
+            order: 订单对象
+            
+        Returns:
+            Dict[str, Any]: 包含 'passed' 和 'reason' 的检查结果
+        """
+        try:
+            result = {'passed': True, 'reason': '', 'warnings': []}
+            
+            try:
+                from core.risk_monitoring.enhanced_risk_monitor import EnhancedRiskMonitor
+                risk_monitor = self.service_container.resolve(EnhancedRiskMonitor)
+                
+                if risk_monitor and hasattr(risk_monitor, 'check_order_risk'):
+                    risk_result = risk_monitor.check_order_risk(order)
+                    if not risk_result.get('passed', True):
+                        result['passed'] = False
+                        result['reason'] = risk_result.get('reason', '风控检查未通过')
+                        logger.warning(f"风控检查拒绝订单: {order.order_id}, 原因: {result['reason']}")
+                        return result
+                        
+            except ImportError:
+                logger.debug("EnhancedRiskMonitor不可用，跳过高级风控检查")
+            except Exception as e:
+                logger.warning(f"风控检查异常: {e}")
+            
+            try:
+                from core.trading.account_manager import AccountManager
+                account_manager = self.service_container.resolve(AccountManager)
+                
+                if order.account_id and order.account_id != "default":
+                    account = account_manager.get_account(order.account_id)
+                    if account:
+                        order_value = order.order_price * order.order_quantity
+                        
+                        if hasattr(account, 'available_cash') and account.available_cash:
+                            if order_value > account.available_cash:
+                                result['passed'] = False
+                                result['reason'] = f"资金不足: 需要{order_value:.2f}, 可用{account.available_cash:.2f}"
+                                return result
+                        
+                        if hasattr(account, 'position_limit') and account.position_limit:
+                            positions = account_manager.get_positions_by_account(account.account_id)
+                            if len(positions) >= account.position_limit:
+                                result['warnings'].append(f"持仓数量接近限制: {len(positions)}/{account.position_limit}")
+                                
+            except Exception as e:
+                logger.warning(f"账户风控检查异常: {e}")
+            
+            if order.order_quantity <= 0:
+                result['passed'] = False
+                result['reason'] = f"订单数量无效: {order.order_quantity}"
+                return result
+            
+            if order.order_price <= 0:
+                result['passed'] = False
+                result['reason'] = f"订单价格无效: {order.order_price}"
+                return result
+            
+            max_order_value = 10000000
+            order_value = order.order_price * order.order_quantity
+            if order_value > max_order_value:
+                result['warnings'].append(f"单笔订单金额较大: {order_value:.2f}")
+            
+            if result['warnings']:
+                logger.info(f"订单风控检查通过但有警告: {order.order_id}, 警告: {result['warnings']}")
+            else:
+                logger.debug(f"订单风控检查通过: {order.order_id}")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"交易前风控检查异常: {e}")
+            return {'passed': True, 'reason': f'风控检查异常: {str(e)}', 'warnings': []}
+
     def _get_trading_interface_for_account(self, account: Account) -> Optional[TradingInterface]:
         """
         根据账号获取交易接口（带缓存）
@@ -511,6 +592,17 @@ class OrderExecutor:
                     status=ExecutionStatus.FAILED,
                     message=f"订单完整性验证失败: {validation_error}",
                     error_code="ORDER_VALIDATION_FAILED"
+                )
+
+            # 0.5 交易前风控预检查（P0-2修复）
+            risk_check_result = self._pre_trade_risk_check(order)
+            if not risk_check_result['passed']:
+                logger.warning(f"交易前风控检查未通过: {order.order_id} - {risk_check_result['reason']}")
+                return ExecutionResult(
+                    order_id=order.order_id,
+                    status=ExecutionStatus.FAILED,
+                    message=f"风控检查未通过: {risk_check_result['reason']}",
+                    error_code="RISK_CHECK_FAILED"
                 )
 
             # 1. 解析订单使用的账号

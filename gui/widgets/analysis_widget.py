@@ -12,7 +12,6 @@ from .analysis_tabs import (
     TrendAnalysisTab,
     SectorFlowTab,
     WaveAnalysisTab,
-    SentimentAnalysisTab,
     HotspotAnalysisTab
 )
 from utils.data_preprocessing import kdata_preprocess as _kdata_preprocess
@@ -435,6 +434,12 @@ class AnalysisWidget(QWidget):
                 self.pattern_tab.pattern_selected.connect(
                     self.pattern_selected)
 
+            # 连接形态检测信号 - 用于主图显示
+            if hasattr(self.pattern_tab, 'pattern_detected'):
+                self.pattern_tab.pattern_detected.connect(
+                    self._on_pattern_detected)
+                logger.info("已连接 pattern_detected 信号")
+
             # 【修复】设置pattern_tab的parent_widget并建立反向连接
             if hasattr(self.pattern_tab, 'set_parent_widget'):
                 self.pattern_tab.set_parent_widget(self)
@@ -448,6 +453,32 @@ class AnalysisWidget(QWidget):
 
         except Exception as e:
             logger.error(f"连接标签页信号失败: {e}")
+
+    def _on_pattern_detected(self, results):
+        """处理形态检测信号 - 转发到主窗口"""
+        try:
+            if isinstance(results, dict) and 'patterns' in results:
+                patterns = results['patterns']
+                logger.info(f"收到形态检测信号，包含 {len(patterns)} 个形态")
+
+                # 转发 pattern_selected 信号
+                if hasattr(self, 'pattern_selected'):
+                    self.pattern_selected.emit(len(patterns))
+
+                # 尝试通过事件总线发送形态信号
+                from core.events import PatternSignalsDisplayEvent
+                if hasattr(self, 'event_bus') and self.event_bus:
+                    for pattern in patterns:
+                        event = PatternSignalsDisplayEvent(
+                            pattern_name=pattern.get('name', ''),
+                            all_signal_indices=[pattern.get('index', -1)],
+                            highlighted_signal_index=pattern.get('index', -1)
+                        )
+                        self.event_bus.publish(event)
+                    logger.info(f"已发布 {len(patterns)} 个形态信号到事件总线")
+
+        except Exception as e:
+            logger.error(f"处理形态检测信号失败: {e}")
 
     def setup_shortcuts(self):
         """设置快捷键"""

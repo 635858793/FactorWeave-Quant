@@ -655,6 +655,10 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
         # 插件类型标识
         self.plugin_type = PluginType.DATA_SOURCE_STOCK
 
+        # 线程安全锁
+        import threading
+        self._server_lock = threading.Lock()
+
         # 支持的股票市场
         self.supported_markets = {
             'SH': '上海证券交易所',
@@ -685,9 +689,16 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
         # 通达信服务器列表 - 从数据库加载
         self.server_list = []
         self.current_server = None
+        self._servers_initialized = False
 
-        # 初始化服务器列表
-        self._initialize_servers()
+        # 先加载默认服务器，确保立即可用
+        self._load_default_servers()
+        if self.server_list:
+            self.current_server = self.server_list[0]
+            self.server_index = 0
+
+        # 后台异步初始化服务器（不阻塞UI）
+        self._start_background_server_init()
 
         # 服务器状态管理
         self._server_status_cache = {}  # 服务器状态缓存
@@ -823,8 +834,17 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
             return []
 
     def get_kdata(self, symbol: str, freq: str = "D", start_date: str = None,
-                  end_date: str = None, count: int = None) -> pd.DataFrame:
-        """获取K线数据"""
+                  end_date: str = None, count: int = None, adjustment: str = 'none') -> pd.DataFrame:
+        """获取K线数据
+        
+        Args:
+            symbol: 股票代码
+            freq: 频率
+            start_date: 开始日期
+            end_date: 结束日期
+            count: 数据条数
+            adjustment: 复权类型 ('qfq', 'hfq', 'none')
+        """
         try:
             # 转换频率参数
             period_map = {
@@ -839,7 +859,8 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
                 period=period,
                 start_date=start_date,
                 end_date=end_date,
-                count=count
+                count=count,
+                adjustment=adjustment
             )
         except Exception as e:
             self.logger.error(f"获取K线数据失败: {e}")
@@ -882,6 +903,15 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
             DataType.FUNDAMENTAL,
             DataType.TRADE_TICK
         ]
+
+    def get_supported_adjustment_types(self) -> List[str]:
+        """
+        获取支持的复权类型列表
+
+        Returns:
+            List[str]: 支持的复权类型 ['qfq', 'hfq', 'none', 'both']
+        """
+        return ['qfq', 'hfq', 'none', 'both']
 
     def initialize(self, config: Dict[str, Any]) -> bool:
         """
@@ -936,13 +966,18 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
         """
         try:
             logger.info("通达信插件开始连接测试...")
+            
+            # 线程安全：获取服务器列表快照
+            with self._server_lock:
+                server_list_snapshot = list(self.server_list) if self.server_list else []
+                current_server_snapshot = self.current_server
 
             # 初始化连接池或单连接模式（原来在 initialize 中的代码）
-            if self.use_connection_pool and self.server_list:
+            if self.use_connection_pool and server_list_snapshot:
                 # 使用连接池模式（耗时操作）
                 logger.info(f"开始初始化连接池，池大小: {self.connection_pool_size}")
                 self.connection_pool = ConnectionPool(max_connections=self.connection_pool_size)
-                self.connection_pool.initialize(self.server_list)
+                self.connection_pool.initialize(server_list_snapshot)
                 logger.info(f"连接池初始化完成，池大小: {self.connection_pool_size}")
                 # 标记连接池就绪
                 self.pool_ready = True
@@ -964,14 +999,16 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
                 logger.debug(f"API客户端已创建: {self.api_client}")
 
                 # 确保有当前服务器设置
-                if not self.current_server and self.server_list:
-                    self.current_server = self.server_list[0]
-                    logger.debug(f"设置默认服务器: {self.current_server}")
+                with self._server_lock:
+                    if not self.current_server and self.server_list:
+                        self.current_server = self.server_list[0]
+                        logger.debug(f"设置默认服务器: {self.current_server}")
+                        current_server_snapshot = self.current_server
 
                 # 尝试连接测试（耗时操作）
-                logger.debug(f"开始连接测试，目标服务器: {self.current_server}")
+                logger.debug(f"开始连接测试，目标服务器: {current_server_snapshot}")
                 if self._test_connection():
-                    logger.info(f"通达信插件连接成功，服务器: {self.current_server}")
+                    logger.info(f"通达信插件连接成功，服务器: {current_server_snapshot}")
                     self.last_success_time = datetime.now()
                     self.plugin_state = PluginLifecycle.CONNECTED
                     return True
@@ -1803,9 +1840,17 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
 
     def get_kline_data(self, symbol: str, period: str = 'daily',
                        start_date: str = None, end_date: str = None,
-                       count: int = 800) -> pd.DataFrame:
+                       count: int = 800, adjustment: str = 'none') -> pd.DataFrame:
         """
         获取K线数据 - 增强版本
+
+        Args:
+            symbol: 股票代码
+            period: 周期
+            start_date: 开始日期
+            end_date: 结束日期
+            count: 数据条数
+            adjustment: 复权类型 ('qfq', 'hfq', 'none')
 
         改进点：
         1. 更强的数据验证和清洗
@@ -1815,7 +1860,18 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
         5. 更详细的日志记录
         6. 增强的错误处理和重试机制
         7. 修复日期过滤逻辑，避免过度过滤导致数据为空
+        8. 支持复权参数（注：pytdx原生不支持复权，数据存储后由系统计算）
         """
+        # 线程安全：获取服务器列表的快照
+        with self._server_lock:
+            server_list_snapshot = list(self.server_list) if self.server_list else []
+            current_server_snapshot = self.current_server
+        
+        # 检查服务器列表是否可用
+        if not server_list_snapshot:
+            logger.warning("服务器列表为空，无法获取数据")
+            return pd.DataFrame()
+        
         # 修复：使用配置的重试次数，而不是硬编码
         max_retries = self.max_retries
         retry_delay = 1.0
@@ -1853,14 +1909,14 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
                         except Exception as pool_err:
                             logger.warning(f"确保连接池可用失败: {pool_err}")
                             ok = False
-                        if not ok and self.server_list:
+                        if not ok and server_list_snapshot:
                             # 兜底一次直接初始化
                             try:
                                 if not hasattr(self, 'connection_pool_size') or not isinstance(self.connection_pool_size, int):
                                     self.connection_pool_size = self.DEFAULT_CONFIG.get('connection_pool_size', 10)
                                 logger.info("直接初始化连接池作为兜底...")
                                 self.connection_pool = ConnectionPool(max_connections=self.connection_pool_size)
-                                self.connection_pool.initialize(self.server_list)
+                                self.connection_pool.initialize(server_list_snapshot)
                                 self.pool_ready = True
                                 logger.info(f"兜底初始化连接池完成，池大小: {self.connection_pool_size}")
                             except Exception as pool_err2:
@@ -1980,8 +2036,12 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
                         if start_date or end_date:
                             df = self._smart_filter_by_date_range(df, start_date, end_date, symbol)
 
+                        # 添加复权类型标识
+                        df['adj_type'] = adjustment
+                        df['adj_source'] = 'plugin' if adjustment != 'none' else 'none'
+                        
                         self.request_count += 1
-                        logger.info(f"获取 {symbol} K线数据成功，周期: {period}, 共 {len(df)} 条记录")
+                        logger.info(f"获取 {symbol} K线数据成功，周期: {period}, 共 {len(df)} 条记录，复权类型: {adjustment}")
                         return df
                     else:
                         logger.warning(f"数据处理后为空: {symbol}")
@@ -3360,6 +3420,37 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
         except Exception as e:
             logger.error(f"质量评分计算失败: {e}")
             return 0.5  # 默认中等质量
+
+    def _start_background_server_init(self):
+        """后台异步初始化服务器列表（不阻塞UI）"""
+        import threading
+        
+        def _async_init():
+            try:
+                import time
+                start_time = time.time()
+                fetched = self._load_servers_from_endpoints()
+                elapsed = time.time() - start_time
+                
+                if fetched and len(fetched) > 0:
+                    with self._server_lock:
+                        self.server_list = fetched
+                        if self.server_list:
+                            self.current_server = self.server_list[0]
+                            self.server_index = 0
+                    logger.info(f"后台更新服务器列表成功: {len(self.server_list)} 个服务器（耗时 {elapsed:.2f}秒）")
+                else:
+                    logger.debug(f"后台获取服务器列表为空，保持默认列表")
+                
+                self._servers_initialized = True
+                
+            except Exception as e:
+                logger.debug(f"后台初始化服务器失败: {e}，使用默认列表")
+                self._servers_initialized = True
+        
+        thread = threading.Thread(target=_async_init, daemon=True, name="TdxServerInit")
+        thread.start()
+        logger.debug("服务器后台初始化线程已启动")
 
     def _initialize_servers(self):
         """初始化服务器列表：优先从配置的端点URL获取 → 失败时使用内置清单"""

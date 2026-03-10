@@ -3357,6 +3357,8 @@ class DataImportExecutionEngine(QObject):
                 # 复权数据（2个）- 量化回测必需
                 'adj_close': None,      # 复权收盘价
                 'adj_factor': 1.0,      # 复权因子（默认1.0=不复权）
+                'adj_type': 'none',    # 复权类型 (qfq/hfq/none)
+                'adj_source': 'unknown', # 复权数据来源 (plugin/calculated)
 
                 # 扩展交易数据（2个）
                 'turnover_rate': None,  # 换手率（行业标准）
@@ -3725,46 +3727,89 @@ class DataImportExecutionEngine(QObject):
                 logger.debug(f"[验证策略] 实盘用途：启用严格验证")
 
             # 1. 从真实数据提供者获取K线数据（关键监控点1：网络请求）
+            # 支持多种复权类型自动获取
             network_start = time.time()
             logger.debug(f"⏱️  [网络请求开始] {symbol} | 线程:{thread_id}")
 
-            # 🔧 修复：添加详细的参数日志
             logger.debug(f"📝 [调用参数] code={symbol}, freq={task_config.frequency.value if hasattr(task_config.frequency, 'value') else task_config.frequency}, "
                          f"asset_type={task_config.asset_type}, data_source={task_config.data_source}")
 
+            adjustment_types = self._get_plugin_adjustment_types(task_config.data_source)
+            logger.info(f"[复权类型] {symbol} 支持的复权类型: {adjustment_types}")
+
+            all_record_count = 0
+            
+            # 优化策略：只下载不复权数据，其他复权类型本地计算
+            # 1. 首先下载不复权数据（网络请求）
             kdata = self.real_data_provider.get_real_kdata(
                 code=symbol,
                 freq=task_config.frequency.value if hasattr(task_config.frequency, 'value') else str(task_config.frequency),
                 start_date=task_config.start_date,
                 end_date=task_config.end_date,
                 data_source=task_config.data_source,
-                asset_type=task_config.asset_type
+                asset_type=task_config.asset_type,
+                adjustment='none'
             )
+
+            if kdata is None or kdata.empty:
+                logger.warning(f"[不复权数据为空] {symbol}，无法获取基础数据")
+                return {'symbol': symbol, 'success': False, 'record_count': 0, 'error': '无法获取不复权数据'}
+
+            if 'adj_type' not in kdata.columns:
+                kdata['adj_type'] = 'none'
+            if 'adj_source' not in kdata.columns:
+                kdata['adj_source'] = 'plugin'
+            if 'adj_close' not in kdata.columns:
+                kdata['adj_close'] = kdata['close']
+                kdata['adj_factor'] = 1.0
+
+            logger.info(f"[不复权数据获取成功] {symbol} | 条数:{len(kdata)}")
+
+            # 保存不复权数据
+            db_start = time.time()
+            self._save_kdata_to_database(symbol, kdata, task_config)
+            db_elapsed = time.time() - db_start
+            logger.debug(f"[不复权数据入队完成] {symbol}, 入队耗时:{db_elapsed:.2f}秒")
+            all_record_count += len(kdata)
+
+            # 2. 本地计算前复权和后复权（如果有需要）
+            for adj_type in ['qfq', 'hfq']:
+                if adj_type not in adjustment_types:
+                    logger.debug(f"[复权计算] {symbol} 跳过 {adj_type}（插件不支持）")
+                    continue
+
+                logger.debug(f"[复权计算] {symbol} 正在计算 {adj_type}")
+
+                # 复制不复权数据作为基础
+                adj_kdata = kdata.copy()
+
+                # 计算复权价格
+                calculated_kdata = self._calculate_adjustment_local_fast(symbol, adj_kdata, adj_type)
+
+                if calculated_kdata is None or calculated_kdata.empty:
+                    logger.warning(f"[复权计算失败] {symbol} 复权类型={adj_type}")
+                    continue
+
+                if 'adj_type' not in calculated_kdata.columns:
+                    calculated_kdata['adj_type'] = adj_type
+                if 'adj_source' not in calculated_kdata.columns:
+                    calculated_kdata['adj_source'] = 'calculated'
+
+                logger.info(f"[复权计算成功] {symbol} 复权类型={adj_type} | 条数:{len(calculated_kdata)}")
+
+                # 保存复权数据
+                db_start = time.time()
+                self._save_kdata_to_database(symbol, calculated_kdata, task_config)
+                db_elapsed = time.time() - db_start
+                logger.debug(f"[复权数据入队完成] {symbol} 复权类型={adj_type}, 入队耗时:{db_elapsed:.2f}秒")
+                all_record_count += len(calculated_kdata)
 
             network_elapsed = time.time() - network_start
             logger.info(f"⏱️  [网络请求完成] {symbol} | 耗时:{network_elapsed:.2f}秒 | 线程:{thread_id}")
 
-            # 🔧 修复：关键监控点1 - 检查是否获取到数据
-            if kdata is None:
-                logger.error(f"❌ [数据为None] {symbol} | 调用get_real_kdata()返回None，这表明数据源可能不可用或返回了异常值")
-                return {'symbol': symbol, 'success': False, 'record_count': 0, 'error': '数据提供者返回None'}
-
-            if kdata.empty:
-                logger.warning(f"❌ [数据为空] {symbol} | 从real_data_provider获取到空数据，可能原因：")
-                logger.warning(f"   1. 数据源(如Tushare/AKShare)无此股票数据")
-                logger.warning(f"   2. 数据源API调用失败或无权限")
-                logger.warning(f"   3. 日期范围内无交易数据")
-                logger.warning(f"   4. 数据源返回异常")
-                logger.warning(f"   详细检查：数据源={task_config.data_source}, 股票={symbol}, 日期范围={task_config.start_date}~{task_config.end_date}")
-                return {'symbol': symbol, 'success': False, 'record_count': 0, 'error': '未获取到数据'}
-
-            # 🔧 修复：验证数据的基本完整性
-            if 'datetime' not in kdata.columns and 'timestamp' not in kdata.columns:
-                logger.error(f"❌ [数据格式错误] {symbol} | 数据缺少datetime/timestamp列，数据列={kdata.columns.tolist()}")
-                return {'symbol': symbol, 'success': False, 'record_count': 0, 'error': '数据格式无效'}
-
-            logger.info(f"[数据获取成功] {symbol} | 条数:{len(kdata)} | 列数:{len(kdata.columns)} | 耗时:{network_elapsed:.2f}秒")
-            logger.debug(f"[数据字段] {kdata.columns.tolist()}")
+            if all_record_count == 0:
+                logger.warning(f"❌ [数据为空] {symbol} | 所有复权类型均无法获取数据")
+                return {'symbol': symbol, 'success': False, 'record_count': 0, 'error': '所有复权类型均无法获取数据'}
 
             # 2. 数据质量验证
             if self.enable_data_quality_monitoring or strict_validation:
@@ -3802,9 +3847,9 @@ class DataImportExecutionEngine(QObject):
             self._async_download_fundamental_data(symbol, task_config)
 
             total_elapsed = time.time() - task_start_time
-            logger.info(f"🟢 [完成] {symbol} | 总耗时:{total_elapsed:.2f}秒 (网络:{network_elapsed:.2f}s, 数据库:{db_elapsed:.2f}s) | 线程:{thread_id}")
+            logger.info(f"🟢 [完成] {symbol} | 总耗时:{total_elapsed:.2f}秒 | 总记录:{all_record_count} | 线程:{thread_id}")
 
-            return {'symbol': symbol, 'success': True, 'record_count': len(kdata), 'error': None}
+            return {'symbol': symbol, 'success': True, 'record_count': all_record_count, 'error': None}
 
         except Exception as e:
             error_msg = str(e)
@@ -3814,6 +3859,72 @@ class DataImportExecutionEngine(QObject):
             import traceback
             logger.error(traceback.format_exc())
             return {'symbol': symbol, 'success': False, 'record_count': 0, 'error': error_msg}
+
+    def _get_plugin_adjustment_types(self, data_source: str = None) -> List[str]:
+        """获取插件支持的复权类型"""
+        try:
+            if not self._real_data_provider_initialized:
+                self._ensure_real_data_provider()
+
+            if self.real_data_provider and hasattr(self.real_data_provider, '_get_plugin_adjustment_types'):
+                return self.real_data_provider._get_plugin_adjustment_types(data_source)
+
+            return ['none']
+        except Exception as e:
+            logger.debug(f"获取插件复权类型失败: {e}")
+            return ['none']
+
+    def _calculate_adjustment_local(self, symbol: str, task_config: ImportTaskConfig, adj_type: str) -> 'pd.DataFrame':
+        """本地计算复权数据"""
+        try:
+            if adj_type == 'none':
+                return pd.DataFrame()
+
+            from core.utils.adjustment_calculator import get_adjustment_calculator
+            calculator = get_adjustment_calculator()
+
+            base_kdata = self.real_data_provider.get_real_kdata(
+                code=symbol,
+                freq=task_config.frequency.value if hasattr(task_config.frequency, 'value') else str(task_config.frequency),
+                start_date=task_config.start_date,
+                end_date=task_config.end_date,
+                data_source=task_config.data_source,
+                asset_type=task_config.asset_type,
+                adjustment='none'
+            )
+
+            if base_kdata is None or base_kdata.empty:
+                return pd.DataFrame()
+
+            adjusted_kdata = calculator.calculate_adjustment(base_kdata, symbol, adj_type)
+
+            logger.info(f"[本地复权计算] {symbol} 复权类型={adj_type}, 原始数据={len(base_kdata)}条")
+            return adjusted_kdata
+
+        except Exception as e:
+            logger.error(f"[本地复权计算失败] {symbol} 复权类型={adj_type}: {e}")
+            return pd.DataFrame()
+
+    def _calculate_adjustment_local_fast(self, symbol: str, base_kdata: 'pd.DataFrame', adj_type: str) -> 'pd.DataFrame':
+        """快速本地计算复权数据（基于已有不复权数据）"""
+        try:
+            if adj_type == 'none':
+                return base_kdata
+
+            if base_kdata is None or base_kdata.empty:
+                return pd.DataFrame()
+
+            from core.utils.adjustment_calculator import get_adjustment_calculator
+            calculator = get_adjustment_calculator()
+
+            adjusted_kdata = calculator.calculate_adjustment(base_kdata, symbol, adj_type)
+
+            logger.info(f"[本地快速复权计算] {symbol} 复权类型={adj_type}, 原始数据={len(base_kdata)}条")
+            return adjusted_kdata
+
+        except Exception as e:
+            logger.error(f"[本地快速复权计算失败] {symbol} 复权类型={adj_type}: {e}")
+            return pd.DataFrame()
 
     def _import_kline_data(self, task_config: ImportTaskConfig, result: TaskExecutionResult):
         """导入K线数据（支持并行处理）"""
@@ -4133,10 +4244,11 @@ class DataImportExecutionEngine(QObject):
             from ..plugin_types import DataType
 
             # 标准化数据字段
-            fund_df = self._standardize_fundamental_data_fields(fund_df, data_source=task_config.data_source)
+            fund_df = self._standardize_fundamental_data_fields(fund_df, symbol, data_source=task_config.data_source)
 
-            # 使用写入队列保存到数据库
-            buffer_key = f"{task_config.asset_type.value}_{task_config.task_id}_fundamental"
+            # asset_type 可能是字符串或枚举类型，需要处理
+            asset_type_str = task_config.asset_type.value if hasattr(task_config.asset_type, 'value') else str(task_config.asset_type)
+            buffer_key = f"{asset_type_str}_{task_config.task_id}_fundamental"
 
             write_task = WriteTask(
                 buffer_key=buffer_key,
@@ -4200,11 +4312,69 @@ class DataImportExecutionEngine(QObject):
         logger.warning(f"[基本面降级] {symbol} | 所有降级数据源均失败")
         return None
 
-    def _standardize_fundamental_data_fields(self, fund_df: 'pd.DataFrame', data_source: str) -> 'pd.DataFrame':
+    def _normalize_date_format(self, date_value) -> Optional[str]:
+        """标准化日期格式为 YYYY-MM-DD
+
+        Args:
+            date_value: 日期值，可能是字符串、datetime或其他格式
+
+        Returns:
+            标准化后的日期字符串 (YYYY-MM-DD) 或 None
+        """
+        if date_value is None or (isinstance(date_value, str) and date_value.strip() == ''):
+            return None
+
+        # 如果已经是 datetime 对象
+        if isinstance(date_value, datetime):
+            return date_value.strftime('%Y-%m-%d')
+
+        # 如果是 pandas Timestamp
+        try:
+            import pandas as pd
+            if isinstance(date_value, pd.Timestamp):
+                return date_value.strftime('%Y-%m-%d')
+        except ImportError:
+            pass
+
+        # 字符串格式转换
+        date_str = str(date_value).strip()
+
+        # YYYYMMDD -> YYYY-MM-DD
+        if len(date_str) == 8 and date_str.isdigit():
+            return f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
+
+        # YYYY-MM-DD (已经是正确格式)
+        if len(date_str) == 10 and '-' in date_str:
+            return date_str
+
+        # YYYY/MM/DD -> YYYY-MM-DD
+        if len(date_str) == 10 and '/' in date_str:
+            return date_str.replace('/', '-')
+
+        # 尝试解析其他格式
+        try:
+            from datetime import datetime as dt
+            parsed = dt.strptime(date_str, '%Y-%m-%d')
+            return parsed.strftime('%Y-%m-%d')
+        except ValueError:
+            pass
+
+        try:
+            from datetime import datetime as dt
+            parsed = dt.strptime(date_str, '%Y/%m/%d')
+            return parsed.strftime('%Y-%m-%d')
+        except ValueError:
+            pass
+
+        logger.warning(f"无法解析日期格式: {date_value}")
+        return None
+
+    def _standardize_fundamental_data_fields(self, fund_df: 'pd.DataFrame', symbol: str, data_source: str) -> 'pd.DataFrame':
         """标准化基本面数据字段，确保与数据库表结构匹配
 
         Args:
             fund_df: 原始基本面数据DataFrame
+            symbol: 股票代码（用于填充缺失的symbol字段）
             data_source: 数据源名称
 
         Returns:
@@ -4213,10 +4383,10 @@ class DataImportExecutionEngine(QObject):
         try:
             import pandas as pd
 
-            # 确保symbol字段存在
+            # 确保symbol字段存在，如果不存在则添加
             if 'symbol' not in fund_df.columns:
-                logger.warning("基本面数据缺少symbol字段")
-                return pd.DataFrame()
+                logger.warning("基本面数据缺少symbol字段，自动填充")
+                fund_df['symbol'] = symbol
 
             # 字段映射（将插件返回的字段名映射到数据库表结构）
             # 数据库表结构（来自AssetSeparatedDatabaseManager）：
@@ -4233,6 +4403,10 @@ class DataImportExecutionEngine(QObject):
 
             # 重命名字段
             fund_df = fund_df.rename(columns=field_mapping)
+
+            # 标准化 list_date 字段格式 (YYYYMMDD -> YYYY-MM-DD)
+            if 'list_date' in fund_df.columns:
+                fund_df['list_date'] = fund_df['list_date'].apply(self._normalize_date_format)
 
             # 添加created_at字段
             fund_df['created_at'] = datetime.now()

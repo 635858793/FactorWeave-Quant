@@ -1,6 +1,3 @@
-from loguru import logger
-
-from core.services.tensorflow_gpu_manager import TensorFlowGPUManager
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
@@ -27,6 +24,10 @@ from pathlib import Path
 import traceback
 from enum import Enum
 from dataclasses import dataclass
+import threading
+
+from loguru import logger
+from core.services.tensorflow_gpu_manager import TensorFlowGPUManager
 
 DL_AVAILABLE = False
 TENSORFLOW_AVAILABLE = False
@@ -51,11 +52,89 @@ def _check_dl_availability():
             TENSORFLOW_AVAILABLE = False
             return False
         
+        # 确保项目根目录在 Python 路径中
+        import sys
+        import os
+        from pathlib import Path
+        
+        # 尝试多种方式找到项目根目录
+        project_root = None
+        
+        # 方法1: 使用 __file__ 计算
+        try:
+            project_root = Path(__file__).parent.parent.parent
+            if not (project_root / 'models' / 'deep_learning.py').exists():
+                project_root = None
+        except Exception:
+            project_root = None
+        
+        # 方法2: 使用当前工作目录
+        if project_root is None:
+            cwd = Path(os.getcwd())
+            if (cwd / 'models' / 'deep_learning.py').exists():
+                project_root = cwd
+        
+        # 方法3: 检查 sys.path 中是否已有项目根目录
+        if project_root is None:
+            for p in sys.path:
+                if p:
+                    try:
+                        path_obj = Path(p)
+                        if (path_obj / 'models' / 'deep_learning.py').exists():
+                            project_root = path_obj
+                            break
+                    except Exception:
+                        continue
+        
+        if project_root is None:
+            logger.warning("无法找到项目根目录，深度学习模块不可用")
+            DL_AVAILABLE = False
+            TENSORFLOW_AVAILABLE = False
+            return False
+        
+        # 规范化路径（解决大小写问题）
+        project_root = project_root.resolve()
+        project_root_str = str(project_root)
+        
+        # 检查路径是否已在 sys.path 中（忽略大小写，Windows兼容）
+        path_in_sys = any(
+            Path(p).resolve() == project_root 
+            for p in sys.path 
+            if p and Path(p).exists()
+        )
+        
+        if not path_in_sys:
+            sys.path.insert(0, project_root_str)
+        
+        # 清理可能冲突的 models 模块缓存
+        models_to_remove = [k for k in sys.modules.keys() if k == 'models' or k.startswith('models.')]
+        for k in models_to_remove:
+            del sys.modules[k]
+        
+        # 使用 importlib 直接导入模块
+        import importlib.util
+        
         # 尝试导入深度学习模块
         try:
-            import models.deep_learning
+            dl_path = project_root / 'models' / 'deep_learning.py'
+            spec = importlib.util.spec_from_file_location('models.deep_learning', dl_path)
+            if spec is None or spec.loader is None:
+                raise ImportError(f"无法加载模块: {dl_path}")
+            dl_module = importlib.util.module_from_spec(spec)
+            sys.modules['models.deep_learning'] = dl_module
+            
+            # 先创建 models 包
+            if 'models' not in sys.modules:
+                models_init = project_root / 'models' / '__init__.py'
+                models_spec = importlib.util.spec_from_file_location('models', models_init)
+                if models_spec and models_spec.loader:
+                    models_module = importlib.util.module_from_spec(models_spec)
+                    sys.modules['models'] = models_module
+                    models_spec.loader.exec_module(models_module)
+            
+            spec.loader.exec_module(dl_module)
             logger.info("models.deep_learning 导入成功")
-        except ImportError as e:
+        except Exception as e:
             logger.warning(f"models.deep_learning 导入失败: {e}")
             logger.warning("深度学习模块不可用，将使用统计模型")
             DL_AVAILABLE = False
@@ -64,9 +143,15 @@ def _check_dl_availability():
         
         # 尝试导入模型评估模块
         try:
-            import models.model_evaluation
+            me_path = project_root / 'models' / 'model_evaluation.py'
+            me_spec = importlib.util.spec_from_file_location('models.model_evaluation', me_path)
+            if me_spec is None or me_spec.loader is None:
+                raise ImportError(f"无法加载模块: {me_path}")
+            me_module = importlib.util.module_from_spec(me_spec)
+            sys.modules['models.model_evaluation'] = me_module
+            me_spec.loader.exec_module(me_module)
             logger.info("models.model_evaluation 导入成功")
-        except ImportError as e:
+        except Exception as e:
             logger.warning(f"models.model_evaluation 导入失败: {e}")
             logger.warning("模型评估模块不可用，将使用统计模型")
             DL_AVAILABLE = False
@@ -75,7 +160,7 @@ def _check_dl_availability():
         
         # 所有模块导入成功
         DL_AVAILABLE = True
-        TENSORFLOW_AVAILABLE = models.deep_learning.TENSORFLOW_AVAILABLE
+        TENSORFLOW_AVAILABLE = dl_module.TENSORFLOW_AVAILABLE
         logger.info(f"深度学习模块检查成功: DL_AVAILABLE={DL_AVAILABLE}, TENSORFLOW_AVAILABLE={TENSORFLOW_AVAILABLE}")
         return True
         
@@ -223,10 +308,29 @@ class PredictionType:
 
 
 class AIPredictionService(BaseService):
-    """AI预测服务"""
+    """AI预测服务（单例模式）"""
+    
+    _instance = None
+    _initialized = False
+    _lock = threading.Lock()
+    
+    def __new__(cls):
+        """单例模式：确保只有一个实例"""
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+        return cls._instance
 
     def __init__(self):
         """初始化AI预测服务"""
+        if AIPredictionService._initialized:
+            return
+        with AIPredictionService._lock:
+            if AIPredictionService._initialized:
+                return
+            AIPredictionService._initialized = True
+        
         super().__init__()
 
         # 从数据库加载配置
@@ -991,6 +1095,10 @@ class AIPredictionService(BaseService):
                     if model_obj:
                         self._models[pred_type] = model_obj
                         self._model_metadata[pred_type] = metadata or {}
+                        self._model_metadata['pattern'] = metadata or {}  # 兼容字符串 key
+                        self._model_metadata['trend'] = metadata or {}    # 兼容字符串 key
+                        self._model_metadata['sentiment'] = metadata or {}  # 兼容字符串 key
+                        self._model_metadata['price'] = metadata or {}    # 兼容字符串 key
                         model_loaded = True
                         logger.info(f" 加载{pred_type}激活模型: {active_path}")
 
@@ -1001,6 +1109,10 @@ class AIPredictionService(BaseService):
                     if model_obj:
                         self._models[pred_type] = model_obj
                         self._model_metadata[pred_type] = metadata or {}
+                        self._model_metadata['pattern'] = metadata or {}  # 兼容字符串 key
+                        self._model_metadata['trend'] = metadata or {}    # 兼容字符串 key
+                        self._model_metadata['sentiment'] = metadata or {}  # 兼容字符串 key
+                        self._model_metadata['price'] = metadata or {}    # 兼容字符串 key
                         model_loaded = True
                         logger.info(f" 加载{pred_type}增量训练模型: {pickle_path.name}")
 

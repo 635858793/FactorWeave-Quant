@@ -843,7 +843,7 @@ class UnifiedDataManager:
 
     def get_kdata_from_source(self, stock_code: str, period: str = 'D', count: int = 365,
                               data_source: str = None, asset_type: AssetType = None,
-                              start_date=None, end_date=None) -> pd.DataFrame:
+                              start_date=None, end_date=None, adjustment: str = 'none') -> pd.DataFrame:
         """
         从指定数据源获取K线数据
 
@@ -855,6 +855,7 @@ class UnifiedDataManager:
             asset_type: 资产类型（可选，如果不提供则使用默认值A股）
             start_date: 开始日期 (可选，如果不提供则自动计算，格式: YYYY-MM-DD或datetime对象)
             end_date: 结束日期 (可选，如果不提供则自动计算，格式: YYYY-MM-DD或datetime对象)
+            adjustment: 复权类型 ('qfq', 'hfq', 'none')
 
         Returns:
             K线数据DataFrame
@@ -863,7 +864,7 @@ class UnifiedDataManager:
             from core.plugin_types import Period
             frequency = Period.to_frequency(period)
 
-            cache_key = f"kdata_{stock_code}_{period}_{count}_{data_source}"
+            cache_key = f"kdata_{stock_code}_{period}_{count}_{data_source}_{adjustment}"
 
             # 1. 检查缓存
             cached_data = self._get_cached_data(cache_key)
@@ -965,16 +966,17 @@ class UnifiedDataManager:
                     else:
                         logger.info(f"[数据获取] 未指定时间范围，使用count={count}获取最近数据")
 
-                    logger.info(f"[数据获取] 开始查询 {stock_code}，时间范围: {start_date} 到 {end_date}，频率: {frequency}，count: {actual_count}，数据源: {data_source}")
+                    logger.info(f"[数据获取] 开始查询 {stock_code}，时间范围: {start_date} 到 {end_date}，频率: {frequency}，count: {actual_count}，数据源: {data_source}, 复权: {adjustment}")
 
                     df = self._uni_plugin_manager.get_kline_data(
                         symbol=stock_code,
-                        asset_type=final_asset_type,  # 使用传入的资产类型
+                        asset_type=final_asset_type,
                         start_date=start_date,
                         end_date=end_date,
                         frequency=frequency,
-                        count=actual_count,  # 使用智能计算后的count
-                        data_source=data_source  # 传递指定的数据源
+                        count=actual_count,
+                        data_source=data_source,
+                        adjustment=adjustment
                     )
 
                     if not df.empty:

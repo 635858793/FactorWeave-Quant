@@ -12,6 +12,7 @@ import random
 from PyQt5.QtWidgets import (QListWidgetItem, QTableWidgetItem, QDialog,
                              QMessageBox, QFileDialog)
 from PyQt5.QtCore import Qt, QTimer
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 class EnhancedBatchAnalysisMixin:
     """增强版批量分析功能混入类"""
@@ -156,29 +157,42 @@ class EnhancedBatchAnalysisMixin:
                 total_tasks = len(stocks) * len(strategies)
                 completed_tasks = 0
 
-                for stock in stocks:
-                    for strategy in strategies:
+                max_workers = getattr(self, '_batch_parallel_workers', 4)
+
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    task_futures = {}
+                    for stock in stocks:
+                        for strategy in strategies:
+                            future = executor.submit(
+                                self._run_real_backtest_analysis_safe,
+                                stock, strategy
+                            )
+                            task_futures[future] = (stock, strategy)
+
+                    for future in as_completed(task_futures):
+                        stock, strategy = task_futures[future]
+
                         if not getattr(self, '_batch_analysis_running', True):
-                            break
+                            future.cancel()
+                            continue
 
                         try:
-                            result = self._run_real_backtest_analysis(stock, strategy)
-                            self.enhanced_batch_results.append(result)
+                            result = future.result()
+                            if result:
+                                with self._batch_results_lock:
+                                    self.enhanced_batch_results.append(result)
 
-                            QTimer.singleShot(0, lambda r=result: self._update_batch_task_result(r))
+                                self._schedule_ui_update(result, completed_tasks, total_tasks, stock, strategy)
 
                             completed_tasks += 1
-                            progress = int(completed_tasks / total_tasks * 100)
-                            QTimer.singleShot(0, lambda p=progress: self._update_batch_progress(p))
 
-                            QTimer.singleShot(0, lambda: self._add_batch_log(
-                                f"完成分析: {stock['code']} - {strategy}"))
+                            if self._should_update_ui():
+                                progress = int(completed_tasks / total_tasks * 100)
+                                QTimer.singleShot(0, lambda p=progress: self._update_batch_progress(p))
 
                         except Exception as e:
-                            QTimer.singleShot(0, lambda e=e: self._add_batch_log(
-                                f"分析失败: {stock['code']} - {strategy}: {str(e)}"))
-
-                        time.sleep(0.1)
+                            QTimer.singleShot(0, lambda es=e, sc=stock, st=strategy: self._add_batch_log(
+                                f"分析失败: {sc['code']} - {st}: {str(es)}"))
 
                 QTimer.singleShot(0, self._on_enhanced_batch_analysis_finished)
 
@@ -190,11 +204,142 @@ class EnhancedBatchAnalysisMixin:
         self.enhanced_batch_worker = threading.Thread(target=batch_analysis_worker)
         self.enhanced_batch_worker.start()
 
+    def _get_backtest_engine(self):
+        """获取或创建回测引擎实例（复用模式）"""
+        if not hasattr(self, '_backtest_engine') or self._backtest_engine is None:
+            from backtest.unified_backtest_engine import UnifiedBacktestEngine
+            self._backtest_engine = UnifiedBacktestEngine()
+            logger.info("创建新的UnifiedBacktestEngine实例")
+        return self._backtest_engine
+
+    def _run_real_backtest_analysis_safe(self, stock, strategy):
+        """线程安全的回测分析执行（带异常处理）"""
+        try:
+            return self._run_real_backtest_analysis(stock, strategy)
+        except Exception as e:
+            logger.error(f"回测分析执行失败: {stock['code']} - {strategy}: {str(e)}")
+            return None
+
+    def _should_update_ui(self):
+        """判断是否应该更新UI（节流控制）"""
+        import time
+        current_time = time.time() * 1000
+        interval = getattr(self, '_ui_update_interval', 500)
+        if current_time - getattr(self, '_last_ui_update_time', 0) >= interval:
+            self._last_ui_update_time = current_time
+            return True
+        return False
+
+    def _schedule_ui_update(self, result, completed, total, stock, strategy):
+        """调度UI更新（带节流）"""
+        if self._should_update_ui():
+            QTimer.singleShot(0, lambda r=result: self._update_batch_task_result(r))
+            QTimer.singleShot(0, lambda: self._add_batch_log(
+                f"完成分析: {stock['code']} - {strategy}"))
+
+    def _get_cached_kline_data(self, stock_code, period='D', count=250):
+        """获取K线数据（带缓存）"""
+        if not hasattr(self, '_kline_cache'):
+            self._kline_cache = {}
+
+        cache_key = f"{stock_code}_{period}_{count}"
+        timeout = getattr(self, '_kline_cache_timeout', 300)
+
+        if cache_key in self._kline_cache:
+            cached_data, cached_time = self._kline_cache[cache_key]
+            import time
+            if time.time() - cached_time < timeout:
+                logger.debug(f"使用缓存K线数据: {stock_code}")
+                return cached_data
+
+        try:
+            from core.containers import get_service_container
+            service_container = get_service_container()
+            if service_container:
+                from core.services.stock_service import StockService
+                stock_service = service_container.resolve(StockService)
+                if stock_service and hasattr(stock_service, 'get_kline_data'):
+                    data = stock_service.get_kline_data(stock_code, period, count)
+                    import time
+                    self._kline_cache[cache_key] = (data, time.time())
+                    return data
+        except Exception as e:
+            logger.warning(f"获取K线数据失败: {stock_code}: {str(e)}")
+
+        return None
+
     def _run_real_backtest_analysis(self, stock, strategy):
         """运行真实的回测分析"""
         try:
-            # 这里可以调用现有的真实分析功能
-            return self._generate_improved_mock_result(stock, strategy)
+            if hasattr(self, 'trading_widget') and self.trading_widget:
+                try:
+                    from core.containers import get_service_container
+                    service_container = get_service_container()
+
+                    if service_container:
+                        from core.services.stock_service import StockService
+                        stock_service = service_container.resolve(StockService)
+
+                        if stock_service and hasattr(stock_service, 'get_kline_data'):
+                            start_date = self.enhanced_batch_analysis_config.get('start_date', '2024-01-01')
+                            end_date = self.enhanced_batch_analysis_config.get('end_date', '2024-12-31')
+                            initial_capital = self.enhanced_batch_analysis_config.get('initial_capital', 100000)
+                            commission = self.enhanced_batch_analysis_config.get('commission', 0.003)
+                            slippage = self.enhanced_batch_analysis_config.get('slippage', 0.001)
+
+                            try:
+                                kline_data = self._get_cached_kline_data(
+                                    stock['code'],
+                                    period='D',
+                                    count=250
+                                )
+
+                                if kline_data is not None and len(kline_data) > 0:
+                                    backtest_engine = self._get_backtest_engine()
+
+                                    signal_col = 'signal'
+                                    if signal_col not in kline_data.columns:
+                                        kline_data = self._generate_technical_signals(kline_data, strategy)
+
+                                    if signal_col in kline_data.columns:
+                                        result = backtest_engine.run_backtest(
+                                            data=kline_data,
+                                            signal_col=signal_col,
+                                            price_col='close',
+                                            initial_capital=initial_capital,
+                                            commission_pct=commission,
+                                            slippage_pct=slippage
+                                        )
+
+                                        if result and 'metrics' in result:
+                                            metrics = result['metrics']
+                                            analysis_result = {
+                                                'stock_code': stock['code'],
+                                                'stock_name': stock['name'],
+                                                'strategy': strategy,
+                                                'return_rate': metrics.get('total_return', 0),
+                                                'sharpe_ratio': metrics.get('sharpe_ratio', 0),
+                                                'max_drawdown': abs(metrics.get('max_drawdown', 0)),
+                                                'win_rate': metrics.get('win_rate', 0),
+                                                'total_trades': metrics.get('total_trades', 0),
+                                                'analysis_time': time.strftime("%Y-%m-%d %H:%M:%S")
+                                            }
+                                            self._publish_batch_analysis_event(analysis_result)
+                                            return analysis_result
+                                else:
+                                    self._add_batch_log(f"无法获取数据: {stock['code']}，使用模拟数据")
+                            except Exception as data_error:
+                                self._add_batch_log(f"获取数据失败: {stock['code']} - {str(data_error)}，使用模拟数据")
+                        else:
+                            self._add_batch_log(f"股票服务不可用，使用模拟数据: {stock['code']}")
+                    else:
+                        self._add_batch_log(f"服务容器不可用，使用模拟数据: {stock['code']}")
+                except Exception as e:
+                    self._add_batch_log(f"调用真实回测失败: {str(e)}，使用模拟数据")
+
+            mock_result = self._generate_improved_mock_result(stock, strategy)
+            self._publish_batch_analysis_event(mock_result)
+            return mock_result
         except Exception as e:
             return {
                 'stock_code': stock['code'],
@@ -208,6 +353,67 @@ class EnhancedBatchAnalysisMixin:
                 'analysis_time': time.strftime("%Y-%m-%d %H:%M:%S"),
                 'error': str(e)
             }
+
+    def _publish_batch_analysis_event(self, result):
+        """发布批量分析完成事件到事件总线"""
+        try:
+            from core.events import get_event_bus
+            event_bus = get_event_bus()
+            if event_bus:
+                from core.events.types import AnalysisCompleteEvent
+                event = AnalysisCompleteEvent(
+                    stock_code=result.get('stock_code'),
+                    analysis_type=result.get('strategy', 'batch_analysis'),
+                    results=result
+                )
+                event_bus.publish(event)
+                logger.debug(f"发布批量分析事件: {result.get('stock_code')} - {result.get('strategy')}")
+        except Exception as e:
+            logger.warning(f"发布事件失败: {str(e)}")
+
+    def _generate_technical_signals(self, data, strategy):
+        """根据策略生成技术信号"""
+        import pandas as pd
+        data = data.copy()
+
+        if "MA" in strategy or "均线" in strategy:
+            data['signal'] = 0
+            if 'ma5' in data.columns and 'ma20' in data.columns:
+                data.loc[data['ma5'] > data['ma20'], 'signal'] = 1
+                data.loc[data['ma5'] < data['ma20'], 'signal'] = -1
+
+        elif "MACD" in strategy:
+            data['signal'] = 0
+            if 'macd' in data.columns and 'signal' in data.columns:
+                data.loc[data['macd'] > data['macd_signal'], 'signal'] = 1
+                data.loc[data['macd'] < data['macd_signal'], 'signal'] = -1
+
+        elif "RSI" in strategy:
+            data['signal'] = 0
+            if 'rsi' in data.columns:
+                data.loc[data['rsi'] < 30, 'signal'] = 1
+                data.loc[data['rsi'] > 70, 'signal'] = -1
+
+        elif "KDJ" in strategy:
+            data['signal'] = 0
+            if 'kdj_k' in data.columns and 'kdj_d' in data.columns:
+                data.loc[data['kdj_k'] > data['kdj_d'], 'signal'] = 1
+                data.loc[data['kdj_k'] < data['kdj_d'], 'signal'] = -1
+
+        elif "布林" in strategy:
+            data['signal'] = 0
+            if 'bb_upper' in data.columns and 'bb_lower' in data.columns:
+                data.loc[data['close'] < data['bb_lower'], 'signal'] = 1
+                data.loc[data['close'] > data['bb_upper'], 'signal'] = -1
+
+        else:
+            data['signal'] = 0
+            if len(data) > 20:
+                data.loc[data['close'] > data['close'].shift(1), 'signal'] = 1
+                data.loc[data['close'] < data['close'].shift(1), 'signal'] = -1
+
+        data['signal'] = data['signal'].fillna(0)
+        return data
 
     def _generate_improved_mock_result(self, stock, strategy):
         """生成改进的模拟结果"""

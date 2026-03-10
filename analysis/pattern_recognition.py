@@ -6,15 +6,20 @@
 from typing import List, Dict, Any, Optional
 import pandas as pd
 import numpy as np
+import logging
+
 from .pattern_base import BasePatternRecognizer, PatternResult, SignalType
+
+logger = logging.getLogger(__name__)
 
 
 class PatternRecognizer(BasePatternRecognizer):
     """基础形态识别器"""
 
-    def __init__(self, config=None):
+    def __init__(self, config=None, debug_mode=False):
         """初始化形态识别器"""
-        # 如果没有提供config，创建一个默认配置
+        self.debug_mode = debug_mode
+        
         if config is None:
             from .pattern_base import PatternConfig, SignalType
             config = PatternConfig(
@@ -64,22 +69,144 @@ class PatternRecognizer(BasePatternRecognizer):
             return results
 
         try:
-            # 简单的形态识别示例
-            # 这里可以添加更复杂的形态识别逻辑
+            algorithm_executed = False
 
-            # 检测锤子线形态
-            hammer_results = self._detect_hammer(data)
-            results.extend(hammer_results)
+            if hasattr(self.config, 'algorithm_code') and self.config.algorithm_code:
+                algorithm_code = self.config.algorithm_code.strip()
+                if algorithm_code and algorithm_code != 'basic':
+                    if self.debug_mode:
+                        print(f"[recognize_patterns] 开始执行算法: {self.config.name}")
+                    try:
+                        results = self._execute_algorithm_code(algorithm_code, data)
+                        algorithm_executed = True
+                        if self.debug_mode:
+                            print(f"[recognize_patterns] 执行算法代码成功，检测到 {len(results)} 个形态: {self.config.name}")
+                    except Exception as e:
+                        if self.debug_mode:
+                            print(f"[recognize_patterns] 执行算法代码失败: {e}，回退到默认识别")
+                        import traceback
+                        if self.debug_mode:
+                            traceback.print_exc()
 
-            # 检测十字星形态
-            doji_results = self._detect_doji(data)
-            results.extend(doji_results)
+            if not algorithm_executed:
+                if self.debug_mode:
+                    print(f"[recognize_patterns] 使用默认识别器，检测形态: 锤子线, 十字星")
+
+                hammer_results = self._detect_hammer(data)
+                results.extend(hammer_results)
+
+                doji_results = self._detect_doji(data)
+                results.extend(doji_results)
 
         except Exception as e:
-            # 记录错误但不中断程序
             print(f"形态识别过程中出现错误: {e}")
 
         return results
+
+    def _execute_algorithm_code(self, algorithm_code: str, data: pd.DataFrame) -> List[PatternResult]:
+        """
+        执行存储在数据库中的算法代码
+
+        Args:
+            algorithm_code: 存储的Python算法代码
+            data: K线数据
+
+        Returns:
+            形态识别结果列表
+        """
+        results = []
+
+        try:
+            kdata = data.copy()
+            
+            trend = self.analyze_trend(kdata)
+
+            def get_datetime_val(kdata, index):
+                """获取指定索引的日期时间字符串"""
+                try:
+                    if hasattr(kdata, 'index') and index < len(kdata):
+                        if hasattr(kdata.index, '__getitem__'):
+                            return str(kdata.index[index])
+                        elif 'datetime' in kdata.columns and index < len(kdata):
+                            return str(kdata.iloc[index]['datetime'])
+                    return None
+                except:
+                    return None
+
+            try:
+                from scipy import signal as scipy_signal
+                has_scipy = True
+            except ImportError:
+                has_scipy = False
+
+            local_vars = {
+                'kdata': kdata,
+                'results': results,
+                'pd': pd,
+                'np': np,
+                'scipy_signal': scipy_signal if has_scipy else None,
+                'PatternResult': PatternResult,
+                'SignalType': SignalType,
+                'create_result': self.create_result,
+                'get_datetime_val': get_datetime_val,
+                'trend': trend,
+                'analyze_trend': self.analyze_trend,
+                'is_trend_compatible': self.is_trend_compatible,
+            }
+
+            exec(algorithm_code, {}, local_vars)
+
+            raw_results = local_vars.get('results', [])
+            
+            for r in raw_results:
+                if isinstance(r, dict):
+                    signal_str = r.get('signal_type', 'neutral')
+                    
+                    compatible, reason = self.is_trend_compatible(signal_str, trend)
+                    
+                    r['_trend_compatible'] = compatible
+                    r['_trend_reason'] = reason
+                    
+                    if compatible:
+                        result = self._convert_dict_to_pattern_result(r)
+                        if result:
+                            results.append(result)
+                    else:
+                        if self.debug_mode:
+                            print(f"[趋势过滤] {r.get('pattern_name', 'unknown')} 在位置 {r.get('index', 0)} 被过滤: {reason}")
+                elif isinstance(r, PatternResult):
+                    results.append(r)
+
+        except Exception as e:
+            if self.debug_mode:
+                print(f"[_execute_algorithm_code] 执行算法失败: {e}")
+            raise
+
+        return results
+
+    def _convert_dict_to_pattern_result(self, data: dict) -> Optional[PatternResult]:
+        """将字典转换为PatternResult对象"""
+        try:
+            signal_type = SignalType.from_string(data.get('signal_type', 'neutral'))
+            
+            return PatternResult(
+                pattern_type=data.get('pattern_type', 'unknown'),
+                pattern_name=data.get('pattern_name', self.config.name),
+                pattern_category=data.get('pattern_category', self.config.category),
+                signal_type=signal_type,
+                confidence=data.get('confidence', 0.5),
+                confidence_level=self.calculate_confidence_level(data.get('confidence', 0.5)),
+                index=data.get('index', 0),
+                datetime_val=data.get('datetime_val'),
+                price=data.get('price', 0.0),
+                start_index=data.get('start_index', data.get('index', 0)),
+                end_index=data.get('end_index', data.get('index', 0)),
+                extra_data=data
+            )
+        except Exception as e:
+            if self.debug_mode:
+                print(f"[_convert_dict_to_pattern_result] 转换失败: {e}")
+            return None
 
     def _detect_hammer(self, data: pd.DataFrame) -> List[PatternResult]:
         """检测锤子线形态"""
@@ -275,18 +402,24 @@ class EnhancedPatternRecognizer(PatternRecognizer):
             pattern_manager = PatternManager()
             
             # 获取要识别的形态配置
+            logger.info(f"[identify_patterns] 开始查找形态配置，pattern_types={pattern_types}")
+            
             if pattern_types:
                 # 如果指定了形态类型，只识别这些类型
                 pattern_configs = []
                 for pattern_type in pattern_types:
                     config = pattern_manager.get_pattern_config(pattern_type)
+                    logger.info(f"[identify_patterns] 查找 {pattern_type}: {'找到' if config else '未找到'}")
                     if config:
                         pattern_configs.append(config)
             else:
                 # 识别所有激活的形态
                 pattern_configs = pattern_manager.get_pattern_configs(active_only=True)
             
+            logger.info(f"[identify_patterns] 找到 {len(pattern_configs)} 个形态配置")
+            
             if not pattern_configs:
+                logger.warning(f"[identify_patterns] 没有找到可用的形态配置，pattern_types={pattern_types}")
                 if self.debug_mode:
                     print(f"[identify_patterns] 没有找到可用的形态配置")
                 return []
@@ -296,8 +429,7 @@ class EnhancedPatternRecognizer(PatternRecognizer):
             
             for config in pattern_configs:
                 try:
-                    # 使用配置的置信度阈值或传入的阈值
-                    threshold = max(config.confidence_threshold, confidence_threshold)
+                    threshold = min(config.confidence_threshold, confidence_threshold)
                     
                     # 尝试使用 PatternAlgorithmFactory 创建识别器
                     recognizer = None
@@ -308,7 +440,7 @@ class EnhancedPatternRecognizer(PatternRecognizer):
                         # 如果工厂无法创建识别器，使用基础识别器
                         if self.debug_mode:
                             print(f"[identify_patterns] 无法通过工厂创建识别器，使用基础识别器: {e}")
-                        recognizer = PatternRecognizer(config)
+                        recognizer = PatternRecognizer(config, debug_mode=self.debug_mode)
                     
                     # 验证数据
                     if not recognizer.validate_data(kdata):

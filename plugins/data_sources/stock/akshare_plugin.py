@@ -114,10 +114,18 @@ class AKSharePlugin(IDataSourcePlugin):
             DataType.SECTOR_FUND_FLOW,    # 板块资金流数据（主要功能）
             DataType.REAL_TIME_QUOTE,     # 实时行情
             DataType.ASSET_LIST,          # 资产列表
-            DataType.FUNDAMENTAL          # 基本面数据（股本等）
-            # 注意：不包含 HISTORICAL_KLINE，因为 AKShare 的 K线数据不完整
-            # 虽然技术上可以通过 ak.stock_zh_a_hist() 获取，但不是所有股票都有数据
+            DataType.FUNDAMENTAL,          # 基本面数据（股本等）
+            DataType.HISTORICAL_KLINE     # 支持K线数据
         ]
+
+    def get_supported_adjustment_types(self) -> List[str]:
+        """
+        获取支持的复权类型列表
+
+        Returns:
+            List[str]: 支持的复权类型 ['qfq', 'hfq', 'none', 'both']
+        """
+        return ['qfq', 'hfq', 'none', 'both']
 
     def get_capabilities(self) -> Dict[str, Any]:
         """获取插件能力"""
@@ -458,7 +466,7 @@ class AKSharePlugin(IDataSourcePlugin):
             return []
 
     def get_kdata(self, symbol: str, freq: str = "D", start_date: str = None,
-                  end_date: str = None, count: int = None) -> pd.DataFrame:
+                  end_date: str = None, count: int = None, adjustment: str = 'none') -> pd.DataFrame:
         """获取K线数据
 
         Args:
@@ -467,6 +475,7 @@ class AKSharePlugin(IDataSourcePlugin):
             start_date: 开始日期（格式：'2023-01-01'或'20230101'）
             end_date: 结束日期（格式：'2023-12-31'或'20231231'）
             count: 数据条数（可选）
+            adjustment: 复权类型 ('qfq', 'hfq', 'none')
 
         Returns:
             pd.DataFrame: K线数据（包含datetime, open, high, low, close, volume等）
@@ -543,12 +552,21 @@ class AKSharePlugin(IDataSourcePlugin):
                 log_prefix=f"AKShare获取{symbol_clean}"
             )
             def fetch_kline_data():
+                # 复权类型映射
+                adjustment_map = {
+                    'qfq': 'qfq',   # 前复权
+                    'hfq': 'hfq',   # 后复权
+                    'none': '',     # 不复权
+                    'both': 'qfq'   # 默认前复权
+                }
+                adjust = adjustment_map.get(adjustment, '')
+                
                 return ak.stock_zh_a_hist(
                     symbol=symbol_clean,
                     period=period,
                     start_date=ak_start_date,
                     end_date=ak_end_date,
-                    adjust=""  # 不复权
+                    adjust=adjust  # 动态复权参数
                 )
 
             df = fetch_kline_data()
@@ -593,8 +611,12 @@ class AKSharePlugin(IDataSourcePlugin):
             # 限制数据条数（如果指定了count）
             if count and len(df) > count:
                 df = df.tail(count)
+            
+            # 添加复权类型标识
+            df['adj_type'] = adjustment
+            df['adj_source'] = 'plugin'
 
-            self.logger.info(f"从AKShare成功获取{symbol}的K线数据: {len(df)}条记录")
+            self.logger.info(f"从AKShare成功获取{symbol}的K线数据: {len(df)}条记录，复权类型: {adjustment}")
             return df
 
         except Exception as e:

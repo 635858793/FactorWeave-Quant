@@ -52,6 +52,15 @@ class TaskExecutionResult:
         """判断任务是否成功完成"""
         return self.status == TaskExecutionStatus.COMPLETED and self.failed_records == 0
 
+    @success.setter
+    def success(self, value: bool):
+        """设置任务成功状态"""
+        if value:
+            self.status = TaskExecutionStatus.COMPLETED
+            self.failed_records = 0
+        else:
+            self.status = TaskExecutionStatus.FAILED
+
     @property
     def progress_percentage(self) -> float:
         """进度百分比（兼容属性）"""

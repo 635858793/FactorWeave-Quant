@@ -423,8 +423,17 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
         return []
 
     def get_kdata(self, symbol: str, freq: str = "D", start_date: str = None,
-                  end_date: str = None, count: int = None) -> pd.DataFrame:
-        """获取K线数据 - 抽象方法实现"""
+                  end_date: str = None, count: int = None, adjustment: str = 'none') -> pd.DataFrame:
+        """获取K线数据 - 抽象方法实现
+        
+        Args:
+            symbol: 股票代码
+            freq: 频率
+            start_date: 开始日期
+            end_date: 结束日期
+            count: 数据条数
+            adjustment: 复权类型 ('qfq', 'hfq', 'none')
+        """
         try:
             # 标准化股票代码
             normalized_symbol = self._normalize_stock_code(symbol)
@@ -451,12 +460,13 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
 
             period = freq_map.get(freq, 'daily')
 
-            # 调用内部的get_kline_data方法
+            # 调用内部的get_kline_data方法，传递复权参数
             return self.get_kline_data(
                 symbol=normalized_symbol,
                 period=period,
                 start_date=start_date,
-                end_date=end_date
+                end_date=end_date,
+                adjustment=adjustment
             )
 
         except Exception as e:
@@ -616,8 +626,17 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
         return symbol
 
     def get_kline_data(self, symbol: str, period: str = 'daily',
-                       start_date: str = None, end_date: str = None) -> pd.DataFrame:
-        """获取K线数据"""
+                       start_date: str = None, end_date: str = None,
+                       adjustment: str = 'none') -> pd.DataFrame:
+        """获取K线数据
+        
+        Args:
+            symbol: 股票代码
+            period: 周期
+            start_date: 开始日期
+            end_date: 结束日期
+            adjustment: 复权类型 ('qfq', 'hfq', 'none')
+        """
         try:
             self.request_count += 1
 
@@ -655,6 +674,15 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
 
             klt = period_mapping.get(period, '101')
 
+            # 复权类型映射
+            adjustment_map = {
+                'qfq': '1',   # 前复权
+                'hfq': '2',   # 后复权
+                'none': '0',  # 不复权
+                'both': '1'   # 默认前复权
+            }
+            fqt = adjustment_map.get(adjustment, '0')
+
             base_url = self.config.get('base_url', DEFAULT_CONFIG['base_url'])
             api = self.config.get('api_urls', DEFAULT_CONFIG['api_urls'])
             url = f"{base_url}{api['kline']}"
@@ -664,7 +692,7 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
                 'fields1': 'f1,f2,f3,f4,f5,f6',
                 'fields2': 'f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61',
                 'klt': klt,
-                'fqt': '1',  # 前复权
+                'fqt': fqt,  # 动态复权参数
                 'beg': start_date or '0',
                 'end': end_date or '20500101'
             }
@@ -700,8 +728,12 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
                         if not df.empty:
                             df['datetime'] = pd.to_datetime(df['datetime'])
                             df = df.set_index('datetime')
-
-                            logger.info(f"获取 {symbol} K线数据成功，共 {len(df)} 条记录")
+                            
+                            # 添加复权类型标识
+                            df['adj_type'] = adjustment
+                            df['adj_source'] = 'plugin'
+                            
+                            logger.info(f"获取 {symbol} K线数据成功，共 {len(df)} 条记录，复权类型: {adjustment}")
                             return df
 
             raise Exception("无法获取K线数据")
@@ -848,6 +880,15 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
     def get_supported_data_types(self) -> List[DataType]:
         """获取支持的数据类型列表"""
         return [DataType.HISTORICAL_KLINE, DataType.REAL_TIME_QUOTE, DataType.SECTOR_FUND_FLOW]
+
+    def get_supported_adjustment_types(self) -> List[str]:
+        """
+        获取支持的复权类型列表
+
+        Returns:
+            List[str]: 支持的复权类型 ['qfq', 'hfq', 'none', 'both']
+        """
+        return ['qfq', 'hfq', 'none', 'both']
 
     def shutdown(self) -> None:
         """关闭插件，释放资源"""

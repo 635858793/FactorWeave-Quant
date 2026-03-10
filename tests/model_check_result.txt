@@ -1,0 +1,13 @@
+Error: Level '0' does not exist
+Traceback (most recent call last):
+  File "<string>", line 29, in <module>
+  File "d:\DevelopTool\FreeCode\HIkyuu-UI\hikyuu-ui\core\__init__.py", line 8, in <module>
+    from loguru import logger
+  File "E:\anaconda3\Lib\site-packages\loguru\__init__.py", line 32, in <module>
+    logger.add(_sys.stderr)
+  File "E:\anaconda3\Lib\site-packages\loguru\_logger.py", line 937, in add
+    levelno = self.level(level).no
+              ^^^^^^^^^^^^^^^^^
+  File "E:\anaconda3\Lib\site-packages\loguru\_logger.py", line 1598, in level
+    raise ValueError("Level '%s' does not exist" % name) from None
+ValueError: Level '0' does not exist

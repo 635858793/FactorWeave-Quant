@@ -109,6 +109,16 @@ class Position:
     profit_loss_ratio: Optional[float] = None  # 盈亏比例
     last_update: datetime = field(default_factory=datetime.now)
 
+    @property
+    def avg_cost(self) -> float:
+        """平均成本价"""
+        return float(self.cost_price) if self.cost_price else 0.0
+
+    @property
+    def profit_loss_pct(self) -> float:
+        """盈亏比例百分比"""
+        return float(self.profit_loss_ratio) if self.profit_loss_ratio else 0.0
+
     def update_market_data(self, current_price: Decimal):
         """更新市场数据"""
         self.current_price = current_price

@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 账户管理对话框
@@ -107,6 +107,32 @@ class AccountManagementDialog(QDialog):
             refresh_btn = QPushButton("刷新")
             refresh_btn.clicked.connect(self.load_accounts)
             toolbar_layout.addWidget(refresh_btn)
+
+            # 实时同步开关
+            self.realtime_sync_checkbox = QPushButton("实时同步: 关")
+            self.realtime_sync_checkbox.setCheckable(True)
+            self.realtime_sync_checkbox.setChecked(False)
+            self.realtime_sync_checkbox.clicked.connect(self.toggle_realtime_sync)
+            self.realtime_sync_checkbox.setStyleSheet("""
+                QPushButton { background-color: #f0f0f0; color: #666; padding: 5px 10px; border-radius: 4px; }
+                QPushButton:checked { background-color: #4CAF50; color: white; }
+            """)
+            toolbar_layout.addWidget(self.realtime_sync_checkbox)
+
+            # 同步间隔
+            self.sync_interval_spin = QSpinBox()
+            self.sync_interval_spin.setRange(5, 300)
+            self.sync_interval_spin.setValue(30)
+            self.sync_interval_spin.setSuffix(" 秒")
+            self.sync_interval_spin.setToolTip("持仓同步间隔(秒)")
+            toolbar_layout.addWidget(QLabel("间隔:"))
+            toolbar_layout.addWidget(self.sync_interval_spin)
+
+            # 强制同步按钮
+            force_sync_btn = QPushButton("强制同步")
+            force_sync_btn.clicked.connect(self.force_sync_positions)
+            force_sync_btn.setStyleSheet("background-color: #2196F3; color: white; padding: 5px 10px; border-radius: 4px;")
+            toolbar_layout.addWidget(force_sync_btn)
 
             toolbar_layout.addStretch()
 
@@ -402,6 +428,34 @@ class AccountManagementDialog(QDialog):
         except Exception as e:
             logger.error(f"加载资金信息失败: {e}")
             self.status_label.setText(f"加载失败: {str(e)}")
+
+    def toggle_realtime_sync(self):
+        """切换实时同步开关"""
+        try:
+            if self.realtime_sync_checkbox.isChecked():
+                interval = self.sync_interval_spin.value()
+                self.account_manager.enable_realtime_sync(interval_seconds=interval)
+                self.realtime_sync_checkbox.setText("实时同步: 开")
+                self.status_label.setText(f"实时持仓同步已启用，间隔 {interval} 秒")
+            else:
+                self.account_manager.disable_realtime_sync()
+                self.realtime_sync_checkbox.setText("实时同步: 关")
+                self.status_label.setText("实时持仓同步已禁用")
+        except Exception as e:
+            logger.error(f"切换实时同步失败: {e}")
+            self.status_label.setText(f"操作失败: {str(e)}")
+
+    def force_sync_positions(self):
+        """强制同步所有持仓"""
+        try:
+            self.status_label.setText("正在强制同步持仓...")
+            results = self.account_manager.force_sync_all_positions()
+            success_count = sum(1 for v in results.values() if v)
+            self.status_label.setText(f"强制同步完成: {success_count}/{len(results)} 个账户成功")
+            self.load_positions()
+        except Exception as e:
+            logger.error(f"强制同步持仓失败: {e}")
+            self.status_label.setText(f"同步失败: {str(e)}")
 
     def update_fund_table(self):
         """更新资金表格"""
