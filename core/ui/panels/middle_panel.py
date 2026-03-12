@@ -1119,6 +1119,16 @@ class MiddlePanel(BasePanel):
 
             logger.info(f"股票选择: {self._current_stock_name} ({self._current_stock_code})")
 
+            # 直接使用事件中的K线数据更新图表，避免循环调用
+            kline_data = getattr(event, 'kline_data', None)
+            if kline_data is not None and hasattr(self, 'chart_widget') and self.chart_widget:
+                logger.info(f"[MiddlePanel] 使用事件中的K线数据更新图表，记录数: {len(kline_data) if hasattr(kline_data, '__len__') else 'N/A'}")
+                self.chart_widget.update_chart({'kline_data': kline_data, 'stock_code': self._current_stock_code, 'stock_name': self._current_stock_name})
+            else:
+                # 如果事件中没有K线数据，则触发数据加载
+                logger.info(f"[MiddlePanel] 事件中无K线数据，触发数据加载")
+                self._load_chart_data()
+
         except Exception as e:
             logger.error(f"处理股票选择事件失败: {e}", exc_info=True)
 

@@ -442,7 +442,7 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
         self.batch_checkbox.stateChanged.connect(self.toggle_batch_mode)
 
         self.auto_calc_checkbox = QCheckBox("自动计算")
-        self.auto_calc_checkbox.setChecked(False)
+        self.auto_calc_checkbox.setChecked(True)
         self.auto_calc_checkbox.setToolTip("数据更新时自动重新计算指标")
         self.auto_calc_checkbox.stateChanged.connect(self.toggle_auto_calculate)
 

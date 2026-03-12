@@ -3,6 +3,9 @@
 FactorWeave-Quant  主程序入口
 """
 
+import os
+os.environ['PNG_SKIP_sRGB_CHECK_PROFILE'] = '1'
+
 import sys
 import asyncio
 import traceback
@@ -369,7 +372,7 @@ def main():
                     enable_webgpu=True,
                     enable_progressive=True,
                     max_workers=os.cpu_count()
-                )
+                )   
                 logger.info("WebGPU硬件加速渲染系统初始化成功")
             except ImportError:
                 logger.warning("WebGPU模块导入失败，将使用标准渲染")

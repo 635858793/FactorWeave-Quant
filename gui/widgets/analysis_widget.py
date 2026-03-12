@@ -465,17 +465,10 @@ class AnalysisWidget(QWidget):
                 if hasattr(self, 'pattern_selected'):
                     self.pattern_selected.emit(len(patterns))
 
-                # 尝试通过事件总线发送形态信号
-                from core.events import PatternSignalsDisplayEvent
-                if hasattr(self, 'event_bus') and self.event_bus:
-                    for pattern in patterns:
-                        event = PatternSignalsDisplayEvent(
-                            pattern_name=pattern.get('name', ''),
-                            all_signal_indices=[pattern.get('index', -1)],
-                            highlighted_signal_index=pattern.get('index', -1)
-                        )
-                        self.event_bus.publish(event)
-                    logger.info(f"已发布 {len(patterns)} 个形态信号到事件总线")
+                # 【修复】不再在分析完成时自动发布 PatternSignalsDisplayEvent 事件
+                # 信号应该只在用户点击形态表格中的某一行时才发布
+                # 这样可以避免覆盖用户选择的特定类型信号
+                logger.info(f"形态分析完成，等待用户点击表格选择要显示的信号")
 
         except Exception as e:
             logger.error(f"处理形态检测信号失败: {e}")

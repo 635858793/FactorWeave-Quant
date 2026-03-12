@@ -3196,6 +3196,9 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
             # 1. 形态名称 - 列0
             pattern_name = pattern.get('pattern_name', pattern.get('name', pattern.get('type', '未知形态')))
             name_item = QTableWidgetItem(str(pattern_name))
+            # 存储 analysis_type 到 Qt.UserRole，供后续筛选使用
+            analysis_type = pattern.get('analysis_type', '')
+            name_item.setData(Qt.UserRole, analysis_type)
             self.patterns_table.setItem(row, 0, name_item)
 
             # 2. 类型 - 列1
@@ -3333,6 +3336,9 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
                 # 1. 形态名称 - 列0
                 pattern_name = pattern.get('pattern_name', pattern.get('name', pattern.get('type', '未知形态')))
                 name_item = QTableWidgetItem(str(pattern_name))
+                # 存储 analysis_type 到 Qt.UserRole，供后续筛选使用
+                analysis_type = pattern.get('analysis_type', '')
+                name_item.setData(Qt.UserRole, analysis_type)
                 self.patterns_table.setItem(row, 0, name_item)
 
                 # 2. 类型 - 列1
@@ -3457,6 +3463,7 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
                 return
 
             clicked_pattern_name = pattern_name_item.text()
+            clicked_analysis_type = pattern_name_item.data(Qt.UserRole) or ''  # 获取算法类型
 
             # 获取当前行形态的索引
             index_item = self.patterns_table.item(row, 5)  # 位置列
@@ -3470,30 +3477,35 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
                 # 如果无法解析，则使用行号作为后备
                 clicked_index = row
 
-            # 筛选出所有同名的形态信号
+            # 筛选出所有同名的形态信号（同时匹配 name + analysis_type）
             all_patterns = []
+            
             for r in range(self.patterns_table.rowCount()):
                 name_item = self.patterns_table.item(r, 0)
                 if name_item and name_item.text() == clicked_pattern_name:
-                    idx_item = self.patterns_table.item(r, 5)
-                    if idx_item:
-                        try:
-                            idx = int(idx_item.text().split('#')[-1])
-                            all_patterns.append(idx)
-                        except (ValueError, IndexError):
-                            pass
+                    # 双重筛选：同时匹配名称和算法类型
+                    item_analysis_type = name_item.data(Qt.UserRole) or ''
+                    if clicked_analysis_type == '' or item_analysis_type == clicked_analysis_type:
+                        idx_item = self.patterns_table.item(r, 5)
+                        if idx_item:
+                            try:
+                                idx = int(idx_item.text().split('#')[-1])
+                                all_patterns.append(idx)
+                            except (ValueError, IndexError):
+                                pass
 
-            logger.info(f"点击了形态: {clicked_pattern_name}, 索引: {clicked_index}。共找到 {len(all_patterns)} 个同类信号。")
+            logger.info(f"点击了形态: {clicked_pattern_name}, 算法类型: {clicked_analysis_type}, 索引: {clicked_index}。共找到 {len(all_patterns)} 个同类信号。")
 
             # 发布事件，通知主图表更新
             if hasattr(self, 'event_bus') and self.event_bus:
                 display_event = PatternSignalsDisplayEvent(
                     pattern_name=clicked_pattern_name,
                     all_signal_indices=all_patterns,
-                    highlighted_signal_index=clicked_index
+                    highlighted_signal_index=clicked_index,
+                    analysis_type=clicked_analysis_type
                 )
                 self.event_bus.publish(display_event)
-                logger.info(f"发布了 PatternSignalsDisplayEvent 事件: {clicked_pattern_name}")
+                logger.info(f"发布了 PatternSignalsDisplayEvent 事件: {clicked_pattern_name}, 算法类型: {clicked_analysis_type}, 信号数量: {len(all_patterns)}")
             else:
                 logger.warning("未能发布 PatternSignalsDisplayEvent 事件，因为 event_bus 不可用。")
 

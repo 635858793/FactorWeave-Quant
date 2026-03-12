@@ -235,6 +235,7 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
         try:
             logger.info(f"收到 PatternSignalsDisplayEvent: {event.pattern_name}, "
                         f"高亮索引: {event.highlighted_signal_index}, "
+                        f"算法类型: {event.analysis_type}, "
                         f"共 {len(event.all_signal_indices)} 个信号")
 
             # 调用SignalMixin中的方法来绘制信号
@@ -242,7 +243,8 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
                 self.draw_pattern_signals(
                     event.all_signal_indices,
                     event.highlighted_signal_index,
-                    event.pattern_name
+                    event.pattern_name,
+                    event.analysis_type
                 )
             else:
                 logger.warning("ChartWidget 中缺少 draw_pattern_signals 方法，无法绘制形态信号。")

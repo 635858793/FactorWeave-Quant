@@ -655,13 +655,15 @@ class PatternSignalsDisplayEvent(BaseEvent):
     pattern_name: str = ""
     all_signal_indices: list = field(default_factory=list)
     highlighted_signal_index: int = -1
+    analysis_type: str = ""  # 算法类型：one_click / professional / 等
 
     def __post_init__(self):
         super().__post_init__()
         self.data.update({
             'pattern_name': self.pattern_name,
             'all_signal_indices': self.all_signal_indices,
-            'highlighted_signal_index': self.highlighted_signal_index
+            'highlighted_signal_index': self.highlighted_signal_index,
+            'analysis_type': self.analysis_type
         })
 
 

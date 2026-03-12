@@ -46,12 +46,28 @@ class IncrementalTrainingModel:
     model_type: str
     estimator: Any
     is_classifier: bool
+    is_incremental: bool
     classes: Optional[Any] = None
     imputer: Optional[Any] = None
     scaler: Optional[Any] = None
     trained_epochs: int = 0
     imputer_fitted: bool = False
     scaler_fitted: bool = False
+
+    def __init__(self, model_type: str, estimator: Any, is_classifier: bool,
+                 classes: Optional[Any] = None, imputer: Optional[Any] = None,
+                 scaler: Optional[Any] = None, is_incremental: bool = True):
+        """初始化模型封装器"""
+        self.model_type = model_type
+        self.estimator = estimator
+        self.is_classifier = is_classifier
+        self.is_incremental = is_incremental
+        self.classes = classes
+        self.imputer = imputer
+        self.scaler = scaler
+        self.trained_epochs = 0
+        self.imputer_fitted = False
+        self.scaler_fitted = False
 
     def _ensure_numpy(self, data: Any, dtype: Any = None) -> Any:
         if np is None:
@@ -78,12 +94,16 @@ class IncrementalTrainingModel:
         if self.scaler:
             if not self.scaler_fitted:
                 if train_mode:
-                    self.scaler.partial_fit(X)
+                    if self.is_incremental:
+                        self.scaler.partial_fit(X)
+                    else:
+                        self.scaler.fit(X)
                     self.scaler_fitted = True
                 else:
                     raise RuntimeError("Scaler尚未拟合，无法进行推理")
             elif train_mode:
-                self.scaler.partial_fit(X)
+                if self.is_incremental:
+                    self.scaler.partial_fit(X)
 
             X = self.scaler.transform(X)
 
@@ -94,10 +114,39 @@ class IncrementalTrainingModel:
         y = self._ensure_numpy(targets, dtype=target_dtype).ravel()
         return y
 
+    def fit(self, features: Any, targets: Any) -> float:
+        """
+        执行一次性完整训练（非增量），并返回该批次的损失指标。
+        适用于不支持增量学习的模型（如RandomForest, XGBoost, LightGBM等）。
+        """
+        X = self._prepare_features(features, train_mode=True)
+        y = self._prepare_targets(targets)
+
+        if self.is_classifier:
+            classes = self.classes
+            if classes is None:
+                classes = np.unique(y)
+            self.estimator.fit(X, y)
+        else:
+            self.estimator.fit(X, y)
+
+        self.trained_epochs += 1
+
+        predictions = self.estimator.predict(X)
+        if self.is_classifier:
+            accuracy = float((predictions == y).mean())
+            return max(0.0, 1.0 - accuracy)
+
+        mse = float(np.mean((predictions - y) ** 2))
+        return mse
+
     def partial_fit(self, features: Any, targets: Any) -> float:
         """
-        对单个epoch执行增量训练，并返回该批次的损失指标。
+        对单个epoch执行训练，根据is_incremental选择增量或一次性训练方式。
         """
+        if not self.is_incremental:
+            return self.fit(features, targets)
+
         X = self._prepare_features(features, train_mode=True)
         y = self._prepare_targets(targets)
 
@@ -1650,7 +1699,7 @@ class ModelTrainingService(BaseService):
             return empty_series, empty_series
 
     def _ensure_ml_dependencies(self) -> Dict[str, Any]:
-        """按需加载scikit-learn组件，避免重复导入"""
+        """按需加载scikit-learn组件和高级ML算法"""
         if self._ml_dependencies is not None:
             return self._ml_dependencies
 
@@ -1660,25 +1709,42 @@ class ModelTrainingService(BaseService):
 
         linear_model = sklearn_modules.get('linear_model')
         preprocessing = sklearn_modules.get('preprocessing')
+        ensemble = sklearn_modules.get('ensemble')
+        svm_module = sklearn_modules.get('svm')
         impute_module = safe_import('sklearn.impute', required=False)
+        
+        xgboost = safe_import('xgboost', required=False)
+        lightgbm = safe_import('lightgbm', required=False)
 
         dependencies = {
             'SGDClassifier': getattr(linear_model, 'SGDClassifier', None) if linear_model else None,
             'SGDRegressor': getattr(linear_model, 'SGDRegressor', None) if linear_model else None,
             'StandardScaler': getattr(preprocessing, 'StandardScaler', None) if preprocessing else None,
             'SimpleImputer': getattr(impute_module, 'SimpleImputer', None) if impute_module else None,
+            'RandomForestClassifier': getattr(ensemble, 'RandomForestClassifier', None) if ensemble else None,
+            'RandomForestRegressor': getattr(ensemble, 'RandomForestRegressor', None) if ensemble else None,
+            'GradientBoostingClassifier': getattr(ensemble, 'GradientBoostingClassifier', None) if ensemble else None,
+            'GradientBoostingRegressor': getattr(ensemble, 'GradientBoostingRegressor', None) if ensemble else None,
+            'SVC': getattr(svm_module, 'SVC', None) if svm_module else None,
+            'SVR': getattr(svm_module, 'SVR', None) if svm_module else None,
+            'XGBClassifier': xgboost.XGBClassifier if xgboost else None,
+            'XGBRegressor': xgboost.XGBRegressor if xgboost else None,
+            'LGBMClassifier': lightgbm.LGBMClassifier if lightgbm else None,
+            'LGBMRegressor': lightgbm.LGBMRegressor if lightgbm else None,
         }
 
-        missing = [name for name, component in dependencies.items() if component is None]
+        required = ['SGDClassifier', 'SGDRegressor', 'StandardScaler', 'SimpleImputer']
+        missing = [name for name in required if dependencies.get(name) is None]
         if missing:
-            raise ImportError(f"缺少scikit-learn组件: {', '.join(missing)}")
+            raise ImportError(f"缺少必要的scikit-learn组件: {', '.join(missing)}")
 
         self._ml_dependencies = dependencies
+        logger.info(f"ML依赖加载完成，可用算法: {[k for k,v in dependencies.items() if v is not None]}")
         return dependencies
 
     def _initialize_model(self, model_type: str, config: Dict[str, Any]):
         """
-        初始化模型
+        初始化模型 - 支持多种算法
 
         Args:
             model_type: 模型类型
@@ -1689,70 +1755,294 @@ class ModelTrainingService(BaseService):
         """
         try:
             dependencies = self._ensure_ml_dependencies()
-            learning_rate = float(config.get('learning_rate', 0.01))
-            alpha = float(config.get('alpha', 1e-4))
             random_state = int(config.get('seed', 42))
+            algorithm = config.get('algorithm', 'sgd')
+            
             classifier_types = {"pattern", "trend", "sentiment", "risk", "volatility"}
             regressor_types = {"price"}
+            
+            is_classifier = model_type in classifier_types
+            is_regressor = model_type in regressor_types
+            
+            if algorithm == 'xgboost':
+                if is_classifier:
+                    estimator = dependencies['XGBClassifier'](
+                        n_estimators=config.get('n_estimators', 100),
+                        max_depth=config.get('max_depth', 6),
+                        learning_rate=config.get('learning_rate', 0.1),
+                        random_state=random_state,
+                        use_label_encoder=False,
+                        eval_metric='logloss',
+                        n_jobs=config.get('n_jobs', -1),
+                        tree_method='hist'
+                    )
+                    classes = config.get('classes', [-1, 0, 1])
+                    if np is not None:
+                        classes = np.array(classes, dtype=np.int32)
+                    model = IncrementalTrainingModel(
+                        model_type=model_type,
+                        estimator=estimator,
+                        is_classifier=True,
+                        classes=classes,
+                        imputer=dependencies['SimpleImputer'](strategy='median'),
+                        scaler=dependencies['StandardScaler'](),
+                        is_incremental=False
+                    )
+                    logger.info(f"{model_type} 模型初始化完成（XGBoost分类器）")
+                    return model
+                else:
+                    estimator = dependencies['XGBRegressor'](
+                        n_estimators=config.get('n_estimators', 100),
+                        max_depth=config.get('max_depth', 6),
+                        learning_rate=config.get('learning_rate', 0.1),
+                        random_state=random_state,
+                        n_jobs=config.get('n_jobs', -1),
+                        tree_method='hist'
+                    )
+                    model = IncrementalTrainingModel(
+                        model_type=model_type,
+                        estimator=estimator,
+                        is_classifier=False,
+                        imputer=dependencies['SimpleImputer'](strategy='median'),
+                        scaler=dependencies['StandardScaler'](),
+                        is_incremental=False
+                    )
+                    logger.info(f"{model_type} 模型初始化完成（XGBoost回归器）")
+                    return model
+            
+            if algorithm == 'lightgbm':
+                if is_classifier:
+                    estimator = dependencies['LGBMClassifier'](
+                        n_estimators=config.get('n_estimators', 100),
+                        max_depth=config.get('max_depth', 6),
+                        learning_rate=config.get('learning_rate', 0.1),
+                        random_state=random_state,
+                        verbose=-1
+                    )
+                    classes = config.get('classes', [-1, 0, 1])
+                    if np is not None:
+                        classes = np.array(classes, dtype=np.int32)
+                    model = IncrementalTrainingModel(
+                        model_type=model_type,
+                        estimator=estimator,
+                        is_classifier=True,
+                        classes=classes,
+                        imputer=dependencies['SimpleImputer'](strategy='median'),
+                        scaler=dependencies['StandardScaler'](),
+                        is_incremental=False
+                    )
+                    logger.info(f"{model_type} 模型初始化完成（LightGBM分类器）")
+                    return model
+                else:
+                    estimator = dependencies['LGBMRegressor'](
+                        n_estimators=config.get('n_estimators', 100),
+                        max_depth=config.get('max_depth', 6),
+                        learning_rate=config.get('learning_rate', 0.1),
+                        random_state=random_state,
+                        verbose=-1,
+                        n_jobs=config.get('n_jobs', -1)
+                    )
+                    model = IncrementalTrainingModel(
+                        model_type=model_type,
+                        estimator=estimator,
+                        is_classifier=False,
+                        imputer=dependencies['SimpleImputer'](strategy='median'),
+                        scaler=dependencies['StandardScaler'](),
+                        is_incremental=False
+                    )
+                    logger.info(f"{model_type} 模型初始化完成（LightGBM回归器）")
+                    return model
+            
+            if algorithm == 'random_forest':
+                if is_classifier:
+                    estimator = dependencies['RandomForestClassifier'](
+                        n_estimators=config.get('n_estimators', 100),
+                        max_depth=config.get('max_depth', 10),
+                        random_state=random_state,
+                        n_jobs=-1
+                    )
+                    classes = config.get('classes', [-1, 0, 1])
+                    if np is not None:
+                        classes = np.array(classes, dtype=np.int32)
+                    model = IncrementalTrainingModel(
+                        model_type=model_type,
+                        estimator=estimator,
+                        is_classifier=True,
+                        classes=classes,
+                        imputer=dependencies['SimpleImputer'](strategy='median'),
+                        scaler=dependencies['StandardScaler'](),
+                        is_incremental=False
+                    )
+                    logger.info(f"{model_type} 模型初始化完成（随机森林分类器）")
+                    return model
+                else:
+                    estimator = dependencies['RandomForestRegressor'](
+                        n_estimators=config.get('n_estimators', 100),
+                        max_depth=config.get('max_depth', 10),
+                        random_state=random_state,
+                        n_jobs=config.get('n_jobs', -1)
+                    )
+                    model = IncrementalTrainingModel(
+                        model_type=model_type,
+                        estimator=estimator,
+                        is_classifier=False,
+                        imputer=dependencies['SimpleImputer'](strategy='median'),
+                        scaler=dependencies['StandardScaler'](),
+                        is_incremental=False
+                    )
+                    logger.info(f"{model_type} 模型初始化完成（随机森林回归器）")
+                    return model
+            
+            if algorithm == 'gradient_boosting':
+                if is_classifier:
+                    estimator = dependencies['GradientBoostingClassifier'](
+                        n_estimators=config.get('n_estimators', 100),
+                        max_depth=config.get('max_depth', 5),
+                        learning_rate=config.get('learning_rate', 0.1),
+                        random_state=random_state,
+                        n_iter_no_change=config.get('n_iter_no_change', 10),
+                        validation_fraction=config.get('validation_fraction', 0.1)
+                    )
+                    classes = config.get('classes', [-1, 0, 1])
+                    if np is not None:
+                        classes = np.array(classes, dtype=np.int32)
+                    model = IncrementalTrainingModel(
+                        model_type=model_type,
+                        estimator=estimator,
+                        is_classifier=True,
+                        classes=classes,
+                        imputer=dependencies['SimpleImputer'](strategy='median'),
+                        scaler=dependencies['StandardScaler'](),
+                        is_incremental=False
+                    )
+                    logger.info(f"{model_type} 模型初始化完成（梯度提升分类器）")
+                    return model
+                else:
+                    estimator = dependencies['GradientBoostingRegressor'](
+                        n_estimators=config.get('n_estimators', 100),
+                        max_depth=config.get('max_depth', 5),
+                        learning_rate=config.get('learning_rate', 0.1),
+                        random_state=random_state,
+                        n_iter_no_change=config.get('n_iter_no_change', 10),
+                        validation_fraction=config.get('validation_fraction', 0.1)
+                    )
+                    model = IncrementalTrainingModel(
+                        model_type=model_type,
+                        estimator=estimator,
+                        is_classifier=False,
+                        imputer=dependencies['SimpleImputer'](strategy='median'),
+                        scaler=dependencies['StandardScaler'](),
+                        is_incremental=False
+                    )
+                    logger.info(f"{model_type} 模型初始化完成（梯度提升回归器）")
+                    return model
+            
+            if algorithm == 'svm':
+                if is_classifier:
+                    estimator = dependencies['SVC'](
+                        kernel=config.get('kernel', 'rbf'),
+                        C=config.get('C', 1.0),
+                        gamma=config.get('gamma', 'scale'),
+                        random_state=random_state,
+                        probability=True,
+                        cache_size=config.get('cache_size', 500)
+                    )
+                    classes = config.get('classes', [-1, 0, 1])
+                    if np is not None:
+                        classes = np.array(classes, dtype=np.int32)
+                    model = IncrementalTrainingModel(
+                        model_type=model_type,
+                        estimator=estimator,
+                        is_classifier=True,
+                        classes=classes,
+                        imputer=dependencies['SimpleImputer'](strategy='median'),
+                        scaler=dependencies['StandardScaler'](),
+                        is_incremental=False
+                    )
+                    logger.info(f"{model_type} 模型初始化完成（SVM分类器）")
+                    return model
+                else:
+                    estimator = dependencies['SVR'](
+                        kernel=config.get('kernel', 'rbf'),
+                        C=config.get('C', 1.0),
+                        gamma=config.get('gamma', 'scale'),
+                        cache_size=config.get('cache_size', 500)
+                    )
+                    model = IncrementalTrainingModel(
+                        model_type=model_type,
+                        estimator=estimator,
+                        is_classifier=False,
+                        imputer=dependencies['SimpleImputer'](strategy='median'),
+                        scaler=dependencies['StandardScaler'](),
+                        is_incremental=False
+                    )
+                    logger.info(f"{model_type} 模型初始化完成（SVM回归器）")
+                    return model
+            
+            if algorithm == 'sgd' or algorithm == 'linear':
+                alpha = float(config.get('alpha', 1e-4))
+                learning_rate = float(config.get('learning_rate', 0.01))
+                
+                if is_classifier:
+                    sgd_classifier = dependencies['SGDClassifier']
+                    if not sgd_classifier:
+                        raise ImportError("SGDClassifier 不可用")
 
-            if model_type in classifier_types:
-                sgd_classifier = dependencies['SGDClassifier']
-                if not sgd_classifier:
-                    raise ImportError("SGDClassifier 不可用")
+                    estimator = sgd_classifier(
+                        loss=config.get('loss', 'log_loss'),
+                        penalty=config.get('penalty', 'l2'),
+                        alpha=alpha,
+                        learning_rate=config.get('sgd_schedule', 'constant'),
+                        eta0=learning_rate,
+                        random_state=random_state,
+                        max_iter=1,
+                        warm_start=True
+                    )
 
-                estimator = sgd_classifier(
-                    loss=config.get('loss', 'log_loss'),
-                    penalty=config.get('penalty', 'l2'),
-                    alpha=alpha,
-                    learning_rate=config.get('sgd_schedule', 'constant'),
-                    eta0=learning_rate,
-                    random_state=random_state,
-                    max_iter=1,
-                    warm_start=True
-                )
+                    classes = config.get('classes', [-1, 0, 1])
+                    if np is not None:
+                        classes = np.array(classes, dtype=np.int32)
 
-                classes = config.get('classes', [-1, 0, 1])
-                if np is not None:
-                    classes = np.array(classes, dtype=np.int32)
+                    model = IncrementalTrainingModel(
+                        model_type=model_type,
+                        estimator=estimator,
+                        is_classifier=True,
+                        classes=classes,
+                        imputer=dependencies['SimpleImputer'](strategy='median'),
+                        scaler=dependencies['StandardScaler'](),
+                        is_incremental=True
+                    )
+                    logger.info(f"{model_type} 模型初始化完成（SGD分类器）")
+                    return model
 
-                model = IncrementalTrainingModel(
-                    model_type=model_type,
-                    estimator=estimator,
-                    is_classifier=True,
-                    classes=classes,
-                    imputer=dependencies['SimpleImputer'](strategy='median'),
-                    scaler=dependencies['StandardScaler']()
-                )
-                logger.info(f"{model_type} 模型初始化完成（SGDClassifier）")
-                return model
+                if is_regressor:
+                    sgd_regressor = dependencies['SGDRegressor']
+                    if not sgd_regressor:
+                        raise ImportError("SGDRegressor 不可用")
 
-            if model_type in regressor_types:
-                sgd_regressor = dependencies['SGDRegressor']
-                if not sgd_regressor:
-                    raise ImportError("SGDRegressor 不可用")
+                    estimator = sgd_regressor(
+                        loss=config.get('loss', 'squared_error'),
+                        penalty=config.get('penalty', 'l2'),
+                        alpha=alpha,
+                        learning_rate=config.get('sgd_schedule', 'invscaling'),
+                        eta0=learning_rate,
+                        random_state=random_state,
+                        max_iter=1,
+                        warm_start=True
+                    )
 
-                estimator = sgd_regressor(
-                    loss=config.get('loss', 'squared_error'),
-                    penalty=config.get('penalty', 'l2'),
-                    alpha=alpha,
-                    learning_rate=config.get('sgd_schedule', 'invscaling'),
-                    eta0=learning_rate,
-                    random_state=random_state,
-                    max_iter=1,
-                    warm_start=True
-                )
+                    model = IncrementalTrainingModel(
+                        model_type=model_type,
+                        estimator=estimator,
+                        is_classifier=False,
+                        imputer=dependencies['SimpleImputer'](strategy='median'),
+                        scaler=dependencies['StandardScaler'](),
+                        is_incremental=True
+                    )
+                    logger.info(f"{model_type} 模型初始化完成（SGD回归器）")
+                    return model
 
-                model = IncrementalTrainingModel(
-                    model_type=model_type,
-                    estimator=estimator,
-                    is_classifier=False,
-                    imputer=dependencies['SimpleImputer'](strategy='median'),
-                    scaler=dependencies['StandardScaler']()
-                )
-                logger.info("price 模型初始化完成（SGDRegressor）")
-                return model
-
-            raise ValueError(f"不支持的模型类型: {model_type}")
+            raise ValueError(f"不支持的算法类型: {algorithm}，支持的算法: sgd, xgboost, lightgbm, random_forest, gradient_boosting, svm")
 
         except Exception as e:
             logger.error(f"初始化模型失败: {e}")
@@ -1973,6 +2263,47 @@ class ModelTrainingService(BaseService):
 
         except Exception as e:
             logger.error(f"取消训练任务失败: {e}")
+            return False
+
+    def delete_training_task(self, task_id: str) -> bool:
+        """
+        删除训练任务
+
+        Args:
+            task_id: 任务ID
+
+        Returns:
+            是否成功删除
+        """
+        try:
+            with self._task_lock:
+                if task_id not in self._training_tasks:
+                    raise ValueError(f"任务不存在: {task_id}")
+
+                task = self._training_tasks[task_id]
+                if task['status'] == TrainingTaskStatus.TRAINING.value:
+                    raise ValueError("训练中的任务不能删除，请先取消")
+
+                del self._training_tasks[task_id]
+
+            # 从数据库删除
+            if self._database_service:
+                try:
+                    with self._database_service.get_connection("strategy_sqlite") as conn:
+                        cursor = conn.cursor()
+                        cursor.execute("DELETE FROM training_tasks WHERE task_id = ?", (task_id,))
+                        cursor.execute("DELETE FROM training_logs WHERE training_task_id = ?", (task_id,))
+                        conn.commit()
+                except Exception as db_err:
+                    logger.warning(f"从数据库删除任务失败: {db_err}")
+
+            self._event_bus.publish("training.task.deleted", task_id=task_id)
+
+            logger.info(f"训练任务已删除: {task_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"删除训练任务失败: {e}")
             return False
 
     def get_training_progress(self, task_id: str) -> Optional[Dict[str, Any]]:

@@ -134,12 +134,23 @@ class SignalMixin:
             if True:  # 使用Loguru日志
                 logger.error(f"绘制信号失败: {str(e)}")
 
-    def draw_pattern_signals(self, all_indices: List[int], highlighted_index: int, pattern_name: str):
+    def draw_pattern_signals(self, all_indices: List[int], highlighted_index: int, pattern_name: str, analysis_type: str = ""):
         """在图表上绘制并高亮形态信号"""
         try:
             if not hasattr(self, 'price_ax') or not self.price_ax or self.current_kdata is None:
                 logger.warning("无法绘制形态信号，因为图表或数据尚未准备好。")
                 return
+
+            # 根据算法类型选择不同的标记颜色
+            if analysis_type == 'professional':
+                color_scheme = {'normal': 'purple', 'highlighted': 'darkviolet', 'alpha': 0.8}
+            elif analysis_type == 'one_click':
+                color_scheme = {'normal': 'orange', 'highlighted': 'red', 'alpha': 0.7}
+            else:
+                color_scheme = {'normal': 'orange', 'highlighted': 'red', 'alpha': 0.7}
+
+            logger.info(f"绘制形态信号: pattern={pattern_name}, type={analysis_type}, "
+                        f"信号数量: {len(all_indices)}, color_scheme={color_scheme}")
 
             # 清除之前绘制的形态信号 - 使用安全的删除方法
             if hasattr(self, '_pattern_signal_artists'):
@@ -171,8 +182,8 @@ class SignalMixin:
                         # 根据是否高亮选择不同的标记样式
                         marker = 'v' if not is_highlighted else '^'  # 高亮使用向上箭头
                         size = 150 if is_highlighted else 80
-                        color = 'red' if is_highlighted else 'orange'
-                        alpha = 1.0 if is_highlighted else 0.7
+                        color = color_scheme['highlighted'] if is_highlighted else color_scheme['normal']
+                        alpha = 1.0 if is_highlighted else color_scheme['alpha']
                         zorder = 10 if is_highlighted else 5
 
                         # 使用 scatter 绘制标记
