@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from .event_handler import EventHandler, AsyncEventHandler
 from loguru import logger
 import asyncio
+import inspect
 import threading
 import weakref
 import time
@@ -163,6 +164,26 @@ class EventBus:
 
         return event_filter.matches(event)
 
+    def _execute_handler(self, handler: Callable, event: BaseEvent) -> None:
+        """在线程池中执行事件处理器"""
+        try:
+            sig = inspect.signature(handler)
+            params = list(sig.parameters.values())
+            
+            if not params:
+                handler()
+            elif any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params):
+                handler(**getattr(event, '__dict__', {}))
+            else:
+                handler(event)
+        except (ValueError, TypeError) as e:
+            try:
+                handler(event)
+            except Exception as fallback_error:
+                logger.error(f"Error executing event handler: {fallback_error}")
+        except Exception as e:
+            logger.error(f"Error executing event handler: {e}")
+
     def _sort_handlers_by_priority(self, handlers: List[SimpleEventHandler]) -> List[SimpleEventHandler]:
         """按优先级排序处理器（优先级数值越小越先执行）"""
         return sorted(handlers, key=lambda h: getattr(h, 'priority', 0))
@@ -298,8 +319,9 @@ class EventBus:
             try:
                 if asyncio.iscoroutinefunction(handler_wrapper.handler):
                     asyncio.create_task(handler_wrapper.handler(event_obj))
+                elif self._async_execution and self._executor:
+                    self._executor.submit(self._execute_handler, handler_wrapper.handler, event_obj)
                 else:
-                    # 忽略返回值，避免 sipBadCatcherResult 错误
                     _ = handler_wrapper.handler(event_obj)
 
                 self._stats['events_handled'] += 1
@@ -444,12 +466,14 @@ class EventBus:
 _global_event_bus: Optional[EventBus] = None
 _bus_lock = threading.Lock()
 
-def get_event_bus(name: str = "default") -> EventBus:
+def get_event_bus(name: str = "default", async_execution: bool = False, max_workers: int = 4) -> EventBus:
     """
     获取事件总线实例
 
     Args:
         name: 事件总线名称
+        async_execution: 是否启用异步执行（默认False，同步模式保证UI更新顺序）
+        max_workers: 异步执行时的最大工作线程数
 
     Returns:
         事件总线实例
@@ -458,7 +482,10 @@ def get_event_bus(name: str = "default") -> EventBus:
 
     with _bus_lock:
         if _global_event_bus is None:
-            _global_event_bus = EventBus()
+            _global_event_bus = EventBus(
+                async_execution=async_execution,
+                max_workers=max_workers
+            )
         return _global_event_bus
 
 def set_event_bus(event_bus: EventBus) -> None:

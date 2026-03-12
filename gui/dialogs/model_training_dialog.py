@@ -12,7 +12,7 @@
 
 from loguru import logger
 from typing import Dict, Any, List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
     QTableWidget, QTableWidgetItem, QHeaderView, QPushButton,
@@ -146,7 +146,10 @@ class ModelTrainingDialog(QDialog):
         self.tasks_table.setHorizontalHeaderLabels([
             "任务ID", "任务名称", "模型类型", "状态", "进度", "创建时间", "开始时间", "验证Loss", "操作"
         ])
-        self.tasks_table.horizontalHeader().setStretchLastSection(True)
+        header = self.tasks_table.horizontalHeader()
+        for i in range(9):
+            header.setSectionResizeMode(i, QHeaderView.ResizeToContents)
+        self.tasks_table.verticalHeader().setDefaultSectionSize(50)
         self.tasks_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.tasks_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.tasks_table.doubleClicked.connect(self.view_task_details)
@@ -176,7 +179,11 @@ class ModelTrainingDialog(QDialog):
         self.versions_table.setHorizontalHeaderLabels([
             "版本号", "模型类型", "训练任务", "性能指标", "成本收益", "创建时间", "当前版本", "操作"
         ])
-        self.versions_table.horizontalHeader().setStretchLastSection(True)
+        versions_header = self.versions_table.horizontalHeader()
+        for i in range(8):
+            versions_header.setSectionResizeMode(i, QHeaderView.ResizeToContents)
+        self.versions_table.verticalHeader().setDefaultSectionSize(50)
+        # versions_header.setMinimumSectionSize(180)
         self.versions_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.versions_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.versions_table.doubleClicked.connect(self.view_version_details)
@@ -220,6 +227,8 @@ class ModelTrainingDialog(QDialog):
 
         self.governance_table = QTableWidget()
         self.governance_table.setColumnCount(6)
+        self.governance_table.verticalHeader().setDefaultSectionSize(50)
+
         self.governance_table.setHorizontalHeaderLabels([
             "模型类型", "当前版本", "推荐版本", "净收益", "Sharpe", "上线操作"
         ])
@@ -237,9 +246,13 @@ class ModelTrainingDialog(QDialog):
         dialog = CreateTrainingTaskDialog(self)
         if dialog.exec_() == QDialog.Accepted:
             task_data = dialog.get_task_data()
+            task_name = task_data.get('task_name', '').strip()
+            if not task_name:
+                model_type = task_data.get('model_type', 'unknown')
+                task_name = f"训练任务-{model_type}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
             try:
                 task_id = self.training_service.create_training_task(
-                    task_name=task_data['task_name'],
+                    task_name=task_name,
                     model_type=task_data['model_type'],
                     config=task_data['config'],
                     task_description=task_data.get('description', '')
@@ -324,11 +337,13 @@ class ModelTrainingDialog(QDialog):
                 curve_btn = QPushButton("曲线")
                 curve_btn.clicked.connect(lambda checked, tid=task['task_id']: self.show_validation_curve(tid))
                 action_layout.addWidget(curve_btn)
+                delete_btn = QPushButton("删除")
+                delete_btn.clicked.connect(lambda checked, tid=task['task_id']: self.delete_training_task(tid))
+                action_layout.addWidget(delete_btn)
                 action_layout.addStretch()
 
                 self.tasks_table.setCellWidget(row, 8, action_widget)
 
-            self.tasks_table.resizeColumnsToContents()
             self._update_log_task_filter()
 
         except Exception as e:
@@ -401,8 +416,6 @@ class ModelTrainingDialog(QDialog):
                 action_layout.addStretch()
 
                 self.versions_table.setCellWidget(row, 7, action_widget)
-
-            self.versions_table.resizeColumnsToContents()
 
         except Exception as e:
             self.logger.error(f"加载模型版本失败: {e}")
@@ -483,6 +496,21 @@ class ModelTrainingDialog(QDialog):
         except Exception as e:
             QMessageBox.critical(self, "错误", f"取消训练任务失败: {e}")
             self.logger.error(f"取消训练任务失败: {e}")
+
+    def delete_training_task(self, task_id: str):
+        """删除训练任务"""
+        try:
+            reply = QMessageBox.question(self, "确认", "确定要删除该训练任务吗？此操作不可恢复。",
+                                         QMessageBox.Yes | QMessageBox.No)
+            if reply == QMessageBox.Yes:
+                if self.training_service.delete_training_task(task_id):
+                    QMessageBox.information(self, "成功", "训练任务已删除")
+                    self.load_tasks()
+                else:
+                    QMessageBox.warning(self, "警告", "删除训练任务失败")
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"删除训练任务失败: {e}")
+            self.logger.error(f"删除训练任务失败: {e}")
 
     def view_task_details(self, task_id: str = None):
         """查看任务详情"""
@@ -671,67 +699,84 @@ class ModelTrainingDialog(QDialog):
 class CreateTrainingTaskDialog(QDialog):
     """创建训练任务对话框"""
 
+    ALGORITHM_OPTIONS = [
+        ("sgd", "SGD (随机梯度下降) - 增量训练"),
+        ("xgboost", "XGBoost - 梯度提升"),
+        ("lightgbm", "LightGBM - 轻量级梯度提升"),
+        ("random_forest", "RandomForest (随机森林)"),
+        ("gradient_boosting", "GradientBoosting (梯度提升)"),
+        ("svm", "SVM (支持向量机)")
+    ]
+    
+    OPTIMIZATION_METHODS = [
+        ("none", "不优化 (使用默认参数)"),
+        ("random_search", "随机搜索 (Random Search)"),
+        ("grid_search", "网格搜索 (Grid Search)"),
+        ("bayesian", "贝叶斯优化 (Bayesian)")
+    ]
+    
+    FEATURE_TYPES = [
+        ("momentum", "动量指标 (RSI, MACD, Stochastic)"),
+        ("trend", "趋势指标 (MA, EMA, ADX)"),
+        ("volatility", "波动率指标 (ATR, Bollinger Bands)"),
+        ("volume", "成交量指标 (OBV, VWAP, Volume MA)")
+    ]
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("创建训练任务")
-        self.setMinimumSize(700, 600)
+        self.setMinimumSize(800, 750)
         self.setup_ui()
 
     def setup_ui(self):
         """设置UI"""
         layout = QVBoxLayout(self)
 
-        # 添加说明标签
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_content = QWidget()
+        scroll_layout = QVBoxLayout(scroll_content)
+        
         info_label = QLabel(
             "💡 提示：填写股票代码（如sh600000）获取真实K线数据进行训练。\n"
             "如果不填写股票代码，系统将使用合成数据进行训练。"
         )
         info_label.setStyleSheet("background-color: #e3f2fd; padding: 8px; border-radius: 4px;")
         info_label.setWordWrap(True)
-        layout.addWidget(info_label)
+        scroll_layout.addWidget(info_label)
 
-        # 表单
         form = QFormLayout()
 
-        # 任务名称
         self.task_name_edit = QLineEdit()
         form.addRow("任务名称:", self.task_name_edit)
 
-        # 模型类型
         self.model_type_combo = QComboBox()
         self.model_type_combo.addItems(["pattern", "trend", "price", "sentiment", "risk", "volatility"])
         form.addRow("模型类型:", self.model_type_combo)
 
-        # 任务描述
         self.description_edit = QTextEdit()
-        self.description_edit.setMaximumHeight(100)
+        self.description_edit.setMaximumHeight(80)
         form.addRow("任务描述:", self.description_edit)
 
-        # 数据配置
-        data_group = QGroupBox("数据配置")
+        data_group = QGroupBox("📊 数据配置")
         data_layout = QFormLayout()
 
-        # Symbol
         self.symbol_edit = QLineEdit()
         self.symbol_edit.setPlaceholderText("例如: sh600000, sz000001")
         data_layout.addRow("股票代码:", self.symbol_edit)
 
-        # Start Date
         self.start_date_edit = QDateEdit()
         self.start_date_edit.setCalendarPopup(True)
         self.start_date_edit.setDisplayFormat("yyyy-MM-dd")
-        from datetime import datetime, timedelta
         self.start_date_edit.setDate(datetime.now().date() - timedelta(days=365))
         data_layout.addRow("开始日期:", self.start_date_edit)
 
-        # End Date
         self.end_date_edit = QDateEdit()
         self.end_date_edit.setCalendarPopup(True)
         self.end_date_edit.setDisplayFormat("yyyy-MM-dd")
         self.end_date_edit.setDate(datetime.now().date())
         data_layout.addRow("结束日期:", self.end_date_edit)
 
-        # Prediction Horizon
         self.horizon_spin = QSpinBox()
         self.horizon_spin.setMinimum(1)
         self.horizon_spin.setMaximum(100)
@@ -739,36 +784,340 @@ class CreateTrainingTaskDialog(QDialog):
         data_layout.addRow("预测视窗:", self.horizon_spin)
 
         data_group.setLayout(data_layout)
-        form.addRow(data_group)
+        scroll_layout.addWidget(data_group)
 
-        # 训练配置
-        config_group = QGroupBox("训练配置")
-        config_layout = QFormLayout()
+        algo_group = QGroupBox("🤖 算法配置")
+        algo_layout = QFormLayout()
 
-        # Epochs
+        self.algorithm_combo = QComboBox()
+        for value, label in self.ALGORITHM_OPTIONS:
+            self.algorithm_combo.addItem(label, value)
+        algo_layout.addRow("选择算法:", self.algorithm_combo)
+        
+        self.algorithm_combo.currentIndexChanged.connect(self.on_algorithm_changed)
+
+        algo_group.setLayout(algo_layout)
+        scroll_layout.addWidget(algo_group)
+
+        self.params_group = QGroupBox("⚙️ 超参数配置")
+        self.params_layout = QFormLayout()
+        self._init_default_params()
+        self.params_group.setLayout(self.params_layout)
+        scroll_layout.addWidget(self.params_group)
+
+        automl_group = QGroupBox("🔧 AutoML 优化")
+        automl_layout = QFormLayout()
+
+        self.optimization_method_combo = QComboBox()
+        for value, label in self.OPTIMIZATION_METHODS:
+            self.optimization_method_combo.addItem(label, value)
+        automl_layout.addRow("优化方法:", self.optimization_method_combo)
+
+        self.n_iter_spin = QSpinBox()
+        self.n_iter_spin.setMinimum(5)
+        self.n_iter_spin.setMaximum(200)
+        self.n_iter_spin.setValue(30)
+        self.n_iter_spin.setEnabled(False)
+        automl_layout.addRow("优化迭代次数:", self.n_iter_spin)
+
+        self.cv_spin = QSpinBox()
+        self.cv_spin.setMinimum(2)
+        self.cv_spin.setMaximum(10)
+        self.cv_spin.setValue(3)
+        self.cv_spin.setEnabled(False)
+        automl_layout.addRow("交叉验证折数:", self.cv_spin)
+
+        self.optimization_method_combo.currentIndexChanged.connect(self.on_optimization_changed)
+
+        automl_group.setLayout(automl_layout)
+        scroll_layout.addWidget(automl_group)
+
+        feature_group = QGroupBox("📈 特征工程")
+        feature_layout = QVBoxLayout()
+
+        self.feature_checkboxes = {}
+        for value, label in self.FEATURE_TYPES:
+            checkbox = QCheckBox(label)
+            checkbox.setChecked(True)
+            self.feature_checkboxes[value] = checkbox
+            feature_layout.addWidget(checkbox)
+
+        feature_select_layout = QHBoxLayout()
+        self.feature_selection_combo = QComboBox()
+        feature_options = [
+            ("all", "使用全部特征"),
+            ("importance", "基于重要性选择 Top N"),
+            ("correlation", "基于相关性选择"),
+            ("mutual_info", "基于互信息选择")
+        ]
+        for value, label in feature_options:
+            self.feature_selection_combo.addItem(label, value)
+        feature_select_layout.addWidget(QLabel("特征选择方法:"))
+        feature_select_layout.addWidget(self.feature_selection_combo)
+        
+        self.n_features_spin = QSpinBox()
+        self.n_features_spin.setMinimum(10)
+        self.n_features_spin.setMaximum(200)
+        self.n_features_spin.setValue(50)
+        self.n_features_spin.setEnabled(False)
+        feature_select_layout.addWidget(QLabel("选择特征数:"))
+        feature_select_layout.addWidget(self.n_features_spin)
+        
+        feature_layout.addLayout(feature_select_layout)
+        feature_group.setLayout(feature_layout)
+        scroll_layout.addWidget(feature_group)
+
+        train_group = QGroupBox("🎯 训练配置")
+        train_layout = QFormLayout()
+
         self.epochs_spin = QSpinBox()
         self.epochs_spin.setMinimum(1)
         self.epochs_spin.setMaximum(1000)
         self.epochs_spin.setValue(10)
-        config_layout.addRow("训练轮数:", self.epochs_spin)
+        train_layout.addRow("训练轮数:", self.epochs_spin)
 
-        # Batch Size
         self.batch_size_spin = QSpinBox()
         self.batch_size_spin.setMinimum(1)
         self.batch_size_spin.setMaximum(1024)
         self.batch_size_spin.setValue(32)
-        config_layout.addRow("批次大小:", self.batch_size_spin)
+        train_layout.addRow("批次大小:", self.batch_size_spin)
 
-        # Learning Rate
         self.learning_rate_spin = QDoubleSpinBox()
         self.learning_rate_spin.setMinimum(0.0001)
         self.learning_rate_spin.setMaximum(1.0)
         self.learning_rate_spin.setSingleStep(0.0001)
-        self.learning_rate_spin.setValue(0.001)
+        self.learning_rate_spin.setValue(0.01)
         self.learning_rate_spin.setDecimals(4)
-        config_layout.addRow("学习率:", self.learning_rate_spin)
+        train_layout.addRow("学习率:", self.learning_rate_spin)
 
-        config_group.setLayout(config_layout)
+        self.seed_spin = QSpinBox()
+        self.seed_spin.setMinimum(1)
+        self.seed_spin.setMaximum(9999)
+        self.seed_spin.setValue(42)
+        train_layout.addRow("随机种子:", self.seed_spin)
+
+        train_group.setLayout(train_layout)
+        scroll_layout.addWidget(train_group)
+
+        scroll.setWidget(scroll_content)
+        layout.addWidget(scroll)
+
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        
+        save_template_btn = QPushButton("保存为模板")
+        save_template_btn.clicked.connect(self.save_as_template)
+        button_layout.addWidget(save_template_btn)
+        
+        load_template_btn = QPushButton("加载模板")
+        load_template_btn.clicked.connect(self.load_template)
+        button_layout.addWidget(load_template_btn)
+        
+        cancel_btn = QPushButton("取消")
+        cancel_btn.clicked.connect(self.reject)
+        button_layout.addWidget(cancel_btn)
+        
+        confirm_btn = QPushButton("创建任务")
+        confirm_btn.setDefault(True)
+        confirm_btn.clicked.connect(self.accept)
+        button_layout.addWidget(confirm_btn)
+        
+        layout.addLayout(button_layout)
+
+    def _init_default_params(self):
+        """初始化默认超参数"""
+        self.param_widgets = {}
+        
+        self.n_estimators_spin = QSpinBox()
+        self.n_estimators_spin.setMinimum(10)
+        self.n_estimators_spin.setMaximum(1000)
+        self.n_estimators_spin.setValue(100)
+        self.param_widgets['n_estimators'] = self.n_estimators_spin
+        self.params_layout.addRow("树的数量 (n_estimators):", self.n_estimators_spin)
+        
+        self.max_depth_spin = QSpinBox()
+        self.max_depth_spin.setMinimum(1)
+        self.max_depth_spin.setMaximum(30)
+        self.max_depth_spin.setValue(6)
+        self.param_widgets['max_depth'] = self.max_depth_spin
+        self.params_layout.addRow("最大深度 (max_depth):", self.max_depth_spin)
+        
+        self.min_samples_split_spin = QSpinBox()
+        self.min_samples_split_spin.setMinimum(2)
+        self.min_samples_split_spin.setMaximum(100)
+        self.min_samples_split_spin.setValue(2)
+        self.param_widgets['min_samples_split'] = self.min_samples_split_spin
+        self.params_layout.addRow("最小分裂样本数:", self.min_samples_split_spin)
+        
+        self.subsample_spin = QDoubleSpinBox()
+        self.subsample_spin.setMinimum(0.1)
+        self.subsample_spin.setMaximum(1.0)
+        self.subsample_spin.setSingleStep(0.1)
+        self.subsample_spin.setValue(1.0)
+        self.param_widgets['subsample'] = self.subsample_spin
+        self.params_layout.addRow("子采样比例:", self.subsample_spin)
+        
+        self.reg_alpha_spin = QDoubleSpinBox()
+        self.reg_alpha_spin.setMinimum(0)
+        self.reg_alpha_spin.setMaximum(10)
+        self.reg_alpha_spin.setSingleStep(0.01)
+        self.reg_alpha_spin.setValue(0)
+        self.param_widgets['reg_alpha'] = self.reg_alpha_spin
+        self.params_layout.addRow("L1正则化 (reg_alpha):", self.reg_alpha_spin)
+        
+        self.reg_lambda_spin = QDoubleSpinBox()
+        self.reg_lambda_spin.setMinimum(0)
+        self.reg_lambda_spin.setMaximum(10)
+        self.reg_lambda_spin.setSingleStep(0.01)
+        self.reg_lambda_spin.setValue(1)
+        self.param_widgets['reg_lambda'] = self.reg_lambda_spin
+        self.params_layout.addRow("L2正则化 (reg_lambda):", self.reg_lambda_spin)
+
+    def on_algorithm_changed(self, index):
+        """算法变更时更新参数"""
+        algorithm = self.algorithm_combo.currentData()
+        
+        for key, widget in self.param_widgets.items():
+            widget.setEnabled(True)
+        
+        if algorithm in ['xgboost', 'lightgbm']:
+            self.n_estimators_spin.setEnabled(True)
+            self.max_depth_spin.setEnabled(True)
+            self.subsample_spin.setEnabled(True)
+            self.reg_alpha_spin.setEnabled(True)
+            self.reg_lambda_spin.setEnabled(True)
+        elif algorithm == 'random_forest':
+            self.n_estimators_spin.setEnabled(True)
+            self.max_depth_spin.setEnabled(True)
+            self.min_samples_split_spin.setEnabled(True)
+        elif algorithm == 'gradient_boosting':
+            self.n_estimators_spin.setEnabled(True)
+            self.max_depth_spin.setEnabled(True)
+            self.subsample_spin.setEnabled(True)
+        elif algorithm == 'svm':
+            self.n_estimators_spin.setEnabled(False)
+            self.max_depth_spin.setEnabled(False)
+            self.min_samples_split_spin.setEnabled(False)
+            self.subsample_spin.setEnabled(False)
+            self.reg_alpha_spin.setEnabled(False)
+            self.reg_lambda_spin.setEnabled(False)
+        else:
+            for widget in self.param_widgets.values():
+                widget.setEnabled(False)
+
+    def on_optimization_changed(self, index):
+        """优化方法变更时更新UI"""
+        method = self.optimization_method_combo.currentData()
+        enabled = method != "none"
+        self.n_iter_spin.setEnabled(enabled)
+        self.cv_spin.setEnabled(enabled)
+
+    def save_as_template(self):
+        """保存为模板"""
+        from PyQt5.QtWidgets import QFileDialog
+        filename, _ = QFileDialog.getSaveFileName(
+            self, "保存训练模板", "", "JSON Files (*.json)"
+        )
+        if filename:
+            try:
+                import json
+                template_data = self.get_task_data()
+                with open(filename, 'w', encoding='utf-8') as f:
+                    json.dump(template_data, f, ensure_ascii=False, indent=2)
+                QMessageBox.information(self, "成功", f"模板已保存到: {filename}")
+            except Exception as e:
+                QMessageBox.critical(self, "错误", f"保存模板失败: {e}")
+
+    def load_template(self):
+        """加载模板"""
+        from PyQt5.QtWidgets import QFileDialog
+        filename, _ = QFileDialog.getOpenFileName(
+            self, "加载训练模板", "", "JSON Files (*.json)"
+        )
+        if filename:
+            try:
+                import json
+                with open(filename, 'r', encoding='utf-8') as f:
+                    template_data = json.load(f)
+                self._apply_template(template_data)
+                QMessageBox.information(self, "成功", "模板已加载")
+            except Exception as e:
+                QMessageBox.critical(self, "错误", f"加载模板失败: {e}")
+
+    def _apply_template(self, data: Dict[str, Any]):
+        """应用模板数据"""
+        config = data.get('config', {})
+        
+        if 'task_name' in data:
+            self.task_name_edit.setText(data['task_name'])
+        if 'model_type' in data:
+            idx = self.model_type_combo.findText(data['model_type'])
+            if idx >= 0:
+                self.model_type_combo.setCurrentIndex(idx)
+        if 'description' in data:
+            self.description_edit.setPlainText(data['description'])
+        
+        data_config = config.get('data', {})
+        if 'symbol' in data_config:
+            self.symbol_edit.setText(data_config['symbol'])
+        
+        algo = config.get('algorithm', 'sgd')
+        for i in range(self.algorithm_combo.count()):
+            if self.algorithm_combo.itemData(i) == algo:
+                self.algorithm_combo.setCurrentIndex(i)
+                break
+
+    def get_task_data(self) -> Dict[str, Any]:
+        """获取任务数据"""
+        algorithm = self.algorithm_combo.currentData()
+        optimization = self.optimization_method_combo.currentData()
+        
+        params = {}
+        if algorithm != 'sgd':
+            for key, widget in self.param_widgets.items():
+                if widget.isEnabled():
+                    if isinstance(widget, QSpinBox):
+                        params[key] = widget.value()
+                    elif isinstance(widget, QDoubleSpinBox):
+                        params[key] = widget.value()
+        
+        feature_types = []
+        for value, checkbox in self.feature_checkboxes.items():
+            if checkbox.isChecked():
+                feature_types.append(value)
+        
+        feature_selection_method = self.feature_selection_combo.currentData()
+        n_features = self.n_features_spin.value() if feature_selection_method != 'all' else None
+        
+        return {
+            'task_name': self.task_name_edit.text(),
+            'model_type': self.model_type_combo.currentText(),
+            'description': self.description_edit.toPlainText(),
+            'config': {
+                'algorithm': algorithm,
+                'data': {
+                    'symbol': self.symbol_edit.text().strip(),
+                    'start_date': self.start_date_edit.date().toString("yyyy-MM-dd"),
+                    'end_date': self.end_date_edit.date().toString("yyyy-MM-dd"),
+                    'prediction_horizon': self.horizon_spin.value()
+                },
+                'epochs': self.epochs_spin.value(),
+                'batch_size': self.batch_size_spin.value(),
+                'learning_rate': self.learning_rate_spin.value(),
+                'seed': self.seed_spin.value(),
+                'params': params,
+                'optimization': {
+                    'method': optimization if optimization != 'none' else None,
+                    'n_iter': self.n_iter_spin.value() if optimization != 'none' else None,
+                    'cv': self.cv_spin.value() if optimization != 'none' else None
+                },
+                'features': {
+                    'types': feature_types,
+                    'selection_method': feature_selection_method,
+                    'n_features': n_features
+                }
+            }
+        }
         form.addRow(config_group)
 
         layout.addLayout(form)
@@ -809,26 +1158,6 @@ class CreateTrainingTaskDialog(QDialog):
 
         self.accept()
 
-    def get_task_data(self) -> Dict[str, Any]:
-        """获取任务数据"""
-        return {
-            'task_name': self.task_name_edit.text(),
-            'model_type': self.model_type_combo.currentText(),
-            'description': self.description_edit.toPlainText(),
-            'config': {
-                'data': {
-                    'symbol': self.symbol_edit.text().strip(),
-                    'start_date': self.start_date_edit.date().toString("yyyy-MM-dd"),
-                    'end_date': self.end_date_edit.date().toString("yyyy-MM-dd"),
-                    'prediction_horizon': self.horizon_spin.value()
-                },
-                'epochs': self.epochs_spin.value(),
-                'batch_size': self.batch_size_spin.value(),
-                'learning_rate': self.learning_rate_spin.value(),
-                'prediction_horizon': self.horizon_spin.value()
-            }
-        }
-
 
 class TaskDetailsDialog(QDialog):
     """任务详情对话框"""
@@ -862,12 +1191,12 @@ class TaskDetailsDialog(QDialog):
             layout.addWidget(curve_btn)
 
         # 按钮
-        button_layout = QHBoxLayout()
-        button_layout.addStretch()
-        close_btn = QPushButton("关闭")
-        close_btn.clicked.connect(self.close)
-        button_layout.addWidget(close_btn)
-        layout.addLayout(button_layout)
+        # button_layout = QHBoxLayout()
+        # button_layout.addStretch()
+        # close_btn = QPushButton("关闭")
+        # close_btn.clicked.connect(self.close)
+        # button_layout.addWidget(close_btn)
+        # layout.addLayout(button_layout)
 
 
 class VersionDetailsDialog(QDialog):
