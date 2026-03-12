@@ -8,6 +8,7 @@ from loguru import logger
 import numpy as np
 import pandas as pd
 import traceback
+import time
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime, timedelta
 from PyQt5.QtWidgets import *
@@ -199,15 +200,16 @@ class AnalysisThread(QThread):
             logger.debug(f"使用最近 {len(kdata_sample)} / {total_len} 根K线 ({sample_ratio*100:.0f}%)")
 
             # 执行形态识别
-            # 使用线程启动时传入的 sensitivity 参数
+            # 使用线程启动时传入的 confidence_threshold 参数
             sensitivity = self.sensitivity
             slider_value = int(sensitivity * 100)
-            threshold = max(0.1, 0.1 + (1 - sensitivity) * 0.5)
+            # 使用传入的min_confidence作为阈值（通过sensitivity传递）
+            threshold = sensitivity  # 此时sensitivity实际是confidence_threshold值
             logger.info(f"开始形态识别，滑块值={slider_value}%, sensitivity={sensitivity:.0%}, threshold={threshold:.0%}")
             patterns = recognizer.identify_patterns(
                 kdata_sample,
-                confidence_threshold=threshold,  # 阈值 = 1 - 灵敏度
-                pattern_types=self.selected_patterns  # 使用从UI传递过来的列表
+                confidence_threshold=threshold,
+                pattern_types=self.selected_patterns
             )
             logger.info(f"原始识别结果: {len(patterns)} 个形态")
             if len(patterns) == 0:
@@ -671,7 +673,7 @@ class ProfessionalScanThread(QThread):
 
             # 获取参数
             sensitivity = self.pattern_tab.sensitivity_slider.value() / 100.0 if hasattr(self.pattern_tab, 'sensitivity_slider') else 0.7
-            confidence_threshold = max(0.1, sensitivity * 0.5)
+            confidence_threshold = self.pattern_tab.min_confidence.value() if hasattr(self.pattern_tab, 'min_confidence') else 0.3
 
             logger.info(f" 执行形态识别，置信度阈值: {confidence_threshold}")
 
@@ -1037,47 +1039,127 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
 
         # 高级设置组
         advanced_group = QGroupBox("高级设置")
-        advanced_layout = QHBoxLayout(advanced_group)
+        advanced_layout = QVBoxLayout(advanced_group)
 
-        # 灵敏度设置
+        # 第一行：灵敏度设置
+        sensitivity_row = QHBoxLayout()
+        sensitivity_row.setSpacing(10)
+        
         lmdQl = QLabel("灵敏度:")
         lmdQl.setFixedWidth(45)
         lmdQl.setStyleSheet("padding: 2px 0;")
-        advanced_layout.addWidget(lmdQl)
+        sensitivity_row.addWidget(lmdQl)
         
         self.sensitivity_slider = QSlider(Qt.Horizontal)
-        self.sensitivity_slider.setFixedSize(200, 16)  # 宽度200，高度减半
+        self.sensitivity_slider.setFixedSize(200, 16)
         self.sensitivity_slider.setRange(0, 100)
         self.sensitivity_slider.setValue(70)
         
-        # 使用setToolTip设置纯文本tooltip
         tooltip_text = (
             "形态识别灵敏度\n"
             "━━━━━━━━━━━━━━━━━━\n"
-            "较低 (0-30%):  信号少而精准，适合长线\n"
+            "较低 (0-30%):  保守模式，信号精准\n"
             "中等 (40-70%): 平衡模式，推荐默认\n"
-            "较高 (80-100%): 信号多而杂，适合激进短线\n"
+            "较高 (80-100%): 激进模式，信号多样\n"
             "━━━━━━━━━━━━━━━━━━\n"
-            "实际阈值 = 1.0 - 灵敏度%"
+            "自动联动置信度筛选"
         )
         self.sensitivity_slider.setToolTip(tooltip_text)
-        advanced_layout.addWidget(self.sensitivity_slider)
+        sensitivity_row.addWidget(self.sensitivity_slider)
         
         self.sensitivity_label = QLabel("70%")
         self.sensitivity_label.setFixedWidth(35)
         self.sensitivity_label.setStyleSheet("padding: 2px 0;")
         self.sensitivity_label.setToolTip("当前灵敏度对应的识别阈值")
-        advanced_layout.addWidget(self.sensitivity_label)
+        sensitivity_row.addWidget(self.sensitivity_label)
         
         self.sensitivity_slider.valueChanged.connect(self._on_sensitivity_changed)
         
-        toolbar_layout.addWidget(advanced_group)
-        
-        # 实时监控开关
         self.realtime_cb = QCheckBox("实时监控")
         self.realtime_cb.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.realtime_cb.setToolTip("启用实时形态监控和预警")
-        advanced_layout.addWidget(self.realtime_cb)
+        sensitivity_row.addWidget(self.realtime_cb)
+        
+        self.enable_ml_cb = QCheckBox("机器学习预测")
+        self.enable_ml_cb.setChecked(True)
+        self.enable_ml_cb.setToolTip("启用AI驱动的形态预测功能")
+        sensitivity_row.addWidget(self.enable_ml_cb)
+        
+        self.enable_alerts_cb = QCheckBox("形态预警")
+        self.enable_alerts_cb.setChecked(True)
+        self.enable_alerts_cb.setToolTip("识别到关键形态时发送预警通知")
+        sensitivity_row.addWidget(self.enable_alerts_cb)
+        
+        self.historical_analysis_cb = QCheckBox("历史分析")
+        self.historical_analysis_cb.setToolTip("包含历史形态的统计和分析")
+        sensitivity_row.addWidget(self.historical_analysis_cb)
+        
+        sensitivity_row.addStretch()
+        
+        advanced_layout.addLayout(sensitivity_row)
+        
+        # 第二行：筛选条件
+        filter_row = QHBoxLayout()
+        filter_row.setSpacing(10)
+        
+        confidence_label = QLabel("置信度:")
+        confidence_label.setFixedWidth(45)
+        filter_row.addWidget(confidence_label)
+        
+        self.min_confidence = QDoubleSpinBox()
+        self.min_confidence.setRange(0.0, 1.0)
+        self.min_confidence.setSingleStep(0.01)
+        self.min_confidence.setValue(0.3)
+        self.min_confidence.setFixedWidth(60)
+        filter_row.addWidget(self.min_confidence)
+        
+        filter_row.addWidget(QLabel("至"))
+        
+        self.max_confidence = QDoubleSpinBox()
+        self.max_confidence.setRange(0.0, 1.0)
+        self.max_confidence.setSingleStep(0.01)
+        self.max_confidence.setValue(1.0)
+        self.max_confidence.setFixedWidth(60)
+        filter_row.addWidget(self.max_confidence)
+        
+        filter_row.addSpacing(20)
+        
+        success_label = QLabel("成功率:")
+        success_label.setFixedWidth(45)
+        filter_row.addWidget(success_label)
+        
+        self.min_success = QDoubleSpinBox()
+        self.min_success.setRange(0.0, 1.0)
+        self.min_success.setSingleStep(0.01)
+        self.min_success.setValue(0.3)
+        self.min_success.setFixedWidth(60)
+        filter_row.addWidget(self.min_success)
+        
+        filter_row.addWidget(QLabel("至"))
+        
+        self.max_success = QDoubleSpinBox()
+        self.max_success.setRange(0.0, 1.0)
+        self.max_success.setSingleStep(0.01)
+        self.max_success.setValue(1.0)
+        self.max_success.setFixedWidth(60)
+        filter_row.addWidget(self.max_success)
+        
+        filter_row.addSpacing(20)
+        
+        risk_label = QLabel("风险等级:")
+        risk_label.setFixedWidth(60)
+        filter_row.addWidget(risk_label)
+        
+        self.risk_combo = QComboBox()
+        self.risk_combo.addItems(["全部", "低风险", "中风险", "高风险"])
+        self.risk_combo.setFixedWidth(80)
+        filter_row.addWidget(self.risk_combo)
+        
+        filter_row.addStretch()
+        
+        advanced_layout.addLayout(filter_row)
+        
+        toolbar_layout.addWidget(advanced_group)
 
         layout.addWidget(toolbar)
 
@@ -1125,67 +1207,8 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
 
         layout.addLayout(type_layout)
 
-        # 筛选条件
-        filter_group = QGroupBox("筛选条件")
-        filter_layout = QFormLayout(filter_group)
-
-        # 置信度范围
-        confidence_layout = QHBoxLayout()
-        self.min_confidence = QDoubleSpinBox()
-        self.min_confidence.setRange(0.0, 1.0)
-        self.min_confidence.setSingleStep(0.01)
-        self.min_confidence.setValue(0.3)
-
-        self.max_confidence = QDoubleSpinBox()
-        self.max_confidence.setRange(0.0, 1.0)
-        self.max_confidence.setSingleStep(0.01)
-        self.max_confidence.setValue(1.0)
-
-        confidence_layout.addWidget(self.min_confidence)
-        confidence_layout.addWidget(QLabel("至"))
-        confidence_layout.addWidget(self.max_confidence)
-        filter_layout.addRow("置信度:", confidence_layout)
-
-        # 成功率范围
-        success_layout = QHBoxLayout()
-        self.min_success = QDoubleSpinBox()
-        self.min_success.setRange(0.0, 1.0)
-        self.min_success.setSingleStep(0.01)
-        self.min_success.setValue(0.3)
-
-        self.max_success = QDoubleSpinBox()
-        self.max_success.setRange(0.0, 1.0)
-        self.max_success.setSingleStep(0.01)
-        self.max_success.setValue(1.0)
-
-        success_layout.addWidget(self.min_success)
-        success_layout.addWidget(QLabel("至"))
-        success_layout.addWidget(self.max_success)
-        filter_layout.addRow("成功率:", success_layout)
-
-        # 风险等级
-        self.risk_combo = QComboBox()
-        self.risk_combo.addItems(["全部", "低风险", "中风险", "高风险"])
-        filter_layout.addRow("风险等级:", self.risk_combo)
-
-        layout.addWidget(filter_group)
-
-        # 高级选项
-        advanced_group = QGroupBox("高级选项")
-        advanced_layout = QVBoxLayout(advanced_group)
-
-        self.enable_ml_cb = QCheckBox("启用机器学习预测")
-        self.enable_ml_cb.setChecked(True)
-        advanced_layout.addWidget(self.enable_ml_cb)
-
-        self.enable_alerts_cb = QCheckBox("启用形态预警")
-        self.enable_alerts_cb.setChecked(True)
-        advanced_layout.addWidget(self.enable_alerts_cb)
-
-        self.historical_analysis_cb = QCheckBox("包含历史分析")
-        advanced_layout.addWidget(self.historical_analysis_cb)
-
-        layout.addWidget(advanced_group)
+        # 预留区域（高级选项已移至顶部高级设置）
+        layout.addStretch()
         layout.addStretch()
 
         scroll_area.setWidget(panel)
@@ -1379,18 +1402,63 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
                 confidence_threshold = model_config.get('confidence_threshold', 0.7)
                 self.confidence_threshold.setValue(confidence_threshold)
 
+                # 设置灵敏度滑块
+                sensitivity_value = model_config.get('pattern_sensitivity', 70)
+                if hasattr(self, 'sensitivity_slider'):
+                    self.sensitivity_slider.valueChanged.disconnect()
+                    self.sensitivity_slider.setValue(sensitivity_value)
+                    self.sensitivity_slider.valueChanged.connect(self._on_sensitivity_changed)
+                    # 同步更新标签
+                    sensitivity = sensitivity_value / 100.0
+                    self.sensitivity_label.setText(f"{sensitivity_value}%")
+                    self.sensitivity_label.setToolTip(f"当前识别阈值: {sensitivity:.0%}\n信号数量与灵敏度成正比")
+
             logger.info("UI控件配置已从数据库加载")
 
         except Exception as e:
             logger.warning(f"从数据库加载UI配置失败，使用默认值: {e}")
 
     def _on_sensitivity_changed(self, value):
-        """灵敏度滑块值变更处理"""
+        """灵敏度滑块值变更处理 - 联动置信度筛选"""
         sensitivity = value / 100.0
-        threshold = max(0.1, 0.1 + (1 - sensitivity) * 0.5)
+        
+        if value <= 30:
+            min_conf = 0.5
+            mode_desc = "保守模式(只显示高置信度形态)"
+        elif value <= 70:
+            min_conf = 0.3
+            mode_desc = "平衡模式(默认)"
+        else:
+            min_conf = 0.1
+            mode_desc = "激进模式(显示更多信号)"
+        
+        if hasattr(self, 'min_confidence'):
+            old_val = self.min_confidence.value()
+            self.min_confidence.setValue(min_conf)
+            logger.info(f"灵敏度调整 {value}% → 置信度筛选自动调整为 {min_conf:.0%} ({mode_desc})")
+        
         self.sensitivity_label.setText(f"{value}%")
-        self.sensitivity_label.setToolTip(f"当前识别阈值: {threshold:.0%}\n信号数量与灵敏度成正比")
-        logger.debug(f"灵敏度已调整为: {value}% (阈值: {threshold:.0%})")
+        self.sensitivity_label.setToolTip(
+            f"灵敏度: {value}%\n"
+            f"模式: {mode_desc}\n"
+            f"置信度筛选: {min_conf:.0%}\n"
+            f"─────────────────\n"
+            f"低(0-30%): 保守模式，信号精准\n"
+            f"中(40-70%): 平衡模式，推荐默认\n"
+            f"高(80-100%): 激进模式，信号多样"
+        )
+        logger.debug(f"灵敏度已调整为: {value}% ({mode_desc})")
+
+        try:
+            from db.models.ai_config_models import get_ai_config_manager
+            config_manager = get_ai_config_manager()
+
+            model_config = config_manager.get_config('model_config') or {}
+            model_config['pattern_sensitivity'] = value
+            config_manager.update_config('model_config', model_config, 'UI调整')
+
+        except Exception as e:
+            logger.warning(f"保存灵敏度配置失败: {e}")
 
     def _on_prediction_days_changed(self, value):
         """预测天数变更处理"""
@@ -2149,7 +2217,7 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
             slider_value = self.sensitivity_slider.value()
             logger.info(f"[DEBUG] 滑块值: {slider_value}")
             sensitivity = slider_value / 100.0
-            confidence_threshold = max(0.1, 0.1 + (1 - sensitivity) * 0.5)
+            confidence_threshold = self.min_confidence.value()
             enable_ml = self.enable_ml_cb.isChecked()
             enable_alerts = self.enable_alerts_cb.isChecked()
             enable_historical = self.historical_analysis_cb.isChecked()
@@ -2173,16 +2241,16 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
                 self.progress_bar.setVisible(False)
                 return
 
-            # 启动异步分析
+            # 启动异步分析 - 传递min_confidence值给sensitivity参数（线程内部使用）
             self.analysis_thread = AnalysisThread(
                 kdata=self.kdata.copy(),
-                sensitivity=sensitivity,
+                sensitivity=confidence_threshold,
                 enable_ml=enable_ml,
                 enable_alerts=enable_alerts,
                 enable_historical=enable_historical,
                 config_manager=self.config_manager,
                 filters=filters,
-                selected_patterns=selected_patterns,  # 将选择的形态列表传递给线程
+                selected_patterns=selected_patterns,
                 ai_prediction_service=self.ai_prediction_service,
                 prediction_days=self.prediction_days.value()
             )
@@ -2341,7 +2409,7 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
             # 获取灵敏度参数
             slider_value = self.sensitivity_slider.value() if hasattr(self, 'sensitivity_slider') else 70
             sensitivity = slider_value / 100.0
-            confidence_threshold = max(0.1, 0.1 + (1 - sensitivity) * 0.5)
+            confidence_threshold = self.min_confidence.value()
 
             logger.info(f" 专业扫描模式：执行深度形态识别，置信度阈值: {confidence_threshold}")
 
@@ -3059,9 +3127,45 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
             return {'error': str(e)}
 
     def _do_refresh_data(self):
-        """数据刷新时的处理"""
-        if self.realtime_cb.isChecked():
-            self.one_click_analysis()
+        """数据刷新时的处理 - 带节流机制"""
+        if not self.realtime_cb.isChecked():
+            return
+        
+        current_time = time.time()
+        
+        if not hasattr(self, '_last_realtime_analysis_time'):
+            self._last_realtime_analysis_time = 0
+        
+        min_interval = 1.0
+        
+        if current_time - self._last_realtime_analysis_time < min_interval:
+            if not hasattr(self, '_realtime_pending_analysis'):
+                self._realtime_pending_analysis = False
+            
+            self._realtime_pending_analysis = True
+            
+            if not hasattr(self, '_realtime_throttle_timer'):
+                from PyQt5.QtCore import QTimer
+                self._realtime_throttle_timer = QTimer()
+                self._realtime_throttle_timer.setSingleShot(True)
+                self._realtime_throttle_timer.timeout.connect(self._execute_pending_realtime_analysis)
+            
+            if not self._realtime_throttle_timer.isActive():
+                remaining_time = int((min_interval - (current_time - self._last_realtime_analysis_time)) * 1000)
+                self._realtime_throttle_timer.start(max(remaining_time, 100))
+            return
+        
+        self._last_realtime_analysis_time = current_time
+        self._realtime_pending_analysis = False
+        self.one_click_analysis()
+    
+    def _execute_pending_realtime_analysis(self):
+        """执行待处理的实时分析"""
+        if hasattr(self, '_realtime_pending_analysis') and self._realtime_pending_analysis:
+            if self.realtime_cb.isChecked():
+                self._last_realtime_analysis_time = time.time()
+                self._realtime_pending_analysis = False
+                self.one_click_analysis()
 
     def _update_results_display(self, results):
         """更新结果显示 - 安全版"""

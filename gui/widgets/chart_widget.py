@@ -231,7 +231,16 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
             logger.debug(f"事件订阅失败（独立模式下正常）: {e}")
 
     def _handle_pattern_signals_display(self, event: PatternSignalsDisplayEvent):
-        """处理形态信号显示事件"""
+        """处理形态信号显示事件 - 确保在主线程执行"""
+        try:
+            # 使用 QTimer.singleShot 确保在 Qt 主线程中执行
+            # 避免 EventBus 异步执行时在非主线程操作 UI
+            QTimer.singleShot(0, lambda: self._do_draw_pattern_signals(event))
+        except Exception as e:
+            logger.error(f"调度形态信号绘制失败: {e}")
+
+    def _do_draw_pattern_signals(self, event: PatternSignalsDisplayEvent):
+        """实际执行形态信号绘制（在主线程中）"""
         try:
             logger.info(f"收到 PatternSignalsDisplayEvent: {event.pattern_name}, "
                         f"高亮索引: {event.highlighted_signal_index}, "
@@ -519,7 +528,7 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
             indicators: 指标列表
             enable_progressive: 是否启用渐进式加载（覆盖全局配置）
         """
-        with QMutexLocker(self.update_lock):
+        with QMutexLocker(self._update_lock):
             if kdata is None or kdata.empty:
                 logger.warning("set_kdata: kdata为空, 清空图表")
                 self.clear_chart()

@@ -429,7 +429,7 @@ class EnhancedPatternRecognizer(PatternRecognizer):
             
             for config in pattern_configs:
                 try:
-                    threshold = min(config.confidence_threshold, confidence_threshold)
+                    threshold = confidence_threshold
                     
                     # 尝试使用 PatternAlgorithmFactory 创建识别器
                     recognizer = None
