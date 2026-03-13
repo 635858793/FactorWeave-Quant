@@ -656,6 +656,7 @@ class PatternSignalsDisplayEvent(BaseEvent):
     all_signal_indices: list = field(default_factory=list)
     highlighted_signal_index: int = -1
     analysis_type: str = ""  # 算法类型：one_click / professional / 等
+    pattern_data: dict = field(default_factory=dict)  # 形态详细数据，用于渲染区域背景和关键点连线
 
     def __post_init__(self):
         super().__post_init__()
@@ -663,7 +664,8 @@ class PatternSignalsDisplayEvent(BaseEvent):
             'pattern_name': self.pattern_name,
             'all_signal_indices': self.all_signal_indices,
             'highlighted_signal_index': self.highlighted_signal_index,
-            'analysis_type': self.analysis_type
+            'analysis_type': self.analysis_type,
+            'pattern_data': self.pattern_data
         })
 
 

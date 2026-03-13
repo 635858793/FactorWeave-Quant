@@ -8,6 +8,853 @@ from typing import Optional, List, Dict, Any, Tuple
 import numpy as np
 import pandas as pd
 
+try:
+    from PyQt5.QtCore import QMutexLocker
+    QMUTEX_AVAILABLE = True
+except ImportError:
+    QMUTEX_AVAILABLE = False
+
+try:
+    from utils.theme import ThemeManager
+    THEME_AVAILABLE = True
+except ImportError:
+    THEME_AVAILABLE = False
+
+
+def is_dark_theme(theme_manager) -> bool:
+    """检测是否为暗色主题"""
+    if theme_manager is None:
+        return True
+    try:
+        if hasattr(theme_manager, 'is_dark_theme'):
+            return theme_manager.is_dark_theme()
+        if hasattr(theme_manager, 'current_theme') and hasattr(theme_manager.current_theme, 'is_dark'):
+            return theme_manager.current_theme.is_dark()
+        if hasattr(theme_manager, 'theme_type'):
+            return theme_manager.theme_type.lower() == 'dark'
+    except Exception:
+        pass
+    return True
+
+
+class PatternStyleManager:
+    """形态渲染样式管理器 - 提供统一的形态渲染样式配置（支持主题适配）"""
+    
+    # 暗色主题样式
+    DARK_STYLES = {
+        'head_shoulders': {
+            'region_color': (1.0, 0.2, 0.2, 0.15),
+            'line_color': '#FF6B6B',
+            'line_style': '--',
+            'line_width': 1.5,
+            'marker': 'o',
+            'marker_size': 100,
+            'marker_color': '#FF6B6B',
+            'marker_edge_color': '#FFFFFF',
+            'marker_edge_width': 1.5,
+            'glow_effect': False,
+            'gradient_fill': False,
+            'border_color': '#FF6B6B',
+            'border_width': 1.0,
+        },
+        'head_shoulders_inverse': {
+            'region_color': (0.2, 0.8, 0.2, 0.12),
+            'line_color': '#44FF44',
+            'line_style': '--',
+            'line_width': 1.5,
+            'marker': 'o',
+            'marker_size': 100,
+            'marker_color': '#44FF44',
+            'marker_edge_color': '#FFFFFF',
+            'marker_edge_width': 1.5,
+            'glow_effect': False,
+            'gradient_fill': False,
+            'border_color': '#44FF44',
+            'border_width': 1.0,
+        },
+        'double_top': {
+            'region_color': (1.0, 0.3, 0.3, 0.12),
+            'line_color': '#FF5555',
+            'line_style': '-.',
+            'line_width': 1.5,
+            'marker': 'D',
+            'marker_size': 80,
+            'marker_color': '#FF5555',
+            'marker_edge_color': '#FFFFFF',
+            'marker_edge_width': 1.5,
+            'glow_effect': False,
+            'gradient_fill': False,
+            'border_color': '#FF5555',
+            'border_width': 1.0,
+        },
+        'double_bottom': {
+            'region_color': (0.3, 1.0, 0.3, 0.12),
+            'line_color': '#55FF55',
+            'line_style': '-.',
+            'line_width': 1.5,
+            'marker': 'D',
+            'marker_size': 80,
+            'marker_color': '#55FF55',
+            'marker_edge_color': '#FFFFFF',
+            'marker_edge_width': 1.5,
+            'glow_effect': False,
+            'gradient_fill': False,
+            'border_color': '#55FF55',
+            'border_width': 1.0,
+        },
+        'triangle': {
+            'region_color': (0.3, 0.5, 1.0, 0.12),
+            'line_color': '#5588FF',
+            'line_style': ':',
+            'line_width': 1.2,
+            'marker': '^',
+            'marker_size': 80,
+            'marker_color': '#5588FF',
+            'marker_edge_color': '#FFFFFF',
+            'marker_edge_width': 1.5,
+            'glow_effect': False,
+            'gradient_fill': False,
+            'border_color': '#5588FF',
+            'border_width': 1.0,
+        },
+        'wedge': {
+            'region_color': (0.8, 0.5, 0.2, 0.12),
+            'line_color': '#CC8800',
+            'line_style': '-.',
+            'line_width': 1.2,
+            'marker': '^',
+            'marker_size': 80,
+            'marker_color': '#CC8800',
+            'marker_edge_color': '#FFFFFF',
+            'marker_edge_width': 1.5,
+            'glow_effect': False,
+            'gradient_fill': False,
+            'border_color': '#CC8800',
+            'border_width': 1.0,
+        },
+        'channel': {
+            'region_color': (0.5, 0.5, 0.5, 0.1),
+            'line_color': '#888888',
+            'line_style': '-',
+            'line_width': 1.0,
+            'marker': 'o',
+            'marker_size': 60,
+            'marker_color': '#888888',
+            'marker_edge_color': '#FFFFFF',
+            'marker_edge_width': 1.0,
+            'glow_effect': False,
+            'gradient_fill': False,
+            'border_color': '#888888',
+            'border_width': 1.0,
+        },
+        'flag': {
+            'region_color': (0.2, 0.6, 0.8, 0.12),
+            'line_color': '#00CED1',
+            'line_style': '-',
+            'line_width': 1.5,
+            'marker': 's',
+            'marker_size': 70,
+            'marker_color': '#00CED1',
+            'marker_edge_color': '#FFFFFF',
+            'marker_edge_width': 1.5,
+            'glow_effect': False,
+            'gradient_fill': False,
+            'border_color': '#00CED1',
+            'border_width': 1.0,
+        },
+        'rectangle': {
+            'region_color': (0.6, 0.4, 0.2, 0.12),
+            'line_color': '#CD853F',
+            'line_style': '-',
+            'line_width': 1.5,
+            'marker': 's',
+            'marker_size': 80,
+            'marker_color': '#CD853F',
+            'marker_edge_color': '#FFFFFF',
+            'marker_edge_width': 1.5,
+            'glow_effect': False,
+            'gradient_fill': False,
+            'border_color': '#CD853F',
+            'border_width': 1.0,
+        },
+        'symmetrical_triangle': {
+            'region_color': (0.5, 0.3, 0.7, 0.12),
+            'line_color': '#9370DB',
+            'line_style': ':',
+            'line_width': 1.5,
+            'marker': 'D',
+            'marker_size': 80,
+            'marker_color': '#9370DB',
+            'marker_edge_color': '#FFFFFF',
+            'marker_edge_width': 1.5,
+            'glow_effect': False,
+            'gradient_fill': False,
+            'border_color': '#9370DB',
+            'border_width': 1.0,
+        },
+        'ascending_triangle': {
+            'region_color': (0.3, 0.7, 0.4, 0.12),
+            'line_color': '#32CD32',
+            'line_style': '-.',
+            'line_width': 1.5,
+            'marker': '^',
+            'marker_size': 80,
+            'marker_color': '#32CD32',
+            'marker_edge_color': '#FFFFFF',
+            'marker_edge_width': 1.5,
+            'glow_effect': False,
+            'gradient_fill': False,
+            'border_color': '#32CD32',
+            'border_width': 1.0,
+        },
+        'descending_triangle': {
+            'region_color': (0.8, 0.3, 0.3, 0.12),
+            'line_color': '#DC143C',
+            'line_style': '-.',
+            'line_width': 1.5,
+            'marker': 'v',
+            'marker_size': 80,
+            'marker_color': '#DC143C',
+            'marker_edge_color': '#FFFFFF',
+            'marker_edge_width': 1.5,
+            'glow_effect': False,
+            'gradient_fill': False,
+            'border_color': '#DC143C',
+            'border_width': 1.0,
+        },
+        'cup_and_handle': {
+            'region_color': (0.9, 0.6, 0.1, 0.12),
+            'line_color': '#FFB347',
+            'line_style': '--',
+            'line_width': 1.5,
+            'marker': 'o',
+            'marker_size': 90,
+            'marker_color': '#FFB347',
+            'marker_edge_color': '#FFFFFF',
+            'marker_edge_width': 1.5,
+            'glow_effect': False,
+            'gradient_fill': False,
+            'border_color': '#FFB347',
+            'border_width': 1.0,
+        },
+        'rounding_bottom': {
+            'region_color': (0.4, 0.6, 0.8, 0.12),
+            'line_color': '#6495ED',
+            'line_style': '--',
+            'line_width': 1.5,
+            'marker': 'o',
+            'marker_size': 90,
+            'marker_color': '#6495ED',
+            'marker_edge_color': '#FFFFFF',
+            'marker_edge_width': 1.5,
+            'glow_effect': False,
+            'gradient_fill': False,
+            'border_color': '#6495ED',
+            'border_width': 1.0,
+        },
+        'professional': {
+            'region_color': (0.6, 0.3, 0.8, 0.12),
+            'line_color': '#9944FF',
+            'line_style': '--',
+            'line_width': 1.5,
+            'marker': 'o',
+            'marker_size': 100,
+            'marker_color': '#9944FF',
+            'marker_edge_color': '#FFFFFF',
+            'marker_edge_width': 1.5,
+            'glow_effect': False,
+            'gradient_fill': False,
+            'border_color': '#9944FF',
+            'border_width': 1.0,
+        },
+        'one_click': {
+            'region_color': (1.0, 0.65, 0.0, 0.12),
+            'line_color': '#FFA500',
+            'line_style': '-',
+            'line_width': 1.2,
+            'marker': 'v',
+            'marker_size': 80,
+            'marker_color': '#FFA500',
+            'marker_edge_color': '#FFFFFF',
+            'marker_edge_width': 1.5,
+            'glow_effect': False,
+            'gradient_fill': False,
+            'border_color': '#FFA500',
+            'border_width': 1.0,
+        },
+        'default': {
+            'region_color': (1.0, 0.65, 0.0, 0.12),
+            'line_color': '#FFA500',
+            'line_style': '-',
+            'line_width': 1.0,
+            'marker': 'v',
+            'marker_size': 80,
+            'marker_color': '#FFA500',
+            'marker_edge_color': '#FFFFFF',
+            'marker_edge_width': 1.0,
+            'glow_effect': False,
+            'gradient_fill': False,
+            'border_color': '#FFA500',
+            'border_width': 1.0,
+        }
+    }
+    
+    # 亮色主题样式
+    LIGHT_STYLES = {
+        'head_shoulders': {
+            'region_color': (0.9, 0.1, 0.1, 0.15),
+            'line_color': '#CC0000',
+            'line_style': '--',
+            'line_width': 1.5,
+            'marker': 'o',
+            'marker_size': 100,
+            'marker_color': '#CC0000',
+            'marker_edge_color': '#333333',
+            'marker_edge_width': 1.5,
+            'glow_effect': False,
+            'gradient_fill': False,
+            'border_color': '#CC0000',
+            'border_width': 1.0,
+        },
+        'head_shoulders_inverse': {
+            'region_color': (0.1, 0.7, 0.1, 0.12),
+            'line_color': '#00AA00',
+            'line_style': '--',
+            'line_width': 1.5,
+            'marker': 'o',
+            'marker_size': 100,
+            'marker_color': '#00AA00',
+            'marker_edge_color': '#333333',
+            'marker_edge_width': 1.5,
+            'glow_effect': False,
+            'gradient_fill': False,
+            'border_color': '#00AA00',
+            'border_width': 1.0,
+        },
+        'double_top': {
+            'region_color': (0.9, 0.2, 0.2, 0.12),
+            'line_color': '#CC2222',
+            'line_style': '-.',
+            'line_width': 1.5,
+            'marker': 'D',
+            'marker_size': 80,
+            'marker_color': '#CC2222',
+            'marker_edge_color': '#333333',
+            'marker_edge_width': 1.5,
+            'glow_effect': False,
+            'gradient_fill': False,
+            'border_color': '#CC2222',
+            'border_width': 1.0,
+        },
+        'double_bottom': {
+            'region_color': (0.2, 0.8, 0.2, 0.12),
+            'line_color': '#22AA22',
+            'line_style': '-.',
+            'line_width': 1.5,
+            'marker': 'D',
+            'marker_size': 80,
+            'marker_color': '#22AA22',
+            'marker_edge_color': '#333333',
+            'marker_edge_width': 1.5,
+            'glow_effect': False,
+            'gradient_fill': False,
+            'border_color': '#22AA22',
+            'border_width': 1.0,
+        },
+        'triangle': {
+            'region_color': (0.2, 0.4, 0.9, 0.12),
+            'line_color': '#2255DD',
+            'line_style': ':',
+            'line_width': 1.2,
+            'marker': '^',
+            'marker_size': 80,
+            'marker_color': '#2255DD',
+            'marker_edge_color': '#333333',
+            'marker_edge_width': 1.5,
+            'glow_effect': False,
+            'gradient_fill': False,
+            'border_color': '#2255DD',
+            'border_width': 1.0,
+        },
+        'wedge': {
+            'region_color': (0.7, 0.4, 0.1, 0.12),
+            'line_color': '#996600',
+            'line_style': '-.',
+            'line_width': 1.2,
+            'marker': '^',
+            'marker_size': 80,
+            'marker_color': '#996600',
+            'marker_edge_color': '#333333',
+            'marker_edge_width': 1.5,
+            'glow_effect': False,
+            'gradient_fill': False,
+            'border_color': '#996600',
+            'border_width': 1.0,
+        },
+        'channel': {
+            'region_color': (0.4, 0.4, 0.4, 0.1),
+            'line_color': '#666666',
+            'line_style': '-',
+            'line_width': 1.0,
+            'marker': 'o',
+            'marker_size': 60,
+            'marker_color': '#666666',
+            'marker_edge_color': '#333333',
+            'marker_edge_width': 1.0,
+            'glow_effect': False,
+            'gradient_fill': False,
+            'border_color': '#666666',
+            'border_width': 1.0,
+        },
+        'flag': {
+            'region_color': (0.1, 0.5, 0.7, 0.12),
+            'line_color': '#008B8B',
+            'line_style': '-',
+            'line_width': 1.5,
+            'marker': 's',
+            'marker_size': 70,
+            'marker_color': '#008B8B',
+            'marker_edge_color': '#333333',
+            'marker_edge_width': 1.5,
+            'glow_effect': False,
+            'gradient_fill': False,
+            'border_color': '#008B8B',
+            'border_width': 1.0,
+        },
+        'rectangle': {
+            'region_color': (0.5, 0.3, 0.1, 0.12),
+            'line_color': '#A0522D',
+            'line_style': '-',
+            'line_width': 1.5,
+            'marker': 's',
+            'marker_size': 80,
+            'marker_color': '#A0522D',
+            'marker_edge_color': '#333333',
+            'marker_edge_width': 1.5,
+            'glow_effect': False,
+            'gradient_fill': False,
+            'border_color': '#A0522D',
+            'border_width': 1.0,
+        },
+        'symmetrical_triangle': {
+            'region_color': (0.4, 0.2, 0.6, 0.12),
+            'line_color': '#8A2BE2',
+            'line_style': ':',
+            'line_width': 1.5,
+            'marker': 'D',
+            'marker_size': 80,
+            'marker_color': '#8A2BE2',
+            'marker_edge_color': '#333333',
+            'marker_edge_width': 1.5,
+            'glow_effect': False,
+            'gradient_fill': False,
+            'border_color': '#8A2BE2',
+            'border_width': 1.0,
+        },
+        'ascending_triangle': {
+            'region_color': (0.2, 0.6, 0.3, 0.12),
+            'line_color': '#228B22',
+            'line_style': '-.',
+            'line_width': 1.5,
+            'marker': '^',
+            'marker_size': 80,
+            'marker_color': '#228B22',
+            'marker_edge_color': '#333333',
+            'marker_edge_width': 1.5,
+            'glow_effect': False,
+            'gradient_fill': False,
+            'border_color': '#228B22',
+            'border_width': 1.0,
+        },
+        'descending_triangle': {
+            'region_color': (0.7, 0.2, 0.2, 0.12),
+            'line_color': '#B22222',
+            'line_style': '-.',
+            'line_width': 1.5,
+            'marker': 'v',
+            'marker_size': 80,
+            'marker_color': '#B22222',
+            'marker_edge_color': '#333333',
+            'marker_edge_width': 1.5,
+            'glow_effect': False,
+            'gradient_fill': False,
+            'border_color': '#B22222',
+            'border_width': 1.0,
+        },
+        'cup_and_handle': {
+            'region_color': (0.8, 0.5, 0.0, 0.12),
+            'line_color': '#DAA520',
+            'line_style': '--',
+            'line_width': 1.5,
+            'marker': 'o',
+            'marker_size': 90,
+            'marker_color': '#DAA520',
+            'marker_edge_color': '#333333',
+            'marker_edge_width': 1.5,
+            'glow_effect': False,
+            'gradient_fill': False,
+            'border_color': '#DAA520',
+            'border_width': 1.0,
+        },
+        'rounding_bottom': {
+            'region_color': (0.3, 0.5, 0.7, 0.12),
+            'line_color': '#4169E1',
+            'line_style': '--',
+            'line_width': 1.5,
+            'marker': 'o',
+            'marker_size': 90,
+            'marker_color': '#4169E1',
+            'marker_edge_color': '#333333',
+            'marker_edge_width': 1.5,
+            'glow_effect': False,
+            'gradient_fill': False,
+            'border_color': '#4169E1',
+            'border_width': 1.0,
+        },
+        'professional': {
+            'region_color': (0.5, 0.2, 0.7, 0.12),
+            'line_color': '#7722CC',
+            'line_style': '--',
+            'line_width': 1.5,
+            'marker': 'o',
+            'marker_size': 100,
+            'marker_color': '#7722CC',
+            'marker_edge_color': '#333333',
+            'marker_edge_width': 1.5,
+            'glow_effect': False,
+            'gradient_fill': False,
+            'border_color': '#7722CC',
+            'border_width': 1.0,
+        },
+        'one_click': {
+            'region_color': (0.9, 0.5, 0.0, 0.12),
+            'line_color': '#DD8800',
+            'line_style': '-',
+            'line_width': 1.2,
+            'marker': 'v',
+            'marker_size': 80,
+            'marker_color': '#DD8800',
+            'marker_edge_color': '#333333',
+            'marker_edge_width': 1.5,
+            'glow_effect': False,
+            'gradient_fill': False,
+            'border_color': '#DD8800',
+            'border_width': 1.0,
+        },
+        'default': {
+            'region_color': (0.9, 0.5, 0.0, 0.12),
+            'line_color': '#DD8800',
+            'line_style': '-',
+            'line_width': 1.0,
+            'marker': 'v',
+            'marker_size': 80,
+            'marker_color': '#DD8800',
+            'marker_edge_color': '#333333',
+            'marker_edge_width': 1.0,
+            'glow_effect': False,
+            'gradient_fill': False,
+            'border_color': '#DD8800',
+            'border_width': 1.0,
+        }
+    }
+    
+    @classmethod
+    def get_style(cls, pattern_type: str = 'default', is_dark: bool = True) -> dict:
+        """获取形态样式配置（支持主题适配）
+        
+        Args:
+            pattern_type: 形态类型
+            is_dark: 是否为暗色主题
+            
+        Returns:
+            样式配置字典
+        """
+        styles = cls.DARK_STYLES if is_dark else cls.LIGHT_STYLES
+        return styles.get(pattern_type, styles['default'])
+    
+    @classmethod
+    def get_style_by_analysis_type(cls, analysis_type: str, is_dark: bool = True) -> dict:
+        """根据分析类型获取样式（支持主题适配）"""
+        styles = cls.DARK_STYLES if is_dark else cls.LIGHT_STYLES
+        
+        if analysis_type == 'professional':
+            return styles.get('professional', styles['default'])
+        elif analysis_type == 'one_click':
+            return styles.get('one_click', styles['default'])
+        return styles['default']
+    
+    @classmethod
+    def detect_pattern_type(cls, pattern_name: str) -> str:
+        """根据形态名称自动检测类型"""
+        name_lower = pattern_name.lower() if pattern_name else ''
+        
+        if 'head' in name_lower or 'shoulder' in name_lower:
+            if 'inv' in name_lower or '底' in pattern_name:
+                return 'head_shoulders_inverse'
+            return 'head_shoulders'
+        elif 'double_top' in name_lower or '双顶' in pattern_name or 'M顶' in pattern_name:
+            return 'double_top'
+        elif 'double_bottom' in name_lower or '双底' in pattern_name or 'W底' in pattern_name:
+            return 'double_bottom'
+        elif 'triangle' in name_lower or '三角' in pattern_name:
+            if '对称' in name_lower or 'symmetric' in name_lower:
+                return 'symmetrical_triangle'
+            elif '上升' in name_lower or 'ascend' in name_lower:
+                return 'ascending_triangle'
+            elif '下降' in name_lower or 'descend' in name_lower:
+                return 'descending_triangle'
+            return 'triangle'
+        elif 'wedge' in name_lower or '楔形' in pattern_name:
+            return 'wedge'
+        elif 'channel' in name_lower or '通道' in pattern_name:
+            return 'channel'
+        elif 'flag' in name_lower or '旗' in pattern_name:
+            return 'flag'
+        elif 'rectangle' in name_lower or '矩形' in pattern_name or '箱体' in pattern_name:
+            return 'rectangle'
+        elif 'cup' in name_lower or 'handle' in name_lower or '杯柄' in pattern_name:
+            return 'cup_and_handle'
+        elif 'rounding' in name_lower or '圆' in name_lower:
+            return 'rounding_bottom'
+        
+        return 'default'
+    
+    @classmethod
+    def _normalize_category(cls, category: str) -> str:
+        """标准化形态类别名称"""
+        if not category:
+            return 'unknown'
+        
+        cat_lower = category.lower()
+        
+        reversal_aliases = ['reversal', '反转', 'revers', 'rev', '顶部', '底部']
+        continuation_aliases = ['continuation', '持续', 'continue', 'cont', '盘整']
+        trend_aliases = ['trend', '趋势', 'tend']
+        complex_aliases = ['complex', '复杂', 'comp']
+        volume_aliases = ['volume', '价量', 'vol', '量能']
+        gap_aliases = ['gap', '缺口', '跳空']
+        
+        for alias in reversal_aliases:
+            if alias in cat_lower:
+                return 'reversal'
+        for alias in continuation_aliases:
+            if alias in cat_lower:
+                return 'continuation'
+        for alias in trend_aliases:
+            if alias in cat_lower:
+                return 'trend'
+        for alias in complex_aliases:
+            if alias in cat_lower:
+                return 'complex'
+        for alias in volume_aliases:
+            if alias in cat_lower:
+                return 'volume'
+        for alias in gap_aliases:
+            if alias in cat_lower:
+                return 'gap'
+        
+        return 'unknown'
+    
+    @classmethod
+    def _normalize_signal(cls, signal: str) -> str:
+        """标准化信号类型"""
+        if not signal:
+            return 'neutral'
+        
+        sig_lower = signal.lower()
+        
+        buy_aliases = ['buy', '看涨', '买入', 'bullish', 'long', '多', '上涨']
+        sell_aliases = ['sell', '看跌', '卖出', 'bearish', 'short', '空', '下跌']
+        
+        for alias in buy_aliases:
+            if alias in sig_lower:
+                return 'buy'
+        for alias in sell_aliases:
+            if alias in sig_lower:
+                return 'sell'
+        
+        return 'neutral'
+    
+    # 动态样式模板 - 按形态类别和信号类型生成样式
+    # 类别: reversal(反转), continuation(持续), trend(趋势), complex(复杂), volume(价量), gap(缺口), unknown(未知)
+    # 信号: buy(看涨)→^, sell(看跌)→v, neutral(中性)→o
+    CATEGORY_STYLES = {
+        'reversal': {
+            'buy': {'marker': '^', 'line_style': '--'},
+            'sell': {'marker': 'v', 'line_style': '--'},
+            'neutral': {'marker': 'o', 'line_style': '--'},
+        },
+        'continuation': {
+            'buy': {'marker': '^', 'line_style': '-.'},
+            'sell': {'marker': 'v', 'line_style': '-.'},
+            'neutral': {'marker': 'o', 'line_style': '-.'},
+        },
+        'trend': {
+            'buy': {'marker': '^', 'line_style': '-'},
+            'sell': {'marker': 'v', 'line_style': '-'},
+            'neutral': {'marker': 'o', 'line_style': '-'},
+        },
+        'complex': {
+            'buy': {'marker': '^', 'line_style': ':'},
+            'sell': {'marker': 'v', 'line_style': ':'},
+            'neutral': {'marker': 'o', 'line_style': ':'},
+        },
+        'volume': {
+            'buy': {'marker': '^', 'line_style': '--'},
+            'sell': {'marker': 'v', 'line_style': '--'},
+            'neutral': {'marker': 'o', 'line_style': '--'},
+        },
+        'gap': {
+            'buy': {'marker': '^', 'line_style': '-.'},
+            'sell': {'marker': 'v', 'line_style': '-.'},
+            'neutral': {'marker': 'o', 'line_style': '-.'},
+        },
+        'unknown': {
+            'buy': {'marker': '^', 'line_style': '-'},
+            'sell': {'marker': 'v', 'line_style': '-'},
+            'neutral': {'marker': 'o', 'line_style': '-'},
+        },
+    }
+    
+    # 颜色方案 - 按类别+信号+主题
+    COLOR_SCHEMES = {
+        ('reversal', 'buy'): {
+            'dark': {'primary': '#44FF44', 'light': '#22CC22', 'region': (0.2, 0.8, 0.2, 0.12)},
+            'light': {'primary': '#228B22', 'light': '#32CD32', 'region': (0.1, 0.7, 0.1, 0.12)}
+        },
+        ('reversal', 'sell'): {
+            'dark': {'primary': '#FF4444', 'light': '#CC2222', 'region': (1.0, 0.2, 0.2, 0.12)},
+            'light': {'primary': '#B22222', 'light': '#DC143C', 'region': (0.9, 0.1, 0.1, 0.12)}
+        },
+        ('continuation', 'buy'): {
+            'dark': {'primary': '#4488FF', 'light': '#2255DD', 'region': (0.2, 0.5, 1.0, 0.12)},
+            'light': {'primary': '#2255DD', 'light': '#4169E1', 'region': (0.2, 0.4, 0.9, 0.12)}
+        },
+        ('continuation', 'sell'): {
+            'dark': {'primary': '#FFAA44', 'light': '#DD8800', 'region': (1.0, 0.6, 0.2, 0.12)},
+            'light': {'primary': '#CC6600', 'light': '#DAA520', 'region': (0.8, 0.4, 0.0, 0.12)}
+        },
+        ('trend', 'buy'): {
+            'dark': {'primary': '#44DDFF', 'light': '#22AAAA', 'region': (0.2, 0.8, 0.9, 0.1)},
+            'light': {'primary': '#008B8B', 'light': '#20B2AA', 'region': (0.0, 0.5, 0.5, 0.1)}
+        },
+        ('trend', 'sell'): {
+            'dark': {'primary': '#FF88CC', 'light': '#DD5599', 'region': (1.0, 0.4, 0.7, 0.1)},
+            'light': {'primary': '#C71585', 'light': '#DB7093', 'region': (0.8, 0.3, 0.5, 0.1)}
+        },
+        ('trend', 'neutral'): {
+            'dark': {'primary': '#888888', 'light': '#666666', 'region': (0.5, 0.5, 0.5, 0.1)},
+            'light': {'primary': '#666666', 'light': '#808080', 'region': (0.4, 0.4, 0.4, 0.1)}
+        },
+        ('complex', 'neutral'): {
+            'dark': {'primary': '#AA44FF', 'light': '#7722CC', 'region': (0.6, 0.2, 0.8, 0.12)},
+            'light': {'primary': '#8B008B', 'light': '#9932CC', 'region': (0.5, 0.0, 0.5, 0.12)}
+        },
+        ('volume', 'buy'): {
+            'dark': {'primary': '#44FFAA', 'light': '#22DD88', 'region': (0.2, 0.9, 0.6, 0.1)},
+            'light': {'primary': '#00C853', 'light': '#32CD32', 'region': (0.1, 0.8, 0.3, 0.1)}
+        },
+        ('volume', 'sell'): {
+            'dark': {'primary': '#FFAA88', 'light': '#DD7766', 'region': (1.0, 0.6, 0.5, 0.1)},
+            'light': {'primary': '#CD5C5C', 'light': '#F08080', 'region': (0.8, 0.3, 0.3, 0.1)}
+        },
+        ('gap', 'buy'): {
+            'dark': {'primary': '#FFFF44', 'light': '#DDDD22', 'region': (1.0, 1.0, 0.2, 0.15)},
+            'light': {'primary': '#FFD700', 'light': '#FFC125', 'region': (1.0, 0.8, 0.0, 0.12)}
+        },
+        ('gap', 'sell'): {
+            'dark': {'primary': '#FF44FF', 'light': '#DD22DD', 'region': (1.0, 0.2, 1.0, 0.15)},
+            'light': {'primary': '#FF00FF', 'light': '#DA70D6', 'region': (0.8, 0.0, 0.8, 0.12)}
+        },
+        ('unknown', 'neutral'): {
+            'dark': {'primary': '#FFA500', 'light': '#DD8800', 'region': (1.0, 0.65, 0.0, 0.12)},
+            'light': {'primary': '#FF8C00', 'light': '#FFA500', 'region': (1.0, 0.5, 0.0, 0.12)}
+        }
+    }
+    
+    @classmethod
+    def get_style_dynamic(cls, pattern_info: dict, is_dark: bool = True) -> dict:
+        """动态生成样式 - 基于形态类别和信号类型
+        
+        Args:
+            pattern_info: 形态信息字典，包含:
+                - pattern_category: 形态类别 (reversal/continuation/trend/complex/volume/gap/unknown)
+                - signal_type: 信号类型 (buy/sell/neutral)
+                - pattern_type: 具体形态类型 (可选，用于精确匹配)
+            is_dark: 是否为暗色主题
+            
+        Returns:
+            完整的样式配置字典
+        """
+        category = pattern_info.get('pattern_category', 'unknown')
+        signal = pattern_info.get('signal_type', 'neutral')
+        
+        if category is None:
+            category = 'unknown'
+        if signal is None:
+            signal = 'neutral'
+        
+        category = cls._normalize_category(category)
+        signal = cls._normalize_signal(signal)
+        
+        theme_key = 'dark' if is_dark else 'light'
+        
+        color_key = (category, signal)
+        color_scheme = cls.COLOR_SCHEMES.get(color_key, cls.COLOR_SCHEMES.get(('unknown', 'neutral')))
+        colors = color_scheme.get(theme_key, color_scheme['dark'])
+        
+        category_templates = cls.CATEGORY_STYLES.get(category, cls.CATEGORY_STYLES['unknown'])
+        template = category_templates.get(signal, category_templates['neutral'])
+        
+        edge_color = '#FFFFFF' if is_dark else '#333333'
+        
+        style = {
+            'region_color': colors['region'],
+            'line_color': colors['primary'],
+            'line_style': template.get('line_style', '-'),
+            'line_width': 1.5,
+            'marker': template.get('marker', 'o'),
+            'marker_size': 80,
+            'marker_color': colors['primary'],
+            'marker_edge_color': edge_color,
+            'marker_edge_width': 1.5,
+            'glow_effect': False,
+            'gradient_fill': False,
+            'border_color': colors['primary'],
+            'border_width': 1.0,
+            'category': category,
+            'signal': signal,
+        }
+        
+        return style
+    
+    @classmethod
+    def get_style_from_result(cls, pattern_result: dict, is_dark: bool = True) -> dict:
+        """从PatternResult对象获取样式（支持动态和静态两种方式）
+        
+        Args:
+            pattern_result: 形态识别结果字典，包含:
+                - pattern_category: 形态类别
+                - signal_type: 信号类型
+                - pattern_name: 形态名称
+                - pattern_type: 形态类型标识
+            is_dark: 是否为暗色主题
+            
+        Returns:
+            样式配置字典
+        """
+        if pattern_result.get('pattern_category') or pattern_result.get('signal_type'):
+            return cls.get_style_dynamic(pattern_result, is_dark)
+        
+        pattern_type = pattern_result.get('pattern_type')
+        if pattern_type:
+            return cls.get_style(pattern_type, is_dark)
+        
+        pattern_name = pattern_result.get('pattern_name', '')
+        detected_type = cls.detect_pattern_type(pattern_name)
+        return cls.get_style(detected_type, is_dark)
+
+
 class SignalMixin:
 
     def _safe_remove_artist(self, artist):
@@ -140,82 +987,158 @@ class SignalMixin:
         except Exception as e:
             logger.error(f"绘制信号失败: {str(e)}")
 
-    def draw_pattern_signals(self, all_indices: List[int], highlighted_index: int, pattern_name: str, analysis_type: str = ""):
-        """在图表上绘制并高亮形态信号"""
+    def draw_pattern_signals(self, all_indices: List[int], highlighted_index: int, pattern_name: str, analysis_type: str = "", pattern_data: dict = None):
+        """在图表上绘制并高亮形态信号 - 线程安全增强版本
+        
+        参数:
+            all_indices: 所有信号索引列表
+            highlighted_index: 高亮信号索引
+            pattern_name: 形态名称
+            analysis_type: 分析类型 (professional/one_click)
+            pattern_data: 形态详细数据，用于渲染区域背景和关键点连线
+                - start_idx: 形态起始索引
+                - end_idx: 形态结束索引
+                - key_points: 关键点列表 [(idx, price), ...]
+                - pattern_type: 形态类型 (head_shoulders/double_top/triangle等)
+        """
+        # 线程安全保护：尝试获取渲染锁
+        if QMUTEX_AVAILABLE and hasattr(self, '_render_lock'):
+            with QMutexLocker(self._render_lock):
+                self._draw_pattern_signals_impl(
+                    all_indices, highlighted_index, pattern_name, 
+                    analysis_type, pattern_data
+                )
+        else:
+            self._draw_pattern_signals_impl(
+                all_indices, highlighted_index, pattern_name,
+                analysis_type, pattern_data
+            )
+    
+    def _draw_pattern_signals_impl(self, all_indices: List[int], highlighted_index: int, 
+                                   pattern_name: str, analysis_type: str, pattern_data: dict):
+        """实际绘制实现 - 私有方法"""
         try:
             if not hasattr(self, 'price_ax') or not self.price_ax or self.current_kdata is None:
                 logger.warning("无法绘制形态信号，因为图表或数据尚未准备好。")
                 return
 
-            # 根据算法类型选择不同的标记颜色
-            if analysis_type == 'professional':
-                color_scheme = {'normal': 'purple', 'highlighted': 'darkviolet', 'alpha': 0.8}
-            elif analysis_type == 'one_click':
-                color_scheme = {'normal': 'orange', 'highlighted': 'red', 'alpha': 0.7}
+            # 数据一致性保护：复制数据避免引用
+            kdata = self.current_kdata.copy()
+            
+            # 获取主题信息
+            is_dark = True
+            if hasattr(self, 'theme_manager') and self.theme_manager is not None:
+                is_dark = is_dark_theme(self.theme_manager)
+            
+            # 获取样式配置
+            pattern_type = None
+            
+            pattern_info = {}
+            if pattern_data:
+                pattern_info = {
+                    'pattern_category': pattern_data.get('pattern_category'),
+                    'signal_type': pattern_data.get('signal_type'),
+                    'pattern_type': pattern_data.get('pattern_type'),
+                    'pattern_name': pattern_name,
+                }
+            
+            if pattern_data and 'pattern_type' in pattern_data:
+                pattern_type = pattern_data['pattern_type']
             else:
-                color_scheme = {'normal': 'orange', 'highlighted': 'red', 'alpha': 0.7}
+                pattern_type = PatternStyleManager.detect_pattern_type(pattern_name)
+                pattern_info['pattern_type'] = pattern_type
+            
+            if pattern_info.get('pattern_category') or pattern_info.get('signal_type'):
+                logger.info(f"使用动态样式: category={pattern_info.get('pattern_category')}, signal={pattern_info.get('signal_type')}")
+                style = PatternStyleManager.get_style_dynamic(pattern_info, is_dark)
+            elif pattern_data and (pattern_data.get('pattern_category') or pattern_data.get('signal_type')):
+                logger.info(f"从pattern_data使用动态样式: category={pattern_data.get('pattern_category')}, signal={pattern_data.get('signal_type')}")
+                style = PatternStyleManager.get_style_dynamic(pattern_data, is_dark)
+            elif analysis_type:
+                style = PatternStyleManager.get_style_by_analysis_type(analysis_type, is_dark)
+            else:
+                style = PatternStyleManager.get_style(pattern_type, is_dark)
+            
+            logger.info(f"绘制形态信号: pattern={pattern_name}, type={pattern_type}, "
+                        f"analysis={analysis_type}, 信号数量: {len(all_indices)}, style={pattern_type}")
 
-            logger.info(f"绘制形态信号: pattern={pattern_name}, type={analysis_type}, "
-                        f"信号数量: {len(all_indices)}, color_scheme={color_scheme}")
+            # 清除之前绘制的形态信号
+            self._clear_pattern_artists()
+            
+            # 确保列表已初始化
+            if not hasattr(self, '_pattern_signal_artists'):
+                self._pattern_signal_artists = []
 
-            # 清除之前绘制的形态信号 - 使用安全的删除方法
-            if hasattr(self, '_pattern_signal_artists'):
-                for artist in self._pattern_signal_artists[:]:  # 创建副本以避免迭代时修改
-                    self._safe_remove_artist(artist)
-            self._pattern_signal_artists = []
+            # 绘制形态区域背景（新增功能）
+            region_artist = self._render_pattern_region(pattern_data, kdata, style)
+            if region_artist:
+                if isinstance(region_artist, list):
+                    self._pattern_signal_artists.extend(region_artist)
+                else:
+                    self._pattern_signal_artists.append(region_artist)
 
-            kdata = self.current_kdata
+            # 绘制形态关键点连线（新增功能）
+            line_artist = self._render_pattern_lines(pattern_data, kdata, style)
+            if line_artist:
+                if isinstance(line_artist, tuple):
+                    self._pattern_signal_artists.extend(line_artist)
+                elif isinstance(line_artist, list):
+                    self._pattern_signal_artists.extend(line_artist)
+                else:
+                    self._pattern_signal_artists.append(line_artist)
 
             # 去重索引，避免重复绘制
             unique_indices = list(set(all_indices))
             logger.debug(f"准备绘制 {len(unique_indices)} 个唯一的形态信号（原始数量: {len(all_indices)}）")
             
-            # 绘制所有同类型的信号
+            # 绘制所有信号标记点
             drawn_count = 0
             for index in unique_indices:
                 if 0 <= index < len(kdata):
                     try:
-                        # 获取价格，确保在可见范围内
-                        price = float(kdata['high'].iloc[index]) * 1.02  # 在K线上方绘制标记
+                        price = float(kdata['high'].iloc[index]) * 1.02
                         
-                        # 验证价格是否有效
                         if pd.isna(price) or price <= 0:
                             logger.warning(f"索引 {index} 的价格无效: {price}")
                             continue
 
                         is_highlighted = (index == highlighted_index)
-
-                        # 根据是否高亮选择不同的标记样式
-                        marker = 'v' if not is_highlighted else '^'  # 高亮使用向上箭头
-                        size = 150 if is_highlighted else 80
-                        color = color_scheme['highlighted'] if is_highlighted else color_scheme['normal']
-                        alpha = 1.0 if is_highlighted else color_scheme['alpha']
+                        
+                        # 使用样式配置
+                        marker = style.get('marker', 'o')
+                        # 高亮时放大，但保持使用样式中定义的标记
+                        size = style.get('marker_size', 80) * 1.5 if is_highlighted else style.get('marker_size', 80)
+                        color = style.get('marker_color', '#FFA500')
+                        if is_highlighted:
+                            color = '#FF0000'
+                        alpha = 1.0 if is_highlighted else 0.75
                         zorder = 10 if is_highlighted else 5
+                        edge_color = style.get('marker_edge_color', 'white')
 
-                        # 使用 scatter 绘制标记
                         scatter = self.price_ax.scatter(
                             index, price, 
                             s=size, 
                             c=color, 
                             marker=marker,
                             alpha=alpha, 
-                            edgecolors='white', 
-                            linewidth=1, 
+                            edgecolors=edge_color, 
+                            linewidth=style.get('marker_edge_width', 1.5), 
                             zorder=zorder,
                             label=pattern_name if is_highlighted else None
                         )
                         self._pattern_signal_artists.append(scatter)
                         drawn_count += 1
 
-                        # 如果是高亮信号，添加一个文本标签
+                        # 高亮信号添加标签
                         if is_highlighted:
                             text = self.price_ax.text(
                                 index, price, f'  {pattern_name}',
                                 fontsize=9, 
                                 color=color, 
-                                va='bottom' if marker == '^' else 'top', 
+                                va='bottom',
                                 ha='left',
                                 fontweight='bold',
+                                bbox=dict(boxstyle="round,pad=0.2", facecolor='white', alpha=0.9, edgecolor=color),
                                 zorder=zorder + 1
                             )
                             self._pattern_signal_artists.append(text)
@@ -223,50 +1146,11 @@ class SignalMixin:
                         logger.warning(f"绘制索引 {index} 的信号失败: {e}")
                         continue
 
-            # 确保坐标轴范围包含所有绘制的点
+            # 调整坐标轴范围
             if drawn_count > 0:
-                try:
-                    # 获取当前坐标轴范围
-                    xlim = self.price_ax.get_xlim()
-                    ylim = self.price_ax.get_ylim()
-                    
-                    # 计算需要包含的索引范围
-                    if unique_indices:
-                        min_idx = min(unique_indices)
-                        max_idx = max(unique_indices)
-                        
-                        # 扩展X轴范围以包含所有信号
-                        new_xlim = (
-                            min(xlim[0], max(0, min_idx - 10)),
-                            max(xlim[1], max_idx + 10)
-                        )
-                        
-                        # 计算需要包含的价格范围
-                        signal_prices = []
-                        for idx in unique_indices:
-                            if 0 <= idx < len(kdata):
-                                try:
-                                    p = float(kdata['high'].iloc[idx]) * 1.05  # 包含标签空间
-                                    if not pd.isna(p) and p > 0:
-                                        signal_prices.append(p)
-                                except Exception:
-                                    pass
-                        
-                        if signal_prices:
-                            min_price = min(signal_prices)
-                            max_price = max(signal_prices)
-                            new_ylim = (
-                                min(ylim[0], min_price * 0.95),
-                                max(ylim[1], max_price * 1.05)
-                            )
-                            
-                            # 更新坐标轴范围
-                            self.price_ax.set_xlim(new_xlim)
-                            self.price_ax.set_ylim(new_ylim)
-                except Exception as e:
-                    logger.warning(f"调整坐标轴范围失败: {e}")
+                self._adjust_axis_limits(unique_indices, kdata)
 
-            # 使用 draw_idle 进行延迟重绘，避免阻塞
+            # 统一绘制，避免过度渲染
             if hasattr(self, 'canvas') and self.canvas:
                 try:
                     self.canvas.draw_idle()
@@ -279,6 +1163,187 @@ class SignalMixin:
             logger.error(f"绘制形态信号失败: {e}")
             import traceback
             logger.error(traceback.format_exc())
+    
+    def _render_pattern_region(self, pattern_data: dict, kdata, style: dict):
+        """渲染形态区域背景"""
+        if not pattern_data:
+            return None
+        
+        try:
+            start_idx = pattern_data.get('start_idx')
+            end_idx = pattern_data.get('end_idx')
+            
+            if start_idx is None or end_idx is None:
+                return None
+            
+            start_idx = max(0, int(start_idx) - 1)
+            end_idx = min(len(kdata) - 1, int(end_idx) + 1)
+            
+            if start_idx >= end_idx:
+                return None
+            
+            artists = []
+            
+            region = self.price_ax.axvspan(
+                start_idx, end_idx,
+                color=style.get('region_color', (1.0, 0.65, 0.0, 0.12)),
+                zorder=1,
+                alpha=0.15
+            )
+            artists.append(region)
+            
+            # 移除渐变填充以提高性能
+            # if style.get('gradient_fill', False):
+            #     for i in range(1, 6):
+            #         alpha = 0.02 * i
+            #         gradient_region = self.price_ax.axvspan(
+            #             start_idx, end_idx,
+            #             color=style.get('region_color', (1.0, 0.65, 0.0, 0.12)),
+            #             zorder=1,
+            #             alpha=alpha
+            #         )
+            #         artists.append(gradient_region)
+            
+            if style.get('border_color') and style.get('border_width', 0) > 0:
+                border_left = self.price_ax.axvline(
+                    x=start_idx,
+                    color=style.get('border_color'),
+                    linewidth=style.get('border_width', 1.0),
+                    linestyle='--',
+                    alpha=0.7,
+                    zorder=2
+                )
+                border_right = self.price_ax.axvline(
+                    x=end_idx,
+                    color=style.get('border_color'),
+                    linewidth=style.get('border_width', 1.0),
+                    linestyle='--',
+                    alpha=0.7,
+                    zorder=2
+                )
+                artists.extend([border_left, border_right])
+            
+            return artists if len(artists) > 1 else artists[0] if artists else None
+            
+        except Exception as e:
+            logger.debug(f"渲染形态区域背景失败: {e}")
+            return None
+    
+    def _render_pattern_lines(self, pattern_data: dict, kdata, style: dict):
+        """渲染形态关键点连线"""
+        if not pattern_data:
+            return None
+        
+        try:
+            key_points = pattern_data.get('key_points', [])
+            
+            if not key_points or len(key_points) < 2:
+                return None
+            
+            # 确保所有点都在有效范围内
+            valid_points = []
+            for idx, price in key_points:
+                if 0 <= idx < len(kdata):
+                    try:
+                        if price is None:
+                            price = float(kdata['high'].iloc[idx])
+                        valid_points.append((idx, price))
+                    except Exception:
+                        continue
+            
+            if len(valid_points) < 2:
+                return None
+            
+            x_coords = [p[0] for p in valid_points]
+            y_coords = [p[1] for p in valid_points]
+            
+            line, = self.price_ax.plot(
+                x_coords, y_coords,
+                color=style.get('line_color', '#FFA500'),
+                linestyle=style.get('line_style', '-'),
+                linewidth=style.get('line_width', 1.5),
+                marker=style.get('marker', 'o'),
+                markersize=8,
+                markerfacecolor=style.get('marker_color', '#FFA500'),
+                markeredgecolor=style.get('marker_edge_color', 'white'),
+                markeredgewidth=style.get('marker_edge_width', 1.5),
+                zorder=3,
+                alpha=0.85
+            )
+            
+            if style.get('glow_effect', False):
+                glow_line, = self.price_ax.plot(
+                    x_coords, y_coords,
+                    color=style.get('marker_color', '#FFA500'),
+                    linestyle=style.get('line_style', '-'),
+                    linewidth=style.get('line_width', 1.5) + 3,
+                    marker=style.get('marker', 'o'),
+                    markersize=12,
+                    markerfacecolor='none',
+                    markeredgecolor=style.get('marker_color', '#FFA500'),
+                    markeredgewidth=0.5,
+                    zorder=2,
+                    alpha=0.3
+                )
+                return line, glow_line
+            
+            return line
+            
+        except Exception as e:
+            logger.debug(f"渲染形态关键点连线失败: {e}")
+            return None
+    
+    def _clear_pattern_artists(self):
+        """清除之前的形态渲染对象"""
+        if not hasattr(self, '_pattern_signal_artists'):
+            self._pattern_signal_artists = []
+            return
+        
+        if self._pattern_signal_artists:
+            for artist in self._pattern_signal_artists[:]:
+                try:
+                    self._safe_remove_artist(artist)
+                except Exception:
+                    pass
+        self._pattern_signal_artists = []
+    
+    def _adjust_axis_limits(self, unique_indices: list, kdata):
+        """调整坐标轴范围以包含所有信号"""
+        try:
+            xlim = self.price_ax.get_xlim()
+            ylim = self.price_ax.get_ylim()
+            
+            if unique_indices:
+                min_idx = min(unique_indices)
+                max_idx = max(unique_indices)
+                
+                new_xlim = (
+                    min(xlim[0], max(0, min_idx - 10)),
+                    max(xlim[1], max_idx + 10)
+                )
+                
+                signal_prices = []
+                for idx in unique_indices:
+                    if 0 <= idx < len(kdata):
+                        try:
+                            p = float(kdata['high'].iloc[idx]) * 1.08
+                            if not pd.isna(p) and p > 0:
+                                signal_prices.append(p)
+                        except Exception:
+                            pass
+                
+                if signal_prices:
+                    min_price = min(signal_prices)
+                    max_price = max(signal_prices)
+                    new_ylim = (
+                        min(ylim[0], min_price * 0.95),
+                        max(ylim[1], max_price * 1.08)
+                    )
+                    
+                    self.price_ax.set_xlim(new_xlim)
+                    self.price_ax.set_ylim(new_ylim)
+        except Exception as e:
+            logger.debug(f"调整坐标轴范围失败: {e}")
 
     def _select_important_signals(self, signals, max_count):
         """选择重要信号，根据置信度和类型优先级"""

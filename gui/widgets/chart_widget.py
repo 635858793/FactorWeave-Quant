@@ -231,11 +231,28 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
             logger.debug(f"事件订阅失败（独立模式下正常）: {e}")
 
     def _handle_pattern_signals_display(self, event: PatternSignalsDisplayEvent):
-        """处理形态信号显示事件 - 确保在主线程执行"""
+        """处理形态信号显示事件 - 确保在主线程执行，支持去重和防抖"""
         try:
+            # 生成请求标识用于去重
+            request_key = f"{event.pattern_name}_{event.analysis_type}_{event.highlighted_signal_index}"
+            
+            # 检查是否是相同的请求（去重）
+            if hasattr(self, '_last_pattern_request_key'):
+                if getattr(self, '_last_pattern_request_key', None) == request_key:
+                    logger.debug(f"跳过重复的形态渲染请求: {request_key}")
+                    return
+            
+            # 记录当前请求
+            self._last_pattern_request_key = request_key
+            
+            # 如果有正在等待的定时器，先取消（防抖）
+            if hasattr(self, '_pattern_render_timer') and self._pattern_render_timer:
+                self._pattern_render_timer.stop()
+            
             # 使用 QTimer.singleShot 确保在 Qt 主线程中执行
-            # 避免 EventBus 异步执行时在非主线程操作 UI
-            QTimer.singleShot(0, lambda: self._do_draw_pattern_signals(event))
+            # 50ms 延迟用于防抖，合并快速连续的请求
+            self._pattern_render_timer = QTimer.singleShot(50, lambda: self._do_draw_pattern_signals(event))
+            
         except Exception as e:
             logger.error(f"调度形态信号绘制失败: {e}")
 
@@ -245,7 +262,8 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
             logger.info(f"收到 PatternSignalsDisplayEvent: {event.pattern_name}, "
                         f"高亮索引: {event.highlighted_signal_index}, "
                         f"算法类型: {event.analysis_type}, "
-                        f"共 {len(event.all_signal_indices)} 个信号")
+                        f"共 {len(event.all_signal_indices)} 个信号, "
+                        f"pattern_data: {bool(event.pattern_data)}")
 
             # 调用SignalMixin中的方法来绘制信号
             if hasattr(self, 'draw_pattern_signals'):
@@ -253,7 +271,8 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
                     event.all_signal_indices,
                     event.highlighted_signal_index,
                     event.pattern_name,
-                    event.analysis_type
+                    event.analysis_type,
+                    event.pattern_data
                 )
             else:
                 logger.warning("ChartWidget 中缺少 draw_pattern_signals 方法，无法绘制形态信号。")

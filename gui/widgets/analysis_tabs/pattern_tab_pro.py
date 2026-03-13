@@ -20,6 +20,7 @@ from db.models.ai_config_models import get_ai_config_manager
 from .base_tab import BaseAnalysisTab
 from core.events.types import PatternSignalsDisplayEvent
 from analysis.pattern_manager import PatternManager
+from gui.widgets.chart_mixins.signal_mixin import PatternStyleManager
 from core.services.backtest_result_manager import BacktestResultManager, BacktestResult
 
 logger = logger
@@ -34,10 +35,11 @@ class AnalysisThread(QThread):
 
     def __init__(self, kdata, sensitivity=0.7, enable_ml=True, enable_alerts=True,
                  enable_historical=False, config_manager=None, filters=None, selected_patterns=None,
-                 ai_prediction_service=None, prediction_days=5):
+                 ai_prediction_service=None, prediction_days=5, pattern_tab=None):
         super().__init__()
         self.kdata = kdata
         self.current_kdata = kdata  # 添加current_kdata别名
+        self.pattern_tab = pattern_tab  # 存储pattern_tab引用
         self.sensitivity = sensitivity
         logger.info(f"[AnalysisThread] 初始化: sensitivity={self.sensitivity}")
         self.enable_ml = enable_ml
@@ -78,6 +80,10 @@ class AnalysisThread(QThread):
 
             # 应用筛选
             filtered_patterns = self._filter_patterns(patterns)
+
+            # 批量处理历史统计数据（性能优化）
+            if filtered_patterns and hasattr(self, 'pattern_tab') and self.pattern_tab:
+                self.pattern_tab.batch_process_pattern_stats(filtered_patterns, self.kdata)
 
             results['patterns'] = filtered_patterns
             logger.info(f"形态识别完成，识别到 {len(patterns)} 个形态, 筛选后剩余 {len(filtered_patterns)} 个")
@@ -197,7 +203,8 @@ class AnalysisThread(QThread):
             
             sample_size = max(100, int(total_len * sample_ratio))
             kdata_sample = self.kdata.tail(sample_size)
-            logger.debug(f"使用最近 {len(kdata_sample)} / {total_len} 根K线 ({sample_ratio*100:.0f}%)")
+            sample_offset = total_len - len(kdata_sample)  # 计算采样起始偏移量
+            logger.debug(f"使用最近 {len(kdata_sample)} / {total_len} 根K线 ({sample_ratio*100:.0f}%)，偏移量={sample_offset}")
 
             # 执行形态识别
             # 使用线程启动时传入的 confidence_threshold 参数
@@ -230,8 +237,51 @@ class AnalysisThread(QThread):
                 pattern_dict['analysis_type'] = 'one_click'
                 pattern_dict['scan_mode'] = 'quick'
 
+                # 索引偏移补偿：将采样数据的索引转换为原始数据的索引
+                if sample_offset > 0 and 'start_index' in pattern_dict and pattern_dict['start_index'] is not None:
+                    pattern_dict['start_index'] = pattern_dict['start_index'] + sample_offset
+                if sample_offset > 0 and 'end_index' in pattern_dict and pattern_dict['end_index'] is not None:
+                    pattern_dict['end_index'] = pattern_dict['end_index'] + sample_offset
+                if sample_offset > 0 and 'index' in pattern_dict and pattern_dict['index'] is not None:
+                    pattern_dict['index'] = pattern_dict['index'] + sample_offset
+
+                # 调试日志：输出索引信息
+                logger.info(f"[索引调试] {pattern_dict.get('pattern_name')}: index={pattern_dict.get('index')}, start_index={pattern_dict.get('start_index')}, end_index={pattern_dict.get('end_index')}, sample_offset={sample_offset}")
+
                 # 数据校验和清洗
                 self._validate_and_clean_pattern(pattern_dict)
+                
+                # 添加目标价和建议字段
+                pattern_name = pattern_dict.get('pattern_name', '')
+                confidence = pattern_dict.get('confidence', 0.5)
+                price = pattern_dict.get('price', 0.0)
+                
+                # 计算目标价
+                if price and isinstance(price, (int, float)) and price > 0:
+                    signal = pattern_dict.get('signal', 'neutral')
+                    if signal == 'buy' or signal == 'bullish':
+                        target_price = price * 1.05
+                    elif signal == 'sell' or signal == 'bearish':
+                        target_price = price * 0.95
+                    else:
+                        target_price = price
+                    pattern_dict['target_price'] = f"{target_price:.2f}"
+                else:
+                    pattern_dict['target_price'] = "N/A"
+                
+                # 添加建议
+                if confidence > 0.8:
+                    if '顶' in pattern_name or '上吊' in pattern_name:
+                        pattern_dict['recommendation'] = "强烈建议卖出"
+                    elif '底' in pattern_name or '锤子' in pattern_name:
+                        pattern_dict['recommendation'] = "强烈建议买入"
+                    else:
+                        pattern_dict['recommendation'] = "密切关注"
+                elif confidence > 0.6:
+                    pattern_dict['recommendation'] = "谨慎操作"
+                else:
+                    pattern_dict['recommendation'] = "继续观察"
+                
                 pattern_dicts.append(pattern_dict)
 
             # 转换成列表，并按置信度排序
@@ -246,7 +296,7 @@ class AnalysisThread(QThread):
             return []
 
     def _validate_and_clean_pattern(self, pattern: Dict) -> None:
-        """验证并清理形态数据"""
+        """验证并清理形态数据（性能优化版）"""
         # 确保基本字段存在
         required_fields = {
             'pattern_name': '未知形态',
@@ -261,15 +311,23 @@ class AnalysisThread(QThread):
             if field not in pattern or pattern[field] is None:
                 pattern[field] = default_value
 
+        # 确保索引字段存在
+        if 'start_index' not in pattern or pattern.get('start_index') is None:
+            pattern['start_index'] = pattern.get('index', 0)
+        if 'end_index' not in pattern or pattern.get('end_index') is None:
+            pattern['end_index'] = pattern.get('index', 0)
+
         # 检查和修正置信度
         if not isinstance(pattern['confidence'], (int, float)):
             pattern['confidence'] = 0.5
         elif pattern['confidence'] < 0 or pattern['confidence'] > 1:
             pattern['confidence'] = max(0, min(pattern['confidence'], 1))
 
-        # 确保必要的额外字段
+        # 成功率延迟到批量处理，不再在单个形态验证中查询
+        # 使用预设默认值
         if 'success_rate' not in pattern or pattern.get('success_rate') is None:
             pattern['success_rate'] = 0.7
+        pattern['success_rate_source'] = 'preset'
 
         if 'risk_level' not in pattern or pattern.get('risk_level') is None:
             pattern['risk_level'] = 'medium'
@@ -278,6 +336,87 @@ class AnalysisThread(QThread):
             pattern['category'] = pattern['pattern_category']
         elif 'category' not in pattern:
             pattern['category'] = '未分类'
+
+    def _batch_process_pattern_stats(self, patterns: List[Dict]) -> None:
+        """批量处理形态历史统计数据（性能优化版）"""
+        if not patterns:
+            return
+            
+        try:
+            from analysis.pattern_manager import PatternManager
+            pattern_manager = PatternManager()
+            
+            # 收集需要记录的数据
+            records_to_insert = []
+            
+            for pattern in patterns:
+                pattern_name = pattern.get('pattern_name', '')
+                stock_code = pattern.get('stock_code', 'UNKNOWN')
+                signal_type = pattern.get('signal', 'neutral')
+                confidence = pattern.get('confidence', 0.5)
+                index = pattern.get('index', 0)
+                price = pattern.get('price', 0.0)
+                
+                # 获取触发日期
+                trigger_date = None
+                if hasattr(self, 'kdata') and self.kdata is not None and index < len(self.kdata):
+                    try:
+                        if hasattr(self.kdata.index, 'strftime'):
+                            trigger_date = self.kdata.index[index].strftime('%Y-%m-%d')
+                        elif isinstance(self.kdata.index[index], str):
+                            trigger_date = str(self.kdata.index[index])[:10]
+                    except:
+                        pass
+                
+                if trigger_date:
+                    records_to_insert.append({
+                        'pattern_type': pattern_name,
+                        'stock_code': stock_code,
+                        'signal_type': signal_type,
+                        'confidence': confidence,
+                        'trigger_date': trigger_date,
+                        'trigger_price': price
+                    })
+                
+                # 查询历史成功率（批量一次查询所有唯一形态）
+            
+            # 批量查询历史成功率
+            unique_patterns = list(set([p.get('pattern_name', '') for p in patterns if p.get('pattern_name')]))
+            pattern_stats = {}
+            for pattern_name in unique_patterns:
+                try:
+                    effectiveness = pattern_manager.get_pattern_effectiveness(pattern_name, days=90)
+                    if effectiveness.get('success_rate', 0) > 0:
+                        pattern_stats[pattern_name] = effectiveness
+                except:
+                    pass
+            
+            # 更新每个形态的成功率
+            for pattern in patterns:
+                pattern_name = pattern.get('pattern_name', '')
+                if pattern_name in pattern_stats:
+                    effectiveness = pattern_stats[pattern_name]
+                    historical_success_rate = effectiveness.get('success_rate', 0) / 100.0
+                    pattern['success_rate'] = historical_success_rate
+                    pattern['success_rate_source'] = 'historical'
+                    pattern['historical_stats'] = effectiveness
+            
+            # 批量记录形态结果
+            for record in records_to_insert:
+                try:
+                    pattern_manager.record_pattern_result(**record)
+                except Exception as e:
+                    logger.debug(f"记录形态结果失败: {e}")
+            
+            try:
+                pattern_manager.cleanup_old_records(days=90, min_samples=20)
+            except Exception as e:
+                logger.debug(f"自动清理历史数据失败: {e}")
+                    
+            logger.debug(f"批量处理完成：查询{len(unique_patterns)}个形态统计，记录{len(records_to_insert)}条数据")
+            
+        except Exception as e:
+            logger.debug(f"批量处理历史数据失败（不影响主流程）: {e}")
 
     def _validate_patterns_input(self, patterns: List[Dict]) -> List[Dict]:
         """验证和清理形态输入数据"""
@@ -647,6 +786,24 @@ class ProfessionalScanThread(QThread):
             if self.is_cancelled:
                 return
 
+            # 获取kdata供批量处理使用
+            kdata = None
+            if hasattr(self, 'pattern_tab') and self.pattern_tab is not None:
+                if hasattr(self.pattern_tab, 'current_kdata') and self.pattern_tab.current_kdata is not None:
+                    kdata = self.pattern_tab.current_kdata
+                elif hasattr(self.pattern_tab, 'kdata') and self.pattern_tab.kdata is not None:
+                    kdata = self.pattern_tab.kdata
+
+            # 批量处理历史统计数据（性能优化）
+            if patterns and hasattr(self, 'pattern_tab') and self.pattern_tab:
+                try:
+                    self.pattern_tab.batch_process_pattern_stats(patterns, kdata)
+                except Exception as e:
+                    logger.debug(f"批量处理历史数据失败: {e}")
+
+            if self.is_cancelled:
+                return
+
             # 格式化结果
             self.progress_updated.emit(80, "正在格式化结果...")
             formatted_results = self._format_results(patterns, high_quality_patterns)
@@ -671,15 +828,32 @@ class ProfessionalScanThread(QThread):
             # 创建识别器
             recognizer = EnhancedPatternRecognizer(debug_mode=True)
 
-            # 获取参数
-            sensitivity = self.pattern_tab.sensitivity_slider.value() / 100.0 if hasattr(self.pattern_tab, 'sensitivity_slider') else 0.7
-            confidence_threshold = self.pattern_tab.min_confidence.value() if hasattr(self.pattern_tab, 'min_confidence') else 0.3
+            # 获取参数 - 安全访问
+            sensitivity = 0.7
+            confidence_threshold = 0.3
+            kdata = None
+            
+            if hasattr(self, 'pattern_tab') and self.pattern_tab is not None:
+                if hasattr(self.pattern_tab, 'sensitivity_slider'):
+                    sensitivity = self.pattern_tab.sensitivity_slider.value() / 100.0
+                if hasattr(self.pattern_tab, 'min_confidence'):
+                    confidence_threshold = self.pattern_tab.min_confidence.value()
+                if hasattr(self.pattern_tab, 'current_kdata') and self.pattern_tab.current_kdata is not None:
+                    kdata = self.pattern_tab.current_kdata
+
+            # 如果从pattern_tab获取失败，尝试其他方式
+            if kdata is None:
+                if hasattr(self, 'kdata') and self.kdata is not None:
+                    kdata = self.kdata
+            
+            if kdata is None:
+                raise ValueError("无法获取K线数据")
 
             logger.info(f" 执行形态识别，置信度阈值: {confidence_threshold}")
 
             # 执行识别
             raw_patterns = recognizer.identify_patterns(
-                self.pattern_tab.current_kdata,
+                kdata,
                 confidence_threshold=confidence_threshold,
                 pattern_types=None  # 识别所有类型
             )
@@ -705,9 +879,9 @@ class ProfessionalScanThread(QThread):
                     'signal_type': pattern_dict.get('signal', pattern_dict.get('signal_type', 'neutral')),
                     'start_date': pattern_dict.get('datetime', pattern_dict.get('start_date', '')),
                     'end_date': pattern_dict.get('end_date', ''),
-                    'price_change': self.pattern_tab._calculate_price_change(),
-                    'target_price': self.pattern_tab._calculate_target_price(pattern_dict.get('pattern_name', '')),
-                    'recommendation': self.pattern_tab._get_recommendation(pattern_dict.get('pattern_name', ''), pattern_dict.get('confidence', 0.5)),
+                    'price_change': self.pattern_tab._calculate_price_change() if hasattr(self, 'pattern_tab') and self.pattern_tab else "+0.00%",
+                    'target_price': self.pattern_tab._calculate_target_price(pattern_dict.get('pattern_name', '')) if hasattr(self, 'pattern_tab') and self.pattern_tab else "N/A",
+                    'recommendation': self.pattern_tab._get_recommendation(pattern_dict.get('pattern_name', ''), pattern_dict.get('confidence', 0.5)) if hasattr(self, 'pattern_tab') and self.pattern_tab else "继续观察",
                     'real_data': True,
                     # 主图显示需要的字段
                     'index': pattern_dict.get('index', pattern_dict.get('start_index')),
@@ -741,6 +915,13 @@ class ProfessionalScanThread(QThread):
 
     def _format_results(self, all_patterns, high_quality_patterns):
         """格式化结果，确保兼容性"""
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        if hasattr(self, 'pattern_tab') and self.pattern_tab is not None:
+            try:
+                timestamp = self.pattern_tab._get_pattern_start_date()
+            except Exception:
+                pass
+        
         return {
             'patterns': high_quality_patterns if high_quality_patterns else all_patterns,
             'scan_type': 'professional',
@@ -748,7 +929,7 @@ class ProfessionalScanThread(QThread):
             'message': f'专业扫描完成，发现{len(high_quality_patterns)}个高质量形态' if high_quality_patterns else f'未发现高质量形态，显示所有{len(all_patterns)}个检测结果',
             'total_patterns': len(all_patterns),
             'high_quality_count': len(high_quality_patterns),
-            'timestamp': self.pattern_tab._get_pattern_start_date()
+            'timestamp': timestamp
         }
 
 
@@ -1035,6 +1216,20 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
         quick_layout.addWidget(one_click_btn)
         quick_layout.addWidget(ai_predict_btn)
         quick_layout.addWidget(pro_scan_btn)
+
+        stats_btn = QPushButton("形态统计")
+        stats_btn.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #ffc107, stop:1 #e0a800);
+                color: white; font-weight: bold; padding: 8px 16px;
+                border-radius: 4px; border: none;
+            }
+            QPushButton:hover { background: #e0a800; }
+        """)
+        stats_btn.clicked.connect(self.show_pattern_statistics)
+        quick_layout.addWidget(stats_btn)
+
         toolbar_layout.addWidget(quick_group)
 
         # 高级设置组
@@ -2252,7 +2447,8 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
                 filters=filters,
                 selected_patterns=selected_patterns,
                 ai_prediction_service=self.ai_prediction_service,
-                prediction_days=self.prediction_days.value()
+                prediction_days=self.prediction_days.value(),
+                pattern_tab=self
             )
 
             # 连接信号
@@ -2455,7 +2651,11 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
                     'recommendation': self._get_recommendation(pattern_dict.get('pattern_name', ''), pattern_dict.get('confidence', 0.5)),
                     'real_data': True,  # 标记为真实数据
                     'analysis_type': 'professional',  # 专业扫描标识
-                    'scan_mode': 'deep'  # 深度扫描模式
+                    'scan_mode': 'deep',  # 深度扫描模式
+                    'start_index': pattern_dict.get('start_index'),
+                    'end_index': pattern_dict.get('end_index'),
+                    'index': pattern_dict.get('index'),
+                    'price': pattern_dict.get('price'),
                 }
                 processed_patterns.append(processed_pattern)
 
@@ -2869,17 +3069,34 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
 
     def _calculate_price_change(self):
         """计算价格变化"""
-        if hasattr(self.current_kdata, 'close') and len(self.current_kdata) > 10:
-            start_price = self.current_kdata['close'].iloc[-10]
-            end_price = self.current_kdata['close'].iloc[-1]
+        kdata = None
+        if hasattr(self, 'pattern_tab') and self.pattern_tab is not None and hasattr(self.pattern_tab, 'current_kdata') and self.pattern_tab.current_kdata is not None:
+            kdata = self.pattern_tab.current_kdata
+        
+        if kdata is None and hasattr(self, 'current_kdata') and self.current_kdata is not None:
+            kdata = self.current_kdata
+        if kdata is None and hasattr(self, 'kdata') and self.kdata is not None:
+            kdata = self.kdata
+        
+        if kdata is not None and hasattr(kdata, 'close') and len(kdata) > 10:
+            start_price = kdata['close'].iloc[-10]
+            end_price = kdata['close'].iloc[-1]
             return f"{((end_price - start_price) / start_price * 100):+.2f}%"
         return "+0.00%"
 
     def _calculate_target_price(self, pattern_name):
         """计算目标价位"""
-        if hasattr(self.current_kdata, 'close') and len(self.current_kdata) > 0:
-            current_price = self.current_kdata['close'].iloc[-1]
-            # 根据形态类型计算目标价位
+        kdata = None
+        if hasattr(self, 'pattern_tab') and self.pattern_tab is not None and hasattr(self.pattern_tab, 'current_kdata') and self.pattern_tab.current_kdata is not None:
+            kdata = self.pattern_tab.current_kdata
+        
+        if kdata is None and hasattr(self, 'current_kdata') and self.current_kdata is not None:
+            kdata = self.current_kdata
+        if kdata is None and hasattr(self, 'kdata') and self.kdata is not None:
+            kdata = self.kdata
+        
+        if kdata is not None and hasattr(kdata, 'close') and len(kdata) > 0:
+            current_price = kdata['close'].iloc[-1]
             if '顶' in pattern_name or '上吊' in pattern_name:
                 target = current_price * 0.95
             elif '底' in pattern_name or '锤子' in pattern_name:
@@ -2902,6 +3119,80 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
             return "谨慎操作"
         else:
             return "继续观察"
+
+    def batch_process_pattern_stats(self, patterns: List[Dict], kdata) -> None:
+        """批量处理形态历史统计数据（供扫描线程调用）"""
+        if not patterns:
+            return
+        
+        try:
+            from analysis.pattern_manager import PatternManager
+            pattern_manager = PatternManager()
+            
+            records_to_insert = []
+            
+            for pattern in patterns:
+                pattern_name = pattern.get('pattern_name', '')
+                stock_code = pattern.get('stock_code', 'UNKNOWN')
+                signal_type = pattern.get('signal', 'neutral')
+                confidence = pattern.get('confidence', 0.5)
+                index = pattern.get('index', 0)
+                price = pattern.get('price', 0.0)
+                
+                trigger_date = None
+                if kdata is not None and index < len(kdata):
+                    try:
+                        if hasattr(kdata.index, 'strftime'):
+                            trigger_date = kdata.index[index].strftime('%Y-%m-%d')
+                        elif isinstance(kdata.index[index], str):
+                            trigger_date = str(kdata.index[index])[:10]
+                    except:
+                        pass
+                
+                if trigger_date:
+                    records_to_insert.append({
+                        'pattern_type': pattern_name,
+                        'stock_code': stock_code,
+                        'signal_type': signal_type,
+                        'confidence': confidence,
+                        'trigger_date': trigger_date,
+                        'trigger_price': price
+                    })
+            
+            unique_patterns = list(set([p.get('pattern_name', '') for p in patterns if p.get('pattern_name')]))
+            pattern_stats = {}
+            for pattern_name in unique_patterns:
+                try:
+                    effectiveness = pattern_manager.get_pattern_effectiveness(pattern_name, days=90)
+                    if effectiveness.get('success_rate', 0) > 0:
+                        pattern_stats[pattern_name] = effectiveness
+                except:
+                    pass
+            
+            for pattern in patterns:
+                pattern_name = pattern.get('pattern_name', '')
+                if pattern_name in pattern_stats:
+                    effectiveness = pattern_stats[pattern_name]
+                    historical_success_rate = effectiveness.get('success_rate', 0) / 100.0
+                    pattern['success_rate'] = historical_success_rate
+                    pattern['success_rate_source'] = 'historical'
+                    pattern['historical_stats'] = effectiveness
+            
+            for record in records_to_insert:
+                try:
+                    pattern_manager.record_pattern_result(**record)
+                except Exception as e:
+                    logger.debug(f"记录形态结果失败: {e}")
+            
+            try:
+                pattern_manager.cleanup_old_records(days=90, min_samples=20)
+            except Exception as e:
+                logger.debug(f"自动清理历史数据失败: {e}")
+                    
+            logger.debug(f"批量处理完成：查询{len(unique_patterns)}个形态统计，记录{len(records_to_insert)}条数据")
+            
+        except Exception as e:
+            logger.debug(f"批量处理历史数据失败（不影响主流程）: {e}")
 
     def _connect_main_chart_signals(self):
         """连接主图显示信号"""
@@ -3034,34 +3325,28 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
         try:
             logger.info("开始专业扫描...")
 
-            # 验证数据
             if not self.validate_kdata_with_warning():
                 logger.warning("数据验证失败，取消专业扫描")
                 return
 
             logger.info("数据验证通过")
 
-            # 停止之前的扫描
             if hasattr(self, 'professional_scan_thread') and self.professional_scan_thread.isRunning():
                 self.professional_scan_thread.cancel()
-                self.professional_scan_thread.wait(1000)  # 等待1秒
+                self.professional_scan_thread.wait(1000)
 
-            # 显示进度条
             if hasattr(self, 'progress_bar'):
                 self.progress_bar.setVisible(True)
                 self.progress_bar.setValue(0)
             if hasattr(self, 'status_label'):
                 self.status_label.setText("准备专业扫描...")
 
-            # 创建专业扫描线程
             self.professional_scan_thread = ProfessionalScanThread(self)
 
-            # 连接信号
             self.professional_scan_thread.progress_updated.connect(self.update_progress)
             self.professional_scan_thread.analysis_completed.connect(self.on_analysis_completed)
             self.professional_scan_thread.error_occurred.connect(self.on_analysis_error)
 
-            # 启动线程
             self.professional_scan_thread.start()
             logger.info("已启动专业扫描线程")
 
@@ -3069,12 +3354,93 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
             logger.error(f" 专业扫描启动失败: {e}")
             logger.error(traceback.format_exc())
 
-            # 隐藏进度条
             if hasattr(self, 'progress_bar'):
                 self.progress_bar.setVisible(False)
 
-            # 显示错误消息
             QMessageBox.critical(self, "错误", f"专业扫描启动失败: {e}")
+
+    def show_pattern_statistics(self):
+        """显示形态统计分析对话框"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("形态统计分析")
+        dialog.setModal(True)
+        dialog.resize(800, 600)
+
+        layout = QVBoxLayout(dialog)
+
+        loading_label = QLabel("正在加载数据...")
+        loading_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(loading_label)
+        QApplication.processEvents()
+
+        try:
+            from analysis.pattern_manager import PatternManager
+            pattern_manager = PatternManager.get_instance()
+
+            summary = pattern_manager.get_training_data_summary()
+
+            layout.removeWidget(loading_label)
+            loading_label.deleteLater()
+
+            info_group = QGroupBox("数据概览")
+            info_layout = QHBoxLayout(info_group)
+            info_layout.addWidget(QLabel(f"总记录数: {summary.get('total_records', 0)}"))
+            info_layout.addWidget(QLabel(f"平均置信度: {summary.get('average_confidence', 0):.1%}"))
+            info_layout.addWidget(QLabel(f"可用于训练: {summary.get('valid_for_training', 0)} 种形态"))
+            layout.addWidget(info_group)
+
+            table_label = QLabel("形态样本分布:")
+            layout.addWidget(table_label)
+
+            table = QTableWidget()
+            table.setColumnCount(4)
+            table.setHorizontalHeaderLabels(["形态名称", "样本数", "可用训练", "状态"])
+            
+            pattern_dist = summary.get('pattern_distribution', [])
+            table.setRowCount(len(pattern_dist))
+            
+            for i, item in enumerate(pattern_dist):
+                pattern_name = item.get('pattern', '')
+                count = item.get('count', 0)
+                can_train = count >= 30
+                status = "✅ 可用" if can_train else "⚠️ 不足"
+                
+                table.setItem(i, 0, QTableWidgetItem(pattern_name))
+                table.setItem(i, 1, QTableWidgetItem(str(count)))
+                table.setItem(i, 2, QTableWidgetItem("✅ 是" if can_train else "❌ 否"))
+                table.setItem(i, 3, QTableWidgetItem(status))
+            
+            table.resizeColumnsToContents()
+            layout.addWidget(table)
+
+            recommendations = pattern_manager.get_recommended_patterns(top_n=5)
+            if recommendations:
+                rec_label = QLabel("推荐形态 TOP5:")
+                layout.addWidget(rec_label)
+                
+                rec_table = QTableWidget()
+                rec_table.setColumnCount(4)
+                rec_table.setHorizontalHeaderLabels(["形态", "成功率", "平均收益", "样本数"])
+                rec_table.setRowCount(len(recommendations))
+                
+                for i, rec in enumerate(recommendations):
+                    rec_table.setItem(i, 0, QTableWidgetItem(rec.get('pattern_type', '')))
+                    rec_table.setItem(i, 1, QTableWidgetItem(f"{rec.get('success_rate', 0):.1f}%"))
+                    rec_table.setItem(i, 2, QTableWidgetItem(f"{rec.get('average_return', 0):+.1f}%"))
+                    rec_table.setItem(i, 3, QTableWidgetItem(str(rec.get('total_signals', 0))))
+                
+                rec_table.resizeColumnsToContents()
+                layout.addWidget(rec_table)
+
+        except Exception as e:
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.warning(dialog, "错误", f"加载统计数据失败: {str(e)}")
+
+        close_btn = QPushButton("关闭")
+        close_btn.clicked.connect(dialog.accept)
+        layout.addWidget(close_btn)
+
+        dialog.exec_()
 
     def _professional_scan_async(self):
         """异步专业扫描 - 修复版"""
@@ -3300,9 +3666,15 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
             # 1. 形态名称 - 列0
             pattern_name = pattern.get('pattern_name', pattern.get('name', pattern.get('type', '未知形态')))
             name_item = QTableWidgetItem(str(pattern_name))
-            # 存储 analysis_type 到 Qt.UserRole，供后续筛选使用
-            analysis_type = pattern.get('analysis_type', '')
-            name_item.setData(Qt.UserRole, analysis_type)
+            # 存储多个数据到 Qt.UserRole，供后续渲染使用
+            user_data = {
+                'analysis_type': pattern.get('analysis_type', ''),
+                'pattern_category': pattern.get('pattern_category', pattern.get('category', '')),
+                'signal_type': pattern.get('signal_type', pattern.get('signal', 'neutral')),
+                'start_index': pattern.get('start_index'),
+                'end_index': pattern.get('end_index'),
+            }
+            name_item.setData(Qt.UserRole, user_data)
             self.patterns_table.setItem(row, 0, name_item)
 
             # 2. 类型 - 列1
@@ -3336,6 +3708,47 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
 
             # 5. 信号 - 列4
             signal = pattern.get('signal', '')
+            if not signal:
+                signal = pattern.get('signal_type', '')
+            
+            # 如果仍然没有信号，根据形态名称推断
+            if not signal or signal == 'neutral':
+                pattern_name = pattern.get('pattern_name', '')
+                name_lower = pattern_name.lower()
+                
+                # 看跌形态（卖出信号）- 基于专业技术分析
+                # 反转形态：头肩顶、M顶、双顶、扩散三角形、岛形反转
+                # 下降趋势中的楔形（向下突破）
+                # 英文：head_shoulders_top, double_top, m_top, triple_top, rising_wedge, expanding
+                if '头肩顶' in pattern_name or 'M顶' in pattern_name or '双顶' in pattern_name or \
+                   '三重顶' in pattern_name or '顶' in pattern_name or '射击' in pattern_name or \
+                   '上吊' in pattern_name or '岛' in pattern_name or '扩散' in pattern_name or \
+                   '下降' in pattern_name or '倒锤' in pattern_name or '黄昏' in pattern_name or \
+                   '流星' in pattern_name or \
+                   'head_shoulders_top' in name_lower or 'double_top' in name_lower or \
+                   'm_top' in name_lower or 'triple_top' in name_lower or \
+                   'expanding' in name_lower or 'falling' in name_lower:
+                    signal = 'sell'
+                # 看涨形态（买入信号）- 基于专业技术分析
+                # 反转形态：头肩底、W底、双底、锤子线、启明星
+                # 上升趋势中的楔形（向上突破）
+                # 英文：head_shoulders_bottom, double_bottom, w_bottom, triple_bottom, falling_wedge
+                elif '头肩底' in pattern_name or 'W底' in pattern_name or '双底' in pattern_name or \
+                     '三重底' in pattern_name or '底' in pattern_name or '锤子' in pattern_name or \
+                     '孕' in pattern_name or '支撑' in pattern_name or '上升' in pattern_name or \
+                     '看涨' in pattern_name or '启明星' in pattern_name or \
+                     'head_shoulders_bottom' in name_lower or 'double_bottom' in name_lower or \
+                     'w_bottom' in name_lower or 'triple_bottom' in name_lower or \
+                     'falling_wedge' in name_lower:
+                    signal = 'buy'
+                # 中继形态（旗形、三角旗形）- 根据上下文可能是中性
+                # 英文：flag, pennant, rectangle, cup_and_handle
+                elif '旗形' in pattern_name or '三角旗' in pattern_name or '收敛' in pattern_name or \
+                     '突破' in pattern_name or \
+                     'flag' in name_lower or 'pennant' in name_lower or \
+                     'rectangle' in name_lower or 'cup_and_handle' in name_lower:
+                    signal = 'neutral'
+            
             signal_str = "买入" if signal == "buy" else "卖出" if signal == "sell" else "中性"
             signal_item = QTableWidgetItem(signal_str)
             if signal == "buy":
@@ -3368,6 +3781,43 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
             else:
                 price_str = ""
             self.patterns_table.setItem(row, 7, QTableWidgetItem(price_str))
+
+            # 9. 目标价 - 列8
+            target_price = pattern.get('target_price')
+            price_val = pattern.get('price')
+            signal_val = pattern.get('signal', '')
+            
+            # 处理目标价
+            if target_price:
+                if isinstance(target_price, str) and target_price not in ['N/A', '', '0.00']:
+                    target_price_str = target_price
+                elif isinstance(target_price, (int, float)):
+                    target_price_str = f"{target_price:.2f}"
+                else:
+                    # 根据价格和信号计算
+                    if price_val and isinstance(price_val, (int, float)) and price_val > 0:
+                        if signal_val in ['buy', 'bullish']:
+                            target_price_str = f"{price_val * 1.05:.2f}"
+                        elif signal_val in ['sell', 'bearish']:
+                            target_price_str = f"{price_val * 0.95:.2f}"
+                        else:
+                            target_price_str = f"{price_val:.2f}"
+                    else:
+                        target_price_str = "N/A"
+            else:
+                target_price_str = "N/A"
+            self.patterns_table.setItem(row, 8, QTableWidgetItem(target_price_str))
+
+            # 10. 建议 - 列9
+            recommendation = pattern.get('recommendation', '')
+            if not recommendation:
+                if signal_val in ['buy', 'bullish']:
+                    recommendation = "建议买入"
+                elif signal_val in ['sell', 'bearish']:
+                    recommendation = "建议卖出"
+                else:
+                    recommendation = "观望"
+            self.patterns_table.setItem(row, 9, QTableWidgetItem(recommendation))
 
         except Exception as e:
             logger.error(f"填充表格行 {row} 失败: {e}")
@@ -3440,9 +3890,15 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
                 # 1. 形态名称 - 列0
                 pattern_name = pattern.get('pattern_name', pattern.get('name', pattern.get('type', '未知形态')))
                 name_item = QTableWidgetItem(str(pattern_name))
-                # 存储 analysis_type 到 Qt.UserRole，供后续筛选使用
-                analysis_type = pattern.get('analysis_type', '')
-                name_item.setData(Qt.UserRole, analysis_type)
+                # 存储多个数据到 Qt.UserRole，供后续渲染使用
+                user_data = {
+                    'analysis_type': pattern.get('analysis_type', ''),
+                    'pattern_category': pattern.get('pattern_category', pattern.get('category', '')),
+                    'signal_type': pattern.get('signal_type', pattern.get('signal', 'neutral')),
+                    'start_index': pattern.get('start_index'),
+                    'end_index': pattern.get('end_index'),
+                }
+                name_item.setData(Qt.UserRole, user_data)
                 self.patterns_table.setItem(row, 0, name_item)
 
                 # 2. 类型 - 列1
@@ -3476,6 +3932,32 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
 
                 # 5. 信号 - 列4
                 signal = pattern.get('signal', '')
+                if not signal:
+                    signal = pattern.get('signal_type', '')
+                
+                # 如果仍然没有信号，根据形态名称推断
+                if not signal or signal == 'neutral':
+                    pattern_name = pattern.get('pattern_name', '')
+                    
+                    # 看跌形态（卖出信号）- 基于专业技术分析
+                    # 反转形态：头肩顶、双顶、扩散三角形、岛形反转
+                    # 下降趋势中的楔形（向下突破）
+                    if '头肩顶' in pattern_name or 'M顶' in pattern_name or '双顶' in pattern_name or \
+                       '顶' in pattern_name or '射击' in pattern_name or '上吊' in pattern_name or \
+                       '岛' in pattern_name or '扩散' in pattern_name or '下降' in pattern_name or \
+                       '倒锤' in pattern_name or '黄昏' in pattern_name or '流星' in pattern_name:
+                        signal = 'sell'
+                    # 看涨形态（买入信号）- 基于专业技术分析
+                    # 反转形态：头肩底、双底、锤子线
+                    # 上升趋势中的楔形（向上突破）
+                    # 中继形态：旗形、三角旗形（突破后延续趋势）
+                    elif '头肩底' in pattern_name or 'W底' in pattern_name or '双底' in pattern_name or \
+                         '底' in pattern_name or '锤子' in pattern_name or \
+                         '孕' in pattern_name or '支撑' in pattern_name or '上升' in pattern_name or \
+                         '看涨' in pattern_name or '旗形' in pattern_name or '三角旗' in pattern_name or \
+                         '收敛' in pattern_name or '突破' in pattern_name or '启明星' in pattern_name:
+                        signal = 'buy'
+                
                 signal_str = "买入" if signal == "buy" else "卖出" if signal == "sell" else "中性"
                 signal_item = QTableWidgetItem(signal_str)
                 if signal == "buy":
@@ -3511,28 +3993,45 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
 
                 # 9. 目标价 - 列8
                 target_price = pattern.get('target_price')
-                if target_price is None and price is not None and isinstance(price, (int, float)):
-                    # 简单估算目标价
-                    if signal == "buy":
-                        target_price = price * 1.05  # 假设上涨5%
-                    elif signal == "sell":
-                        target_price = price * 0.95  # 假设下跌5%
+                # 处理字符串类型的目标价
+                if isinstance(target_price, str):
+                    if target_price == "N/A" or target_price == "":
+                        # 尝试从价格计算
+                        if price is not None and isinstance(price, (int, float)):
+                            if signal == "buy":
+                                target_price = price * 1.05
+                            elif signal == "sell":
+                                target_price = price * 0.95
+                            else:
+                                target_price = price
+                            target_price_str = f"{target_price:.2f}"
+                        else:
+                            target_price_str = "0.00"
                     else:
-                        target_price = price  # 中性信号
-
-                if target_price is not None and isinstance(target_price, (int, float)):
+                        target_price_str = target_price
+                elif target_price is None and price is not None and isinstance(price, (int, float)):
+                    if signal == "buy":
+                        target_price = price * 1.05
+                    elif signal == "sell":
+                        target_price = price * 0.95
+                    else:
+                        target_price = price
+                    target_price_str = f"{target_price:.2f}" if target_price is not None else "0.00"
+                elif target_price is not None and isinstance(target_price, (int, float)):
                     target_price_str = f"{target_price:.2f}"
                 else:
-                    target_price_str = "0.00"  # 确保不为空
+                    target_price_str = "0.00"
                 self.patterns_table.setItem(row, 8, QTableWidgetItem(target_price_str))
 
                 # 10. 建议 - 列9
-                if signal == "buy":
-                    recommendation = "建议买入"
-                elif signal == "sell":
-                    recommendation = "建议卖出"
-                else:
-                    recommendation = "观望"
+                recommendation = pattern.get('recommendation', '')
+                if not recommendation:
+                    if signal == "buy":
+                        recommendation = "建议买入"
+                    elif signal == "sell":
+                        recommendation = "建议卖出"
+                    else:
+                        recommendation = "观望"
                 self.patterns_table.setItem(row, 9, QTableWidgetItem(recommendation))
 
             # 添加表头提示
@@ -3567,7 +4066,16 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
                 return
 
             clicked_pattern_name = pattern_name_item.text()
-            clicked_analysis_type = pattern_name_item.data(Qt.UserRole) or ''  # 获取算法类型
+            clicked_user_data = pattern_name_item.data(Qt.UserRole)
+            if isinstance(clicked_user_data, dict):
+                clicked_analysis_type = clicked_user_data.get('analysis_type', '')
+                # 直接从被点击行获取 start_index 和 end_index
+                clicked_start_idx = clicked_user_data.get('start_index')
+                clicked_end_idx = clicked_user_data.get('end_index')
+            else:
+                clicked_analysis_type = clicked_user_data or ''
+                clicked_start_idx = None
+                clicked_end_idx = None
 
             # 获取当前行形态的索引
             index_item = self.patterns_table.item(row, 5)  # 位置列
@@ -3588,7 +4096,12 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
                 name_item = self.patterns_table.item(r, 0)
                 if name_item and name_item.text() == clicked_pattern_name:
                     # 双重筛选：同时匹配名称和算法类型
-                    item_analysis_type = name_item.data(Qt.UserRole) or ''
+                    user_data = name_item.data(Qt.UserRole)
+                    if isinstance(user_data, dict):
+                        item_analysis_type = user_data.get('analysis_type', '')
+                    else:
+                        item_analysis_type = user_data or ''
+                    
                     if clicked_analysis_type == '' or item_analysis_type == clicked_analysis_type:
                         idx_item = self.patterns_table.item(r, 5)
                         if idx_item:
@@ -3600,16 +4113,42 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
 
             logger.info(f"点击了形态: {clicked_pattern_name}, 算法类型: {clicked_analysis_type}, 索引: {clicked_index}。共找到 {len(all_patterns)} 个同类信号。")
 
+            # 构建形态详细数据，用于渲染区域背景和关键点连线
+            pattern_data = {
+                'start_idx': clicked_start_idx,
+                'end_idx': clicked_end_idx,
+                'key_points': [],
+                'pattern_type': PatternStyleManager.detect_pattern_type(clicked_pattern_name) if PatternStyleManager else 'default',
+                'pattern_category': clicked_user_data.get('pattern_category', None) if isinstance(clicked_user_data, dict) else None,
+                'signal_type': clicked_user_data.get('signal_type', 'neutral') if isinstance(clicked_user_data, dict) else 'neutral',
+            }
+            
+            # 如果 user_data 中没有区间信息，尝试从表格列获取（作为后备）
+            if pattern_data['start_idx'] is None or pattern_data['end_idx'] is None:
+                range_item = self.patterns_table.item(row, 6)
+                if range_item:
+                    range_str = range_item.text()
+                    if '-' in range_str:
+                        try:
+                            parts = range_str.split('-')
+                            if pattern_data['start_idx'] is None:
+                                pattern_data['start_idx'] = int(parts[0])
+                            if pattern_data['end_idx'] is None:
+                                pattern_data['end_idx'] = int(parts[1])
+                        except (ValueError, IndexError):
+                            pass
+            
             # 发布事件，通知主图表更新
             if hasattr(self, 'event_bus') and self.event_bus:
                 display_event = PatternSignalsDisplayEvent(
                     pattern_name=clicked_pattern_name,
                     all_signal_indices=all_patterns,
                     highlighted_signal_index=clicked_index,
-                    analysis_type=clicked_analysis_type
+                    analysis_type=clicked_analysis_type,
+                    pattern_data=pattern_data
                 )
                 self.event_bus.publish(display_event)
-                logger.info(f"发布了 PatternSignalsDisplayEvent 事件: {clicked_pattern_name}, 算法类型: {clicked_analysis_type}, 信号数量: {len(all_patterns)}")
+                logger.info(f"发布了 PatternSignalsDisplayEvent 事件: {clicked_pattern_name}, 算法类型: {clicked_analysis_type}, 信号数量: {len(all_patterns)}, pattern_data: {pattern_data}")
             else:
                 logger.warning("未能发布 PatternSignalsDisplayEvent 事件，因为 event_bus 不可用。")
 

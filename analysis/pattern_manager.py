@@ -117,6 +117,21 @@ class PatternManager:
                     )
                 ''')
 
+                cursor.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_pattern_history_type_date 
+                    ON pattern_history(pattern_type, trigger_date)
+                ''')
+
+                cursor.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_pattern_history_date 
+                    ON pattern_history(trigger_date)
+                ''')
+
+                cursor.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_pattern_history_stock 
+                    ON pattern_history(stock_code)
+                ''')
+
                 # 创建通达信形态导入表
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS tdx_patterns (
@@ -687,7 +702,8 @@ for i in range(len(kdata)):
     def record_pattern_result(self, pattern_type: str, stock_code: str,
                               signal_type: str, confidence: float,
                               trigger_date: str, trigger_price: float,
-                              result_date: str = None, result_price: float = None) -> bool:
+                              result_date: str = None, result_price: float = None,
+                              max_total_records: int = 10000) -> bool:
         """
         记录形态识别结果（用于效果统计）
 
@@ -700,6 +716,7 @@ for i in range(len(kdata)):
             trigger_price: 触发价格
             result_date: 结果日期
             result_price: 结果价格
+            max_total_records: 最大总记录数，默认10000
 
         Returns:
             是否成功
@@ -714,16 +731,31 @@ for i in range(len(kdata)):
                     return_rate = (result_price - trigger_price) / \
                         trigger_price * 100
 
-                    # 根据信号类型判断是否成功
                     if signal_type == 'buy':
                         is_successful = 1 if return_rate > 0 else 0
                     elif signal_type == 'sell':
                         is_successful = 1 if return_rate < 0 else 0
                     else:
                         is_successful = 1 if abs(
-                            return_rate) < 2 else 0  # 中性信号，波动小于2%算成功
+                            return_rate) < 2 else 0
 
                 cursor = conn.cursor()
+
+                cursor.execute('SELECT COUNT(*) FROM pattern_history')
+                total_count = cursor.fetchone()[0]
+
+                if total_count >= max_total_records:
+                    excess = total_count - max_total_records + 1
+                    cursor.execute('''
+                        DELETE FROM pattern_history
+                        WHERE id IN (
+                            SELECT id FROM pattern_history
+                            ORDER BY trigger_date ASC, created_at ASC
+                            LIMIT ?
+                        )
+                    ''', (excess,))
+                    logger.info(f"已达到最大记录数{max_total_records}，删除{excess}条最旧记录")
+
                 cursor.execute('''
                     INSERT INTO pattern_history 
                     (pattern_type, stock_code, signal_type, confidence, 
@@ -780,6 +812,160 @@ for i in range(len(kdata)):
                 return recommendations
         except sqlite3.Error as e:
             logger.info(f"获取推荐形态失败: {e}")
+            return []
+
+    def cleanup_old_records(self, days: int = 90, min_samples: int = 20, max_delete: int = 1000) -> Dict:
+        """
+        清理过期的形态历史记录（智能清理）
+
+        Args:
+            days: 保留天数，默认90天
+            min_samples: 每种形态最低保留样本数，默认20条
+            max_delete: 每次最多删除条数，避免长事务，默认1000
+
+        Returns:
+            清理结果统计
+        """
+        result = {
+            'total_deleted': 0,
+            'by_pattern': {},
+            'error': None
+        }
+
+        try:
+            with self._get_db_connection() as conn:
+                cursor = conn.cursor()
+
+                cursor.execute('''
+                    SELECT pattern_type, COUNT(*) as count
+                    FROM pattern_history
+                    GROUP BY pattern_type
+                ''')
+                pattern_counts = {row[0]: row[1] for row in cursor.fetchall()}
+
+                for pattern_type, total_count in pattern_counts.items():
+                    if total_count <= min_samples:
+                        continue
+
+                    to_delete = min(total_count - min_samples, max_delete)
+
+                    cursor.execute('''
+                        DELETE FROM pattern_history
+                        WHERE id IN (
+                            SELECT id FROM pattern_history
+                            WHERE pattern_type = ?
+                            AND trigger_date < date('now', '-' || ? || ' days')
+                            ORDER BY trigger_date ASC
+                            LIMIT ?
+                        )
+                    ''', (pattern_type, days, to_delete))
+
+                    deleted = cursor.rowcount
+                    result['total_deleted'] += deleted
+                    result['by_pattern'][pattern_type] = deleted
+
+                conn.commit()
+                logger.info(f"历史数据清理完成: 删除{result['total_deleted']}条记录")
+
+        except sqlite3.Error as e:
+            result['error'] = str(e)
+            logger.error(f"清理历史记录失败: {e}")
+
+        return result
+
+    def get_training_data_summary(self) -> Dict:
+        """
+        获取训练数据摘要（用于AI训练数据管理）
+
+        Returns:
+            训练数据统计信息
+        """
+        try:
+            with self._get_db_connection() as conn:
+                cursor = conn.cursor()
+
+                cursor.execute('SELECT COUNT(*) FROM pattern_history')
+                total_records = cursor.fetchone()[0]
+
+                cursor.execute('''
+                    SELECT pattern_type, COUNT(*) as count
+                    FROM pattern_history
+                    GROUP BY pattern_type
+                    ORDER BY count DESC
+                ''')
+                pattern_distribution = [{'pattern': row[0], 'count': row[1]} for row in cursor.fetchall()]
+
+                cursor.execute('SELECT AVG(confidence) FROM pattern_history')
+                avg_confidence = cursor.fetchone()[0] or 0
+
+                cursor.execute('''
+                    SELECT signal_type, COUNT(*) as count
+                    FROM pattern_history
+                    GROUP BY signal_type
+                ''')
+                signal_distribution = {row[0]: row[1] for row in cursor.fetchall()}
+
+                return {
+                    'total_records': total_records,
+                    'pattern_distribution': pattern_distribution,
+                    'average_confidence': round(avg_confidence, 3),
+                    'signal_distribution': signal_distribution,
+                    'valid_for_training': sum(1 for p in pattern_distribution if p['count'] >= 30)
+                }
+
+        except sqlite3.Error as e:
+            logger.error(f"获取训练数据摘要失败: {e}")
+            return {
+                'total_records': 0,
+                'pattern_distribution': [],
+                'average_confidence': 0,
+                'signal_distribution': {},
+                'valid_for_training': 0
+            }
+
+    def get_pattern_effectiveness_trend(self, pattern_type: str, months: int = 6) -> List[Dict]:
+        """
+        获取形态效果趋势（用于形态优化建议）
+
+        Args:
+            pattern_type: 形态类型
+            months: 追溯月份数，默认6个月
+
+        Returns:
+            月度统计数据列表
+        """
+        try:
+            with self._get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT 
+                        strftime('%Y-%m', trigger_date) as month,
+                        COUNT(*) as total_count,
+                        COUNT(CASE WHEN is_successful = 1 THEN 1 END) as success_count,
+                        AVG(return_rate) as avg_return,
+                        AVG(confidence) as avg_confidence
+                    FROM pattern_history
+                    WHERE pattern_type = ?
+                    AND trigger_date >= date('now', '-' || ? || ' months')
+                    GROUP BY month
+                    ORDER BY month ASC
+                ''', (pattern_type, months))
+
+                results = []
+                for row in cursor.fetchall():
+                    results.append({
+                        'month': row[0],
+                        'total_count': row[1],
+                        'success_count': row[2],
+                        'success_rate': round(row[2] / row[1] * 100, 2) if row[1] > 0 else 0,
+                        'avg_return': round(row[3] or 0, 2),
+                        'avg_confidence': round(row[4] or 0, 3)
+                    })
+
+                return results
+
+        except sqlite3.Error as e:
+            logger.error(f"获取形态效果趋势失败: {e}")
             return []
 
     def get_all_patterns(self, active_only: bool = True) -> List[PatternConfig]:
