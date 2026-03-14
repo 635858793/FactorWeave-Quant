@@ -24,13 +24,27 @@ _GAPS_ALIASES = ['缺口形态', 'gap']
 _CONTINUATION_ALIASES = ['持续形态', 'continuation', 'continuation_pattern']
 
 class SignalType(Enum):
-    """信号类型"""
+    """信号类型枚举
+    
+    统一信号类型定义，包含以下成员：
+    - BUY/SELL: 基础买入/卖出信号
+    - HOLD: 持有信号
+    - NEUTRAL: 中性信号（无方向）
+    - STRONG_BUY/STRONG_SELL: 强烈买入/卖出信号
+    - CLOSE_LONG/CLOSE_SHORT: 平多/平空信号
+    """
     BUY = "buy"
     SELL = "sell"
+    HOLD = "hold"
     NEUTRAL = "neutral"
+    STRONG_BUY = "strong_buy"
+    STRONG_SELL = "strong_sell"
+    CLOSE_LONG = "close_long"
+    CLOSE_SHORT = "close_short"
 
     @classmethod
     def from_string(cls, s: str) -> 'SignalType':
+        """从字符串转换为 SignalType"""
         if s is None:
             return cls.NEUTRAL
         s_lower = s.lower()
@@ -38,6 +52,25 @@ class SignalType(Enum):
             if member.value == s_lower:
                 return member
         return cls.NEUTRAL
+
+    def to_string(self) -> str:
+        """转换为字符串"""
+        return self.value
+
+    @property
+    def is_buy(self) -> bool:
+        """是否为买入信号"""
+        return self in (self.BUY, self.STRONG_BUY)
+
+    @property
+    def is_sell(self) -> bool:
+        """是否为卖出信号"""
+        return self in (self.SELL, self.STRONG_SELL, self.CLOSE_LONG, self.CLOSE_SHORT)
+
+    @property
+    def is_strong(self) -> bool:
+        """是否为强烈信号"""
+        return self in (self.STRONG_BUY, self.STRONG_SELL)
 
 @dataclass
 class PatternResult:

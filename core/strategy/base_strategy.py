@@ -17,6 +17,8 @@ import hashlib
 import uuid
 from pathlib import Path
 
+from analysis.pattern_base import SignalType
+
 try:
     from core.events import EventBus, get_event_bus
     EVENT_BUS_AVAILABLE = True
@@ -45,14 +47,6 @@ class StrategyStatus(Enum):
     STOPPED = "stopped"        # 已停止
     ERROR = "error"            # 错误状态
     COMPLETED = "completed"    # 已完成
-
-class SignalType(Enum):
-    """信号类型枚举"""
-    BUY = "buy"                # 买入信号
-    SELL = "sell"              # 卖出信号
-    HOLD = "hold"              # 持有信号
-    CLOSE_LONG = "close_long"  # 平多信号
-    CLOSE_SHORT = "close_short"  # 平空信号
 
 @dataclass
 class StrategySignal:

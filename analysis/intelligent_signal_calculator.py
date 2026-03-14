@@ -6,24 +6,8 @@
 from typing import Dict, Any, Optional, Tuple
 import pandas as pd
 import numpy as np
-from enum import Enum
 
-
-class SignalType(Enum):
-    """信号类型"""
-    BUY = "buy"
-    SELL = "sell"
-    NEUTRAL = "neutral"
-    
-    @classmethod
-    def from_string(cls, s: str) -> 'SignalType':
-        if s is None:
-            return cls.NEUTRAL
-        s_lower = s.lower()
-        for member in cls:
-            if member.value == s_lower or member.value == s_lower[:3]:
-                return member
-        return cls.NEUTRAL
+from .pattern_base import SignalType
 
 
 class IntelligentSignalCalculator:

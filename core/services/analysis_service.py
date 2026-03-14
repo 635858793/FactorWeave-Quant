@@ -24,6 +24,7 @@ from .base_service import BaseService
 from ..events import EventBus, get_event_bus
 from ..containers import ServiceContainer, get_service_container
 from core.indicator_service import calculate_indicator, batch_calculate_indicators
+from analysis.pattern_base import SignalType
 
 
 class IndicatorType(Enum):
@@ -58,15 +59,6 @@ class TimeFrame(Enum):
     DAILY = "1d"
     WEEKLY = "1w"
     MONTHLY = "1M"
-
-
-class SignalType(Enum):
-    """信号类型"""
-    BUY = "buy"
-    SELL = "sell"
-    HOLD = "hold"
-    STRONG_BUY = "strong_buy"
-    STRONG_SELL = "strong_sell"
 
 
 @dataclass
