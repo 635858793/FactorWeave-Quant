@@ -735,7 +735,7 @@ class SectorFlowTabPro(BaseAnalysisTab):
                         )
 
                         if sector_fund_flow_data is not None and not sector_fund_flow_data.empty:
-                            monitor_data = self._process_sector_flow_data(sector_fund_flow_data)
+                            monitor_data = self._process_new_sector_flow_data(sector_fund_flow_data)
                             if monitor_data:
                                 logger.info(f" [DEBUG] TET框架获取板块资金流数据成功: {len(monitor_data)} 条")
                                 return monitor_data
@@ -816,7 +816,7 @@ class SectorFlowTabPro(BaseAnalysisTab):
                         logger.info(f" [DEBUG] 数据管理器获取板块数据: {len(df)} 行")
 
                         if not df.empty:
-                            monitor_data = self._process_sector_flow_data(df)
+                            monitor_data = self._process_new_sector_flow_data(df)
                             if monitor_data:
                                 logger.info(f" [DEBUG] 数据管理器生成监控数据: {len(monitor_data)} 条")
                                 logger.info(f" [DEBUG] 数据管理器生成监控数据: {len(monitor_data)} 条")

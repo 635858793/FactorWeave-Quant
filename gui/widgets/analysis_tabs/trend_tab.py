@@ -12,12 +12,23 @@ import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
 import time
-import sqlite3
 import json
 
 from .base_tab import BaseAnalysisTab
 
 logger = logger
+
+
+def get_database_service():
+    """获取DatabaseService实例"""
+    try:
+        from core.containers import get_service_container
+        from core.services.database_service import DatabaseService
+        container = get_service_container()
+        return container.get_service(DatabaseService)
+    except Exception as e:
+        logger.warning(f"无法从ServiceContainer获取DatabaseService: {e}")
+        return None
 
 
 class TrendAnalysisTab(BaseAnalysisTab):
@@ -94,8 +105,8 @@ class TrendAnalysisTab(BaseAnalysisTab):
         self.progress_bar = None
         self.current_kdata = None  # 当前K线数据
 
-        # 配置数据库管理 - 使用系统配置数据库
-        self.db_path = "data/factorweave_system.sqlite"
+        # 获取DatabaseService实例
+        self._database_service = get_database_service()
 
         # 在父类初始化前加载设置（UI创建时需要用到）
         self.alert_settings = self._load_alert_settings_from_db_safe()
@@ -108,32 +119,9 @@ class TrendAnalysisTab(BaseAnalysisTab):
         self._connect_signals()
 
     def _load_alert_settings_from_db_safe(self):
-        """安全地从数据库加载预警设置"""
-        try:
-            import sqlite3
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT config_value FROM trend_alert_config 
-                    WHERE config_key = 'trend_alerts' AND is_active = 1
-                """)
-                result = cursor.fetchone()
-
-                if result:
-                    return json.loads(result[0])
-                else:
-                    # 返回默认设置
-                    default_settings = {
-                        'trend_reversal': True,
-                        'high_confidence': True,
-                        'breakout': False,
-                        'confidence_threshold': 0.8,
-                        'strength_threshold': 60
-                    }
-                    return default_settings
-
-        except Exception as e:
-            logger.error(f"从数据库加载预警设置失败: {e}")
+        """从数据库加载预警设置"""
+        if not self._database_service:
+            logger.warning("DatabaseService不可用，使用默认预警设置")
             return {
                 'trend_reversal': True,
                 'high_confidence': True,
@@ -142,107 +130,63 @@ class TrendAnalysisTab(BaseAnalysisTab):
                 'strength_threshold': 60
             }
 
+        result = self._database_service.get_trend_alert_config('trend_alerts')
+        if result:
+            return result
+
+        return {
+            'trend_reversal': True,
+            'high_confidence': True,
+            'breakout': False,
+            'confidence_threshold': 0.8,
+            'strength_threshold': 60
+        }
+
     def _save_alert_settings_to_db(self, settings):
         """保存预警设置到数据库"""
-        try:
-
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-
-                # 确保表存在
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS trend_alert_config (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        config_key TEXT NOT NULL,
-                        config_value TEXT NOT NULL,
-                        is_active INTEGER DEFAULT 1,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                """)
-
-                # 将设置序列化为JSON
-                settings_json = json.dumps(settings, ensure_ascii=False)
-
-                # 使用REPLACE来更新或插入，明确指定created_at字段
-                cursor.execute("""
-                    REPLACE INTO trend_alert_config (config_key, config_value, is_active, created_at, updated_at)
-                    VALUES (?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                """, ('trend_alerts', settings_json))
-
-                conn.commit()
-                logger.info("预警设置已保存到数据库")
-                return True
-
-        except Exception as e:
-            logger.error(f" 保存预警设置到数据库失败: {e}")
+        if not self._database_service:
+            logger.warning("DatabaseService不可用，无法保存预警设置")
             return False
+
+        if self._database_service.save_trend_alert_config('trend_alerts', settings):
+            logger.info("预警设置已保存到数据库")
+            return True
+
+        logger.error("保存预警设置失败")
+        return False
 
     def _load_advanced_options_from_db(self):
         """从数据库加载高级选项设置"""
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT config_value FROM trend_alert_config 
-                    WHERE config_key = 'advanced_options' AND is_active = 1
-                """)
-                result = cursor.fetchone()
-
-                if result:
-                    return json.loads(result[0])
-                else:
-                    # 返回默认设置
-                    default_options = {
-                        'enable_prediction': True,
-                        'enable_alerts': True,
-                        'auto_update': False
-                    }
-                    return default_options
-
-        except Exception as e:
-            logger.error(f"从数据库加载高级选项设置失败: {e}")
+        if not self._database_service:
+            logger.warning("DatabaseService不可用，使用默认高级选项")
             return {
                 'enable_prediction': True,
                 'enable_alerts': True,
                 'auto_update': False
             }
 
+        result = self._database_service.get_trend_alert_config('advanced_options')
+        if result:
+            return result
+
+        return {
+            'enable_prediction': True,
+            'enable_alerts': True,
+            'auto_update': False
+        }
+
     def _save_advanced_options_to_db(self, options):
         """保存高级选项设置到数据库"""
-        try:
-
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-
-                # 确保表存在
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS trend_alert_config (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        config_key TEXT NOT NULL,
-                        config_value TEXT NOT NULL,
-                        is_active INTEGER DEFAULT 1,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                """)
-
-                # 将设置序列化为JSON
-                options_json = json.dumps(options, ensure_ascii=False)
-
-                # 使用REPLACE来更新或插入
-                cursor.execute("""
-                    REPLACE INTO trend_alert_config (config_key, config_value, is_active, created_at, updated_at)
-                    VALUES (?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                """, ('advanced_options', options_json))
-
-                conn.commit()
-                logger.info("高级选项设置已保存到数据库")
-                return True
-
-        except Exception as e:
-            logger.error(f" 保存高级选项设置到数据库失败: {e}")
+        if not self._database_service:
+            logger.warning("DatabaseService不可用，无法保存高级选项")
             return False
+
+        if self._database_service.save_trend_alert_config('advanced_options', options):
+            logger.info("高级选项设置已保存到数据库")
+            return True
+
+        logger.error("保存高级选项设置失败")
+        return False
 
     def _connect_signals(self):
         """连接信号"""

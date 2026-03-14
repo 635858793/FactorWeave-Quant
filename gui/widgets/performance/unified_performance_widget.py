@@ -1075,26 +1075,29 @@ class ModernUnifiedPerformanceWidget(QWidget):
                         logger.error(traceback.format_exc())
 
                     try:
-                        import sqlite3
-                        from pathlib import Path
-                        db_path = Path("data/factorweave_system.sqlite")
-                        if db_path.exists():
-                            with sqlite3.connect(db_path) as conn:
-                                cursor = conn.cursor()
-                                cursor.execute("SELECT COUNT(*) as total, SUM(is_active) as active FROM data_source")
-                                result = cursor.fetchone()
-                                if result and result[0] > 0:
-                                    active_rate = (result[1] / result[0]) if result[0] > 0 else 0.0
-                                    quality_metrics['validity'] = active_rate
+                        from core.containers import get_service_container
+                        from core.services.database_service import DatabaseService
+
+                        container = get_service_container()
+                        if container and container.is_registered(DatabaseService):
+                            db_service = container.resolve(DatabaseService)
+                            if db_service:
+                                stats = db_service.get_data_source_stats()
+                                if stats and stats.get('total', 0) > 0:
+                                    quality_metrics['validity'] = stats.get('active_rate', 0.0)
+                                    logger.info(f"从DatabaseService获取数据源统计: {stats}")
                                 else:
                                     logger.debug("数据库中没有数据源数据，使用默认值")
                                     quality_metrics['validity'] = 0
+                            else:
+                                logger.debug("DatabaseService实例为None，使用默认值")
+                                quality_metrics['validity'] = 0
                         else:
-                            logger.debug("数据库文件不存在，使用默认值")
+                            logger.warning("DatabaseService未在服务容器中注册，使用默认值")
                             quality_metrics['validity'] = 0
 
                     except Exception as e:
-                        logger.debug(f"数据库质量数据获取失败: {e}，使用默认值")
+                        logger.error(f"DatabaseService数据获取失败: {e}")
                         quality_metrics['validity'] = 0
 
                     if not quality_metrics:

@@ -92,11 +92,17 @@ class PatternRecognizer(BasePatternRecognizer):
                 if self.debug_mode:
                     print(f"[recognize_patterns] 使用默认识别器，检测形态: 锤子线, 十字星")
 
-                hammer_results = self._detect_hammer(data)
-                results.extend(hammer_results)
+                hammer_dicts = self._detect_hammer(data)
+                for hammer_dict in hammer_dicts:
+                    result = self._convert_dict_to_pattern_result(hammer_dict, data)
+                    if result:
+                        results.append(result)
 
-                doji_results = self._detect_doji(data)
-                results.extend(doji_results)
+                doji_dicts = self._detect_doji(data)
+                for doji_dict in doji_dicts:
+                    result = self._convert_dict_to_pattern_result(doji_dict, data)
+                    if result:
+                        results.append(result)
 
         except Exception as e:
             print(f"形态识别过程中出现错误: {e}")
@@ -168,7 +174,7 @@ class PatternRecognizer(BasePatternRecognizer):
                     r['_trend_reason'] = reason
                     
                     if compatible:
-                        result = self._convert_dict_to_pattern_result(r)
+                        result = self._convert_dict_to_pattern_result(r, kdata)
                         if result:
                             results.append(result)
                     else:
@@ -184,39 +190,79 @@ class PatternRecognizer(BasePatternRecognizer):
 
         return results
 
-    def _convert_dict_to_pattern_result(self, data: dict) -> Optional[PatternResult]:
-        """将字典转换为PatternResult对象"""
+    def _convert_dict_to_pattern_result(self, data: dict, kdata: pd.DataFrame = None) -> Optional[PatternResult]:
+        """将字典转换为PatternResult对象，并应用智能信号计算"""
         try:
-            signal_type = SignalType.from_string(data.get('signal_type', 'neutral'))
+            base_signal = SignalType.from_string(data.get('signal_type', 'neutral'))
+            
+            if kdata is not None and 'index' in data:
+                try:
+                    from analysis.intelligent_signal_calculator_optimized import create_intelligent_signal_calculator
+                    
+                    calculator = create_intelligent_signal_calculator()
+                    index = data.get('index', 0)
+                    confidence = data.get('confidence', 0.5)
+                    pattern_name = data.get('pattern_name', self.config.name)
+                    pattern_category = data.get('pattern_category', self.config.category)
+                    
+                    final_signal, adjusted_confidence, reason = calculator.calculate_signal(
+                        pattern_name=pattern_name,
+                        pattern_category=pattern_category,
+                        base_signal=base_signal,
+                        kdata=kdata,
+                        index=index,
+                        confidence=confidence,
+                        trend_info=None
+                    )
+                    
+                    if self.debug_mode:
+                        print(f"[智能信号] {pattern_name}: {base_signal.value} -> {final_signal.value} "
+                              f"(置信度: {confidence:.2f} -> {adjusted_confidence:.2f})")
+                        print(f"  原因: {reason}")
+                    
+                    signal_type = final_signal
+                    confidence = adjusted_confidence
+                    
+                    if 'extra_data' not in data:
+                        data['extra_data'] = {}
+                    data['extra_data']['signal_reason'] = reason
+                    
+                except Exception as e:
+                    if self.debug_mode:
+                        print(f"[智能信号计算失败] 使用原始信号: {e}")
+                    signal_type = base_signal
+                    confidence = data.get('confidence', 0.5)
+            else:
+                signal_type = base_signal
+                confidence = data.get('confidence', 0.5)
             
             return PatternResult(
                 pattern_type=data.get('pattern_type', 'unknown'),
                 pattern_name=data.get('pattern_name', self.config.name),
                 pattern_category=data.get('pattern_category', self.config.category),
                 signal_type=signal_type,
-                confidence=data.get('confidence', 0.5),
-                confidence_level=self.calculate_confidence_level(data.get('confidence', 0.5)),
+                confidence=confidence,
+                confidence_level=self.calculate_confidence_level(confidence),
                 index=data.get('index', 0),
                 datetime_val=data.get('datetime_val'),
                 price=data.get('price', 0.0),
                 start_index=data.get('start_index', data.get('index', 0)),
                 end_index=data.get('end_index', data.get('index', 0)),
-                extra_data=data
+                extra_data=data.get('extra_data', data)
             )
         except Exception as e:
             if self.debug_mode:
                 print(f"[_convert_dict_to_pattern_result] 转换失败: {e}")
             return None
 
-    def _detect_hammer(self, data: pd.DataFrame) -> List[PatternResult]:
-        """检测锤子线形态"""
+    def _detect_hammer(self, data: pd.DataFrame) -> List[dict]:
+        """检测锤子线形态 - 返回字典列表以支持智能信号计算"""
         results = []
 
         if len(data) < 1:
             return results
 
         try:
-            # 从配置中获取参数，如果没有则使用默认值
             min_body_ratio = self.parameters.get('min_body_ratio', 0.1)
             shadow_ratio_threshold = self.parameters.get('shadow_ratio_threshold', 2.0)
             confidence_threshold = self.parameters.get('confidence_threshold', 0.7)
@@ -228,43 +274,38 @@ class PatternRecognizer(BasePatternRecognizer):
                 low_price = row['low']
                 close_price = row['close']
 
-                # 锤子线的基本条件
                 body = abs(close_price - open_price)
                 upper_shadow = high_price - max(open_price, close_price)
                 lower_shadow = min(open_price, close_price) - low_price
 
-                # 使用配置参数判断
                 if lower_shadow > shadow_ratio_threshold * body and upper_shadow < body * min_body_ratio:
-                    result = PatternResult(
-                        pattern_type="candlestick",
-                        pattern_name="锤子线",
-                        pattern_category="反转形态",
-                        signal_type=SignalType.BUY,
-                        confidence=confidence_threshold,
-                        confidence_level="中等",
-                        index=i,
-                        datetime_val=None,
-                        price=close_price,
-                        start_index=i,
-                        end_index=i,
-                        extra_data={"description": "检测到锤子线形态，可能的买入信号"}
-                    )
-                    results.append(result)
+                    results.append({
+                        'pattern_type': 'candlestick',
+                        'pattern_name': '锤子线',
+                        'pattern_category': '反转形态',
+                        'signal_type': 'buy',
+                        'confidence': confidence_threshold,
+                        'index': i,
+                        'datetime_val': None,
+                        'price': float(close_price),
+                        'start_index': i,
+                        'end_index': i,
+                        'description': '检测到锤子线形态，可能的买入信号'
+                    })
 
         except Exception as e:
             print(f"锤子线检测错误: {e}")
 
         return results
 
-    def _detect_doji(self, data: pd.DataFrame) -> List[PatternResult]:
-        """检测十字星形态"""
+    def _detect_doji(self, data: pd.DataFrame) -> List[dict]:
+        """检测十字星形态 - 返回字典列表以支持智能信号计算"""
         results = []
 
         if len(data) < 1:
             return results
 
         try:
-            # 从配置中获取参数，如果没有则使用默认值
             body_ratio_threshold = self.parameters.get('body_ratio_threshold', 0.1)
             confidence_threshold = self.parameters.get('confidence_threshold', 0.6)
 
@@ -275,27 +316,23 @@ class PatternRecognizer(BasePatternRecognizer):
                 low_price = row['low']
                 close_price = row['close']
 
-                # 十字星的基本条件
                 body = abs(close_price - open_price)
                 total_range = high_price - low_price
 
-                # 使用配置参数判断
                 if total_range > 0 and body / total_range < body_ratio_threshold:
-                    result = PatternResult(
-                        pattern_type="candlestick",
-                        pattern_name="十字星",
-                        pattern_category="反转形态",
-                        signal_type=SignalType.NEUTRAL,
-                        confidence=confidence_threshold,
-                        confidence_level="中等",
-                        index=i,
-                        datetime_val=None,
-                        price=close_price,
-                        start_index=i,
-                        end_index=i,
-                        extra_data={"description": "检测到十字星形态，市场犹豫信号"}
-                    )
-                    results.append(result)
+                    results.append({
+                        'pattern_type': 'candlestick',
+                        'pattern_name': '十字星',
+                        'pattern_category': '反转形态',
+                        'signal_type': 'neutral',
+                        'confidence': confidence_threshold,
+                        'index': i,
+                        'datetime_val': None,
+                        'price': float(close_price),
+                        'start_index': i,
+                        'end_index': i,
+                        'description': '检测到十字星形态，市场犹豫信号'
+                    })
 
         except Exception as e:
             print(f"十字星检测错误: {e}")
@@ -345,12 +382,12 @@ class EnhancedPatternRecognizer(PatternRecognizer):
         # 调用基础识别方法
         basic_results = super().recognize(kdata)
 
-        # 增强处理
+        # 增强处理 - 保留智能信号计算器的结果
         enhanced_results = []
         for result in basic_results:
-            # 计算置信度分数
-            confidence = self._calculate_confidence(result, kdata)
-            result.confidence = confidence
+            # 基于智能信号计算器的置信度进行调整，而不是覆盖
+            adjusted_confidence = self._adjust_confidence(result, kdata)
+            result.confidence = adjusted_confidence
 
             # 添加到历史记录
             self.pattern_history.append(result)
@@ -362,24 +399,30 @@ class EnhancedPatternRecognizer(PatternRecognizer):
 
         return enhanced_results
 
-    def _calculate_confidence(self, pattern_result: PatternResult, kdata: pd.DataFrame) -> float:
-        """计算形态置信度"""
+    def _adjust_confidence(self, pattern_result: PatternResult, kdata: pd.DataFrame) -> float:
+        """
+        调整形态置信度 - 基于智能信号计算器的结果进行微调
+        
+        注意：此方法不应该完全覆盖置信度，而是基于成交量等因素进行微调
+        """
         try:
-            # 基础置信度
-            base_confidence = 0.5
-
-            # 根据成交量调整
-            if len(kdata) > 0:
-                volume_factor = min(kdata['volume'].iloc[-1] / kdata['volume'].mean(), 2.0)
-                base_confidence *= volume_factor
-
+            # 保留智能信号计算器的置信度作为基础
+            base_confidence = pattern_result.confidence
+            
+            # 根据成交量进行微调（仅作为辅助因素）
+            if len(kdata) > 0 and 'volume' in kdata.columns:
+                volume_factor = min(kdata['volume'].iloc[-1] / kdata['volume'].mean(), 1.2)  # 限制最大调整幅度
+                adjusted_confidence = base_confidence * volume_factor
+            else:
+                adjusted_confidence = base_confidence
+            
             # 限制在0-1范围内
-            return min(max(base_confidence, 0.0), 1.0)
+            return min(max(adjusted_confidence, 0.1), 1.0)
 
         except Exception as e:
             if self.debug_mode:
-                print(f"计算置信度失败: {e}")
-            return 0.5
+                print(f"调整置信度失败: {e}")
+            return pattern_result.confidence  # 返回原始置信度
 
     def identify_patterns(self, kdata: pd.DataFrame, 
                          confidence_threshold: float = 0.5,

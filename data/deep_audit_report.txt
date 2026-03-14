@@ -1,0 +1,202 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+深度审核报告：数据库业务调用链、并发问题、数据准确性、性能问题
+"""
+
+print("""
+================================================================================
+                    数据库深度审核报告
+================================================================================
+
+一、数据库文件统计与分布
+--------------------------------------------------------------------------------
+
+1. SQLite数据库:
+   - factorweave_system.sqlite (核心系统数据库, 130+ 表)
+   - strategy.sqlite (策略相关, 12 表)
+   - tradeaccount.sqlite (交易账户, 3 表)
+   - enhanced_risk_monitor.sqlite (风险监控, 5 表)
+   - enhanced_async_tasks.sqlite (异步任务, 2 表)
+   - backtest_monitor.sqlite (回测监控, 2 表)
+   - metrics.sqlite (指标, 1 表)
+   - performance.sqlite (性能, 1 表)
+   - tdx_servers.sqlite (通达信服务器, 2 表)
+   - alert_config.sqlite (告警配置, 3 表)
+   - unified_quality_monitor.sqlite (质量监控, 4 表)
+
+2. DuckDB数据库:
+   - data/databases/stock_a/stock_a_data.duckdb (A股数据)
+   - data/databases/stock_a/stock_a_orders.duckdb (A股订单)
+   - data/databases/stock_us/stock_us_data.duckdb (美股数据)
+   - data/databases/fund/fund_data.duckdb (基金数据)
+   - data/databases/index/index_data.duckdb (指数数据)
+   - factorweave_analytics.duckdb (分析数据)
+   - hikyuu_backtest.duckdb (回测结果)
+
+3. 特殊问题:
+   - hikyuu.db 损坏 (ERROR: file is not a database)
+   - stock_a_orders.duckdb, test.duckdb 为空
+
+================================================================================
+
+二、表重复问题 (严重)
+--------------------------------------------------------------------------------
+
+发现以下表在多个数据库中重复存在:
+   - accuracy_statistics: factorweave_system.sqlite, strategy.sqlite
+   - model_versions: factorweave_system.sqlite, strategy.sqlite
+   - prediction_records: factorweave_system.sqlite, strategy.sqlite
+   - strategies: factorweave_system.sqlite, strategy.sqlite
+   - strategy_executions: factorweave_system.sqlite, strategy.sqlite
+   - strategy_parameters: factorweave_system.sqlite, strategy.sqlite
+   - strategy_signals: factorweave_system.sqlite, strategy.sqlite
+   - training_logs: factorweave_system.sqlite, strategy.sqlite
+   - training_tasks: factorweave_system.sqlite, strategy.sqlite
+   - risk_alerts: enhanced_risk_monitor.sqlite, factorweave_system.sqlite
+   - risk_history: alert_config.sqlite, factorweave_system.sqlite
+   - sqlite_sequence: (系统表, 多处存在)
+
+风险: 数据不一致、维护困难、更新遗漏
+
+================================================================================
+
+三、业务调用链分析
+--------------------------------------------------------------------------------
+
+1. 核心系统数据库 (factorweave_system.sqlite):
+   被以下模块调用:
+   - core/services/database_service.py
+   - core/services/model_training_service.py
+   - core/services/prediction_tracking_service.py
+   - core/services/progress_persistence_manager.py
+   - core/services/config_service.py
+   - core/indicator_service.py
+   - core/unified_indicator_service.py
+   - core/risk_rule_manager.py
+   - core/strategy/strategy_database.py
+   - db/models/* (多个模型)
+   - optimization/* (优化模块)
+   - gui/* (多个GUI组件)
+
+2. 策略数据库 (strategy.sqlite):
+   - core/services/model_training_service.py (主要调用)
+
+3. 交易账户数据库 (tradeaccount.sqlite):
+   - core/trading/account_repository.py
+   - core/trading/account_manager.py
+
+4. DuckDB数据存储:
+   - core/services/unified_data_manager.py
+   - core/asset_database_manager.py
+   - core/database/duckdb_manager.py
+
+================================================================================
+
+四、并发问题分析
+--------------------------------------------------------------------------------
+
+1. SQLite并发控制:
+   ✓ 使用WAL模式 (PRAGMA journal_mode=WAL)
+   ✓ 使用同步模式 NORMAL (PRAGMA synchronous=NORMAL)
+   ✓ 部分模块使用 check_same_thread=False
+   ⚠ 存在大量 threading.Lock/RLock
+   ⚠ 部分代码直接 sqlite3.connect() 无锁保护
+
+2. DuckDB并发控制:
+   ✓ DuckDBConnectionManager 有 RLock 保护
+   ✓ 使用连接池 (pool_size=15)
+   ✓ get_connection_manager() 有全局锁保护
+   ✓ 线程数自动配置 (auto 或根据CPU核心数)
+
+3. 潜在并发问题:
+   ⚠ model_training_service.py 直接 sqlite3.connect() 无锁
+   ⚠ pattern_manager.py 使用全局锁但连接管理分散
+   ⚠ 多处直接使用 sqlite3.connect() 可能产生竞态条件
+   ⚠ unified_data_manager.py 有多个锁，可能死锁
+
+4. 具体问题点:
+   - core/services/model_training_service.py: 多处直接 sqlite3.connect()
+   - analysis/pattern_manager.py: 类级别锁 _lock
+   - 多处 import_execution_engine.py: ThreadPoolExecutor 并发
+
+================================================================================
+
+五、数据准确性问题
+--------------------------------------------------------------------------------
+
+1. 外键约束:
+   ⚠ 大部分表没有启用外键约束
+   ⚠ 只有部分表有外键定义 (strategy.sqlite)
+   ⚠ 手动执行 PRAGMA foreign_keys 开关
+
+2. 数据完整性:
+   ⚠ hikyuu.db 损坏 (无法读取)
+   ⚠ 部分DuckDB表为空 (stock_b, stock_h, stock_us等)
+   ⚠ 多处使用 OR IGNORE/REPLACE 掩盖冲突
+
+3. 数据一致性:
+   ⚠ 重复表导致数据不同步
+   ⚠ 没有跨数据库一致性检查
+   ⚠ 缺少事务边界控制
+
+4. 数据验证:
+   ⚠ 缺少数据验证层
+   ⚠ 直接写入数据库无校验
+   ⚠ 类型转换可能丢失精度
+
+================================================================================
+
+六、性能问题分析
+--------------------------------------------------------------------------------
+
+1. 索引情况:
+   ✓ factorweave_system.sqlite 有适当索引
+   ✓ strategy.sqlite 有多个索引
+   ✓ tradeaccount.sqlite 有索引
+
+2. 查询优化:
+   ✓ DuckDB 配置了线程和内存限制
+   ✓ 使用连接池减少连接开销
+   ⚠ 缺少查询缓存
+   ⚠ 大量 COUNT(*) 可能影响性能
+
+3. 性能瓶颈:
+   ⚠ factorweave_system.sqlite 有130+表，过于庞大
+   ⚠ 多表JOIN可能性能不佳
+   ⚠ 没有分库分表机制
+   ⚠ WAL模式在高频写入时可能成为瓶颈
+
+4. 配置问题:
+   ⚠ DuckDB 线程配置为 'auto'，生产环境建议固定
+   ⚠ 内存限制未明确设置
+   ⚠ 缺少慢查询日志
+
+================================================================================
+
+七、关键问题汇总
+--------------------------------------------------------------------------------
+
+【严重问题 - 必须修复】
+1. hikyuu.db 损坏 - 需要重建或修复
+2. 表重复 - factorweave_system.sqlite 与 strategy.sqlite 功能重叠
+3. 外键约束缺失 - 数据完整性无法保证
+
+【高优先级问题】
+4. 并发控制不一致 - 部分代码无锁保护
+5. 多处直接 sqlite3.connect() - 应统一使用连接池
+6. 数据同步问题 - 重复表数据可能不一致
+
+【中优先级问题】
+7. 空数据库 - 部分DuckDB无数据
+8. 缺少事务管理 - 部分操作无原子性保证
+9. 缺少监控 - 无慢查询、性能监控
+
+【优化建议】
+10. 考虑拆分 factorweave_system.sqlite (130+表过大)
+11. 统一数据库访问层
+12. 添加数据一致性检查
+13. 建立数据库健康检查机制
+
+================================================================================
+""")

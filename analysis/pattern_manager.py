@@ -8,6 +8,7 @@ import sqlite3
 import os
 import json
 import threading
+import time
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 import pandas as pd
@@ -18,11 +19,37 @@ from analysis.pattern_base import (
 )
 
 
+class _CachedConnection:
+    """数据库连接包装类，支持with语句并管理连接锁"""
+    
+    def __init__(self, connection, lock: threading.Lock):
+        self._connection = connection
+        self._lock = lock
+    
+    def __enter__(self):
+        self._lock.acquire()
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._lock.release()
+        return False
+    
+    def cursor(self):
+        return self._connection.cursor()
+    
+    def commit(self):
+        return self._connection.commit()
+    
+    def close(self):
+        return self._connection.close()
+
+
 class PatternManager:
     """形态管理器 - 增强版，支持数据库算法和统一接口"""
     
     _instance: Optional['PatternManager'] = None
     _lock = threading.Lock()
+    _connection_lock = threading.Lock()
 
     def __new__(cls, db_path: Optional[str] = None):
         if cls._instance is None:
@@ -55,18 +82,39 @@ class PatternManager:
 
         self.pattern_recognizer = PatternRecognizer()
         self._patterns_cache: Optional[List[PatternConfig]] = None
+        self._pattern_by_name_cache: Dict[str, PatternConfig] = {}
+        self._pattern_by_type_cache: Dict[str, PatternConfig] = {}
+        self._effectiveness_cache: Dict[str, Tuple[List[Dict], float]] = {}
         self._cache_lock = threading.Lock()
+        self._db_connection = None
+        self._connection_acquired_time = 0
+        self._connection_timeout = 60.0
         self._ensure_database_schema()
         self._initialized = True
 
     def _get_db_connection(self):
-        """获取数据库连接"""
-        import time
-        logger.info(f"[DEBUG] _get_db_connection 开始，db_path={self.db_path}")
-        start = time.time()
-        conn = sqlite3.connect(self.db_path, timeout=30.0)
-        logger.info(f"[DEBUG] _get_db_connection 完成，耗时: {time.time() - start:.2f}秒")
-        return conn
+        """获取数据库连接（带连接缓存，复用连接提升性能）"""
+        current_time = time.time()
+        
+        with self._connection_lock:
+            if self._db_connection is not None:
+                if current_time - self._connection_acquired_time < self._connection_timeout:
+                    return _CachedConnection(self._db_connection, self._connection_lock)
+                else:
+                    try:
+                        self._db_connection.close()
+                    except:
+                        pass
+            
+            conn = sqlite3.connect(self.db_path, timeout=30.0, check_same_thread=False)
+            conn.row_factory = sqlite3.Row
+            self._db_connection = conn
+            self._connection_acquired_time = current_time
+            return _CachedConnection(conn, self._connection_lock)
+
+    def _release_connection(self):
+        """释放数据库连接（仅在实际需要使用with语句时才调用）"""
+        pass
 
     def _ensure_database_schema(self):
         """确保数据库表结构正确"""
@@ -196,51 +244,51 @@ class PatternManager:
         try:
             logger.info("[DEBUG] 开始连接数据库...")
             start = time.time()
-            conn = self._get_db_connection()
-            logger.info(f"[DEBUG] 数据库连接完成，耗时: {time.time() - start:.2f}秒")
-            
-            cursor = conn.cursor()
-            logger.info("[DEBUG] 执行SQL查询...")
-            start = time.time()
-            cursor.execute("SELECT * FROM pattern_types ORDER BY category, name")
-            rows = cursor.fetchall()
-            logger.info(f"[DEBUG] SQL查询完成，耗时: {time.time() - start:.2f}秒，返回 {len(rows)} 条")
+            with self._get_db_connection() as conn:
+                logger.info(f"[DEBUG] 数据库连接完成，耗时: {time.time() - start:.2f}秒")
+                
+                cursor = conn.cursor()
+                logger.info("[DEBUG] 执行SQL查询...")
+                start = time.time()
+                cursor.execute("SELECT * FROM pattern_types ORDER BY category, name")
+                rows = cursor.fetchall()
+                logger.info(f"[DEBUG] SQL查询完成，耗时: {time.time() - start:.2f}秒，返回 {len(rows)} 条")
 
-            patterns = []
-            logger.info(f"[_load_all_patterns_from_db] 从数据库加载了 {len(rows)} 条形态配置。")
+                patterns = []
+                logger.info(f"[_load_all_patterns_from_db] 从数据库加载了 {len(rows)} 条形态配置。")
 
-            for row in rows:
-                try:
-                    raw_category = row[3]
-                    parameters_raw = row[13] if len(row) > 13 and row[13] else '{}'
-                    if isinstance(parameters_raw, str):
-                        parameters = json.loads(parameters_raw)
-                    elif isinstance(parameters_raw, (int, float)):
-                        parameters = json.loads(str(parameters_raw)) if str(parameters_raw).strip() else {}
-                    else:
-                        parameters = parameters_raw if isinstance(parameters_raw, dict) else {}
+                for row in rows:
+                    try:
+                        raw_category = row[3]
+                        parameters_raw = row[13] if len(row) > 13 and row[13] else '{}'
+                        if isinstance(parameters_raw, str):
+                            parameters = json.loads(parameters_raw)
+                        elif isinstance(parameters_raw, (int, float)):
+                            parameters = json.loads(str(parameters_raw)) if str(parameters_raw).strip() else {}
+                        else:
+                            parameters = parameters_raw if isinstance(parameters_raw, dict) else {}
 
-                    signal_enum = SignalType.from_string(row[4])
+                        signal_enum = SignalType.from_string(row[4])
 
-                    patterns.append(PatternConfig(
-                        id=row[0],
-                        name=row[1],
-                        english_name=row[2],
-                        category=raw_category,
-                        signal_type=signal_enum,
-                        description=row[5],
-                        min_periods=row[6],
-                        max_periods=row[7],
-                        confidence_threshold=row[8],
-                        algorithm_code=row[12] if len(row) > 12 else "",
-                        parameters=parameters,
-                        is_active=bool(row[9]),
-                        success_rate=row[15] if len(row) > 15 and row[15] is not None else 0.7,
-                        risk_level=row[16] if len(row) > 16 and row[16] is not None else 'medium'
-                    ))
-                except Exception as e:
-                    logger.warning(f"解析形态配置失败: {e}")
-                    continue
+                        patterns.append(PatternConfig(
+                            id=row[0],
+                            name=row[1],
+                            english_name=row[2],
+                            category=raw_category,
+                            signal_type=signal_enum,
+                            description=row[5],
+                            min_periods=row[6],
+                            max_periods=row[7],
+                            confidence_threshold=row[8],
+                            algorithm_code=row[12] if len(row) > 12 else "",
+                            parameters=parameters,
+                            is_active=bool(row[9]),
+                            success_rate=row[15] if len(row) > 15 and row[15] is not None and row[15] > 0 else None,
+                            risk_level=row[16] if len(row) > 16 and row[16] is not None else 'medium'
+                        ))
+                    except Exception as e:
+                        logger.warning(f"解析形态配置失败: {e}")
+                        continue
             self._patterns_cache = patterns
             logger.info(f"[_load_all_patterns_from_db] 成功解析并缓存了 {len(patterns)} 条形态配置。")
         except sqlite3.Error as e:
@@ -257,12 +305,16 @@ class PatternManager:
         Returns:
             形态配置或None
         """
+        if name in self._pattern_by_name_cache:
+            return self._pattern_by_name_cache[name]
+            
         if self._patterns_cache is None:
             self._load_all_patterns_from_db()
 
         if self._patterns_cache:
             for config in self._patterns_cache:
                 if config.name == name or config.english_name == name:
+                    self._pattern_by_name_cache[name] = config
                     return config
         return None
 
@@ -276,6 +328,9 @@ class PatternManager:
         Returns:
             如果找到，则返回PatternConfig对象，否则返回None。
         """
+        if pattern_type in self._pattern_by_type_cache:
+            return self._pattern_by_type_cache[pattern_type]
+            
         with self._cache_lock:
             if self._patterns_cache is None:
                 self._load_all_patterns_from_db()
@@ -284,10 +339,13 @@ class PatternManager:
 
             for config in self._patterns_cache:
                 if config.english_name and config.english_name.lower().replace('_', ' ') == normalized_type:
+                    self._pattern_by_type_cache[pattern_type] = config
                     return config
                 if config.name.lower() == normalized_type:
+                    self._pattern_by_type_cache[pattern_type] = config
                     return config
 
+            self._pattern_by_type_cache[pattern_type] = None
             return None
 
     def get_patterns_by_category(self, category: str) -> List[PatternConfig]:
@@ -660,6 +718,12 @@ for i in range(len(kdata)):
         Returns:
             有效性统计
         """
+        cache_key = f"{pattern_type}_{days}"
+        if cache_key in self._effectiveness_cache:
+            cached_data, cached_time = self._effectiveness_cache[cache_key]
+            if time.time() - cached_time < 300:
+                return cached_data
+        
         try:
             with self._get_db_connection() as conn:
                 cursor = conn.cursor()
@@ -676,19 +740,22 @@ for i in range(len(kdata)):
 
                 row = cursor.fetchone()
                 if row and row[0] > 0:
-                    return {
+                    result = {
                         'total_signals': row[0],
                         'success_rate': (row[2] / row[0]) * 100 if row[0] > 0 else 0,
                         'average_return': row[1] or 0,
                         'average_confidence': row[3] or 0
                     }
                 else:
-                    return {
+                    result = {
                         'total_signals': 0,
                         'success_rate': 0,
                         'average_return': 0,
                         'average_confidence': 0
                     }
+                
+                self._effectiveness_cache[cache_key] = (result, time.time())
+                return result
 
         except sqlite3.Error as e:
             logger.info(f"获取形态有效性失败: {e}")

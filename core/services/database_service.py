@@ -1645,6 +1645,12 @@ class DatabaseService(BaseService):
             # 创建用户反馈表
             self._create_user_feedback_table()
 
+            # 创建趋势预警配置表
+            self._create_trend_alert_config_table()
+
+            # 创建数据源表
+            self._create_data_source_table()
+
             logger.info("✓ System configuration database tables initialized")
 
         except Exception as e:
@@ -2361,6 +2367,129 @@ class DatabaseService(BaseService):
                     conn.execute(index_sql)
                 except Exception as e:
                     logger.warning(f"创建索引失败（可能已存在）: {e}")
+
+    def _create_trend_alert_config_table(self) -> None:
+        """创建趋势预警配置表"""
+        sql = """
+        CREATE TABLE IF NOT EXISTS trend_alert_config (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            config_key TEXT NOT NULL,
+            config_value TEXT NOT NULL,
+            is_active INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+
+        with self.get_connection("factorweave_system_sqlite") as conn:
+            conn.execute(sql)
+
+        indices = [
+            "CREATE INDEX IF NOT EXISTS idx_trend_alert_config_key ON trend_alert_config(config_key)",
+            "CREATE INDEX IF NOT EXISTS idx_trend_alert_config_active ON trend_alert_config(is_active)"
+        ]
+
+        with self.get_connection("factorweave_system_sqlite") as conn:
+            for index_sql in indices:
+                try:
+                    conn.execute(index_sql)
+                except Exception as e:
+                    logger.warning(f"创建索引失败（可能已存在）: {e}")
+
+    def _create_data_source_table(self) -> None:
+        """创建数据源表"""
+        sql = """
+        CREATE TABLE IF NOT EXISTS data_source (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            type TEXT NOT NULL,
+            config TEXT,
+            is_active INTEGER DEFAULT 0,
+            priority INTEGER DEFAULT 50,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+
+        with self.get_connection("factorweave_system_sqlite") as conn:
+            conn.execute(sql)
+
+        indices = [
+            "CREATE INDEX IF NOT EXISTS idx_data_source_name ON data_source(name)",
+            "CREATE INDEX IF NOT EXISTS idx_data_source_type ON data_source(type)",
+            "CREATE INDEX IF NOT EXISTS idx_data_source_active ON data_source(is_active)"
+        ]
+
+        with self.get_connection("factorweave_system_sqlite") as conn:
+            for index_sql in indices:
+                try:
+                    conn.execute(index_sql)
+                except Exception as e:
+                    logger.warning(f"创建索引失败（可能已存在）: {e}")
+
+    def save_trend_alert_config(self, config_key: str, config_value: dict) -> bool:
+        """保存趋势预警配置"""
+        try:
+            import json
+            value_json = json.dumps(config_value, ensure_ascii=False)
+
+            sql = """
+            REPLACE INTO trend_alert_config (config_key, config_value, is_active, created_at, updated_at)
+            VALUES (?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """
+
+            with self.get_connection("factorweave_system_sqlite") as conn:
+                conn.execute(sql, (config_key, value_json))
+
+            logger.info(f"趋势预警配置已保存: {config_key}")
+            return True
+        except Exception as e:
+            logger.error(f"保存趋势预警配置失败: {e}")
+            return False
+
+    def get_trend_alert_config(self, config_key: str) -> dict:
+        """获取趋势预警配置"""
+        try:
+            import json
+
+            sql = """
+            SELECT config_value FROM trend_alert_config
+            WHERE config_key = ? AND is_active = 1
+            """
+
+            with self.get_connection("factorweave_system_sqlite") as conn:
+                result = conn.execute(sql, (config_key,))
+
+            if result and len(result) > 0:
+                return json.loads(result[0][0])
+            return {}
+        except Exception as e:
+            logger.error(f"获取趋势预警配置失败: {e}")
+            return {}
+
+    def get_data_source_stats(self) -> dict:
+        """获取数据源统计信息"""
+        try:
+            sql = """
+            SELECT COUNT(*) as total, SUM(is_active) as active
+            FROM data_source
+            """
+
+            with self.get_connection("factorweave_system_sqlite") as conn:
+                result = conn.execute(sql)
+
+            if result and len(result) > 0:
+                total = result[0][0] or 0
+                active = result[0][1] or 0
+                return {
+                    'total': total,
+                    'active': active,
+                    'active_rate': (active / total) if total > 0 else 0.0
+                }
+            return {'total': 0, 'active': 0, 'active_rate': 0.0}
+        except Exception as e:
+            logger.error(f"获取数据源统计失败: {e}")
+            return {'total': 0, 'active': 0, 'active_rate': 0.0}
 
     def _create_user_interactions_table(self) -> None:
         """创建用户交互表"""
