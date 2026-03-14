@@ -1,0 +1,231 @@
+<mxfile host="65bd71144e">
+    <diagram id="strategy-architecture" name="策略系统三层架构">
+        <mxGraphModel dx="1484" dy="2312" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1200" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="layer3-bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#FF9800;fontColor=#E65100;" parent="1" vertex="1">
+                    <mxGeometry x="75" y="450" width="1150" height="380" as="geometry"/>
+                </mxCell>
+                <mxCell id="layer2-bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#2196F3;fontColor=#0D47A1;" parent="1" vertex="1">
+                    <mxGeometry x="80" y="130" width="1150" height="260" as="geometry"/>
+                </mxCell>
+                <mxCell id="title1" value="策略系统三层架构" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1;fontColor=default;" parent="1" vertex="1">
+                    <mxGeometry x="450" y="-150" width="400" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="layer1-bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#4CAF50;fontColor=#1B5E20;" parent="1" vertex="1">
+                    <mxGeometry x="90" y="-90" width="1150" height="180" as="geometry"/>
+                </mxCell>
+                <mxCell id="layer1-title" value="第1层: 插件工厂层 (Plugin Layer)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=16;fontStyle=1;fontColor=#2E7D32;" parent="1" vertex="1">
+                    <mxGeometry x="110" y="-80" width="300" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="pf1" value="factorweave&#10;→ create_adaptive_pandas_strategy()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#81C784;fontColor=#1B5E20;align=center;" parent="1" vertex="1">
+                    <mxGeometry x="130" y="-30" width="160" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="pf2" value="backtrader&#10;→ BacktraderStrategyPlugin()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#81C784;fontColor=#1B5E20;align=center;" parent="1" vertex="1">
+                    <mxGeometry x="310" y="-30" width="160" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="pf3" value="adj_momentum&#10;→ AdjMomentumPlugin()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#81C784;fontColor=#1B5E20;align=center;" parent="1" vertex="1">
+                    <mxGeometry x="490" y="-30" width="160" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="pf4" value="vwap_reversion&#10;→ VWAPReversionPlugin()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#81C784;fontColor=#1B5E20;align=center;" parent="1" vertex="1">
+                    <mxGeometry x="670" y="-30" width="160" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="pf5" value="custom&#10;→ CustomStrategyPlugin()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#81C784;fontColor=#1B5E20;align=center;" parent="1" vertex="1">
+                    <mxGeometry x="850" y="-30" width="160" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="pf6" value="mean_reversion&#10;→ MeanReversionStrategyPlugin()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#81C784;fontColor=#1B5E20;align=center;" parent="1" vertex="1">
+                    <mxGeometry x="1030" y="-30" width="160" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="pf-label" value="_plugin_factories (内存字典)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=2;fontColor=#2E7D32;" parent="1" vertex="1">
+                    <mxGeometry x="130" y="40" width="200" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="layer2-title" value="第2层: 策略注册层 (Registry Layer)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=16;fontStyle=1;fontColor=#1565C0;" parent="1" vertex="1">
+                    <mxGeometry x="110" y="150" width="320" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="strategies-table" value="strategies 表 (数据库)&#10;─────────────────&#10;15 条记录&#10;&#10;• name&#10;• strategy_type&#10;• class_path&#10;• author&#10;• description&#10;• category&#10;• metadata = '{}' &#10;        (冗余)" style="swimlane;fillColor=#BBDEFB;strokeColor=#64B5F6;fontColor=#0D47A1;align=left;horizontal=1;verticalAlign=top;" parent="1" vertex="1">
+                    <mxGeometry x="240" y="180" width="220" height="190" as="geometry"/>
+                </mxCell>
+                <mxCell id="registry" value="StrategyRegistry (内存)&#10;─────────────────&#10;缓存策略类元数据&#10;&#10;• get_strategy()&#10;• list_strategies()&#10;• get_all_metadata()&#10;• search_strategies()" style="swimlane;fillColor=#BBDEFB;strokeColor=#64B5F6;fontColor=#0D47A1;align=left;horizontal=1;verticalAlign=top;" parent="1" vertex="1">
+                    <mxGeometry x="850" y="180" width="240" height="190" as="geometry"/>
+                </mxCell>
+                <mxCell id="arrow1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2196F3;strokeWidth=2;fillColor=#E3F2FD;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" parent="1" source="layer1-bg" target="registry" edge="1">
+                    <mxGeometry relative="0.5" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="665" y="280"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="arrow1-label" value="初始化时加载" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontColor=#1565C0;" parent="1" vertex="1">
+                    <mxGeometry x="930" y="160" width="80" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="layer3-title" value="第3层: 策略配置层 (Config Layer) - 核心层" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=16;fontStyle=1;fontColor=#EF6C00;" parent="1" vertex="1">
+                    <mxGeometry x="100" y="480" width="400" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="configs-table" value="strategy_configs 表 (数据库)&#10;─────────────────&#10;6 条记录 - 运行时配置&#10;&#10;strategy_id | plugin_type&#10;───────────────────────────&#10;default_factorweave | factorweave&#10;default_backtrader | backtrader&#10;default_adj_momentum | adj_momentum&#10;default_vwap_reversion| vwap_reversion&#10;default_custom | custom&#10;default_mean_reversion | mean_reversion&#10;&#10;parameters: {...}&#10;metadata: {group, tags}" style="swimlane;fillColor=#FFE0B2;strokeColor=#FFB74D;fontColor=#E65100;align=left;horizontal=1;verticalAlign=top;" parent="1" vertex="1">
+                    <mxGeometry x="120" y="520" width="500" height="280" as="geometry"/>
+                </mxCell>
+                <mxCell id="strategy-service" value="StrategyService&#10;─────────────────&#10;内存缓存 _strategy_configs&#10;&#10;• get_strategy_config()&#10;• create_strategy_config()&#10;• update_strategy_config()&#10;• get_all_strategy_configs()&#10;• get_strategies_by_group()" style="swimlane;fillColor=#FFE0B2;strokeColor=#FFB74D;fontColor=#E65100;align=center;horizontal=1;verticalAlign=top;" parent="1" vertex="1">
+                    <mxGeometry x="710" y="520" width="280" height="280" as="geometry"/>
+                </mxCell>
+                <mxCell id="arrow2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#FF9800;strokeWidth=2;fillColor=#FFF3E0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="registry" target="strategy-service" edge="1">
+                    <mxGeometry relative="0.5" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="970" y="480"/>
+                            <mxPoint x="850" y="480"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="arrow2-label" value="初始化时加载并生成配置" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontColor=#EF6C00;" parent="1" vertex="1">
+                    <mxGeometry x="530" y="490" width="140" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="arrow3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#9C27B0;strokeWidth=2;fillColor=#F3E5F5;dashed=1;" parent="1" source="strategies-table" target="configs-table" edge="1">
+                    <mxGeometry relative="0.5" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="330" y="380"/>
+                            <mxPoint x="330" y="380"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="arrow3-label" value="plugin_type 关联" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontColor=#7B1FA2;" parent="1" vertex="1">
+                    <mxGeometry x="280" y="350" width="100" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend" value="图例说明" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=14;fontStyle=1;fontColor=#2C3E50;" parent="1" vertex="1">
+                    <mxGeometry x="1040" y="520" width="100" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg1" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#81C784;" parent="1" vertex="1">
+                    <mxGeometry x="1040" y="550" width="20" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg1-txt" value="插件工厂 (Plugin Factory)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#2C3E50;" parent="1" vertex="1">
+                    <mxGeometry x="1070" y="550" width="180" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg2" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#64B5F6;" parent="1" vertex="1">
+                    <mxGeometry x="1040" y="580" width="20" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg2-txt" value="策略注册表 (Registry)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#2C3E50;" parent="1" vertex="1">
+                    <mxGeometry x="1070" y="580" width="180" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg3" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#FFB74D;" parent="1" vertex="1">
+                    <mxGeometry x="1040" y="610" width="20" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg3-txt" value="策略配置 (Config) - 核心" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#2C3E50;" parent="1" vertex="1">
+                    <mxGeometry x="1070" y="610" width="180" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="core-note" value="核心: GUI 显示和运行都使用 strategy_configs 表" style="text;html=1;strokeColor=#E53935;fillColor=#FFEBEE;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=12;fontStyle=1;fontColor=#C62828;" parent="1" vertex="1">
+                    <mxGeometry x="950" y="670" width="280" height="30" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="business-flow" name="完整业务流程">
+        <mxGraphModel dx="1600" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1400" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <!-- 标题 -->
+                <mxCell id="title2" value="策略系统完整业务流程" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1;fontColor=#2C3E50;" vertex="1" parent="1">
+                    <mxGeometry x="500" y="20" width="300" height="40" as="geometry"/>
+                </mxCell>
+                <!-- 阶段1: 初始化 -->
+                <mxCell id="phase1-bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#9C27B0;fontColor=#4A148C;" vertex="1" parent="1">
+                    <mxGeometry x="40" y="80" width="1520" height="200" as="geometry"/>
+                </mxCell>
+                <mxCell id="phase1-title" value="【阶段1: 系统初始化】" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=16;fontStyle=1;fontColor=#6A1B9A;" vertex="1" parent="1">
+                    <mxGeometry x="60" y="90" width="200" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="init1" value="StrategyService.__init__()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1BEE7;strokeColor=#BA68C8;fontColor=#4A148C;align=center;" vertex="1" parent="1">
+                    <mxGeometry x="80" y="140" width="200" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="init2" value="_register_builtin_plugin_factories()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1BEE7;strokeColor=#BA68C8;fontColor=#4A148C;align=center;" vertex="1" parent="1">
+                    <mxGeometry x="320" y="140" width="280" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="init3" value="_load_strategy_configs()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1BEE7;strokeColor=#BA68C8;fontColor=#4A148C;align=center;" vertex="1" parent="1">
+                    <mxGeometry x="640" y="140" width="240" height="40" as="geometry"/>
+                </mxCell>
+                <!-- 初始化步骤 -->
+                <mxCell id="init4" value="1. 从 strategy_configs 表加载" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#CE93D8;strokeColor=#AB47BC;fontColor=#4A148C;align=left;" vertex="1" parent="1">
+                    <mxGeometry x="660" y="195" width="200" height="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="init5" value="2. 从 strategies 表加载并生成配置" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#CE93D8;strokeColor=#AB47BC;fontColor=#4A148C;align=left;" vertex="1" parent="1">
+                    <mxGeometry x="660" y="225" width="200" height="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="init6" value="3. 兜底: 生成默认策略配置" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#CE93D8;strokeColor=#AB47BC;fontColor=#4A148C;align=left;" vertex="1" parent="1">
+                    <mxGeometry x="660" y="255" width="200" height="25" as="geometry"/>
+                </mxCell>
+                <!-- 箭头 -->
+                <mxCell id="fa1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#9C27B0;strokeWidth=2;" edge="1" parent="1" source="init1" target="init2">
+                    <mxGeometry relative="0.5" as="geometry"/>
+                </mxCell>
+                <mxCell id="fa2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#9C27B0;strokeWidth=2;" edge="1" parent="1" source="init2" target="init3">
+                    <mxGeometry relative="0.5" as="geometry"/>
+                </mxCell>
+                <!-- 阶段2: GUI选择 -->
+                <mxCell id="phase2-bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8EAF6;strokeColor=#3F51B5;fontColor=#1A237E;" vertex="1" parent="1">
+                    <mxGeometry x="40" y="300" width="1520" height="180" as="geometry"/>
+                </mxCell>
+                <mxCell id="phase2-title" value="【阶段2: GUI 选择策略】" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=16;fontStyle=1;fontColor=#283593;" vertex="1" parent="1">
+                    <mxGeometry x="60" y="310" width="220" height="30" as="geometry"/>
+                </mxCell>
+                <!-- 回测场景 -->
+                <mxCell id="scene1" value="场景A: 回测 Widget&#10;─────────────────&#10;backtest_widget.py" style="swimlane;fillColor=#C5CAE9;strokeColor=#7986CB;fontColor=#1A237E;align=center;horizontal=1;" vertex="1" parent="1">
+                    <mxGeometry x="80" y="360" width="220" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="scene1-call" value="registry.get_all_metadata()&#10;  ↓&#10;strategies 表读取" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#1A237E;" vertex="1" parent="1">
+                    <mxGeometry x="90" y="390" width="180" height="50" as="geometry"/>
+                </mxCell>
+                <!-- 策略管理器场景 -->
+                <mxCell id="scene2" value="场景B: 策略管理器&#10;─────────────────&#10;enhanced_strategy_manager_dialog.py" style="swimlane;fillColor=#C5CAE9;strokeColor=#7986CB;fontColor=#1A237E;align=center;horizontal=1;" vertex="1" parent="1">
+                    <mxGeometry x="360" y="360" width="320" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="scene2-call" value="strategy_service.get_all_strategy_configs()&#10;  ↓&#10;直接从 _strategy_configs 内存读取" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#1A237E;" vertex="1" parent="1">
+                    <mxGeometry x="370" y="390" width="280" height="50" as="geometry"/>
+                </mxCell>
+                <!-- 推荐面板场景 -->
+                <mxCell id="scene3" value="场景C: 智能推荐面板&#10;─────────────────&#10;smart_recommendation_panel.py" style="swimlane;fillColor=#C5CAE9;strokeColor=#7986CB;fontColor=#1A237E;align=center;horizontal=1;" vertex="1" parent="1">
+                    <mxGeometry x="740" y="360" width="280" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="scene3-call" value="strategy_service.get_all_strategy_configs()&#10;  ↓&#10;直接从 _strategy_configs 内存读取" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#1A237E;" vertex="1" parent="1">
+                    <mxGeometry x="750" y="390" width="260" height="50" as="geometry"/>
+                </mxCell>
+                <!-- 阶段3: 执行 -->
+                <mxCell id="phase3-bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;fontColor=#1B5E20;" vertex="1" parent="1">
+                    <mxGeometry x="40" y="500" width="1520" height="280" as="geometry"/>
+                </mxCell>
+                <mxCell id="phase3-title" value="【阶段3: 执行回测/实盘】" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=16;fontStyle=1;fontColor=#2E7D32;" vertex="1" parent="1">
+                    <mxGeometry x="60" y="510" width="220" height="30" as="geometry"/>
+                </mxCell>
+                <!-- 执行流程 -->
+                <mxCell id="exec1" value="execute_backtest(strategy_id)&#10;回测执行入口" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#81C784;fontColor=#1B5E20;align=center;" vertex="1" parent="1">
+                    <mxGeometry x="80" y="560" width="220" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="exec2" value="get_strategy_config(strategy_id)&#10;从 _strategy_configs 读取配置" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#81C784;fontColor=#1B5E20;align=center;" vertex="1" parent="1">
+                    <mxGeometry x="360" y="560" width="280" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="exec3" value="create_strategy_plugin(plugin_type)&#10;从插件工厂创建实例" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#81C784;fontColor=#1B5E20;align=center;" vertex="1" parent="1">
+                    <mxGeometry x="700" y="560" width="280" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="exec4" value="_plugin_factories[plugin_type]()&#10;调用工厂函数创建插件" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#81C784;fontColor=#1B5E20;align=center;" vertex="1" parent="1">
+                    <mxGeometry x="1040" y="560" width="260" height="60" as="geometry"/>
+                </mxCell>
+                <!-- 箭头 -->
+                <mxCell id="ea1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2E7D32;strokeWidth=2;" edge="1" parent="1" source="exec1" target="exec2">
+                    <mxGeometry relative="0.5" as="geometry"/>
+                </mxCell>
+                <mxCell id="ea2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2E7D32;strokeWidth=2;" edge="1" parent="1" source="exec2" target="exec3">
+                    <mxGeometry relative="0.5" as="geometry"/>
+                </mxCell>
+                <mxCell id="ea3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2E7D32;strokeWidth=2;" edge="1" parent="1" source="exec3" target="exec4">
+                    <mxGeometry relative="0.5" as="geometry"/>
+                </mxCell>
+                <!-- IStrategyPlugin -->
+                <mxCell id="exec5" value="IStrategyPlugin 实例&#10;─────────────────&#10;get_strategy_info()&#10;  ↓&#10;返回 StrategyInfo&#10;(name, description...)" style="swimlane;fillColor=#A5D6A7;strokeColor=#66BB6A;fontColor=#1B5E20;align=center;horizontal=1;" vertex="1" parent="1">
+                    <mxGeometry x="1040" y="650" width="260" height="100" as="geometry"/>
+                </mxCell>
+                <!-- 数据流向说明 -->
+                <mxCell id="flow-note" value="数据流向说明:&#10;1. GUI 主要使用 strategy_configs 表 (核心数据源)&#10;2. strategies 表主要在回测时选择策略类使用&#10;3. 两表通过 plugin_type 关联到插件工厂" style="text;html=1;strokeColor=#E53935;fillColor=#FFEBEE;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=12;fontColor=#C62828;" vertex="1" parent="1">
+                    <mxGeometry x="80" y="800" width="500" height="60" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

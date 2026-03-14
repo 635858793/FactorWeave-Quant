@@ -3730,7 +3730,7 @@ class DatabaseService(BaseService):
                     'created_at': result[7],
                     'updated_at': result[8],
                     'is_active': result[9],
-                    'metadata': json.loads(result[10]) if result[10] else {},
+                    'metadata': json.loads(result[10]) if result[10] and str(result[10]).strip() else {},
                     'class_path': result[11]
                 }
             return None
@@ -3782,7 +3782,7 @@ class DatabaseService(BaseService):
                     'created_at': result[7],
                     'updated_at': result[8],
                     'is_active': result[9],
-                    'metadata': json.loads(result[10]) if result[10] else {},
+                    'metadata': json.loads(result[10]) if result[10] and str(result[10]).strip() else {},
                     'class_path': result[11]
                 })
 
@@ -4091,7 +4091,7 @@ class DatabaseService(BaseService):
                     'created_at': result[7],
                     'updated_at': result[8],
                     'is_active': result[9],
-                    'metadata': json.loads(result[10]) if result[10] else {},
+                    'metadata': json.loads(result[10]) if result[10] and str(result[10]).strip() else {},
                     'class_path': result[11]
                 })
 
