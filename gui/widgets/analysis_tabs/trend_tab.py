@@ -1628,7 +1628,8 @@ class TrendAnalysisTab(BaseAnalysisTab):
             else:
                 try:
                     target_price_str = f"{float(str(target_price_val).replace('￥', '').replace(',', '')) or 0:.2f}"
-                except:
+                except (ValueError, TypeError) as e:
+                    logger.debug(f"目标价格转换失败: {target_price_val}, {e}")
                     target_price_str = str(target_price_val) if str(target_price_val).strip() else "--"
 
             # 安全获取并格式化duration
@@ -1670,12 +1671,14 @@ class TrendAnalysisTab(BaseAnalysisTab):
             # 确保是数值类型
             try:
                 avg_strength_val = float(avg_strength)
-            except:
+            except (ValueError, TypeError) as e:
+                logger.debug(f"强度转换失败: {avg_strength}, {e}")
                 avg_strength_val = 0
 
             try:
                 avg_confidence_val = float(avg_confidence)
-            except:
+            except (ValueError, TypeError) as e:
+                logger.debug(f"置信度转换失败: {avg_confidence}, {e}")
                 avg_confidence_val = 0
 
             stats_text = (
@@ -1706,26 +1709,30 @@ class TrendAnalysisTab(BaseAnalysisTab):
                 else:
                     strength_num = float(strength_val)
                 strength_str = f"{strength_num:.2f}%"
-            except:
+            except (ValueError, TypeError) as e:
+                logger.debug(f"强度格式化失败: {strength_val}, {e}")
                 strength_str = str(strength_val)
 
             # 安全格式化其他数值字段
             try:
                 consistency_val = float(result.get('consistency', 0))
                 consistency_str = f"{consistency_val:.2f}"
-            except:
+            except (ValueError, TypeError) as e:
+                logger.debug(f"一致性格式化失败: {result.get('consistency')}, {e}")
                 consistency_str = str(result.get('consistency', '0'))
 
             try:
                 weight_val = float(result.get('weight', 0))
                 weight_str = f"{weight_val:.2f}"
-            except:
+            except (ValueError, TypeError) as e:
+                logger.debug(f"权重格式化失败: {result.get('weight')}, {e}")
                 weight_str = str(result.get('weight', '0'))
 
             try:
                 score_val = float(result.get('score', 0))
                 score_str = f"{score_val:.2f}"
-            except:
+            except (ValueError, TypeError) as e:
+                logger.debug(f"分数格式化失败: {result.get('score')}, {e}")
                 score_str = str(result.get('score', '0'))
 
             processed_results.append({
@@ -1782,14 +1789,16 @@ class TrendAnalysisTab(BaseAnalysisTab):
             try:
                 price_val = float(level.get('price', 0))
                 price_str = f"{price_val:.2f}"
-            except:
+            except (ValueError, TypeError) as e:
+                logger.debug(f"价格格式化失败: {level.get('price')}, {e}")
                 price_str = str(level.get('price', '0'))
 
             # 安全格式化strength
             try:
                 strength_val = float(level.get('strength', 0))
                 strength_str = f"{strength_val:.2f}"
-            except:
+            except (ValueError, TypeError) as e:
+                logger.debug(f"强度格式化失败: {level.get('strength')}, {e}")
                 strength_str = str(level.get('strength', '0'))
 
             processed_levels.append({
@@ -1879,7 +1888,8 @@ class TrendAnalysisTab(BaseAnalysisTab):
             if hasattr(self, 'current_kdata') and self.current_kdata is not None and len(self.current_kdata) > 0:
                 return self.current_kdata.index[-1].strftime('%Y-%m-%d') if hasattr(self.current_kdata.index[-1], 'strftime') else str(self.current_kdata.index[-1])
             return datetime.now().strftime('%Y-%m-%d')
-        except:
+        except Exception as e:
+            logger.debug(f"获取形态开始日期失败: {e}")
             return datetime.now().strftime('%Y-%m-%d')
 
     def _get_pattern_end_date(self):
@@ -1894,7 +1904,8 @@ class TrendAnalysisTab(BaseAnalysisTab):
                 prev_price = self.current_kdata['close'].iloc[-2]
                 return f"{((current_price - prev_price) / prev_price * 100):.2f}%"
             return "0.00%"
-        except:
+        except Exception as e:
+            logger.debug(f"计算价格变化率失败: {e}")
             return "0.00%"
 
     def _calculate_target_price(self, pattern_name):
@@ -1910,7 +1921,8 @@ class TrendAnalysisTab(BaseAnalysisTab):
                 else:
                     return f"{current_price:.2f}"
             return "0.00"
-        except:
+        except Exception as e:
+            logger.debug(f"计算目标价格失败: {e}")
             return "0.00"
 
     def _get_recommendation(self, pattern_name, confidence):
@@ -1927,7 +1939,8 @@ class TrendAnalysisTab(BaseAnalysisTab):
                 elif '下降' in pattern_name or '看跌' in pattern_name:
                     return "卖出"
             return "观望"
-        except:
+        except Exception as e:
+            logger.debug(f"获取建议失败: {e}")
             return "观望"
 
     def _load_alert_settings(self):

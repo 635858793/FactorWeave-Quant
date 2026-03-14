@@ -850,8 +850,8 @@ class DatabaseService(BaseService):
                 if config.enable_wal:
                     try:
                         connection.execute("PRAGMA journal_mode=WAL")
-                    except:
-                        pass  # DuckDB可能不支持WAL
+                    except (AttributeError, duckdb.IOException, Exception) as e:
+                        logger.debug(f"DuckDB不支持WAL模式: {e}")
 
                 return connection
 
@@ -1232,8 +1232,8 @@ class DatabaseService(BaseService):
                         connection.execute("ROLLBACK")
                     elif connection.db_type == DatabaseType.SQLITE:
                         connection.connection.rollback()
-                except:
-                    pass
+                except Exception as e:
+                    logger.warning(f"事务回滚失败: {e}")
 
             # 更新事务指标
             if transaction_id in self._active_transactions:
@@ -1415,7 +1415,8 @@ class DatabaseService(BaseService):
                                 elif conn.db_type == DatabaseType.SQLITE:
                                     conn.execute("SELECT 1")
                                 valid_connections.append(conn)
-                            except:
+                            except Exception as e:
+                                logger.debug(f"连接验证失败，关闭连接: {e}")
                                 conn.close()
 
                     self._connection_pools[pool_name] = valid_connections
@@ -1557,8 +1558,8 @@ class DatabaseService(BaseService):
                         elif conn.db_type == DatabaseType.SQLITE:
                             conn.execute("SELECT 1")
                     healthy_pools += 1
-                except:
-                    pass
+                except Exception as e:
+                    logger.warning(f"连接池 {pool_name} 健康检查失败: {e}")
 
             return {
                 "status": "healthy" if healthy_pools > 0 else "unhealthy",
@@ -3730,7 +3731,7 @@ class DatabaseService(BaseService):
                     'created_at': result[7],
                     'updated_at': result[8],
                     'is_active': result[9],
-                    'metadata': json.loads(result[10]) if result[10] and str(result[10]).strip() else {},
+                    'metadata': self._safe_json_parse(result[10]),
                     'class_path': result[11]
                 }
             return None
@@ -3782,7 +3783,7 @@ class DatabaseService(BaseService):
                     'created_at': result[7],
                     'updated_at': result[8],
                     'is_active': result[9],
-                    'metadata': json.loads(result[10]) if result[10] and str(result[10]).strip() else {},
+                    'metadata': self._safe_json_parse(result[10]),
                     'class_path': result[11]
                 })
 
@@ -4091,7 +4092,7 @@ class DatabaseService(BaseService):
                     'created_at': result[7],
                     'updated_at': result[8],
                     'is_active': result[9],
-                    'metadata': json.loads(result[10]) if result[10] and str(result[10]).strip() else {},
+                    'metadata': self._safe_json_parse(result[10]),
                     'class_path': result[11]
                 })
 
@@ -4171,6 +4172,44 @@ class DatabaseService(BaseService):
         except Exception as e:
             logger.error(f"获取数据库统计信息失败: {e}")
             return {}
+
+    def _safe_json_parse(self, value: Any, default: Any = None) -> Any:
+        """
+        安全地解析JSON字符串
+
+        Args:
+            value: 要解析的值
+            default: 解析失败时返回的默认值
+
+        Returns:
+            解析后的对象或默认值
+        """
+        if default is None:
+            default = {}
+
+        if value is None:
+            return default
+
+        if isinstance(value, (dict, list)):
+            return value
+
+        if isinstance(value, (bytes, bytearray)):
+            if not value:
+                return default
+            value = value.decode('utf-8')
+
+        if not value:
+            return default
+
+        value_str = str(value).strip()
+        if not value_str:
+            return default
+
+        try:
+            return json.loads(value_str)
+        except (json.JSONDecodeError, TypeError) as e:
+            logger.warning(f"JSON解析失败: {e}, 原始值: {repr(value)[:100]}")
+            return default
 
     def _serialize_value(self, value: Any) -> str:
         """

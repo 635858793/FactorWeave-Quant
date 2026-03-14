@@ -209,17 +209,17 @@ class PatternManager:
             形态配置列表
         """
         import time
-        logger.info("[DEBUG] PatternManager.get_pattern_configs 开始...")
-        
+        logger.debug("PatternManager.get_pattern_configs 开始...")
+
         with self._cache_lock:
-            logger.info(f"[DEBUG] _patterns_cache 是 None? {self._patterns_cache is None}")
+            logger.debug(f"_patterns_cache 是 None? {self._patterns_cache is None}")
             if self._patterns_cache is None:
-                logger.info("[DEBUG] 调用 _load_all_patterns_from_db()...")
+                logger.debug("调用 _load_all_patterns_from_db()...")
                 start = time.time()
                 self._load_all_patterns_from_db()
-                logger.info(f"[DEBUG] _load_all_patterns_from_db() 完成，耗时: {time.time() - start:.2f}秒")
+                logger.debug(f"_load_all_patterns_from_db() 完成，耗时: {time.time() - start:.2f}秒")
 
-            logger.info(f"[DEBUG] 缓存中有 {len(self._patterns_cache) if self._patterns_cache else 0} 条")
+            logger.debug(f"缓存中有 {len(self._patterns_cache) if self._patterns_cache else 0} 条")
 
             filtered_patterns = self._patterns_cache
             if filtered_patterns is None:
@@ -242,17 +242,17 @@ class PatternManager:
         """从数据库加载所有形态并缓存（注意：此方法由get_pattern_configs调用，已持有锁）"""
         import time
         try:
-            logger.info("[DEBUG] 开始连接数据库...")
+            logger.debug("开始连接数据库...")
             start = time.time()
             with self._get_db_connection() as conn:
-                logger.info(f"[DEBUG] 数据库连接完成，耗时: {time.time() - start:.2f}秒")
+                logger.debug(f"数据库连接完成，耗时: {time.time() - start:.2f}秒")
                 
                 cursor = conn.cursor()
-                logger.info("[DEBUG] 执行SQL查询...")
+                logger.debug("执行SQL查询...")
                 start = time.time()
                 cursor.execute("SELECT * FROM pattern_types ORDER BY category, name")
                 rows = cursor.fetchall()
-                logger.info(f"[DEBUG] SQL查询完成，耗时: {time.time() - start:.2f}秒，返回 {len(rows)} 条")
+                logger.debug(f"SQL查询完成，耗时: {time.time() - start:.2f}秒，返回 {len(rows)} 条")
 
                 patterns = []
                 logger.info(f"[_load_all_patterns_from_db] 从数据库加载了 {len(rows)} 条形态配置。")
