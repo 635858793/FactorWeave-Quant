@@ -186,7 +186,14 @@ class MovingAverageStrategyPlugin(IStrategyPlugin):
         signals = []
         current_position = 0
         
-        for i in range(1, len(data)):
+        # 修复：确保从慢速均线稳定后开始检查
+        start_idx = max(self._config.slow_period, 1)
+        logger.info(f"双均线策略开始生成信号 - 数据量：{len(data)}, 起始索引：{start_idx}")
+        
+        buy_count = 0
+        sell_count = 0
+        
+        for i in range(start_idx, len(data)):
             timestamp = data.index[i]
             current_price = close_prices.iloc[i]
             
@@ -195,6 +202,11 @@ class MovingAverageStrategyPlugin(IStrategyPlugin):
             fast_ma_prev = fast_ma.iloc[i-1]
             slow_ma_prev = slow_ma.iloc[i-1]
             
+            # 跳过 NaN 值
+            if pd.isna([fast_ma_val, slow_ma_val, fast_ma_prev, slow_ma_prev]).any():
+                logger.debug(f"跳过 index={i} - 均线值为 NaN")
+                continue
+            
             signal_type = SignalType.HOLD
             reason = ""
             
@@ -202,12 +214,16 @@ class MovingAverageStrategyPlugin(IStrategyPlugin):
                 if current_position <= 0:
                     signal_type = SignalType.BUY
                     current_position = 1
-                    reason = f"金叉: 快速均线({fast_ma_val:.2f})上穿慢速均线({slow_ma_val:.2f})"
+                    reason = f"金叉：快速均线 ({fast_ma_val:.2f}) 上穿慢速均线 ({slow_ma_val:.2f})"
+                    buy_count += 1
+                    logger.info(f"生成买入信号 - index={i}, price={current_price:.2f}, reason={reason}")
             elif fast_ma_prev >= slow_ma_prev and fast_ma_val < slow_ma_val:
                 if current_position >= 0:
                     signal_type = SignalType.SELL
                     current_position = -1
-                    reason = f"死叉: 快速均线({fast_ma_val:.2f})下穿慢速均线({slow_ma_val:.2f})"
+                    reason = f"死叉：快速均线 ({fast_ma_val:.2f}) 下穿慢速均线 ({slow_ma_val:.2f})"
+                    sell_count += 1
+                    logger.info(f"生成卖出信号 - index={i}, price={current_price:.2f}, reason={reason}")
             
             if signal_type != SignalType.HOLD:
                 stop_loss = current_price * (1 - self._config.stop_loss_pct) if self._config.stop_loss_pct > 0 else None
@@ -227,6 +243,13 @@ class MovingAverageStrategyPlugin(IStrategyPlugin):
                     confidence=confidence
                 )
                 signals.append(signal)
+        
+        # 添加信号生成统计
+        checked_count = len(data) - start_idx
+        logger.info(f"双均线策略信号生成完成 - 检查了{checked_count}个数据点，生成{len(signals)}个信号（买入：{buy_count}, 卖出：{sell_count}）")
+        
+        if not signals:
+            logger.warning(f"双均线策略未生成任何信号 - 可能原因：1.市场无明显均线交叉 2.信号条件过于严格 3.数据量不足")
         
         # 发布信号生成事件
         if signals:

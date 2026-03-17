@@ -8,6 +8,7 @@ from loguru import logger
 
 import threading
 import time
+import re
 from typing import Dict, Any, Optional, List, Callable, Set, Union
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, Future
@@ -181,6 +182,17 @@ class UnifiedDataManager:
         self._request_lock = threading.Lock()
 
         self._cache_ttl = 300  # 5分钟缓存TTL
+
+        # SQL注入防护：允许的列名白名单
+        self._ALLOWED_STOCK_COLUMNS = frozenset({
+            'code', 'name', 'industry', 'area', 'market', 'list_date',
+            'total_shares', 'circulating_shares', 'total_market_cap',
+            'pe', 'pb', 'roe', 'eps', 'revenue', 'profit'
+        })
+        self._ALLOWED_MARKET_COLUMNS = frozenset({
+            'code', 'trade_date', 'open', 'high', 'low', 'close',
+            'volume', 'amount', 'change', 'pct_change', 'turnover'
+        })
 
         self.cache_manager = None
         try:
@@ -1050,6 +1062,16 @@ class UnifiedDataManager:
 
         except Exception as e:
             logger.warning(f"缓存存储失败: {e}")
+
+    def _validate_columns(self, columns: List[str], allowed_columns: frozenset) -> List[str]:
+        """验证列名是否在白名单中，防止SQL注入"""
+        validated = []
+        for col in columns:
+            if col in allowed_columns:
+                validated.append(col)
+            else:
+                logger.warning(f"列名 {col} 不在白名单中，已过滤")
+        return validated
 
     def get_asset_list(self, asset_type: str = 'stock_a', market: str = 'all') -> pd.DataFrame:
         """
@@ -4662,9 +4684,14 @@ class UnifiedDataManager:
             if self.conn and self._db_lock:
                 with self._db_lock:
                     cursor = self.conn.cursor()
-                    set_clause = ', '.join([f"{key} = ?" for key in data.keys()])
+                    # SQL注入防护：验证列名白名单
+                    validated_keys = self._validate_columns(list(data.keys()), self._ALLOWED_STOCK_COLUMNS)
+                    if not validated_keys:
+                        logger.error(f"股票数据列名验证失败，无有效列: {list(data.keys())}")
+                        return False
+                    set_clause = ', '.join([f"{key} = ?" for key in validated_keys])
                     sql = f"UPDATE stocks SET {set_clause} WHERE code = ?"
-                    params = list(data.values()) + [stock_code]
+                    params = [data[key] for key in validated_keys] + [stock_code]
                     cursor.execute(sql, params)
                     self.conn.commit()
 
@@ -4899,9 +4926,15 @@ class UnifiedDataManager:
             if self.conn and self._db_lock:
                 with self._db_lock:
                     cursor = self.conn.cursor()
-                    set_clause = ', '.join([f"{key} = ?" for key in data.keys() if key != 'trade_date'])
+                    # SQL注入防护：验证列名白名单
+                    data_keys = [key for key in data.keys() if key != 'trade_date']
+                    validated_keys = self._validate_columns(data_keys, self._ALLOWED_MARKET_COLUMNS)
+                    if not validated_keys:
+                        logger.error(f"行情数据列名验证失败，无有效列: {data_keys}")
+                        return False
+                    set_clause = ', '.join([f"{key} = ?" for key in validated_keys])
                     sql = f"UPDATE market SET {set_clause} WHERE code = ? AND trade_date = ?"
-                    params = [data[key] for key in data.keys() if key != 'trade_date']
+                    params = [data[key] for key in validated_keys]
                     params.extend([index_code, trade_date])
                     cursor.execute(sql, params)
                     self.conn.commit()

@@ -8,7 +8,7 @@ from loguru import logger
 import numpy as np
 import pandas as pd
 import numba
-from numba import jit, prange
+from numba import jit, prange, njit
 from typing import Dict, List, Optional, Any, Tuple, Union, Callable
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
@@ -111,6 +111,182 @@ class VectorizedBacktestEngine:
                 returns[i] = (capital[i] - capital[i-1]) / capital[i-1]
 
         return positions, capital, returns
+
+    @staticmethod
+    @njit(cache=True, fastmath=True)
+    def _vectorized_backtest_with_risk(
+        prices: np.ndarray, signals: np.ndarray,
+        initial_capital: float, position_size: float,
+        commission_pct: float, slippage_pct: float,
+        stop_loss_pct: float, take_profit_pct: float,
+        max_holding_periods: int
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """
+        向量化回测核心计算（支持止损/止盈/持有期）- JIT编译
+
+        Args:
+            prices: 价格数组
+            signals: 信号数组
+            initial_capital: 初始资金
+            position_size: 仓位大小
+            commission_pct: 手续费比例
+            slippage_pct: 滑点比例
+            stop_loss_pct: 止损比例 (-1表示不启用)
+            take_profit_pct: 止盈比例 (-1表示不启用)
+            max_holding_periods: 最大持有期 (-1表示不启用)
+
+        Returns:
+            Tuple: (持仓数组, 资金数组, 收益数组, 退出原因数组, 持有期数组)
+        """
+        n = len(prices)
+        positions = np.zeros(n)
+        capital = np.zeros(n)
+        returns = np.zeros(n)
+        exit_reasons = np.zeros(n)
+        holding_periods = np.zeros(n, dtype=np.int64)
+
+        capital[0] = initial_capital
+        current_position = 0.0
+        current_capital = initial_capital
+        entry_price = 0.0
+        holding_days = 0
+
+        use_stop_loss = stop_loss_pct >= 0
+        use_take_profit = take_profit_pct >= 0
+        use_max_holding = max_holding_periods >= 0
+
+        for i in range(1, n):
+            price = prices[i]
+            signal = signals[i]
+            exit_reason = 0
+
+            if current_position != 0:
+                holding_days += 1
+                holding_periods[i] = holding_days
+            else:
+                holding_days = 0
+                holding_periods[i] = 0
+
+            if current_position > 0:
+                if use_stop_loss and price <= entry_price * (1 - stop_loss_pct):
+                    exit_reason = 1
+                    current_capital += current_position * price * (1 - commission_pct - slippage_pct)
+                    current_position = 0
+                elif use_take_profit and price >= entry_price * (1 + take_profit_pct):
+                    exit_reason = 2
+                    current_capital += current_position * price * (1 - commission_pct - slippage_pct)
+                    current_position = 0
+                elif use_max_holding and holding_days >= max_holding_periods:
+                    exit_reason = 3
+                    current_capital += current_position * price * (1 - commission_pct - slippage_pct)
+                    current_position = 0
+            elif current_position < 0:
+                if use_stop_loss and price >= entry_price * (1 + stop_loss_pct):
+                    exit_reason = 1
+                    current_capital += abs(current_position) * price * (1 - commission_pct - slippage_pct)
+                    current_position = 0
+                elif use_take_profit and price <= entry_price * (1 - take_profit_pct):
+                    exit_reason = 2
+                    current_capital += abs(current_position) * price * (1 - commission_pct - slippage_pct)
+                    current_position = 0
+                elif use_max_holding and holding_days >= max_holding_periods:
+                    exit_reason = 3
+                    current_capital += abs(current_position) * price * (1 - commission_pct - slippage_pct)
+                    current_position = 0
+
+            # 如果没有退出，检查交易信号
+            if current_position == 0:
+                if signal == 1:
+                    trade_cost = price * (commission_pct + slippage_pct)
+                    shares = (current_capital * position_size) / (price + trade_cost)
+                    current_position = shares
+                    current_capital -= shares * (price + trade_cost)
+                    entry_price = price + trade_cost
+                    holding_days = 0
+                elif signal == -1:
+                    trade_cost = price * (commission_pct + slippage_pct)
+                    shares = (current_capital * position_size) / (price + trade_cost)
+                    current_position = -shares
+                    current_capital -= shares * (price + trade_cost)
+                    entry_price = price + trade_cost
+                    holding_days = 0
+
+            positions[i] = current_position
+
+            # 计算当前权益
+            if current_position > 0:
+                equity = current_capital + current_position * price
+            elif current_position < 0:
+                equity = current_capital - current_position * price
+            else:
+                equity = current_capital
+
+            capital[i] = equity
+            exit_reasons[i] = exit_reason
+
+            # 计算收益率
+            if i > 0 and capital[i-1] != 0:
+                returns[i] = (capital[i] - capital[i-1]) / capital[i-1]
+
+        return positions, capital, returns, exit_reasons, holding_periods
+
+    def run_vectorized_backtest_with_risk(
+        self, data: pd.DataFrame, signal_col: str = 'signal',
+        price_col: str = 'close', initial_capital: float = 100000,
+        position_size: float = 1.0, commission_pct: float = 0.001,
+        slippage_pct: float = 0.001, stop_loss_pct: Optional[float] = None,
+        take_profit_pct: Optional[float] = None,
+        max_holding_periods: Optional[int] = None
+    ) -> pd.DataFrame:
+        """
+        运行支持止损/止盈/持有期的向量化回测
+
+        Args:
+            data: 回测数据
+            signal_col: 信号列名
+            price_col: 价格列名
+            initial_capital: 初始资金
+            position_size: 仓位大小
+            commission_pct: 手续费比例
+            slippage_pct: 滑点比例
+            stop_loss_pct: 止损比例
+            take_profit_pct: 止盈比例
+            max_holding_periods: 最大持有期
+
+        Returns:
+            pd.DataFrame: 回测结果
+        """
+        try:
+            prices = data[price_col].astype(float).values
+            signals = data[signal_col].astype(float).values
+
+            if np.any(np.isnan(prices)) or np.any(np.isinf(prices)):
+                raise ValueError("价格数据包含NaN或无穷大值")
+            if np.any(np.isnan(signals)) or np.any(np.isinf(signals)):
+                raise ValueError("信号数据包含NaN或无穷大值")
+
+            sl_pct = -1.0 if stop_loss_pct is None else float(stop_loss_pct)
+            tp_pct = -1.0 if take_profit_pct is None else float(take_profit_pct)
+            max_hp = -1 if max_holding_periods is None else int(max_holding_periods)
+
+            positions, capital, returns, exit_reasons, holding_periods = self._vectorized_backtest_with_risk(
+                prices, signals, initial_capital, position_size,
+                commission_pct, slippage_pct, sl_pct, tp_pct, max_hp
+            )
+
+            result = data.copy()
+            result['position'] = positions
+            result['capital'] = capital
+            result['returns'] = returns
+            result['exit_reason'] = exit_reasons
+            result['holding_periods'] = holding_periods
+            result['cumulative_returns'] = (1 + pd.Series(returns)).cumprod() - 1
+
+            return result
+
+        except Exception as e:
+            self.logger.error(f"带风控的向量化回测失败: {e}")
+            raise
 
     def run_vectorized_backtest(self, data: pd.DataFrame, signal_col: str = 'signal',
                                 price_col: str = 'close', initial_capital: float = 100000,

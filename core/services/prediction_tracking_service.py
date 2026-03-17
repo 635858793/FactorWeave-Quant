@@ -94,8 +94,8 @@ class PredictionTrackingService(BaseService):
                     self._create_prediction_records_table(conn)
                     self._create_accuracy_statistics_table(conn)
             else:
-                # 直接使用SQLite创建表
-                self._create_tables_directly()
+                logger.error("DatabaseService不可用，无法初始化预测跟踪表")
+                raise RuntimeError("DatabaseService不可用，无法初始化预测跟踪表")
 
             logger.info("数据库表初始化完成")
         except Exception as e:
@@ -177,80 +177,6 @@ class PredictionTrackingService(BaseService):
             logger.error(f"创建accuracy_statistics表失败: {e}")
             raise
 
-    def _create_tables_directly(self) -> None:
-        """直接使用SQLite创建表（当DatabaseService不可用时）"""
-        try:
-            import sqlite3
-            db_path = Path("data/factorweave_system.sqlite")
-            db_path.parent.mkdir(parents=True, exist_ok=True)
-
-            conn = sqlite3.connect(str(db_path))
-            cursor = conn.cursor()
-
-            # 创建预测记录表
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS prediction_records (
-                    record_id TEXT PRIMARY KEY,
-                    model_version_id TEXT NOT NULL,
-                    prediction_type TEXT NOT NULL,
-                    prediction_time TIMESTAMP NOT NULL,
-                    prediction_result_json TEXT NOT NULL,
-                    confidence REAL NOT NULL,
-                    actual_result_json TEXT,
-                    accuracy REAL,
-                    calculated_at TIMESTAMP,
-                    FOREIGN KEY (model_version_id) REFERENCES model_versions(version_id)
-                )
-            """)
-
-            # 创建索引
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_prediction_records_model_version 
-                ON prediction_records(model_version_id)
-            """)
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_prediction_records_type_time 
-                ON prediction_records(prediction_type, prediction_time)
-            """)
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_prediction_records_time 
-                ON prediction_records(prediction_time)
-            """)
-
-            # 创建准确性统计表
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS accuracy_statistics (
-                    stat_id TEXT PRIMARY KEY,
-                    model_version_id TEXT NOT NULL,
-                    prediction_type TEXT NOT NULL,
-                    time_period TEXT NOT NULL,
-                    total_predictions INTEGER DEFAULT 0,
-                    correct_predictions INTEGER DEFAULT 0,
-                    accuracy_rate REAL DEFAULT 0.0,
-                    avg_confidence REAL DEFAULT 0.0,
-                    calculated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (model_version_id) REFERENCES model_versions(version_id),
-                    UNIQUE(model_version_id, prediction_type, time_period)
-                )
-            """)
-
-            # 创建索引
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_accuracy_statistics_model_version 
-                ON accuracy_statistics(model_version_id)
-            """)
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_accuracy_statistics_type_period 
-                ON accuracy_statistics(prediction_type, time_period)
-            """)
-
-            conn.commit()
-            conn.close()
-            logger.info("直接创建数据库表成功")
-        except Exception as e:
-            logger.error(f"直接创建数据库表失败: {e}")
-            raise
-
     def _make_stat_key(self, model_version_id: str, prediction_type: str, time_period: str) -> str:
         """生成统计缓存的唯一键"""
         return f"{model_version_id or ''}_{prediction_type or ''}_{time_period or ''}"
@@ -282,32 +208,8 @@ class PredictionTrackingService(BaseService):
                             'calculated_at': row[8]
                         }
             else:
-                import sqlite3
-                db_path = Path("data/factorweave_system.sqlite")
-                if db_path.exists():
-                    conn = sqlite3.connect(str(db_path))
-                    cursor = conn.cursor()
-                    cursor.execute("SELECT * FROM accuracy_statistics")
-                    rows = cursor.fetchall()
-
-                    for row in rows:
-                        stat_id = row[0]
-                        model_version_id = row[1]
-                        prediction_type = row[2]
-                        time_period = row[3]
-                        stat_key = self._make_stat_key(model_version_id, prediction_type, time_period)
-                        self._accuracy_statistics[stat_key] = {
-                            'stat_id': stat_id,
-                            'model_version_id': model_version_id,
-                            'prediction_type': prediction_type,
-                            'time_period': time_period,
-                            'total_predictions': row[4] or 0,
-                            'correct_predictions': row[5] or 0,
-                            'accuracy_rate': row[6] or 0.0,
-                            'avg_confidence': row[7] or 0.0,
-                            'calculated_at': row[8]
-                        }
-                    conn.close()
+                logger.error("DatabaseService不可用，无法加载准确性统计")
+                raise RuntimeError("DatabaseService不可用，无法加载准确性统计")
 
             logger.info(f"加载了 {len(self._accuracy_statistics)} 个现有准确性统计")
         except Exception as e:
@@ -328,21 +230,8 @@ class PredictionTrackingService(BaseService):
                     """, (limit,))
                     rows = cursor.fetchall()
             else:
-                import sqlite3
-                db_path = Path("data/factorweave_system.sqlite")
-                if not db_path.exists():
-                    return
-                conn = sqlite3.connect(str(db_path))
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT record_id, model_version_id, prediction_type, prediction_time,
-                           prediction_result_json, confidence, actual_result_json, accuracy, calculated_at
-                    FROM prediction_records
-                    ORDER BY prediction_time DESC
-                    LIMIT ?
-                """, (limit,))
-                rows = cursor.fetchall()
-                conn.close()
+                logger.error("DatabaseService不可用，无法加载历史预测记录")
+                raise RuntimeError("DatabaseService不可用，无法加载历史预测记录")
 
             with self._record_lock:
                 for row in rows:
@@ -437,28 +326,8 @@ class PredictionTrackingService(BaseService):
                     ))
                     conn.commit()
             else:
-                import sqlite3
-                db_path = Path("data/factorweave_system.sqlite")
-                conn = sqlite3.connect(str(db_path))
-                cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT INTO prediction_records 
-                    (record_id, model_version_id, prediction_type, prediction_time,
-                     prediction_result_json, confidence, actual_result_json, accuracy, calculated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    record_data['record_id'],
-                    record_data['model_version_id'],
-                    record_data['prediction_type'],
-                    record_data['prediction_time'],
-                    json.dumps(record_data['prediction_result']),
-                    record_data['confidence'],
-                    json.dumps(record_data['actual_result']) if record_data['actual_result'] else None,
-                    record_data['accuracy'],
-                    record_data['calculated_at']
-                ))
-                conn.commit()
-                conn.close()
+                logger.error("DatabaseService不可用，无法保存预测记录")
+                raise RuntimeError("DatabaseService不可用，无法保存预测记录")
         except Exception as e:
             logger.error(f"保存预测记录到数据库失败: {e}")
             raise
@@ -574,22 +443,8 @@ class PredictionTrackingService(BaseService):
                     ))
                     conn.commit()
             else:
-                import sqlite3
-                db_path = Path("data/factorweave_system.sqlite")
-                conn = sqlite3.connect(str(db_path))
-                cursor = conn.cursor()
-                cursor.execute("""
-                    UPDATE prediction_records 
-                    SET actual_result_json = ?, accuracy = ?, calculated_at = ?
-                    WHERE record_id = ?
-                """, (
-                    json.dumps(actual_result),
-                    accuracy,
-                    datetime.now().isoformat(),
-                    record_id
-                ))
-                conn.commit()
-                conn.close()
+                logger.error("DatabaseService不可用，无法更新预测准确性")
+                raise RuntimeError("DatabaseService不可用，无法更新预测准确性")
         except Exception as e:
             logger.error(f"更新数据库中的预测准确性失败: {e}")
             raise
@@ -665,28 +520,8 @@ class PredictionTrackingService(BaseService):
                     ))
                     conn.commit()
             else:
-                import sqlite3
-                db_path = Path("data/factorweave_system.sqlite")
-                conn = sqlite3.connect(str(db_path))
-                cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT OR REPLACE INTO accuracy_statistics 
-                    (stat_id, model_version_id, prediction_type, time_period,
-                     total_predictions, correct_predictions, accuracy_rate, avg_confidence, calculated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    stat_data['stat_id'],
-                    stat_data['model_version_id'],
-                    stat_data['prediction_type'],
-                    stat_data['time_period'],
-                    stat_data['total_predictions'],
-                    stat_data['correct_predictions'],
-                    stat_data['accuracy_rate'],
-                    stat_data['avg_confidence'],
-                    stat_data['calculated_at']
-                ))
-                conn.commit()
-                conn.close()
+                logger.error("DatabaseService不可用，无法保存统计")
+                raise RuntimeError("DatabaseService不可用，无法保存统计")
         except Exception as e:
             logger.error(f"保存统计到数据库失败: {e}")
             raise

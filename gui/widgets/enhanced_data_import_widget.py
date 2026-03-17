@@ -2732,7 +2732,8 @@ class EnhancedDataImportWidget(QWidget):
                 conn = conn_manager.get_connection()
                 try:
                     result = conn.execute(
-                        f"SELECT MAX(datetime) as latest_date FROM {table_name} WHERE symbol = '{symbol}'"
+                        "SELECT MAX(datetime) as latest_date FROM ? WHERE symbol = ?",
+                        (table_name, symbol)
                     ).fetchall()
 
                     if result and result[0][0]:
@@ -2925,7 +2926,8 @@ class EnhancedDataImportWidget(QWidget):
 
                     try:
                         result = conn.execute(
-                            f"SELECT DISTINCT symbol FROM {table_name} ORDER BY symbol LIMIT 10000"
+                            "SELECT DISTINCT symbol FROM ? ORDER BY symbol LIMIT 10000",
+                            (table_name,)
                         ).fetchall()
 
                         if result:

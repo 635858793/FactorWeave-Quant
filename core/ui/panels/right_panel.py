@@ -1573,14 +1573,9 @@ class RightPanel(BasePanel):
             
             # 如果是回测结果，更新回测显示
             if event.analysis_type == "backtest" and event.results and "backtest" in event.results:
-                # 使用 QMetaObject.invokeMethod 确保在主线程中更新 UI
-                from PyQt5.QtCore import QMetaObject, Qt
-                QMetaObject.invokeMethod(
-                    self,
-                    "_safe_update_backtest_results",
-                    Qt.QueuedConnection,
-                    event.results["backtest"]
-                )
+                # BacktestWidget 已通过 request_ui_update 信号自行更新 UI
+                # 这里只需记录日志，无需重复调用
+                logger.info("回测结果由 BacktestWidget 自行更新 UI")
             
         except Exception as e:
             logger.error(f"处理分析完成事件失败: {e}")

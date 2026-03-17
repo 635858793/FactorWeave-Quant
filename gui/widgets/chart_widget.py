@@ -973,14 +973,19 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
                 # 处理监控数据
                 timestamp = data.get('timestamp')
                 if timestamp:
-                    logger.debug(f"添加监控数据: {timestamp}, 指标数量: {len(data)}")
+                    # 存储回测监控数据
+                    if not hasattr(self, '_backtest_metrics'):
+                        self._backtest_metrics = []
+                    self._backtest_metrics.append(data)
+                    
+                    # 限制数据长度
+                    if len(self._backtest_metrics) > 1000:
+                        self._backtest_metrics = self._backtest_metrics[-1000:]
+                    
+                    logger.debug(f"添加监控数据: {timestamp}, 指标数量: {len(data)}, 累计数据: {len(self._backtest_metrics)}")
 
-                    # 这里可以根据需要实现具体的图表更新逻辑
-                    # 目前先使用通用更新方式
-                    self.update()
-
-                    # 可以在这里添加具体的实时图表绘制逻辑
-                    # 比如绘制收益率曲线、回撤曲线等
+                    # 绘制回测结果图表
+                    self._draw_backtest_charts()
 
                 else:
                     logger.warning("监控数据缺少timestamp字段")
@@ -994,6 +999,131 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
                 self.update()
             except Exception as fallback_e:
                 logger.error(f"降级更新失败: {fallback_e}")
+
+    def _draw_backtest_charts(self):
+        """绘制回测结果图表（收益率曲线、回撤曲线等）"""
+        try:
+            if not hasattr(self, '_backtest_metrics') or not self._backtest_metrics:
+                return
+            
+            # 提取数据
+            metrics_data = self._backtest_metrics
+            
+            # 提取时间序列数据
+            timestamps = []
+            cumulative_returns = []
+            drawdowns = []
+            sharpe_ratios = []
+            
+            for m in metrics_data:
+                ts = m.get('timestamp')
+                if ts:
+                    timestamps.append(ts)
+                    cumulative_returns.append(m.get('cumulative_return', 0))
+                    drawdowns.append(m.get('current_drawdown', 0))
+                    sharpe_ratios.append(m.get('sharpe_ratio', 0))
+            
+            if not timestamps:
+                return
+            
+            # 创建DataFrame用于绘图
+            import pandas as pd
+            df = pd.DataFrame({
+                'timestamp': timestamps,
+                'cumulative_return': cumulative_returns,
+                'drawdown': drawdowns,
+                'sharpe_ratio': sharpe_ratios
+            })
+            
+            # 直接使用matplotlib绘图（不依赖渲染器方法）
+            try:
+                # 检查是否有 figure 和 axes
+                if hasattr(self, 'figure') and hasattr(self, 'price_ax'):
+                    # 第一次创建或使用现有坐标轴
+                    if not hasattr(self, '_backtest_ax') or self._backtest_ax is None:
+                        # 创建新的子图用于回测结果
+                        self._backtest_ax = self.figure.add_subplot(211)
+                        logger.debug("创建新的回测坐标轴")
+                    
+                    # 清除坐标轴上的旧数据（不清除坐标轴本身）
+                    self._backtest_ax.clear()
+                    
+                    # 绘制累计收益率曲线
+                    self._backtest_ax.plot(range(len(df)), df['cumulative_return'], 
+                                          'b-', linewidth=1.5, label='累计收益率')
+                    
+                    # 绘制回撤曲线（使用次坐标轴）
+                    if hasattr(self, '_backtest_ax2') and self._backtest_ax2:
+                        self._backtest_ax2.clear()
+                    else:
+                        self._backtest_ax2 = self._backtest_ax.twinx()
+                    
+                    self._backtest_ax2.plot(range(len(df)), df['drawdown'], 
+                            'r-', linewidth=1, alpha=0.7, label='回撤')
+                    self._backtest_ax2.fill_between(range(len(df)), df['drawdown'], 0, 
+                                    alpha=0.3, color='red')
+                    
+                    # 设置标题和标签
+                    self._backtest_ax.set_title('回测结果', fontsize=10)
+                    self._backtest_ax.set_ylabel('累计收益率', fontsize=8)
+                    self._backtest_ax2.set_ylabel('回撤', fontsize=8)
+                    self._backtest_ax.legend(loc='upper left', fontsize=8)
+                    self._backtest_ax2.legend(loc='upper right', fontsize=8)
+                    self._backtest_ax.grid(True, alpha=0.3)
+                    
+                    # 刷新画布
+                    if hasattr(self, 'canvas'):
+                        self.canvas.draw_idle()
+                    
+                    logger.debug(f"绘制回测图表完成，数据点: {len(df)}")
+                else:
+                    # 降级：只调用update
+                    self.update()
+                    logger.debug("使用通用更新方法")
+                    
+            except Exception as draw_e:
+                logger.error(f"matplotlib绘图失败: {draw_e}")
+                # 降级：只调用update
+                self.update()
+                
+        except Exception as e:
+            logger.error(f"绘制回测图表失败: {e}")
+            # 降级处理
+            try:
+                self.update()
+            except Exception as fallback_e:
+                logger.error(f"降级更新失败：{fallback_e}")
+
+    def clear_data(self):
+        """清空回测数据"""
+        try:
+            if hasattr(self, '_backtest_metrics'):
+                self._backtest_metrics = []
+                logger.debug("已清空回测数据")
+            
+            # 清除图表上的坐标轴
+            if hasattr(self, '_backtest_ax') and self._backtest_ax:
+                try:
+                    self._backtest_ax.clear()
+                    logger.debug("已清空回测坐标轴")
+                except Exception as e:
+                    logger.warning(f"清空坐标轴失败：{e}")
+            
+            if hasattr(self, '_backtest_ax2') and self._backtest_ax2:
+                try:
+                    self._backtest_ax2.clear()
+                    logger.debug("已清空回测次坐标轴")
+                except Exception as e:
+                    logger.warning(f"清空次坐标轴失败：{e}")
+            
+            # 刷新画布
+            if hasattr(self, 'canvas'):
+                self.canvas.draw_idle()
+            
+            logger.info("回测数据已清空")
+            
+        except Exception as e:
+            logger.error(f"清空数据失败：{e}")
 
     def closeEvent(self, event):
         logger.info("ChartWidget closeEvent 触发")

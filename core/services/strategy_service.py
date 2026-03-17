@@ -296,16 +296,24 @@ class StrategyService(BaseService):
         try:
             sig = inspect.signature(plugin.generate_signals)
             params = list(sig.parameters.keys())
+            logger.debug(f"策略插件 {plugin.__class__.__name__} 的 generate_signals 方法参数: {params}")
 
-            if len(params) >= 3:
+            if len(params) == 2:
+                logger.debug(f"调用 2 参数版本: generate_signals(data, context)")
                 return plugin.generate_signals(market_data_df, context)
-            else:
+            elif len(params) == 1:
+                logger.debug(f"调用 1 参数版本: generate_signals(data)")
                 return plugin.generate_signals(market_data_df)
+            else:
+                logger.warning(f"未知参数数量: {len(params)}，尝试 2 参数调用")
+                return plugin.generate_signals(market_data_df, context)
 
-        except (ValueError, TypeError):
+        except (ValueError, TypeError) as e:
+            logger.warning(f"签名检查失败，使用回退调用: {e}")
             try:
                 return plugin.generate_signals(market_data_df, context)
-            except TypeError:
+            except TypeError as e2:
+                logger.warning(f"2参数调用失败，尝试1参数: {e2}")
                 return plugin.generate_signals(market_data_df)
 
     def _do_initialize(self) -> None:
@@ -447,7 +455,9 @@ class StrategyService(BaseService):
                 
                 # 额外步骤：从 strategies 表加载已注册策略并生成配置
                 logger.info("尝试从 strategies 表加载已注册策略")
-                sql = "SELECT * FROM strategies WHERE is_active = 1"
+                sql = """SELECT id, name, strategy_type, version, author, description,
+                              category, created_at, updated_at, is_active, metadata, class_path
+                       FROM strategies WHERE is_active = 1"""
                 with database_service.get_connection("strategy_sqlite") as conn:
                     registered_strategies = conn.execute(sql)
                 
@@ -455,24 +465,27 @@ class StrategyService(BaseService):
                 
                 # 为每个已注册策略创建配置
                 for strategy in registered_strategies:
-                    # strategies 表字段顺序：id, name, strategy_type, version, author, description, params, created_at, updated_at, is_active
-                    strategy_id = str(strategy[0])  # id (转换为字符串)
-                    strategy_name = strategy[1]  # name
-                    strategy_type = strategy[2]  # strategy_type
-                    author = strategy[4]  # author
-                    description = strategy[5]  # description
-                    params_json = strategy[6]  # params (JSON字符串)
+                    strategy_dict = dict(strategy)
+                    strategy_id = str(strategy_dict['id'])
+                    strategy_name = strategy_dict['name']
+                    strategy_type = strategy_dict['strategy_type']
+                    author = strategy_dict.get('author', '')
+                    description = strategy_dict.get('description', '')
+                    
+                    try:
+                        metadata = strategy_dict.get('metadata', {})
+                        if isinstance(metadata, str):
+                            metadata = json.loads(metadata) if metadata else {}
+                    except json.JSONDecodeError:
+                        logger.warning(f"解析策略 {strategy_name} 的元数据失败，使用空字典")
+                        metadata = {}
+                    
+                    parameters = metadata.get('parameters', {})
                     
                     # 跳过已存在的策略
                     if strategy_id in self._strategy_configs:
                         logger.info(f"策略 {strategy_name} (ID: {strategy_id}) 已存在配置，跳过")
                         continue
-                    
-                    try:
-                        parameters = json.loads(params_json) if params_json and params_json != '{}' else {}
-                    except json.JSONDecodeError:
-                        logger.warning(f"解析策略 {strategy_name} 的参数失败，使用空参数")
-                        parameters = {}
                     
                     # 根据策略类型确定plugin_type
                     plugin_type = "custom"

@@ -101,16 +101,29 @@ class AdaptivePandasStrategy(BaseStrategy):
         signals = []
         
         if len(data) < 50:
+            logger.warning(f"数据量不足（{len(data)}条），需要至少 50 条记录，返回空信号")
             return signals
         
         try:
             # 计算技术指标
             indicators = self._calculate_technical_indicators(data)
             
-            # 生成基于多指标共振的信号
-            for i in range(max(20, indicators['ma_20'].notna().sum()), len(data)):
+            # 修正起始索引：使用MA20有效数据的起始位置，但不低于20
+            ma_valid_count = indicators['ma_20'].notna().sum()
+            start_idx = max(20, len(data) - 100) if ma_valid_count >= 20 else max(20, ma_valid_count)
+            signal_count = 0
+            buy_count = 0
+            sell_count = 0
+            
+            logger.info(f"开始生成信号 - 数据量：{len(data)}, 有效 MA20 数据：{ma_valid_count}, 起始索引：{start_idx}")
+            
+            checked_count = 0
+            no_signal_reasons = {'ma_trend': 0, 'macd': 0, 'rsi': 0, 'boll': 0, 'low_confidence': 0}
+            
+            for i in range(start_idx, len(data)):
                 current_idx = data.index[i]
                 current_price = data['close'].iloc[i]
+                checked_count += 1
                 
                 # 获取当前指标值
                 current_ma = indicators['ma_20'].iloc[i]
@@ -119,6 +132,7 @@ class AdaptivePandasStrategy(BaseStrategy):
                 current_macd = indicators['macd'].iloc[i]
                 
                 if pd.isna([current_ma, current_atr, current_rsi]).any():
+                    logger.debug(f"跳过 index={i} - 指标值为 NaN")
                     continue
                 
                 # 计算自适应止损止盈
@@ -131,7 +145,9 @@ class AdaptivePandasStrategy(BaseStrategy):
                 signal_conditions = self._evaluate_signal_conditions(
                     data.iloc[:i+1], indicators.iloc[:i+1], i)
                 
+                signal_count += 1
                 if signal_conditions['buy_signal']:
+                    buy_count += 1
                     confidence = min(signal_conditions['confidence'] * 1.2, 0.95)
                     signals.append(StrategySignal(
                         timestamp=current_idx,
@@ -139,12 +155,14 @@ class AdaptivePandasStrategy(BaseStrategy):
                         price=current_price,
                         confidence=confidence,
                         strategy_name=self.name,
-                        reason=f"多指标共振买入: {signal_conditions['reason']}",
+                        reason=f"多指标共振买入：{signal_conditions['reason']}",
                         stop_loss=current_price * (1 - stop_loss_pct),
                         take_profit=current_price * (1 + take_profit_pct)
                     ))
+                    logger.info(f"生成买入信号 - index={i}, price={current_price:.2f}, confidence={confidence:.2f}, reason={signal_conditions['reason']}")
                     
                 elif signal_conditions['sell_signal']:
+                    sell_count += 1
                     confidence = min(signal_conditions['confidence'] * 1.2, 0.95)
                     signals.append(StrategySignal(
                         timestamp=current_idx,
@@ -152,10 +170,13 @@ class AdaptivePandasStrategy(BaseStrategy):
                         price=current_price,
                         confidence=confidence,
                         strategy_name=self.name,
-                        reason=f"多指标共振卖出: {signal_conditions['reason']}",
+                        reason=f"多指标共振卖出：{signal_conditions['reason']}",
                         stop_loss=current_price * (1 + stop_loss_pct),
                         take_profit=current_price * (1 - take_profit_pct)
                     ))
+                    logger.info(f"生成卖出信号 - index={i}, price={current_price:.2f}, confidence={confidence:.2f}, reason={signal_conditions['reason']}")
+            
+            logger.info(f"信号生成完成 - 检查了{checked_count}个数据点，生成{len(signals)}个信号（买入：{buy_count}, 卖出：{sell_count}）")
             
             self._calculation_history.append({
                 'timestamp': datetime.now(),
@@ -167,9 +188,11 @@ class AdaptivePandasStrategy(BaseStrategy):
             # 发布信号生成事件
             if signals:
                 self._trigger_signal_generated_event(signals)
+            else:
+                logger.warning(f"未生成任何信号 - 可能原因：1.信号条件过于严格 2.市场无明显趋势 3.指标值不满足阈值")
             
         except Exception as e:
-            logger.error(f"pandas自适应策略信号生成失败: {e}")
+            logger.error(f"pandas 自适应策略信号生成失败：{e}", exc_info=True)
             
         return signals
 
@@ -353,8 +376,8 @@ class AdaptivePandasStrategy(BaseStrategy):
                 sell_conditions.append("布林带突破")
                 confidence_score += 0.15
             
-            # 信号阈值
-            signal_threshold = 0.6
+            # 信号阈值 - 降低阈值以产生更多信号用于回测
+            signal_threshold = 0.4
             
             buy_signal = len(buy_conditions) >= 2 and confidence_score >= signal_threshold
             sell_signal = len(sell_conditions) >= 2 and confidence_score >= signal_threshold

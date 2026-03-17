@@ -1678,6 +1678,12 @@ class DatabaseService(BaseService):
             # 创建策略信号表
             self._create_strategy_signals_table()
 
+            # 创建模型训练相关表
+            self._create_model_training_tables()
+
+            # 创建预测跟踪相关表
+            self._create_prediction_tracking_tables()
+
             # 注意：订单表现在由多资产支持系统管理，不再在此处创建
             # 订单表会根据资产类型路由到对应的数据库中
             # 请使用 scripts/init_order_databases_auto.py 初始化订单数据库
@@ -1918,6 +1924,152 @@ class DatabaseService(BaseService):
         
         with self.get_connection("strategy_sqlite") as conn:
             for index_sql in indices:
+                conn.execute(index_sql)
+
+    def _create_model_training_tables(self) -> None:
+        """创建模型训练相关表"""
+        # 训练任务表
+        sql_tasks = """
+        CREATE TABLE IF NOT EXISTS training_tasks (
+            task_id TEXT PRIMARY KEY,
+            task_name TEXT NOT NULL,
+            task_description TEXT,
+            model_type TEXT NOT NULL,
+            status TEXT NOT NULL,
+            config_json TEXT NOT NULL,
+            progress REAL DEFAULT 0.0,
+            error_message TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            started_at TIMESTAMP,
+            completed_at TIMESTAMP
+        )
+        """
+        
+        with self.get_connection("strategy_sqlite") as conn:
+            conn.execute(sql_tasks)
+            
+        indices_tasks = [
+            "CREATE INDEX IF NOT EXISTS idx_training_tasks_status ON training_tasks(status)",
+            "CREATE INDEX IF NOT EXISTS idx_training_tasks_model_type ON training_tasks(model_type)",
+            "CREATE INDEX IF NOT EXISTS idx_training_tasks_created_at ON training_tasks(created_at)"
+        ]
+        
+        with self.get_connection("strategy_sqlite") as conn:
+            for index_sql in indices_tasks:
+                conn.execute(index_sql)
+        
+        # 模型版本表
+        sql_versions = """
+        CREATE TABLE IF NOT EXISTS model_versions (
+            version_id TEXT PRIMARY KEY,
+            version_number TEXT NOT NULL UNIQUE,
+            model_type TEXT NOT NULL,
+            model_file_path TEXT NOT NULL,
+            training_task_id TEXT,
+            performance_metrics_json TEXT,
+            config_json TEXT,
+            is_current INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_by TEXT,
+            description TEXT,
+            FOREIGN KEY (training_task_id) REFERENCES training_tasks(task_id)
+        )
+        """
+        
+        with self.get_connection("strategy_sqlite") as conn:
+            conn.execute(sql_versions)
+            
+        indices_versions = [
+            "CREATE INDEX IF NOT EXISTS idx_model_versions_task_id ON model_versions(training_task_id)",
+            "CREATE INDEX IF NOT EXISTS idx_model_versions_is_current ON model_versions(is_current)"
+        ]
+        
+        with self.get_connection("strategy_sqlite") as conn:
+            for index_sql in indices_versions:
+                conn.execute(index_sql)
+        
+        # 训练日志表
+        sql_logs = """
+        CREATE TABLE IF NOT EXISTS training_logs (
+            log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            training_task_id TEXT NOT NULL,
+            log_level TEXT NOT NULL,
+            log_message TEXT NOT NULL,
+            log_data_json TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (training_task_id) REFERENCES training_tasks(task_id)
+        )
+        """
+        
+        with self.get_connection("strategy_sqlite") as conn:
+            conn.execute(sql_logs)
+            
+        indices_logs = [
+            "CREATE INDEX IF NOT EXISTS idx_training_logs_task_id ON training_logs(training_task_id)",
+            "CREATE INDEX IF NOT EXISTS idx_training_logs_level ON training_logs(log_level)"
+        ]
+        
+        with self.get_connection("strategy_sqlite") as conn:
+            for index_sql in indices_logs:
+                conn.execute(index_sql)
+
+    def _create_prediction_tracking_tables(self) -> None:
+        """创建预测跟踪相关表"""
+        sql_prediction_records = """
+        CREATE TABLE IF NOT EXISTS prediction_records (
+            record_id TEXT PRIMARY KEY,
+            model_version_id TEXT NOT NULL,
+            prediction_type TEXT NOT NULL,
+            prediction_time TIMESTAMP NOT NULL,
+            prediction_result_json TEXT NOT NULL,
+            confidence REAL NOT NULL,
+            actual_result_json TEXT,
+            accuracy REAL,
+            calculated_at TIMESTAMP,
+            FOREIGN KEY (model_version_id) REFERENCES model_versions(version_id)
+        )
+        """
+
+        with self.get_connection("strategy_sqlite") as conn:
+            conn.execute(sql_prediction_records)
+
+        indices_prediction_records = [
+            "CREATE INDEX IF NOT EXISTS idx_prediction_records_model_version ON prediction_records(model_version_id)",
+            "CREATE INDEX IF NOT EXISTS idx_prediction_records_type_time ON prediction_records(prediction_type, prediction_time)",
+            "CREATE INDEX IF NOT EXISTS idx_prediction_records_time ON prediction_records(prediction_time)"
+        ]
+
+        with self.get_connection("strategy_sqlite") as conn:
+            for index_sql in indices_prediction_records:
+                conn.execute(index_sql)
+
+        sql_accuracy_statistics = """
+        CREATE TABLE IF NOT EXISTS accuracy_statistics (
+            stat_id TEXT PRIMARY KEY,
+            model_version_id TEXT NOT NULL,
+            prediction_type TEXT NOT NULL,
+            time_period TEXT NOT NULL,
+            total_predictions INTEGER DEFAULT 0,
+            correct_predictions INTEGER DEFAULT 0,
+            accuracy_rate REAL DEFAULT 0.0,
+            avg_confidence REAL DEFAULT 0.0,
+            calculated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (model_version_id) REFERENCES model_versions(version_id),
+            UNIQUE(model_version_id, prediction_type, time_period)
+        )
+        """
+
+        with self.get_connection("strategy_sqlite") as conn:
+            conn.execute(sql_accuracy_statistics)
+
+        indices_accuracy_statistics = [
+            "CREATE INDEX IF NOT EXISTS idx_accuracy_statistics_model_version ON accuracy_statistics(model_version_id)",
+            "CREATE INDEX IF NOT EXISTS idx_accuracy_statistics_type_period ON accuracy_statistics(prediction_type, time_period)"
+        ]
+
+        with self.get_connection("strategy_sqlite") as conn:
+            for index_sql in indices_accuracy_statistics:
                 conn.execute(index_sql)
 
     def _create_ai_strategy_table(self) -> None:
@@ -3688,7 +3840,7 @@ class DatabaseService(BaseService):
                     metadata.get('author', ''),
                     metadata.get('description', ''),
                     metadata.get('category', ''),
-                    json.dumps(metadata.get('metadata', {})),
+                    json.dumps(metadata),  # 存储完整的metadata字典
                     f"{strategy_class.__module__}.{strategy_class.__name__}"
                 ))
                 conn.commit()
@@ -3712,7 +3864,9 @@ class DatabaseService(BaseService):
             策略信息字典
         """
         try:
-            sql = "SELECT * FROM strategies WHERE id = ?"
+            sql = """SELECT id, name, strategy_type, version, author, description,
+                           category, created_at, updated_at, is_active, metadata, class_path
+                    FROM strategies WHERE id = ?"""
 
             with self.get_connection("strategy_sqlite") as conn:
                 cursor = conn.cursor()
@@ -3720,19 +3874,20 @@ class DatabaseService(BaseService):
                 result = cursor.fetchone()
 
             if result:
+                result_dict = dict(result)
                 return {
-                    'id': result[0],
-                    'name': result[1],
-                    'strategy_type': result[2],
-                    'version': result[3],
-                    'author': result[4],
-                    'description': result[5],
-                    'category': result[6],
-                    'created_at': result[7],
-                    'updated_at': result[8],
-                    'is_active': result[9],
-                    'metadata': self._safe_json_parse(result[10]),
-                    'class_path': result[11]
+                    'id': result_dict['id'],
+                    'name': result_dict['name'],
+                    'strategy_type': result_dict['strategy_type'],
+                    'version': result_dict['version'],
+                    'author': result_dict['author'],
+                    'description': result_dict['description'],
+                    'category': result_dict['category'],
+                    'created_at': result_dict['created_at'],
+                    'updated_at': result_dict['updated_at'],
+                    'is_active': result_dict['is_active'],
+                    'metadata': self._safe_json_parse(result_dict['metadata']),
+                    'class_path': result_dict['class_path']
                 }
             return None
 
@@ -3752,7 +3907,9 @@ class DatabaseService(BaseService):
             策略列表
         """
         try:
-            sql = "SELECT * FROM strategies WHERE 1=1"
+            sql = """SELECT id, name, strategy_type, version, author, description,
+                           category, created_at, updated_at, is_active, metadata, class_path
+                    FROM strategies WHERE 1=1"""
             params = []
 
             if strategy_type:
@@ -3772,19 +3929,20 @@ class DatabaseService(BaseService):
 
             strategies = []
             for result in results:
+                result_dict = dict(result)
                 strategies.append({
-                    'id': result[0],
-                    'name': result[1],
-                    'strategy_type': result[2],
-                    'version': result[3],
-                    'author': result[4],
-                    'description': result[5],
-                    'category': result[6],
-                    'created_at': result[7],
-                    'updated_at': result[8],
-                    'is_active': result[9],
-                    'metadata': self._safe_json_parse(result[10]),
-                    'class_path': result[11]
+                    'id': result_dict['id'],
+                    'name': result_dict['name'],
+                    'strategy_type': result_dict['strategy_type'],
+                    'version': result_dict['version'],
+                    'author': result_dict['author'],
+                    'description': result_dict['description'],
+                    'category': result_dict['category'],
+                    'created_at': result_dict['created_at'],
+                    'updated_at': result_dict['updated_at'],
+                    'is_active': result_dict['is_active'],
+                    'metadata': self._safe_json_parse(result_dict['metadata']),
+                    'class_path': result_dict['class_path']
                 })
 
             return strategies
@@ -4066,7 +4224,9 @@ class DatabaseService(BaseService):
             策略数据列表
         """
         try:
-            sql = "SELECT * FROM strategies WHERE 1=1"
+            sql = """SELECT id, name, strategy_type, version, author, description,
+                           category, created_at, updated_at, is_active, metadata, class_path
+                    FROM strategies WHERE 1=1"""
             params = []
 
             if strategy_ids:
@@ -4081,19 +4241,20 @@ class DatabaseService(BaseService):
 
             strategies = []
             for result in results:
+                result_dict = dict(result)
                 strategies.append({
-                    'id': result[0],
-                    'name': result[1],
-                    'strategy_type': result[2],
-                    'version': result[3],
-                    'author': result[4],
-                    'description': result[5],
-                    'category': result[6],
-                    'created_at': result[7],
-                    'updated_at': result[8],
-                    'is_active': result[9],
-                    'metadata': self._safe_json_parse(result[10]),
-                    'class_path': result[11]
+                    'id': result_dict['id'],
+                    'name': result_dict['name'],
+                    'strategy_type': result_dict['strategy_type'],
+                    'version': result_dict['version'],
+                    'author': result_dict['author'],
+                    'description': result_dict['description'],
+                    'category': result_dict['category'],
+                    'created_at': result_dict['created_at'],
+                    'updated_at': result_dict['updated_at'],
+                    'is_active': result_dict['is_active'],
+                    'metadata': self._safe_json_parse(result_dict['metadata']),
+                    'class_path': result_dict['class_path']
                 })
 
             logger.info(f"策略导出成功: {len(strategies)}个策略")
@@ -4205,10 +4366,16 @@ class DatabaseService(BaseService):
         if not value_str:
             return default
 
+        # 快速检查：如果是类路径字符串（包含点号但不是JSON对象），直接返回默认值
+        # 这避免了对策略类路径字符串产生不必要的警告
+        if '.' in value_str and not value_str.startswith(('{', '[', '"')):
+            # 可能是类路径字符串，如 'core.strategy.builtin_strategies.MAStrategy'
+            if value_str.count('.') >= 1 and not value_str.startswith('{'):
+                return default
+
         try:
             return json.loads(value_str)
-        except (json.JSONDecodeError, TypeError) as e:
-            logger.warning(f"JSON解析失败: {e}, 原始值: {repr(value)[:100]}")
+        except (json.JSONDecodeError, TypeError):
             return default
 
     def _serialize_value(self, value: Any) -> str:

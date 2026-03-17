@@ -355,10 +355,13 @@ class AnalysisThread(QThread):
             pattern['confidence'] = max(0, min(pattern['confidence'], 1))
 
         # 成功率延迟到批量处理，不再在单个形态验证中查询
-        # 使用预设默认值
+        # 使用预设默认值（如果已有值则保留，用于一键分析场景）
         if 'success_rate' not in pattern or pattern.get('success_rate') is None:
-            pattern['success_rate'] = None
-        pattern['success_rate_source'] = 'no_data'
+            if pattern.get('analysis_type') == 'one_click':
+                pattern['success_rate'] = 0.7  # 一键分析使用默认值
+            else:
+                pattern['success_rate'] = None
+        pattern['success_rate_source'] = 'default' if pattern.get('analysis_type') == 'one_click' else 'no_data'
 
         if 'risk_level' not in pattern or pattern.get('risk_level') is None:
             pattern['risk_level'] = 'medium'
@@ -447,6 +450,8 @@ class AnalysisThread(QThread):
                 pattern_manager.cleanup_old_records(days=90, min_samples=20)
             except Exception as e:
                 logger.debug(f"自动清理历史数据失败: {e}")
+            
+            QTimer.singleShot(100, self._async_settle_pattern_results)
                     
             logger.debug(f"批量处理完成：查询{len(unique_patterns)}个形态统计，记录{len(records_to_insert)}条数据")
             
@@ -913,7 +918,7 @@ class ProfessionalScanThread(QThread):
                     'start_date': pattern_dict.get('datetime', pattern_dict.get('start_date', '')),
                     'end_date': pattern_dict.get('end_date', ''),
                     'price_change': self.pattern_tab._calculate_price_change() if hasattr(self, 'pattern_tab') and self.pattern_tab else "+0.00%",
-                    'target_price': self.pattern_tab._calculate_target_price(pattern_dict.get('pattern_name', '')) if hasattr(self, 'pattern_tab') and self.pattern_tab else "N/A",
+                    'target_price': self.pattern_tab._calculate_target_price(pattern_dict.get('pattern_name', ''), pattern_dict.get('signal')) if hasattr(self, 'pattern_tab') and self.pattern_tab else "N/A",
                     'recommendation': self.pattern_tab._get_recommendation(pattern_dict.get('pattern_name', ''), pattern_dict.get('confidence', 0.5)) if hasattr(self, 'pattern_tab') and self.pattern_tab else "继续观察",
                     'real_data': True,
                     # 主图显示需要的字段
@@ -2614,29 +2619,26 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
             return {'error': str(e)}
 
     def _detect_all_patterns(self):
-        """检测所有形态 - 使用真实算法"""
+        """检测所有形态 - 仅使用真实算法"""
         try:
-            # 首先尝试使用真实的形态识别算法
             logger.info("使用真实形态识别算法...")
 
             if hasattr(self, 'current_kdata') and self.current_kdata is not None and not self.current_kdata.empty:
-                # 使用真实的形态识别器
                 real_patterns = self._detect_patterns_with_real_algorithm()
                 if real_patterns:
-                    logger.info(f" 真实算法检测到 {len(real_patterns)} 个形态")
+                    logger.info(f"真实算法检测到 {len(real_patterns)} 个形态")
                     return real_patterns
                 else:
-                    logger.warning("真实算法未检测到形态，使用模拟数据")
+                    logger.warning("真实算法未检测到任何形态，返回空结果")
+                    return []
             else:
-                logger.warning("无有效K线数据，使用模拟数据")
-
-            # 如果真实算法没有结果，回退到模拟数据（但要标记）
-            return self._generate_simulated_patterns_as_fallback()
+                logger.error("无有效K线数据，无法进行形态识别")
+                return []
 
         except Exception as e:
-            logger.error(f" 形态检测失败: {e}")
-            # 出错时使用模拟数据作为后备
-            return self._generate_simulated_patterns_as_fallback()
+            logger.error(f"形态检测失败: {e}")
+            logger.error(traceback.format_exc())
+            return []
 
     def _detect_patterns_with_real_algorithm(self):
         """使用真实的形态识别算法 - 专业扫描版本（深度扫描）"""
@@ -2690,7 +2692,7 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
                     'start_date': pattern_dict.get('datetime', self._get_pattern_start_date()),
                     'end_date': self._get_pattern_end_date(),
                     'price_change': self._calculate_price_change(),
-                    'target_price': self._calculate_target_price(pattern_dict.get('pattern_name', '')),
+                    'target_price': self._calculate_target_price(pattern_dict.get('pattern_name', ''), pattern_dict.get('signal')),
                     'recommendation': self._get_recommendation(pattern_dict.get('pattern_name', ''), pattern_dict.get('confidence', 0.5)),
                     'real_data': True,  # 标记为真实数据
                     'analysis_type': 'professional',  # 专业扫描标识
@@ -3127,7 +3129,7 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
             return f"{((end_price - start_price) / start_price * 100):+.2f}%"
         return "+0.00%"
 
-    def _calculate_target_price(self, pattern_name):
+    def _calculate_target_price(self, pattern_name, signal=None):
         """计算目标价位"""
         kdata = None
         if hasattr(self, 'pattern_tab') and self.pattern_tab is not None and hasattr(self.pattern_tab, 'current_kdata') and self.pattern_tab.current_kdata is not None:
@@ -3140,12 +3142,20 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
         
         if kdata is not None and hasattr(kdata, 'close') and len(kdata) > 0:
             current_price = kdata['close'].iloc[-1]
-            if '顶' in pattern_name or '上吊' in pattern_name:
+            
+            if signal is not None:
+                if signal == 'buy' or signal == 'bullish':
+                    target = current_price * 1.05
+                elif signal == 'sell' or signal == 'bearish':
+                    target = current_price * 0.95
+                else:
+                    target = current_price
+            elif '顶' in pattern_name or '上吊' in pattern_name:
                 target = current_price * 0.95
             elif '底' in pattern_name or '锤子' in pattern_name:
                 target = current_price * 1.05
             else:
-                target = current_price * np.random.uniform(0.98, 1.02)
+                target = current_price
             return f"{target:.2f}"
         return "N/A"
 
@@ -3183,12 +3193,19 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
                 price = pattern.get('price', 0.0)
                 
                 trigger_date = None
+                future_price = None
                 if kdata is not None and index < len(kdata):
                     try:
                         if hasattr(kdata.index, 'strftime'):
                             trigger_date = kdata.index[index].strftime('%Y-%m-%d')
+                            future_index = index + 5
+                            if future_index < len(kdata):
+                                future_price = float(kdata['close'].iloc[future_index])
                         elif isinstance(kdata.index[index], str):
                             trigger_date = str(kdata.index[index])[:10]
+                            future_index = index + 5
+                            if future_index < len(kdata):
+                                future_price = float(kdata['close'].iloc[future_index])
                     except:
                         pass
                 
@@ -3199,7 +3216,8 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
                         'signal_type': signal_type,
                         'confidence': confidence,
                         'trigger_date': trigger_date,
-                        'trigger_price': price
+                        'trigger_price': price,
+                        'future_price': future_price
                     })
             
             unique_patterns = list(set([p.get('pattern_name', '') for p in patterns if p.get('pattern_name')]))
@@ -3231,11 +3249,24 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
                 pattern_manager.cleanup_old_records(days=90, min_samples=20)
             except Exception as e:
                 logger.debug(f"自动清理历史数据失败: {e}")
+            
+            QTimer.singleShot(100, self._async_settle_pattern_results)
                     
             logger.debug(f"批量处理完成：查询{len(unique_patterns)}个形态统计，记录{len(records_to_insert)}条数据")
             
         except Exception as e:
             logger.debug(f"批量处理历史数据失败（不影响主流程）: {e}")
+
+    def _async_settle_pattern_results(self):
+        """异步结算待处理结果"""
+        try:
+            from analysis.pattern_manager import PatternManager
+            pattern_manager = PatternManager.get_instance()
+            result = pattern_manager.settle_pending_results(days=5, max_settle=500)
+            if result.get('settled_count', 0) > 0:
+                logger.info(f"异步结算完成: 成功{result['settled_count']}条")
+        except Exception as e:
+            logger.debug(f"异步结算失败: {e}")
 
     def _connect_main_chart_signals(self):
         """连接主图显示信号"""
@@ -3362,9 +3393,17 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
         dialog = QDialog(self)
         dialog.setWindowTitle("形态统计分析")
         dialog.setModal(True)
-        dialog.resize(800, 600)
+        dialog.resize(900, 650)
 
         layout = QVBoxLayout(dialog)
+
+        header_label = QLabel("📊 形态历史数据统计分析")
+        header_label.setStyleSheet("font-size: 14px; font-weight: bold; padding: 5px;")
+        layout.addWidget(header_label)
+
+        time_range_label = QLabel("统计范围: 最近90天 | 数据来源: 历史形态识别记录")
+        time_range_label.setStyleSheet("color: #666; padding: 3px;")
+        layout.addWidget(time_range_label)
 
         loading_label = QLabel("正在加载数据...")
         loading_label.setAlignment(Qt.AlignCenter)
@@ -3375,24 +3414,86 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
             from analysis.pattern_manager import PatternManager
             pattern_manager = PatternManager.get_instance()
 
-            summary = pattern_manager.get_training_data_summary()
+            summary = pattern_manager.get_training_data_summary(days=90)
+            logger.info(f"形态统计数据: {summary}")
 
             layout.removeWidget(loading_label)
             loading_label.deleteLater()
 
             info_group = QGroupBox("数据概览")
             info_layout = QHBoxLayout(info_group)
-            info_layout.addWidget(QLabel(f"总记录数: {summary.get('total_records', 0)}"))
-            info_layout.addWidget(QLabel(f"平均置信度: {summary.get('average_confidence', 0):.1%}"))
-            info_layout.addWidget(QLabel(f"可用于训练: {summary.get('valid_for_training', 0)} 种形态"))
+            avg_conf_val = summary.get('average_confidence', 0)
+            avg_conf_display = f"{avg_conf_val * 100:.1f}%" if avg_conf_val <= 1.0 else f"{avg_conf_val:.1f}%"
+            pending = summary.get('pending_records', 0)
+            info_layout.addWidget(QLabel(f"📈 总记录数: {summary.get('total_records', 0)}"))
+            info_layout.addWidget(QLabel(f"📊 有效记录: {summary.get('valid_records', 0)}"))
+            info_layout.addWidget(QLabel(f"⏳ 待结算: {pending}"))
+            info_layout.addWidget(QLabel(f"📉 平均置信度: {avg_conf_display}"))
+            info_layout.addWidget(QLabel(f"✅ 可用于训练: {summary.get('valid_for_training', 0)} 种形态"))
             layout.addWidget(info_group)
 
+            signal_dist = summary.get('signal_distribution', {})
+            if signal_dist:
+                signal_group = QGroupBox("📊 信号类型分布")
+                signal_layout = QHBoxLayout(signal_group)
+                signal_layout.addWidget(QLabel(f"📈 买入: {signal_dist.get('buy', 0)}"))
+                signal_layout.addWidget(QLabel(f"📉 卖出: {signal_dist.get('sell', 0)}"))
+                signal_layout.addWidget(QLabel(f"➡️ 中性: {signal_dist.get('neutral', 0)}"))
+                layout.addWidget(signal_group)
+
+            return_dist = summary.get('return_distribution', {})
+            if return_dist:
+                return_group = QGroupBox("📈 收益率分布")
+                return_layout = QHBoxLayout(return_group)
+                return_layout.setSpacing(10)
+                
+                # 涨幅（绿色）
+                up_labels = [
+                    (f"🟢 涨幅>10%: {return_dist.get('涨幅>10%', 0)}", "#2e7d32"),
+                    (f"🟢 涨幅 5%-10%: {return_dist.get('涨幅 5%-10%', 0)}", "#388e3c"),
+                    (f"🟢 涨幅 0%-5%: {return_dist.get('涨幅 0%-5%', 0)}", "#4caf50"),
+                ]
+                # 跌幅（红色）
+                down_labels = [
+                    (f"🔴 跌幅 0%-5%: {return_dist.get('跌幅 0%-5%', 0)}", "#d32f2f"),
+                    (f"🔴 跌幅 5%-10%: {return_dist.get('跌幅 5%-10%', 0)}", "#c62828"),
+                    (f"🔴 跌幅>10%: {return_dist.get('跌幅>10%', 0)}", "#b71c1c"),
+                ]
+                
+                for text, color in up_labels + down_labels:
+                    label = QLabel(text)
+                    label.setStyleSheet(f"color: {color}; font-weight: bold; font-size: 12px;")
+                    label.setMinimumWidth(120)
+                    return_layout.addWidget(label)
+                
+                layout.addWidget(return_group)
+            else:
+                logger.warning("收益率分布数据为空，不显示")
+
+            if pending > 0:
+                pending_hint = QLabel(f"💡 {pending}条记录待5天结算后变为有效，结算后即可参与统计")
+                pending_hint.setStyleSheet("color: #E65100; font-size: 11px; padding: 3px;")
+                layout.addWidget(pending_hint)
+
+            hint_label = QLabel("💡 提示: 样本数≥30的形态可用于AI训练")
+            hint_label.setStyleSheet("color: #666; font-size: 11px; padding: 3px;")
+            layout.addWidget(hint_label)
+
             table_label = QLabel("形态样本分布:")
+            table_label.setStyleSheet("font-weight: bold;")
             layout.addWidget(table_label)
+
+            from datetime import datetime
+            time_label = QLabel(f"数据查询时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | 统计范围：最近 90 天")
+            time_label.setStyleSheet("color: #666; font-size: 10px; padding: 3px;")
+            layout.addWidget(time_label)
 
             table = QTableWidget()
             table.setColumnCount(4)
             table.setHorizontalHeaderLabels(["形态名称", "样本数", "可用训练", "状态"])
+            table.setEditTriggers(QTableWidget.NoEditTriggers)
+            table.setSelectionBehavior(QTableWidget.SelectRows)
+            table.setSelectionMode(QTableWidget.SingleSelection)
             
             pattern_dist = summary.get('pattern_distribution', [])
             table.setRowCount(len(pattern_dist))
@@ -3401,44 +3502,87 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
                 pattern_name = item.get('pattern', '')
                 count = item.get('count', 0)
                 can_train = count >= 30
-                status = "✅ 可用" if can_train else "⚠️ 不足"
+                status = "✅ 可训练" if can_train else "⚠️ 不足"
                 
                 table.setItem(i, 0, QTableWidgetItem(pattern_name))
                 table.setItem(i, 1, QTableWidgetItem(str(count)))
                 table.setItem(i, 2, QTableWidgetItem("✅ 是" if can_train else "❌ 否"))
                 table.setItem(i, 3, QTableWidgetItem(status))
+                
+                if not can_train:
+                    for col in range(4):
+                        item = table.item(i, col)
+                        if item:
+                            item.setBackground(QColor(255, 255, 200))
             
             table.resizeColumnsToContents()
             layout.addWidget(table)
 
             recommendations = pattern_manager.get_recommended_patterns(top_n=5)
             if recommendations:
-                rec_label = QLabel("推荐形态 TOP5:")
+                rec_label = QLabel("🏆 推荐形态 TOP5 (基于历史效果综合评分):")
+                rec_label.setStyleSheet("font-weight: bold; margin-top: 10px;")
                 layout.addWidget(rec_label)
                 
                 rec_table = QTableWidget()
-                rec_table.setColumnCount(4)
-                rec_table.setHorizontalHeaderLabels(["形态", "成功率", "平均收益", "样本数"])
+                rec_table.setColumnCount(5)
+                rec_table.setHorizontalHeaderLabels(["形态", "成功率", "平均收益", "样本数", "综合评分"])
                 rec_table.setRowCount(len(recommendations))
+                rec_table.setEditTriggers(QTableWidget.NoEditTriggers)
+                rec_table.setSelectionBehavior(QTableWidget.SelectRows)
+                rec_table.setSelectionMode(QTableWidget.SingleSelection)
                 
                 for i, rec in enumerate(recommendations):
                     rec_table.setItem(i, 0, QTableWidgetItem(rec.get('pattern_type', '')))
                     rec_table.setItem(i, 1, QTableWidgetItem(f"{rec.get('success_rate', 0):.1f}%"))
-                    rec_table.setItem(i, 2, QTableWidgetItem(f"{rec.get('average_return', 0):+.1f}%"))
+                    rec_table.setItem(i, 2, QTableWidgetItem(f"{rec.get('average_return', 0):+.2f}%"))
                     rec_table.setItem(i, 3, QTableWidgetItem(str(rec.get('total_signals', 0))))
+                    rec_table.setItem(i, 4, QTableWidgetItem(f"{rec.get('recommendation_score', 0):.3f}"))
+                    
+                    for col in range(5):
+                        item = rec_table.item(i, col)
+                        if item and i == 0:
+                            item.setBackground(QColor(255, 230, 230))
                 
                 rec_table.resizeColumnsToContents()
                 layout.addWidget(rec_table)
 
+                rec_desc = QLabel("评分规则: 成功率×50% + 归一化收益×30% + 置信度×20%")
+                rec_desc.setStyleSheet("color: #888; font-size: 10px; padding: 3px;")
+                layout.addWidget(rec_desc)
+
         except Exception as e:
+            import traceback
             from PyQt5.QtWidgets import QMessageBox
-            QMessageBox.warning(dialog, "错误", f"加载统计数据失败: {str(e)}")
+            error_msg = f"加载统计数据失败: {str(e)}\n{traceback.format_exc()}"
+            logger.error(error_msg)
+            QMessageBox.warning(dialog, "错误", error_msg)
 
         close_btn = QPushButton("关闭")
         close_btn.clicked.connect(dialog.accept)
-        layout.addWidget(close_btn)
+        
+        refresh_btn = QPushButton("🔄 刷新数据")
+        refresh_btn.clicked.connect(lambda: self._refresh_statistics(dialog))
+        
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        btn_layout.addWidget(refresh_btn)
+        btn_layout.addWidget(close_btn)
+        layout.addLayout(btn_layout)
 
         dialog.exec_()
+
+    def _refresh_statistics(self, dialog):
+        """刷新统计数据"""
+        from PyQt5.QtWidgets import QMessageBox
+        try:
+            from analysis.pattern_manager import PatternManager
+            pattern_manager = PatternManager.get_instance()
+            pattern_manager.settle_pending_results(days=5, max_settle=500)
+            QMessageBox.information(dialog, "成功", "数据已刷新，请重新打开形态统计分析")
+            dialog.accept()
+        except Exception as e:
+            QMessageBox.warning(dialog, "错误", f"刷新失败: {str(e)}")
 
     def _professional_scan_async(self):
         """异步专业扫描 - 修复版"""

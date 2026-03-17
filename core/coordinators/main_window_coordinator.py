@@ -1726,18 +1726,38 @@ FactorWeave-Quant  2.0 (重构版本)
     def _on_batch_analysis(self) -> None:
         """批量分析"""
         try:
-            # from gui.dialogs.batch_analysis_dialog import BatchAnalysisDialog  # 已移除
-            logger.warning("批量分析对话框已移除，请使用主界面右侧面板的批量分析功能")
-            return
-
-            dialog = BatchAnalysisDialog(self._main_window)
-            self.center_dialog(dialog)
-            dialog.exec_()
+            # 尝试激活右侧面板的批量分析功能
+            right_panel = self._panels.get('right')
+            if right_panel and hasattr(right_panel, '_analysis_tools_panel'):
+                analysis_panel = right_panel._analysis_tools_panel
+                if hasattr(analysis_panel, 'start_enhanced_batch_analysis'):
+                    # 激活右侧面板并开始批量分析
+                    if hasattr(right_panel, 'show'):
+                        right_panel.show()
+                    if hasattr(analysis_panel, 'activate_batch_tab'):
+                        analysis_panel.activate_batch_tab()
+                    logger.info("已激活右侧面板批量分析功能")
+                    return
+            
+            # 如果面板方法不可用，尝试创建批量分析对话框
+            try:
+                from gui.dialogs.batch_analysis_dialog import BatchAnalysisDialog
+                dialog = BatchAnalysisDialog(self._main_window)
+                self.center_dialog(dialog)
+                dialog.exec_()
+            except ImportError:
+                # 对话框不存在，显示提示
+                QMessageBox.information(
+                    self._main_window, 
+                    "批量分析", 
+                    "请使用右侧面板的批量分析功能"
+                )
+                logger.info("请使用右侧面板的批量分析功能")
 
         except Exception as e:
             logger.error(f"批量分析失败: {e}")
             QMessageBox.critical(self._main_window, "错误",
-                                 f"打开批量分析对话框失败: {str(e)}")
+                                 f"打开批量分析功能失败: {str(e)}")
 
     def _on_intelligent_model_selection(self) -> None:
         """智能模型选择"""

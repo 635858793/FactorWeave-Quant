@@ -1100,7 +1100,7 @@ class StrategyDevelopmentWorkflow(QWidget):
             from gui.dialogs.enhanced_strategy_manager_dialog import EnhancedStrategyManagerDialog
             
             dialog = EnhancedStrategyManagerDialog(self)
-            dialog.tab_widget.setCurrentIndex(3)
+            dialog._switch_view('optimization')
             dialog.show()
             
         except Exception as e:

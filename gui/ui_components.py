@@ -489,11 +489,24 @@ class AnalysisToolsPanel(BaseAnalysisPanel, EnhancedBatchAnalysisMixin):
             stock_selection_layout.addStretch()
             batch_layout.addLayout(stock_selection_layout)
 
-            self.batch_stock_list = QListWidget()
-            self.batch_stock_list.setMinimumHeight(80)
-            self.batch_stock_list.setMaximumHeight(120)
-            self.batch_stock_list.setSelectionMode(QAbstractItemView.MultiSelection)
+            # 股票列表表格 - 多列网格形式展示所有股票
             batch_layout.addWidget(QLabel("股票列表:"))
+            self.batch_stock_list = QTableWidget(0, 10)  # 10 列，每行显示 10 只股票
+            self.batch_stock_list.setHorizontalHeaderLabels(
+                ["股票 1", "股票 2", "股票 3", "股票 4", "股票 5", "股票 6", "股票 7", "股票 8", "股票 9", "股票 10"]
+            )
+            self.batch_stock_list.setMinimumHeight(150)
+            self.batch_stock_list.setMaximumHeight(300)
+            self.batch_stock_list.setSelectionBehavior(QAbstractItemView.SelectItems)
+            self.batch_stock_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+            self.batch_stock_list.setEditTriggers(QAbstractItemView.NoEditTriggers)
+            self.batch_stock_list.setAlternatingRowColors(True)
+            
+            # 设置列宽 - 平均分配
+            header = self.batch_stock_list.horizontalHeader()
+            for i in range(10):
+                header.setSectionResizeMode(i, QHeaderView.Stretch)
+            
             batch_layout.addWidget(self.batch_stock_list)
 
             stock_buttons_layout = QHBoxLayout()
@@ -512,18 +525,24 @@ class AnalysisToolsPanel(BaseAnalysisPanel, EnhancedBatchAnalysisMixin):
             stock_buttons_layout.addStretch()
             batch_layout.addLayout(stock_buttons_layout)
 
+            # 策略列表表格 - 多列网格形式展示所有策略
             batch_layout.addWidget(QLabel("策略列表:"))
-            self.batch_strategy_list = QListWidget()
-            self.batch_strategy_list.setMinimumHeight(60)
-            self.batch_strategy_list.setMaximumHeight(80)
-            self.batch_strategy_list.setSelectionMode(QAbstractItemView.MultiSelection)
-
-            default_strategies = ["MA策略", "MACD策略", "RSI策略", "KDJ策略", "布林带策略"]
-            for strategy in default_strategies:
-                item = QListWidgetItem(strategy)
-                item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-                item.setCheckState(Qt.Checked)
-                self.batch_strategy_list.addItem(item)
+            self.batch_strategy_list = QTableWidget(0, 5)  # 5 列，每行显示 5 个策略
+            self.batch_strategy_list.setHorizontalHeaderLabels(
+                ["策略 1", "策略 2", "策略 3", "策略 4", "策略 5"]
+            )
+            self.batch_strategy_list.setMinimumHeight(120)
+            self.batch_strategy_list.setMaximumHeight(200)
+            self.batch_strategy_list.setSelectionBehavior(QAbstractItemView.SelectItems)
+            self.batch_strategy_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+            self.batch_strategy_list.setEditTriggers(QAbstractItemView.NoEditTriggers)
+            self.batch_strategy_list.setAlternatingRowColors(True)
+            
+            # 设置列宽 - 平均分配
+            strategy_header = self.batch_strategy_list.horizontalHeader()
+            for i in range(5):
+                strategy_header.setSectionResizeMode(i, QHeaderView.Stretch)
+            
             batch_layout.addWidget(self.batch_strategy_list)
 
             param_layout = QGridLayout()
@@ -705,6 +724,7 @@ class AnalysisToolsPanel(BaseAnalysisPanel, EnhancedBatchAnalysisMixin):
             parent_layout.addWidget(batch_group)
 
             self._load_default_batch_stocks()
+            self._load_default_batch_strategies()
 
             logger.info("批量分析UI组件创建完成")
 

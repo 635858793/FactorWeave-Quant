@@ -4,7 +4,7 @@ from loguru import logger
 策略数据库管理器
 
 提供策略的数据库存储、查询、修改、导入和删除功能
-使用系统统一组件，避免硬编码
+已统一接入DatabaseService，使用连接池管理
 """
 
 import sqlite3
@@ -16,39 +16,32 @@ from pathlib import Path
 import threading
 from contextlib import contextmanager
 
-# 使用系统统一组件
 from core.system_adapters import get_config, get_data_validator
 from .base_strategy import BaseStrategy, StrategySignal, StrategyParameter
 
 class StrategyDatabaseManager:
-    """策略数据库管理器"""
+    """策略数据库管理器 - 统一接入DatabaseService"""
 
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, database_service):
         """
         初始化数据库管理器
 
         Args:
-            db_path: 数据库路径，如果为None则使用配置文件中的路径
+            database_service: DatabaseService实例，用于连接池管理（必填）
         """
-        self.logger = logger.bind(module=__name__)
+        if database_service is None:
+            raise ValueError("database_service参数不能为None，StrategyDatabaseManager必须通过DatabaseService管理")
+
+        self.logger = logger.bind(module="strategy_database")
         self.config = get_config()
         self.validator = get_data_validator()
 
-        # 从配置获取数据库路径，避免硬编码
-        if db_path is None:
-            db_path = self.config.get('strategy_database', {}).get(
-                'path', 'data/factorweave_system.sqlite')
-
-        self.db_path = Path(db_path)
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # 线程锁确保数据库操作安全
+        self._database_service = database_service
+        self._pool_name = "strategy_sqlite"
         self._lock = threading.RLock()
 
-        # 初始化数据库
         self._init_database()
-
-        self.logger.info(f"策略数据库管理器初始化完成: {self.db_path}")
+        self.logger.info("策略数据库管理器初始化完成，使用DatabaseService连接池")
 
     def _init_database(self):
         """初始化数据库表结构"""
@@ -141,39 +134,33 @@ class StrategyDatabaseManager:
 
     @contextmanager
     def _get_connection(self, auto_commit=True):
-        """获取数据库连接的上下文管理器
-        
-        Args:
-            auto_commit: 是否自动提交事务
-        """
+        """获取数据库连接 - 通过DatabaseService连接池"""
         with self._lock:
-            conn = sqlite3.connect(str(self.db_path), timeout=30.0)
-            conn.row_factory = sqlite3.Row
-            try:
-                yield conn
-                if auto_commit:
-                    conn.commit()
-            except Exception as e:
-                conn.rollback()
-                raise
-            finally:
-                conn.close()
+            with self._database_service.get_connection(self._pool_name) as db_conn:
+                conn = db_conn.connection
+                conn.row_factory = sqlite3.Row
+                try:
+                    yield conn
+                    if auto_commit:
+                        conn.commit()
+                except Exception as e:
+                    conn.rollback()
+                    raise
                 
     @contextmanager
     def transaction(self):
-        """事务上下文管理器，用于执行多个相关的数据库操作"""
+        """事务上下文管理器 - 通过DatabaseService连接池"""
         with self._lock:
-            conn = sqlite3.connect(str(self.db_path), timeout=30.0)
-            conn.row_factory = sqlite3.Row
-            try:
-                yield conn
-                conn.commit()
-            except Exception as e:
-                conn.rollback()
-                logger.error(f"事务执行失败，已回滚: {e}")
-                raise
-            finally:
-                conn.close()
+            with self._database_service.get_connection(self._pool_name) as db_conn:
+                conn = db_conn.connection
+                conn.row_factory = sqlite3.Row
+                try:
+                    yield conn
+                    conn.commit()
+                except Exception as e:
+                    conn.rollback()
+                    logger.error(f"事务执行失败，已回滚: {e}")
+                    raise
 
     def register_strategy(self, strategy_class: type, metadata: Dict[str, Any]) -> int:
         """
@@ -262,7 +249,9 @@ class StrategyDatabaseManager:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    'SELECT * FROM strategies WHERE name = ? AND is_active = 1', (strategy_name,))
+                    '''SELECT id, name, strategy_type, version, author, description,
+                              category, created_at, updated_at, is_active, metadata, class_path
+                       FROM strategies WHERE name = ? AND is_active = 1''', (strategy_name,))
                 row = cursor.fetchone()
 
                 if row:
@@ -312,7 +301,9 @@ class StrategyDatabaseManager:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
 
-                query = 'SELECT * FROM strategies WHERE is_active = 1'
+                query = '''SELECT id, name, strategy_type, version, author, description,
+                              category, created_at, updated_at, is_active, metadata, class_path
+                           FROM strategies WHERE is_active = 1'''
                 params = []
 
                 if category:
@@ -570,12 +561,16 @@ class StrategyDatabaseManager:
                     # 导出指定策略
                     placeholders = ','.join(['?' for _ in strategy_names])
                     cursor.execute(f'''
-                        SELECT * FROM strategies WHERE name IN ({placeholders})
+                        SELECT id, name, strategy_type, version, author, description,
+                              category, created_at, updated_at, is_active, metadata, class_path
+                        FROM strategies WHERE name IN ({placeholders})
                     ''', strategy_names)
                 else:
                     # 导出所有策略
                     cursor.execute(
-                        'SELECT * FROM strategies WHERE is_active = 1')
+                        '''SELECT id, name, strategy_type, version, author, description,
+                              category, created_at, updated_at, is_active, metadata, class_path
+                           FROM strategies WHERE is_active = 1''')
 
                 strategies = cursor.fetchall()
                 exported_data = []
@@ -791,22 +786,36 @@ class StrategyDatabaseManager:
 _strategy_db_manager = None
 _db_lock = threading.Lock()
 
-def get_strategy_database_manager() -> StrategyDatabaseManager:
-    """获取策略数据库管理器单例"""
-    global _strategy_db_manager
-
-    if _strategy_db_manager is None:
-        with _db_lock:
-            if _strategy_db_manager is None:
-                _strategy_db_manager = StrategyDatabaseManager()
-
-    return _strategy_db_manager
-
-def initialize_strategy_database(db_path: Optional[str] = None) -> StrategyDatabaseManager:
-    """初始化策略数据库管理器"""
+def initialize_strategy_database(database_service) -> StrategyDatabaseManager:
+    """初始化策略数据库管理器
+    
+    Args:
+        database_service: DatabaseService实例（必填）
+    """
     global _strategy_db_manager
 
     with _db_lock:
-        _strategy_db_manager = StrategyDatabaseManager(db_path)
+        _strategy_db_manager = StrategyDatabaseManager(database_service=database_service)
+
+    return _strategy_db_manager
+
+
+def get_strategy_database_manager(database_service=None) -> StrategyDatabaseManager:
+    """获取策略数据库管理器单例
+    
+    Args:
+        database_service: DatabaseService实例（首次调用时必填，后续调用可为None）
+    """
+    global _strategy_db_manager
+
+    if _strategy_db_manager is not None:
+        return _strategy_db_manager
+    
+    if database_service is None:
+        raise ValueError("首次调用get_strategy_database_manager必须传入database_service")
+    
+    with _db_lock:
+        if _strategy_db_manager is None:
+            _strategy_db_manager = StrategyDatabaseManager(database_service=database_service)
 
     return _strategy_db_manager

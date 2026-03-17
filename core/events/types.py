@@ -83,6 +83,10 @@ class EventType(Enum):
     
     # 策略性能事件
     PERFORMANCE_UPDATED = "performance_updated"
+    
+    # 回测进度事件
+    BACKTEST_PROGRESS = "backtest_progress"
+    BACKTEST_COMPLETED = "backtest_completed"
 
 
 class EventFilter:
@@ -269,6 +273,40 @@ class OptimizationMetricsUpdatedEvent(BaseEvent):
         super().__post_init__()
         self.data.update({
             'metrics': self.metrics
+        })
+
+
+@dataclass
+class BacktestProgressEvent(BaseEvent):
+    """回测进度事件 - 实时更新使用"""
+    bar_index: int = 0  # 当前 K 线索引
+    total_bars: int = 0  # 总 K 线数
+    progress: float = 0.0  # 进度百分比 (0-1)
+    current_result: Dict[str, Any] = field(default_factory=dict)  # 当前结果
+    message: str = ""  # 状态消息
+    event_type: EventType = EventType.BACKTEST_PROGRESS
+    
+    def __post_init__(self):
+        super().__post_init__()
+        self.data.update({
+            'bar_index': self.bar_index,
+            'total_bars': self.total_bars,
+            'progress': self.progress,
+            'current_result': self.current_result,
+            'message': self.message
+        })
+
+
+@dataclass
+class BacktestCompletedEvent(BaseEvent):
+    """回测完成事件 - 最终结果"""
+    results: Dict[str, Any] = field(default_factory=dict)  # 完整回测结果
+    event_type: EventType = EventType.BACKTEST_COMPLETED
+    
+    def __post_init__(self):
+        super().__post_init__()
+        self.data.update({
+            'results': self.results
         })
 
 

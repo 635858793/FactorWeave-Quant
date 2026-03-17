@@ -87,6 +87,11 @@ class GPURendererConfig:
     # 内存管理
     gpu_memory_limit_mb: int = 512
     enable_memory_pool: bool = True
+    cleanup_threshold: float = 0.8  # 内存使用率超过80%时触发清理
+    
+    # 分辨率配置
+    default_width: int = 1920
+    default_height: int = 1080
 
 class WebGPUContext:
     """WebGPU上下文管理器"""
@@ -115,47 +120,32 @@ class WebGPUContext:
     def initialize(self) -> bool:
         """初始化WebGPU上下文"""
         try:
-            # 兼容性报告验证和标准化
             validated_report = self._validate_compatibility_report(self.compatibility_report)
             
-            if validated_report:
-                logger.info(f"兼容性报告验证通过: 性能评分={validated_report['score']}, 推荐后端={validated_report['backend']}")
-                
-                # 检查推荐后端是否为GPU类型
-                backend_value = validated_report['backend'].value if hasattr(validated_report['backend'], 'value') else validated_report['backend']
+            if validated_report and validated_report.get('score', 0) >= 60.0:
+                backend_value = validated_report['backend']
+                if hasattr(backend_value, 'value'):
+                    backend_value = backend_value.value
                 is_gpu_backend = backend_value in ['webgpu', 'webgl', 'native', 'basic']
                 
-                # 如果性能评分足够高且推荐后端是GPU后端，强制使用GPU后端
-                if validated_report['score'] >= 60.0 and is_gpu_backend:
-                    logger.info(f"高性能兼容性报告检测到，强制使用GPU后端初始化")
-                    
-                    # 优先尝试智能推荐后端
-                    if self._initialize_smart_backend(validated_report['backend']):
-                        logger.info(f"智能推荐后端初始化成功")
-                        return True
-                    else:
-                        logger.warning("智能推荐后端初始化失败，强制尝试GPU回退策略")
-                        # 即使智能推荐失败，也尝试所有GPU后端
-                        if self._initialize_gpu_fallback():
-                            logger.info(f"GPU回退初始化成功")
-                            return True
-                        else:
-                            logger.warning("所有GPU后端初始化失败，尝试配置后端")
-                            return self._initialize_by_preferred_backend()
-                else:
-                    # 兼容性报告评分较低，使用配置后端
-                    logger.info(f"兼容性报告评分较低，使用配置后端: {self.config.preferred_backend.value}")
-                    return self._initialize_by_preferred_backend()
-            else:
-                # 兼容性报告验证失败，尝试使用配置后端
-                logger.warning("⚠️ 兼容性报告无效，使用配置后端选择逻辑")
-                return self._initialize_by_preferred_backend()
+                if is_gpu_backend:
+                    return self._initialize_with_validation(validated_report)
+            
+            return self._initialize_by_preferred_backend()
                 
         except Exception as e:
             logger.error(f"WebGPU上下文初始化失败: {e}")
-            # 最后的回退策略
-            logger.warning("所有初始化策略失败，使用CPU回退")
             return self._initialize_cpu_fallback()
+    
+    def _initialize_with_validation(self, validated_report: dict) -> bool:
+        """基于验证后的报告初始化"""
+        if self._initialize_smart_backend(validated_report['backend']):
+            return True
+        
+        if self._initialize_gpu_fallback():
+            return True
+        
+        return self._initialize_by_preferred_backend()
     
     def _validate_compatibility_report(self, report):
         """验证和标准化兼容性报告"""
@@ -348,8 +338,8 @@ class WebGPUContext:
                     self.device = "ModernGL 高性能GPU上下文"
                 
                 # 设置高性能渲染参数
-                self.width = 1920  # 高分辨率支持
-                self.height = 1080
+                self.width = self.config.default_width
+                self.height = self.config.default_height
                 
                 # 创建高性能framebuffer
                 self.color_texture = self.context.texture((self.width, self.height), 4)
@@ -394,8 +384,8 @@ class WebGPUContext:
             self.device = "ModernGL 高性能CPU模拟 (NVIDIA GeForce GTX 1660级别)"
             
             # 高分辨率支持
-            self.width = 1920
-            self.height = 1080
+            self.width = self.config.default_width
+            self.height = self.config.default_height
             
             # 创建高性能模拟着色器
             self._create_high_performance_shaders()
@@ -461,19 +451,44 @@ class WebGPUContext:
     def _enable_high_performance_features(self):
         """启用高性能渲染特性"""
         try:
-            # 启用多线程渲染支持
             if hasattr(self.context, 'enable'):
                 self.context.enable(moderngl.BLEND)
             
-            # 设置高性能渲染参数
-            self.render_queue_size = 10000  # 大批次渲染支持
-            self.vertex_buffer_pool_size = 100  # 顶点缓冲区池
-            self.enable_gpu_caching = True  # 启用GPU缓存
+            self.render_queue_size = 10000
+            self.vertex_buffer_pool_size = 100
+            self.enable_gpu_caching = True
             
             logger.debug("高性能渲染特性启用成功")
             
         except Exception as e:
             logger.warning(f"高性能特性启用失败: {e}")
+    
+    def set_resolution(self, width: int, height: int) -> bool:
+        """动态设置分辨率并重建framebuffer"""
+        if width <= 0 or height <= 0:
+            logger.warning(f"无效的分辨率: {width}x{height}")
+            return False
+        
+        try:
+            self.width = width
+            self.height = height
+            
+            if hasattr(self.context, 'texture') and hasattr(self.context, 'framebuffer'):
+                self.color_texture = self.context.texture((width, height), 4)
+                self.depth_texture = self.context.depth_texture((width, height))
+                self.fbo = self.context.framebuffer(
+                    color_attachments=[self.color_texture],
+                    depth_attachment=self.depth_texture
+                )
+                logger.info(f"分辨率已更新: {width}x{height}")
+                return True
+            else:
+                logger.debug("上下文不支持动态分辨率更新")
+                return False
+                
+        except Exception as e:
+            logger.warning(f"分辨率更新失败: {e}")
+            return False
     
     def _initialize_opengl(self) -> bool:
         """初始化OpenGL后端"""
@@ -860,62 +875,65 @@ class GPUResourcePool:
         self.index_buffer_pool = {}
         self.shader_program_pool = {}
         
-        # 简化的资源池管理，无性能监控
         self.max_memory_usage = config.gpu_memory_limit_mb
         self.current_memory_usage = 0.0
+        self.cleanup_threshold = getattr(config, 'cleanup_threshold', 0.8)
+        
+        self._lock = threading.RLock()
         
         logger.info("GPU资源池初始化完成")
     
     def get_vertex_buffer(self, size: int, usage_type: str = "static") -> Optional[Any]:
-        """获取或创建顶点缓冲区"""
-        # 检查缓存中是否有合适的缓冲区
         cache_key = f"{size}_{usage_type}"
         
-        if cache_key in self.vertex_buffer_pool:
-            buffer_info = self.vertex_buffer_pool[cache_key]
-            if not buffer_info['in_use']:
-                buffer_info['in_use'] = True
-                buffer_info['last_used'] = time.time()
-                return buffer_info['buffer']
+        with self._lock:
+            if cache_key in self.vertex_buffer_pool:
+                buffer_info = self.vertex_buffer_pool[cache_key]
+                if not buffer_info['in_use']:
+                    buffer_info['in_use'] = True
+                    buffer_info['last_used'] = time.time()
+                    return buffer_info['buffer']
         
-        # 创建新缓冲区
-        try:
-            buffer = self._create_new_vertex_buffer(size, usage_type)
-            if buffer is not None:
-                self.vertex_buffer_pool[cache_key] = {
-                    'buffer': buffer,
-                    'size': size,
-                    'in_use': True,
-                    'created_time': time.time(),
-                    'last_used': time.time(),
-                    'usage_count': 1
-                }
-                
-                # 更新内存使用情况
-                self._update_memory_usage(size, 'allocate')
-                
-                logger.debug(f"创建新顶点缓冲区: {size}字节")
-                return buffer
-        except Exception as e:
-            logger.error(f"创建顶点缓冲区失败: {e}")
-            return None
+        buffer = self._create_new_vertex_buffer(size, usage_type)
+        if buffer is not None:
+            with self._lock:
+                if cache_key not in self.vertex_buffer_pool:
+                    self.vertex_buffer_pool[cache_key] = {
+                        'buffer': buffer,
+                        'size': size,
+                        'in_use': True,
+                        'created_time': time.time(),
+                        'last_used': time.time(),
+                        'usage_count': 1
+                    }
+                    self._update_memory_usage(size, 'allocate')
+                    logger.debug(f"创建新顶点缓冲区: {size}字节")
+                    return buffer
+                else:
+                    existing = self.vertex_buffer_pool[cache_key]
+                    if not existing['in_use']:
+                        existing['in_use'] = True
+                        existing['last_used'] = time.time()
+                        return existing['buffer']
+        
+        return None
     
     def release_vertex_buffer(self, buffer, size: int = None) -> bool:
         """释放顶点缓冲区（标记为可用）"""
-        # 查找并释放缓冲区
-        for cache_key, buffer_info in self.vertex_buffer_pool.items():
-            if buffer_info['buffer'] == buffer:
-                buffer_info['in_use'] = False
-                buffer_info['last_used'] = time.time()
-                buffer_info['usage_count'] += 1
-                
-                if size:
-                    self._update_memory_usage(size, 'free')
-                
-                logger.debug(f"释放顶点缓冲区: {cache_key}")
-                return True
-        
-        return False
+        with self._lock:
+            for cache_key, buffer_info in self.vertex_buffer_pool.items():
+                if buffer_info['buffer'] == buffer:
+                    buffer_info['in_use'] = False
+                    buffer_info['last_used'] = time.time()
+                    buffer_info['usage_count'] += 1
+                    
+                    if size:
+                        self._update_memory_usage(size, 'free')
+                    
+                    logger.debug(f"释放顶点缓冲区: {cache_key}")
+                    return True
+            
+            return False
     
     def _create_new_vertex_buffer(self, size: int, usage_type: str) -> Optional[Any]:
         """创建新的顶点缓冲区"""
@@ -963,73 +981,72 @@ class GPUResourcePool:
     
     def should_cleanup(self) -> bool:
         """判断是否需要清理资源"""
-        memory_ratio = self.current_memory_usage / self.max_memory_usage
-        return memory_ratio > self.cleanup_threshold
+        with self._lock:
+            memory_ratio = self.current_memory_usage / self.max_memory_usage
+            return memory_ratio > self.cleanup_threshold
     
     def cleanup_unused_resources(self, max_age_seconds: int = 300):
         """清理未使用的资源"""
-        current_time = time.time()
-        cleaned_count = 0
-        
-        # 清理旧的顶点缓冲区
-        for cache_key, buffer_info in list(self.vertex_buffer_pool.items()):
-            age = current_time - buffer_info['created_time']
-            unused_time = current_time - buffer_info['last_used']
+        with self._lock:
+            current_time = time.time()
+            cleaned_count = 0
+            buffers_to_clean = []
             
-            # 清理条件：超过最大年龄或超过5分钟未使用
-            if (not buffer_info['in_use'] and 
-                (age > max_age_seconds or unused_time > 300)):
+            for cache_key, buffer_info in list(self.vertex_buffer_pool.items()):
+                age = current_time - buffer_info['created_time']
+                unused_time = current_time - buffer_info['last_used']
                 
+                if (not buffer_info['in_use'] and 
+                    (age > max_age_seconds or unused_time > 300)):
+                    buffers_to_clean.append((cache_key, buffer_info))
+            
+            for cache_key, buffer_info in buffers_to_clean:
                 try:
-                    # 释放GPU资源
                     if hasattr(buffer_info['buffer'], 'delete'):
                         buffer_info['buffer'].delete()
                     
-                    # 更新内存统计
-                    self._update_memory_usage(buffer_info['size'], 'free')
+                    size_mb = buffer_info['size'] / (1024 * 1024)
+                    self.current_memory_usage = max(0, self.current_memory_usage - size_mb)
                     
-                    # 从池中移除
                     del self.vertex_buffer_pool[cache_key]
                     cleaned_count += 1
                     
                 except Exception as e:
                     logger.warning(f"清理缓冲区失败 {cache_key}: {e}")
-        
-        if cleaned_count > 0:
-            logger.info(f"清理了 {cleaned_count} 个未使用的GPU缓冲区")
-        
-        return cleaned_count
+            
+            if cleaned_count > 0:
+                logger.info(f"清理了 {cleaned_count} 个未使用的GPU缓冲区")
+            
+            return cleaned_count
     
     def get_pool_stats(self) -> Dict[str, Any]:
         """获取资源池统计信息"""
-        return {
-            'pool_size': len(self.vertex_buffer_pool),
-            'current_memory_usage_mb': self.current_memory_usage,
-            'memory_utilization_ratio': self.current_memory_usage / self.max_memory_usage,
-            'in_use_buffers': sum(1 for info in self.vertex_buffer_pool.values() if info['in_use']),
-            'unused_buffers': sum(1 for info in self.vertex_buffer_pool.values() if not info['in_use'])
-        }
+        with self._lock:
+            return {
+                'pool_size': len(self.vertex_buffer_pool),
+                'current_memory_usage_mb': self.current_memory_usage,
+                'memory_utilization_ratio': self.current_memory_usage / self.max_memory_usage if self.max_memory_usage > 0 else 0,
+                'in_use_buffers': sum(1 for info in self.vertex_buffer_pool.values() if info['in_use']),
+                'unused_buffers': sum(1 for info in self.vertex_buffer_pool.values() if not info['in_use'])
+            }
 
 class WebGPURenderer(BaseChartRenderer):
     """真实的WebGPU渲染器"""
     
     def __init__(self, config: GPURendererConfig = None, enable_logging: bool = True, 
                  enable_performance_monitoring: bool = True):
-        # 初始化父类
         super().__init__(enable_logging, enable_performance_monitoring)
         
         self.config = config or GPURendererConfig()
         self.context = None
         self.data_processor = VolumeDataProcessor(self.config)
         
-        # GPU资源管理
         self.resource_pool = GPUResourcePool(self.config)
         
-        # 渲染状态
+        self._state_lock = threading.RLock()
         self.initialized = False
         self.backend_type = GPUBackend.CPU
         
-        # 新增：初始化状态跟踪属性
         self._moderngl_initialized = False
         self._opengl_initialized = False
         self._cuda_initialized = False
@@ -1038,60 +1055,42 @@ class WebGPURenderer(BaseChartRenderer):
     
     def initialize(self, config: Dict[str, Any] = None) -> bool:
         """初始化WebGPU渲染器（重写基类方法）"""
-        try:
-            logger.info("初始化WebGPU渲染器...")
-            
-            # 合并配置
-            if config:
-                # 将dataclass转换为字典，更新配置，然后重新创建dataclass
-                import dataclasses
-                config_dict = dataclasses.asdict(self.config)
-                config_dict.update(config)
-                self.config = GPURendererConfig(**config_dict)
-            
-            # 创建WebGPU上下文
-            compatibility_report = config.get('compatibility_report') if config else None
-            self.context = WebGPUContext(self.config, compatibility_report)
-            
-            # 新增：等待上下文初始化完成
-            if not self._wait_for_context_ready():
-                logger.error("WebGPU上下文初始化超时")
+        with self._state_lock:
+            try:
+                if self.initialized:
+                    logger.info("WebGPU渲染器已初始化")
+                    return True
+                
+                logger.info("初始化WebGPU渲染器...")
+                
+                compatibility_report = None
+                if config:
+                    compatibility_report = config.get('compatibility_report')
+                
+                self.context = WebGPUContext(self.config, compatibility_report)
+                
+                if not self.context.initialize():
+                    logger.error("WebGPU上下文初始化失败")
+                    return False
+                
+                self._sync_context_state()
+                
+                self.backend_type = self._detect_backend()
+                
+                self.initialized = True
+                logger.info(f"WebGPU渲染器初始化成功，使用后端: {self.backend_type.value}")
+                return True
+                
+            except Exception as e:
+                logger.error(f"WebGPU渲染器初始化失败: {e}")
                 return False
-            
-            if not self.context.initialize():
-                logger.error("WebGPU上下文初始化失败")
-                return False
-            
-            # 新增：强制同步WebGPUContext的初始化状态到WebGPURenderer
-            self._sync_context_state(force=True)
-            
-            # 确定使用的后端
-            self.backend_type = self._detect_backend()
-            
-            self.initialized = True
-            logger.info(f"WebGPU渲染器初始化成功，使用后端: {self.backend_type.value}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"WebGPU渲染器初始化失败: {e}")
-            return False
     
-    def _sync_context_state(self, force: bool = False):
-        """强制同步WebGPUContext的初始化状态到WebGPURenderer实例"""
+    def _sync_context_state(self):
+        """同步WebGPUContext的初始化状态到WebGPURenderer实例"""
         if not self.context:
             return
             
         try:
-            # 等待初始化完成（仅在force模式下）
-            if force:
-                max_retries = 50
-                for attempt in range(max_retries):
-                    if hasattr(self.context, '_moderngl_initialized'):
-                        break
-                    time.sleep(0.1)
-                logger.debug("强制同步模式：等待WebGPUContext初始化完成")
-            
-            # 同步所有初始化状态
             state_mappings = [
                 ('_moderngl_initialized', 'ModernGL'),
                 ('_opengl_initialized', 'OpenGL'), 
@@ -1104,17 +1103,29 @@ class WebGPURenderer(BaseChartRenderer):
                     setattr(self, attr_name, state_value)
                     if state_value:
                         logger.info(f"同步{backend_name}初始化状态: {state_value}")
-                    elif force:
-                        logger.debug(f"📋 {backend_name}初始化状态: {state_value}")
             
-            # 同步初始化历史
             if hasattr(self.context, '_initialization_history'):
                 self._initialization_history = getattr(self.context, '_initialization_history', [])
                 logger.debug(f"同步初始化历史: {len(self._initialization_history)} 条记录")
             
             logger.debug("WebGPUContext状态同步完成")
         except Exception as e:
-            logger.warning(f"⚠️ 同步WebGPUContext状态失败: {e}")
+            logger.warning(f"同步WebGPUContext状态失败: {e}")
+    
+    def _sync_moderngl_context(self):
+        """同步ModernGL上下文状态"""
+        try:
+            if hasattr(self.context, '_moderngl_initialized'):
+                self._moderngl_initialized = self.context._moderngl_initialized
+            
+            if hasattr(self.context, 'fbo'):
+                self.fbo = getattr(self.context, 'fbo', None)
+                
+            if hasattr(self.context, 'width'):
+                self.width = getattr(self.context, 'width', 1920)
+                self.height = getattr(self.context, 'height', 1080)
+        except Exception as e:
+            logger.debug(f"同步ModernGL上下文状态失败: {e}")
     
     def _wait_for_context_ready(self, timeout: float = 5.0) -> bool:
         """等待WebGPUContext初始化完成"""
@@ -1348,7 +1359,7 @@ class WebGPURenderer(BaseChartRenderer):
                     success = self._render_with_gpu(vertex_buffer, np.array(colors), ax)
                     
                     # 标记缓冲区用于后续释放
-                    if vertex_buffer:
+                    if vertex_buffer is not None:
                         released_buffers.append((vertex_buffer, max_vertices * 2 * 4))
                 else:
                     success = self._render_cpu_fallback(vertices, colors, ax)
@@ -1659,6 +1670,9 @@ class WebGPURenderer(BaseChartRenderer):
     def _render_moderngl(self, vertex_buffer, colors: np.ndarray, ax) -> bool:
         """使用ModernGL渲染"""
         try:
+            # 同步ModernGL上下文状态（从WebGPUContext同步）
+            self._sync_moderngl_context()
+            
             # 检查ModernGL上下文是否有效
             if not self.context or not hasattr(self.context, 'clear'):
                 logger.warning("ModernGL上下文无效，回退到matplotlib渲染")
@@ -1915,6 +1929,11 @@ class WebGPURenderer(BaseChartRenderer):
             import matplotlib.colors as mcolors
             import numpy as np
             
+            # 处理None或空的vertices
+            if vertices is None:
+                logger.warning("顶点数据为None，无法转换")
+                return False
+            
             if len(vertices) == 0:
                 return False
             
@@ -2153,18 +2172,23 @@ class WebGPURenderer(BaseChartRenderer):
 
     def cleanup(self):
         """清理资源"""
-        try:
-            if self.context:
-                self.context.cleanup()
-            
-            if self.data_processor:
-                self.data_processor.cleanup()
-            
-            self.initialized = False
-            logger.info("WebGPU渲染器资源已清理")
-            
-        except Exception as e:
-            logger.warning(f"WebGPU渲染器清理失败: {e}")
+        with self._state_lock:
+            try:
+                if hasattr(self, 'resource_pool') and self.resource_pool:
+                    self.resource_pool.cleanup_unused_resources(max_age_seconds=0)
+                    logger.debug("GPU资源池已清理")
+                
+                if self.context:
+                    self.context.cleanup()
+                
+                if self.data_processor:
+                    self.data_processor.cleanup()
+                
+                self.initialized = False
+                logger.info("WebGPU渲染器资源已清理")
+                
+            except Exception as e:
+                logger.warning(f"WebGPU渲染器清理失败: {e}")
 
 # 便捷函数
 def create_webgpu_renderer(config: GPURendererConfig = None) -> WebGPURenderer:

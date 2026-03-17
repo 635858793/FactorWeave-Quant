@@ -270,18 +270,6 @@ class UnifiedBacktestEngine:
         except Exception as e:
             self.logger.error(f"数据验证器初始化失败: {e}")
 
-        # 初始化实时监控器
-        self.real_time_monitor = None
-        try:
-            from backtest.real_time_backtest_monitor import RealTimeBacktestMonitor, MonitoringLevel
-            monitoring_level = MonitoringLevel.STANDARD  # 使用标准级别避免过度监控
-            self.real_time_monitor = RealTimeBacktestMonitor(monitoring_level)
-            self.logger.info("实时监控器初始化成功")
-        except ImportError as e:
-            self.logger.warning(f"实时监控器导入失败: {e}")
-        except Exception as e:
-            self.logger.error(f"实时监控器初始化失败: {e}")
-
         # 初始化结果存储
         self.results = None
         self.trades = []
@@ -320,12 +308,13 @@ class UnifiedBacktestEngine:
                      max_holding_periods: Optional[int] = None,
                      enable_compound: bool = True,
                      benchmark_data: Optional[pd.DataFrame] = None,
-                     execution_model: str = 'fixed') -> Dict[str, Any]:
+                     execution_model: str = 'fixed',
+                     progress_callback=None) -> Dict[str, Any]:
         """
         运行统一回测
 
         Args:
-            data: 包含价格和信号数据的DataFrame
+            data: 包含价格和信号数据的 DataFrame
             signal_col: 信号列名
             price_col: 价格列名
             initial_capital: 初始资金
@@ -339,29 +328,16 @@ class UnifiedBacktestEngine:
             enable_compound: 是否启用复利
             benchmark_data: 基准数据
             execution_model: 成交模型 ('fixed', 'vwap', 'random')
+            progress_callback: 进度回调函数，签名：callback(bar_index, total_bars, current_result)
 
         Returns:
-            包含回测结果的Dict
+            包含回测结果的 Dict
         """
         try:
             engine_type = "向量化引擎" if self.use_vectorized_engine and self.vectorized_engine else "标准引擎"
             self.logger.info(f"开始统一回测，级别: {self.backtest_level.value}，引擎: {engine_type}，成交模型: {execution_model}")
             
             self._execution_model = execution_model
-
-            # 启动实时监控（如果可用）
-            if self.real_time_monitor:
-                try:
-                    self.real_time_monitor.start_monitoring(
-                        backtest_engine=self,
-                        data=data,
-                        engine_type=engine_type,
-                        backtest_level=self.backtest_level.value,
-                        initial_capital=initial_capital
-                    )
-                    self.logger.info("实时监控已启动")
-                except Exception as e:
-                    self.logger.warning(f"启动实时监控失败: {e}")
 
             # 数据预处理和验证
             processed_data = self._preprocess_and_validate_data(
@@ -382,7 +358,8 @@ class UnifiedBacktestEngine:
                 self.logger.info("选择向量化引擎执行回测")
                 results = self._run_vectorized_backtest(
                     processed_data, signal_col, price_col, initial_capital,
-                    position_size, commission_pct, slippage_pct, min_commission
+                    position_size, commission_pct, slippage_pct, min_commission,
+                    stop_loss_pct, take_profit_pct, max_holding_periods
                 )
             else:
                 # 使用标准引擎（支持止损/止盈/持有期）
@@ -401,26 +378,41 @@ class UnifiedBacktestEngine:
             # 保存结果
             self.results = results
 
-            # 停止实时监控（如果可用）
-            if self.real_time_monitor:
-                try:
-                    monitoring_summary = self.real_time_monitor.stop_monitoring()
-                    self.logger.info(f"实时监控已停止")
-                except Exception as e:
-                    self.logger.warning(f"停止实时监控失败: {e}")
-
             self.logger.info(f"回测完成，总交易次数: {len(self.trades)}")
 
-            # 返回统一格式的结果 - 为了兼容性，直接返回DataFrame
-            if isinstance(results, pd.DataFrame):
-                return results
-            else:
-                # 如果不是DataFrame，返回字典格式
-                return {
-                    'backtest_result': results,
-                    'risk_metrics': self.metrics,
-                    'performance_summary': self.get_metrics_summary()
-                }
+            # 构建包含完整指标的结果字典
+            equity_curve = None
+            if isinstance(results, pd.Series):
+                equity_curve = results
+            elif isinstance(results, pd.DataFrame):
+                if 'capital' in results.columns:
+                    equity_curve = results['capital']
+                elif 'equity' in results.columns:
+                    equity_curve = results['equity']
+            
+            result_dict = {
+                'equity_curve': equity_curve,
+                'trades': self.trades,
+                'total_trades': len(self.trades),
+            }
+            
+            # 添加风险指标到结果中
+            if self.metrics is not None:
+                # 将dataclass转换为字典
+                from dataclasses import asdict
+                metrics_dict = asdict(self.metrics)
+                result_dict.update(metrics_dict)
+            
+            # 如果有性能摘要，也添加到结果中
+            try:
+                performance_summary = self.get_metrics_summary()
+                if performance_summary:
+                    result_dict.update(performance_summary)
+            except:
+                pass
+            
+            # 返回统一格式的结果 - 为了兼容性，直接返回包含完整指标的字典
+            return result_dict
 
         except Exception as e:
             import traceback
@@ -472,9 +464,10 @@ class UnifiedBacktestEngine:
         """
         智能选择最优回测引擎
 
-        基于功能需求选择引擎，而非数据量：
-        - 需要高级功能（止损/止盈/持有期）：使用标准引擎
-        - 无高级功能需求：使用向量化引擎（JIT极速）
+        始终使用向量化引擎（JIT极速），并根据是否需要风控功能
+        自动选择对应的回测方法：
+        - 需要高级功能（止损/止盈/持有期）：使用带风控的向量化引擎
+        - 无高级功能需求：使用基础向量化引擎
 
         Args:
             data: 回测数据
@@ -494,20 +487,17 @@ class UnifiedBacktestEngine:
             self.logger.info("优化引擎不可用，选择标准引擎")
             return "standard"
 
-        # 如果需要高级功能（止损、期），使用标准止盈、最大持有引擎
-        # 标准引擎支持完整的交易逻辑（止损/止盈/持有期检查）
-        if stop_loss_pct or take_profit_pct or max_holding_periods:
-            self.logger.info("检测到高级功能需求（止损/止盈/持有期），选择标准引擎")
-            return "standard"
-
-        # 无高级功能需求，始终使用向量化引擎
-        # 向量化引擎使用JIT编译，性能极致（100万条数据约68ms）
-        self.logger.info("无高级功能需求，选择向量化引擎（JIT极速）")
+        # 始终使用向量化引擎（JIT极速）
+        # 新增带风控的向量化引擎支持止损/止盈/持有期
+        self.logger.info("选择向量化引擎（JIT极速，支持风控）")
         return "vectorized"
 
     def _run_vectorized_backtest(self, data: pd.DataFrame, signal_col: str, price_col: str,
                                  initial_capital: float, position_size: float,
-                                 commission_pct: float, slippage_pct: float, min_commission: float) -> pd.DataFrame:
+                                 commission_pct: float, slippage_pct: float, min_commission: float,
+                                 stop_loss_pct: Optional[float] = None,
+                                 take_profit_pct: Optional[float] = None,
+                                 max_holding_periods: Optional[int] = None) -> pd.DataFrame:
         """
         使用向量化引擎运行回测
 
@@ -527,16 +517,35 @@ class UnifiedBacktestEngine:
         try:
             self.logger.info("使用向量化引擎执行回测")
 
-            # 调用向量化引擎
-            vectorized_result = self.vectorized_engine.run_vectorized_backtest(
-                data=data,
-                signal_col=signal_col,
-                price_col=price_col,
-                initial_capital=initial_capital,
-                position_size=position_size,
-                commission_pct=commission_pct,
-                slippage_pct=slippage_pct
-            )
+            # 判断是否需要风控功能
+            needs_risk = stop_loss_pct is not None or take_profit_pct is not None or max_holding_periods is not None
+
+            if needs_risk:
+                # 使用带风控的向量化引擎
+                self.logger.info("启用风控功能（止损/止盈/持有期）")
+                vectorized_result = self.vectorized_engine.run_vectorized_backtest_with_risk(
+                    data=data,
+                    signal_col=signal_col,
+                    price_col=price_col,
+                    initial_capital=initial_capital,
+                    position_size=position_size,
+                    commission_pct=commission_pct,
+                    slippage_pct=slippage_pct,
+                    stop_loss_pct=stop_loss_pct,
+                    take_profit_pct=take_profit_pct,
+                    max_holding_periods=max_holding_periods
+                )
+            else:
+                # 使用基础向量化引擎
+                vectorized_result = self.vectorized_engine.run_vectorized_backtest(
+                    data=data,
+                    signal_col=signal_col,
+                    price_col=price_col,
+                    initial_capital=initial_capital,
+                    position_size=position_size,
+                    commission_pct=commission_pct,
+                    slippage_pct=slippage_pct
+                )
 
             # 转换结果格式以兼容统一回测引擎的期望格式
             results = vectorized_result.copy()
@@ -873,6 +882,30 @@ class UnifiedBacktestEngine:
         if trade_state['position'] == 0:
             return False, ''
 
+        # 止损检查
+        if stop_loss_pct is not None:
+            if (trade_state['position'] > 0 and
+                    current_price <= trade_state['entry_price'] * (1 - stop_loss_pct)):
+                return True, 'Stop Loss'
+            elif (trade_state['position'] < 0 and
+                  current_price >= trade_state['entry_price'] * (1 + stop_loss_pct)):
+                return True, 'Stop Loss'
+
+        # 止盈检查
+        if take_profit_pct is not None:
+            if (trade_state['position'] > 0 and
+                    current_price >= trade_state['entry_price'] * (1 + take_profit_pct)):
+                return True, 'Take Profit'
+            elif (trade_state['position'] < 0 and
+                  current_price <= trade_state['entry_price'] * (1 - take_profit_pct)):
+                return True, 'Take Profit'
+
+        # 最大持有期检查
+        if max_holding_periods is not None and trade_state['holding_periods'] >= max_holding_periods:
+            return True, 'Max Holding Period'
+
+        return False, ''
+
     def _calculate_execution_price(self, results: pd.DataFrame, i: int, 
                                    base_price: float, is_buy: bool, 
                                    slippage_pct: float = 0.001) -> float:
@@ -1005,30 +1038,6 @@ class UnifiedBacktestEngine:
                 return base_price * (1 + slippage_pct)
             else:
                 return base_price * (1 - slippage_pct)
-
-        # 止损检查
-        if stop_loss_pct is not None:
-            if (trade_state['position'] > 0 and
-                    current_price <= trade_state['entry_price'] * (1 - stop_loss_pct)):
-                return True, 'Stop Loss'
-            elif (trade_state['position'] < 0 and
-                  current_price >= trade_state['entry_price'] * (1 + stop_loss_pct)):
-                return True, 'Stop Loss'
-
-        # 止盈检查
-        if take_profit_pct is not None:
-            if (trade_state['position'] > 0 and
-                    current_price >= trade_state['entry_price'] * (1 + take_profit_pct)):
-                return True, 'Take Profit'
-            elif (trade_state['position'] < 0 and
-                  current_price <= trade_state['entry_price'] * (1 - take_profit_pct)):
-                return True, 'Take Profit'
-
-        # 最大持有期检查
-        if max_holding_periods is not None and trade_state['holding_periods'] >= max_holding_periods:
-            return True, 'Max Holding Period'
-
-        return False, ''
 
     def _process_trading_signals(self, results: pd.DataFrame, i: int,
                                  trade_state: Dict[str, Any], signal: float,
@@ -1579,23 +1588,23 @@ class UnifiedBacktestEngine:
         return UnifiedRiskMetrics()
 
     def get_metrics_summary(self) -> Dict[str, Any]:
-        """获取指标摘要"""
+        """获取指标摘要（数值格式）"""
         if self.metrics is None:
             return {}
 
         return {
-            '总收益率': f"{self.metrics.total_return:.2%}",
-            '年化收益率': f"{self.metrics.annualized_return:.2%}",
-            '年化波动率': f"{self.metrics.volatility:.2%}",
-            'Sharpe比率': f"{self.metrics.sharpe_ratio:.3f}",
-            'Sortino比率': f"{self.metrics.sortino_ratio:.3f}",
-            'Calmar比率': f"{self.metrics.calmar_ratio:.3f}",
-            '最大回撤': f"{self.metrics.max_drawdown:.2%}",
-            '最大回撤持续期': f"{self.metrics.max_drawdown_duration}天",
-            '胜率': f"{self.metrics.win_rate:.2%}",
-            '盈利因子': f"{self.metrics.profit_factor:.3f}",
-            'VaR(95%)': f"{self.metrics.var_95:.2%}",
-            'CVaR(95%)': f"{self.metrics.cvar_95:.2%}",
+            'total_return': self.metrics.total_return,
+            'annualized_return': self.metrics.annualized_return,
+            'volatility': self.metrics.volatility,
+            'sharpe_ratio': self.metrics.sharpe_ratio,
+            'sortino_ratio': self.metrics.sortino_ratio,
+            'calmar_ratio': self.metrics.calmar_ratio,
+            'max_drawdown': self.metrics.max_drawdown,
+            'max_drawdown_duration': self.metrics.max_drawdown_duration,
+            'win_rate': self.metrics.win_rate,
+            'profit_factor': self.metrics.profit_factor,
+            'var_95': self.metrics.var_95,
+            'cvar_95': self.metrics.cvar_95,
         }
 
 # 便利函数

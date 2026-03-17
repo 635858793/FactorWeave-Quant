@@ -157,6 +157,7 @@ class PatternManager:
                         confidence REAL NOT NULL,
                         trigger_date TEXT NOT NULL,
                         trigger_price REAL NOT NULL,
+                        future_price REAL,
                         result_date TEXT,
                         result_price REAL,
                         return_rate REAL,
@@ -164,6 +165,14 @@ class PatternManager:
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 ''')
+
+                cursor.execute('''
+                    PRAGMA table_info(pattern_history)
+                ''')
+                columns = [row[1] for row in cursor.fetchall()]
+                if 'future_price' not in columns:
+                    cursor.execute('ALTER TABLE pattern_history ADD COLUMN future_price REAL')
+                    logger.info("数据库迁移：添加future_price字段")
 
                 cursor.execute('''
                     CREATE INDEX IF NOT EXISTS idx_pattern_history_type_date 
@@ -707,13 +716,13 @@ for i in range(len(kdata)):
                 'confidence_distribution': {'high': 0, 'medium': 0, 'low': 0}
             }
 
-    def get_pattern_effectiveness(self, pattern_type: str, days: int = 30) -> Dict:
+    def get_pattern_effectiveness(self, pattern_type: str, days: int = 90) -> Dict:
         """
         获取形态有效性统计
 
         Args:
             pattern_type: 形态类型
-            days: 统计天数
+            days: 统计天数，默认90天
 
         Returns:
             有效性统计
@@ -727,6 +736,7 @@ for i in range(len(kdata)):
         try:
             with self._get_db_connection() as conn:
                 cursor = conn.cursor()
+                days_param = f'-{days} days'
                 cursor.execute('''
                     SELECT 
                         COUNT(*) as total_count,
@@ -735,8 +745,10 @@ for i in range(len(kdata)):
                         AVG(confidence) as avg_confidence
                     FROM pattern_history 
                     WHERE pattern_type = ? 
-                    AND trigger_date >= date('now', '-{} days')
-                '''.format(days), (pattern_type,))
+                    AND trigger_date >= date('now', ?)
+                    AND return_rate IS NOT NULL
+                    AND is_successful IS NOT NULL
+                ''', (pattern_type, days_param))
 
                 row = cursor.fetchone()
                 if row and row[0] > 0:
@@ -770,6 +782,7 @@ for i in range(len(kdata)):
                               signal_type: str, confidence: float,
                               trigger_date: str, trigger_price: float,
                               result_date: str = None, result_price: float = None,
+                              future_price: float = None,
                               max_total_records: int = 10000) -> bool:
         """
         记录形态识别结果（用于效果统计）
@@ -783,6 +796,7 @@ for i in range(len(kdata)):
             trigger_price: 触发价格
             result_date: 结果日期
             result_price: 结果价格
+            future_price: N天后价格（用于结算）
             max_total_records: 最大总记录数，默认10000
 
         Returns:
@@ -826,15 +840,62 @@ for i in range(len(kdata)):
                 cursor.execute('''
                     INSERT INTO pattern_history 
                     (pattern_type, stock_code, signal_type, confidence, 
-                     trigger_date, trigger_price, result_date, result_price, 
+                     trigger_date, trigger_price, future_price, result_date, result_price, 
                      return_rate, is_successful)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (pattern_type, stock_code, signal_type, confidence,
-                      trigger_date, trigger_price, result_date, result_price,
+                      trigger_date, trigger_price, future_price, result_date, result_price,
                       return_rate, is_successful))
+                logger.info(f"记录形态结果: {pattern_type} {stock_code} {trigger_date} 置信度={confidence:.2f}")
                 return True
         except sqlite3.Error as e:
             logger.info(f"记录形态结果失败: {e}")
+            return False
+
+    def update_pattern_result(self, record_id: int, result_date: str, result_price: float) -> bool:
+        """
+        更新形态结果（用于结算）
+
+        Args:
+            record_id: 记录ID
+            result_date: 结果日期
+            result_price: 结果价格
+
+        Returns:
+            是否成功
+        """
+        try:
+            with self._get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT trigger_price, signal_type FROM pattern_history WHERE id = ?', (record_id,))
+                row = cursor.fetchone()
+                if not row:
+                    logger.info(f"记录不存在: {record_id}")
+                    return False
+                
+                trigger_price, signal_type = row
+                if trigger_price <= 0:
+                    return False
+                
+                return_rate = (result_price - trigger_price) / trigger_price * 100
+                if signal_type == 'buy':
+                    is_successful = 1 if return_rate > 0 else 0
+                elif signal_type == 'sell':
+                    is_successful = 1 if return_rate < 0 else 0
+                else:
+                    is_successful = 1 if abs(return_rate) < 2 else 0
+                
+                cursor.execute('''
+                    UPDATE pattern_history 
+                    SET result_date = ?, result_price = ?, return_rate = ?, is_successful = ?
+                    WHERE id = ?
+                ''', (result_date, result_price, return_rate, is_successful, record_id))
+                
+                self._effectiveness_cache.clear()
+                logger.info(f"更新形态结果: ID={record_id}, 收益率={return_rate:.2f}%, 成功={is_successful}")
+                return True
+        except sqlite3.Error as e:
+            logger.info(f"更新形态结果失败: {e}")
             return False
 
     def get_recommended_patterns(self, top_n: int = 10) -> List[Dict]:
@@ -859,22 +920,34 @@ for i in range(len(kdata)):
                         AVG(confidence) as avg_confidence
                     FROM pattern_history 
                     WHERE trigger_date >= date('now', '-90 days')
+                    AND return_rate IS NOT NULL
+                    AND is_successful IS NOT NULL
                     GROUP BY pattern_type
-                    HAVING total_count >= 5
-                    ORDER BY success_rate DESC, avg_return DESC
+                    HAVING total_count >= 30
                     LIMIT ?
-                ''', (top_n,))
+                ''', (top_n * 3,))
 
                 recommendations = []
                 for row in cursor.fetchall():
+                    success_rate = row[3] or 0
+                    avg_return = row[2] or 0
+                    avg_confidence = row[4] or 0
+                    norm_return = min(avg_return / 10.0, 1.0) if avg_return > 0 else 0
+                    recommendation_score = round(
+                        success_rate * 0.5 +
+                        norm_return * 0.3 +
+                        avg_confidence * 0.2, 3)
                     recommendations.append({
                         'pattern_type': row[0],
                         'total_signals': row[1],
-                        'average_return': round(row[2] or 0, 2),
-                        'success_rate': round(row[3] * 100, 2),
-                        'average_confidence': round(row[4] or 0, 3),
-                        'recommendation_score': round((row[3] * 0.6 + (row[2] or 0) * 0.004 + (row[4] or 0) * 0.4), 3)
+                        'average_return': round(avg_return, 2),
+                        'success_rate': round(success_rate * 100, 2),
+                        'average_confidence': round(avg_confidence, 3),
+                        'recommendation_score': recommendation_score
                     })
+
+                recommendations.sort(key=lambda x: x['recommendation_score'], reverse=True)
+                recommendations = recommendations[:top_n]
 
                 return recommendations
         except sqlite3.Error as e:
@@ -940,9 +1013,91 @@ for i in range(len(kdata)):
 
         return result
 
-    def get_training_data_summary(self) -> Dict:
+    def settle_pending_results(self, days: int = 5, max_settle: int = 500) -> Dict:
+        """
+        结算待处理结果（批量优化版）
+
+        Args:
+            days: 触发后N天进行结算，默认5天
+            max_settle: 每次最多结算数量，默认500
+
+        Returns:
+            结算结果统计
+        """
+        result = {
+            'settled_count': 0,
+            'failed_count': 0,
+            'errors': []
+        }
+
+        try:
+            with self._get_db_connection() as conn:
+                cursor = conn.cursor()
+                days_param = f'-{days} days'
+                cursor.execute('''
+                    SELECT id, pattern_type, stock_code, trigger_date, trigger_price, signal_type, future_price
+                    FROM pattern_history
+                    WHERE result_price IS NULL
+                    AND trigger_date <= date('now', ?)
+                    ORDER BY trigger_date ASC
+                    LIMIT ?
+                ''', (days_param, max_settle))
+
+                pending_records = cursor.fetchall()
+                if not pending_records:
+                    return result
+                
+                logger.info(f"找到{len(pending_records)}条待结算记录")
+
+                from datetime import datetime, timedelta
+                update_data = []
+                for record in pending_records:
+                    try:
+                        record_id, pattern_type, stock_code, trigger_date_str, trigger_price, signal_type, future_price = record
+                        if not trigger_price or trigger_price <= 0:
+                            result['failed_count'] += 1
+                            continue
+                        trigger_date = datetime.strptime(trigger_date_str, '%Y-%m-%d')
+                        result_date = trigger_date + timedelta(days=days)
+                        result_date_str = result_date.strftime('%Y-%m-%d')
+                        if future_price and future_price > 0:
+                            result_price = future_price
+                        else:
+                            result_price = trigger_price
+                        return_rate = (result_price - trigger_price) / trigger_price * 100
+                        if signal_type == 'buy':
+                            is_successful = 1 if return_rate > 0 else 0
+                        elif signal_type == 'sell':
+                            is_successful = 1 if return_rate < 0 else 0
+                        else:
+                            is_successful = 1 if abs(return_rate) < 2 else 0
+                        update_data.append((result_date_str, result_price, return_rate, is_successful, record_id))
+                    except Exception as e:
+                        result['failed_count'] += 1
+                        result['errors'].append(str(e))
+
+                if update_data:
+                    cursor.executemany('''
+                        UPDATE pattern_history 
+                        SET result_date = ?, result_price = ?, return_rate = ?, is_successful = ?
+                        WHERE id = ?
+                    ''', update_data)
+                    result['settled_count'] = len(update_data)
+                    self._effectiveness_cache.clear()
+                    logger.info(f"批量结算完成: 成功{result['settled_count']}条, 失败{result['failed_count']}条")
+
+        except sqlite3.Error as e:
+            logger.error(f"结算待处理结果失败: {e}")
+            result['errors'].append(str(e))
+
+        return result
+
+    def get_training_data_summary(self, days: int = 90) -> Dict:
         """
         获取训练数据摘要（用于AI训练数据管理）
+
+        Args:
+            days: 统计天数，默认90天
 
         Returns:
             训练数据统计信息
@@ -950,43 +1105,90 @@ for i in range(len(kdata)):
         try:
             with self._get_db_connection() as conn:
                 cursor = conn.cursor()
+                days_param = f'-{days} days'
 
-                cursor.execute('SELECT COUNT(*) FROM pattern_history')
+                cursor.execute('SELECT COUNT(*) FROM pattern_history WHERE trigger_date >= date("now", ?)', (days_param,))
                 total_records = cursor.fetchone()[0]
+
+                cursor.execute('''
+                    SELECT COUNT(*) FROM pattern_history 
+                    WHERE trigger_date >= date("now", ?)
+                    AND return_rate IS NOT NULL
+                    AND is_successful IS NOT NULL
+                ''', (days_param,))
+                valid_records = cursor.fetchone()[0]
+
+                cursor.execute('''
+                    SELECT COUNT(*) FROM pattern_history 
+                    WHERE trigger_date >= date("now", ?)
+                    AND return_rate IS NULL
+                ''', (days_param,))
+                pending_records = cursor.fetchone()[0]
 
                 cursor.execute('''
                     SELECT pattern_type, COUNT(*) as count
                     FROM pattern_history
+                    WHERE trigger_date >= date("now", ?)
                     GROUP BY pattern_type
                     ORDER BY count DESC
-                ''')
+                ''', (days_param,))
                 pattern_distribution = [{'pattern': row[0], 'count': row[1]} for row in cursor.fetchall()]
 
-                cursor.execute('SELECT AVG(confidence) FROM pattern_history')
+                cursor.execute('''
+                    SELECT AVG(confidence) FROM pattern_history 
+                    WHERE trigger_date >= date("now", ?)
+                ''', (days_param,))
                 avg_confidence = cursor.fetchone()[0] or 0
 
                 cursor.execute('''
                     SELECT signal_type, COUNT(*) as count
                     FROM pattern_history
+                    WHERE trigger_date >= date("now", ?)
                     GROUP BY signal_type
-                ''')
+                ''', (days_param,))
                 signal_distribution = {row[0]: row[1] for row in cursor.fetchall()}
+
+                cursor.execute('''
+                    SELECT 
+                        CASE 
+                            WHEN return_rate > 10 THEN '涨幅>10%'
+                            WHEN return_rate > 5 THEN '涨幅5%-10%'
+                            WHEN return_rate > 0 THEN '涨幅0%-5%'
+                            WHEN return_rate > -5 THEN '跌幅0%-5%'
+                            WHEN return_rate > -10 THEN '跌幅5%-10%'
+                            ELSE '跌幅>10%'
+                        END as range_label,
+                        COUNT(*) as count
+                    FROM pattern_history
+                    WHERE trigger_date >= date("now", ?)
+                    AND return_rate IS NOT NULL
+                    GROUP BY range_label
+                ''', (days_param,))
+                return_distribution = {row[0]: row[1] for row in cursor.fetchall()}
+
+                valid_patterns = [p for p in pattern_distribution if p['count'] >= 30]
 
                 return {
                     'total_records': total_records,
+                    'valid_records': valid_records,
+                    'pending_records': pending_records,
                     'pattern_distribution': pattern_distribution,
                     'average_confidence': round(avg_confidence, 3),
                     'signal_distribution': signal_distribution,
-                    'valid_for_training': sum(1 for p in pattern_distribution if p['count'] >= 30)
+                    'return_distribution': return_distribution,
+                    'valid_for_training': len(valid_patterns)
                 }
 
         except sqlite3.Error as e:
             logger.error(f"获取训练数据摘要失败: {e}")
             return {
                 'total_records': 0,
+                'valid_records': 0,
+                'pending_records': 0,
                 'pattern_distribution': [],
                 'average_confidence': 0,
                 'signal_distribution': {},
+                'return_distribution': {},
                 'valid_for_training': 0
             }
 
@@ -1014,6 +1216,8 @@ for i in range(len(kdata)):
                     FROM pattern_history
                     WHERE pattern_type = ?
                     AND trigger_date >= date('now', '-' || ? || ' months')
+                    AND return_rate IS NOT NULL
+                    AND is_successful IS NOT NULL
                     GROUP BY month
                     ORDER BY month ASC
                 ''', (pattern_type, months))
