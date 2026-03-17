@@ -1009,75 +1009,118 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
             # 提取数据
             metrics_data = self._backtest_metrics
             
+            logger.info(f"_draw_backtest_charts: metrics_data 长度={len(metrics_data) if metrics_data else 0}")
+            if metrics_data and len(metrics_data) > 0:
+                logger.info(f"前 3 个数据点：{metrics_data[:3]}")
+            
             # 提取时间序列数据
             timestamps = []
             cumulative_returns = []
             drawdowns = []
-            sharpe_ratios = []
             
             for m in metrics_data:
                 ts = m.get('timestamp')
                 if ts:
                     timestamps.append(ts)
-                    cumulative_returns.append(m.get('cumulative_return', 0))
-                    drawdowns.append(m.get('current_drawdown', 0))
-                    sharpe_ratios.append(m.get('sharpe_ratio', 0))
+                    cr = m.get('cumulative_return', 0)
+                    dd = m.get('current_drawdown', 0)
+                    cumulative_returns.append(cr)
+                    drawdowns.append(dd)
+            
+            logger.info(f"提取完成：timestamps={len(timestamps)}, cumulative_returns={len(cumulative_returns)}, drawdowns={len(drawdowns)}")
+            if drawdowns:
+                logger.info(f"drawdowns 前 5 个值：{drawdowns[:5]}")
             
             if not timestamps:
                 return
             
-            # 创建DataFrame用于绘图
+            # 创建 DataFrame 用于绘图
             import pandas as pd
             df = pd.DataFrame({
                 'timestamp': timestamps,
                 'cumulative_return': cumulative_returns,
-                'drawdown': drawdowns,
-                'sharpe_ratio': sharpe_ratios
+                'drawdown': drawdowns
             })
             
-            # 直接使用matplotlib绘图（不依赖渲染器方法）
+            # 直接使用 matplotlib 绘图（不依赖渲染器方法）
             try:
                 # 检查是否有 figure 和 axes
                 if hasattr(self, 'figure') and hasattr(self, 'price_ax'):
                     # 第一次创建或使用现有坐标轴
                     if not hasattr(self, '_backtest_ax') or self._backtest_ax is None:
-                        # 创建新的子图用于回测结果
-                        self._backtest_ax = self.figure.add_subplot(211)
-                        logger.debug("创建新的回测坐标轴")
+                        # 创建新的子图用于回测结果 - 使用单图模式占满整个画布
+                        self._backtest_ax = self.figure.add_subplot(111)
+                        logger.debug("创建新的回测坐标轴 (单图模式)")
                     
                     # 清除坐标轴上的旧数据（不清除坐标轴本身）
                     self._backtest_ax.clear()
                     
-                    # 绘制累计收益率曲线
+                    # 绘制累计收益率曲线（主坐标轴，蓝色）
                     self._backtest_ax.plot(range(len(df)), df['cumulative_return'], 
-                                          'b-', linewidth=1.5, label='累计收益率')
+                                          'b-', linewidth=2, label='累计收益率')
                     
-                    # 绘制回撤曲线（使用次坐标轴）
+                    # 绘制回撤曲线（次坐标轴，红色）
                     if hasattr(self, '_backtest_ax2') and self._backtest_ax2:
                         self._backtest_ax2.clear()
                     else:
-                        self._backtest_ax2 = self._backtest_ax.twinx()
+                        logger.debug("准备创建新的回撤次坐标轴 (twinx)")
+                        try:
+                            self._backtest_ax2 = self._backtest_ax.twinx()
+                            logger.debug(f"成功创建回撤次坐标轴：{self._backtest_ax2}")
+                        except Exception as twinx_e:
+                            logger.error(f"创建 twinx 失败：{twinx_e}")
+                            raise
+                    
+                    logger.debug(f"开始绘制回撤曲线，数据点数量={len(df)}")
+                    logger.debug(f"回撤数据范围：min={df['drawdown'].min():.6f}, max={df['drawdown'].max():.6f}")
                     
                     self._backtest_ax2.plot(range(len(df)), df['drawdown'], 
-                            'r-', linewidth=1, alpha=0.7, label='回撤')
+                            'r-', linewidth=1.5, alpha=0.8, label='回撤')
                     self._backtest_ax2.fill_between(range(len(df)), df['drawdown'], 0, 
                                     alpha=0.3, color='red')
                     
+                    logger.debug("✅ 回撤曲线绘制完成（红色，填充）")
+                    
                     # 设置标题和标签
-                    self._backtest_ax.set_title('回测结果', fontsize=10)
-                    self._backtest_ax.set_ylabel('累计收益率', fontsize=8)
-                    self._backtest_ax2.set_ylabel('回撤', fontsize=8)
-                    self._backtest_ax.legend(loc='upper left', fontsize=8)
-                    self._backtest_ax2.legend(loc='upper right', fontsize=8)
+                    self._backtest_ax.set_title('回测结果', fontsize=12)
+                    self._backtest_ax.set_ylabel('累计收益率', fontsize=10, color='blue')
+                    self._backtest_ax2.set_ylabel('回撤', fontsize=10, color='red')
+                    
+                    # 设置坐标轴颜色
+                    self._backtest_ax.tick_params(labelcolor='blue')
+                    self._backtest_ax2.tick_params(labelcolor='red')
+                    
+                    # 添加图例
+                    self._backtest_ax.legend(loc='upper left', fontsize=9)
+                    self._backtest_ax2.legend(loc='upper right', fontsize=9)
+                    
+                    # 网格
                     self._backtest_ax.grid(True, alpha=0.3)
                     
                     # 刷新画布
                     if hasattr(self, 'canvas'):
                         self.canvas.draw_idle()
+                        logger.debug("✅ 画布已刷新")
                     
-                    logger.debug(f"绘制回测图表完成，数据点: {len(df)}")
+                    logger.info(f"🎉 回测图表绘制完成，数据点：{len(df)}")
+                    
+                    # 网格
+                    self._backtest_ax.grid(True, alpha=0.3)
+                    
+                    # 刷新画布
+                    if hasattr(self, 'canvas'):
+                        self.canvas.draw_idle()
+                        logger.debug("✅ 画布已刷新")
+                    
+                    logger.info(f"🎉 回测综合图表绘制完成，数据点：{len(df)}")
+                    
+                    # 添加调试日志：检查回撤数据
+                    if len(df) > 0:
+                        logger.debug(f"回撤数据统计：min={df['drawdown'].min():.4f}, max={df['drawdown'].max():.4f}, mean={df['drawdown'].mean():.4f}")
+                        if df['drawdown'].min() == 0 and df['drawdown'].max() == 0:
+                            logger.warning("回撤数据全为 0，可能计算有误")
                 else:
-                    # 降级：只调用update
+                    # 降级：只调用 update
                     self.update()
                     logger.debug("使用通用更新方法")
                     
@@ -1101,20 +1144,20 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
                 self._backtest_metrics = []
                 logger.debug("已清空回测数据")
             
-            # 清除图表上的坐标轴
+            # 清除图表上的所有坐标轴
             if hasattr(self, '_backtest_ax') and self._backtest_ax:
                 try:
                     self._backtest_ax.clear()
-                    logger.debug("已清空回测坐标轴")
+                    logger.debug("已清空回测主坐标轴")
                 except Exception as e:
-                    logger.warning(f"清空坐标轴失败：{e}")
+                    logger.warning(f"清空主坐标轴失败：{e}")
             
             if hasattr(self, '_backtest_ax2') and self._backtest_ax2:
                 try:
                     self._backtest_ax2.clear()
-                    logger.debug("已清空回测次坐标轴")
+                    logger.debug("已清空回撤次坐标轴")
                 except Exception as e:
-                    logger.warning(f"清空次坐标轴失败：{e}")
+                    logger.warning(f"清空回撤坐标轴失败：{e}")
             
             # 刷新画布
             if hasattr(self, 'canvas'):

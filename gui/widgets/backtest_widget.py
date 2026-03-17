@@ -198,6 +198,13 @@ class RealTimeChart(QWidget):
             self.pending_data = data_points[:]
             self.displayed_count = 0
             
+            # 检查 data_points
+            logger.info(f"start_progressive_display: 接收 {len(data_points)} 个数据点")
+            if data_points and len(data_points) > 0:
+                logger.info(f"前 3 个数据点：capital={[dp['capital'] for dp in data_points[:3]]}, "
+                           f"cumulative_return={[dp['cumulative_return'] for dp in data_points[:3]]}, "
+                           f"current_drawdown={[dp['current_drawdown'] for dp in data_points[:3]]}")
+            
             # 清空图表
             if hasattr(self.chart_widget, 'clear_data'):
                 self.chart_widget.clear_data()
@@ -1272,32 +1279,7 @@ class AlertsPanel(QWidget):
         """)
         layout.addWidget(title)
 
-        self.performance_group = QGroupBox("性能指标")
-        performance_layout = QFormLayout(self.performance_group)
-
-        self.engine_type_label = QLabel("未启动")
-        self.execution_time_label = QLabel("0.00秒")
-        self.data_size_label = QLabel("0条")
-        self.trade_count_label = QLabel("0次")
-
-        performance_layout.addRow("引擎类型:", self.engine_type_label)
-        performance_layout.addRow("执行时间:", self.execution_time_label)
-        performance_layout.addRow("数据量:", self.data_size_label)
-        performance_layout.addRow("交易次数:", self.trade_count_label)
-
-        layout.addWidget(self.performance_group)
-
-        self.risk_chart_group = QGroupBox("风险指标趋势图")
-        risk_chart_layout = QVBoxLayout(self.risk_chart_group)
-        
-        self.risk_figure = Figure(figsize=(5, 3), dpi=80)
-        self.risk_figure.patch.set_facecolor('#1e2329')
-        self.risk_canvas = FigureCanvas(self.risk_figure)
-        self.risk_canvas.setStyleSheet("background-color: #1e2329;")
-        risk_chart_layout.addWidget(self.risk_canvas)
-        
-        self._init_risk_chart()
-        layout.addWidget(self.risk_chart_group)
+        # 移除性能指标面板
 
         self.alerts_list = QListWidget()
         self.alerts_list.setStyleSheet("""
@@ -1434,32 +1416,6 @@ class AlertsPanel(QWidget):
         """清除所有预警"""
         self.alerts_list.clear()
         self.alerts.clear()
-
-    def update_performance_metrics(self, engine_type: str = None, execution_time: float = None,
-                                   data_size: int = None, trade_count: int = None):
-        """更新性能指标显示"""
-        if engine_type:
-            self.engine_type_label.setText(engine_type)
-            self.engine_type_label.setStyleSheet("color: #10b981; font-weight: bold;")
-
-        if execution_time is not None:
-            self.execution_time_label.setText(f"{execution_time:.4f}秒")
-            # 根据执行时间设置颜色
-            if execution_time < 1.0:
-                color = "#10b981"  # 绿色 - 快
-            elif execution_time < 5.0:
-                color = "#f59e0b"  # 黄色 - 中等
-            else:
-                color = "#ef4444"  # 红色 - 慢
-            self.execution_time_label.setStyleSheet(f"color: {color}; font-weight: bold;")
-
-        if data_size is not None:
-            self.data_size_label.setText(f"{data_size}条")
-            self.data_size_label.setStyleSheet("color: #3b82f6; font-weight: bold;")
-
-        if trade_count is not None:
-            self.trade_count_label.setText(f"{trade_count}次")
-            self.trade_count_label.setStyleSheet("color: #8b5cf6; font-weight: bold;")
 
     def update_risk_metrics(self, risk_metrics: Dict):
         """更新风险指标显示"""
@@ -1616,10 +1572,20 @@ class ProfessionalBacktestWidget(QWidget):
             }
         """)
 
-        # 主布局
-        main_layout = QHBoxLayout(self)
-        main_layout.setSpacing(8)
-        main_layout.setContentsMargins(8, 8, 8, 8)
+        # 主布局 - 使用QSplitter实现可调节布局
+        main_splitter = QSplitter(Qt.Horizontal)
+        main_splitter.setHandleWidth(4)
+        main_splitter.setStyleSheet("""
+            QSplitter::handle {
+                background: #2d3748;
+            }
+            QSplitter::handle:hover {
+                background: #4299e1;
+            }
+            QSplitter::handle:pressed {
+                background: #63b3ed;
+            }
+        """)
 
         # 左侧控制面板（只保留控制和预警）
         left_panel = QVBoxLayout()
@@ -1656,14 +1622,15 @@ class ProfessionalBacktestWidget(QWidget):
         left_widget = QWidget()
         left_widget.setLayout(left_panel)
 
-        # 创建滚动区域
+        # 创建滚动区域 - 支持可调节宽度
         left_scroll = QScrollArea()
         left_scroll.setWidget(left_widget)
         left_scroll.setWidgetResizable(True)
         left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         left_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        left_scroll.setMinimumWidth(280)  # 增加宽度
-        left_scroll.setMaximumWidth(340)  # 增加最大宽度
+        left_scroll.setMinimumWidth(250)  # 最小宽度
+        left_scroll.setMaximumWidth(450)  # 最大宽度（可拖拽范围）
+        left_scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         left_scroll.setStyleSheet("""
             QScrollArea {
                 border: none;
@@ -1684,28 +1651,80 @@ class ProfessionalBacktestWidget(QWidget):
             }
         """)
 
-        # 右侧区域（指标+图表）
+        # 右侧区域（指标 + 图表 + 预警）
         right_layout = QVBoxLayout()
         right_layout.setSpacing(4)
         right_layout.setContentsMargins(0, 0, 0, 0)
 
-        # 指标面板
+        # 指标面板（固定高度）
         self.metrics_panel = MetricsPanel()
-        # self.metrics_panel.setMaximumHeight(200)  # 进一步增加高度避免遮挡
-        # self.metrics_panel.setMinimumHeight(180)  # 设置最小高度
+        # self.metrics_panel.setMaximumHeight(180)
+        # self.metrics_panel.setMinimumHeight(160)
         right_layout.addWidget(self.metrics_panel)
 
-        # 图表区域
+        # 图表区域（占用剩余空间的主要部分）
         self.chart_widget = RealTimeChart()
-        right_layout.addWidget(self.chart_widget, 1)  # 占用剩余空间
+        self.chart_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.chart_widget.setMinimumHeight(400)  # 增加最小高度，提升图表显示空间
+        right_layout.addWidget(self.chart_widget, 1)  # stretch=1，占用主要空间
 
         # 右侧容器
         right_widget = QWidget()
         right_widget.setLayout(right_layout)
 
+        # 添加到分割器 - 实现可调节布局
+        main_splitter.addWidget(left_scroll)
+        main_splitter.addWidget(right_widget)
+
+        # 设置初始比例 (左侧:右侧 = 1:3)
+        main_splitter.setStretchFactor(0, 1)
+        main_splitter.setStretchFactor(1, 3)
+
+        # 设置初始分割位置
+        total_width = 1200  # 默认窗口宽度
+        main_splitter.setSizes([int(total_width * 0.25), int(total_width * 0.75)])
+
+        # 允许左侧面板折叠
+        main_splitter.setCollapsible(0, True)
+        main_splitter.setCollapsible(1, False)
+
         # 添加到主布局
-        main_layout.addWidget(left_scroll)
-        main_layout.addWidget(right_widget, 1)
+        main_layout = QHBoxLayout(self)
+        main_layout.setContentsMargins(4, 4, 4, 4)
+        main_layout.addWidget(main_splitter)
+
+        # 保存引用以便响应式调整
+        self.main_splitter = main_splitter
+        self.left_scroll = left_scroll
+
+    def resizeEvent(self, event):
+        """窗口大小变化时自适应调整布局"""
+        super().resizeEvent(event)
+        self._adjust_layout_on_resize(event)
+
+    def _adjust_layout_on_resize(self, event):
+        """根据窗口大小调整布局"""
+        try:
+            width = event.size().width()
+            height = event.size().height()
+
+            if hasattr(self, 'main_splitter'):
+                current_sizes = self.main_splitter.sizes()
+                total = sum(current_sizes)
+                if total > 0:
+                    min_left = 250
+                    max_left = 450
+                    if width < 1024:
+                        new_left = min(int(width * 0.22), min_left)
+                    elif width > 1920:
+                        new_left = min(int(width * 0.20), max_left)
+                    else:
+                        new_left = int(width * 0.20)
+                    new_left = max(min_left, min(max_left, new_left))
+                    new_right = width - new_left - 4
+                    self.main_splitter.setSizes([new_left, new_right])
+        except Exception as e:
+            logger.warning(f"调整布局失败: {e}")
 
     def create_time_panel(self):
         """创建时间范围设置面板"""
@@ -2024,11 +2043,6 @@ class ProfessionalBacktestWidget(QWidget):
             engine_type = "向量化引擎" if params.get('use_vectorized_engine', True) else "标准引擎"
             if params.get('auto_select_engine', True):
                 engine_type += " (自动选择)"
-
-            self.alerts_panel.update_performance_metrics(
-                engine_type=engine_type,
-                data_size=len(stock_data)
-            )
 
             self.start_monitoring(stock_data, params)
 
@@ -2428,6 +2442,10 @@ class ProfessionalBacktestWidget(QWidget):
             self.execution_time = time.time() - self.start_time if hasattr(self, 'start_time') else 0.0
 
             logger.info(f"回测完成，执行时间：{self.execution_time:.2f}s")
+            logger.info(f"回测结果总览: total_return={results.get('total_return', 0):.4f}, "
+                       f"max_drawdown={results.get('max_drawdown', 0):.4f}, "
+                       f"sharpe_ratio={results.get('sharpe_ratio', 0):.4f}, "
+                       f"trade_count={results.get('trade_count', 0)}")
 
             # 更新进度到 100%
             self.control_panel.update_progress(100, "回测完成", "回测已完成")
@@ -2489,30 +2507,86 @@ class ProfessionalBacktestWidget(QWidget):
                     self.metrics_panel.update_metrics(results)
                     logger.info("回测指标面板已更新")
                 
+                # 更新风险指标面板（如果存在）
+                if hasattr(self, 'risk_metrics_panel') and self.risk_metrics_panel:
+                    self.risk_metrics_panel.update_risk_metrics(results)
+                    logger.info("风险指标面板已更新")
+                
                 # 更新图表 - 使用事件驱动的实时推送方式
                 if hasattr(self, 'chart_widget') and self.chart_widget:
                     # 从回测结果中提取 equity_curve 数据
                     equity_curve = results.get('equity_curve')
+                    logger.info(f"equity_curve 提取：type={type(equity_curve)}, len={len(equity_curve) if hasattr(equity_curve, '__len__') else 'N/A'}")
+                    
                     if equity_curve is not None and len(equity_curve) > 0:
+                        # 准备所有数据点 - 包含回撤计算
+                        from datetime import datetime
+                        
                         if isinstance(equity_curve, pd.Series):
+                            logger.info(f"equity_curve 前 5 个值 (Series): {equity_curve[:5].tolist()}")
+                            logger.info(f"equity_curve 统计：min={equity_curve.min():.2f}, max={equity_curve.max():.2f}, mean={equity_curve.mean():.2f}")
                             equity_curve = equity_curve.tolist()
                         
                         if isinstance(equity_curve, list):
-                            # 准备所有数据点
-                            from datetime import datetime
+                            logger.info(f"equity_curve 前 5 个值 (list): {equity_curve[:5]}")
+                            if len(equity_curve) > 0:
+                                logger.info(f"equity_curve 统计：min={min(equity_curve):.2f}, max={max(equity_curve):.2f}, mean={sum(equity_curve)/len(equity_curve):.2f}")
+                                logger.info(f"equity_curve 后 5 个值：{equity_curve[-5:]}")
+                            
+                            # 提取初始资金（必须在最前面定义）
                             initial_capital = equity_curve[0] if equity_curve[0] != 0 else 1
+                            logger.info(f"初始资金：{initial_capital}")
+                            
+                            # 检查是否有非初始值的点
+                            non_initial = [v for v in equity_curve if abs(v - initial_capital) > 0.01]
+                            logger.info(f"非初始资金的数据点数量：{len(non_initial)}/{len(equity_curve)}")
+                            
+                            # 从回测结果中提取风险指标（这些是整体指标，不是时间序列）
+                            risk_metrics_for_chart = {
+                                'var_95': results.get('var_95', 0) or 0,
+                                'cvar_95': results.get('cvar_95', 0) or 0,
+                                'sharpe_ratio': results.get('sharpe_ratio', 0) or 0
+                            }
+                            
+                            logger.info(f"提取风险指标：VaR={risk_metrics_for_chart['var_95']:.6f}, CVaR={risk_metrics_for_chart['cvar_95']:.6f}, Sharpe={risk_metrics_for_chart['sharpe_ratio']:.3f}")
+                            
+                            # 计算回撤曲线
+                            running_max = initial_capital
+                            drawdown_curve = []
                             
                             data_points = []
                             for i, value in enumerate(equity_curve):
+                                # 更新运行最大值
+                                if value > running_max:
+                                    running_max = value
+                                    logger.debug(f"bar {i}: 更新 running_max = {running_max}")
+                                
+                                # 计算当前回撤
+                                current_drawdown = (value - running_max) / running_max if running_max > 0 else 0
+                                drawdown_curve.append(current_drawdown)
+                                
+                                if i < 5 or i >= len(equity_curve) - 5 or i % 50 == 0:  # 显示前 5 个、后 5 个和每 50 个的日志
+                                    logger.info(f"bar {i}: value={value:.2f}, running_max={running_max:.2f}, drawdown={current_drawdown:.6f}")
+                                
+                                # 创建数据点，包含风险指标
                                 data_point = {
                                     'timestamp': datetime.now(),
                                     'cumulative_return': (value / initial_capital - 1),
-                                    'current_drawdown': 0,
+                                    'current_drawdown': current_drawdown,  # ✅ 使用计算的回撤值
                                     'capital': value,
                                     'bar_index': i,
-                                    'total_bars': len(equity_curve)
+                                    'total_bars': len(equity_curve),
+                                    # 添加风险指标（每个点都包含相同的整体指标值）
+                                    'var_95': risk_metrics_for_chart['var_95'],
+                                    'cvar_95': risk_metrics_for_chart['cvar_95'],
+                                    'sharpe_ratio': risk_metrics_for_chart['sharpe_ratio']
                                 }
                                 data_points.append(data_point)
+                            
+                            # 输出回撤统计
+                            if drawdown_curve:
+                                logger.info(f"回撤计算完成：min={min(drawdown_curve):.6f}, max={max(drawdown_curve):.6f}, 非零数量={sum(1 for d in drawdown_curve if d < 0)}")
+                                logger.info(f"回撤后 5 个值：{drawdown_curve[-5:]}")
                             
                             # 方案 1: 使用渐进式动态展示（推荐，可看到动态过程）
                             if hasattr(self.chart_widget, 'start_progressive_display'):
