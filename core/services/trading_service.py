@@ -25,6 +25,11 @@ from ..containers import ServiceContainer, get_service_container
 
 
 
+try:
+    from ..trading.trading_mode import TradingMode, ModeContext, ModeAwareMixin
+except (ImportError, ValueError):
+    from core.trading.trading_mode import TradingMode, ModeContext, ModeAwareMixin
+
 class OrderType(Enum):
     """订单类型"""
     MARKET = "market"  # 市价单
@@ -206,7 +211,7 @@ class TradingMetrics:
     last_update: datetime = field(default_factory=datetime.now)
 
 
-class TradingService(BaseService):
+class TradingService(BaseService, ModeAwareMixin):
     """
     统一交易服务 - 架构精简重构版本
 
@@ -268,6 +273,10 @@ class TradingService(BaseService):
         self._ctp_lock = threading.RLock()
 
         logger.info("TradingService initialized for architecture simplification")
+        
+        # 模式上下文（ModeAwareMixin 要求）
+        self._current_mode_context: Optional[ModeContext] = None
+        self._mode_config: Dict[str, Any] = {}
 
     def _do_initialize(self) -> None:
         """执行具体的初始化逻辑"""
@@ -290,6 +299,49 @@ class TradingService(BaseService):
         except Exception as e:
             logger.error(f"❌ Failed to initialize TradingService: {e}")
             raise
+
+    def set_mode(self, mode: TradingMode, **config) -> None:
+        """
+        设置交易模式
+        
+        Args:
+            mode: 交易模式
+            **config: 模式相关配置
+        """
+        self._current_mode_context = ModeContext(
+            mode=mode,
+            config=config,
+            metadata={'service': 'TradingService'}
+        )
+        self._mode_config = config
+        logger.info(f"TradingService 设置为模式：{mode.value}")
+        
+        # 根据模式调整配置
+        if mode == TradingMode.LIVE:
+            self._trading_config["enable_risk_control"] = True
+            self._trading_config["commission_rate"] = config.get("commission_rate", 0.001)
+            logger.info("实盘模式：启用严格风控")
+        elif mode == TradingMode.PAPER:
+            self._trading_config["enable_risk_control"] = True
+            self._trading_config["commission_rate"] = config.get("commission_rate", 0.001)
+            logger.info("模拟模式：启用风控但不实际下单")
+        elif mode == TradingMode.BACKTEST:
+            self._trading_config["enable_risk_control"] = config.get("enable_risk_control", False)
+            logger.info("回测模式：风控可选")
+
+    def get_mode(self) -> TradingMode:
+        """获取当前交易模式"""
+        if self._current_mode_context:
+            return self._current_mode_context.mode
+        return TradingMode.BACKTEST  # 默认回测模式
+
+    def is_backtest_mode(self) -> bool:
+        """是否为回测模式"""
+        return self.get_mode() == TradingMode.BACKTEST
+
+    def is_live_mode(self) -> bool:
+        """是否为实盘模式"""
+        return self.get_mode() in (TradingMode.LIVE, TradingMode.PAPER)
 
     def _initialize_default_portfolio(self) -> None:
         """初始化默认投资组合"""

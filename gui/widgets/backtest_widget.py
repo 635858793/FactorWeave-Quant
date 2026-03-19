@@ -1,4 +1,5 @@
 from loguru import logger
+from core.trading.trading_mode import TradingMode, ModeContext
 """
 专业级回测UI组件
 集成到FactorWeave-Quant GUI系统中，提供实时回测监控和数据联动功能
@@ -130,6 +131,15 @@ class RealTimeChart(QWidget):
         self.displayed_count = 0  # 已显示的数据点数量
         self.animation_timer = QTimer()  # 动画定时器
         self.animation_timer.timeout.connect(self._incremental_update)
+        
+        # 模式选择器
+        self.mode_label = QLabel("交易模式:")
+        self.mode_selector = QComboBox()
+        self.mode_selector.addItems(['回测模式', '实盘模式', '混合模式'])
+        self.mode_selector.setToolTip("选择回测/实盘/混合模式")
+        self.mode_selector.currentTextChanged.connect(self.on_mode_changed)
+        self.current_mode = TradingMode.BACKTEST  # 默认回测模式
+        
         self.init_ui()
 
     def init_ui(self):
@@ -182,11 +192,17 @@ class RealTimeChart(QWidget):
     def apply_theme(self, theme: str):
         """应用主题"""
         if UNIFIED_CHART_AVAILABLE and hasattr(self, 'chart_widget'):
-            chart_service = get_unified_chart_service()
-            if hasattr(chart_service, 'apply_theme'):
-                chart_service.apply_theme(self.chart_widget, theme)
-            else:
-                logger.debug("图表服务不支持 apply_theme 方法")
+            self.chart_widget.apply_theme(theme)
+
+    def on_mode_changed(self, mode_text: str):
+        """处理模式切换"""
+        mode_map = {
+            '回测模式': TradingMode.BACKTEST,
+            '实盘模式': TradingMode.LIVE,
+            '混合模式': getattr(TradingMode, 'HYBRID', TradingMode.BACKTEST)
+        }
+        self.current_mode = mode_map.get(mode_text, TradingMode.BACKTEST)
+        logger.info(f"切换交易模式：{mode_text} -> {self.current_mode.value}")
 
     def start_progressive_display(self, data_points: List[Dict], batch_size: int = 10, interval_ms: int = 50):
         """启动渐进式动态展示"""
@@ -619,6 +635,31 @@ class ControlPanel(QWidget):
         """)
         strategy_layout.addRow(self.params_table)
 
+        # 高级参数配置按钮（使用 ParameterEditorWidget）
+        advanced_params_btn = QPushButton("📝 高级参数配置")
+        advanced_params_btn.setStyleSheet("""
+            QPushButton {
+                background: linear-gradient(45deg, #8b5cf6, #7c3aed);
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 12px;
+                font-weight: bold;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background: linear-gradient(45deg, #7c3aed, #6d28d9);
+            }
+            QPushButton:pressed {
+                background: linear-gradient(45deg, #6d28d9, #5b21b6);
+            }
+        """)
+        advanced_params_btn.setToolTip("打开可视化参数编辑器，支持参数扫描、预设管理和智能推荐")
+        advanced_params_btn.clicked.connect(
+            lambda: self.parent_widget._open_advanced_parameter_editor()
+        )
+        strategy_layout.addRow(advanced_params_btn)
+
         # 策略预览按钮
         preview_button = QPushButton("策略预览")
         preview_button.setStyleSheet("""
@@ -1012,21 +1053,21 @@ class ControlPanel(QWidget):
         """预览策略信号"""
         try:
             strategy_name = self.strategy_combo.currentText()
-            logger.info(f"预览策略: {strategy_name}")
+            logger.info(f"预览策略：{strategy_name}")
 
             QMessageBox.information(
                 self,
                 "策略预览",
-                f"已选择策略: {strategy_name}\n\n"
+                f"已选择策略：{strategy_name}\n\n"
                 f"策略参数将根据选择的策略自动配置。\n"
                 f"点击'开始回测'按钮执行回测。"
             )
         except Exception as e:
-            logger.error(f"策略预览失败: {e}")
+            logger.error(f"策略预览失败：{e}")
             QMessageBox.warning(
                 self,
                 "预览失败",
-                f"策略预览失败: {str(e)}"
+                f"策略预览失败：{str(e)}"
             )
 
     def on_start_backtest(self):
@@ -1482,7 +1523,7 @@ class ProfessionalBacktestWidget(QWidget):
     def __init__(self, parent=None, config_manager: Optional[ConfigManager] = None):
         super().__init__(parent)
         self.config_manager = config_manager or ConfigManager()
-        # 纯Loguru架构，移除log_manager依赖
+        # 纯 Loguru 架构，移除 log_manager 依赖
 
         # 回测相关组件（使用实例复用模式）
         self.backtest_engine = None
@@ -1560,6 +1601,25 @@ class ProfessionalBacktestWidget(QWidget):
         self.request_ui_update.connect(self._on_backtest_completed, Qt.QueuedConnection)
         self.request_progress_update.connect(self._on_progress_update, Qt.QueuedConnection)
         self.request_alert.connect(self._on_alert_request, Qt.QueuedConnection)
+        
+        # 模式管理
+        self.current_mode = TradingMode.BACKTEST  # 默认回测模式
+
+    def on_mode_changed(self, mode_text: str):
+        """处理模式切换"""
+        mode_map = {
+            '回测模式': TradingMode.BACKTEST,
+            '实盘模式': TradingMode.LIVE,
+            '混合模式': getattr(TradingMode, 'HYBRID', TradingMode.BACKTEST)
+        }
+        self.current_mode = mode_map.get(mode_text, TradingMode.BACKTEST)
+        logger.info(f"ProfessionalBacktestWidget 切换交易模式：{mode_text} -> {self.current_mode.value}")
+        
+        # 根据模式调整配置
+        if self.current_mode == TradingMode.LIVE:
+            logger.info("实盘模式：启用严格风控和性能优化")
+        elif self.current_mode == TradingMode.BACKTEST:
+            logger.info("回测模式：使用完整计算")
 
     def init_ui(self):
         """初始化UI"""
@@ -2053,6 +2113,90 @@ class ProfessionalBacktestWidget(QWidget):
             self.error_occurred.emit(f"启动回测失败: {str(e)}")
             self.control_panel.on_stop_backtest()
             self.control_panel.reset_progress()
+
+    def _open_advanced_parameter_editor(self):
+        """打开高级参数编辑器（ParameterEditorWidget）"""
+        try:
+            from gui.widgets.parameter_editor import ParameterEditorWidget
+            from core.strategy.strategy_engine import get_strategy_engine
+            from core.trading.trading_mode import ModeContext, TradingMode
+            
+            # 获取当前策略
+            strategy_name = self.control_panel.strategy_combo.currentText()
+            logger.info(f"打开高级参数编辑器：{strategy_name}")
+            
+            # 创建策略实例
+            strategy_engine = get_strategy_engine()
+            strategy = strategy_engine.get_strategy_instance(strategy_name)
+            
+            # 创建 mode_context
+            mode_context = ModeContext.create_backtest()
+            strategy.set_mode_context(mode_context)
+            
+            # 创建参数编辑器对话框
+            from PyQt5.QtWidgets import QDialog
+            dialog = QDialog(self)
+            dialog.setWindowTitle(f"高级参数配置 - {strategy_name}")
+            dialog.resize(700, 900)
+            
+            # 创建参数编辑器
+            parameter_editor = ParameterEditorWidget(strategy, dialog)
+            
+            # 传递 kdata（如果有）
+            if hasattr(self, 'current_data') and self.current_data is not None:
+                parameter_editor.kdata = self.current_data
+                logger.info(f"已传递 K 线数据到参数编辑器：{len(self.current_data)} 条")
+            
+            # 传递 mode_context
+            parameter_editor.mode_context = mode_context
+            
+            # 连接信号
+            parameter_editor.parameter_changed.connect(
+                lambda name, value: self._on_advanced_parameter_changed(name, value, strategy)
+            )
+            parameter_editor.parameters_applied.connect(
+                lambda: self._on_advanced_parameters_applied(strategy)
+            )
+            parameter_editor.scan_completed.connect(
+                lambda result: self._on_parameter_scan_completed(result)
+            )
+            parameter_editor.comparison_completed.connect(
+                lambda results: self._on_parameter_comparison_completed(results)
+            )
+            
+            # 添加到对话框
+            layout = QVBoxLayout(dialog)
+            layout.addWidget(parameter_editor)
+            
+            # 显示对话框
+            dialog.exec_()
+            
+            logger.info("高级参数编辑器已关闭")
+            
+        except Exception as e:
+            logger.error(f"打开高级参数编辑器失败：{e}")
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self,
+                "错误",
+                f"无法打开高级参数编辑器：{e}"
+            )
+
+    def _on_advanced_parameter_changed(self, name, value, strategy):
+        """高级参数变化回调"""
+        logger.info(f"高级参数变化：{name} = {value}")
+
+    def _on_advanced_parameters_applied(self, strategy):
+        """高级参数应用回调"""
+        logger.info(f"高级参数已应用：{strategy.name}")
+
+    def _on_parameter_scan_completed(self, result):
+        """参数扫描完成回调"""
+        logger.info(f"参数扫描完成：{len(result)} 个结果")
+
+    def _on_parameter_comparison_completed(self, results):
+        """参数对比完成回调"""
+        logger.info(f"参数对比完成：{len(results)} 个结果")
 
     def _get_stock_service(self):
         """获取股票服务"""
@@ -2838,6 +2982,17 @@ class ProfessionalBacktestWidget(QWidget):
                 # 直接运行一次完整回测（不使用监控器的多次分块调用）
                 try:
                     logger.info("开始执行单次完整回测...")
+                    
+                    # 创建模式上下文
+                    mode_context = ModeContext.create_backtest(
+                        start_date=params.get('start_date') if params else None,
+                        end_date=params.get('end_date') if params else None
+                    )
+                    
+                    # 设置引擎的模式上下文
+                    if hasattr(backtest_engine, 'mode_context'):
+                        backtest_engine.mode_context = mode_context
+                    
                     final_result = backtest_engine.run_backtest(
                         data=data,
                         initial_capital=params.get('initial_capital', 100000),
@@ -2847,7 +3002,8 @@ class ProfessionalBacktestWidget(QWidget):
                         stop_loss_pct=stop_loss_pct if stop_loss_pct > 0 else None,
                         take_profit_pct=take_profit_pct if take_profit_pct > 0 else None,
                         max_holding_periods=max_holding_periods,
-                        enable_compound=params.get('enable_compound', True)
+                        enable_compound=params.get('enable_compound', True),
+                        mode_context=mode_context  # 传递 mode_context
                     )
                     # 调试：打印返回类型
                     logger.info(f"回测结果类型：{type(final_result).__name__}")

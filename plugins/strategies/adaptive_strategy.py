@@ -130,23 +130,52 @@ class AdaptivePandasStrategy(BaseStrategy):
             return signals
         
         try:
+            # 根据模式调整信号生成逻辑
+            if self.mode_context and self.mode_context.mode.is_live:
+                # 实盘模式：使用更严格的信号条件和性能优化
+                logger.info("实盘模式：启用严格信号条件和性能优化")
+                check_mode = 'live'
+                lookback_window = max(50, self.get_parameter('lookback_window', 50))
+                signal_threshold = 0.8  # 更严格的信号阈值
+            else:
+                # 回测模式：使用标准信号条件和完整计算
+                logger.info("回测模式：使用完整计算")
+                check_mode = 'backtest'
+                lookback_window = self.get_parameter('lookback_window', 30)
+                signal_threshold = 0.6  # 标准信号阈值
+            
             # 计算技术指标
             indicators = self._calculate_technical_indicators(data)
             
             # 检查是否启用向量化优化
             if self.get_parameter('vectorized_enabled', True):
                 logger.info("使用向量化信号生成（性能优化）")
-                signals = self._vectorized_generate_signals(data, indicators)
+                signals = self._vectorized_generate_signals(
+                    data, 
+                    indicators,
+                    check_mode=check_mode,
+                    lookback_window=lookback_window,
+                    signal_threshold=signal_threshold
+                )
             else:
                 logger.info("使用循环信号生成（兼容模式）")
-                signals = self._loop_generate_signals(data, indicators)
+                signals = self._loop_generate_signals(
+                    data,
+                    indicators,
+                    check_mode=check_mode,
+                    lookback_window=lookback_window,
+                    signal_threshold=signal_threshold
+                )
             
             self._calculation_history.append({
                 'timestamp': datetime.now(),
                 'signals_generated': len(signals),
                 'data_points': len(data),
                 'ta_lib_used': self._ta_lib_available,
-                'vectorized_enabled': self.get_parameter('vectorized_enabled', True)
+                'vectorized_enabled': self.get_parameter('vectorized_enabled', True),
+                'mode': self.trading_mode.value if self.trading_mode else 'unknown',
+                'check_mode': check_mode,
+                'lookback_window': lookback_window
             })
             
             # 发布信号生成事件
@@ -340,11 +369,13 @@ class AdaptivePandasStrategy(BaseStrategy):
                 sell_conditions.append("布林带突破")
                 confidence_score += 0.15
             
-            # 信号阈值 - 降低阈值以产生更多信号用于回测
-            signal_threshold = 0.4
+            # 信号阈值 - 根据模式调整
+            # 实盘模式使用更高阈值（0.8），回测模式使用较低阈值（0.6）
+            is_live_mode = self.mode_context and self.mode_context.mode.is_live if self.mode_context else False
+            threshold = 0.8 if is_live_mode else 0.6
             
-            buy_signal = len(buy_conditions) >= 2 and confidence_score >= signal_threshold
-            sell_signal = len(sell_conditions) >= 2 and confidence_score >= signal_threshold
+            buy_signal = len(buy_conditions) >= 2 and confidence_score >= threshold
+            sell_signal = len(sell_conditions) >= 2 and confidence_score >= threshold
             
             return {
                 'buy_signal': buy_signal,
@@ -369,14 +400,27 @@ class AdaptivePandasStrategy(BaseStrategy):
             
             # 计算简化的性能指标
             init_cash = self.get_parameter("init_cash", 100000)
+            fixed_count = self.get_parameter("fixed_count", 100)
             
             # 基于策略参数估算收益率
             atr_multiplier = self.get_parameter("atr_multiplier", 2.0)
+            atr_period = self.get_parameter("atr_period", 14)
             volatility_factor = self.get_parameter("volatility_factor", 0.5)
             trend_factor = self.get_parameter("trend_factor", 0.3)
+            market_factor = self.get_parameter("market_factor", 0.2)
             
-            # 估算总收益率（基于策略参数）
-            estimated_return = (atr_multiplier * 0.01) * trend_factor * volatility_factor * 10
+            # 止盈止损参数
+            min_take_profit = self.get_parameter("min_take_profit", 0.05)
+            max_take_profit = self.get_parameter("max_take_profit", 0.2)
+            trailing_profit = self.get_parameter("trailing_profit", 0.03)
+            profit_lock = self.get_parameter("profit_lock", 0.05)
+            
+            # 滑点参数
+            slippage_percent = self.get_parameter("slippage_percent", 0.01)
+            
+            # 估算总收益率（基于策略参数，考虑市场因子）
+            base_return = (atr_multiplier * 0.01) * trend_factor * volatility_factor * 10
+            estimated_return = base_return * (1 + market_factor)
             total_return = max(min(estimated_return, 1.0), -0.5)
             
             # 年化收益率（假设一年交易日）
@@ -431,8 +475,23 @@ class AdaptivePandasStrategy(BaseStrategy):
                 end_date=None
             )
 
-    def _vectorized_generate_signals(self, data: pd.DataFrame, indicators: pd.DataFrame) -> List[StrategySignal]:
-        """向量化信号生成方法"""
+    def _vectorized_generate_signals(
+        self, 
+        data: pd.DataFrame, 
+        indicators: pd.DataFrame,
+        check_mode: Optional[str] = None,
+        lookback_window: Optional[int] = None,
+        signal_threshold: Optional[float] = None
+    ) -> List[StrategySignal]:
+        """向量化信号生成方法
+        
+        Args:
+            data: 市场数据
+            indicators: 技术指标
+            check_mode: 检查模式（backtest/live/hybrid），优先使用此参数，否则从配置获取
+            lookback_window: 回溯窗口，优先使用此参数，否则从配置获取
+            signal_threshold: 信号阈值，优先使用此参数，否则使用默认值
+        """
         try:
             signals = []
             
@@ -443,18 +502,40 @@ class AdaptivePandasStrategy(BaseStrategy):
             else:
                 first_valid_idx = 20
             
-            # 智能自适应窗口
-            total_bars = len(data)
-            if total_bars <= 200:
-                start_idx = first_valid_idx
-            elif total_bars <= 1000:
-                lookback = min(200, total_bars - first_valid_idx)
-                start_idx = total_bars - lookback
-            else:
-                lookback = min(500, total_bars - first_valid_idx)
-                start_idx = total_bars - lookback
+            # 使用传入的参数或从配置获取
+            check_mode = check_mode or self.get_parameter('check_mode', 'hybrid')
+            lookback_window = lookback_window or self.get_parameter('lookback_window', 200)
+            threshold = signal_threshold if signal_threshold is not None else 0.4
             
-            logger.info(f"向量化信号生成 - 数据量：{len(data)}, 起始索引：{start_idx}")
+            # 智能自适应窗口（支持模式切换）
+            total_bars = len(data)
+            
+            if check_mode == 'backtest':
+                # 回测模式：使用完整数据
+                if total_bars <= 200:
+                    start_idx = first_valid_idx
+                elif total_bars <= 1000:
+                    lookback = min(200, total_bars - first_valid_idx)
+                    start_idx = total_bars - lookback
+                else:
+                    lookback = min(500, total_bars - first_valid_idx)
+                    start_idx = total_bars - lookback
+            elif check_mode == 'live':
+                # 实盘模式：使用可配置窗口
+                lookback = min(lookback_window, total_bars - first_valid_idx)
+                start_idx = max(first_valid_idx, total_bars - lookback)
+            else:  # hybrid
+                # 混合模式：根据数据量自动调整
+                if total_bars <= 200:
+                    start_idx = first_valid_idx
+                elif total_bars <= 1000:
+                    lookback = min(200, total_bars - first_valid_idx)
+                    start_idx = total_bars - lookback
+                else:
+                    lookback = min(500, total_bars - first_valid_idx)
+                    start_idx = total_bars - lookback
+            
+            logger.info(f"向量化信号生成 - 模式：{check_mode}, 数据量：{len(data)}, 窗口：{lookback_window}, 起始索引：{start_idx}")
             
             # 准备向量化数据
             close_prices = data['close'].values[start_idx:]
@@ -506,12 +587,13 @@ class AdaptivePandasStrategy(BaseStrategy):
             sell_scores += rsi_overbought.astype(float) * 0.2
             sell_scores += boll_breakout_upper.astype(float) * 0.15
             
-            # 信号阈值
-            signal_threshold = 0.4
+            # 使用传入的信号阈值
+            threshold = threshold if threshold is not None else 0.4
+            logger.info(f"向量化信号生成使用阈值：{threshold}")
             
             # 找出所有买入和卖出信号（互斥处理）
-            buy_candidates = np.where(buy_scores >= signal_threshold)[0]
-            sell_candidates = np.where(sell_scores >= signal_threshold)[0]
+            buy_candidates = np.where(buy_scores >= threshold)[0]
+            sell_candidates = np.where(sell_scores >= threshold)[0]
             
             # 应用互斥逻辑：如果某个点同时满足买入和卖出，选择分数高的
             final_buy_indices = []
@@ -614,8 +696,23 @@ class AdaptivePandasStrategy(BaseStrategy):
             logger.error(f"向量化信号生成失败：{e}", exc_info=True)
             return []
     
-    def _loop_generate_signals(self, data: pd.DataFrame, indicators: pd.DataFrame) -> List[StrategySignal]:
-        """循环版本信号生成方法（保留作为 fallback）"""
+    def _loop_generate_signals(
+        self, 
+        data: pd.DataFrame, 
+        indicators: pd.DataFrame,
+        check_mode: Optional[str] = None,
+        lookback_window: Optional[int] = None,
+        signal_threshold: Optional[float] = None
+    ) -> List[StrategySignal]:
+        """循环版本信号生成方法（保留作为 fallback）
+        
+        Args:
+            data: 市场数据
+            indicators: 技术指标
+            check_mode: 检查模式（backtest/live/hybrid），优先使用此参数，否则从配置获取
+            lookback_window: 回溯窗口，优先使用此参数，否则从配置获取
+            signal_threshold: 信号阈值，优先使用此参数，否则使用默认值
+        """
         try:
             signals = []
             
@@ -626,18 +723,40 @@ class AdaptivePandasStrategy(BaseStrategy):
             else:
                 first_valid_idx = 20
             
-            # 智能自适应窗口
-            total_bars = len(data)
-            if total_bars <= 200:
-                start_idx = first_valid_idx
-            elif total_bars <= 1000:
-                lookback = min(200, total_bars - first_valid_idx)
-                start_idx = total_bars - lookback
-            else:
-                lookback = min(500, total_bars - first_valid_idx)
-                start_idx = total_bars - lookback
+            # 使用传入的参数或从配置获取
+            check_mode = check_mode or self.get_parameter('check_mode', 'hybrid')
+            lookback_window = lookback_window or self.get_parameter('lookback_window', 200)
+            threshold = signal_threshold if signal_threshold is not None else 0.4
             
-            logger.info(f"循环信号生成 - 数据量：{len(data)}, 起始索引：{start_idx}")
+            # 智能自适应窗口（支持模式切换）
+            total_bars = len(data)
+            
+            if check_mode == 'backtest':
+                # 回测模式：使用完整数据
+                if total_bars <= 200:
+                    start_idx = first_valid_idx
+                elif total_bars <= 1000:
+                    lookback = min(200, total_bars - first_valid_idx)
+                    start_idx = total_bars - lookback
+                else:
+                    lookback = min(500, total_bars - first_valid_idx)
+                    start_idx = total_bars - lookback
+            elif check_mode == 'live':
+                # 实盘模式：使用可配置窗口
+                lookback = min(lookback_window, total_bars - first_valid_idx)
+                start_idx = max(first_valid_idx, total_bars - lookback)
+            else:  # hybrid
+                # 混合模式：根据数据量自动调整
+                if total_bars <= 200:
+                    start_idx = first_valid_idx
+                elif total_bars <= 1000:
+                    lookback = min(200, total_bars - first_valid_idx)
+                    start_idx = total_bars - lookback
+                else:
+                    lookback = min(500, total_bars - first_valid_idx)
+                    start_idx = total_bars - lookback
+            
+            logger.info(f"循环信号生成 - 模式：{check_mode}, 数据量：{len(data)}, 窗口：{lookback_window}, 起始索引：{start_idx}")
             
             signal_count = 0
             buy_count = 0

@@ -12,6 +12,7 @@ from ..containers import ServiceContainer
 from ..events import EventBus
 from ..enums import PluginStatus
 from .base_service import BaseService
+from ..trading.trading_mode import TradingMode, ModeContext
 from loguru import logger
 import traceback
 import os
@@ -1060,7 +1061,8 @@ class StrategyService(BaseService):
     async def run_backtest(self,
                            strategy_id: str,
                            market_data: StandardMarketData,
-                           context: StrategyContext) -> str:
+                           context: StrategyContext,
+                           mode: TradingMode = TradingMode.BACKTEST) -> str:
         """运行回测"""
         try:
             if strategy_id not in self._strategy_configs:
@@ -1084,13 +1086,25 @@ class StrategyService(BaseService):
                 context=context
             )
 
+            
             self._backtest_tasks[task_id] = backtest_task
+
+            # 创建模式上下文并传递给策略
+            mode_context = ModeContext.create_backtest(
+                start_date=context.start_date.isoformat() if hasattr(context.start_date, 'isoformat') else str(context.start_date),
+                end_date=context.end_date.isoformat() if hasattr(context.end_date, 'isoformat') else str(context.end_date),
+                mode=mode.value,
+                use_full_data=mode == TradingMode.BACKTEST,
+                performance_critical=mode == TradingMode.LIVE,
+            )
+            
+            logger.info(f"创建模式上下文：{mode.value}, 策略：{strategy_id}, 时间范围：{context.start_date} 至 {context.end_date}")
 
             # 启动回测任务（带超时控制）
             try:
                 async_task = asyncio.create_task(
                     asyncio.wait_for(
-                        self._execute_backtest(task_id),
+                        self._execute_backtest(task_id, mode_context),
                         timeout=self._backtest_timeout_seconds
                     )
                 )
@@ -1110,7 +1124,7 @@ class StrategyService(BaseService):
             logger.error(f"回测请求上下文: market_data={market_data.symbol}, context={context.symbol} - {context.start_date} 至 {context.end_date}")
             raise
 
-    async def _execute_backtest(self, task_id: str) -> None:
+    async def _execute_backtest(self, task_id: str, mode_context: ModeContext = None) -> None:
         """执行回测"""
         backtest_task = self._backtest_tasks[task_id]
         strategy_id = backtest_task.strategy_config.strategy_id
@@ -1140,6 +1154,11 @@ class StrategyService(BaseService):
                 logger.error(f"回测任务 {task_id} 失败: {error_msg}")
                 raise ValueError(error_msg)
 
+            # 设置策略的模式上下文
+            if mode_context and hasattr(plugin, 'mode_context'):
+                plugin.mode_context = mode_context
+                logger.info(f"已为策略 {strategy_id} 设置模式上下文：{mode_context.mode.value}")
+            
             # 更新插件使用时间
             self._update_plugin_last_used(plugin)
             # 更新插件状态为RUNNING
@@ -1165,6 +1184,11 @@ class StrategyService(BaseService):
                 logger.error(f"回测任务 {task_id} 失败: {error_msg}")
                 raise ValueError(error_msg)
 
+            # 设置策略的模式上下文
+            if mode_context and hasattr(plugin, 'mode_context'):
+                plugin.mode_context = mode_context
+                logger.info(f"已为策略 {strategy_id} 设置模式上下文：{mode_context.mode.value}")
+            
             # 更新插件使用时间
             self._update_plugin_last_used(plugin)
             
@@ -1196,6 +1220,11 @@ class StrategyService(BaseService):
                 except Exception as e:
                     logger.warning(f"发布信号生成事件失败: {e}")
 
+            # 设置策略的模式上下文
+            if mode_context and hasattr(plugin, 'mode_context'):
+                plugin.mode_context = mode_context
+                logger.info(f"已为策略 {strategy_id} 设置模式上下文：{mode_context.mode.value}")
+            
             # 更新插件使用时间
             self._update_plugin_last_used(plugin)
             

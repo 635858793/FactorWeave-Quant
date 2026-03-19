@@ -114,6 +114,8 @@ class ImportTaskConfig:
     force_full_update: bool = False    # 强制全量更新
     check_completeness: bool = True  # 数据完整性检查
     skip_latest_data: bool = True  # 跳过最新数据
+    # 基本面数据下载配置
+    enable_fundamental_download: bool = False  # 是否同时下载基本面数据（仅在 K 线数据下载时有效）
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
 

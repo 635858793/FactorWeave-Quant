@@ -279,9 +279,10 @@ class MainMenuBar(QMenuBar):
 
             self.strategy_menu.addSeparator()
 
-            # 策略优化
-            self.strategy_optimize_action = QAction("策略优化", self)
-            self.strategy_optimize_action.setStatusTip("优化策略参数")
+            # 策略优化（独立参数编辑器）
+            self.strategy_optimize_action = QAction("⚡ 策略参数优化", self)
+            self.strategy_optimize_action.setStatusTip("打开可视化参数编辑器（支持参数扫描、预设管理和智能推荐）")
+            self.strategy_optimize_action.setShortcut("Ctrl+Shift+O")  # 行业通用快捷键
             self.strategy_menu.addAction(self.strategy_optimize_action)
 
             self.strategy_menu.addSeparator()

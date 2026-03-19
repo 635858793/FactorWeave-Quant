@@ -1340,7 +1340,7 @@ class EnhancedDataImportWidget(QWidget):
 
         # 数据类型
         self.data_type_combo = QComboBox()
-        self.data_type_combo.addItems(["K线数据", "分笔数据", "财务数据", "基本面数据"])
+        self.data_type_combo.addItems(["K 线数据", "分笔数据", "财务数据", "基本面数据"])
         basic_layout.addRow("📈 数据类型:", self.data_type_combo)
 
         # 数据频率
@@ -1348,6 +1348,16 @@ class EnhancedDataImportWidget(QWidget):
         self.frequency_combo = QComboBox()
         self.frequency_combo.addItems(Period.all_periods())
         basic_layout.addRow("⏱️ 数据频率:", self.frequency_combo)
+
+        # 基本面数据下载开关（新增）
+        self.fundamental_data_download_cb = QCheckBox("📊 同时下载基本面数据")
+        self.fundamental_data_download_cb.setChecked(False)  # 默认关闭
+        self.fundamental_data_download_cb.setToolTip(
+            "勾选后，在创建 K 线数据下载任务时，会同时创建基本面数据下载任务\n"
+            "基本面数据包括：股本、市盈率、市净率、市值等财务指标"
+        )
+        self.fundamental_data_download_cb.stateChanged.connect(self.on_fundamental_data_download_changed)
+        basic_layout.addRow("", self.fundamental_data_download_cb)
 
         content_layout.addWidget(basic_info_group)
 
@@ -1626,15 +1636,10 @@ class EnhancedDataImportWidget(QWidget):
         ai_layout.addLayout(ai_row2)
         ai_layout.addLayout(ai_row3)
 
-        # ==================== 实时写入配置（融入智能化功能组）====================
         separator = QFrame()
         separator.setFrameShape(QFrame.HLine)
         separator.setFrameShadow(QFrame.Sunken)
         ai_layout.addWidget(separator)
-
-        realtime_label = QLabel("⚡ 实时写入配置")
-        realtime_label.setStyleSheet("font-weight: bold; color: #0066cc;")
-        ai_layout.addWidget(realtime_label)
 
         content_layout.addWidget(ai_features_group)
 
@@ -4530,7 +4535,7 @@ class EnhancedDataImportWidget(QWidget):
         # 设置表格
         columns = [
             "任务名称", "状态", "进度", "数据源", "资产类型", "数据类型",
-            "频率", "下载数量", "开始时间", "结束时间", "运行时间", "成功数", "失败数", "定时任务"
+            "频率", "下载数量", "开始时间", "结束时间", "运行时间", "成功数", "失败数", "定时任务", "基本面下载"
         ]
         self.task_table.setColumnCount(len(columns))
         self.task_table.setHorizontalHeaderLabels(columns)
@@ -4554,6 +4559,7 @@ class EnhancedDataImportWidget(QWidget):
         header.setSectionResizeMode(11, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(12, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(13, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(14, QHeaderView.ResizeToContents)  # 基本面下载列
 
         main_splitter.addWidget(self.task_table)
 
@@ -4636,8 +4642,18 @@ class EnhancedDataImportWidget(QWidget):
                 QMessageBox.warning(self, "提示", "请先输入或选择股票代码")
                 return
 
+            # 检查是否启用基本面数据下载（仅当数据类型为 K 线数据时）
+            enable_fundamental = (
+                hasattr(self, 'fundamental_data_download_cb') and 
+                self.fundamental_data_download_cb.isChecked() and
+                task_config_dict.get('data_type') == 'K 线数据'
+            )
+
+            # 将基本面数据下载配置传递到任务配置中
+            task_config_dict['enable_fundamental_download'] = enable_fundamental
+
             # 使用传统方式创建任务
-            self._create_task_legacy(task_config_dict)
+            self._create_task_legacy(task_config_dict, show_success_message=True)
 
         except Exception as e:
             logger.error(f"从配置创建任务失败: {e}") if logger else None
@@ -4710,7 +4726,10 @@ class EnhancedDataImportWidget(QWidget):
 
                 # 时间范围配置
                 'start_date': self.start_date.date().toString("yyyy-MM-dd") if hasattr(self, 'start_date') else None,
-                'end_date': self.end_date.date().toString("yyyy-MM-dd") if hasattr(self, 'end_date') else None
+                'end_date': self.end_date.date().toString("yyyy-MM-dd") if hasattr(self, 'end_date') else None,
+                
+                # 基本面数据下载配置
+                'enable_fundamental_download': self.fundamental_data_download_cb.isChecked() if hasattr(self, 'fundamental_data_download_cb') else False
             }
 
             return config
@@ -4729,8 +4748,13 @@ class EnhancedDataImportWidget(QWidget):
             logger.error(f"创建任务失败: {e}") if logger else None
             QMessageBox.critical(self, "错误", f"创建任务失败: {e}")
 
-    def _create_task_legacy(self, task_config_dict):
-        """传统方式创建任务（回退方案）"""
+    def _create_task_legacy(self, task_config_dict, show_success_message=True):
+        """传统方式创建任务（回退方案）
+        
+        Args:
+            task_config_dict: 任务配置字典
+            show_success_message: 是否显示成功提示，默认 True
+        """
         try:
             # 频率字符串到枚举的映射
             frequency_str = task_config_dict.get('frequency', '1d')
@@ -4768,7 +4792,8 @@ class EnhancedDataImportWidget(QWidget):
                 memory_limit=task_config_dict.get('memory_limit', 2048),
                 timeout=task_config_dict.get('timeout', 60),  # 优化：默认超时从300秒减少到60秒
                 progress_interval=task_config_dict.get('progress_interval', 5),
-                validate_data=task_config_dict.get('validate_data', True)
+                validate_data=task_config_dict.get('validate_data', True),
+                enable_fundamental_download=task_config_dict.get('enable_fundamental_download', False)  # 添加基本面数据下载配置
             )
 
             # 添加任务到配置管理器
@@ -4776,13 +4801,13 @@ class EnhancedDataImportWidget(QWidget):
                 self.config_manager.add_import_task(task_config)
                 logger.info(f"创建新任务 {task_config.name}") if logger else None
                 self.refresh_task_list()
-                QMessageBox.information(self, "成功", f"任务 '{task_config.name}' 创建成功")
+                QMessageBox.information(self, "成功", f"任务 '{task_config.name}' 创建成功") if show_success_message else None
             else:
-                QMessageBox.warning(self, "错误", "配置管理器未初始化")
+                QMessageBox.warning(self, "错误", "配置管理器未初始化") if show_success_message else None
 
         except Exception as e:
-            logger.error(f"传统方式创建任务失败: {e}")
-            QMessageBox.critical(self, "错误", f"创建任务失败: {e}")
+            logger.error(f"传统方式创建任务失败：{e}")
+            QMessageBox.critical(self, "错误", f"创建任务失败：{e}") if show_success_message else None
 
     def refresh_task_list(self):
         """刷新任务列表（优化版：增量更新，减少闪烁）"""
@@ -4886,6 +4911,14 @@ class EnhancedDataImportWidget(QWidget):
                         enabled = getattr(task, 'enabled', True)
                         schedule_status = "✓ 启用" if enabled else "○ 禁用"
 
+                    # 基本面下载状态
+                    fundamental_status = ""
+                    if task.data_type == "K 线数据":
+                        if hasattr(task, 'enable_fundamental_download') and task.enable_fundamental_download:
+                            fundamental_status = "✓ 同步下载"
+                        else:
+                            fundamental_status = "○ 未下载"
+
                     items = [
                         task.name,
                         status_text,
@@ -4900,7 +4933,8 @@ class EnhancedDataImportWidget(QWidget):
                         runtime,
                         str(success_count),
                         str(failure_count),
-                        schedule_status
+                        schedule_status,
+                        fundamental_status
                     ]
 
                     # 🔧 如果任务存在，更新单元格内容而非重建整行
@@ -4931,6 +4965,13 @@ class EnhancedDataImportWidget(QWidget):
                                             item.setForeground(QColor("#28a745"))
                                         elif "禁用" in str(item_text):
                                             item.setForeground(QColor("#6c757d"))
+                                    
+                                    # 基本面下载列颜色
+                                    if col == 14:
+                                        if "同步下载" in str(item_text):
+                                            item.setForeground(QColor("#28a745"))
+                                        elif "未下载" in str(item_text):
+                                            item.setForeground(QColor("#6c757d"))
                     else:
                         # 🔧 新任务：添加新行
                         row = self.task_table.rowCount()
@@ -4955,6 +4996,13 @@ class EnhancedDataImportWidget(QWidget):
                                 if "启用" in str(item_text):
                                     item.setForeground(QColor("#28a745"))
                                 elif "禁用" in str(item_text):
+                                    item.setForeground(QColor("#6c757d"))
+                            
+                            # 基本面下载列颜色
+                            if col == 14:
+                                if "同步下载" in str(item_text):
+                                    item.setForeground(QColor("#28a745"))
+                                elif "未下载" in str(item_text):
                                     item.setForeground(QColor("#6c757d"))
 
                             self.task_table.setItem(row, col, item)
@@ -6987,16 +7035,6 @@ class EnhancedDataImportWidget(QWidget):
         except Exception as e:
             logger.error(f"初始化批量按钮失败: {e}") if logger else None
 
-    # ==================== 实时写入事件处理方法 ====================
-
-    def on_realtime_config_changed(self, config: Dict[str, Any]):
-        """实时写入配置变更"""
-        try:
-            logger.info(f"实时写入配置已变更: {config}") if logger else None
-            self.current_realtime_config = config
-        except Exception as e:
-            logger.error(f"处理配置变更失败: {e}") if logger else None
-
     def on_stop_download(self):
         """停止下载"""
         try:
@@ -7215,8 +7253,59 @@ class EnhancedDataImportWidget(QWidget):
             return tag_mapping.get(display_name, "[通用]")
 
         except Exception as e:
-            logger.error(f"获取数据用途标记失败: {e}") if logger else None
+            logger.error(f"获取数据用途标记失败：{e}") if logger else None
             return "[通用]"
+
+    def on_fundamental_data_download_changed(self, state):
+        """基本面数据下载开关状态变化处理"""
+        try:
+            if state == Qt.Checked:
+                logger.info("已启用基本面数据下载") if logger else None
+            else:
+                logger.info("已禁用基本面数据下载") if logger else None
+        except Exception as e:
+            logger.error(f"处理基本面数据下载开关变化失败：{e}") if logger else None
+
+    def _create_fundamental_data_task(self, base_config_dict: dict, show_success_message=False):
+        """创建基本面数据下载任务
+        
+        Args:
+            base_config_dict: 基础配置字典，包含股票代码等公共配置
+            show_success_message: 是否显示成功提示，默认 False
+            
+        Returns:
+            str: 创建的任务名称，失败时返回 None
+        """
+        try:
+            from datetime import datetime
+            from PyQt5.QtWidgets import QMessageBox
+            
+            # 复制基础配置（使用深拷贝避免列表引用问题）
+            fundamental_config = base_config_dict.copy()
+            fundamental_config['symbols'] = base_config_dict.get('symbols', []).copy()
+            
+            # 修改数据类型为基本面数据
+            fundamental_config['data_type'] = '基本面数据'
+            
+            # 生成新的任务 ID 和名称
+            fundamental_config['task_id'] = f"task_{int(datetime.now().timestamp())}_fundamental"
+            base_name = base_config_dict.get('name', f"导入任务_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+            # 移除可能存在的标记
+            import re
+            clean_name = re.sub(r'\[(通用 | 历史 | 回测 | 实时 | 实盘)\]$', '', base_name).strip()
+            fundamental_config['name'] = f"{clean_name} [基本面]"
+            
+            # 使用传统方式创建任务
+            self._create_task_legacy(fundamental_config, show_success_message=show_success_message)
+            
+            logger.info(f"已创建基本面数据任务：{fundamental_config['name']}") if logger else None
+            
+            return fundamental_config['name']
+            
+        except Exception as e:
+            logger.error(f"创建基本面数据任务失败：{e}") if logger else None
+            # 不显示错误弹窗，避免干扰主任务创建流程
+            return None
 
 
 if __name__ == "__main__":

@@ -2926,23 +2926,113 @@ FactorWeave-Quant  2.0 (重构版本)
             QMessageBox.warning(self._main_window, "错误", f"无法启动策略回测: {e}")
 
     def _on_strategy_optimize(self) -> None:
-        """策略优化"""
+        """策略优化 - 打开独立参数编辑器对话框"""
         try:
+            from gui.widgets.parameter_editor import ParameterEditorWidget
+            from core.strategy.strategy_engine import get_strategy_engine
+            from core.trading.trading_mode import ModeContext, TradingMode
+            from PyQt5.QtWidgets import QDialog, QVBoxLayout, QComboBox, QLabel, QHBoxLayout, QMessageBox
+            from PyQt5.QtCore import Qt
+
+            # 创建独立对话框
+            dialog = QDialog(self._main_window)
+            dialog.setWindowTitle("⚡ 策略参数优化")
+            dialog.resize(800, 900)
+            dialog.setMinimumSize(700, 600)
+
+            # 主布局
+            main_layout = QVBoxLayout(dialog)
+
+            # 策略选择区域
+            strategy_selection_widget = QWidget()
+            strategy_selection_layout = QHBoxLayout(strategy_selection_widget)
+            strategy_selection_layout.setContentsMargins(0, 0, 0, 0)
+
+            strategy_label = QLabel("选择策略:")
+            strategy_label.setStyleSheet("font-weight: bold; font-size: 12px;")
+            strategy_selection_layout.addWidget(strategy_label)
+
+            strategy_combo = QComboBox()
+            strategy_combo.setMinimumWidth(300)
+            strategy_selection_layout.addWidget(strategy_combo)
+            strategy_selection_layout.addStretch()
+
+            # 加载策略列表
             try:
-                from gui.dialogs.enhanced_strategy_manager_dialog import EnhancedStrategyManagerDialog
-                dialog = EnhancedStrategyManagerDialog(self._main_window)
-                # 直接切换到优化视图
-                if hasattr(dialog, 'current_view'):
-                    dialog.current_view = 'optimization'
-                    dialog._switch_view('optimization')
-                dialog.exec_()
-                logger.info("启动增强版策略优化对话框V2")
-            except ImportError as e:
-                logger.error(f"增强版策略优化V2不可用: {e}")
-                QMessageBox.warning(self._main_window, "错误", f"策略优化功能不可用: {e}")
+                strategy_engine = get_strategy_engine()
+                strategies = strategy_engine.get_available_strategies()
+                for strategy in strategies:
+                    strategy_combo.addItem(strategy['name'], strategy['id'])
+            except Exception as e:
+                logger.warning(f"加载策略列表失败，使用默认列表: {e}")
+                # 添加默认策略
+                default_strategies = ["MA策略", "MACD策略", "RSI策略", "KDJ策略", "布林带策略"]
+                for i, name in enumerate(default_strategies):
+                    strategy_combo.addItem(name, f"strategy_{i}")
+
+            main_layout.addWidget(strategy_selection_widget)
+
+            # 创建参数编辑器
+            parameter_editor = ParameterEditorWidget(parent=dialog)
+            main_layout.addWidget(parameter_editor)
+
+            # 策略选择变化时加载参数
+            current_strategy = None
+
+            def load_strategy_parameters():
+                nonlocal current_strategy
+                strategy_name = strategy_combo.currentText()
+                strategy_id = strategy_combo.currentData()
+
+                try:
+                    strategy_engine = get_strategy_engine()
+                    strategy = strategy_engine.get_strategy_instance(strategy_name)
+
+                    # 创建 mode_context
+                    mode_context = ModeContext.create_backtest()
+                    strategy.set_mode_context(mode_context)
+
+                    # 更新参数编辑器
+                    parameter_editor.strategy = strategy
+                    parameter_editor.mode_context = mode_context
+
+                    # 重新加载参数 UI
+                    parameter_editor._load_strategy_parameters()
+
+                    current_strategy = strategy
+                    logger.info(f"已加载策略参数: {strategy_name}")
+
+                except Exception as e:
+                    logger.error(f"加载策略参数失败: {e}")
+
+            # 连接信号
+            strategy_combo.currentIndexChanged.connect(load_strategy_parameters)
+
+            # 初始加载
+            if strategy_combo.count() > 0:
+                load_strategy_parameters()
+
+            # 添加底部按钮
+            button_layout = QHBoxLayout()
+            button_layout.addStretch()
+
+            close_btn = QPushButton("关闭")
+            close_btn.clicked.connect(dialog.close)
+            button_layout.addWidget(close_btn)
+
+            main_layout.addLayout(button_layout)
+
+            # 显示对话框
+            dialog.exec_()
+
+            logger.info("策略参数优化对话框已关闭")
+
+        except ImportError as e:
+            logger.error(f"参数优化组件不可用: {e}")
+            QMessageBox.warning(self._main_window, "错误", f"参数优化功能不可用: {e}")
         except Exception as e:
             logger.error(f"策略优化失败: {e}")
-            QMessageBox.warning(self._main_window, "错误", f"无法启动策略优化: {e}")
+            QMessageBox.warning(self._main_window, "错误", f"无法打开参数优化: {e}")
 
     def _on_import_data(self) -> None:
         """导入数据"""

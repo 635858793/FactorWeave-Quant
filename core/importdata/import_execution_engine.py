@@ -3843,8 +3843,13 @@ class DataImportExecutionEngine(QObject):
 
             logger.info(f"⏱️  [数据入队完成] {symbol} | 入队耗时:{db_elapsed:.2f}秒 | 队列大小:{queue_size_before}→{queue_size_after} | 线程:{thread_id}")
 
-            # 异步触发基本面数据下载（在K线数据成功获取后）
-            self._async_download_fundamental_data(symbol, task_config)
+            # 异步触发基本面数据下载（在 K 线数据成功获取后）
+            # 🔧 修复：只在用户启用基本面数据下载时才触发
+            if task_config.enable_fundamental_download:
+                logger.debug(f"[基本面] {symbol} | 用户启用基本面数据下载，开始异步下载...")
+                self._async_download_fundamental_data(symbol, task_config)
+            else:
+                logger.debug(f"[基本面] {symbol} | 用户未启用基本面数据下载，跳过")
 
             total_elapsed = time.time() - task_start_time
             logger.info(f"🟢 [完成] {symbol} | 总耗时:{total_elapsed:.2f}秒 | 总记录:{all_record_count} | 线程:{thread_id}")
@@ -4123,8 +4128,12 @@ class DataImportExecutionEngine(QObject):
                     break
 
                 try:
-                    # 获取基本面数据
-                    fundamental_data = self.real_data_provider.get_real_fundamental_data(symbol)
+                    # 获取基本面数据（使用 data_manager 统一接口）
+                    fundamental_data = self.data_manager.get_fundamental_data(
+                        symbol,
+                        asset_type=task_config.asset_type,
+                        data_source=task_config.data_source
+                    )
 
                     if fundamental_data:
                         # 将基本面数据转换为DataFrame并保存

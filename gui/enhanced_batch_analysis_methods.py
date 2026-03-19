@@ -10,6 +10,10 @@ from PyQt5.QtWidgets import (QListWidgetItem, QTableWidgetItem, QDialog,
 from PyQt5.QtCore import Qt, QTimer
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+# 导入模式管理框架
+from core.trading.trading_mode import ModeContext
+from backtest.unified_backtest_engine import UnifiedBacktestEngine
+
 class EnhancedBatchAnalysisMixin:
     """增强版批量分析功能混入类"""
 
@@ -409,7 +413,17 @@ class EnhancedBatchAnalysisMixin:
                                 )
 
                                 if kline_data is not None and len(kline_data) > 0:
+                                    # 创建模式上下文
+                                    mode_context = ModeContext.create_backtest(
+                                        start_date=params.get('start_date') if 'params' in locals() else None,
+                                        end_date=params.get('end_date') if 'params' in locals() else None
+                                    )
+                                    
                                     backtest_engine = self._get_backtest_engine()
+                                    
+                                    # 如果引擎支持 mode_context，则设置
+                                    if isinstance(backtest_engine, UnifiedBacktestEngine):
+                                        backtest_engine.mode_context = mode_context
 
                                     signal_col = 'signal'
                                     if signal_col not in kline_data.columns:
@@ -422,7 +436,8 @@ class EnhancedBatchAnalysisMixin:
                                             price_col='close',
                                             initial_capital=initial_capital,
                                             commission_pct=commission,
-                                            slippage_pct=slippage
+                                            slippage_pct=slippage,
+                                            mode_context=mode_context  # 传递 mode_context
                                         )
 
                                         # 处理 DataFrame 返回值

@@ -9,7 +9,7 @@ from PyQt5.QtWidgets import (
     QToolBar, QAction, QToolButton, QMenu,
     QFileDialog, QMessageBox, QDialog, QVBoxLayout,
     QLabel, QPushButton, QLineEdit, QSpinBox, QComboBox,
-    QHBoxLayout, QGroupBox, QFormLayout, QDialogButtonBox, QSizePolicy
+    QHBoxLayout, QGroupBox, QFormLayout, QDialogButtonBox, QSizePolicy, QWidget
 )
 from PyQt5.QtCore import Qt, QSize, QKeySequence
 from PyQt5.QtGui import QIcon
@@ -31,8 +31,8 @@ def _import_theme_manager():
             THEME_MANAGER_AVAILABLE = True
             logger.info("主题管理器模块导入成功")
         except Exception as e:
-            logger.warning(f"导入主题管理器失败: {e}")
-# log_structured已替换为直接的logger调用
+            logger.warning(f"导入主题管理器失败：{e}")
+# log_structured 已替换为直接的 logger 调用
 
 class MainToolBar(QToolBar):
     """主工具栏"""
@@ -52,11 +52,11 @@ class MainToolBar(QToolBar):
             self._max_zoom_history = 10
 
             # 初始化日志管理器
-            if True:  # 使用Loguru日志
-                # log_manager已迁移到Loguru
+            if True:  # 使用 Loguru 日志
+                # log_manager 已迁移到 Loguru
                 pass
             else:
-                # 纯Loguru架构，移除log_manager依赖
+                # 纯 Loguru 架构，移除 log_manager 依赖
                 pass
 
             # 延迟导入并初始化主题管理器
@@ -66,17 +66,17 @@ class MainToolBar(QToolBar):
                 try:
                     self.theme_manager = get_theme_manager()
                 except Exception as e:
-                    logger.warning(f"获取ThemeManager失败: {e}")
+                    logger.warning(f"获取 ThemeManager 失败：{e}")
 
-            # 初始化UI
+            # 初始化 UI
             self.init_ui()
 
             logger.info("toolbar_init", status="success")
 
         except Exception as e:
-            logger.info(f"初始化工具栏失败: {str(e)}")
-            if True:  # 使用Loguru日志
-                logger.error(f"初始化工具栏失败: {str(e)}")
+            logger.info(f"初始化工具栏失败：{str(e)}")
+            if True:  # 使用 Loguru 日志
+                logger.error(f"初始化工具栏失败：{str(e)}")
                 logger.error(traceback.format_exc())
 
     def init_ui(self):
@@ -91,7 +91,7 @@ class MainToolBar(QToolBar):
             self.create_actions()
 
         except Exception as e:
-            logger.error(f"初始化工具栏失败: {str(e)}")
+            logger.error(f"初始化工具栏失败：{str(e)}")
 
     def create_actions(self):
         """创建工具栏按钮"""
@@ -177,12 +177,13 @@ class MainToolBar(QToolBar):
         self.settings_action.setShortcut("Ctrl+,")
         self.addAction(self.settings_action)
 
-        # 系统优化器
-        self.system_optimizer_action = QAction(
-            QIcon("icons/optimize.png"), "系统优化", self)
-        self.system_optimizer_action.setStatusTip("打开系统优化器")
-        self.system_optimizer_action.setShortcut("Ctrl+Shift+O")
-        self.addAction(self.system_optimizer_action)
+        # 策略参数优化（快捷入口）
+        self.parameter_optimizer_action = QAction(
+            QIcon("icons/optimize.png"), "⚡ 参数优化", self)
+        self.parameter_optimizer_action.setStatusTip("打开策略参数优化器（支持参数扫描、预设管理和智能推荐）")
+        self.parameter_optimizer_action.setShortcut("Ctrl+Shift+O")
+        self.parameter_optimizer_action.triggered.connect(self.show_parameter_optimizer)
+        self.addAction(self.parameter_optimizer_action)
 
         # 搜索框
         self.addSeparator()
@@ -197,7 +198,7 @@ class MainToolBar(QToolBar):
             parent = self.parentWidget()
             if parent and hasattr(parent, 'log_message'):
                 parent.log_message(message, level)
-            elif True:  # 使用Loguru日志
+            elif True:  # 使用 Loguru 日志
                 level = level.upper()
                 if level == "ERROR":
                     logger.error(message)
@@ -210,9 +211,9 @@ class MainToolBar(QToolBar):
             else:
                 logger.info(f"[LOG][{level}] {message}")
         except Exception as e:
-            logger.info(f"记录日志失败: {str(e)}")
-            if True:  # 使用Loguru日志
-                logger.error(f"记录日志失败: {str(e)}")
+            logger.info(f"记录日志失败：{str(e)}")
+            if True:  # 使用 Loguru 日志
+                logger.error(f"记录日志失败：{str(e)}")
                 logger.error(traceback.format_exc())
 
     def new_file(self):
@@ -232,7 +233,7 @@ class MainToolBar(QToolBar):
                 msg_box = QMessageBox.information(self, "成功", "文件创建成功")
 
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"创建文件失败: {str(e)}")
+            QMessageBox.critical(self, "错误", f"创建文件失败：{str(e)}")
 
     def open_file(self):
         """Open a file"""
@@ -251,7 +252,7 @@ class MainToolBar(QToolBar):
                 msg_box = QMessageBox.information(self, "成功", "文件打开成功")
 
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"打开文件失败: {str(e)}")
+            QMessageBox.critical(self, "错误", f"打开文件失败：{str(e)}")
 
     def save_file(self):
         """Save current file"""
@@ -270,7 +271,7 @@ class MainToolBar(QToolBar):
                 QMessageBox.information(self, "成功", "文件保存成功")
 
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"保存文件失败: {str(e)}")
+            QMessageBox.critical(self, "错误", f"保存文件失败：{str(e)}")
 
     def show_settings(self):
         """Show settings dialog"""
@@ -278,7 +279,7 @@ class MainToolBar(QToolBar):
             if hasattr(self.parent(), 'show_settings'):
                 self.parent().show_settings()
         except Exception as e:
-            logger.error(f"显示设置对话框失败: {str(e)}")
+            logger.error(f"显示设置对话框失败：{str(e)}")
 
     def show_calculator(self):
         """Show calculator"""
@@ -319,7 +320,7 @@ class MainToolBar(QToolBar):
             dialog.exec_()
 
         except Exception as e:
-            logger.error(f"显示计算器失败: {str(e)}")
+            logger.error(f"显示计算器失败：{str(e)}")
 
     def show_converter(self):
         """Show unit converter"""
@@ -369,7 +370,7 @@ class MainToolBar(QToolBar):
             dialog.exec_()
 
         except Exception as e:
-            logger.error(f"显示单位转换器失败: {str(e)}")
+            logger.error(f"显示单位转换器失败：{str(e)}")
 
     def resizeEvent(self, event):
         """窗口大小改变事件处理"""
@@ -381,7 +382,7 @@ class MainToolBar(QToolBar):
         try:
             window_width = self.width()
 
-            logger.debug(f"MainToolBar 响应式布局更新: {window_width}")
+            logger.debug(f"MainToolBar 响应式布局更新：{window_width}")
 
             # 更新搜索框宽度
             if hasattr(self, 'search_box'):
@@ -390,12 +391,12 @@ class MainToolBar(QToolBar):
                 self.search_box.setMaximumWidth(int(window_width * 0.25))
 
         except Exception as e:
-            logger.error(f"更新响应式布局失败: {e}")
+            logger.error(f"更新响应式布局失败：{e}")
 
     def zoom_in(self):
         """放大图表"""
         try:
-            logger.info(f"执行放大操作，当前缩放级别: {self._zoom_level}")
+            logger.info(f"执行放大操作，当前缩放级别：{self._zoom_level}")
             
             # 保存当前缩放级别到历史记录
             self._zoom_history.append(self._zoom_level)
@@ -404,18 +405,18 @@ class MainToolBar(QToolBar):
             
             # 增加缩放级别
             self._zoom_level = min(self._zoom_level + 0.1, 3.0)
-            logger.info(f"放大后缩放级别: {self._zoom_level}")
+            logger.info(f"放大后缩放级别：{self._zoom_level}")
             
             # 通知父窗口更新缩放
             self._notify_zoom_change()
             
         except Exception as e:
-            logger.error(f"放大操作失败: {e}")
+            logger.error(f"放大操作失败：{e}")
 
     def zoom_out(self):
         """缩小图表"""
         try:
-            logger.info(f"执行缩小操作，当前缩放级别: {self._zoom_level}")
+            logger.info(f"执行缩小操作，当前缩放级别：{self._zoom_level}")
             
             # 保存当前缩放级别到历史记录
             self._zoom_history.append(self._zoom_level)
@@ -424,18 +425,18 @@ class MainToolBar(QToolBar):
             
             # 减小缩放级别
             self._zoom_level = max(self._zoom_level - 0.1, 0.5)
-            logger.info(f"缩小后缩放级别: {self._zoom_level}")
+            logger.info(f"缩小后缩放级别：{self._zoom_level}")
             
             # 通知父窗口更新缩放
             self._notify_zoom_change()
             
         except Exception as e:
-            logger.error(f"缩小操作失败: {e}")
+            logger.error(f"缩小操作失败：{e}")
 
     def reset_zoom(self):
         """重置缩放"""
         try:
-            logger.info(f"执行重置缩放操作，当前缩放级别: {self._zoom_level}")
+            logger.info(f"执行重置缩放操作，当前缩放级别：{self._zoom_level}")
             
             # 保存当前缩放级别到历史记录
             self._zoom_history.append(self._zoom_level)
@@ -444,13 +445,13 @@ class MainToolBar(QToolBar):
             
             # 重置缩放级别
             self._zoom_level = 1.0
-            logger.info(f"重置后缩放级别: {self._zoom_level}")
+            logger.info(f"重置后缩放级别：{self._zoom_level}")
             
             # 通知父窗口更新缩放
             self._notify_zoom_change()
             
         except Exception as e:
-            logger.error(f"重置缩放操作失败: {e}")
+            logger.error(f"重置缩放操作失败：{e}")
 
     def undo_zoom(self):
         """撤销缩放"""
@@ -461,13 +462,13 @@ class MainToolBar(QToolBar):
             
             # 从历史记录中恢复上一个缩放级别
             self._zoom_level = self._zoom_history.pop()
-            logger.info(f"撤销缩放操作，恢复缩放级别: {self._zoom_level}")
+            logger.info(f"撤销缩放操作，恢复缩放级别：{self._zoom_level}")
             
             # 通知父窗口更新缩放
             self._notify_zoom_change()
             
         except Exception as e:
-            logger.error(f"撤销缩放操作失败: {e}")
+            logger.error(f"撤销缩放操作失败：{e}")
 
     def _notify_zoom_change(self):
         """通知父窗口缩放级别改变"""
@@ -478,4 +479,107 @@ class MainToolBar(QToolBar):
             else:
                 logger.debug("父窗口不支持缩放通知")
         except Exception as e:
-            logger.error(f"通知缩放改变失败: {e}")
+            logger.error(f"通知缩放改变失败：{e}")
+
+    def show_parameter_optimizer(self):
+        """显示参数优化器"""
+        try:
+            from gui.widgets.parameter_editor import ParameterEditorWidget
+            from core.strategy.strategy_engine import get_strategy_engine
+            from core.trading.trading_mode import ModeContext
+
+            # 创建独立对话框
+            dialog = QDialog(self)
+            dialog.setWindowTitle("⚡ 策略参数优化")
+            dialog.resize(800, 900)
+            dialog.setMinimumSize(700, 600)
+
+            # 主布局
+            main_layout = QVBoxLayout(dialog)
+
+            # 策略选择区域
+            strategy_selection_widget = QWidget()
+            strategy_selection_layout = QHBoxLayout(strategy_selection_widget)
+            strategy_selection_layout.setContentsMargins(10, 10, 10, 10)
+
+            strategy_label = QLabel("选择策略:")
+            strategy_label.setStyleSheet("font-weight: bold; font-size: 12px;")
+            strategy_selection_layout.addWidget(strategy_label)
+
+            strategy_combo = QComboBox()
+            strategy_combo.setMinimumWidth(300)
+            strategy_selection_layout.addWidget(strategy_combo)
+            strategy_selection_layout.addStretch()
+
+            # 加载策略列表
+            try:
+                strategy_engine = get_strategy_engine()
+                strategies = strategy_engine.get_available_strategies()
+                for strategy in strategies:
+                    strategy_combo.addItem(strategy['name'], strategy['id'])
+            except Exception as e:
+                logger.warning(f"加载策略列表失败，使用默认列表：{e}")
+                # 添加默认策略
+                default_strategies = ["MA 策略", "MACD 策略", "RSI 策略", "KDJ 策略", "布林带策略"]
+                for i, name in enumerate(default_strategies):
+                    strategy_combo.addItem(name, f"strategy_{i}")
+
+            main_layout.addWidget(strategy_selection_widget)
+
+            # 创建参数编辑器
+            parameter_editor = ParameterEditorWidget(parent=dialog)
+            main_layout.addWidget(parameter_editor)
+
+            # 策略选择变化时加载参数
+            def load_strategy_parameters():
+                strategy_name = strategy_combo.currentText()
+                strategy_id = strategy_combo.currentData()
+
+                try:
+                    strategy_engine = get_strategy_engine()
+                    strategy = strategy_engine.get_strategy_instance(strategy_name)
+
+                    # 创建 mode_context
+                    mode_context = ModeContext.create_backtest()
+                    strategy.set_mode_context(mode_context)
+
+                    # 更新参数编辑器
+                    parameter_editor.strategy = strategy
+                    parameter_editor.mode_context = mode_context
+
+                    # 重新加载参数 UI
+                    parameter_editor._load_strategy_parameters()
+
+                    logger.info(f"已加载策略参数：{strategy_name}")
+
+                except Exception as e:
+                    logger.error(f"加载策略参数失败：{e}")
+
+            # 连接信号
+            strategy_combo.currentIndexChanged.connect(load_strategy_parameters)
+
+            # 初始加载
+            if strategy_combo.count() > 0:
+                load_strategy_parameters()
+
+            # 添加底部按钮
+            button_layout = QHBoxLayout()
+            button_layout.addStretch()
+
+            close_btn = QPushButton("关闭")
+            close_btn.clicked.connect(dialog.close)
+            button_layout.addWidget(close_btn)
+
+            main_layout.addLayout(button_layout)
+
+            # 显示对话框
+            dialog.exec_()
+
+            logger.info("策略参数优化对话框已关闭")
+
+        except ImportError as e:
+            logger.error(f"参数优化组件不可用：{e}")
+            QMessageBox.warning(self, "错误", f"参数优化功能不可用：{e}")
+        except Exception as e:
+            logger.error(f"策略优化失败：{e}")
+            QMessageBox.warning(self, "错误", f"无法打开参数优化：{e}")

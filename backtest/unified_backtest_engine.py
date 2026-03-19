@@ -19,6 +19,11 @@ import pandas as pd
 from loguru import logger
 
 
+try:
+    from ..trading.trading_mode import ModeContext, TradingMode
+except (ImportError, ValueError):
+    from core.trading.trading_mode import ModeContext, TradingMode
+
 def _is_repeat_string(value: Any) -> bool:
     """检测是否为重复字符串模式"""
     try:
@@ -196,6 +201,7 @@ class UnifiedBacktestEngine:
 
     def __init__(self,
                  backtest_level: BacktestLevel = BacktestLevel.PROFESSIONAL,
+                 mode_context: Optional[ModeContext] = None,
                  risk_management_level: RiskManagementLevel = RiskManagementLevel.PROFESSIONAL,
                  use_vectorized_engine: bool = True,
                  auto_select_engine: bool = True,
@@ -216,6 +222,13 @@ class UnifiedBacktestEngine:
         self.auto_select_engine = auto_select_engine
         self._execution_model = execution_model
         self.logger = logger
+
+        # 模式上下文
+        self.mode_context = mode_context
+        if mode_context:
+            self.logger.info(f"回测引擎初始化：mode={mode_context.mode.value}")
+        else:
+            self.logger.info("回测引擎初始化：mode=BACKTEST (default)")
 
         # 根据级别配置参数
         self._configure_settings()
@@ -309,7 +322,8 @@ class UnifiedBacktestEngine:
                      enable_compound: bool = True,
                      benchmark_data: Optional[pd.DataFrame] = None,
                      execution_model: str = 'fixed',
-                     progress_callback=None) -> Dict[str, Any]:
+                     progress_callback=None,
+                     mode_context: Optional[ModeContext] = None) -> Dict[str, Any]:
         """
         运行统一回测
 
@@ -329,15 +343,26 @@ class UnifiedBacktestEngine:
             benchmark_data: 基准数据
             execution_model: 成交模型 ('fixed', 'vwap', 'random')
             progress_callback: 进度回调函数，签名：callback(bar_index, total_bars, current_result)
+            mode_context: 交易模式上下文（可选）
 
         Returns:
             包含回测结果的 Dict
         """
         try:
             engine_type = "向量化引擎" if self.use_vectorized_engine and self.vectorized_engine else "标准引擎"
-            self.logger.info(f"开始统一回测，级别: {self.backtest_level.value}，引擎: {engine_type}，成交模型: {execution_model}")
+            self.logger.info(f"开始统一回测，级别：{self.backtest_level.value}，引擎：{engine_type}，成交模型：{execution_model}")
             
             self._execution_model = execution_model
+            
+            # 使用传入的 mode_context 或实例的 mode_context
+            mode_context = mode_context or self.mode_context
+            if mode_context:
+                self.logger.info(f"使用模式上下文：{mode_context.mode.value}")
+                # 根据模式调整配置
+                if mode_context.mode.is_live:
+                    self.logger.info("实盘模式：使用实时数据，性能敏感")
+                elif mode_context.mode.is_backtest:
+                    self.logger.info("回测模式：使用历史数据，完整计算")
 
             # 数据预处理和验证
             processed_data = self._preprocess_and_validate_data(

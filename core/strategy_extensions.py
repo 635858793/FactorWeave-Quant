@@ -411,7 +411,9 @@ class StrategyContext:
     benchmark: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
-class IStrategyPlugin(ABC):
+from core.trading.trading_mode import ModeAwareMixin, ModeContext, TradingMode
+
+class IStrategyPlugin(ABC, ModeAwareMixin):
     """
     策略插件接口
     

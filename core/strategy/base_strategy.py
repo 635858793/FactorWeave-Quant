@@ -25,6 +25,9 @@ try:
 except ImportError:
     EVENT_BUS_AVAILABLE = False
 
+# 导入模式管理框架
+from core.trading.trading_mode import ModeAwareMixin, ModeContext, TradingMode
+
 
 class StrategyType(Enum):
     """策略类型枚举"""
@@ -114,10 +117,13 @@ class StrategyParameter:
             return False
 
 
-class BaseStrategy(ABC):
+class BaseStrategy(ABC, ModeAwareMixin):
     """策略基类 - 集成事件系统的统一策略接口"""
 
     def __init__(self, name: str, strategy_type: StrategyType = StrategyType.CUSTOM):
+        # 初始化模式感知混入类
+        ModeAwareMixin.__init__(self)
+        
         """初始化策略
 
         Args:

@@ -18,6 +18,7 @@ from core.strategy_extensions import (
     StandardMarketData, StrategyContext, SignalType, TradeAction, TradeStatus,
     ParameterDef, StrategyType, RiskLevel
 )
+from core.trading.trading_mode import ModeAwareMixin
 from core.plugin_types import PluginType
 
 
@@ -35,6 +36,9 @@ class MovingAverageStrategyPlugin(IStrategyPlugin):
     """双均线策略插件"""
     
     def __init__(self):
+        # 初始化模式感知混入类
+        ModeAwareMixin.__init__(self)
+        
         self._config = MAStrategyConfig()
         self._initialized = False
         self._plugin_info = {

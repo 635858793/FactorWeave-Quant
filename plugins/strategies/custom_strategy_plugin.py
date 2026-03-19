@@ -25,6 +25,7 @@ from core.strategy_extensions import (
     StrategyType, SignalType, TradeAction, TradeStatus, RiskLevel,
     AssetType, TimeFrame
 )
+from core.trading.trading_mode import ModeAwareMixin
 
 logger = logger
 
@@ -331,6 +332,9 @@ class CustomStrategyPlugin(IStrategyPlugin):
     """自定义策略框架插件"""
 
     def __init__(self):
+        # 初始化模式感知混入类
+        ModeAwareMixin.__init__(self)
+        
         self.strategy_instance = None
         self.strategy_type = "TrendFollowing"
         self.current_positions = {}
