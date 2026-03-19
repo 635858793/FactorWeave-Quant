@@ -735,7 +735,7 @@ class SectorFlowTabPro(BaseAnalysisTab):
                         )
 
                         if sector_fund_flow_data is not None and not sector_fund_flow_data.empty:
-                            monitor_data = self._process_sector_flow_data(sector_fund_flow_data)
+                            monitor_data = self._process_new_sector_flow_data(sector_fund_flow_data)
                             if monitor_data:
                                 logger.info(f" [DEBUG] TET框架获取板块资金流数据成功: {len(monitor_data)} 条")
                                 return monitor_data
@@ -816,7 +816,7 @@ class SectorFlowTabPro(BaseAnalysisTab):
                         logger.info(f" [DEBUG] 数据管理器获取板块数据: {len(df)} 行")
 
                         if not df.empty:
-                            monitor_data = self._process_sector_flow_data(df)
+                            monitor_data = self._process_new_sector_flow_data(df)
                             if monitor_data:
                                 logger.info(f" [DEBUG] 数据管理器生成监控数据: {len(monitor_data)} 条")
                                 logger.info(f" [DEBUG] 数据管理器生成监控数据: {len(monitor_data)} 条")
@@ -941,14 +941,16 @@ class SectorFlowTabPro(BaseAnalysisTab):
                 return float(amount_str.replace('亿', '')) * 100000000
             else:
                 return float(amount_str)
-        except:
+        except (ValueError, TypeError) as e:
+            logger.debug(f"金额解析失败: {amount_str}, {e}")
             return 0
 
     def _parse_percentage(self, percent_str):
         """解析百分比字符串"""
         try:
             return float(str(percent_str).replace('%', ''))
-        except:
+        except (ValueError, TypeError) as e:
+            logger.debug(f"百分比解析失败: {percent_str}, {e}")
             return 0
 
     def flow_prediction(self):
@@ -1015,13 +1017,15 @@ class SectorFlowTabPro(BaseAnalysisTab):
                                     current_inflow = float(current_inflow.replace('亿', '')) * 100000000
                                 else:
                                     current_inflow = float(current_inflow)
-                            except:
+                            except (ValueError, TypeError) as e:
+                                logger.debug(f"资金流入解析失败: {e}")
                                 current_inflow = 0
 
                         if isinstance(current_ratio, str):
                             try:
                                 current_ratio = float(current_ratio.replace('%', ''))
-                            except:
+                            except (ValueError, TypeError) as e:
+                                logger.debug(f"资金占比解析失败: {e}")
                                 current_ratio = 0
 
                         # 简单的趋势预测逻辑
@@ -1215,7 +1219,8 @@ class SectorFlowTabPro(BaseAnalysisTab):
                                     net_inflow = float(net_inflow.replace('亿', '')) * 100000000
                                 else:
                                     net_inflow = float(net_inflow)
-                            except:
+                            except (ValueError, TypeError) as e:
+                                logger.debug(f"净流入解析失败: {e}")
                                 net_inflow = 0
 
                         # 分类流入和流出板块
@@ -1357,13 +1362,15 @@ class SectorFlowTabPro(BaseAnalysisTab):
                                     main_inflow = float(main_inflow.replace('亿', '')) * 100000000
                                 else:
                                     main_inflow = float(main_inflow)
-                            except:
+                            except (ValueError, TypeError) as e:
+                                logger.debug(f"主力流入解析失败: {e}")
                                 main_inflow = 0
 
                         if isinstance(main_ratio, str):
                             try:
                                 main_ratio = float(main_ratio.replace('%', ''))
-                            except:
+                            except (ValueError, TypeError) as e:
+                                logger.debug(f"主力占比解析失败: {e}")
                                 main_ratio = 0
 
                         # 判断资金类型和方向
@@ -1489,7 +1496,8 @@ class SectorFlowTabPro(BaseAnalysisTab):
                                     net_inflow = float(net_inflow.replace('亿', '')) * 100000000
                                 else:
                                     net_inflow = float(net_inflow)
-                            except:
+                            except (ValueError, TypeError) as e:
+                                logger.debug(f"板块净流入解析失败: {e}")
                                 net_inflow = 0
 
                         # 获取涨跌幅
@@ -1497,7 +1505,8 @@ class SectorFlowTabPro(BaseAnalysisTab):
                         if isinstance(change_pct, str):
                             try:
                                 change_pct = float(change_pct.replace('%', ''))
-                            except:
+                            except (ValueError, TypeError) as e:
+                                logger.debug(f"涨跌幅解析失败: {e}")
                                 change_pct = 0
 
                         # 计算流入强度

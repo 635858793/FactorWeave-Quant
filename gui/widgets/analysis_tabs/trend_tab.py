@@ -12,12 +12,23 @@ import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
 import time
-import sqlite3
 import json
 
 from .base_tab import BaseAnalysisTab
 
 logger = logger
+
+
+def get_database_service():
+    """获取DatabaseService实例"""
+    try:
+        from core.containers import get_service_container
+        from core.services.database_service import DatabaseService
+        container = get_service_container()
+        return container.get_service(DatabaseService)
+    except Exception as e:
+        logger.warning(f"无法从ServiceContainer获取DatabaseService: {e}")
+        return None
 
 
 class TrendAnalysisTab(BaseAnalysisTab):
@@ -94,8 +105,8 @@ class TrendAnalysisTab(BaseAnalysisTab):
         self.progress_bar = None
         self.current_kdata = None  # 当前K线数据
 
-        # 配置数据库管理 - 使用系统配置数据库
-        self.db_path = "data/factorweave_system.sqlite"
+        # 获取DatabaseService实例
+        self._database_service = get_database_service()
 
         # 在父类初始化前加载设置（UI创建时需要用到）
         self.alert_settings = self._load_alert_settings_from_db_safe()
@@ -108,32 +119,9 @@ class TrendAnalysisTab(BaseAnalysisTab):
         self._connect_signals()
 
     def _load_alert_settings_from_db_safe(self):
-        """安全地从数据库加载预警设置"""
-        try:
-            import sqlite3
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT config_value FROM trend_alert_config 
-                    WHERE config_key = 'trend_alerts' AND is_active = 1
-                """)
-                result = cursor.fetchone()
-
-                if result:
-                    return json.loads(result[0])
-                else:
-                    # 返回默认设置
-                    default_settings = {
-                        'trend_reversal': True,
-                        'high_confidence': True,
-                        'breakout': False,
-                        'confidence_threshold': 0.8,
-                        'strength_threshold': 60
-                    }
-                    return default_settings
-
-        except Exception as e:
-            logger.error(f"从数据库加载预警设置失败: {e}")
+        """从数据库加载预警设置"""
+        if not self._database_service:
+            logger.warning("DatabaseService不可用，使用默认预警设置")
             return {
                 'trend_reversal': True,
                 'high_confidence': True,
@@ -142,107 +130,63 @@ class TrendAnalysisTab(BaseAnalysisTab):
                 'strength_threshold': 60
             }
 
+        result = self._database_service.get_trend_alert_config('trend_alerts')
+        if result:
+            return result
+
+        return {
+            'trend_reversal': True,
+            'high_confidence': True,
+            'breakout': False,
+            'confidence_threshold': 0.8,
+            'strength_threshold': 60
+        }
+
     def _save_alert_settings_to_db(self, settings):
         """保存预警设置到数据库"""
-        try:
-
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-
-                # 确保表存在
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS trend_alert_config (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        config_key TEXT NOT NULL,
-                        config_value TEXT NOT NULL,
-                        is_active INTEGER DEFAULT 1,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                """)
-
-                # 将设置序列化为JSON
-                settings_json = json.dumps(settings, ensure_ascii=False)
-
-                # 使用REPLACE来更新或插入，明确指定created_at字段
-                cursor.execute("""
-                    REPLACE INTO trend_alert_config (config_key, config_value, is_active, created_at, updated_at)
-                    VALUES (?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                """, ('trend_alerts', settings_json))
-
-                conn.commit()
-                logger.info("预警设置已保存到数据库")
-                return True
-
-        except Exception as e:
-            logger.error(f" 保存预警设置到数据库失败: {e}")
+        if not self._database_service:
+            logger.warning("DatabaseService不可用，无法保存预警设置")
             return False
+
+        if self._database_service.save_trend_alert_config('trend_alerts', settings):
+            logger.info("预警设置已保存到数据库")
+            return True
+
+        logger.error("保存预警设置失败")
+        return False
 
     def _load_advanced_options_from_db(self):
         """从数据库加载高级选项设置"""
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT config_value FROM trend_alert_config 
-                    WHERE config_key = 'advanced_options' AND is_active = 1
-                """)
-                result = cursor.fetchone()
-
-                if result:
-                    return json.loads(result[0])
-                else:
-                    # 返回默认设置
-                    default_options = {
-                        'enable_prediction': True,
-                        'enable_alerts': True,
-                        'auto_update': False
-                    }
-                    return default_options
-
-        except Exception as e:
-            logger.error(f"从数据库加载高级选项设置失败: {e}")
+        if not self._database_service:
+            logger.warning("DatabaseService不可用，使用默认高级选项")
             return {
                 'enable_prediction': True,
                 'enable_alerts': True,
                 'auto_update': False
             }
 
+        result = self._database_service.get_trend_alert_config('advanced_options')
+        if result:
+            return result
+
+        return {
+            'enable_prediction': True,
+            'enable_alerts': True,
+            'auto_update': False
+        }
+
     def _save_advanced_options_to_db(self, options):
         """保存高级选项设置到数据库"""
-        try:
-
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-
-                # 确保表存在
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS trend_alert_config (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        config_key TEXT NOT NULL,
-                        config_value TEXT NOT NULL,
-                        is_active INTEGER DEFAULT 1,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                """)
-
-                # 将设置序列化为JSON
-                options_json = json.dumps(options, ensure_ascii=False)
-
-                # 使用REPLACE来更新或插入
-                cursor.execute("""
-                    REPLACE INTO trend_alert_config (config_key, config_value, is_active, created_at, updated_at)
-                    VALUES (?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                """, ('advanced_options', options_json))
-
-                conn.commit()
-                logger.info("高级选项设置已保存到数据库")
-                return True
-
-        except Exception as e:
-            logger.error(f" 保存高级选项设置到数据库失败: {e}")
+        if not self._database_service:
+            logger.warning("DatabaseService不可用，无法保存高级选项")
             return False
+
+        if self._database_service.save_trend_alert_config('advanced_options', options):
+            logger.info("高级选项设置已保存到数据库")
+            return True
+
+        logger.error("保存高级选项设置失败")
+        return False
 
     def _connect_signals(self):
         """连接信号"""
@@ -1684,7 +1628,8 @@ class TrendAnalysisTab(BaseAnalysisTab):
             else:
                 try:
                     target_price_str = f"{float(str(target_price_val).replace('￥', '').replace(',', '')) or 0:.2f}"
-                except:
+                except (ValueError, TypeError) as e:
+                    logger.debug(f"目标价格转换失败: {target_price_val}, {e}")
                     target_price_str = str(target_price_val) if str(target_price_val).strip() else "--"
 
             # 安全获取并格式化duration
@@ -1726,12 +1671,14 @@ class TrendAnalysisTab(BaseAnalysisTab):
             # 确保是数值类型
             try:
                 avg_strength_val = float(avg_strength)
-            except:
+            except (ValueError, TypeError) as e:
+                logger.debug(f"强度转换失败: {avg_strength}, {e}")
                 avg_strength_val = 0
 
             try:
                 avg_confidence_val = float(avg_confidence)
-            except:
+            except (ValueError, TypeError) as e:
+                logger.debug(f"置信度转换失败: {avg_confidence}, {e}")
                 avg_confidence_val = 0
 
             stats_text = (
@@ -1762,26 +1709,30 @@ class TrendAnalysisTab(BaseAnalysisTab):
                 else:
                     strength_num = float(strength_val)
                 strength_str = f"{strength_num:.2f}%"
-            except:
+            except (ValueError, TypeError) as e:
+                logger.debug(f"强度格式化失败: {strength_val}, {e}")
                 strength_str = str(strength_val)
 
             # 安全格式化其他数值字段
             try:
                 consistency_val = float(result.get('consistency', 0))
                 consistency_str = f"{consistency_val:.2f}"
-            except:
+            except (ValueError, TypeError) as e:
+                logger.debug(f"一致性格式化失败: {result.get('consistency')}, {e}")
                 consistency_str = str(result.get('consistency', '0'))
 
             try:
                 weight_val = float(result.get('weight', 0))
                 weight_str = f"{weight_val:.2f}"
-            except:
+            except (ValueError, TypeError) as e:
+                logger.debug(f"权重格式化失败: {result.get('weight')}, {e}")
                 weight_str = str(result.get('weight', '0'))
 
             try:
                 score_val = float(result.get('score', 0))
                 score_str = f"{score_val:.2f}"
-            except:
+            except (ValueError, TypeError) as e:
+                logger.debug(f"分数格式化失败: {result.get('score')}, {e}")
                 score_str = str(result.get('score', '0'))
 
             processed_results.append({
@@ -1838,14 +1789,16 @@ class TrendAnalysisTab(BaseAnalysisTab):
             try:
                 price_val = float(level.get('price', 0))
                 price_str = f"{price_val:.2f}"
-            except:
+            except (ValueError, TypeError) as e:
+                logger.debug(f"价格格式化失败: {level.get('price')}, {e}")
                 price_str = str(level.get('price', '0'))
 
             # 安全格式化strength
             try:
                 strength_val = float(level.get('strength', 0))
                 strength_str = f"{strength_val:.2f}"
-            except:
+            except (ValueError, TypeError) as e:
+                logger.debug(f"强度格式化失败: {level.get('strength')}, {e}")
                 strength_str = str(level.get('strength', '0'))
 
             processed_levels.append({
@@ -1935,7 +1888,8 @@ class TrendAnalysisTab(BaseAnalysisTab):
             if hasattr(self, 'current_kdata') and self.current_kdata is not None and len(self.current_kdata) > 0:
                 return self.current_kdata.index[-1].strftime('%Y-%m-%d') if hasattr(self.current_kdata.index[-1], 'strftime') else str(self.current_kdata.index[-1])
             return datetime.now().strftime('%Y-%m-%d')
-        except:
+        except Exception as e:
+            logger.debug(f"获取形态开始日期失败: {e}")
             return datetime.now().strftime('%Y-%m-%d')
 
     def _get_pattern_end_date(self):
@@ -1950,7 +1904,8 @@ class TrendAnalysisTab(BaseAnalysisTab):
                 prev_price = self.current_kdata['close'].iloc[-2]
                 return f"{((current_price - prev_price) / prev_price * 100):.2f}%"
             return "0.00%"
-        except:
+        except Exception as e:
+            logger.debug(f"计算价格变化率失败: {e}")
             return "0.00%"
 
     def _calculate_target_price(self, pattern_name):
@@ -1966,7 +1921,8 @@ class TrendAnalysisTab(BaseAnalysisTab):
                 else:
                     return f"{current_price:.2f}"
             return "0.00"
-        except:
+        except Exception as e:
+            logger.debug(f"计算目标价格失败: {e}")
             return "0.00"
 
     def _get_recommendation(self, pattern_name, confidence):
@@ -1983,7 +1939,8 @@ class TrendAnalysisTab(BaseAnalysisTab):
                 elif '下降' in pattern_name or '看跌' in pattern_name:
                     return "卖出"
             return "观望"
-        except:
+        except Exception as e:
+            logger.debug(f"获取建议失败: {e}")
             return "观望"
 
     def _load_alert_settings(self):

@@ -44,7 +44,8 @@ try:
     from core.strategy.strategy_engine import StrategyEngine, get_strategy_engine
     from core.strategy.strategy_registry import get_strategy_registry
     from core.strategy.strategy_factory import get_strategy_factory
-    from core.services.stock_service import StockService, get_stock_service
+    from core.services.stock_service import StockService
+    from core.containers import get_service_container
     from core.plugin_types import AssetType
     STRATEGY_FRAMEWORK_AVAILABLE = True
 except ImportError as e:
@@ -56,7 +57,7 @@ except ImportError as e:
     get_strategy_registry = None
     get_strategy_factory = None
     StockService = None
-    get_stock_service = None
+    get_service_container = None
     AssetType = None
 
 try:
@@ -1797,7 +1798,7 @@ class StrategyDebugger(QWidget, ThemeAwareWidget):
         
         try:
             if source == 0:
-                if not StockService or not get_stock_service:
+                if not StockService or not get_service_container:
                     self.output_viewer.append_output('股票服务不可用', '#f44747')
                     return
                 
@@ -1806,7 +1807,8 @@ class StrategyDebugger(QWidget, ThemeAwareWidget):
                     self.output_viewer.append_output('请输入股票代码', '#f44747')
                     return
                 
-                stock_service = get_stock_service()
+                container = get_service_container()
+                stock_service = container.resolve(StockService)
                 asset_type = asset_type_combo.currentData()
                 period = period_combo.currentText()
                 count = count_spin.value()

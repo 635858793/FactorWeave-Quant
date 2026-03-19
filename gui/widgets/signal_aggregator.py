@@ -15,8 +15,10 @@ import numpy as np
 from datetime import datetime
 import json
 
-class SignalType(Enum):
-    """信号类型"""
+from analysis.pattern_base import SignalType
+
+class SignalSourceType(Enum):
+    """信号来源类型"""
     TECHNICAL = "technical"
     SENTIMENT = "sentiment"
     FUNDAMENTAL = "fundamental"

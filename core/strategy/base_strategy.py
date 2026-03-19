@@ -17,11 +17,16 @@ import hashlib
 import uuid
 from pathlib import Path
 
+from analysis.pattern_base import SignalType
+
 try:
     from core.events import EventBus, get_event_bus
     EVENT_BUS_AVAILABLE = True
 except ImportError:
     EVENT_BUS_AVAILABLE = False
+
+# 导入模式管理框架
+from core.trading.trading_mode import ModeAwareMixin, ModeContext, TradingMode
 
 
 class StrategyType(Enum):
@@ -45,14 +50,6 @@ class StrategyStatus(Enum):
     STOPPED = "stopped"        # 已停止
     ERROR = "error"            # 错误状态
     COMPLETED = "completed"    # 已完成
-
-class SignalType(Enum):
-    """信号类型枚举"""
-    BUY = "buy"                # 买入信号
-    SELL = "sell"              # 卖出信号
-    HOLD = "hold"              # 持有信号
-    CLOSE_LONG = "close_long"  # 平多信号
-    CLOSE_SHORT = "close_short"  # 平空信号
 
 @dataclass
 class StrategySignal:
@@ -120,10 +117,13 @@ class StrategyParameter:
             return False
 
 
-class BaseStrategy(ABC):
+class BaseStrategy(ABC, ModeAwareMixin):
     """策略基类 - 集成事件系统的统一策略接口"""
 
     def __init__(self, name: str, strategy_type: StrategyType = StrategyType.CUSTOM):
+        # 初始化模式感知混入类
+        ModeAwareMixin.__init__(self)
+        
         """初始化策略
 
         Args:

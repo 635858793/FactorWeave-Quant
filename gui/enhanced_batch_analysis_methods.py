@@ -1,40 +1,82 @@
 from loguru import logger
-"""
-增强版批量分析支持方法
-
-为AnalysisToolsPanel提供完整的批量分析功能支持
-"""
-
+import pandas as pd
 import time
 import threading
 import hashlib
 import random
+import traceback
 from PyQt5.QtWidgets import (QListWidgetItem, QTableWidgetItem, QDialog,
                              QMessageBox, QFileDialog)
 from PyQt5.QtCore import Qt, QTimer
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+# 导入模式管理框架
+from core.trading.trading_mode import ModeContext
+from backtest.unified_backtest_engine import UnifiedBacktestEngine
+
 class EnhancedBatchAnalysisMixin:
     """增强版批量分析功能混入类"""
 
     def _load_default_batch_stocks(self):
-        """加载默认股票列表"""
-        sample_stocks = [
-            {"code": "000001", "name": "平安银行"},
-            {"code": "000002", "name": "万科A"},
-            {"code": "000858", "name": "五粮液"},
-            {"code": "002415", "name": "海康威视"},
-            {"code": "600036", "name": "招商银行"},
-            {"code": "600519", "name": "贵州茅台"},
-            {"code": "600887", "name": "伊利股份"},
-        ]
-
-        for stock in sample_stocks:
-            item = QListWidgetItem(f"{stock['code']} {stock['name']}")
-            item.setData(Qt.UserRole, stock)
-            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-            item.setCheckState(Qt.Checked)
-            self.batch_stock_list.addItem(item)
+        """从数据库加载真实股票列表到表格（多列网格形式）"""
+        try:
+            self.batch_stock_list.setRowCount(0)
+            
+            # 尝试从服务容器获取股票服务
+            stock_service = None
+            if hasattr(self, 'coordinator') and self.coordinator:
+                try:
+                    if hasattr(self.coordinator, 'service_container'):
+                        stock_service = self.coordinator.service_container.resolve('StockService')
+                except Exception as e:
+                    logger.debug(f"获取 StockService 失败：{e}")
+            
+            # 如果服务不可用，使用备用方式
+            if not stock_service:
+                try:
+                    from core.services.stock_service import StockService
+                    stock_service = StockService()
+                    stock_service.initialize()
+                except Exception as e:
+                    logger.warning(f"创建 StockService 失败：{e}")
+                    return
+            
+            # 从数据库获取真实股票数据
+            stock_list = stock_service.get_stock_list()
+            
+            if not stock_list or len(stock_list) == 0:
+                logger.info("数据库中没有股票数据，股票列表为空")
+                return
+            
+            # 限制加载数量（默认前 100 只）
+            max_stocks = min(len(stock_list), 100)
+            
+            # 计算需要的行数（每行 10 只股票）
+            columns_per_row = 10
+            total_rows = (max_stocks + columns_per_row - 1) // columns_per_row
+            
+            self.batch_stock_list.setRowCount(total_rows)
+            
+            for i in range(max_stocks):
+                stock = stock_list[i]
+                row = i // columns_per_row
+                col = i % columns_per_row
+                
+                # 创建单元格项，显示"代码 名称"
+                stock_name = f"{stock.get('code', '')} {stock.get('name', '')}"
+                item = QTableWidgetItem(stock_name)
+                item.setData(Qt.UserRole, stock)
+                item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+                item.setCheckState(Qt.Checked)
+                item.setToolTip(f"{stock.get('code', '')} - {stock.get('name', '')}\n行业：{stock.get('industry', '')}")
+                
+                self.batch_stock_list.setItem(row, col, item)
+            
+            logger.info(f"已从数据库加载 {max_stocks} 只股票到批量分析列表（{total_rows}行 x {columns_per_row}列）")
+            
+        except Exception as e:
+            logger.error(f"加载股票列表失败：{e}")
+            logger.error(traceback.format_exc())
 
     def _on_batch_stock_selection_changed(self, selection_type):
         """股票选择方式改变"""
@@ -45,15 +87,17 @@ class EnhancedBatchAnalysisMixin:
 
     def _batch_select_all_stocks(self):
         """全选股票"""
-        for i in range(self.batch_stock_list.count()):
-            item = self.batch_stock_list.item(i)
-            item.setCheckState(Qt.Checked)
+        for i in range(self.batch_stock_list.rowCount()):
+            check_item = self.batch_stock_list.item(i, 0)
+            if check_item:
+                check_item.setCheckState(Qt.Checked)
 
     def _batch_select_no_stocks(self):
         """全不选股票"""
-        for i in range(self.batch_stock_list.count()):
-            item = self.batch_stock_list.item(i)
-            item.setCheckState(Qt.Unchecked)
+        for i in range(self.batch_stock_list.rowCount()):
+            check_item = self.batch_stock_list.item(i, 0)
+            if check_item:
+                check_item.setCheckState(Qt.Unchecked)
 
     def _batch_import_stock_list(self):
         """导入股票列表"""
@@ -92,26 +136,100 @@ class EnhancedBatchAnalysisMixin:
 
     def _apply_stock_filters(self, filters):
         """应用股票筛选条件"""
-        self._add_batch_log(f"应用筛选条件: {filters}")
+        self._add_batch_log(f"应用筛选条件：{filters}")
+
+    def _load_default_batch_strategies(self):
+        """从数据库加载真实策略列表到表格（多列网格形式）"""
+        try:
+            self.batch_strategy_list.setRowCount(0)
+            
+            # 尝试从服务容器获取策略服务
+            strategy_service = None
+            if hasattr(self, 'coordinator') and self.coordinator:
+                try:
+                    if hasattr(self.coordinator, 'service_container'):
+                        strategy_service = self.coordinator.service_container.resolve('StrategyService')
+                except Exception as e:
+                    logger.debug(f"获取 StrategyService 失败：{e}")
+            
+            # 如果服务不可用，使用备用方式
+            if not strategy_service:
+                try:
+                    from core.services.strategy_service import StrategyService
+                    strategy_service = StrategyService()
+                    strategy_service.initialize()
+                except Exception as e:
+                    logger.warning(f"创建 StrategyService 失败：{e}")
+                    return
+            
+            # 从数据库获取真实策略数据
+            all_strategies = strategy_service.get_all_strategy_configs()
+            
+            if not all_strategies or len(all_strategies) == 0:
+                logger.info("数据库中没有策略数据，策略列表为空")
+                return
+            
+            # 限制加载数量（默认前 50 个）
+            max_strategies = min(len(all_strategies), 50)
+            
+            # 计算需要的行数（每行 5 个策略）
+            columns_per_row = 5
+            total_rows = (max_strategies + columns_per_row - 1) // columns_per_row
+            
+            self.batch_strategy_list.setRowCount(total_rows)
+            
+            for i in range(max_strategies):
+                strategy_config = all_strategies[i]
+                row = i // columns_per_row
+                col = i % columns_per_row
+                
+                # 创建单元格项，显示策略名称
+                strategy_name = strategy_config.metadata.get('name', strategy_config.strategy_id)
+                item = QTableWidgetItem(strategy_name)
+                item.setData(Qt.UserRole, strategy_config)
+                item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+                item.setCheckState(Qt.Checked)
+                
+                # 添加 tooltip 显示详细信息
+                plugin_type = strategy_config.plugin_type
+                author = strategy_config.metadata.get('author', '系统')
+                version = strategy_config.metadata.get('version', '1.0.0')
+                item.setToolTip(f"策略：{strategy_name}\n类型：{plugin_type}\n作者：{author}\n版本：{version}")
+                
+                self.batch_strategy_list.setItem(row, col, item)
+            
+            logger.info(f"已从数据库加载 {max_strategies} 个策略到批量分析列表（{total_rows}行 x {columns_per_row}列）")
+            
+        except Exception as e:
+            logger.error(f"加载策略列表失败：{e}")
+            logger.error(traceback.format_exc())
 
     def start_enhanced_batch_analysis(self):
         """开始增强版批量分析"""
         try:
+            # 从股票列表表格获取选中的股票
             selected_stocks = []
-            for i in range(self.batch_stock_list.count()):
-                item = self.batch_stock_list.item(i)
-                if item.checkState() == Qt.Checked:
-                    selected_stocks.append(item.data(Qt.UserRole))
+            for row in range(self.batch_stock_list.rowCount()):
+                for col in range(self.batch_stock_list.columnCount()):
+                    item = self.batch_stock_list.item(row, col)
+                    if item and item.checkState() == Qt.Checked:
+                        stock_data = item.data(Qt.UserRole)
+                        if stock_data:
+                            selected_stocks.append(stock_data)
 
             if not selected_stocks:
                 QMessageBox.warning(self, "警告", "请至少选择一只股票")
                 return
 
+            # 从策略列表表格获取选中的策略
             selected_strategies = []
-            for i in range(self.batch_strategy_list.count()):
-                item = self.batch_strategy_list.item(i)
-                if item.checkState() == Qt.Checked:
-                    selected_strategies.append(item.text())
+            for row in range(self.batch_strategy_list.rowCount()):
+                for col in range(self.batch_strategy_list.columnCount()):
+                    item = self.batch_strategy_list.item(row, col)
+                    if item and item.checkState() == Qt.Checked:
+                        strategy_data = item.data(Qt.UserRole)
+                        if strategy_data:
+                            selected_strategies.append(strategy_data)
 
             if not selected_strategies:
                 QMessageBox.warning(self, "警告", "请至少选择一个策略")
@@ -295,7 +413,17 @@ class EnhancedBatchAnalysisMixin:
                                 )
 
                                 if kline_data is not None and len(kline_data) > 0:
+                                    # 创建模式上下文
+                                    mode_context = ModeContext.create_backtest(
+                                        start_date=params.get('start_date') if 'params' in locals() else None,
+                                        end_date=params.get('end_date') if 'params' in locals() else None
+                                    )
+                                    
                                     backtest_engine = self._get_backtest_engine()
+                                    
+                                    # 如果引擎支持 mode_context，则设置
+                                    if isinstance(backtest_engine, UnifiedBacktestEngine):
+                                        backtest_engine.mode_context = mode_context
 
                                     signal_col = 'signal'
                                     if signal_col not in kline_data.columns:
@@ -308,10 +436,37 @@ class EnhancedBatchAnalysisMixin:
                                             price_col='close',
                                             initial_capital=initial_capital,
                                             commission_pct=commission,
-                                            slippage_pct=slippage
+                                            slippage_pct=slippage,
+                                            mode_context=mode_context  # 传递 mode_context
                                         )
 
-                                        if result and 'metrics' in result:
+                                        # 处理 DataFrame 返回值
+                                        if isinstance(result, pd.DataFrame):
+                                            # 从 DataFrame 中提取指标
+                                            final_capital = result['capital'].iloc[-1] if 'capital' in result.columns else initial_capital
+                                            total_return = ((final_capital - initial_capital) / initial_capital * 100) if initial_capital > 0 else 0
+                                            max_dd = (result['capital'].cummax() - result['capital']).max() if 'capital' in result.columns else 0
+                                            
+                                            # 计算交易次数
+                                            signal_changes = result['signal'].diff().abs() if 'signal' in result.columns else 0
+                                            total_trades = int(signal_changes.sum()) if hasattr(signal_changes, 'sum') else 0
+                                            
+                                            analysis_result = {
+                                                'stock_code': stock['code'],
+                                                'stock_name': stock['name'],
+                                                'strategy': strategy,
+                                                'return_rate': total_return,
+                                                'sharpe_ratio': 0.0,  # 需要单独计算
+                                                'max_drawdown': max_dd / initial_capital * 100 if initial_capital > 0 else 0,
+                                                'win_rate': 0.0,  # 需要从交易记录计算
+                                                'total_trades': total_trades,
+                                                'final_capital': final_capital,
+                                                'initial_capital': initial_capital,
+                                                'analysis_time': time.strftime("%Y-%m-%d %H:%M:%S")
+                                            }
+                                            self._publish_batch_analysis_event(analysis_result)
+                                            return analysis_result
+                                        elif result and 'metrics' in result:
                                             metrics = result['metrics']
                                             analysis_result = {
                                                 'stock_code': stock['code'],

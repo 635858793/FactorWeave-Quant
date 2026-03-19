@@ -14,12 +14,7 @@ from enum import Enum
 from .events import EventBus, TradeExecutedEvent, PositionUpdatedEvent
 from .containers import ServiceContainer
 from .plugin_types import AssetType
-
-class SignalType(Enum):
-    """信号类型"""
-    BUY = "buy"
-    SELL = "sell"
-    HOLD = "hold"
+from analysis.pattern_base import SignalType
 
 class PositionType(Enum):
     """仓位类型"""

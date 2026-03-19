@@ -272,157 +272,14 @@ class ModelTrainingService(BaseService):
         """初始化数据库表结构"""
         try:
             if self._database_service:
-                # 使用DatabaseService创建表（使用strategy_sqlite数据库）
-                with self._database_service.get_connection("strategy_sqlite") as conn:
-                    self._create_training_tasks_table(conn)
-                    self._create_model_versions_table(conn)
-                    self._create_training_logs_table(conn)
+                # 表已由DatabaseService统一创建，无需重复创建
+                logger.info("模型训练相关表已由DatabaseService统一管理")
             else:
-                # 直接使用SQLite创建表
-                self._create_tables_directly()
+                logger.warning("DatabaseService不可用，但表结构应在初始化时已创建")
 
             logger.info("数据库表初始化完成")
         except Exception as e:
             logger.error(f"数据库表初始化失败: {e}")
-            raise
-
-    def _create_training_tasks_table(self, conn) -> None:
-        """创建训练任务表"""
-        try:
-            cursor = conn.cursor()
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS training_tasks (
-                    task_id TEXT PRIMARY KEY,
-                    task_name TEXT NOT NULL,
-                    task_description TEXT,
-                    model_type TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    config_json TEXT NOT NULL,
-                    progress REAL DEFAULT 0.0,
-                    error_message TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    started_at TIMESTAMP,
-                    completed_at TIMESTAMP
-                )
-            """)
-            conn.commit()
-            logger.debug("training_tasks表创建成功")
-        except Exception as e:
-            logger.error(f"创建training_tasks表失败: {e}")
-            raise
-
-    def _create_model_versions_table(self, conn) -> None:
-        """创建模型版本表"""
-        try:
-            cursor = conn.cursor()
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS model_versions (
-                    version_id TEXT PRIMARY KEY,
-                    version_number TEXT NOT NULL UNIQUE,
-                    model_type TEXT NOT NULL,
-                    model_file_path TEXT NOT NULL,
-                    training_task_id TEXT,
-                    performance_metrics_json TEXT,
-                    config_json TEXT,
-                    is_current INTEGER DEFAULT 0,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    created_by TEXT,
-                    description TEXT,
-                    FOREIGN KEY (training_task_id) REFERENCES training_tasks(task_id)
-                )
-            """)
-            conn.commit()
-            logger.debug("model_versions表创建成功")
-        except Exception as e:
-            logger.error(f"创建model_versions表失败: {e}")
-            raise
-
-    def _create_training_logs_table(self, conn) -> None:
-        """创建训练日志表"""
-        try:
-            cursor = conn.cursor()
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS training_logs (
-                    log_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    training_task_id TEXT NOT NULL,
-                    log_level TEXT NOT NULL,
-                    log_message TEXT NOT NULL,
-                    log_data_json TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (training_task_id) REFERENCES training_tasks(task_id)
-                )
-            """)
-            conn.commit()
-            logger.debug("training_logs表创建成功")
-        except Exception as e:
-            logger.error(f"创建training_logs表失败: {e}")
-            raise
-
-    def _create_tables_directly(self) -> None:
-        """直接使用SQLite创建表（当DatabaseService不可用时）"""
-        try:
-            import sqlite3
-            db_path = Path("data/factorweave_system.sqlite")
-            db_path.parent.mkdir(parents=True, exist_ok=True)
-
-            conn = sqlite3.connect(str(db_path))
-            cursor = conn.cursor()
-
-            # 创建训练任务表
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS training_tasks (
-                    task_id TEXT PRIMARY KEY,
-                    task_name TEXT NOT NULL,
-                    task_description TEXT,
-                    model_type TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    config_json TEXT NOT NULL,
-                    progress REAL DEFAULT 0.0,
-                    error_message TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    started_at TIMESTAMP,
-                    completed_at TIMESTAMP
-                )
-            """)
-
-            # 创建模型版本表
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS model_versions (
-                    version_id TEXT PRIMARY KEY,
-                    version_number TEXT NOT NULL UNIQUE,
-                    model_type TEXT NOT NULL,
-                    model_file_path TEXT NOT NULL,
-                    training_task_id TEXT,
-                    performance_metrics_json TEXT,
-                    config_json TEXT,
-                    is_current INTEGER DEFAULT 0,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    created_by TEXT,
-                    description TEXT,
-                    FOREIGN KEY (training_task_id) REFERENCES training_tasks(task_id)
-                )
-            """)
-
-            # 创建训练日志表
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS training_logs (
-                    log_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    training_task_id TEXT NOT NULL,
-                    log_level TEXT NOT NULL,
-                    log_message TEXT NOT NULL,
-                    log_data_json TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (training_task_id) REFERENCES training_tasks(task_id)
-                )
-            """)
-
-            conn.commit()
-            conn.close()
-            logger.info("直接创建数据库表成功")
-        except Exception as e:
-            logger.error(f"直接创建数据库表失败: {e}")
             raise
 
     def _load_existing_tasks(self) -> None:
@@ -451,37 +308,10 @@ class ModelTrainingService(BaseService):
                             'completed_at': row[11],
                             'training_metadata': self._load_training_metadata(task_id)
                         }
-            else:
-                import sqlite3
-                db_path = Path("data/factorweave_system.sqlite")
-                if db_path.exists():
-                    conn = sqlite3.connect(str(db_path))
-                    cursor = conn.cursor()
-                    cursor.execute("SELECT * FROM training_tasks")
-                    rows = cursor.fetchall()
-
-                    for row in rows:
-                        task_id = row[0]
-                        self._training_tasks[task_id] = {
-                            'task_id': task_id,
-                            'task_name': row[1],
-                            'task_description': row[2],
-                            'model_type': row[3],
-                            'status': row[4],
-                            'config': json.loads(row[5]) if row[5] else {},
-                            'progress': row[6] or 0.0,
-                            'error_message': row[7],
-                            'created_at': row[8],
-                            'updated_at': row[9],
-                            'started_at': row[10],
-                            'completed_at': row[11],
-                            'training_metadata': self._load_training_metadata(task_id)
-                        }
-                    conn.close()
-
             logger.info(f"加载了 {len(self._training_tasks)} 个现有训练任务")
         except Exception as e:
-            logger.warning(f"加载现有训练任务失败: {e}")
+            logger.error(f"加载现有训练任务失败: {e}")
+            raise
 
     def _get_metadata_file(self, task_id: str) -> Path:
         return self._metadata_storage_path / f"{task_id}.json"
@@ -547,35 +377,11 @@ class ModelTrainingService(BaseService):
                             if validation_curve:
                                 training_meta = {'val_history': validation_curve}
                         self._model_versions[version_id]['training_metadata'] = training_meta or {}
-            else:
-                import sqlite3
-                db_path = Path("data/factorweave_system.sqlite")
-                if db_path.exists():
-                    conn = sqlite3.connect(str(db_path))
-                    cursor = conn.cursor()
-                    cursor.execute("SELECT * FROM model_versions")
-                    rows = cursor.fetchall()
-
-                    for row in rows:
-                        version_id = row[0]
-                        self._model_versions[version_id] = {
-                            'version_id': version_id,
-                            'version_number': row[1],
-                            'model_type': row[2],
-                            'model_file_path': row[3],
-                            'training_task_id': row[4],
-                            'performance_metrics': json.loads(row[5]) if row[5] else {},
-                            'config': json.loads(row[6]) if row[6] else {},
-                            'is_current': bool(row[7]),
-                            'created_at': row[8],
-                            'created_by': row[9],
-                            'description': row[10]
-                        }
-                    conn.close()
 
             logger.info(f"加载了 {len(self._model_versions)} 个现有模型版本")
         except Exception as e:
-            logger.warning(f"加载现有模型版本失败: {e}")
+            logger.error(f"加载现有模型版本失败: {e}")
+            raise
 
     def create_training_task(self, task_name: str, model_type: str,
                              config: Dict[str, Any],
@@ -655,33 +461,6 @@ class ModelTrainingService(BaseService):
                         task_data['completed_at']
                     ))
                     conn.commit()
-            else:
-                import sqlite3
-                db_path = Path("data/factorweave_system.sqlite")
-                conn = sqlite3.connect(str(db_path))
-                cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT OR REPLACE INTO training_tasks 
-                    (task_id, task_name, task_description, model_type, status, 
-                     config_json, progress, error_message, created_at, updated_at,
-                     started_at, completed_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    task_data['task_id'],
-                    task_data['task_name'],
-                    task_data['task_description'],
-                    task_data['model_type'],
-                    task_data['status'],
-                    json.dumps(task_data['config']),
-                    task_data['progress'],
-                    task_data['error_message'],
-                    task_data['created_at'],
-                    task_data['updated_at'],
-                    task_data['started_at'],
-                    task_data['completed_at']
-                ))
-                conn.commit()
-                conn.close()
         except Exception as e:
             logger.error(f"保存任务到数据库失败: {e}")
             raise
@@ -857,32 +636,6 @@ class ModelTrainingService(BaseService):
                         version_data['description']
                     ))
                     conn.commit()
-            else:
-                import sqlite3
-                db_path = Path("data/factorweave_system.sqlite")
-                conn = sqlite3.connect(str(db_path))
-                cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT OR REPLACE INTO model_versions 
-                    (version_id, version_number, model_type, model_file_path,
-                     training_task_id, performance_metrics_json, config_json,
-                     is_current, created_at, created_by, description)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    version_data['version_id'],
-                    version_data['version_number'],
-                    version_data['model_type'],
-                    version_data['model_file_path'],
-                    version_data['training_task_id'],
-                    json.dumps(version_data['performance_metrics']),
-                    json.dumps(version_data['config']),
-                    1 if version_data['is_current'] else 0,
-                    version_data['created_at'],
-                    version_data['created_by'],
-                    version_data['description']
-                ))
-                conn.commit()
-                conn.close()
         except Exception as e:
             logger.error(f"保存版本到数据库失败: {e}")
             raise
@@ -961,16 +714,6 @@ class ModelTrainingService(BaseService):
                     cursor.execute("UPDATE model_versions SET is_current = ? WHERE version_id = ?",
                                    (1 if is_current else 0, version_id))
                     conn.commit()
-            else:
-                import sqlite3
-                db_path = Path("data/factorweave_system.sqlite")
-                conn = sqlite3.connect(str(db_path))
-                cursor = conn.cursor()
-                cursor.execute("UPDATE model_versions SET is_current = 0")
-                cursor.execute("UPDATE model_versions SET is_current = ? WHERE version_id = ?",
-                               (1 if is_current else 0, version_id))
-                conn.commit()
-                conn.close()
         except Exception as e:
             logger.error(f"更新版本当前标记失败: {e}")
             raise
@@ -1097,14 +840,6 @@ class ModelTrainingService(BaseService):
                     cursor = conn.cursor()
                     cursor.execute("INSERT INTO training_logs (training_task_id, log_level, log_message, log_data_json) VALUES (?, ?, ?, ?)", (task_id, log_level, log_message, json.dumps(log_data)))
                     conn.commit()
-            else:
-                import sqlite3
-                db_path = Path("data/factorweave_system.sqlite")
-                conn = sqlite3.connect(str(db_path))
-                cursor = conn.cursor()
-                cursor.execute("INSERT INTO training_logs (training_task_id, log_level, log_message, log_data_json) VALUES (?, ?, ?, ?)", (task_id, log_level, log_message, json.dumps(log_data)))
-                conn.commit()
-                conn.close()
         except Exception as e:
             logger.error(f"记录训练日志失败: {e}")
             raise
@@ -2358,15 +2093,8 @@ class ModelTrainingService(BaseService):
                     cursor.execute(query, tuple(params))
                     rows = cursor.fetchall()
             else:
-                import sqlite3
-                db_path = Path("data/factorweave_system.sqlite")
-                if not db_path.exists():
-                    return []
-                conn = sqlite3.connect(str(db_path))
-                cursor = conn.cursor()
-                cursor.execute(query, tuple(params))
-                rows = cursor.fetchall()
-                conn.close()
+                logger.error("DatabaseService不可用，无法获取训练日志")
+                return []
 
             logs: List[Dict[str, Any]] = []
             for row in rows:

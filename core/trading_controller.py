@@ -199,44 +199,86 @@ class TradingController(QObject):
             if hasattr(self._trading_service, 'run_backtest'):
                 results = self._trading_service.run_backtest(params)
             else:
-                # 降级到统一数据管理器
-                if not self._unified_data_manager:
-                    raise ValueError("数据管理器不可用")
+                # 降级到直接使用 UnifiedBacktestEngine
+                try:
+                    from backtest.unified_backtest_engine import UnifiedBacktestEngine, BacktestLevel
+                    
+                    stock_code = params.get('stock')
+                    start_date = params.get('start_date')
+                    end_date = params.get('end_date')
+                    initial_cash = params.get('initial_cash', 100000)
+                    commission_rate = params.get('commission_rate', 0.001)
+                    slippage = params.get('slippage', 0.001)
+                    
+                    kdata = None
+                    if self._unified_data_manager:
+                        kdata = self._unified_data_manager.get_kdata(
+                            stock_code,
+                            start_date=start_date,
+                            end_date=end_date
+                        )
+                    
+                    if kdata is not None and not kdata.empty:
+                        signal_data = kdata.copy()
+                        signal_data['signal'] = 0
+                        
+                        engine = UnifiedBacktestEngine(backtest_level=BacktestLevel.PROFESSIONAL)
+                        backtest_result = engine.run_backtest(
+                            data=signal_data,
+                            initial_capital=initial_cash,
+                            commission_pct=commission_rate,
+                            slippage_pct=slippage
+                        )
+                        
+                        if hasattr(backtest_result, 'to_dict'):
+                            backtest_dict = backtest_result.to_dict('index')
+                        else:
+                            backtest_dict = backtest_result
+                        
+                        results = {
+                            'backtest_result': backtest_dict,
+                            'trades': [],
+                            'positions': [],
+                            'performance': {
+                                'total_return': backtest_dict.get('returns', {}).iloc[-1] if isinstance(backtest_dict.get('returns'), pd.Series) else 0.0,
+                                'final_capital': backtest_dict.get('capital', {}).iloc[-1] if isinstance(backtest_dict.get('capital'), pd.Series) else initial_cash
+                            }
+                        }
+                    else:
+                        raise ValueError("无法获取K线数据")
+                except ImportError:
+                    # 如果 UnifiedBacktestEngine 不可用，使用简化结果
+                    if not self._unified_data_manager:
+                        raise ValueError("数据管理器不可用")
 
-                # 获取K线数据
-                stock_code = params['stock']
-                start_date = params.get('start_date')
-                end_date = params.get('end_date')
+                    kdata = self._unified_data_manager.get_kdata(
+                        stock_code,
+                        start_date=start_date,
+                        end_date=end_date
+                    )
 
-                kdata = self._unified_data_manager.get_kdata(
-                    stock_code,
-                    start_date=start_date,
-                    end_date=end_date
-                )
+                    if kdata is None or (hasattr(kdata, 'empty') and kdata.empty):
+                        raise ValueError("无法获取K线数据")
 
-                if kdata is None or (hasattr(kdata, 'empty') and kdata.empty):
-                    raise ValueError("无法获取K线数据")
-
-                # 简化的回测结果
-                results = {
-                    'trades': [],
-                    'positions': [],
-                    'performance': {
-                        'total_return': 0.0,
-                        'annual_return': 0.0,
-                        'max_drawdown': 0.0,
-                        'win_rate': 0.0,
-                        'profit_factor': 1.0,
-                        'sharpe_ratio': 0.0
-                    },
-                    'risk': {
-                        'alpha': 0.0,
-                        'beta': 1.0,
-                        'information_ratio': 0.0,
-                        'tracking_error': 0.0,
-                        'var': 0.0
+                    results = {
+                        'trades': [],
+                        'positions': [],
+                        'performance': {
+                            'total_return': 0.0,
+                            'annual_return': 0.0,
+                            'max_drawdown': 0.0,
+                            'win_rate': 0.0,
+                            'profit_factor': 1.0,
+                            'sharpe_ratio': 0.0
+                        },
+                        'risk': {
+                            'alpha': 0.0,
+                            'beta': 1.0,
+                            'information_ratio': 0.0,
+                            'tracking_error': 0.0,
+                            'var': 0.0
+                        }
                     }
-                }
 
             # 检查结果是否为None
             if results is None:

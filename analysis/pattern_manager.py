@@ -8,6 +8,7 @@ import sqlite3
 import os
 import json
 import threading
+import time
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 import pandas as pd
@@ -18,11 +19,37 @@ from analysis.pattern_base import (
 )
 
 
+class _CachedConnection:
+    """数据库连接包装类，支持with语句并管理连接锁"""
+    
+    def __init__(self, connection, lock: threading.Lock):
+        self._connection = connection
+        self._lock = lock
+    
+    def __enter__(self):
+        self._lock.acquire()
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._lock.release()
+        return False
+    
+    def cursor(self):
+        return self._connection.cursor()
+    
+    def commit(self):
+        return self._connection.commit()
+    
+    def close(self):
+        return self._connection.close()
+
+
 class PatternManager:
     """形态管理器 - 增强版，支持数据库算法和统一接口"""
     
     _instance: Optional['PatternManager'] = None
     _lock = threading.Lock()
+    _connection_lock = threading.Lock()
 
     def __new__(cls, db_path: Optional[str] = None):
         if cls._instance is None:
@@ -55,18 +82,39 @@ class PatternManager:
 
         self.pattern_recognizer = PatternRecognizer()
         self._patterns_cache: Optional[List[PatternConfig]] = None
+        self._pattern_by_name_cache: Dict[str, PatternConfig] = {}
+        self._pattern_by_type_cache: Dict[str, PatternConfig] = {}
+        self._effectiveness_cache: Dict[str, Tuple[List[Dict], float]] = {}
         self._cache_lock = threading.Lock()
+        self._db_connection = None
+        self._connection_acquired_time = 0
+        self._connection_timeout = 60.0
         self._ensure_database_schema()
         self._initialized = True
 
     def _get_db_connection(self):
-        """获取数据库连接"""
-        import time
-        logger.info(f"[DEBUG] _get_db_connection 开始，db_path={self.db_path}")
-        start = time.time()
-        conn = sqlite3.connect(self.db_path, timeout=30.0)
-        logger.info(f"[DEBUG] _get_db_connection 完成，耗时: {time.time() - start:.2f}秒")
-        return conn
+        """获取数据库连接（带连接缓存，复用连接提升性能）"""
+        current_time = time.time()
+        
+        with self._connection_lock:
+            if self._db_connection is not None:
+                if current_time - self._connection_acquired_time < self._connection_timeout:
+                    return _CachedConnection(self._db_connection, self._connection_lock)
+                else:
+                    try:
+                        self._db_connection.close()
+                    except:
+                        pass
+            
+            conn = sqlite3.connect(self.db_path, timeout=30.0, check_same_thread=False)
+            conn.row_factory = sqlite3.Row
+            self._db_connection = conn
+            self._connection_acquired_time = current_time
+            return _CachedConnection(conn, self._connection_lock)
+
+    def _release_connection(self):
+        """释放数据库连接（仅在实际需要使用with语句时才调用）"""
+        pass
 
     def _ensure_database_schema(self):
         """确保数据库表结构正确"""
@@ -109,12 +157,36 @@ class PatternManager:
                         confidence REAL NOT NULL,
                         trigger_date TEXT NOT NULL,
                         trigger_price REAL NOT NULL,
+                        future_price REAL,
                         result_date TEXT,
                         result_price REAL,
                         return_rate REAL,
                         is_successful INTEGER,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
+                ''')
+
+                cursor.execute('''
+                    PRAGMA table_info(pattern_history)
+                ''')
+                columns = [row[1] for row in cursor.fetchall()]
+                if 'future_price' not in columns:
+                    cursor.execute('ALTER TABLE pattern_history ADD COLUMN future_price REAL')
+                    logger.info("数据库迁移：添加future_price字段")
+
+                cursor.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_pattern_history_type_date 
+                    ON pattern_history(pattern_type, trigger_date)
+                ''')
+
+                cursor.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_pattern_history_date 
+                    ON pattern_history(trigger_date)
+                ''')
+
+                cursor.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_pattern_history_stock 
+                    ON pattern_history(stock_code)
                 ''')
 
                 # 创建通达信形态导入表
@@ -146,17 +218,17 @@ class PatternManager:
             形态配置列表
         """
         import time
-        logger.info("[DEBUG] PatternManager.get_pattern_configs 开始...")
-        
+        logger.debug("PatternManager.get_pattern_configs 开始...")
+
         with self._cache_lock:
-            logger.info(f"[DEBUG] _patterns_cache 是 None? {self._patterns_cache is None}")
+            logger.debug(f"_patterns_cache 是 None? {self._patterns_cache is None}")
             if self._patterns_cache is None:
-                logger.info("[DEBUG] 调用 _load_all_patterns_from_db()...")
+                logger.debug("调用 _load_all_patterns_from_db()...")
                 start = time.time()
                 self._load_all_patterns_from_db()
-                logger.info(f"[DEBUG] _load_all_patterns_from_db() 完成，耗时: {time.time() - start:.2f}秒")
+                logger.debug(f"_load_all_patterns_from_db() 完成，耗时: {time.time() - start:.2f}秒")
 
-            logger.info(f"[DEBUG] 缓存中有 {len(self._patterns_cache) if self._patterns_cache else 0} 条")
+            logger.debug(f"缓存中有 {len(self._patterns_cache) if self._patterns_cache else 0} 条")
 
             filtered_patterns = self._patterns_cache
             if filtered_patterns is None:
@@ -179,53 +251,53 @@ class PatternManager:
         """从数据库加载所有形态并缓存（注意：此方法由get_pattern_configs调用，已持有锁）"""
         import time
         try:
-            logger.info("[DEBUG] 开始连接数据库...")
+            logger.debug("开始连接数据库...")
             start = time.time()
-            conn = self._get_db_connection()
-            logger.info(f"[DEBUG] 数据库连接完成，耗时: {time.time() - start:.2f}秒")
-            
-            cursor = conn.cursor()
-            logger.info("[DEBUG] 执行SQL查询...")
-            start = time.time()
-            cursor.execute("SELECT * FROM pattern_types ORDER BY category, name")
-            rows = cursor.fetchall()
-            logger.info(f"[DEBUG] SQL查询完成，耗时: {time.time() - start:.2f}秒，返回 {len(rows)} 条")
+            with self._get_db_connection() as conn:
+                logger.debug(f"数据库连接完成，耗时: {time.time() - start:.2f}秒")
+                
+                cursor = conn.cursor()
+                logger.debug("执行SQL查询...")
+                start = time.time()
+                cursor.execute("SELECT * FROM pattern_types ORDER BY category, name")
+                rows = cursor.fetchall()
+                logger.debug(f"SQL查询完成，耗时: {time.time() - start:.2f}秒，返回 {len(rows)} 条")
 
-            patterns = []
-            logger.info(f"[_load_all_patterns_from_db] 从数据库加载了 {len(rows)} 条形态配置。")
+                patterns = []
+                logger.info(f"[_load_all_patterns_from_db] 从数据库加载了 {len(rows)} 条形态配置。")
 
-            for row in rows:
-                try:
-                    raw_category = row[3]
-                    parameters_raw = row[13] if len(row) > 13 and row[13] else '{}'
-                    if isinstance(parameters_raw, str):
-                        parameters = json.loads(parameters_raw)
-                    elif isinstance(parameters_raw, (int, float)):
-                        parameters = json.loads(str(parameters_raw)) if str(parameters_raw).strip() else {}
-                    else:
-                        parameters = parameters_raw if isinstance(parameters_raw, dict) else {}
+                for row in rows:
+                    try:
+                        raw_category = row[3]
+                        parameters_raw = row[13] if len(row) > 13 and row[13] else '{}'
+                        if isinstance(parameters_raw, str):
+                            parameters = json.loads(parameters_raw)
+                        elif isinstance(parameters_raw, (int, float)):
+                            parameters = json.loads(str(parameters_raw)) if str(parameters_raw).strip() else {}
+                        else:
+                            parameters = parameters_raw if isinstance(parameters_raw, dict) else {}
 
-                    signal_enum = SignalType.from_string(row[4])
+                        signal_enum = SignalType.from_string(row[4])
 
-                    patterns.append(PatternConfig(
-                        id=row[0],
-                        name=row[1],
-                        english_name=row[2],
-                        category=raw_category,
-                        signal_type=signal_enum,
-                        description=row[5],
-                        min_periods=row[6],
-                        max_periods=row[7],
-                        confidence_threshold=row[8],
-                        algorithm_code=row[12] if len(row) > 12 else "",
-                        parameters=parameters,
-                        is_active=bool(row[9]),
-                        success_rate=row[15] if len(row) > 15 and row[15] is not None else 0.7,
-                        risk_level=row[16] if len(row) > 16 and row[16] is not None else 'medium'
-                    ))
-                except Exception as e:
-                    logger.warning(f"解析形态配置失败: {e}")
-                    continue
+                        patterns.append(PatternConfig(
+                            id=row[0],
+                            name=row[1],
+                            english_name=row[2],
+                            category=raw_category,
+                            signal_type=signal_enum,
+                            description=row[5],
+                            min_periods=row[6],
+                            max_periods=row[7],
+                            confidence_threshold=row[8],
+                            algorithm_code=row[12] if len(row) > 12 else "",
+                            parameters=parameters,
+                            is_active=bool(row[9]),
+                            success_rate=row[15] if len(row) > 15 and row[15] is not None and row[15] > 0 else None,
+                            risk_level=row[16] if len(row) > 16 and row[16] is not None else 'medium'
+                        ))
+                    except Exception as e:
+                        logger.warning(f"解析形态配置失败: {e}")
+                        continue
             self._patterns_cache = patterns
             logger.info(f"[_load_all_patterns_from_db] 成功解析并缓存了 {len(patterns)} 条形态配置。")
         except sqlite3.Error as e:
@@ -242,12 +314,16 @@ class PatternManager:
         Returns:
             形态配置或None
         """
+        if name in self._pattern_by_name_cache:
+            return self._pattern_by_name_cache[name]
+            
         if self._patterns_cache is None:
             self._load_all_patterns_from_db()
 
         if self._patterns_cache:
             for config in self._patterns_cache:
                 if config.name == name or config.english_name == name:
+                    self._pattern_by_name_cache[name] = config
                     return config
         return None
 
@@ -261,6 +337,9 @@ class PatternManager:
         Returns:
             如果找到，则返回PatternConfig对象，否则返回None。
         """
+        if pattern_type in self._pattern_by_type_cache:
+            return self._pattern_by_type_cache[pattern_type]
+            
         with self._cache_lock:
             if self._patterns_cache is None:
                 self._load_all_patterns_from_db()
@@ -269,10 +348,13 @@ class PatternManager:
 
             for config in self._patterns_cache:
                 if config.english_name and config.english_name.lower().replace('_', ' ') == normalized_type:
+                    self._pattern_by_type_cache[pattern_type] = config
                     return config
                 if config.name.lower() == normalized_type:
+                    self._pattern_by_type_cache[pattern_type] = config
                     return config
 
+            self._pattern_by_type_cache[pattern_type] = None
             return None
 
     def get_patterns_by_category(self, category: str) -> List[PatternConfig]:
@@ -634,20 +716,27 @@ for i in range(len(kdata)):
                 'confidence_distribution': {'high': 0, 'medium': 0, 'low': 0}
             }
 
-    def get_pattern_effectiveness(self, pattern_type: str, days: int = 30) -> Dict:
+    def get_pattern_effectiveness(self, pattern_type: str, days: int = 90) -> Dict:
         """
         获取形态有效性统计
 
         Args:
             pattern_type: 形态类型
-            days: 统计天数
+            days: 统计天数，默认90天
 
         Returns:
             有效性统计
         """
+        cache_key = f"{pattern_type}_{days}"
+        if cache_key in self._effectiveness_cache:
+            cached_data, cached_time = self._effectiveness_cache[cache_key]
+            if time.time() - cached_time < 300:
+                return cached_data
+        
         try:
             with self._get_db_connection() as conn:
                 cursor = conn.cursor()
+                days_param = f'-{days} days'
                 cursor.execute('''
                     SELECT 
                         COUNT(*) as total_count,
@@ -656,24 +745,29 @@ for i in range(len(kdata)):
                         AVG(confidence) as avg_confidence
                     FROM pattern_history 
                     WHERE pattern_type = ? 
-                    AND trigger_date >= date('now', '-{} days')
-                '''.format(days), (pattern_type,))
+                    AND trigger_date >= date('now', ?)
+                    AND return_rate IS NOT NULL
+                    AND is_successful IS NOT NULL
+                ''', (pattern_type, days_param))
 
                 row = cursor.fetchone()
                 if row and row[0] > 0:
-                    return {
+                    result = {
                         'total_signals': row[0],
                         'success_rate': (row[2] / row[0]) * 100 if row[0] > 0 else 0,
                         'average_return': row[1] or 0,
                         'average_confidence': row[3] or 0
                     }
                 else:
-                    return {
+                    result = {
                         'total_signals': 0,
                         'success_rate': 0,
                         'average_return': 0,
                         'average_confidence': 0
                     }
+                
+                self._effectiveness_cache[cache_key] = (result, time.time())
+                return result
 
         except sqlite3.Error as e:
             logger.info(f"获取形态有效性失败: {e}")
@@ -687,7 +781,9 @@ for i in range(len(kdata)):
     def record_pattern_result(self, pattern_type: str, stock_code: str,
                               signal_type: str, confidence: float,
                               trigger_date: str, trigger_price: float,
-                              result_date: str = None, result_price: float = None) -> bool:
+                              result_date: str = None, result_price: float = None,
+                              future_price: float = None,
+                              max_total_records: int = 10000) -> bool:
         """
         记录形态识别结果（用于效果统计）
 
@@ -700,6 +796,8 @@ for i in range(len(kdata)):
             trigger_price: 触发价格
             result_date: 结果日期
             result_price: 结果价格
+            future_price: N天后价格（用于结算）
+            max_total_records: 最大总记录数，默认10000
 
         Returns:
             是否成功
@@ -714,28 +812,90 @@ for i in range(len(kdata)):
                     return_rate = (result_price - trigger_price) / \
                         trigger_price * 100
 
-                    # 根据信号类型判断是否成功
                     if signal_type == 'buy':
                         is_successful = 1 if return_rate > 0 else 0
                     elif signal_type == 'sell':
                         is_successful = 1 if return_rate < 0 else 0
                     else:
                         is_successful = 1 if abs(
-                            return_rate) < 2 else 0  # 中性信号，波动小于2%算成功
+                            return_rate) < 2 else 0
 
                 cursor = conn.cursor()
+
+                cursor.execute('SELECT COUNT(*) FROM pattern_history')
+                total_count = cursor.fetchone()[0]
+
+                if total_count >= max_total_records:
+                    excess = total_count - max_total_records + 1
+                    cursor.execute('''
+                        DELETE FROM pattern_history
+                        WHERE id IN (
+                            SELECT id FROM pattern_history
+                            ORDER BY trigger_date ASC, created_at ASC
+                            LIMIT ?
+                        )
+                    ''', (excess,))
+                    logger.info(f"已达到最大记录数{max_total_records}，删除{excess}条最旧记录")
+
                 cursor.execute('''
                     INSERT INTO pattern_history 
                     (pattern_type, stock_code, signal_type, confidence, 
-                     trigger_date, trigger_price, result_date, result_price, 
+                     trigger_date, trigger_price, future_price, result_date, result_price, 
                      return_rate, is_successful)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (pattern_type, stock_code, signal_type, confidence,
-                      trigger_date, trigger_price, result_date, result_price,
+                      trigger_date, trigger_price, future_price, result_date, result_price,
                       return_rate, is_successful))
+                logger.info(f"记录形态结果: {pattern_type} {stock_code} {trigger_date} 置信度={confidence:.2f}")
                 return True
         except sqlite3.Error as e:
             logger.info(f"记录形态结果失败: {e}")
+            return False
+
+    def update_pattern_result(self, record_id: int, result_date: str, result_price: float) -> bool:
+        """
+        更新形态结果（用于结算）
+
+        Args:
+            record_id: 记录ID
+            result_date: 结果日期
+            result_price: 结果价格
+
+        Returns:
+            是否成功
+        """
+        try:
+            with self._get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT trigger_price, signal_type FROM pattern_history WHERE id = ?', (record_id,))
+                row = cursor.fetchone()
+                if not row:
+                    logger.info(f"记录不存在: {record_id}")
+                    return False
+                
+                trigger_price, signal_type = row
+                if trigger_price <= 0:
+                    return False
+                
+                return_rate = (result_price - trigger_price) / trigger_price * 100
+                if signal_type == 'buy':
+                    is_successful = 1 if return_rate > 0 else 0
+                elif signal_type == 'sell':
+                    is_successful = 1 if return_rate < 0 else 0
+                else:
+                    is_successful = 1 if abs(return_rate) < 2 else 0
+                
+                cursor.execute('''
+                    UPDATE pattern_history 
+                    SET result_date = ?, result_price = ?, return_rate = ?, is_successful = ?
+                    WHERE id = ?
+                ''', (result_date, result_price, return_rate, is_successful, record_id))
+                
+                self._effectiveness_cache.clear()
+                logger.info(f"更新形态结果: ID={record_id}, 收益率={return_rate:.2f}%, 成功={is_successful}")
+                return True
+        except sqlite3.Error as e:
+            logger.info(f"更新形态结果失败: {e}")
             return False
 
     def get_recommended_patterns(self, top_n: int = 10) -> List[Dict]:
@@ -760,26 +920,323 @@ for i in range(len(kdata)):
                         AVG(confidence) as avg_confidence
                     FROM pattern_history 
                     WHERE trigger_date >= date('now', '-90 days')
+                    AND return_rate IS NOT NULL
+                    AND is_successful IS NOT NULL
                     GROUP BY pattern_type
-                    HAVING total_count >= 5
-                    ORDER BY success_rate DESC, avg_return DESC
+                    HAVING total_count >= 30
                     LIMIT ?
-                ''', (top_n,))
+                ''', (top_n * 3,))
 
                 recommendations = []
                 for row in cursor.fetchall():
+                    success_rate = row[3] or 0
+                    avg_return = row[2] or 0
+                    avg_confidence = row[4] or 0
+                    norm_return = min(avg_return / 10.0, 1.0) if avg_return > 0 else 0
+                    recommendation_score = round(
+                        success_rate * 0.5 +
+                        norm_return * 0.3 +
+                        avg_confidence * 0.2, 3)
                     recommendations.append({
                         'pattern_type': row[0],
                         'total_signals': row[1],
-                        'average_return': round(row[2] or 0, 2),
-                        'success_rate': round(row[3] * 100, 2),
-                        'average_confidence': round(row[4] or 0, 3),
-                        'recommendation_score': round((row[3] * 0.6 + (row[2] or 0) * 0.004 + (row[4] or 0) * 0.4), 3)
+                        'average_return': round(avg_return, 2),
+                        'success_rate': round(success_rate * 100, 2),
+                        'average_confidence': round(avg_confidence, 3),
+                        'recommendation_score': recommendation_score
                     })
+
+                recommendations.sort(key=lambda x: x['recommendation_score'], reverse=True)
+                recommendations = recommendations[:top_n]
 
                 return recommendations
         except sqlite3.Error as e:
             logger.info(f"获取推荐形态失败: {e}")
+            return []
+
+    def cleanup_old_records(self, days: int = 90, min_samples: int = 20, max_delete: int = 1000) -> Dict:
+        """
+        清理过期的形态历史记录（智能清理）
+
+        Args:
+            days: 保留天数，默认90天
+            min_samples: 每种形态最低保留样本数，默认20条
+            max_delete: 每次最多删除条数，避免长事务，默认1000
+
+        Returns:
+            清理结果统计
+        """
+        result = {
+            'total_deleted': 0,
+            'by_pattern': {},
+            'error': None
+        }
+
+        try:
+            with self._get_db_connection() as conn:
+                cursor = conn.cursor()
+
+                cursor.execute('''
+                    SELECT pattern_type, COUNT(*) as count
+                    FROM pattern_history
+                    GROUP BY pattern_type
+                ''')
+                pattern_counts = {row[0]: row[1] for row in cursor.fetchall()}
+
+                for pattern_type, total_count in pattern_counts.items():
+                    if total_count <= min_samples:
+                        continue
+
+                    to_delete = min(total_count - min_samples, max_delete)
+
+                    cursor.execute('''
+                        DELETE FROM pattern_history
+                        WHERE id IN (
+                            SELECT id FROM pattern_history
+                            WHERE pattern_type = ?
+                            AND trigger_date < date('now', '-' || ? || ' days')
+                            ORDER BY trigger_date ASC
+                            LIMIT ?
+                        )
+                    ''', (pattern_type, days, to_delete))
+
+                    deleted = cursor.rowcount
+                    result['total_deleted'] += deleted
+                    result['by_pattern'][pattern_type] = deleted
+
+                conn.commit()
+                logger.info(f"历史数据清理完成: 删除{result['total_deleted']}条记录")
+
+        except sqlite3.Error as e:
+            result['error'] = str(e)
+            logger.error(f"清理历史记录失败: {e}")
+
+        return result
+
+    def settle_pending_results(self, days: int = 5, max_settle: int = 500) -> Dict:
+        """
+        结算待处理结果（批量优化版）
+
+        Args:
+            days: 触发后N天进行结算，默认5天
+            max_settle: 每次最多结算数量，默认500
+
+        Returns:
+            结算结果统计
+        """
+        result = {
+            'settled_count': 0,
+            'failed_count': 0,
+            'errors': []
+        }
+
+        try:
+            with self._get_db_connection() as conn:
+                cursor = conn.cursor()
+                days_param = f'-{days} days'
+                cursor.execute('''
+                    SELECT id, pattern_type, stock_code, trigger_date, trigger_price, signal_type, future_price
+                    FROM pattern_history
+                    WHERE result_price IS NULL
+                    AND trigger_date <= date('now', ?)
+                    ORDER BY trigger_date ASC
+                    LIMIT ?
+                ''', (days_param, max_settle))
+
+                pending_records = cursor.fetchall()
+                if not pending_records:
+                    return result
+                
+                logger.info(f"找到{len(pending_records)}条待结算记录")
+
+                from datetime import datetime, timedelta
+                update_data = []
+                for record in pending_records:
+                    try:
+                        record_id, pattern_type, stock_code, trigger_date_str, trigger_price, signal_type, future_price = record
+                        if not trigger_price or trigger_price <= 0:
+                            result['failed_count'] += 1
+                            continue
+                        trigger_date = datetime.strptime(trigger_date_str, '%Y-%m-%d')
+                        result_date = trigger_date + timedelta(days=days)
+                        result_date_str = result_date.strftime('%Y-%m-%d')
+                        if future_price and future_price > 0:
+                            result_price = future_price
+                        else:
+                            result_price = trigger_price
+                        return_rate = (result_price - trigger_price) / trigger_price * 100
+                        if signal_type == 'buy':
+                            is_successful = 1 if return_rate > 0 else 0
+                        elif signal_type == 'sell':
+                            is_successful = 1 if return_rate < 0 else 0
+                        else:
+                            is_successful = 1 if abs(return_rate) < 2 else 0
+                        update_data.append((result_date_str, result_price, return_rate, is_successful, record_id))
+                    except Exception as e:
+                        result['failed_count'] += 1
+                        result['errors'].append(str(e))
+
+                if update_data:
+                    cursor.executemany('''
+                        UPDATE pattern_history 
+                        SET result_date = ?, result_price = ?, return_rate = ?, is_successful = ?
+                        WHERE id = ?
+                    ''', update_data)
+                    result['settled_count'] = len(update_data)
+                    self._effectiveness_cache.clear()
+                    logger.info(f"批量结算完成: 成功{result['settled_count']}条, 失败{result['failed_count']}条")
+
+        except sqlite3.Error as e:
+            logger.error(f"结算待处理结果失败: {e}")
+            result['errors'].append(str(e))
+
+        return result
+
+    def get_training_data_summary(self, days: int = 90) -> Dict:
+        """
+        获取训练数据摘要（用于AI训练数据管理）
+
+        Args:
+            days: 统计天数，默认90天
+
+        Returns:
+            训练数据统计信息
+        """
+        try:
+            with self._get_db_connection() as conn:
+                cursor = conn.cursor()
+                days_param = f'-{days} days'
+
+                cursor.execute('SELECT COUNT(*) FROM pattern_history WHERE trigger_date >= date("now", ?)', (days_param,))
+                total_records = cursor.fetchone()[0]
+
+                cursor.execute('''
+                    SELECT COUNT(*) FROM pattern_history 
+                    WHERE trigger_date >= date("now", ?)
+                    AND return_rate IS NOT NULL
+                    AND is_successful IS NOT NULL
+                ''', (days_param,))
+                valid_records = cursor.fetchone()[0]
+
+                cursor.execute('''
+                    SELECT COUNT(*) FROM pattern_history 
+                    WHERE trigger_date >= date("now", ?)
+                    AND return_rate IS NULL
+                ''', (days_param,))
+                pending_records = cursor.fetchone()[0]
+
+                cursor.execute('''
+                    SELECT pattern_type, COUNT(*) as count
+                    FROM pattern_history
+                    WHERE trigger_date >= date("now", ?)
+                    GROUP BY pattern_type
+                    ORDER BY count DESC
+                ''', (days_param,))
+                pattern_distribution = [{'pattern': row[0], 'count': row[1]} for row in cursor.fetchall()]
+
+                cursor.execute('''
+                    SELECT AVG(confidence) FROM pattern_history 
+                    WHERE trigger_date >= date("now", ?)
+                ''', (days_param,))
+                avg_confidence = cursor.fetchone()[0] or 0
+
+                cursor.execute('''
+                    SELECT signal_type, COUNT(*) as count
+                    FROM pattern_history
+                    WHERE trigger_date >= date("now", ?)
+                    GROUP BY signal_type
+                ''', (days_param,))
+                signal_distribution = {row[0]: row[1] for row in cursor.fetchall()}
+
+                cursor.execute('''
+                    SELECT 
+                        CASE 
+                            WHEN return_rate > 10 THEN '涨幅>10%'
+                            WHEN return_rate > 5 THEN '涨幅5%-10%'
+                            WHEN return_rate > 0 THEN '涨幅0%-5%'
+                            WHEN return_rate > -5 THEN '跌幅0%-5%'
+                            WHEN return_rate > -10 THEN '跌幅5%-10%'
+                            ELSE '跌幅>10%'
+                        END as range_label,
+                        COUNT(*) as count
+                    FROM pattern_history
+                    WHERE trigger_date >= date("now", ?)
+                    AND return_rate IS NOT NULL
+                    GROUP BY range_label
+                ''', (days_param,))
+                return_distribution = {row[0]: row[1] for row in cursor.fetchall()}
+
+                valid_patterns = [p for p in pattern_distribution if p['count'] >= 30]
+
+                return {
+                    'total_records': total_records,
+                    'valid_records': valid_records,
+                    'pending_records': pending_records,
+                    'pattern_distribution': pattern_distribution,
+                    'average_confidence': round(avg_confidence, 3),
+                    'signal_distribution': signal_distribution,
+                    'return_distribution': return_distribution,
+                    'valid_for_training': len(valid_patterns)
+                }
+
+        except sqlite3.Error as e:
+            logger.error(f"获取训练数据摘要失败: {e}")
+            return {
+                'total_records': 0,
+                'valid_records': 0,
+                'pending_records': 0,
+                'pattern_distribution': [],
+                'average_confidence': 0,
+                'signal_distribution': {},
+                'return_distribution': {},
+                'valid_for_training': 0
+            }
+
+    def get_pattern_effectiveness_trend(self, pattern_type: str, months: int = 6) -> List[Dict]:
+        """
+        获取形态效果趋势（用于形态优化建议）
+
+        Args:
+            pattern_type: 形态类型
+            months: 追溯月份数，默认6个月
+
+        Returns:
+            月度统计数据列表
+        """
+        try:
+            with self._get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT 
+                        strftime('%Y-%m', trigger_date) as month,
+                        COUNT(*) as total_count,
+                        COUNT(CASE WHEN is_successful = 1 THEN 1 END) as success_count,
+                        AVG(return_rate) as avg_return,
+                        AVG(confidence) as avg_confidence
+                    FROM pattern_history
+                    WHERE pattern_type = ?
+                    AND trigger_date >= date('now', '-' || ? || ' months')
+                    AND return_rate IS NOT NULL
+                    AND is_successful IS NOT NULL
+                    GROUP BY month
+                    ORDER BY month ASC
+                ''', (pattern_type, months))
+
+                results = []
+                for row in cursor.fetchall():
+                    results.append({
+                        'month': row[0],
+                        'total_count': row[1],
+                        'success_count': row[2],
+                        'success_rate': round(row[2] / row[1] * 100, 2) if row[1] > 0 else 0,
+                        'avg_return': round(row[3] or 0, 2),
+                        'avg_confidence': round(row[4] or 0, 3)
+                    })
+
+                return results
+
+        except sqlite3.Error as e:
+            logger.error(f"获取形态效果趋势失败: {e}")
             return []
 
     def get_all_patterns(self, active_only: bool = True) -> List[PatternConfig]:

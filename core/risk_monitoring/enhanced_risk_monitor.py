@@ -140,7 +140,7 @@ class EnhancedRiskMonitor:
         self.scaler = StandardScaler()
 
         # 数据存储
-        self.db_path = Path(self.config.get('db_path', 'data/enhanced_risk_monitor.db'))
+        self.db_path = Path(self.config.get('db_path', 'data/enhanced_risk_monitor.sqlite'))
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_database()
 

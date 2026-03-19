@@ -226,13 +226,8 @@ class MainMenuBar(QMenuBar):
             # 回测
             self.backtest_action = QAction("回测", self)
             self.backtest_action.setStatusTip("回测当前策略")
+            self.backtest_action.setShortcut("Ctrl+Shift+B")
             self.analysis_menu.addAction(self.backtest_action)
-
-            # 专业回测（合并了专业回测系统和专业回测面板）
-            self.professional_backtest_action = QAction("专业回测", self)
-            self.professional_backtest_action.setStatusTip("打开专业回测功能（支持面板和窗口模式）")
-            self.professional_backtest_action.setShortcut("Ctrl+Shift+B")
-            self.analysis_menu.addAction(self.professional_backtest_action)
 
             # 优化
             self.optimize_action = QAction("优化", self)
@@ -284,9 +279,10 @@ class MainMenuBar(QMenuBar):
 
             self.strategy_menu.addSeparator()
 
-            # 策略优化
-            self.strategy_optimize_action = QAction("策略优化", self)
-            self.strategy_optimize_action.setStatusTip("优化策略参数")
+            # 策略优化（独立参数编辑器）
+            self.strategy_optimize_action = QAction("⚡ 策略参数优化", self)
+            self.strategy_optimize_action.setStatusTip("打开可视化参数编辑器（支持参数扫描、预设管理和智能推荐）")
+            self.strategy_optimize_action.setShortcut("Ctrl+Shift+O")  # 行业通用快捷键
             self.strategy_menu.addAction(self.strategy_optimize_action)
 
             self.strategy_menu.addSeparator()
@@ -866,12 +862,20 @@ class MainMenuBar(QMenuBar):
     def backtest(self):
         """Run backtest"""
         try:
-            # 获取主窗口的回测控件
+            # 优先使用 coordinator 的专业回测功能
+            if self.coordinator and hasattr(self.coordinator, '_on_professional_backtest'):
+                self.coordinator._on_professional_backtest()
+                return
+            
+            # 备选：尝试使用右侧面板的回测功能
             main_window = self.window()
-            if hasattr(main_window, 'trading_widget'):
-                main_window.trading_widget.run_backtest()
-            else:
-                QMessageBox.information(self, "回测", "回测功能已启动")
+            if hasattr(main_window, '_analysis_tools_panel'):
+                panel = main_window._analysis_tools_panel
+                if hasattr(panel, 'start_enhanced_batch_analysis'):
+                    QMessageBox.information(self, "回测", "请使用右侧面板的分析功能")
+                    return
+            
+            QMessageBox.information(self, "回测", "请使用菜单栏的'专业回测'功能")
         except Exception as e:
             QMessageBox.critical(self, "错误", f"启动回测失败: {str(e)}")
 
@@ -1023,8 +1027,7 @@ class MainMenuBar(QMenuBar):
 
                 # 分析相关
                 ('analyze_action', '_on_analyze'),
-                ('backtest_action', '_on_backtest'),
-                ('professional_backtest_action', '_on_professional_backtest'),
+                ('backtest_action', '_on_professional_backtest'),
                 ('optimize_action', '_on_optimize'),
                 ('batch_analysis_action', '_on_batch_analysis'),
                 ('intelligent_model_selection_action', '_on_intelligent_model_selection'),

@@ -10,10 +10,9 @@ FactorWeave-Quant策略管理系统
 import atexit
 from typing import Dict, List, Optional, Any, Type
 
-# 使用系统统一组件
 from core.system_adapters import get_config
+from core.containers import get_service_container
 
-# 导入核心组件
 from .base_strategy import (
     BaseStrategy, StrategySignal, StrategyParameter, StrategyType, SignalType
 )
@@ -29,7 +28,6 @@ from .strategy_factory import (
 from .parameter_manager import (
     StrategyParameterManager, ParameterValidator, get_parameter_manager
 )
-# 使用统一性能监控系统
 from core.performance import get_performance_monitor as get_performance_evaluator
 from .lifecycle_manager import (
     StrategyLifecycleManager, get_lifecycle_manager
@@ -39,11 +37,9 @@ from .strategy_database import (
 )
 from .builtin_strategies import *
 
-# 版本信息
 __version__ = "2.0.0"
 __author__ = "FactorWeave 团队"
 
-# 全局管理器实例
 _managers_initialized = False
 logger = logger.bind(module=__name__)
 
@@ -74,10 +70,18 @@ def initialize_strategy_system(config: Optional[Dict[str, Any]] = None) -> Dict[
 
         strategy_config = system_config.get('strategy_system', {})
 
-        # 初始化数据库管理器
-        db_config = strategy_config.get('database', {})
-        db_path = db_config.get('path')
-        db_manager = initialize_strategy_database(db_path)
+        # 初始化数据库管理器 - 从ServiceContainer获取DatabaseService
+        from core.services.database_service import DatabaseService
+        try:
+            container = get_service_container()
+            database_service = container.try_resolve(DatabaseService)
+            if database_service is None:
+                raise ValueError("DatabaseService未在ServiceContainer中注册")
+        except Exception as e:
+            logger.error(f"无法获取DatabaseService: {e}")
+            raise
+
+        db_manager = initialize_strategy_database(database_service)
         logger.info("数据库管理器初始化完成")
 
         # 初始化策略注册器

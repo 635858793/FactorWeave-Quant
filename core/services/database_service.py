@@ -850,8 +850,8 @@ class DatabaseService(BaseService):
                 if config.enable_wal:
                     try:
                         connection.execute("PRAGMA journal_mode=WAL")
-                    except:
-                        pass  # DuckDB可能不支持WAL
+                    except (AttributeError, duckdb.IOException, Exception) as e:
+                        logger.debug(f"DuckDB不支持WAL模式: {e}")
 
                 return connection
 
@@ -1232,8 +1232,8 @@ class DatabaseService(BaseService):
                         connection.execute("ROLLBACK")
                     elif connection.db_type == DatabaseType.SQLITE:
                         connection.connection.rollback()
-                except:
-                    pass
+                except Exception as e:
+                    logger.warning(f"事务回滚失败: {e}")
 
             # 更新事务指标
             if transaction_id in self._active_transactions:
@@ -1415,7 +1415,8 @@ class DatabaseService(BaseService):
                                 elif conn.db_type == DatabaseType.SQLITE:
                                     conn.execute("SELECT 1")
                                 valid_connections.append(conn)
-                            except:
+                            except Exception as e:
+                                logger.debug(f"连接验证失败，关闭连接: {e}")
                                 conn.close()
 
                     self._connection_pools[pool_name] = valid_connections
@@ -1557,8 +1558,8 @@ class DatabaseService(BaseService):
                         elif conn.db_type == DatabaseType.SQLITE:
                             conn.execute("SELECT 1")
                     healthy_pools += 1
-                except:
-                    pass
+                except Exception as e:
+                    logger.warning(f"连接池 {pool_name} 健康检查失败: {e}")
 
             return {
                 "status": "healthy" if healthy_pools > 0 else "unhealthy",
@@ -1645,6 +1646,12 @@ class DatabaseService(BaseService):
             # 创建用户反馈表
             self._create_user_feedback_table()
 
+            # 创建趋势预警配置表
+            self._create_trend_alert_config_table()
+
+            # 创建数据源表
+            self._create_data_source_table()
+
             logger.info("✓ System configuration database tables initialized")
 
         except Exception as e:
@@ -1670,6 +1677,12 @@ class DatabaseService(BaseService):
 
             # 创建策略信号表
             self._create_strategy_signals_table()
+
+            # 创建模型训练相关表
+            self._create_model_training_tables()
+
+            # 创建预测跟踪相关表
+            self._create_prediction_tracking_tables()
 
             # 注意：订单表现在由多资产支持系统管理，不再在此处创建
             # 订单表会根据资产类型路由到对应的数据库中
@@ -1911,6 +1924,152 @@ class DatabaseService(BaseService):
         
         with self.get_connection("strategy_sqlite") as conn:
             for index_sql in indices:
+                conn.execute(index_sql)
+
+    def _create_model_training_tables(self) -> None:
+        """创建模型训练相关表"""
+        # 训练任务表
+        sql_tasks = """
+        CREATE TABLE IF NOT EXISTS training_tasks (
+            task_id TEXT PRIMARY KEY,
+            task_name TEXT NOT NULL,
+            task_description TEXT,
+            model_type TEXT NOT NULL,
+            status TEXT NOT NULL,
+            config_json TEXT NOT NULL,
+            progress REAL DEFAULT 0.0,
+            error_message TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            started_at TIMESTAMP,
+            completed_at TIMESTAMP
+        )
+        """
+        
+        with self.get_connection("strategy_sqlite") as conn:
+            conn.execute(sql_tasks)
+            
+        indices_tasks = [
+            "CREATE INDEX IF NOT EXISTS idx_training_tasks_status ON training_tasks(status)",
+            "CREATE INDEX IF NOT EXISTS idx_training_tasks_model_type ON training_tasks(model_type)",
+            "CREATE INDEX IF NOT EXISTS idx_training_tasks_created_at ON training_tasks(created_at)"
+        ]
+        
+        with self.get_connection("strategy_sqlite") as conn:
+            for index_sql in indices_tasks:
+                conn.execute(index_sql)
+        
+        # 模型版本表
+        sql_versions = """
+        CREATE TABLE IF NOT EXISTS model_versions (
+            version_id TEXT PRIMARY KEY,
+            version_number TEXT NOT NULL UNIQUE,
+            model_type TEXT NOT NULL,
+            model_file_path TEXT NOT NULL,
+            training_task_id TEXT,
+            performance_metrics_json TEXT,
+            config_json TEXT,
+            is_current INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_by TEXT,
+            description TEXT,
+            FOREIGN KEY (training_task_id) REFERENCES training_tasks(task_id)
+        )
+        """
+        
+        with self.get_connection("strategy_sqlite") as conn:
+            conn.execute(sql_versions)
+            
+        indices_versions = [
+            "CREATE INDEX IF NOT EXISTS idx_model_versions_task_id ON model_versions(training_task_id)",
+            "CREATE INDEX IF NOT EXISTS idx_model_versions_is_current ON model_versions(is_current)"
+        ]
+        
+        with self.get_connection("strategy_sqlite") as conn:
+            for index_sql in indices_versions:
+                conn.execute(index_sql)
+        
+        # 训练日志表
+        sql_logs = """
+        CREATE TABLE IF NOT EXISTS training_logs (
+            log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            training_task_id TEXT NOT NULL,
+            log_level TEXT NOT NULL,
+            log_message TEXT NOT NULL,
+            log_data_json TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (training_task_id) REFERENCES training_tasks(task_id)
+        )
+        """
+        
+        with self.get_connection("strategy_sqlite") as conn:
+            conn.execute(sql_logs)
+            
+        indices_logs = [
+            "CREATE INDEX IF NOT EXISTS idx_training_logs_task_id ON training_logs(training_task_id)",
+            "CREATE INDEX IF NOT EXISTS idx_training_logs_level ON training_logs(log_level)"
+        ]
+        
+        with self.get_connection("strategy_sqlite") as conn:
+            for index_sql in indices_logs:
+                conn.execute(index_sql)
+
+    def _create_prediction_tracking_tables(self) -> None:
+        """创建预测跟踪相关表"""
+        sql_prediction_records = """
+        CREATE TABLE IF NOT EXISTS prediction_records (
+            record_id TEXT PRIMARY KEY,
+            model_version_id TEXT NOT NULL,
+            prediction_type TEXT NOT NULL,
+            prediction_time TIMESTAMP NOT NULL,
+            prediction_result_json TEXT NOT NULL,
+            confidence REAL NOT NULL,
+            actual_result_json TEXT,
+            accuracy REAL,
+            calculated_at TIMESTAMP,
+            FOREIGN KEY (model_version_id) REFERENCES model_versions(version_id)
+        )
+        """
+
+        with self.get_connection("strategy_sqlite") as conn:
+            conn.execute(sql_prediction_records)
+
+        indices_prediction_records = [
+            "CREATE INDEX IF NOT EXISTS idx_prediction_records_model_version ON prediction_records(model_version_id)",
+            "CREATE INDEX IF NOT EXISTS idx_prediction_records_type_time ON prediction_records(prediction_type, prediction_time)",
+            "CREATE INDEX IF NOT EXISTS idx_prediction_records_time ON prediction_records(prediction_time)"
+        ]
+
+        with self.get_connection("strategy_sqlite") as conn:
+            for index_sql in indices_prediction_records:
+                conn.execute(index_sql)
+
+        sql_accuracy_statistics = """
+        CREATE TABLE IF NOT EXISTS accuracy_statistics (
+            stat_id TEXT PRIMARY KEY,
+            model_version_id TEXT NOT NULL,
+            prediction_type TEXT NOT NULL,
+            time_period TEXT NOT NULL,
+            total_predictions INTEGER DEFAULT 0,
+            correct_predictions INTEGER DEFAULT 0,
+            accuracy_rate REAL DEFAULT 0.0,
+            avg_confidence REAL DEFAULT 0.0,
+            calculated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (model_version_id) REFERENCES model_versions(version_id),
+            UNIQUE(model_version_id, prediction_type, time_period)
+        )
+        """
+
+        with self.get_connection("strategy_sqlite") as conn:
+            conn.execute(sql_accuracy_statistics)
+
+        indices_accuracy_statistics = [
+            "CREATE INDEX IF NOT EXISTS idx_accuracy_statistics_model_version ON accuracy_statistics(model_version_id)",
+            "CREATE INDEX IF NOT EXISTS idx_accuracy_statistics_type_period ON accuracy_statistics(prediction_type, time_period)"
+        ]
+
+        with self.get_connection("strategy_sqlite") as conn:
+            for index_sql in indices_accuracy_statistics:
                 conn.execute(index_sql)
 
     def _create_ai_strategy_table(self) -> None:
@@ -2361,6 +2520,129 @@ class DatabaseService(BaseService):
                     conn.execute(index_sql)
                 except Exception as e:
                     logger.warning(f"创建索引失败（可能已存在）: {e}")
+
+    def _create_trend_alert_config_table(self) -> None:
+        """创建趋势预警配置表"""
+        sql = """
+        CREATE TABLE IF NOT EXISTS trend_alert_config (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            config_key TEXT NOT NULL,
+            config_value TEXT NOT NULL,
+            is_active INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+
+        with self.get_connection("factorweave_system_sqlite") as conn:
+            conn.execute(sql)
+
+        indices = [
+            "CREATE INDEX IF NOT EXISTS idx_trend_alert_config_key ON trend_alert_config(config_key)",
+            "CREATE INDEX IF NOT EXISTS idx_trend_alert_config_active ON trend_alert_config(is_active)"
+        ]
+
+        with self.get_connection("factorweave_system_sqlite") as conn:
+            for index_sql in indices:
+                try:
+                    conn.execute(index_sql)
+                except Exception as e:
+                    logger.warning(f"创建索引失败（可能已存在）: {e}")
+
+    def _create_data_source_table(self) -> None:
+        """创建数据源表"""
+        sql = """
+        CREATE TABLE IF NOT EXISTS data_source (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            type TEXT NOT NULL,
+            config TEXT,
+            is_active INTEGER DEFAULT 0,
+            priority INTEGER DEFAULT 50,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+
+        with self.get_connection("factorweave_system_sqlite") as conn:
+            conn.execute(sql)
+
+        indices = [
+            "CREATE INDEX IF NOT EXISTS idx_data_source_name ON data_source(name)",
+            "CREATE INDEX IF NOT EXISTS idx_data_source_type ON data_source(type)",
+            "CREATE INDEX IF NOT EXISTS idx_data_source_active ON data_source(is_active)"
+        ]
+
+        with self.get_connection("factorweave_system_sqlite") as conn:
+            for index_sql in indices:
+                try:
+                    conn.execute(index_sql)
+                except Exception as e:
+                    logger.warning(f"创建索引失败（可能已存在）: {e}")
+
+    def save_trend_alert_config(self, config_key: str, config_value: dict) -> bool:
+        """保存趋势预警配置"""
+        try:
+            import json
+            value_json = json.dumps(config_value, ensure_ascii=False)
+
+            sql = """
+            REPLACE INTO trend_alert_config (config_key, config_value, is_active, created_at, updated_at)
+            VALUES (?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """
+
+            with self.get_connection("factorweave_system_sqlite") as conn:
+                conn.execute(sql, (config_key, value_json))
+
+            logger.info(f"趋势预警配置已保存: {config_key}")
+            return True
+        except Exception as e:
+            logger.error(f"保存趋势预警配置失败: {e}")
+            return False
+
+    def get_trend_alert_config(self, config_key: str) -> dict:
+        """获取趋势预警配置"""
+        try:
+            import json
+
+            sql = """
+            SELECT config_value FROM trend_alert_config
+            WHERE config_key = ? AND is_active = 1
+            """
+
+            with self.get_connection("factorweave_system_sqlite") as conn:
+                result = conn.execute(sql, (config_key,))
+
+            if result and len(result) > 0:
+                return json.loads(result[0][0])
+            return {}
+        except Exception as e:
+            logger.error(f"获取趋势预警配置失败: {e}")
+            return {}
+
+    def get_data_source_stats(self) -> dict:
+        """获取数据源统计信息"""
+        try:
+            sql = """
+            SELECT COUNT(*) as total, SUM(is_active) as active
+            FROM data_source
+            """
+
+            with self.get_connection("factorweave_system_sqlite") as conn:
+                result = conn.execute(sql)
+
+            if result and len(result) > 0:
+                total = result[0][0] or 0
+                active = result[0][1] or 0
+                return {
+                    'total': total,
+                    'active': active,
+                    'active_rate': (active / total) if total > 0 else 0.0
+                }
+            return {'total': 0, 'active': 0, 'active_rate': 0.0}
+        except Exception as e:
+            logger.error(f"获取数据源统计失败: {e}")
+            return {'total': 0, 'active': 0, 'active_rate': 0.0}
 
     def _create_user_interactions_table(self) -> None:
         """创建用户交互表"""
@@ -3558,7 +3840,7 @@ class DatabaseService(BaseService):
                     metadata.get('author', ''),
                     metadata.get('description', ''),
                     metadata.get('category', ''),
-                    json.dumps(metadata.get('metadata', {})),
+                    json.dumps(metadata),  # 存储完整的metadata字典
                     f"{strategy_class.__module__}.{strategy_class.__name__}"
                 ))
                 conn.commit()
@@ -3582,7 +3864,9 @@ class DatabaseService(BaseService):
             策略信息字典
         """
         try:
-            sql = "SELECT * FROM strategies WHERE id = ?"
+            sql = """SELECT id, name, strategy_type, version, author, description,
+                           category, created_at, updated_at, is_active, metadata, class_path
+                    FROM strategies WHERE id = ?"""
 
             with self.get_connection("strategy_sqlite") as conn:
                 cursor = conn.cursor()
@@ -3590,19 +3874,20 @@ class DatabaseService(BaseService):
                 result = cursor.fetchone()
 
             if result:
+                result_dict = dict(result)
                 return {
-                    'id': result[0],
-                    'name': result[1],
-                    'strategy_type': result[2],
-                    'version': result[3],
-                    'author': result[4],
-                    'description': result[5],
-                    'category': result[6],
-                    'created_at': result[7],
-                    'updated_at': result[8],
-                    'is_active': result[9],
-                    'metadata': json.loads(result[10]) if result[10] else {},
-                    'class_path': result[11]
+                    'id': result_dict['id'],
+                    'name': result_dict['name'],
+                    'strategy_type': result_dict['strategy_type'],
+                    'version': result_dict['version'],
+                    'author': result_dict['author'],
+                    'description': result_dict['description'],
+                    'category': result_dict['category'],
+                    'created_at': result_dict['created_at'],
+                    'updated_at': result_dict['updated_at'],
+                    'is_active': result_dict['is_active'],
+                    'metadata': self._safe_json_parse(result_dict['metadata']),
+                    'class_path': result_dict['class_path']
                 }
             return None
 
@@ -3622,7 +3907,9 @@ class DatabaseService(BaseService):
             策略列表
         """
         try:
-            sql = "SELECT * FROM strategies WHERE 1=1"
+            sql = """SELECT id, name, strategy_type, version, author, description,
+                           category, created_at, updated_at, is_active, metadata, class_path
+                    FROM strategies WHERE 1=1"""
             params = []
 
             if strategy_type:
@@ -3642,19 +3929,20 @@ class DatabaseService(BaseService):
 
             strategies = []
             for result in results:
+                result_dict = dict(result)
                 strategies.append({
-                    'id': result[0],
-                    'name': result[1],
-                    'strategy_type': result[2],
-                    'version': result[3],
-                    'author': result[4],
-                    'description': result[5],
-                    'category': result[6],
-                    'created_at': result[7],
-                    'updated_at': result[8],
-                    'is_active': result[9],
-                    'metadata': json.loads(result[10]) if result[10] else {},
-                    'class_path': result[11]
+                    'id': result_dict['id'],
+                    'name': result_dict['name'],
+                    'strategy_type': result_dict['strategy_type'],
+                    'version': result_dict['version'],
+                    'author': result_dict['author'],
+                    'description': result_dict['description'],
+                    'category': result_dict['category'],
+                    'created_at': result_dict['created_at'],
+                    'updated_at': result_dict['updated_at'],
+                    'is_active': result_dict['is_active'],
+                    'metadata': self._safe_json_parse(result_dict['metadata']),
+                    'class_path': result_dict['class_path']
                 })
 
             return strategies
@@ -3936,7 +4224,9 @@ class DatabaseService(BaseService):
             策略数据列表
         """
         try:
-            sql = "SELECT * FROM strategies WHERE 1=1"
+            sql = """SELECT id, name, strategy_type, version, author, description,
+                           category, created_at, updated_at, is_active, metadata, class_path
+                    FROM strategies WHERE 1=1"""
             params = []
 
             if strategy_ids:
@@ -3951,19 +4241,20 @@ class DatabaseService(BaseService):
 
             strategies = []
             for result in results:
+                result_dict = dict(result)
                 strategies.append({
-                    'id': result[0],
-                    'name': result[1],
-                    'strategy_type': result[2],
-                    'version': result[3],
-                    'author': result[4],
-                    'description': result[5],
-                    'category': result[6],
-                    'created_at': result[7],
-                    'updated_at': result[8],
-                    'is_active': result[9],
-                    'metadata': json.loads(result[10]) if result[10] else {},
-                    'class_path': result[11]
+                    'id': result_dict['id'],
+                    'name': result_dict['name'],
+                    'strategy_type': result_dict['strategy_type'],
+                    'version': result_dict['version'],
+                    'author': result_dict['author'],
+                    'description': result_dict['description'],
+                    'category': result_dict['category'],
+                    'created_at': result_dict['created_at'],
+                    'updated_at': result_dict['updated_at'],
+                    'is_active': result_dict['is_active'],
+                    'metadata': self._safe_json_parse(result_dict['metadata']),
+                    'class_path': result_dict['class_path']
                 })
 
             logger.info(f"策略导出成功: {len(strategies)}个策略")
@@ -4042,6 +4333,50 @@ class DatabaseService(BaseService):
         except Exception as e:
             logger.error(f"获取数据库统计信息失败: {e}")
             return {}
+
+    def _safe_json_parse(self, value: Any, default: Any = None) -> Any:
+        """
+        安全地解析JSON字符串
+
+        Args:
+            value: 要解析的值
+            default: 解析失败时返回的默认值
+
+        Returns:
+            解析后的对象或默认值
+        """
+        if default is None:
+            default = {}
+
+        if value is None:
+            return default
+
+        if isinstance(value, (dict, list)):
+            return value
+
+        if isinstance(value, (bytes, bytearray)):
+            if not value:
+                return default
+            value = value.decode('utf-8')
+
+        if not value:
+            return default
+
+        value_str = str(value).strip()
+        if not value_str:
+            return default
+
+        # 快速检查：如果是类路径字符串（包含点号但不是JSON对象），直接返回默认值
+        # 这避免了对策略类路径字符串产生不必要的警告
+        if '.' in value_str and not value_str.startswith(('{', '[', '"')):
+            # 可能是类路径字符串，如 'core.strategy.builtin_strategies.MAStrategy'
+            if value_str.count('.') >= 1 and not value_str.startswith('{'):
+                return default
+
+        try:
+            return json.loads(value_str)
+        except (json.JSONDecodeError, TypeError):
+            return default
 
     def _serialize_value(self, value: Any) -> str:
         """

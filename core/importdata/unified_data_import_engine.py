@@ -1465,9 +1465,68 @@ class UnifiedDataImportEngine(QObject):
 
     def _import_fundamental_data(self, task_config: ImportTaskConfig, result: UnifiedImportResult):
         """导入基本面数据"""
-        logger.info("导入基本面数据 - 功能开发中")
-        result.total_records = len(task_config.symbols)
-        result.processed_records = result.total_records
+        try:
+            logger.info(f"开始导入基本面数据：{len(task_config.symbols)}个股票")
+            
+            from core.services.enhanced_duckdb_data_downloader import get_enhanced_duckdb_data_downloader
+            from core.plugin_types import AssetType
+            
+            # 获取增强数据下载器
+            downloader = get_enhanced_duckdb_data_downloader()
+            if not downloader:
+                raise Exception("无法获取增强数据下载器")
+            
+            # 识别资产类型（默认为 A 股）
+            asset_type = AssetType.STOCK_A
+            try:
+                if hasattr(self, 'asset_identifier') and task_config.symbols:
+                    asset_type = self.asset_identifier.identify_asset_type_by_symbol(task_config.symbols[0])
+            except:
+                pass
+            
+            # 执行基本面数据下载
+            import asyncio
+            
+            async def _download_fundamental():
+                return await downloader.download_fundamental_data(
+                    symbols=task_config.symbols,
+                    data_types=['financial_statement', 'announcement', 'analyst_rating'],
+                    asset_type=asset_type
+                )
+            
+            # 在新的事件循环中执行异步函数
+            import threading
+            result_data = {}
+            
+            def run_async():
+                nonlocal result_data
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    result_data = loop.run_until_complete(_download_fundamental())
+                finally:
+                    loop.close()
+            
+            thread = threading.Thread(target=run_async)
+            thread.start()
+            thread.join(timeout=300)  # 5 分钟超时
+            
+            # 统计结果
+            result.total_records = len(task_config.symbols)
+            if result_data:
+                result.processed_records = len(result_data)
+                logger.info(f"基本面数据导入完成：成功{len(result_data)}/{len(task_config.symbols)}个股票")
+            else:
+                logger.warning("基本面数据导入未返回任何数据")
+                result.processed_records = 0
+                
+        except Exception as e:
+            logger.error(f"导入基本面数据失败：{e}")
+            import traceback
+            logger.debug(traceback.format_exc())
+            result.total_records = len(task_config.symbols)
+            result.processed_records = 0
+            result.status = UnifiedTaskStatus.FAILED
 
     # ==================== 同步版本的数据导入方法 ====================
 

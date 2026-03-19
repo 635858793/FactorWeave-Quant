@@ -1655,14 +1655,31 @@ class TradingWidget(QWidget):
                     service_container = get_service_container()
                     ts = service_container.resolve(TradingService)
                     if not ts:
-                        return None
+                        return {'code': code, 'strategy': strategy, 'params': params, 'error': '交易服务不可用'}
                     if ts and hasattr(ts, 'set_current_stock'):
                         ts.set_current_stock(code)
                     if ts and hasattr(ts, 'get_kdata'):
                         kdata = ts.get_kdata(code)
                     p = dict(params)
                     p['strategy'] = strategy
-                    res = ts.run_backtest(p)
+                    # 使用直接调用 UnifiedBacktestEngine 的方式（替代不存在的 ts.run_backtest）
+                    try:
+                        from backtest.unified_backtest_engine import UnifiedBacktestEngine, BacktestLevel
+                        if kdata is not None and not kdata.empty:
+                            signal_data = kdata.copy()
+                            signal_data['signal'] = 0
+                            engine = UnifiedBacktestEngine(backtest_level=BacktestLevel.PROFESSIONAL)
+                            result = engine.run_backtest(
+                                data=signal_data,
+                                initial_capital=p.get('initial_cash', 100000),
+                                commission_pct=p.get('commission_rate', 0.001),
+                                slippage_pct=p.get('slippage', 0.001)
+                            )
+                            res = result.to_dict() if hasattr(result, 'to_dict') else result
+                        else:
+                            res = {'error': '无法获取股票数据'}
+                    except Exception as e:
+                        res = {'error': f'回测执行失败: {str(e)}'}
                     return {'code': code, 'strategy': strategy, 'params': p, 'result': res}
                 tasks = [dask.delayed(single_task)(code, strategy, params)
                          for code in stock_list for strategy in strategy_list for params in param_grid]
@@ -1689,14 +1706,31 @@ class TradingWidget(QWidget):
                     service_container = get_service_container()
                     ts = service_container.resolve(TradingService)
                     if not ts:
-                        return None
+                        return {'code': code, 'strategy': strategy, 'params': params, 'error': '交易服务不可用'}
                     if ts and hasattr(ts, 'set_current_stock'):
                         ts.set_current_stock(code)
                     if ts and hasattr(ts, 'get_kdata'):
                         kdata = ts.get_kdata(code)
                     p = dict(params)
                     p['strategy'] = strategy
-                    res = ts.run_backtest(p)
+                    # 使用直接调用 UnifiedBacktestEngine 的方式
+                    try:
+                        from backtest.unified_backtest_engine import UnifiedBacktestEngine, BacktestLevel
+                        if kdata is not None and not kdata.empty:
+                            signal_data = kdata.copy()
+                            signal_data['signal'] = 0
+                            engine = UnifiedBacktestEngine(backtest_level=BacktestLevel.PROFESSIONAL)
+                            result = engine.run_backtest(
+                                data=signal_data,
+                                initial_capital=p.get('initial_cash', 100000),
+                                commission_pct=p.get('commission_rate', 0.001),
+                                slippage_pct=p.get('slippage', 0.001)
+                            )
+                            res = result.to_dict() if hasattr(result, 'to_dict') else result
+                        else:
+                            res = {'error': '无法获取股票数据'}
+                    except Exception as e:
+                        res = {'error': f'回测执行失败: {str(e)}'}
                     return {'code': code, 'strategy': strategy, 'params': p, 'result': res}
                 tasks = [single_task.remote(
                     code, strategy, params) for code in stock_list for strategy in strategy_list for params in param_grid]
@@ -1720,14 +1754,31 @@ class TradingWidget(QWidget):
                     service_container = get_service_container()
                     ts = service_container.resolve(TradingService)
                     if not ts:
-                        return None
+                        return {'code': code, 'strategy': strategy, 'params': params, 'error': '交易服务不可用'}
                     if ts and hasattr(ts, 'set_current_stock'):
                         ts.set_current_stock(code)
                     if ts and hasattr(ts, 'get_kdata'):
                         kdata = ts.get_kdata(code)
                     p = dict(params)
                     p['strategy'] = strategy
-                    res = ts.run_backtest(p)
+                    # 使用直接调用 UnifiedBacktestEngine 的方式
+                    try:
+                        from backtest.unified_backtest_engine import UnifiedBacktestEngine, BacktestLevel
+                        if kdata is not None and not kdata.empty:
+                            signal_data = kdata.copy()
+                            signal_data['signal'] = 0
+                            engine = UnifiedBacktestEngine(backtest_level=BacktestLevel.PROFESSIONAL)
+                            result = engine.run_backtest(
+                                data=signal_data,
+                                initial_capital=p.get('initial_cash', 100000),
+                                commission_pct=p.get('commission_rate', 0.001),
+                                slippage_pct=p.get('slippage', 0.001)
+                            )
+                            res = result.to_dict() if hasattr(result, 'to_dict') else result
+                        else:
+                            res = {'error': '无法获取股票数据'}
+                    except Exception as e:
+                        res = {'error': f'回测执行失败: {str(e)}'}
                     return {'code': code, 'strategy': strategy, 'params': p, 'result': res}
                 tasks = [group(single_task.s(code, strategy, params)
                                for code in stock_list for strategy in strategy_list for params in param_grid)]
@@ -1753,6 +1804,10 @@ class TradingWidget(QWidget):
                                 service_container = get_service_container()
                                 ts = service_container.resolve(TradingService)
                                 if not ts:
+                                    results.append({'code': code, 'strategy': strategy, 'params': params, 'error': '交易服务不可用'})
+                                    done += 1
+                                    if progress_callback:
+                                        progress_callback(done, total)
                                     continue
 
                                 if ts and hasattr(ts, 'set_current_stock'):
@@ -1761,7 +1816,24 @@ class TradingWidget(QWidget):
                                     kdata = ts.get_kdata(code)
                                 p = dict(params)
                                 p['strategy'] = strategy
-                                res = ts.run_backtest(p)
+                                # 使用直接调用 UnifiedBacktestEngine 的方式
+                                try:
+                                    from backtest.unified_backtest_engine import UnifiedBacktestEngine, BacktestLevel
+                                    if kdata is not None and not kdata.empty:
+                                        signal_data = kdata.copy()
+                                        signal_data['signal'] = 0
+                                        engine = UnifiedBacktestEngine(backtest_level=BacktestLevel.PROFESSIONAL)
+                                        result = engine.run_backtest(
+                                            data=signal_data,
+                                            initial_capital=p.get('initial_cash', 100000),
+                                            commission_pct=p.get('commission_rate', 0.001),
+                                            slippage_pct=p.get('slippage', 0.001)
+                                        )
+                                        res = result.to_dict() if hasattr(result, 'to_dict') else result
+                                    else:
+                                        res = {'error': '无法获取股票数据'}
+                                except Exception as e:
+                                    res = {'error': f'回测执行失败: {str(e)}'}
                                 results.append(
                                     {'code': code, 'strategy': strategy, 'params': p, 'result': res})
                             except Exception as e:

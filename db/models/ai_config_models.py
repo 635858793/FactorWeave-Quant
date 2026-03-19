@@ -215,7 +215,6 @@ class AIPredictionConfigManager:
                     """, (key, value_json, "", current_time, current_time))
 
                 conn.commit()
-                logger.info(f"配置 {key} 已更新")
 
         except Exception as e:
             logger.error(f"更新配置失败: {e}")

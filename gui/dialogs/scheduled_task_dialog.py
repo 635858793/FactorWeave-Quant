@@ -479,7 +479,8 @@ class ScheduledTaskDialog(QDialog):
             try:
                 h, m = int(hour), int(minute)
                 time_desc = f"{h:02d}:{m:02d}"
-            except:
+            except (ValueError, TypeError) as e:
+                logger.debug(f"时间解析失败: {hour}:{minute}, {e}")
                 time_desc = f"{hour}:{minute}"
         else:
             time_desc = f"{hour}:{minute}"
@@ -496,20 +497,23 @@ class ScheduledTaskDialog(QDialog):
                     start, end = map(int, weekday.split("-"))
                     days = [weekday_names[i] for i in range(start, end + 1)]
                     return f"每 {', '.join(days)} {time_desc} 执行"
-                except:
+                except (ValueError, TypeError) as e:
+                    logger.debug(f"星期范围解析失败: {weekday}, {e}")
                     pass
             elif "," in weekday:
                 try:
                     days = [weekday_names[int(d)] for d in weekday.split(",")]
                     return f"每 {', '.join(days)} {time_desc} 执行"
-                except:
+                except (ValueError, TypeError) as e:
+                    logger.debug(f"星期列表解析失败: {weekday}, {e}")
                     pass
             else:
                 try:
                     w = int(weekday)
                     if 0 <= w <= 6:
                         return f"每{weekday_names[w]} {time_desc} 执行"
-                except:
+                except (ValueError, TypeError) as e:
+                    logger.debug(f"星期解析失败: {weekday}, {e}")
                     pass
             return f"每周 {time_desc} 执行"
         
@@ -517,7 +521,8 @@ class ScheduledTaskDialog(QDialog):
             try:
                 d = int(day)
                 return f"每月 {d} 日 {time_desc} 执行"
-            except:
+            except (ValueError, TypeError) as e:
+                logger.debug(f"日期解析失败: {day}, {e}")
                 pass
             return f"每月 {time_desc} 执行"
         
@@ -531,7 +536,8 @@ class ScheduledTaskDialog(QDialog):
         try:
             cron = croniter(cron_expr, datetime.now())
             return [cron.get_next(datetime) for _ in range(count)]
-        except:
+        except (ValueError, KeyError) as e:
+            logger.debug(f"Cron表达式解析失败: {cron_expr}, {e}")
             return []
 
     def _on_custom_cron_changed(self):

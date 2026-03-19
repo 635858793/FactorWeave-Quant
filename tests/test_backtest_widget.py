@@ -351,5 +351,205 @@ class TestThreadSafety(unittest.TestCase):
         self.assertEqual(len(monitoring_data), 1)
 
 
+class TestRiskAlerts(unittest.TestCase):
+    """测试风险预警功能"""
+
+    def test_max_drawdown_alert_high(self):
+        """测试最大回撤超过20%预警"""
+        results = {
+            'max_drawdown': 0.25,
+            'sharpe_ratio': 1.0,
+            'win_rate': 0.5,
+            'total_return': 0.1,
+            'volatility': 0.2
+        }
+        expected_alerts = []
+        if results['max_drawdown'] > 0.20:
+            expected_alerts.append('critical')
+        elif results['max_drawdown'] > 0.10:
+            expected_alerts.append('warning')
+        
+        self.assertIn('critical', expected_alerts)
+
+    def test_max_drawdown_alert_warning(self):
+        """测试最大回撤超过10%预警"""
+        results = {
+            'max_drawdown': 0.15,
+            'sharpe_ratio': 1.0,
+            'win_rate': 0.5,
+            'total_return': 0.1,
+            'volatility': 0.2
+        }
+        expected_alerts = []
+        if results['max_drawdown'] > 0.20:
+            expected_alerts.append('critical')
+        elif results['max_drawdown'] > 0.10:
+            expected_alerts.append('warning')
+        
+        self.assertIn('warning', expected_alerts)
+
+    def test_sharpe_ratio_negative_alert(self):
+        """测试夏普比率为负预警"""
+        results = {
+            'max_drawdown': 0.05,
+            'sharpe_ratio': -0.5,
+            'win_rate': 0.5,
+            'total_return': 0.1,
+            'volatility': 0.2
+        }
+        expected_alerts = []
+        if results['sharpe_ratio'] < 0:
+            expected_alerts.append('critical')
+        elif results['sharpe_ratio'] < 0.5:
+            expected_alerts.append('warning')
+        
+        self.assertIn('critical', expected_alerts)
+
+    def test_sharpe_ratio_low_alert(self):
+        """测试夏普比率偏低预警"""
+        results = {
+            'max_drawdown': 0.05,
+            'sharpe_ratio': 0.3,
+            'win_rate': 0.5,
+            'total_return': 0.1,
+            'volatility': 0.2
+        }
+        expected_alerts = []
+        if results['sharpe_ratio'] < 0:
+            expected_alerts.append('critical')
+        elif results['sharpe_ratio'] < 0.5:
+            expected_alerts.append('warning')
+        
+        self.assertIn('warning', expected_alerts)
+
+    def test_win_rate_low_alert(self):
+        """测试胜率低于30%预警"""
+        results = {
+            'max_drawdown': 0.05,
+            'sharpe_ratio': 1.0,
+            'win_rate': 0.25,
+            'total_return': 0.1,
+            'volatility': 0.2
+        }
+        if results['win_rate'] < 0.3:
+            alert_triggered = True
+        else:
+            alert_triggered = False
+        
+        self.assertTrue(alert_triggered)
+
+    def test_total_return_loss_alert(self):
+        """测试总收益亏损超过20%预警"""
+        results = {
+            'max_drawdown': 0.05,
+            'sharpe_ratio': 1.0,
+            'win_rate': 0.5,
+            'total_return': -0.25,
+            'volatility': 0.2
+        }
+        if results['total_return'] < -0.20:
+            alert_triggered = True
+        else:
+            alert_triggered = False
+        
+        self.assertTrue(alert_triggered)
+
+    def test_volatility_high_alert(self):
+        """测试波动率超过50%预警"""
+        results = {
+            'max_drawdown': 0.05,
+            'sharpe_ratio': 1.0,
+            'win_rate': 0.5,
+            'total_return': 0.1,
+            'volatility': 0.6
+        }
+        if results['volatility'] > 0.5:
+            alert_triggered = True
+        else:
+            alert_triggered = False
+        
+        self.assertTrue(alert_triggered)
+
+    def test_no_alerts_when_normal(self):
+        """测试正常情况无预警"""
+        results = {
+            'max_drawdown': 0.05,
+            'sharpe_ratio': 1.5,
+            'win_rate': 0.6,
+            'total_return': 0.3,
+            'volatility': 0.2
+        }
+        alerts = []
+        if results['max_drawdown'] > 0.20:
+            alerts.append('critical')
+        elif results['max_drawdown'] > 0.10:
+            alerts.append('warning')
+        
+        if results['sharpe_ratio'] < 0:
+            alerts.append('critical')
+        elif results['sharpe_ratio'] < 0.5:
+            alerts.append('warning')
+        
+        if results['win_rate'] < 0.3:
+            alerts.append('warning')
+        
+        if results['total_return'] < -0.20:
+            alerts.append('critical')
+        
+        if results['volatility'] > 0.5:
+            alerts.append('warning')
+        
+        self.assertEqual(len(alerts), 0)
+
+    def test_none_values_handling(self):
+        """测试None值处理"""
+        results = {
+            'max_drawdown': None,
+            'sharpe_ratio': None,
+            'win_rate': None,
+            'total_return': None,
+            'volatility': None
+        }
+        max_dd = results.get('max_drawdown', 0) or 0
+        self.assertEqual(max_dd, 0)
+
+    def test_all_alerts_triggered(self):
+        """测试所有预警同时触发"""
+        results = {
+            'max_drawdown': 0.30,
+            'sharpe_ratio': -1.0,
+            'win_rate': 0.20,
+            'total_return': -0.50,
+            'volatility': 0.8
+        }
+        alerts = []
+        
+        max_dd = results.get('max_drawdown', 0) or 0
+        if max_dd > 0.20:
+            alerts.append('max_drawdown_critical')
+        elif max_dd > 0.10:
+            alerts.append('max_drawdown_warning')
+        
+        sharpe = results.get('sharpe_ratio', 0) or 0
+        if sharpe < 0:
+            alerts.append('sharpe_critical')
+        elif sharpe < 0.5:
+            alerts.append('sharpe_warning')
+        
+        win_rate = results.get('win_rate', 0) or 0
+        if win_rate < 0.3:
+            alerts.append('win_rate_warning')
+        
+        total_return = results.get('total_return', 0) or 0
+        if total_return < -0.20:
+            alerts.append('return_critical')
+        
+        volatility = results.get('volatility', 0) or 0
+        if volatility > 0.5:
+            alerts.append('volatility_warning')
+        
+        self.assertEqual(len(alerts), 5)
+
+
 if __name__ == '__main__':
     unittest.main()

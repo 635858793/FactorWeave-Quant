@@ -147,6 +147,8 @@ class VWAPReversionPlugin(IStrategyPlugin):
                 df = market_data.to_dataframe()
                 symbol = market_data.symbol
             
+            logger.info(f"开始生成VWAP信号，数据长度: {len(df)}, 股票: {symbol}")
+            
             # 检查数据是否包含必需的列
             required_cols = ['vwap', 'close', 'turnover_rate']
             missing_cols = [col for col in required_cols if col not in df.columns]
@@ -158,14 +160,29 @@ class VWAPReversionPlugin(IStrategyPlugin):
             threshold = self._parameters.get('deviation_threshold', 0.02)
             min_turnover = self._parameters.get('min_turnover_rate', 0.5)
             
+            logger.debug(f"VWAP策略参数: threshold={threshold}, min_turnover={min_turnover}")
+            
+            # 检查VWAP稳定性（跳过前20个数据点）
+            vwap_stability_period = 20
+            if len(df) < vwap_stability_period:
+                logger.warning(f"数据长度不足 {vwap_stability_period} 个周期，VWAP可能不稳定: {len(df)}")
+            
             # 计算偏离度
             df['vwap_deviation'] = (df['close'] - df['vwap']) / df['vwap']
             
             # 流动性过滤
             df['is_liquid'] = df['turnover_rate'] > min_turnover
             
-            # 生成信号
-            for i in range(len(df)):
+            # 统计流动性
+            liquid_count = df['is_liquid'].sum()
+            logger.debug(f"流动性充足的数据点: {liquid_count}/{len(df)}")
+            
+            # 从稳定期开始生成信号
+            buy_signals_count = 0
+            sell_signals_count = 0
+            hold_signals_count = 0
+            
+            for i in range(vwap_stability_period, len(df)):
                 current_date = df.index[i]
                 current_close = df.iloc[i]['close']
                 deviation = df.iloc[i]['vwap_deviation']
@@ -180,10 +197,16 @@ class VWAPReversionPlugin(IStrategyPlugin):
                         signal_type = SignalType.BUY
                         strength = min(abs(deviation), 1.0)
                         reason = f"价格低于VWAP {abs(deviation):.4f}，且流动性充足"
+                        buy_signals_count += 1
                     elif deviation > threshold:
                         signal_type = SignalType.SELL
                         strength = min(deviation, 1.0)
                         reason = f"价格高于VWAP {deviation:.4f}，且流动性充足"
+                        sell_signals_count += 1
+                    else:
+                        hold_signals_count += 1
+                else:
+                    hold_signals_count += 1
                 
                 if signal_type != SignalType.HOLD:
                     signal = Signal(
@@ -201,7 +224,7 @@ class VWAPReversionPlugin(IStrategyPlugin):
                     )
                     signals.append(signal)
             
-            logger.info(f"生成了 {len(signals)} 个信号: {symbol}")
+            logger.info(f"生成了 {len(signals)} 个信号: {symbol}, 买入={buy_signals_count}, 卖出={sell_signals_count}, 持有={hold_signals_count}")
             
             # 发布信号生成事件
             if signals:

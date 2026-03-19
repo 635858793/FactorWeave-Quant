@@ -111,6 +111,7 @@ from datetime import datetime
 
 # Import AssetType from plugin_types instead of redefining it
 from .plugin_types import AssetType
+from analysis.pattern_base import SignalType
 
 
 class StrategyType(Enum):
@@ -126,14 +127,6 @@ class StrategyType(Enum):
     MULTI_FACTOR = "multi_factor"
     HIGH_FREQUENCY = "high_frequency"
     CUSTOM = "custom"
-
-class SignalType(Enum):
-    """信号类型"""
-    BUY = "buy"
-    SELL = "sell"
-    HOLD = "hold"
-    CLOSE_LONG = "close_long"
-    CLOSE_SHORT = "close_short"
 
 class TradeAction(Enum):
     """交易动作"""
@@ -418,7 +411,9 @@ class StrategyContext:
     benchmark: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
-class IStrategyPlugin(ABC):
+from core.trading.trading_mode import ModeAwareMixin, ModeContext, TradingMode
+
+class IStrategyPlugin(ABC, ModeAwareMixin):
     """
     策略插件接口
     

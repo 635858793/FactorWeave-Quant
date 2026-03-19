@@ -1137,27 +1137,97 @@ class EnhancedStrategyManagerDialog(QDialog):
         return widget
 
     def _create_optimization_view(self) -> QWidget:
-        """创建参数优化视图"""
+        """创建参数优化视图 - 集成 ParameterEditorWidget"""
         widget = QWidget()
-        layout = QHBoxLayout(widget)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(10)
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
         
-        # 左侧：参数范围配置 - 添加滚动区域
-        param_scroll = QScrollArea()
-        param_scroll.setWidgetResizable(True)
-        param_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        # 策略选择区域
+        strategy_selection_widget = QWidget()
+        strategy_selection_layout = QHBoxLayout(strategy_selection_widget)
+        strategy_selection_layout.setContentsMargins(10, 10, 10, 10)
         
-        param_panel = self._create_optimization_param_panel()
-        param_scroll.setWidget(param_panel)
-        layout.addWidget(param_scroll, 1)
+        strategy_label = QLabel("选择策略:")
+        strategy_label.setStyleSheet("font-weight: bold; font-size: 12px;")
+        strategy_selection_layout.addWidget(strategy_label)
         
-        # 右侧：优化结果 - 使用自适应高度
-        result_panel = self._create_optimization_result_panel()
-        result_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        layout.addWidget(result_panel, 2)
+        self.optimization_strategy_combo = QComboBox()
+        self.optimization_strategy_combo.setMinimumWidth(300)
+        self.optimization_strategy_combo.setToolTip("选择要优化的策略")
+        strategy_selection_layout.addWidget(self.optimization_strategy_combo)
+        strategy_selection_layout.addStretch()
+        
+        layout.addWidget(strategy_selection_widget)
+        
+        # 集成 ParameterEditorWidget
+        from gui.widgets.parameter_editor import ParameterEditorWidget
+        self.parameter_editor = ParameterEditorWidget(parent=widget)
+        layout.addWidget(self.parameter_editor)
+        
+        # 加载策略列表
+        self._load_optimization_strategies()
+        
+        # 策略选择变化时加载参数
+        self.optimization_strategy_combo.currentIndexChanged.connect(
+            self._on_optimization_strategy_changed
+        )
+        
+        # 初始加载
+        if self.optimization_strategy_combo.count() > 0:
+            self._on_optimization_strategy_changed(0)
         
         return widget
+    
+    def _load_optimization_strategies(self):
+        """加载优化策略列表"""
+        try:
+            from core.strategy.strategy_engine import get_strategy_engine
+            
+            strategy_engine = get_strategy_engine()
+            strategies = strategy_engine.get_available_strategies()
+            
+            self.optimization_strategy_combo.clear()
+            for strategy in strategies:
+                self.optimization_strategy_combo.addItem(strategy['name'], strategy['id'])
+            
+            logger.info(f"已加载 {len(strategies)} 个策略到优化列表")
+        except Exception as e:
+            logger.warning(f"加载优化策略列表失败：{e}")
+            # 添加默认策略
+            self.optimization_strategy_combo.clear()
+            default_strategies = ["MA 策略", "MACD 策略", "RSI 策略", "KDJ 策略", "布林带策略"]
+            for i, name in enumerate(default_strategies):
+                self.optimization_strategy_combo.addItem(name, f"strategy_{i}")
+    
+    def _on_optimization_strategy_changed(self, index: int):
+        """优化策略选择变化"""
+        if index < 0:
+            return
+        
+        strategy_name = self.optimization_strategy_combo.currentText()
+        strategy_id = self.optimization_strategy_combo.currentData()
+        
+        try:
+            from core.strategy.strategy_engine import get_strategy_engine
+            from core.trading.trading_mode import ModeContext
+            
+            strategy_engine = get_strategy_engine()
+            strategy = strategy_engine.get_strategy_instance(strategy_name)
+            
+            # 创建 mode_context
+            mode_context = ModeContext.create_backtest()
+            strategy.set_mode_context(mode_context)
+            
+            # 更新参数编辑器
+            if hasattr(self, 'parameter_editor'):
+                self.parameter_editor.strategy = strategy
+                self.parameter_editor.mode_context = mode_context
+                self.parameter_editor._load_strategy_parameters()
+            
+            logger.info(f"已加载策略参数：{strategy_name}")
+        except Exception as e:
+            logger.error(f"加载策略参数失败：{e}")
 
     def _create_optimization_param_panel(self) -> QWidget:
         """创建参数优化配置面板"""

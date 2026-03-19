@@ -1001,8 +1001,8 @@ class ServiceBootstrap:
                     alert_engine = initialize_alert_rule_engine(self.event_bus, dedup_service)
                     hot_loader.add_update_callback(alert_engine.reload_rules_sync)
                     logger.info("告警引擎与热加载服务关联完成")
-                except:
-                    pass
+                except Exception as e:
+                    logger.warning(f"告警引擎关联失败（非致命）: {e}")
 
                 logger.info("告警规则热加载服务注册并启动完成")
             except Exception as e:
@@ -1155,17 +1155,22 @@ class ServiceBootstrap:
                 logger.warning("StrategyHotReloader已注册，跳过")
 
             # 注册策略核心组件（确保DatabaseService已注册）
+            # 修复：使用全局单例而不是创建新实例
+            from core.strategy.strategy_registry import get_strategy_registry
+            strategy_registry = get_strategy_registry()  # 使用全局单例
+            
+            # 注册到 ServiceContainer（可选，用于依赖注入）
             if not self._is_service_registered(StrategyRegistry):
                 self.service_container.register(
                     StrategyRegistry,
                     scope=ServiceScope.SINGLETON,
-                    factory=lambda: StrategyRegistry()
+                    factory=lambda: strategy_registry  # 返回全局单例
                 )
-                strategy_registry = self.service_container.resolve(StrategyRegistry)
-                logger.info("策略注册器注册完成")
+                logger.info("策略注册器注册完成（使用全局单例）")
             else:
-                strategy_registry = self.service_container.resolve(StrategyRegistry)
-                logger.warning("StrategyRegistry已注册，跳过")
+                # 如果已注册，替换为全局单例以确保一致性
+                self.service_container._singletons[StrategyRegistry] = strategy_registry
+                logger.warning("StrategyRegistry已注册，已同步为全局单例")
 
             # 处理待注册的策略（在模块导入时使用装饰器注册的策略）
             try:
@@ -1386,6 +1391,23 @@ class ServiceBootstrap:
                         )
                     )
                 logger.info("策略管理器注册完成")
+
+                # 注册StrategyDatabaseManager - 统一使用DatabaseService连接池
+                try:
+                    from core.strategy.strategy_database import StrategyDatabaseManager
+                    db_service = self.service_container.resolve(DatabaseService)
+                    if db_service:
+                        if not self._is_service_registered(StrategyDatabaseManager):
+                            self.service_container.register(
+                                StrategyDatabaseManager,
+                                scope=ServiceScope.SINGLETON,
+                                factory=lambda: StrategyDatabaseManager(database_service=db_service)
+                            )
+                        logger.info("StrategyDatabaseManager注册完成 - 统一使用DatabaseService连接池")
+                    else:
+                        logger.warning("DatabaseService未就绪，无法注册StrategyDatabaseManager")
+                except Exception as e:
+                    logger.warning(f"StrategyDatabaseManager注册失败: {e}")
 
             except Exception as e:
                 logger.warning(f" 策略服务注册失败: {e}")

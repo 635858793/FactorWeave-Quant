@@ -1,4 +1,5 @@
 from loguru import logger
+from core.trading.trading_mode import TradingMode, ModeContext
 """
 专业级回测UI组件
 集成到FactorWeave-Quant GUI系统中，提供实时回测监控和数据联动功能
@@ -126,7 +127,19 @@ class RealTimeChart(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.data_queue = queue.Queue()
+        self.pending_data = []  # 待显示的完整数据集（用于渐进式加载）
+        self.displayed_count = 0  # 已显示的数据点数量
+        self.animation_timer = QTimer()  # 动画定时器
+        self.animation_timer.timeout.connect(self._incremental_update)
+        
+        # 模式选择器
+        self.mode_label = QLabel("交易模式:")
+        self.mode_selector = QComboBox()
+        self.mode_selector.addItems(['回测模式', '实盘模式', '混合模式'])
+        self.mode_selector.setToolTip("选择回测/实盘/混合模式")
+        self.mode_selector.currentTextChanged.connect(self.on_mode_changed)
+        self.current_mode = TradingMode.BACKTEST  # 默认回测模式
+        
         self.init_ui()
 
     def init_ui(self):
@@ -145,11 +158,6 @@ class RealTimeChart(QWidget):
             self.fallback_widget = QLabel("图表服务不可用，请检查依赖")
             self.fallback_widget.setAlignment(Qt.AlignCenter)
             layout.addWidget(self.fallback_widget)
-
-        # 启动定时器更新数据
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.update_charts)
-        self.timer.start(1000)  # 每秒更新一次
 
     def setup_chart(self):
         """设置图表配置"""
@@ -175,39 +183,6 @@ class RealTimeChart(QWidget):
         except Exception as e:
             logger.error(f"图表设置失败: {e}")
 
-    def update_charts(self):
-        """更新图表"""
-        if not UNIFIED_CHART_AVAILABLE:
-            return
-
-        try:
-            # 获取最新数据
-            if not self.data_queue.empty():
-                data = []
-                while not self.data_queue.empty():
-                    data.append(self.data_queue.get())
-
-                if data:
-                    # 转换为DataFrame
-                    df = pd.DataFrame(data)
-
-                    # 更新图表数据
-                    self.chart_widget.update_data(df)
-
-        except Exception as e:
-            logger.error(f"图表更新失败: {e}")
-
-    def add_data(self, data: Dict):
-        """添加数据到队列"""
-        self.data_queue.put(data)
-
-    def clear_data(self):
-        """清空数据"""
-        while not self.data_queue.empty():
-            self.data_queue.get()
-
-        if UNIFIED_CHART_AVAILABLE and hasattr(self, 'chart_widget'):
-            self.chart_widget.clear_data()
 
     def set_chart_type(self, chart_type: str):
         """设置图表类型"""
@@ -217,11 +192,83 @@ class RealTimeChart(QWidget):
     def apply_theme(self, theme: str):
         """应用主题"""
         if UNIFIED_CHART_AVAILABLE and hasattr(self, 'chart_widget'):
-            chart_service = get_unified_chart_service()
-            if hasattr(chart_service, 'apply_theme'):
-                chart_service.apply_theme(self.chart_widget, theme)
+            self.chart_widget.apply_theme(theme)
+
+    def on_mode_changed(self, mode_text: str):
+        """处理模式切换"""
+        mode_map = {
+            '回测模式': TradingMode.BACKTEST,
+            '实盘模式': TradingMode.LIVE,
+            '混合模式': getattr(TradingMode, 'HYBRID', TradingMode.BACKTEST)
+        }
+        self.current_mode = mode_map.get(mode_text, TradingMode.BACKTEST)
+        logger.info(f"切换交易模式：{mode_text} -> {self.current_mode.value}")
+
+    def start_progressive_display(self, data_points: List[Dict], batch_size: int = 10, interval_ms: int = 50):
+        """启动渐进式动态展示"""
+        try:
+            # 停止之前的动画
+            self.animation_timer.stop()
+            
+            # 清空旧数据
+            self.pending_data = data_points[:]
+            self.displayed_count = 0
+            
+            # 检查 data_points
+            logger.info(f"start_progressive_display: 接收 {len(data_points)} 个数据点")
+            if data_points and len(data_points) > 0:
+                logger.info(f"前 3 个数据点：capital={[dp['capital'] for dp in data_points[:3]]}, "
+                           f"cumulative_return={[dp['cumulative_return'] for dp in data_points[:3]]}, "
+                           f"current_drawdown={[dp['current_drawdown'] for dp in data_points[:3]]}")
+            
+            # 清空图表
+            if hasattr(self.chart_widget, 'clear_data'):
+                self.chart_widget.clear_data()
+            
+            # 设置每批大小和间隔
+            self._batch_size = batch_size
+            self._interval_ms = interval_ms
+            
+            # 启动动画定时器
+            self.animation_timer.start(interval_ms)
+            
+            logger.info(f"启动渐进式展示：共{len(data_points)}个点，每批{batch_size}个，间隔{interval_ms}ms")
+            
+        except Exception as e:
+            logger.error(f"启动渐进式展示失败：{e}")
+
+    def _incremental_update(self):
+        """增量更新图表（用于渐进式展示）"""
+        try:
+            if self.displayed_count >= len(self.pending_data):
+                # 所有数据已显示完毕，停止定时器
+                self.animation_timer.stop()
+                logger.info("渐进式展示完成")
+                return
+            
+            # 计算本批次的结束位置
+            end_index = min(self.displayed_count + self._batch_size, len(self.pending_data))
+            
+            # 获取本批次数据
+            batch = self.pending_data[self.displayed_count:end_index]
+            
+            # 添加到图表
+            if hasattr(self.chart_widget, '_backtest_metrics'):
+                self.chart_widget._backtest_metrics.extend(batch)
             else:
-                logger.debug("图表服务不支持apply_theme方法")
+                self.chart_widget._backtest_metrics = batch
+            
+            # 更新已显示计数
+            self.displayed_count = end_index
+            
+            # 绘制当前状态
+            if hasattr(self.chart_widget, '_draw_backtest_charts'):
+                self.chart_widget._draw_backtest_charts()
+            
+            logger.debug(f"已显示 {self.displayed_count}/{len(self.pending_data)} 个数据点")
+            
+        except Exception as e:
+            logger.error(f"增量更新失败：{e}")
 
 
 class MetricsPanel(QWidget):
@@ -587,6 +634,31 @@ class ControlPanel(QWidget):
             }
         """)
         strategy_layout.addRow(self.params_table)
+
+        # 高级参数配置按钮（使用 ParameterEditorWidget）
+        advanced_params_btn = QPushButton("📝 高级参数配置")
+        advanced_params_btn.setStyleSheet("""
+            QPushButton {
+                background: linear-gradient(45deg, #8b5cf6, #7c3aed);
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 12px;
+                font-weight: bold;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background: linear-gradient(45deg, #7c3aed, #6d28d9);
+            }
+            QPushButton:pressed {
+                background: linear-gradient(45deg, #6d28d9, #5b21b6);
+            }
+        """)
+        advanced_params_btn.setToolTip("打开可视化参数编辑器，支持参数扫描、预设管理和智能推荐")
+        advanced_params_btn.clicked.connect(
+            lambda: self.parent_widget._open_advanced_parameter_editor()
+        )
+        strategy_layout.addRow(advanced_params_btn)
 
         # 策略预览按钮
         preview_button = QPushButton("策略预览")
@@ -981,21 +1053,21 @@ class ControlPanel(QWidget):
         """预览策略信号"""
         try:
             strategy_name = self.strategy_combo.currentText()
-            logger.info(f"预览策略: {strategy_name}")
+            logger.info(f"预览策略：{strategy_name}")
 
             QMessageBox.information(
                 self,
                 "策略预览",
-                f"已选择策略: {strategy_name}\n\n"
+                f"已选择策略：{strategy_name}\n\n"
                 f"策略参数将根据选择的策略自动配置。\n"
                 f"点击'开始回测'按钮执行回测。"
             )
         except Exception as e:
-            logger.error(f"策略预览失败: {e}")
+            logger.error(f"策略预览失败：{e}")
             QMessageBox.warning(
                 self,
                 "预览失败",
-                f"策略预览失败: {str(e)}"
+                f"策略预览失败：{str(e)}"
             )
 
     def on_start_backtest(self):
@@ -1190,7 +1262,7 @@ class ControlPanel(QWidget):
             main_window = parent_widget._main_window if parent_widget else None
             
             dialog = EnhancedStrategyManagerDialog(main_window)
-            dialog.tab_widget.setCurrentIndex(3)
+            dialog._switch_view('optimization')
             dialog.show()
             logger.info("参数优化功能已打开")
             
@@ -1210,7 +1282,7 @@ class ControlPanel(QWidget):
             main_window = parent_widget._main_window if parent_widget else None
             
             dialog = EnhancedStrategyManagerDialog(main_window)
-            dialog.tab_widget.setCurrentIndex(0)
+            dialog._switch_view('library')
             dialog.show()
             logger.info("策略对比功能已打开")
             
@@ -1248,32 +1320,7 @@ class AlertsPanel(QWidget):
         """)
         layout.addWidget(title)
 
-        self.performance_group = QGroupBox("性能指标")
-        performance_layout = QFormLayout(self.performance_group)
-
-        self.engine_type_label = QLabel("未启动")
-        self.execution_time_label = QLabel("0.00秒")
-        self.data_size_label = QLabel("0条")
-        self.trade_count_label = QLabel("0次")
-
-        performance_layout.addRow("引擎类型:", self.engine_type_label)
-        performance_layout.addRow("执行时间:", self.execution_time_label)
-        performance_layout.addRow("数据量:", self.data_size_label)
-        performance_layout.addRow("交易次数:", self.trade_count_label)
-
-        layout.addWidget(self.performance_group)
-
-        self.risk_chart_group = QGroupBox("风险指标趋势图")
-        risk_chart_layout = QVBoxLayout(self.risk_chart_group)
-        
-        self.risk_figure = Figure(figsize=(5, 3), dpi=80)
-        self.risk_figure.patch.set_facecolor('#1e2329')
-        self.risk_canvas = FigureCanvas(self.risk_figure)
-        self.risk_canvas.setStyleSheet("background-color: #1e2329;")
-        risk_chart_layout.addWidget(self.risk_canvas)
-        
-        self._init_risk_chart()
-        layout.addWidget(self.risk_chart_group)
+        # 移除性能指标面板
 
         self.alerts_list = QListWidget()
         self.alerts_list.setStyleSheet("""
@@ -1411,32 +1458,6 @@ class AlertsPanel(QWidget):
         self.alerts_list.clear()
         self.alerts.clear()
 
-    def update_performance_metrics(self, engine_type: str = None, execution_time: float = None,
-                                   data_size: int = None, trade_count: int = None):
-        """更新性能指标显示"""
-        if engine_type:
-            self.engine_type_label.setText(engine_type)
-            self.engine_type_label.setStyleSheet("color: #10b981; font-weight: bold;")
-
-        if execution_time is not None:
-            self.execution_time_label.setText(f"{execution_time:.4f}秒")
-            # 根据执行时间设置颜色
-            if execution_time < 1.0:
-                color = "#10b981"  # 绿色 - 快
-            elif execution_time < 5.0:
-                color = "#f59e0b"  # 黄色 - 中等
-            else:
-                color = "#ef4444"  # 红色 - 慢
-            self.execution_time_label.setStyleSheet(f"color: {color}; font-weight: bold;")
-
-        if data_size is not None:
-            self.data_size_label.setText(f"{data_size}条")
-            self.data_size_label.setStyleSheet("color: #3b82f6; font-weight: bold;")
-
-        if trade_count is not None:
-            self.trade_count_label.setText(f"{trade_count}次")
-            self.trade_count_label.setStyleSheet("color: #8b5cf6; font-weight: bold;")
-
     def update_risk_metrics(self, risk_metrics: Dict):
         """更新风险指标显示"""
         try:
@@ -1490,22 +1511,29 @@ class AlertsPanel(QWidget):
 
 
 class ProfessionalBacktestWidget(QWidget):
-    """专业级回测UI组件"""
+    """专业级回测 UI 组件"""
 
     # 定义信号
     backtest_completed = pyqtSignal(dict)
     error_occurred = pyqtSignal(str)
+    request_ui_update = pyqtSignal(dict)  # 用于从工作线程请求 UI 更新
+    request_progress_update = pyqtSignal(int, str, str)  # 进度更新信号
+    request_alert = pyqtSignal(str, str)  # 预警信号
 
     def __init__(self, parent=None, config_manager: Optional[ConfigManager] = None):
         super().__init__(parent)
         self.config_manager = config_manager or ConfigManager()
-        # 纯Loguru架构，移除log_manager依赖
+        # 纯 Loguru 架构，移除 log_manager 依赖
 
-        # 回测相关组件
+        # 回测相关组件（使用实例复用模式）
         self.backtest_engine = None
         self.monitor = None
         self.validator = None
         self.optimizer = None
+        
+        # 引擎和监控器配置缓存（用于复用）
+        self._engine_config = None
+        self._monitoring_data = {}  # 存储完整回测结果
 
         # 监控线程
         self.monitoring_thread = None
@@ -1563,11 +1591,35 @@ class ProfessionalBacktestWidget(QWidget):
             'sharpe_ratio': 0.5
         }
 
-        # 初始化UI
+        # 初始化 UI
         self.init_ui()
 
         # 初始化回测组件
         self.init_backtest_components()
+        
+        # 连接信号到槽（确保在主线程中更新 UI）
+        self.request_ui_update.connect(self._on_backtest_completed, Qt.QueuedConnection)
+        self.request_progress_update.connect(self._on_progress_update, Qt.QueuedConnection)
+        self.request_alert.connect(self._on_alert_request, Qt.QueuedConnection)
+        
+        # 模式管理
+        self.current_mode = TradingMode.BACKTEST  # 默认回测模式
+
+    def on_mode_changed(self, mode_text: str):
+        """处理模式切换"""
+        mode_map = {
+            '回测模式': TradingMode.BACKTEST,
+            '实盘模式': TradingMode.LIVE,
+            '混合模式': getattr(TradingMode, 'HYBRID', TradingMode.BACKTEST)
+        }
+        self.current_mode = mode_map.get(mode_text, TradingMode.BACKTEST)
+        logger.info(f"ProfessionalBacktestWidget 切换交易模式：{mode_text} -> {self.current_mode.value}")
+        
+        # 根据模式调整配置
+        if self.current_mode == TradingMode.LIVE:
+            logger.info("实盘模式：启用严格风控和性能优化")
+        elif self.current_mode == TradingMode.BACKTEST:
+            logger.info("回测模式：使用完整计算")
 
     def init_ui(self):
         """初始化UI"""
@@ -1580,10 +1632,20 @@ class ProfessionalBacktestWidget(QWidget):
             }
         """)
 
-        # 主布局
-        main_layout = QHBoxLayout(self)
-        main_layout.setSpacing(8)
-        main_layout.setContentsMargins(8, 8, 8, 8)
+        # 主布局 - 使用QSplitter实现可调节布局
+        main_splitter = QSplitter(Qt.Horizontal)
+        main_splitter.setHandleWidth(4)
+        main_splitter.setStyleSheet("""
+            QSplitter::handle {
+                background: #2d3748;
+            }
+            QSplitter::handle:hover {
+                background: #4299e1;
+            }
+            QSplitter::handle:pressed {
+                background: #63b3ed;
+            }
+        """)
 
         # 左侧控制面板（只保留控制和预警）
         left_panel = QVBoxLayout()
@@ -1620,14 +1682,15 @@ class ProfessionalBacktestWidget(QWidget):
         left_widget = QWidget()
         left_widget.setLayout(left_panel)
 
-        # 创建滚动区域
+        # 创建滚动区域 - 支持可调节宽度
         left_scroll = QScrollArea()
         left_scroll.setWidget(left_widget)
         left_scroll.setWidgetResizable(True)
         left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         left_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        left_scroll.setMinimumWidth(280)  # 增加宽度
-        left_scroll.setMaximumWidth(340)  # 增加最大宽度
+        left_scroll.setMinimumWidth(250)  # 最小宽度
+        left_scroll.setMaximumWidth(450)  # 最大宽度（可拖拽范围）
+        left_scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         left_scroll.setStyleSheet("""
             QScrollArea {
                 border: none;
@@ -1648,28 +1711,80 @@ class ProfessionalBacktestWidget(QWidget):
             }
         """)
 
-        # 右侧区域（指标+图表）
+        # 右侧区域（指标 + 图表 + 预警）
         right_layout = QVBoxLayout()
         right_layout.setSpacing(4)
         right_layout.setContentsMargins(0, 0, 0, 0)
 
-        # 指标面板
+        # 指标面板（固定高度）
         self.metrics_panel = MetricsPanel()
-        # self.metrics_panel.setMaximumHeight(200)  # 进一步增加高度避免遮挡
-        # self.metrics_panel.setMinimumHeight(180)  # 设置最小高度
+        # self.metrics_panel.setMaximumHeight(180)
+        # self.metrics_panel.setMinimumHeight(160)
         right_layout.addWidget(self.metrics_panel)
 
-        # 图表区域
+        # 图表区域（占用剩余空间的主要部分）
         self.chart_widget = RealTimeChart()
-        right_layout.addWidget(self.chart_widget, 1)  # 占用剩余空间
+        self.chart_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.chart_widget.setMinimumHeight(400)  # 增加最小高度，提升图表显示空间
+        right_layout.addWidget(self.chart_widget, 1)  # stretch=1，占用主要空间
 
         # 右侧容器
         right_widget = QWidget()
         right_widget.setLayout(right_layout)
 
+        # 添加到分割器 - 实现可调节布局
+        main_splitter.addWidget(left_scroll)
+        main_splitter.addWidget(right_widget)
+
+        # 设置初始比例 (左侧:右侧 = 1:3)
+        main_splitter.setStretchFactor(0, 1)
+        main_splitter.setStretchFactor(1, 3)
+
+        # 设置初始分割位置
+        total_width = 1200  # 默认窗口宽度
+        main_splitter.setSizes([int(total_width * 0.25), int(total_width * 0.75)])
+
+        # 允许左侧面板折叠
+        main_splitter.setCollapsible(0, True)
+        main_splitter.setCollapsible(1, False)
+
         # 添加到主布局
-        main_layout.addWidget(left_scroll)
-        main_layout.addWidget(right_widget, 1)
+        main_layout = QHBoxLayout(self)
+        main_layout.setContentsMargins(4, 4, 4, 4)
+        main_layout.addWidget(main_splitter)
+
+        # 保存引用以便响应式调整
+        self.main_splitter = main_splitter
+        self.left_scroll = left_scroll
+
+    def resizeEvent(self, event):
+        """窗口大小变化时自适应调整布局"""
+        super().resizeEvent(event)
+        self._adjust_layout_on_resize(event)
+
+    def _adjust_layout_on_resize(self, event):
+        """根据窗口大小调整布局"""
+        try:
+            width = event.size().width()
+            height = event.size().height()
+
+            if hasattr(self, 'main_splitter'):
+                current_sizes = self.main_splitter.sizes()
+                total = sum(current_sizes)
+                if total > 0:
+                    min_left = 250
+                    max_left = 450
+                    if width < 1024:
+                        new_left = min(int(width * 0.22), min_left)
+                    elif width > 1920:
+                        new_left = min(int(width * 0.20), max_left)
+                    else:
+                        new_left = int(width * 0.20)
+                    new_left = max(min_left, min(max_left, new_left))
+                    new_right = width - new_left - 4
+                    self.main_splitter.setSizes([new_left, new_right])
+        except Exception as e:
+            logger.warning(f"调整布局失败: {e}")
 
     def create_time_panel(self):
         """创建时间范围设置面板"""
@@ -1953,37 +2068,41 @@ class ProfessionalBacktestWidget(QWidget):
             }
             execution_model = execution_model_map.get(execution_model_text, 'fixed')
 
+            # 保存引擎配置，用于复用
+            self._engine_config = {
+                'backtest_level': BacktestLevel.PROFESSIONAL,
+                'use_vectorized_engine': use_vectorized,
+                'auto_select_engine': auto_select,
+                'execution_model': execution_model
+            }
+
             # 更新进度
             self.control_panel.update_progress(50, "启动监控", "正在初始化回测引擎...")
 
-            self.backtest_engine = UnifiedBacktestEngine(
-                backtest_level=BacktestLevel.PROFESSIONAL,
-                use_vectorized_engine=use_vectorized,
-                auto_select_engine=auto_select,
-                execution_model=execution_model
-            )
+            # 使用复用模式获取引擎（避免重复创建）
+            self.backtest_engine = self._get_engine(self._engine_config)
 
             engine_info = f"向量化: {use_vectorized}, 自动选择: {auto_select}, 成交模型: {execution_model}"
-            logger.info(f"回测引擎创建成功 - {engine_info}")
+            logger.info(f"回测引擎创建/复用成功 - {engine_info}")
 
             try:
-                self.monitor = RealTimeBacktestMonitor(
-                    monitoring_level=MonitoringLevel.REAL_TIME
-                )
+                # 复用监控器（避免重复创建）
+                self.monitor = self._get_monitor()
+                if self.monitor and hasattr(self.monitor, '_is_running') and self.monitor._is_running:
+                    logger.info("复用已有监控器，先停止")
+                    self.monitor.stop_monitoring()
+                    import time
+                    time.sleep(0.1)
+                    self.monitor = self._get_monitor()  # 重新获取
             except Exception as e:
-                logger.error(f'创建监控器失败: {e}')
-                self.monitor = None
+                logger.warning(f'获取监控器失败: {e}，创建新的监控器')
+                self.monitor = self._get_monitor()
 
             self.current_data = stock_data
 
             engine_type = "向量化引擎" if params.get('use_vectorized_engine', True) else "标准引擎"
             if params.get('auto_select_engine', True):
                 engine_type += " (自动选择)"
-
-            self.alerts_panel.update_performance_metrics(
-                engine_type=engine_type,
-                data_size=len(stock_data)
-            )
 
             self.start_monitoring(stock_data, params)
 
@@ -1994,6 +2113,90 @@ class ProfessionalBacktestWidget(QWidget):
             self.error_occurred.emit(f"启动回测失败: {str(e)}")
             self.control_panel.on_stop_backtest()
             self.control_panel.reset_progress()
+
+    def _open_advanced_parameter_editor(self):
+        """打开高级参数编辑器（ParameterEditorWidget）"""
+        try:
+            from gui.widgets.parameter_editor import ParameterEditorWidget
+            from core.strategy.strategy_engine import get_strategy_engine
+            from core.trading.trading_mode import ModeContext, TradingMode
+            
+            # 获取当前策略
+            strategy_name = self.control_panel.strategy_combo.currentText()
+            logger.info(f"打开高级参数编辑器：{strategy_name}")
+            
+            # 创建策略实例
+            strategy_engine = get_strategy_engine()
+            strategy = strategy_engine.get_strategy_instance(strategy_name)
+            
+            # 创建 mode_context
+            mode_context = ModeContext.create_backtest()
+            strategy.set_mode_context(mode_context)
+            
+            # 创建参数编辑器对话框
+            from PyQt5.QtWidgets import QDialog
+            dialog = QDialog(self)
+            dialog.setWindowTitle(f"高级参数配置 - {strategy_name}")
+            dialog.resize(700, 900)
+            
+            # 创建参数编辑器
+            parameter_editor = ParameterEditorWidget(strategy, dialog)
+            
+            # 传递 kdata（如果有）
+            if hasattr(self, 'current_data') and self.current_data is not None:
+                parameter_editor.kdata = self.current_data
+                logger.info(f"已传递 K 线数据到参数编辑器：{len(self.current_data)} 条")
+            
+            # 传递 mode_context
+            parameter_editor.mode_context = mode_context
+            
+            # 连接信号
+            parameter_editor.parameter_changed.connect(
+                lambda name, value: self._on_advanced_parameter_changed(name, value, strategy)
+            )
+            parameter_editor.parameters_applied.connect(
+                lambda: self._on_advanced_parameters_applied(strategy)
+            )
+            parameter_editor.scan_completed.connect(
+                lambda result: self._on_parameter_scan_completed(result)
+            )
+            parameter_editor.comparison_completed.connect(
+                lambda results: self._on_parameter_comparison_completed(results)
+            )
+            
+            # 添加到对话框
+            layout = QVBoxLayout(dialog)
+            layout.addWidget(parameter_editor)
+            
+            # 显示对话框
+            dialog.exec_()
+            
+            logger.info("高级参数编辑器已关闭")
+            
+        except Exception as e:
+            logger.error(f"打开高级参数编辑器失败：{e}")
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self,
+                "错误",
+                f"无法打开高级参数编辑器：{e}"
+            )
+
+    def _on_advanced_parameter_changed(self, name, value, strategy):
+        """高级参数变化回调"""
+        logger.info(f"高级参数变化：{name} = {value}")
+
+    def _on_advanced_parameters_applied(self, strategy):
+        """高级参数应用回调"""
+        logger.info(f"高级参数已应用：{strategy.name}")
+
+    def _on_parameter_scan_completed(self, result):
+        """参数扫描完成回调"""
+        logger.info(f"参数扫描完成：{len(result)} 个结果")
+
+    def _on_parameter_comparison_completed(self, results):
+        """参数对比完成回调"""
+        logger.info(f"参数对比完成：{len(results)} 个结果")
 
     def _get_stock_service(self):
         """获取股票服务"""
@@ -2014,6 +2217,60 @@ class ProfessionalBacktestWidget(QWidget):
         except Exception as e:
             logger.error(f"获取StockService失败: {e}")
             return None
+
+    def _get_engine(self, config: Dict = None) -> 'UnifiedBacktestEngine':
+        """获取或创建回测引擎（复用模式）"""
+        from backtest.unified_backtest_engine import UnifiedBacktestEngine, BacktestLevel
+        
+        if self.backtest_engine is not None and config is not None:
+            if self._engine_config == config:
+                logger.info("复用已有回测引擎实例")
+                return self.backtest_engine
+        
+        if config is None:
+            config = self._engine_config or {
+                'backtest_level': BacktestLevel.PROFESSIONAL,
+                'use_vectorized_engine': True,
+                'auto_select_engine': True,
+                'execution_model': 'fixed'
+            }
+        
+        backtest_level = config.get('backtest_level')
+        if backtest_level is None:
+            backtest_level = BacktestLevel.PROFESSIONAL
+        
+        use_vectorized = config.get('use_vectorized_engine', True)
+        auto_select = config.get('auto_select_engine', True)
+        execution_model = config.get('execution_model', 'fixed')
+        
+        self.backtest_engine = UnifiedBacktestEngine(
+            backtest_level=backtest_level,
+            use_vectorized_engine=use_vectorized,
+            auto_select_engine=auto_select,
+            execution_model=execution_model
+        )
+        self._engine_config = config
+        logger.info(f"创建新的回测引擎实例")
+        return self.backtest_engine
+
+    def _get_monitor(self) -> 'RealTimeBacktestMonitor':
+        """获取或创建监控器（复用模式）"""
+        from backtest.real_time_backtest_monitor import RealTimeBacktestMonitor, MonitoringLevel
+        
+        if self.monitor is not None:
+            # 使用 is_monitoring 属性检查监控器状态
+            if not hasattr(self.monitor, 'is_monitoring') or not self.monitor.is_monitoring:
+                logger.info("复用已有监控器实例")
+                return self.monitor
+            else:
+                logger.info("监控器正在运行，先停止")
+                self.monitor.stop_monitoring()
+                import time
+                time.sleep(0.1)  # 等待监控器完全停止
+        
+        self.monitor = RealTimeBacktestMonitor(monitoring_level=MonitoringLevel.REAL_TIME)
+        logger.info("创建新的监控器实例")
+        return self.monitor
 
     def _get_stock_data(self, stock_code: str, period: str) -> pd.DataFrame:
         """从系统框架获取真实股票数据"""
@@ -2114,6 +2371,15 @@ class ProfessionalBacktestWidget(QWidget):
     def _generate_strategy_signals(self, kdata: pd.DataFrame, strategy_name: str) -> pd.Series:
         """生成策略信号"""
         try:
+            # 确保策略已注册
+            try:
+                from core.strategy import get_strategy_registry, _register_builtin_strategies
+                registry = get_strategy_registry()
+                _register_builtin_strategies(registry)
+                logger.debug(f"强制注册内置策略完成，当前注册策略: {list(registry._strategies.keys())}")
+            except Exception as reg_err:
+                logger.warning(f"强制注册内置策略失败: {reg_err}")
+
             # 检查缓存
             cache_key = f"{strategy_name}_{len(kdata)}"
             if cache_key in self.signal_cache:
@@ -2138,13 +2404,19 @@ class ProfessionalBacktestWidget(QWidget):
 
             # 转换为数值类型（BUY=1, SELL=-1, HOLD=0）
             signals = pd.Series(0.0, index=kdata.index, dtype=float)
+            
+            # 构建时间戳到索引的映射，处理timestamp可能不在index中的情况
+            timestamp_to_idx = {ts: i for i, ts in enumerate(kdata.index)}
+            
             for signal in signals_list:
-                if signal.signal_type == SignalType.BUY:
-                    signals[signal.timestamp] = 1.0
-                elif signal.signal_type == SignalType.SELL:
-                    signals[signal.timestamp] = -1.0
-                else:  # HOLD
-                    signals[signal.timestamp] = 0.0
+                if signal.timestamp in timestamp_to_idx:
+                    idx = timestamp_to_idx[signal.timestamp]
+                    if signal.signal_type == SignalType.BUY:
+                        signals.iloc[idx] = 1.0
+                    elif signal.signal_type == SignalType.SELL:
+                        signals.iloc[idx] = -1.0
+                    else:  # HOLD
+                        signals.iloc[idx] = 0.0
 
             # 验证信号格式
             signals = self._validate_signals(signals, kdata)
@@ -2292,7 +2564,9 @@ class ProfessionalBacktestWidget(QWidget):
 
             # 验证资金曲线
             if 'equity_curve' in results:
-                if not isinstance(results['equity_curve'], (list, np.ndarray, pd.Series)):
+                if isinstance(results['equity_curve'], pd.Series):
+                    results['equity_curve'] = results['equity_curve'].tolist()
+                elif not isinstance(results['equity_curve'], (list, np.ndarray)):
                     logger.warning("资金曲线格式错误，将使用空列表")
                     results['equity_curve'] = []
 
@@ -2311,7 +2585,11 @@ class ProfessionalBacktestWidget(QWidget):
             # 记录执行时间
             self.execution_time = time.time() - self.start_time if hasattr(self, 'start_time') else 0.0
 
-            logger.info(f"回测完成，执行时间: {self.execution_time:.2f}s")
+            logger.info(f"回测完成，执行时间：{self.execution_time:.2f}s")
+            logger.info(f"回测结果总览: total_return={results.get('total_return', 0):.4f}, "
+                       f"max_drawdown={results.get('max_drawdown', 0):.4f}, "
+                       f"sharpe_ratio={results.get('sharpe_ratio', 0):.4f}, "
+                       f"trade_count={results.get('trade_count', 0)}")
 
             # 更新进度到 100%
             self.control_panel.update_progress(100, "回测完成", "回测已完成")
@@ -2366,11 +2644,163 @@ class ProfessionalBacktestWidget(QWidget):
             except Exception as e:
                 logger.warning(f"发布事件失败: {e}")
 
-            # 更新UI显示
+            # 更新当前 UI 的图表和指标显示
+            try:
+                # 更新指标面板
+                if hasattr(self, 'metrics_panel') and self.metrics_panel:
+                    self.metrics_panel.update_metrics(results)
+                    logger.info("回测指标面板已更新")
+                
+                # 更新风险指标面板（如果存在）
+                if hasattr(self, 'risk_metrics_panel') and self.risk_metrics_panel:
+                    self.risk_metrics_panel.update_risk_metrics(results)
+                    logger.info("风险指标面板已更新")
+                
+                # 更新图表 - 使用事件驱动的实时推送方式
+                if hasattr(self, 'chart_widget') and self.chart_widget:
+                    # 从回测结果中提取 equity_curve 数据
+                    equity_curve = results.get('equity_curve')
+                    logger.info(f"equity_curve 提取：type={type(equity_curve)}, len={len(equity_curve) if hasattr(equity_curve, '__len__') else 'N/A'}")
+                    
+                    if equity_curve is not None and len(equity_curve) > 0:
+                        # 准备所有数据点 - 包含回撤计算
+                        from datetime import datetime
+                        
+                        if isinstance(equity_curve, pd.Series):
+                            logger.info(f"equity_curve 前 5 个值 (Series): {equity_curve[:5].tolist()}")
+                            logger.info(f"equity_curve 统计：min={equity_curve.min():.2f}, max={equity_curve.max():.2f}, mean={equity_curve.mean():.2f}")
+                            equity_curve = equity_curve.tolist()
+                        
+                        if isinstance(equity_curve, list):
+                            logger.info(f"equity_curve 前 5 个值 (list): {equity_curve[:5]}")
+                            if len(equity_curve) > 0:
+                                logger.info(f"equity_curve 统计：min={min(equity_curve):.2f}, max={max(equity_curve):.2f}, mean={sum(equity_curve)/len(equity_curve):.2f}")
+                                logger.info(f"equity_curve 后 5 个值：{equity_curve[-5:]}")
+                            
+                            # 提取初始资金（必须在最前面定义）
+                            initial_capital = equity_curve[0] if equity_curve[0] != 0 else 1
+                            logger.info(f"初始资金：{initial_capital}")
+                            
+                            # 检查是否有非初始值的点
+                            non_initial = [v for v in equity_curve if abs(v - initial_capital) > 0.01]
+                            logger.info(f"非初始资金的数据点数量：{len(non_initial)}/{len(equity_curve)}")
+                            
+                            # 从回测结果中提取风险指标（这些是整体指标，不是时间序列）
+                            risk_metrics_for_chart = {
+                                'var_95': results.get('var_95', 0) or 0,
+                                'cvar_95': results.get('cvar_95', 0) or 0,
+                                'sharpe_ratio': results.get('sharpe_ratio', 0) or 0
+                            }
+                            
+                            logger.info(f"提取风险指标：VaR={risk_metrics_for_chart['var_95']:.6f}, CVaR={risk_metrics_for_chart['cvar_95']:.6f}, Sharpe={risk_metrics_for_chart['sharpe_ratio']:.3f}")
+                            
+                            # 计算回撤曲线
+                            running_max = initial_capital
+                            drawdown_curve = []
+                            
+                            data_points = []
+                            for i, value in enumerate(equity_curve):
+                                # 更新运行最大值
+                                if value > running_max:
+                                    running_max = value
+                                    logger.debug(f"bar {i}: 更新 running_max = {running_max}")
+                                
+                                # 计算当前回撤
+                                current_drawdown = (value - running_max) / running_max if running_max > 0 else 0
+                                drawdown_curve.append(current_drawdown)
+                                
+                                if i < 5 or i >= len(equity_curve) - 5 or i % 50 == 0:  # 显示前 5 个、后 5 个和每 50 个的日志
+                                    logger.info(f"bar {i}: value={value:.2f}, running_max={running_max:.2f}, drawdown={current_drawdown:.6f}")
+                                
+                                # 创建数据点，包含风险指标
+                                data_point = {
+                                    'timestamp': datetime.now(),
+                                    'cumulative_return': (value / initial_capital - 1),
+                                    'current_drawdown': current_drawdown,  # ✅ 使用计算的回撤值
+                                    'capital': value,
+                                    'bar_index': i,
+                                    'total_bars': len(equity_curve),
+                                    # 添加风险指标（每个点都包含相同的整体指标值）
+                                    'var_95': risk_metrics_for_chart['var_95'],
+                                    'cvar_95': risk_metrics_for_chart['cvar_95'],
+                                    'sharpe_ratio': risk_metrics_for_chart['sharpe_ratio']
+                                }
+                                data_points.append(data_point)
+                            
+                            # 输出回撤统计
+                            if drawdown_curve:
+                                logger.info(f"回撤计算完成：min={min(drawdown_curve):.6f}, max={max(drawdown_curve):.6f}, 非零数量={sum(1 for d in drawdown_curve if d < 0)}")
+                                logger.info(f"回撤后 5 个值：{drawdown_curve[-5:]}")
+                            
+                            # 方案 1: 使用渐进式动态展示（推荐，可看到动态过程）
+                            if hasattr(self.chart_widget, 'start_progressive_display'):
+                                self.chart_widget.start_progressive_display(data_points, batch_size=15, interval_ms=30)
+                                logger.info(f"启动渐进式展示：{len(equity_curve)}个数据点")
+                            
+                            # 方案 2: 使用事件推送（实时性更好，需要事件总线支持）
+                            # 已注释，因为当前使用渐进式展示已经足够
+                            # try:
+                            #     from core.events import get_event_bus, BacktestProgressEvent
+                            #     event_bus = get_event_bus()
+                            #     for dp in data_points:
+                            #         event_bus.publish(BacktestProgressEvent(
+                            #             bar_index=dp['bar_index'],
+                            #             total_bars=dp['total_bars'],
+                            #             progress=dp['bar_index'] / dp['total_bars'],
+                            #             current_result=dp
+                            #         ))
+                            # except Exception as e:
+                            #     logger.warning(f"事件推送失败：{e}")
+            except Exception as e:
+                logger.warning(f"更新图表失败：{e}")
+
+
+            # 更新UI显示 - 风险预警检查
+            try:
+                max_dd = results.get('max_drawdown', 0) or 0
+                if max_dd > 0.20:
+                    self.alerts_panel.add_alert('critical', f"最大回撤 {max_dd:.1%} 超过 20%")
+                elif max_dd > 0.10:
+                    self.alerts_panel.add_alert('warning', f"最大回撤 {max_dd:.1%} 超过 10%")
+
+                sharpe = results.get('sharpe_ratio', 0) or 0
+                if sharpe < 0:
+                    self.alerts_panel.add_alert('critical', f"夏普比率 {sharpe:.2f} 为负")
+                elif sharpe < 0.5:
+                    self.alerts_panel.add_alert('warning', f"夏普比率 {sharpe:.2f} 偏低")
+
+                win_rate = results.get('win_rate', 0) or 0
+                if win_rate < 0.3:
+                    self.alerts_panel.add_alert('warning', f"胜率 {win_rate:.1%} 低于 30%")
+
+                total_return = results.get('total_return', 0) or 0
+                if total_return < -0.20:
+                    self.alerts_panel.add_alert('critical', f"总收益 {total_return:.1%} 亏损超过 20%")
+
+                volatility = results.get('volatility', 0) or 0
+                if volatility > 0.5:
+                    self.alerts_panel.add_alert('warning', f"波动率 {volatility:.1%} 超过 50%")
+            except Exception as e:
+                logger.warning(f"风险预警检查失败: {e}")
+
             self.alerts_panel.add_alert('success', f'回测完成: {self.current_stock_code}')
 
         except Exception as e:
-            logger.error(f"处理回测完成失败: {e}")
+            logger.error(f"处理回测完成失败：{e}")
+
+    def _on_progress_update(self, progress: int, stage: str, message: str):
+        """进度更新槽函数（在主线程执行）"""
+        try:
+            self.control_panel.update_progress(progress, stage, message)
+        except Exception as e:
+            logger.error(f"进度更新失败：{e}")
+
+    def _on_alert_request(self, level: str, message: str):
+        """预警添加槽函数（在主线程执行）"""
+        try:
+            self.alerts_panel.add_alert(level, message)
+        except Exception as e:
+            logger.error(f"添加预警失败：{e}")
 
     def _save_results_to_local_file(self, results: Dict):
         """保存回测结果到本地文件"""
@@ -2467,10 +2897,33 @@ class ProfessionalBacktestWidget(QWidget):
         from backtest.real_time_backtest_monitor import RealTimeBacktestMonitor, MonitoringLevel
         from backtest.unified_backtest_engine import UnifiedBacktestEngine
         
+        def simulate_progress(stop_event):
+            """模拟回测进度，让用户感觉有在进行"""
+            stages = [
+                (0, "数据验证", "正在验证数据完整性..."),
+                (15, "策略计算", "正在计算策略指标..."),
+                (30, "信号生成", "正在生成交易信号..."),
+                (50, "回测执行", "正在执行回测引擎..."),
+                (70, "风险计算", "正在计算风险指标..."),
+                (85, "结果汇总", "正在汇总回测结果...")
+            ]
+            current_progress = 0
+            stage_idx = 0
+            while not stop_event.is_set() and stage_idx < len(stages):
+                target_progress, stage_name, message = stages[stage_idx]
+                while current_progress < target_progress and not stop_event.is_set():
+                    current_progress += 1
+                    # 使用信号更新进度（修复工作线程无法使用 QTimer 的问题）
+                    self.request_progress_update.emit(current_progress, stage_name, message)
+                    time.sleep(0.05)
+                stage_idx += 1
+        
         def monitoring_loop():
-            """真实的回测监控循环"""
+            """优化的回测监控循环 - 单次完整回测"""
             thread_name = threading.current_thread().name
-            logger.info(f"真实回测监控循环开始 - 线程: {thread_name}")
+            logger.info(f"回测监控循环开始 - 线程: {thread_name}")
+            
+            stop_progress_event = threading.Event()
             
             try:
                 # 获取当前回测数据
@@ -2479,14 +2932,19 @@ class ProfessionalBacktestWidget(QWidget):
                 else:
                     raise RuntimeError("无法获取回测数据，请先启动回测")
                 
+                data_len = len(data)
+                logger.info(f"回测数据量: {data_len} 条")
+                
                 # 获取风控配置参数
                 risk_control = params.get('risk_control', {})
-                stop_loss = risk_control.get('stop_loss', 0.10)  # 默认10%
-                take_profit = risk_control.get('take_profit', 0.20)  # 默认20%
+                stop_loss = risk_control.get('stop_loss', 0.10)
+                take_profit = risk_control.get('take_profit', 0.20)
+                max_holding = risk_control.get('max_holding_periods', 0)
                 
                 # 转换为引擎需要的格式（小数）
                 stop_loss_pct = stop_loss / 100 if stop_loss > 1 else stop_loss
                 take_profit_pct = take_profit / 100 if take_profit > 1 else take_profit
+                max_holding_periods = int(max_holding) if max_holding and max_holding > 0 else None
                 
                 # 获取引擎配置
                 use_vectorized = params.get('use_vectorized_engine', True)
@@ -2499,122 +2957,185 @@ class ProfessionalBacktestWidget(QWidget):
                 }
                 execution_model = execution_model_map.get(execution_model_text, 'fixed')
                 
-                # 创建真实回测引擎
+                # 使用复用模式获取引擎
                 from backtest.unified_backtest_engine import BacktestLevel
-                backtest_engine = UnifiedBacktestEngine(
-                    backtest_level=BacktestLevel.PROFESSIONAL,
-                    use_vectorized_engine=use_vectorized,
-                    auto_select_engine=auto_select,
-                    execution_model=execution_model
+                engine_config = {
+                    'backtest_level': BacktestLevel.PROFESSIONAL,
+                    'use_vectorized_engine': use_vectorized,
+                    'auto_select_engine': auto_select,
+                    'execution_model': execution_model
+                }
+                backtest_engine = self._get_engine(engine_config)
+                
+                logger.info("使用复用的回测引擎")
+                
+                # 启动模拟进度线程
+                stop_progress_event.clear()
+                progress_thread = threading.Thread(
+                    target=simulate_progress,
+                    args=(stop_progress_event,),
+                    daemon=True,
+                    name="ProgressSimulator"
                 )
+                progress_thread.start()
                 
-                # 创建真实监控器
-                monitor = RealTimeBacktestMonitor(monitoring_level=MonitoringLevel.REAL_TIME)
-                
-                # 启动监控（传递风控参数）
-                monitor.start_monitoring(
-                    backtest_engine=backtest_engine,
-                    data=data,
-                    initial_capital=params.get('initial_capital', 100000),
-                    engine_type="unified",
-                    stop_loss_pct=stop_loss_pct,
-                    take_profit_pct=take_profit_pct,
-                    max_holding_periods=risk_control.get('max_holding_periods')
-                )
-                
-                # 监控循环：等待监控器数据并更新UI
-                iteration = 0
-                while self.is_monitoring:
-                    try:
-                        # 检查停止信号
-                        if not self.is_monitoring:
-                            logger.info(f"收到停止信号，退出监控循环 - 线程: {thread_name}")
-                            break
-                        
-                        # 等待监控数据
-                        time.sleep(0.5)  # 500ms间隔
-                        
-                        # 从监控器获取最新指标数据
-                        if hasattr(monitor, 'get_latest_metrics'):
-                            latest_metrics = monitor.get_latest_metrics()
-                            if latest_metrics:
-                                # 转换为UI友好的格式
-                                ui_data = {
-                                    'timestamp': latest_metrics.timestamp,
-                                    'current_return': latest_metrics.current_return,
-                                    'cumulative_return': latest_metrics.cumulative_return,
-                                    'current_drawdown': latest_metrics.current_drawdown,
-                                    'max_drawdown': latest_metrics.max_drawdown,
-                                    'sharpe_ratio': latest_metrics.sharpe_ratio,
-                                    'volatility': latest_metrics.volatility,
-                                    'var_95': latest_metrics.var_95,
-                                    'total_return': latest_metrics.cumulative_return,
-                                    'annualized_return': latest_metrics.cumulative_return * 252,
-                                    'win_rate': latest_metrics.win_rate,
-                                    'profit_factor': latest_metrics.profit_factor,
-                                    'execution_time': latest_metrics.execution_time
-                                }
-                                
-                                # 安全的UI更新（使用信号槽机制）
-                                self._safe_update_ui(ui_data)
-                                
-                                # 存储监控数据（线程安全）
-                                with self.monitoring_data_lock:
-                                    self.monitoring_data.append(ui_data)
-                                    
-                                    # 限制数据长度
-                                    if len(self.monitoring_data) > 1000:
-                                        self.monitoring_data = self.monitoring_data[-1000:]
-                        
-                        iteration += 1
-
-                        # 更新进度（50% - 90%）
-                        if hasattr(self, 'current_data') and len(self.current_data) > 0:
-                            total_iterations = len(self.current_data)
-                            progress = min(50 + (iteration / total_iterations) * 40, 90)
-                            if iteration % 10 == 0:  # 每10次迭代更新一次进度
-                                QTimer.singleShot(0, lambda p=progress: self.control_panel.update_progress(
-                                    int(p), "执行回测", f"已处理 {iteration}/{total_iterations} 条数据"
-                                ))
-
-                        # 检查预警
-                        if hasattr(monitor, 'get_latest_alerts') and monitor.alerts_history:
-                            latest_alerts = monitor.get_latest_alerts()
-                            if latest_alerts:
-                                for alert in latest_alerts:
-                                    QTimer.singleShot(0, lambda a=alert: self._safe_add_alert(a))
-                        
-                        # 应用风险控制规则
-                        self._apply_risk_control_rules(ui_data, params)
-                        
-                    except Exception as e:
-                        logger.error(f"监控循环处理异常: {e}")
-                        # 继续运行，不要因为单个错误而退出
-                        time.sleep(1.0)
-                        continue
-                        
-            except Exception as e:
-                logger.error(f"监控线程异常: {e}")
-            finally:
-                # 停止监控器
+                # 直接运行一次完整回测（不使用监控器的多次分块调用）
                 try:
-                    if 'monitor' in locals():
-                        # 获取最终回测结果
-                        if hasattr(monitor, 'get_final_results'):
-                            final_results = monitor.get_final_results()
-                            if final_results:
-                                # 验证回测结果
-                                final_results = self._validate_backtest_results(final_results)
-                                # 保存最终结果
-                                self.current_results = final_results
-                                # 在主线程中调用回测完成处理
-                                QTimer.singleShot(0, lambda: self._on_backtest_completed(final_results))
-                        monitor.stop_monitoring()
+                    logger.info("开始执行单次完整回测...")
+                    
+                    # 创建模式上下文
+                    mode_context = ModeContext.create_backtest(
+                        start_date=params.get('start_date') if params else None,
+                        end_date=params.get('end_date') if params else None
+                    )
+                    
+                    # 设置引擎的模式上下文
+                    if hasattr(backtest_engine, 'mode_context'):
+                        backtest_engine.mode_context = mode_context
+                    
+                    final_result = backtest_engine.run_backtest(
+                        data=data,
+                        initial_capital=params.get('initial_capital', 100000),
+                        position_size=params.get('position_size', 1.0),
+                        commission_pct=params.get('commission_pct', 0.001),
+                        slippage_pct=params.get('slippage_pct', 0.001),
+                        stop_loss_pct=stop_loss_pct if stop_loss_pct > 0 else None,
+                        take_profit_pct=take_profit_pct if take_profit_pct > 0 else None,
+                        max_holding_periods=max_holding_periods,
+                        enable_compound=params.get('enable_compound', True),
+                        mode_context=mode_context  # 传递 mode_context
+                    )
+                    # 调试：打印返回类型
+                    logger.info(f"回测结果类型：{type(final_result).__name__}")
+                    if isinstance(final_result, dict):
+                        eq_curve = final_result.get('equity_curve')
+                        if eq_curve is not None:
+                            logger.info(f"返回字典，键数：{len(final_result)}, equity_curve 类型：{type(eq_curve).__name__}, 长度：{len(eq_curve) if hasattr(eq_curve, '__len__') else 'N/A'}")
+                        else:
+                            logger.info(f"返回字典，键数：{len(final_result)}, equity_curve: None")
+                    elif hasattr(final_result, '__len__'):
+                        logger.info(f"返回对象长度：{len(final_result)}")
                 except Exception as e:
-                    logger.error(f"停止监控器失败: {e}")
-
-                logger.info(f"监控循环结束 - 线程: {thread_name}")
+                    logger.error(f"回测执行失败：{e}")
+                    raise
+                
+                # 停止模拟进度
+                stop_progress_event.set()
+                progress_thread.join(timeout=2.0)
+                
+                # 获取完整结果
+                final_results = None
+                
+                # 处理两种返回类型：字典（统一引擎）或DataFrame（标准引擎）
+                if isinstance(final_result, dict):
+                    # 统一引擎返回的字典格式
+                    try:
+                        final_results = {
+                            'equity_curve': final_result.get('equity_curve'),
+                            'trades': final_result.get('trades', []),
+                            'total_trades': final_result.get('total_trades', 0),
+                            'total_return': final_result.get('total_return', 0.0),
+                            'max_drawdown': final_result.get('max_drawdown', 0.0),
+                            'sharpe_ratio': final_result.get('sharpe_ratio', 0.0),
+                            'win_rate': final_result.get('win_rate', 0.0),
+                            'profit_factor': final_result.get('profit_factor', 0.0),
+                            'volatility': final_result.get('volatility', 0.0),
+                            'annualized_return': final_result.get('annualized_return', 0.0),
+                            'calmar_ratio': final_result.get('calmar_ratio', 0.0),
+                            'sortino_ratio': final_result.get('sortino_ratio', 0.0),
+                            'var_95': final_result.get('var_95', 0.0),
+                            'cvar_95': final_result.get('cvar_95', 0.0),
+                            'trade_count': final_result.get('total_trades', 0),
+                            'data_rows': len(final_result.get('equity_curve', [])) if final_result.get('equity_curve') is not None else 0
+                        }
+                        logger.info(f"成功获取完整回测结果，交易次数: {final_results['total_trades']}")
+                    except Exception as e:
+                        logger.error(f"转换回测结果失败: {e}")
+                        final_results = None
+                elif final_result is not None and hasattr(final_result, 'to_dict'):
+                    # 兼容DataFrame格式（旧引擎）
+                    try:
+                        result_dict = final_result.to_dict(orient='records')
+                        
+                        # 计算累计收益
+                        cumulative_return = 0.0
+                        if 'capital' in final_result.columns and len(final_result) > 0:
+                            cumulative_return = (final_result['capital'].iloc[-1] / final_result['capital'].iloc[0] - 1)
+                        
+                        # 计算交易次数
+                        trade_count = 0
+                        if 'position' in final_result.columns:
+                            positions = final_result['position'].values
+                            trade_count = np.sum(np.diff(positions) != 0)
+                        
+                        final_results = {
+                            'backtest_data': result_dict,
+                            'equity_curve': final_result['capital'].tolist() if 'capital' in final_result.columns else [],
+                            'position_curve': final_result['position'].tolist() if 'position' in final_result.columns else [],
+                            'returns_curve': final_result['returns'].tolist() if 'returns' in final_result.columns else [],
+                            'cumulative_return': cumulative_return,
+                            'trade_count': int(trade_count),
+                            'data_rows': len(final_result)
+                        }
+                        logger.info(f"成功获取完整回测结果，数据行数: {len(final_result)}")
+                    except Exception as e:
+                        logger.error(f"转换回测结果失败: {e}")
+                        final_results = None
+                
+                # 如果单次回测失败，尝试使用监控器方式
+                if final_results is None:
+                    logger.warning("单次回测失败，尝试使用监控器方式")
+                    monitor = self._get_monitor()
+                    monitor.start_monitoring(
+                        backtest_engine=backtest_engine,
+                        data=data,
+                        initial_capital=params.get('initial_capital', 100000),
+                        engine_type="unified",
+                        stop_loss_pct=stop_loss_pct,
+                        take_profit_pct=take_profit_pct,
+                        max_holding_periods=max_holding_periods
+                    )
+                    
+                    # 等待监控完成
+                    while self.is_monitoring and monitor.is_monitoring:
+                        time.sleep(0.2)
+                    
+                    # 从监控器获取结果
+                    if hasattr(monitor, 'get_monitoring_summary'):
+                        summary = monitor.get_monitoring_summary()
+                        if summary:
+                            final_results = summary
+                    monitor.stop_monitoring()
+                
+                # 保存结果
+                if final_results:
+                    self._monitoring_data = final_results
+                    final_results = self._validate_backtest_results(final_results)
+                    self.current_results = final_results
+                    
+                    # 通过信号更新进度到 100%（修复工作线程无法使用 QTimer 的问题）
+                    self.request_progress_update.emit(100, "回测完成", "回测已完成")
+                    
+                    # 通过信号调用主线程的 UI 更新方法（修复工作线程无法使用 QTimer 的问题）
+                    self.request_ui_update.emit(final_results)
+                    logger.info(f"回测完成，最终结果已保存，已发送 UI 更新信号")
+                else:
+                    logger.error("未能获取最终回测结果")
+                    # 通过信号更新失败状态
+                    self.request_progress_update.emit(0, "回测失败", "无法获取回测结果")
+                
+            except Exception as e:
+                logger.error(f"回测循环异常：{e}")
+                import traceback
+                logger.error(traceback.format_exc())
+                stop_progress_event.set()
+                
+                # 通过信号通知 UI 回测失败（修复工作线程无法使用 QTimer 的问题）
+                self.request_progress_update.emit(0, "回测失败", str(e))
+            
+            finally:
                 self.is_monitoring = False
+                logger.info(f"回测循环结束 - 线程: {thread_name}")
 
         # 启动监控线程（非守护线程，确保可以正确停止）
         self.is_monitoring = True
@@ -2683,74 +3204,6 @@ class ProfessionalBacktestWidget(QWidget):
 
         except Exception as e:
             logger.error(f"检查预警失败: {e}")
-
-    def _safe_update_ui(self, data: Dict):
-        """安全的UI更新方法 - 在主线程中执行UI更新"""
-        try:
-            # 确保在主线程中更新UI
-            if threading.current_thread() != threading.main_thread():
-                # 如果不在主线程，使用信号槽机制延迟到主线程执行
-                QTimer.singleShot(0, lambda: self._update_ui_main_thread(data))
-            else:
-                # 如果已经在主线程，直接更新
-                self._update_ui_main_thread(data)
-        except Exception as e:
-            logger.error(f"安全UI更新失败: {e}")
-
-    def _update_ui_main_thread(self, data: Dict):
-        """在主线程中更新UI的具体实现"""
-        try:
-            # 更新图表数据
-            if hasattr(self, 'chart_widget') and self.chart_widget:
-                self.chart_widget.add_data(data)
-            
-            # 更新指标面板
-            if hasattr(self, 'metrics_panel') and self.metrics_panel:
-                self.metrics_panel.update_metrics(data)
-            
-            # 更新关键指标标签
-            if hasattr(self, 'total_return_label'):
-                total_return = data.get('total_return', 0)
-                self.total_return_label.setText(f"{total_return:.2%}")
-                
-                # 设置颜色
-                color = "red" if total_return < 0 else "green"
-                self.total_return_label.setStyleSheet(f"color: {color};")
-            
-            if hasattr(self, 'sharpe_ratio_label'):
-                sharpe = data.get('sharpe_ratio', 0)
-                self.sharpe_ratio_label.setText(f"{sharpe:.3f}")
-                
-                # 设置颜色
-                color = "red" if sharpe < 0 else "green"
-                self.sharpe_ratio_label.setStyleSheet(f"color: {color};")
-            
-            if hasattr(self, 'max_drawdown_label'):
-                max_dd = data.get('max_drawdown', 0)
-                self.max_drawdown_label.setText(f"{max_dd:.2%}")
-                self.max_drawdown_label.setStyleSheet("color: red;")
-            
-            if hasattr(self, 'win_rate_label'):
-                win_rate = data.get('win_rate', 0)
-                self.win_rate_label.setText(f"{win_rate:.2%}")
-                
-                # 设置颜色
-                color = "red" if win_rate < 0.5 else "green"
-                self.win_rate_label.setStyleSheet(f"color: {color};")
-            
-            if hasattr(self, 'profit_factor_label'):
-                pf = data.get('profit_factor', 0)
-                self.profit_factor_label.setText(f"{pf:.3f}")
-                
-                # 设置颜色
-                color = "red" if pf < 1.0 else "green"
-                self.profit_factor_label.setStyleSheet(f"color: {color};")
-            
-            # 计算并更新风险指标
-            self._calculate_and_update_risk_metrics(data)
-                
-        except Exception as e:
-            logger.error(f"主线程UI更新失败: {e}")
 
     def _calculate_and_update_risk_metrics(self, data: Dict):
         """计算并更新风险指标 - 性能优化版本"""

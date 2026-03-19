@@ -11,6 +11,7 @@ from core.strategy_extensions import (
     TradeResult, TradeAction, Position, TradingPerformanceMetrics, StrategyType,
     ParameterDef, RiskLevel, TimeFrame
 )
+from core.trading.trading_mode import ModeAwareMixin
 from core.events import SignalGeneratedEvent, get_event_bus
 
 
@@ -51,6 +52,9 @@ class MeanReversionStrategyPlugin(IStrategyPlugin):
     """
     
     def __init__(self):
+        # 初始化模式感知混入类
+        ModeAwareMixin.__init__(self)
+        
         self._initialized = False
         self._config: Optional[MeanReversionConfig] = None
         self._plugin_info = {
