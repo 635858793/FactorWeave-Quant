@@ -1057,15 +1057,88 @@ class UnifiedDataImportEngine(QObject):
             # 转换为兼容的ImportTaskConfig
             import_config = task_config.to_import_task_config()
 
-            # 执行数据导入逻辑
-            if task_config.data_type == "K线数据":
+            # 执行数据导入逻辑 - 使用数据类型映射机制
+            data_type_str = getattr(task_config, 'data_type', 'K 线数据').strip()
+            
+            # 使用 plugin_center 的映射机制（复用现有架构）
+            data_type = data_type_str  # 默认使用原始字符串
+            try:
+                # 通过 data_manager 访问 plugin_center（已验证的访问路径）
+                uni_plugin_manager = getattr(self, '_data_manager', None)
+                if uni_plugin_manager:
+                    # 尝试多种方式访问 plugin_center
+                    plugin_center = None
+                    
+                    # 方式 1: 通过 _uni_plugin_manager 属性
+                    uni_plugin_mgr = getattr(uni_plugin_manager, '_uni_plugin_manager', None)
+                    if uni_plugin_mgr:
+                        plugin_center = getattr(uni_plugin_mgr, 'plugin_center', None)
+                    
+                    # 方式 2: 直接访问 plugin_center 属性
+                    if not plugin_center:
+                        plugin_center = getattr(uni_plugin_manager, 'plugin_center', None)
+                    
+                    # 方式 3: 通过 get_unified_data_manager() 获取
+                    if not plugin_center:
+                        try:
+                            from core.services.unified_data_manager import get_unified_data_manager
+                            udm = get_unified_data_manager()
+                            if udm:
+                                uni_plugin_mgr = getattr(udm, '_uni_plugin_manager', None)
+                                if uni_plugin_mgr:
+                                    plugin_center = getattr(uni_plugin_mgr, 'plugin_center', None)
+                        except Exception:
+                            pass
+                    
+                    # 如果找到 plugin_center，使用映射
+                    if plugin_center and hasattr(plugin_center, '_map_string_to_data_type'):
+                        from core.plugin_types import DataType
+                        data_type_enum = plugin_center._map_string_to_data_type(data_type_str)
+                        if data_type_enum:
+                            # 将枚举转换为中文显示名用于后续比较
+                            display_mapping = {
+                                # 主要数据类型
+                                DataType.HISTORICAL_KLINE: 'K 线数据',
+                                DataType.REAL_TIME_QUOTE: '实时行情',
+                                DataType.FUNDAMENTAL: '基本面数据',
+                                DataType.ASSET_LIST: '资产列表',
+                                DataType.SECTOR_FUND_FLOW: '板块资金流',
+                                
+                                # 其他数据类型（使用英文 value 作为显示名）
+                                DataType.MARKET_DEPTH: '盘口深度',
+                                DataType.TRADE_TICK: '逐笔成交',
+                                DataType.TICK_DATA: 'Tick 数据',
+                                DataType.ORDER_BOOK: '委托账本',
+                                DataType.LEVEL2_DATA: 'Level2 数据',
+                                DataType.NEWS: '新闻数据',
+                                DataType.ANNOUNCEMENT: '公告数据',
+                                DataType.FUND_FLOW: '资金流数据',
+                                DataType.INDIVIDUAL_FUND_FLOW: '个股资金流',
+                                DataType.MAIN_FUND_FLOW: '主力资金流',
+                                DataType.SECTOR_DATA: '板块数据',
+                                DataType.TECHNICAL_INDICATORS: '技术指标',
+                                DataType.INTRADAY_DATA: '分时数据',
+                                DataType.STOCK_BASIC_INFO: '股票基本信息',
+                            }
+                            data_type = display_mapping.get(data_type_enum, data_type_str)
+                            logger.debug(f"统一引擎数据类型映射：{data_type_str} → {data_type_enum.value} → {data_type}")
+            except Exception as e:
+                logger.debug(f"统一引擎数据类型映射失败，使用原始值：{e}")
+                data_type = data_type_str
+            
+            logger.info(f" 统一引擎执行数据类型：{data_type}")
+
+            if data_type == "K 线数据":
+                logger.info("开始导入 K 线数据")
                 self._import_kline_data(import_config, result)
-            elif task_config.data_type == "实时行情":
+            elif data_type == "实时行情":
+                logger.info("开始导入实时行情")
                 self._import_realtime_data(import_config, result)
-            elif task_config.data_type == "基本面数据":
+            elif data_type == "基本面数据":
+                logger.info("开始导入基本面数据")
                 self._import_fundamental_data(import_config, result)
             else:
-                logger.warning(f"不支持的数据类型，使用默认K线数据导入: {task_config.data_type}")
+                logger.warning(f" 不支持的数据类型，默认使用 K 线数据：{data_type}")
                 self._import_kline_data(import_config, result)
 
             # 任务完成
@@ -1123,15 +1196,88 @@ class UnifiedDataImportEngine(QObject):
             # 转换为兼容的ImportTaskConfig
             import_config = task_config.to_import_task_config()
 
-            # 执行数据导入逻辑
-            if task_config.data_type == "K线数据":
+            # 执行数据导入逻辑 - 使用数据类型映射机制
+            data_type_str = getattr(task_config, 'data_type', 'K 线数据').strip()
+            
+            # 使用 plugin_center 的映射机制（复用现有架构）
+            data_type = data_type_str  # 默认使用原始字符串
+            try:
+                # 通过 data_manager 访问 plugin_center（已验证的访问路径）
+                uni_plugin_manager = getattr(self, '_data_manager', None)
+                if uni_plugin_manager:
+                    # 尝试多种方式访问 plugin_center
+                    plugin_center = None
+                    
+                    # 方式 1: 通过 _uni_plugin_manager 属性
+                    uni_plugin_mgr = getattr(uni_plugin_manager, '_uni_plugin_manager', None)
+                    if uni_plugin_mgr:
+                        plugin_center = getattr(uni_plugin_mgr, 'plugin_center', None)
+                    
+                    # 方式 2: 直接访问 plugin_center 属性
+                    if not plugin_center:
+                        plugin_center = getattr(uni_plugin_manager, 'plugin_center', None)
+                    
+                    # 方式 3: 通过 get_unified_data_manager() 获取
+                    if not plugin_center:
+                        try:
+                            from core.services.unified_data_manager import get_unified_data_manager
+                            udm = get_unified_data_manager()
+                            if udm:
+                                uni_plugin_mgr = getattr(udm, '_uni_plugin_manager', None)
+                                if uni_plugin_mgr:
+                                    plugin_center = getattr(uni_plugin_mgr, 'plugin_center', None)
+                        except Exception:
+                            pass
+                    
+                    # 如果找到 plugin_center，使用映射
+                    if plugin_center and hasattr(plugin_center, '_map_string_to_data_type'):
+                        from core.plugin_types import DataType
+                        data_type_enum = plugin_center._map_string_to_data_type(data_type_str)
+                        if data_type_enum:
+                            # 将枚举转换为中文显示名用于后续比较
+                            display_mapping = {
+                                # 主要数据类型
+                                DataType.HISTORICAL_KLINE: 'K 线数据',
+                                DataType.REAL_TIME_QUOTE: '实时行情',
+                                DataType.FUNDAMENTAL: '基本面数据',
+                                DataType.ASSET_LIST: '资产列表',
+                                DataType.SECTOR_FUND_FLOW: '板块资金流',
+                                
+                                # 其他数据类型（使用英文 value 作为显示名）
+                                DataType.MARKET_DEPTH: '盘口深度',
+                                DataType.TRADE_TICK: '逐笔成交',
+                                DataType.TICK_DATA: 'Tick 数据',
+                                DataType.ORDER_BOOK: '委托账本',
+                                DataType.LEVEL2_DATA: 'Level2 数据',
+                                DataType.NEWS: '新闻数据',
+                                DataType.ANNOUNCEMENT: '公告数据',
+                                DataType.FUND_FLOW: '资金流数据',
+                                DataType.INDIVIDUAL_FUND_FLOW: '个股资金流',
+                                DataType.MAIN_FUND_FLOW: '主力资金流',
+                                DataType.SECTOR_DATA: '板块数据',
+                                DataType.TECHNICAL_INDICATORS: '技术指标',
+                                DataType.INTRADAY_DATA: '分时数据',
+                                DataType.STOCK_BASIC_INFO: '股票基本信息',
+                            }
+                            data_type = display_mapping.get(data_type_enum, data_type_str)
+                            logger.debug(f"统一引擎数据类型映射：{data_type_str} → {data_type_enum.value} → {data_type}")
+            except Exception as e:
+                logger.debug(f"统一引擎数据类型映射失败，使用原始值：{e}")
+                data_type = data_type_str
+            
+            logger.info(f" 统一引擎执行数据类型：{data_type}")
+
+            if data_type == "K 线数据":
+                logger.info("开始导入 K 线数据")
                 self._import_kline_data_sync(import_config, result)
-            elif task_config.data_type == "实时行情":
+            elif data_type == "实时行情":
+                logger.info("开始导入实时行情")
                 self._import_realtime_data_sync(import_config, result)
-            elif task_config.data_type == "基本面数据":
+            elif data_type == "基本面数据":
+                logger.info("开始导入基本面数据")
                 self._import_fundamental_data_sync(import_config, result)
             else:
-                logger.warning(f"不支持的数据类型，使用默认K线数据导入: {task_config.data_type}")
+                logger.warning(f" 不支持的数据类型，默认使用 K 线数据：{data_type}")
                 self._import_kline_data_sync(import_config, result)
 
             # 任务完成

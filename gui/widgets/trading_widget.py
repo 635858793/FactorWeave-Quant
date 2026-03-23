@@ -1941,11 +1941,13 @@ class TradingWidget(QWidget):
                     # 首先尝试获取实时数据
                     try:
                         realtime_data = asset_service.get_real_time_data(
-                            symbol=self.current_stock,
+                            symbols=[self.current_stock],
                             asset_type=AssetType.STOCK_A
                         )
-                        if realtime_data and 'price' in realtime_data:
-                            return float(realtime_data['price'])
+                        if realtime_data and self.current_stock in realtime_data:
+                            quote = realtime_data[self.current_stock]
+                            if quote and 'price' in quote:
+                                return float(quote['price'])
                     except Exception:
                         pass  # 实时数据失败，继续尝试历史数据
 
@@ -1967,13 +1969,18 @@ class TradingWidget(QWidget):
             try:
                 from core.services.unified_data_manager import get_unified_data_manager
                 data_manager = get_unified_data_manager()
-                realtime_data = data_manager.get_realtime_quotes([self.current_stock])
-
-                if realtime_data and self.current_stock in realtime_data:
-                    return float(realtime_data[self.current_stock].get('price', 0))
+                uni_plugin = data_manager.get_uni_plugin_manager()
+                if uni_plugin:
+                    realtime_result = uni_plugin.get_real_time_data(
+                        symbols=[self.current_stock],
+                        asset_type=AssetType.STOCK_A
+                    )
+                    if realtime_result is not None and not realtime_result.empty:
+                        row = realtime_result.iloc[-1] if hasattr(realtime_result, 'iloc') else realtime_result
+                        return float(row.get('price', row.get('current_price', 0)))
 
                 # 如果没有实时数据，使用最新的K线数据
-                kdata = data_manager.get_kdata(self.current_stock, ktype='D')
+                kdata = data_manager.get_kdata(self.current_stock, period='D')
                 if kdata is not None and len(kdata) > 0:
                     if hasattr(kdata, 'iloc'):  # DataFrame
                         return float(kdata.iloc[-1]['close'])

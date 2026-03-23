@@ -494,6 +494,48 @@ class RealDataProvider:
             self.logger.error(f"获取真实K线数据失败 {code}: {e}")
             return pd.DataFrame()
 
+    def get_real_quote(self, symbol: str) -> Optional[Dict[str, Any]]:
+        """获取单个股票实时行情（不持久化）
+
+        Args:
+            symbol: 股票代码
+
+        Returns:
+            Dict 包含: symbol, code, name, price, change, change_pct, volume, amount 等
+            如果获取失败返回 None
+        """
+        try:
+            if not self.data_manager:
+                self.logger.warning("数据管理器未初始化")
+                return None
+
+            uni_plugin_manager = self.data_manager.get_uni_plugin_manager()
+            if not uni_plugin_manager:
+                self.logger.warning("UniPluginManager 不可用")
+                return None
+
+            from ..plugin_types import AssetType
+            result = uni_plugin_manager.get_real_time_data(
+                symbols=[symbol],
+                asset_type=AssetType.STOCK_A
+            )
+
+            if isinstance(result, pd.DataFrame):
+                if not result.empty:
+                    row = result.iloc[0]
+                    quote_dict = row.to_dict()
+                    quote_dict['symbol'] = symbol
+                    return quote_dict
+            elif isinstance(result, dict):
+                return result.get(symbol)
+
+            self.logger.warning(f"未获取到 {symbol} 的实时行情数据")
+            return None
+
+        except Exception as e:
+            self.logger.error(f"获取实时行情失败: {symbol}, {e}")
+            return None
+
     def get_multiple_stocks_data(self, codes: List[str], freq: str = 'D',
                                  count: int = 250) -> Dict[str, pd.DataFrame]:
         """批量获取多只股票的真实数据

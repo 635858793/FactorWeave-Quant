@@ -38,6 +38,7 @@ from ..performance.unified_monitor import get_performance_monitor
 from ..services.enhanced_performance_bridge import EnhancedPerformanceBridge, get_enhanced_performance_bridge
 from ..risk_monitoring.enhanced_risk_monitor import EnhancedRiskMonitor, get_enhanced_risk_monitor
 from ..services.distributed_service import DistributedService, NodeDiscovery, NodeInfo
+from ..plugin_types import DataType
 from optimization.auto_tuner import AlgorithmAutoTuner, TuningTask, OptimizationConfig
 from optimization.algorithm_optimizer import PerformanceEvaluator
 from ..services.enhanced_data_manager import DataQualityMonitor
@@ -2705,8 +2706,50 @@ class DataImportExecutionEngine(QObject):
                 result.total_records = len(task_config.symbols)
 
             # 根据任务类型执行不同的导入逻辑
-            data_type = getattr(task_config, 'data_type', 'K线数据')  # 默认为K线数据
-            logger.info(f" 执行数据类型: {data_type}")
+            # 根据任务类型执行不同的导入逻辑
+            data_type_str = getattr(task_config, 'data_type', 'K 线数据').strip()
+            
+            # 使用 plugin_center 的映射机制（复用现有架构）
+            data_type = data_type_str  # 默认使用原始字符串
+            try:
+                # 通过 data_manager 访问 plugin_center（已验证的访问路径）
+                uni_plugin_manager = getattr(self.data_manager, '_uni_plugin_manager', None)
+                if uni_plugin_manager:
+                    plugin_center = getattr(uni_plugin_manager, 'plugin_center', None)
+                    if plugin_center and hasattr(plugin_center, '_map_string_to_data_type'):
+                        data_type_enum = plugin_center._map_string_to_data_type(data_type_str)
+                        if data_type_enum:
+                            # 将枚举转换为中文显示名用于后续比较
+                            display_mapping = {
+                                # 主要数据类型
+                                DataType.HISTORICAL_KLINE: 'K 线数据',
+                                DataType.REAL_TIME_QUOTE: '实时行情',
+                                DataType.FUNDAMENTAL: '基本面数据',
+                                DataType.ASSET_LIST: '资产列表',
+                                DataType.SECTOR_FUND_FLOW: '板块资金流',
+                                
+                                # 其他数据类型（使用英文 value 作为显示名）
+                                DataType.MARKET_DEPTH: '盘口深度',
+                                DataType.TRADE_TICK: '逐笔成交',
+                                DataType.TICK_DATA: 'Tick 数据',
+                                DataType.ORDER_BOOK: '委托账本',
+                                DataType.LEVEL2_DATA: 'Level2 数据',
+                                DataType.NEWS: '新闻数据',
+                                DataType.ANNOUNCEMENT: '公告数据',
+                                DataType.FUND_FLOW: '资金流数据',
+                                DataType.INDIVIDUAL_FUND_FLOW: '个股资金流',
+                                DataType.MAIN_FUND_FLOW: '主力资金流',
+                                DataType.SECTOR_DATA: '板块数据',
+                                DataType.TECHNICAL_INDICATORS: '技术指标',
+                                DataType.INTRADAY_DATA: '分时数据',
+                                DataType.STOCK_BASIC_INFO: '股票基本信息',
+                            }
+                            data_type = display_mapping.get(data_type_enum, data_type_str)
+                            logger.debug(f"数据类型映射：{data_type_str} → {data_type_enum.value} → {data_type}")
+            except Exception as e:
+                logger.debug(f"数据类型映射失败，使用原始值：{e}")
+                data_type = data_type_str
+            
 
             if data_type == "K线数据":
                 logger.info("开始导入K线数据")
@@ -3669,12 +3712,7 @@ class DataImportExecutionEngine(QObject):
                     quote_data = self.real_data_provider.get_real_quote(symbol)
 
                     if quote_data:
-                        # 将实时数据转换为DataFrame并保存
-                        if isinstance(quote_data, dict):
-                            import pandas as pd
-                            quote_df = pd.DataFrame([quote_data])
-                            self._save_realtime_data_to_database(symbol, quote_df, task_config.asset_type)
-                        logger.info(f"成功导入并保存 {symbol} 的实时行情数据")
+                        logger.info(f"成功获取 {symbol} 的实时行情数据")
                         result.processed_records += 1
                     else:
                         logger.warning(f"未获取到 {symbol} 的实时行情数据")
