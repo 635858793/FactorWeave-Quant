@@ -623,8 +623,20 @@ class UnifiedDataManager:
 
             logger.info("开始初始化UniPluginDataManager...")
 
-            # 创建必要的组件
-            plugin_manager = PluginManager()
+            # 从服务容器获取已有的PluginManager实例，而不是创建新的
+            plugin_manager = None
+            if self.service_container and self.service_container.is_registered(PluginManager):
+                try:
+                    plugin_manager = self.service_container.resolve(PluginManager)
+                    logger.info("从服务容器获取PluginManager成功")
+                except Exception as e:
+                    logger.warning(f"从服务容器获取PluginManager失败: {e}")
+
+            # 如果服务容器中没有，则创建新实例（兼容旧逻辑）
+            if plugin_manager is None:
+                plugin_manager = PluginManager()
+                logger.warning("使用新创建的PluginManager实例（非单例）")
+
             data_source_router = DataSourceRouter()
             tet_pipeline = TETDataPipeline(data_source_router)
 

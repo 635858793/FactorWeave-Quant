@@ -428,6 +428,55 @@ class StrategyEngine:
 
         return stats
 
+    def get_available_strategies(self) -> List[Dict[str, Any]]:
+        """获取可用策略列表（委托给StrategyFactory）
+
+        Returns:
+            List[Dict]: 策略列表，每个dict包含name和id
+        """
+        try:
+            factory = get_strategy_factory()
+            strategy_names = factory.get_available_strategies()
+
+            # 转换为 {name, id} 格式
+            result = []
+            for name in strategy_names:
+                metadata = factory.get_strategy_metadata(name)
+                if metadata:
+                    result.append({
+                        'name': name,
+                        'id': metadata.get('id', name),
+                        'category': metadata.get('category', 'custom'),
+                        'description': metadata.get('description', '')
+                    })
+                else:
+                    result.append({'name': name, 'id': name})
+
+            self.logger.debug(f"获取可用策略列表: {len(result)} 个")
+            return result
+        except Exception as e:
+            self.logger.error(f"获取可用策略列表失败: {e}")
+            return []
+
+    def get_strategy_instance(self, strategy_name: str) -> Optional[BaseStrategy]:
+        """获取策略实例（委托给StrategyFactory）
+
+        Args:
+            strategy_name: 策略名称
+
+        Returns:
+            BaseStrategy: 策略实例
+        """
+        try:
+            factory = get_strategy_factory()
+            strategy = factory.create_strategy(strategy_name)
+            if strategy is None:
+                self.logger.warning(f"策略不存在或创建失败: {strategy_name}")
+            return strategy
+        except Exception as e:
+            self.logger.error(f"获取策略实例失败 {strategy_name}: {e}")
+            return None
+
     def shutdown(self, wait: bool = True):
         """
         关闭执行引擎

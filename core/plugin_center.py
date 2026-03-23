@@ -350,8 +350,9 @@ class PluginCenter:
         )
 
     def _map_string_to_data_type(self, data_type_str: str) -> Optional[DataType]:
-        """将字符串映射到DataType枚举"""
+        """将字符串映射到 DataType 枚举"""
         mapping = {
+            # 英文映射
             'historical_kline': DataType.HISTORICAL_KLINE,
             'kline': DataType.HISTORICAL_KLINE,
             'real_time_quote': DataType.REAL_TIME_QUOTE,
@@ -362,10 +363,35 @@ class PluginCenter:
             'sector_fund_flow': DataType.SECTOR_FUND_FLOW,
             'stock_daily': DataType.HISTORICAL_KLINE,
             'stock_intraday': DataType.HISTORICAL_KLINE,
-            'stock_info': DataType.FUNDAMENTAL
+            'stock_info': DataType.FUNDAMENTAL,
+            
+            # 中文映射（UI 显示名）
+            'K 线数据': DataType.HISTORICAL_KLINE,
+            '实时行情': DataType.REAL_TIME_QUOTE,
+            '基本面数据': DataType.FUNDAMENTAL,
+            '资产列表': DataType.ASSET_LIST,
+            '板块资金流': DataType.SECTOR_FUND_FLOW,
+            '盘口深度': DataType.MARKET_DEPTH,
+            '逐笔成交': DataType.TRADE_TICK,
+            'Tick 数据': DataType.TICK_DATA,
+            '委托账本': DataType.ORDER_BOOK,
+            'Level2 数据': DataType.LEVEL2_DATA,
+            '新闻数据': DataType.NEWS,
+            '公告数据': DataType.ANNOUNCEMENT,
+            '资金流数据': DataType.FUND_FLOW,
+            '个股资金流': DataType.INDIVIDUAL_FUND_FLOW,
+            '主力资金流': DataType.MAIN_FUND_FLOW,
+            '板块数据': DataType.SECTOR_DATA,
+            '技术指标': DataType.TECHNICAL_INDICATORS,
+            '分时数据': DataType.INTRADAY_DATA,
+            '股票基本信息': DataType.STOCK_BASIC_INFO,
         }
-
-        return mapping.get(data_type_str.lower())
+        
+        # 处理大小写：英文转小写，中文保持原样
+        if data_type_str and data_type_str.isascii():
+            return mapping.get(data_type_str.lower())
+        else:
+            return mapping.get(data_type_str)
 
     def _build_capability_indexes(self) -> None:
         """构建能力索引"""
