@@ -2851,29 +2851,14 @@ class DataImportExecutionEngine(QObject):
 
         finally:
             if hasattr(self, 'db_writer_thread'):
-                queue_size = self.db_writer_thread.write_queue.qsize()
-                if queue_size > 0:
-                    logger.info(f"任务结束，等待队列清空: {task_config.task_id}, 队列剩余:{queue_size}个任务")
-                    import time
-                    start_time = time.time()
-                    while self.db_writer_thread.write_queue.qsize() > 0 and (time.time() - start_time) < 30:
-                        time.sleep(0.5)
-                    logger.info(f"队列已清空，耗时:{time.time()-start_time:.2f}秒")
-
-                stats = self.db_writer_thread.get_stats()
-                merge_buffer_size = stats.get('merge_buffer_size', 0)
-                if merge_buffer_size > 0:
-                    logger.info(f"等待合并缓冲区刷新: {merge_buffer_size}个DataFrame")
-                    import time
-                    buffer_start_time = time.time()
-                    while stats.get('merge_buffer_size', 0) > 0 and (time.time() - buffer_start_time) < 5:
-                        time.sleep(0.2)
-                        stats = self.db_writer_thread.get_stats()
-                    final_buffer_size = stats.get('merge_buffer_size', 0)
-                    if final_buffer_size == 0:
-                        logger.info(f"合并缓冲区已刷新，耗时:{time.time()-buffer_start_time:.2f}秒")
-                    else:
-                        logger.warning(f"合并缓冲区刷新超时，剩余:{final_buffer_size}个DataFrame（将由超时机制自动刷新）")
+                # 强制停止DatabaseWriterThread，确保merge buffer完全刷新
+                # 修复：必须在finally块中明确停止写入线程，防止数据丢失
+                try:
+                    self.db_writer_thread.stop(wait=True, timeout=30.0)
+                    stats = self.db_writer_thread.get_stats()
+                    logger.info(f"DatabaseWriterThread统计: {stats}")
+                except Exception as e:
+                    logger.error(f"停止DatabaseWriterThread失败: {e}")
 
             with self._task_lock:
                 if task_config.task_id in self._running_tasks:

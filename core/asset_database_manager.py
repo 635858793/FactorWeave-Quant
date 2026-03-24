@@ -2335,13 +2335,11 @@ class AssetSeparatedDatabaseManager:
             db_path = self._get_database_path(asset_type)
 
             with self.duckdb_manager.get_pool(db_path).get_connection() as conn:
-                # 确保asset_metadata表存在
                 if 'asset_metadata' in self._table_schemas:
                     try:
-                        # 检查表是否存在
                         table_exists = conn.execute("""
-                            SELECT COUNT(*) 
-                            FROM information_schema.tables 
+                            SELECT COUNT(*)
+                            FROM information_schema.tables
                             WHERE table_name = 'asset_metadata'
                         """).fetchone()[0] > 0
 
@@ -2351,22 +2349,59 @@ class AssetSeparatedDatabaseManager:
                             logger.info(f"成功创建表 asset_metadata")
                     except Exception as e:
                         logger.error(f"确保asset_metadata表存在失败: {e}")
-                        # 尝试直接创建
                         try:
                             conn.execute(self._table_schemas['asset_metadata'])
                         except:
                             pass
 
-                # 检查是否已存在
+                import json
+
+                if not metadata.get('name') or not metadata.get('market'):
+                    logger.error(f"缺少必需字段: {symbol}")
+                    return False
+
+                if 'data_sources' in metadata:
+                    if isinstance(metadata['data_sources'], list):
+                        metadata['data_sources'] = json.dumps(metadata['data_sources'], ensure_ascii=False)
+                else:
+                    sources = [metadata.get('primary_data_source')] if metadata.get('primary_data_source') else []
+                    metadata['data_sources'] = json.dumps(sources, ensure_ascii=False)
+
+                if 'tags' in metadata and isinstance(metadata['tags'], list):
+                    metadata['tags'] = json.dumps(metadata['tags'], ensure_ascii=False)
+
+                if 'attributes' in metadata and isinstance(metadata['attributes'], dict):
+                    metadata['attributes'] = json.dumps(metadata['attributes'], ensure_ascii=False)
+
+                metadata['symbol'] = symbol
+                metadata.setdefault('listing_status', 'active')
+                metadata.setdefault('metadata_version', 1)
+
+                try:
+                    table_info = conn.execute("PRAGMA table_info(asset_metadata)").fetchall()
+                    table_columns = [row[1] for row in table_info]
+                except Exception as e:
+                    logger.warning(f"[upsert_asset_metadata] 获取表结构失败: {e}，使用预定义列表")
+                    table_columns = [
+                        'symbol', 'name', 'asset_type', 'market', 'exchange',
+                        'sector', 'industry', 'industry_code',
+                        'listing_date', 'delisting_date', 'listing_status',
+                        'total_shares', 'circulating_shares', 'currency', 'base_currency',
+                        'quote_currency', 'contract_type', 'data_sources', 'primary_data_source',
+                        'last_update_source', 'metadata_version', 'data_quality_score',
+                        'last_verified', 'tags', 'attributes', 'created_at', 'updated_at'
+                    ]
+
+                date_fields = {'listing_date', 'delisting_date', 'last_verified', 'created_at', 'updated_at'}
+                important_fields = {'sector', 'industry', 'industry_code', 'listing_date',
+                                   'total_shares', 'circulating_shares'}
+
                 existing = conn.execute(
                     "SELECT * FROM asset_metadata WHERE symbol = ?",
                     [symbol]
                 ).fetchone()
 
-                import json
-
                 if existing:
-                    # 更新逻辑：追加数据源
                     columns = [desc[0] for desc in conn.description]
                     existing_dict = dict(zip(columns, existing))
                     existing_sources_str = existing_dict.get('data_sources', '[]')
@@ -2376,172 +2411,56 @@ class AssetSeparatedDatabaseManager:
                     except:
                         existing_sources = []
 
-                    # 追加新数据源
                     new_source = metadata.get('primary_data_source')
                     if new_source and new_source not in existing_sources:
                         existing_sources.append(new_source)
+                    metadata['data_sources'] = json.dumps(existing_sources, ensure_ascii=False)
 
-                    # 修复：获取表的实际列名，过滤掉不存在的列（UPDATE逻辑）
-                    try:
-                        # 使用DuckDB的PRAGMA table_info获取表结构
-                        table_info = conn.execute("PRAGMA table_info(asset_metadata)").fetchall()
-                        table_columns = [row[1] for row in table_info]  # row[1]是列名
-                    except Exception as e:
-                        logger.warning(f"[upsert_asset_metadata UPDATE] 获取表结构失败: {e}，使用预定义列表")
-                        table_columns = [
-                            'symbol', 'name', 'asset_type', 'market', 'exchange',
-                            'sector', 'industry', 'industry_code',
-                            'listing_date', 'delisting_date', 'listing_status',
-                            'total_shares', 'circulating_shares', 'currency', 'base_currency',
-                            'quote_currency', 'contract_type', 'data_sources', 'primary_data_source',
-                            'last_update_source', 'metadata_version', 'data_quality_score',
-                            'last_verified', 'tags', 'attributes', 'created_at', 'updated_at'
-                        ]
+                filtered_metadata = {}
+                for k, v in metadata.items():
+                    if k not in table_columns:
+                        continue
 
-                    # 构建UPDATE
-                    update_fields = []
-                    update_params = []
-
-                    # 定义重要字段：如果新值为None/空，则不更新，保留已有数据
-                    important_fields = {'sector', 'industry', 'industry_code', 'listing_date',
-                                        'total_shares', 'circulating_shares'}
-
-                    # 日期字段列表（需要特殊处理）
-                    date_fields = {'listing_date', 'delisting_date', 'last_verified', 'created_at', 'updated_at'}
-
-                    for key, value in metadata.items():
-                        if key in ['symbol', 'created_at']:
+                    if k in date_fields and v is not None:
+                        if isinstance(v, int):
+                            logger.warning(f"[upsert_asset_metadata] 字段'{k}'类型为INTEGER，跳过")
                             continue
-
-                        # 修复：检查列是否在表中存在
-                        if key not in table_columns:
-                            logger.debug(f"[upsert_asset_metadata UPDATE] 列'{key}'不在asset_metadata表中，跳过")
-                            continue
-
-                        # 保护重要字段：如果新值为None/空，跳过更新（保留已有值）
-                        if key in important_fields:
-                            if value is None or (isinstance(value, str) and not value.strip()):
-                                logger.debug(f"[upsert_asset_metadata UPDATE] 字段'{key}'新值为空，保留已有数据")
+                        elif isinstance(v, str):
+                            import re
+                            if not re.match(r'^\d{4}-\d{2}-\d{2}$', v.strip()):
+                                logger.warning(f"[upsert_asset_metadata] 字段'{k}'日期格式不正确，跳过")
                                 continue
 
-                        # 处理日期字段类型转换
-                        if key in date_fields and value is not None:
-                            # 如果是整数（时间戳），跳过（DuckDB不支持INTEGER->DATE转换）
-                            if isinstance(value, int):
-                                logger.warning(f"[upsert_asset_metadata UPDATE] 字段'{key}'类型为INTEGER，跳过（DuckDB不支持INTEGER->DATE转换），原值={value}")
-                                continue
-                            # 如果是字符串，确保格式正确（YYYY-MM-DD）
-                            elif isinstance(value, str):
-                                import re
-                                if not re.match(r'^\d{4}-\d{2}-\d{2}$', value.strip()):
-                                    logger.warning(f"[upsert_asset_metadata UPDATE] 字段'{key}'日期格式不正确，跳过，原值={value}")
-                                    continue
+                    if existing and k in important_fields:
+                        if v is None or (isinstance(v, str) and not v.strip()):
+                            continue
 
-                        if key == 'data_sources':
-                            update_fields.append(f"{key} = ?")
-                            update_params.append(json.dumps(existing_sources, ensure_ascii=False))
-                        elif key in ['tags', 'attributes'] and isinstance(value, (list, dict)):
-                            update_fields.append(f"{key} = ?")
-                            update_params.append(json.dumps(value, ensure_ascii=False))
-                        else:
-                            update_fields.append(f"{key} = ?")
-                            update_params.append(value)
+                    filtered_metadata[k] = v
 
-                    update_fields.extend([
-                        "metadata_version = metadata_version + 1",
-                        "last_verified = NOW()",
-                        "updated_at = NOW()"
-                    ])
+                removed_keys = set(metadata.keys()) - set(filtered_metadata.keys())
+                if removed_keys:
+                    logger.debug(f"[upsert_asset_metadata] 过滤不存在的列: {removed_keys}")
 
-                    if new_source:
-                        update_fields.append("last_update_source = ?")
-                        update_params.append(new_source)
+                columns = list(filtered_metadata.keys())
+                placeholders = ['?' for _ in columns]
+                values = [filtered_metadata[col] for col in columns]
 
-                    update_params.append(symbol)
+                update_parts = []
+                for col in columns:
+                    if col != 'symbol':
+                        update_parts.append(f"{col} = EXCLUDED.{col}")
 
-                    sql = f"UPDATE asset_metadata SET {', '.join(update_fields)} WHERE symbol = ?"
-                    conn.execute(sql, update_params)
-                    logger.info(f"更新资产元数据: {symbol}")
-
+                if update_parts:
+                    sql = f"""INSERT INTO asset_metadata ({', '.join(columns)})
+                              VALUES ({', '.join(placeholders)})
+                              ON CONFLICT (symbol) DO UPDATE SET {', '.join(update_parts)}"""
                 else:
-                    # 插入逻辑
-                    if not metadata.get('name') or not metadata.get('market'):
-                        logger.error(f"缺少必需字段: {symbol}")
-                        return False
+                    sql = f"""INSERT INTO asset_metadata ({', '.join(columns)})
+                              VALUES ({', '.join(placeholders)})
+                              ON CONFLICT (symbol) DO NOTHING"""
 
-                    # JSON字段处理（修复：使用ensure_ascii=False保留中文）
-                    if 'data_sources' in metadata:
-                        if isinstance(metadata['data_sources'], list):
-                            metadata['data_sources'] = json.dumps(metadata['data_sources'], ensure_ascii=False)
-                    else:
-                        sources = [metadata.get('primary_data_source')] if metadata.get('primary_data_source') else []
-                        metadata['data_sources'] = json.dumps(sources, ensure_ascii=False)
-
-                    if 'tags' in metadata and isinstance(metadata['tags'], list):
-                        metadata['tags'] = json.dumps(metadata['tags'], ensure_ascii=False)
-
-                    if 'attributes' in metadata and isinstance(metadata['attributes'], dict):
-                        metadata['attributes'] = json.dumps(metadata['attributes'], ensure_ascii=False)
-
-                    metadata['symbol'] = symbol
-                    metadata.setdefault('listing_status', 'active')
-                    metadata.setdefault('metadata_version', 1)
-
-                    # 修复：获取表的实际列名，过滤掉不存在的列
-                    try:
-                        # 使用DuckDB的PRAGMA table_info获取表结构
-                        table_info = conn.execute("PRAGMA table_info(asset_metadata)").fetchall()
-                        table_columns = [row[1] for row in table_info]  # row[1]是列名
-                        logger.debug(f"[upsert_asset_metadata] 从PRAGMA table_info获取asset_metadata列: {table_columns}")
-                    except Exception as e:
-                        # 如果PRAGMA table_info方法获取失败，使用已知的列列表
-                        logger.warning(f"[upsert_asset_metadata] 获取表结构失败: {e}，使用预定义列表")
-                        table_columns = [
-                            'symbol', 'name', 'asset_type', 'market', 'exchange',
-                            'sector', 'industry', 'industry_code',
-                            'listing_date', 'delisting_date', 'listing_status',
-                            'total_shares', 'circulating_shares', 'currency', 'base_currency',
-                            'quote_currency', 'contract_type', 'data_sources', 'primary_data_source',
-                            'last_update_source', 'metadata_version', 'data_quality_score',
-                            'last_verified', 'tags', 'attributes', 'created_at', 'updated_at'
-                        ]
-
-                    # 日期字段列表（需要特殊处理）
-                    date_fields = {'listing_date', 'delisting_date', 'last_verified', 'created_at', 'updated_at'}
-
-                    # 过滤metadata中不存在的列，并处理日期字段类型
-                    filtered_metadata = {}
-                    for k, v in metadata.items():
-                        if k not in table_columns:
-                            continue
-
-                        # 处理日期字段类型转换
-                        if k in date_fields and v is not None:
-                            # 如果是整数（时间戳），跳过（DuckDB不支持INTEGER->DATE转换）
-                            if isinstance(v, int):
-                                logger.warning(f"[upsert_asset_metadata INSERT] 字段'{k}'类型为INTEGER，跳过（DuckDB不支持INTEGER->DATE转换），原值={v}")
-                                continue
-                            # 如果是字符串，确保格式正确（YYYY-MM-DD）
-                            elif isinstance(v, str):
-                                import re
-                                if not re.match(r'^\d{4}-\d{2}-\d{2}$', v.strip()):
-                                    logger.warning(f"[upsert_asset_metadata INSERT] 字段'{k}'日期格式不正确，跳过，原值={v}")
-                                    continue
-
-                        filtered_metadata[k] = v
-
-                    # 记录被过滤掉的列
-                    removed_keys = set(metadata.keys()) - set(filtered_metadata.keys())
-                    if removed_keys:
-                        logger.warning(f"[upsert_asset_metadata] 以下列在asset_metadata表中不存在或类型不匹配，已过滤: {removed_keys}")
-
-                    columns = list(filtered_metadata.keys())
-                    placeholders = ['?' for _ in columns]
-                    values = [filtered_metadata[col] for col in columns]
-
-                    sql = f"INSERT INTO asset_metadata ({', '.join(columns)}) VALUES ({', '.join(placeholders)})"
-                    conn.execute(sql, values)
-                    logger.info(f"插入资产元数据: {symbol}")
+                conn.execute(sql, values)
+                logger.info(f"Upsert资产元数据: {symbol} (ON CONFLICT DO)")
 
                 conn.commit()
                 return True
@@ -2557,6 +2476,20 @@ class AssetSeparatedDatabaseManager:
         try:
             db_path = self._get_database_path(asset_type)
             with self.duckdb_manager.get_pool(db_path).get_connection() as conn:
+                if 'asset_metadata' in self._table_schemas:
+                    try:
+                        table_exists = conn.execute("""
+                            SELECT COUNT(*)
+                            FROM information_schema.tables
+                            WHERE table_name = 'asset_metadata'
+                        """).fetchone()[0] > 0
+
+                        if not table_exists:
+                            logger.debug(f"asset_metadata表不存在，跳过查询")
+                            return None
+                    except Exception:
+                        return None
+
                 result = conn.execute(
                     "SELECT * FROM asset_metadata WHERE symbol = ?",
                     [symbol]
@@ -2566,7 +2499,6 @@ class AssetSeparatedDatabaseManager:
                     columns = [desc[0] for desc in conn.description]
                     metadata_dict = dict(zip(columns, result))
 
-                    # 解析JSON字段
                     import json
                     for field in ['data_sources', 'tags', 'attributes']:
                         if field in metadata_dict and metadata_dict[field]:
@@ -2591,6 +2523,20 @@ class AssetSeparatedDatabaseManager:
 
             db_path = self._get_database_path(asset_type)
             with self.duckdb_manager.get_pool(db_path).get_connection() as conn:
+                if 'asset_metadata' in self._table_schemas:
+                    try:
+                        table_exists = conn.execute("""
+                            SELECT COUNT(*)
+                            FROM information_schema.tables
+                            WHERE table_name = 'asset_metadata'
+                        """).fetchone()[0] > 0
+
+                        if not table_exists:
+                            logger.debug(f"asset_metadata表不存在，返回空字典")
+                            return {}
+                    except Exception:
+                        return {}
+
                 placeholders = ','.join(['?' for _ in symbols])
                 query = f"SELECT * FROM asset_metadata WHERE symbol IN ({placeholders})"
 
@@ -2631,6 +2577,20 @@ class AssetSeparatedDatabaseManager:
         try:
             db_path = self._get_database_path(asset_type)
             with self.duckdb_manager.get_pool(db_path).get_connection() as conn:
+                if 'fundamentals' in self._table_schemas:
+                    try:
+                        table_exists = conn.execute("""
+                            SELECT COUNT(*)
+                            FROM information_schema.tables
+                            WHERE table_name = 'fundamentals'
+                        """).fetchone()[0] > 0
+
+                        if not table_exists:
+                            logger.debug(f"fundamentals表不存在，跳过查询")
+                            return None
+                    except Exception:
+                        return None
+
                 result = conn.execute(
                     "SELECT * FROM fundamentals WHERE symbol = ?",
                     [symbol]
@@ -2640,7 +2600,6 @@ class AssetSeparatedDatabaseManager:
                     columns = [desc[0] for desc in conn.description]
                     fundamental_dict = dict(zip(columns, result))
 
-                    # 解析JSON字段（如果有）
                     for field in ['attributes', 'tags']:
                         if field in fundamental_dict and fundamental_dict[field]:
                             try:
@@ -2675,6 +2634,20 @@ class AssetSeparatedDatabaseManager:
 
             db_path = self._get_database_path(asset_type)
             with self.duckdb_manager.get_pool(db_path).get_connection() as conn:
+                if 'fundamentals' in self._table_schemas:
+                    try:
+                        table_exists = conn.execute("""
+                            SELECT COUNT(*)
+                            FROM information_schema.tables
+                            WHERE table_name = 'fundamentals'
+                        """).fetchone()[0] > 0
+
+                        if not table_exists:
+                            logger.debug(f"fundamentals表不存在，返回空字典")
+                            return {}
+                    except Exception:
+                        return {}
+
                 placeholders = ','.join(['?' for _ in symbols])
                 query = f"SELECT * FROM fundamentals WHERE symbol IN ({placeholders})"
 
@@ -2687,7 +2660,6 @@ class AssetSeparatedDatabaseManager:
                     fundamental_dict = dict(zip(columns, row))
                     symbol = fundamental_dict['symbol']
 
-                    # 解析JSON字段（如果有）
                     for field in ['attributes', 'tags']:
                         if field in fundamental_dict and fundamental_dict[field]:
                             try:

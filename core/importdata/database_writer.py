@@ -228,15 +228,30 @@ class DatabaseWriterThread(threading.Thread):
                 if self._merge_buffer[buffer_key]:
                     try:
                         parts = buffer_key.split('_', 1)
+                        logger.debug(f"[_flush_merge_buffer] buffer_key={buffer_key}, parts={parts}")
                         if len(parts) >= 1:
                             from ..plugin_types import AssetType, DataType
                             asset_type_str = parts[0]
+                            if len(parts) > 1:
+                                if parts[1].startswith('a_'):
+                                    asset_type_str = "stock_a"
+                                elif parts[1].startswith('b_'):
+                                    asset_type_str = "stock_b"
+                                elif parts[1].startswith('h_') and not parts[1].startswith('hk_'):
+                                    asset_type_str = "stock_h"
+                                elif parts[1].startswith('hk_'):
+                                    asset_type_str = "stock_hk"
+                                elif parts[1].startswith('us_'):
+                                    asset_type_str = "stock_us"
+                            logger.debug(f"[_flush_merge_buffer] parsed asset_type_str={asset_type_str}")
                             asset_type = AssetType(asset_type_str)
                             data_type = DataType.HISTORICAL_KLINE
 
                             self._flush_buffer_key(buffer_key, asset_type, data_type)
                     except Exception as e:
                         logger.error(f"刷新缓冲区失败: {buffer_key}, {e}")
+                        import traceback
+                        logger.error(traceback.format_exc())
 
     def stop(self, wait: bool = True, timeout: float = 30.0):
         logger.info(f"停止DatabaseWriterThread (wait={wait}, queue_size={self.write_queue.qsize()})")
@@ -251,8 +266,12 @@ class DatabaseWriterThread(threading.Thread):
                     time.sleep(0.5)
 
                 self.join(timeout=5.0)
+
+                self._flush_merge_buffer()
+                logger.debug(f"DatabaseWriterThread已停止，buffer已刷新")
             except Exception as e:
                 logger.error(f"停止写入线程失败: {e}")
+                self._flush_merge_buffer()
 
     def get_stats(self) -> Dict[str, Any]:
         with self._stats_lock:
