@@ -8479,7 +8479,7 @@
     },
     "603429": {
       "code": "603429",
-      "name": "集友股份",
+      "name": "*ST集友",
       "csrc_industry": "",
       "exchange_industry": "",
       "market": "SH"
@@ -11229,5 +11229,5 @@
       "market": "SH"
     }
   },
-  "last_update": "2026-03-23T20:54:08.599305"
+  "last_update": "2026-03-24T21:08:34.369866"
 }

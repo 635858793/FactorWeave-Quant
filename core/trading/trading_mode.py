@@ -233,7 +233,11 @@ class ModeAwareMixin:
         """设置模式上下文"""
         self._mode_context = context
         self._on_mode_changed(context)
-    
+
+    def set_mode_context(self, context: ModeContext) -> None:
+        """设置模式上下文（方法形式，兼容旧接口）"""
+        self.mode_context = context
+
     @property
     def trading_mode(self) -> Optional[TradingMode]:
         """获取当前交易模式"""
