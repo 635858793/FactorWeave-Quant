@@ -102,7 +102,7 @@ class EastmoneyUnifiedPlugin(IDataSourcePlugin):
             capabilities={
                 'data_types': [
                     # 实时数据
-                    DataType.REAL_TIME_QUOTE, DataType.LEVEL2, DataType.TICK_DATA, DataType.ORDER_BOOK,
+                    DataType.REAL_TIME_QUOTE, DataType.LEVEL2_DATA, DataType.TICK_DATA, DataType.ORDER_BOOK,
                     # 历史数据
                     DataType.HISTORICAL_KLINE, DataType.STOCK_LIST,
                     # 基本面数据
@@ -191,7 +191,7 @@ class EastmoneyUnifiedPlugin(IDataSourcePlugin):
             if query.data_type == DataType.REAL_TIME_QUOTE:
                 return await self._get_realtime_quotes([query.symbol], query.asset_type)
 
-            elif query.data_type == DataType.LEVEL2:
+            elif query.data_type == DataType.LEVEL2_DATA:
                 return await self._get_level2_data([query.symbol], query.asset_type)
 
             elif query.data_type == DataType.TICK_DATA:

@@ -21,7 +21,7 @@ import json
 import time
 import threading
 from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional, Callable
+from typing import Dict, List, Any, Optional, Callable, Union
 from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
 
@@ -232,8 +232,14 @@ class MiniQMTPlugin(StandardDataSourcePlugin):
             self.logger.error(f"获取实时行情失败: {symbol}, {e}")
             return None
 
-    def get_tick_data(self, symbol: str, start_time: datetime, end_time: datetime) -> pd.DataFrame:
-        """获取tick数据"""
+    def get_tick_data(
+        self,
+        symbol: str,
+        start_time: datetime,
+        end_time: datetime,
+        asset_type: AssetType = None
+    ) -> pd.DataFrame:
+        """获取tick数据（兼容 EnhancedRealtimeDataManager 接口）"""
         try:
             if not self._xtdata:
                 return pd.DataFrame()
@@ -509,6 +515,31 @@ class MiniQMTPlugin(StandardDataSourcePlugin):
     def get_real_time_quotes(self, symbols: List[str]) -> List[Dict[str, Any]]:
         """获取实时行情"""
         return self._internal_get_real_time_quotes(symbols)
+
+    def get_real_time_data(self, symbols: Union[str, List[str]]) -> pd.DataFrame:
+        """
+        获取实时数据（统一接口，兼容 EnhancedRealtimeDataManager）
+
+        Args:
+            symbols: 股票代码或代码列表
+
+        Returns:
+            pd.DataFrame: 实时行情数据，symbol 作为普通列而非索引
+        """
+        if isinstance(symbols, str):
+            symbols = [symbols]
+
+        quotes = self._internal_get_real_time_quotes(symbols)
+        if not quotes:
+            return pd.DataFrame()
+
+        df = pd.DataFrame(quotes)
+        if df.empty:
+            return df
+
+        if 'symbol' in df.columns:
+            df.reset_index(drop=True, inplace=True)
+        return df
 
     def get_version(self) -> str:
         """获取插件版本"""

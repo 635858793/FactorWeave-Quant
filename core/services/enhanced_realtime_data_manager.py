@@ -56,6 +56,7 @@ class EnhancedRealtimeDataManager:
         self.data_buffers: Dict[str, deque] = defaultdict(lambda: deque(maxlen=1000))  # 实时数据缓冲区
         self.subscription_status: Dict[str, Dict[str, bool]] = {}  # 订阅状态
         self.connection_lock = threading.RLock()
+        self.realtime_plugins: Dict[str, IDataSourcePlugin] = {}  # 实时数据源插件注册表
         logger.info("EnhancedRealtimeDataManager 初始化完成，集成TET框架。")
 
     async def register_realtime_plugin(self, plugin_id: str, plugin: IDataSourcePlugin):
@@ -66,52 +67,114 @@ class EnhancedRealtimeDataManager:
         logger.info(f"实时数据源插件 '{plugin_id}' 注册请求，建议通过PluginCenter自动发现")
 
         # 检查插件是否已在TET框架中注册
-        plugin_center = self.uni_plugin_manager.plugin_center
-        if plugin_id in plugin_center.data_source_plugins:
-            logger.info(f"插件 '{plugin_id}' 已在TET框架中注册")
-        else:
-            # 通过PluginCenter注册
-            success = plugin_center._register_data_source_plugin(plugin_id, plugin)
-            if success:
-                logger.info(f"插件 '{plugin_id}' 已通过PluginCenter注册到TET框架")
+        if self.uni_plugin_manager and hasattr(self.uni_plugin_manager, 'plugin_center'):
+            plugin_center = self.uni_plugin_manager.plugin_center
+            if plugin_id in plugin_center.data_source_plugins:
+                logger.info(f"插件 '{plugin_id}' 已在TET框架中注册")
             else:
-                logger.warning(f"插件 '{plugin_id}' 注册到TET框架失败")
+                # 通过PluginCenter注册
+                success = plugin_center._register_data_source_plugin(plugin_id, plugin)
+                if success:
+                    logger.info(f"插件 '{plugin_id}' 已通过PluginCenter注册到TET框架")
+                else:
+                    logger.warning(f"插件 '{plugin_id}' 注册到TET框架失败")
+        else:
+            logger.warning(f"UniPluginManager 为空，跳过TET框架注册")
+
+        # 同时注册到本地插件表
+        self.realtime_plugins[plugin_id] = plugin
+        logger.info(f"插件 '{plugin_id}' 已注册到实时数据管理器")
 
     async def subscribe_realtime_data(self, symbols: List[str], data_types: List[DataType], asset_type: AssetType, source_plugin_id: Optional[str] = None):
         """
         订阅实时数据（Level-2, Tick等）
-        通过TET框架统一调用插件API
+        直接通过插件接口订阅，不依赖不存在的 TET 框架方法
         """
-        logger.info(f"通过TET框架订阅实时数据: 股票={symbols}, 类型={data_types}, 资产={asset_type}, 插件={source_plugin_id}")
+        logger.info(f"订阅实时数据: 股票={symbols}, 类型={data_types}, 资产={asset_type}, 插件={source_plugin_id}")
 
         for data_type in data_types:
             for symbol in symbols:
                 try:
-                    # 通过TET框架构建查询
-                    from core.tet_data_pipeline import StandardQuery
-                    query = StandardQuery(
-                        symbol=symbol,
-                        data_type=data_type,
-                        asset_type=asset_type,
-                        source_plugin_id=source_plugin_id,
-                        start_date=datetime.now(),
-                        end_date=datetime.now(),
-                        extra_params={'realtime': True, 'subscribe': True}
-                    )
-
-                    # 通过TET框架调用插件
-                    context = await self.uni_plugin_manager.create_request_context(query)
-                    result = await self.uni_plugin_manager.execute_data_request(context)
-
-                    if result:
-                        # 启动实时数据轮询任务
+                    # 直接通过插件订阅（不依赖 TET 框架）
+                    if source_plugin_id and source_plugin_id in self.realtime_plugins:
+                        plugin = self.realtime_plugins[source_plugin_id]
                         asyncio.create_task(self._maintain_realtime_subscription(symbol, data_type, asset_type, source_plugin_id))
-                        logger.info(f"通过TET框架成功订阅 {symbol} 的 {data_type.value} 数据")
+                        logger.info(f"通过指定插件 {source_plugin_id} 成功订阅 {symbol} 的 {data_type.value} 数据")
+                    elif self.realtime_plugins:
+                        # 使用默认插件
+                        default_plugin_id = self._select_default_plugin(data_type)
+                        if default_plugin_id:
+                            asyncio.create_task(self._maintain_realtime_subscription(symbol, data_type, asset_type, default_plugin_id))
+                            logger.info(f"通过默认插件 {default_plugin_id} 成功订阅 {symbol} 的 {data_type.value} 数据")
+                        else:
+                            logger.error(f"没有可用的插件来订阅 {symbol} 的 {data_type.value} 数据")
                     else:
-                        logger.warning(f"TET框架订阅失败: {symbol} - {data_type.value}")
+                        logger.error(f"没有可用的插件来订阅 {symbol} 的 {data_type.value} 数据")
 
                 except Exception as e:
-                    logger.error(f"通过TET框架订阅实时数据失败: {symbol} - {data_type.value}: {e}")
+                    logger.error(f"订阅实时数据失败: {symbol} - {data_type.value}: {e}")
+
+    async def _maintain_realtime_subscription(
+        self,
+        symbol: str,
+        data_type: DataType,
+        asset_type: AssetType,
+        source_plugin_id: Optional[str] = None
+    ):
+        """维护实时数据订阅（轮询任务）"""
+        try:
+            plugin_id = source_plugin_id
+            plugin = None
+
+            if not plugin_id:
+                plugin_id = self._select_default_plugin(data_type)
+
+            plugin = self.realtime_plugins.get(plugin_id)
+            if not plugin:
+                logger.error(f"插件 {plugin_id} 未注册到实时数据管理器")
+                return
+
+            logger.info(f"开始维护 {symbol} 的 {data_type.value} 数据订阅，插件: {plugin_id}")
+
+            if data_type == DataType.TICK_DATA:
+                await self._poll_tick_data(plugin_id, plugin, [symbol], asset_type)
+            elif data_type == DataType.LEVEL2_DATA:
+                await self._poll_realtime_data(plugin_id, plugin, [symbol], data_type, asset_type)
+            elif data_type == DataType.ORDER_BOOK:
+                await self._poll_order_book_data(plugin_id, plugin, [symbol], asset_type)
+            else:
+                logger.warning(f"不支持的数据类型: {data_type}")
+
+        except Exception as e:
+            logger.error(f"维护实时订阅失败: {e}")
+
+    def _select_default_plugin(self, data_type: DataType) -> str:
+        """选择默认插件（根据数据类型能力匹配）"""
+        if not self.realtime_plugins:
+            return ""
+
+        capability_map = {
+            DataType.TICK_DATA: 'tick',
+            DataType.LEVEL2_DATA: 'level2',
+            DataType.ORDER_BOOK: 'order_book',
+        }
+        required_capability = capability_map.get(data_type)
+
+        for plugin_id, plugin in self.realtime_plugins.items():
+            if required_capability:
+                if hasattr(plugin, 'get_capabilities'):
+                    capabilities = plugin.get_capabilities()
+                    if capabilities.get(required_capability, False):
+                        return plugin_id
+                continue
+            return plugin_id
+
+        return ""
+
+    def _ensure_subscription_status(self, plugin_id: str) -> None:
+        """确保订阅状态已初始化"""
+        if plugin_id not in self.subscription_status:
+            self.subscription_status[plugin_id] = {}
 
     async def _subscribe_via_plugin(self, plugin_id: str, plugin: IDataSourcePlugin, symbols: List[str], data_types: List[DataType], asset_type: AssetType):
         """通过特定插件订阅实时数据"""
@@ -119,7 +182,7 @@ class EnhancedRealtimeDataManager:
         # 根据数据类型调用不同的订阅方法
         for data_type in data_types:
             try:
-                if data_type == DataType.LEVEL2:
+                if data_type == DataType.LEVEL2_DATA:
                     await self._subscribe_level2_data(plugin_id, plugin, symbols, asset_type)
                 elif data_type == DataType.TICK_DATA:
                     await self._subscribe_tick_data(plugin_id, plugin, symbols, asset_type)
@@ -140,7 +203,7 @@ class EnhancedRealtimeDataManager:
                 logger.info(f"插件 {plugin_id} Level-2数据订阅成功")
             elif hasattr(plugin, 'get_real_time_data'):
                 # 使用实时数据获取方法
-                asyncio.create_task(self._poll_realtime_data(plugin_id, plugin, symbols, DataType.LEVEL2, asset_type))
+                asyncio.create_task(self._poll_realtime_data(plugin_id, plugin, symbols, DataType.LEVEL2_DATA, asset_type))
                 logger.info(f"插件 {plugin_id} 开始轮询Level-2数据")
             else:
                 logger.warning(f"插件 {plugin_id} 不支持Level-2数据订阅")
@@ -182,6 +245,7 @@ class EnhancedRealtimeDataManager:
 
     async def _poll_realtime_data(self, plugin_id: str, plugin: IDataSourcePlugin, symbols: List[str], data_type: DataType, asset_type: AssetType):
         """轮询实时数据"""
+        self._ensure_subscription_status(plugin_id)
         subscription_key = f"{plugin_id}_{data_type.value}"
         self.subscription_status[plugin_id][subscription_key] = True
 
@@ -202,6 +266,7 @@ class EnhancedRealtimeDataManager:
 
     async def _poll_tick_data(self, plugin_id: str, plugin: IDataSourcePlugin, symbols: List[str], asset_type: AssetType):
         """轮询Tick数据"""
+        self._ensure_subscription_status(plugin_id)
         subscription_key = f"{plugin_id}_tick"
         self.subscription_status[plugin_id][subscription_key] = True
 
@@ -225,6 +290,7 @@ class EnhancedRealtimeDataManager:
 
     async def _poll_order_book_data(self, plugin_id: str, plugin: IDataSourcePlugin, symbols: List[str], asset_type: AssetType):
         """轮询订单簿数据"""
+        self._ensure_subscription_status(plugin_id)
         subscription_key = f"{plugin_id}_orderbook"
         self.subscription_status[plugin_id][subscription_key] = True
 
@@ -247,9 +313,20 @@ class EnhancedRealtimeDataManager:
         try:
             # 数据标准化
             for _, row in raw_data.iterrows():
-                standard_data = self.data_standardizer.standardize_realtime_data(row.to_dict(), data_type, plugin_id)
+                standard_data = row.to_dict()
 
-                if standard_data and self.data_validator.validate_realtime_data(standard_data, data_type):
+                if self.data_standardizer:
+                    standard_data = self.data_standardizer.standardize_realtime_data(standard_data, data_type, plugin_id)
+
+                if not standard_data:
+                    continue
+
+                should_validate = self.data_validator is not None
+                is_valid = True
+                if should_validate:
+                    is_valid = self.data_validator.validate_realtime_data(standard_data, data_type)
+
+                if is_valid:
                     # 添加到缓冲区
                     symbol = standard_data.get('symbol')
                     if symbol:
@@ -262,13 +339,30 @@ class EnhancedRealtimeDataManager:
         except Exception as e:
             logger.error(f"处理实时数据失败，插件 {plugin_id}: {e}")
 
-    async def _process_tick_data(self, plugin_id: str, symbol: str, tick_data: List[Dict]):
+    async def _process_tick_data(self, plugin_id: str, symbol: str, tick_data):
         """处理Tick数据"""
         try:
-            for tick in tick_data:
-                standard_tick = self.data_standardizer.standardize_realtime_data(tick, DataType.TICK_DATA, plugin_id)
+            # 如果是 DataFrame，转换为 List[Dict]
+            if hasattr(tick_data, 'to_dict'):
+                tick_list = tick_data.to_dict('records')
+            else:
+                tick_list = tick_data
 
-                if standard_tick and self.data_validator.validate_realtime_data(standard_tick, DataType.TICK_DATA):
+            for tick in tick_list:
+                standard_tick = tick
+
+                if self.data_standardizer:
+                    standard_tick = self.data_standardizer.standardize_realtime_data(standard_tick, DataType.TICK_DATA, plugin_id)
+
+                if not standard_tick:
+                    continue
+
+                should_validate = self.data_validator is not None
+                is_valid = True
+                if should_validate:
+                    is_valid = self.data_validator.validate_realtime_data(standard_tick, DataType.TICK_DATA)
+
+                if is_valid:
                     # 添加到缓冲区
                     self.data_buffers[symbol].append(standard_tick)
 
@@ -282,9 +376,20 @@ class EnhancedRealtimeDataManager:
     async def _process_order_book_data(self, plugin_id: str, symbol: str, order_book: Dict):
         """处理订单簿数据"""
         try:
-            standard_order_book = self.data_standardizer.standardize_realtime_data(order_book, DataType.ORDER_BOOK, plugin_id)
+            standard_order_book = order_book
 
-            if standard_order_book and self.data_validator.validate_realtime_data(standard_order_book, DataType.ORDER_BOOK):
+            if self.data_standardizer:
+                standard_order_book = self.data_standardizer.standardize_realtime_data(standard_order_book, DataType.ORDER_BOOK, plugin_id)
+
+            if not standard_order_book:
+                return
+
+            should_validate = self.data_validator is not None
+            is_valid = True
+            if should_validate:
+                is_valid = self.data_validator.validate_realtime_data(standard_order_book, DataType.ORDER_BOOK)
+
+            if is_valid:
                 # 添加到缓冲区
                 self.data_buffers[symbol].append(standard_order_book)
 

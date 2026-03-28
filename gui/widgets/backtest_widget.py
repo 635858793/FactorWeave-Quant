@@ -413,7 +413,6 @@ class MetricsPanel(QWidget):
     def update_metrics(self, metrics: Dict):
         """更新指标表格"""
         try:
-            # 准备所有指标数据
             total_return = metrics.get('total_return', 0)
             annualized_return = metrics.get('annualized_return', 0)
             sharpe_ratio = metrics.get('sharpe_ratio', 0)
@@ -421,7 +420,6 @@ class MetricsPanel(QWidget):
             max_drawdown = metrics.get('max_drawdown', 0)
             win_rate = metrics.get('win_rate', 0)
 
-            # 风险指标
             var_95 = metrics.get('var_95', 0)
             beta = metrics.get('beta', 0)
             skew = metrics.get('skew', 0)
@@ -429,7 +427,6 @@ class MetricsPanel(QWidget):
             volatility = metrics.get('volatility', 0)
             alpha = metrics.get('alpha', 0)
 
-            # 交易指标
             trade_count = metrics.get('trade_count', 0)
             profit_loss_ratio = metrics.get('profit_loss_ratio', 0)
             expectancy = metrics.get('expectancy', 0)
@@ -437,18 +434,13 @@ class MetricsPanel(QWidget):
             avg_holding_period = metrics.get('avg_holding_period', 0)
             turnover_rate = metrics.get('turnover_rate', 0)
 
-            # 更新表格数据 - 4行5列，重要指标在前
             table_data = [
-                # 核心指标行（最重要）
                 [f"{total_return:.2%}", f"{annualized_return:.2%}", f"{sharpe_ratio:.3f}",
                  f"{max_drawdown:.2%}", f"{win_rate:.2%}"],
-                # 风险指标行
                 [f"VaR: {var_95:.2%}", f"β: {beta:.3f}", f"偏度: {skew:.2f}",
                  f"峰度: {kurtosis:.2f}", f"波动率: {volatility:.2%}"],
-                # 交易指标行
                 [f"交易: {trade_count}次", f"盈亏比: {profit_loss_ratio:.2f}", f"期望: {expectancy:.2%}",
                  f"连胜: {max_consecutive_wins}次", f"持仓: {avg_holding_period:.0f}天"],
-                # 其他指标行
                 [f"换手: {turnover_rate:.2%}", f"α: {alpha:.3f}", f"Sortino: {sortino_ratio:.3f}",
                  f"盈利因子: {profit_loss_ratio:.2f}", f"期望收益: {annualized_return:.2%}"]
             ]
@@ -490,12 +482,17 @@ class MetricsPanel(QWidget):
                             font.setPointSize(10)
                             item.setFont(font)
 
-                        else:  # 其他指标行
-                            item.setForeground(QColor("#a0aec0"))  # 统一灰色
+                        else:
+                            item.setForeground(QColor("#a0aec0"))
                             font = item.font()
                             font.setPointSize(9)
                             item.setFont(font)
 
+        except RuntimeError as e:
+            if "wrapped C/C++ object" in str(e):
+                logger.warning(f"Qt控件已销毁，取消更新指标: {e}")
+            else:
+                raise
         except Exception as e:
             logger.error(f"更新指标表格失败: {e}")
 
@@ -564,17 +561,17 @@ class ControlPanel(QWidget):
 
         # 仓位大小
         self.position_size = QDoubleSpinBox()
-        self.position_size.setRange(0.1, 1.0)
-        self.position_size.setValue(0.95)
-        self.position_size.setSingleStep(0.05)
+        self.position_size.setRange(1, 100)
+        self.position_size.setValue(95)
+        self.position_size.setSingleStep(1)
         self.position_size.setSuffix("%")
         params_layout.addRow("仓位大小:", self.position_size)
 
-        # 手续费率
+        # 手续费率（用户输入 0.03 表示 0.03%）
         self.commission_pct = QDoubleSpinBox()
-        self.commission_pct.setRange(0.0001, 0.01)
-        self.commission_pct.setValue(0.0003)
-        self.commission_pct.setDecimals(4)
+        self.commission_pct.setRange(0.001, 1.0)
+        self.commission_pct.setValue(0.03)
+        self.commission_pct.setDecimals(2)
         self.commission_pct.setSuffix("%")
         params_layout.addRow("手续费率:", self.commission_pct)
 
@@ -683,6 +680,20 @@ class ControlPanel(QWidget):
         strategy_layout.addRow(preview_button)
 
         layout.addWidget(strategy_group)
+
+        # 股票选择组
+        stock_group = QGroupBox("股票选择")
+        stock_group.setStyleSheet(params_group.styleSheet())
+        stock_layout = QFormLayout(stock_group)
+
+        # 股票代码输入
+        self.stock_code_input = QLineEdit()
+        self.stock_code_input.setText('000001')
+        self.stock_code_input.setPlaceholderText("请输入股票代码，如 000001")
+        self.stock_code_input.setToolTip("输入要回测的股票代码")
+        stock_layout.addRow("股票代码:", self.stock_code_input)
+
+        layout.addWidget(stock_group)
 
         # 时间范围设置组
         time_group = QGroupBox("时间范围设置")
@@ -973,11 +984,9 @@ class ControlPanel(QWidget):
     def update_progress(self, progress: int, stage: str, message: str):
         """更新进度"""
         try:
-            # 更新进度条
             self.progress_bar.setValue(progress)
             self.progress_bar.setFormat(f"{progress}% - {stage}")
 
-            # 更新状态标签
             self.status_label.setText(f"状态: {stage}")
             self.status_label.setStyleSheet("""
                 QLabel {
@@ -990,10 +999,16 @@ class ControlPanel(QWidget):
                 }
             """)
 
-            # 添加进度预警
             if self.parent_widget and hasattr(self.parent_widget, 'alerts_panel'):
-                self.parent_widget.alerts_panel.add_alert('info', f"{stage}: {message}")
-
+                try:
+                    self.parent_widget.alerts_panel.add_alert('info', f"{stage}: {message}")
+                except RuntimeError:
+                    pass
+        except RuntimeError as e:
+            if "wrapped C/C++ object" in str(e):
+                logger.warning(f"Qt控件已销毁，取消更新进度: {e}")
+            else:
+                raise
         except Exception as e:
             logger.error(f"更新进度失败: {e}")
 
@@ -1013,6 +1028,11 @@ class ControlPanel(QWidget):
                     background-color: #1e2329;
                 }
             """)
+        except RuntimeError as e:
+            if "wrapped C/C++ object" in str(e):
+                logger.warning(f"Qt控件已销毁，取消重置进度: {e}")
+            else:
+                raise
         except Exception as e:
             logger.error(f"重置进度失败: {e}")
 
@@ -1072,67 +1092,85 @@ class ControlPanel(QWidget):
 
     def on_start_backtest(self):
         """开始回测"""
-        # 解析引擎选择
-        engine_type_text = self.engine_type.currentText()
-        if engine_type_text == "自动选择（推荐）":
-            use_vectorized_engine = self.use_vectorized.isChecked()
-            auto_select_engine = True
-        elif engine_type_text == "向量化引擎":
-            use_vectorized_engine = True
-            auto_select_engine = False
-        else:  # 标准引擎
-            use_vectorized_engine = False
-            auto_select_engine = False
+        try:
+            engine_type_text = self.engine_type.currentText()
+            if engine_type_text == "自动选择（推荐）":
+                use_vectorized_engine = self.use_vectorized.isChecked()
+                auto_select_engine = True
+            elif engine_type_text == "向量化引擎":
+                use_vectorized_engine = True
+                auto_select_engine = False
+            else:
+                use_vectorized_engine = False
+                auto_select_engine = False
 
-        params = {
-            'initial_capital': self.initial_capital.value(),
-            'position_size': self.position_size.value() / 100,
-            'commission_pct': self.commission_pct.value() / 100,
-            'professional_level': self.professional_level.currentText(),
-            'performance_level': self.performance_level.currentText(),
-            'use_vectorized_engine': use_vectorized_engine,
-            'auto_select_engine': auto_select_engine,
-            'execution_model': self.execution_model.currentText(),
-            'strategy': self.strategy_combo.currentText(),
-            'risk_control': {
-                'max_drawdown_limit': self.parent_widget.risk_panel.max_drawdown_limit.value() if hasattr(self, 'parent_widget') and hasattr(self.parent_widget, 'risk_panel') else 0.20,
-                'stop_loss': self.parent_widget.risk_panel.stop_loss.value() if hasattr(self, 'parent_widget') and hasattr(self.parent_widget, 'risk_panel') else 0.10,
-                'take_profit': self.parent_widget.risk_panel.take_profit.value() if hasattr(self, 'parent_widget') and hasattr(self.parent_widget, 'risk_panel') else 0.20,
-                'max_position_size': self.parent_widget.risk_panel.max_position_size.value() if hasattr(self, 'parent_widget') and hasattr(self.parent_widget, 'risk_panel') else 0.10,
-                'max_holding_periods': self.parent_widget.risk_panel.max_holding_periods.value() if hasattr(self, 'parent_widget') and hasattr(self.parent_widget, 'risk_panel') else 0
+            params = {
+                'initial_capital': self.initial_capital.value(),
+                'position_size': self.position_size.value() / 100,
+                'commission_pct': self.commission_pct.value() / 100,
+                'professional_level': self.professional_level.currentText(),
+                'performance_level': self.performance_level.currentText(),
+                'use_vectorized_engine': use_vectorized_engine,
+                'auto_select_engine': auto_select_engine,
+                'execution_model': self.execution_model.currentText(),
+                'strategy': self.strategy_combo.currentText(),
+                'stock_code': self.stock_code_input.text().strip() or '000001',
+                'start_date': self.start_date.date().toString('yyyy-MM-dd'),
+                'end_date': self.end_date.date().toString('yyyy-MM-dd'),
+                'period': self.data_frequency.currentText(),
+                'benchmark': self.parent_widget.benchmark_panel.benchmark_index.currentText() if hasattr(self, 'parent_widget') and hasattr(self.parent_widget, 'benchmark_panel') else '沪深300',
+                'risk_control': {
+                    'max_drawdown_limit': self.parent_widget.risk_panel.max_drawdown_limit.value() if hasattr(self, 'parent_widget') and hasattr(self.parent_widget, 'risk_panel') else 0.20,
+                    'stop_loss': self.parent_widget.risk_panel.stop_loss.value() if hasattr(self, 'parent_widget') and hasattr(self.parent_widget, 'risk_panel') else 0.10,
+                    'take_profit': self.parent_widget.risk_panel.take_profit.value() if hasattr(self, 'parent_widget') and hasattr(self.parent_widget, 'risk_panel') else 0.20,
+                    'max_position_size': self.parent_widget.risk_panel.max_position_size.value() if hasattr(self, 'parent_widget') and hasattr(self.parent_widget, 'risk_panel') else 0.10,
+                    'max_holding_periods': self.parent_widget.risk_panel.max_holding_periods.value() if hasattr(self, 'parent_widget') and hasattr(self.parent_widget, 'risk_panel') else 0
+                }
             }
-        }
 
-        self.start_backtest.emit(params)
-        self.start_button.setEnabled(False)
-        self.stop_button.setEnabled(True)
-        self.status_label.setText("状态: 运行中")
-        self.status_label.setStyleSheet("""
-            QLabel {
-                color: #f59e0b;
-                font-weight: bold;
-                padding: 10px;
-                border: 1px solid #2d3748;
-                border-radius: 5px;
-                background-color: #1e2329;
-            }
-        """)
+            self.start_backtest.emit(params)
+            self.start_button.setEnabled(False)
+            self.stop_button.setEnabled(True)
+            self.status_label.setText("状态: 运行中")
+            self.status_label.setStyleSheet("""
+                QLabel {
+                    color: #f59e0b;
+                    font-weight: bold;
+                    padding: 10px;
+                    border: 1px solid #2d3748;
+                    border-radius: 5px;
+                    background-color: #1e2329;
+                }
+            """)
+        except RuntimeError as e:
+            if "wrapped C/C++ object" in str(e) or "has been deleted" in str(e):
+                logger.warning(f"Qt控件已销毁，取消启动回测: {e}")
+            else:
+                raise
+        except Exception as e:
+            logger.error(f"启动回测失败: {e}")
 
     def on_stop_backtest(self):
         """停止回测"""
-        self.start_button.setEnabled(True)
-        self.stop_button.setEnabled(False)
-        self.status_label.setText("状态: 已停止")
-        self.status_label.setStyleSheet("""
-            QLabel {
-                color: #ef4444;
-                font-weight: bold;
-                padding: 10px;
-                border: 1px solid #2d3748;
-                border-radius: 5px;
-                background-color: #1e2329;
-            }
-        """)
+        try:
+            self.start_button.setEnabled(True)
+            self.stop_button.setEnabled(False)
+            self.status_label.setText("状态: 已停止")
+            self.status_label.setStyleSheet("""
+                QLabel {
+                    color: #ef4444;
+                    font-weight: bold;
+                    padding: 10px;
+                    border: 1px solid #2d3748;
+                    border-radius: 5px;
+                    background-color: #1e2329;
+                }
+            """)
+        except RuntimeError as e:
+            if "wrapped C/C++ object" in str(e):
+                logger.warning(f"Qt控件已销毁，取消停止操作: {e}")
+            else:
+                raise
 
     def _export_results(self):
         """导出回测结果"""
@@ -1376,87 +1414,94 @@ class AlertsPanel(QWidget):
 
     def _update_risk_chart(self):
         """更新风险指标图表"""
-        if not self.risk_metrics_history:
-            return
-        
-        self.risk_ax.clear()
-        self.risk_ax.set_facecolor('#1e2329')
-        self.risk_ax.tick_params(colors='white')
-        self.risk_ax.spines['bottom'].set_color('white')
-        self.risk_ax.spines['top'].set_color('white')
-        self.risk_ax.spines['left'].set_color('white')
-        self.risk_ax.spines['right'].set_color('white')
-        
-        x = range(len(self.risk_metrics_history))
-        
-        var_values = [m.get('var_95', 0) * 100 for m in self.risk_metrics_history]
-        cvar_values = [m.get('cvar_95', 0) * 100 for m in self.risk_metrics_history]
-        drawdown_values = [m.get('max_drawdown', 0) * 100 for m in self.risk_metrics_history]
-        sharpe_values = [m.get('sharpe_ratio', 0) for m in self.risk_metrics_history]
-        
-        self.risk_ax.plot(x, var_values, 'r-', label='VaR(95%)', linewidth=2)
-        self.risk_ax.plot(x, cvar_values, 'orange', label='CVaR(95%)', linewidth=2)
-        self.risk_ax.plot(x, drawdown_values, 'y-', label='最大回撤', linewidth=2)
-        
-        ax2 = self.risk_ax.twinx()
-        ax2.plot(x, sharpe_values, 'g-', label='夏普比率', linewidth=2)
-        ax2.tick_params(colors='white')
-        ax2.spines['right'].set_color('white')
-        ax2.set_ylabel('夏普比率', color='white')
-        
-        self.risk_ax.set_xlabel('时间点', color='white')
-        self.risk_ax.set_ylabel('风险指标 (%)', color='white')
-        self.risk_ax.set_title('风险指标实时趋势', color='white')
-        
-        lines1, labels1 = self.risk_ax.get_legend_handles_labels()
-        lines2, labels2 = ax2.get_legend_handles_labels()
-        self.risk_ax.legend(lines1 + lines2, labels1 + labels2, loc='upper left', 
-                           facecolor='#2d3748', edgecolor='white', labelcolor='white')
-        
-        self.risk_ax.grid(True, alpha=0.3, color='white')
-        
-        self.risk_figure.tight_layout()
-        self.risk_canvas.draw()
+        try:
+            if not self.risk_metrics_history:
+                return
+            
+            self.risk_ax.clear()
+            self.risk_ax.set_facecolor('#1e2329')
+            self.risk_ax.tick_params(colors='white')
+            self.risk_ax.spines['bottom'].set_color('white')
+            self.risk_ax.spines['top'].set_color('white')
+            self.risk_ax.spines['left'].set_color('white')
+            self.risk_ax.spines['right'].set_color('white')
+            
+            x = range(len(self.risk_metrics_history))
+            
+            var_values = [m.get('var_95', 0) * 100 for m in self.risk_metrics_history]
+            cvar_values = [m.get('cvar_95', 0) * 100 for m in self.risk_metrics_history]
+            drawdown_values = [m.get('max_drawdown', 0) * 100 for m in self.risk_metrics_history]
+            sharpe_values = [m.get('sharpe_ratio', 0) for m in self.risk_metrics_history]
+            
+            self.risk_ax.plot(x, var_values, 'r-', label='VaR(95%)', linewidth=2)
+            self.risk_ax.plot(x, cvar_values, 'orange', label='CVaR(95%)', linewidth=2)
+            self.risk_ax.plot(x, drawdown_values, 'y-', label='最大回撤', linewidth=2)
+            
+            ax2 = self.risk_ax.twinx()
+            ax2.plot(x, sharpe_values, 'g-', label='夏普比率', linewidth=2)
+            ax2.tick_params(colors='white')
+            ax2.spines['right'].set_color('white')
+            ax2.set_ylabel('夏普比率', color='white')
+            
+            self.risk_ax.set_xlabel('时间点', color='white')
+            self.risk_ax.set_ylabel('风险指标 (%)', color='white')
+            self.risk_ax.set_title('风险指标实时趋势', color='white')
+            
+            lines1, labels1 = self.risk_ax.get_legend_handles_labels()
+            lines2, labels2 = ax2.get_legend_handles_labels()
+            self.risk_ax.legend(lines1 + lines2, labels1 + labels2, loc='upper left', 
+                               facecolor='#2d3748', edgecolor='white', labelcolor='white')
+            
+            self.risk_ax.grid(True, alpha=0.3, color='white')
+            
+            self.risk_figure.tight_layout()
+            self.risk_canvas.draw()
+        except RuntimeError:
+            pass
 
     def add_alert(self, level: str, message: str):
         """添加预警"""
-        timestamp = datetime.now().strftime("%H:%M:%S")
+        try:
+            timestamp = datetime.now().strftime("%H:%M:%S")
 
-        # 确定图标和颜色
-        if level == 'critical':
-            icon = ''
-            color = '#ef4444'
-        elif level == 'warning':
-            icon = ''
-            color = '#f59e0b'
-        else:
-            icon = 'ℹ'
-            color = '#3b82f6'
+            if level == 'critical':
+                icon = ''
+                color = '#ef4444'
+            elif level == 'warning':
+                icon = ''
+                color = '#f59e0b'
+            else:
+                icon = 'ℹ'
+                color = '#3b82f6'
 
-        # 创建预警项
-        alert_item = QListWidgetItem()
-        alert_text = f"{icon} [{timestamp}] {level.upper()}: {message}"
-        alert_item.setText(alert_text)
-        alert_item.setForeground(QColor(color))
+            alert_item = QListWidgetItem()
+            alert_text = f"{icon} [{timestamp}] {level.upper()}: {message}"
+            alert_item.setText(alert_text)
+            alert_item.setForeground(QColor(color))
 
-        # 添加到列表顶部
-        self.alerts_list.insertItem(0, alert_item)
+            self.alerts_list.insertItem(0, alert_item)
 
-        # 限制预警数量
-        if self.alerts_list.count() > 50:
-            self.alerts_list.takeItem(self.alerts_list.count() - 1)
+            if self.alerts_list.count() > 50:
+                self.alerts_list.takeItem(self.alerts_list.count() - 1)
 
-        # 存储预警
-        self.alerts.append({
-            'timestamp': timestamp,
-            'level': level,
-            'message': message
-        })
+            self.alerts.append({
+                'timestamp': timestamp,
+                'level': level,
+                'message': message
+            })
+        except RuntimeError as e:
+            if "wrapped C/C++ object" in str(e):
+                pass
+            else:
+                raise
 
     def clear_alerts(self):
         """清除所有预警"""
-        self.alerts_list.clear()
-        self.alerts.clear()
+        try:
+            self.alerts_list.clear()
+            self.alerts.clear()
+        except RuntimeError:
+            pass
 
     def update_risk_metrics(self, risk_metrics: Dict):
         """更新风险指标显示"""
@@ -1506,6 +1551,11 @@ class AlertsPanel(QWidget):
             
             self._update_risk_chart()
             
+        except RuntimeError as e:
+            if "wrapped C/C++ object" in str(e):
+                pass
+            else:
+                raise
         except Exception as e:
             logger.error(f"更新风险指标显示失败: {e}")
 
@@ -1540,6 +1590,7 @@ class ProfessionalBacktestWidget(QWidget):
         self.is_monitoring = False
         self.monitoring_data = []
         self.monitoring_data_lock = Lock()
+        self._is_closing = False
 
         # 回测相关变量
         self.current_stock_code = None
@@ -1621,6 +1672,52 @@ class ProfessionalBacktestWidget(QWidget):
         elif self.current_mode == TradingMode.BACKTEST:
             logger.info("回测模式：使用完整计算")
 
+    def closeEvent(self, event):
+        """窗口关闭事件处理 - 确保正确清理资源"""
+        try:
+            logger.info("ProfessionalBacktestWidget 收到关闭事件，开始清理...")
+            self._is_closing = True
+
+            if hasattr(self, 'control_panel') and self.control_panel:
+                self.control_panel.stop_backtest.emit()
+
+            if hasattr(self, 'is_monitoring') and self.is_monitoring:
+                self.stop_backtest()
+
+            if hasattr(self, 'monitoring_thread') and self.monitoring_thread and self.monitoring_thread.is_alive():
+                self.monitoring_thread.join(timeout=2.0)
+
+            if hasattr(self, 'chart_widget') and self.chart_widget and hasattr(self.chart_widget, 'animation_timer'):
+                self.chart_widget.animation_timer.stop()
+
+            super().closeEvent(event)
+            logger.info("ProfessionalBacktestWidget 清理完成")
+        except Exception as e:
+            logger.error(f"关闭时清理资源失败: {e}")
+            super().closeEvent(event)
+
+    def _cleanup_before_close(self):
+        """在窗口关闭前清理资源（供外部调用）"""
+        try:
+            logger.info("ProfessionalBacktestWidget _cleanup_before_close 开始清理...")
+            self._is_closing = True
+
+            if hasattr(self, 'control_panel') and self.control_panel:
+                self.control_panel.stop_backtest.emit()
+
+            if hasattr(self, 'is_monitoring') and self.is_monitoring:
+                self.stop_backtest()
+
+            if hasattr(self, 'monitoring_thread') and self.monitoring_thread and self.monitoring_thread.is_alive():
+                self.monitoring_thread.join(timeout=2.0)
+
+            if hasattr(self, 'chart_widget') and self.chart_widget and hasattr(self.chart_widget, 'animation_timer'):
+                self.chart_widget.animation_timer.stop()
+
+            logger.info("ProfessionalBacktestWidget _cleanup_before_close 完成")
+        except Exception as e:
+            logger.error(f"_cleanup_before_close 失败: {e}")
+
     def init_ui(self):
         """初始化UI"""
         # 设置窗口样式
@@ -1653,7 +1750,7 @@ class ProfessionalBacktestWidget(QWidget):
         left_panel.setContentsMargins(4, 4, 4, 4)
 
         # 控制面板
-        self.control_panel = ControlPanel()
+        self.control_panel = ControlPanel(parent=self)
         self.control_panel.start_backtest.connect(self.start_backtest)
         self.control_panel.stop_backtest.connect(self.stop_backtest)
         left_panel.addWidget(self.control_panel)
@@ -1675,7 +1772,7 @@ class ProfessionalBacktestWidget(QWidget):
         left_panel.addWidget(self.advanced_panel)
 
         # 预警面板
-        self.alerts_panel = AlertsPanel()
+        self.alerts_panel = AlertsPanel(parent=self)
         left_panel.addWidget(self.alerts_panel)
 
         # 左侧面板容器（添加滚动功能）
@@ -1717,15 +1814,15 @@ class ProfessionalBacktestWidget(QWidget):
         right_layout.setContentsMargins(0, 0, 0, 0)
 
         # 指标面板（固定高度）
-        self.metrics_panel = MetricsPanel()
+        self.metrics_panel = MetricsPanel(parent=self)
         # self.metrics_panel.setMaximumHeight(180)
         # self.metrics_panel.setMinimumHeight(160)
         right_layout.addWidget(self.metrics_panel)
 
         # 图表区域（占用剩余空间的主要部分）
-        self.chart_widget = RealTimeChart()
+        self.chart_widget = RealTimeChart(parent=self)
         self.chart_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.chart_widget.setMinimumHeight(400)  # 增加最小高度，提升图表显示空间
+        self.chart_widget.setMinimumHeight(400)
         right_layout.addWidget(self.chart_widget, 1)  # stretch=1，占用主要空间
 
         # 右侧容器
@@ -1822,8 +1919,8 @@ class ProfessionalBacktestWidget(QWidget):
         # 基准指数选择
         self.benchmark_index = QComboBox()
         self.benchmark_index.addItems([
-            "无基准", "沪深300", "中证500", "创业板指", "上证50",
-            "科创50", "恒生指数", "纳斯达克", "标普500"
+            "无", "沪深300", "上证指数", "深证成指", "创业板", "科创50",
+            "上证50", "中证500", "中证1000"
         ])
         self.benchmark_index.setCurrentText("沪深300")
         layout.addRow("基准指数:", self.benchmark_index)
@@ -2018,6 +2115,8 @@ class ProfessionalBacktestWidget(QWidget):
     def start_backtest(self, params: Dict):
         """开始回测"""
         try:
+            if getattr(self, '_is_closing', False):
+                return
             logger.info("开始启动回测")
 
             # 更新进度
@@ -2043,6 +2142,13 @@ class ProfessionalBacktestWidget(QWidget):
 
             # 更新进度
             self.control_panel.update_progress(20, "获取股票数据", f"已获取 {len(stock_data)} 条数据")
+
+            # 获取基准指数数据
+            benchmark_name = params.get('benchmark', '沪深300')
+            benchmark_data = self._get_benchmark_data(benchmark_name, stock_code, period)
+
+            # 将 benchmark_data 添加到 params 中，传递给 start_monitoring
+            params['benchmark_data'] = benchmark_data
 
             # 生成策略信号
             try:
@@ -2106,6 +2212,8 @@ class ProfessionalBacktestWidget(QWidget):
 
             self.start_monitoring(stock_data, params)
 
+            if getattr(self, '_is_closing', False):
+                return
             self.alerts_panel.add_alert('info', f'回测已启动，使用{engine_type}，数据: {stock_code}')
 
         except Exception as e:
@@ -2272,6 +2380,73 @@ class ProfessionalBacktestWidget(QWidget):
         logger.info("创建新的监控器实例")
         return self.monitor
 
+    BENCHMARK_MAPPING = {
+        '沪深300': '000300',
+        '上证指数': '000001',
+        '深证成指': '399001',
+        '创业板': '399006',
+        '科创50': '000688',
+        '上证50': '000016',
+        '中证500': '000905',
+        '中证1000': '000852',
+    }
+
+    def _get_benchmark_data(self, benchmark_name: str, stock_code: str, period: str) -> Optional[pd.DataFrame]:
+        """获取基准指数数据"""
+        try:
+            if not benchmark_name or benchmark_name == '无':
+                logger.info("未选择基准指数，跳过")
+                return None
+
+            benchmark_code = self.BENCHMARK_MAPPING.get(benchmark_name)
+            if not benchmark_code:
+                logger.warning(f"未找到基准指数 {benchmark_name} 的代码映射")
+                return None
+
+            stock_service = self._get_stock_service()
+            if stock_service is None:
+                logger.warning("无法获取StockService实例，无法获取基准数据")
+                return None
+
+            period_ui_to_internal = {
+                '分时': 'tick', '5分钟': '5m', '15分钟': '15m', '30分钟': '30m',
+                '60分钟': '60m', '日线': '1d', '周线': '1w', '月线': '1M'
+            }
+            period_internal = period_ui_to_internal.get(period, period)
+
+            period_map = {
+                "1w": 7, "2w": 14, "1m": 30, "3m": 90,
+                "6m": 180, "1y": 365, "2y": 730, "5y": 1825,
+                "1d": 365, "1M": 365, "tick": 1
+            }
+            days = period_map.get(period_internal, 365)
+
+            period_to_stock_service = {
+                'tick': 'tick', '5m': '5m', '15m': '15m', '30m': '30m',
+                '60分钟': '60m', '1d': 'D', '1w': 'W', '1M': 'M'
+            }
+            stock_period = period_to_stock_service.get(period_internal, 'D')
+            benchmark_data = stock_service.get_kdata(benchmark_code, period=stock_period, count=days)
+
+            if benchmark_data is None or benchmark_data.empty:
+                logger.warning(f"无法获取基准指数 {benchmark_name} ({benchmark_code}) 的数据")
+                return None
+
+            close_col = 'close' if 'close' in benchmark_data.columns else ('收盘' if '收盘' in benchmark_data.columns else None)
+            if close_col is None:
+                logger.warning(f"基准数据缺少价格列")
+                return None
+
+            benchmark_data = benchmark_data.copy()
+            benchmark_data['close'] = benchmark_data[close_col]
+
+            logger.info(f"成功获取基准指数数据: {benchmark_name} ({benchmark_code}), {len(benchmark_data)}条记录")
+            return benchmark_data
+
+        except Exception as e:
+            logger.error(f"获取基准指数数据失败: {e}")
+            return None
+
     def _get_stock_data(self, stock_code: str, period: str) -> pd.DataFrame:
         """从系统框架获取真实股票数据"""
         try:
@@ -2286,13 +2461,25 @@ class ProfessionalBacktestWidget(QWidget):
             if stock_service is None:
                 raise RuntimeError("无法获取StockService实例")
 
+            period_ui_to_internal = {
+                '分时': 'tick', '5分钟': '5m', '15分钟': '15m', '30分钟': '30m',
+                '60分钟': '60m', '日线': '1d', '周线': '1w', '月线': '1M'
+            }
+            period_internal = period_ui_to_internal.get(period, period)
+
             period_map = {
                 "1w": 7, "2w": 14, "1m": 30, "3m": 90,
-                "6m": 180, "1y": 365, "2y": 730, "5y": 1825
+                "6m": 180, "1y": 365, "2y": 730, "5y": 1825,
+                "1d": 365, "1M": 365, "tick": 1
             }
-            days = period_map.get(period, 365)
+            days = period_map.get(period_internal, 365)
 
-            kdata = stock_service.get_kdata(stock_code, period='D', count=days)
+            period_to_stock_service = {
+                'tick': 'tick', '5m': '5m', '15m': '15m', '30m': '30m',
+                '60m': '60m', '1d': 'D', '1w': 'W', '1M': 'M'
+            }
+            stock_period = period_to_stock_service.get(period_internal, 'D')
+            kdata = stock_service.get_kdata(stock_code, period=stock_period, count=days)
 
             if kdata is None or kdata.empty:
                 raise RuntimeError(f"无法获取股票 {stock_code} 的K线数据，数据为空")
@@ -2580,6 +2767,8 @@ class ProfessionalBacktestWidget(QWidget):
     def _on_backtest_completed(self, results: Dict):
         """回测完成处理"""
         try:
+            if getattr(self, '_is_closing', False):
+                return
             import time
 
             # 记录执行时间
@@ -2791,6 +2980,8 @@ class ProfessionalBacktestWidget(QWidget):
     def _on_progress_update(self, progress: int, stage: str, message: str):
         """进度更新槽函数（在主线程执行）"""
         try:
+            if getattr(self, '_is_closing', False):
+                return
             self.control_panel.update_progress(progress, stage, message)
         except Exception as e:
             logger.error(f"进度更新失败：{e}")
@@ -2798,6 +2989,8 @@ class ProfessionalBacktestWidget(QWidget):
     def _on_alert_request(self, level: str, message: str):
         """预警添加槽函数（在主线程执行）"""
         try:
+            if getattr(self, '_is_closing', False):
+                return
             self.alerts_panel.add_alert(level, message)
         except Exception as e:
             logger.error(f"添加预警失败：{e}")
@@ -2840,7 +3033,8 @@ class ProfessionalBacktestWidget(QWidget):
     def stop_backtest(self):
         """停止回测"""
         try:
-            # 如果没有正在运行的回测，直接返回
+            if getattr(self, '_is_closing', False):
+                return
             if not self.is_monitoring:
                 logger.info("没有正在运行的回测")
                 return
@@ -2889,7 +3083,8 @@ class ProfessionalBacktestWidget(QWidget):
 
     def start_monitoring(self, data: pd.DataFrame, params: Dict):
         """启动监控"""
-        # 停止之前的监控（如果有的话）
+        if getattr(self, '_is_closing', False):
+            return
         if self.is_monitoring:
             self.stop_backtest()
 
@@ -3003,7 +3198,8 @@ class ProfessionalBacktestWidget(QWidget):
                         take_profit_pct=take_profit_pct if take_profit_pct > 0 else None,
                         max_holding_periods=max_holding_periods,
                         enable_compound=params.get('enable_compound', True),
-                        mode_context=mode_context  # 传递 mode_context
+                        benchmark_data=params.get('benchmark_data'),
+                        mode_context=mode_context
                     )
                     # 调试：打印返回类型
                     logger.info(f"回测结果类型：{type(final_result).__name__}")
@@ -3177,30 +3373,21 @@ class ProfessionalBacktestWidget(QWidget):
     def _check_alerts(self, data: Dict):
         """检查预警"""
         try:
-            # 检查回撤预警
+            if getattr(self, '_is_closing', False):
+                return
             drawdown = data.get('current_drawdown', 0)
             if drawdown > 0.15:
-                QTimer.singleShot(0, lambda: self.alerts_panel.add_alert(
-                    'critical', f'回撤过大: {drawdown:.2%}'
-                ))
+                self._safe_add_alert({'level': 'critical', 'message': f'回撤过大: {drawdown:.2%}'})
             elif drawdown > 0.1:
-                QTimer.singleShot(0, lambda: self.alerts_panel.add_alert(
-                    'warning', f'回撤警告: {drawdown:.2%}'
-                ))
+                self._safe_add_alert({'level': 'warning', 'message': f'回撤警告: {drawdown:.2%}'})
 
-            # 检查Sharpe比率预警
             sharpe = data.get('sharpe_ratio', 0)
             if sharpe < 0:
-                QTimer.singleShot(0, lambda: self.alerts_panel.add_alert(
-                    'warning', f'Sharpe比率为负: {sharpe:.3f}'
-                ))
+                self._safe_add_alert({'level': 'warning', 'message': f'Sharpe比率为负: {sharpe:.3f}'})
 
-            # 检查波动率预警
             volatility = data.get('volatility', 0)
             if volatility > 0.3:
-                QTimer.singleShot(0, lambda: self.alerts_panel.add_alert(
-                    'warning', f'波动率过高: {volatility:.2%}'
-                ))
+                self._safe_add_alert({'level': 'warning', 'message': f'波动率过高: {volatility:.2%}'})
 
         except Exception as e:
             logger.error(f"检查预警失败: {e}")
@@ -3260,6 +3447,8 @@ class ProfessionalBacktestWidget(QWidget):
     def _check_risk_alerts(self):
         """检查风险预警"""
         try:
+            if getattr(self, '_is_closing', False):
+                return
             if not self.risk_metrics:
                 return
             
@@ -3305,6 +3494,8 @@ class ProfessionalBacktestWidget(QWidget):
     def _apply_risk_control_rules(self, ui_data: Dict, params: Dict):
         """应用风险控制规则"""
         try:
+            if getattr(self, '_is_closing', False):
+                return
             risk_control = params.get('risk_control', {})
             if not risk_control:
                 return
@@ -3347,12 +3538,11 @@ class ProfessionalBacktestWidget(QWidget):
     def _safe_add_alert(self, alert_data):
         """安全的添加预警方法 - 在主线程中执行"""
         try:
-            # 确保在主线程中更新UI
+            if getattr(self, '_is_closing', False):
+                return
             if threading.current_thread() != threading.main_thread():
-                # 如果不在主线程，使用信号槽机制延迟到主线程执行
                 QTimer.singleShot(0, lambda: self._add_alert_main_thread(alert_data))
             else:
-                # 如果已经在主线程，直接添加
                 self._add_alert_main_thread(alert_data)
         except Exception as e:
             logger.error(f"安全添加预警失败: {e}")
@@ -3360,6 +3550,8 @@ class ProfessionalBacktestWidget(QWidget):
     def _add_alert_main_thread(self, alert_data):
         """在主线程中添加预警的具体实现"""
         try:
+            if getattr(self, '_is_closing', False):
+                return
             if hasattr(self, 'alerts_panel') and self.alerts_panel:
                 # 处理不同格式的预警数据
                 if isinstance(alert_data, dict):
