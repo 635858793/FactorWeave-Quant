@@ -3907,23 +3907,36 @@ FactorWeave-Quant  2.0 (重构版本)
                 for plugin_id in realtime_plugin_ids:
                     if plugin_id in plugin_center.data_source_plugins:
                         try:
-                            import asyncio
+                            # 同步方式注册插件，确保注册完成后才继续
                             loop = asyncio.get_event_loop()
                             if loop.is_running():
-                                asyncio.create_task(self._realtime_manager.register_realtime_plugin(
-                                    plugin_id,
-                                    plugin_center.data_source_plugins[plugin_id]
-                                ))
+                                # Qt 事件循环运行时，使用 run_until_complete 同步等待注册完成
+                                # 这是安全的，因为 register_realtime_plugin 是轻量级操作
+                                import concurrent.futures
+                                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                                    future = executor.submit(
+                                        loop.run_until_complete,
+                                        self._realtime_manager.register_realtime_plugin(
+                                            plugin_id,
+                                            plugin_center.data_source_plugins[plugin_id]
+                                        )
+                                    )
+                                    try:
+                                        future.result(timeout=5.0)  # 5 秒超时
+                                        logger.info(f"实时数据插件 {plugin_id} 已同步注册到实时数据管理器")
+                                    except concurrent.futures.TimeoutError:
+                                        logger.error(f"实时数据插件 {plugin_id} 注册超时")
                             else:
                                 loop.run_until_complete(self._realtime_manager.register_realtime_plugin(
                                     plugin_id,
                                     plugin_center.data_source_plugins[plugin_id]
                                 ))
-                            logger.info(f"实时数据插件 {plugin_id} 已注册到实时数据管理器")
-                        except RuntimeError as e:
-                            logger.warning(f"asyncio 事件循环操作失败：{e}")
+                                logger.info(f"实时数据插件 {plugin_id} 已注册到实时数据管理器")
+                        except Exception as e:
+                            logger.error(f"实时数据插件 {plugin_id} 注册失败：{e}")
+                            # 同步注册失败时，直接添加到插件字典
                             self._realtime_manager.realtime_plugins[plugin_id] = plugin_center.data_source_plugins[plugin_id]
-                            logger.info(f"实时数据插件 {plugin_id} 已同步注册到实时数据管理器")
+                            logger.info(f"实时数据插件 {plugin_id} 已强制同步注册到实时数据管理器")
                     else:
                         logger.info(f"实时数据插件 {plugin_id} 未在 plugin_center 中发现，可能未启用")
 

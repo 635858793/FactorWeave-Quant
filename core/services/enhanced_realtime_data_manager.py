@@ -23,8 +23,10 @@ import asyncio
 import websocket
 import json
 import requests
+import queue
+import time as time_module
 from datetime import datetime, timedelta
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional, Union, Callable
 from loguru import logger
 import pandas as pd
 from collections import defaultdict, deque
@@ -40,11 +42,54 @@ from core.events.event_bus import EventBus, RealtimeDataEvent, OrderBookEvent, T
 logger = logger.bind(module=__name__)
 
 
+class PluginCallbackAdapter:
+    """
+    插件回调适配器
+    统一不同插件的 callback 签名差异
+
+    Level2RealtimePlugin: callback(data_type, symbol, data) - 三个参数
+    MiniQMTPlugin: callback(data) - 一个参数
+    """
+
+    def __init__(self, enhanced_manager: 'EnhancedRealtimeDataManager', plugin_id: str, data_type: DataType):
+        self.enhanced_manager = enhanced_manager
+        self.plugin_id = plugin_id
+        self.data_type = data_type
+        self._is_level2_plugin = 'level2' in plugin_id.lower()
+
+    def __call__(self, *args, **kwargs):
+        """统一调用入口，适配不同插件的 callback 签名"""
+        try:
+            if self._is_level2_plugin:
+                data_type = args[0] if len(args) > 0 else kwargs.get('data_type', '')
+                symbol = args[1] if len(args) > 1 else kwargs.get('symbol', '')
+                data = args[2] if len(args) > 2 else kwargs.get('data', {})
+            else:
+                data = args[0] if len(args) > 0 else kwargs.get('data', {})
+                symbol = data.get('symbol', '') if isinstance(data, dict) else ''
+                data_type = self.data_type.value
+
+            if not symbol:
+                logger.warning(f"Callback 缺少 symbol 参数，插件: {self.plugin_id}")
+                return
+
+            self.enhanced_manager._queue_callback_data(
+                self.plugin_id, symbol, data_type, data
+            )
+        except Exception as e:
+            logger.error(f"PluginCallbackAdapter 执行失败: {e}")
+
+
 class EnhancedRealtimeDataManager:
     """
     增强实时行情数据管理器
     负责Level-2、Tick数据和订单簿数据的获取、处理、标准化和分发。
     使用真实的数据源API，不包含任何模拟数据。
+
+    支持两种数据获取模式：
+    1. 轮询模式（默认）：定期调用插件的 get_real_time_data 方法获取数据
+    2. Callback 模式（推荐）：注册 callback 函数，插件通过 WebSocket 收到数据后立即回调
+           优势：延迟更低（<100ms vs ~1秒），数据更实时
     """
 
     def __init__(self, event_bus: EventBus, data_standardizer: DataStandardizationEngine, data_validator: DataValidator, uni_plugin_manager: 'UniPluginDataManager'):
@@ -57,7 +102,25 @@ class EnhancedRealtimeDataManager:
         self.subscription_status: Dict[str, Dict[str, bool]] = {}  # 订阅状态
         self.connection_lock = threading.RLock()
         self.realtime_plugins: Dict[str, IDataSourcePlugin] = {}  # 实时数据源插件注册表
-        logger.info("EnhancedRealtimeDataManager 初始化完成，集成TET框架。")
+
+        # Callback 模式相关属性
+        self._callback_queue: queue.Queue = queue.Queue(maxsize=1000)  # 线程安全的数据队列
+        self._use_callback_mode: bool = True  # 是否启用 callback 模式
+        self._callback_mode_started: bool = False  # Callback 处理协程是否已启动
+        self._callback_mode_lock: threading.Lock = threading.Lock()  # 确保协程只启动一次
+
+        # Level-2 数据缓存管理（集成 get_level2_data 用）
+        self._level2_cache: Dict[str, Dict] = {}  # symbol -> data 缓存
+        self._cache_timestamps: Dict[str, datetime] = {}  # symbol -> timestamp 缓存时间戳
+        self._cache_ttl_seconds: int = 5  # 缓存有效期（秒）
+        self._cache_lock: threading.Lock = threading.Lock()  # 缓存访问锁
+
+        # 降级策略监控
+        self._fallback_stats: Dict[str, Dict] = {}  # 统计降级次数
+        self._last_poll_times: Dict[str, datetime] = {}  # 记录上次轮询时间
+        self._poll_intervals: Dict[str, float] = {}  # 动态轮询间隔
+
+        logger.info("EnhancedRealtimeDataManager 初始化完成，集成 TET 框架，启用 Level-2 缓存和智能降级策略")
 
     async def register_realtime_plugin(self, plugin_id: str, plugin: IDataSourcePlugin):
         """
@@ -89,30 +152,39 @@ class EnhancedRealtimeDataManager:
         """
         订阅实时数据（Level-2, Tick等）
         直接通过插件接口订阅，不依赖不存在的 TET 框架方法
+
+        优先使用 Callback 模式以降低延迟
+        注意：Callback 模式失败时会直接抛出异常，确保系统异常能够被及时发现和处理
         """
         logger.info(f"订阅实时数据: 股票={symbols}, 类型={data_types}, 资产={asset_type}, 插件={source_plugin_id}")
 
+        errors = []
         for data_type in data_types:
             for symbol in symbols:
                 try:
-                    # 直接通过插件订阅（不依赖 TET 框架）
                     if source_plugin_id and source_plugin_id in self.realtime_plugins:
-                        plugin = self.realtime_plugins[source_plugin_id]
-                        asyncio.create_task(self._maintain_realtime_subscription(symbol, data_type, asset_type, source_plugin_id))
+                        await self._subscribe_with_callback(symbol, data_type, asset_type, source_plugin_id)
                         logger.info(f"通过指定插件 {source_plugin_id} 成功订阅 {symbol} 的 {data_type.value} 数据")
                     elif self.realtime_plugins:
-                        # 使用默认插件
                         default_plugin_id = self._select_default_plugin(data_type)
                         if default_plugin_id:
-                            asyncio.create_task(self._maintain_realtime_subscription(symbol, data_type, asset_type, default_plugin_id))
+                            await self._subscribe_with_callback(symbol, data_type, asset_type, default_plugin_id)
                             logger.info(f"通过默认插件 {default_plugin_id} 成功订阅 {symbol} 的 {data_type.value} 数据")
                         else:
-                            logger.error(f"没有可用的插件来订阅 {symbol} 的 {data_type.value} 数据")
+                            error_msg = f"没有可用的插件来订阅 {symbol} 的 {data_type.value} 数据"
+                            logger.error(error_msg)
+                            errors.append(error_msg)
                     else:
-                        logger.error(f"没有可用的插件来订阅 {symbol} 的 {data_type.value} 数据")
+                        error_msg = f"没有可用的插件来订阅 {symbol} 的 {data_type.value} 数据"
+                        logger.error(error_msg)
+                        errors.append(error_msg)
 
-                except Exception as e:
-                    logger.error(f"订阅实时数据失败: {symbol} - {data_type.value}: {e}")
+                except (RuntimeError, AttributeError) as e:
+                    # Callback 模式失败直接抛出异常，不吞掉
+                    raise
+
+        if errors:
+            raise RuntimeError(f"订阅失败: {'; '.join(errors)}")
 
     async def _maintain_realtime_subscription(
         self,
@@ -147,6 +219,192 @@ class EnhancedRealtimeDataManager:
 
         except Exception as e:
             logger.error(f"维护实时订阅失败: {e}")
+
+    async def _subscribe_with_callback(
+        self,
+        symbol: str,
+        data_type: DataType,
+        asset_type: AssetType,
+        plugin_id: Optional[str] = None
+    ):
+        """
+        使用 Callback 模式订阅数据（优先模式，降低延迟）
+
+        优势：数据到达后立即处理，延迟 <100ms
+        对比轮询模式：需要等待下次轮询，延迟 ~1秒
+
+        注意：Callback 模式失败时会直接报错，不会回退到轮询模式
+              以确保系统异常能够被及时发现和处理
+        """
+        if not plugin_id:
+            plugin_id = self._select_default_plugin(data_type)
+
+        plugin = self.realtime_plugins.get(plugin_id)
+        if not plugin:
+            error_msg = f"插件 {plugin_id} 未注册到实时数据管理器，无法订阅 {symbol} 的 {data_type.value} 数据"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
+
+        # 检查插件是否支持 subscribe_realtime_data 方法
+        if not hasattr(plugin, 'subscribe_realtime_data'):
+            error_msg = f"插件 {plugin_id} 不支持 subscribe_realtime_data 方法，无法订阅 {symbol} 的 {data_type.value} 数据"
+            logger.error(error_msg)
+            raise AttributeError(error_msg)
+
+        # 创建 callback 适配器
+        adapter = PluginCallbackAdapter(self, plugin_id, data_type)
+
+        # 确保 callback 处理协程已启动
+        await self._ensure_callback_mode_started_async()
+
+        # 调用插件的 subscribe_realtime_data 方法注册 callback
+        success = plugin.subscribe_realtime_data([symbol], adapter, data_type)
+
+        if not success:
+            error_msg = f"Callback 模式订阅失败，插件 {plugin_id} 返回 False，无法订阅 {symbol} 的 {data_type.value} 数据"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
+
+        self._ensure_subscription_status(plugin_id)
+        subscription_key = f"{plugin_id}_{data_type.value}"
+        self.subscription_status[plugin_id][subscription_key] = True
+        logger.info(f"Callback 模式订阅成功: {symbol}, 插件: {plugin_id}, 类型: {data_type.value}")
+
+    async def _fallback_to_poll_mode(
+        self,
+        symbol: str,
+        data_type: DataType,
+        asset_type: AssetType,
+        plugin_id: Optional[str] = None
+    ):
+        """回退到轮询模式（当 callback 模式不可用时）"""
+        logger.info(f"回退到轮询模式: {symbol}, 类型: {data_type.value}")
+        try:
+            if not plugin_id:
+                plugin_id = self._select_default_plugin(data_type)
+
+            plugin = self.realtime_plugins.get(plugin_id)
+            if not plugin:
+                logger.error(f"回退模式失败：插件 {plugin_id} 未找到")
+                return
+
+            if data_type == DataType.TICK_DATA:
+                asyncio.create_task(self._poll_tick_data(plugin_id, plugin, [symbol], asset_type))
+            elif data_type == DataType.LEVEL2_DATA:
+                asyncio.create_task(self._poll_realtime_data(plugin_id, plugin, [symbol], data_type, asset_type))
+            elif data_type == DataType.ORDER_BOOK:
+                asyncio.create_task(self._poll_order_book_data(plugin_id, plugin, [symbol], asset_type))
+            else:
+                logger.warning(f"不支持的数据类型: {data_type}")
+
+        except Exception as e:
+            logger.error(f"回退到轮询模式失败: {e}")
+
+    def _ensure_callback_mode_started(self):
+        """确保 callback 处理协程已启动（线程安全）"""
+        with self._callback_mode_lock:
+            if not self._callback_mode_started:
+                try:
+                    loop = asyncio.get_running_loop()
+                    self._callback_mode_started = True
+                    loop.call_soon_threadsafe(lambda: asyncio.create_task(self._process_callback_queue()))
+                    logger.info("Callback 处理协程已启动")
+                except RuntimeError:
+                    logger.warning("当前无运行中的事件循环，Callback 模式将在首次订阅时启动")
+
+    async def _ensure_callback_mode_started_async(self):
+        """异步确保 callback 处理协程已启动"""
+        with self._callback_mode_lock:
+            if not self._callback_mode_started:
+                self._callback_mode_started = True
+                asyncio.create_task(self._process_callback_queue())
+                logger.info("Callback 处理协程已启动")
+
+    def _queue_callback_data(self, plugin_id: str, symbol: str, data_type: str, data: Any):
+        """
+        将 callback 数据放入队列（线程安全）
+
+        此方法在插件的 WebSocket/xtdata 线程中被调用
+        必须使用线程安全的方式处理
+        """
+        try:
+            self._callback_queue.put_nowait({
+                'plugin_id': plugin_id,
+                'symbol': symbol,
+                'data_type': data_type,
+                'data': data,
+                'timestamp': time_module.time()
+            })
+        except queue.Full:
+            logger.warning(f"Callback 队列已满，跳过数据: {symbol}")
+
+    async def _process_callback_queue(self):
+        """
+        处理 callback 队列（持续运行）
+
+        从队列中取出数据，进行标准化和验证，然后发布事件
+        """
+        logger.info("Callback 队列处理协程启动")
+
+        while self._use_callback_mode:
+            try:
+                # 非阻塞获取数据
+                while not self._callback_queue.empty():
+                    try:
+                        callback_data = self._callback_queue.get_nowait()
+                        await self._process_callback_data(callback_data)
+                    except queue.Empty:
+                        break
+
+                # 控制处理频率，避免 CPU 空转
+                await asyncio.sleep(0.01)  # 10ms 间隔
+
+            except Exception as e:
+                logger.error(f"处理 callback 队列失败: {e}")
+                await asyncio.sleep(0.1)
+
+    async def _process_callback_data(self, callback_data: Dict):
+        """处理单个 callback 数据"""
+        try:
+            plugin_id = callback_data['plugin_id']
+            symbol = callback_data['symbol']
+            data_type_str = callback_data['data_type']
+            raw_data = callback_data['data']
+
+            # 转换 data_type 字符串到 DataType 枚举
+            try:
+                data_type = DataType(data_type_str)
+            except ValueError:
+                data_type = DataType.LEVEL2_DATA  # 默认值
+
+            # 获取插件
+            plugin = self.realtime_plugins.get(plugin_id)
+            if not plugin:
+                logger.warning(f"插件 {plugin_id} 未找到")
+                return
+
+            # 将 raw_data 转换为 DataFrame 格式以兼容现有处理逻辑
+            if isinstance(raw_data, dict):
+                df = pd.DataFrame([raw_data])
+            elif isinstance(raw_data, list):
+                df = pd.DataFrame(raw_data)
+            elif hasattr(raw_data, 'to_dict'):
+                df = raw_data.to_dict()
+                df = pd.DataFrame(df) if isinstance(df, dict) else raw_data
+            else:
+                logger.warning(f"Callback 数据格式不支持: {type(raw_data)}")
+                return
+
+            if df.empty:
+                return
+
+            # 使用现有的 _process_realtime_data 方法处理
+            await self._process_realtime_data(plugin_id, df, data_type)
+
+            logger.debug(f"Callback 数据已处理: {symbol}, 类型: {data_type.value}")
+
+        except Exception as e:
+            logger.error(f"处理 callback 数据失败: {e}")
 
     def _select_default_plugin(self, data_type: DataType) -> str:
         """选择默认插件（根据数据类型能力匹配）"""
@@ -195,21 +453,29 @@ class EnhancedRealtimeDataManager:
                 logger.error(f"订阅 {data_type} 数据失败，插件 {plugin_id}: {e}")
 
     async def _subscribe_level2_data(self, plugin_id: str, plugin: IDataSourcePlugin, symbols: List[str], asset_type: AssetType):
-        """订阅Level-2数据"""
+        """
+        订阅 Level-2 数据（智能降级版本）
+        
+        使用智能降级策略：
+        1. Callback 优先（实时推送，延迟 <100ms）
+        2. Pull 降级（带缓存轮询，减少 API 调用）
+        
+        Args:
+            plugin_id: 插件 ID
+            plugin: 插件实例
+            symbols: 股票代码列表
+            asset_type: 资产类型
+        """
         try:
-            # 检查插件是否有Level-2数据订阅方法
-            if hasattr(plugin, 'subscribe_level2_data'):
-                await plugin.subscribe_level2_data(symbols, asset_type)
-                logger.info(f"插件 {plugin_id} Level-2数据订阅成功")
-            elif hasattr(plugin, 'get_real_time_data'):
-                # 使用实时数据获取方法
-                asyncio.create_task(self._poll_realtime_data(plugin_id, plugin, symbols, DataType.LEVEL2_DATA, asset_type))
-                logger.info(f"插件 {plugin_id} 开始轮询Level-2数据")
-            else:
-                logger.warning(f"插件 {plugin_id} 不支持Level-2数据订阅")
+            for symbol in symbols:
+                # 使用智能降级策略
+                await self._subscribe_level2_data_smart(symbol, plugin_id, plugin, asset_type)
+            
+            logger.info(f"Level-2 数据订阅完成（智能降级）：{symbols}, 插件：{plugin_id}")
 
         except Exception as e:
-            logger.error(f"订阅Level-2数据失败，插件 {plugin_id}: {e}")
+            logger.error(f"订阅 Level-2 数据失败，插件 {plugin_id}: {e}")
+            raise
 
     async def _subscribe_tick_data(self, plugin_id: str, plugin: IDataSourcePlugin, symbols: List[str], asset_type: AssetType):
         """订阅Tick数据"""
@@ -373,6 +639,54 @@ class EnhancedRealtimeDataManager:
         except Exception as e:
             logger.error(f"处理Tick数据失败，插件 {plugin_id}: {e}")
 
+    async def _process_level2_data(self, plugin_id: str, symbol: str, level2_data: Dict):
+        """
+        处理 Level-2 数据
+        
+        Args:
+            plugin_id: 插件 ID
+            symbol: 股票代码
+            level2_data: Level-2 数据（包含 bids/asks 五档）
+        """
+        try:
+            standard_level2 = level2_data
+
+            if self.data_standardizer:
+                standard_level2 = self.data_standardizer.standardize_realtime_data(standard_level2, DataType.LEVEL2_DATA, plugin_id)
+
+            if not standard_level2:
+                return
+
+            should_validate = self.data_validator is not None
+            is_valid = True
+            if should_validate:
+                is_valid = self.data_validator.validate_realtime_data(standard_level2, DataType.LEVEL2_DATA)
+
+            if is_valid:
+                # 添加到缓冲区
+                self.data_buffers[symbol].append(standard_level2)
+
+                # 发布事件（使用 RealtimeDataEvent，因为前端期望这个事件类型）
+                # 注意：realtime_data 字典必须包含 symbol 字段，前端从这里获取股票代码
+                event = RealtimeDataEvent(
+                    realtime_data=standard_level2,
+                    symbol=symbol,
+                    data_type='level2_data'
+                )
+                await self.event_bus.publish(event)
+                
+                logger.debug(f"Level-2 数据处理完成并发布事件：{symbol}")
+
+        except Exception as e:
+            logger.error(f"处理 Level-2 数据失败，插件 {plugin_id}: {e}")
+            # 记录错误统计
+            if not hasattr(self, '_level2_error_stats'):
+                self._level2_error_stats = {}
+            if symbol not in self._level2_error_stats:
+                self._level2_error_stats[symbol] = {'errors': 0, 'last_error': None}
+            self._level2_error_stats[symbol]['errors'] += 1
+            self._level2_error_stats[symbol]['last_error'] = str(e)
+    
     async def _process_order_book_data(self, plugin_id: str, symbol: str, order_book: Dict):
         """处理订单簿数据"""
         try:
@@ -495,7 +809,382 @@ class EnhancedRealtimeDataManager:
         """获取缓冲的数据"""
         buffer = self.data_buffers.get(symbol, deque())
         return list(buffer)[-limit:] if buffer else []
+    
+    # ========== 监控和统计方法 ==========
+    
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """
+        获取缓存统计信息
+        
+        Returns:
+            缓存统计字典
+        """
+        with self._cache_lock:
+            current_time = datetime.now()
+            valid_count = 0
+            expired_count = 0
+            
+            for symbol, timestamp in self._cache_timestamps.items():
+                age = (current_time - timestamp).total_seconds()
+                if age > self._cache_ttl_seconds:
+                    expired_count += 1
+                else:
+                    valid_count += 1
+            
+            return {
+                'total_cached': len(self._level2_cache),
+                'valid_cache': valid_count,
+                'expired_cache': expired_count,
+                'cache_ttl_seconds': self._cache_ttl_seconds,
+                'cache_size_mb': len(self._level2_cache) * 0.001  # 估算
+            }
+    
+    def get_fallback_stats(self) -> Dict[str, Any]:
+        """
+        获取降级统计信息
+        
+        Returns:
+            降级统计字典
+        """
+        total_fallbacks = sum(stats['total_fallbacks'] for stats in self._fallback_stats.values())
+        callback_failures = sum(stats.get('callback_failures', 0) for stats in self._fallback_stats.values())
+        
+        return {
+            'total_symbols': len(self._fallback_stats),
+            'total_fallbacks': total_fallbacks,
+            'callback_failures': callback_failures,
+            'fallback_rate': callback_failures / total_fallbacks if total_fallbacks > 0 else 0,
+            'details': {
+                symbol: {
+                    'total_fallbacks': stats['total_fallbacks'],
+                    'last_reasons': stats['reasons'][-5:]  # 最近 5 次原因
+                }
+                for symbol, stats in self._fallback_stats.items()
+            }
+        }
+    
+    def get_polling_stats(self) -> Dict[str, Any]:
+        """
+        获取轮询统计信息
+        
+        Returns:
+            轮询统计字典
+        """
+        current_time = datetime.now()
+        polling_info = {}
+        
+        for symbol, last_poll in self._last_poll_times.items():
+            interval = self._poll_intervals.get(symbol, 1.0)
+            time_since_last = (current_time - last_poll).total_seconds()
+            
+            polling_info[symbol] = {
+                'last_poll': last_poll.isoformat(),
+                'seconds_ago': time_since_last,
+                'current_interval': interval,
+                'next_poll_in': max(0, interval - time_since_last)
+            }
+        
+        return {
+            'total_polling_symbols': len(polling_info),
+            'polling_details': polling_info
+        }
+    
+    def get_performance_metrics(self) -> Dict[str, Any]:
+        """
+        获取性能指标
+        
+        Returns:
+            性能指标字典
+        """
+        cache_stats = self.get_cache_stats()
+        fallback_stats = self.get_fallback_stats()
+        polling_stats = self.get_polling_stats()
+        
+        return {
+            'cache': cache_stats,
+            'fallback': fallback_stats,
+            'polling': polling_stats,
+            'summary': {
+                'callback_success_rate': 1 - fallback_stats['fallback_rate'],
+                'cache_hit_rate': cache_stats['valid_cache'] / max(1, cache_stats['total_cached']),
+                'total_realtime_symbols': len(self.data_buffers)
+            }
+        }
 
+    # ========== Level-2 数据缓存管理方法 ==========
+    
+    def _get_cached_level2_data(self, symbol: str) -> Optional[Dict]:
+        """
+        获取缓存的 Level-2 数据
+        
+        Args:
+            symbol: 股票代码
+            
+        Returns:
+            缓存的数据，如果缓存不存在或已过期则返回 None
+        """
+        with self._cache_lock:
+            if symbol not in self._level2_cache:
+                return None
+            
+            # 检查缓存是否过期
+            timestamp = self._cache_timestamps.get(symbol)
+            if not timestamp:
+                return None
+            
+            age = (datetime.now() - timestamp).total_seconds()
+            if age > self._cache_ttl_seconds:
+                # 缓存过期，清理
+                logger.debug(f"缓存过期：{symbol}, 年龄：{age:.2f}s")
+                del self._level2_cache[symbol]
+                del self._cache_timestamps[symbol]
+                return None
+            
+            # 缓存有效
+            logger.debug(f"缓存命中：{symbol}, 年龄：{age:.2f}s")
+            return self._level2_cache[symbol]
+    
+    def _set_cached_level2_data(self, symbol: str, data: Dict):
+        """
+        设置缓存的 Level-2 数据
+        
+        Args:
+            symbol: 股票代码
+            data: Level-2 数据
+        """
+        with self._cache_lock:
+            self._level2_cache[symbol] = data
+            self._cache_timestamps[symbol] = datetime.now()
+            logger.debug(f"缓存更新：{symbol}")
+    
+    def _record_fallback(self, symbol: str, reason: str):
+        """
+        记录降级事件
+        
+        Args:
+            symbol: 股票代码
+            reason: 降级原因
+        """
+        if symbol not in self._fallback_stats:
+            self._fallback_stats[symbol] = {
+                'total_fallbacks': 0,
+                'callback_failures': 0,
+                'pull_failures': 0,
+                'reasons': []
+            }
+        
+        self._fallback_stats[symbol]['total_fallbacks'] += 1
+        self._fallback_stats[symbol]['reasons'].append(reason)
+        
+        logger.warning(f"降级记录：{symbol}, 原因：{reason}, 总次数：{self._fallback_stats[symbol]['total_fallbacks']}")
+    
+    # ========== 智能降级策略方法 ==========
+    
+    async def _subscribe_level2_data_smart(
+        self,
+        symbol: str,
+        plugin_id: str,
+        plugin: IDataSourcePlugin,
+        asset_type: AssetType
+    ):
+        """
+        智能订阅 Level-2 数据：Callback 优先，Pull 降级
+        
+        策略：
+        1. 首先尝试获取初始数据（Pull 模式）
+        2. 然后注册 Callback（实时推送）
+        3. 如果 Callback 失败，降级到带缓存的轮询
+        
+        Args:
+            symbol: 股票代码
+            plugin_id: 插件 ID
+            plugin: 插件实例
+            asset_type: 资产类型
+        """
+        logger.info(f"智能订阅 Level-2: {symbol}, 插件：{plugin_id}")
+        
+        # 步骤 1: 获取初始数据（Pull 模式）
+        try:
+            if hasattr(plugin, 'get_level2_data'):
+                initial_data = plugin.get_level2_data(symbol)
+                if initial_data:
+                    # 标准化并处理数据
+                    await self._process_level2_data(plugin_id, symbol, initial_data)
+                    # 更新缓存
+                    self._set_cached_level2_data(symbol, initial_data)
+                    logger.info(f"✅ 初始数据获取成功：{symbol}")
+                else:
+                    logger.warning(f"⚠️ 初始数据为空：{symbol}")
+            else:
+                logger.warning(f"插件 {plugin_id} 没有 get_level2_data 方法")
+        except Exception as e:
+            logger.error(f"❌ 获取初始数据失败：{symbol}, {e}")
+            self._record_fallback(symbol, f"initial_pull_failed: {e}")
+        
+        # 步骤 2: 注册 Callback（实时推送）
+        try:
+            # 创建 callback 适配器
+            adapter = PluginCallbackAdapter(self, plugin_id, DataType.LEVEL2_DATA)
+            
+            # 调用插件的 subscribe_realtime_data 方法注册 callback
+            success = plugin.subscribe_realtime_data([symbol], adapter, DataType.LEVEL2_DATA)
+            
+            if success:
+                logger.info(f"✅ Callback 模式订阅成功：{symbol}")
+                # 记录成功，重置降级统计
+                if symbol in self._fallback_stats:
+                    self._fallback_stats[symbol]['total_fallbacks'] = 0
+                return
+            else:
+                logger.warning(f"⚠️ Callback 模式返回失败：{symbol}")
+                self._record_fallback(symbol, "callback_returned_false")
+                
+        except Exception as e:
+            logger.error(f"❌ Callback 模式异常：{symbol}, {e}")
+            self._record_fallback(symbol, f"callback_exception: {e}")
+        
+        # 步骤 3: 降级到带缓存的轮询
+        logger.warning(f"⚠️ Callback 失败，降级到带缓存的轮询：{symbol}")
+        self._record_fallback(symbol, "fallback_to_polling")
+        
+        # 启动轮询任务（带缓存）
+        asyncio.create_task(self._poll_level2_data_cached(plugin_id, plugin, [symbol], asset_type))
+    
+    async def _poll_level2_data_cached(
+        self,
+        plugin_id: str,
+        plugin: IDataSourcePlugin,
+        symbols: List[str],
+        asset_type: AssetType,
+        initial_interval: float = 1.0,
+        max_interval: float = 5.0,
+        min_interval: float = 0.5  # 最小轮询间隔保护
+    ):
+        """
+        带缓存的 Level-2 轮询方法
+        
+        特点：
+        - 使用动态轮询间隔（指数退避）
+        - 只在缓存过期时拉取
+        - 减少 API 调用次数
+        - 添加最小间隔保护防止过频请求
+        - 添加错误计数和重试限制
+        
+        Args:
+            plugin_id: 插件 ID
+            plugin: 插件实例
+            symbols: 股票代码列表
+            asset_type: 资产类型
+            initial_interval: 初始轮询间隔（秒）
+            max_interval: 最大轮询间隔（秒）
+            min_interval: 最小轮询间隔（秒），防止过频请求
+        """
+        logger.info(f"启动带缓存的轮询：{symbols}, 插件：{plugin_id}")
+        
+        # 初始化轮询参数
+        for symbol in symbols:
+            self._poll_intervals[symbol] = max(initial_interval, min_interval)
+            # 添加错误计数器
+            if not hasattr(self, '_poll_error_counts'):
+                self._poll_error_counts = {}
+            if symbol not in self._poll_error_counts:
+                self._poll_error_counts[symbol] = 0
+        
+        consecutive_errors = 0
+        max_consecutive_errors = 10  # 最大连续错误次数
+        
+        while True:
+            try:
+                current_time = datetime.now()
+                
+                for symbol in symbols:
+                    # 检查是否需要轮询
+                    last_poll = self._last_poll_times.get(symbol)
+                    interval = self._poll_intervals.get(symbol, initial_interval)
+                    
+                    # 确保间隔不小于最小值
+                    interval = max(interval, min_interval)
+                    
+                    if last_poll and (current_time - last_poll).total_seconds() < interval:
+                        # 还没到轮询时间
+                        continue
+                    
+                    # 检查缓存是否有效
+                    cached_data = self._get_cached_level2_data(symbol)
+                    if cached_data:
+                        # 缓存有效，跳过本次轮询
+                        logger.debug(f"缓存有效，跳过轮询：{symbol}")
+                        # 重置错误计数
+                        if symbol in self._poll_error_counts:
+                            self._poll_error_counts[symbol] = 0
+                        continue
+                    
+                    # 执行轮询
+                    try:
+                        if hasattr(plugin, 'get_level2_data'):
+                            data = plugin.get_level2_data(symbol)
+                            if data:
+                                # 更新缓存
+                                self._set_cached_level2_data(symbol, data)
+                                # 处理数据
+                                await self._process_level2_data(plugin_id, symbol, data)
+                                # 重置轮询间隔和错误计数（成功）
+                                self._poll_intervals[symbol] = max(initial_interval, min_interval)
+                                consecutive_errors = 0
+                                if symbol in self._poll_error_counts:
+                                    self._poll_error_counts[symbol] = 0
+                                logger.debug(f"轮询成功：{symbol}")
+                            else:
+                                # 数据为空，增加轮询间隔（指数退避）
+                                consecutive_errors += 1
+                                self._poll_intervals[symbol] = min(
+                                    self._poll_intervals.get(symbol, initial_interval) * 1.5,
+                                    max_interval
+                                )
+                                logger.warning(f"轮询数据为空：{symbol}, 连续错误：{consecutive_errors}, 下次间隔：{self._poll_intervals[symbol]:.2f}s")
+                        else:
+                            logger.error(f"插件 {plugin_id} 没有 get_level2_data 方法")
+                            consecutive_errors += 1
+                    except Exception as poll_error:
+                        # 轮询异常
+                        consecutive_errors += 1
+                        if symbol in self._poll_error_counts:
+                            self._poll_error_counts[symbol] += 1
+                        logger.error(f"轮询异常：{symbol}, 错误：{poll_error}, 连续错误：{consecutive_errors}")
+                        
+                        # 增加轮询间隔
+                        self._poll_intervals[symbol] = min(
+                            self._poll_intervals.get(symbol, initial_interval) * 2,
+                            max_interval
+                        )
+                    
+                    # 记录上次轮询时间
+                    self._last_poll_times[symbol] = current_time
+                    
+                    # 检查是否超过最大连续错误次数
+                    if consecutive_errors >= max_consecutive_errors:
+                        logger.error(f"连续错误次数超限（{max_consecutive_errors}），停止轮询：{symbol}")
+                        # 发送告警事件
+                        from core.events.types import ErrorEvent
+                        await self.event_bus.publish(ErrorEvent(
+                            error_type='level2_polling_max_errors',
+                            message=f'股票 {symbol} 连续轮询失败 {consecutive_errors} 次，已停止轮询',
+                            symbol=symbol
+                        ))
+                        return  # 退出轮询
+                
+                
+                # 等待 100ms 后检查下次轮询
+                await asyncio.sleep(0.1)
+                
+            except asyncio.CancelledError:
+                logger.info(f"轮询任务被取消：{symbols}")
+                break
+            except Exception as e:
+                logger.error(f"轮询异常：{e}")
+                # 异常后等待更长时间
+                await asyncio.sleep(5.0)
+    
     async def cleanup(self):
         """清理资源"""
         logger.info("开始清理实时数据管理器资源...")
@@ -505,13 +1194,19 @@ class EnhancedRealtimeDataManager:
             for subscription_key in self.subscription_status[plugin_id]:
                 self.subscription_status[plugin_id][subscription_key] = False
 
-        # 关闭WebSocket连接
+        # 关闭 WebSocket 连接
         for connection in self.websocket_connections.values():
             try:
                 if hasattr(connection, 'close'):
                     connection.close()
             except Exception as e:
-                logger.warning(f"关闭WebSocket连接失败: {e}")
+                logger.warning(f"关闭 WebSocket 连接失败：{e}")
 
         self.websocket_connections.clear()
+        
+        # 清理缓存
+        with self._cache_lock:
+            self._level2_cache.clear()
+            self._cache_timestamps.clear()
+        
         logger.info("实时数据管理器资源清理完成")

@@ -558,7 +558,7 @@ class MiniQMTPlugin(StandardDataSourcePlugin):
         return {
             'realtime': True,
             'historical': True,
-            'level2': True,
+            'level2': False,  # 注：当前 subscribe_realtime_data 返回 tick 数据，如需完整 Level-2 请使用 Level2RealtimePlugin
             'tick': True,
             'multi_market': True,
             'subscription': True,
