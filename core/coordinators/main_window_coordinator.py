@@ -3454,12 +3454,22 @@ FactorWeave-Quant  2.0 (重构版本)
 
             # 检查是否已有独立窗口存在
             if hasattr(self, '_standalone_backtest_window') and self._standalone_backtest_window:
-                # 如果窗口已存在，直接显示并激活
-                self._standalone_backtest_window.show()
-                self._standalone_backtest_window.raise_()
-                self._standalone_backtest_window.activateWindow()
-                logger.info("专业回测独立窗口已激活")
-                return
+                # 检查 Qt 对象是否有效
+                try:
+                    # 尝试访问窗口属性，验证对象是否有效
+                    if self._standalone_backtest_window.isVisible() or self._standalone_backtest_window.isHidden():
+                        self._standalone_backtest_window.show()
+                        self._standalone_backtest_window.raise_()
+                        self._standalone_backtest_window.activateWindow()
+                        logger.info("专业回测独立窗口已激活")
+                        return
+                except RuntimeError as e:
+                    # Qt 对象已删除，清理引用
+                    logger.warning(f"检测到已删除的窗口引用，将创建新窗口：{e}")
+                    try:
+                        del self._standalone_backtest_window
+                    except:
+                        pass
 
             # 创建新的独立浮动窗口
             self._standalone_backtest_window = QMainWindow()
@@ -3500,8 +3510,8 @@ FactorWeave-Quant  2.0 (重构版本)
                 }
             """)
 
-            # 设置窗口属性
-            self._standalone_backtest_window.setAttribute(Qt.WA_DeleteOnClose, False)  # 关闭时不删除，只隐藏
+            # 设置窗口属性：关闭时删除窗口
+            self._standalone_backtest_window.setAttribute(Qt.WA_DeleteOnClose, True)
 
             # 连接关闭事件
             def on_window_close():
@@ -3511,16 +3521,21 @@ FactorWeave-Quant  2.0 (重构版本)
                         if backtest_widget and hasattr(backtest_widget, '_cleanup_before_close'):
                             backtest_widget._cleanup_before_close()
                 except Exception as e:
-                    logger.error(f"关闭时清理回测窗口失败: {e}")
-                self._standalone_backtest_window.hide()
-                logger.info("专业回测独立窗口已隐藏")
+                    logger.error(f"关闭时清理回测窗口失败：{e}")
+                finally:
+                    # 确保总是删除引用
+                    if hasattr(self, '_standalone_backtest_window'):
+                        try:
+                            del self._standalone_backtest_window
+                        except:
+                            pass
+                    logger.info("专业回测独立窗口已关闭并清理")
 
-            # 重写关闭事件
-            original_close_event = self._standalone_backtest_window.closeEvent
-
+            # 重写关闭事件：允许窗口正常关闭（WA_DeleteOnClose 会处理删除）
             def close_event(event):
-                event.ignore()  # 忽略关闭事件
-                on_window_close()  # 执行隐藏操作
+                logger.info("专业回测独立窗口收到关闭事件")
+                on_window_close()  # 执行清理操作
+                event.accept()  # 接受关闭事件，让 Qt 正常关闭窗口
             self._standalone_backtest_window.closeEvent = close_event
 
             # 显示窗口

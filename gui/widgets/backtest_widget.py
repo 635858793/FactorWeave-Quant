@@ -124,9 +124,14 @@ except ImportError:
 
 class RealTimeChart(QWidget):
     """实时图表组件 - 基于统一图表服务的高性能实现"""
+    
+    # 新增信号：图表展示完成
+    chart_display_completed = pyqtSignal()
 
     def __init__(self, parent=None):
-        super().__init__(parent)
+        super().__init__(parent)  # parent 可以为 None，由 layout 系统管理
+        # parent_widget 会在外部设置，用于访问其他面板
+        self.parent_widget = None
         self.pending_data = []  # 待显示的完整数据集（用于渐进式加载）
         self.displayed_count = 0  # 已显示的数据点数量
         self.animation_timer = QTimer()  # 动画定时器
@@ -244,6 +249,8 @@ class RealTimeChart(QWidget):
                 # 所有数据已显示完毕，停止定时器
                 self.animation_timer.stop()
                 logger.info("渐进式展示完成")
+                # ✅ 发射图表展示完成信号
+                self.chart_display_completed.emit()
                 return
             
             # 计算本批次的结束位置
@@ -275,7 +282,9 @@ class MetricsPanel(QWidget):
     """指标面板"""
 
     def __init__(self, parent=None):
-        super().__init__(parent)
+        super().__init__(parent)  # parent 可以为 None，由 layout 系统管理
+        # parent_widget 会在外部设置，用于访问其他面板
+        self.parent_widget = None
         self.init_ui()
 
     def init_ui(self):
@@ -305,47 +314,47 @@ class MetricsPanel(QWidget):
         self.metrics_table.setMaximumHeight(400)  # 增加高度
         self.metrics_table.setMinimumHeight(180)   # 增加最小高度
 
-        # 设置专业表格样式
+        # 设置专业表格样式（深蓝科技风格）
         self.metrics_table.setStyleSheet("""
             QTableWidget {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #1a1f2e, stop:1 #0f1419);
-                border: 2px solid #2d3748;
+                background: rgba(30, 41, 59, 128);
+                border: 1px solid #374151;
                 border-radius: 8px;
-                gridline-color: #4a5568;
+                gridline-color: #374151;
                 font-size: 11px;
                 font-family: 'Consolas', 'Monaco', monospace;
-                selection-background-color: #4299e1;
+                selection-background-color: #1e40af;
+                color: #e2e8f0;
             }
             QTableWidget::item {
-                padding: 6px 8px;
-                border: 1px solid #2d3748;
+                padding: 8px 10px;
+                border: 1px solid #374151;
                 text-align: center;
-                min-height: 20px;
+                min-height: 22px;
             }
             QTableWidget::item:hover {
-                background-color: rgba(66, 153, 225, 0.2);
-                border: 1px solid #4299e1;
+                background-color: rgba(59, 130, 246, 0.15);
+                border: 1px solid #3b82f6;
             }
             QTableWidget::item:selected {
-                background-color: rgba(66, 153, 225, 0.3);
+                background-color: rgba(59, 130, 246, 0.25);
                 color: #ffffff;
-                font-weight: bold;
+                font-weight: 600;
             }
             QHeaderView::section {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #4a5568, stop:1 #2d3748);
-                color: #e2e8f0;
-                padding: 8px;
-                border: 1px solid #4a5568;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #1e40af, stop:1 #0891b2);
+                color: #dbeafe;
+                padding: 10px;
+                border: 1px solid #374151;
                 font-weight: 700;
-                font-size: 10px;
+                font-size: 11px;
                 text-transform: uppercase;
                 letter-spacing: 0.5px;
             }
             QHeaderView::section:hover {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #5a6578, stop:1 #3d4758);
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #1e3a8a, stop:1 #0e7490);
             }
         """)
 
@@ -504,9 +513,147 @@ class ControlPanel(QWidget):
     start_backtest = pyqtSignal(dict)
     stop_backtest = pyqtSignal()
 
+    # 类变量：状态标签样式（所有实例共享）
+    STATUS_STYLES = {
+        'ready': """
+            QLabel {
+                color: #10b981;
+                font-weight: 600;
+                padding: 12px;
+                border: 1px solid #374151;
+                border-radius: 6px;
+                background-color: rgba(30, 41, 59, 128);
+                font-size: 11px;
+            }
+        """,
+        'starting': """
+            QLabel {
+                color: #3b82f6;
+                font-weight: 600;
+                padding: 12px;
+                border: 1px solid #374151;
+                border-radius: 6px;
+                background-color: rgba(30, 41, 59, 128);
+                font-size: 11px;
+            }
+        """,
+        'running': """
+            QLabel {
+                color: #f59e0b;
+                font-weight: 600;
+                padding: 12px;
+                border: 1px solid #374151;
+                border-radius: 6px;
+                background-color: rgba(30, 41, 59, 128);
+                font-size: 11px;
+            }
+        """,
+        'completed': """
+            QLabel {
+                color: #10b981;
+                font-weight: 600;
+                padding: 12px;
+                border: 1px solid #374151;
+                border-radius: 6px;
+                background-color: rgba(30, 41, 59, 128);
+                font-size: 11px;
+            }
+        """,
+        'stopped': """
+            QLabel {
+                color: #ef4444;
+                font-weight: 600;
+                padding: 12px;
+                border: 1px solid #374151;
+                border-radius: 6px;
+                background-color: rgba(30, 41, 59, 128);
+                font-size: 11px;
+            }
+        """,
+        'error': """
+            QLabel {
+                color: #ef4444;
+                font-weight: 600;
+                padding: 12px;
+                border: 1px solid #374151;
+                border-radius: 6px;
+                background-color: rgba(30, 41, 59, 128);
+                font-size: 11px;
+            }
+        """
+    }
+
+    # 类变量：按钮样式（所有实例共享）
+    START_BUTTON_ENABLED_STYLE = """
+        QPushButton {
+            background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1, 
+                stop:0 #1e40af, stop:1 #0891b2);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 20px;
+            font-weight: bold;
+            font-size: 12px;
+        }
+        QPushButton:hover {
+            background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1, 
+                stop:0 #1e3a8a, stop:1 #0e7490);
+        }
+        QPushButton:pressed {
+            background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1, 
+                stop:0 #1e293b, stop:1 #155e75);
+        }
+    """
+    START_BUTTON_DISABLED_STYLE = """
+        QPushButton {
+            background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1, 
+                stop:0 #4b5563, stop:1 #6b7280);
+            color: #9ca3af;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 20px;
+            font-weight: bold;
+            font-size: 12px;
+        }
+    """
+    STOP_BUTTON_ENABLED_STYLE = """
+        QPushButton {
+            background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1, 
+                stop:0 #991b1b, stop:1 #b91c1c);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 20px;
+            font-weight: bold;
+            font-size: 12px;
+        }
+        QPushButton:hover {
+            background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1, 
+                stop:0 #7f1d1d, stop:1 #991b1b);
+        }
+        QPushButton:pressed {
+            background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1, 
+                stop:0 #450a0a, stop:1 #7f1d1d);
+        }
+    """
+    STOP_BUTTON_DISABLED_STYLE = """
+        QPushButton {
+            background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1, 
+                stop:0 #4b5563, stop:1 #6b7280);
+            color: #9ca3af;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 20px;
+            font-weight: bold;
+            font-size: 12px;
+        }
+    """
+
     def __init__(self, parent=None):
-        super().__init__(parent)
-        self.parent_widget = parent  # 保存父组件的引用
+        super().__init__(parent)  # parent 可以为 None，由 layout 系统管理
+        # parent_widget 会在外部设置，用于访问其他面板
+        self.parent_widget = None
+        self._is_closing = False  # 关闭状态标志
         self.init_ui()
 
     def init_ui(self):
@@ -517,14 +664,14 @@ class ControlPanel(QWidget):
         title = QLabel("控制面板")
         title.setStyleSheet("""
             QLabel {
-                font-size: 13px;
-                font-weight: 600;
-                color: #4299e1;
-                padding: 6px 8px;
-                border-bottom: 1px solid #4299e1;
-                margin-bottom: 4px;
-                background: rgba(66, 153, 225, 0.1);
-                border-radius: 4px;
+                font-size: 14px;
+                font-weight: bold;
+                color: #60a5fa;
+                padding: 8px 10px;
+                border-bottom: 2px solid #3b82f6;
+                margin-bottom: 8px;
+                background: rgba(59, 130, 246, 0.1);
+                border-radius: 6px;
             }
         """)
         layout.addWidget(title)
@@ -533,30 +680,62 @@ class ControlPanel(QWidget):
         params_group = QGroupBox("回测参数")
         params_group.setStyleSheet("""
             QGroupBox {
-                font-weight: 500;
-                font-size: 11px;
-                border: 1px solid #4a5568;
-                border-radius: 6px;
-                margin-top: 6px;
-                padding-top: 6px;
+                font-weight: 600;
+                font-size: 12px;
+                border: 1px solid #374151;
+                border-radius: 8px;
+                margin-top: 10px;
+                padding-top: 12px;
                 color: #e2e8f0;
-                background: rgba(45, 55, 72, 0.2);
+                background: rgba(30, 41, 59, 128);
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
-                left: 8px;
-                padding: 0 4px 0 4px;
-                color: #cbd5e0;
-                font-size: 10px;
+                left: 10px;
+                padding: 0 6px 0 6px;
+                color: #93c5fd;
+                font-size: 11px;
+                font-weight: 600;
             }
         """)
         params_layout = QFormLayout(params_group)
+        
+        # 统一输入框样式（深蓝科技风）
+        input_style = """
+            QSpinBox, QDoubleSpinBox, QComboBox {
+                background: rgba(30, 41, 59, 128);
+                border: 1px solid #374151;
+                border-radius: 4px;
+                padding: 4px 8px;
+                color: #e2e8f0;
+                font-size: 11px;
+            }
+            QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {
+                border-color: #3b82f6;
+            }
+            QSpinBox:hover, QDoubleSpinBox:hover, QComboBox:hover {
+                border-color: #64748b;
+            }
+            QComboBox::drop-down {
+                border: none;
+                width: 20px;
+            }
+            QComboBox::down-arrow {
+                image: none;
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-top: 8px solid #93c5fd;
+                margin-right: 5px;
+            }
+        """
 
         # 初始资金
         self.initial_capital = QSpinBox()
         self.initial_capital.setRange(10000, 100000000)
         self.initial_capital.setValue(1000000)
         self.initial_capital.setSuffix("元")
+        # 应用输入框样式
+        self.initial_capital.setStyleSheet(input_style)
         params_layout.addRow("初始资金:", self.initial_capital)
 
         # 仓位大小
@@ -565,6 +744,8 @@ class ControlPanel(QWidget):
         self.position_size.setValue(95)
         self.position_size.setSingleStep(1)
         self.position_size.setSuffix("%")
+        # 应用输入框样式
+        self.position_size.setStyleSheet(input_style)
         params_layout.addRow("仓位大小:", self.position_size)
 
         # 手续费率（用户输入 0.03 表示 0.03%）
@@ -573,6 +754,8 @@ class ControlPanel(QWidget):
         self.commission_pct.setValue(0.03)
         self.commission_pct.setDecimals(2)
         self.commission_pct.setSuffix("%")
+        # 应用输入框样式
+        self.commission_pct.setStyleSheet(input_style)
         params_layout.addRow("手续费率:", self.commission_pct)
 
         # 专业级别
@@ -581,6 +764,8 @@ class ControlPanel(QWidget):
             "RETAIL", "INSTITUTIONAL", "HEDGE_FUND", "INVESTMENT_BANK"
         ])
         self.professional_level.setCurrentText("INVESTMENT_BANK")
+        # 应用输入框样式
+        self.professional_level.setStyleSheet(input_style)
         params_layout.addRow("专业级别:", self.professional_level)
 
         # 性能级别
@@ -704,12 +889,16 @@ class ControlPanel(QWidget):
         self.start_date = QDateEdit()
         self.start_date.setDate(QDate.currentDate().addYears(-1))
         self.start_date.setCalendarPopup(True)
+        # 应用输入框样式
+        self.start_date.setStyleSheet(input_style)
         time_layout.addRow("开始日期:", self.start_date)
 
         # 结束日期
         self.end_date = QDateEdit()
         self.end_date.setDate(QDate.currentDate())
         self.end_date.setCalendarPopup(True)
+        # 应用输入框样式
+        self.end_date.setStyleSheet(input_style)
         time_layout.addRow("结束日期:", self.end_date)
 
         # 数据频率
@@ -717,6 +906,8 @@ class ControlPanel(QWidget):
         self.data_frequency = QComboBox()
         self.data_frequency.addItems(Period.all_periods())
         self.data_frequency.setCurrentText("日线")
+        # 应用输入框样式
+        self.data_frequency.setStyleSheet(input_style)
         time_layout.addRow("数据频率:", self.data_frequency)
 
         # 基准对比设置组
@@ -745,6 +936,8 @@ class ControlPanel(QWidget):
         ])
         self.engine_type.setCurrentText("自动选择（推荐）")
         self.engine_type.setToolTip("自动选择：根据数据大小和功能需求智能选择最优引擎\n向量化引擎：高性能，适合大数据集\n标准引擎：功能完整，支持高级功能")
+        # 应用输入框样式
+        self.engine_type.setStyleSheet(input_style)
         engine_layout.addRow("引擎类型:", self.engine_type)
 
         # 向量化选项
@@ -769,64 +962,46 @@ class ControlPanel(QWidget):
         engine_layout.addRow("成交模型:", self.execution_model)
 
         layout.addWidget(params_group)
+        layout.addWidget(time_group)  # 添加时间范围设置组
+        layout.addWidget(benchmark_group)  # 添加基准对比设置组
         layout.addWidget(engine_group)
 
         # 控制按钮
         buttons_layout = QHBoxLayout()
 
-        self.start_button = QPushButton("开始回测")
-        self.start_button.setStyleSheet("""
-            QPushButton {
-                background: linear-gradient(45deg, #10d4ff, #8b5cf6);
-                color: white;
-                border: none;
-                border-radius: 8px;
-                padding: 10px 20px;
-                font-weight: bold;
-                font-size: 12px;
-            }
-            QPushButton:hover {
-                background: linear-gradient(45deg, #0099cc, #6d28d9);
-            }
-            QPushButton:pressed {
-                background: linear-gradient(45deg, #0066aa, #5b21b6);
-            }
-        """)
+        self.start_button = QPushButton("▶ 开始回测 (Ctrl+Enter)")
+        self.start_button.setMinimumHeight(40)
+        self.start_button.setFont(QFont("Segoe UI", 11, QFont.Bold))
+        # 使用类变量样式
+        self.start_button.setStyleSheet(self.START_BUTTON_ENABLED_STYLE)
         self.start_button.clicked.connect(self.on_start_backtest)
         self.start_button.setToolTip("开始执行回测 (Ctrl+Enter)")
 
-        self.stop_button = QPushButton("停止回测")
-        self.stop_button.setStyleSheet("""
-            QPushButton {
-                background: linear-gradient(45deg, #1f4444, #dc2626);
-                color: white;
-                border: none;
-                border-radius: 8px;
-                padding: 10px 20px;
-                font-weight: bold;
-                font-size: 12px;
-            }
-            QPushButton:hover {
-                background: linear-gradient(45deg, #dc2626, #b91c1c);
-            }
-            QPushButton:pressed {
-                background: linear-gradient(45deg, #b91c1c, #991b1b);
-            }
-        """)
+        self.stop_button = QPushButton("⏹ 停止回测 (Ctrl+Esc)")
+        self.stop_button.setMinimumHeight(40)
+        self.stop_button.setFont(QFont("Segoe UI", 11, QFont.Bold))
+        # 使用类变量样式
+        self.stop_button.setStyleSheet(self.STOP_BUTTON_ENABLED_STYLE)
         self.stop_button.clicked.connect(self.stop_backtest.emit)
         self.stop_button.setEnabled(False)
         self.stop_button.setToolTip("停止当前回测 (Ctrl+Esc)")
 
         buttons_layout.addWidget(self.start_button)
         buttons_layout.addWidget(self.stop_button)
+        # 等宽布局，使按钮宽度一致
+        buttons_layout.setStretchFactor(self.start_button, 1)
+        buttons_layout.setStretchFactor(self.stop_button, 1)
         layout.addLayout(buttons_layout)
 
         # 导出按钮
         export_layout = QHBoxLayout()
-        export_button = QPushButton("导出结果")
+        export_button = QPushButton("💾 导出结果")
+        export_button.setMinimumHeight(40)
+        export_button.setFont(QFont("Segoe UI", 11, QFont.Bold))
         export_button.setStyleSheet("""
             QPushButton {
-                background: linear-gradient(45deg, #10b981, #059669);
+                background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1, 
+                    stop:0 #047857, stop:1 #059669);
                 color: white;
                 border: none;
                 border-radius: 6px;
@@ -835,10 +1010,12 @@ class ControlPanel(QWidget):
                 font-size: 11px;
             }
             QPushButton:hover {
-                background: linear-gradient(45deg, #059669, #047857);
+                background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1, 
+                    stop:0 #065f46, stop:1 #047857);
             }
             QPushButton:pressed {
-                background: linear-gradient(45deg, #047857, #065f46);
+                background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1, 
+                    stop:0 #064e3b, stop:1 #065f46);
             }
         """)
         export_button.clicked.connect(self._export_results)
@@ -847,32 +1024,16 @@ class ControlPanel(QWidget):
 
         # 高级功能分组
         advanced_group = QGroupBox("高级功能")
-        advanced_group.setStyleSheet("""
-            QGroupBox {
-                font-weight: 500;
-                font-size: 11px;
-                border: 1px solid #4a5568;
-                border-radius: 6px;
-                margin-top: 6px;
-                padding-top: 6px;
-                color: #e2e8f0;
-                background: rgba(45, 55, 72, 0.2);
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 8px;
-                padding: 0 4px 0 4px;
-                color: #cbd5e0;
-                font-size: 10px;
-            }
-        """)
+        advanced_group.setStyleSheet(params_group.styleSheet())
         advanced_layout = QVBoxLayout(advanced_group)
 
         # 风险管理按钮
         risk_management_button = QPushButton("🛡️ 风险管理")
+        risk_management_button.setMinimumHeight(36)
         risk_management_button.setStyleSheet("""
             QPushButton {
-                background: linear-gradient(45deg, #f59e0b, #d97706);
+                background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #f59e0b, stop:1 #d97706);
                 color: white;
                 border: none;
                 border-radius: 6px;
@@ -882,10 +1043,12 @@ class ControlPanel(QWidget):
                 text-align: left;
             }
             QPushButton:hover {
-                background: linear-gradient(45deg, #d97706, #b45309);
+                background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #d97706, stop:1 #b45309);
             }
             QPushButton:pressed {
-                background: linear-gradient(45deg, #b45309, #92400e);
+                background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #b45309, stop:1 #92400e);
             }
         """)
         risk_management_button.setToolTip("打开性能监控中心的风险控制标签页")
@@ -894,9 +1057,11 @@ class ControlPanel(QWidget):
 
         # 参数优化按钮
         parameter_optimization_button = QPushButton("⚙️ 参数优化")
+        parameter_optimization_button.setMinimumHeight(36)
         parameter_optimization_button.setStyleSheet("""
             QPushButton {
-                background: linear-gradient(45deg, #8b5cf6, #7c3aed);
+                background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #8b5cf6, stop:1 #7c3aed);
                 color: white;
                 border: none;
                 border-radius: 6px;
@@ -906,10 +1071,12 @@ class ControlPanel(QWidget):
                 text-align: left;
             }
             QPushButton:hover {
-                background: linear-gradient(45deg, #7c3aed, #6d28d9);
+                background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #7c3aed, stop:1 #6d28d9);
             }
             QPushButton:pressed {
-                background: linear-gradient(45deg, #6d28d9, #5b21b6);
+                background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #6d28d9, stop:1 #5b21b6);
             }
         """)
         parameter_optimization_button.setToolTip("打开策略管理器的参数优化视图")
@@ -918,9 +1085,11 @@ class ControlPanel(QWidget):
 
         # 策略对比按钮
         strategy_comparison_button = QPushButton("📊 策略对比")
+        strategy_comparison_button.setMinimumHeight(36)
         strategy_comparison_button.setStyleSheet("""
             QPushButton {
-                background: linear-gradient(45deg, #06b6d4, #0891b2);
+                background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #06b6d4, stop:1 #0891b2);
                 color: white;
                 border: none;
                 border-radius: 6px;
@@ -930,10 +1099,12 @@ class ControlPanel(QWidget):
                 text-align: left;
             }
             QPushButton:hover {
-                background: linear-gradient(45deg, #0891b2, #0e7490);
+                background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #0891b2, stop:1 #0e7490);
             }
             QPushButton:pressed {
-                background: linear-gradient(45deg, #0e7490, #155e75);
+                background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #0e7490, stop:1 #155e75);
             }
         """)
         strategy_comparison_button.setToolTip("打开策略管理器的策略对比功能")
@@ -947,11 +1118,12 @@ class ControlPanel(QWidget):
         self.status_label.setStyleSheet("""
             QLabel {
                 color: #10b981;
-                font-weight: bold;
-                padding: 10px;
-                border: 1px solid #2d3748;
-                border-radius: 5px;
-                background-color: #1e2329;
+                font-weight: 600;
+                padding: 12px;
+                border: 1px solid #374151;
+                border-radius: 6px;
+                background-color: rgba(30, 41, 59, 128);
+                font-size: 11px;
             }
         """)
         layout.addWidget(self.status_label)
@@ -960,17 +1132,18 @@ class ControlPanel(QWidget):
         self.progress_bar = QProgressBar()
         self.progress_bar.setStyleSheet("""
             QProgressBar {
-                border: 1px solid #4a5568;
-                border-radius: 5px;
+                border: 1px solid #374151;
+                border-radius: 6px;
                 text-align: center;
-                background-color: #1e2329;
+                background-color: rgba(30, 41, 59, 128);
                 color: #e2e8f0;
-                font-size: 10px;
-                height: 20px;
+                font-size: 11px;
+                height: 22px;
             }
             QProgressBar::chunk {
-                background-color: #10b981;
-                border-radius: 4px;
+                background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #10b981, stop:1 #059669);
+                border-radius: 5px;
             }
         """)
         self.progress_bar.setRange(0, 100)
@@ -980,6 +1153,28 @@ class ControlPanel(QWidget):
         layout.addWidget(self.progress_bar)
 
         layout.addStretch()
+
+    def closeEvent(self, event):
+        """窗口关闭事件处理"""
+        try:
+            logger.info("ControlPanel 收到关闭事件")
+            self._is_closing = True  # 设置关闭标志
+            
+            # 【新增】断开循环引用
+            if hasattr(self, 'parent_widget'):
+                self.parent_widget = None
+            
+            # 【新增】断开信号连接
+            try:
+                self.start_backtest.disconnect()
+                self.stop_backtest.disconnect()
+            except:
+                pass
+            
+            super().closeEvent(event)
+        except Exception as e:
+            logger.error(f"ControlPanel closeEvent 失败：{e}")
+            super().closeEvent(event)
 
     def update_progress(self, progress: int, stage: str, message: str):
         """更新进度"""
@@ -991,11 +1186,12 @@ class ControlPanel(QWidget):
             self.status_label.setStyleSheet("""
                 QLabel {
                     color: #10b981;
-                    font-weight: bold;
-                    padding: 10px;
-                    border: 1px solid #2d3748;
-                    border-radius: 5px;
-                    background-color: #1e2329;
+                    font-weight: 600;
+                    padding: 12px;
+                    border: 1px solid #374151;
+                    border-radius: 6px;
+                    background-color: rgba(30, 41, 59, 128);
+                    font-size: 11px;
                 }
             """)
 
@@ -1021,11 +1217,12 @@ class ControlPanel(QWidget):
             self.status_label.setStyleSheet("""
                 QLabel {
                     color: #10b981;
-                    font-weight: bold;
-                    padding: 10px;
-                    border: 1px solid #2d3748;
-                    border-radius: 5px;
-                    background-color: #1e2329;
+                    font-weight: 600;
+                    padding: 12px;
+                    border: 1px solid #374151;
+                    border-radius: 6px;
+                    background-color: rgba(30, 41, 59, 128);
+                    font-size: 11px;
                 }
             """)
         except RuntimeError as e:
@@ -1093,6 +1290,26 @@ class ControlPanel(QWidget):
     def on_start_backtest(self):
         """开始回测"""
         try:
+            # 检查是否正在关闭
+            if self._is_closing:
+                logger.warning("控制面板正在关闭，取消启动回测")
+                return
+            
+            # 检查控件是否有效
+            if not hasattr(self, 'start_date') or not hasattr(self, 'end_date'):
+                logger.warning("控制面板未完全初始化，取消启动回测")
+                return
+            
+            # 检查控件是否已销毁
+            try:
+                self.start_date.date()
+                self.end_date.date()
+            except RuntimeError as e:
+                if "wrapped C/C++ object" in str(e) or "has been deleted" in str(e):
+                    logger.warning(f"Qt 控件已销毁，取消启动回测：{e}")
+                    return
+                raise
+            
             engine_type_text = self.engine_type.currentText()
             if engine_type_text == "自动选择（推荐）":
                 use_vectorized_engine = self.use_vectorized.isChecked()
@@ -1118,28 +1335,32 @@ class ControlPanel(QWidget):
                 'start_date': self.start_date.date().toString('yyyy-MM-dd'),
                 'end_date': self.end_date.date().toString('yyyy-MM-dd'),
                 'period': self.data_frequency.currentText(),
-                'benchmark': self.parent_widget.benchmark_panel.benchmark_index.currentText() if hasattr(self, 'parent_widget') and hasattr(self.parent_widget, 'benchmark_panel') else '沪深300',
+                'benchmark': self.parent_widget.benchmark_index.currentText() if hasattr(self, 'parent_widget') and hasattr(self.parent_widget, 'benchmark_index') else '沪深300',
                 'risk_control': {
-                    'max_drawdown_limit': self.parent_widget.risk_panel.max_drawdown_limit.value() if hasattr(self, 'parent_widget') and hasattr(self.parent_widget, 'risk_panel') else 0.20,
-                    'stop_loss': self.parent_widget.risk_panel.stop_loss.value() if hasattr(self, 'parent_widget') and hasattr(self.parent_widget, 'risk_panel') else 0.10,
-                    'take_profit': self.parent_widget.risk_panel.take_profit.value() if hasattr(self, 'parent_widget') and hasattr(self.parent_widget, 'risk_panel') else 0.20,
-                    'max_position_size': self.parent_widget.risk_panel.max_position_size.value() if hasattr(self, 'parent_widget') and hasattr(self.parent_widget, 'risk_panel') else 0.10,
-                    'max_holding_periods': self.parent_widget.risk_panel.max_holding_periods.value() if hasattr(self, 'parent_widget') and hasattr(self.parent_widget, 'risk_panel') else 0
+                    'max_drawdown_limit': self.parent_widget.max_drawdown_limit.value() if hasattr(self, 'parent_widget') and hasattr(self.parent_widget, 'max_drawdown_limit') else 0.20,
+                    'stop_loss': self.parent_widget.stop_loss.value() if hasattr(self, 'parent_widget') and hasattr(self.parent_widget, 'stop_loss') else 0.10,
+                    'take_profit': self.parent_widget.take_profit.value() if hasattr(self, 'parent_widget') and hasattr(self.parent_widget, 'take_profit') else 0.20,
+                    'max_position_size': self.parent_widget.max_position_size.value() if hasattr(self, 'parent_widget') and hasattr(self.parent_widget, 'max_position_size') else 0.10,
+                    'max_holding_periods': self.parent_widget.max_holding_periods.value() if hasattr(self, 'parent_widget') and hasattr(self.parent_widget, 'max_holding_periods') else 0
                 }
             }
 
             self.start_backtest.emit(params)
+            # 更新按钮状态 - 运行中
             self.start_button.setEnabled(False)
+            self.start_button.setStyleSheet(self.START_BUTTON_DISABLED_STYLE)
             self.stop_button.setEnabled(True)
-            self.status_label.setText("状态: 运行中")
+            self.stop_button.setStyleSheet(self.STOP_BUTTON_ENABLED_STYLE)
+            self.status_label.setText("状态：运行中")
             self.status_label.setStyleSheet("""
                 QLabel {
                     color: #f59e0b;
-                    font-weight: bold;
-                    padding: 10px;
-                    border: 1px solid #2d3748;
-                    border-radius: 5px;
-                    background-color: #1e2329;
+                    font-weight: 600;
+                    padding: 12px;
+                    border: 1px solid #374151;
+                    border-radius: 6px;
+                    background-color: rgba(30, 41, 59, 128);
+                    font-size: 11px;
                 }
             """)
         except RuntimeError as e:
@@ -1153,22 +1374,44 @@ class ControlPanel(QWidget):
     def on_stop_backtest(self):
         """停止回测"""
         try:
+            # 重置按钮状态 - 已停止
             self.start_button.setEnabled(True)
+            self.start_button.setStyleSheet(self.START_BUTTON_ENABLED_STYLE)
             self.stop_button.setEnabled(False)
+            self.stop_button.setStyleSheet(self.STOP_BUTTON_DISABLED_STYLE)
             self.status_label.setText("状态: 已停止")
             self.status_label.setStyleSheet("""
                 QLabel {
                     color: #ef4444;
-                    font-weight: bold;
-                    padding: 10px;
-                    border: 1px solid #2d3748;
-                    border-radius: 5px;
-                    background-color: #1e2329;
+                    font-weight: 600;
+                    padding: 12px;
+                    border: 1px solid #374151;
+                    border-radius: 6px;
+                    background-color: rgba(30, 41, 59, 128);
+                    font-size: 11px;
                 }
             """)
         except RuntimeError as e:
             if "wrapped C/C++ object" in str(e):
-                logger.warning(f"Qt控件已销毁，取消停止操作: {e}")
+                logger.warning(f"Qt 控件已销毁，取消停止操作：{e}")
+            else:
+                raise
+
+    def on_backtest_finished(self):
+        """回测完成后的状态重置"""
+        try:
+            # 重置按钮状态
+            self.start_button.setEnabled(True)
+            self.start_button.setStyleSheet(self.START_BUTTON_ENABLED_STYLE)
+            self.stop_button.setEnabled(False)
+            self.stop_button.setStyleSheet(self.STOP_BUTTON_DISABLED_STYLE)
+            
+            # 更新状态标签为完成状态（绿色）
+            self.status_label.setText("状态：已完成")
+            self.status_label.setStyleSheet(self.STATUS_STYLES['completed'])
+        except RuntimeError as e:
+            if "wrapped C/C++ object" in str(e):
+                logger.warning(f"Qt 控件已销毁，取消状态重置：{e}")
             else:
                 raise
 
@@ -1333,7 +1576,9 @@ class AlertsPanel(QWidget):
     """预警面板"""
 
     def __init__(self, parent=None):
-        super().__init__(parent)
+        super().__init__(parent)  # parent 可以为 None，由 layout 系统管理
+        # parent_widget 会在外部设置，用于访问其他面板
+        self.parent_widget = None
         self.alerts = []
         self.risk_metrics_history = []
         self.max_history_points = 50
@@ -1549,7 +1794,8 @@ class AlertsPanel(QWidget):
             sharpe_color = "#10b981" if sharpe_ratio > 1.0 else "#f59e0b" if sharpe_ratio > 0 else "#ef4444"
             self.sharpe_label.setStyleSheet(f"color: {sharpe_color}; font-weight: bold;")
             
-            self._update_risk_chart()
+            if hasattr(self, 'risk_ax') and self.risk_ax is not None:
+                self._update_risk_chart()
             
         except RuntimeError as e:
             if "wrapped C/C++ object" in str(e):
@@ -1591,6 +1837,9 @@ class ProfessionalBacktestWidget(QWidget):
         self.monitoring_data = []
         self.monitoring_data_lock = Lock()
         self._is_closing = False
+        
+        # 异步清理工作线程（用于优雅清理监控线程）
+        self._cleanup_worker = None
 
         # 回测相关变量
         self.current_stock_code = None
@@ -1682,10 +1931,8 @@ class ProfessionalBacktestWidget(QWidget):
                 self.control_panel.stop_backtest.emit()
 
             if hasattr(self, 'is_monitoring') and self.is_monitoring:
-                self.stop_backtest()
-
-            if hasattr(self, 'monitoring_thread') and self.monitoring_thread and self.monitoring_thread.is_alive():
-                self.monitoring_thread.join(timeout=2.0)
+                # 窗口关闭时使用同步清理（不更新 UI，避免不必要的操作）
+                self._cleanup_thread_sync(update_ui=False)
 
             if hasattr(self, 'chart_widget') and self.chart_widget and hasattr(self.chart_widget, 'animation_timer'):
                 self.chart_widget.animation_timer.stop()
@@ -1706,10 +1953,8 @@ class ProfessionalBacktestWidget(QWidget):
                 self.control_panel.stop_backtest.emit()
 
             if hasattr(self, 'is_monitoring') and self.is_monitoring:
-                self.stop_backtest()
-
-            if hasattr(self, 'monitoring_thread') and self.monitoring_thread and self.monitoring_thread.is_alive():
-                self.monitoring_thread.join(timeout=2.0)
+                # 窗口关闭时使用同步清理（不更新 UI，避免不必要的操作）
+                self._cleanup_thread_sync(update_ui=False)
 
             if hasattr(self, 'chart_widget') and self.chart_widget and hasattr(self.chart_widget, 'animation_timer'):
                 self.chart_widget.animation_timer.stop()
@@ -1750,7 +1995,8 @@ class ProfessionalBacktestWidget(QWidget):
         left_panel.setContentsMargins(4, 4, 4, 4)
 
         # 控制面板
-        self.control_panel = ControlPanel(parent=self)
+        self.control_panel = ControlPanel()  # 不设置 parent，让 layout 系统自动管理
+        self.control_panel.parent_widget = self  # 保存父组件引用，用于访问其他面板
         self.control_panel.start_backtest.connect(self.start_backtest)
         self.control_panel.stop_backtest.connect(self.stop_backtest)
         left_panel.addWidget(self.control_panel)
@@ -1772,7 +2018,8 @@ class ProfessionalBacktestWidget(QWidget):
         left_panel.addWidget(self.advanced_panel)
 
         # 预警面板
-        self.alerts_panel = AlertsPanel(parent=self)
+        self.alerts_panel = AlertsPanel()  # 不设置 parent，让 layout 系统自动管理
+        self.alerts_panel.parent_widget = self  # 保存父组件引用
         left_panel.addWidget(self.alerts_panel)
 
         # 左侧面板容器（添加滚动功能）
@@ -1785,8 +2032,8 @@ class ProfessionalBacktestWidget(QWidget):
         left_scroll.setWidgetResizable(True)
         left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         left_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        left_scroll.setMinimumWidth(250)  # 最小宽度
-        left_scroll.setMaximumWidth(450)  # 最大宽度（可拖拽范围）
+        left_scroll.setMinimumWidth(280)  # 最小宽度增加到 280px
+        left_scroll.setMaximumWidth(800)  # 最大宽度放宽到 800px，允许用户自由调整
         left_scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         left_scroll.setStyleSheet("""
             QScrollArea {
@@ -1814,15 +2061,19 @@ class ProfessionalBacktestWidget(QWidget):
         right_layout.setContentsMargins(0, 0, 0, 0)
 
         # 指标面板（固定高度）
-        self.metrics_panel = MetricsPanel(parent=self)
+        self.metrics_panel = MetricsPanel()  # 不设置 parent，让 layout 系统自动管理
+        self.metrics_panel.parent_widget = self  # 保存父组件引用
         # self.metrics_panel.setMaximumHeight(180)
         # self.metrics_panel.setMinimumHeight(160)
         right_layout.addWidget(self.metrics_panel)
 
         # 图表区域（占用剩余空间的主要部分）
-        self.chart_widget = RealTimeChart(parent=self)
+        self.chart_widget = RealTimeChart()  # 不设置 parent，让 layout 系统自动管理
+        self.chart_widget.parent_widget = self  # 保存父组件引用
         self.chart_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.chart_widget.setMinimumHeight(400)
+        # ✅ 连接图表展示完成信号，在图表展示完成后才切换按钮状态
+        self.chart_widget.chart_display_completed.connect(self.on_chart_display_completed)
         right_layout.addWidget(self.chart_widget, 1)  # stretch=1，占用主要空间
 
         # 右侧容器
@@ -1869,8 +2120,8 @@ class ProfessionalBacktestWidget(QWidget):
                 current_sizes = self.main_splitter.sizes()
                 total = sum(current_sizes)
                 if total > 0:
-                    min_left = 250
-                    max_left = 450
+                    min_left = 280  # 更新为新的最小值
+                    max_left = 800  # 更新为新的最大值
                     if width < 1024:
                         new_left = min(int(width * 0.22), min_left)
                     elif width > 1920:
@@ -1880,6 +2131,24 @@ class ProfessionalBacktestWidget(QWidget):
                     new_left = max(min_left, min(max_left, new_left))
                     new_right = width - new_left - 4
                     self.main_splitter.setSizes([new_left, new_right])
+            
+            # 调整指标面板高度（使用百分比）
+            if hasattr(self, 'metrics_panel') and self.metrics_panel:
+                # 根据窗口高度动态调整指标面板高度
+                # 小屏幕 25%，中等屏幕 20%，大屏幕 15%
+                if height < 768:
+                    metrics_height = int(height * 0.25)
+                elif height > 1080:
+                    metrics_height = int(height * 0.15)
+                else:
+                    metrics_height = int(height * 0.20)
+                
+                # 限制在合理范围内
+                metrics_height = max(150, min(400, metrics_height))
+                
+                if hasattr(self.metrics_panel, 'metrics_table'):
+                    self.metrics_panel.metrics_table.setMaximumHeight(metrics_height)
+                    self.metrics_panel.metrics_table.setMinimumHeight(metrics_height)
         except Exception as e:
             logger.warning(f"调整布局失败: {e}")
 
@@ -2361,23 +2630,26 @@ class ProfessionalBacktestWidget(QWidget):
         logger.info(f"创建新的回测引擎实例")
         return self.backtest_engine
 
-    def _get_monitor(self) -> 'RealTimeBacktestMonitor':
+    def _get_monitor(self, force_new: bool = False) -> 'RealTimeBacktestMonitor':
         """获取或创建监控器（复用模式）"""
         from backtest.real_time_backtest_monitor import RealTimeBacktestMonitor, MonitoringLevel
         
-        if self.monitor is not None:
-            # 使用 is_monitoring 属性检查监控器状态
-            if not hasattr(self.monitor, 'is_monitoring') or not self.monitor.is_monitoring:
-                logger.info("复用已有监控器实例")
-                return self.monitor
-            else:
-                logger.info("监控器正在运行，先停止")
-                self.monitor.stop_monitoring()
-                import time
-                time.sleep(0.1)  # 等待监控器完全停止
+        # 强制创建新实例或没有旧实例
+        if force_new or self.monitor is None:
+            self.monitor = RealTimeBacktestMonitor(monitoring_level=MonitoringLevel.REAL_TIME)
+            logger.info("创建新的监控器实例")
+            return self.monitor
         
-        self.monitor = RealTimeBacktestMonitor(monitoring_level=MonitoringLevel.REAL_TIME)
-        logger.info("创建新的监控器实例")
+        # 检查旧实例状态
+        if hasattr(self.monitor, 'is_monitoring') and self.monitor.is_monitoring:
+            logger.info("监控器正在运行，停止并重新创建")
+            self.monitor.stop_monitoring()
+            # 不等待，直接创建新实例（消除硬编码延迟）
+            self.monitor = RealTimeBacktestMonitor(monitoring_level=MonitoringLevel.REAL_TIME)
+            logger.info("已创建新监控器实例")
+        else:
+            logger.info("复用已有监控器实例")
+        
         return self.monitor
 
     BENCHMARK_MAPPING = {
@@ -2447,8 +2719,8 @@ class ProfessionalBacktestWidget(QWidget):
             logger.error(f"获取基准指数数据失败: {e}")
             return None
 
-    def _get_stock_data(self, stock_code: str, period: str) -> pd.DataFrame:
-        """从系统框架获取真实股票数据"""
+    def _get_stock_data(self, stock_code: str, period: str, timeout: int = 30) -> pd.DataFrame:
+        """从系统框架获取真实股票数据（带超时控制）"""
         try:
             # 检查缓存
             cache_key = f"{stock_code}_{period}"
@@ -2479,7 +2751,23 @@ class ProfessionalBacktestWidget(QWidget):
                 '60m': '60m', '1d': 'D', '1w': 'W', '1M': 'M'
             }
             stock_period = period_to_stock_service.get(period_internal, 'D')
-            kdata = stock_service.get_kdata(stock_code, period=stock_period, count=days)
+            
+            # 使用线程池实现超时控制
+            from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+            
+            def fetch_data():
+                return stock_service.get_kdata(stock_code, period=stock_period, count=days)
+            
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(fetch_data)
+                try:
+                    kdata = future.result(timeout=timeout)  # 超时控制
+                except FuturesTimeoutError:
+                    logger.error(f"获取股票数据超时（{timeout}秒）：{stock_code}")
+                    raise RuntimeError(f"获取股票数据超时，请检查网络连接（超时时间：{timeout}秒）")
+                except Exception as e:
+                    logger.error(f"获取股票数据失败：{e}")
+                    raise
 
             if kdata is None or kdata.empty:
                 raise RuntimeError(f"无法获取股票 {stock_code} 的K线数据，数据为空")
@@ -2508,52 +2796,41 @@ class ProfessionalBacktestWidget(QWidget):
 
         except Exception as e:
             logger.error(f"获取股票数据失败: {e}")
-            # 尝试使用备用数据源
-            try:
-                logger.info("尝试使用备用数据源...")
-                kdata = self._get_fallback_stock_data(stock_code, period)
+            logger.info("尝试使用备用数据源...")
+            kdata = self._get_fallback_stock_data(stock_code, period)
+            if kdata is not None and not kdata.empty:
                 logger.info(f"备用数据源成功: {len(kdata)}条记录")
                 return kdata
-            except Exception as e2:
-                logger.error(f"备用数据源也失败: {e2}")
-                # 不再使用模拟数据，直接抛出错误
-                raise RuntimeError(f"无法获取股票 {stock_code} 的数据，请检查网络连接或稍后重试")
+            raise RuntimeError(f"无法获取股票 {stock_code} 的数据，请检查网络连接或稍后重试")
 
     def _get_fallback_stock_data(self, stock_code: str, period: str) -> pd.DataFrame:
         """从备用数据源获取股票数据"""
-        try:
-            import yfinance as yf
-            import datetime
+        import yfinance as yf
 
-            period_map = {
-                "1w": "1mo", "2w": "1mo", "1m": "1mo", "3m": "3mo",
-                "6m": "6mo", "1y": "1y", "2y": "2y", "5y": "5y"
-            }
-            yf_period = period_map.get(period, "1y")
+        period_map = {
+            "1w": "1mo", "2w": "1mo", "1m": "1mo", "3m": "3mo",
+            "6m": "6mo", "1y": "1y", "2y": "2y", "5y": "5y"
+        }
+        yf_period = period_map.get(period, "1y")
 
-            ticker = yf.Ticker(f"{stock_code}.SS" if stock_code.startswith('6') else f"{stock_code}.SZ")
-            data = ticker.history(period=yf_period)
+        ticker = yf.Ticker(f"{stock_code}.SS" if stock_code.startswith('6') else f"{stock_code}.SZ")
+        data = ticker.history(period=yf_period)
 
-            if data is None or data.empty:
-                raise RuntimeError("备用数据源返回空数据")
+        if data is None or data.empty:
+            raise RuntimeError("备用数据源返回空数据")
 
-            data = data.reset_index()
-            data = data.rename(columns={
-                'Date': 'datetime',
-                'Open': 'open',
-                'High': 'high',
-                'Low': 'low',
-                'Close': 'close',
-                'Volume': 'volume'
-            })
+        data = data.reset_index()
+        data = data.rename(columns={
+            'Date': 'datetime',
+            'Open': 'open',
+            'High': 'high',
+            'Low': 'low',
+            'Close': 'close',
+            'Volume': 'volume'
+        })
 
-            logger.info(f"备用数据源获取成功: {len(data)}条记录")
-            return data
-
-        except ImportError:
-            raise RuntimeError("yfinance未安装")
-        except Exception as e:
-            raise RuntimeError(f"备用数据源失败: {e}")
+        logger.info(f"备用数据源获取成功: {len(data)}条记录")
+        return data
 
     def _generate_strategy_signals(self, kdata: pd.DataFrame, strategy_name: str) -> pd.Series:
         """生成策略信号"""
@@ -2567,8 +2844,12 @@ class ProfessionalBacktestWidget(QWidget):
             except Exception as reg_err:
                 logger.warning(f"强制注册内置策略失败: {reg_err}")
 
-            # 检查缓存
-            cache_key = f"{strategy_name}_{len(kdata)}"
+            # 检查缓存 - 包含策略版本和阈值参数信息以避免参数修改后返回旧缓存
+            strategy_version = "3.0.2"  # AdaptivePandas策略版本
+            # 获取策略默认阈值参数（用于缓存键）
+            backtest_threshold = 0.45  # 默认回测阈值
+            live_threshold = 0.6  # 默认实盘阈值
+            cache_key = f"{strategy_name}_v{strategy_version}_bt{backtest_threshold}_live{live_threshold}_{len(kdata)}"
             if cache_key in self.signal_cache:
                 logger.info(f"使用缓存的策略信号: {cache_key}")
                 return self.signal_cache[cache_key]
@@ -2782,6 +3063,9 @@ class ProfessionalBacktestWidget(QWidget):
 
             # 更新进度到 100%
             self.control_panel.update_progress(100, "回测完成", "回测已完成")
+            
+            # ❌ 移除：不在这里切换按钮状态，等待图表展示完成
+            # self.control_panel.on_backtest_finished()  # 已删除
 
             # 保存回测结果
             if self.backtest_result_manager:
@@ -2944,38 +3228,25 @@ class ProfessionalBacktestWidget(QWidget):
                 logger.warning(f"更新图表失败：{e}")
 
 
-            # 更新UI显示 - 风险预警检查
+            # 更新UI显示 - 使用统一的风险指标更新和预警检查
             try:
-                max_dd = results.get('max_drawdown', 0) or 0
-                if max_dd > 0.20:
-                    self.alerts_panel.add_alert('critical', f"最大回撤 {max_dd:.1%} 超过 20%")
-                elif max_dd > 0.10:
-                    self.alerts_panel.add_alert('warning', f"最大回撤 {max_dd:.1%} 超过 10%")
-
-                sharpe = results.get('sharpe_ratio', 0) or 0
-                if sharpe < 0:
-                    self.alerts_panel.add_alert('critical', f"夏普比率 {sharpe:.2f} 为负")
-                elif sharpe < 0.5:
-                    self.alerts_panel.add_alert('warning', f"夏普比率 {sharpe:.2f} 偏低")
-
-                win_rate = results.get('win_rate', 0) or 0
-                if win_rate < 0.3:
-                    self.alerts_panel.add_alert('warning', f"胜率 {win_rate:.1%} 低于 30%")
-
-                total_return = results.get('total_return', 0) or 0
-                if total_return < -0.20:
-                    self.alerts_panel.add_alert('critical', f"总收益 {total_return:.1%} 亏损超过 20%")
-
-                volatility = results.get('volatility', 0) or 0
-                if volatility > 0.5:
-                    self.alerts_panel.add_alert('warning', f"波动率 {volatility:.1%} 超过 50%")
+                # 调用统一的风险指标更新（内部会检查预警）
+                self._update_risk_metrics(results)
             except Exception as e:
-                logger.warning(f"风险预警检查失败: {e}")
+                logger.warning(f"风险指标更新失败: {e}")
+                # 备用方案：直接检查关键预警
+                self._check_critical_alerts(results)
 
             self.alerts_panel.add_alert('success', f'回测完成: {self.current_stock_code}')
 
         except Exception as e:
             logger.error(f"处理回测完成失败：{e}")
+            # 【新增】通知用户并恢复状态
+            try:
+                self.control_panel.update_progress(0, "回测失败", f"回测完成处理失败：{str(e)}")
+                self.control_panel.on_stop_backtest()
+            except:
+                pass
 
     def _on_progress_update(self, progress: int, stage: str, message: str):
         """进度更新槽函数（在主线程执行）"""
@@ -2985,6 +3256,18 @@ class ProfessionalBacktestWidget(QWidget):
             self.control_panel.update_progress(progress, stage, message)
         except Exception as e:
             logger.error(f"进度更新失败：{e}")
+
+    def on_chart_display_completed(self):
+        """图表展示完成后的处理（在主线程执行）"""
+        try:
+            if getattr(self, '_is_closing', False):
+                logger.info("窗口正在关闭，跳过图表完成后的按钮状态重置")
+                return
+            logger.info("图表展示完成，重置按钮状态")
+            # ✅ 在图表完全展示后才切换按钮状态
+            self.control_panel.on_backtest_finished()
+        except Exception as e:
+            logger.error(f"图表展示完成处理失败：{e}")
 
     def _on_alert_request(self, level: str, message: str):
         """预警添加槽函数（在主线程执行）"""
@@ -2996,38 +3279,48 @@ class ProfessionalBacktestWidget(QWidget):
             logger.error(f"添加预警失败：{e}")
 
     def _save_results_to_local_file(self, results: Dict):
-        """保存回测结果到本地文件"""
+        """保存回测结果到本地文件（带事务保证）"""
+        import json
+        import os
+        import tempfile
+        from datetime import datetime
+
+        save_dir = os.path.join(os.getcwd(), 'backtest_results')
+        os.makedirs(save_dir, exist_ok=True)
+
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"backtest_{self.current_stock_code}_{self.current_strategy}_{timestamp}.json"
+        filepath = os.path.join(save_dir, filename)
+
+        save_data = {
+            'stock_code': self.current_stock_code,
+            'stock_name': self.current_stock_name,
+            'strategy_name': self.current_strategy,
+            'backtest_time': datetime.now().isoformat(),
+            'execution_time': self.execution_time,
+            'results': results
+        }
+
+        temp_fd, temp_path = tempfile.mkstemp(suffix='.json', dir=save_dir)
         try:
-            import json
-            import os
-            from datetime import datetime
-
-            # 创建保存目录
-            save_dir = os.path.join(os.getcwd(), 'backtest_results')
-            os.makedirs(save_dir, exist_ok=True)
-
-            # 生成文件名
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f"backtest_{self.current_stock_code}_{self.current_strategy}_{timestamp}.json"
-            filepath = os.path.join(save_dir, filename)
-
-            # 准备保存的数据
-            save_data = {
-                'stock_code': self.current_stock_code,
-                'stock_name': self.current_stock_name,
-                'strategy_name': self.current_strategy,
-                'backtest_time': datetime.now().isoformat(),
-                'execution_time': self.execution_time,
-                'results': results
-            }
-
-            # 保存到文件
-            with open(filepath, 'w', encoding='utf-8') as f:
+            with os.fdopen(temp_fd, 'w', encoding='utf-8') as f:
                 json.dump(save_data, f, ensure_ascii=False, indent=2, default=str)
+                f.flush()
+                os.fsync(f.fileno())
 
+            with open(temp_path, 'r', encoding='utf-8') as f:
+                verified_data = json.load(f)
+                if verified_data.get('stock_code') != self.current_stock_code:
+                    raise RuntimeError("数据验证失败")
+
+            os.replace(temp_path, filepath)
             logger.info(f"回测结果已保存到: {filepath}")
-
         except Exception as e:
+            if os.path.exists(temp_path):
+                try:
+                    os.unlink(temp_path)
+                except:
+                    pass
             raise RuntimeError(f"保存到本地文件失败: {e}")
 
     def stop_backtest(self):
@@ -3057,29 +3350,109 @@ class ProfessionalBacktestWidget(QWidget):
             self.is_monitoring = False
 
             if self.monitoring_thread and self.monitoring_thread.is_alive():
-                logger.info(f"等待监控线程结束 - 线程ID: {self.monitoring_thread.ident}")
+                logger.info(f"等待监控线程结束 - 线程 ID: {self.monitoring_thread.ident}")
 
-                # 给线程更多时间优雅退出
-                self.monitoring_thread.join(timeout=10.0)
-
-                if self.monitoring_thread.is_alive():
-                    logger.warning(f"监控线程未能在10秒内结束 - 线程ID: {self.monitoring_thread.ident}")
-                else:
-                    logger.info("监控线程已正常结束")
-
-            # 清理线程引用
-            self.monitoring_thread = None
+                # 异步等待线程结束，UI 更新由 _on_thread_cleanup_complete 处理
+                self._cleanup_thread_async()
+                # 不立即执行 UI 更新，等待异步清理完成
+            else:
+                # 线程已结束或未启动，直接清理并更新 UI
+                self.monitoring_thread = None
+                self._on_thread_cleanup_complete()
 
             # 性能监控已移至性能监控中心
-
-            self.control_panel.on_stop_backtest()
-            self.control_panel.reset_progress()
-            self.alerts_panel.add_alert('warning', '回测已停止，结果未保存')
 
             logger.info("回测已停止")
 
         except Exception as e:
-            logger.error(f"停止回测失败: {e}")
+            logger.error(f"停止回测失败：{e}")
+
+    def _cleanup_thread_async(self):
+        """异步清理监控线程，避免阻塞 UI"""
+        from PyQt5.QtCore import QThread
+        
+        # 检查是否已有清理线程在运行（防止重复创建）
+        if hasattr(self, '_cleanup_worker') and self._cleanup_worker is not None:
+            if self._cleanup_worker.isRunning():
+                logger.warning("已有清理线程在运行，跳过")
+                return
+        
+        def wait_thread():
+            """在工作线程中等待监控线程结束"""
+            try:
+                if self.monitoring_thread and self.monitoring_thread.is_alive():
+                    self.monitoring_thread.join(timeout=2.0)
+                    
+                    if self.monitoring_thread.is_alive():
+                        logger.warning(f"监控线程未能在 2 秒内结束 - 线程 ID: {self.monitoring_thread.ident}")
+                    else:
+                        logger.info("监控线程已正常结束")
+            except Exception as e:
+                logger.error(f"等待线程结束失败：{e}")
+            finally:
+                # 清理线程引用
+                self.monitoring_thread = None
+                
+                # 通过信号通知清理完成（在主线程中执行）
+                try:
+                    # 使用 metaObject 方法调用主线程的方法
+                    from PyQt5.QtCore import QMetaObject, Qt
+                    QMetaObject.invokeMethod(
+                        self, '_on_thread_cleanup_complete', Qt.QueuedConnection
+                    )
+                except Exception as e:
+                    logger.error(f"调用清理完成方法失败：{e}")
+        
+        # 创建工作线程并保存引用
+        try:
+            self._cleanup_worker = QThread()
+            self._cleanup_worker.run = wait_thread
+            self._cleanup_worker.finished.connect(self._on_cleanup_worker_finished)
+            
+            # 启动工作线程
+            self._cleanup_worker.start()
+            logger.info("已启动异步线程清理任务")
+        except Exception as e:
+            logger.error(f"启动清理线程失败：{e}")
+            # 回退到同步清理
+            self.monitoring_thread = None
+            self._on_thread_cleanup_complete()
+    
+    def _on_cleanup_worker_finished(self):
+        """清理工作线程完成后的处理"""
+        logger.debug("清理工作线程已结束")
+        self._cleanup_worker = None
+    
+    def _cleanup_thread_sync(self, update_ui=True):
+        """同步清理监控线程（用于窗口关闭等场景）
+        
+        Args:
+            update_ui: 是否更新 UI。窗口关闭时设为 False 可避免不必要的 UI 更新
+        """
+        try:
+            if self.monitoring_thread and self.monitoring_thread.is_alive():
+                logger.info("同步等待监控线程结束...")
+                self.monitoring_thread.join(timeout=2.0)
+                
+                if self.monitoring_thread.is_alive():
+                    logger.warning(f"监控线程未能在 2 秒内结束 - 线程 ID: {self.monitoring_thread.ident}")
+                else:
+                    logger.info("监控线程已正常结束")
+        except Exception as e:
+            logger.error(f"同步等待线程结束失败：{e}")
+        finally:
+            self.monitoring_thread = None
+            
+        # 根据参数决定是否更新 UI
+        if update_ui:
+            self._on_thread_cleanup_complete()
+    
+    def _on_thread_cleanup_complete(self):
+        """线程清理完成后的处理（在主线程中执行）"""
+        logger.info("线程清理完成，更新 UI")
+        self.control_panel.on_stop_backtest()
+        self.control_panel.reset_progress()
+        self.alerts_panel.add_alert('warning', '回测已停止，结果未保存')
 
     def start_monitoring(self, data: pd.DataFrame, params: Dict):
         """启动监控"""
@@ -3092,33 +3465,10 @@ class ProfessionalBacktestWidget(QWidget):
         from backtest.real_time_backtest_monitor import RealTimeBacktestMonitor, MonitoringLevel
         from backtest.unified_backtest_engine import UnifiedBacktestEngine
         
-        def simulate_progress(stop_event):
-            """模拟回测进度，让用户感觉有在进行"""
-            stages = [
-                (0, "数据验证", "正在验证数据完整性..."),
-                (15, "策略计算", "正在计算策略指标..."),
-                (30, "信号生成", "正在生成交易信号..."),
-                (50, "回测执行", "正在执行回测引擎..."),
-                (70, "风险计算", "正在计算风险指标..."),
-                (85, "结果汇总", "正在汇总回测结果...")
-            ]
-            current_progress = 0
-            stage_idx = 0
-            while not stop_event.is_set() and stage_idx < len(stages):
-                target_progress, stage_name, message = stages[stage_idx]
-                while current_progress < target_progress and not stop_event.is_set():
-                    current_progress += 1
-                    # 使用信号更新进度（修复工作线程无法使用 QTimer 的问题）
-                    self.request_progress_update.emit(current_progress, stage_name, message)
-                    time.sleep(0.05)
-                stage_idx += 1
-        
         def monitoring_loop():
             """优化的回测监控循环 - 单次完整回测"""
             thread_name = threading.current_thread().name
             logger.info(f"回测监控循环开始 - 线程: {thread_name}")
-            
-            stop_progress_event = threading.Event()
             
             try:
                 # 获取当前回测数据
@@ -3164,17 +3514,39 @@ class ProfessionalBacktestWidget(QWidget):
                 
                 logger.info("使用复用的回测引擎")
                 
-                # 启动模拟进度线程
-                stop_progress_event.clear()
-                progress_thread = threading.Thread(
-                    target=simulate_progress,
-                    args=(stop_progress_event,),
-                    daemon=True,
-                    name="ProgressSimulator"
-                )
-                progress_thread.start()
+                # 定义真实进度回调函数（替代模拟进度线程）
+                def progress_callback(bar_index: int, total_bars: int, current_result: Dict = None):
+                    """真实的回测进度回调"""
+                    if getattr(self, '_is_closing', False):
+                        return
+                    try:
+                        progress = int((bar_index / total_bars) * 100) if total_bars > 0 else 0
+                        
+                        # 根据进度判断阶段
+                        if progress < 20:
+                            stage_name = "数据验证"
+                            message = f"验证数据完整性... ({bar_index}/{total_bars})"
+                        elif progress < 40:
+                            stage_name = "策略计算"
+                            message = f"计算策略指标... ({bar_index}/{total_bars})"
+                        elif progress < 60:
+                            stage_name = "信号生成"
+                            message = f"生成交易信号... ({bar_index}/{total_bars})"
+                        elif progress < 80:
+                            stage_name = "回测执行"
+                            message = f"执行回测引擎... ({bar_index}/{total_bars})"
+                        elif progress < 95:
+                            stage_name = "风险计算"
+                            message = f"计算风险指标... ({bar_index}/{total_bars})"
+                        else:
+                            stage_name = "结果汇总"
+                            message = f"汇总回测结果... ({bar_index}/{total_bars})"
+                        
+                        self.request_progress_update.emit(progress, stage_name, message)
+                    except Exception as e:
+                        logger.debug(f"进度回调异常: {e}")
                 
-                # 直接运行一次完整回测（不使用监控器的多次分块调用）
+                # 直接运行一次完整回测（使用真实进度回调）
                 try:
                     logger.info("开始执行单次完整回测...")
                     
@@ -3199,7 +3571,8 @@ class ProfessionalBacktestWidget(QWidget):
                         max_holding_periods=max_holding_periods,
                         enable_compound=params.get('enable_compound', True),
                         benchmark_data=params.get('benchmark_data'),
-                        mode_context=mode_context
+                        mode_context=mode_context,
+                        progress_callback=progress_callback  # 使用真实进度回调
                     )
                     # 调试：打印返回类型
                     logger.info(f"回测结果类型：{type(final_result).__name__}")
@@ -3214,10 +3587,6 @@ class ProfessionalBacktestWidget(QWidget):
                 except Exception as e:
                     logger.error(f"回测执行失败：{e}")
                     raise
-                
-                # 停止模拟进度
-                stop_progress_event.set()
-                progress_thread.join(timeout=2.0)
                 
                 # 获取完整结果
                 final_results = None
@@ -3278,9 +3647,17 @@ class ProfessionalBacktestWidget(QWidget):
                         logger.error(f"转换回测结果失败: {e}")
                         final_results = None
                 
-                # 如果单次回测失败，尝试使用监控器方式
+                # 如果单次回测失败，尝试使用监控器方式（带进度回调）
                 if final_results is None:
                     logger.warning("单次回测失败，尝试使用监控器方式")
+                    
+                    def monitor_progress_callback(bar_index: int, total_bars: int, current_result: Dict = None):
+                        """监控器进度回调"""
+                        if getattr(self, '_is_closing', False):
+                            return
+                        progress = int((bar_index / total_bars) * 100) if total_bars > 0 else 0
+                        self.request_progress_update.emit(progress, "回测执行", f"监控模式: {bar_index}/{total_bars}")
+                    
                     monitor = self._get_monitor()
                     monitor.start_monitoring(
                         backtest_engine=backtest_engine,
@@ -3289,7 +3666,8 @@ class ProfessionalBacktestWidget(QWidget):
                         engine_type="unified",
                         stop_loss_pct=stop_loss_pct,
                         take_profit_pct=take_profit_pct,
-                        max_holding_periods=max_holding_periods
+                        max_holding_periods=max_holding_periods,
+                        progress_callback=monitor_progress_callback  # 传入进度回调
                     )
                     
                     # 等待监控完成
@@ -3324,7 +3702,6 @@ class ProfessionalBacktestWidget(QWidget):
                 logger.error(f"回测循环异常：{e}")
                 import traceback
                 logger.error(traceback.format_exc())
-                stop_progress_event.set()
                 
                 # 通过信号通知 UI 回测失败（修复工作线程无法使用 QTimer 的问题）
                 self.request_progress_update.emit(0, "回测失败", str(e))
@@ -3391,6 +3768,62 @@ class ProfessionalBacktestWidget(QWidget):
 
         except Exception as e:
             logger.error(f"检查预警失败: {e}")
+
+    def _update_risk_metrics(self, results: Dict):
+        """从回测结果更新风险指标（统一入口）"""
+        try:
+            if getattr(self, '_is_closing', False):
+                return
+            
+            if not results:
+                return
+            
+            # 提取风险指标
+            var_95 = results.get('var_95', 0) or 0
+            cvar_95 = results.get('cvar_95', 0) or 0
+            max_drawdown = results.get('max_drawdown', 0) or 0
+            volatility = results.get('volatility', 0) or 0
+            sharpe_ratio = results.get('sharpe_ratio', 0) or 0
+            
+            new_metrics = {
+                'var_95': var_95,
+                'cvar_95': cvar_95,
+                'max_drawdown': max_drawdown,
+                'volatility': volatility,
+                'sharpe_ratio': sharpe_ratio
+            }
+            
+            # 检查是否有变化
+            if hasattr(self, 'risk_metrics') and self.risk_metrics == new_metrics:
+                return
+            
+            self.risk_metrics = new_metrics
+            self._check_risk_alerts()
+            
+            if hasattr(self, 'alerts_panel') and self.alerts_panel:
+                self.alerts_panel.update_risk_metrics(self.risk_metrics)
+                
+        except Exception as e:
+            logger.error(f"更新风险指标失败: {e}")
+
+    def _check_critical_alerts(self, results: Dict):
+        """检查关键预警（备用方案）"""
+        try:
+            max_dd = results.get('max_drawdown', 0) or 0
+            dd_threshold = abs(self.risk_thresholds.get('max_drawdown', -0.20))
+            if max_dd < -dd_threshold:
+                self.alerts_panel.add_alert('critical', f"最大回撤 {abs(max_dd):.1%} 超过 {dd_threshold:.1%}")
+            elif max_dd < -(dd_threshold / 2):
+                self.alerts_panel.add_alert('warning', f"最大回撤 {abs(max_dd):.1%} 超过 {dd_threshold/2:.1%}")
+
+            sharpe = results.get('sharpe_ratio', 0) or 0
+            sharpe_threshold = self.risk_thresholds.get('sharpe_ratio', 0.5)
+            if sharpe < 0:
+                self.alerts_panel.add_alert('critical', f"夏普比率 {sharpe:.2f} 为负")
+            elif sharpe < sharpe_threshold:
+                self.alerts_panel.add_alert('warning', f"夏普比率 {sharpe:.2f} 低于 {sharpe_threshold:.2f}")
+        except Exception as e:
+            logger.error(f"检查关键预警失败: {e}")
 
     def _calculate_and_update_risk_metrics(self, data: Dict):
         """计算并更新风险指标 - 性能优化版本"""

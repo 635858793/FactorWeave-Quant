@@ -156,7 +156,9 @@ class EnhancedRealtimeDataManager:
         优先使用 Callback 模式以降低延迟
         注意：Callback 模式失败时会直接抛出异常，确保系统异常能够被及时发现和处理
         """
-        logger.info(f"订阅实时数据: 股票={symbols}, 类型={data_types}, 资产={asset_type}, 插件={source_plugin_id}")
+        logger.warning(f"[REALTIME_SUB] 订阅实时数据: 股票={symbols}, 类型={data_types}, 资产={asset_type}, 插件={source_plugin_id}")
+        logger.warning(f"[REALTIME_SUB] 当前 realtime_plugins 状态: {list(self.realtime_plugins.keys()) if self.realtime_plugins else 'EMPTY'}")
+        logger.warning(f"[REALTIME_SUB] uni_plugin_manager 状态: {self.uni_plugin_manager is not None}")
 
         errors = []
         for data_type in data_types:
@@ -409,7 +411,10 @@ class EnhancedRealtimeDataManager:
     def _select_default_plugin(self, data_type: DataType) -> str:
         """选择默认插件（根据数据类型能力匹配）"""
         if not self.realtime_plugins:
+            logger.warning(f"没有已注册的实时数据插件可供选择，数据类型: {data_type.value}")
             return ""
+
+        logger.info(f"当前已注册的实时数据插件: {list(self.realtime_plugins.keys())}")
 
         capability_map = {
             DataType.TICK_DATA: 'tick',
@@ -417,16 +422,31 @@ class EnhancedRealtimeDataManager:
             DataType.ORDER_BOOK: 'order_book',
         }
         required_capability = capability_map.get(data_type)
+        logger.debug(f"为数据类型 {data_type.value} 查找具有能力 {required_capability} 的插件")
 
         for plugin_id, plugin in self.realtime_plugins.items():
-            if required_capability:
-                if hasattr(plugin, 'get_capabilities'):
-                    capabilities = plugin.get_capabilities()
+            if hasattr(plugin, 'get_capabilities'):
+                capabilities = plugin.get_capabilities()
+                logger.debug(f"插件 {plugin_id} 的能力: {capabilities}")
+                if required_capability:
                     if capabilities.get(required_capability, False):
+                        logger.info(f"找到匹配的插件: {plugin_id}，能力: {required_capability}")
                         return plugin_id
-                continue
-            return plugin_id
+                    else:
+                        logger.debug(f"插件 {plugin_id} 缺少所需能力 {required_capability}，继续寻找")
+                        continue
+                else:
+                    return plugin_id
+            else:
+                logger.debug(f"插件 {plugin_id} 没有 get_capabilities 方法，直接使用")
+                return plugin_id
 
+        if not required_capability:
+            first_plugin = next(iter(self.realtime_plugins.keys()), "")
+            logger.warning(f"无法精确匹配，回退使用第一个可用插件: {first_plugin}")
+            return first_plugin
+
+        logger.warning(f"没有找到支持数据类型 {data_type.value} (需要能力: {required_capability}) 的插件")
         return ""
 
     def _ensure_subscription_status(self, plugin_id: str) -> None:

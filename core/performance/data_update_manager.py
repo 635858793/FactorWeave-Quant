@@ -60,7 +60,7 @@ class PerformanceDataUpdateManager(QObject):
     """
 
     # 信号
-    data_updated = pyqtSignal(str, str, Any)  # 数据更新信号 (tab_name, data_type, data)
+    data_updated = pyqtSignal(str, str, object)  # 数据更新信号 (tab_name, data_type, data)
     update_error = pyqtSignal(str, str, str)  # 更新错误信号 (tab_name, data_type, error)
     update_completed = pyqtSignal(str, float)  # 更新完成信号 (tab_name, update_time)
 

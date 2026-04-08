@@ -612,6 +612,144 @@ class AlertRuleEngine:
 
             return stats
 
+    def reload_rules_sync(self, rules: List) -> None:
+        """
+        从热加载服务同步规则（同步方法）
+
+        将数据库模型格式的 AlertRule 转换为业务模型并批量加载
+
+        Args:
+            rules: 数据库模型格式的 AlertRule 列表
+                   (来自 db.models.alert_config_models.AlertRule)
+        """
+        try:
+            with self._rule_lock:
+                self._rules.clear()
+                converted_count = 0
+
+                for rule_data in rules:
+                    try:
+                        business_rule = self._convert_db_rule_to_business_rule(rule_data)
+                        if business_rule:
+                            self._rules[business_rule.rule_id] = business_rule
+                            converted_count += 1
+                    except Exception as e:
+                        self.logger.error(f"转换规则失败 {getattr(rule_data, 'name', 'unknown')}: {e}")
+                        continue
+
+                self._update_stats()
+                self.logger.info(f"热加载同步完成: 成功转换 {converted_count}/{len(rules)} 条规则")
+
+        except Exception as e:
+            self.logger.error(f"热加载同步失败: {e}")
+
+    def _convert_db_rule_to_business_rule(self, rule_data) -> Optional[AlertRule]:
+        """
+        将数据库模型转换为业务模型
+
+        Args:
+            rule_data: 数据库模型 AlertRule
+
+        Returns:
+            Optional[AlertRule]: 业务模型 AlertRule，转换失败返回 None
+        """
+        try:
+            rule_id = str(rule_data.id)
+            name = rule_data.name or f"unnamed_rule_{rule_id}"
+            description = rule_data.description or ""
+
+            rule_type_map = {
+                "系统资源": "system",
+                "交易": "trading",
+                "数据质量": "data_quality",
+                "性能": "performance"
+            }
+            category = rule_type_map.get(rule_data.rule_type, "system")
+
+            priority_to_level = {
+                "低": AlertLevel.INFO,
+                "中": AlertLevel.WARNING,
+                "高": AlertLevel.ERROR,
+                "紧急": AlertLevel.CRITICAL
+            }
+            level = priority_to_level.get(rule_data.priority, AlertLevel.WARNING)
+
+            operator_map = {
+                ">": ">",
+                ">=": ">=",
+                "<": "<",
+                "<=": "<=",
+                "==": "==",
+                "!=": "!="
+            }
+            operator = operator_map.get(rule_data.operator, ">")
+
+            condition = RuleCondition(
+                condition_type=RuleConditionType.THRESHOLD,
+                metric_name=rule_data.metric_name,
+                operator=operator,
+                threshold_value=float(rule_data.threshold_value),
+                time_window_minutes=5,
+                evaluation_frequency_seconds=rule_data.check_interval
+            )
+
+            actions = []
+            if rule_data.desktop_notification or rule_data.sound_notification:
+                actions.append(RuleAction(
+                    action_type=RuleActionType.LOG,
+                    target="internal",
+                    template=rule_data.message_template or "{rule_name} 触发告警: {metric_name} {operator} {threshold_value}"
+                ))
+
+            if rule_data.email_notification:
+                actions.append(RuleAction(
+                    action_type=RuleActionType.EMAIL,
+                    target=rule_data.email_recipients or "default",
+                    template=rule_data.message_template
+                ))
+
+            if rule_data.webhook_notification:
+                actions.append(RuleAction(
+                    action_type=RuleActionType.WEBHOOK,
+                    target=rule_data.webhook_url or "default",
+                    template=rule_data.message_template
+                ))
+
+            if rule_data.dingtalk_notification:
+                actions.append(RuleAction(
+                    action_type=RuleActionType.WEBHOOK,
+                    target=rule_data.dingtalk_webhook_url or "default_dingtalk",
+                    template=rule_data.message_template
+                ))
+
+            if not actions:
+                actions.append(RuleAction(
+                    action_type=RuleActionType.LOG,
+                    target="internal",
+                    template="{rule_name} 触发告警"
+                ))
+
+            business_rule = AlertRule(
+                rule_id=rule_id,
+                name=name,
+                description=description,
+                conditions=[condition],
+                actions=actions,
+                level=level,
+                category=category,
+                enabled=rule_data.enabled,
+                cooldown_minutes=rule_data.silence_period // 60 if rule_data.silence_period > 0 else 5,
+                max_executions_per_hour=rule_data.max_alerts,
+                created_at=datetime.fromisoformat(rule_data.created_at) if rule_data.created_at else datetime.now(),
+                updated_at=datetime.fromisoformat(rule_data.updated_at) if rule_data.updated_at else datetime.now()
+            )
+
+            return business_rule
+
+        except Exception as e:
+            self.logger.error(f"转换规则详细失败: {e}")
+            return None
+
     def dispose(self) -> None:
         """清理资源"""
         self.stop()

@@ -68,7 +68,8 @@ class AIPredictionConfigDialog(QDialog):
 
             # 分割器
             splitter = QSplitter(Qt.Horizontal)
-            main_layout.addWidget(splitter)
+            splitter.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            main_layout.addWidget(splitter, 1)
 
             # 左侧：配置编辑区域
             config_widget = self.create_config_widget()
@@ -87,6 +88,7 @@ class AIPredictionConfigDialog(QDialog):
 
             # 状态标签
             self.status_label = QLabel("就绪")
+            self.status_label.setFixedHeight(20)
             main_layout.addWidget(self.status_label)
 
         except Exception as e:
@@ -350,6 +352,8 @@ class AIPredictionConfigDialog(QDialog):
         """创建历史记录区域"""
         widget = QWidget()
         layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(5)
 
         # 历史记录标题
         history_label = QLabel("配置变更历史")
@@ -366,10 +370,12 @@ class AIPredictionConfigDialog(QDialog):
         # 历史记录表格列宽自适应
         self.history_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.history_table.horizontalHeader().setStretchLastSection(True)
-        layout.addWidget(self.history_table)
+        self.history_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        layout.addWidget(self.history_table, 1)
 
         # 刷新按钮
         refresh_btn = QPushButton("刷新历史")
+        refresh_btn.setFixedHeight(30)
         refresh_btn.clicked.connect(self.load_history)
         layout.addWidget(refresh_btn)
 
@@ -378,6 +384,7 @@ class AIPredictionConfigDialog(QDialog):
     def create_button_layout(self) -> QHBoxLayout:
         """创建按钮布局"""
         layout = QHBoxLayout()
+        layout.setSpacing(10)
 
         # 应用按钮
         apply_btn = QPushButton("应用配置")

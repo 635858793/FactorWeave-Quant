@@ -30,7 +30,7 @@ from core.take_profit import AdaptiveTakeProfit
 @register_strategy("AdaptivePandas", metadata={
     "description": "完全基于pandas的自适应止损止盈策略",
     "author": "FactorWeave-Quant 团队",
-    "version": "3.0.0",
+    "version": "3.0.2",
     "category": "adaptive",
     "dependencies": ["pandas", "numpy"],
     "hikyuu_free": True
@@ -49,7 +49,7 @@ class AdaptivePandasStrategy(BaseStrategy):
             "name": "AdaptivePandasStrategy",
             "display_name": "自适应止损止盈策略",
             "description": "基于pandas的自适应交易策略，支持止损止盈、趋势识别、波动率调整等功能",
-            "version": "3.0.0",
+            "version": "3.0.2",
             "author": "FactorWeave-Quant 团队",
             "strategy_type": "adaptive",
             "supported_assets": ["stock"],
@@ -117,6 +117,10 @@ class AdaptivePandasStrategy(BaseStrategy):
         self.add_parameter("slippage_percent", 0.01,
                            float, "滑点百分比", 0.001, 0.05)
 
+        # 信号阈值参数（可配置）
+        self.add_parameter("signal_threshold_backtest", 0.45, float, "回测信号阈值", 0.2, 0.8)
+        self.add_parameter("signal_threshold_live", 0.6, float, "实盘信号阈值", 0.3, 0.9)
+
     def generate_signals(self, data: pd.DataFrame, context=None) -> List[StrategySignal]:
         """
         生成交易信号
@@ -136,13 +140,13 @@ class AdaptivePandasStrategy(BaseStrategy):
                 logger.info("实盘模式：启用严格信号条件和性能优化")
                 check_mode = 'live'
                 lookback_window = max(50, self.get_parameter('lookback_window', 50))
-                signal_threshold = 0.8  # 更严格的信号阈值
+                signal_threshold = self.get_parameter('signal_threshold_live', 0.6)  # 实盘信号阈值（可配置）
             else:
                 # 回测模式：使用标准信号条件和完整计算
                 logger.info("回测模式：使用完整计算")
                 check_mode = 'backtest'
                 lookback_window = self.get_parameter('lookback_window', 30)
-                signal_threshold = 0.6  # 标准信号阈值
+                signal_threshold = self.get_parameter('signal_threshold_backtest', 0.45)  # 回测信号阈值（可配置）
             
             # 计算技术指标
             indicators = self._calculate_technical_indicators(data)
@@ -369,10 +373,9 @@ class AdaptivePandasStrategy(BaseStrategy):
                 sell_conditions.append("布林带突破")
                 confidence_score += 0.15
             
-            # 信号阈值 - 根据模式调整
-            # 实盘模式使用更高阈值（0.8），回测模式使用较低阈值（0.6）
+            # 信号阈值 - 根据模式调整（使用可配置参数）
             is_live_mode = self.mode_context and self.mode_context.mode.is_live if self.mode_context else False
-            threshold = 0.8 if is_live_mode else 0.6
+            threshold = self.get_parameter('signal_threshold_live', 0.6) if is_live_mode else self.get_parameter('signal_threshold_backtest', 0.45)
             
             buy_signal = len(buy_conditions) >= 2 and confidence_score >= threshold
             sell_signal = len(sell_conditions) >= 2 and confidence_score >= threshold
@@ -505,7 +508,7 @@ class AdaptivePandasStrategy(BaseStrategy):
             # 使用传入的参数或从配置获取
             check_mode = check_mode or self.get_parameter('check_mode', 'hybrid')
             lookback_window = lookback_window or self.get_parameter('lookback_window', 200)
-            threshold = signal_threshold if signal_threshold is not None else 0.4
+            threshold = signal_threshold if signal_threshold is not None else 0.45  # 默认回测阈值
             
             # 智能自适应窗口（支持模式切换）
             total_bars = len(data)
@@ -588,8 +591,16 @@ class AdaptivePandasStrategy(BaseStrategy):
             sell_scores += boll_breakout_upper.astype(float) * 0.15
             
             # 使用传入的信号阈值
-            threshold = threshold if threshold is not None else 0.4
+            threshold = threshold if threshold is not None else 0.45  # 默认回测阈值
             logger.info(f"向量化信号生成使用阈值：{threshold}")
+            
+            # 调试信息：输出指标统计
+            logger.info(f"指标统计 - MA趋势向上: {np.sum(ma_trend_bull)}, MA趋势向下: {np.sum(ma_trend_bear)}")
+            logger.info(f"指标统计 - MACD金叉: {np.sum(macd_bull)}, MACD死叉: {np.sum(macd_bear)}")
+            logger.info(f"指标统计 - RSI超卖: {np.sum(rsi_oversold)}, RSI超买: {np.sum(rsi_overbought)}")
+            logger.info(f"指标统计 - 布林带下轨突破: {np.sum(boll_breakout_lower)}, 布林带上轨突破: {np.sum(boll_breakout_upper)}")
+            logger.info(f"评分统计 - 买入最高分: {np.max(buy_scores):.2f}, 卖出最高分: {np.max(sell_scores):.2f}")
+            logger.info(f"评分统计 - 买入分数>=阈值: {np.sum(buy_scores >= threshold)}, 卖出分数>=阈值: {np.sum(sell_scores >= threshold)}")
             
             # 找出所有买入和卖出信号（互斥处理）
             buy_candidates = np.where(buy_scores >= threshold)[0]
@@ -726,7 +737,7 @@ class AdaptivePandasStrategy(BaseStrategy):
             # 使用传入的参数或从配置获取
             check_mode = check_mode or self.get_parameter('check_mode', 'hybrid')
             lookback_window = lookback_window or self.get_parameter('lookback_window', 200)
-            threshold = signal_threshold if signal_threshold is not None else 0.4
+            threshold = signal_threshold if signal_threshold is not None else 0.45  # 默认回测阈值
             
             # 智能自适应窗口（支持模式切换）
             total_bars = len(data)
