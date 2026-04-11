@@ -767,16 +767,24 @@ class VolumeDataProcessor:
         """处理成交量数据为GPU格式"""
         try:
             start_time = time.time()
-            
+
             # 提取数据
             volumes = data['volume'].values
-            
+
+            # 判断涨跌：需要open和close价格
+            if 'open' in data.columns and 'close' in data.columns:
+                open_prices = data['open'].values
+                close_prices = data['close'].values
+                is_up = close_prices >= open_prices
+            else:
+                is_up = np.ones(len(volumes), dtype=bool)
+
             # GPU数据预处理
             if self.config.chunk_processing:
                 # 分块处理大数据集
-                vertices, colors, indices = self._process_in_chunks(volumes, style)
+                vertices, colors, indices = self._process_in_chunks(volumes, style, is_up)
             else:
-                vertices, colors, indices = self._process_single_batch(volumes, style)
+                vertices, colors, indices = self._process_single_batch(volumes, style, is_up=is_up)
             
             processing_time = time.time() - start_time
             logger.debug(f"成交量GPU数据预处理完成: {len(vertices)}个顶点，耗时 {processing_time*1000:.2f}ms")
@@ -788,16 +796,17 @@ class VolumeDataProcessor:
             # 降级到CPU处理
             return self._cpu_fallback_process(data, style)
     
-    def _process_in_chunks(self, volumes: np.ndarray, style: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _process_in_chunks(self, volumes: np.ndarray, style: Dict[str, Any], is_up: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """分块处理大数据集"""
         all_vertices = []
         all_colors = []
         all_indices = []
-        
+
         chunk_size = self.config.chunk_size
         for i in range(0, len(volumes), chunk_size):
             chunk = volumes[i:i + chunk_size]
-            chunk_vertices, chunk_colors, chunk_indices = self._process_single_batch(chunk, style, i)
+            chunk_is_up = is_up[i:i + chunk_size] if is_up is not None else None
+            chunk_vertices, chunk_colors, chunk_indices = self._process_single_batch(chunk, style, i, chunk_is_up)
             
             all_vertices.extend(chunk_vertices)
             all_colors.extend(chunk_colors)
@@ -805,24 +814,31 @@ class VolumeDataProcessor:
         
         return np.array(all_vertices), np.array(all_colors), np.array(all_indices)
     
-    def _process_single_batch(self, volumes: np.ndarray, style: Dict[str, Any], offset: int = 0) -> Tuple[List, List, List]:
+    def _process_single_batch(self, volumes: np.ndarray, style: Dict[str, Any], offset: int = 0, is_up: np.ndarray = None) -> Tuple[List, List, List]:
         """处理单个批次的数据"""
         vertices = []
         colors = []  # 存储每个四边形的颜色，而不是每个顶点的颜色
         indices = []
-        
+
         # 基础样式
-        base_color = style.get('color', '#1f77b4')
-        alpha = style.get('alpha', 0.7)
-        
+        up_color = style.get('up_color', '#ff4444')
+        down_color = style.get('down_color', '#44ff44')
+        alpha = style.get('alpha', 0.6)
+
+        # 预计算 max(volumes) 避免重复计算
+        max_volume = max(volumes) if len(volumes) > 0 else 0
+        # 归一化目标范围
+        target_max = 100.0
+
         for i, volume in enumerate(volumes):
             if volume > 0:
                 x = offset + i
                 y_bottom = 0
-                y_top = volume
-                
+                # 归一化成交量到 target_max 范围
+                normalized_volume = (volume / max_volume) * target_max if max_volume > 0 else 0
+                y_top = normalized_volume
+
                 # 创建柱子四个顶点的2D坐标 (x, y)
-                # (x-0.5, y_bottom), (x-0.5, y_top), (x+0.5, y_top), (x+0.5, y_bottom)
                 quad_vertices = [
                     x - 0.5, y_bottom,  # 左下
                     x - 0.5, y_top,     # 左上
@@ -830,22 +846,20 @@ class VolumeDataProcessor:
                     x + 0.5, y_bottom   # 右下
                 ]
                 vertices.extend(quad_vertices)
-                
-                # 设置颜色（支持渐变）
-                if callable(base_color):
-                    normalized_volume = volume / max(volumes) if max(volumes) > 0 else 0
-                    color = base_color(normalized_volume)
+
+                # 根据涨跌选择颜色
+                if is_up is not None and i < len(is_up):
+                    color = up_color if is_up[i] else down_color
                 else:
-                    color = base_color
-                
+                    color = up_color
+
                 # 将颜色转换为RGB
                 if isinstance(color, str):
-                    # 简单的颜色转换
                     color_rgb = self._hex_to_rgb(color)
                 else:
                     color_rgb = color
-                
-                # 每个四边形只需要存储一次颜色，而不是每个顶点都存储
+
+                # 每个四边形只需要存储一次颜色
                 colors.extend([color_rgb[0], color_rgb[1], color_rgb[2]])
         
         return vertices, colors, indices
@@ -922,17 +936,18 @@ class GPUResourcePool:
         """释放顶点缓冲区（标记为可用）"""
         with self._lock:
             for cache_key, buffer_info in self.vertex_buffer_pool.items():
-                if buffer_info['buffer'] == buffer:
+                stored_buffer = buffer_info['buffer']
+                if stored_buffer is buffer or (hasattr(stored_buffer, 'ctypes.data') and hasattr(buffer, 'ctypes.data') and stored_buffer.ctypes.data == buffer.ctypes.data):
                     buffer_info['in_use'] = False
                     buffer_info['last_used'] = time.time()
                     buffer_info['usage_count'] += 1
-                    
+
                     if size:
                         self._update_memory_usage(size, 'free')
-                    
+
                     logger.debug(f"释放顶点缓冲区: {cache_key}")
                     return True
-            
+
             return False
     
     def _create_new_vertex_buffer(self, size: int, usage_type: str) -> Optional[Any]:
@@ -1040,19 +1055,31 @@ class WebGPURenderer(BaseChartRenderer):
         self.config = config or GPURendererConfig()
         self.context = None
         self.data_processor = VolumeDataProcessor(self.config)
-        
+        self.shader_modules = {}
         self.resource_pool = GPUResourcePool(self.config)
         
         self._state_lock = threading.RLock()
         self.initialized = False
         self.backend_type = GPUBackend.CPU
-        
+
         self._moderngl_initialized = False
         self._opengl_initialized = False
         self._cuda_initialized = False
-        
+
         logger.info("WebGPU渲染器实例创建完成")
-    
+
+    def _parse_color(self, color) -> List[float]:
+        """解析颜色为RGB列表"""
+        if isinstance(color, (list, tuple)) and len(color) >= 3:
+            return [float(color[0]), float(color[1]), float(color[2])]
+        elif isinstance(color, str):
+            import matplotlib.colors as mcolors
+            try:
+                return list(mcolors.hex2color(color))
+            except Exception:
+                return [1.0, 0.0, 0.0]
+        return [1.0, 0.0, 0.0]
+
     def initialize(self, config: Dict[str, Any] = None) -> bool:
         """初始化WebGPU渲染器（重写基类方法）"""
         with self._state_lock:
@@ -1113,19 +1140,54 @@ class WebGPURenderer(BaseChartRenderer):
             logger.warning(f"同步WebGPUContext状态失败: {e}")
     
     def _sync_moderngl_context(self):
-        """同步ModernGL上下文状态"""
+        """同步 ModernGL 上下文状态，并在需要时尝试恢复"""
         try:
+            # 检查 WebGPUContext 是否存在
+            if not self.context:
+                logger.debug("WebGPUContext 为 None，无法同步 ModernGL 状态")
+                return False
+            
+            # 同步 ModernGL 初始化状态
             if hasattr(self.context, '_moderngl_initialized'):
                 self._moderngl_initialized = self.context._moderngl_initialized
             
+            # 同步 framebuffer
             if hasattr(self.context, 'fbo'):
                 self.fbo = getattr(self.context, 'fbo', None)
                 
+            # 同步分辨率
             if hasattr(self.context, 'width'):
                 self.width = getattr(self.context, 'width', 1920)
                 self.height = getattr(self.context, 'height', 1080)
+            
+            # 验证 ModernGL 上下文是否仍然有效
+            if self._moderngl_initialized:
+                moderngl_ctx = getattr(self.context, 'context', None)
+                if moderngl_ctx:
+                    # 检查上下文是否有效
+                    if not hasattr(moderngl_ctx, 'clear'):
+                        logger.warning("ModernGL 上下文已失效，尝试重新初始化")
+                        self._moderngl_initialized = False
+                        return False
+                    
+                    # 检查 framebuffer 是否有效
+                    if self.fbo and not hasattr(self.fbo, 'use'):
+                        logger.warning("Framebuffer 已失效，尝试从上下文恢复")
+                        self.fbo = getattr(self.context, 'fbo', None)
+                    
+                    logger.debug("ModernGL 上下文状态验证成功")
+                    return True
+                else:
+                    logger.debug("WebGPUContext 中没有 ModernGL 上下文对象")
+                    return False
+            else:
+                logger.debug("ModernGL 尚未初始化")
+                return False
+                
         except Exception as e:
-            logger.debug(f"同步ModernGL上下文状态失败: {e}")
+            logger.warning(f"同步 ModernGL 上下文状态失败：{e}")
+            return False
+    
     
     def _wait_for_context_ready(self, timeout: float = 5.0) -> bool:
         """等待WebGPUContext初始化完成"""
@@ -1322,18 +1384,18 @@ class WebGPURenderer(BaseChartRenderer):
             batch_vertices, batch_colors, batch_indices = [], [], []
             batch_sizes = []
             
-            for data in data_list:
+            for idx, data in enumerate(data_list):
                 if len(data) == 0:
                     batch_vertices.append([])
                     batch_colors.append([])
                     batch_indices.append([])
                     batch_sizes.append(0)
                 else:
-                    vertices, colors, indices = self.data_processor.process_volume_data(data, {})
+                    vertices, colors, indices = self.data_processor.process_volume_data(data, style_list[idx] if idx < len(style_list) else {})
                     batch_vertices.append(vertices)
                     batch_colors.append(colors)
                     batch_indices.append(indices)
-                    batch_sizes.append(len(vertices))
+                    batch_sizes.append(len(vertices) if hasattr(vertices, '__len__') else 0)
             
             # 2. GPU缓冲池管理 - 使用优化的资源池
             max_vertices = max(sum(len(v) for v in batch_vertices), 0)
@@ -1347,23 +1409,80 @@ class WebGPURenderer(BaseChartRenderer):
             results = []
             total_vertices = 0
             released_buffers = []
-            
+
             for i, (vertices, colors, vertex_buffer, ax) in enumerate(zip(
                 batch_vertices, batch_colors, vertex_buffers, ax_list)):
-                
+
                 if batch_sizes[i] == 0:
                     results.append(True)  # 空数据集视为成功
                     continue
-                
-                if self.backend_type != GPUBackend.CPU and self.backend_type is not None:
-                    success = self._render_with_gpu(vertex_buffer, np.array(colors), ax)
-                    
-                    # 标记缓冲区用于后续释放
+
+                success = False
+                try:
+                    if self.backend_type != GPUBackend.CPU and self.backend_type is not None:
+                        # 将顶点数据写入缓冲区
+                        vb_has_write = hasattr(vertex_buffer, 'write') if vertex_buffer is not None else False
+                        is_numpy_buffer = isinstance(vertex_buffer, np.ndarray)
+
+                        if is_numpy_buffer:
+                            vertices_np = np.array(vertices, dtype=np.float32)
+                            if vertices_np.ndim == 1:
+                                n_quads = len(vertices_np) // 8
+                                vertices_2d = np.zeros((n_quads * 4, 2), dtype=np.float32)
+                                for qi in range(n_quads):
+                                    base = qi * 8
+                                    vertices_2d[qi*4] = [vertices_np[base], vertices_np[base+1]]
+                                    vertices_2d[qi*4+1] = [vertices_np[base+2], vertices_np[base+3]]
+                                    vertices_2d[qi*4+2] = [vertices_np[base+4], vertices_np[base+5]]
+                                    vertices_2d[qi*4+3] = [vertices_np[base+6], vertices_np[base+7]]
+                                success = self._convert_gpu_data_to_matplotlib(vertices_2d, np.array(colors), ax, is_volume=True)
+                            else:
+                                success = self._convert_gpu_data_to_matplotlib(vertices_np, np.array(colors), ax, is_volume=True)
+                        elif vertex_buffer is not None and vb_has_write and len(vertices) > 0:
+                            vertices_data = np.array(vertices, dtype=np.float32)
+                            vertex_buffer.write(vertices_data.tobytes())
+                            success = self._render_with_gpu(vertex_buffer, np.array(colors), ax)
+                            # 如果GPU渲染失败，尝试读取缓冲区数据并直接用matplotlib渲染
+                            if not success:
+                                logger.info("DEBUG: GPU rendering failed, reading buffer data for fallback")
+                                try:
+                                    if hasattr(vertex_buffer, 'read'):
+                                        raw_data = vertex_buffer.read()
+                                        if raw_data and len(raw_data) > 0:
+                                            read_arr = np.frombuffer(raw_data, dtype=np.float32)
+                                            logger.info(f"DEBUG: buffer read size={len(read_arr)}, sum={np.sum(read_arr)}")
+                                            if read_arr.size > 0 and np.sum(read_arr) != 0:
+                                                # 数据格式：(n_quads * 8,) -> reshape to 2D
+                                                if read_arr.size % 8 == 0:
+                                                    n_quads = len(read_arr) // 8
+                                                    vertices_2d = np.zeros((n_quads * 4, 2), dtype=np.float32)
+                                                    for qi in range(n_quads):
+                                                        base = qi * 8
+                                                        vertices_2d[qi*4] = [read_arr[base], read_arr[base+1]]
+                                                        vertices_2d[qi*4+1] = [read_arr[base+2], read_arr[base+3]]
+                                                        vertices_2d[qi*4+2] = [read_arr[base+4], read_arr[base+5]]
+                                                        vertices_2d[qi*4+3] = [read_arr[base+6], read_arr[base+7]]
+                                                    success = self._convert_gpu_data_to_matplotlib(vertices_2d, np.array(colors), ax, is_volume=True)
+                                                else:
+                                                    success = self._convert_gpu_data_to_matplotlib(np.array([]), np.array(colors), ax, is_volume=True)
+                                            else:
+                                                success = self._convert_gpu_data_to_matplotlib(np.array([]), np.array(colors), ax, is_volume=True)
+                                        else:
+                                            success = self._convert_gpu_data_to_matplotlib(np.array([]), np.array(colors), ax, is_volume=True)
+                                    else:
+                                        success = self._convert_gpu_data_to_matplotlib(np.array([]), np.array(colors), ax, is_volume=True)
+                                except Exception as buffer_read_err:
+                                    logger.warning(f"Buffer read failed: {buffer_read_err}")
+                                    success = self._convert_gpu_data_to_matplotlib(np.array([]), np.array(colors), ax, is_volume=True)
+                        else:
+                            success = self._render_cpu_fallback(vertices, colors, ax)
+                    else:
+                        success = self._render_cpu_fallback(vertices, colors, ax)
+                finally:
+                    # 确保缓冲区被释放，防止资源泄漏
                     if vertex_buffer is not None:
                         released_buffers.append((vertex_buffer, max_vertices * 2 * 4))
-                else:
-                    success = self._render_cpu_fallback(vertices, colors, ax)
-                
+
                 results.append(success)
                 total_vertices += len(vertices)
             
@@ -1372,15 +1491,19 @@ class WebGPURenderer(BaseChartRenderer):
                 self.resource_pool.release_vertex_buffer(buffer, buffer_size)
             
             # 5. 渲染完成
-            if any(results):
+            results_arr = np.array(results) if results else np.array([False])
+            if results_arr.any():
                 logger.info(f"批量GPU成交量渲染完成: {total_vertices//4}个柱子")
             
             return results
-            
+
         except Exception as e:
+            import traceback
             logger.error(f"批量GPU成交量渲染失败: {e}")
+            logger.error(f"异常类型: {type(e).__name__}")
+            logger.error(f"异常详情: {traceback.format_exc()}")
             # 降级到CPU渲染
-            return [self._render_cpu_fallback_simple(data, style, ax) 
+            return [self._render_cpu_fallback_simple(data, style, ax)
                for data, style, ax in zip(data_list, style_list, ax_list)]
     
     def render_volume_gpu_accelerated(self, ax, data: pd.DataFrame, 
@@ -1434,9 +1557,8 @@ class WebGPURenderer(BaseChartRenderer):
             
             # GPU加速渲染逻辑（这里简化实现，实际需要更复杂的GPU处理）
             if self.backend_type in [GPUBackend.MODERNGL, GPUBackend.OPENGL]:
-                # 使用GPU渲染逻辑
-                vertices, colors = self._process_candlestick_data_gpu(processed_data, style)
-                return self._render_with_gpu_buffer(vertices, colors, ax)
+                vertices, colors, is_up_list, segments = self._process_candlestick_data_gpu(processed_data, style)
+                return self._render_with_gpu_buffer(vertices, colors, ax, is_up_list=is_up_list, segments=segments)
             else:
                 # 降级到CPU渲染
                 return self._render_cpu_fallback_candlestick(data, style, ax)
@@ -1549,17 +1671,61 @@ class WebGPURenderer(BaseChartRenderer):
         """准备线图数据"""
         return data.copy()
     
-    def _process_candlestick_data_gpu(self, data: pd.DataFrame, style: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarray]:
-        """处理K线图数据用于GPU渲染"""
-        # 简化的GPU处理逻辑
+    def _process_candlestick_data_gpu(self, data: pd.DataFrame, style: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarray, np.ndarray, List]:
+        """处理K线图数据用于GPU渲染
+
+        Returns:
+            vertices: K线实体顶点 (n_points*4, 2)
+            colors: 颜色数据 (n_points*4, 3)
+            is_up_list: 涨跌列表
+            segments: 影线线段列表，每个元素是 [(x1,y1), (x2,y2)]
+        """
         n_points = len(data)
-        vertices = np.zeros((n_points * 4, 2), dtype=np.float32)  # 每个K线4个顶点
+
+        up_color = self._parse_color(style.get('up_color', '#ff0000'))
+        down_color = self._parse_color(style.get('down_color', '#00ff00'))
+
+        open_prices = data['open'].values if 'open' in data.columns else data['close'].values
+        close_prices = data['close'].values
+        high_prices = data['high'].values if 'high' in data.columns else data['close'].values
+        low_prices = data['low'].values if 'low' in data.columns else data['close'].values
+
+        candle_width = style.get('candle_width', 0.8)
+
+        vertices = np.zeros((n_points * 4, 2), dtype=np.float32)
         colors = np.zeros((n_points * 4, 3), dtype=np.float32)
-        
-        # 设置默认颜色
-        colors[:, :] = [0.8, 0.2, 0.2] if 'up_color' not in style else [0.2, 0.8, 0.2]
-        
-        return vertices, colors
+        is_up_list = np.zeros(n_points, dtype=bool)
+        segments = []
+
+        for i in range(n_points):
+            x_center = float(i)
+            open_price = float(open_prices[i])
+            close_price = float(close_prices[i])
+            high_price = float(high_prices[i])
+            low_price = float(low_prices[i])
+
+            is_up = close_price >= open_price
+            is_up_list[i] = is_up
+            color = up_color if is_up else down_color
+
+            half_width = candle_width / 2.0
+            body_bottom = min(open_price, close_price)
+            body_height = abs(close_price - open_price) if abs(close_price - open_price) > 0 else 0.001
+
+            verts_idx = i * 4
+            colors_idx = i * 4
+
+            vertices[verts_idx] = [x_center - half_width, body_bottom]
+            vertices[verts_idx + 1] = [x_center - half_width, body_bottom + body_height]
+            vertices[verts_idx + 2] = [x_center + half_width, body_bottom + body_height]
+            vertices[verts_idx + 3] = [x_center + half_width, body_bottom]
+
+            for j in range(4):
+                colors[colors_idx + j] = color
+
+            segments.append([(x_center, low_price), (x_center, high_price)])
+
+        return vertices, colors, is_up_list, segments
     
     def _process_line_data_gpu(self, data: pd.Series, style: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarray]:
         """处理线图数据用于GPU渲染"""
@@ -1573,11 +1739,10 @@ class WebGPURenderer(BaseChartRenderer):
         
         return vertices, colors
     
-    def _render_with_gpu_buffer(self, vertices: np.ndarray, colors: np.ndarray, ax) -> bool:
+    def _render_with_gpu_buffer(self, vertices: np.ndarray, colors: np.ndarray, ax, is_up_list: np.ndarray = None, segments: List = None) -> bool:
         """使用GPU缓冲区渲染"""
         try:
-            # 使用现有的GPU渲染方法
-            return self._render_with_gpu(None, colors, ax)
+            return self._render_with_gpu(vertices, colors, ax, is_up_list=is_up_list, segments=segments)
         except Exception as e:
             logger.error(f"GPU缓冲区渲染失败: {e}")
             return False
@@ -1652,236 +1817,214 @@ class WebGPURenderer(BaseChartRenderer):
         
         return buffers
     
-    def _render_with_gpu(self, vertex_buffer, colors: np.ndarray, ax) -> bool:
+    def _render_with_gpu(self, vertex_buffer, colors: np.ndarray, ax, is_up_list: np.ndarray = None, segments: List = None) -> bool:
         """使用GPU进行实际渲染"""
         try:
+            # 检查顶点缓冲区是否有效
+            if vertex_buffer is None:
+                logger.debug("顶点缓冲区为None，回退到CPU渲染")
+                colors_arr = np.asarray(colors) if colors is not None else np.array([])
+                return self._convert_gpu_data_to_matplotlib(np.array([]), colors_arr, ax, is_up_list=is_up_list, segments=segments)
+
+            # 如果是numpy数组（而不是GPU buffer），直接转换为matplotlib渲染
+            if isinstance(vertex_buffer, np.ndarray):
+                logger.debug("检测到numpy数组作为缓冲区，回退到CPU渲染")
+                colors_arr = np.asarray(colors) if colors is not None else np.array([])
+                return self._convert_gpu_data_to_matplotlib(vertex_buffer, colors_arr, ax, is_up_list=is_up_list, segments=segments)
+
+            if not hasattr(vertex_buffer, 'bind'):
+                logger.debug("顶点缓冲区无效（无bind方法），回退到CPU渲染")
+                colors_arr = np.asarray(colors) if colors is not None else np.array([])
+                return self._convert_gpu_data_to_matplotlib(np.array([]), colors_arr, ax, is_up_list=is_up_list, segments=segments)
+
+            # 调试日志
+            vb_has_len = hasattr(vertex_buffer, '__len__')
+            vb_has_size = hasattr(vertex_buffer, 'size')
+            vb_len = len(vertex_buffer) if vb_has_len else 0
+            vb_size_elems = vertex_buffer.size if vb_has_size else 0
+            colors_arr = np.asarray(colors) if colors is not None else np.array([])
+            colors_len = len(colors_arr)
+            logger.debug(f"DEBUG _render_with_gpu: vb_has_len={vb_has_len}, vb_len={vb_len}, vb_size={vb_size_elems}, colors_len={colors_len}, backend={self.backend_type}")
+
             # 根据后端类型执行不同的渲染逻辑
             if self.backend_type == GPUBackend.MODERNGL and hasattr(self.context, 'context'):
-                return self._render_moderngl(vertex_buffer, colors, ax)
+                return self._render_moderngl(vertex_buffer, colors_arr, ax, is_up_list=is_up_list, segments=segments)
             elif self.backend_type == GPUBackend.OPENGL:
-                return self._render_opengl(vertex_buffer, colors, ax)
+                return self._render_opengl(vertex_buffer, colors_arr, ax, is_up_list=is_up_list, segments=segments)
             else:
-                return False
-                
+                return self._convert_gpu_data_to_matplotlib(vertex_buffer, colors_arr, ax, is_up_list=is_up_list, segments=segments)
+
         except Exception as e:
             logger.error(f"GPU渲染失败: {e}")
             return False
     
-    def _render_moderngl(self, vertex_buffer, colors: np.ndarray, ax) -> bool:
+    def _render_moderngl(self, vertex_buffer, colors: np.ndarray, ax, is_up_list: np.ndarray = None, segments: List = None) -> bool:
         """使用ModernGL渲染"""
+        logger.debug(f"DEBUG _render_moderngl START: vb type={type(vertex_buffer)}, colors type={type(colors)}, colors.len={len(colors) if hasattr(colors, '__len__') else 'N/A'}")
+
+        if vertex_buffer is None or not hasattr(vertex_buffer, 'bind'):
+            logger.debug("顶点缓冲区无效，回退到CPU渲染")
+            return self._convert_gpu_data_to_matplotlib(
+                np.array([]) if vertex_buffer is None else vertex_buffer,
+                colors, ax, is_up_list=is_up_list
+            )
+
+        rendering_success = False
         try:
-            # 同步ModernGL上下文状态（从WebGPUContext同步）
-            self._sync_moderngl_context()
-            
-            # 检查ModernGL上下文是否有效
-            if not self.context or not hasattr(self.context, 'clear'):
+            if not self._sync_moderngl_context():
+                logger.warning("ModernGL上下文同步失败，回退到matplotlib渲染")
+                return self._convert_gpu_data_to_matplotlib(vertex_buffer, colors, ax, is_up_list=is_up_list, segments=segments)
+
+            moderngl_context = getattr(self.context, 'context', None)
+            if not moderngl_context or not hasattr(moderngl_context, 'clear'):
                 logger.warning("ModernGL上下文无效，回退到matplotlib渲染")
-                return self._convert_gpu_data_to_matplotlib(vertex_buffer, colors, ax)
-            
-            # 绑定framebuffer进行离屏渲染
+                return self._convert_gpu_data_to_matplotlib(vertex_buffer, colors, ax, is_up_list=is_up_list, segments=segments)
+
             if hasattr(self, 'fbo') and self.fbo:
                 self.fbo.use()
             else:
                 logger.warning("Framebuffer未初始化，回退到matplotlib渲染")
-                return self._convert_gpu_data_to_matplotlib(vertex_buffer, colors, ax)
-            
-            # 清除framebuffer
-            self.context.clear(0.0, 0.0, 0.0, 0.0)
-            
-            # 设置视口
-            self.context.viewport = (0, 0, self.width, self.height)
-            
-            # 创建顶点数组对象(VAO)来管理顶点数据
-            if hasattr(self.context, 'vertex_array') and hasattr(vertex_buffer, 'bind'):
+                return self._convert_gpu_data_to_matplotlib(vertex_buffer, colors, ax, is_up_list=is_up_list, segments=segments)
+
+            moderngl_context.clear(0.0, 0.0, 0.0, 0.0)
+            moderngl_context.viewport = (0, 0, self.width, self.height)
+
+            if hasattr(moderngl_context, 'vertex_array') and hasattr(vertex_buffer, 'bind'):
                 try:
-                    # 由于我们现在每个四边形只有一个颜色，需要重新组织颜色数据
-                    # 将每个颜色复制4次以匹配每个顶点
-                    if len(colors) > 0 and len(vertex_buffer) > 0:
-                        # 计算四边形数量
-                        quad_count = len(vertex_buffer) // 8  # 每个四边形8个顶点坐标值
-                        color_count = len(colors) // 3        # 每个颜色3个RGB值
-                        
-                        # 如果颜色数量与四边形数量匹配，则扩展颜色数据
+                    colors_array_for_check = np.asarray(colors)
+                    vb_size = len(vertex_buffer) if hasattr(vertex_buffer, '__len__') else (vertex_buffer.size if hasattr(vertex_buffer, 'size') else 0)
+                    vb_float_count = vb_size // 4 if vb_size > 0 else 0
+                    logger.debug(f"DEBUG _render_moderngl: vb_size={vb_size}, vb_float_count={vb_float_count}, colors_len={len(colors_array_for_check)}")
+                    if colors_array_for_check.size > 0 and vb_float_count > 0:
+                        quad_count = vb_float_count // 8
+                        color_count = len(colors_array_for_check) // 3
+
                         if quad_count == color_count:
-                            # 扩展颜色数据，每个颜色复制4次（每个顶点一次）
-                            expanded_colors = []
-                            for i in range(color_count):
-                                # 提取颜色
-                                r, g, b = colors[i*3], colors[i*3+1], colors[i*3+2]
-                                # 复制4次
-                                for _ in range(4):
-                                    expanded_colors.extend([r, g, b])
-                            
-                            # 创建颜色缓冲区
-                            color_buffer = self.context.buffer(np.array(expanded_colors, dtype=np.float32))
+                            colors_reshaped = colors[:color_count*3].reshape(-1, 3)
+                            expanded_colors = np.repeat(colors_reshaped, 4, axis=0).flatten()
+                            color_buffer = moderngl_context.buffer(expanded_colors.astype(np.float32))
                         else:
-                            # 如果不匹配，使用原始颜色数据
-                            color_buffer = self.context.buffer(colors.astype(np.float32)) if not hasattr(colors, 'bind') else colors
-                    
-                    # 创建VAO，绑定顶点位置和颜色数据
+                            color_buffer = moderngl_context.buffer(colors.astype(np.float32)) if not hasattr(colors, 'bind') else colors
+
                     if hasattr(colors, 'bind') or 'color_buffer' in locals():
-                        # 获取要使用的颜色缓冲区
                         buffer_to_use = color_buffer if 'color_buffer' in locals() else colors
-                        
-                        vao = self.context.vertex_array(
+                        vao = moderngl_context.vertex_array(
                             self.shader_modules.get('basic'),
-                            [(vertex_buffer, '2f', 0),      # 顶点位置属性(location=0)
-                             (buffer_to_use, '3f', 1)]      # 颜色属性(location=1)
+                            [(vertex_buffer, '2f', 0), (buffer_to_use, '3f', 1)]
                         )
                     else:
-                        # 只有顶点数据，创建简单VAO
-                        vao = self.context.vertex_array(
+                        vao = moderngl_context.vertex_array(
                             self.shader_modules.get('basic'),
-                            [(vertex_buffer, '2f', 0)]  # 顶点位置属性(location=0)
+                            [(vertex_buffer, '2f', 0)]
                         )
-                    
-                    # 使用着色器程序
+
                     if 'basic' in self.shader_modules and self.shader_modules['basic']:
+                        logger.debug("DEBUG: shader_modules['basic'] exists, proceeding with render")
                         self.shader_modules['basic'].use()
-                        
-                        # 计算并设置投影矩阵
-                        # 获取matplotlib轴的范围来构建正交投影矩阵
-                        xlim = ax.get_xlim()
-                        ylim = ax.get_ylim()
-                        
-                        # 创建正交投影矩阵
-                        projection_matrix = self._create_orthographic_projection(
-                            xlim[0], xlim[1], ylim[0], ylim[1], -1.0, 1.0
-                        )
-                        
-                        # 设置投影矩阵uniform变量
+                        xlim, ylim = ax.get_xlim(), ax.get_ylim()
+                        projection_matrix = self._create_orthographic_projection(xlim[0], xlim[1], ylim[0], ylim[1], -1.0, 1.0)
                         proj_uniform = self.shader_modules['basic'].get('projection', None)
                         if proj_uniform is not None:
                             proj_uniform.write(projection_matrix.astype('f4').tobytes())
-                        
-                        # 启用混合以支持透明度
-                        self.context.enable(moderngl.BLEND)
-                        self.context.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
-                        
-                        # 渲染几何体
-                        if hasattr(vertex_buffer, 'size'):
-                            # 计算顶点数量
-                            vertex_count = vertex_buffer.size // (2 * 4)  # 每个顶点2个float坐标，每个float 4字节
+
+                        moderngl_context.enable(moderngl.BLEND)
+                        moderngl_context.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
+
+                        vb_has_size = hasattr(vertex_buffer, 'size')
+                        logger.debug(f"DEBUG: before vao.render, vb_has_size={vb_has_size}")
+                        if vb_has_size:
+                            vertex_count = vertex_buffer.size // (2 * 4)
+                            logger.debug(f"DEBUG: rendering with vertex_count={vertex_count}")
                             vao.render(moderngl.TRIANGLES, vertices=vertex_count)
                         else:
-                            # 默认渲染一定数量的顶点
+                            logger.debug("DEBUG: rendering with default vertex_count=1000")
                             vao.render(moderngl.TRIANGLES, vertices=1000)
-                        
+
                         logger.debug("ModernGL GPU渲染成功")
-                        return True
+                        rendering_success = True
                     else:
-                        logger.warning("着色器程序不可用")
-                        
+                        logger.warning(f"着色器程序不可用: 'basic' in shader_modules = {'basic' in self.shader_modules}, shader_modules['basic'] = {self.shader_modules.get('basic')}")
+
                 except Exception as vao_error:
                     logger.warning(f"VAO创建或渲染失败: {vao_error}")
-            
-            # 如果VAO方法失败，尝试直接使用缓冲区渲染
-            elif 'basic' in self.shader_modules and self.shader_modules['basic']:
-                try:
-                    # 使用着色器程序
-                    self.shader_modules['basic'].use()
-                    
-                    # 计算并设置投影矩阵
-                    # 获取matplotlib轴的范围来构建正交投影矩阵
-                    xlim = ax.get_xlim()
-                    ylim = ax.get_ylim()
-                    
-                    # 创建正交投影矩阵
-                    projection_matrix = self._create_orthographic_projection(
-                        xlim[0], xlim[1], ylim[0], ylim[1], -1.0, 1.0
-                    )
-                    
-                    # 设置投影矩阵uniform变量
-                    proj_uniform = self.shader_modules['basic'].get('projection', None)
-                    if proj_uniform is not None:
-                        proj_uniform.write(projection_matrix.astype('f4').tobytes())
-                    
-                    # 如果vertex_buffer是ModernGL buffer对象，则绑定它
-                    if hasattr(vertex_buffer, 'bind'):
-                        vertex_buffer.bind(0)  # 绑定到属性位置0
-                    
-                    # 处理颜色数据
-                    if len(colors) > 0:
-                        # 计算四边形数量和颜色数量
+            else:
+                if 'basic' in self.shader_modules and self.shader_modules['basic']:
+                    try:
+                        self.shader_modules['basic'].use()
+                        xlim, ylim = ax.get_xlim(), ax.get_ylim()
+                        projection_matrix = self._create_orthographic_projection(xlim[0], xlim[1], ylim[0], ylim[1], -1.0, 1.0)
+                        proj_uniform = self.shader_modules['basic'].get('projection', None)
+                        if proj_uniform is not None:
+                            proj_uniform.write(projection_matrix.astype('f4').tobytes())
+
+                        if hasattr(vertex_buffer, 'bind'):
+                            vertex_buffer.bind(0)
+
+                        colors_array_check = np.asarray(colors)
                         vertex_data = vertex_buffer.read() if hasattr(vertex_buffer, 'read') else vertex_buffer
-                        vertex_count = len(vertex_data) // (2 * 4)  # 每个顶点2个float坐标，每个float 4字节
-                        quad_count = vertex_count // 4  # 每个四边形4个顶点
-                        color_count = len(colors) // 3   # 每个颜色3个RGB值
-                        
-                        # 如果颜色数量与四边形数量匹配，则扩展颜色数据
-                        if quad_count == color_count:
-                            # 扩展颜色数据，每个颜色复制4次（每个顶点一次）
-                            expanded_colors = []
-                            for i in range(color_count):
-                                # 提取颜色
-                                r, g, b = colors[i*3], colors[i*3+1], colors[i*3+2]
-                                # 复制4次
-                                for _ in range(4):
-                                    expanded_colors.extend([r, g, b])
-                            
-                            # 创建颜色缓冲区并绑定到属性位置1
-                            color_buffer = self.context.buffer(np.array(expanded_colors, dtype=np.float32))
-                            color_buffer.bind(1)  # 绑定到属性位置1
-                    
-                    # 启用混合以支持透明度
-                    self.context.enable(moderngl.BLEND)
-                    self.context.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
-                    
-                    # 进行实际的渲染调用
-                    if hasattr(vertex_buffer, 'size'):
-                        vertex_count = vertex_buffer.size // (2 * 4)  # 假设每个顶点2个float坐标，每个float 4字节
-                        self.context.draw(moderngl.TRIANGLES, vertex_count=vertex_count)
-                    else:
-                        logger.warning("无法确定顶点数量，使用默认值")
-                        self.context.draw(moderngl.TRIANGLES, vertex_count=1000)
-                    
-                    logger.debug("ModernGL直接缓冲区渲染成功")
+                        vd_arr = np.asarray(vertex_data) if vertex_data is not None else np.array([])
+                        if colors_array_check.size > 0 and vertex_buffer is not None and vd_arr.size > 0:
+                            vertex_count = len(vertex_data) // (2 * 4)
+                            quad_count = vertex_count // 4
+                            color_count = len(colors_array_check) // 3
+
+                            if quad_count == color_count:
+                                colors_reshaped = colors[:color_count*3].reshape(-1, 3)
+                                expanded_colors = np.repeat(colors_reshaped, 4, axis=0).flatten()
+                                color_buffer = moderngl_context.buffer(expanded_colors.astype(np.float32))
+                                color_buffer.bind(1)
+
+                        moderngl_context.enable(moderngl.BLEND)
+                        moderngl_context.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
+
+                        if hasattr(vertex_buffer, 'size'):
+                            vertex_count = vertex_buffer.size // (2 * 4)
+                            moderngl_context.draw(moderngl.TRIANGLES, vertex_count=vertex_count)
+                        else:
+                            moderngl_context.draw(moderngl.TRIANGLES, vertex_count=1000)
+
+                        logger.debug("ModernGL直接缓冲区渲染成功")
+                        rendering_success = True
+                        logger.info(f"DEBUG: rendering_success set to True, fbo exists: {hasattr(self, 'fbo') and self.fbo is not None}")
+                    except Exception as shader_error:
+                        logger.warning(f"直接缓冲区渲染失败: {shader_error}")
+
+            logger.info(f"DEBUG: before FBO read, rendering_success={rendering_success}")
+            if rendering_success:
+                try:
+                    image_data = self.fbo.read(components=4, dtype='f1')
+                    image_array = np.frombuffer(image_data, dtype=np.uint8)
+                    image_array = image_array.reshape((self.height, self.width, 4))
+                    image_array = np.flipud(image_array)
+                    extent = ax.get_xlim() + ax.get_ylim()
+                    logger.info(f"DEBUG FBO read: image_array.shape={image_array.shape}, extent={extent}, fbo_size=({self.width}, {self.height})")
+                    logger.info(f"DEBUG FBO image: min={np.min(image_array)}, max={np.max(image_array)}, nonzero_count={np.count_nonzero(image_array)}")
+                    ax.imshow(image_array, extent=extent, aspect='auto', origin='upper')
+                    logger.debug("ModernGL渲染成功并显示在matplotlib中")
                     return True
-                except Exception as shader_error:
-                    logger.warning(f"直接缓冲区渲染失败: {shader_error}")
-            
-            # 从framebuffer读取渲染结果
-            try:
-                # 读取颜色数据
-                image_data = self.fbo.read(components=4, dtype='f1')  # 读取RGBA，unsigned byte
-                
-                # 将数据转换为numpy数组
-                image_array = np.frombuffer(image_data, dtype=np.uint8)
-                image_array = image_array.reshape((self.height, self.width, 4))
-                
-                # 转换为matplotlib可使用的格式
-                # 注意：ModernGL的坐标系统可能与matplotlib不同，可能需要翻转Y轴
-                image_array = np.flipud(image_array)  # 翻转Y轴
-                
-                # 在matplotlib中显示渲染结果
-                ax.imshow(image_array, extent=ax.get_xlim() + ax.get_ylim(), aspect='auto', origin='upper')
-                
-                logger.debug("ModernGL渲染成功并显示在matplotlib中")
-                return True
-            except Exception as read_error:
-                logger.warning(f"从framebuffer读取数据失败: {read_error}")
-                # 回退到matplotlib渲染
-                return self._convert_gpu_data_to_matplotlib(vertex_buffer, colors, ax)
-            
+                except Exception as read_error:
+                    logger.warning(f"从framebuffer读取数据失败: {read_error}")
+
+            logger.info("DEBUG: falling back to _convert_gpu_data_to_matplotlib")
+            return self._convert_gpu_data_to_matplotlib(vertex_buffer, colors, ax, is_up_list=is_up_list, segments=segments)
+
         except Exception as e:
             logger.error(f"ModernGL渲染失败: {e}")
-            # 回退到matplotlib渲染
-            return self._convert_gpu_data_to_matplotlib(vertex_buffer, colors, ax)
+            return self._convert_gpu_data_to_matplotlib(vertex_buffer, colors, ax, is_up_list=is_up_list, segments=segments)
     
-    def _render_opengl(self, vertex_buffer, colors: np.ndarray, ax) -> bool:
+    def _render_opengl(self, vertex_buffer, colors: np.ndarray, ax, is_up_list: np.ndarray = None, segments: List = None) -> bool:
         """使用OpenGL渲染"""
         try:
-            # OpenGL渲染逻辑
-            return self._convert_gpu_data_to_matplotlib(vertex_buffer, colors, ax)
+            return self._convert_gpu_data_to_matplotlib(vertex_buffer, colors, ax, is_up_list=is_up_list, segments=segments)
             
         except Exception as e:
             logger.error(f"OpenGL渲染失败: {e}")
             return False
     
-    def _render_cpu_fallback(self, vertices: List, colors: List, ax) -> bool:
+    def _render_cpu_fallback(self, vertices: List, colors: List, ax, is_up_list: np.ndarray = None) -> bool:
         """CPU回退渲染"""
         try:
-            return self._convert_gpu_data_to_matplotlib(np.array(vertices), np.array(colors), ax)
+            return self._convert_gpu_data_to_matplotlib(np.array(vertices), np.array(colors), ax, is_up_list=is_up_list)
         except Exception as e:
             logger.error(f"CPU回退渲染失败: {e}")
             return False
@@ -1890,113 +2033,176 @@ class WebGPURenderer(BaseChartRenderer):
         """简化的CPU回退渲染"""
         try:
             from matplotlib.collections import PolyCollection
-            
+
             volumes = data['volume'].values
             color = style.get('color', '#1f77b4') if style else '#1f77b4'
             alpha = style.get('alpha', 0.7) if style else 0.7
-            
-            # 创建简单的柱状图
+
+            max_volume = max(volumes) if len(volumes) > 0 else 1
+            target_max = 100.0
+
             verts = []
             for i, volume in enumerate(volumes):
                 if volume > 0:
                     x = i
                     left = x - 0.4
                     right = x + 0.4
-                    
+                    normalized_volume = (volume / max_volume) * target_max
+
                     verts.append([
-                        (left, 0), (left, volume), (right, volume), (right, 0)
+                        (left, 0), (left, normalized_volume), (right, normalized_volume), (right, 0)
                     ])
-            
+
             if verts:
                 collection = PolyCollection(
-                    verts, 
+                    verts,
                     facecolors=color,
                     alpha=alpha
                 )
                 ax.add_collection(collection)
                 ax.autoscale_view()
-                
+
             return True
-            
+
         except Exception as e:
             logger.error(f"简化CPU回退渲染失败: {e}")
             return False
     
-    def _convert_gpu_data_to_matplotlib(self, vertices: np.ndarray, colors: np.ndarray, ax) -> bool:
-        """将GPU数据转换为matplotlib格式（优化版本）"""
+    def _convert_gpu_data_to_matplotlib(self, vertices: np.ndarray, colors: np.ndarray, ax, is_up_list: np.ndarray = None, segments: List = None, is_volume: bool = False) -> bool:
+        """将GPU数据转换为matplotlib格式（使用Polygon）
+
+        Args:
+            vertices: 顶点数据，格式为(n_quads*4, 2)或(n_quads*8,)
+            colors: 颜色数据
+            ax: matplotlib坐标轴
+            is_up_list: 涨跌列表，用于区分空心K线(上涨)和实心K线(下跌)
+            segments: 影线线段列表
+            is_volume: 是否为成交量渲染（成交量始终为实心）
+        """
         try:
-            from matplotlib.collections import PolyCollection
-            import matplotlib.colors as mcolors
+            import matplotlib.pyplot as plt
             import numpy as np
-            
-            # 处理None或空的vertices
+
             if vertices is None:
                 logger.warning("顶点数据为None，无法转换")
                 return False
-            
-            if len(vertices) == 0:
+
+            vertices_array = np.asarray(vertices)
+            if vertices_array.size == 0:
                 return False
-            
-            # 使用向量化操作提高效率
-            num_quads = len(vertices) // 8
-            
+
+            if vertices_array.ndim == 2:
+                num_quads = len(vertices_array) // 4
+            else:
+                num_quads = len(vertices_array) // 8
+
             if num_quads == 0:
                 return False
-            
-            # 向量化创建顶点数组，避免逐个添加
-            verts = np.zeros((num_quads, 4, 2))
-            
-            # 填充顶点数据
-            for quad_idx in range(num_quads):
-                base_idx = quad_idx * 8
-                verts[quad_idx, 0, 0] = vertices[base_idx]      # 左下 x
-                verts[quad_idx, 0, 1] = vertices[base_idx+1]    # 左下 y
-                verts[quad_idx, 1, 0] = vertices[base_idx+2]    # 左上 x
-                verts[quad_idx, 1, 1] = vertices[base_idx+3]    # 左上 y
-                verts[quad_idx, 2, 0] = vertices[base_idx+4]    # 右上 x
-                verts[quad_idx, 2, 1] = vertices[base_idx+5]    # 右上 y
-                verts[quad_idx, 3, 0] = vertices[base_idx+6]    # 右下 x
-                verts[quad_idx, 3, 1] = vertices[base_idx+7]    # 右下 y
-            
-            # 向量化处理颜色
-            # 检查是否有颜色数据
-            face_colors = None
-            if len(colors) >= num_quads * 3:  # 每个柱子至少需要一个RGB颜色
-                # 提取每个柱子的颜色（取第一个顶点的颜色）
-                color_indices = np.arange(0, num_quads) * 3
-                face_colors = colors[color_indices]
-            
-            # 使用优化的PolyCollection创建
-            if face_colors is not None:
-                # 转换格式为matplotlib期望的格式
-                # face_colors需要是 (N, 3) 或 (N, 4) 格式
-                if face_colors.ndim == 1:
-                    face_colors = face_colors.reshape(-1, 3)
-                
-                collection = PolyCollection(
-                    verts,
-                    facecolors=face_colors,
-                    alpha=0.7,
-                    edgecolors='none'
-                )
+
+            if vertices_array.ndim == 2:
+                vertices_flat = vertices_array.flatten()
             else:
-                # 如果没有颜色数据，使用默认颜色
-                collection = PolyCollection(
-                    verts,
-                    facecolors='face',
-                    alpha=0.7,
-                    edgecolors='none'
-                )
-            
+                vertices_flat = vertices_array
+
+            from matplotlib.collections import PatchCollection
+            from matplotlib.patches import Polygon as MplPolygon
+
+            patches = []
+            patch_colors = []
+            colors_arr = np.asarray(colors) if colors is not None else None
+
+            logger.info(f"DEBUG _convert: vertices_array.ndim={vertices_array.ndim}, shape={vertices_array.shape if vertices_array.ndim == 2 else len(vertices_array)}, sum={np.sum(vertices_array) if vertices_array.size > 0 else 'N/A'}")
+            if vertices_array.size == 0 or np.sum(vertices_array) == 0:
+                logger.warning(f"DEBUG _convert: vertices all zeros or empty, skipping")
+                return False
+
+            for i in range(num_quads):
+                base_idx = i * 8
+                if base_idx + 7 >= len(vertices_flat):
+                    break
+
+                x1, y1 = vertices_flat[base_idx], vertices_flat[base_idx + 1]
+                x2, y2 = vertices_flat[base_idx + 2], vertices_flat[base_idx + 3]
+                x3, y3 = vertices_flat[base_idx + 4], vertices_flat[base_idx + 5]
+                x4, y4 = vertices_flat[base_idx + 6], vertices_flat[base_idx + 7]
+
+                polygon = MplPolygon([(x1, y1), (x2, y2), (x3, y3), (x4, y4)], closed=True)
+                patches.append(polygon)
+
+                if colors_arr is not None and len(colors_arr) > 0:
+                    if colors_arr.ndim == 2 and len(colors_arr) > i:
+                        patch_color = colors_arr[i].tolist()
+                    elif colors_arr.ndim == 1:
+                        base_color_idx = i * 3
+                        if base_color_idx + 3 <= len(colors_arr):
+                            patch_color = [colors_arr[base_color_idx], colors_arr[base_color_idx+1], colors_arr[base_color_idx+2]]
+                        else:
+                            patch_color = [0.5, 0.5, 0.8]
+                    else:
+                        patch_color = [0.5, 0.5, 0.8]
+                else:
+                    patch_color = [0.5, 0.5, 0.8]
+
+                is_up = is_up_list[i] if is_up_list is not None and i < len(is_up_list) else True
+                if is_volume:
+                    patch_colors.append({'facecolor': patch_color, 'edgecolor': patch_color, 'linewidth': 0.8})
+                elif is_up:
+                    patch_colors.append({'facecolor': 'none', 'edgecolor': patch_color, 'linewidth': 0.8})
+                else:
+                    patch_colors.append({'facecolor': patch_color, 'edgecolor': patch_color, 'linewidth': 0.8})
+
+            if len(patches) == 0:
+                return False
+
+            collection = PatchCollection(patches, facecolor='none', edgecolor='none')
+            for i, pc in enumerate(patch_colors):
+                if i < len(collection.get_paths()):
+                    pass
+            collection.set_facecolors([pc['facecolor'] for pc in patch_colors])
+            collection.set_edgecolors([pc['edgecolor'] for pc in patch_colors])
+            collection.set_linewidths([pc['linewidth'] for pc in patch_colors])
+            collection.set_alpha(0.8)
+
             ax.add_collection(collection)
+
+            if segments and len(segments) > 0:
+                from matplotlib.collections import LineCollection
+                colors_arr = np.asarray(colors) if colors is not None else None
+                shadow_colors = []
+                for i in range(len(segments)):
+                    if colors_arr is not None and len(colors_arr) > 0:
+                        if colors_arr.ndim == 2 and len(colors_arr) > i:
+                            shadow_colors.append(colors_arr[i].tolist())
+                        elif colors_arr.ndim == 1:
+                            base_color_idx = i * 3
+                            if base_color_idx + 3 <= len(colors_arr):
+                                shadow_colors.append([colors_arr[base_color_idx], colors_arr[base_color_idx+1], colors_arr[base_color_idx+2]])
+                            else:
+                                shadow_colors.append([1.0, 0.0, 0.0])
+                        else:
+                            shadow_colors.append([1.0, 0.0, 0.0])
+                    else:
+                        shadow_colors.append([1.0, 0.0, 0.0])
+
+                valid_segments = []
+                valid_colors = []
+                for i, seg in enumerate(segments):
+                    if i < len(shadow_colors):
+                        valid_segments.append(seg)
+                        valid_colors.append(shadow_colors[i])
+
+                if valid_segments:
+                    lc = LineCollection(valid_segments, colors=valid_colors, linewidths=0.5)
+                    ax.add_collection(lc)
+
+            logger.info(f"DEBUG Polygon: added {len(patches)} patches")
+
             ax.autoscale_view()
-            
-            logger.debug(f"GPU数据转换完成: {num_quads}个柱子（向量化优化）")
+
             return True
-            
+
         except Exception as e:
-            logger.error(f"GPU数据转换失败: {e}")
-            # 备用方案：使用原有点对点方法
+            logger.error(f"GPU数据转换失败（Polygon方式）: {e}")
             return self._convert_gpu_data_fallback(vertices, colors, ax)
     
     def _convert_gpu_data_fallback(self, vertices: np.ndarray, colors: np.ndarray, ax) -> bool:
@@ -2005,7 +2211,7 @@ class WebGPURenderer(BaseChartRenderer):
             from matplotlib.collections import PolyCollection
             import matplotlib.colors as mcolors
             
-            if len(vertices) == 0:
+            if vertices is None or len(vertices) == 0:
                 return False
             
             # 将顶点数据转换为PolyCollection格式
@@ -2024,19 +2230,28 @@ class WebGPURenderer(BaseChartRenderer):
                     verts.append(quad)
                     
                     # 获取颜色（取第一个顶点的颜色）
-                    color_idx = (i // 8) * 12  # 每个柱子12个颜色值 (4个顶点 * 3个RGB)
-                    if color_idx + 2 < len(colors):
-                        color_rgb = colors[color_idx:color_idx+3]
-                        # 转换为matplotlib颜色格式
-                        face_colors.append(color_rgb)
+                    colors_array = np.asarray(colors)
+
+                    # 处理不同的 colors 形状：(N*3,) 或 (N, 3)
+                    quad_idx = i // 8
+                    if colors_array.ndim == 2 and colors_array.shape[1] == 3:
+                        if quad_idx < len(colors_array):
+                            color_rgb = colors_array[quad_idx]
+                        else:
+                            color_rgb = [0.5, 0.5, 0.8]
                     else:
-                        # 默认颜色
-                        face_colors.append([0.5, 0.5, 0.8])
+                        color_idx = (i // 8) * 3
+                        if color_idx + 3 <= len(colors_array):
+                            color_rgb = colors_array[color_idx:color_idx+3]
+                        else:
+                            color_rgb = [0.5, 0.5, 0.8]
+
+                    face_colors.append(color_rgb.tolist() if hasattr(color_rgb, 'tolist') else list(color_rgb))
             
             if verts:
                 collection = PolyCollection(
                     verts,
-                    facecolors=face_colors if face_colors else 'face',
+                    facecolors=face_colors if face_colors else [0.5, 0.5, 0.8],
                     alpha=0.7,
                     edgecolors='none'
                 )
@@ -2103,7 +2318,7 @@ class WebGPURenderer(BaseChartRenderer):
                         performance_info['context_active'] = True
                     else:
                         performance_info['context_active'] = False
-                except:
+                except Exception as e:
                     performance_info['context_active'] = False
             else:
                 performance_info['context_active'] = False

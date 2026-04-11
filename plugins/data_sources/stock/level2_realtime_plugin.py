@@ -153,8 +153,15 @@ class Level2RealtimePlugin(StandardDataSourcePlugin):
         return self.config.supported_data_types
 
     def get_capabilities(self) -> Dict[str, Any]:
-        """获取插件能力"""
-        return self.plugin_info.capabilities
+        """获取插件能力（兼容 EnhancedRealtimeDataManager 的能力匹配格式）"""
+        base_capabilities = self.plugin_info.capabilities.copy() if self.plugin_info.capabilities else {}
+        base_capabilities.update({
+            'tick': True,
+            'level2': True,
+            'order_book': True,
+            'realtime': True,
+        })
+        return base_capabilities
 
     def _internal_connect(self, **kwargs) -> bool:
         """内部连接实现"""

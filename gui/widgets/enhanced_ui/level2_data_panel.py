@@ -737,7 +737,8 @@ class Level2DataPanel(QWidget):
         try:
             if self.realtime_manager:
                 asyncio.create_task(self.realtime_manager.subscribe_realtime_data(
-                    symbol, [DataType.LEVEL2, DataType.TICK, DataType.ORDER_BOOK]
+                    [symbol], [DataType.LEVEL2_DATA, DataType.TICK_DATA, DataType.ORDER_BOOK],
+                    AssetType.STOCK_A
                 ))
 
             self.subscribed_symbols.add(symbol)
@@ -750,7 +751,9 @@ class Level2DataPanel(QWidget):
         """取消订阅股票Level-2数据"""
         try:
             if self.realtime_manager:
-                asyncio.create_task(self.realtime_manager.unsubscribe_realtime_data(symbol))
+                asyncio.create_task(self.realtime_manager.unsubscribe_realtime_data(
+                    [symbol], [DataType.LEVEL2_DATA, DataType.TICK_DATA, DataType.ORDER_BOOK]
+                ))
 
             self.subscribed_symbols.discard(symbol)
             logger.info(f"已取消订阅 {symbol} 的Level-2数据")

@@ -368,9 +368,25 @@ class UnifiedBacktestEngine:
             processed_data = self._preprocess_and_validate_data(
                 data, signal_col, price_col)
 
+            # 获取预处理后的数据长度（用于进度回调）
+            total_bars = len(processed_data)
+
+            # 【新增】开始进度回调
+            if progress_callback and callable(progress_callback):
+                try:
+                    progress_callback(0, total_bars, {"status": "starting"})
+                except Exception as e:
+                    self.logger.debug(f"开始进度回调失败：{e}")
+
             # 检查是否为空数据处理结果
             if processed_data.empty:
                 self.logger.info("空数据处理完成")
+                # 【新增】空数据时也要通知完成
+                if progress_callback and callable(progress_callback):
+                    try:
+                        progress_callback(0, total_bars, {"status": "empty_data"})
+                    except Exception as e:
+                        self.logger.debug(f"空数据进度回调失败：{e}")
                 return processed_data
 
             # 智能选择回测引擎
@@ -436,14 +452,27 @@ class UnifiedBacktestEngine:
             except:
                 pass
             
+            # 【新增】完成进度回调
+            if progress_callback and callable(progress_callback):
+                try:
+                    progress_callback(total_bars, total_bars, result_dict)
+                except Exception as e:
+                    self.logger.debug(f"完成进度回调失败：{e}")
+            
             # 返回统一格式的结果 - 为了兼容性，直接返回包含完整指标的字典
             return result_dict
 
         except Exception as e:
             import traceback
             error_traceback = traceback.format_exc()
-            self.logger.error(f"回测失败: {e}")
-            self.logger.error(f"详细错误堆栈: {error_traceback}")
+            self.logger.error(f"回测失败：{e}")
+            self.logger.error(f"详细错误堆栈：{error_traceback}")
+            # 【新增】失败进度回调
+            if progress_callback and callable(progress_callback):
+                try:
+                    progress_callback(0, total_bars if 'total_bars' in locals() else 0, {"status": "error", "error": str(e)})
+                except Exception as cb_err:
+                    self.logger.debug(f"错误进度回调失败：{cb_err}")
             raise
 
     def _preprocess_and_validate_data(self, data: pd.DataFrame,

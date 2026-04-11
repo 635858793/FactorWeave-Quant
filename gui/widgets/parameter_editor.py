@@ -224,7 +224,7 @@ class ParameterEditorWidget(QWidget):
     """参数编辑器 Widget（完整版）"""
     
     # 信号：参数变化
-    parameter_changed = pyqtSignal(str, Any)
+    parameter_changed = pyqtSignal(str, object)
     # 信号：参数已应用
     parameters_applied = pyqtSignal()
     # 信号：扫描完成（第二阶段）

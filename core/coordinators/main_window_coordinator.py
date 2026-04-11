@@ -3454,12 +3454,22 @@ FactorWeave-Quant  2.0 (重构版本)
 
             # 检查是否已有独立窗口存在
             if hasattr(self, '_standalone_backtest_window') and self._standalone_backtest_window:
-                # 如果窗口已存在，直接显示并激活
-                self._standalone_backtest_window.show()
-                self._standalone_backtest_window.raise_()
-                self._standalone_backtest_window.activateWindow()
-                logger.info("专业回测独立窗口已激活")
-                return
+                # 检查 Qt 对象是否有效
+                try:
+                    # 尝试访问窗口属性，验证对象是否有效
+                    if self._standalone_backtest_window.isVisible() or self._standalone_backtest_window.isHidden():
+                        self._standalone_backtest_window.show()
+                        self._standalone_backtest_window.raise_()
+                        self._standalone_backtest_window.activateWindow()
+                        logger.info("专业回测独立窗口已激活")
+                        return
+                except RuntimeError as e:
+                    # Qt 对象已删除，清理引用
+                    logger.warning(f"检测到已删除的窗口引用，将创建新窗口：{e}")
+                    try:
+                        del self._standalone_backtest_window
+                    except:
+                        pass
 
             # 创建新的独立浮动窗口
             self._standalone_backtest_window = QMainWindow()
@@ -3500,20 +3510,32 @@ FactorWeave-Quant  2.0 (重构版本)
                 }
             """)
 
-            # 设置窗口属性
-            self._standalone_backtest_window.setAttribute(Qt.WA_DeleteOnClose, False)  # 关闭时不删除，只隐藏
+            # 设置窗口属性：关闭时删除窗口
+            self._standalone_backtest_window.setAttribute(Qt.WA_DeleteOnClose, True)
 
             # 连接关闭事件
             def on_window_close():
-                self._standalone_backtest_window.hide()
-                logger.info("专业回测独立窗口已隐藏")
+                try:
+                    if hasattr(self, '_standalone_backtest_window') and self._standalone_backtest_window:
+                        backtest_widget = self._standalone_backtest_window.centralWidget()
+                        if backtest_widget and hasattr(backtest_widget, '_cleanup_before_close'):
+                            backtest_widget._cleanup_before_close()
+                except Exception as e:
+                    logger.error(f"关闭时清理回测窗口失败：{e}")
+                finally:
+                    # 确保总是删除引用
+                    if hasattr(self, '_standalone_backtest_window'):
+                        try:
+                            del self._standalone_backtest_window
+                        except:
+                            pass
+                    logger.info("专业回测独立窗口已关闭并清理")
 
-            # 重写关闭事件
-            original_close_event = self._standalone_backtest_window.closeEvent
-
+            # 重写关闭事件：允许窗口正常关闭（WA_DeleteOnClose 会处理删除）
             def close_event(event):
-                event.ignore()  # 忽略关闭事件
-                on_window_close()  # 执行隐藏操作
+                logger.info("专业回测独立窗口收到关闭事件")
+                on_window_close()  # 执行清理操作
+                event.accept()  # 接受关闭事件，让 Qt 正常关闭窗口
             self._standalone_backtest_window.closeEvent = close_event
 
             # 显示窗口
@@ -3855,6 +3877,93 @@ FactorWeave-Quant  2.0 (重构版本)
         """获取状态栏 - 兼容方法"""
         return self._main_window.statusBar() if self._main_window else None
 
+    def _initialize_realtime_components(self):
+        """初始化实时数据组件"""
+        try:
+            from core.services.enhanced_realtime_data_manager import EnhancedRealtimeDataManager
+            from core.services.realtime_compute_engine import RealtimeComputeEngine
+            from core.data_standardization_engine import DataStandardizationEngine
+            from core.data_validator import DataValidator
+
+            logger.info("开始初始化实时数据组件...")
+
+            # 创建实时计算引擎（初始化已在构造函数中完成）
+            self._realtime_compute_engine = RealtimeComputeEngine(self._event_bus)
+            logger.info("RealtimeComputeEngine 初始化完成")
+
+            # 获取数据标准器和验证器
+            try:
+                data_standardizer = DataStandardizationEngine()
+                data_validator = DataValidator()
+            except Exception as e:
+                logger.warning(f"创建数据标准器/验证器失败，使用默认实现: {e}")
+                data_standardizer = None
+                data_validator = None
+
+            # 创建实时数据管理器
+            self._realtime_manager = EnhancedRealtimeDataManager(
+                event_bus=self._event_bus,
+                data_standardizer=data_standardizer,
+                data_validator=data_validator,
+                uni_plugin_manager=self._data_manager._uni_plugin_manager if hasattr(self._data_manager, '_uni_plugin_manager') else None
+            )
+            logger.info("EnhancedRealtimeDataManager 初始化完成")
+
+            # 注册所有实时数据插件到实时数据管理器（同步方式，避免 Qt 事件循环冲突）
+            if hasattr(self._data_manager, '_uni_plugin_manager'):
+                plugin_center = self._data_manager._uni_plugin_manager.plugin_center
+                
+                # 定义需要注册的实时数据插件列表
+                realtime_plugin_ids = [
+                    'data_sources.stock.miniqmt_plugin',      # MiniQMT 实时数据
+                    'data_sources.stock.level2_realtime_plugin'  # Level-2 实时数据
+                ]
+                
+                for plugin_id in realtime_plugin_ids:
+                    if plugin_id in plugin_center.data_source_plugins:
+                        try:
+                            # 同步方式注册插件，确保注册完成后才继续
+                            loop = asyncio.get_event_loop()
+                            if loop.is_running():
+                                # Qt 事件循环运行时，使用 run_until_complete 同步等待注册完成
+                                # 这是安全的，因为 register_realtime_plugin 是轻量级操作
+                                import concurrent.futures
+                                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                                    future = executor.submit(
+                                        loop.run_until_complete,
+                                        self._realtime_manager.register_realtime_plugin(
+                                            plugin_id,
+                                            plugin_center.data_source_plugins[plugin_id]
+                                        )
+                                    )
+                                    try:
+                                        future.result(timeout=5.0)  # 5 秒超时
+                                        logger.info(f"实时数据插件 {plugin_id} 已同步注册到实时数据管理器")
+                                    except concurrent.futures.TimeoutError:
+                                        logger.error(f"实时数据插件 {plugin_id} 注册超时")
+                            else:
+                                loop.run_until_complete(self._realtime_manager.register_realtime_plugin(
+                                    plugin_id,
+                                    plugin_center.data_source_plugins[plugin_id]
+                                ))
+                                logger.info(f"实时数据插件 {plugin_id} 已注册到实时数据管理器")
+                        except Exception as e:
+                            logger.error(f"实时数据插件 {plugin_id} 注册失败：{e}")
+                            # 同步注册失败时，直接添加到插件字典
+                            self._realtime_manager.realtime_plugins[plugin_id] = plugin_center.data_source_plugins[plugin_id]
+                            logger.info(f"实时数据插件 {plugin_id} 已强制同步注册到实时数据管理器")
+                    else:
+                        logger.info(f"实时数据插件 {plugin_id} 未在 plugin_center 中发现，可能未启用")
+
+            logger.info("实时数据组件初始化完成")
+
+        except Exception as e:
+            logger.error(f"初始化实时数据组件失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            self._realtime_manager = None
+            self._realtime_compute_engine = None
+
     def _initialize_enhanced_ui_components_async(self):
         """异步初始化增强UI组件（在事件循环中执行，避免阻塞主初始化流程）"""
         import time
@@ -3881,11 +3990,15 @@ FactorWeave-Quant  2.0 (重构版本)
             # 存储增强组件引用
             self._enhanced_components = {}
 
+            # 初始化实时数据组件
+            self._initialize_realtime_components()
+
             # 创建Level-2数据面板
             level2_start = time.time()
             self._enhanced_components['level2_panel'] = Level2DataPanel(
                 parent=self._main_window,
-                event_bus=self._event_bus
+                event_bus=self._event_bus,
+                realtime_manager=self._realtime_manager
             )
             level2_time = time.time() - level2_start
             logger.info(f"Level2DataPanel创建耗时: {level2_time:.3f}秒")

@@ -336,17 +336,26 @@ class RealTimeBacktestMonitor:
                 end_row = min(processed_rows + chunk_size, len(data))
                 chunk_data = data.iloc[:end_row].copy()
 
-                # 过滤掉run_backtest不支持的参数
+                # 过滤掉 run_backtest 不支持的参数
                 filtered_kwargs = {
-                    k: v for k, v in kwargs.items() 
-                    if k in ['signal_col', 'price_col', 'initial_capital', 'position_size', 
-                             'commission_pct', 'slippage_pct', 'min_commission', 'stop_loss_pct', 
+                    k: v for k, v in kwargs.items()
+                    if k in ['signal_col', 'price_col', 'initial_capital', 'position_size',
+                             'commission_pct', 'slippage_pct', 'min_commission', 'stop_loss_pct',
                              'take_profit_pct', 'max_holding_periods', 'enable_compound', 'benchmark_data']
+                    # 不包含 progress_callback，因为监控器有自己的进度逻辑，避免与引擎内部回调冲突
                 }
-                
+
                 # 运行回测
                 result = backtest_engine.run_backtest(
                     chunk_data, **filtered_kwargs)
+
+                # 调用进度回调
+                progress_callback = kwargs.get('progress_callback')
+                if progress_callback and callable(progress_callback):
+                    try:
+                        progress_callback(processed_rows, len(data), result)
+                    except Exception as e:
+                        logger.warning(f"进度回调失败: {e}")
 
                 # 再次检查停止信号
                 if not self.is_monitoring:
