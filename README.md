@@ -1176,12 +1176,11 @@ powershell -ExecutionPolicy Bypass -File install_gpu_windows.ps1
 **解决方案**:
 ```python
 # 重置数据库
-from core.database.duckdb_manager import DuckDBManager
-db_manager = DuckDBManager()
-db_manager.reset_database()
+from core.database.duckdb_manager import get_connection_manager
+manager = get_connection_manager()
 
 # 检查数据库状态
-python -c "from core.database.duckdb_manager import DuckDBManager; print(DuckDBManager().health_check())"
+python -c "from core.database.duckdb_manager import get_connection_manager; print(get_connection_manager().health_check_all())"
 ```
 
 ##### 3. 插件加载失败

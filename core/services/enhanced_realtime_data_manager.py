@@ -38,8 +38,11 @@ from core.tet_data_pipeline import StandardQuery, StandardData
 from core.data_standardization_engine import DataStandardizationEngine
 from core.data_validator import DataValidator
 from core.events.event_bus import EventBus, RealtimeDataEvent, OrderBookEvent, TickDataEvent
+from core.database.duckdb_manager import get_connection_manager
 
 logger = logger.bind(module=__name__)
+
+MAIN_DATABASE_PATH = "data/factorweave_analytics.duckdb"
 
 
 class PluginCallbackAdapter:
@@ -742,11 +745,7 @@ class EnhancedRealtimeDataManager:
         logger.info(f"从历史数据源获取tick数据: {symbol} 从 {start_time} 到 {end_time}")
 
         try:
-            # 这里应该连接到真实的数据库查询
-            # 例如：从DuckDB查询历史Tick数据
-            from core.database.duckdb_manager import DuckDBManager
-
-            duckdb_manager = DuckDBManager()
+            manager = get_connection_manager()
             query = """
                 SELECT symbol, timestamp, price, volume, trade_type, source
                 FROM tick_data 
@@ -754,7 +753,8 @@ class EnhancedRealtimeDataManager:
                 ORDER BY timestamp
             """
 
-            result_df = duckdb_manager.query(query, params=[symbol, start_time.isoformat(), end_time.isoformat()])
+            with manager.get_connection(MAIN_DATABASE_PATH) as conn:
+                result_df = conn.execute(query, [symbol, start_time.isoformat(), end_time.isoformat()]).fetchdf()
 
             if result_df is not None and not result_df.empty:
                 logger.info(f"从DuckDB获取到 {len(result_df)} 条tick数据")
@@ -775,10 +775,7 @@ class EnhancedRealtimeDataManager:
         logger.info(f"从历史数据源获取订单簿快照: {symbol} 在 {timestamp}")
 
         try:
-            # 从DuckDB查询订单簿历史数据
-            from core.database.duckdb_manager import DuckDBManager
-
-            duckdb_manager = DuckDBManager()
+            manager = get_connection_manager()
             query = """
                 SELECT symbol, timestamp, bids, asks, source
                 FROM order_book_snapshots 
@@ -787,16 +784,16 @@ class EnhancedRealtimeDataManager:
                 LIMIT 1
             """
 
-            result = duckdb_manager.query(query, params=[symbol, timestamp.isoformat()])
+            with manager.get_connection(MAIN_DATABASE_PATH) as conn:
+                result = conn.execute(query, [symbol, timestamp.isoformat()]).fetchone()
 
-            if result is not None and not result.empty:
-                row = result.iloc[0]
+            if result is not None:
                 return {
-                    "symbol": row['symbol'],
-                    "timestamp": row['timestamp'],
-                    "bids": json.loads(row['bids']) if isinstance(row['bids'], str) else row['bids'],
-                    "asks": json.loads(row['asks']) if isinstance(row['asks'], str) else row['asks'],
-                    "source": row['source']
+                    "symbol": result['symbol'],
+                    "timestamp": result['timestamp'],
+                    "bids": json.loads(result['bids']) if isinstance(result['bids'], str) else result['bids'],
+                    "asks": json.loads(result['asks']) if isinstance(result['asks'], str) else result['asks'],
+                    "source": result['source']
                 }
             else:
                 logger.warning(f"未找到 {symbol} 在 {timestamp} 的订单簿数据")

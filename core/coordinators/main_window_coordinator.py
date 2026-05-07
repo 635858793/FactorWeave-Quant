@@ -1420,6 +1420,28 @@ class MainWindowCoordinator(BaseCoordinator):
             QMessageBox.critical(self._main_window, "错误",
                                  f"打开系统设置对话框失败: {str(e)}")
 
+    def _on_feature_control(self) -> None:
+        """功能控制面板"""
+        try:
+            from gui.widgets.feature_control_widget import FeatureControlWidget
+            from PyQt5.QtWidgets import QDialog, QVBoxLayout
+
+            dialog = QDialog(self._main_window)
+            dialog.setWindowTitle("功能控制")
+            dialog.resize(900, 700)
+
+            layout = QVBoxLayout(dialog)
+            widget = FeatureControlWidget()
+            layout.addWidget(widget)
+
+            self.center_dialog(dialog)
+            dialog.exec_()
+
+        except Exception as e:
+            logger.error(f"打开功能控制失败: {e}")
+            QMessageBox.critical(self._main_window, "错误",
+                                 f"打开功能控制失败: {str(e)}")
+
     def _on_settings_applied(self, settings: dict) -> None:
         """处理设置应用事件"""
         try:

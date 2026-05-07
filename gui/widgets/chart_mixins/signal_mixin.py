@@ -43,63 +43,63 @@ class PatternStyleManager:
     # 暗色主题样式
     DARK_STYLES = {
         'head_shoulders': {
-            'region_color': (1.0, 0.2, 0.2, 0.15),
-            'line_color': '#FF6B6B',
+            'region_color': (0.0, 1.0, 0.0, 0.15),
+            'line_color': '#00FF00',
             'line_style': '--',
             'line_width': 1.5,
             'marker': 'o',
             'marker_size': 100,
-            'marker_color': '#FF6B6B',
+            'marker_color': '#00FF00',
             'marker_edge_color': '#FFFFFF',
             'marker_edge_width': 1.5,
             'glow_effect': False,
             'gradient_fill': False,
-            'border_color': '#FF6B6B',
+            'border_color': '#00FF00',
             'border_width': 1.0,
         },
         'head_shoulders_inverse': {
-            'region_color': (0.2, 0.8, 0.2, 0.12),
-            'line_color': '#44FF44',
+            'region_color': (1.0, 0.0, 0.0, 0.12),
+            'line_color': '#FF0000',
             'line_style': '--',
             'line_width': 1.5,
             'marker': 'o',
             'marker_size': 100,
-            'marker_color': '#44FF44',
+            'marker_color': '#FF0000',
             'marker_edge_color': '#FFFFFF',
             'marker_edge_width': 1.5,
             'glow_effect': False,
             'gradient_fill': False,
-            'border_color': '#44FF44',
+            'border_color': '#FF0000',
             'border_width': 1.0,
         },
         'double_top': {
-            'region_color': (1.0, 0.3, 0.3, 0.12),
-            'line_color': '#FF5555',
+            'region_color': (0.0, 1.0, 0.0, 0.12),
+            'line_color': '#00FF00',
             'line_style': '-.',
             'line_width': 1.5,
             'marker': 'D',
             'marker_size': 80,
-            'marker_color': '#FF5555',
+            'marker_color': '#00FF00',
             'marker_edge_color': '#FFFFFF',
             'marker_edge_width': 1.5,
             'glow_effect': False,
             'gradient_fill': False,
-            'border_color': '#FF5555',
+            'border_color': '#00FF00',
             'border_width': 1.0,
         },
         'double_bottom': {
-            'region_color': (0.3, 1.0, 0.3, 0.12),
-            'line_color': '#55FF55',
+            'region_color': (1.0, 0.0, 0.0, 0.12),
+            'line_color': '#FF0000',
             'line_style': '-.',
             'line_width': 1.5,
             'marker': 'D',
             'marker_size': 80,
-            'marker_color': '#55FF55',
+            'marker_color': '#FF0000',
             'marker_edge_color': '#FFFFFF',
             'marker_edge_width': 1.5,
             'glow_effect': False,
             'gradient_fill': False,
-            'border_color': '#55FF55',
+            'border_color': '#FF0000',
             'border_width': 1.0,
         },
         'triangle': {
@@ -302,63 +302,63 @@ class PatternStyleManager:
     # 亮色主题样式
     LIGHT_STYLES = {
         'head_shoulders': {
-            'region_color': (0.9, 0.1, 0.1, 0.15),
-            'line_color': '#CC0000',
+            'region_color': (0.0, 1.0, 0.0, 0.15),
+            'line_color': '#00FF00',
             'line_style': '--',
             'line_width': 1.5,
             'marker': 'o',
             'marker_size': 100,
-            'marker_color': '#CC0000',
+            'marker_color': '#00FF00',
             'marker_edge_color': '#333333',
             'marker_edge_width': 1.5,
             'glow_effect': False,
             'gradient_fill': False,
-            'border_color': '#CC0000',
+            'border_color': '#00FF00',
             'border_width': 1.0,
         },
         'head_shoulders_inverse': {
-            'region_color': (0.1, 0.7, 0.1, 0.12),
-            'line_color': '#00AA00',
+            'region_color': (1.0, 0.0, 0.0, 0.12),
+            'line_color': '#FF0000',
             'line_style': '--',
             'line_width': 1.5,
             'marker': 'o',
             'marker_size': 100,
-            'marker_color': '#00AA00',
+            'marker_color': '#FF0000',
             'marker_edge_color': '#333333',
             'marker_edge_width': 1.5,
             'glow_effect': False,
             'gradient_fill': False,
-            'border_color': '#00AA00',
+            'border_color': '#FF0000',
             'border_width': 1.0,
         },
         'double_top': {
-            'region_color': (0.9, 0.2, 0.2, 0.12),
-            'line_color': '#CC2222',
+            'region_color': (0.0, 1.0, 0.0, 0.12),
+            'line_color': '#00FF00',
             'line_style': '-.',
             'line_width': 1.5,
             'marker': 'D',
             'marker_size': 80,
-            'marker_color': '#CC2222',
+            'marker_color': '#00FF00',
             'marker_edge_color': '#333333',
             'marker_edge_width': 1.5,
             'glow_effect': False,
             'gradient_fill': False,
-            'border_color': '#CC2222',
+            'border_color': '#00FF00',
             'border_width': 1.0,
         },
         'double_bottom': {
-            'region_color': (0.2, 0.8, 0.2, 0.12),
-            'line_color': '#22AA22',
+            'region_color': (1.0, 0.0, 0.0, 0.12),
+            'line_color': '#FF0000',
             'line_style': '-.',
             'line_width': 1.5,
             'marker': 'D',
             'marker_size': 80,
-            'marker_color': '#22AA22',
+            'marker_color': '#FF0000',
             'marker_edge_color': '#333333',
             'marker_edge_width': 1.5,
             'glow_effect': False,
             'gradient_fill': False,
-            'border_color': '#22AA22',
+            'border_color': '#FF0000',
             'border_width': 1.0,
         },
         'triangle': {
@@ -588,7 +588,7 @@ class PatternStyleManager:
         """根据形态名称自动检测类型"""
         name_lower = pattern_name.lower() if pattern_name else ''
         
-        if 'head' in name_lower or 'shoulder' in name_lower:
+        if 'head' in name_lower or 'shoulder' in name_lower or '头肩' in pattern_name:
             if 'inv' in name_lower or '底' in pattern_name:
                 return 'head_shoulders_inverse'
             return 'head_shoulders'
@@ -621,55 +621,93 @@ class PatternStyleManager:
     
     @classmethod
     def _normalize_category(cls, category: str) -> str:
-        """标准化形态类别名称"""
+        """标准化形态类别名称
+        
+        采用精确匹配优先策略，避免短别名误匹配。
+        """
         if not category:
             return 'unknown'
         
         cat_lower = category.lower()
         
-        reversal_aliases = ['reversal', '反转', 'revers', 'rev', '顶部', '底部']
-        continuation_aliases = ['continuation', '持续', 'continue', 'cont', '盘整']
-        trend_aliases = ['trend', '趋势', 'tend']
-        complex_aliases = ['complex', '复杂', 'comp']
-        volume_aliases = ['volume', '价量', 'vol', '量能']
-        gap_aliases = ['gap', '缺口', '跳空']
+        exact_reversal = {'reversal', '反转形态', 'candlestick'}
+        exact_continuation = {'continuation', '持续形态'}
+        exact_trend = {'trend', '趋势形态'}
+        exact_complex = {'complex', '复杂形态'}
+        exact_volume = {'volume', '价量形态'}
+        exact_gap = {'gap', '缺口形态'}
         
-        for alias in reversal_aliases:
+        if cat_lower in exact_reversal:
+            return 'reversal'
+        if cat_lower in exact_continuation:
+            return 'continuation'
+        if cat_lower in exact_trend:
+            return 'trend'
+        if cat_lower in exact_complex:
+            return 'complex'
+        if cat_lower in exact_volume:
+            return 'volume'
+        if cat_lower in exact_gap:
+            return 'gap'
+        
+        reversal_substrings = ['反转', 'revers', '顶部', '底部', 'k线']
+        continuation_substrings = ['持续', 'continu', '盘整']
+        trend_substrings = ['趋势']
+        complex_substrings = ['复杂']
+        volume_substrings = ['价量', '量能']
+        gap_substrings = ['缺口', '跳空']
+        
+        for alias in reversal_substrings:
             if alias in cat_lower:
                 return 'reversal'
-        for alias in continuation_aliases:
+        for alias in continuation_substrings:
             if alias in cat_lower:
                 return 'continuation'
-        for alias in trend_aliases:
+        for alias in trend_substrings:
             if alias in cat_lower:
                 return 'trend'
-        for alias in complex_aliases:
+        for alias in complex_substrings:
             if alias in cat_lower:
                 return 'complex'
-        for alias in volume_aliases:
+        for alias in volume_substrings:
             if alias in cat_lower:
                 return 'volume'
-        for alias in gap_aliases:
+        for alias in gap_substrings:
             if alias in cat_lower:
                 return 'gap'
         
         return 'unknown'
     
     @classmethod
-    def _normalize_signal(cls, signal: str) -> str:
-        """标准化信号类型"""
+    def _normalize_signal(cls, signal) -> str:
+        """标准化信号类型
+        
+        采用精确匹配优先策略，避免子串误匹配。
+        例如 'close_long' 不应被 'long' 误判为 buy。
+        """
         if not signal:
             return 'neutral'
         
-        sig_lower = signal.lower()
+        if hasattr(signal, 'value'):
+            signal = signal.value
         
-        buy_aliases = ['buy', '看涨', '买入', 'bullish', 'long', '多', '上涨']
-        sell_aliases = ['sell', '看跌', '卖出', 'bearish', 'short', '空', '下跌']
+        sig_lower = str(signal).lower()
         
-        for alias in buy_aliases:
+        exact_buy = {'buy', 'strong_buy', 'close_short'}
+        exact_sell = {'sell', 'strong_sell', 'close_long'}
+        
+        if sig_lower in exact_buy:
+            return 'buy'
+        if sig_lower in exact_sell:
+            return 'sell'
+        
+        buy_substrings = ['看涨', '买入', 'bullish', '多', '上涨']
+        sell_substrings = ['看跌', '卖出', 'bearish', '空', '下跌']
+        
+        for alias in buy_substrings:
             if alias in sig_lower:
                 return 'buy'
-        for alias in sell_aliases:
+        for alias in sell_substrings:
             if alias in sig_lower:
                 return 'sell'
         
@@ -719,28 +757,28 @@ class PatternStyleManager:
     # 颜色方案 - 按类别+信号+主题
     COLOR_SCHEMES = {
         ('reversal', 'buy'): {
-            'dark': {'primary': '#44FF44', 'light': '#22CC22', 'region': (0.2, 0.8, 0.2, 0.12)},
-            'light': {'primary': '#228B22', 'light': '#32CD32', 'region': (0.1, 0.7, 0.1, 0.12)}
+            'dark': {'primary': '#FF0000', 'light': '#FF0000', 'region': (1.0, 0.0, 0.0, 0.12)},
+            'light': {'primary': '#FF0000', 'light': '#FF0000', 'region': (1.0, 0.0, 0.0, 0.12)}
         },
         ('reversal', 'sell'): {
-            'dark': {'primary': '#FF4444', 'light': '#CC2222', 'region': (1.0, 0.2, 0.2, 0.12)},
-            'light': {'primary': '#B22222', 'light': '#DC143C', 'region': (0.9, 0.1, 0.1, 0.12)}
+            'dark': {'primary': '#00FF00', 'light': '#00FF00', 'region': (0.0, 1.0, 0.0, 0.12)},
+            'light': {'primary': '#00FF00', 'light': '#00FF00', 'region': (0.0, 1.0, 0.0, 0.12)}
         },
         ('continuation', 'buy'): {
-            'dark': {'primary': '#4488FF', 'light': '#2255DD', 'region': (0.2, 0.5, 1.0, 0.12)},
-            'light': {'primary': '#2255DD', 'light': '#4169E1', 'region': (0.2, 0.4, 0.9, 0.12)}
+            'dark': {'primary': '#FF0000', 'light': '#FF0000', 'region': (1.0, 0.0, 0.0, 0.12)},
+            'light': {'primary': '#FF0000', 'light': '#FF0000', 'region': (1.0, 0.0, 0.0, 0.12)}
         },
         ('continuation', 'sell'): {
-            'dark': {'primary': '#FFAA44', 'light': '#DD8800', 'region': (1.0, 0.6, 0.2, 0.12)},
-            'light': {'primary': '#CC6600', 'light': '#DAA520', 'region': (0.8, 0.4, 0.0, 0.12)}
+            'dark': {'primary': '#00FF00', 'light': '#00FF00', 'region': (0.0, 1.0, 0.0, 0.12)},
+            'light': {'primary': '#00FF00', 'light': '#00FF00', 'region': (0.0, 1.0, 0.0, 0.12)}
         },
         ('trend', 'buy'): {
-            'dark': {'primary': '#44DDFF', 'light': '#22AAAA', 'region': (0.2, 0.8, 0.9, 0.1)},
-            'light': {'primary': '#008B8B', 'light': '#20B2AA', 'region': (0.0, 0.5, 0.5, 0.1)}
+            'dark': {'primary': '#FF0000', 'light': '#FF0000', 'region': (1.0, 0.0, 0.0, 0.12)},
+            'light': {'primary': '#FF0000', 'light': '#FF0000', 'region': (1.0, 0.0, 0.0, 0.12)}
         },
         ('trend', 'sell'): {
-            'dark': {'primary': '#FF88CC', 'light': '#DD5599', 'region': (1.0, 0.4, 0.7, 0.1)},
-            'light': {'primary': '#C71585', 'light': '#DB7093', 'region': (0.8, 0.3, 0.5, 0.1)}
+            'dark': {'primary': '#00FF00', 'light': '#00FF00', 'region': (0.0, 1.0, 0.0, 0.12)},
+            'light': {'primary': '#00FF00', 'light': '#00FF00', 'region': (0.0, 1.0, 0.0, 0.12)}
         },
         ('trend', 'neutral'): {
             'dark': {'primary': '#888888', 'light': '#666666', 'region': (0.5, 0.5, 0.5, 0.1)},
@@ -751,24 +789,56 @@ class PatternStyleManager:
             'light': {'primary': '#8B008B', 'light': '#9932CC', 'region': (0.5, 0.0, 0.5, 0.12)}
         },
         ('volume', 'buy'): {
-            'dark': {'primary': '#44FFAA', 'light': '#22DD88', 'region': (0.2, 0.9, 0.6, 0.1)},
-            'light': {'primary': '#00C853', 'light': '#32CD32', 'region': (0.1, 0.8, 0.3, 0.1)}
+            'dark': {'primary': '#FF0000', 'light': '#FF0000', 'region': (1.0, 0.0, 0.0, 0.12)},
+            'light': {'primary': '#FF0000', 'light': '#FF0000', 'region': (1.0, 0.0, 0.0, 0.12)}
         },
         ('volume', 'sell'): {
-            'dark': {'primary': '#FFAA88', 'light': '#DD7766', 'region': (1.0, 0.6, 0.5, 0.1)},
-            'light': {'primary': '#CD5C5C', 'light': '#F08080', 'region': (0.8, 0.3, 0.3, 0.1)}
+            'dark': {'primary': '#00FF00', 'light': '#00FF00', 'region': (0.0, 1.0, 0.0, 0.12)},
+            'light': {'primary': '#00FF00', 'light': '#00FF00', 'region': (0.0, 1.0, 0.0, 0.12)}
         },
         ('gap', 'buy'): {
-            'dark': {'primary': '#FFFF44', 'light': '#DDDD22', 'region': (1.0, 1.0, 0.2, 0.15)},
-            'light': {'primary': '#FFD700', 'light': '#FFC125', 'region': (1.0, 0.8, 0.0, 0.12)}
+            'dark': {'primary': '#FF0000', 'light': '#FF0000', 'region': (1.0, 0.0, 0.0, 0.12)},
+            'light': {'primary': '#FF0000', 'light': '#FF0000', 'region': (1.0, 0.0, 0.0, 0.12)}
         },
         ('gap', 'sell'): {
-            'dark': {'primary': '#FF44FF', 'light': '#DD22DD', 'region': (1.0, 0.2, 1.0, 0.15)},
-            'light': {'primary': '#FF00FF', 'light': '#DA70D6', 'region': (0.8, 0.0, 0.8, 0.12)}
+            'dark': {'primary': '#00FF00', 'light': '#00FF00', 'region': (0.0, 1.0, 0.0, 0.12)},
+            'light': {'primary': '#00FF00', 'light': '#00FF00', 'region': (0.0, 1.0, 0.0, 0.12)}
+        },
+        ('unknown', 'buy'): {
+            'dark': {'primary': '#FF0000', 'light': '#FF0000', 'region': (1.0, 0.0, 0.0, 0.12)},
+            'light': {'primary': '#FF0000', 'light': '#FF0000', 'region': (1.0, 0.0, 0.0, 0.12)}
+        },
+        ('unknown', 'sell'): {
+            'dark': {'primary': '#00FF00', 'light': '#00FF00', 'region': (0.0, 1.0, 0.0, 0.12)},
+            'light': {'primary': '#00FF00', 'light': '#00FF00', 'region': (0.0, 1.0, 0.0, 0.12)}
         },
         ('unknown', 'neutral'): {
             'dark': {'primary': '#FFA500', 'light': '#DD8800', 'region': (1.0, 0.65, 0.0, 0.12)},
             'light': {'primary': '#FF8C00', 'light': '#FFA500', 'region': (1.0, 0.5, 0.0, 0.12)}
+        },
+        ('reversal', 'neutral'): {
+            'dark': {'primary': '#888888', 'light': '#666666', 'region': (0.5, 0.5, 0.5, 0.1)},
+            'light': {'primary': '#666666', 'light': '#808080', 'region': (0.4, 0.4, 0.4, 0.1)}
+        },
+        ('continuation', 'neutral'): {
+            'dark': {'primary': '#888888', 'light': '#666666', 'region': (0.5, 0.5, 0.5, 0.1)},
+            'light': {'primary': '#666666', 'light': '#808080', 'region': (0.4, 0.4, 0.4, 0.1)}
+        },
+        ('complex', 'buy'): {
+            'dark': {'primary': '#FF0000', 'light': '#FF0000', 'region': (1.0, 0.0, 0.0, 0.12)},
+            'light': {'primary': '#FF0000', 'light': '#FF0000', 'region': (1.0, 0.0, 0.0, 0.12)}
+        },
+        ('complex', 'sell'): {
+            'dark': {'primary': '#00FF00', 'light': '#00FF00', 'region': (0.0, 1.0, 0.0, 0.12)},
+            'light': {'primary': '#00FF00', 'light': '#00FF00', 'region': (0.0, 1.0, 0.0, 0.12)}
+        },
+        ('volume', 'neutral'): {
+            'dark': {'primary': '#888888', 'light': '#666666', 'region': (0.5, 0.5, 0.5, 0.1)},
+            'light': {'primary': '#666666', 'light': '#808080', 'region': (0.4, 0.4, 0.4, 0.1)}
+        },
+        ('gap', 'neutral'): {
+            'dark': {'primary': '#888888', 'light': '#666666', 'region': (0.5, 0.5, 0.5, 0.1)},
+            'light': {'primary': '#666666', 'light': '#808080', 'region': (0.4, 0.4, 0.4, 0.1)}
         }
     }
     
@@ -1109,8 +1179,7 @@ class SignalMixin:
                         # 高亮时放大，但保持使用样式中定义的标记
                         size = style.get('marker_size', 80) * 1.5 if is_highlighted else style.get('marker_size', 80)
                         color = style.get('marker_color', '#FFA500')
-                        if is_highlighted:
-                            color = '#FF0000'
+                        # 高亮时保持原色，只增加不透明度
                         alpha = 1.0 if is_highlighted else 0.75
                         zorder = 10 if is_highlighted else 5
                         edge_color = style.get('marker_edge_color', 'white')
@@ -1360,13 +1429,13 @@ class SignalMixin:
             confidence = signal.get('confidence', 0)
             price = signal.get('price', 0)
 
-            # 根据信号类型设置颜色和标记
+            # 根据信号类型设置颜色和标记（中国股市习惯：买入=红色，卖出=绿色）
             if signal_type == 'double_top':
-                color = 'red'
+                color = 'green'
                 marker = 'v'
                 label = 'DT'
             elif signal_type == 'double_bottom':
-                color = 'green'
+                color = 'red'
                 marker = '^'
                 label = 'DB'
             else:
@@ -1510,10 +1579,10 @@ class SignalMixin:
         kdata = self.current_kdata
         x = np.arange(len(kdata))
 
-        # 专业化颜色配置 - 参考同花顺、东方财富等软件
+        # 专业化颜色配置 - 参考同花顺、东方财富等软件（中国股市习惯：买入=亮红色，卖出=亮绿色）
         signal_colors = {
-            'buy': '#FF4444',      # 买入信号 - 红色箭头向上
-            'sell': '#00AA00',     # 卖出信号 - 绿色箭头向下
+            'buy': '#FF0000',      # 买入信号 - 亮红色箭头向上
+            'sell': '#00FF00',     # 卖出信号 - 亮绿色箭头向下
             'neutral': '#FFB000'   # 中性信号 - 橙色圆点
         }
 

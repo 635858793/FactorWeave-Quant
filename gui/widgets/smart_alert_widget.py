@@ -311,7 +311,7 @@ class SignalDetailDialog(QWidget):
 
             signal_layout.addWidget(QLabel("方向:"), 1, 0)
             direction_label = QLabel(signal.direction.upper())
-            direction_color = "#27ae60" if signal.direction == "buy" else "#e74c3c"
+            direction_color = "#FF0000" if signal.direction == "buy" else "#00FF00"
             direction_label.setStyleSheet(f"color: {direction_color}; font-weight: bold;")
             signal_layout.addWidget(direction_label, 1, 1)
 

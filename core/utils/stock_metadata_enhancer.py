@@ -17,8 +17,11 @@ from typing import Dict, List, Optional, Any
 from loguru import logger
 import threading
 import time
+from pathlib import Path
 
 logger = logger.bind(module=__name__)
+
+MAIN_DATABASE_PATH = str(Path("data/factorweave_analytics.duckdb").resolve())
 
 
 class StockMetadataEnhancer:
@@ -470,10 +473,11 @@ class StockMetadataEnhancer:
 
             logger.info(f"查询缺少行业信息的股票...")
 
-            from ..duckdb_manager import DuckDBManager
-            duckdb_mgr = DuckDBManager()
+            from ..duckdb_manager import get_connection_manager
 
-            with duckdb_mgr.get_connection(db_path) as conn:
+            manager = get_connection_manager()
+
+            with manager.get_connection(MAIN_DATABASE_PATH) as conn:
                 result_df = conn.execute(query).fetchdf()
 
             if result_df.empty:

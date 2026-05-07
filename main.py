@@ -22,7 +22,7 @@ from utils.exception_handler import setup_exception_handler
 from utils.warning_suppressor import suppress_warnings
 from core.coordinators import MainWindowCoordinator
 from core.events import EventBus, get_event_bus
-from core.containers import ServiceContainer, get_service_container
+from core.containers import ServiceContainer, get_service_container, set_service_container
 from core.containers.service_registry import ServiceScope
 from core.services.service_bootstrap import bootstrap_services
 from core.graceful_shutdown import shutdown_manager  # 优雅关闭管理器
@@ -205,7 +205,11 @@ class FactorWeaveQuantApplication:
         """初始化核心组件"""
         logger.info("2. 初始化核心组件...")
 
-        # 获取全局服务容器和事件总线
+        from core.containers.unified_service_container import UnifiedServiceContainer
+        unified_container = UnifiedServiceContainer()
+        set_service_container(unified_container)
+        logger.info("统一服务容器(UnifiedServiceContainer)已设置为全局容器")
+
         self.service_container = get_service_container()
         self.event_bus = get_event_bus()
 

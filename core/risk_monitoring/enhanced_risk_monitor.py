@@ -132,7 +132,15 @@ class EnhancedRiskMonitor:
         # 基础组件
         self.risk_monitor = RiskMonitor() if CORE_AVAILABLE else None
         self.alert_system = RiskAlertSystem() if CORE_AVAILABLE else None
-        self.ai_service = AIPredictionService() if CORE_AVAILABLE else None
+        try:
+            if CORE_AVAILABLE:
+                from core.containers import get_service_container
+                container = get_service_container()
+                self.ai_service = container.resolve(AIPredictionService)
+            else:
+                self.ai_service = None
+        except Exception:
+            self.ai_service = None
 
         # 智能化组件
         self.anomaly_detector = IsolationForest(contamination=0.1, random_state=42)

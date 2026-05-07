@@ -43,10 +43,14 @@ class SignalType(Enum):
     CLOSE_SHORT = "close_short"
 
     @classmethod
-    def from_string(cls, s: str) -> 'SignalType':
-        """从字符串转换为 SignalType"""
+    def from_string(cls, s) -> 'SignalType':
+        """从字符串或枚举转换为 SignalType"""
         if s is None:
             return cls.NEUTRAL
+        if isinstance(s, cls):
+            return s
+        if not isinstance(s, str):
+            s = str(s)
         s_lower = s.lower()
         for member in cls:
             if member.value == s_lower:
@@ -90,11 +94,12 @@ class PatternResult:
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典格式"""
-        return {
+        result = {
             'type': self.pattern_type,
             'pattern_name': self.pattern_name,
             'pattern_category': self.pattern_category,
             'signal': self.signal_type.value,
+            'signal_type': self.signal_type.value,
             'confidence': self.confidence,
             'confidence_level': self.confidence_level,
             'index': self.index,
@@ -102,8 +107,10 @@ class PatternResult:
             'price': self.price,
             'start_index': self.start_index,
             'end_index': self.end_index,
-            **(self.extra_data or {})
         }
+        if self.extra_data:
+            result.update(self.extra_data)
+        return result
 
 @dataclass
 class PatternConfig:
@@ -215,9 +222,25 @@ class BasePatternRecognizer(ABC):
         
         current_price = close[-1]
         
-        if current_price > sma20 * 1.02:
+        atr_multiplier = 0.015
+        if len(kdata) >= 20:
+            high = kdata['high'].values
+            low = kdata['low'].values
+            close_vals = kdata['close'].values
+            
+            tr = np.maximum(
+                high[1:] - low[1:],
+                np.maximum(
+                    np.abs(high[1:] - close_vals[:-1]),
+                    np.abs(low[1:] - close_vals[:-1])
+                )
+            )
+            atr = np.mean(tr[-20:]) if len(tr) >= 20 else np.mean(tr)
+            atr_multiplier = (atr / sma20) if sma20 > 0 else 0.015
+        
+        if current_price > sma20 * (1 + atr_multiplier):
             trend = 'uptrend'
-        elif current_price < sma20 * 0.98:
+        elif current_price < sma20 * (1 - atr_multiplier):
             trend = 'downtrend'
         else:
             trend = 'sideways'
@@ -231,7 +254,7 @@ class BasePatternRecognizer(ABC):
             'current_price': current_price
         }
 
-    def is_trend_compatible(self, pattern_signal: str, trend: Dict[str, Any]) -> Tuple[bool, str]:
+    def is_trend_compatible(self, pattern_signal: str, trend: Dict[str, Any]) -> Tuple[bool, str, float]:
         """
         判断形态信号是否与当前趋势兼容
         
@@ -240,31 +263,35 @@ class BasePatternRecognizer(ABC):
             trend: 趋势分析结果
             
         Returns:
-            (是否兼容, 原因)
+            (是否保留, 原因, 置信度调整系数)
+            - 置信度调整系数 > 1.0 表示信号增强
+            - 置信度调整系数 < 1.0 表示信号减弱
+            - 返回 False 表示完全过滤（不建议）
         """
         pattern_signal = pattern_signal.lower().strip()
         trend_type = trend.get('trend', 'sideways')
+        trend_strength = trend.get('strength', 0.5)
         
         bullish_patterns = ['buy', 'bullish', '上升', '看涨']
         bearish_patterns = ['sell', 'bearish', '下降', '看跌']
         
         if pattern_signal in bullish_patterns:
             if trend_type == 'uptrend':
-                return True, '形态出现在上涨趋势中，符合预期'
+                return True, '形态出现在上涨趋势中，符合顺势买入', 1.1
             elif trend_type == 'downtrend':
-                return False, '形态出现在下跌趋势中，看涨信号可信度降低'
+                return True, '形态出现在下跌趋势中，是潜在的反转买入信号', 1.3
             else:
-                return True, '形态出现在横盘震荡中'
+                return True, '形态出现在横盘震荡中', 1.0
         
         if pattern_signal in bearish_patterns:
             if trend_type == 'downtrend':
-                return True, '形态出现在下跌趋势中，符合预期'
+                return True, '形态出现在下跌趋势中，符合顺势卖出', 1.1
             elif trend_type == 'uptrend':
-                return False, '形态出现在上涨趋势中，看跌信号可信度降低'
+                return True, '形态出现在上涨趋势中，是潜在的反转卖出信号', 1.3
             else:
-                return True, '形态出现在横盘震荡中'
+                return True, '形态出现在横盘震荡中', 1.0
         
-        return True, '中性形态无需趋势判断'
+        return True, '中性形态无需趋势判断', 1.0
 
     def create_result(self, pattern_type: str, signal_type: SignalType,
                       confidence: float, index: int, price: float,

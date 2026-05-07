@@ -306,13 +306,16 @@ class PluginManager:
         self._init_database_service()
 
     def _init_database_service(self):
-        """初始化数据库服务"""
         try:
             from core.services.plugin_database_service import PluginDatabaseService
-            self.db_service = PluginDatabaseService()
-            logger.info("插件数据库服务初始化成功")
+            try:
+                from core.containers import get_service_container
+                self.db_service = get_service_container().resolve(PluginDatabaseService)
+                logger.info("插件数据库服务初始化成功(容器解析)")
+            except Exception:
+                self.db_service = PluginDatabaseService()
+                logger.info("插件数据库服务初始化成功(后备)")
 
-            # 加载数据库中已启用的插件
             self._load_enabled_plugins_from_db()
 
         except Exception as e:
@@ -1867,7 +1870,9 @@ class PluginManager:
                     if hasattr(plugin_info, 'register_indicators'):
                         try:
                             from core.indicator_service import IndicatorService
-                            indicator_service = IndicatorService()
+                            from core.containers import get_service_container
+                            container = get_service_container()
+                            indicator_service = container.resolve(IndicatorService)
 
                             # 调用register_indicators获取指标列表
                             indicators_list = plugin_info.register_indicators()

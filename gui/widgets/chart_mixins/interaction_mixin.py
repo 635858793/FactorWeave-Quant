@@ -290,10 +290,10 @@ class InteractionMixin:
         kdata = self.current_kdata
         x = np.arange(len(kdata))
 
-        # 专业化颜色配置 - 参考同花顺、东方财富等软件
+        # 专业化颜色配置 - 参考同花顺、东方财富等软件（中国股市习惯：买入=亮红色，卖出=亮绿色）
         signal_colors = {
-            'buy': '#FF4444',      # 买入信号 - 红色箭头向上
-            'sell': '#00AA00',     # 卖出信号 - 绿色箭头向下
+            'buy': '#FF0000',      # 买入信号 - 亮红色箭头向上
+            'sell': '#00FF00',     # 卖出信号 - 亮绿色箭头向下
             'neutral': '#FFB000'   # 中性信号 - 橙色圆点
         }
 

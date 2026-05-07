@@ -13,6 +13,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # 导入模式管理框架
 from core.trading.trading_mode import ModeContext
 from backtest.unified_backtest_engine import UnifiedBacktestEngine
+from core.services.stock_service import StockService
+from core.services.strategy_service import StrategyService
 
 class EnhancedBatchAnalysisMixin:
     """增强版批量分析功能混入类"""
@@ -22,24 +24,9 @@ class EnhancedBatchAnalysisMixin:
         try:
             self.batch_stock_list.setRowCount(0)
             
-            # 尝试从服务容器获取股票服务
-            stock_service = None
-            if hasattr(self, 'coordinator') and self.coordinator:
-                try:
-                    if hasattr(self.coordinator, 'service_container'):
-                        stock_service = self.coordinator.service_container.resolve('StockService')
-                except Exception as e:
-                    logger.debug(f"获取 StockService 失败：{e}")
-            
-            # 如果服务不可用，使用备用方式
-            if not stock_service:
-                try:
-                    from core.services.stock_service import StockService
-                    stock_service = StockService()
-                    stock_service.initialize()
-                except Exception as e:
-                    logger.warning(f"创建 StockService 失败：{e}")
-                    return
+            from core.containers import get_service_container
+            container = get_service_container()
+            stock_service = container.resolve(StockService)
             
             # 从数据库获取真实股票数据
             stock_list = stock_service.get_stock_list()
@@ -143,24 +130,9 @@ class EnhancedBatchAnalysisMixin:
         try:
             self.batch_strategy_list.setRowCount(0)
             
-            # 尝试从服务容器获取策略服务
-            strategy_service = None
-            if hasattr(self, 'coordinator') and self.coordinator:
-                try:
-                    if hasattr(self.coordinator, 'service_container'):
-                        strategy_service = self.coordinator.service_container.resolve('StrategyService')
-                except Exception as e:
-                    logger.debug(f"获取 StrategyService 失败：{e}")
-            
-            # 如果服务不可用，使用备用方式
-            if not strategy_service:
-                try:
-                    from core.services.strategy_service import StrategyService
-                    strategy_service = StrategyService()
-                    strategy_service.initialize()
-                except Exception as e:
-                    logger.warning(f"创建 StrategyService 失败：{e}")
-                    return
+            from core.containers import get_service_container
+            container = get_service_container()
+            strategy_service = container.resolve(StrategyService)
             
             # 从数据库获取真实策略数据
             all_strategies = strategy_service.get_all_strategy_configs()

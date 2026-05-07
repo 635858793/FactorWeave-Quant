@@ -407,7 +407,9 @@ class UnifiedPerformanceCoordinator:
         # 初始化AI预测服务
         if AI_PREDICTION_AVAILABLE:
             try:
-                self.ai_predictor = AIPredictionService()
+                from core.containers import get_service_container
+                container = get_service_container()
+                self.ai_predictor = container.resolve(AIPredictionService)
                 logger.info("AI预测服务已集成")
             except Exception as e:
                 logger.warning(f"AI预测服务初始化失败: {e}")

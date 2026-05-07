@@ -762,17 +762,16 @@ class SmartRecommendationPanel(QWidget):
     def _get_config_service(self):
         """获取配置服务"""
         try:
-            # 检查是否已经有配置服务实例
             if hasattr(self, '_config_service') and self._config_service is not None:
                 return self._config_service
-                
-            # 尝试创建配置服务实例
-            self._config_service = ConfigService()
-            logger.info("配置服务初始化成功")
+
+            from core.containers import get_service_container
+            container = get_service_container()
+            self._config_service = container.resolve(ConfigService)
+            logger.info("从服务容器获取配置服务成功")
             return self._config_service
         except Exception as e:
             logger.error(f"获取配置服务失败: {e}")
-            # 返回一个简单的配置管理器作为后备
             return SimpleConfigManager()
 
     def _create_stock_recommendations_tab(self) -> QWidget:
@@ -1186,10 +1185,11 @@ class SmartRecommendationPanel(QWidget):
                 self._bettafish_agent = BettaFishAgent()
                 logger.info("BettaFish Agent创建成功")
             
-            # 创建监控服务
             if not self._monitoring_service:
-                self._monitoring_service = BettaFishMonitoringService()
-                logger.info("BettaFish监控服务创建成功")
+                from core.containers import get_service_container
+                container = get_service_container()
+                self._monitoring_service = container.resolve(BettaFishMonitoringService)
+                logger.info("从服务容器获取BettaFish监控服务成功")
             
             # 重新创建仪表板
             if hasattr(self, 'bettafish_dashboard'):

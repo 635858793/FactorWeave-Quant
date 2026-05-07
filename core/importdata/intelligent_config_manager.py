@@ -123,8 +123,12 @@ class IntelligentConfigManager(ImportConfigManager):
     def __init__(self, db_path: str = "data/factorweave_system.sqlite"):
         super().__init__(db_path)
 
-        # AI预测服务
-        self.ai_service = AIPredictionService()
+        try:
+            from core.containers import get_service_container
+            container = get_service_container()
+            self.ai_service = container.resolve(AIPredictionService)
+        except Exception:
+            self.ai_service = None
 
         # 智能配置相关数据
         self._config_templates: Dict[str, ConfigTemplate] = {}

@@ -357,8 +357,9 @@ class UnifiedDataImportEngine(QObject):
         """初始化AI和智能优化组件"""
         try:
             if self.enable_ai_optimization:
-                # AI预测服务
-                self.ai_prediction_service = AIPredictionService()
+                from core.containers import get_service_container
+                container = get_service_container()
+                self.ai_prediction_service = container.resolve(AIPredictionService)
                 self._ai_service_initialized = True
 
                 # 自动调优系统
@@ -389,7 +390,11 @@ class UnifiedDataImportEngine(QObject):
         """初始化性能和监控组件"""
         try:
             # 深度分析服务
-            self.deep_analysis_service = DeepAnalysisService()
+            try:
+                from core.containers import get_service_container
+                self.deep_analysis_service = get_service_container().resolve(DeepAnalysisService)
+            except Exception:
+                self.deep_analysis_service = DeepAnalysisService()
 
             # 性能集成器
             self.performance_integrator = FactorWeavePerformanceIntegrator()

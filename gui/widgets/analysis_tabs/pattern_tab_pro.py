@@ -224,14 +224,16 @@ class AnalysisThread(QThread):
             # 2. 使用较高的置信度阈值，确保结果质量
             # 3. 数据采样优化，提升分析速度
 
-            # 数据采样：根据K线总长度动态调整采样范围
+            # 数据采样：根据K线总长度动态调整采样范围（优化阈值）
             total_len = len(self.kdata)
             if total_len <= 100:
                 sample_ratio = 1.0
             elif total_len <= 300:
                 sample_ratio = 0.8
             elif total_len <= 500:
-                sample_ratio = 0.6
+                sample_ratio = 0.7
+            elif total_len <= 1000:
+                sample_ratio = 0.5
             else:
                 sample_ratio = 0.4
             
@@ -2655,14 +2657,27 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
             logger.info(f" 专业扫描模式：执行深度形态识别，置信度阈值: {confidence_threshold}")
 
             #  专业扫描特点：
-            # 1. 使用全部历史数据，不限制范围
+            # 1. 使用智能采样优化大数据量
             # 2. 识别所有形态类型，不受用户选择限制
             # 3. 使用较低的置信度阈值，发现更多潜在形态
             # 4. 多轮扫描，确保不遗漏任何重要形态
 
-            # 使用全部数据进行完整分析
-            kdata_sample = self.current_kdata
-            logger.info(f" 专业扫描：使用全部 {len(kdata_sample)} 根K线进行深度分析")
+            # 智能采样：数据量超过阈值时使用采样
+            # 采用尾随采样策略，保留最近的连续数据完整性
+            kdata_full = self.current_kdata
+            total_len = len(kdata_full)
+            
+            # 尾随采样：只取最后2000根K线，保留连续数据完整性
+            max_sample_size = 2000
+            
+            if total_len <= max_sample_size:
+                kdata_sample = kdata_full
+                logger.info(f" 专业扫描：数据量 {total_len} <= {max_sample_size}，使用全部数据")
+            else:
+                # 尾随采样策略：保留最近2000根K线
+                # 优点：保留完整连续数据，不破坏多根K线形态（如三白兵、三黑鸦）
+                kdata_sample = kdata_full.tail(max_sample_size)
+                logger.info(f" 专业扫描：原始 {total_len} 根K线，尾随采样 {max_sample_size} 根K线")
 
             # 完整形态识别，不限制类型
             raw_patterns = recognizer.identify_patterns(
@@ -3130,7 +3145,7 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
         return "+0.00%"
 
     def _calculate_target_price(self, pattern_name, signal=None):
-        """计算目标价位"""
+        """计算目标价位 - ATR动态计算版本"""
         kdata = None
         if hasattr(self, 'pattern_tab') and self.pattern_tab is not None and hasattr(self.pattern_tab, 'current_kdata') and self.pattern_tab.current_kdata is not None:
             kdata = self.pattern_tab.current_kdata
@@ -3143,28 +3158,55 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
         if kdata is not None and hasattr(kdata, 'close') and len(kdata) > 0:
             current_price = kdata['close'].iloc[-1]
             
-            if signal is not None:
-                if signal == 'buy' or signal == 'bullish':
-                    target = current_price * 1.05
-                elif signal == 'sell' or signal == 'bearish':
-                    target = current_price * 0.95
-                else:
-                    target = current_price
-            elif '顶' in pattern_name or '上吊' in pattern_name:
-                target = current_price * 0.95
-            elif '底' in pattern_name or '锤子' in pattern_name:
-                target = current_price * 1.05
-            else:
-                target = current_price
+            atr_multiplier = 2.0
+            atr_period = 14
+            target = current_price
+            
+            if len(kdata) >= atr_period:
+                high = kdata['high'].values
+                low = kdata['low'].values
+                close = kdata['close'].values
+                
+                tr = np.maximum(
+                    high[1:] - low[1:],
+                    np.maximum(
+                        np.abs(high[1:] - close[:-1]),
+                        np.abs(low[1:] - close[:-1])
+                    )
+                )
+                atr = np.mean(tr[-atr_period:])
+                
+                if atr > 0:
+                    if signal is not None:
+                        if signal == 'buy' or signal == 'bullish':
+                            target = current_price + atr * atr_multiplier
+                        elif signal == 'sell' or signal == 'bearish':
+                            target = current_price - atr * atr_multiplier
+                        else:
+                            target = current_price
+                    else:
+                        pattern_lower = pattern_name.lower()
+                        if any(kw in pattern_lower for kw in ['顶', '上吊', '射击', '黄昏', '乌云']):
+                            target = current_price - atr * atr_multiplier
+                        elif any(kw in pattern_lower for kw in ['底', '锤子', '启明', '刺透', '吞没']):
+                            target = current_price + atr * atr_multiplier
+                        elif any(kw in pattern_lower for kw in ['旗', '楔']):
+                            target = current_price + atr * 1.5
+                        elif '三角' in pattern_lower:
+                            target = current_price + atr * 3.0
+                        else:
+                            target = current_price + atr * atr_multiplier
+            
             return f"{target:.2f}"
         return "N/A"
 
     def _get_recommendation(self, pattern_name, confidence):
         """获取操作建议"""
+        pattern_lower = pattern_name.lower()
         if confidence > 0.8:
-            if '顶' in pattern_name or '上吊' in pattern_name:
+            if any(kw in pattern_lower for kw in ['顶', '上吊', '射击', '黄昏', '乌云']):
                 return "强烈建议卖出"
-            elif '底' in pattern_name or '锤子' in pattern_name:
+            elif any(kw in pattern_lower for kw in ['底', '锤子', '启明', '刺透', '吞没']):
                 return "强烈建议买入"
             else:
                 return "密切关注"
@@ -4876,21 +4918,42 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
 
     def _infer_signal_type(self, pattern_name):
         """根据形态名称推断信号类型"""
-        pattern_name = pattern_name.lower()
+        pattern_name_lower = pattern_name.lower()
 
-        # 看涨形态
-        bullish_patterns = ['上升', '突破', '底部', '反转', '黄金', '买入', '多头']
-        # 看跌形态
-        bearish_patterns = ['下降', '跌破', '顶部', '下跌', '死亡', '卖出', '空头']
+        bullish_keywords = [
+            '锤子线', '启明星', '刺透形态', '上涨吞没', '底部形态',
+            '锤子', '底', '启明', '刺透', '吞没', '上涨', '突破', '金叉',
+            '多头', '买入', '买', '升', '黄金', '红', '阳',
+            'hammer', 'bottom', 'morning', 'piercing', 'bullish', 'buy', 'up'
+        ]
+        
+        bearish_keywords = [
+            '上吊线', '黄昏星', '乌云盖顶', '下跌吞没', '顶部形态',
+            '吊', '顶', '黄昏', '乌云', '吞没', '下跌', '死叉', '孕线',
+            '空头', '卖出', '卖', '降', '死亡', '黑', '阴',
+            'hanging', 'top', 'evening', 'dark_cloud', 'bearish', 'sell', 'down'
+        ]
+        
+        neutral_keywords = [
+            '十字星', '纺锤线', '等待形态', '观望形态', '中继形态',
+            '十字', '纺锤', '等待', '观望', '中继', '持续',
+            'doji', 'spinning', 'neutral', 'waiting'
+        ]
 
-        for keyword in bullish_patterns:
-            if keyword in pattern_name:
-                return 'bullish'
-
-        for keyword in bearish_patterns:
-            if keyword in pattern_name:
-                return 'bearish'
-
+        all_keywords = []
+        for kw in bullish_keywords:
+            all_keywords.append((kw, 'buy'))
+        for kw in bearish_keywords:
+            all_keywords.append((kw, 'sell'))
+        for kw in neutral_keywords:
+            all_keywords.append((kw, 'neutral'))
+        
+        all_keywords.sort(key=lambda x: len(x[0]), reverse=True)
+        
+        for keyword, signal in all_keywords:
+            if keyword in pattern_name_lower:
+                return signal
+        
         return 'neutral'
 
     def _quick_pattern_analysis(self):

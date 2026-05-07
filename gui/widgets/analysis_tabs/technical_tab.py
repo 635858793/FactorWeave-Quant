@@ -20,7 +20,7 @@ from core.indicator_adapter import (
 )
 from datetime import datetime
 import json
-
+from core.indicator_service import IndicatorService
 
 class BatchCalculateWorker(QThread):
     """后台批量计算工作线程"""
@@ -37,8 +37,9 @@ class BatchCalculateWorker(QThread):
     
     def run(self):
         try:
-            from core.indicator_service import IndicatorService
-            service = IndicatorService()
+            from core.containers import get_service_container
+            container = get_service_container()
+            service = container.resolve(IndicatorService)
             
             start_time = time.time()
             self.progress.emit(10, "正在初始化批量计算...")

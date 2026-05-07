@@ -799,7 +799,9 @@ class DistributedTaskScheduler:
                 stock_service = None
                 try:
                     from core.services.stock_service import StockService
-                    stock_service = StockService()
+                    from core.containers import get_service_container
+                    container = get_service_container()
+                    stock_service = container.resolve(StockService)
                     if not stock_service._initialized:
                         stock_service._do_initialize()
                 except Exception as service_error:

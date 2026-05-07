@@ -524,6 +524,12 @@ class CrosshairMixin:
                         self.enable_crosshair(force_rebind=False)
                     self._crosshair_needs_init = False
                 
+                # 性能优化：基于帧率的节流机制，限制最高更新频率约60fps
+                current_time = time.time()
+                if current_time - self._last_crosshair_update_time < 0.016:
+                    return
+                self._last_crosshair_update_time = current_time
+                
                 # [最终诊断] 添加日志，检查事件是否被接收
                 logger.debug(f"Crosshair event: x={event.x}, y={event.y}, inaxes={event.inaxes}")
 

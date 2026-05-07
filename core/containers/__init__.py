@@ -4,7 +4,7 @@
 提供依赖注入和服务管理的核心组件。
 """
 
-from .service_container import ServiceContainer, get_service_container
+from .service_container import ServiceContainer, get_service_container, set_service_container
 from .service_registry import ServiceRegistry, ServiceInfo, ServiceScope
 
 _enhanced_service_container = None
@@ -37,17 +37,17 @@ class UnifiedServiceContainer:
         return _get_unified_service_container()(*args, **kwargs)
 
 def get_unified_container():
-    """获取统一服务容器"""
-    return _get_unified_service_container().get_instance()
+    from .unified_service_container import get_unified_container as _get_unified
+    return _get_unified()
 
 def reset_unified_container():
-    """重置统一服务容器"""
-    global _unified_service_container
-    _unified_service_container = None
+    from .unified_service_container import reset_unified_container as _reset_unified
+    _reset_unified()
 
 __all__ = [
     'ServiceContainer',
     'get_service_container',
+    'set_service_container',
     'ServiceRegistry',
     'ServiceInfo',
     'ServiceScope',

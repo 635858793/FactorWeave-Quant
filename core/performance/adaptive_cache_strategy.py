@@ -411,7 +411,9 @@ class AdaptiveCacheStrategy:
         self.ai_service: Optional[AIPredictionService] = None
         if AI_PREDICTION_AVAILABLE:
             try:
-                self.ai_service = AIPredictionService()
+                from core.containers import get_service_container
+                container = get_service_container()
+                self.ai_service = container.resolve(AIPredictionService)
             except Exception as e:
                 logger.warning(f"AI预测服务初始化失败: {e}")
         

@@ -31,7 +31,8 @@ def init_pattern_algorithms():
         'hammer': {
             'code': '''
 # 锤头线识别算法
-for i in range(len(kdata)):
+max_process_length = min(len(kdata), 1000)
+for i in range(max_process_length):
     k = kdata.iloc[i]
     
     # 计算各部分比例
@@ -74,7 +75,8 @@ for i in range(len(kdata)):
         'doji': {
             'code': '''
 # 十字星识别算法
-for i in range(len(kdata)):
+max_process_length = min(len(kdata), 1000)
+for i in range(max_process_length):
     k = kdata.iloc[i]
     
     body_size = abs(k['close'] - k['open'])
@@ -112,7 +114,8 @@ for i in range(len(kdata)):
         'shooting_star': {
             'code': '''
 # 流星线识别算法
-for i in range(len(kdata)):
+max_process_length = min(len(kdata), 1000)
+for i in range(max_process_length):
     k = kdata.iloc[i]
     
     body_size = abs(k['close'] - k['open'])
@@ -154,7 +157,8 @@ for i in range(len(kdata)):
         'inverted_hammer': {
             'code': '''
 # 倒锤头识别算法
-for i in range(len(kdata)):
+max_process_length = min(len(kdata), 1000)
+for i in range(max_process_length):
     k = kdata.iloc[i]
     
     body_size = abs(k['close'] - k['open'])
@@ -200,7 +204,8 @@ for i in range(len(kdata)):
         'marubozu': {
             'code': '''
 # 光头光脚线识别算法
-for i in range(len(kdata)):
+max_process_length = min(len(kdata), 1000)
+for i in range(max_process_length):
     k = kdata.iloc[i]
     
     body_size = abs(k['close'] - k['open'])
@@ -245,7 +250,8 @@ for i in range(len(kdata)):
         'spinning_top': {
             'code': '''
 # 纺锤线识别算法
-for i in range(len(kdata)):
+max_process_length = min(len(kdata), 1000)
+for i in range(max_process_length):
     k = kdata.iloc[i]
     
     body_size = abs(k['close'] - k['open'])
@@ -288,7 +294,8 @@ for i in range(len(kdata)):
         'bullish_engulfing': {
             'code': '''
 # 看涨吞没识别算法
-for i in range(1, len(kdata)):
+max_process_length = min(len(kdata), 1000)
+for i in range(1, max_process_length):
     k1 = kdata.iloc[i-1]  # 前一根
     k2 = kdata.iloc[i]    # 当前根
     
@@ -325,7 +332,8 @@ for i in range(1, len(kdata)):
         'bearish_engulfing': {
             'code': '''
 # 看跌吞没识别算法
-for i in range(1, len(kdata)):
+max_process_length = min(len(kdata), 1000)
+for i in range(1, max_process_length):
     k1 = kdata.iloc[i-1]  # 前一根
     k2 = kdata.iloc[i]    # 当前根
     
@@ -362,7 +370,8 @@ for i in range(1, len(kdata)):
         'piercing_pattern': {
             'code': '''
 # 刺透形态识别算法
-for i in range(1, len(kdata)):
+max_process_length = min(len(kdata), 1000)
+for i in range(1, max_process_length):
     k1 = kdata.iloc[i-1]  # 前一根
     k2 = kdata.iloc[i]    # 当前根
     
@@ -400,7 +409,8 @@ for i in range(1, len(kdata)):
         'dark_cloud_cover': {
             'code': '''
 # 乌云盖顶识别算法
-for i in range(1, len(kdata)):
+max_process_length = min(len(kdata), 1000)
+for i in range(1, max_process_length):
     k1 = kdata.iloc[i-1]  # 前一根
     k2 = kdata.iloc[i]    # 当前根
     
@@ -439,7 +449,8 @@ for i in range(1, len(kdata)):
         'three_white_soldiers': {
             'code': '''
 # 三白兵识别算法
-for i in range(2, len(kdata)):
+max_process_length = min(len(kdata), 1000)
+for i in range(2, max_process_length):
     k0 = kdata.iloc[i-2]  # 前日
     k1 = kdata.iloc[i-1]  # 昨日
     k2 = kdata.iloc[i]    # 今日
@@ -664,7 +675,8 @@ except Exception as e:
         'morning_star': {
             'code': '''
 # 早晨之星识别算法
-for i in range(2, len(kdata)):
+max_process_length = min(len(kdata), 1000)
+for i in range(2, max_process_length):
     k0 = kdata.iloc[i-2]  # 第一根
     k1 = kdata.iloc[i-1]  # 第二根（星线）
     k2 = kdata.iloc[i]    # 第三根
@@ -730,7 +742,8 @@ for i in range(2, len(kdata)):
         'evening_star': {
             'code': '''
 # 黄昏之星识别算法
-for i in range(2, len(kdata)):
+max_process_length = min(len(kdata), 1000)
+for i in range(2, max_process_length):
     k0 = kdata.iloc[i-2]  # 第一根
     k1 = kdata.iloc[i-1]  # 第二根（星线）
     k2 = kdata.iloc[i]    # 第三根
