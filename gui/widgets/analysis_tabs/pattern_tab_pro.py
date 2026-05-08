@@ -754,14 +754,12 @@ class AnalysisThread(QThread):
                 pattern_names = [p.get('name', 'Unknown') for p in patterns]
                 unique_patterns = list(set(pattern_names))
 
-                for i, pattern1 in enumerate(unique_patterns[:3]):  # 限制数量
+                for i, pattern1 in enumerate(unique_patterns[:3]):
                     for pattern2 in unique_patterns[i+1:4]:
                         correlation_key = f"{pattern1} vs {pattern2}"
-                        # 模拟相关性分析
-                        correlation = np.random.uniform(-0.5, 0.8)
                         historical_data['correlation_analysis'][correlation_key] = {
-                            'correlation': correlation,
-                            'interpretation': '正相关' if correlation > 0.3 else '负相关' if correlation < -0.3 else '无明显相关'
+                            'correlation': None,
+                            'interpretation': '数据不足，无法计算相关性'
                         }
 
             # 生成历史分析摘要
@@ -2083,68 +2081,39 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
             return self._generate_mock_data(period_days)
 
     def _generate_mock_data(self, period_days):
-        """生成模拟数据用于演示回测"""
-
-        try:
-            # 生成日期序列
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=period_days)
-            dates = pd.date_range(start=start_date, end=end_date, freq='D')
-
-            # 生成模拟价格数据（随机游走）
-            np.random.seed(42)  # 保证结果可重现
-            initial_price = 10.0
-            returns = np.random.normal(0.001, 0.02, len(dates))  # 日收益率
-            prices = [initial_price]
-
-            for ret in returns[1:]:
-                new_price = prices[-1] * (1 + ret)
-                prices.append(new_price)
-
-            # 创建DataFrame
-            data = pd.DataFrame({
-                'open': prices,
-                'high': [p * (1 + abs(np.random.normal(0, 0.01))) for p in prices],
-                'low': [p * (1 - abs(np.random.normal(0, 0.01))) for p in prices],
-                'close': prices,
-                'volume': np.random.randint(10000, 100000, len(dates)),
-                'signal': 0
-            }, index=dates)
-
-            # 添加一些随机信号
-            signal_positions = np.random.choice(len(data), size=max(1, len(data)//10), replace=False)
-            for pos in signal_positions:
-                data.iloc[pos, data.columns.get_loc('signal')] = np.random.choice([-1, 1])
-
-            logger.info(f"生成了 {len(data)} 天的模拟数据")
-            return data
-
-        except Exception as e:
-            logger.error(f"生成模拟数据失败: {e}")
-        return None
+        """数据不可用时的占位方法，返回空DataFrame而非假数据"""
+        logger.warning(
+            f"形态分析: 无法获取真实K线数据（周期={period_days}天），"
+            f"返回空数据。请检查数据源配置。"
+        )
+        return pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume', 'signal'])
 
     def _run_simplified_backtest(self, patterns, period_days):
-        """运行简化版回测（当专业回测引擎不可用时使用）"""
+        """简化版回测（当专业回测引擎不可用时，返回错误提示而非假数据）"""
+        logger.warning(
+            f"形态分析: 专业回测引擎不可用，无法执行回测。"
+            f"检测到 {len(patterns)} 个形态，回测周期 {period_days} 天。"
+            f"请确保回测引擎和数据源配置正确。"
+        )
         try:
-            # 生成简化的回测报告
-            pattern_count = len(patterns)
-            high_confidence_patterns = [p for p in patterns if p.get('confidence', 0) > 0.7]
+            if hasattr(self, 'status_label'):
+                self.status_label.setText("回测引擎不可用，无法执行回测分析")
+            if hasattr(self, 'progress_bar'):
+                self.progress_bar.setVisible(False)
 
-            # 模拟回测结果
-            mock_results = {
-                'total_return': np.random.uniform(0.05, 0.25),
-                'max_drawdown': np.random.uniform(-0.15, -0.05),
-                'sharpe_ratio': np.random.uniform(0.8, 2.0),
-                'win_rate': np.random.uniform(0.5, 0.8),
-                'total_trades': max(1, len(high_confidence_patterns)),
-                'pattern_count': pattern_count,
-                'period_days': period_days
-            }
-
-            self._display_simplified_results(mock_results)
-
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self,
+                "回测引擎不可用",
+                "专业回测引擎当前不可用，无法执行形态分析回测。\n\n"
+                "请检查：\n"
+                "1. 数据源是否已正确配置\n"
+                "2. 回测引擎模块是否正常加载\n"
+                "3. 网络连接是否正常\n\n"
+                "修复后请重新运行形态分析。"
+            )
         except Exception as e:
-            logger.error(f"简化回测失败: {e}")
+            logger.error(f"简化回测错误提示失败: {e}")
 
     def _display_backtest_results(self, results):
         """显示专业回测结果"""
@@ -2776,14 +2745,11 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
 
     def _calculate_pattern_confidence(self, pattern_name, info, sensitivity):
         """计算形态置信度"""
-        # 基础置信度
-        base_confidence = np.random.uniform(0.3, 0.9)
+        base_confidence = info.get('success_rate', 0.5)
 
-        # 根据灵敏度调整
         adjusted_confidence = base_confidence * (0.5 + sensitivity * 0.5)
 
-        # 根据历史成功率调整
-        success_factor = info['success_rate']
+        success_factor = info.get('success_rate', 0.5)
         final_confidence = adjusted_confidence * (0.7 + success_factor * 0.3)
 
         return min(final_confidence, 1.0)

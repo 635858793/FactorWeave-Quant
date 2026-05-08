@@ -442,16 +442,16 @@ class InteractionMixin:
             for artist in getattr(self, '_highlight_artists', []):
                 try:
                     artist.remove()
-                except:
-                    pass
+                except Exception as e:
+                    logger.debug(f"interaction_mixin: {e}")
             self._highlight_artists = []
 
             # 清除气泡提示
             for artist in getattr(self, '_tooltip_artists', []):
                 try:
                     artist.remove()
-                except:
-                    pass
+                except Exception as e:
+                    logger.debug(f"interaction_mixin: {e}")
             self._tooltip_artists = []
 
             self.canvas.draw()

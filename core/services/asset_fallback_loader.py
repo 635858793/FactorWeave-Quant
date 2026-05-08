@@ -810,7 +810,7 @@ class AssetFallbackLoader:
         """从 Binance API 获取加密货币数据"""
         try:
             import aiohttp
-            import asyncio
+            from utils.async_utils import run_async_blocking
 
             async def fetch():
                 async with aiohttp.ClientSession() as session:
@@ -818,7 +818,7 @@ class AssetFallbackLoader:
                         if response.status == 200:
                             data = await response.json()
                             cryptos = []
-                            for item in data[:50]:  # 限制数量
+                            for item in data[:50]:
                                 if item['symbol'].endswith('USDT'):
                                     symbol = item['symbol'].replace('USDT', '')
                                     cryptos.append({
@@ -831,7 +831,7 @@ class AssetFallbackLoader:
                             return pd.DataFrame(cryptos)
                         return None
 
-            return asyncio.run(fetch())
+            return run_async_blocking(fetch())
 
         except Exception as e:
             logger.warning(f"⚠️ 从 Binance API 获取数据失败: {e}")
@@ -841,7 +841,7 @@ class AssetFallbackLoader:
         """从 CoinGecko API 获取加密货币数据"""
         try:
             import aiohttp
-            import asyncio
+            from utils.async_utils import run_async_blocking
 
             async def fetch():
                 async with aiohttp.ClientSession() as session:
@@ -867,7 +867,7 @@ class AssetFallbackLoader:
                             return pd.DataFrame(cryptos)
                         return None
 
-            return asyncio.run(fetch())
+            return run_async_blocking(fetch())
 
         except Exception as e:
             logger.warning(f"⚠️ 从 CoinGecko API 获取数据失败: {e}")
@@ -941,8 +941,9 @@ class AssetFallbackLoader:
         """清理缓存"""
         if self._http_session:
             try:
-                asyncio.run(self._http_session.close())
-            except Exception:
-                pass
+                from utils.async_utils import run_async_safe
+                run_async_safe(self._http_session.close())
+            except Exception as e:
+                logger.debug(f"关闭HTTP会话失败: {e}")
         self._http_session = None
         logger.info("Fallback 加载器缓存已清理")

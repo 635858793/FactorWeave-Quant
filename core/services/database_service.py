@@ -717,25 +717,7 @@ class DatabaseService(BaseService):
     def _initialize_performance_optimizers(self) -> None:
         """初始化性能优化器（临时禁用 - v2.2架构修复）"""
         try:
-            # TODO v2.2: 重新设计optimizer架构
-            # DuckDBPerformanceOptimizer需要db_path参数，不是config对象
-            # 当前optimizer在FactorWeaveAnalyticsDB中已经使用
-            # 这里暂时跳过创建，避免参数错误
-
-            logger.info(f"✓ Performance optimizers initialization skipped (architecture refactoring)")
-            # 注释掉原有的错误代码
-            # for pool_name, config in self._pool_configs.items():
-            #     if config.db_type == DatabaseType.DUCKDB and config.enable_optimization:
-            #         try:
-            #             optimizer_config = DuckDBConfig(
-            #                 memory_limit=config.memory_limit,
-            #                 threads=config.thread_count
-            #             )
-            #             self._performance_optimizers[pool_name] = DuckDBPerformanceOptimizer(optimizer_config)
-            #         except Exception as e:
-            #             logger.warning(f"Failed to create optimizer for pool {pool_name}: {e}")
-
-            # logger.info(f"✓ Created {len(self._performance_optimizers)} performance optimizers")
+            logger.info(f"Performance optimizers initialization skipped (architecture refactoring planned for v2.2)")
 
         except Exception as e:
             logger.error(f"Failed to initialize performance optimizers: {e}")

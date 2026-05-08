@@ -10,7 +10,6 @@ import sys
 import asyncio
 import traceback
 from pathlib import Path
-import os
 
 from loguru import logger
 

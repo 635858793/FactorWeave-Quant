@@ -1834,53 +1834,22 @@ class UnifiedDataManager:
         from datetime import datetime, timedelta
 
         try:
-            # 生成模拟板块资金流排行数据
-            sectors = ['银行', '证券', '保险', '房地产', '钢铁', '煤炭', '有色金属', '石油石化',
-                       '电力', '公用事业', '交通运输', '电子', '计算机', '通信', '医药生物']
+            logger.warning("资金流向数据不可用，返回空数据。请配置资金流向数据源以获取真实数据。")
 
-            sector_data = []
-            for i, sector in enumerate(sectors[:10]):  # 取前10个板块
-                sector_data.append({
-                    'sector_name': sector,
-                    'net_inflow': random.uniform(-50000, 100000),  # 净流入(万元)
-                    'main_inflow': random.uniform(10000, 80000),   # 主力流入
-                    'main_outflow': random.uniform(10000, 60000),  # 主力流出
-                    'retail_inflow': random.uniform(5000, 30000),  # 散户流入
-                    'retail_outflow': random.uniform(5000, 25000),  # 散户流出
-                    'change_rate': random.uniform(-5.0, 8.0),      # 涨跌幅%
-                    'rank': i + 1
-                })
-
-            sector_df = pd.DataFrame(sector_data)
-
-            # 生成模拟个股资金流数据
-            stocks = ['000001.SZ', '000002.SZ', '600000.SH', '600036.SH', '000858.SZ']
-            individual_data = []
-            for stock in stocks:
-                individual_data.append({
-                    'symbol': stock,
-                    'name': f'股票{stock[:6]}',
-                    'net_inflow': random.uniform(-10000, 20000),
-                    'main_inflow': random.uniform(2000, 15000),
-                    'main_outflow': random.uniform(2000, 12000),
-                    'price': random.uniform(10.0, 50.0),
-                    'change_rate': random.uniform(-3.0, 5.0),
-                    'volume': random.randint(100000, 1000000)
-                })
-
-            individual_df = pd.DataFrame(individual_data)
-
-            # 生成模拟市场资金流数据
+            sector_df = pd.DataFrame(columns=['sector_name', 'net_inflow', 'main_inflow', 'main_outflow',
+                                               'retail_inflow', 'retail_outflow', 'change_rate', 'rank'])
+            individual_df = pd.DataFrame(columns=['symbol', 'name', 'net_inflow', 'main_inflow', 'main_outflow',
+                                                   'price', 'change_rate', 'volume'])
             market_flow = {
-                'total_net_inflow': random.uniform(-500000, 800000),
-                'main_net_inflow': random.uniform(-300000, 500000),
-                'retail_net_inflow': random.uniform(-200000, 300000),
-                'north_fund_inflow': random.uniform(-50000, 100000),
+                'total_net_inflow': None,
+                'main_net_inflow': None,
+                'retail_net_inflow': None,
+                'north_fund_inflow': None,
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 'market_status': 'open' if 9 <= datetime.now().hour <= 15 else 'closed'
             }
 
-            logger.info(f"生成模拟资金流数据: 板块{len(sector_df)}个, 个股{len(individual_df)}个")
+            logger.info(f"资金流数据: 板块{len(sector_df)}个, 个股{len(individual_df)}个（数据源未配置）")
 
             return {
                 'sector_flow_rank': sector_df,
@@ -3151,8 +3120,8 @@ class UnifiedDataManager:
             logger.error("增强DuckDB数据下载器不可用")
             return {}
 
-        import asyncio
-        return asyncio.run(self.enhanced_duckdb_downloader.get_data_statistics())
+        from utils.async_utils import run_async_blocking
+        return run_async_blocking(self.enhanced_duckdb_downloader.get_data_statistics())
 
     async def get_historical_data_batch(self,
                                        symbols: List[str],

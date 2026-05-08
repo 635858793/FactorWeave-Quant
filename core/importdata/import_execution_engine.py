@@ -4967,24 +4967,11 @@ class DataImportExecutionEngine(QObject):
             if not self.enhanced_risk_monitor:
                 return {}
 
-            # 这里可以实现具体的风险趋势分析逻辑
-            # 暂时返回模拟数据
+            logger.warning("风险趋势数据不可用，返回空数据。请配置风险数据源以获取真实数据。")
             trends = {
-                'market_risk': [
-                    {'date': (datetime.now() - timedelta(days=i)).strftime('%Y-%m-%d'),
-                     'value': np.random.uniform(0.2, 0.8)}
-                    for i in range(days, 0, -1)
-                ],
-                'liquidity_risk': [
-                    {'date': (datetime.now() - timedelta(days=i)).strftime('%Y-%m-%d'),
-                     'value': np.random.uniform(0.1, 0.6)}
-                    for i in range(days, 0, -1)
-                ],
-                'concentration_risk': [
-                    {'date': (datetime.now() - timedelta(days=i)).strftime('%Y-%m-%d'),
-                     'value': np.random.uniform(0.3, 0.7)}
-                    for i in range(days, 0, -1)
-                ]
+                'market_risk': [],
+                'liquidity_risk': [],
+                'concentration_risk': []
             }
 
             return trends

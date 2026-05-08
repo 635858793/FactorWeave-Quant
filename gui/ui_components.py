@@ -388,18 +388,18 @@ class AnalysisToolsPanel(BaseAnalysisPanel, EnhancedBatchAnalysisMixin):
         try:
             self.set_progress(100)
 
-            # 生成模拟结果
+            logger.warning("回测引擎未配置，无法生成真实回测结果。请配置回测引擎后重试。")
             results = {
                 'strategy': self.strategy_combo.currentText(),
-                'total_return': round(random.uniform(0.05, 0.25), 4),
-                'sharpe_ratio': round(random.uniform(1.2, 2.5), 2),
-                'max_drawdown': round(random.uniform(0.08, 0.15), 4),
-                'win_rate': round(random.uniform(0.55, 0.75), 2),
-                'total_trades': random.randint(50, 150)
+                'total_return': None,
+                'sharpe_ratio': None,
+                'max_drawdown': None,
+                'win_rate': None,
+                'total_trades': 0
             }
 
             self.performance_metrics = results
-            self.update_status("分析完成")
+            self.update_status("分析完成（回测引擎未配置，结果为空）")
             self.show_progress(False)
 
             # 发射完成信号

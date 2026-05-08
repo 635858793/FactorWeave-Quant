@@ -481,43 +481,8 @@ class HistoryDataDialog(QDialog):
 
     def _generate_sample_data(self, stock_code: str, start_date: str, end_date: str) -> List[Dict]:
         """生成示例数据"""
-        import random
-
-        start = datetime.strptime(start_date, "%Y-%m-%d")
-        end = datetime.strptime(end_date, "%Y-%m-%d")
-
-        data = []
-        current_date = start
-        base_price = 10.0
-
-        while current_date <= end:
-            # 跳过周末
-            if current_date.weekday() < 5:
-                # 生成随机价格数据
-                change = random.uniform(-0.1, 0.1)
-                base_price *= (1 + change)
-
-                open_price = base_price * random.uniform(0.99, 1.01)
-                high_price = max(open_price, base_price) * \
-                    random.uniform(1.0, 1.05)
-                low_price = min(open_price, base_price) * \
-                    random.uniform(0.95, 1.0)
-                close_price = base_price
-                volume = random.randint(1000000, 10000000)
-
-                data.append({
-                    'date': current_date.strftime("%Y-%m-%d"),
-                    'open': round(open_price, 2),
-                    'high': round(high_price, 2),
-                    'low': round(low_price, 2),
-                    'close': round(close_price, 2),
-                    'volume': volume,
-                    'amount': round(volume * close_price, 2)
-                })
-
-            current_date += timedelta(days=1)
-
-        return data
+        logger.warning(f"历史数据不可用({stock_code})，返回空数据。请配置数据源以获取真实数据。")
+        return []
 
     def _display_data(self, data: List[Dict]) -> None:
         """显示数据"""

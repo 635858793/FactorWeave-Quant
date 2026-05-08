@@ -514,8 +514,8 @@ class IntelligentDataRouter:
         try:
             for plugin_id, plugin in self.registered_plugins.items():
                 try:
-                    # 异步健康检查
-                    health_result = asyncio.run(plugin.health_check())
+                    from utils.async_utils import run_async_blocking
+                    health_result = run_async_blocking(plugin.health_check())
 
                     with self._lock:
                         if plugin_id in self.plugin_metrics:

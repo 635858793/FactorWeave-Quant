@@ -208,7 +208,7 @@ def run_analysis(params: Dict[str, Any]):
         analysis_type = params.get('analysis_type', 'comprehensive')
         kline_data = params.get('kline_data', [])
 
-        import asyncio
+        from utils.async_utils import run_async_safe
         from core.containers import get_service_container
 
         async def run_analysis_async():
@@ -223,7 +223,7 @@ def run_analysis(params: Dict[str, Any]):
                     )
             return None
 
-        result = asyncio.run(run_analysis_async())
+        result = run_async_safe(run_analysis_async())
 
         if result is None:
             return {"result": "error", "error": "分析服务返回为空", "analysis": {}}
@@ -501,18 +501,56 @@ def ai_optimize_params(params: Dict[str, Any]):
         params: {
             'strategy': str,           # 策略名
             'param_space': Dict,       # 参数空间（如{'fast': [5,10,20], 'slow': [20,50,100]}）
-            'history': List[Dict]      # 历史数据
+            'data': List[Dict],        # 股票K线数据（必需，用于真实回测评分）
+            'signal_func': str,        # 信号生成函数名（可选，默认根据strategy推断）
+            'price_col': str,          # 价格列名，默认'close'
+            'initial_capital': float,  # 初始资金，默认100000
         }
     返回：
-        dict: {'best_params': 最优参数, 'history': 优化过程}
+        dict: {'best_params': 最优参数, 'best_score': 最优分数, 'history': 优化过程}
     """
     try:
         from itertools import product
-        import random
 
         strategy = params.get('strategy', 'default')
         param_space = params.get('param_space', {'fast': [5, 10], 'slow': [20, 50]})
-        history_data = params.get('history', [])
+        stock_data = params.get('data', [])
+
+        if not stock_data:
+            logger.warning("AI参数优化: 未提供股票数据，无法执行真实回测优化")
+            return {
+                "result": "error",
+                "error": "参数优化需要提供股票K线数据(data字段)，无法使用模拟数据",
+                "best_params": {},
+                "best_score": 0,
+                "history": []
+            }
+
+        if UnifiedBacktestEngine is None:
+            logger.warning("AI参数优化: 回测引擎不可用")
+            return {
+                "result": "error",
+                "error": "回测引擎不可用，无法执行参数优化",
+                "best_params": {},
+                "best_score": 0,
+                "history": []
+            }
+
+        df = pd.DataFrame(stock_data)
+        required_cols = ['close']
+        missing_cols = [c for c in required_cols if c not in df.columns]
+        if missing_cols:
+            return {
+                "result": "error",
+                "error": f"数据缺少必需列: {missing_cols}",
+                "best_params": {},
+                "best_score": 0,
+                "history": []
+            }
+
+        price_col = params.get('price_col', 'close')
+        initial_capital = params.get('initial_capital', 100000)
+        signal_func_name = params.get('signal_func', strategy)
 
         param_names = list(param_space.keys())
         param_values = [param_space[k] for k in param_names]
@@ -521,37 +559,150 @@ def ai_optimize_params(params: Dict[str, Any]):
         best_params = {}
         optimization_history = []
 
-        for param_combo in product(*param_values):
+        total_combinations = 1
+        for v in param_values:
+            total_combinations *= len(v)
+        logger.info(f"AI参数优化开始: 策略={strategy}, 参数组合数={total_combinations}")
+
+        for idx, param_combo in enumerate(product(*param_values)):
             current_params = dict(zip(param_names, param_combo))
 
-            score = random.uniform(0.5, 1.0)
-            if history_data:
-                base_score = 0.7
-                score = base_score + random.uniform(-0.1, 0.2)
+            try:
+                signal_df = df.copy()
+                signal_df = _generate_strategy_signals(
+                    signal_df, strategy, current_params, signal_func_name
+                )
+
+                engine = UnifiedBacktestEngine(
+                    backtest_level=BacktestLevel.PROFESSIONAL if BacktestLevel else None,
+                    use_vectorized_engine=True,
+                    auto_select_engine=True
+                )
+
+                result = engine.run_backtest(
+                    data=signal_df,
+                    signal_col='signal',
+                    price_col=price_col,
+                    initial_capital=initial_capital,
+                    commission_pct=0.001,
+                    slippage_pct=0.001
+                )
+
+                score = result.get('sharpe_ratio', 0)
+                if score is None or (isinstance(score, float) and np.isnan(score)):
+                    score = result.get('total_return', 0)
+
+                logger.debug(f"  组合 {idx+1}/{total_combinations}: {current_params} → score={score:.4f}")
+
+            except Exception as combo_error:
+                logger.warning(f"  组合 {idx+1}/{total_combinations}: {current_params} → 回测失败: {combo_error}")
+                score = float('-inf')
 
             optimization_history.append({
                 'params': current_params,
-                'score': score
+                'score': float(score) if not np.isnan(float(score)) else float('-inf')
             })
 
-            if score > best_score:
+            if score > best_score and not (isinstance(score, float) and np.isnan(score)):
                 best_score = score
                 best_params = current_params
 
         optimization_history.sort(key=lambda x: x['score'], reverse=True)
 
-        logger.info(f"参数优化完成: 策略={strategy}, 最优参数={best_params}, 分数={best_score}")
+        if best_score == float('-inf'):
+            logger.warning(f"AI参数优化: 所有参数组合回测均失败")
+            return {
+                "result": "error",
+                "error": "所有参数组合回测均失败，请检查数据和策略配置",
+                "best_params": {k: v[0] if isinstance(v, list) and v else v for k, v in param_space.items()},
+                "best_score": 0,
+                "history": []
+            }
+
+        logger.info(f"AI参数优化完成: 策略={strategy}, 最优参数={best_params}, 最优分数={best_score:.4f}")
         return {
+            "result": "success",
             "best_params": best_params,
-            "best_score": best_score,
+            "best_score": float(best_score),
             "history": optimization_history[:10]
         }
 
     except Exception as e:
         logger.error(f"参数优化失败: {e}")
-        param_space = params.get('param_space', {'fast': [5, 10], 'slow': [20, 50]})
-        best_params = {k: v[0] if isinstance(v, list) and v else v for k, v in param_space.items()}
-        return {"best_params": best_params, "history": [], "error": str(e)}
+        return {
+            "result": "error",
+            "error": str(e),
+            "best_params": {},
+            "best_score": 0,
+            "history": []
+        }
+
+
+def _generate_strategy_signals(
+    df: pd.DataFrame,
+    strategy: str,
+    params: Dict[str, Any],
+    signal_func_name: str
+) -> pd.DataFrame:
+    """根据策略和参数生成交易信号"""
+    df = df.copy()
+    df['signal'] = 0
+
+    strategy_lower = strategy.lower()
+
+    if 'ma' in strategy_lower or '均线' in strategy:
+        fast = params.get('fast', 5)
+        slow = params.get('slow', 20)
+        df['ma_fast'] = df['close'].rolling(window=fast).mean()
+        df['ma_slow'] = df['close'].rolling(window=slow).mean()
+        df.loc[df['ma_fast'] > df['ma_slow'], 'signal'] = 1
+        df.loc[df['ma_fast'] < df['ma_slow'], 'signal'] = -1
+
+    elif 'macd' in strategy_lower:
+        fast = params.get('fast', 12)
+        slow = params.get('slow', 26)
+        signal_period = params.get('signal', 9)
+        ema_fast = df['close'].ewm(span=fast, adjust=False).mean()
+        ema_slow = df['close'].ewm(span=slow, adjust=False).mean()
+        df['macd_line'] = ema_fast - ema_slow
+        df['macd_signal'] = df['macd_line'].ewm(span=signal_period, adjust=False).mean()
+        df.loc[df['macd_line'] > df['macd_signal'], 'signal'] = 1
+        df.loc[df['macd_line'] < df['macd_signal'], 'signal'] = -1
+
+    elif 'rsi' in strategy_lower:
+        period = params.get('period', 14)
+        oversold = params.get('oversold', 30)
+        overbought = params.get('overbought', 70)
+        delta = df['close'].diff()
+        gain = delta.where(delta > 0, 0.0)
+        loss = -delta.where(delta < 0, 0.0)
+        avg_gain = gain.rolling(window=period).mean()
+        avg_loss = loss.rolling(window=period).mean()
+        rs = avg_gain / avg_loss.replace(0, np.nan)
+        df['rsi'] = 100 - (100 / (1 + rs))
+        df.loc[df['rsi'] < oversold, 'signal'] = 1
+        df.loc[df['rsi'] > overbought, 'signal'] = -1
+
+    elif 'bb' in strategy_lower or '布林' in strategy:
+        period = params.get('period', 20)
+        std_dev = params.get('std_dev', 2)
+        df['bb_mid'] = df['close'].rolling(window=period).mean()
+        bb_std = df['close'].rolling(window=period).std()
+        df['bb_upper'] = df['bb_mid'] + std_dev * bb_std
+        df['bb_lower'] = df['bb_mid'] - std_dev * bb_std
+        df.loc[df['close'] < df['bb_lower'], 'signal'] = 1
+        df.loc[df['close'] > df['bb_upper'], 'signal'] = -1
+
+    else:
+        fast = params.get('fast', 5)
+        slow = params.get('slow', 20)
+        df['ma_fast'] = df['close'].rolling(window=fast).mean()
+        df['ma_slow'] = df['close'].rolling(window=slow).mean()
+        df.loc[df['ma_fast'] > df['ma_slow'], 'signal'] = 1
+        df.loc[df['ma_fast'] < df['ma_slow'], 'signal'] = -1
+
+    df['signal'] = df['signal'].fillna(0)
+    return df
 
 
 @app.post("/api/ai/diagnosis")

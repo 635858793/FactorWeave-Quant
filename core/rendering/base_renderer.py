@@ -13,6 +13,7 @@ from typing import Dict, Any, List, Optional, Union
 import pandas as pd
 import numpy as np
 from matplotlib.axes import Axes
+from loguru import logger
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
@@ -100,7 +101,7 @@ class BaseChartRenderer(IChartRenderer):
         if self.enable_logging:
             timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
             log_message = f"[{timestamp}] [{self.__class__.__name__}] {level}: {message}"
-            print(log_message)  # TODO: 集成到统一日志系统
+            logger.debug(log_message)
     
     def _measure_performance(self, operation_name: str):
         """性能测量装饰器"""

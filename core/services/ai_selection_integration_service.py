@@ -3193,7 +3193,8 @@ class AISelectionIntegrationService:
                 else:
                     logger.warning(f"未找到策略类型 {strategy.value} 的记录，使用策略类型作为ID")
             
-            result = asyncio.run(
+            from utils.async_utils import run_async_blocking
+            result = run_async_blocking(
                 self.select_stocks_with_explanation(
                     strategy_id=strategy_id,
                     criteria=criteria,

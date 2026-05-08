@@ -1193,8 +1193,8 @@ class QualityReportGenerator:
                     next_run = schedule_info['next_run']
 
                     if current_time >= next_run:
-                        # 生成报告
-                        asyncio.run(self.generate_report(schedule_info['config']))
+                        from utils.async_utils import run_async_safe
+                        run_async_safe(self.generate_report(schedule_info['config']))
 
                         # 更新调度信息
                         schedule_info['last_run'] = current_time

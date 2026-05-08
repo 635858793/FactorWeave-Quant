@@ -1853,8 +1853,7 @@ class RightPanel(BasePanel):
             self._update_status("请先选择股票再导出报告")
             return
 
-        self._update_status("报告导出功能开发中...")
-        # TODO: 实现报告导出功能
+        self._update_status("报告导出功能开发中，敬请期待。")
 
     def get_current_stock_info(self) -> Dict[str, str]:
         """获取当前股票信息"""

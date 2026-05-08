@@ -453,8 +453,8 @@ class CrosshairMixin:
                 if line is not None:
                     try:
                         line.remove()
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"crosshair_mixin: {e}")
             self._crosshair_lines.clear()
 
             # 清除文本
@@ -462,8 +462,8 @@ class CrosshairMixin:
                 if hasattr(self, attr) and getattr(self, attr) is not None:
                     try:
                         getattr(self, attr).remove()
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"crosshair_mixin: {e}")
                     setattr(self, attr, None)
 
         except Exception as e:

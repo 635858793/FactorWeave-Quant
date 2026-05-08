@@ -439,46 +439,8 @@ class HotspotAnalysisTab(BaseAnalysisTab):
     def analyze_sector_hotspots(self, period: int, heat_threshold: float, gain_threshold: float, volume_multiplier: float):
         """分析板块热点"""
         try:
-            # 模拟板块数据
-            sectors = [
-                "新能源汽车", "人工智能", "半导体", "生物医药", "5G通信",
-                "新材料", "军工", "消费电子", "光伏", "风电",
-                "锂电池", "芯片", "云计算", "大数据", "物联网"
-            ]
-
+            logger.warning("板块热点数据不可用，返回空数据。请配置热点数据源以获取真实数据。")
             self.sector_rankings = []
-
-            for sector in sectors:
-                # 模拟板块数据
-                heat_index = random.uniform(0.5, 3.0)
-                gain_pct = random.uniform(-5.0, 15.0)
-                volume_ratio = random.uniform(0.8, 4.0)
-                rising_count = random.randint(5, 25)
-                leading_stock = f"{sector}龙头"
-
-                # 判断热点等级
-                if heat_index >= 2.5 and gain_pct >= 5.0:
-                    level = "超级热点"
-                elif heat_index >= 2.0 and gain_pct >= 3.0:
-                    level = "强势热点"
-                elif heat_index >= 1.5 and gain_pct >= 1.0:
-                    level = "一般热点"
-                else:
-                    level = "冷门板块"
-
-                self.sector_rankings.append({
-                    '板块名称': sector,
-                    '热度指数': f"{heat_index:.2f}",
-                    '涨跌幅': f"{gain_pct:+.2f}%",
-                    '成交量比': f"{volume_ratio:.2f}",
-                    '领涨股': leading_stock,
-                    '上涨家数': f"{rising_count}",
-                    '热点等级': level
-                })
-
-            # 按热度指数排序
-            self.sector_rankings.sort(
-                key=lambda x: float(x['热度指数']), reverse=True)
 
         except Exception as e:
             logger.error(f"板块热点分析失败: {str(e)}")
@@ -486,40 +448,8 @@ class HotspotAnalysisTab(BaseAnalysisTab):
     def analyze_leading_stocks(self, period: int, heat_threshold: float, gain_threshold: float):
         """分析龙头股"""
         try:
-            # 模拟龙头股数据
-            leading_stocks_data = [
-                ("000001", "平安银行", "银行", 8.5, 2.3, 85, "2500亿", "绝对龙头"),
-                ("000002", "万科A", "房地产", 5.2, 1.8, 78, "2800亿", "行业龙头"),
-                ("000858", "五粮液", "白酒", 12.3, 3.1, 92, "8500亿", "绝对龙头"),
-                ("600036", "招商银行", "银行", 6.8, 2.0, 88, "12000亿", "绝对龙头"),
-                ("600519", "贵州茅台", "白酒", 4.2, 1.5, 95, "25000亿", "绝对龙头"),
-                ("000858", "宁德时代", "新能源", 15.8, 4.2, 90, "12000亿", "绝对龙头"),
-                ("002415", "海康威视", "安防", 9.3, 2.8, 82, "4500亿", "行业龙头"),
-                ("300059", "东方财富", "券商", 11.2, 3.5, 79, "3200亿", "行业龙头")
-            ]
-
+            logger.warning("龙头股数据不可用，返回空数据。请配置数据源以获取真实数据。")
             self.leading_stocks = []
-
-            for code, name, sector, base_gain, base_volume, base_index, market_cap, status in leading_stocks_data:
-                # 添加随机波动
-                gain_pct = base_gain + random.uniform(-2.0, 3.0)
-                volume_ratio = base_volume + random.uniform(-0.5, 1.0)
-                leading_index = base_index + random.randint(-5, 5)
-
-                self.leading_stocks.append({
-                    '股票代码': code,
-                    '股票名称': name,
-                    '所属板块': sector,
-                    '涨跌幅': f"{gain_pct:+.2f}%",
-                    '成交量比': f"{volume_ratio:.2f}",
-                    '龙头指数': str(leading_index),
-                    '市值': market_cap,
-                    '地位': status
-                })
-
-            # 按龙头指数排序
-            self.leading_stocks.sort(
-                key=lambda x: int(x['龙头指数']), reverse=True)
 
         except Exception as e:
             logger.error(f"龙头股分析失败: {str(e)}")
@@ -527,42 +457,8 @@ class HotspotAnalysisTab(BaseAnalysisTab):
     def analyze_theme_opportunities(self, period: int, heat_threshold: float):
         """分析主题机会"""
         try:
-            # 模拟主题机会数据
-            themes = [
-                "碳中和", "数字经济", "元宇宙", "新基建", "国产替代",
-                "医美概念", "预制菜", "ChatGPT", "东数西算", "专精特新"
-            ]
-
+            logger.warning("主题机会数据不可用，返回空数据。请配置数据源以获取真实数据。")
             self.theme_opportunities = []
-
-            for theme in themes:
-                heat_score = random.uniform(60, 95)
-                stock_count = random.randint(15, 80)
-                avg_gain = random.uniform(-2.0, 12.0)
-                attention = random.uniform(0.3, 1.0)
-
-                # 判断投资机会
-                if heat_score >= 85 and avg_gain >= 5.0:
-                    opportunity = "强烈推荐"
-                elif heat_score >= 75 and avg_gain >= 2.0:
-                    opportunity = "值得关注"
-                elif heat_score >= 65:
-                    opportunity = "谨慎观望"
-                else:
-                    opportunity = "暂不推荐"
-
-                self.theme_opportunities.append({
-                    '主题名称': theme,
-                    '热度评分': f"{heat_score:.1f}",
-                    '相关股票数': str(stock_count),
-                    '平均涨幅': f"{avg_gain:+.2f}%",
-                    '资金关注度': f"{attention:.2f}",
-                    '投资机会': opportunity
-                })
-
-            # 按热度评分排序
-            self.theme_opportunities.sort(
-                key=lambda x: float(x['热度评分']), reverse=True)
 
         except Exception as e:
             logger.error(f"主题机会分析失败: {str(e)}")

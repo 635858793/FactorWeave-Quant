@@ -32,8 +32,8 @@ def is_dark_theme(theme_manager) -> bool:
             return theme_manager.current_theme.is_dark()
         if hasattr(theme_manager, 'theme_type'):
             return theme_manager.theme_type.lower() == 'dark'
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"signal_mixin: {e}")
     return True
 
 
@@ -976,24 +976,24 @@ class SignalMixin:
                             try:
                                 collection_list.remove(artist)
                                 return True
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                logger.debug(f"signal_mixin: {e}")
 
             # 方法3: 如果以上都失败，至少隐藏对象
             if hasattr(artist, 'set_visible'):
                 try:
                     artist.set_visible(False)
                     return True
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"signal_mixin: {e}")
 
             # 方法4: 对于一些特殊类型，尝试设置alpha为0
             if hasattr(artist, 'set_alpha'):
                 try:
                     artist.set_alpha(0)
                     return True
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"signal_mixin: {e}")          
 
             return False
 
@@ -1013,8 +1013,8 @@ class SignalMixin:
             for artist in getattr(self, '_signal_artists', []):
                 try:
                     self._safe_remove_artist(artist)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"signal_mixin: {e}")
             self._signal_artists = []
 
             if not signals:
@@ -1372,8 +1372,8 @@ class SignalMixin:
             for artist in self._pattern_signal_artists[:]:
                 try:
                     self._safe_remove_artist(artist)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"signal_mixin: {e}")
         self._pattern_signal_artists = []
     
     def _adjust_axis_limits(self, unique_indices: list, kdata):
@@ -1398,8 +1398,8 @@ class SignalMixin:
                             p = float(kdata['high'].iloc[idx]) * 1.08
                             if not pd.isna(p) and p > 0:
                                 signal_prices.append(p)
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug(f"signal_mixin: {e}")
                 
                 if signal_prices:
                     min_price = min(signal_prices)
@@ -1479,8 +1479,8 @@ class SignalMixin:
             for artist in getattr(self, '_tooltip_artists', []):
                 try:
                     self._safe_remove_artist(artist)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"signal_mixin: {e}")
             self._tooltip_artists = []
 
     def get_signal_tooltip_at_index(self, idx: int) -> str:
@@ -1522,8 +1522,8 @@ class SignalMixin:
             for artist in getattr(self, '_highlight_artists', []):
                 try:
                     self._safe_remove_artist(artist)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"signal_mixin: {e}")
             self._highlight_artists = []
 
             if signal_data:
@@ -1549,16 +1549,16 @@ class SignalMixin:
             for artist in getattr(self, '_highlight_artists', []):
                 try:
                     self._safe_remove_artist(artist)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"signal_mixin: {e}")
             self._highlight_artists = []
 
             # 清除气泡提示
             for artist in getattr(self, '_tooltip_artists', []):
                 try:
                     self._safe_remove_artist(artist)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"signal_mixin: {e}")
             self._tooltip_artists = []
 
             self.canvas.draw_idle()

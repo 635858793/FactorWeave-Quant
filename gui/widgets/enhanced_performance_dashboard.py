@@ -1015,54 +1015,51 @@ class EnhancedPerformanceDashboard(QWidget):
 
     def load_sample_data(self):
         """加载示例数据"""
-        import random
+        import psutil
 
-        # 生成初始历史数据
         base_time = datetime.now() - timedelta(minutes=30)
 
         for i in range(30):
             timestamp = base_time + timedelta(minutes=i)
 
-            # 生成示例指标数据
             metrics = {
-                MetricType.CPU_USAGE: random.uniform(20, 80),
-                MetricType.MEMORY_USAGE: random.uniform(30, 70),
-                MetricType.DISK_IO: random.uniform(50, 300),
-                MetricType.NETWORK_IO: random.uniform(10, 100),
-                MetricType.CACHE_HIT_RATE: random.uniform(60, 95),
-                MetricType.RESPONSE_TIME: random.uniform(100, 500),
-                MetricType.THROUGHPUT: random.uniform(100, 1000),
-                MetricType.ERROR_RATE: random.uniform(0, 5),
-                MetricType.QUEUE_LENGTH: random.uniform(0, 50),
-                MetricType.TASK_EXECUTION_TIME: random.uniform(10, 300)
+                MetricType.CPU_USAGE: psutil.cpu_percent(interval=0.1) if i == 0 else None,
+                MetricType.MEMORY_USAGE: psutil.virtual_memory().percent if i == 0 else None,
+                MetricType.DISK_IO: None,
+                MetricType.NETWORK_IO: None,
+                MetricType.CACHE_HIT_RATE: None,
+                MetricType.RESPONSE_TIME: None,
+                MetricType.THROUGHPUT: None,
+                MetricType.ERROR_RATE: None,
+                MetricType.QUEUE_LENGTH: None,
+                MetricType.TASK_EXECUTION_TIME: None
             }
 
             for metric_type, value in metrics.items():
-                metric = PerformanceMetric(
-                    metric_type=metric_type,
-                    value=value,
-                    timestamp=timestamp
-                )
-                self.metrics_history[metric_type].append(metric)
+                if value is not None:
+                    metric = PerformanceMetric(
+                        metric_type=metric_type,
+                        value=value,
+                        timestamp=timestamp
+                    )
+                    self.metrics_history[metric_type].append(metric)
 
     def update_realtime_data(self):
         """更新实时数据"""
         if not self.monitoring_active:
             return
 
-        import random
+        import psutil
 
-        # 生成新的实时数据
         timestamp = datetime.now()
 
-        # 模拟真实的指标变化
         metrics = {
-            MetricType.CPU_USAGE: random.uniform(40, 85),
-            MetricType.MEMORY_USAGE: random.uniform(35, 75),
-            MetricType.DISK_IO: random.uniform(100, 400),
-            MetricType.NETWORK_IO: random.uniform(50, 150),
-            MetricType.CACHE_HIT_RATE: random.uniform(65, 90),
-            MetricType.RESPONSE_TIME: random.uniform(150, 600)
+            MetricType.CPU_USAGE: psutil.cpu_percent(interval=0.1),
+            MetricType.MEMORY_USAGE: psutil.virtual_memory().percent,
+            MetricType.DISK_IO: None,
+            MetricType.NETWORK_IO: None,
+            MetricType.CACHE_HIT_RATE: None,
+            MetricType.RESPONSE_TIME: None
         }
 
         for metric_type, value in metrics.items():

@@ -1599,8 +1599,7 @@ class WebGPURenderer(BaseChartRenderer):
         标准接口：渲染技术指标
         """
         try:
-            logger.info("WebGPURenderer渲染技术指标")
-            # TODO: 实现技术指标GPU渲染
+            logger.info("WebGPURenderer渲染技术指标 - GPU加速渲染尚未实现，请使用CPU渲染路径")
             return False
         except Exception as e:
             logger.error(f"技术指标渲染失败: {e}")

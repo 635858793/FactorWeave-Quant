@@ -353,13 +353,11 @@ class SystemMonitor:
                 metrics['线程数量'] = 0
                 metrics['句柄数量'] = 0
 
-            # 响应时间（基于系统负载动态计算）
-            import random
-            base_response = 30 + random.uniform(-10, 20)  # 基础响应时间30ms
+            base_response = 30.0
             if cpu_percent > 70:
-                base_response += (cpu_percent - 70) * 2  # CPU高时响应时间增加
+                base_response += (cpu_percent - 70) * 2
             if memory.percent > 70:
-                base_response += (memory.percent - 70) * 1.5  # 内存高时响应时间增加
+                base_response += (memory.percent - 70) * 1.5
             metrics['响应时间'] = max(10, min(200, base_response))  # 限制在10-200ms
 
             # 重命名字段以匹配UI显示
@@ -1370,21 +1368,20 @@ class UnifiedPerformanceMonitor:
                 base_return = 0.0
                 base_sharpe = 0.3
             
-            import random
-            random.seed(int(time.time()) % 1000)
-            
-            metrics['total_return'] = base_return + random.uniform(-0.02, 0.02)
-            metrics['annual_return'] = base_return + random.uniform(-0.03, 0.03)
-            metrics['volatility'] = 0.15 + random.uniform(-0.02, 0.02)
-            metrics['sharpe_ratio'] = base_sharpe + random.uniform(-0.1, 0.1)
-            metrics['sortino_ratio'] = base_sharpe * 1.2 + random.uniform(-0.1, 0.1)
-            metrics['max_drawdown'] = 0.1 + random.uniform(0, 0.05) * (1 + cpu_factor)
-            metrics['calmar_ratio'] = base_return / max(metrics['max_drawdown'], 0.01)
-            metrics['win_rate'] = 0.55 + random.uniform(-0.05, 0.05)
-            metrics['profit_loss_ratio'] = 1.5 + random.uniform(-0.2, 0.2)
-            metrics['total_trades'] = random.randint(100, 1000)
-            metrics['winning_trades'] = int(metrics['total_trades'] * metrics['win_rate'])
-            metrics['losing_trades'] = int(metrics['total_trades'] * (1 - metrics['win_rate']))
+            logger.warning("回测指标数据不可用，返回空值。请配置回测引擎以获取真实数据。")
+
+            metrics['total_return'] = None
+            metrics['annual_return'] = None
+            metrics['volatility'] = None
+            metrics['sharpe_ratio'] = None
+            metrics['sortino_ratio'] = None
+            metrics['max_drawdown'] = None
+            metrics['calmar_ratio'] = None
+            metrics['win_rate'] = None
+            metrics['profit_loss_ratio'] = None
+            metrics['total_trades'] = 0
+            metrics['winning_trades'] = 0
+            metrics['losing_trades'] = 0
             
             return metrics
             
