@@ -228,9 +228,11 @@ class CandleVirtualRenderer(QObject):
                 segments_up = []  # 上涨影线
                 segments_down = []  # 下跌影线
                 
+                # 增加蜡烛宽度从0.3到0.45，使蜡烛更宽更清晰
+                candle_half_width = 0.45
                 for i, (x_val, open_price, high, low, close) in enumerate(zip(x_values, opens, highs, lows, closes)):
-                    left = x_val - 0.3
-                    right = x_val + 0.3
+                    left = x_val - candle_half_width
+                    right = x_val + candle_half_width
                     
                     if close >= open_price:
                         # 阳线
@@ -426,9 +428,11 @@ class CandleVirtualRenderer(QObject):
             segments_up = []  # 上涨影线
             segments_down = []  # 下跌影线
             
+            # 增加蜡烛宽度从0.3到0.45，使蜡烛更宽更清晰
+            candle_half_width = 0.45
             for i, (x_val, open_price, high, low, close) in enumerate(zip(chunk_x, opens, highs, lows, closes)):
-                left = x_val - 0.3
-                right = x_val + 0.3
+                left = x_val - candle_half_width
+                right = x_val + candle_half_width
                 
                 if close >= open_price:
                     # 阳线

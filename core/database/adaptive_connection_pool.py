@@ -35,7 +35,7 @@ class AdaptivePoolConfig:
 
     # 边界
     min_pool_size: int = 3
-    max_pool_size: int = 50
+    max_pool_size: int = 20
 
     # 阈值
     scale_up_usage_threshold: float = 0.8

@@ -79,36 +79,43 @@ class LogWidget(QTextEdit):
     def __init__(self):
         super().__init__()
         self.setReadOnly(True)
-        # 使用document()来设置最大块数，兼容性更好
         try:
-            self.document().setMaximumBlockCount(1000)  # 限制最大行数
+            self.document().setMaximumBlockCount(1000)
         except AttributeError:
-            # 如果方法不存在，使用替代方案
             pass
 
-        # 设置字体
         font = QFont("Consolas", 9)
         font.setStyleHint(QFont.Monospace)
         self.setFont(font)
 
-        # 日志级别颜色
         self.level_colors = {
             'DEBUG': '#888888',
-            # 'INFO': '#000000',
             'WARNING': '#FF8C00',
             'ERROR': '#FF0000',
             'CRITICAL': '#8B0000'
         }
 
-        # 连接信号到槽
         self.log_appended.connect(self._append_log_safe)
 
+        self._pending_logs: list = []
+        self._flush_timer = QTimer(self)
+        self._flush_timer.setSingleShot(True)
+        self._flush_timer.timeout.connect(self._flush_pending_logs)
+
     def append_log(self, message: str, level: str = 'INFO'):
-        """添加日志消息 - 线程安全版本，通过信号/槽机制确保在主线程中执行"""
+        """添加日志消息 - 批量发送，减少信号频率"""
         color = self.level_colors.get(level, self.palette().text().color().name())
         formatted_msg = f'<span style="color: {color};">[{level}] {message}</span>'
-        # 发射信号而不是直接操作UI
-        self.log_appended.emit(formatted_msg, level)
+        self._pending_logs.append((formatted_msg, level))
+        if not self._flush_timer.isActive():
+            self._flush_timer.start(100)
+
+    def _flush_pending_logs(self):
+        """批量刷新待处理的日志"""
+        logs = self._pending_logs
+        self._pending_logs = []
+        for formatted_msg, level in logs:
+            self.log_appended.emit(formatted_msg, level)
 
     @pyqtSlot(str, str)
     def _append_log_safe(self, formatted_msg: str, level: str):

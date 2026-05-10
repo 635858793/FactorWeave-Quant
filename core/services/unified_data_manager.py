@@ -2795,8 +2795,7 @@ class UnifiedDataManager:
             chart_service = self.service_container.resolve(ChartService)
 
             if chart_service:
-                # ChartService支持asset_type参数，传递过去
-                return chart_service.get_kdata(stock_code, period, count, asset_type=asset_type)
+                return await chart_service.get_kdata_async(stock_code, period, count, asset_type=asset_type)
 
             # 如果没有ChartService，使用默认数据源
             # 注意：core.data_manager已迁移，使用当前实例

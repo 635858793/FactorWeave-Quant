@@ -94,8 +94,17 @@ class MainWindowCoordinator(BaseCoordinator):
         self._main_window.setGeometry(100, 100, 1400, 900)
         self._main_window.setMinimumSize(1200, 800)
 
-        # 连接窗口大小改变信号
-        self._main_window.resize_requested.connect(self._update_responsive_layout)
+        # 连接窗口大小改变信号（防抖处理）
+        self._resize_debounce_timer = QTimer(self._main_window)
+        self._resize_debounce_timer.setSingleShot(True)
+        self._resize_debounce_timer.timeout.connect(self._update_responsive_layout)
+        self._main_window.resize_requested.connect(self._on_resize_requested)
+
+        # 状态栏消息队列
+        self._message_queue: list = []
+        self._message_timer = QTimer(self._main_window)
+        self._message_timer.setSingleShot(True)
+        self._message_timer.timeout.connect(self._process_message_queue)
 
         # UI面板
         self._panels: Dict[str, Any] = {}
@@ -1244,8 +1253,22 @@ class MainWindowCoordinator(BaseCoordinator):
         return self._panels.get(panel_name)
 
     def show_message(self, message: str, level: str = 'info') -> None:
-        """显示消息"""
-        self._status_label.setText(message)
+        """显示消息（使用队列，每条消息至少显示2秒）"""
+        self._message_queue.append(message)
+        if not self._message_timer.isActive():
+            self._process_message_queue()
+
+    def _process_message_queue(self):
+        """处理消息队列"""
+        if self._message_queue:
+            message = self._message_queue.pop(0)
+            self._status_label.setText(f"  {message}")
+            if self._message_queue:
+                self._message_timer.start(2000)
+
+    def _on_resize_requested(self):
+        """窗口大小改变请求（防抖150ms）"""
+        self._resize_debounce_timer.start(150)
 
     def center_dialog(self, dialog, parent=None, offset_y=50):
         """居中显示对话框"""
@@ -1286,14 +1309,16 @@ class MainWindowCoordinator(BaseCoordinator):
     def _do_dispose(self) -> None:
         """清理资源"""
         try:
-            # 清理UI面板
+            if hasattr(self, '_resize_debounce_timer'):
+                self._resize_debounce_timer.stop()
+            if hasattr(self, '_message_timer'):
+                self._message_timer.stop()
+
             if 'performance_dashboard' in self._panels:
                 self._panels['performance_dashboard'].dispose()
 
-            # 保存窗口配置
             self._save_window_config()
 
-            # 关闭主窗口
             if self._main_window:
                 self._main_window.close()
 

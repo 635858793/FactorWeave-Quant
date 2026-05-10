@@ -184,10 +184,10 @@ class ChartRenderer(QObject):
         if use_datetime_axis and len(xvals) > 1:
             # datetime X轴：根据时间间隔计算宽度
             avg_interval = np.mean(np.diff(xvals))
-            candle_width = max(0.3, avg_interval * 0.6)  # 蜡烛宽度为平均间隔的60%
+            candle_width = max(0.35, avg_interval * 0.75)  # 蜡烛宽度为平均间隔的75%，最小0.35
         else:
-            # 数字索引：固定宽度
-            candle_width = 0.3
+            # 数字索引：固定宽度，增加至0.45使蜡烛更宽
+            candle_width = 0.45
 
         # 性能优化：使用完全向量化的numpy操作，提升10-100倍性能
         # 提取数据为numpy数组（避免iterrows()的性能开销）
@@ -243,21 +243,23 @@ class ChartRenderer(QObject):
 
         # 性能优化：检查数组长度而不是转换为bool（避免numpy警告）
         # 修改为空心蜡烛图样式：facecolor透明，只有边框
+        # 增加边框线宽从0.4到0.6，使蜡烛图更清晰可见
+        line_width = style.get('line_width', 0.6)
         if len(verts_up) > 0:
             collection_up = PolyCollection(
-                verts_up, facecolor='none', edgecolor=up_color, linewidth=0.4, alpha=alpha)
+                verts_up, facecolor='none', edgecolor=up_color, linewidth=line_width, alpha=alpha)
             ax.add_collection(collection_up)
         if len(verts_down) > 0:
             collection_down = PolyCollection(
-                verts_down, facecolor='none', edgecolor=down_color, linewidth=0.4, alpha=alpha)
+                verts_down, facecolor='none', edgecolor=down_color, linewidth=line_width, alpha=alpha)
             ax.add_collection(collection_down)
         if len(segments_up) > 0:  # 影线
             collection_shadow_up = LineCollection(
-                segments_up, colors=up_color, linewidth=0.4, alpha=alpha)
+                segments_up, colors=up_color, linewidth=line_width, alpha=alpha)
             ax.add_collection(collection_shadow_up)
         if len(segments_down) > 0:
             collection_shadow_down = LineCollection(
-                segments_down, colors=down_color, linewidth=0.4, alpha=alpha)
+                segments_down, colors=down_color, linewidth=line_width, alpha=alpha)
             ax.add_collection(collection_shadow_down)
         # 性能优化：移除autoscale_view()调用，由调用方统一处理
         # ax.autoscale_view()  # 已移除，在rendering_mixin中统一调用
