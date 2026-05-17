@@ -168,10 +168,26 @@ class IntelligentSignalCalculatorOptimized:
             
             current_price = float(close[-1])
             
-            if current_price > sma20 * 1.02 and slope > 0:
+            atr_multiplier = 0.015
+            if len(kdata) >= 20:
+                high = kdata['high'].values
+                low = kdata['low'].values
+                close_vals = kdata['close'].values
+                
+                tr = np.maximum(
+                    high[1:] - low[1:],
+                    np.maximum(
+                        np.abs(high[1:] - close_vals[:-1]),
+                        np.abs(low[1:] - close_vals[:-1])
+                    )
+                )
+                atr = np.mean(tr[-20:]) if len(tr) >= 20 else np.mean(tr)
+                atr_multiplier = (atr / sma20) if sma20 > 0 else 0.015
+            
+            if current_price > sma20 * (1 + atr_multiplier) and slope > 0:
                 trend = 'uptrend'
                 direction = 'up'
-            elif current_price < sma20 * 0.98 and slope < 0:
+            elif current_price < sma20 * (1 - atr_multiplier) and slope < 0:
                 trend = 'downtrend'
                 direction = 'down'
             else:

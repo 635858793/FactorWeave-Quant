@@ -380,19 +380,18 @@ class ConfigService(BaseService):
             是否成功设置
         """
         try:
-            # 设置到内存
-            keys = key.split('.')
-            config = self._config_data
+            with self._db_lock:
+                keys = key.split('.')
+                config = self._config_data
 
-            for k in keys[:-1]:
-                if k not in config:
-                    config[k] = {}
-                config = config[k]
+                for k in keys[:-1]:
+                    if k not in config:
+                        config[k] = {}
+                    config = config[k]
 
-            old_value = config.get(keys[-1])
-            config[keys[-1]] = value
+                old_value = config.get(keys[-1])
+                config[keys[-1]] = value
 
-            # 保存配置
             if save:
                 if self._use_sqlite:
                     self._save_config_to_sqlite(key, value)

@@ -21,10 +21,11 @@ def get_api_base_url():
     """获取API基础URL，从配置服务加载"""
     try:
         from core.services.config_service import ConfigService
-        # 创建配置服务实例
-        config_service = ConfigService()
-        
-        # 从配置获取API URL
+        from core.containers import get_service_container
+        container = get_service_container()
+        config_service = container.resolve(ConfigService)
+        logger.info("从服务容器获取配置服务成功")
+
         api_url = config_service.get('hybrid_api.url', 'http://localhost:8000')
         logger.info(f"从配置加载API地址: {api_url}")
         return api_url

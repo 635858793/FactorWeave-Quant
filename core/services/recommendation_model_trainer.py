@@ -1125,37 +1125,8 @@ class RecommendationModelTrainer:
             # 获取第一个模型配置
             model_id = list(self.model_configs.keys())[0]
             
-            # 在新的事件循环中运行异步训练
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # 如果事件循环正在运行，使用 create_task
-                    import threading
-                    result = []
-                    
-                    def run_in_thread():
-                        new_loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(new_loop)
-                        try:
-                            result.append(new_loop.run_until_complete(self.train_model(model_id)))
-                        finally:
-                            new_loop.close()
-                    
-                    thread = threading.Thread(target=run_in_thread)
-                    thread.start()
-                    thread.join(timeout=60)  # 最多等待60秒
-                    
-                    if thread.is_alive():
-                        logger.warning("训练任务仍在后台运行")
-                        return f"train_{model_id}_{datetime.now().timestamp()}"
-                    
-                    return result[0] if result else ""
-                else:
-                    # 如果事件循环未运行，直接使用 asyncio.run
-                    return asyncio.run(self.train_model(model_id))
-            except RuntimeError:
-                # 没有事件循环，创建新的
-                return asyncio.run(self.train_model(model_id))
+            from utils.async_utils import run_async_blocking
+            return run_async_blocking(self.train_model(model_id), timeout=60)
                 
         except Exception as e:
             logger.error(f"训练推荐模型失败: {e}")

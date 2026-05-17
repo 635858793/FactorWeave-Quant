@@ -1732,8 +1732,7 @@ class AIPredictionService(BaseService):
                     features.get('volume_strength', 0.5),
                     features.get('volatility_signal', 0.5)
                 ])
-                random_factor = np.random.normal(0, 0.1)
-                adjusted_strength = np.clip(prediction_strength + random_factor, 0, 1)
+                adjusted_strength = np.clip(prediction_strength, 0, 1)
 
             if adjusted_strength > 0.6:
                 direction = "上涨"

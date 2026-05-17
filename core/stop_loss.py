@@ -11,7 +11,12 @@ class StopLossStrategy(ABC):
     
     def __init__(self, name: str):
         self.name = name
-        self._indicator_service = EnhancedIndicatorService()
+        try:
+            from core.containers import get_service_container
+            container = get_service_container()
+            self._indicator_service = container.resolve(EnhancedIndicatorService)
+        except Exception:
+            self._indicator_service = EnhancedIndicatorService()
         self._data_standardizer = DataStandardizer()
     
     @abstractmethod

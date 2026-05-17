@@ -1343,10 +1343,8 @@ class StrategyService(BaseService):
             
             cumulative_returns = []
             for i in range(n_days):
-                volatility = 0.01
-                noise = np.random.normal(0, volatility)
-                daily_return_with_noise = daily_return + noise
-                
+                daily_return_with_noise = daily_return
+
                 if i == 0:
                     cumulative_returns.append(daily_return_with_noise)
                 else:

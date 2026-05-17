@@ -132,7 +132,15 @@ class EnhancedRiskMonitor:
         # 基础组件
         self.risk_monitor = RiskMonitor() if CORE_AVAILABLE else None
         self.alert_system = RiskAlertSystem() if CORE_AVAILABLE else None
-        self.ai_service = AIPredictionService() if CORE_AVAILABLE else None
+        try:
+            if CORE_AVAILABLE:
+                from core.containers import get_service_container
+                container = get_service_container()
+                self.ai_service = container.resolve(AIPredictionService)
+            else:
+                self.ai_service = None
+        except Exception:
+            self.ai_service = None
 
         # 智能化组件
         self.anomaly_detector = IsolationForest(contamination=0.1, random_state=42)
@@ -303,38 +311,55 @@ class EnhancedRiskMonitor:
     def _collect_risk_metrics(self) -> Dict[str, Any]:
         """收集风险指标"""
         try:
-            # 基础风险指标
             base_metrics = {}
+
             if self.risk_monitor:
-                # 这里可以调用现有的风险监控系统
-                base_metrics = {
-                    'market_risk': {
-                        'volatility': np.random.uniform(0.1, 0.8),
-                        'beta': np.random.uniform(0.5, 2.0),
-                        'var_95': np.random.uniform(0.01, 0.1),
-                        'es_95': np.random.uniform(0.02, 0.15)
-                    },
-                    'liquidity_risk': {
-                        'bid_ask_spread': np.random.uniform(0.001, 0.01),
-                        'turnover_ratio': np.random.uniform(0.1, 2.0),
-                        'market_impact': np.random.uniform(0.001, 0.05)
-                    },
-                    'concentration_risk': {
-                        'herfindahl_index': np.random.uniform(0.1, 0.5),
-                        'max_position_weight': np.random.uniform(0.05, 0.3),
-                        'sector_concentration': np.random.uniform(0.2, 0.7)
+                try:
+                    raw_risk_data = self.risk_monitor.get_risk_metrics()
+                    if raw_risk_data:
+                        base_metrics = {
+                            'market_risk': {
+                                'volatility': raw_risk_data.get('volatility', 0),
+                                'beta': raw_risk_data.get('beta', 0),
+                                'var_95': raw_risk_data.get('var_95', 0),
+                                'es_95': raw_risk_data.get('es_95', 0)
+                            },
+                            'liquidity_risk': {
+                                'bid_ask_spread': raw_risk_data.get('bid_ask_spread', 0),
+                                'turnover_ratio': raw_risk_data.get('turnover_ratio', 0),
+                                'market_impact': raw_risk_data.get('market_impact', 0)
+                            },
+                            'concentration_risk': {
+                                'herfindahl_index': raw_risk_data.get('herfindahl_index', 0),
+                                'max_position_weight': raw_risk_data.get('max_position_weight', 0),
+                                'sector_concentration': raw_risk_data.get('sector_concentration', 0)
+                            }
+                        }
+                    else:
+                        logger.warning("risk_monitor.get_risk_metrics() 返回空数据，风险指标不可用")
+                except Exception as rm_error:
+                    logger.warning(f"从risk_monitor获取风险指标失败: {rm_error}")
+            else:
+                logger.warning("risk_monitor未初始化，无法获取真实风险指标")
+
+            system_metrics = {}
+            try:
+                import psutil
+                cpu_percent = psutil.cpu_percent(interval=0.1)
+                memory = psutil.virtual_memory()
+                disk = psutil.disk_usage('/')
+                system_metrics = {
+                    'system_risk': {
+                        'cpu_usage': round(cpu_percent / 100.0, 4),
+                        'memory_usage': round(memory.percent / 100.0, 4),
+                        'disk_usage': round(disk.percent / 100.0, 4),
+                        'network_latency': 0
                     }
                 }
-
-            # 添加系统性能指标
-            system_metrics = {
-                'system_risk': {
-                    'cpu_usage': np.random.uniform(0.1, 0.9),
-                    'memory_usage': np.random.uniform(0.2, 0.8),
-                    'disk_usage': np.random.uniform(0.3, 0.9),
-                    'network_latency': np.random.uniform(10, 200)
-                }
-            }
+            except ImportError:
+                logger.warning("psutil不可用，无法获取系统性能指标")
+            except Exception as sys_error:
+                logger.warning(f"获取系统性能指标失败: {sys_error}")
 
             base_metrics.update(system_metrics)
             return base_metrics
@@ -881,14 +906,14 @@ class EnhancedRiskMonitor:
 
     def _get_market_conditions(self) -> Dict[str, Any]:
         """获取市场条件"""
-        # 这里可以集成实际的市场数据
+        logger.warning("市场条件数据不可用，返回空值。请配置市场数据源以获取真实数据。")
         return {
-            'market_volatility': np.random.uniform(0.1, 0.5),
-            'market_trend': np.random.choice(['bull', 'bear', 'sideways']),
+            'market_volatility': None,
+            'market_trend': 'unknown',
             'economic_indicators': {
-                'gdp_growth': np.random.uniform(-2, 5),
-                'inflation_rate': np.random.uniform(0, 8),
-                'interest_rate': np.random.uniform(0, 10)
+                'gdp_growth': None,
+                'inflation_rate': None,
+                'interest_rate': None
             }
         }
 

@@ -1,13 +1,12 @@
-from loguru import logger
 """
 事件处理器模块
 
 提供事件处理器的基类和实现，支持同步和异步事件处理。
 """
 
-import asyncio
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, List, Optional, Union
+from loguru import logger
 from .types import BaseEvent
 
 
@@ -87,17 +86,8 @@ class AsyncEventHandler(EventHandler):
         Returns:
             处理结果
         """
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # 如果已经在事件循环中，创建任务
-                return asyncio.create_task(self.handle_async(event))
-            else:
-                # 如果没有事件循环，运行新的循环
-                return loop.run_until_complete(self.handle_async(event))
-        except RuntimeError:
-            # 如果没有事件循环，创建新的
-            return asyncio.run(self.handle_async(event))
+        from utils.async_utils import run_async_safe
+        return run_async_safe(self.handle_async(event))
 
 class FunctionEventHandler(EventHandler):
     """

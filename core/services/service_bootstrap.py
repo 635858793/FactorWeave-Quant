@@ -1697,6 +1697,108 @@ class ServiceBootstrap:
             logger.error(f"❌ 分布式服务注册失败: {e}")
             logger.error(traceback.format_exc())
 
+        try:
+            from .bettafish_monitoring_service import BettaFishMonitoringService
+
+            def create_bettafish_monitoring():
+                return BettaFishMonitoringService(event_bus=self.event_bus)
+
+            self.service_container.register_factory(
+                BettaFishMonitoringService,
+                create_bettafish_monitoring,
+                scope=ServiceScope.SINGLETON
+            )
+            logger.info("BettaFish监控服务注册完成")
+        except ImportError as e:
+            logger.warning(f"BettaFish监控服务模块不可用，跳过注册: {e}")
+        except Exception as e:
+            logger.error(f"BettaFish监控服务注册失败: {e}")
+            logger.error(traceback.format_exc())
+
+        try:
+            from core.indicator_service import IndicatorService, get_indicator_service
+
+            def create_indicator_service():
+                return get_indicator_service()
+
+            if not self._is_service_registered(IndicatorService):
+                self.service_container.register_factory(
+                    IndicatorService,
+                    create_indicator_service,
+                    scope=ServiceScope.SINGLETON
+                )
+                logger.info("IndicatorService注册完成(使用全局单例)")
+            else:
+                logger.info("IndicatorService已注册，跳过")
+        except ImportError as e:
+            logger.warning(f"IndicatorService模块不可用，跳过注册: {e}")
+        except Exception as e:
+            logger.error(f"IndicatorService注册失败: {e}")
+            logger.error(traceback.format_exc())
+
+        try:
+            from .performance_service import PerformanceService
+
+            def create_performance_service():
+                return PerformanceService(event_bus=self.event_bus)
+
+            if not self._is_service_registered(PerformanceService):
+                self.service_container.register_factory(
+                    PerformanceService,
+                    create_performance_service,
+                    scope=ServiceScope.SINGLETON
+                )
+                logger.info("PerformanceService注册完成")
+            else:
+                logger.info("PerformanceService已注册，跳过")
+        except ImportError as e:
+            logger.warning(f"PerformanceService模块不可用，跳过注册: {e}")
+        except Exception as e:
+            logger.error(f"PerformanceService注册失败: {e}")
+            logger.error(traceback.format_exc())
+
+        try:
+            from .lifecycle_service import LifecycleService
+
+            def create_lifecycle_service():
+                return LifecycleService(event_bus=self.event_bus)
+
+            if not self._is_service_registered(LifecycleService):
+                self.service_container.register_factory(
+                    LifecycleService,
+                    create_lifecycle_service,
+                    scope=ServiceScope.SINGLETON
+                )
+                logger.info("LifecycleService注册完成")
+            else:
+                logger.info("LifecycleService已注册，跳过")
+        except ImportError as e:
+            logger.warning(f"LifecycleService模块不可用，跳过注册: {e}")
+        except Exception as e:
+            logger.error(f"LifecycleService注册失败: {e}")
+            logger.error(traceback.format_exc())
+
+        try:
+            from .environment_service import EnvironmentService
+
+            def create_environment_service():
+                return EnvironmentService(event_bus=self.event_bus)
+
+            if not self._is_service_registered(EnvironmentService):
+                self.service_container.register_factory(
+                    EnvironmentService,
+                    create_environment_service,
+                    scope=ServiceScope.SINGLETON
+                )
+                logger.info("EnvironmentService注册完成")
+            else:
+                logger.info("EnvironmentService已注册，跳过")
+        except ImportError as e:
+            logger.warning(f"EnvironmentService模块不可用，跳过注册: {e}")
+        except Exception as e:
+            logger.error(f"EnvironmentService注册失败: {e}")
+            logger.error(traceback.format_exc())
+
         # 深度分析框架服务
         try:
             from core.services.deep_analysis_framework import (
@@ -1729,6 +1831,48 @@ class ServiceBootstrap:
             logger.warning(f"深度分析框架模块不可用，跳过注册: {e}")
         except Exception as e:
             logger.error(f"❌ 深度分析框架注册失败: {e}")
+            logger.error(traceback.format_exc())
+
+        try:
+            from core.services.deep_analysis_service import DeepAnalysisService
+
+            def create_deep_analysis_service():
+                return DeepAnalysisService()
+
+            if not self._is_service_registered(DeepAnalysisService):
+                self.service_container.register_factory(
+                    DeepAnalysisService,
+                    create_deep_analysis_service,
+                    scope=ServiceScope.SINGLETON
+                )
+                logger.info("DeepAnalysisService注册完成")
+            else:
+                logger.info("DeepAnalysisService已注册，跳过")
+        except ImportError as e:
+            logger.warning(f"DeepAnalysisService模块不可用，跳过注册: {e}")
+        except Exception as e:
+            logger.error(f"DeepAnalysisService注册失败: {e}")
+            logger.error(traceback.format_exc())
+
+        try:
+            from core.services.plugin_database_service import PluginDatabaseService
+
+            def create_plugin_database_service():
+                return PluginDatabaseService()
+
+            if not self._is_service_registered(PluginDatabaseService):
+                self.service_container.register_factory(
+                    PluginDatabaseService,
+                    create_plugin_database_service,
+                    scope=ServiceScope.SINGLETON
+                )
+                logger.info("PluginDatabaseService注册完成")
+            else:
+                logger.info("PluginDatabaseService已注册，跳过")
+        except ImportError as e:
+            logger.warning(f"PluginDatabaseService模块不可用，跳过注册: {e}")
+        except Exception as e:
+            logger.error(f"PluginDatabaseService注册失败: {e}")
             logger.error(traceback.format_exc())
 
         # 注册5个深度优化功能模块

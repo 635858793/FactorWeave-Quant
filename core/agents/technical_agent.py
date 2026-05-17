@@ -191,44 +191,9 @@ class TechnicalAnalysisAgent(BaseService):
                             context: Dict[str, Any] = None) -> Optional[pd.DataFrame]:
         """获取价格数据"""
         try:
-            # 模拟获取价格数据（实际项目中需要接入真实数据源）
-            # 生成模拟的OHLCV数据
-            dates = pd.date_range(start=datetime.now() - timedelta(days=200), 
-                                end=datetime.now(), freq='D')
-            
-            # 生成模拟价格数据
-            np.random.seed(hash(stock_code) % 2**32)  # 使用股票代码作为随机种子
-            
-            # 基础价格
-            base_price = 50.0
-            prices = []
-            current_price = base_price
-            
-            for i in range(len(dates)):
-                # 生成随机波动
-                change = np.random.normal(0, 0.02)  # 2%标准差
-                current_price *= (1 + change)
-                
-                # 生成OHLC数据
-                high = current_price * (1 + abs(np.random.normal(0, 0.01)))
-                low = current_price * (1 - abs(np.random.normal(0, 0.01)))
-                open_price = current_price * (1 + np.random.normal(0, 0.005))
-                close_price = current_price
-                volume = np.random.randint(1000000, 10000000)
-                
-                prices.append({
-                    'open': open_price,
-                    'high': high,
-                    'low': low,
-                    'close': close_price,
-                    'volume': volume
-                })
-            
-            df = pd.DataFrame(prices, index=dates)
-            
-            logger.debug(f"获取{stock_code}价格数据: {len(df)}个数据点")
-            return df
-            
+            logger.warning(f"价格数据不可用({stock_code})，返回None。请配置数据源以获取真实数据。")
+            return None
+
         except Exception as e:
             logger.error(f"获取价格数据失败: {str(e)}")
             return None

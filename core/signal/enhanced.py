@@ -98,8 +98,13 @@ class EnhancedSignal(BaseSignal):
         self.last_signal = 0      # 上一个信号
         self.market_regime = "neutral"  # 市场状态
         self.volatility = 0.0     # 市场波动率
-        self.ml_model = None      # 机器学习模型
-        self._enhanced_indicator_service = EnhancedIndicatorService()
+        self.ml_model = None
+        try:
+            from core.containers import get_service_container
+            container = get_service_container()
+            self._enhanced_indicator_service = container.resolve(EnhancedIndicatorService)
+        except Exception:
+            self._enhanced_indicator_service = EnhancedIndicatorService()
         
         # 加载机器学习模型
         if self.get_param("enable_ml") and self.get_param("ml_model_path"):

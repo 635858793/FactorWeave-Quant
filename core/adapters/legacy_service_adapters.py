@@ -211,8 +211,7 @@ class LegacyConfigServiceAdapter:
         try:
             container = get_service_container()
             self._service = container.resolve(ConfigService)
-        except:
-            # 回退到基本实现
+        except Exception:
             from ..services.config_service import ConfigService
             self._service = ConfigService()
 

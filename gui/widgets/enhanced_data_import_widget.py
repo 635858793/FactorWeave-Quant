@@ -3050,42 +3050,17 @@ class EnhancedDataImportWidget(QWidget):
                 self.download_service.set_download_strategy(DownloadStrategy.GAP_FILL)
 
                 # 开始下载（使用异步方式，避免阻塞UI）
-                import asyncio
-                try:
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        # 如果事件循环正在运行，创建任务
-                        asyncio.create_task(
-                            self.download_service.download_incremental_data(
-                                symbols=symbols_to_fix,
-                                end_date=datetime.now(),
-                                strategy=DownloadStrategy.GAP_FILL,
-                                skip_weekends=True,
-                                skip_holidays=True
-                            )
-                        )
-                    else:
-                        # 如果事件循环未运行，直接运行
-                        loop.run_until_complete(
-                            self.download_service.download_incremental_data(
-                                symbols=symbols_to_fix,
-                                end_date=datetime.now(),
-                                strategy=DownloadStrategy.GAP_FILL,
-                                skip_weekends=True,
-                                skip_holidays=True
-                            )
-                        )
-                except RuntimeError:
-                    # 没有事件循环，创建新的
-                    asyncio.run(
-                        self.download_service.download_incremental_data(
-                            symbols=symbols_to_fix,
-                            end_date=datetime.now(),
-                            strategy=DownloadStrategy.GAP_FILL,
-                            skip_weekends=True,
-                            skip_holidays=True
-                        )
+                from utils.async_utils import run_async_safe
+
+                run_async_safe(
+                    self.download_service.download_incremental_data(
+                        symbols=symbols_to_fix,
+                        end_date=datetime.now(),
+                        strategy=DownloadStrategy.GAP_FILL,
+                        skip_weekends=True,
+                        skip_holidays=True
                     )
+                )
 
                 self.data_status_info.append("缺口修复任务已启动，请查看进度监控标签页")
             else:
@@ -3137,39 +3112,17 @@ class EnhancedDataImportWidget(QWidget):
                 self.download_service.set_download_strategy(DownloadStrategy.LATEST_ONLY)
 
                 # 开始下载（使用异步方式，避免阻塞UI）
-                import asyncio
-                try:
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        asyncio.create_task(
-                            self.download_service.download_incremental_data(
-                                symbols=[symbol],
-                                end_date=datetime.now(),
-                                strategy=DownloadStrategy.LATEST_ONLY,
-                                skip_weekends=True,
-                                skip_holidays=True
-                            )
-                        )
-                    else:
-                        loop.run_until_complete(
-                            self.download_service.download_incremental_data(
-                                symbols=[symbol],
-                                end_date=datetime.now(),
-                                strategy=DownloadStrategy.LATEST_ONLY,
-                                skip_weekends=True,
-                                skip_holidays=True
-                            )
-                        )
-                except RuntimeError:
-                    asyncio.run(
-                        self.download_service.download_incremental_data(
-                            symbols=[symbol],
-                            end_date=datetime.now(),
-                            strategy=DownloadStrategy.LATEST_ONLY,
-                            skip_weekends=True,
-                            skip_holidays=True
-                        )
+                from utils.async_utils import run_async_safe
+
+                run_async_safe(
+                    self.download_service.download_incremental_data(
+                        symbols=[symbol],
+                        end_date=datetime.now(),
+                        strategy=DownloadStrategy.LATEST_ONLY,
+                        skip_weekends=True,
+                        skip_holidays=True
                     )
+                )
 
                 self.data_status_info.append(f"已启动 {symbol} 的增量更新任务")
             else:

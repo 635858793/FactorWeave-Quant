@@ -1808,9 +1808,8 @@ class ModelTrainingService(BaseService):
                     return float(np.mean(losses))
                 return sum(losses) / len(losses)
 
-            # 未迁移到增量训练的模型，继续使用历史随机损失逻辑以保持兼容
-            import random
-            return random.uniform(0.1, 0.5) * (0.9 ** epoch)
+            logger.warning(f"模型未迁移到增量训练，无法计算真实损失。请迁移模型以获取准确结果。")
+            return None
 
         except Exception as e:
             logger.error(f"训练epoch失败: {e}")

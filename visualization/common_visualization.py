@@ -22,8 +22,8 @@ class CommonVisualization:
         """
         self.style = style or {
             'price_color': 'blue',
-            'buy_color': 'green',
-            'sell_color': 'red',
+            'buy_color': '#FF0000',
+            'sell_color': '#00FF00',
             'grid_alpha': 0.3,
             'buy_marker': '^',
             'sell_marker': 'v',

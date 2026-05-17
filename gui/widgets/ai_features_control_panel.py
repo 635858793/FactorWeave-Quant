@@ -113,8 +113,10 @@ class AIStatusWidget(QWidget):
         """初始化AI服务"""
         if CORE_AVAILABLE:
             try:
-                self.ai_prediction_service = AIPredictionService()
-                logger.info("AI预测服务初始化成功")
+                from core.containers import get_service_container
+                container = get_service_container()
+                self.ai_prediction_service = container.resolve(AIPredictionService)
+                logger.info("从服务容器获取AI预测服务成功")
             except Exception as e:
                 logger.warning(f"AI预测服务初始化失败: {e}")
                 self.ai_prediction_service = None
@@ -630,8 +632,10 @@ class PredictionDisplayWidget(QWidget):
         """初始化AI服务"""
         if CORE_AVAILABLE:
             try:
-                self.ai_prediction_service = AIPredictionService()
-                logger.info("AI预测服务初始化成功")
+                from core.containers import get_service_container
+                container = get_service_container()
+                self.ai_prediction_service = container.resolve(AIPredictionService)
+                logger.info("从服务容器获取AI预测服务成功")
             except Exception as e:
                 logger.warning(f"AI预测服务初始化失败: {e}")
                 self.ai_prediction_service = None
@@ -1365,8 +1369,10 @@ class AIFeaturesControlPanel(QWidget):
         """初始化AI预测服务"""
         if CORE_AVAILABLE:
             try:
-                self.ai_prediction_service = AIPredictionService()
-                logger.info("AI预测服务已初始化")
+                from core.containers import get_service_container
+                container = get_service_container()
+                self.ai_prediction_service = container.resolve(AIPredictionService)
+                logger.info("从服务容器获取AI预测服务成功")
             except Exception as e:
                 logger.warning(f"AI预测服务初始化失败: {e}")
                 self.ai_prediction_service = None

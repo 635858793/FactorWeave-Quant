@@ -34,6 +34,7 @@ logs/*
 *.wal
 *.db
 *.sqlite
+config/.llm_key
 *.sqlite-journal
 .vscode/*
 *.sqlite-wal

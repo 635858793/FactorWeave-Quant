@@ -2324,11 +2324,7 @@ class EnhancedPluginManagerDialog(QDialog):
                 " 自动依赖管理"
             )
 
-            # TODO: 实现真正的插件市场刷新
-            # 1. 连接到插件服务器
-            # 2. 获取可用插件列表
-            # 3. 检查版本更新
-            # 4. 显示在市场界面
+            logger.info("插件市场刷新功能开发中，当前显示为演示界面")
 
         except Exception as e:
             logger.error(f" 刷新插件市场失败: {e}")
@@ -3455,7 +3451,6 @@ class EnhancedPluginManagerDialog(QDialog):
 
     def load_data_source_plugin(self):
         """加载数据源插件"""
-        # TODO: 实现插件加载对话框
         QMessageBox.information(self, "功能开发中", "插件加载功能正在开发中...")
 
     def unload_data_source_plugin(self):
@@ -3465,7 +3460,6 @@ class EnhancedPluginManagerDialog(QDialog):
             QMessageBox.warning(self, "未选择插件", "请先选择要卸载的插件")
             return
 
-        # TODO: 实现插件卸载功能
         QMessageBox.information(self, "功能开发中", "插件卸载功能正在开发中...")
 
     def configure_data_source_plugin(self, source_id):

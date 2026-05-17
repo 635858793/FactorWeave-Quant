@@ -62,9 +62,8 @@ class MainMenuBar(QMenuBar):
 
         except Exception as e:
             logger.info(f"初始化菜单栏失败: {str(e)}")
-            if True:  # 使用Loguru日志
-                logger.error(f"初始化菜单栏失败: {str(e)}")
-                logger.error(traceback.format_exc())
+            logger.error(f"初始化菜单栏失败: {str(e)}")
+            logger.error(traceback.format_exc())
 
     def init_ui(self):
         """初始化菜单栏"""
@@ -135,8 +134,7 @@ class MainMenuBar(QMenuBar):
             # 注意：信号连接已在connect_signals方法中统一处理，这里不再重复连接
 
         except Exception as e:
-            if True:  # 使用Loguru日志
-                logger.error(f"初始化文件菜单失败: {str(e)}")
+            logger.error(f"初始化文件菜单失败: {str(e)}")
 
     def init_edit_menu(self):
         """初始化编辑菜单"""
@@ -166,8 +164,7 @@ class MainMenuBar(QMenuBar):
             # 注意：信号连接已在connect_signals方法中统一处理，这里不再重复连接
 
         except Exception as e:
-            if True:  # 使用Loguru日志
-                logger.error(f"初始化编辑菜单失败: {str(e)}")
+            logger.error(f"初始化编辑菜单失败: {str(e)}")
 
     def init_view_menu(self):
         """初始化视图菜单"""
@@ -212,8 +209,7 @@ class MainMenuBar(QMenuBar):
             self.view_menu.addSeparator()
 
         except Exception as e:
-            if True:  # 使用Loguru日志
-                logger.error(f"初始化视图菜单失败: {str(e)}")
+            logger.error(f"初始化视图菜单失败: {str(e)}")
 
     def init_analysis_menu(self):
         """初始化分析菜单"""
@@ -249,8 +245,7 @@ class MainMenuBar(QMenuBar):
             self.intelligent_model_selection_action.setShortcut("Ctrl+M")
             self.analysis_menu.addAction(self.intelligent_model_selection_action)
         except Exception as e:
-            if True:  # 使用Loguru日志
-                logger.error(f"初始化分析菜单失败: {str(e)}")
+            logger.error(f"初始化分析菜单失败: {str(e)}")
 
     def init_strategy_menu(self):
         """初始化策略菜单"""
@@ -305,8 +300,7 @@ class MainMenuBar(QMenuBar):
             # 注意：信号连接已在connect_signals方法中统一处理，这里不再重复连接
 
         except Exception as e:
-            if True:  # 使用Loguru日志
-                logger.error(f"初始化策略菜单失败: {str(e)}")
+            logger.error(f"初始化策略菜单失败: {str(e)}")
 
     def init_data_menu(self):
         """初始化数据菜单"""
@@ -365,8 +359,7 @@ class MainMenuBar(QMenuBar):
             # 避免重复连接导致方法被调用多次
 
         except Exception as e:
-            if True:  # 使用Loguru日志
-                logger.error(f"初始化数据菜单失败: {str(e)}")
+            logger.error(f"初始化数据菜单失败: {str(e)}")
 
     def init_tools_menu(self):
         """初始化工具菜单"""
@@ -482,8 +475,7 @@ class MainMenuBar(QMenuBar):
             # 注意：信号连接已在connect_signals方法中统一处理，这里不再重复连接
 
         except Exception as e:
-            if True:  # 使用Loguru日志
-                logger.error(f"初始化工具菜单失败: {str(e)}")
+            logger.error(f"初始化工具菜单失败: {str(e)}")
 
     def init_performance_menu(self):
         """初始化性能监控菜单"""
@@ -535,8 +527,7 @@ class MainMenuBar(QMenuBar):
             # 注意：信号连接将在connect_signals方法中统一处理
 
         except Exception as e:
-            if True:  # 使用Loguru日志
-                logger.error(f"初始化性能监控菜单失败: {str(e)}")
+            logger.error(f"初始化性能监控菜单失败: {str(e)}")
 
     def init_advanced_menu(self):
         """初始化高级功能菜单"""
@@ -641,8 +632,7 @@ class MainMenuBar(QMenuBar):
             self.ai_training_menu.addAction(self.prediction_accuracy_action)
 
         except Exception as e:
-            if True:  # 使用Loguru日志
-                logger.error(f"初始化高级功能菜单失败: {str(e)}")
+            logger.error(f"初始化高级功能菜单失败: {str(e)}")
 
     def init_debug_menu(self):
         """初始化调试菜单，添加显示/隐藏日志菜单项"""
@@ -652,8 +642,7 @@ class MainMenuBar(QMenuBar):
             # 信号连接已移至统一的信号连接处理中，避免重复连接
             self.debug_menu.addAction(self.toggle_log_action)
         except Exception as e:
-            if True:  # 使用Loguru日志
-                logger.error(f"初始化调试菜单失败: {str(e)}")
+            logger.error(f"初始化调试菜单失败: {str(e)}")
 
     def init_help_menu(self):
         """初始化帮助菜单"""
@@ -704,8 +693,7 @@ class MainMenuBar(QMenuBar):
             # 注意：信号连接已在connect_signals方法中统一处理，这里不再重复连接
 
         except Exception as e:
-            if True:  # 使用Loguru日志
-                logger.error(f"初始化帮助菜单失败: {str(e)}")
+            logger.error(f"初始化帮助菜单失败: {str(e)}")
 
     def log_message(self, message: str, level: str = "info") -> None:
         """记录日志消息，统一调用主窗口或日志管理器"""
@@ -713,8 +701,7 @@ class MainMenuBar(QMenuBar):
             parent = self.parentWidget()
             if parent and hasattr(parent, 'log_message'):
                 parent.log_message(message, level)
-            elif True:  # 使用Loguru日志
-                # 直接用log_manager
+            else:
                 level = level.upper()
                 if level == "ERROR":
                     logger.error(message)
@@ -724,18 +711,14 @@ class MainMenuBar(QMenuBar):
                     logger.debug(message)
                 else:
                     logger.info(message)
-            else:
-                logger.info(f"[LOG][{level}] {message}")
         except Exception as e:
             logger.info(f"记录日志失败: {str(e)}")
-            if True:  # 使用Loguru日志
-                logger.error(f"记录日志失败: {str(e)}")
-                logger.error(traceback.format_exc())
+            logger.error(f"记录日志失败: {str(e)}")
+            logger.error(traceback.format_exc())
 
     def new_file(self):
         """Create a new file"""
-        # TODO: Implement new file creation
-        pass
+        QMessageBox.information(self, "提示", "新建文件功能开发中，敬请期待。")
 
     def open_file(self):
         """Open a file"""
@@ -748,16 +731,14 @@ class MainMenuBar(QMenuBar):
             )
 
             if file_path:
-                # TODO: Implement file opening
-                pass
+                QMessageBox.information(self, "提示", "文件打开功能开发中，敬请期待。")
 
         except Exception as e:
             QMessageBox.critical(self, "错误", f"打开文件失败: {str(e)}")
 
     def save_file(self):
         """Save current file"""
-        # TODO: Implement file saving
-        pass
+        QMessageBox.information(self, "提示", "文件保存功能开发中，敬请期待。")
 
     def save_file_as(self):
         """Save current file with new name"""
@@ -770,8 +751,7 @@ class MainMenuBar(QMenuBar):
             )
 
             if file_path:
-                # TODO: Implement file saving
-                pass
+                QMessageBox.information(self, "提示", "文件另存为功能开发中，敬请期待。")
 
         except Exception as e:
             QMessageBox.critical(self, "错误", f"保存文件失败: {str(e)}")
@@ -787,8 +767,7 @@ class MainMenuBar(QMenuBar):
             )
 
             if file_path:
-                # TODO: Implement data import
-                pass
+                QMessageBox.information(self, "提示", "数据导入功能开发中，敬请期待。")
 
         except Exception as e:
             QMessageBox.critical(self, "错误", f"导入数据失败: {str(e)}")
@@ -804,41 +783,34 @@ class MainMenuBar(QMenuBar):
             )
 
             if file_path:
-                # TODO: Implement data export
-                pass
+                QMessageBox.information(self, "提示", "数据导出功能开发中，敬请期待。")
 
         except Exception as e:
             QMessageBox.critical(self, "错误", f"导出数据失败: {str(e)}")
 
     def undo(self):
         """Undo last action"""
-        # TODO: Implement undo
-        pass
+        QMessageBox.information(self, "提示", "撤销功能开发中，敬请期待。")
 
     def redo(self):
         """Redo last undone action"""
-        # TODO: Implement redo
-        pass
+        QMessageBox.information(self, "提示", "重做功能开发中，敬请期待。")
 
     def cut(self):
         """Cut selected content"""
-        # TODO: Implement cut
-        pass
+        QMessageBox.information(self, "提示", "剪切功能开发中，敬请期待。")
 
     def copy(self):
         """Copy selected content"""
-        # TODO: Implement copy
-        pass
+        QMessageBox.information(self, "提示", "复制功能开发中，敬请期待。")
 
     def paste(self):
         """Paste content"""
-        # TODO: Implement paste
-        pass
+        QMessageBox.information(self, "提示", "粘贴功能开发中，敬请期待。")
 
     def select_all(self):
         """Select all content"""
-        # TODO: Implement select all
-        pass
+        QMessageBox.information(self, "提示", "全选功能开发中，敬请期待。")
 
     def toggle_fullscreen(self):
         """Toggle fullscreen mode"""
@@ -881,23 +853,19 @@ class MainMenuBar(QMenuBar):
 
     def optimize(self):
         """Optimize parameters"""
-        # TODO: Implement optimization
-        pass
+        QMessageBox.information(self, "提示", "参数优化功能开发中，敬请期待。")
 
     def pattern_recognition(self):
         """Perform pattern recognition"""
-        # TODO: Implement pattern recognition
-        pass
+        QMessageBox.information(self, "提示", "形态识别功能开发中，敬请期待。")
 
     def wave_analysis(self):
         """Perform wave analysis"""
-        # TODO: Implement wave analysis
-        pass
+        QMessageBox.information(self, "提示", "波浪分析功能开发中，敬请期待。")
 
     def risk_analysis(self):
         """Perform risk analysis"""
-        # TODO: Implement risk analysis
-        pass
+        QMessageBox.information(self, "提示", "风险分析功能开发中，敬请期待。")
 
     def show_settings(self):
         """Show settings dialog"""
@@ -906,13 +874,11 @@ class MainMenuBar(QMenuBar):
 
     def show_calculator(self):
         """Show calculator"""
-        # TODO: Implement calculator
-        pass
+        QMessageBox.information(self, "提示", "计算器功能开发中，敬请期待。")
 
     def show_converter(self):
         """Show unit converter"""
-        # TODO: Implement unit converter
-        pass
+        QMessageBox.information(self, "提示", "单位转换器功能开发中，敬请期待。")
 
     def show_system_optimizer(self):
         """Show system optimizer"""
@@ -921,8 +887,7 @@ class MainMenuBar(QMenuBar):
             show_system_optimizer_dialog(self.parent())
         except Exception as e:
             QMessageBox.critical(self.parent(), "错误", f"打开系统优化器失败: {str(e)}")
-            if True:  # 使用Loguru日志
-                logger.error(f"打开系统优化器失败: {str(e)}")
+            logger.error(f"打开系统优化器失败: {str(e)}")
 
     def show_webgpu_status(self):
         """Show WebGPU status dialog"""
@@ -932,13 +897,11 @@ class MainMenuBar(QMenuBar):
             dialog.exec_()
         except Exception as e:
             QMessageBox.critical(self.parent(), "错误", f"打开WebGPU状态对话框失败: {str(e)}")
-            if True:  # 使用Loguru日志
-                logger.error(f"打开WebGPU状态对话框失败: {str(e)}")
+            logger.error(f"打开WebGPU状态对话框失败: {str(e)}")
 
     def show_documentation(self):
         """Show documentation"""
-        # TODO: Implement documentation viewer
-        pass
+        QMessageBox.information(self, "提示", "文档查看器功能开发中，敬请期待。")
 
     def apply_theme(self, theme_manager):
         """根据主题优化菜单栏样式"""
@@ -1131,10 +1094,8 @@ class MainMenuBar(QMenuBar):
                         action.triggered.connect(lambda: None)
 
         except Exception as e:
-            if True:  # 使用Loguru日志
-                logger.error(f"连接菜单信号失败: {str(e)}")
-            else:
-                logger.info(f"连接菜单信号失败: {str(e)}")
+            logger.error(f"连接菜单信号失败: {str(e)}")
+            logger.info(f"连接菜单信号失败: {str(e)}")
 
     # ==================== 插件管理方法 ====================
 
@@ -1155,8 +1116,7 @@ class MainMenuBar(QMenuBar):
                 "错误",
                 f"打开数据源插件管理器失败:\n{str(e)}"
             )
-            if True:  # 使用Loguru日志
-                logger.error(f"打开数据源插件管理器失败: {str(e)}")
+            logger.error(f"打开数据源插件管理器失败: {str(e)}")
 
     def show_plugin_manager(self):
         """显示通用插件管理器"""
@@ -1175,8 +1135,7 @@ class MainMenuBar(QMenuBar):
                 "错误",
                 f"打开插件管理器失败:\n{str(e)}"
             )
-            if True:  # 使用Loguru日志
-                logger.error(f"打开插件管理器失败: {str(e)}")
+            logger.error(f"打开插件管理器失败: {str(e)}")
 
     def show_model_training_dialog(self):
         """显示模型训练管理对话框"""
@@ -1191,8 +1150,7 @@ class MainMenuBar(QMenuBar):
                 "错误",
                 f"打开模型训练管理对话框失败:\n{str(e)}"
             )
-            if True:  # 使用Loguru日志
-                logger.error(f"打开模型训练管理对话框失败: {str(e)}")
+            logger.error(f"打开模型训练管理对话框失败: {str(e)}")
 
     def show_prediction_accuracy_dialog(self):
         """显示预测准确性跟踪对话框"""
@@ -1207,8 +1165,7 @@ class MainMenuBar(QMenuBar):
                 "错误",
                 f"打开预测准确性跟踪对话框失败:\n{str(e)}"
             )
-            if True:  # 使用Loguru日志
-                logger.error(f"打开预测准确性跟踪对话框失败: {str(e)}")
+            logger.error(f"打开预测准确性跟踪对话框失败: {str(e)}")
     
     def show_adaptive_pool_config(self):
         """显示连接池管理对话框并切换到自适应配置Tab"""
@@ -1228,8 +1185,7 @@ class MainMenuBar(QMenuBar):
                 "错误",
                 f"打开连接池管理对话框失败:\n{str(e)}"
             )
-            if True:  # 使用Loguru日志
-                logger.error(f"打开连接池管理对话框失败: {str(e)}")
+            logger.error(f"打开连接池管理对话框失败: {str(e)}")
 
     def show_connection_pool_manager(self):
         """显示统一连接池管理对话框"""
@@ -1244,8 +1200,7 @@ class MainMenuBar(QMenuBar):
                 "错误",
                 f"打开连接池管理对话框失败:\n{str(e)}"
             )
-            if True:  # 使用Loguru日志
-                logger.error(f"打开连接池管理对话框失败: {str(e)}")
+            logger.error(f"打开连接池管理对话框失败: {str(e)}")
 
     def show_distributed_monitor(self):
         """显示分布式节点监控对话框"""
@@ -1296,8 +1251,7 @@ class MainMenuBar(QMenuBar):
                 "错误",
                 f"打开情绪数据插件管理器失败:\n{str(e)}"
             )
-            if True:  # 使用Loguru日志
-                logger.error(f"打开情绪数据插件管理器失败: {str(e)}")
+            logger.error(f"打开情绪数据插件管理器失败: {str(e)}")
 
     def show_plugin_market(self):
         """显示插件市场"""
@@ -1316,8 +1270,7 @@ class MainMenuBar(QMenuBar):
                 "错误",
                 f"打开插件市场失败:\n{str(e)}"
             )
-            if True:  # 使用Loguru日志
-                logger.error(f"打开插件市场失败: {str(e)}")
+            logger.error(f"打开插件市场失败: {str(e)}")
 
     def _create_plugin_dialog(self, target_tab=None):
         """创建插件对话框的通用方法"""

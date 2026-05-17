@@ -155,35 +155,8 @@ class TechnicalAnalysisDialog(QDialog):
 
     def _generate_sample_data(self) -> pd.DataFrame:
         """生成示例数据"""
-        import random
-
-        dates = pd.date_range(start='2023-01-01', end='2024-01-01', freq='D')
-        dates = dates[dates.weekday < 5]  # 只保留工作日
-
-        data = []
-        base_price = 10.0
-
-        for date in dates:
-            change = random.uniform(-0.05, 0.05)
-            base_price *= (1 + change)
-
-            open_price = base_price * random.uniform(0.99, 1.01)
-            high_price = max(open_price, base_price) * \
-                random.uniform(1.0, 1.03)
-            low_price = min(open_price, base_price) * random.uniform(0.97, 1.0)
-            close_price = base_price
-            volume = random.randint(1000000, 10000000)
-
-            data.append({
-                'date': date,
-                'open': round(open_price, 2),
-                'high': round(high_price, 2),
-                'low': round(low_price, 2),
-                'close': round(close_price, 2),
-                'volume': volume
-            })
-
-        return pd.DataFrame(data)
+        logger.warning("技术分析示例数据不可用，返回空DataFrame。请配置数据源以获取真实数据。")
+        return pd.DataFrame(columns=['date', 'open', 'high', 'low', 'close', 'volume'])
 
     def _calculate_indicators(self) -> None:
         """计算技术指标 - 使用统一指标服务"""

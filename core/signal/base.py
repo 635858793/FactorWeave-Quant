@@ -42,7 +42,12 @@ class BaseSignal:
         self.name = name
         self._params = {}
         self._cache = {}
-        self._indicator_service = EnhancedIndicatorService()
+        try:
+            from core.containers import get_service_container
+            container = get_service_container()
+            self._indicator_service = container.resolve(EnhancedIndicatorService)
+        except Exception:
+            self._indicator_service = EnhancedIndicatorService()
         self._data_standardizer = DataStandardizer()
         
         # 信号存储

@@ -122,36 +122,8 @@ class BondService(CacheableService, ConfigurableService):
             return self._generate_mock_kline_data(bond_code, period, count)
     
     def _generate_mock_kline_data(self, bond_code: str, period: str, count: int) -> pd.DataFrame:
-        import numpy as np
-        from datetime import datetime, timedelta
-        
-        bond_info = self.get_bond_info(bond_code)
-        base_price = bond_info.get('price', 100.0) if bond_info else 100.0
-        
-        end_date = datetime.now()
-        dates = [end_date - timedelta(days=i) for i in range(count)]
-        dates.reverse()
-        
-        np.random.seed(hash(bond_code) % 10000)
-        price_changes = np.random.normal(0, 0.002, count)
-        
-        prices = [base_price]
-        for change in price_changes[1:]:
-            prices.append(prices[-1] * (1 + change))
-        
-        data = {
-            'date': [d.strftime('%Y-%m-%d') for d in dates],
-            'open': prices,
-            'high': [p * (1 + abs(np.random.normal(0, 0.001))) for p in prices],
-            'low': [p * (1 - abs(np.random.normal(0, 0.001))) for p in prices],
-            'close': [p * (1 + np.random.normal(0, 0.001)) for p in prices],
-            'volume': np.random.randint(10000, 1000000, count),
-            'amount': np.random.randint(1000000, 100000000, count),
-        }
-        
-        df = pd.DataFrame(data)
-        self.set_to_cache(f"bond_kline_{bond_code}_{period}_{count}", df)
-        return df
+        logger.warning(f"债券K线数据不可用({bond_code})，返回空DataFrame。请配置数据源以获取真实数据。")
+        return pd.DataFrame(columns=['date', 'open', 'high', 'low', 'close', 'volume', 'amount'])
     
     def get_bond_info(self, bond_code: str) -> Optional[Dict[str, Any]]:
         self._ensure_initialized()

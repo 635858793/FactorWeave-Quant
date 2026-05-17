@@ -94,7 +94,8 @@ class AISelectionWorker(QThread):
             if self.use_nlp:
                 # 使用自然语言解析模式
                 if hasattr(self.ai_selection_service, 'select_stocks_with_nlp'):
-                    result = asyncio.run(
+                    from utils.async_utils import run_async_blocking
+                    result = run_async_blocking(
                         self.ai_selection_service.select_stocks_with_nlp(
                             user_input=self.nlp_input,
                             strategy_type=self.strategy

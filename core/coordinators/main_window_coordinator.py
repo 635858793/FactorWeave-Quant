@@ -94,8 +94,17 @@ class MainWindowCoordinator(BaseCoordinator):
         self._main_window.setGeometry(100, 100, 1400, 900)
         self._main_window.setMinimumSize(1200, 800)
 
-        # 连接窗口大小改变信号
-        self._main_window.resize_requested.connect(self._update_responsive_layout)
+        # 连接窗口大小改变信号（防抖处理）
+        self._resize_debounce_timer = QTimer(self._main_window)
+        self._resize_debounce_timer.setSingleShot(True)
+        self._resize_debounce_timer.timeout.connect(self._update_responsive_layout)
+        self._main_window.resize_requested.connect(self._on_resize_requested)
+
+        # 状态栏消息队列
+        self._message_queue: list = []
+        self._message_timer = QTimer(self._main_window)
+        self._message_timer.setSingleShot(True)
+        self._message_timer.timeout.connect(self._process_message_queue)
 
         # UI面板
         self._panels: Dict[str, Any] = {}
@@ -166,16 +175,15 @@ class MainWindowCoordinator(BaseCoordinator):
 
             # 获取资产服务（TET模式）
             try:
-                # 直接设置_asset_service为None，因为AssetService并不存在
-                # 移除相对导入，改为设置默认值
-                self._asset_service = None
-                logger.info("AssetService已设置为None（服务不存在）")
+                from core.services.asset_service import AssetService
+                if self.service_container.is_registered(AssetService):
+                    self._asset_service = self.service_container.resolve(AssetService)
+                    logger.info("AssetService解析成功")
+                else:
+                    self._asset_service = None
+                    logger.warning("AssetService未在容器中注册")
             except Exception as e:
-                logger.warning(f" AssetService初始化失败: {e}")
-                self._asset_service = None
-
-            # 如果AssetService初始化失败，设置为None
-            if not hasattr(self, '_asset_service'):
+                logger.warning(f"AssetService初始化失败: {e}")
                 self._asset_service = None
 
             # 初始化窗口
@@ -348,8 +356,10 @@ class MainWindowCoordinator(BaseCoordinator):
                 parent=self._main_window,
                 coordinator=self
             )
-            # 修复：设置中间面板的合理尺寸限制，避免图表区域过宽
-            # 由于右侧面板已改为 QDockWidget，中间面板需要设置最小宽度以确保图表正常显示
+            # 优化：设置中间面板的合理尺寸限制，确保K线图有足够的显示空间
+            # 设置最小宽度为800像素，确保K线图能够清晰显示
+            middle_panel._root_frame.setMinimumWidth(800)
+            # 设置尺寸策略为扩展，让中间面板能够充分利用可用空间
             middle_panel._root_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
             horizontal_splitter.addWidget(middle_panel._root_frame)
             self._panels['middle'] = middle_panel
@@ -379,8 +389,10 @@ class MainWindowCoordinator(BaseCoordinator):
 
             logger.info("右侧技术分析面板已创建为 QDockWidget")
 
-            # 设置分割器比例（仅包含左侧和中间面板）
-            horizontal_splitter.setSizes([300, 900])
+            # 优化：设置分割器比例，增加中间面板的宽度比例
+            # 使用更大的中间面板宽度，确保K线图有足够的显示空间
+            # 左侧面板250像素，中间面板根据窗口大小自适应（建议至少1200像素）
+            horizontal_splitter.setSizes([250, 1200])
 
             # 创建底部面板（日志面板）
             from core.ui.panels.bottom_panel import BottomPanel
@@ -1241,8 +1253,22 @@ class MainWindowCoordinator(BaseCoordinator):
         return self._panels.get(panel_name)
 
     def show_message(self, message: str, level: str = 'info') -> None:
-        """显示消息"""
-        self._status_label.setText(message)
+        """显示消息（使用队列，每条消息至少显示2秒）"""
+        self._message_queue.append(message)
+        if not self._message_timer.isActive():
+            self._process_message_queue()
+
+    def _process_message_queue(self):
+        """处理消息队列"""
+        if self._message_queue:
+            message = self._message_queue.pop(0)
+            self._status_label.setText(f"  {message}")
+            if self._message_queue:
+                self._message_timer.start(2000)
+
+    def _on_resize_requested(self):
+        """窗口大小改变请求（防抖150ms）"""
+        self._resize_debounce_timer.start(150)
 
     def center_dialog(self, dialog, parent=None, offset_y=50):
         """居中显示对话框"""
@@ -1283,14 +1309,16 @@ class MainWindowCoordinator(BaseCoordinator):
     def _do_dispose(self) -> None:
         """清理资源"""
         try:
-            # 清理UI面板
+            if hasattr(self, '_resize_debounce_timer'):
+                self._resize_debounce_timer.stop()
+            if hasattr(self, '_message_timer'):
+                self._message_timer.stop()
+
             if 'performance_dashboard' in self._panels:
                 self._panels['performance_dashboard'].dispose()
 
-            # 保存窗口配置
             self._save_window_config()
 
-            # 关闭主窗口
             if self._main_window:
                 self._main_window.close()
 
@@ -1419,6 +1447,28 @@ class MainWindowCoordinator(BaseCoordinator):
             logger.error(f"系统设置失败: {e}")
             QMessageBox.critical(self._main_window, "错误",
                                  f"打开系统设置对话框失败: {str(e)}")
+
+    def _on_feature_control(self) -> None:
+        """功能控制面板"""
+        try:
+            from gui.widgets.feature_control_widget import FeatureControlWidget
+            from PyQt5.QtWidgets import QDialog, QVBoxLayout
+
+            dialog = QDialog(self._main_window)
+            dialog.setWindowTitle("功能控制")
+            dialog.resize(900, 700)
+
+            layout = QVBoxLayout(dialog)
+            widget = FeatureControlWidget()
+            layout.addWidget(widget)
+
+            self.center_dialog(dialog)
+            dialog.exec_()
+
+        except Exception as e:
+            logger.error(f"打开功能控制失败: {e}")
+            QMessageBox.critical(self._main_window, "错误",
+                                 f"打开功能控制失败: {str(e)}")
 
     def _on_settings_applied(self, settings: dict) -> None:
         """处理设置应用事件"""

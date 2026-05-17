@@ -1,4 +1,3 @@
-from loguru import logger
 """
 右侧面板 - 修复版
 
@@ -7,6 +6,7 @@ from loguru import logger
 2. 基础功能组件NoneType错误
 3. 数据更新时的组件访问问题
 """
+from loguru import logger
 import time
 import traceback
 from typing import Dict, Any, List, Optional
@@ -62,11 +62,6 @@ except ImportError as e:
         logger.warning(f"无法导入专业分析标签页: {e}")
     PROFESSIONAL_TABS_AVAILABLE = False
     ENHANCED_SENTIMENT_AVAILABLE = False
-
-# 情绪分析标签页已移除（优化性能，避免不必要的网络请求）
-PROFESSIONAL_SENTIMENT_AVAILABLE = False
-
-KLINE_TECHNICAL_AVAILABLE = False
 
 
 # 导入AnalysisToolsPanel
@@ -1853,8 +1848,7 @@ class RightPanel(BasePanel):
             self._update_status("请先选择股票再导出报告")
             return
 
-        self._update_status("报告导出功能开发中...")
-        # TODO: 实现报告导出功能
+        self._update_status("报告导出功能开发中，敬请期待。")
 
     def get_current_stock_info(self) -> Dict[str, str]:
         """获取当前股票信息"""

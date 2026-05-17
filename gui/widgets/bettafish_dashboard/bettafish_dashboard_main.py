@@ -226,8 +226,10 @@ class BettaFishDashboard(QWidget):
         """初始化监控服务"""
         try:
             if not self._monitoring_service:
-                self._monitoring_service = BettaFishMonitoringService()
-                logger.info("BettaFish监控服务初始化成功")
+                from core.containers import get_service_container
+                container = get_service_container()
+                self._monitoring_service = container.resolve(BettaFishMonitoringService)
+                logger.info("从服务容器获取BettaFish监控服务成功")
         except Exception as e:
             logger.error(f"BettaFish监控服务初始化失败: {e}")
 

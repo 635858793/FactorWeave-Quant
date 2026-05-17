@@ -412,20 +412,24 @@ _container_lock = threading.Lock()
 
 
 def get_unified_container() -> UnifiedServiceContainer:
-    """获取全局统一服务容器实例"""
+    from .service_container import get_service_container
+
+    container = get_service_container()
+    if isinstance(container, UnifiedServiceContainer):
+        return container
+
     global _unified_container
 
     if _unified_container is None:
         with _container_lock:
             if _unified_container is None:
                 _unified_container = UnifiedServiceContainer()
-                logger.info("Global UnifiedServiceContainer created")
+                logger.info("Global UnifiedServiceContainer created (fallback)")
 
     return _unified_container
 
 
 def reset_unified_container() -> None:
-    """重置全局统一服务容器（主要用于测试）"""
     global _unified_container
 
     with _container_lock:

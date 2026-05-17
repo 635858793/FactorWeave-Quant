@@ -307,7 +307,7 @@ class RealTimeDataProcessor(QObject):
         
         try:
             # 获取队列大小
-            queue_size = asyncio.run(self.message_queue.qsize())
+            queue_size = self.message_queue.qsize()
             
             # 处理有限数量的消息，避免阻塞UI
             processed_count = 0
@@ -447,7 +447,7 @@ class RealTimeDataProcessor(QObject):
             'messages_received_per_sec': self.stats['messages_received'] / 5,  # 5秒统计
             'messages_processed_per_sec': self.stats['messages_processed'] / 5,
             'avg_processing_time_ms': self.stats['avg_processing_time_ms'],
-            'queue_size': asyncio.run(self.message_queue.qsize()),
+            'queue_size': self.message_queue.qsize(),
             'queue_sizes': {p.name: size for p, size in self.message_queue.get_priority_sizes().items()},
             'bytes_per_sec': self.stats['bytes_received'] / 5,
             'reconnect_count': self.stats['reconnect_count'],

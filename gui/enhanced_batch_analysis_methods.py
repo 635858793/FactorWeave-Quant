@@ -2,8 +2,6 @@ from loguru import logger
 import pandas as pd
 import time
 import threading
-import hashlib
-import random
 import traceback
 from PyQt5.QtWidgets import (QListWidgetItem, QTableWidgetItem, QDialog,
                              QMessageBox, QFileDialog)
@@ -13,6 +11,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # 导入模式管理框架
 from core.trading.trading_mode import ModeContext
 from backtest.unified_backtest_engine import UnifiedBacktestEngine
+from core.services.stock_service import StockService
+from core.services.strategy_service import StrategyService
 
 class EnhancedBatchAnalysisMixin:
     """增强版批量分析功能混入类"""
@@ -22,24 +22,9 @@ class EnhancedBatchAnalysisMixin:
         try:
             self.batch_stock_list.setRowCount(0)
             
-            # 尝试从服务容器获取股票服务
-            stock_service = None
-            if hasattr(self, 'coordinator') and self.coordinator:
-                try:
-                    if hasattr(self.coordinator, 'service_container'):
-                        stock_service = self.coordinator.service_container.resolve('StockService')
-                except Exception as e:
-                    logger.debug(f"获取 StockService 失败：{e}")
-            
-            # 如果服务不可用，使用备用方式
-            if not stock_service:
-                try:
-                    from core.services.stock_service import StockService
-                    stock_service = StockService()
-                    stock_service.initialize()
-                except Exception as e:
-                    logger.warning(f"创建 StockService 失败：{e}")
-                    return
+            from core.containers import get_service_container
+            container = get_service_container()
+            stock_service = container.resolve(StockService)
             
             # 从数据库获取真实股票数据
             stock_list = stock_service.get_stock_list()
@@ -143,24 +128,9 @@ class EnhancedBatchAnalysisMixin:
         try:
             self.batch_strategy_list.setRowCount(0)
             
-            # 尝试从服务容器获取策略服务
-            strategy_service = None
-            if hasattr(self, 'coordinator') and self.coordinator:
-                try:
-                    if hasattr(self.coordinator, 'service_container'):
-                        strategy_service = self.coordinator.service_container.resolve('StrategyService')
-                except Exception as e:
-                    logger.debug(f"获取 StrategyService 失败：{e}")
-            
-            # 如果服务不可用，使用备用方式
-            if not strategy_service:
-                try:
-                    from core.services.strategy_service import StrategyService
-                    strategy_service = StrategyService()
-                    strategy_service.initialize()
-                except Exception as e:
-                    logger.warning(f"创建 StrategyService 失败：{e}")
-                    return
+            from core.containers import get_service_container
+            container = get_service_container()
+            strategy_service = container.resolve(StrategyService)
             
             # 从数据库获取真实策略数据
             all_strategies = strategy_service.get_all_strategy_configs()
@@ -571,27 +541,23 @@ class EnhancedBatchAnalysisMixin:
         return data
 
     def _generate_improved_mock_result(self, stock, strategy):
-        """生成改进的模拟结果"""
-        seed = int(hashlib.md5(f"{stock['code']}{strategy}".encode()).hexdigest()[:8], 16)
-        random.seed(seed)
-
-        if "均线" in strategy or "MACD" in strategy:
-            base_return = random.uniform(-0.1, 0.25)
-        elif "RSI" in strategy or "KDJ" in strategy:
-            base_return = random.uniform(-0.15, 0.2)
-        else:
-            base_return = random.uniform(-0.2, 0.3)
-
+        """返回空结果而非模拟数据，确保用户不会基于虚假数据做决策"""
+        logger.warning(
+            f"批量分析: 无法获取 {stock.get('code', 'unknown')} 的真实数据，"
+            f"策略={strategy}，返回空结果。请检查数据源配置和网络连接。"
+        )
         return {
-            'stock_code': stock['code'],
-            'stock_name': stock['name'],
+            'stock_code': stock.get('code', 'unknown'),
+            'stock_name': stock.get('name', 'unknown'),
             'strategy': strategy,
-            'return_rate': round(base_return, 4),
-            'sharpe_ratio': round(random.uniform(0.5, 2.5), 2),
-            'max_drawdown': round(random.uniform(0.05, abs(base_return) + 0.1), 4),
-            'win_rate': round(random.uniform(0.4, 0.7), 2),
-            'total_trades': random.randint(50, 200),
-            'analysis_time': time.strftime("%Y-%m-%d %H:%M:%S")
+            'return_rate': None,
+            'sharpe_ratio': None,
+            'max_drawdown': None,
+            'win_rate': None,
+            'total_trades': 0,
+            'analysis_time': time.strftime("%Y-%m-%d %H:%M:%S"),
+            'error': '数据不可用，无法执行真实回测分析',
+            'data_unavailable': True
         }
 
     def stop_enhanced_batch_analysis(self):

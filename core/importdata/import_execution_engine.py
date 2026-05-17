@@ -209,15 +209,20 @@ class DataImportExecutionEngine(QObject):
                 self._init_ai_service()
 
     def _ensure_deep_analysis_service(self):
-        """确保深度分析服务已初始化（懒加载，线程安全）"""
         with self._lazy_init_lock:
             if not self._deep_analysis_initialized:
                 try:
-                    self.deep_analysis_service = DeepAnalysisService()
+                    from core.containers import get_service_container
+                    self.deep_analysis_service = get_service_container().resolve(DeepAnalysisService)
                     self._deep_analysis_initialized = True
-                    logger.info("深度分析服务初始化成功")
-                except Exception as e:
-                    logger.warning(f"深度分析服务初始化失败: {e}")
+                    logger.info("深度分析服务初始化成功(容器解析)")
+                except Exception:
+                    try:
+                        self.deep_analysis_service = DeepAnalysisService()
+                        self._deep_analysis_initialized = True
+                        logger.info("深度分析服务初始化成功(后备)")
+                    except Exception as e:
+                        logger.warning(f"深度分析服务初始化失败: {e}")
 
     def _ensure_performance_integrator(self):
         """确保性能集成器已初始化（懒加载，线程安全）"""
@@ -293,7 +298,9 @@ class DataImportExecutionEngine(QObject):
     def _init_ai_service(self):
         """初始化AI预测服务"""
         try:
-            self.ai_prediction_service = AIPredictionService()
+            from core.containers import get_service_container
+            container = get_service_container()
+            self.ai_prediction_service = container.resolve(AIPredictionService)
             self._ai_service_initialized = True
             logger.info("AI预测服务初始化成功")
         except Exception as e:
@@ -4960,24 +4967,11 @@ class DataImportExecutionEngine(QObject):
             if not self.enhanced_risk_monitor:
                 return {}
 
-            # 这里可以实现具体的风险趋势分析逻辑
-            # 暂时返回模拟数据
+            logger.warning("风险趋势数据不可用，返回空数据。请配置风险数据源以获取真实数据。")
             trends = {
-                'market_risk': [
-                    {'date': (datetime.now() - timedelta(days=i)).strftime('%Y-%m-%d'),
-                     'value': np.random.uniform(0.2, 0.8)}
-                    for i in range(days, 0, -1)
-                ],
-                'liquidity_risk': [
-                    {'date': (datetime.now() - timedelta(days=i)).strftime('%Y-%m-%d'),
-                     'value': np.random.uniform(0.1, 0.6)}
-                    for i in range(days, 0, -1)
-                ],
-                'concentration_risk': [
-                    {'date': (datetime.now() - timedelta(days=i)).strftime('%Y-%m-%d'),
-                     'value': np.random.uniform(0.3, 0.7)}
-                    for i in range(days, 0, -1)
-                ]
+                'market_risk': [],
+                'liquidity_risk': [],
+                'concentration_risk': []
             }
 
             return trends

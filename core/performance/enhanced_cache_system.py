@@ -965,14 +965,14 @@ def cached(ttl: Optional[float] = None, key_func: Optional[Callable] = None):
             else:
                 cache_key = f"{func.__module__}.{func.__name__}:{hash((args, tuple(kwargs.items())))}"
 
-            # 尝试从缓存获取
-            cached_result = asyncio.run(cache_system.get(cache_key))
+            from utils.async_utils import run_async_blocking
+
+            cached_result = run_async_blocking(cache_system.get(cache_key))
             if cached_result is not None:
                 return cached_result
 
-            # 执行函数并缓存结果
             result = func(*args, **kwargs)
-            asyncio.run(cache_system.put(cache_key, result, ttl))
+            run_async_blocking(cache_system.put(cache_key, result, ttl))
 
             return result
 

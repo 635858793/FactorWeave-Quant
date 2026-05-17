@@ -66,7 +66,11 @@ class UniPluginDataManager:
         """
         self.plugin_center = PluginCenter(plugin_manager)
         self.tet_engine = TETRouterEngine(data_source_router, tet_pipeline)
-        self.risk_manager = DataQualityRiskManager()
+        try:
+            from core.containers import get_service_container
+            self.risk_manager = get_service_container().resolve(DataQualityRiskManager)
+        except Exception:
+            self.risk_manager = DataQualityRiskManager()
 
         # 保存路由器引用以便注册插件
         self.data_source_router = data_source_router

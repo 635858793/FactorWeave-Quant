@@ -336,14 +336,17 @@ class DataService(BaseService):
             raise
 
     def _initialize_quality_manager(self) -> None:
-        """初始化质量管理器"""
         try:
-            self._quality_manager = DataQualityRiskManager()
-            logger.info("✓ Data Quality Risk Manager initialized")
-
-        except Exception as e:
-            logger.error(f"Failed to initialize quality manager: {e}")
-            raise
+            from core.containers import get_service_container
+            self._quality_manager = get_service_container().resolve(DataQualityRiskManager)
+            logger.info("✓ Data Quality Risk Manager initialized (from container)")
+        except Exception:
+            try:
+                self._quality_manager = DataQualityRiskManager()
+                logger.info("✓ Data Quality Risk Manager initialized (fallback)")
+            except Exception as e:
+                logger.error(f"Failed to initialize quality manager: {e}")
+                raise
 
     def _discover_data_sources(self) -> None:
         """发现和注册数据源"""

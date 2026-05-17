@@ -471,35 +471,30 @@ class EnhancedStrategyManagerDialogV3(QDialog):
                 
     def _update_stat_cards(self):
         """更新统计卡片"""
-        import random
-        
-        total = random.randint(50, 200)
-        running = random.randint(5, 20)
-        configured = random.randint(30, 100)
-        error = random.randint(0, 10)
-        
+        logger.warning("策略统计数据不可用，返回空值。请配置策略数据源以获取真实数据。")
+
         self.total_strategy_card.set_value(
-            str(total),
-            trend_percent=random.uniform(-10, 20),
-            trend_data=[total - random.randint(1, 10) for _ in range(7)]
+            "0",
+            trend_percent=0,
+            trend_data=[0 for _ in range(7)]
         )
         
         self.running_strategy_card.set_value(
-            str(running),
-            trend_percent=random.uniform(-5, 15),
-            trend_data=[running - random.randint(0, 3) for _ in range(7)]
+            "0",
+            trend_percent=0,
+            trend_data=[0 for _ in range(7)]
         )
-        
+
         self.configured_strategy_card.set_value(
-            str(configured),
-            trend_percent=random.uniform(-8, 12),
-            trend_data=[configured - random.randint(1, 8) for _ in range(7)]
+            "0",
+            trend_percent=0,
+            trend_data=[0 for _ in range(7)]
         )
-        
+
         self.error_strategy_card.set_value(
-            str(error),
-            trend_percent=random.uniform(-20, 5),
-            trend_data=[error + random.randint(0, 2) for _ in range(7)]
+            "0",
+            trend_percent=0,
+            trend_data=[0 for _ in range(7)]
         )
         
     def closeEvent(self, event):
