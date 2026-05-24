@@ -185,7 +185,8 @@ class AIStockSelector:
                     batch_size=self.model_params.get('batch_size', 32),
                     validation_split=0.2,
                     callbacks=[early_stopping, reduce_lr],
-                    verbose=0
+                    verbose=0,
+                    shuffle=True
                 )
                 
                 self.is_trained = True

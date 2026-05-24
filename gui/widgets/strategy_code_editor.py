@@ -209,55 +209,39 @@ class AsyncCompletionWorker(QThread):
         """计算补全项 - 在工作线程中执行"""
         completions = []
         prefix_lower = prefix.lower() if prefix else ''
-        
+
         text_before = self._get_text_before_cursor(code, line, column)
-        
+
         if '.' in text_before:
-            module_completions = self._get_module_completions(text_before, prefix)
-            completions.extend(module_completions)
-        
-        for word in self._python_keywords:
-            if not prefix_lower or word.lower().startswith(prefix_lower):
-                if word not in completions:
-                    completions.append(word)
-                    
-        for word in self._python_builtins:
-            if not prefix_lower or word.lower().startswith(prefix_lower):
-                if word not in completions:
-                    completions.append(word)
-                    
-        for word in self._hikyuu_api:
-            if not prefix_lower or word.lower().startswith(prefix_lower):
-                if word not in completions:
-                    completions.append(word)
-                    
-        for word in self._system_strategy_api:
-            if not prefix_lower or word.lower().startswith(prefix_lower):
-                if word not in completions:
-                    completions.append(word)
-                    
-        for word in self._system_service_api:
-            if not prefix_lower or word.lower().startswith(prefix_lower):
-                if word not in completions:
-                    completions.append(word)
-                    
+            completions.extend(self._get_module_completions(text_before, prefix))
+
+        seen = set(completions)
+        is_match = (lambda w: not prefix_lower or w.lower().startswith(prefix_lower))
+        all_sources = (
+            self._python_keywords, self._python_builtins, self._hikyuu_api,
+            self._system_strategy_api, self._system_service_api,
+        )
+        for source in all_sources:
+            items = [w for w in source if is_match(w) and w not in seen]
+            completions.extend(items)
+            seen.update(items)
+
         try:
             import jedi
             script = jedi.Script(code=code)
             jedi_completions = script.complete(line, column)
-            for c in jedi_completions[:20]:
-                if c.name not in completions:
-                    if not prefix_lower or c.name.lower().startswith(prefix_lower):
-                        completions.append(c.name)
+            jedi_items = [c.name for c in jedi_completions[:20]
+                          if c.name not in seen and is_match(c.name)]
+            completions.extend(jedi_items)
+            seen.update(jedi_items)
         except Exception:
             pass
-            
+
         words_in_code = set(re.findall(r'\b[a-zA-Z_][a-zA-Z0-9_]*\b', code))
-        for word in words_in_code:
-            if not prefix_lower or word.lower().startswith(prefix_lower):
-                if word not in completions and len(word) > 2:
-                    completions.append(word)
-        
+        code_items = [w for w in words_in_code
+                      if is_match(w) and w not in seen and len(w) > 2]
+        completions.extend(code_items)
+
         return completions[:50]
         
     def _get_text_before_cursor(self, code: str, line: int, column: int) -> str:
@@ -594,7 +578,7 @@ class MinimapWidget(QWidget):
         if THEME_AVAILABLE:
             try:
                 return get_theme_manager()
-            except:
+            except Exception:
                 pass
         return None
 
@@ -1475,6 +1459,34 @@ class EditorTabWidget(QTabWidget):
         self._apply_theme()
 
 
+SAFE_BUILTINS = {
+    'abs': abs, 'all': all, 'any': any, 'bin': bin, 'bool': bool,
+    'bytearray': bytearray, 'bytes': bytes, 'callable': callable, 'chr': chr,
+    'classmethod': classmethod, 'complex': complex, 'delattr': delattr,
+    'dict': dict, 'dir': dir, 'divmod': divmod, 'enumerate': enumerate,
+    'filter': filter, 'float': float, 'format': format, 'frozenset': frozenset,
+    'getattr': getattr, 'hasattr': hasattr, 'hash': hash, 'hex': hex,
+    'id': id, 'int': int, 'isinstance': isinstance, 'issubclass': issubclass,
+    'iter': iter, 'len': len, 'list': list, 'map': map, 'max': max,
+    'min': min, 'next': next, 'object': object, 'oct': oct, 'ord': ord,
+    'pow': pow, 'print': print, 'property': property, 'range': range,
+    'repr': repr, 'reversed': reversed, 'round': round, 'set': set,
+    'setattr': setattr, 'slice': slice, 'sorted': sorted, 'staticmethod': staticmethod,
+    'str': str, 'sum': sum, 'super': super, 'tuple': tuple, 'type': type,
+    'vars': vars, 'zip': zip, 'True': True, 'False': False, 'None': None,
+    'Exception': Exception, 'ValueError': ValueError, 'TypeError': TypeError,
+    'KeyError': KeyError, 'IndexError': IndexError, 'AttributeError': AttributeError,
+    'ImportError': ImportError, 'RuntimeError': RuntimeError, 'StopIteration': StopIteration,
+}
+
+SAFE_IMPORT_WHITELIST = {
+    'numpy', 'pandas', 'math', 'statistics', 'datetime', 'collections',
+    'itertools', 'functools', 'json', 'csv', 'typing', 'dataclasses',
+    'core.strategy', 'core.strategy.base_strategy', 'core.strategy.strategy_factory',
+    'hikyuu',
+}
+
+
 class StrategyCodeEditor(QWidget):
     """策略代码编辑器 - 重构版"""
 
@@ -1487,6 +1499,7 @@ class StrategyCodeEditor(QWidget):
         self.current_file = None
         self.is_modified = False
         self._open_files = {}
+        self._safe_mode = True
         self._init_theme_manager()
         self.init_ui()
         self._init_code_completion()
@@ -1504,7 +1517,7 @@ class StrategyCodeEditor(QWidget):
         if self.theme_manager:
             try:
                 self.theme_manager.theme_changed.connect(self._on_theme_changed)
-            except:
+            except Exception:
                 pass
 
     def _on_theme_changed(self, theme):
@@ -2025,8 +2038,90 @@ class StrategyCodeEditor(QWidget):
 
     def _run_code(self):
         code = self.code_editor.toPlainText()
-        self.code_executed.emit(code)
-        self._status_label.setText('正在运行代码...')
+        if not code.strip():
+            QMessageBox.warning(self, "警告", "代码为空，无法运行")
+            return
+        if self._safe_mode:
+            result, error = self._safe_execute_code(code)
+            if error:
+                QMessageBox.critical(self, "执行失败", f"代码执行失败:\n{error}")
+                self._status_label.setText(f'执行失败: {error[:50]}')
+            else:
+                self._status_label.setText('代码已在安全沙箱中执行完成')
+        else:
+            self.code_executed.emit(code)
+            self._status_label.setText('正在运行代码...')
+
+    def set_safe_mode(self, enabled: bool = True):
+        self._safe_mode = enabled
+
+    def _safe_execute_code(self, code: str) -> tuple:
+        import sys
+        import threading
+        import importlib
+
+        result = {}
+        error_msg = None
+
+        safe_globals = {
+            '__builtins__': dict(SAFE_BUILTINS),
+            '__name__': '__strategy_sandbox__',
+            '__file__': '<sandbox>',
+        }
+
+        class SandboxImportHook:
+            @staticmethod
+            def find_module(fullname, path=None):
+                if fullname in SAFE_IMPORT_WHITELIST:
+                    return None
+                for allowed in SAFE_IMPORT_WHITELIST:
+                    if fullname.startswith(allowed + '.'):
+                        return None
+                raise ImportError(f"模块 '{fullname}' 不在安全白名单中")
+
+        class SafeDict(dict):
+            def __setitem__(self, key, value):
+                if key == '__builtins__':
+                    raise RuntimeError("不允许修改 __builtins__")
+                super().__setitem__(key, value)
+
+        safe_globals = SafeDict(safe_globals)
+
+        exec_result = {}
+
+        def _exec_in_thread():
+            nonlocal error_msg
+            try:
+                saved_hooks = sys.meta_path[:]
+                sys.meta_path.insert(0, SandboxImportHook())
+                try:
+                    exec(code, safe_globals, safe_globals)
+                finally:
+                    sys.meta_path = saved_hooks
+
+                for name, obj in safe_globals.items():
+                    if name.startswith('_'):
+                        continue
+                    if isinstance(obj, type) and callable(getattr(obj, 'generate_signals', None)):
+                        exec_result['strategy_class'] = name
+                        exec_result['strategy_type'] = obj
+                        break
+            except Exception as e:
+                error_msg = str(e)
+
+        exec_thread = threading.Thread(target=_exec_in_thread, daemon=True)
+        exec_thread.start()
+        exec_thread.join(timeout=30)
+
+        if exec_thread.is_alive():
+            error_msg = "代码执行超时（30秒限制）"
+            logger.warning(f"安全沙箱执行超时")
+
+        if error_msg:
+            return None, error_msg
+
+        logger.info(f"安全沙箱执行成功，发现策略类: {exec_result.get('strategy_class', '无')}")
+        return exec_result, None
 
     def _format_code(self):
         try:

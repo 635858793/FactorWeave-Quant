@@ -1,4 +1,3 @@
-from loguru import logger
 #!/usr/bin/env python3
 """
 策略执行引擎
@@ -14,6 +13,8 @@ from typing import Dict, List, Optional, Any, Union, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 import pandas as pd
+import numpy as np
+from loguru import logger
 
 # 使用系统统一组件
 from core.system_adapters import get_config, get_performance_monitor
@@ -74,6 +75,7 @@ class StrategyEngine:
             'cache_misses': 0
         }
         self._stats_lock = threading.Lock()
+        self._strategy_update_lock = threading.RLock()
 
         self.logger.info(f"策略执行引擎初始化完成: max_workers={self.max_workers}")
 
@@ -147,21 +149,23 @@ class StrategyEngine:
                     return cached_result, execution_info
 
             # 使用策略工厂创建策略实例 - 转移职责到StrategyFactory
-            factory = get_strategy_factory()
-            strategy_instance = factory.create_strategy(strategy_name)
-            if strategy_instance is None:
-                raise ValueError(f"策略不存在或创建失败: {strategy_name}")
+            # 使用RLock保护策略创建与执行，防止热更新时的并发读写
+            with self._strategy_update_lock:
+                factory = get_strategy_factory()
+                strategy_instance = factory.create_strategy(strategy_name)
+                if strategy_instance is None:
+                    raise ValueError(f"策略不存在或创建失败: {strategy_name}")
 
-            # 验证数据
-            required_columns = strategy_instance.get_required_columns()
-            missing_columns = [
-                col for col in required_columns if col not in data.columns]
-            if missing_columns:
-                raise ValueError(f"缺少必需的数据列: {missing_columns}")
+                # 验证数据
+                required_columns = strategy_instance.get_required_columns()
+                missing_columns = [
+                    col for col in required_columns if col not in data.columns]
+                if missing_columns:
+                    raise ValueError(f"缺少必需的数据列: {missing_columns}")
 
-            # 执行策略
-            with self.performance_monitor.measure_time(f"strategy_execution_{strategy_name}"):
-                signals = strategy_instance.generate_signals(data)
+                # 执行策略
+                with self.performance_monitor.measure_time(f"strategy_execution_{strategy_name}"):
+                    signals = strategy_instance.generate_signals(data)
 
             # 验证信号
             if not isinstance(signals, list):
@@ -477,6 +481,41 @@ class StrategyEngine:
             self.logger.error(f"获取策略实例失败 {strategy_name}: {e}")
             return None
 
+    def update_strategy_params(self, strategy_name: str, params: Dict[str, Any]) -> bool:
+        """
+        热更新策略参数（使用RLock保护并发安全）
+
+        Args:
+            strategy_name: 策略名称
+            params: 参数字典
+
+        Returns:
+            bool: 更新是否成功
+        """
+        with self._strategy_update_lock:
+            try:
+                factory = get_strategy_factory()
+                strategy = factory.create_strategy(strategy_name)
+                if strategy is None:
+                    self.logger.warning(f"策略不存在，无法热更新参数: {strategy_name}")
+                    return False
+
+                if hasattr(strategy, 'update_params'):
+                    strategy.update_params(params)
+                elif hasattr(strategy, 'set_params'):
+                    strategy.set_params(params)
+                else:
+                    for key, value in params.items():
+                        if hasattr(strategy, key):
+                            setattr(strategy, key, value)
+
+                self.logger.info(f"策略参数热更新成功: {strategy_name}, params={params}")
+                return True
+
+            except Exception as e:
+                self.logger.error(f"策略参数热更新失败 {strategy_name}: {e}")
+                return False
+
     def shutdown(self, wait: bool = True):
         """
         关闭执行引擎
@@ -505,38 +544,111 @@ class StrategyEngine:
             return str(hash(str(data.shape) + str(list(data.columns))))
 
     def _calculate_performance_metrics(self, signals: List[StrategySignal]) -> Dict[str, Any]:
-        """计算性能指标"""
+        """计算性能指标，字段与PerformanceMetrics数据类对齐"""
         if not signals:
-            return {}
+            return {
+                'total_trades': 0, 'winning_trades': 0, 'losing_trades': 0,
+                'total_return': 0.0, 'annual_return': 0.0,
+                'sharpe_ratio': 0.0, 'max_drawdown': 0.0,
+                'win_rate': 0.0, 'profit_factor': 0.0,
+                'avg_win': 0.0, 'avg_loss': 0.0,
+                'signal_count': 0, 'buy_signals': 0, 'sell_signals': 0,
+            }
 
         try:
             buy_signals = [s for s in signals if s.signal_type.value == 'BUY']
-            sell_signals = [
-                s for s in signals if s.signal_type.value == 'SELL']
+            sell_signals = [s for s in signals if s.signal_type.value == 'SELL']
+            hold_signals = [s for s in signals if s.signal_type.value not in ('BUY', 'SELL')]
+
+            total_trades = len(buy_signals) + len(sell_signals)
+            buy_prices = [s.price for s in buy_signals if s.price > 0]
+            sell_prices = [s.price for s in sell_signals if s.price > 0]
+            buy_confidences = [s.confidence for s in buy_signals]
+            sell_confidences = [s.confidence for s in sell_signals]
+
+            avg_buy_price = np.mean(buy_prices) if buy_prices else 0.0
+            avg_sell_price = np.mean(sell_prices) if sell_prices else 0.0
+            avg_buy_confidence = np.mean(buy_confidences) if buy_confidences else 0.0
+            avg_sell_confidence = np.mean(sell_confidences) if sell_confidences else 0.0
+
+            sorted_signals = sorted(signals, key=lambda s: s.timestamp)
+            buy_queue = []
+            returns = []
+            for s in sorted_signals:
+                if s.signal_type.value == 'BUY' and s.price > 0:
+                    buy_queue.append(s.price)
+                elif s.signal_type.value == 'SELL' and s.price > 0:
+                    if buy_queue:
+                        buy_price = buy_queue.pop(0)
+                        r = (s.price - buy_price) / buy_price
+                        returns.append(r)
+            paired_trades = len(returns)
+
+            winning_trades = sum(1 for r in returns if r > 0)
+            losing_trades = sum(1 for r in returns if r <= 0)
+
+            total_return = sum(returns) if returns else 0.0
+            avg_return = total_return / len(returns) if returns else 0.0
+
+            if returns:
+                avg_win = sum(r for r in returns if r > 0) / winning_trades if winning_trades > 0 else 0.0
+                avg_loss = sum(r for r in returns if r <= 0) / losing_trades if losing_trades > 0 else 0.0
+            else:
+                avg_win = 0.0
+                avg_loss = 0.0
+
+            gross_profit = sum(r for r in returns if r > 0) if returns else 0.0
+            gross_loss = abs(sum(r for r in returns if r <= 0)) if returns else 0.0
+            profit_factor = gross_profit / gross_loss if gross_loss > 0 else (float('inf') if gross_profit > 0 else 0.0)
+
+            win_rate = winning_trades / len(returns) if returns else 0.0
+
+            peak = 0.0
+            cumulative = 0.0
+            max_drawdown = 0.0
+            for r in returns:
+                cumulative += r
+                peak = max(peak, cumulative)
+                drawdown = peak - cumulative
+                max_drawdown = max(max_drawdown, drawdown)
+
+            return_std = float(np.std(returns)) if len(returns) > 1 else 0.0
+            sharpe_ratio = (avg_return / return_std) if return_std > 0 else 0.0
 
             metrics = {
-                'total_signals': len(signals),
+                'total_trades': total_trades,
+                'winning_trades': winning_trades,
+                'losing_trades': losing_trades,
+                'total_return': round(total_return, 6),
+                'annual_return': round(total_return * (252 / max(len(returns), 1)), 6),
+                'sharpe_ratio': round(sharpe_ratio, 4),
+                'max_drawdown': round(max_drawdown, 6),
+                'win_rate': round(win_rate, 4),
+                'profit_factor': round(profit_factor, 4) if profit_factor != float('inf') else -1.0,
+                'avg_win': round(avg_win, 6),
+                'avg_loss': round(avg_loss, 6),
+                'signal_count': len(signals),
                 'buy_signals': len(buy_signals),
                 'sell_signals': len(sell_signals),
-                'average_confidence': sum(s.confidence for s in signals) / len(signals),
-                'max_confidence': max(s.confidence for s in signals),
-                'min_confidence': min(s.confidence for s in signals)
+                'hold_signals': len(hold_signals),
+                'avg_buy_price': round(avg_buy_price, 4),
+                'avg_sell_price': round(avg_sell_price, 4),
+                'avg_buy_confidence': round(avg_buy_confidence, 4),
+                'avg_sell_confidence': round(avg_sell_confidence, 4),
             }
-
-            # 计算价格统计
-            if signals:
-                prices = [s.price for s in signals]
-                metrics.update({
-                    'average_price': sum(prices) / len(prices),
-                    'max_price': max(prices),
-                    'min_price': min(prices)
-                })
 
             return metrics
 
         except Exception as e:
             self.logger.warning(f"计算性能指标失败: {e}")
-            return {}
+            return {
+                'total_trades': len(signals), 'winning_trades': 0, 'losing_trades': 0,
+                'total_return': 0.0, 'annual_return': 0.0,
+                'sharpe_ratio': 0.0, 'max_drawdown': 0.0,
+                'win_rate': 0.0, 'profit_factor': 0.0,
+                'avg_win': 0.0, 'avg_loss': 0.0,
+                'signal_count': len(signals), 'error': str(e),
+            }
 
     def _update_stats(self, result_type: str, execution_time: float = 0.0):
         """更新统计信息"""

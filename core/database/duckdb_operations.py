@@ -9,12 +9,16 @@ DuckDB数据操作接口
 - 事务管理
 - 查询性能监控
 
+注意: update_data 和 delete_data 方法当前无调用方，仅为死代码保留。
+      如后续启用，需确保 where_conditions 使用 Dict[str, Any] 参数化查询格式。
+
 作者: FactorWeave-Quant团队
 版本: 1.0
 """
 
 import time
 import pandas as pd
+import re
 from typing import Dict, Any, Optional, List, Tuple, Union
 from pathlib import Path
 from dataclasses import dataclass
@@ -24,6 +28,16 @@ import json
 
 from .duckdb_manager import DuckDBConnectionManager, get_connection_manager
 from .table_manager import DynamicTableManager, TableType, get_table_manager
+
+
+_SAFE_TABLE_NAME_PATTERN = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
+
+
+def _validate_table_name(table_name: str) -> str:
+    """校验表名，防止SQL注入"""
+    if not _SAFE_TABLE_NAME_PATTERN.match(table_name):
+        raise ValueError(f"非法的表名: '{table_name}'，只允许字母、数字和下划线，且不能以数字开头")
+    return table_name
 
 
 @dataclass
@@ -103,6 +117,8 @@ class DuckDBOperations:
         start_time = time.time()
 
         try:
+            _validate_table_name(table_name)
+
             if data.empty:
                 return InsertResult(
                     success=True,
@@ -262,16 +278,19 @@ class DuckDBOperations:
         start_time = time.time()
 
         try:
+            _validate_table_name(table_name)
+
             with self.connection_manager.get_connection(database_path) as conn:
                 if custom_sql:
-                    # 使用自定义SQL
                     query_sql = custom_sql
+                    query_params = None
                 else:
-                    # 构建查询SQL
-                    query_sql = self._build_query_sql(table_name, query_filter)
+                    query_sql, query_params = self._build_query_sql(table_name, query_filter)
 
-                # 执行查询
-                result_df = conn.execute(query_sql).df()
+                if query_params:
+                    result_df = conn.execute(query_sql, query_params).df()
+                else:
+                    result_df = conn.execute(query_sql).df()
 
                 execution_time = time.time() - start_time
 
@@ -310,25 +329,29 @@ class DuckDBOperations:
                 error_message=str(e)
             )
 
-    def _build_query_sql(self, table_name: str, query_filter: Optional[QueryFilter]) -> str:
-        """构建查询SQL"""
+    def _build_query_sql(self, table_name: str, query_filter: Optional[QueryFilter]) -> tuple:
+        """构建查询SQL，返回(sql, params)元组以支持参数化查询"""
         sql_parts = [f"SELECT * FROM {table_name}"]
         where_conditions = []
+        params = []
 
         if query_filter:
             # 符号过滤
             if query_filter.symbols:
-                symbols_str = "', '".join(query_filter.symbols)
-                where_conditions.append(f"symbol IN ('{symbols_str}')")
+                placeholders = ", ".join(["?"] * len(query_filter.symbols))
+                where_conditions.append(f"symbol IN ({placeholders})")
+                params.extend(query_filter.symbols)
 
             # 日期范围过滤
             if query_filter.start_date:
                 start_date_str = self._format_date(query_filter.start_date)
-                where_conditions.append(f"{query_filter.date_column} >= '{start_date_str}'")
+                where_conditions.append(f"{query_filter.date_column} >= ?")
+                params.append(start_date_str)
 
             if query_filter.end_date:
                 end_date_str = self._format_date(query_filter.end_date)
-                where_conditions.append(f"{query_filter.date_column} <= '{end_date_str}'")
+                where_conditions.append(f"{query_filter.date_column} <= ?")
+                params.append(end_date_str)
 
             # 自定义WHERE条件
             if query_filter.where_conditions:
@@ -338,12 +361,15 @@ class DuckDBOperations:
             if query_filter.additional_filters:
                 for key, value in query_filter.additional_filters.items():
                     if isinstance(value, str):
-                        where_conditions.append(f"{key} = '{value}'")
+                        where_conditions.append(f"{key} = ?")
+                        params.append(value)
                     elif isinstance(value, (int, float)):
-                        where_conditions.append(f"{key} = {value}")
+                        where_conditions.append(f"{key} = ?")
+                        params.append(value)
                     elif isinstance(value, list):
-                        values_str = "', '".join(str(v) for v in value)
-                        where_conditions.append(f"{key} IN ('{values_str}')")
+                        placeholders = ", ".join(["?"] * len(value))
+                        where_conditions.append(f"{key} IN ({placeholders})")
+                        params.extend([str(v) for v in value])
 
         # 添加WHERE子句
         if where_conditions:
@@ -357,7 +383,7 @@ class DuckDBOperations:
         if query_filter and query_filter.limit:
             sql_parts.append(f"LIMIT {query_filter.limit}")
 
-        return " ".join(sql_parts)
+        return " ".join(sql_parts), params
 
     def _format_date(self, date_value: Union[str, datetime, date]) -> str:
         """格式化日期"""
@@ -371,7 +397,7 @@ class DuckDBOperations:
             return str(date_value)
 
     def update_data(self, database_path: str, table_name: str,
-                    update_data: Dict[str, Any], where_conditions: List[str]) -> bool:
+                    update_data: Dict[str, Any], where_conditions: Dict[str, Any]) -> bool:
         """
         更新数据
 
@@ -379,29 +405,32 @@ class DuckDBOperations:
             database_path: 数据库路径
             table_name: 表名
             update_data: 更新数据字典
-            where_conditions: WHERE条件列表
+            where_conditions: WHERE条件字典 (key=column, value=condition_value)
 
         Returns:
             更新是否成功
         """
         try:
-            # 构建UPDATE SQL
+            _validate_table_name(table_name)
+
             set_clauses = []
+            params = []
             for key, value in update_data.items():
-                if isinstance(value, str):
-                    set_clauses.append(f"{key} = '{value}'")
-                elif value is None:
-                    set_clauses.append(f"{key} = NULL")
-                else:
-                    set_clauses.append(f"{key} = {value}")
+                set_clauses.append(f"{key} = ?")
+                params.append(value)
+
+            where_parts = []
+            for key, value in where_conditions.items():
+                where_parts.append(f"{key} = ?")
+                params.append(value)
 
             set_clause = ", ".join(set_clauses)
-            where_clause = " AND ".join(where_conditions)
+            where_clause = " AND ".join(where_parts)
 
             update_sql = f"UPDATE {table_name} SET {set_clause} WHERE {where_clause}"
 
             with self.connection_manager.get_connection(database_path) as conn:
-                result = conn.execute(update_sql)
+                result = conn.execute(update_sql, params)
                 affected_rows = result.fetchall() if hasattr(result, 'fetchall') else 0
 
                 logger.info(f"数据更新完成: {table_name}, 影响 {affected_rows} 行")
@@ -412,24 +441,32 @@ class DuckDBOperations:
             return False
 
     def delete_data(self, database_path: str, table_name: str,
-                    where_conditions: List[str]) -> bool:
+                    where_conditions: Dict[str, Any]) -> bool:
         """
         删除数据
 
         Args:
             database_path: 数据库路径
             table_name: 表名
-            where_conditions: WHERE条件列表
+            where_conditions: WHERE条件字典 (key=column, value=condition_value)
 
         Returns:
             删除是否成功
         """
         try:
-            where_clause = " AND ".join(where_conditions)
+            _validate_table_name(table_name)
+
+            where_parts = []
+            params = []
+            for key, value in where_conditions.items():
+                where_parts.append(f"{key} = ?")
+                params.append(value)
+
+            where_clause = " AND ".join(where_parts)
             delete_sql = f"DELETE FROM {table_name} WHERE {where_clause}"
 
             with self.connection_manager.get_connection(database_path) as conn:
-                result = conn.execute(delete_sql)
+                result = conn.execute(delete_sql, params)
                 affected_rows = result.fetchall() if hasattr(result, 'fetchall') else 0
 
                 logger.info(f"数据删除完成: {table_name}, 影响 {affected_rows} 行")
@@ -484,7 +521,7 @@ class DuckDBOperations:
                 # 尝试获取DataFrame结果
                 try:
                     result_df = result.df()
-                except:
+                except Exception:
                     # 如果不是SELECT语句，创建空DataFrame
                     result_df = pd.DataFrame()
 
@@ -524,6 +561,8 @@ class DuckDBOperations:
             统计信息
         """
         try:
+            _validate_table_name(table_name)
+
             with self.connection_manager.get_connection(database_path) as conn:
                 # 获取行数
                 row_count = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
@@ -565,6 +604,8 @@ class DuckDBOperations:
             优化是否成功
         """
         try:
+            _validate_table_name(table_name)
+
             with self.connection_manager.get_connection(database_path) as conn:
                 # DuckDB的优化操作
                 conn.execute(f"ANALYZE {table_name}")
@@ -649,34 +690,24 @@ class DuckDBOperations:
             查询结果
         """
         try:
-            # 如果有参数，替换占位符
-            if params:
-                # 将?占位符替换为实际值
-                formatted_query = query
-                for i, param in enumerate(params):
-                    # 处理datetime对象，转换为ISO格式字符串并加引号
-                    if isinstance(param, (datetime, pd.Timestamp)):
-                        formatted_query = formatted_query.replace('?', f"'{param.isoformat()}'", 1)
-                    # 处理字符串参数，需要加引号
-                    elif isinstance(param, str):
-                        formatted_query = formatted_query.replace('?', f"'{param}'", 1)
-                    # 处理其他类型，直接转换为字符串
-                    else:
-                        formatted_query = formatted_query.replace('?', str(param), 1)
-            else:
-                formatted_query = query
+            start_time = time.time()
 
-            # 使用query_data执行查询
-            # 从查询中提取表名（简单处理）
-            table_name = self._extract_table_name(formatted_query)
+            with self.connection_manager.get_connection(database_path) as conn:
+                if params:
+                    result = conn.execute(query, params).fetchdf()
+                else:
+                    result = conn.execute(query).fetchdf()
 
-            result = self.query_data(
-                database_path=database_path,
-                table_name=table_name,
-                custom_sql=formatted_query
+            execution_time = time.time() - start_time
+
+            return QueryResult(
+                data=result,
+                execution_time=execution_time,
+                row_count=len(result),
+                columns=list(result.columns) if not result.empty else [],
+                query_sql=query,
+                success=True
             )
-
-            return result
 
         except Exception as e:
             logger.error(f"执行查询失败: {e}")

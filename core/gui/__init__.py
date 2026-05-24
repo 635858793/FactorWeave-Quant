@@ -10,14 +10,11 @@ Core GUI 模块
 版本: 1.0
 """
 
-import logging
+from loguru import logger
 from typing import Dict, Any, Optional, List, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-
-# 基础日志配置
-logger = logging.getLogger(__name__)
 
 
 class UIPerformanceLevel(Enum):

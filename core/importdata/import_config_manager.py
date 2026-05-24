@@ -14,9 +14,10 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass, asdict, field
 from enum import Enum
 from pathlib import Path
-import sqlite3
 import threading
 from concurrent.futures import ThreadPoolExecutor
+
+from ..database.unified_sqlite_access import UnifiedSQLiteAccess
 
 
 
@@ -164,13 +165,14 @@ class ImportTaskConfig:
 
 @dataclass
 class ImportProgress:
-    """导入进度"""
     task_id: str                       # 任务ID
     status: ImportStatus               # 状态
     total_symbols: int = 0             # 总股票数
     processed_symbols: int = 0         # 已处理股票数
     total_records: int = 0             # 总记录数
     imported_records: int = 0          # 已导入记录数
+    skipped_records: int = 0           # 跳过记录数（重复/无需更新）
+    duplicate_count: int = 0           # 重复记录数
     error_count: int = 0               # 错误数量
     start_time: Optional[str] = None   # 开始时间
     end_time: Optional[str] = None     # 结束时间
@@ -240,7 +242,8 @@ class ImportConfigManager:
 
     def _init_database(self):
         """初始化数据库"""
-        with sqlite3.connect(self.db_path) as conn:
+        db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+        with db.get_connection() as conn:
             cursor = conn.cursor()
 
             # 数据源配置表
@@ -280,6 +283,8 @@ class ImportConfigManager:
                     status TEXT NOT NULL,
                     total_records INTEGER,
                     imported_records INTEGER,
+                    skipped_records INTEGER DEFAULT 0,
+                    duplicate_count INTEGER DEFAULT 0,
                     error_count INTEGER,
                     start_time TEXT,
                     end_time TEXT,
@@ -288,11 +293,16 @@ class ImportConfigManager:
                 )
             """)
 
-            conn.commit()
+            for col, col_type in [('skipped_records', 'INTEGER DEFAULT 0'), ('duplicate_count', 'INTEGER DEFAULT 0')]:
+                try:
+                    cursor.execute(f"ALTER TABLE import_history ADD COLUMN {col} {col_type}")
+                except Exception:
+                    pass
 
     def _load_configs(self):
         """加载配置"""
-        with sqlite3.connect(self.db_path) as conn:
+        db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+        with db.get_connection() as conn:
             cursor = conn.cursor()
 
             # 加载数据源配置
@@ -334,22 +344,19 @@ class ImportConfigManager:
         """添加数据源配置"""
         try:
             with self._lock:
-                with sqlite3.connect(self.db_path) as conn:
+                db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+                with db.get_connection() as conn:
                     cursor = conn.cursor()
                     now = datetime.now().isoformat()
 
-                    cursor.execute("""
-                        INSERT OR REPLACE INTO data_sources 
-                        (name, config, created_at, updated_at)
-                        VALUES (?, ?, ?, ?)
-                    """, (
+                    cursor.execute("""INSERT INTO data_sources (name, config, created_at, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(name) DO UPDATE SET config = excluded.config, updated_at = excluded.updated_at""", (
                         config.name,
                         json.dumps(config.to_dict(), ensure_ascii=False),
                         now,
                         now
                     ))
 
-                    conn.commit()
+                    # 数据源配置更新
                     self._data_sources[config.name] = config
 
                 logger.info(f"添加数据源配置: {config.name}")
@@ -382,7 +389,8 @@ class ImportConfigManager:
                         setattr(config, key, value)
 
                 # 保存到数据库
-                with sqlite3.connect(self.db_path) as conn:
+                db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+                with db.get_connection() as conn:
                     cursor = conn.cursor()
                     cursor.execute("""
                         UPDATE data_sources 
@@ -393,7 +401,6 @@ class ImportConfigManager:
                         datetime.now().isoformat(),
                         name
                     ))
-                    conn.commit()
 
                 logger.info(f"更新数据源配置: {name}")
                 return True
@@ -406,10 +413,10 @@ class ImportConfigManager:
         """删除数据源配置"""
         try:
             with self._lock:
-                with sqlite3.connect(self.db_path) as conn:
+                db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+                with db.get_connection() as conn:
                     cursor = conn.cursor()
                     cursor.execute("DELETE FROM data_sources WHERE name = ?", (name,))
-                    conn.commit()
 
                 if name in self._data_sources:
                     del self._data_sources[name]
@@ -426,15 +433,19 @@ class ImportConfigManager:
         """添加导入任务配置"""
         try:
             with self._lock:
-                with sqlite3.connect(self.db_path) as conn:
+                db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+                with db.get_connection() as conn:
                     cursor = conn.cursor()
                     now = datetime.now().isoformat()
                     config.updated_at = now
 
                     cursor.execute("""
-                        INSERT OR REPLACE INTO import_tasks 
+                        INSERT INTO import_tasks 
                         (task_id, config, created_at, updated_at)
                         VALUES (?, ?, ?, ?)
+                        ON CONFLICT(task_id) DO UPDATE SET
+                            config = excluded.config,
+                            updated_at = excluded.updated_at
                     """, (
                         config.task_id,
                         json.dumps(config.to_dict(), ensure_ascii=False),
@@ -442,7 +453,6 @@ class ImportConfigManager:
                         now
                     ))
 
-                    conn.commit()
                     self._tasks[config.task_id] = config
 
                 logger.info(f"添加导入任务: {config.task_id}")
@@ -490,7 +500,8 @@ class ImportConfigManager:
                 task.updated_at = datetime.now().isoformat()
 
                 # 保存到数据库
-                with sqlite3.connect(self.db_path) as conn:
+                db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+                with db.get_connection() as conn:
                     cursor = conn.cursor()
                     cursor.execute("""
                         UPDATE import_tasks 
@@ -501,7 +512,6 @@ class ImportConfigManager:
                         task.updated_at,
                         task_id
                     ))
-                    conn.commit()
 
                 logger.info(f"更新导入任务: {task_id}")
                 return True
@@ -514,11 +524,11 @@ class ImportConfigManager:
         """删除导入任务配置"""
         try:
             with self._lock:
-                with sqlite3.connect(self.db_path) as conn:
+                db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+                with db.get_connection() as conn:
                     cursor = conn.cursor()
                     cursor.execute("DELETE FROM import_tasks WHERE task_id = ?", (task_id,))
                     cursor.execute("DELETE FROM import_progress WHERE task_id = ?", (task_id,))
-                    conn.commit()
 
                 if task_id in self._tasks:
                     del self._tasks[task_id]
@@ -537,21 +547,24 @@ class ImportConfigManager:
         """更新导入进度"""
         try:
             with self._lock:
-                with sqlite3.connect(self.db_path) as conn:
+                db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+                with db.get_connection() as conn:
                     cursor = conn.cursor()
                     now = datetime.now().isoformat()
 
                     cursor.execute("""
-                        INSERT OR REPLACE INTO import_progress 
+                        INSERT INTO import_progress 
                         (task_id, progress, updated_at)
                         VALUES (?, ?, ?)
+                        ON CONFLICT(task_id) DO UPDATE SET
+                            progress = excluded.progress,
+                            updated_at = excluded.updated_at
                     """, (
                         progress.task_id,
                         json.dumps(progress.to_dict(), ensure_ascii=False),
                         now
                     ))
 
-                    conn.commit()
                     self._progress[progress.task_id] = progress
 
                 return True
@@ -574,29 +587,40 @@ class ImportConfigManager:
                 if progress.status == ImportStatus.RUNNING]
 
     def save_history(self, progress: ImportProgress) -> bool:
-        """保存导入历史"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     INSERT INTO import_history 
-                    (task_id, status, total_records, imported_records, error_count,
+                    (task_id, status, total_records, imported_records, skipped_records,
+                     duplicate_count, error_count,
                      start_time, end_time, error_message, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     progress.task_id,
                     progress.status.value,
                     progress.total_records,
                     progress.imported_records,
+                    progress.skipped_records,
+                    progress.duplicate_count,
                     progress.error_count,
                     progress.start_time,
                     progress.end_time,
                     progress.error_message,
                     datetime.now().isoformat()
                 ))
-                conn.commit()
 
-            logger.info(f"保存导入历史: {progress.task_id}")
+            if progress.skipped_records > 0 or progress.duplicate_count > 0:
+                logger.info(
+                    f"保存导入历史: {progress.task_id}, "
+                    f"导入: {progress.imported_records}, "
+                    f"跳过(重复): {progress.skipped_records}, "
+                    f"去重: {progress.duplicate_count}, "
+                    f"错误: {progress.error_count}"
+                )
+            else:
+                logger.info(f"保存导入历史: {progress.task_id}")
             return True
 
         except Exception as e:
@@ -607,7 +631,8 @@ class ImportConfigManager:
                     limit: int = 100) -> List[Dict[str, Any]]:
         """获取导入历史"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 if task_id:
@@ -635,7 +660,8 @@ class ImportConfigManager:
     def get_statistics(self) -> Dict[str, Any]:
         """获取统计信息"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 # 任务统计
@@ -738,7 +764,7 @@ def main():
         plugin_name="wind_plugin",
         priority=1,
         timeout=30,
-        api_key="your_api_key",
+        api_key=os.environ.get("WIND_API_KEY", "your_api_key"),
         base_url="https://api.wind.com.cn"
     )
     manager.add_data_source(wind_config)

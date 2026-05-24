@@ -15,7 +15,6 @@
 """
 
 import sys
-import logging
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from enum import Enum
@@ -45,19 +44,11 @@ from PyQt5.QtGui import (
     QPolygonF, QCursor
 )
 
-try:
-    from core.services.feature_control_service import (
-        FeatureControlService, FeatureConfig, FeatureStatus, FeatureLevel,
-        get_feature_control_service
-    )
-    from loguru import logger
-    CORE_AVAILABLE = True
-except ImportError as e:
-    logger = logging.getLogger(__name__)
-    CORE_AVAILABLE = False
-    logger.warning(f"功能控制服务不可用: {e}")
-
-logger = logger.bind(module=__name__) if hasattr(logger, 'bind') else logging.getLogger(__name__)
+from core.services.feature_control_service import (
+    FeatureControlService, FeatureConfig, FeatureStatus, FeatureLevel,
+    get_feature_control_service
+)
+from loguru import logger
 
 
 class FeatureToggleDelegate(QStyledItemDelegate):

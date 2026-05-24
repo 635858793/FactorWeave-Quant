@@ -18,7 +18,6 @@
 
 import asyncio
 import json
-import sqlite3
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field
 from enum import Enum
@@ -36,6 +35,8 @@ from sklearn.ensemble import IsolationForest, RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import DBSCAN
 import joblib
+
+from core.database.unified_sqlite_access import UnifiedSQLiteAccess
 
 try:
     from core.risk_control import RiskMonitor
@@ -144,6 +145,7 @@ class EnhancedRiskMonitor:
 
         # 智能化组件
         self.anomaly_detector = IsolationForest(contamination=0.1, random_state=42)
+        self._anomaly_detector_fitted = False
         self.risk_classifier = RandomForestClassifier(n_estimators=100, random_state=42)
         self.scaler = StandardScaler()
 
@@ -160,6 +162,10 @@ class EnhancedRiskMonitor:
         self._cache_ttl = 300  # 缓存有效期（秒）
         self.monitoring_thread = None
         self.alert_queue = queue.Queue()
+
+        self._current_positions = []
+
+        self._alert_history = {}
         self.metrics_history = []
         self.alerts_history = []
 
@@ -182,7 +188,8 @@ class EnhancedRiskMonitor:
     def _init_database(self):
         """初始化数据库"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 # 风险指标表
@@ -244,8 +251,7 @@ class EnhancedRiskMonitor:
                     )
                 ''')
 
-                conn.commit()
-                logger.info("风险监控数据库初始化完成")
+            logger.info("风险监控数据库初始化完成")
 
         except Exception as e:
             logger.error(f"初始化数据库失败: {e}")
@@ -275,6 +281,15 @@ class EnhancedRiskMonitor:
             try:
                 # 收集风险指标
                 risk_metrics = self._collect_risk_metrics()
+
+                # 调用 RiskAlertSystem 进行独立的业务风险检查
+                if self.alert_system and risk_metrics:
+                    try:
+                        system_alerts = self.alert_system.check_risk_alerts(risk_metrics)
+                        if system_alerts:
+                            logger.info(f"RiskAlertSystem 检测到 {len(system_alerts)} 个业务风险预警")
+                    except Exception as alert_error:
+                        logger.warning(f"RiskAlertSystem 检查失败: {alert_error}")
 
                 # 智能分析风险
                 analyzed_metrics = self._analyze_risk_metrics(risk_metrics)
@@ -486,8 +501,12 @@ class EnhancedRiskMonitor:
             else:
                 normalized_values = self.scaler.fit_transform(metric_values)
 
-            # 异常检测
-            anomaly_scores = self.anomaly_detector.fit_predict(normalized_values)
+            # 异常检测 - 首次fit_predict训练，后续predict避免重复训练
+            if self._anomaly_detector_fitted:
+                anomaly_scores = self.anomaly_detector.predict(normalized_values)
+            else:
+                anomaly_scores = self.anomaly_detector.fit_predict(normalized_values)
+                self._anomaly_detector_fitted = True
 
             # 收集异常指标
             for i, score in enumerate(anomaly_scores):
@@ -543,7 +562,7 @@ class EnhancedRiskMonitor:
                 return None
 
             # 计算综合风险分数
-            risk_score = sum(self._metric_to_score(m) for m in high_risk_metrics) / len(high_risk_metrics)
+            risk_score = np.mean([self._metric_to_score(m) for m in high_risk_metrics])
 
             # 确定预警级别
             if risk_score > 0.9:
@@ -558,6 +577,9 @@ class EnhancedRiskMonitor:
 
             # 生成建议
             recommendations = self._generate_risk_recommendations(high_risk_metrics)
+
+            for metric in high_risk_metrics:
+                level = self._check_alert_escalation(metric.name, level)
 
             alert = RiskAlert(
                 id=f"high_risk_{int(datetime.now().timestamp())}",
@@ -685,8 +707,8 @@ class EnhancedRiskMonitor:
     def _get_adaptive_threshold(self, metric_name: str, current_value: float) -> float:
         """获取自适应阈值"""
         try:
-            # 从数据库获取阈值
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     "SELECT threshold_value FROM adaptive_thresholds WHERE metric_name = ?",
@@ -805,6 +827,20 @@ class EnhancedRiskMonitor:
 
         return level_scores.get(metric.level, 0.5) * metric.confidence
 
+
+    def _check_alert_escalation(self, metric_name: str, current_level: RiskLevel) -> RiskLevel:
+        risk_order = [RiskLevel.VERY_LOW, RiskLevel.LOW, RiskLevel.MEDIUM,
+                      RiskLevel.HIGH, RiskLevel.CRITICAL, RiskLevel.EXTREME]
+        history = self._alert_history.get(metric_name, [])
+        if len(history) >= 3:
+            last_three = history[-3:]
+            if all(h['level'] == current_level for h in last_three):
+                current_idx = risk_order.index(current_level)
+                escalated_idx = min(current_idx + 1, len(risk_order) - 1)
+                return risk_order[escalated_idx]
+        return current_level
+
+
     def _generate_risk_recommendations(self, metrics: List[RiskMetric]) -> List[str]:
         """生成风险建议"""
         recommendations = []
@@ -872,7 +908,8 @@ class EnhancedRiskMonitor:
     def _save_adaptive_threshold(self, metric_name: str, threshold: float):
         """保存自适应阈值"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     INSERT OR REPLACE INTO adaptive_thresholds 
@@ -880,7 +917,6 @@ class EnhancedRiskMonitor:
                     VALUES (?, ?, ?, ?, 
                         COALESCE((SELECT update_count FROM adaptive_thresholds WHERE metric_name = ?) + 1, 1))
                 ''', (metric_name, threshold, 0.95, datetime.now(), metric_name))
-                conn.commit()
 
         except Exception as e:
             logger.error(f"保存自适应阈值失败: {e}")
@@ -888,7 +924,8 @@ class EnhancedRiskMonitor:
     def _get_metric_history(self, metric_name: str, limit: int = 50) -> List[Dict]:
         """获取指标历史数据"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT value, timestamp FROM risk_metrics 
@@ -920,7 +957,8 @@ class EnhancedRiskMonitor:
     def _save_metrics(self, metrics: List[RiskMetric]):
         """保存风险指标"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 for metric in metrics:
                     cursor.execute('''
@@ -932,7 +970,6 @@ class EnhancedRiskMonitor:
                         metric.category.value, metric.timestamp, metric.confidence,
                         metric.trend, metric.prediction
                     ))
-                conn.commit()
 
         except Exception as e:
             logger.error(f"保存风险指标失败: {e}")
@@ -940,7 +977,20 @@ class EnhancedRiskMonitor:
     def _save_alerts(self, alerts: List[RiskAlert]):
         """保存风险预警"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            for alert in alerts:
+                for metric in alert.metrics:
+                    history = self._alert_history.get(metric.name, [])
+                    history.append({
+                        'level': alert.level,
+                        'timestamp': alert.timestamp,
+                        'metric_value': metric.value
+                    })
+                    if len(history) > 10:
+                        history = history[-10:]
+                    self._alert_history[metric.name] = history
+
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 for alert in alerts:
                     cursor.execute('''
@@ -952,7 +1002,6 @@ class EnhancedRiskMonitor:
                         alert.priority.value, alert.category.value, alert.timestamp,
                         alert.impact_score
                     ))
-                conn.commit()
 
         except Exception as e:
             logger.error(f"保存风险预警失败: {e}")
@@ -960,7 +1009,8 @@ class EnhancedRiskMonitor:
     def get_current_risk_status(self) -> Dict[str, Any]:
         """获取当前风险状态"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 # 获取最新指标
@@ -1001,7 +1051,8 @@ class EnhancedRiskMonitor:
     def get_risk_alerts(self, hours: int = 24, resolved: bool = False) -> List[Dict[str, Any]]:
         """获取风险预警"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT id, title, message, level, priority, category, timestamp, 
@@ -1025,14 +1076,14 @@ class EnhancedRiskMonitor:
     def resolve_alert(self, alert_id: str, resolution_action: str = "") -> bool:
         """解决预警"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     UPDATE risk_alerts 
                     SET resolved = TRUE, resolution_time = ?, resolution_action = ?
                     WHERE id = ?
                 ''', (datetime.now(), resolution_action, alert_id))
-                conn.commit()
 
                 return cursor.rowcount > 0
 
@@ -1043,7 +1094,8 @@ class EnhancedRiskMonitor:
     def get_risk_scenarios(self, limit: int = 10) -> List[Dict[str, Any]]:
         """获取风险情景"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT name, description, probability, impact, risk_score, 
@@ -1130,28 +1182,54 @@ class EnhancedRiskMonitor:
         return min(max_position_ratio * 2, 1.0)
 
     def _calculate_volatility_risk(self, positions: List[Dict]) -> float:
-        """计算波动性风险（简化版）"""
-        # 简化实现：基于持仓数量的方差
+        """计算波动性风险（基于价格收益率）"""
         if len(positions) <= 1:
-            return 1.0  # 单一持仓风险最高
+            return 1.0
 
-        quantities = [pos['quantity'] for pos in positions]
-        mean_quantity = sum(quantities) / len(quantities)
-        variance = sum((q - mean_quantity) ** 2 for q in quantities) / len(quantities)
+        prices = []
+        for pos in positions:
+            if 'price' in pos and 'daily_return' in pos:
+                prices.append(pos['daily_return'])
+            elif 'price' in pos:
+                prices.append(pos['price'])
 
-        # 标准化到0-1范围
-        return min(variance / (mean_quantity ** 2 + 1), 1.0)
+        if len(prices) <= 1:
+            return 1.0
+
+        if any(isinstance(p, (int, float)) and abs(p) < 0.5 for p in prices):
+            returns = np.array(prices, dtype=float)
+        else:
+            price_arr = np.array(prices, dtype=float)
+            returns = np.diff(price_arr) / (price_arr[:-1] + 1e-10)
+            if len(returns) < 2:
+                return 1.0
+
+        volatility = float(np.std(returns, ddof=1))
+        return min(volatility / 0.02, 1.0)
 
     def _calculate_liquidity_risk(self, positions: List[Dict]) -> float:
-        """计算流动性风险（简化版）"""
-        # 简化实现：基于持仓数量，假设数量越大流动性风险越高
+        """计算流动性风险
+
+        基于持仓数据的流动性风险评估：
+        - 优先使用 turnover_ratio 等真实流动性指标
+        - 若无真实指标，使用持仓数量作为代理变量（数量越大流动性风险越高）
+        - 限制：此简化方法不能完全替代真实的市场流动性数据
+        """
         if not positions:
             return 0.0
 
+        for pos in positions:
+            if 'turnover_ratio' in pos:
+                avg_turnover = np.mean([p.get('turnover_ratio', 0) for p in positions])
+                return max(0.0, min(1.0, 1.0 - avg_turnover))
+
+            if 'volume' in pos:
+                avg_volume = np.mean([p.get('volume', 0) for p in positions])
+                if avg_volume > 0:
+                    return max(0.0, min(1.0, 1.0 - avg_volume / 1e8))
+
         total_quantity = sum(pos['quantity'] for pos in positions)
         avg_quantity = total_quantity / len(positions)
-
-        # 简单的流动性风险评分
         return min(avg_quantity / 10000, 1.0)
 
     def _generate_portfolio_recommendations(self, risk_score: float, positions: List[Dict]) -> List[str]:
@@ -1248,6 +1326,132 @@ class EnhancedRiskMonitor:
                 'status': 'ERROR',
                 'error': str(e)
             }
+
+
+    def check_order_risk(self, order) -> Dict[str, Any]:
+        """
+        检查订单风险
+
+        Args:
+            order: 订单对象（Order dataclass 或 dict）
+
+        Returns:
+            Dict with keys: passed (bool), risk_level (str), violations (list),
+            warnings (list), error_code (str)
+        """
+        try:
+            violations = []
+            warnings = []
+
+            if isinstance(order, dict):
+                stock_code = order.get('stock_code', order.get('symbol', ''))
+                price = order.get('order_price', order.get('price', 0))
+                quantity = order.get('order_quantity', order.get('quantity', 0))
+            else:
+                stock_code = getattr(order, 'stock_code', getattr(order, 'symbol', ''))
+                price = getattr(order, 'order_price', getattr(order, 'price', 0))
+                quantity = getattr(order, 'order_quantity', getattr(order, 'quantity', 0))
+
+            if not stock_code:
+                violations.append({
+                    'rule': 'missing_stock_code',
+                    'message': '订单缺少股票代码',
+                    'severity': 'HIGH'
+                })
+
+            if price <= 0:
+                violations.append({
+                    'rule': 'invalid_price',
+                    'message': '订单价格无效: {}'.format(price),
+                    'severity': 'HIGH'
+                })
+
+            if quantity <= 0:
+                violations.append({
+                    'rule': 'invalid_quantity',
+                    'message': '订单数量无效: {}'.format(quantity),
+                    'severity': 'HIGH'
+                })
+
+            if stock_code and quantity > 0 and price > 0:
+                order_value = price * quantity
+                current_positions = self._current_positions or []
+                total_current_value = sum(
+                    p.get('quantity', 0) * p.get('price', 0)
+                    for p in current_positions
+                )
+
+                if total_current_value > 0:
+                    new_position_value = order_value
+                    for p in current_positions:
+                        pos_code = p.get('stock_code', p.get('symbol', ''))
+                        if pos_code == stock_code:
+                            new_position_value = p.get('quantity', 0) * p.get('price', 0) + order_value
+                            break
+
+                    total_after = total_current_value + order_value
+                    concentration_ratio = new_position_value / total_after if total_after > 0 else 1.0
+
+                    MAX_CONCENTRATION = self.config.get('max_concentration', 0.5)
+                    CONCENTRATION_WARN = self.config.get('concentration_warn', 0.3)
+
+                    if concentration_ratio > MAX_CONCENTRATION:
+                        violations.append({
+                            'rule': 'concentration_limit',
+                            'message': '单一持仓集中度过高: {:.1%}'.format(concentration_ratio),
+                            'severity': 'HIGH'
+                        })
+                    elif concentration_ratio > CONCENTRATION_WARN:
+                        warnings.append({
+                            'rule': 'concentration_warning',
+                            'message': '单一持仓集中度较高: {:.1%}'.format(concentration_ratio),
+                            'severity': 'MEDIUM'
+                        })
+
+                MAX_SINGLE_ORDER_VALUE = self.config.get('max_single_order_value', 10_000_000)
+                ORDER_VALUE_WARN = self.config.get('order_value_warn', 5_000_000)
+
+                if order_value > MAX_SINGLE_ORDER_VALUE:
+                    violations.append({
+                        'rule': 'order_value_limit',
+                        'message': '单笔交易金额过大: {:.2f}'.format(order_value),
+                        'severity': 'HIGH'
+                    })
+                elif order_value > ORDER_VALUE_WARN:
+                    warnings.append({
+                        'rule': 'order_value_warning',
+                        'message': '单笔交易金额较大: {:.2f}'.format(order_value),
+                        'severity': 'MEDIUM'
+                    })
+
+            if violations:
+                risk_level = 'HIGH'
+            elif warnings:
+                risk_level = 'MEDIUM'
+            else:
+                risk_level = 'LOW'
+
+            return {
+                'passed': len(violations) == 0,
+                'risk_level': risk_level,
+                'violations': violations,
+                'warnings': warnings,
+                'error_code': ''
+            }
+
+        except Exception as e:
+            logger.critical("增强版风控检查异常，订单被拒绝: {}".format(e))
+            return {
+                'passed': False,
+                'risk_level': 'CRITICAL',
+                'violations': [{'rule': 'internal_error', 'message': str(e), 'severity': 'CRITICAL'}],
+                'warnings': [],
+                'error_code': 'ENHANCED_RISK_CHECK_FAILED'
+            }
+
+    def update_portfolio_positions(self, positions: list) -> None:
+        self._current_positions = positions
+
 
     def cleanup(self):
         """清理资源"""

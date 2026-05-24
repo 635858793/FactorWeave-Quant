@@ -278,10 +278,8 @@ class OKXPlugin(HTTPAPIPluginTemplate):
             if not instruments_info or 'data' not in instruments_info:
                 return pd.DataFrame()
 
-            symbols_data = []
-
-            for inst in instruments_info['data']:
-                symbols_data.append({
+            symbols_data = [
+                {
                     'symbol': inst.get('instId', ''),
                     'base_asset': inst.get('baseCcy', ''),
                     'quote_asset': inst.get('quoteCcy', ''),
@@ -290,7 +288,9 @@ class OKXPlugin(HTTPAPIPluginTemplate):
                     'tick_size': float(inst.get('tickSz', 0)),
                     'lot_size': float(inst.get('lotSz', 0)),
                     'min_size': float(inst.get('minSz', 0)),
-                })
+                }
+                for inst in instruments_info['data']
+            ]
 
             df = pd.DataFrame(symbols_data)
             self.logger.info(f"获取OKX交易对列表成功，共 {len(df)} 个交易对")

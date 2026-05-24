@@ -1,5 +1,6 @@
 import os
 import psutil
+import threading
 from PyQt5.QtCore import QObject, pyqtSignal, QThread
 import pandas as pd
 import numpy as np
@@ -45,6 +46,7 @@ class AsyncDataProcessor(QObject):
         # 动态调整分块大小 - 优化算法
         self._chunk_size = self._calculate_optimal_chunk_size()
         self._cache = {}  # 计算结果缓存
+        self._cache_lock = threading.Lock()
 
         # 性能监控 - 增强统计
         self._processing_stats = {
@@ -255,14 +257,16 @@ class AsyncDataProcessor(QObject):
             cache_key = f"{indicator}_{hash(str(params))}_{len(data)}"
 
             # 检查缓存
-            if cache_key in self._cache:
-                return self._cache[cache_key]
+            with self._cache_lock:
+                if cache_key in self._cache:
+                    return self._cache[cache_key]
 
             # 使用新的指标服务计算
             result = calculate_indicator(indicator, data, params)
 
             # 缓存结果
-            self._cache[cache_key] = result
+            with self._cache_lock:
+                self._cache[cache_key] = result
 
             return result
 
@@ -271,7 +275,7 @@ class AsyncDataProcessor(QObject):
             try:
                 # 这里可以添加传统指标计算的兜底逻辑
                 return self._calculate_traditional_indicator(data, indicator, params)
-            except:
+            except Exception:
                 raise Exception(f"指标 {indicator} 计算失败: {str(e)}")
 
     def _calculate_traditional_indicator(self, data: pd.DataFrame, indicator: str, params: Dict[str, Any]) -> Any:
@@ -335,7 +339,8 @@ class AsyncDataProcessor(QObject):
 
     def clear_cache(self):
         """清除缓存"""
-        self._cache.clear()
+        with self._cache_lock:
+            self._cache.clear()
 
     def _update_performance_stats(self, processing_time: float):
         """更新性能统计信息"""
@@ -381,7 +386,7 @@ class AsyncDataProcessor(QObject):
         """取消所有任务"""
         try:
             # 关闭线程池
-            self.thread_pool.shutdown(wait=False)
+            self.thread_pool.shutdown(wait=True, cancel_futures=True)
 
             # 重新创建线程池
             self.thread_pool = ThreadPoolExecutor(max_workers=self.max_workers)
@@ -394,5 +399,5 @@ class AsyncDataProcessor(QObject):
         try:
             if hasattr(self, 'thread_pool'):
                 self.thread_pool.shutdown(wait=True)
-        except:
+        except Exception:
             pass

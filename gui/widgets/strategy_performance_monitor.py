@@ -93,6 +93,7 @@ class StrategyPerformanceMonitor(QWidget):
         super().__init__(parent)
         self.strategy_id = None
         self.performance_history: List[Dict] = []
+        self._event_subscription_ids: list = []
         self._setup_ui()
         self._setup_event_subscription()
     
@@ -182,8 +183,9 @@ class StrategyPerformanceMonitor(QWidget):
                 elif isinstance(event, StrategyStoppedEvent):
                     self._on_strategy_stopped(event)
 
-            event_bus.subscribe(PerformanceUpdatedEvent, performance_handler, priority=0)
-            event_bus.subscribe(StrategyStoppedEvent, performance_handler, priority=0)
+            sub_id1 = event_bus.subscribe(PerformanceUpdatedEvent, performance_handler, priority=0)
+            sub_id2 = event_bus.subscribe(StrategyStoppedEvent, performance_handler, priority=0)
+            self._event_subscription_ids.extend([sub_id1, sub_id2])
 
             logger.info("性能监控事件处理器已注册")
 
@@ -265,6 +267,16 @@ class StrategyPerformanceMonitor(QWidget):
     def stop_monitoring(self):
         """停止监控"""
         self.strategy_id = None
+        self.performance_history.clear()
+        if hasattr(self, '_event_subscription_ids'):
+            try:
+                from core.events.event_bus import get_event_bus
+                event_bus = get_event_bus()
+                for sub_id in self._event_subscription_ids:
+                    event_bus.unsubscribe(sub_id)
+                self._event_subscription_ids.clear()
+            except Exception as e:
+                self.logger.warning(f"取消事件订阅失败: {e}")
         self.logger.info("停止性能监控")
     
     def get_performance_summary(self) -> Dict[str, Any]:

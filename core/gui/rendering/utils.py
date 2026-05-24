@@ -14,6 +14,7 @@ import os
 import sys
 import json
 import pickle
+from utils.safe_pickle import safe_load
 import traceback
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union, Callable
@@ -241,7 +242,7 @@ def get_system_info() -> SystemInfo:
                         'height': app.desktop().screen().height()
                     }
                 }
-        except:
+        except Exception:
             pass
             
         return SystemInfo(
@@ -470,7 +471,7 @@ class DataValidator:
                 time_series = pd.to_datetime(data[time_column])
                 if not time_series.is_monotonic_increasing:
                     errors.append("时间序列不单调递增")
-            except:
+            except Exception:
                 pass
                 
         return len(errors) == 0, errors
@@ -586,7 +587,7 @@ class FileHandler:
                     return json.load(f)
             elif format.lower() == 'pickle':
                 with open(file_path, 'rb') as f:
-                    return pickle.load(f)
+                    return safe_load(f)
             else:
                 raise ValueError(f"不支持的文件格式: {format}")
                 

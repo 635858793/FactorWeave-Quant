@@ -352,26 +352,6 @@ def safe_import(module_name: str, required: bool = True) -> Optional[Any]:
     """
     return _import_manager._safe_import(module_name, required=required)
 
-# =============================================================================
-# 模块级别的别名（向后兼容）
-# =============================================================================
-
-# Scipy别名
-_scipy_modules = get_scipy()
-scipy_stats = _scipy_modules.get('stats') if _scipy_modules else None
-scipy_optimize = _scipy_modules.get('optimize') if _scipy_modules else None
-
-# Sklearn别名
-_sklearn_modules = get_sklearn()
-sklearn_metrics = _sklearn_modules.get('metrics') if _sklearn_modules else None
-sklearn_model_selection = _sklearn_modules.get(
-    'model_selection') if _sklearn_modules else None
-sklearn_preprocessing = _sklearn_modules.get(
-    'preprocessing') if _sklearn_modules else None
-
-# Talib别名
-talib = get_talib()
-
 # 导出所有公共接口
 __all__ = [
     # 基础库

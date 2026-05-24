@@ -28,7 +28,7 @@ try:
     from .performance.virtualization import VirtualScrollRenderer, DataAggregator, ViewportTracker
     from .timing.websocket_client import RealTimeDataProcessor, MessageQueue, DataCompressor  
     from .cache.intelligent_cache import IntelligentCache, MLPredictor, L1MemoryCache
-    from .ui.responsive_adapter import ResponsiveAdapter, ResponsiveManager, ScreenType, LayoutMode
+    from .ui.responsive_adapter import ResponsiveOptimizer, ResponsiveManager, ScreenType, LayoutMode
     from .ai.smart_chart_recommender import SmartChartRecommender, UserBehavior, ChartContext, ChartType, UserActivityType
     print("深度优化模块导入成功")
 except ImportError as e:

@@ -12,7 +12,7 @@ AI选股风险控制和合规检查服务
 日期: 2025-12-07
 """
 
-import logging
+from loguru import logger
 import json
 import numpy as np
 import pandas as pd
@@ -59,7 +59,7 @@ from ..ai.personalized_stock_selection_engine import (
 # 指标计算服务
 from .enhanced_indicator_service import EnhancedIndicatorService
 
-logger = logging.getLogger(__name__)
+
 
 
 class RiskControlLevel(Enum):
@@ -2184,16 +2184,17 @@ class AISelectionRiskControlService:
             returns_df = pd.DataFrame(returns_data)
             correlation_matrix = returns_df.corr()
             
-            # 检查是否有异常高的相关性
-            high_correlations = []
+            cols = correlation_matrix.columns
+            corr_values = correlation_matrix.values
+            n = len(cols)
             
-            for i in range(len(correlation_matrix.columns)):
-                for j in range(i+1, len(correlation_matrix.columns)):
-                    corr_value = correlation_matrix.iloc[i, j]
-                    if abs(corr_value) > 0.9:  # 相关性超过0.9
-                        stock1 = correlation_matrix.columns[i]
-                        stock2 = correlation_matrix.columns[j]
-                        high_correlations.append(f"{stock1}-{stock2}: {corr_value:.3f}")
+            i_idx, j_idx = np.triu_indices(n, k=1)
+            high_corr_mask = np.abs(corr_values[i_idx, j_idx]) > 0.9
+            
+            high_correlations = []
+            for ii, jj, mask in zip(i_idx, j_idx, high_corr_mask):
+                if mask:
+                    high_correlations.append(f"{cols[ii]}-{cols[jj]}: {corr_values[ii, jj]:.3f}")
             
             detected = len(high_correlations) > len(selected_stocks) * 0.3  # 超过30%的股票对有高相关性
             

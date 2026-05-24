@@ -110,7 +110,7 @@ class IntelligentSignalCalculatorOptimized:
             
             close_hash = hash(tuple(kdata['close'].iloc[max(0, index-20):index+1].values))
             return f"{date_str}_{close_hash}"
-        except:
+        except Exception:
             return str(index)
     
     def _get_cached_trend(self, cache_key: str, kdata: pd.DataFrame, index: int) -> Dict:

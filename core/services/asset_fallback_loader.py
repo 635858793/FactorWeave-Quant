@@ -179,11 +179,13 @@ class AssetFallbackLoader:
                 try:
                     db_path = self.duckdb_manager.get_database_path(asset_type) if hasattr(self.duckdb_manager, 'get_database_path') else None
                     if db_path:
-                        query = f"SELECT * FROM asset_metadata WHERE asset_type = '{asset_type.value}'"
+                        query = "SELECT * FROM asset_metadata WHERE asset_type = ?"
+                        params = [asset_type.value]
                         if market:
-                            query += f" AND market = '{market.upper()}'"
+                            query += " AND market = ?"
+                            params.append(market.upper())
 
-                        result = self._query_duckdb(db_path, query)
+                        result = self._query_duckdb(db_path, query, params)
                         if result is not None and not result.empty:
                             logger.debug(f"从 DuckDB 获取 {asset_type.value} 资产列表: {len(result)} 条")
                             return result
@@ -219,8 +221,8 @@ class AssetFallbackLoader:
                 try:
                     db_path = self.duckdb_manager.get_database_path(asset_type) if hasattr(self.duckdb_manager, 'get_database_path') else None
                     if db_path:
-                        query = f"SELECT * FROM asset_metadata WHERE asset_type = 'index'"
-                        result = self._query_duckdb(db_path, query)
+                        query = "SELECT * FROM asset_metadata WHERE asset_type = ?"
+                        result = self._query_duckdb(db_path, query, ['index'])
                         if result is not None and not result.empty:
                             logger.debug(f"从 DuckDB 获取指数资产列表: {len(result)} 条")
                             return result
@@ -276,8 +278,8 @@ class AssetFallbackLoader:
                 try:
                     db_path = self.duckdb_manager.get_database_path(asset_type) if hasattr(self.duckdb_manager, 'get_database_path') else None
                     if db_path:
-                        query = f"SELECT * FROM asset_metadata WHERE asset_type = 'fund'"
-                        result = self._query_duckdb(db_path, query)
+                        query = "SELECT * FROM asset_metadata WHERE asset_type = ?"
+                        result = self._query_duckdb(db_path, query, ['fund'])
                         if result is not None and not result.empty:
                             logger.debug(f"从 DuckDB 获取基金资产列表: {len(result)} 条")
                             return result
@@ -312,8 +314,8 @@ class AssetFallbackLoader:
                 try:
                     db_path = self.duckdb_manager.get_database_path(asset_type) if hasattr(self.duckdb_manager, 'get_database_path') else None
                     if db_path:
-                        query = f"SELECT * FROM asset_metadata WHERE asset_type = 'bond'"
-                        result = self._query_duckdb(db_path, query)
+                        query = "SELECT * FROM asset_metadata WHERE asset_type = ?"
+                        result = self._query_duckdb(db_path, query, ['bond'])
                         if result is not None and not result.empty:
                             logger.debug(f"从 DuckDB 获取债券资产列表: {len(result)} 条")
                             return result
@@ -346,8 +348,8 @@ class AssetFallbackLoader:
                 try:
                     db_path = self.duckdb_manager.get_database_path(asset_type) if hasattr(self.duckdb_manager, 'get_database_path') else None
                     if db_path:
-                        query = f"SELECT * FROM asset_metadata WHERE asset_type = 'crypto'"
-                        result = self._query_duckdb(db_path, query)
+                        query = "SELECT * FROM asset_metadata WHERE asset_type = ?"
+                        result = self._query_duckdb(db_path, query, ['crypto'])
                         if result is not None and not result.empty:
                             logger.debug(f"从 DuckDB 获取加密货币资产列表: {len(result)} 条")
                             return result
@@ -393,8 +395,8 @@ class AssetFallbackLoader:
                 try:
                     db_path = self.duckdb_manager.get_database_path(asset_type) if hasattr(self.duckdb_manager, 'get_database_path') else None
                     if db_path:
-                        query = f"SELECT * FROM asset_metadata WHERE asset_type = 'futures'"
-                        result = self._query_duckdb(db_path, query)
+                        query = "SELECT * FROM asset_metadata WHERE asset_type = ?"
+                        result = self._query_duckdb(db_path, query, ['futures'])
                         if result is not None and not result.empty:
                             logger.debug(f"从 DuckDB 获取期货资产列表: {len(result)} 条")
                             return result
@@ -442,8 +444,8 @@ class AssetFallbackLoader:
                 try:
                     db_path = self.duckdb_manager.get_database_path(asset_type) if hasattr(self.duckdb_manager, 'get_database_path') else None
                     if db_path:
-                        query = f"SELECT * FROM asset_metadata WHERE asset_type = 'forex'"
-                        result = self._query_duckdb(db_path, query)
+                        query = "SELECT * FROM asset_metadata WHERE asset_type = ?"
+                        result = self._query_duckdb(db_path, query, ['forex'])
                         if result is not None and not result.empty:
                             logger.debug(f"从 DuckDB 获取外汇资产列表: {len(result)} 条")
                             return result
@@ -490,8 +492,8 @@ class AssetFallbackLoader:
                 try:
                     db_path = self.duckdb_manager.get_database_path(asset_type) if hasattr(self.duckdb_manager, 'get_database_path') else None
                     if db_path:
-                        query = f"SELECT * FROM asset_metadata WHERE asset_type = 'option'"
-                        result = self._query_duckdb(db_path, query)
+                        query = "SELECT * FROM asset_metadata WHERE asset_type = ?"
+                        result = self._query_duckdb(db_path, query, ['option'])
                         if result is not None and not result.empty:
                             logger.debug(f"从 DuckDB 获取期权资产列表: {len(result)} 条")
                             return result
@@ -515,8 +517,8 @@ class AssetFallbackLoader:
                 try:
                     db_path = self.duckdb_manager.get_database_path(asset_type) if hasattr(self.duckdb_manager, 'get_database_path') else None
                     if db_path:
-                        query = f"SELECT * FROM asset_metadata WHERE asset_type = 'warrant'"
-                        result = self._query_duckdb(db_path, query)
+                        query = "SELECT * FROM asset_metadata WHERE asset_type = ?"
+                        result = self._query_duckdb(db_path, query, ['warrant'])
                         if result is not None and not result.empty:
                             logger.debug(f"从 DuckDB 获取涡轮资产列表: {len(result)} 条")
                             return result
@@ -540,8 +542,8 @@ class AssetFallbackLoader:
                 try:
                     db_path = self.duckdb_manager.get_database_path(asset_type) if hasattr(self.duckdb_manager, 'get_database_path') else None
                     if db_path:
-                        query = f"SELECT * FROM asset_metadata WHERE asset_type = 'commodity'"
-                        result = self._query_duckdb(db_path, query)
+                        query = "SELECT * FROM asset_metadata WHERE asset_type = ?"
+                        result = self._query_duckdb(db_path, query, ['commodity'])
                         if result is not None and not result.empty:
                             logger.debug(f"从 DuckDB 获取大宗商品资产列表: {len(result)} 条")
                             return result
@@ -630,8 +632,8 @@ class AssetFallbackLoader:
                 try:
                     db_path = self.duckdb_manager.get_database_path(asset_type) if hasattr(self.duckdb_manager, 'get_database_path') else None
                     if db_path:
-                        query = f"SELECT * FROM asset_metadata WHERE asset_type = 'macro'"
-                        result = self._query_duckdb(db_path, query)
+                        query = "SELECT * FROM asset_metadata WHERE asset_type = ?"
+                        result = self._query_duckdb(db_path, query, ['macro'])
                         if result is not None and not result.empty:
                             logger.debug(f"从 DuckDB 获取宏观经济资产列表: {len(result)} 条")
                             return result
@@ -873,14 +875,27 @@ class AssetFallbackLoader:
             logger.warning(f"⚠️ 从 CoinGecko API 获取数据失败: {e}")
             return None
 
-    def _query_duckdb(self, db_path: str, query: str) -> Optional[pd.DataFrame]:
+    def _query_duckdb(self, db_path: str, query: str, params=None) -> Optional[pd.DataFrame]:
         """查询 DuckDB 数据库"""
         try:
-            import duckdb
-            conn = duckdb.connect(db_path)
-            result = conn.execute(query).fetchdf()
-            conn.close()
-            return result
+            if self.duckdb_manager is not None:
+                with self.duckdb_manager.get_connection(db_path) as conn:
+                    if params:
+                        result = conn.execute(query, params).fetchdf()
+                    else:
+                        result = conn.execute(query).fetchdf()
+                    return result
+            else:
+                import duckdb
+                conn = duckdb.connect(db_path)
+                try:
+                    if params:
+                        result = conn.execute(query, params).fetchdf()
+                    else:
+                        result = conn.execute(query).fetchdf()
+                    return result
+                finally:
+                    conn.close()
         except Exception as e:
             logger.warning(f"⚠️ DuckDB 查询失败: {e}")
             return None

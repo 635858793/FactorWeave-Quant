@@ -28,6 +28,7 @@ from ..data.unified_quality_models import (
 )
 from ..data_validator import ValidationLevel, ValidationResult
 from ..importdata.task_status_manager import TaskStatus, get_task_status_manager
+from ..database.unified_sqlite_access import UnifiedSQLiteAccess
 
 # 使用统一模型中的枚举
 QualityCheckType = QualityDimension  # 兼容性别名
@@ -177,7 +178,8 @@ class UnifiedDataQualityMonitor:
         try:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 # 质量报告表
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS quality_reports (
@@ -238,8 +240,6 @@ class UnifiedDataQualityMonitor:
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_reports_timestamp ON quality_reports(check_timestamp)")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_issues_report ON quality_issues(report_id)")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_trends_source_date ON quality_trends(data_source, metric_date)")
-
-                conn.commit()
 
             logger.info(f"质量监控数据库初始化完成: {self.db_path}")
 
@@ -376,9 +376,11 @@ class UnifiedDataQualityMonitor:
                 score=0.0,
                 passed=False,
                 issues=[QualityIssue(
-                    check_type=QualityCheckType.COMPLETENESS,
+                    issue_id=f"empty_data_{int(time.time())}",
+                    dimension=QualityCheckType.COMPLETENESS,
                     level=QualityIssueLevel.CRITICAL,
-                    message="数据集为空"
+                    title="数据集为空",
+                    description="数据集为空，无法进行完整性检查"
                 )]
             )
 
@@ -453,9 +455,11 @@ class UnifiedDataQualityMonitor:
             if invalid_count > 0:
                 invalid_rate = invalid_count / len(data)
                 issues.append(QualityIssue(
-                    check_type=QualityCheckType.ACCURACY,
+                    issue_id=f"non_numeric_{column}_{int(time.time())}",
+                    dimension=QualityCheckType.ACCURACY,
                     level=QualityIssueLevel.HIGH,
-                    message=f"列 '{column}' 包含非数值数据: {invalid_count} 条",
+                    title=f"列 '{column}' 包含非数值数据: {invalid_count} 条",
+                    description=f"列 '{column}' 存在 {invalid_count} 条非数值数据，占比 {invalid_rate:.2%}",
                     field_name=column,
                     record_count=invalid_count,
                     percentage=invalid_rate * 100,
@@ -471,9 +475,11 @@ class UnifiedDataQualityMonitor:
                 out_of_range = ((numeric_data < min_price) | (numeric_data > max_price)).sum()
                 if out_of_range > 0:
                     issues.append(QualityIssue(
-                        check_type=QualityCheckType.ACCURACY,
+                        issue_id=f"price_range_{column}_{int(time.time())}",
+                        dimension=QualityCheckType.ACCURACY,
                         level=QualityIssueLevel.MEDIUM,
-                        message=f"列 '{column}' 价格超出合理范围: {out_of_range} 条",
+                        title=f"列 '{column}' 价格超出合理范围: {out_of_range} 条",
+                        description=f"列 '{column}' 有 {out_of_range} 条记录的价格超出 [{min_price}, {max_price}] 范围",
                         field_name=column,
                         record_count=out_of_range,
                         recommendation="检查价格数据的单位和精度"
@@ -493,17 +499,21 @@ class UnifiedDataQualityMonitor:
 
                 if invalid_high > 0:
                     issues.append(QualityIssue(
-                        check_type=QualityCheckType.ACCURACY,
+                        issue_id=f"invalid_high_{int(time.time())}",
+                        dimension=QualityCheckType.ACCURACY,
                         level=QualityIssueLevel.HIGH,
-                        message=f"最高价逻辑错误: {invalid_high} 条记录",
+                        title=f"最高价逻辑错误: {invalid_high} 条记录",
+                        description=f"发现 {invalid_high} 条记录的最高价低于开盘价或收盘价",
                         recommendation="检查OHLC数据的逻辑一致性"
                     ))
 
                 if invalid_low > 0:
                     issues.append(QualityIssue(
-                        check_type=QualityCheckType.ACCURACY,
+                        issue_id=f"invalid_low_{int(time.time())}",
+                        dimension=QualityCheckType.ACCURACY,
                         level=QualityIssueLevel.HIGH,
-                        message=f"最低价逻辑错误: {invalid_low} 条记录",
+                        title=f"最低价逻辑错误: {invalid_low} 条记录",
+                        description=f"发现 {invalid_low} 条记录的最低价高于开盘价或收盘价",
                         recommendation="检查OHLC数据的逻辑一致性"
                     ))
 
@@ -537,9 +547,11 @@ class UnifiedDataQualityMonitor:
                 unique_patterns = data[column].dropna().astype(str).str.len().nunique()
                 if unique_patterns > len(data) * 0.1:  # 如果长度变化太大
                     issues.append(QualityIssue(
-                        check_type=QualityCheckType.CONSISTENCY,
+                        issue_id=f"format_inconsistent_{column}_{int(time.time())}",
+                        dimension=QualityCheckType.CONSISTENCY,
                         level=QualityIssueLevel.LOW,
-                        message=f"列 '{column}' 格式不一致",
+                        title=f"列 '{column}' 格式不一致",
+                        description=f"列 '{column}' 的数据格式存在不一致，建议标准化",
                         field_name=column,
                         recommendation=f"标准化 '{column}' 列的数据格式"
                     ))
@@ -552,9 +564,11 @@ class UnifiedDataQualityMonitor:
                 # 检查时间序列是否有序
                 if not dates.is_monotonic_increasing:
                     issues.append(QualityIssue(
-                        check_type=QualityCheckType.CONSISTENCY,
+                        issue_id=f"time_not_monotonic_{int(time.time())}",
+                        dimension=QualityCheckType.CONSISTENCY,
                         level=QualityIssueLevel.MEDIUM,
-                        message="时间序列不是单调递增的",
+                        title="时间序列不是单调递增的",
+                        description="时间序列不是单调递增的，可能存在乱序数据",
                         field_name=date_column,
                         recommendation="对数据按时间排序"
                     ))
@@ -564,14 +578,16 @@ class UnifiedDataQualityMonitor:
                     intervals = dates.diff().dropna()
                     if intervals.nunique() > len(intervals) * 0.1:
                         issues.append(QualityIssue(
-                            check_type=QualityCheckType.CONSISTENCY,
+                            issue_id=f"time_interval_inconsistent_{int(time.time())}",
+                            dimension=QualityCheckType.CONSISTENCY,
                             level=QualityIssueLevel.LOW,
-                            message="时间间隔不一致",
+                            title="时间间隔不一致",
+                            description="数据的时间间隔不一致，可能影响时间序列分析",
                             field_name=date_column,
                             recommendation="检查数据采集频率的一致性"
                         ))
-            except:
-                pass
+            except Exception as e:
+                logger.debug(f"日期一致性检查失败: {e}")
 
         # 计算一致性得分
         if issues:
@@ -627,9 +643,11 @@ class UnifiedDataQualityMonitor:
                 if delay_minutes > threshold_minutes:
                     level = QualityIssueLevel.HIGH if delay_minutes > threshold_minutes * 2 else QualityIssueLevel.MEDIUM
                     issues.append(QualityIssue(
-                        check_type=QualityCheckType.TIMELINESS,
+                        issue_id=f"data_delay_{int(time.time())}",
+                        dimension=QualityCheckType.TIMELINESS,
                         level=level,
-                        message=f"数据延迟 {delay_minutes:.1f} 分钟",
+                        title=f"数据延迟 {delay_minutes:.1f} 分钟",
+                        description=f"最新数据延迟 {delay_minutes:.1f} 分钟，超过阈值 {threshold_minutes} 分钟",
                         field_name=time_column,
                         recommendation="检查数据更新频率和采集流程"
                     ))
@@ -638,9 +656,11 @@ class UnifiedDataQualityMonitor:
 
         except Exception as e:
             issues.append(QualityIssue(
-                check_type=QualityCheckType.TIMELINESS,
+                issue_id=f"time_format_error_{int(time.time())}",
+                dimension=QualityCheckType.TIMELINESS,
                 level=QualityIssueLevel.MEDIUM,
-                message=f"时间格式解析失败: {str(e)}",
+                title=f"时间格式解析失败: {str(e)}",
+                description=f"时间列 '{time_column}' 格式解析失败: {str(e)}",
                 field_name=time_column,
                 recommendation="检查时间格式的标准化"
             ))
@@ -674,9 +694,11 @@ class UnifiedDataQualityMonitor:
                 inf_count = np.isinf(column_data).sum()
                 if inf_count > 0:
                     issues.append(QualityIssue(
-                        check_type=QualityCheckType.VALIDITY,
+                        issue_id=f"inf_value_{column}_{int(time.time())}",
+                        dimension=QualityCheckType.VALIDITY,
                         level=QualityIssueLevel.HIGH,
-                        message=f"列 '{column}' 包含无穷大值: {inf_count} 条",
+                        title=f"列 '{column}' 包含无穷大值: {inf_count} 条",
+                        description=f"列 '{column}' 包含 {inf_count} 条无穷大值，数据不可用",
                         field_name=column,
                         record_count=inf_count,
                         recommendation=f"处理 '{column}' 列的无穷大值"
@@ -718,9 +740,11 @@ class UnifiedDataQualityMonitor:
         if duplicate_count > 0:
             level = QualityIssueLevel.HIGH if duplicate_rate > 0.05 else QualityIssueLevel.MEDIUM
             issues.append(QualityIssue(
-                check_type=QualityCheckType.UNIQUENESS,
+                issue_id=f"duplicate_records_{int(time.time())}",
+                dimension=QualityCheckType.UNIQUENESS,
                 level=level,
-                message=f"发现重复记录: {duplicate_count} 条 ({duplicate_rate:.2%})",
+                title=f"发现重复记录: {duplicate_count} 条 ({duplicate_rate:.2%})",
+                description=f"数据中存在 {duplicate_count} 条重复记录，比例 {duplicate_rate:.2%}",
                 record_count=duplicate_count,
                 percentage=duplicate_rate * 100,
                 recommendation="去除或合并重复记录"
@@ -736,9 +760,11 @@ class UnifiedDataQualityMonitor:
                 if unique_count < total_count:
                     duplicate_keys = total_count - unique_count
                     issues.append(QualityIssue(
-                        check_type=QualityCheckType.UNIQUENESS,
+                        issue_id=f"key_duplicate_{column}_{int(time.time())}",
+                        dimension=QualityCheckType.UNIQUENESS,
                         level=QualityIssueLevel.HIGH,
-                        message=f"关键字段 '{column}' 存在重复: {duplicate_keys} 条",
+                        title=f"关键字段 '{column}' 存在重复: {duplicate_keys} 条",
+                        description=f"关键字段 '{column}' 应有唯一值，但发现 {duplicate_keys} 条重复",
                         field_name=column,
                         record_count=duplicate_keys,
                         recommendation=f"确保 '{column}' 字段的唯一性"
@@ -757,26 +783,123 @@ class UnifiedDataQualityMonitor:
 
     def _check_integrity(self, data: pd.DataFrame, rules: Dict[str, Any],
                          data_type: str) -> QualityCheckResult:
-        """检查数据完整性（引用完整性等）"""
+        """检查数据完整性（引用完整性、结构完整性和业务规则完整性）"""
         issues = []
         details = {}
-        integrity_score = 1.0
+        integrity_checks = []
 
-        # 检查外键完整性（如果定义了外键关系）
+        required_columns = rules.get('required_columns', [])
+        available_columns = [col for col in required_columns if col in data.columns]
+        if required_columns:
+            column_ratio = len(available_columns) / len(required_columns)
+            integrity_checks.append(column_ratio)
+            details['column_integrity'] = column_ratio
+            if column_ratio < 1.0:
+                missing = set(required_columns) - set(available_columns)
+                issues.append(QualityIssue(
+                    issue_id=f"integrity_missing_cols_{int(time.time())}",
+                    dimension=QualityCheckType.INTEGRITY,
+                    level=QualityIssueLevel.HIGH if column_ratio < 0.8 else QualityIssueLevel.MEDIUM,
+                    title=f"数据结构不完整: 缺少 {len(missing)} 个字段",
+                    description=f"缺少必需字段: {', '.join(missing)}",
+                    recommendation="检查数据源字段映射配置"
+                ))
+        else:
+            integrity_checks.append(1.0)
+
         foreign_keys = rules.get('foreign_keys', {})
+        fk_checks = []
         for fk_column, reference_info in foreign_keys.items():
             if fk_column in data.columns:
-                # 这里可以添加外键完整性检查逻辑
-                pass
+                ref_data = reference_info.get('data')
+                ref_column = reference_info.get('column')
+                if ref_data is not None and ref_column is not None:
+                    valid_values = set(ref_data[ref_column].dropna().unique())
+                    actual_values = set(data[fk_column].dropna().unique())
+                    if valid_values:
+                        invalid_refs = actual_values - valid_values
+                        if actual_values and valid_values:
+                            fk_integrity = 1.0 - (len(invalid_refs) / len(actual_values))
+                            fk_checks.append(fk_integrity)
+                            if invalid_refs:
+                                issues.append(QualityIssue(
+                                    issue_id=f"integrity_fk_{fk_column}_{int(time.time())}",
+                                    dimension=QualityCheckType.INTEGRITY,
+                                    level=QualityIssueLevel.HIGH,
+                                    title=f"外键引用完整性违反: 列 '{fk_column}'",
+                                    description=f"列 '{fk_column}' 存在 {len(invalid_refs)} 个值未在引用表中找到",
+                                    field_name=fk_column,
+                                    record_count=len(invalid_refs),
+                                    recommendation=f"验证 '{fk_column}' 列的引用数据完整性"
+                                ))
+        if fk_checks:
+            integrity_checks.append(np.mean(fk_checks))
+        details['foreign_key_checks'] = fk_checks
 
-        # 检查业务规则完整性
         business_rules = rules.get('business_rules', [])
+        rule_checks = []
         for rule in business_rules:
-            # 这里可以添加业务规则检查逻辑
-            pass
+            rule_name = rule.get('name', 'unknown_rule')
+            rule_expr = rule.get('expression')
+            if rule_expr and callable(rule_expr):
+                try:
+                    rule_result = rule_expr(data)
+                    if isinstance(rule_result, bool):
+                        rule_score = 1.0 if rule_result else 0.0
+                    elif isinstance(rule_result, float):
+                        rule_score = max(0.0, min(1.0, rule_result))
+                    else:
+                        rule_score = 1.0
+                    rule_checks.append(rule_score)
+                    if rule_score < 1.0:
+                        issues.append(QualityIssue(
+                            issue_id=f"integrity_rule_{rule_name}_{int(time.time())}",
+                            dimension=QualityCheckType.INTEGRITY,
+                            level=QualityIssueLevel.MEDIUM if rule_score > 0.5 else QualityIssueLevel.HIGH,
+                            title=f"业务规则违反: {rule_name}",
+                            description=f"业务规则 '{rule_name}' 检查未通过，评分 {rule_score:.2f}",
+                            recommendation=rule.get('recommendation', f"检查业务规则 '{rule_name}' 的完整性")
+                        ))
+                except Exception as e:
+                    rule_checks.append(0.0)
+                    issues.append(QualityIssue(
+                        issue_id=f"integrity_rule_error_{rule_name}_{int(time.time())}",
+                        dimension=QualityCheckType.INTEGRITY,
+                        level=QualityIssueLevel.MEDIUM,
+                        title=f"业务规则执行失败: {rule_name}",
+                        description=f"业务规则 '{rule_name}' 执行出错: {str(e)}",
+                        recommendation="修复业务规则定义"
+                    ))
+        if rule_checks:
+            integrity_checks.append(np.mean(rule_checks))
+        details['business_rule_checks'] = rule_checks
 
+        numeric_columns = rules.get('numeric_columns', [])
+        structural_valid = True
+        for col in numeric_columns:
+            if col in data.columns:
+                if not np.issubdtype(data[col].dtype, np.number):
+                    structural_valid = False
+                    issues.append(QualityIssue(
+                        issue_id=f"integrity_dtype_{col}_{int(time.time())}",
+                        dimension=QualityCheckType.INTEGRITY,
+                        level=QualityIssueLevel.MEDIUM,
+                        title=f"列类型不符合预期: '{col}'",
+                        description=f"列 '{col}' 应为数值类型，实际为 {data[col].dtype}",
+                        field_name=col,
+                        recommendation=f"确保 '{col}' 列为正确的数值类型"
+                    ))
+        integrity_checks.append(1.0 if structural_valid else 0.5)
+
+        integrity_score = np.mean(integrity_checks) if integrity_checks else 0.5
         passed = integrity_score >= 0.9
         details['integrity_score'] = integrity_score
+        details['checks_composition'] = {
+            'column_integrity': integrity_checks[0] if len(integrity_checks) > 0 else 0,
+            'foreign_keys': np.mean(fk_checks) if fk_checks else 1.0,
+            'business_rules': np.mean(rule_checks) if rule_checks else 1.0,
+            'structural_valid': 1.0 if structural_valid else 0.5
+        }
 
         return QualityCheckResult(
             check_type=QualityCheckType.INTEGRITY,
@@ -802,7 +925,7 @@ class UnifiedDataQualityMonitor:
                 try:
                     pd.to_datetime(data[column], format=date_format, errors='raise')
                     conformity_scores.append(1.0)
-                except:
+                except ValueError:
                     # 计算格式错误率
                     valid_dates = pd.to_datetime(data[column], errors='coerce').notna().sum()
                     total_dates = len(data) - data[column].isnull().sum()
@@ -811,9 +934,11 @@ class UnifiedDataQualityMonitor:
 
                     if conformity_rate < 0.9:
                         issues.append(QualityIssue(
-                            check_type=QualityCheckType.CONFORMITY,
+                            issue_id=f"date_format_{column}_{int(time.time())}",
+                            dimension=QualityCheckType.CONFORMITY,
                             level=QualityIssueLevel.MEDIUM,
-                            message=f"列 '{column}' 日期格式不符合标准: {(1-conformity_rate):.2%}",
+                            title=f"列 '{column}' 日期格式不符合标准: {(1-conformity_rate):.2%}",
+                            description=f"列 '{column}' 有 {(1-conformity_rate):.2%} 的数据不符合日期格式 {date_format}",
                             field_name=column,
                             recommendation=f"标准化 '{column}' 列的日期格式为 {date_format}"
                         ))
@@ -828,9 +953,11 @@ class UnifiedDataQualityMonitor:
 
                 if over_precision > 0:
                     issues.append(QualityIssue(
-                        check_type=QualityCheckType.CONFORMITY,
+                        issue_id=f"precision_{column}_{int(time.time())}",
+                        dimension=QualityCheckType.CONFORMITY,
                         level=QualityIssueLevel.LOW,
-                        message=f"列 '{column}' 精度超出标准: {over_precision} 条",
+                        title=f"列 '{column}' 精度超出标准: {over_precision} 条",
+                        description=f"列 '{column}' 有 {over_precision} 条记录的小数位数超过 {precision} 位标准",
                         field_name=column,
                         recommendation=f"调整 '{column}' 列的精度为 {precision} 位小数"
                     ))
@@ -942,7 +1069,8 @@ class UnifiedDataQualityMonitor:
 
         try:
             with self._db_lock:
-                with sqlite3.connect(self.db_path) as conn:
+                db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+                with db.get_connection() as conn:
                     # 保存主报告
                     cursor = conn.execute("""
                         INSERT INTO quality_reports (
@@ -962,21 +1090,22 @@ class UnifiedDataQualityMonitor:
 
                     report_id = cursor.lastrowid
 
-                    # 保存质量问题
+                    # 批量收集质量问题
+                    issue_params = []
                     for check_result in report.check_results.values():
                         for issue in check_result.issues:
-                            conn.execute("""
-                                INSERT INTO quality_issues (
-                                    report_id, check_type, issue_level, message,
-                                    field_name, record_count, percentage, recommendation
-                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                            """, [
+                            issue_params.append([
                                 report_id, issue.check_type.value, issue.level.value,
                                 issue.message, issue.field_name, issue.record_count,
                                 issue.percentage, issue.recommendation
                             ])
-
-                    conn.commit()
+                    if issue_params:
+                        conn.executemany("""
+                            INSERT INTO quality_issues (
+                                report_id, check_type, issue_level, message,
+                                field_name, record_count, percentage, recommendation
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """, issue_params)
 
         except Exception as e:
             logger.error(f"保存质量报告失败: {e}")
@@ -1010,9 +1139,8 @@ class UnifiedDataQualityMonitor:
             return []
 
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.row_factory = sqlite3.Row
-
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 cursor = conn.execute("""
                     SELECT * FROM quality_reports 
                     WHERE data_source = ? AND table_name = ?
@@ -1157,3 +1285,4 @@ def initialize_unified_quality_monitor(db_path: Optional[str] = None,
         )
 
     return _unified_quality_monitor
+

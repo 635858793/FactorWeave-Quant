@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from loguru import logger
 
-from .pyqtgraph_engine import PyQtGraphEngine, ChartType, PyQtGraphChartWidget
+from .pyqtgraph_engine import PyQtGraphEngine, ChartType, PyQtGraphChartWidget, ChartConfig
 from .chart_manager import ChartManager
 from .performance_optimizer import ChartPerformanceOptimizer, PerformanceConfig
 from .matplotlib_adapter import MatplotlibAdapter, MatplotlibConfig
@@ -44,8 +44,8 @@ class ChartTheme(Enum):
 
 
 @dataclass
-class ChartConfig:
-    """图表配置"""
+class RendererConfig:
+    """渲染器图表配置（区别于 pyqtgraph_engine.ChartConfig）"""
     # 基本配置
     chart_type: ChartType = ChartType.LINE_CHART
     width: int = 800
@@ -88,7 +88,7 @@ class ChartConfig:
 @dataclass
 class ChartCreationRequest:
     """图表创建请求"""
-    config: ChartConfig
+    config: RendererConfig
     data: Optional[Union[pd.DataFrame, dict, list]] = None
     callbacks: Dict[str, callable] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -108,7 +108,7 @@ class ChartFactory:
         self.data_adapter = None
         
         # 图表模板缓存
-        self.chart_templates: Dict[str, ChartConfig] = {}
+        self.chart_templates: Dict[str, RendererConfig] = {}
         
         # 统计信息
         self.creation_stats = {
@@ -143,7 +143,7 @@ class ChartFactory:
         """注册预定义图表模板"""
         try:
             # 金融K线图模板
-            kline_template = ChartConfig(
+            kline_template = RendererConfig(
                 chart_type=ChartType.CANDLESTICK,
                 title="金融K线图",
                 style=ChartStyle.TRADING,
@@ -157,7 +157,7 @@ class ChartFactory:
             self.chart_templates["kline"] = kline_template
             
             # 性能监控图表模板
-            performance_template = ChartConfig(
+            performance_template = RendererConfig(
                 chart_type=ChartType.LINE_CHART,
                 title="性能监控",
                 style=ChartStyle.PROFESSIONAL,
@@ -171,7 +171,7 @@ class ChartFactory:
             self.chart_templates["performance"] = performance_template
             
             # 实时数据图表模板
-            realtime_template = ChartConfig(
+            realtime_template = RendererConfig(
                 chart_type=ChartType.LINE_CHART,
                 title="实时数据",
                 style=ChartStyle.MODERN,
@@ -184,7 +184,7 @@ class ChartFactory:
             self.chart_templates["realtime"] = realtime_template
             
             # 历史数据图表模板
-            historical_template = ChartConfig(
+            historical_template = RendererConfig(
                 chart_type=ChartType.LINE_CHART,
                 title="历史数据",
                 style=ChartStyle.CLASSIC,
@@ -270,41 +270,32 @@ class ChartFactory:
             logger.error(f"创建图表失败: {e}")
             return None
             
-    def _create_chart_widget(self, config: ChartConfig, chart_data: Dict[str, Any]) -> Optional[PyQtGraphChartWidget]:
+    def _create_chart_widget(self, config: RendererConfig, chart_data: Dict[str, Any]) -> Optional[PyQtGraphChartWidget]:
         """创建图表组件"""
         try:
-            if config.financial and config.chart_type == ChartType.CANDLESTICK:
-                # 金融图表
-                return self.chart_manager.create_candlestick_chart(
-                    data=chart_data,
-                    title=config.title,
-                    show_volume=chart_data.get('volume', False)
-                )
-            elif config.real_time:
-                # 实时图表
-                return self.chart_manager.create_realtime_chart(
-                    data=chart_data,
-                    title=config.title,
-                    buffer_size=config.real_time_buffer,
-                    update_interval=config.update_interval
-                )
-            else:
-                # 标准图表
-                chart_widget = self.pyqtgraph_engine.create_chart(
-                    config.chart_type, config.width, config.height
-                )
-                
-                # 设置数据
-                if chart_data:
-                    chart_widget.set_data(chart_data)
-                    
-                return chart_widget
-                
+            chart_id = f"widget_{datetime.now().strftime('%f')}"
+            engine_config = ChartConfig(
+                chart_type=config.chart_type,
+                width=config.width,
+                height=config.height,
+                title=config.title,
+                real_time=config.real_time,
+                update_interval=config.update_interval,
+                max_data_points=config.max_points,
+                theme="dark" if config.theme == ChartTheme.DARK else "light",
+                enable_grid=config.show_grid,
+                enable_legend=config.show_legend,
+            )
+            chart_widget = self.pyqtgraph_engine.create_chart(chart_id, engine_config)
+            if chart_data:
+                chart_widget.set_data(chart_data)
+            return chart_widget
+
         except Exception as e:
             logger.error(f"创建图表组件失败: {e}")
             return None
             
-    def _apply_chart_style(self, chart_widget: PyQtGraphChartWidget, config: ChartConfig):
+    def _apply_chart_style(self, chart_widget: PyQtGraphChartWidget, config: RendererConfig):
         """应用图表样式"""
         try:
             # 主题设置
@@ -318,7 +309,7 @@ class ChartFactory:
                     import os
                     is_dark = os.environ.get('QT_QPA_PLATFORM', '').lower() == 'wayland'
                     chart_widget.set_dark_theme() if is_dark else chart_widget.set_light_theme()
-                except:
+                except Exception:
                     chart_widget.set_light_theme()
                     
             # 样式设置
@@ -381,7 +372,7 @@ class ChartFactory:
     def create_kline_chart(self, ohlc_data: pd.DataFrame, title: str = "K线图") -> Optional[str]:
         """创建K线图快捷方法"""
         try:
-            config = ChartConfig(
+            config = RendererConfig(
                 chart_type=ChartType.CANDLESTICK,
                 title=title,
                 style=ChartStyle.TRADING,
@@ -454,7 +445,7 @@ class ChartFactory:
             # 复制配置
             source_config = getattr(source_chart, 'config', None)
             if source_config:
-                new_config = ChartConfig(
+                new_config = RendererConfig(
                     chart_type=source_config.chart_type,
                     width=source_config.width,
                     height=source_config.height,
@@ -474,7 +465,7 @@ class ChartFactory:
             logger.error(f"克隆图表失败: {e}")
             return None
             
-    def register_template(self, name: str, config: ChartConfig):
+    def register_template(self, name: str, config: RendererConfig):
         """注册自定义模板"""
         try:
             self.chart_templates[name] = config
@@ -502,7 +493,7 @@ class ChartFactory:
             }
         return None
         
-    def _update_stats(self, chart_id: str, config: ChartConfig, creation_time: float):
+    def _update_stats(self, chart_id: str, config: RendererConfig, creation_time: float):
         """更新统计信息"""
         try:
             self.creation_stats['total_created'] += 1
@@ -522,32 +513,85 @@ class ChartFactory:
         """获取创建统计信息"""
         return self.creation_stats.copy()
         
-    def validate_config(self, config: ChartConfig) -> Tuple[bool, List[str]]:
+    def validate_config(self, config: RendererConfig) -> Tuple[bool, List[str]]:
         """验证图表配置"""
         errors = []
-        
+
         # 基本配置验证
         if config.width <= 0 or config.height <= 0:
             errors.append("图表尺寸必须大于0")
-            
+
         if config.max_points <= 0:
             errors.append("最大数据点必须大于0")
-            
+
         # 数据配置验证
         if config.data_schema not in self.data_adapter.get_schema_list():
             errors.append(f"未知的数据模式: {config.data_schema}")
-            
+
         # 图表类型验证
         if config.chart_type not in ChartType:
             errors.append(f"不支持的图表类型: {config.chart_type}")
-            
+
         return len(errors) == 0, errors
+
+    def cleanup_resources(self):
+        """清理所有渲染资源（用于后端切换或应用退出）"""
+        logger.info("开始清理渲染资源...")
+
+        try:
+            if self.chart_manager:
+                self.chart_manager.clear_all_charts()
+        except Exception as e:
+            logger.error(f"清理图表管理器失败: {e}")
+
+        try:
+            if self.matplotlib_adapter:
+                self.matplotlib_adapter.close_all()
+        except Exception as e:
+            logger.error(f"清理matplotlib适配器失败: {e}")
+
+        try:
+            if self.pyqtgraph_engine:
+                self.pyqtgraph_engine.clear_all_charts()
+        except Exception as e:
+            logger.error(f"清理pyqtgraph引擎失败: {e}")
+
+        logger.info("渲染资源清理完成")
+
+    def switch_backend(self, target: str) -> bool:
+        """切换渲染后端"""
+        valid_backends = ('matplotlib', 'pyqtgraph')
+        if target not in valid_backends:
+            logger.error(f"不支持的后端: {target}，有效选项: {valid_backends}")
+            return False
+
+        logger.info(f"切换渲染后端: -> {target}")
+
+        try:
+            self.cleanup_resources()
+
+            if target == 'matplotlib':
+                if self.matplotlib_adapter is None:
+                    logger.error("matplotlib适配器未初始化")
+                    return False
+                logger.info("已切换到matplotlib渲染后端")
+            elif target == 'pyqtgraph':
+                if self.pyqtgraph_engine is None:
+                    logger.error("pyqtgraph引擎未初始化")
+                    return False
+                logger.info("已切换到pyqtgraph渲染后端")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"切换后端失败: {e}")
+            return False
 
 
 # 导出的公共接口
 __all__ = [
     'ChartFactory',
-    'ChartConfig',
+    'RendererConfig',
     'ChartCreationRequest',
     'ChartStyle',
     'ChartTheme'

@@ -282,19 +282,19 @@ class BinancePlugin(HTTPAPIPluginTemplate):
             if not exchange_info or 'symbols' not in exchange_info:
                 return pd.DataFrame()
 
-            symbols_data = []
-
-            for symbol_info in exchange_info['symbols']:
-                if symbol_info['status'] == 'TRADING':
-                    symbols_data.append({
-                        'symbol': symbol_info['symbol'],
-                        'base_asset': symbol_info['baseAsset'],
-                        'quote_asset': symbol_info['quoteAsset'],
-                        'status': symbol_info['status'],
-                        'base_precision': symbol_info.get('baseAssetPrecision', 8),
-                        'quote_precision': symbol_info.get('quotePrecision', 8),
-                        'permissions': ','.join(symbol_info.get('permissions', [])),
-                    })
+            symbols_data = [
+                {
+                    'symbol': symbol_info['symbol'],
+                    'base_asset': symbol_info['baseAsset'],
+                    'quote_asset': symbol_info['quoteAsset'],
+                    'status': symbol_info['status'],
+                    'base_precision': symbol_info.get('baseAssetPrecision', 8),
+                    'quote_precision': symbol_info.get('quotePrecision', 8),
+                    'permissions': ','.join(symbol_info.get('permissions', [])),
+                }
+                for symbol_info in exchange_info['symbols']
+                if symbol_info['status'] == 'TRADING'
+            ]
 
             df = pd.DataFrame(symbols_data)
             self.logger.info(f"获取币安交易对列表成功，共 {len(df)} 个交易对")

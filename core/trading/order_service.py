@@ -16,6 +16,7 @@ from core.trading.order_models import (
 from core.trading.order_validator import OrderValidator, ValidationResult
 from core.trading.order_repository import OrderRepository
 from core.trading.order_executor import OrderExecutor, ExecutionResult
+from core.trading.trading_types import ExecutionStatus
 from core.trading.order_monitor import OrderMonitor
 from core.trading.order_analyzer import OrderAnalyzer
 from core.containers import ServiceContainer
@@ -40,6 +41,9 @@ class OrderService:
         self._lock_manager_lock = threading.Lock()
 
         self._initialize()
+
+        # 订阅订单终态事件，用于清理资源
+        self.event_bus.subscribe('order_terminal_state', self._on_order_terminal_state)
 
         logger.info("订单服务初始化完成")
 
@@ -116,12 +120,21 @@ class OrderService:
                             account_id = account.account_id
                             logger.info(f"使用策略的默认账号: {account_id}")
                 
-                # 如果还是没有有效账号，使用系统第一个账号
+                # 如果还是没有有效账号，根据资产类型选择匹配的账号
                 if account_id == "default":
                     accounts = account_manager.get_all_accounts()
                     if accounts:
-                        account_id = accounts[0].account_id
-                        logger.info(f"使用系统默认账号: {account_id}")
+                        # 优先选择与请求资产类型匹配的账号
+                        matched_accounts = [
+                            acc for acc in accounts 
+                            if acc.account_id != "default"
+                        ]
+                        if matched_accounts:
+                            account_id = matched_accounts[0].account_id
+                            logger.info(f"使用系统第一个非默认账号: {account_id}")
+                        else:
+                            account_id = accounts[0].account_id
+                            logger.warning(f"系统中只有默认账号，使用: {account_id}")
                     else:
                         logger.error("系统中没有可用的账号")
                         return None
@@ -284,7 +297,7 @@ class OrderService:
                     logger.error(f"订单不存在: {order_id}")
                     return ExecutionResult(
                         order_id=order_id,
-                        status='failed',
+                        status=ExecutionStatus.FAILED,
                         message="订单不存在",
                         error_code="ORDER_NOT_FOUND"
                     )
@@ -299,6 +312,9 @@ class OrderService:
                     order.update_time = datetime.now()
                     self.repository.update_order(order)
 
+                    # 订单达到终态（REJECTED），清理锁防止内存泄漏
+                    self._cleanup_order_lock(order_id)
+
                     # 发布订单被拒绝事件
                     self.event_bus.publish('order_rejected',
                         order_id=order_id,
@@ -307,7 +323,7 @@ class OrderService:
 
                     return ExecutionResult(
                         order_id=order_id,
-                        status='failed',
+                        status=ExecutionStatus.FAILED,
                         message=validation_result.message,
                         error_code=validation_result.error_code
                     )
@@ -316,18 +332,21 @@ class OrderService:
                 result = self.executor.submit_order(order)
 
                 # 4. 发布事件
-                if result.status == 'success':
+                if result.status == ExecutionStatus.SUCCESS:
                     self.event_bus.publish('order_submitted',
                         order_id=order_id,
                         exchange_order_id=result.exchange_order_id
                     )
                 else:
                     # 执行失败时更新订单状态
-                    if result.status == 'failed':
+                    if result.status == ExecutionStatus.FAILED:
                         order.order_status = OrderStatus.FAILED
                         order.error_message = result.message
                         order.update_time = datetime.now()
                         self.repository.update_order(order)
+                        
+                        # 订单状态变为终态，清理锁防止内存泄漏
+                        self._cleanup_order_lock(order_id)
 
                     self.event_bus.publish('order_submit_failed',
                         order_id=order_id,
@@ -340,7 +359,7 @@ class OrderService:
             logger.error(f"提交订单异常: {e}")
             return ExecutionResult(
                 order_id=order_id,
-                status='failed',
+                status=ExecutionStatus.FAILED,
                 message=f"提交订单异常: {str(e)}",
                 error_code="SUBMIT_ERROR"
             )
@@ -363,7 +382,7 @@ class OrderService:
             logger.error(f"取消订单异常: {e}")
             return ExecutionResult(
                 order_id=order_id,
-                status='failed',
+                status=ExecutionStatus.FAILED,
                 message=f"取消订单异常: {str(e)}",
                 error_code="CANCEL_ERROR"
             )
@@ -392,9 +411,9 @@ class OrderService:
             for order_id in order_ids:
                 try:
                     result = self.executor.cancel_order(order_id)
-                    results[order_id] = (result.status == 'success')
+                    results[order_id] = (result.status == ExecutionStatus.SUCCESS)
 
-                    if result.status == 'success':
+                    if result.status == ExecutionStatus.SUCCESS:
                         success_count += 1
                     else:
                         failed_count += 1
@@ -421,7 +440,7 @@ class OrderService:
 
     def modify_order(self, order_id: str, new_price: Optional[float] = None,
                    new_quantity: Optional[int] = None) -> bool:
-        """修改订单（带并发控制）"""
+        """修改订单（带并发控制，原子操作）"""
         lock = self._get_order_lock(order_id)
         try:
             with lock:
@@ -443,22 +462,28 @@ class OrderService:
                     logger.error(f"订单部分成交，不能修改: {order_id}")
                     return False
 
-                # 4. 创建新订单
-                new_price = new_price if new_price is not None else order.order_price
-                new_quantity = new_quantity if new_quantity is not None else order.order_quantity
+                # 4. 取消原订单（先取消，再创建新订单，避免竞态）
+                cancel_result = self.cancel_order(order_id)
+                if cancel_result.status != ExecutionStatus.SUCCESS:
+                    logger.error(f"取消原订单失败: {order_id}")
+                    return False
+
+                # 5. 创建新订单
+                final_price = new_price if new_price is not None else order.order_price
+                final_quantity = new_quantity if new_quantity is not None else order.order_quantity
 
                 new_request = OrderRequest(
                     strategy_id=order.strategy_id,
                     stock_code=order.stock_code,
                     order_type=order.order_type,
                     order_category=order.order_category,
-                    order_price=new_price,
-                    order_quantity=new_quantity,
+                    order_price=final_price,
+                    order_quantity=final_quantity,
                     stop_price=order.stop_price,
                     user_id=order.user_id,
                     account_id=order.account_id,
                     tags=order.tags,
-                    metadata={**order.metadata, 'original_order_id': order.order_id}
+                    metadata={**order.metadata, 'modified_from_order_id': order.order_id}
                 )
 
                 new_order = self.create_order(new_request)
@@ -466,35 +491,10 @@ class OrderService:
                     logger.error(f"创建新订单失败")
                     return False
 
-                # 5. 提交新订单
+                # 6. 提交新订单
                 result = self.submit_order(new_order.order_id)
-                if result.status != 'success':
+                if result.status != ExecutionStatus.SUCCESS:
                     logger.error(f"提交新订单失败: {new_order.order_id}")
-
-                    # 补偿：删除新订单
-                    try:
-                        self.repository.delete_order(new_order.order_id, asset_type=new_order.asset_type)
-                        logger.info(f"已删除未提交的新订单: {new_order.order_id}")
-                    except Exception as e:
-                        logger.error(f"删除新订单失败: {e}")
-
-                    return False
-
-                # 6. 取消原订单
-                cancel_result = self.cancel_order(order_id)
-                if cancel_result.status != 'success':
-                    logger.error(f"取消原订单失败: {order_id}")
-
-                    # 补偿：标记新订单为修改失败但保留
-                    try:
-                        new_order.order_status = OrderStatus.FAILED
-                        new_order.error_message = f"修改订单失败：无法取消原订单 {order_id}"
-                        new_order.update_time = datetime.now()
-                        self.repository.update_order(new_order)
-                        logger.info(f"已标记新订单为修改失败: {new_order.order_id}")
-                    except Exception as e:
-                        logger.error(f"更新新订单状态失败: {e}")
-
                     return False
 
                 logger.info(f"订单修改成功: {order_id} -> {new_order.order_id}")
@@ -643,7 +643,7 @@ class OrderService:
 
             for order in active_orders:
                 result = self.cancel_order(order.order_id)
-                if result.status == 'success':
+                if result.status == ExecutionStatus.SUCCESS:
                     cancelled_count += 1
 
             logger.info(f"取消活跃订单完成: {cancelled_count}/{len(active_orders)}")
@@ -845,3 +845,12 @@ class OrderService:
         except Exception as e:
             logger.error(f"预测订单成交概率失败: {e}")
             return {}
+
+    def _on_order_terminal_state(self, order_id: str, status: str):
+        """处理订单终态事件，清理相关资源"""
+        try:
+            # 订单达到终态（FILLED/CANCELLED/REJECTED/EXPIRED），清理锁
+            self._cleanup_order_lock(order_id)
+            logger.debug(f"订单达到终态，已清理锁: {order_id} ({status})")
+        except Exception as e:
+            logger.error(f"清理订单终态资源失败: {order_id} - {e}")

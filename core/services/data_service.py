@@ -174,6 +174,8 @@ class DataService(BaseService):
         self._source_capabilities: Dict[str, Set[DataType]] = {}
 
         # 缓存系统 - 强制使用统一缓存服务
+        self._cache: Dict[str, Any] = {}
+        self._cache_lock = threading.Lock()
         self._cache_metadata: Dict[str, Dict[str, Any]] = {}
         self._cache_ttl_config: Dict[DataType, timedelta] = {
             DataType.REAL_TIME_QUOTE: timedelta(minutes=1),
@@ -235,7 +237,8 @@ class DataService(BaseService):
             self._unified_cache = self._service_container.resolve(CacheService)
             logger.debug(f"DataService 已连接到统一缓存服务，命名空间: {self._cache_namespace}")
         else:
-            raise RuntimeError("统一缓存服务未注册，请确保 CacheService 已在服务容器中注册")
+            self._unified_cache = None
+            logger.debug(f"{self.__class__.__name__} 统一缓存服务未注册，缓存功能降级为空操作")
 
     def _do_initialize(self) -> None:
         """执行具体的初始化逻辑"""
@@ -508,7 +511,7 @@ class DataService(BaseService):
             # 更新平均响应时间
             if len(self._performance_samples) > 100:
                 self._performance_samples = self._performance_samples[-100:]
-            self._metrics.avg_response_time = sum(self._performance_samples) / len(self._performance_samples)
+            self._metrics.avg_response_time = np.mean(self._performance_samples)
 
             # 移动到已完成请求
             with self._request_lock:
@@ -673,7 +676,7 @@ class DataService(BaseService):
             ttl = self._cache_ttl_config.get(request.data_type, timedelta(minutes=5))
 
             if self._unified_cache is None:
-                raise RuntimeError("统一缓存服务未初始化")
+                return
 
             self._unified_cache.set(cache_key, cache_entry, ttl=ttl, namespace=self._cache_namespace)
             self._cache_metadata[cache_key] = response.metadata.copy()
@@ -882,3 +885,4 @@ def create_data_request(symbol: str, data_type: DataType, asset_type: AssetType 
         asset_type=asset_type,
         **kwargs
     )
+

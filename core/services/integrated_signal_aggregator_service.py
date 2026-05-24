@@ -196,12 +196,12 @@ class TETDataProvider:
         """计算RSI"""
         try:
             delta = prices.diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+            gain = (delta.where(delta > 0, 0)).ewm(alpha=1/period, adjust=False).mean()
+            loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/period, adjust=False).mean()
             rs = gain / loss
             rsi = 100 - (100 / (1 + rs))
             return float(rsi.iloc[-1]) if not rsi.empty else 50.0
-        except:
+        except Exception:
             return 50.0
 
     def _calculate_macd(self, prices: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> Dict[str, float]:
@@ -218,7 +218,7 @@ class TETDataProvider:
                 'dea': float(signal_line.iloc[-1]),
                 'histogram': float(histogram.iloc[-1])
             }
-        except:
+        except Exception:
             return {'dif': 0.0, 'dea': 0.0, 'histogram': 0.0}
 
     def _calculate_ma(self, prices: pd.Series, period: int) -> float:
@@ -226,7 +226,7 @@ class TETDataProvider:
         try:
             ma = prices.rolling(window=period).mean()
             return float(ma.iloc[-1]) if not ma.empty else 0.0
-        except:
+        except Exception:
             return 0.0
 
     def _calculate_kdj(self, kdata: pd.DataFrame, period: int = 9) -> Dict[str, float]:
@@ -250,12 +250,20 @@ class TETDataProvider:
                 'd': float(d.iloc[-1]) if not d.empty else 50.0,
                 'j': float(j.iloc[-1]) if not j.empty else 50.0
             }
-        except:
+        except Exception:
             return {'k': 50.0, 'd': 50.0, 'j': 50.0}
 
 
 class IntegratedSignalAggregatorService(CacheableService, ConfigurableService):
-    """集成的智能信号聚合服务（TET模式）"""
+    """
+    集成的智能信号聚合服务（TET模式）
+
+    信号聚合规则:
+    - 优先级排序: 时间维度(最新信号) > 信号强度 > 信号源可信度
+    - 去重策略: 同一资产+同一信号类型+5分钟内视为重复
+    - 冲突处理: 看涨/看跌信号同时存在时，以信号强度较高者为准
+    - 权重分配: 趋势类信号(0.35) > 反转类信号(0.25) > 成交量类(0.20) > 综合类(0.20)
+    """
 
     def __init__(self):
         CacheableService.__init__(self, namespace='signal_aggregator')

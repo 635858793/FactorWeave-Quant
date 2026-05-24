@@ -1,7 +1,7 @@
 QFrame {
    background-color: rgb(79, 149, 255);
    color:black;
-   font: 75 12pt "Century Schoolbook L";
+   font-weight: 75; font-size: 12pt; font-family: "Century Schoolbook L";
 
 }
 
@@ -10,7 +10,7 @@ QMainWindow{
     color:black;
     border-style: solid;
     border-radius: 10;
-    font: 75 12pt "Century Schoolbook L";
+    font-weight: 75; font-size: 12pt; font-family: "Century Schoolbook L";
 }
 
 QWidget{
@@ -19,7 +19,7 @@ QWidget{
     color:black;
     border-style: solid;
     border-radius: 10;
-    font: 75 12pt "Century Schoolbook L";
+    font-weight: 75; font-size: 12pt; font-family: "Century Schoolbook L";
 
 }
 
@@ -31,7 +31,7 @@ QMenu{
     border-style: solid;
     border-radius: 8;
     padding: 5px;
-    font: italic 12pt "URW Chancery L";
+    font-style: italic; font-size: 12pt; font-family: "URW Chancery L";
     
 }
 
@@ -42,7 +42,7 @@ QSpinBox{
     padding: 3px;
     min-width: 9ex;
     min-height: 2.5ex;
-    font: 75 12pt "Century Schoolbook L";
+    font-weight: 75; font-size: 12pt; font-family: "Century Schoolbook L";
 
 }
 
@@ -54,7 +54,7 @@ QTreeView{
     border-color: seagreen;
     border-style: solid;
     border-radius: 10;
-    font: 75 12pt "Century Schoolbook L";
+    font-weight: 75; font-size: 12pt; font-family: "Century Schoolbook L";
 }
 
 QComboBox{
@@ -63,7 +63,7 @@ QComboBox{
     border-color: seagreen;
     border-style: solid;
     border-radius: 5;
-    font: italic 12pt "URW Chancery L";
+    font-style: italic; font-size: 12pt; font-family: "URW Chancery L";
 }
 QComboBox:hover{
    background-color: qlineargradient(spread:repeat, x1:0, y1:0, x2:1, y2:0, stop:0 rgba(130, 111, 111, 255), stop:1 rgba(255, 255, 255, 255));
@@ -80,7 +80,7 @@ QPushButton {
     padding: 3px;
     min-width: 9ex;
     min-height: 25px;
-    font: 75 12pt "Century Schoolbook L";
+    font-weight: 75; font-size: 12pt; font-family: "Century Schoolbook L";
 }
 
 QPushButton:hover {
@@ -102,7 +102,7 @@ QDialogButtonBox QPushButton {
     padding: 3px;
     min-width: 9ex;
     min-height: 25px;
-    font: 75 12pt "Century Schoolbook L";
+    font-weight: 75; font-size: 12pt; font-family: "Century Schoolbook L";
 }
 QDialogButtonBox QPushButton:hover {
     color:black;
@@ -226,7 +226,7 @@ QRadioButton:hover {
 QMenuBar {
         background-color: rgb(79, 149, 255);
         color: white;
-        font: italic 12pt "URW Chancery L";
+        font-style: italic; font-size: 12pt; font-family: "URW Chancery L";
         padding: 5px;
 }
 QMenuBar::item {
@@ -246,7 +246,7 @@ QMenuBar::item:pressed {
 QStatusBar {
         background-color: rgb(79, 149, 255);
         color: white;
-        font: 75 12pt "Century Schoolbook L";
+        font-weight: 75; font-size: 12pt; font-family: "Century Schoolbook L";
 }
 QStatusBar::item {
         border: none;
@@ -310,7 +310,7 @@ QProgressBar {
         text-align: center;
         color: black;
         background-color: rgb(79, 149, 255);
-        font: 75 12pt "Century Schoolbook L";
+        font-weight: 75; font-size: 12pt; font-family: "Century Schoolbook L";
 }
 QProgressBar::chunk {
         background-color: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 0, stop: 0 yellowgreen, stop: 1 seagreen);
@@ -330,7 +330,7 @@ QTabBar::tab {
         padding: 8px 15px;
         border-top-left-radius: 6px;
         border-top-right-radius: 6px;
-        font: 75 12pt "Century Schoolbook L";
+        font-weight: 75; font-size: 12pt; font-family: "Century Schoolbook L";
 }
 QTabBar::tab:selected {
         background: rgb(79, 149, 255);
@@ -345,7 +345,7 @@ QTabBar::tab:hover:!selected {
 QHeaderView {
         background-color: yellowgreen;
         border: 1px solid seagreen;
-        font: 75 12pt "Century Schoolbook L";
+        font-weight: 75; font-size: 12pt; font-family: "Century Schoolbook L";
 }
 QHeaderView::section {
         background: yellowgreen;
@@ -365,7 +365,7 @@ QTableView {
         background: rgb(79, 149, 255);
         border: 2px solid seagreen;
         border-radius: 10px;
-        font: 75 12pt "Century Schoolbook L";
+        font-weight: 75; font-size: 12pt; font-family: "Century Schoolbook L";
 }
 QTableView::item {
         color: black;
@@ -383,7 +383,7 @@ QListWidget {
         background: rgb(79, 149, 255);
         border: 2px solid seagreen;
         border-radius: 10px;
-        font: 75 12pt "Century Schoolbook L";
+        font-weight: 75; font-size: 12pt; font-family: "Century Schoolbook L";
 }
 QListWidget::item {
         color: black;
@@ -431,7 +431,7 @@ QTextEdit {
         border-radius: 10px;
         color: black;
         background: white;
-        font: 75 12pt "Century Schoolbook L";
+        font-weight: 75; font-size: 12pt; font-family: "Century Schoolbook L";
 }
 
 /**********文本浏览器**********/
@@ -440,7 +440,7 @@ QTextBrowser {
         border-radius: 10px;
         color: black;
         background: white;
-        font: 75 12pt "Century Schoolbook L";
+        font-weight: 75; font-size: 12pt; font-family: "Century Schoolbook L";
 }
 
 /**********分组框**********/
@@ -450,7 +450,7 @@ QGroupBox {
         margin-top: 15px;
         padding-top: 10px;
         color: black;
-        font: 75 bold 13pt "Century Schoolbook L";
+        font-weight: bold; font-size: 13pt; font-family: "Century Schoolbook L";
 }
 QGroupBox::title {
         subcontrol-origin: margin;
@@ -484,7 +484,7 @@ QDockWidget::title {
         background: yellowgreen;
         padding: 5px 10px;
         color: black;
-        font: italic 12pt "URW Chancery L";
+        font-style: italic; font-size: 12pt; font-family: "URW Chancery L";
 }
 QDockWidget::close-button, QDockWidget::float-button {
         background: transparent;
@@ -508,7 +508,7 @@ QCalendarWidget QAbstractItemView {
         selection-color: black;
         border: 2px solid seagreen;
         border-radius: 8px;
-        font: 75 12pt "Century Schoolbook L";
+        font-weight: 75; font-size: 12pt; font-family: "Century Schoolbook L";
 }
 
 /**********拨盘**********/
@@ -541,7 +541,7 @@ QFontComboBox {
         border-radius: 5px;
         padding: 3px;
         background: yellowgreen;
-        font: italic 12pt "URW Chancery L";
+        font-style: italic; font-size: 12pt; font-family: "URW Chancery L";
 }
 QFontComboBox::drop-down {
         width: 20px;
@@ -564,7 +564,7 @@ QDateEdit, QTimeEdit {
         padding: 3px 5px;
         background: white;
         color: black;
-        font: 75 12pt "Century Schoolbook L";
+        font-weight: 75; font-size: 12pt; font-family: "Century Schoolbook L";
 }
 QDateEdit::drop-down, QTimeEdit::drop-down {
         width: 20px;
@@ -576,7 +576,7 @@ QDateTimeEdit {
         padding: 3px 5px;
         background: white;
         color: black;
-        font: 75 12pt "Century Schoolbook L";
+        font-weight: 75; font-size: 12pt; font-family: "Century Schoolbook L";
 }
 QDateTimeEdit::drop-down {
         width: 20px;
@@ -590,7 +590,7 @@ QToolTip {
         color: black;
         padding: 5px;
         border-radius: 4px;
-        font: 75 11pt "Century Schoolbook L";
+        font-weight: 75; font-size: 11pt; font-family: "Century Schoolbook L";
 }
 
 /**********框架扩展**********/

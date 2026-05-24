@@ -14,7 +14,7 @@ from loguru import logger
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
+    QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
     QTableWidget, QTableWidgetItem, QHeaderView, QPushButton,
     QLabel, QLineEdit, QComboBox, QDateEdit, QGroupBox,
     QFormLayout, QMessageBox, QSplitter, QScrollArea, QFrame
@@ -25,12 +25,20 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import matplotlib.dates as mdates
 
+from .base_dialog import BaseDialog
 
-class PredictionAccuracyDialog(QDialog):
+
+class PredictionAccuracyDialog(BaseDialog):
     """预测准确性跟踪对话框"""
 
     def __init__(self, parent=None):
-        super().__init__(parent)
+        super().__init__(
+            parent,
+            title="预测准确性跟踪",
+            min_size=(1200, 800),
+            settings_key="PredictionAccuracyDialog",
+            modal=False
+        )
         self.logger = logger.bind(module=__name__)
         
         # 服务引用
@@ -79,10 +87,6 @@ class PredictionAccuracyDialog(QDialog):
 
     def setup_ui(self):
         """设置用户界面"""
-        self.setWindowTitle("预测准确性跟踪")
-        self.setMinimumSize(1200, 800)
-        self.setModal(False)
-
         # 主布局
         main_layout = QVBoxLayout(self)
 
@@ -321,7 +325,7 @@ class PredictionAccuracyDialog(QDialog):
                     try:
                         dt = datetime.fromisoformat(prediction_time.replace('Z', '+00:00'))
                         prediction_time = dt.strftime('%Y-%m-%d %H:%M:%S')
-                    except:
+                    except Exception:
                         pass
                 self.records_table.setItem(row, 3, QTableWidgetItem(prediction_time))
                 # 置信度

@@ -16,7 +16,7 @@
 """
 
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
+    QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
     QPushButton, QLabel, QGroupBox, QFormLayout, QTableWidget,
     QTableWidgetItem, QHeaderView, QMessageBox, QComboBox,
     QLineEdit, QSpinBox, QDoubleSpinBox, QProgressBar, QFrame,
@@ -29,6 +29,8 @@ from loguru import logger
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 from collections import deque
+
+from .base_dialog import BaseDialog
 
 
 class ConnectionPoolListWidget(QWidget):
@@ -258,6 +260,7 @@ class ConnectionPoolListWidget(QWidget):
         """关闭事件"""
         if hasattr(self, 'refresh_timer'):
             self.refresh_timer.stop()
+        super().closeEvent(event)
         event.accept()
 
 
@@ -654,14 +657,16 @@ class ConnectionPoolHistoryWidget(QWidget):
             QMessageBox.critical(self, "导出失败", f"导出JSON失败: {str(e)}")
 
 
-class ConnectionPoolManagerDialog(QDialog):
+class ConnectionPoolManagerDialog(BaseDialog):
     """连接池管理主对话框"""
     
     def __init__(self, parent=None):
-        super().__init__(parent)
-        
-        self.setWindowTitle("连接池管理")
-        self.setMinimumSize(900, 600)
+        super().__init__(
+            parent,
+            title="连接池管理",
+            min_size=(900, 600),
+            settings_key="ConnectionPoolManagerDialog"
+        )
         
         self._init_ui()
     
@@ -754,6 +759,7 @@ class ConnectionPoolManagerDialog(QDialog):
     
     def closeEvent(self, event):
         """关闭事件"""
+        super().closeEvent(event)
         event.accept()
 
 

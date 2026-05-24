@@ -17,31 +17,7 @@ from analysis.pattern_base import (
     BasePatternRecognizer, PatternConfig, PatternResult,
     PatternAlgorithmFactory, SignalType
 )
-
-
-class _CachedConnection:
-    """数据库连接包装类，支持with语句并管理连接锁"""
-    
-    def __init__(self, connection, lock: threading.Lock):
-        self._connection = connection
-        self._lock = lock
-    
-    def __enter__(self):
-        self._lock.acquire()
-        return self
-    
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self._lock.release()
-        return False
-    
-    def cursor(self):
-        return self._connection.cursor()
-    
-    def commit(self):
-        return self._connection.commit()
-    
-    def close(self):
-        return self._connection.close()
+from core.database.unified_sqlite_access import UnifiedSQLiteAccess
 
 
 class PatternManager:
@@ -49,7 +25,6 @@ class PatternManager:
     
     _instance: Optional['PatternManager'] = None
     _lock = threading.Lock()
-    _connection_lock = threading.Lock()
 
     def __new__(cls, db_path: Optional[str] = None):
         if cls._instance is None:
@@ -86,40 +61,18 @@ class PatternManager:
         self._pattern_by_type_cache: Dict[str, PatternConfig] = {}
         self._effectiveness_cache: Dict[str, Tuple[List[Dict], float]] = {}
         self._cache_lock = threading.Lock()
-        self._db_connection = None
-        self._connection_acquired_time = 0
-        self._connection_timeout = 60.0
         self._ensure_database_schema()
         self._initialized = True
 
-    def _get_db_connection(self):
-        """获取数据库连接（带连接缓存，复用连接提升性能）"""
-        current_time = time.time()
-        
-        with self._connection_lock:
-            if self._db_connection is not None:
-                if current_time - self._connection_acquired_time < self._connection_timeout:
-                    return _CachedConnection(self._db_connection, self._connection_lock)
-                else:
-                    try:
-                        self._db_connection.close()
-                    except:
-                        pass
-            
-            conn = sqlite3.connect(self.db_path, timeout=30.0, check_same_thread=False)
-            conn.row_factory = sqlite3.Row
-            self._db_connection = conn
-            self._connection_acquired_time = current_time
-            return _CachedConnection(conn, self._connection_lock)
-
-    def _release_connection(self):
-        """释放数据库连接（仅在实际需要使用with语句时才调用）"""
-        pass
+    def _get_db(self) -> UnifiedSQLiteAccess:
+        """获取统一数据库访问实例"""
+        return UnifiedSQLiteAccess.get_instance(self.db_path)
 
     def _ensure_database_schema(self):
         """确保数据库表结构正确"""
         try:
-            with self._get_db_connection() as conn:
+            db = self._get_db()
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 # 检查并添加新字段
@@ -250,59 +203,56 @@ class PatternManager:
     def _load_all_patterns_from_db(self):
         """从数据库加载所有形态并缓存（注意：此方法由get_pattern_configs调用，已持有锁）"""
         import time
-        try:
-            logger.debug("开始连接数据库...")
+        logger.debug("开始连接数据库...")
+        start = time.time()
+        db = self._get_db()
+        with db.get_connection() as conn:
+            logger.debug(f"数据库连接完成，耗时: {time.time() - start:.2f}秒")
+            
+            cursor = conn.cursor()
+            logger.debug("执行SQL查询...")
             start = time.time()
-            with self._get_db_connection() as conn:
-                logger.debug(f"数据库连接完成，耗时: {time.time() - start:.2f}秒")
-                
-                cursor = conn.cursor()
-                logger.debug("执行SQL查询...")
-                start = time.time()
-                cursor.execute("SELECT * FROM pattern_types ORDER BY category, name")
-                rows = cursor.fetchall()
-                logger.debug(f"SQL查询完成，耗时: {time.time() - start:.2f}秒，返回 {len(rows)} 条")
+            cursor.execute("SELECT * FROM pattern_types ORDER BY category, name")
+            rows = cursor.fetchall()
+            logger.debug(f"SQL查询完成，耗时: {time.time() - start:.2f}秒，返回 {len(rows)} 条")
 
-                patterns = []
-                logger.info(f"[_load_all_patterns_from_db] 从数据库加载了 {len(rows)} 条形态配置。")
+            patterns = []
+            logger.info(f"[_load_all_patterns_from_db] 从数据库加载了 {len(rows)} 条形态配置。")
 
-                for row in rows:
-                    try:
-                        raw_category = row[3]
-                        parameters_raw = row[13] if len(row) > 13 and row[13] else '{}'
-                        if isinstance(parameters_raw, str):
-                            parameters = json.loads(parameters_raw)
-                        elif isinstance(parameters_raw, (int, float)):
-                            parameters = json.loads(str(parameters_raw)) if str(parameters_raw).strip() else {}
-                        else:
-                            parameters = parameters_raw if isinstance(parameters_raw, dict) else {}
+            for row in rows:
+                try:
+                    raw_category = row[3]
+                    parameters_raw = row[13] if len(row) > 13 and row[13] else '{}'
+                    if isinstance(parameters_raw, str):
+                        parameters = json.loads(parameters_raw)
+                    elif isinstance(parameters_raw, (int, float)):
+                        parameters = json.loads(str(parameters_raw)) if str(parameters_raw).strip() else {}
+                    else:
+                        parameters = parameters_raw if isinstance(parameters_raw, dict) else {}
 
-                        signal_enum = SignalType.from_string(row[4])
+                    signal_enum = SignalType.from_string(row[4])
 
-                        patterns.append(PatternConfig(
-                            id=row[0],
-                            name=row[1],
-                            english_name=row[2],
-                            category=raw_category,
-                            signal_type=signal_enum,
-                            description=row[5],
-                            min_periods=row[6],
-                            max_periods=row[7],
-                            confidence_threshold=row[8],
-                            algorithm_code=row[12] if len(row) > 12 else "",
-                            parameters=parameters,
-                            is_active=bool(row[9]),
-                            success_rate=row[15] if len(row) > 15 and row[15] is not None and row[15] > 0 else None,
-                            risk_level=row[16] if len(row) > 16 and row[16] is not None else 'medium'
-                        ))
-                    except Exception as e:
-                        logger.warning(f"解析形态配置失败: {e}")
-                        continue
-            self._patterns_cache = patterns
-            logger.info(f"[_load_all_patterns_from_db] 成功解析并缓存了 {len(patterns)} 条形态配置。")
-        except sqlite3.Error as e:
-            logger.info(f"从数据库加载形态配置失败: {e}")
-            self._patterns_cache = []
+                    patterns.append(PatternConfig(
+                        id=row[0],
+                        name=row[1],
+                        english_name=row[2],
+                        category=raw_category,
+                        signal_type=signal_enum,
+                        description=row[5],
+                        min_periods=row[6],
+                        max_periods=row[7],
+                        confidence_threshold=row[8],
+                        algorithm_code=row[12] if len(row) > 12 else "",
+                        parameters=parameters,
+                        is_active=bool(row[9]),
+                        success_rate=row[15] if len(row) > 15 and row[15] is not None and row[15] > 0 else None,
+                        risk_level=row[16] if len(row) > 16 and row[16] is not None else 'medium'
+                    ))
+                except Exception as e:
+                    logger.warning(f"解析形态配置失败: {e}")
+                    continue
+        self._patterns_cache = patterns
+        logger.info(f"[_load_all_patterns_from_db] 成功解析并缓存了 {len(patterns)} 条形态配置。")
 
     def get_pattern_by_name(self, name: str) -> Optional[PatternConfig]:
         """
@@ -417,32 +367,32 @@ class PatternManager:
             新增记录的ID，失败返回None
         """
         try:
-            with self._get_db_connection() as conn:
-                min_periods = kwargs.get('min_periods', 5)
-                max_periods = kwargs.get('max_periods', 60)
-                confidence_threshold = kwargs.get('confidence_threshold', 0.5)
-                is_active = kwargs.get('is_active', True)
+            with self._get_db() as db:
+                with db.get_connection() as conn:
+                    min_periods = kwargs.get('min_periods', 5)
+                    max_periods = kwargs.get('max_periods', 60)
+                    confidence_threshold = kwargs.get('confidence_threshold', 0.5)
+                    is_active = kwargs.get('is_active', True)
 
-                parameters_json = json.dumps(parameters or {})
+                    parameters_json = json.dumps(parameters or {})
 
-                cursor = conn.cursor()
-                cursor.execute('''
-                    INSERT INTO pattern_types 
-                    (name, english_name, category, signal_type, description, 
-                     min_periods, max_periods, confidence_threshold, is_active,
-                     algorithm_code, parameters)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (name, english_name, category, signal_type, description,
-                      min_periods, max_periods, confidence_threshold, is_active,
-                      algorithm_code, parameters_json))
+                    cursor = conn.cursor()
+                    cursor.execute('''
+                        INSERT INTO pattern_types 
+                        (name, english_name, category, signal_type, description, 
+                         min_periods, max_periods, confidence_threshold, is_active,
+                         algorithm_code, parameters)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (name, english_name, category, signal_type, description,
+                          min_periods, max_periods, confidence_threshold, is_active,
+                          algorithm_code, parameters_json))
 
-                pattern_id = cursor.lastrowid
-                conn.commit()
+                    pattern_id = cursor.lastrowid
 
-                # 清除缓存
-                self.invalidate_cache()
+                    # 清除缓存
+                    self.invalidate_cache()
 
-                return pattern_id
+                    return pattern_id
         except sqlite3.Error as e:
             logger.info(f"添加形态配置失败: {e}")
             return None
@@ -459,7 +409,8 @@ class PatternManager:
             是否成功
         """
         try:
-            with self._get_db_connection() as conn:
+            db = self._get_db()
+            with db.get_connection() as conn:
                 # 构建更新语句
                 update_fields = []
                 values = []
@@ -478,7 +429,6 @@ class PatternManager:
 
                 cursor = conn.cursor()
                 cursor.execute(query, values)
-                conn.commit()
 
                 # 清除缓存
                 self.invalidate_cache()
@@ -499,11 +449,11 @@ class PatternManager:
             是否成功
         """
         try:
-            with self._get_db_connection() as conn:
+            db = self._get_db()
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     "DELETE FROM pattern_types WHERE id = ?", (pattern_id,))
-                conn.commit()
 
                 # 清除缓存
                 self.invalidate_cache()
@@ -556,7 +506,8 @@ class PatternManager:
     def _save_pattern_config(self, config: PatternConfig) -> bool:
         """保存形态配置到数据库"""
         try:
-            with self._get_db_connection() as conn:
+            db = self._get_db()
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     INSERT INTO pattern_types (
@@ -734,7 +685,8 @@ for i in range(len(kdata)):
                 return cached_data
         
         try:
-            with self._get_db_connection() as conn:
+            db = self._get_db()
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 days_param = f'-{days} days'
                 cursor.execute('''
@@ -803,7 +755,8 @@ for i in range(len(kdata)):
             是否成功
         """
         try:
-            with self._get_db_connection() as conn:
+            db = self._get_db()
+            with db.get_connection() as conn:
                 # 计算收益率和成功标志
                 return_rate = None
                 is_successful = None
@@ -865,7 +818,8 @@ for i in range(len(kdata)):
             是否成功
         """
         try:
-            with self._get_db_connection() as conn:
+            db = self._get_db()
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('SELECT trigger_price, signal_type FROM pattern_history WHERE id = ?', (record_id,))
                 row = cursor.fetchone()
@@ -909,7 +863,8 @@ for i in range(len(kdata)):
             推荐形态列表
         """
         try:
-            with self._get_db_connection() as conn:
+            db = self._get_db()
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT 
@@ -973,7 +928,8 @@ for i in range(len(kdata)):
         }
 
         try:
-            with self._get_db_connection() as conn:
+            db = self._get_db()
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 cursor.execute('''
@@ -1003,8 +959,6 @@ for i in range(len(kdata)):
                     deleted = cursor.rowcount
                     result['total_deleted'] += deleted
                     result['by_pattern'][pattern_type] = deleted
-
-                conn.commit()
                 logger.info(f"历史数据清理完成: 删除{result['total_deleted']}条记录")
 
         except sqlite3.Error as e:
@@ -1031,7 +985,8 @@ for i in range(len(kdata)):
         }
 
         try:
-            with self._get_db_connection() as conn:
+            db = self._get_db()
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 days_param = f'-{days} days'
                 cursor.execute('''
@@ -1103,7 +1058,8 @@ for i in range(len(kdata)):
             训练数据统计信息
         """
         try:
-            with self._get_db_connection() as conn:
+            db = self._get_db()
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 days_param = f'-{days} days'
 
@@ -1204,7 +1160,8 @@ for i in range(len(kdata)):
             月度统计数据列表
         """
         try:
-            with self._get_db_connection() as conn:
+            db = self._get_db()
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT 

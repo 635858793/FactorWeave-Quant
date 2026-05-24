@@ -125,7 +125,7 @@ class NodeConfig:
             if torch.cuda.is_available():
                 capabilities.append("gpu_acceleration")  # GPU加速
                 capabilities.append("cuda_compute")  # CUDA计算
-        except:
+        except Exception:
             pass
 
         # 检测数据导入能力

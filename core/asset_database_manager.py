@@ -741,7 +741,7 @@ class AssetSeparatedDatabaseManager:
                         FROM historical_kline_data
                     """).fetchone()
                     record_count = record_result[0] if record_result else 0
-                except:
+                except Exception:
                     pass  # 表可能不存在
 
                 # 获取支持的数据源
@@ -752,7 +752,7 @@ class AssetSeparatedDatabaseManager:
                         FROM historical_kline_data
                     """).fetchall()
                     supported_sources = [row[0] for row in sources_result]
-                except:
+                except Exception:
                     pass  # 表可能不存在
 
             return AssetDatabaseInfo(
@@ -2351,7 +2351,7 @@ class AssetSeparatedDatabaseManager:
                         logger.error(f"确保asset_metadata表存在失败: {e}")
                         try:
                             conn.execute(self._table_schemas['asset_metadata'])
-                        except:
+                        except Exception:
                             pass
 
                 import json
@@ -2408,7 +2408,7 @@ class AssetSeparatedDatabaseManager:
 
                     try:
                         existing_sources = json.loads(existing_sources_str) if existing_sources_str else []
-                    except:
+                    except Exception:
                         existing_sources = []
 
                     new_source = metadata.get('primary_data_source')
@@ -2504,7 +2504,7 @@ class AssetSeparatedDatabaseManager:
                         if field in metadata_dict and metadata_dict[field]:
                             try:
                                 metadata_dict[field] = json.loads(metadata_dict[field])
-                            except:
+                            except Exception:
                                 pass
 
                     return metadata_dict
@@ -2553,7 +2553,7 @@ class AssetSeparatedDatabaseManager:
                         if field in metadata_dict and metadata_dict[field]:
                             try:
                                 metadata_dict[field] = json.loads(metadata_dict[field])
-                            except:
+                            except Exception:
                                 pass
 
                     result_dict[symbol] = metadata_dict
@@ -2605,7 +2605,7 @@ class AssetSeparatedDatabaseManager:
                             try:
                                 import json
                                 fundamental_dict[field] = json.loads(fundamental_dict[field])
-                            except:
+                            except Exception:
                                 pass
 
                     logger.debug(f"从数据库加载基本面数据成功: {symbol}")
@@ -2664,7 +2664,7 @@ class AssetSeparatedDatabaseManager:
                         if field in fundamental_dict and fundamental_dict[field]:
                             try:
                                 fundamental_dict[field] = json.loads(fundamental_dict[field])
-                            except:
+                            except Exception:
                                 pass
 
                     result_dict[symbol] = fundamental_dict

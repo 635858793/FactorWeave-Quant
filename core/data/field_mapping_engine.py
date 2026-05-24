@@ -207,7 +207,7 @@ class FieldTypeDetector:
             # 尝试转换为日期
             pd.to_datetime(sample_values.head(10))
             return True
-        except:
+        except Exception:
             return False
 
     def _is_numeric_like(self, sample_values: pd.Series) -> bool:
@@ -215,7 +215,7 @@ class FieldTypeDetector:
         try:
             pd.to_numeric(sample_values.head(10))
             return True
-        except:
+        except Exception:
             return False
 
     def _is_percentage_like(self, sample_values: pd.Series, column_name: str) -> bool:
@@ -229,7 +229,7 @@ class FieldTypeDetector:
             numeric_values = pd.to_numeric(sample_values.head(20))
             if all(abs(val) <= 100 for val in numeric_values if not pd.isna(val)):
                 return True
-        except:
+        except Exception:
             pass
 
         return False

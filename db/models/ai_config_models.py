@@ -6,12 +6,12 @@ AI预测配置数据库模型
 用于在数据库中存储和管理AI预测系统的配置参数
 """
 
-import sqlite3
 import json
 from datetime import datetime
 from typing import Dict, Any, Optional
 from pathlib import Path
 import os
+from core.database.unified_sqlite_access import UnifiedSQLiteAccess
 
 logger = logger
 
@@ -36,7 +36,8 @@ class AIPredictionConfigManager:
     def _init_database(self):
         """初始化数据库表"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 # 创建AI预测配置表
@@ -65,7 +66,6 @@ class AIPredictionConfigManager:
                     )
                 """)
 
-                conn.commit()
                 logger.info("AI预测配置数据库表初始化完成")
 
         except Exception as e:
@@ -97,7 +97,8 @@ class AIPredictionConfigManager:
     def _save_config_section(self, key: str, value: Dict[str, Any], description: str = ""):
         """保存配置段到数据库"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 # 检查是否存在
@@ -128,8 +129,6 @@ class AIPredictionConfigManager:
                         VALUES (?, ?, ?, ?, ?)
                     """, (key, value_json, description, current_time, current_time))
 
-                conn.commit()
-
         except Exception as e:
             logger.error(f"保存配置段失败: {e}")
             raise
@@ -145,7 +144,8 @@ class AIPredictionConfigManager:
             配置值字典，如果不存在返回None
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     SELECT config_value FROM ai_prediction_config 
@@ -171,7 +171,8 @@ class AIPredictionConfigManager:
             changed_by: 修改者
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 # 获取旧值
@@ -214,8 +215,6 @@ class AIPredictionConfigManager:
                         VALUES (?, ?, ?, ?, ?)
                     """, (key, value_json, "", current_time, current_time))
 
-                conn.commit()
-
         except Exception as e:
             logger.error(f"更新配置失败: {e}")
             raise
@@ -223,7 +222,8 @@ class AIPredictionConfigManager:
     def get_all_configs(self) -> Dict[str, Any]:
         """获取所有活跃配置"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     SELECT config_key, config_value FROM ai_prediction_config 
@@ -253,7 +253,8 @@ class AIPredictionConfigManager:
             历史记录列表
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 if key:

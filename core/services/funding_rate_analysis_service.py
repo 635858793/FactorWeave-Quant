@@ -47,7 +47,8 @@ class FundingRateAnalysisService(BaseService):
             self._unified_cache = self.service_container.resolve(CacheService)
             logger.debug(f"FundingRateAnalysisService 已连接到统一缓存服务，命名空间: {self._cache_namespace}")
         else:
-            raise RuntimeError("统一缓存服务未注册，请确保 CacheService 已在服务容器中注册")
+            self._unified_cache = None
+            logger.debug(f"{self.__class__.__name__} 统一缓存服务未注册，缓存功能降级为空操作")
 
     def _do_initialize(self) -> None:
         """初始化服务"""
@@ -85,7 +86,8 @@ class FundingRateAnalysisService(BaseService):
             
             if kline_data and kline_data.data is not None:
                 df = kline_data.data
-                self._unified_cache.set(cache_key, df, ttl=timedelta(seconds=self._cache_ttl), namespace=self._cache_namespace)
+                if self._unified_cache is not None:
+                    self._unified_cache.set(cache_key, df, ttl=timedelta(seconds=self._cache_ttl), namespace=self._cache_namespace)
                 logger.info(f"获取资金费率数据成功: {symbol}, {len(df)} 条")
                 return df
             

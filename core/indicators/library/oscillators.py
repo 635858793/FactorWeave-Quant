@@ -89,10 +89,10 @@ def calculate_rsi(df: pd.DataFrame, timeperiod: int = 14) -> pd.DataFrame:
             gain = delta.where(delta > 0, 0)
             loss = -delta.where(delta < 0, 0)
 
-            avg_gain = gain.rolling(window=timeperiod).mean()
-            avg_loss = loss.rolling(window=timeperiod).mean()
+            avg_gain = gain.ewm(alpha=1/timeperiod, adjust=False).mean()
+            avg_loss = loss.ewm(alpha=1/timeperiod, adjust=False).mean()
 
-            rs = avg_gain / avg_loss
+            rs = avg_gain / avg_loss.replace(0, np.nan)
             rsi = 100 - (100 / (1 + rs))
 
             result['RSI'] = rsi
@@ -143,7 +143,10 @@ def calculate_kdj(df: pd.DataFrame, fastk_period: int = 9, slowk_period: int = 3
             # 计算RSV
             low_min = low.rolling(window=fastk_period).min()
             high_max = high.rolling(window=fastk_period).max()
-            rsv = 100 * ((close - low_min) / (high_max - low_min))
+            denom = high_max - low_min
+            rsv = pd.Series(50.0, index=close.index)
+            nonzero_mask = denom != 0
+            rsv[nonzero_mask] = 100 * ((close[nonzero_mask] - low_min[nonzero_mask]) / denom[nonzero_mask])
 
             # 计算K值
             k = rsv.ewm(alpha=1/slowk_period, adjust=False).mean()
@@ -185,12 +188,16 @@ def calculate_cci(df: pd.DataFrame, timeperiod: int = 14) -> pd.DataFrame:
                             close.values, timeperiod=timeperiod)
             result['CCI'] = pd.Series(cci, index=close.index)
         else:
-            # 使用pandas实现
             tp = (high + low + close) / 3
+            tp_arr = tp.values
             ma = tp.rolling(window=timeperiod).mean()
-            md = tp.rolling(window=timeperiod).apply(
-                lambda x: abs(x - x.mean()).mean())
-            cci = (tp - ma) / (0.015 * md)
+            windows = np.lib.stride_tricks.sliding_window_view(tp_arr, timeperiod)
+            wm = windows.mean(axis=1)
+            mad = np.abs(windows - wm[:, np.newaxis]).mean(axis=1)
+            md = np.full(len(tp_arr), np.nan)
+            md[timeperiod - 1:] = mad
+            md = pd.Series(md, index=tp.index)
+            cci = (tp - ma) / (0.015 * md.replace(0, np.nan))
             result['CCI'] = cci
 
     except Exception as e:
@@ -241,7 +248,10 @@ def calculate_stoch(df: pd.DataFrame, fastk_period: int = 5, slowk_period: int =
             high_max = high.rolling(window=fastk_period).max()
 
             # 计算FastK
-            fastk = 100 * ((close - low_min) / (high_max - low_min))
+            denom = high_max - low_min
+            fastk = pd.Series(np.nan, index=close.index)
+            nonzero_mask = denom != 0
+            fastk[nonzero_mask] = 100 * ((close[nonzero_mask] - low_min[nonzero_mask]) / denom[nonzero_mask])
 
             # 计算SlowK (FastK的移动平均)
             if slowk_matype == 0:  # SMA

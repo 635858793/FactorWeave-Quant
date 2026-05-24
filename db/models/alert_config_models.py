@@ -117,8 +117,8 @@ class AlertHistory:
 
 
 @dataclass
-class RiskHistoryRecord:
-    """风险历史记录数据类"""
+class AlertRiskHistoryRecord:
+    """告警风险历史记录数据类"""
     id: Optional[int] = None
     timestamp: str = ""
     overall_risk_score: float = 0.0
@@ -304,9 +304,9 @@ class AlertConfigDatabase:
                     except sqlite3.OperationalError:
                         pass  # 字段已存在
 
-                # 创建风险历史表
+                # 创建告警风险历史表
                 cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS risk_history (
+                    CREATE TABLE IF NOT EXISTS alert_risk_history (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         timestamp TEXT NOT NULL,
                         overall_risk_score REAL NOT NULL,
@@ -338,7 +338,7 @@ class AlertConfigDatabase:
                 """)
 
                 # 创建索引
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_risk_history_timestamp ON risk_history(timestamp)")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_alert_risk_history_timestamp ON alert_risk_history(timestamp)")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_alert_history_timestamp ON alert_history(timestamp)")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_alert_history_level ON alert_history(level)")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_alert_history_rule_id ON alert_history(rule_id)")
@@ -587,8 +587,8 @@ class AlertConfigDatabase:
             logger.error(f"加载告警历史失败: {e}")
             return []
 
-    def save_risk_history(self, record: RiskHistoryRecord) -> Optional[int]:
-        """保存风险历史记录"""
+    def save_risk_history(self, record: AlertRiskHistoryRecord) -> Optional[int]:
+        """保存告警风险历史记录"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
@@ -597,7 +597,7 @@ class AlertConfigDatabase:
                     record.timestamp = datetime.now().isoformat()
 
                 cursor.execute("""
-                    INSERT INTO risk_history (
+                    INSERT INTO alert_risk_history (
                         timestamp, overall_risk_score, risk_level, var_95,
                         max_drawdown, volatility, status
                     ) VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -615,14 +615,14 @@ class AlertConfigDatabase:
             logger.error(f"保存风险历史记录失败: {e}")
             return None
 
-    def load_risk_history(self, limit: int = 100, hours: int = 24) -> List[RiskHistoryRecord]:
+    def load_risk_history(self, limit: int = 100, hours: int = 24) -> List[AlertRiskHistoryRecord]:
         """加载风险历史记录"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
 
                 # 构建查询条件
-                query = "SELECT * FROM risk_history"
+                query = "SELECT * FROM alert_risk_history"
                 params = []
 
                 if hours:
@@ -642,7 +642,7 @@ class AlertConfigDatabase:
 
                 for row in rows:
                     history_dict = dict(zip(columns, row))
-                    history_list.append(RiskHistoryRecord(**history_dict))
+                    history_list.append(AlertRiskHistoryRecord(**history_dict))
 
                 return history_list
 

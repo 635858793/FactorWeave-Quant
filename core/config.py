@@ -1,8 +1,8 @@
-from loguru import logger
 """
 Core configuration module that re-exports the unified ConfigManager
 """
 
+from loguru import logger
 from typing import Dict, Any, Optional
 import os
 import json
@@ -201,9 +201,9 @@ def restore_config(config_manager: ConfigManager, backup_path: str) -> bool:
         # 迁移配置到最新版本
         config = migrate_config(config, config.get('version', '1.0.0'))
 
-        # 更新配置
-        config_manager._config = config
-        config_manager.save()
+        # 更新配置：通过 set() 逐项持久化
+        for key, value in config.items():
+            config_manager.set(key, value)
 
         logger.info(f"配置已从备份恢复: {backup_path}")
         return True
@@ -235,19 +235,18 @@ def _ensure_config_initialized():
         # 验证和迁移配置
         if not validate_config(config_manager.get_all()):
             logger.warning("配置验证失败，使用默认配置")
-            config_manager._config = {
+            default_config = {
                 'version': '1.3.0',
                 'theme': ThemeConfig().to_dict(),
                 'trading': TradingConfig().to_dict(),
                 'data': DataConfig().to_dict(),
                 'ui': {'theme': 'default', 'language': 'zh_CN'}
             }
-            for key, value in config_manager._config.items():
+            for key, value in default_config.items():
                 config_manager.set(key, value)
         else:
             migrated_config = migrate_config(
                 config_manager.get_all(), config_manager.get('version', '1.0.0'))
-            config_manager._config = migrated_config
             for key, value in migrated_config.items():
                 config_manager.set(key, value)
         

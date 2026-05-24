@@ -22,6 +22,7 @@ import asyncio
 import threading
 import time
 import pickle
+from utils.safe_pickle import safe_load, safe_loads
 import gzip
 import hashlib
 import json
@@ -39,11 +40,7 @@ try:
 except ImportError:
     REDIS_AVAILABLE = False
 
-try:
-    from loguru import logger
-except ImportError:
-    import logging
-    logger = logging.getLogger(__name__)
+from loguru import logger
 
 logger = logger.bind(module=__name__)
 
@@ -502,7 +499,7 @@ class DiskCache:
                 if self.index[key].get('compressed', False):
                     data = gzip.decompress(data)
 
-                item = pickle.loads(data)
+                item = safe_loads(data)
 
                 if item.is_expired():
                     self.remove(key)
@@ -641,7 +638,7 @@ class DistributedCache:
                 return None
 
             # 反序列化
-            item = pickle.loads(data)
+            item = safe_loads(data)
 
             if item.is_expired():
                 self.remove(key)
@@ -928,7 +925,7 @@ class EnhancedCacheSystem:
         """估算值的大小"""
         try:
             return len(pickle.dumps(value))
-        except:
+        except Exception:
             return 0
 
     def _get_memory_usage(self, cache) -> int:

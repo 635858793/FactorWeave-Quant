@@ -306,7 +306,7 @@ class GPUDetector:
                 # 合理性检查
                 if memory_mb > 0 and memory_mb < 65536:  # 0MB到64GB之间
                     return memory_mb
-        except:
+        except Exception:
             pass
         
         return 0
@@ -658,24 +658,10 @@ class GPULoadBalancer:
     
     def _run_gpu_benchmark(self, adapter: GPUAdapter) -> Dict[str, float]:
         """运行GPU性能基准测试"""
-        # 简化的基准测试，实际实现中应该包含真实的计算任务
         import time
-        import random
-        
+
+        logger.warning("GPU基准测试未集成实际计算任务，使用硬件规格评分")
         start_time = time.time()
-        
-        # 模拟计算负载
-        compute_time = 0
-        if adapter.vendor == 'NVIDIA':
-            compute_time = 0.5 + random.uniform(0, 0.3)  # NVIDIA通常性能较好
-        elif adapter.vendor == 'AMD':
-            compute_time = 0.6 + random.uniform(0, 0.4)
-        elif adapter.vendor == 'Intel':
-            compute_time = 0.8 + random.uniform(0, 0.5)  # Intel集成显卡性能较低
-        else:
-            compute_time = 1.0 + random.uniform(0, 0.6)
-        
-        time.sleep(compute_time)
         end_time = time.time()
         
         # 基于实际性能调整分数

@@ -422,35 +422,33 @@ class RealDataProvider:
             data_manager_instance = self._get_pooled_data_manager(data_source)
 
             try:
-                # 使用数据管理器获取真实数据
-                if data_source:
-                    # 如果指定了数据源，使用指定的数据源
-                    # 统一资产类型转换逻辑（支持AssetType对象、枚举值字符串、中文名称）
-                    final_asset_type = None
-                    if asset_type:
-                        # 0. 如果已经是AssetType对象，直接使用
-                        if isinstance(asset_type, AssetType):
-                            final_asset_type = asset_type
-                            self.logger.debug(f"资产类型已是AssetType对象: {final_asset_type.value}")
-                        elif isinstance(asset_type, str):
-                            # 1. 尝试作为枚举值字符串（如"stock_a"）
+                # 统一资产类型转换逻辑（支持AssetType对象、枚举值字符串、中文名称）
+                final_asset_type = None
+                if asset_type:
+                    # 0. 如果已经是AssetType对象，直接使用
+                    if isinstance(asset_type, AssetType):
+                        final_asset_type = asset_type
+                        self.logger.debug(f"资产类型已是AssetType对象: {final_asset_type.value}")
+                    elif isinstance(asset_type, str):
+                        # 1. 尝试作为枚举值字符串（如"stock_a"）
+                        try:
+                            final_asset_type = AssetType(asset_type)
+                            self.logger.debug(f"从枚举值字符串转换: '{asset_type}' -> {final_asset_type.value}")
+                        except ValueError:
+                            # 2. 尝试从中文显示名称转换（如"A股"）
                             try:
-                                final_asset_type = AssetType(asset_type)
-                                self.logger.debug(f"从枚举值字符串转换: '{asset_type}' -> {final_asset_type.value}")
-                            except ValueError:
-                                # 2. 尝试从中文显示名称转换（如"A股"）
-                                try:
-                                    from ..ui_asset_type_utils import parse_asset_type_from_combo
-                                    final_asset_type = parse_asset_type_from_combo(asset_type)
-                                    self.logger.debug(f"从中文名称转换: '{asset_type}' -> {final_asset_type.value}")
-                                except Exception as e:
-                                    # 3. 转换失败，使用默认值
-                                    self.logger.warning(f"无法解析资产类型 '{asset_type}' (类型: {type(asset_type)}): {e}，使用默认值 STOCK_A")
-                                    final_asset_type = AssetType.STOCK_A
-                        else:
-                            self.logger.warning(f"资产类型格式不支持 (类型: {type(asset_type)}, 值: {asset_type})，使用默认值 STOCK_A")
-                            final_asset_type = AssetType.STOCK_A
-                    
+                                from ..ui_asset_type_utils import parse_asset_type_from_combo
+                                final_asset_type = parse_asset_type_from_combo(asset_type)
+                                self.logger.debug(f"从中文名称转换: '{asset_type}' -> {final_asset_type.value}")
+                            except Exception as e:
+                                # 3. 转换失败，使用默认值
+                                self.logger.warning(f"无法解析资产类型 '{asset_type}' (类型: {type(asset_type)}): {e}，使用默认值 STOCK_A")
+                                final_asset_type = AssetType.STOCK_A
+                    else:
+                        self.logger.warning(f"资产类型格式不支持 (类型: {type(asset_type)}, 值: {asset_type})，使用默认值 STOCK_A")
+                        final_asset_type = AssetType.STOCK_A
+
+                if data_source:
                     kdata = data_manager_instance.get_kdata_from_source(
                         stock_code=code,
                         period=freq,
@@ -597,7 +595,7 @@ class RealDataProvider:
                         available_stocks.append(code)
                         if len(available_stocks) >= count:
                             break
-                except:
+                except Exception:
                     continue
 
             if len(available_stocks) < count:

@@ -162,6 +162,31 @@ class AutoMLOptimizer:
             logger.warning(f"交叉验证失败: {e}")
             return self.best_score
     
+    def _build_search_space(self):
+        """构建 skopt 搜索空间"""
+        from skopt.space import Real, Integer, Categorical
+
+        dimensions = []
+        for name, space in self.param_space.items():
+            if space.type == "uniform":
+                dimensions.append(Real(space.low, space.high, name=name))
+            elif space.type == "loguniform":
+                dimensions.append(Real(space.low, space.high, prior="log-uniform", name=name))
+            elif space.type == "categorical":
+                dimensions.append(Categorical(space.values, name=name))
+            elif space.type == "int_uniform":
+                dimensions.append(Integer(space.low, space.high, name=name))
+        return dimensions
+
+    def _sample_params_from_skopt(self, skopt_params: list) -> Dict[str, Any]:
+        params = {}
+        for (name, space), val in zip(self.param_space.items(), skopt_params):
+            if space.type == "int_uniform":
+                params[name] = int(val)
+            else:
+                params[name] = val
+        return params
+
     def optimize(
         self, 
         X: np.ndarray, 
@@ -188,7 +213,107 @@ class AutoMLOptimizer:
         
         self.trials = []
         self.best_score = -float('inf') if self.objective == ObjectiveType.MAXIMIZE else float('inf')
+
+        if self.method == OptimizationMethod.BAYESIAN:
+            return self._bayesian_optimize(X, y, model_factory, callbacks, start_time)
+
+        if self.method == OptimizationMethod.GRID_SEARCH:
+            return self._grid_search(X, y, model_factory, callbacks, start_time)
         
+        return self._random_search_optimize(X, y, model_factory, callbacks, start_time)
+
+    def _bayesian_optimize(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        model_factory: Callable[[Dict[str, Any]], Any],
+        callbacks: Optional[List[Callable]],
+        start_time: float
+    ) -> OptimizationResult:
+        try:
+            from skopt import gp_minimize
+            from skopt.utils import use_named_args
+            from skopt.callbacks import VerboseCallback
+            _skopt_available = True
+            logger.info("使用 skopt.gp_minimize 进行贝叶斯优化")
+        except ImportError:
+            _skopt_available = False
+            logger.warning("skopt 不可用，降级到随机搜索")
+            return self._random_search_optimize(X, y, model_factory, callbacks, start_time)
+
+        try:
+            dimensions = self._build_search_space()
+
+            @use_named_args(dimensions)
+            def objective(**params):
+                score = self._cross_validate(params, X, y, model_factory)
+
+                is_best = (
+                    (self.objective == ObjectiveType.MAXIMIZE and score > self.best_score) or
+                    (self.objective == ObjectiveType.MINIMIZE and score < self.best_score)
+                )
+                if is_best:
+                    self.best_score = score
+                    self.best_params = copy.deepcopy(params)
+                    logger.info(f"贝叶斯优化: 新最佳分数 {score:.4f}, 参数: {params}")
+
+                trial = {
+                    'iteration': len(self.trials) + 1,
+                    'params': copy.deepcopy(params),
+                    'score': score,
+                    'is_best': is_best
+                }
+                self.trials.append(trial)
+
+                if callbacks:
+                    for callback in callbacks:
+                        try:
+                            callback(len(self.trials), self.n_iter, params, score,
+                                     self.best_params, self.best_score)
+                        except Exception as e:
+                            logger.warning(f"回调函数执行失败: {e}")
+
+                return -score if self.objective == ObjectiveType.MAXIMIZE else score
+
+            res = gp_minimize(
+                objective,
+                dimensions,
+                n_calls=self.n_iter,
+                n_initial_points=min(10, self.n_iter),
+                random_state=self.random_state,
+                n_jobs=1,
+                verbose=False
+            )
+
+            elapsed_time = time.time() - start_time
+            logger.info(f"贝叶斯优化完成，最佳分数: {self.best_score:.4f}, 最佳参数: {self.best_params}")
+
+            return OptimizationResult(
+                best_params=self.best_params,
+                best_score=self.best_score,
+                all_trials=self.trials,
+                method=self.method,
+                total_iterations=len(self.trials),
+                elapsed_time=elapsed_time
+            )
+
+        except Exception as e:
+            logger.warning(f"贝叶斯优化失败: {e}，降级到随机搜索")
+            self.trials = []
+            self.best_score = -float('inf') if self.objective == ObjectiveType.MAXIMIZE else float('inf')
+            self.best_params = {}
+            return self._random_search_optimize(X, y, model_factory, callbacks, start_time)
+
+    def _random_search_optimize(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        model_factory: Callable[[Dict[str, Any]], Any],
+        callbacks: Optional[List[Callable]],
+        start_time: float
+    ) -> OptimizationResult:
+        import time
+
         for i in range(self.n_iter):
             params = self._sample_params()
             
@@ -231,6 +356,78 @@ class AutoMLOptimizer:
             all_trials=self.trials,
             method=self.method,
             total_iterations=self.n_iter,
+            elapsed_time=elapsed_time
+        )
+
+    def _grid_search(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        model_factory: Callable[[Dict[str, Any]], Any],
+        callbacks: Optional[List[Callable]],
+        start_time: float
+    ) -> OptimizationResult:
+        import time
+        from itertools import product
+
+        param_names = list(self.param_space.keys())
+        value_lists = []
+        for name, space in self.param_space.items():
+            if space.type == "categorical":
+                value_lists.append(space.values)
+            elif space.type == "int_uniform":
+                step = max(1, (space.high - space.low) // min(10, self.n_iter))
+                value_lists.append(list(range(int(space.low), int(space.high) + 1, step)))
+            elif space.type in ("uniform", "loguniform"):
+                value_lists.append(list(np.linspace(space.low, space.high, min(5, self.n_iter))))
+
+        combinations = list(product(*value_lists))
+        total = min(len(combinations), self.n_iter)
+
+        for i, combo in enumerate(combinations[:total]):
+            params = {name: val for name, val in zip(param_names, combo)}
+            if any(space.type == "int_uniform" for space in self.param_space.values()):
+                params = {k: int(v) if self.param_space[k].type == "int_uniform" else v
+                          for k, v in params.items()}
+
+            score = self._cross_validate(params, X, y, model_factory)
+
+            is_best = (
+                (self.objective == ObjectiveType.MAXIMIZE and score > self.best_score) or
+                (self.objective == ObjectiveType.MINIMIZE and score < self.best_score)
+            )
+
+            if is_best:
+                self.best_score = score
+                self.best_params = copy.deepcopy(params)
+                logger.info(f"网格搜索 [{i+1}/{total}]: 新最佳分数 {score:.4f}, 参数: {params}")
+            else:
+                logger.debug(f"网格搜索 [{i+1}/{total}]: 分数 {score:.4f}")
+
+            trial = {
+                'iteration': i + 1,
+                'params': params,
+                'score': score,
+                'is_best': is_best
+            }
+            self.trials.append(trial)
+
+            if callbacks:
+                for callback in callbacks:
+                    try:
+                        callback(i + 1, total, params, score, self.best_params, self.best_score)
+                    except Exception as e:
+                        logger.warning(f"回调函数执行失败: {e}")
+
+        elapsed_time = time.time() - start_time
+        logger.info(f"网格搜索完成，最佳分数: {self.best_score:.4f}, 最佳参数: {self.best_params}")
+
+        return OptimizationResult(
+            best_params=self.best_params,
+            best_score=self.best_score,
+            all_trials=self.trials,
+            method=self.method,
+            total_iterations=len(self.trials),
             elapsed_time=elapsed_time
         )
     

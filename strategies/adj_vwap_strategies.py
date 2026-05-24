@@ -51,8 +51,9 @@ from core.strategy_extensions import (
 # 导入新的20字段标准策略
 
 
+# ✅ 此文件为完整版实现，推荐使用。简化版请参见 strategies/strategy_adapters.py
 class AdjMomentumPlugin(IStrategyPlugin):
-    """复权价格动量策略插件 - 完整实现"""
+    """复权价格动量策略插件 - ✅ 完整实现（推荐使用）"""
 
     def __init__(self):
         """初始化策略插件"""
@@ -409,8 +410,9 @@ class AdjMomentumPlugin(IStrategyPlugin):
         return 0.0
 
 
+# ✅ 此文件为完整版实现，推荐使用。简化版请参见 strategies/strategy_adapters.py
 class VWAPReversionPlugin(IStrategyPlugin):
-    """VWAP均值回归策略插件 - 完整实现"""
+    """VWAP均值回归策略插件 - ✅ 完整实现（推荐使用）"""
 
     def __init__(self):
         """初始化策略插件"""

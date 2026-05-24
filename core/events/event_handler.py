@@ -190,7 +190,7 @@ class CompositeEventHandler(EventHandler):
         """
         super().__init__(name or "CompositeHandler")
         self.handlers = sorted(
-            handlers, key=lambda h: h.priority, reverse=True)
+            handlers, key=lambda h: h.priority)
 
     def handle(self, event: BaseEvent) -> List[Any]:
         """
@@ -221,7 +221,7 @@ class CompositeEventHandler(EventHandler):
             handler: 要添加的处理器
         """
         self.handlers.append(handler)
-        self.handlers.sort(key=lambda h: h.priority, reverse=True)
+        self.handlers.sort(key=lambda h: h.priority)
 
     def remove_handler(self, handler: EventHandler):
         """

@@ -8,7 +8,7 @@ from loguru import logger
 import asyncio
 from typing import Optional, Dict, Any
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
+    QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
     QGroupBox, QFormLayout, QComboBox, QSpinBox, QCheckBox,
     QListWidget, QPushButton, QTextEdit, QLabel, QDialogButtonBox,
     QMessageBox, QProgressBar, QTableWidget, QTableWidgetItem,
@@ -23,6 +23,7 @@ from core.services.system_optimizer import (
     OptimizationConfig,
     OptimizationResult
 )
+from .base_dialog import BaseDialog
 
 logger = logger
 
@@ -81,21 +82,25 @@ class OptimizationWorker(QThread):
     def stop(self):
         """停止优化"""
         self._is_running = False
-        self.terminate()
+        self.requestInterruption()
+        self.quit()
+        self.wait(5000)
 
 
-class SystemOptimizerDialog(QDialog):
+class SystemOptimizerDialog(BaseDialog):
     """系统维护工具对话框"""
 
     def __init__(self, parent: Optional[QWidget] = None):
-        super().__init__(parent)
         self.optimizer_service = None  # 延迟创建
         self.worker = None
         self.current_result = None
 
-        self.setWindowTitle("系统维护工具")
-        self.setMinimumSize(900, 700)
-        self.setModal(True)
+        super().__init__(
+            parent,
+            title="系统维护工具",
+            min_size=(900, 700),
+            settings_key="SystemOptimizerDialog"
+        )
 
         # 设置样式
         self._setup_styles()
@@ -659,10 +664,12 @@ class SystemOptimizerDialog(QDialog):
             if reply == QMessageBox.Yes:
                 self.worker.stop()
                 self.worker.wait()
+                super().closeEvent(event)
                 event.accept()
             else:
                 event.ignore()
         else:
+            super().closeEvent(event)
             event.accept()
 
     def __del__(self):

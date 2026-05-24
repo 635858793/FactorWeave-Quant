@@ -214,9 +214,6 @@ class TradingWidget(QWidget):
             params_group = QGroupBox("参数设置")
             params_layout = QFormLayout(params_group)
 
-            # 添加参数控件
-            self.param_controls = {}
-
             # 创建交易按钮
             buttons_layout = QHBoxLayout()
 
@@ -236,6 +233,100 @@ class TradingWidget(QWidget):
             layout.addWidget(strategy_group)
             layout.addWidget(params_group)
             layout.addLayout(buttons_layout)
+
+            # 创建分析操作按钮
+            analysis_buttons_layout = QHBoxLayout()
+            self.signal_btn = QPushButton("计算信号")
+            analysis_buttons_layout.addWidget(self.signal_btn)
+            self.backtest_btn = QPushButton("运行回测")
+            analysis_buttons_layout.addWidget(self.backtest_btn)
+            layout.addLayout(analysis_buttons_layout)
+
+            # 创建策略参数输入控件
+            strategy_params_group = QGroupBox("策略参数")
+            strategy_params_layout = QFormLayout(strategy_params_group)
+
+            self.ma_short_spin = QSpinBox()
+            self.ma_short_spin.setRange(2, 120)
+            self.ma_short_spin.setValue(5)
+            strategy_params_layout.addRow("MA短周期:", self.ma_short_spin)
+
+            self.ma_long_spin = QSpinBox()
+            self.ma_long_spin.setRange(5, 250)
+            self.ma_long_spin.setValue(10)
+            strategy_params_layout.addRow("MA长周期:", self.ma_long_spin)
+
+            self.macd_short_spin = QSpinBox()
+            self.macd_short_spin.setRange(5, 50)
+            self.macd_short_spin.setValue(7)
+            strategy_params_layout.addRow("MACD快线:", self.macd_short_spin)
+
+            self.macd_long_spin = QSpinBox()
+            self.macd_long_spin.setRange(10, 100)
+            self.macd_long_spin.setValue(26)
+            strategy_params_layout.addRow("MACD慢线:", self.macd_long_spin)
+
+            self.macd_signal_spin = QSpinBox()
+            self.macd_signal_spin.setRange(2, 20)
+            self.macd_signal_spin.setValue(9)
+            strategy_params_layout.addRow("MACD信号:", self.macd_signal_spin)
+
+            self.kdj_n_spin = QSpinBox()
+            self.kdj_n_spin.setRange(3, 30)
+            self.kdj_n_spin.setValue(9)
+            strategy_params_layout.addRow("KDJ N:", self.kdj_n_spin)
+
+            self.kdj_m1_spin = QSpinBox()
+            self.kdj_m1_spin.setRange(1, 10)
+            self.kdj_m1_spin.setValue(3)
+            strategy_params_layout.addRow("KDJ M1:", self.kdj_m1_spin)
+
+            self.kdj_m2_spin = QSpinBox()
+            self.kdj_m2_spin.setRange(1, 10)
+            self.kdj_m2_spin.setValue(3)
+            strategy_params_layout.addRow("KDJ M2:", self.kdj_m2_spin)
+
+            # 回测参数
+            backtest_params_group = QGroupBox("回测参数")
+            backtest_params_layout = QFormLayout(backtest_params_group)
+
+            self.initial_cash_spin = QDoubleSpinBox()
+            self.initial_cash_spin.setRange(1000, 100000000)
+            self.initial_cash_spin.setValue(100000.0)
+            self.initial_cash_spin.setPrefix("¥")
+            backtest_params_layout.addRow("初始资金:", self.initial_cash_spin)
+
+            self.commission_spin = QDoubleSpinBox()
+            self.commission_spin.setRange(0.0, 0.1)
+            self.commission_spin.setSingleStep(0.0001)
+            self.commission_spin.setDecimals(6)
+            self.commission_spin.setValue(0.0003)
+            backtest_params_layout.addRow("佣金率:", self.commission_spin)
+
+            self.slippage_spin = QDoubleSpinBox()
+            self.slippage_spin.setRange(0.0, 0.1)
+            self.slippage_spin.setSingleStep(0.0001)
+            self.slippage_spin.setDecimals(6)
+            self.slippage_spin.setValue(0.0001)
+            backtest_params_layout.addRow("滑点:", self.slippage_spin)
+
+            layout.addWidget(strategy_params_group)
+            layout.addWidget(backtest_params_group)
+
+            # 填充 param_controls 字典
+            self.param_controls = {
+                'ma_short': self.ma_short_spin,
+                'ma_long': self.ma_long_spin,
+                'macd_short': self.macd_short_spin,
+                'macd_long': self.macd_long_spin,
+                'macd_signal': self.macd_signal_spin,
+                'kdj_n': self.kdj_n_spin,
+                'kdj_m1': self.kdj_m1_spin,
+                'kdj_m2': self.kdj_m2_spin,
+                'initial_cash': self.initial_cash_spin,
+                'commission_rate': self.commission_spin,
+                'slippage': self.slippage_spin,
+            }
 
             # 新增：创建绩效指标表格并放入滚动区
             self.performance_table = QTableWidget()
@@ -292,11 +383,6 @@ class TradingWidget(QWidget):
             # 连接策略选择信号
             self.strategy_combo.currentTextChanged.connect(
                 self.on_strategy_changed)
-
-            # 连接按钮信号
-            self.buy_button.clicked.connect(self.execute_buy)
-            self.sell_button.clicked.connect(self.execute_sell)
-            self.cancel_button.clicked.connect(self.cancel_order)
 
             logger.info("信号连接完成")
 
@@ -367,7 +453,6 @@ class TradingWidget(QWidget):
                 quantity = quantity_spin.value()
                 amount = current_price * quantity
 
-                # 创建订单
                 from core.services.trading_service import TradingOrder, OrderType, OrderSide
                 from decimal import Decimal
 
@@ -381,11 +466,10 @@ class TradingWidget(QWidget):
                     price=Decimal(str(current_price))
                 )
 
-                # 使用交易确认与风控服务验证订单
                 if self._trading_confirmation_service:
                     try:
                         confirmation_result = self._trading_confirmation_service.confirm_order(order)
-                        
+
                         if not confirmation_result.get('approved', False):
                             error_msg = confirmation_result.get('error', '订单验证失败')
                             QMessageBox.warning(self, "买入失败", f"订单验证失败: {error_msg}")
@@ -395,7 +479,34 @@ class TradingWidget(QWidget):
                         QMessageBox.warning(self, "买入失败", f"订单验证异常: {str(e)}")
                         return
 
-                # 执行买入逻辑
+                if self._trading_service:
+                    try:
+                        success, result = self._trading_service.create_order(
+                            symbol=self.current_stock,
+                            symbol_name=self.current_stock,
+                            order_type=OrderType.MARKET,
+                            side=OrderSide.BUY,
+                            quantity=quantity,
+                            price=Decimal(str(current_price))
+                        )
+                        if not success:
+                            QMessageBox.warning(self, "买入失败", f"创建订单失败: {result}")
+                            return
+                        order_id = result
+
+                        success, message = self._trading_service.execute_order(
+                            order_id, Decimal(str(current_price))
+                        )
+                        if not success:
+                            QMessageBox.warning(self, "买入失败", f"执行订单失败: {message}")
+                            return
+                    except Exception as e:
+                        logger.error(f"交易服务调用异常: {e}")
+                        QMessageBox.warning(self, "买入失败", f"交易服务异常: {str(e)}")
+                        return
+                else:
+                    logger.warning("TradingService 不可用，仅记录本地交易")
+
                 trade_record = {
                     'time': datetime.now(),
                     'stock_code': self.current_stock,
@@ -403,16 +514,11 @@ class TradingWidget(QWidget):
                     'price': current_price,
                     'quantity': quantity,
                     'amount': amount,
-                    'fee': amount * 0.0003  # 假设手续费为0.03%
+                    'fee': amount * 0.0003
                 }
 
-                # 更新持仓
                 self._update_position(trade_record)
-
-                # 记录交易
                 self._record_trade(trade_record)
-
-                # 发送信号
                 self.trade_executed.emit(trade_record)
 
                 QMessageBox.information(self, "买入成功",
@@ -525,7 +631,6 @@ class TradingWidget(QWidget):
                 quantity = quantity_spin.value()
                 amount = current_price * quantity
 
-                # 创建订单
                 from core.services.trading_service import TradingOrder, OrderType, OrderSide
                 from decimal import Decimal
 
@@ -539,11 +644,10 @@ class TradingWidget(QWidget):
                     price=Decimal(str(current_price))
                 )
 
-                # 使用交易确认与风控服务验证订单
                 if self._trading_confirmation_service:
                     try:
                         confirmation_result = self._trading_confirmation_service.confirm_order(order)
-                        
+
                         if not confirmation_result.get('approved', False):
                             error_msg = confirmation_result.get('error', '订单验证失败')
                             QMessageBox.warning(self, "卖出失败", f"订单验证失败: {error_msg}")
@@ -553,7 +657,34 @@ class TradingWidget(QWidget):
                         QMessageBox.warning(self, "卖出失败", f"订单验证异常: {str(e)}")
                         return
 
-                # 执行卖出逻辑
+                if self._trading_service:
+                    try:
+                        success, result = self._trading_service.create_order(
+                            symbol=self.current_stock,
+                            symbol_name=self.current_stock,
+                            order_type=OrderType.MARKET,
+                            side=OrderSide.SELL,
+                            quantity=quantity,
+                            price=Decimal(str(current_price))
+                        )
+                        if not success:
+                            QMessageBox.warning(self, "卖出失败", f"创建订单失败: {result}")
+                            return
+                        order_id = result
+
+                        success, message = self._trading_service.execute_order(
+                            order_id, Decimal(str(current_price))
+                        )
+                        if not success:
+                            QMessageBox.warning(self, "卖出失败", f"执行订单失败: {message}")
+                            return
+                    except Exception as e:
+                        logger.error(f"交易服务调用异常: {e}")
+                        QMessageBox.warning(self, "卖出失败", f"交易服务异常: {str(e)}")
+                        return
+                else:
+                    logger.warning("TradingService 不可用，仅记录本地交易")
+
                 trade_record = {
                     'time': datetime.now(),
                     'stock_code': self.current_stock,
@@ -561,13 +692,10 @@ class TradingWidget(QWidget):
                     'price': current_price,
                     'quantity': quantity,
                     'amount': amount,
-                    'fee': amount * 0.0003  # 假设手续费为0.03%
+                    'fee': amount * 0.0003
                 }
 
-                # 更新持仓
                 self._update_position(trade_record)
-
-                # 记录交易
                 self._record_trade(trade_record)
 
                 # 发送信号
@@ -611,9 +739,9 @@ class TradingWidget(QWidget):
             order_table.setColumnCount(5)
             order_table.setHorizontalHeaderLabels(
                 ["订单ID", "股票代码", "类型", "价格", "数量"])
+            order_table.setRowCount(len(pending_orders))
 
             for i, order in enumerate(pending_orders):
-                order_table.insertRow(i)
                 order_table.setItem(i, 0, QTableWidgetItem(str(order['id'])))
                 order_table.setItem(
                     i, 1, QTableWidgetItem(order['stock_code']))
@@ -684,8 +812,7 @@ class TradingWidget(QWidget):
                 code = stock_info
             if not isinstance(code, str) or not code.strip():
                 self.current_stock = None
-                if True:  # 使用Loguru日志
-                    log_structured("update_stock: 股票信息无效，未能提取到股票代码", level="error")
+                logger.error("update_stock: 股票信息无效，未能提取到股票代码")
                 QMessageBox.warning(
                     self, "股票选择错误", "update_stock：未能提取到有效的股票代码，请重新选择股票！")
                 return
@@ -710,32 +837,27 @@ class TradingWidget(QWidget):
         try:
             self.current_signals = signals
 
-            # 清空信号表格
-            self.signal_table.setRowCount(0)
+            self.signal_table.setRowCount(len(signals))
 
-            # 添加信号数据
-            for signal in signals:
-                row = self.signal_table.rowCount()
-                self.signal_table.insertRow(row)
-
+            for i, signal in enumerate(signals):
                 self.signal_table.setItem(
-                    row, 0,
+                    i, 0,
                     QTableWidgetItem(signal['time'].strftime('%Y-%m-%d'))
                 )
                 self.signal_table.setItem(
-                    row, 1,
+                    i, 1,
                     QTableWidgetItem(signal['type'])
                 )
                 self.signal_table.setItem(
-                    row, 2,
+                    i, 2,
                     QTableWidgetItem(signal['signal'])
                 )
                 self.signal_table.setItem(
-                    row, 3,
+                    i, 3,
                     QTableWidgetItem(f"{signal['price']:.3f}")
                 )
                 self.signal_table.setItem(
-                    row, 4,
+                    i, 4,
                     QTableWidgetItem(f"{signal['strength']:.4f}")
                 )
 
@@ -754,29 +876,24 @@ class TradingWidget(QWidget):
             perf = results.get('performance') or results.get('metrics') or {}
             risk = results.get('risk', {})
             trades = results.get('trades', [])
-            # 绩效表格
-            self.performance_table.setRowCount(0)
+            perf_items = list(perf.items())
+            self.performance_table.setRowCount(len(perf_items))
             font_bold = QFont()
             font_bold.setBold(True)
-            for i, (k, v) in enumerate(perf.items()):
-                row = self.performance_table.rowCount()
-                self.performance_table.insertRow(row)
+            for i, (k, v) in enumerate(perf_items):
                 item0 = QTableWidgetItem(str(k))
                 item1 = QTableWidgetItem(
                     f"{v:.4f}" if isinstance(v, float) else str(v))
-                # 彩色分组
                 if '率' in k or 'return' in k:
                     item1.setForeground(
                         QColor('green') if v >= 0 else QColor('red'))
-                # 斑马纹
-                if row % 2 == 0:
+                if i % 2 == 0:
                     item0.setBackground(QBrush(QColor(245, 245, 250)))
                     item1.setBackground(QBrush(QColor(245, 245, 250)))
-                # 加粗
                 item0.setFont(font_bold)
                 item1.setFont(font_bold)
-                self.performance_table.setItem(row, 0, item0)
-                self.performance_table.setItem(row, 1, item1)
+                self.performance_table.setItem(i, 0, item0)
+                self.performance_table.setItem(i, 1, item1)
             self.performance_table.setSortingEnabled(True)
             self.performance_table.setSelectionBehavior(
                 QAbstractItemView.SelectRows)
@@ -785,23 +902,21 @@ class TradingWidget(QWidget):
             self.performance_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
             self.performance_table.setStyleSheet(
                 "QTableWidget {border-radius: 8px; border: 1px solid #d0d0d0; background: #fff;}")
-            # 风险表格
-            self.risk_table.setRowCount(0)
-            for i, (k, v) in enumerate(risk.items()):
-                row = self.risk_table.rowCount()
-                self.risk_table.insertRow(row)
+            risk_items = list(risk.items())
+            self.risk_table.setRowCount(len(risk_items))
+            for i, (k, v) in enumerate(risk_items):
                 item0 = QTableWidgetItem(str(k))
                 item1 = QTableWidgetItem(
                     f"{v:.4f}" if isinstance(v, float) else str(v))
                 if 'drawdown' in k or '风险' in k:
                     item1.setForeground(QColor('red'))
-                if row % 2 == 0:
+                if i % 2 == 0:
                     item0.setBackground(QBrush(QColor(245, 245, 250)))
                     item1.setBackground(QBrush(QColor(245, 245, 250)))
                 item0.setFont(font_bold)
                 item1.setFont(font_bold)
-                self.risk_table.setItem(row, 0, item0)
-                self.risk_table.setItem(row, 1, item1)
+                self.risk_table.setItem(i, 0, item0)
+                self.risk_table.setItem(i, 1, item1)
             self.risk_table.setSortingEnabled(True)
             self.risk_table.setSelectionBehavior(QAbstractItemView.SelectRows)
             self.risk_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -889,45 +1004,38 @@ class TradingWidget(QWidget):
         perf_table = QTableWidget()
         perf_table.setColumnCount(2)
         perf_table.setHorizontalHeaderLabels(["绩效指标", "数值"])
-        for k, v in perf.items():
-            row = perf_table.rowCount()
-            perf_table.insertRow(row)
-            item0 = QTableWidgetItem(str(k))
-            item1 = QTableWidgetItem(
-                f"{v:.4f}" if isinstance(v, float) else str(v))
-            perf_table.setItem(row, 0, item0)
-            perf_table.setItem(row, 1, item1)
+        perf_items = list(perf.items())
+        perf_table.setRowCount(len(perf_items))
+        for i, (k, v) in enumerate(perf_items):
+            perf_table.setItem(i, 0, QTableWidgetItem(str(k)))
+            perf_table.setItem(i, 1, QTableWidgetItem(
+                f"{v:.4f}" if isinstance(v, float) else str(v)))
         perf_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         layout.addWidget(QLabel("绩效指标："))
         layout.addWidget(perf_table)
-        # 风险
         risk = results.get('risk', {})
         risk_table = QTableWidget()
         risk_table.setColumnCount(2)
         risk_table.setHorizontalHeaderLabels(["风险指标", "数值"])
-        for k, v in risk.items():
-            row = risk_table.rowCount()
-            risk_table.insertRow(row)
-            item0 = QTableWidgetItem(str(k))
-            item1 = QTableWidgetItem(
-                f"{v:.4f}" if isinstance(v, float) else str(v))
-            risk_table.setItem(row, 0, item0)
-            risk_table.setItem(row, 1, item1)
+        risk_items = list(risk.items())
+        risk_table.setRowCount(len(risk_items))
+        for i, (k, v) in enumerate(risk_items):
+            risk_table.setItem(i, 0, QTableWidgetItem(str(k)))
+            risk_table.setItem(i, 1, QTableWidgetItem(
+                f"{v:.4f}" if isinstance(v, float) else str(v)))
         risk_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         layout.addWidget(QLabel("风险指标："))
         layout.addWidget(risk_table)
-        # 交易明细
         trades = results.get('trades', [])
         if trades:
             trades_table = QTableWidget()
             trades_table.setColumnCount(len(trades[0]))
             trades_table.setHorizontalHeaderLabels(list(trades[0].keys()))
-            for trade in trades:
-                row = trades_table.rowCount()
-                trades_table.insertRow(row)
+            trades_table.setRowCount(len(trades))
+            for i, trade in enumerate(trades):
                 for col, k in enumerate(trade.keys()):
                     trades_table.setItem(
-                        row, col, QTableWidgetItem(str(trade[k])))
+                        i, col, QTableWidgetItem(str(trade[k])))
             trades_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
             layout.addWidget(QLabel("交易明细："))
             layout.addWidget(trades_table)
@@ -1086,7 +1194,7 @@ class TradingWidget(QWidget):
             if self._trading_service and hasattr(self._trading_service, 'calculate_signals'):
                 signals = self._trading_service.calculate_signals(
                     stock_code=self.current_stock.strip(),
-                    kdata=kdata,
+                    kdata=self._kdata_cache.get(self.current_stock.strip()) if hasattr(self, '_kdata_cache') else None,
                     strategy=strategy_name
                 )
             else:
@@ -1139,6 +1247,29 @@ class TradingWidget(QWidget):
             self.update_parameters_visibility()
         except Exception as e:
             logger.error(f"处理策略变更失败: {str(e)}")
+
+    def update_parameters_visibility(self):
+        """根据当前选择的策略显示/隐藏对应的参数控件"""
+        strategy_name = self.strategy_combo.currentText() if hasattr(self, 'strategy_combo') else ""
+
+        if hasattr(self, 'ma_short_spin'):
+            self.ma_short_spin.setVisible(strategy_name == "MA策略")
+        if hasattr(self, 'ma_long_spin'):
+            self.ma_long_spin.setVisible(strategy_name == "MA策略")
+
+        if hasattr(self, 'macd_short_spin'):
+            self.macd_short_spin.setVisible(strategy_name == "MACD策略")
+        if hasattr(self, 'macd_long_spin'):
+            self.macd_long_spin.setVisible(strategy_name == "MACD策略")
+        if hasattr(self, 'macd_signal_spin'):
+            self.macd_signal_spin.setVisible(strategy_name == "MACD策略")
+
+        if hasattr(self, 'kdj_n_spin'):
+            self.kdj_n_spin.setVisible(strategy_name == "KDJ策略")
+        if hasattr(self, 'kdj_m1_spin'):
+            self.kdj_m1_spin.setVisible(strategy_name == "KDJ策略")
+        if hasattr(self, 'kdj_m2_spin'):
+            self.kdj_m2_spin.setVisible(strategy_name == "KDJ策略")
 
     def refresh(self) -> None:
         """
@@ -1237,48 +1368,37 @@ class TradingWidget(QWidget):
             if kdata is None or kdata.empty:
                 raise ValueError("无法获取股票数据 - 所有数据源都失败")
 
-                # 生成交易信号（简化版）
-                signal_data = kdata.copy()
-                signal_data['signal'] = 0
+            signal_data = kdata.copy()
+            signal_data['signal'] = 0
 
-                # 根据策略生成信号
-                if strategy == "均线策略":
-                    ma_short = signal_data['close'].rolling(window=5).mean()
-                    ma_long = signal_data['close'].rolling(window=20).mean()
-                    signal_data.loc[ma_short > ma_long, 'signal'] = 1
-                    signal_data.loc[ma_short < ma_long, 'signal'] = -1
+            if strategy == "均线策略":
+                ma_short = signal_data['close'].rolling(window=5).mean()
+                ma_long = signal_data['close'].rolling(window=20).mean()
+                signal_data.loc[ma_short > ma_long, 'signal'] = 1
+                signal_data.loc[ma_short < ma_long, 'signal'] = -1
 
-                # 创建回测引擎
-                engine = UnifiedBacktestEngine(
-                    backtest_level=BacktestLevel.PROFESSIONAL)
+            engine = UnifiedBacktestEngine(
+                backtest_level=BacktestLevel.PROFESSIONAL)
 
-                # 运行回测
-                result = engine.run_backtest(
-                    data=signal_data,
-                    initial_capital=params['initial_cash'],
-                    position_size=0.9,
-                    commission_pct=params['commission_rate'],
-                    slippage_pct=params['slippage']
-                )
+            result = engine.run_backtest(
+                data=signal_data,
+                initial_capital=params['initial_cash'],
+                position_size=0.9,
+                commission_pct=params['commission_rate'],
+                slippage_pct=params['slippage']
+            )
 
-                # 提取结果
-                backtest_result = result['backtest_result']
-                risk_metrics = result['risk_metrics']
-
-                # 转换为兼容格式
-                metrics = {
-                    'total_return': risk_metrics.total_return,
-                    'annual_return': risk_metrics.annualized_return,
-                    'max_drawdown': risk_metrics.max_drawdown,
-                    'sharpe_ratio': risk_metrics.sharpe_ratio,
-                    'volatility': risk_metrics.volatility,
-                    'win_rate': getattr(risk_metrics, 'win_rate', 0),
-                    'profit_loss_ratio': getattr(risk_metrics, 'profit_loss_ratio', 0),
-                    'final_capital': backtest_result['capital'].iloc[-1],
-                    'total_trades': len(backtest_result[backtest_result['signal'] != 0])
-                }
-            else:
-                raise ValueError("无法获取主窗口或股票数据")
+            metrics = {
+                'total_return': result.get('total_return', 0.0),
+                'annual_return': result.get('annualized_return', 0.0),
+                'max_drawdown': result.get('max_drawdown', 0.0),
+                'sharpe_ratio': result.get('sharpe_ratio', 0.0),
+                'volatility': result.get('volatility', 0.0),
+                'win_rate': result.get('win_rate', 0.0),
+                'profit_loss_ratio': result.get('profit_factor', 0.0),
+                'final_capital': result.get('final_equity', params['initial_cash']),
+                'total_trades': result.get('total_trades', 0)
+            }
 
             self.update_backtest_results(metrics)
             logger.info("回测完成")
@@ -1299,38 +1419,84 @@ class TradingWidget(QWidget):
         self.process_manager.add_step(AnalysisStep('signal_gen', '信号生成'))
         self.process_manager.add_step(AnalysisStep('performance', '绩效计算'))
         self.process_manager.add_step(AnalysisStep('result', '结果展示'))
-        # 参数校验
-        self.process_manager.start_step('param_check')
-        # ...参数校验逻辑...
-        # 校验通过
-        self.process_manager.finish_step('param_check', success=True)
-        self.analysis_progress.emit(
-            {'step_id': 'param_check', 'status': 'success', 'msg': '参数校验通过'})
-        # 数据加载
-        self.process_manager.start_step('data_load')
-        # ...数据加载逻辑...
-        self.process_manager.finish_step('data_load', success=True)
-        self.analysis_progress.emit(
-            {'step_id': 'data_load', 'status': 'success', 'msg': '数据加载完成'})
-        # 信号生成
-        self.process_manager.start_step('signal_gen')
-        # ...信号生成逻辑...
-        self.process_manager.finish_step('signal_gen', success=True)
-        self.analysis_progress.emit(
-            {'step_id': 'signal_gen', 'status': 'success', 'msg': '信号生成完成'})
-        # 绩效计算
-        self.process_manager.start_step('performance')
-        # ...绩效计算逻辑...
-        self.process_manager.finish_step('performance', success=True)
-        self.analysis_progress.emit(
-            {'step_id': 'performance', 'status': 'success', 'msg': '绩效计算完成'})
-        # 结果展示
-        self.process_manager.start_step('result')
-        # ...结果展示逻辑...
-        self.process_manager.finish_step('result', success=True)
-        self.analysis_progress.emit(
-            {'step_id': 'result', 'status': 'success', 'msg': '结果展示完成'})
-        # ... existing code ...
+
+        try:
+            self.process_manager.start_step('param_check')
+            if not self.current_stock or not isinstance(self.current_stock, str) or not self.current_stock.strip():
+                self.process_manager.finish_step('param_check', success=False, error='未选择有效的股票代码')
+                self.analysis_progress.emit(
+                    {'step_id': 'param_check', 'status': 'failed', 'msg': '参数校验失败：未选择有效的股票代码'})
+                return {'error': '未选择有效的股票代码'}
+            self.process_manager.finish_step('param_check', success=True)
+            self.analysis_progress.emit(
+                {'step_id': 'param_check', 'status': 'success', 'msg': f'参数校验通过: {self.current_stock.strip()}'})
+
+            self.process_manager.start_step('data_load')
+            kdata = None
+            from core.containers import get_service_container
+            from core.services import StockService, AssetService
+            from core.plugin_types import AssetType
+            service_container = get_service_container()
+            try:
+                asset_service = service_container.resolve(AssetService)
+                if asset_service:
+                    kdata = asset_service.get_historical_data(
+                        symbol=self.current_stock.strip(), asset_type=AssetType.STOCK_A, period='D')
+            except Exception:
+                pass
+            if kdata is None or (hasattr(kdata, 'empty') and kdata.empty):
+                stock_service = service_container.get_service(StockService)
+                if stock_service:
+                    kdata = stock_service.get_kdata(self.current_stock.strip())
+            if kdata is None or kdata.empty:
+                self.process_manager.finish_step('data_load', success=False, error='无法获取股票数据')
+                self.analysis_progress.emit(
+                    {'step_id': 'data_load', 'status': 'failed', 'msg': '数据加载失败'})
+                return {'error': '无法获取股票数据'}
+            self.process_manager.finish_step('data_load', success=True)
+            self.analysis_progress.emit(
+                {'step_id': 'data_load', 'status': 'success', 'msg': f'数据加载完成: {len(kdata)} 条'})
+
+            self.process_manager.start_step('signal_gen')
+            try:
+                signals_result = self._calculate_signals_impl()
+                if signals_result and signals_result.get('error'):
+                    self.process_manager.finish_step('signal_gen', success=False, error=signals_result['error'])
+                    self.analysis_progress.emit(
+                        {'step_id': 'signal_gen', 'status': 'failed', 'msg': signals_result['error']})
+                    return {'error': signals_result['error']}
+                self.process_manager.finish_step('signal_gen', success=True)
+                self.analysis_progress.emit(
+                    {'step_id': 'signal_gen', 'status': 'success', 'msg': '信号生成完成'})
+            except Exception as e:
+                self.process_manager.finish_step('signal_gen', success=False, error=str(e))
+                self.analysis_progress.emit(
+                    {'step_id': 'signal_gen', 'status': 'failed', 'msg': f'信号生成失败: {e}'})
+                return {'error': str(e)}
+
+            self.process_manager.start_step('performance')
+            try:
+                self._run_backtest_impl()
+                self.process_manager.finish_step('performance', success=True)
+                self.analysis_progress.emit(
+                    {'step_id': 'performance', 'status': 'success', 'msg': '绩效计算完成'})
+            except Exception as e:
+                self.process_manager.finish_step('performance', success=False, error=str(e))
+                self.analysis_progress.emit(
+                    {'step_id': 'performance', 'status': 'failed', 'msg': f'绩效计算失败: {e}'})
+                return {'error': str(e)}
+
+            self.process_manager.start_step('result')
+            self.process_manager.finish_step('result', success=True)
+            self.analysis_progress.emit(
+                {'step_id': 'result', 'status': 'success', 'msg': '结果展示完成'})
+            return {'status': 'completed'}
+
+        except Exception as e:
+            logger.error(f"分析流程异常: {e}")
+            self.analysis_progress.emit(
+                {'step_id': 'result', 'status': 'failed', 'msg': f'分析失败: {e}'})
+            return {'error': str(e)}
 
     def set_parameters(self, params: Dict[str, Any]):
         """
@@ -1871,12 +2037,12 @@ class TradingWidget(QWidget):
 
             def show_group(title, data):
                 if data:
-                    text = f"<b>{title}：</b><br>"
-                    for k, v in data.items():
-                        if isinstance(v, float):
-                            text += f"{k}: {v:.4f}<br>"
-                        else:
-                            text += f"{k}: {v}<br>"
+                    lines = [f"<b>{title}：</b>"]
+                    lines.extend(
+                        f"{k}: {v:.4f}" if isinstance(v, float) else f"{k}: {v}"
+                        for k, v in data.items()
+                    )
+                    text = "<br>".join(lines) + "<br>"
                     self.results_area.append(text)
             show_group("收益类指标", perf)
             show_group("风险类指标", risk)
@@ -2052,9 +2218,8 @@ class TradingWidget(QWidget):
     def _record_trade(self, trade_record: Dict[str, Any]):
         """记录交易记录"""
         try:
-            # 添加到交易记录表格
             row = self.trade_table.rowCount()
-            self.trade_table.insertRow(row)
+            self.trade_table.setRowCount(row + 1)
 
             self.trade_table.setItem(row, 0, QTableWidgetItem(
                 trade_record['time'].strftime('%Y-%m-%d %H:%M:%S')
@@ -2072,7 +2237,6 @@ class TradingWidget(QWidget):
             self.trade_table.setItem(
                 row, 6, QTableWidgetItem(f"{trade_record['fee']:.2f}"))
 
-            # 调整列宽
             self.trade_table.resizeColumnsToContents()
 
         except Exception as e:
@@ -2081,83 +2245,73 @@ class TradingWidget(QWidget):
     def _update_position_table(self):
         """更新持仓表格显示"""
         try:
-            # 清空表格
-            self.position_table.setRowCount(0)
+            self.position_table.setRowCount(len(self.current_positions))
 
-            # 添加持仓数据
-            for position in self.current_positions:
-                row = self.position_table.rowCount()
-                self.position_table.insertRow(row)
-
-                # 获取当前价格
+            for i, position in enumerate(self.current_positions):
                 current_price = self._get_current_price(
                 ) if position['stock_code'] == self.current_stock else position['current_price']
                 if current_price:
                     position['current_price'] = current_price
 
-                # 计算盈亏
                 profit_loss = (
                     current_price - position['cost']) / position['cost'] * 100 if position['cost'] > 0 else 0
 
                 self.position_table.setItem(
-                    row, 0, QTableWidgetItem(position['stock_code']))
+                    i, 0, QTableWidgetItem(position['stock_code']))
                 self.position_table.setItem(
-                    row, 1, QTableWidgetItem(position['stock_name']))
+                    i, 1, QTableWidgetItem(position['stock_name']))
                 self.position_table.setItem(
-                    row, 2, QTableWidgetItem(str(position['quantity'])))
+                    i, 2, QTableWidgetItem(str(position['quantity'])))
                 self.position_table.setItem(
-                    row, 3, QTableWidgetItem(f"{position['cost']:.2f}"))
+                    i, 3, QTableWidgetItem(f"{position['cost']:.2f}"))
                 self.position_table.setItem(
-                    row, 4, QTableWidgetItem(f"{current_price:.2f}"))
+                    i, 4, QTableWidgetItem(f"{current_price:.2f}"))
 
-                # 设置盈亏颜色
                 profit_item = QTableWidgetItem(f"{profit_loss:.2f}%")
                 if profit_loss > 0:
                     profit_item.setForeground(QColor('red'))
                 elif profit_loss < 0:
                     profit_item.setForeground(QColor('green'))
-                self.position_table.setItem(row, 5, profit_item)
+                self.position_table.setItem(i, 5, profit_item)
 
-            # 调整列宽
             self.position_table.resizeColumnsToContents()
 
         except Exception as e:
             logger.error(f"更新持仓表格失败: {str(e)}")
 
     def _get_pending_orders(self) -> List[Dict[str, Any]]:
-        """获取待处理订单列表"""
         try:
-            # 这里返回模拟的订单数据
-            # 在实际应用中，应该从交易接口获取真实的订单数据
-            return [
-                {
-                    'id': '12345',
-                    'stock_code': 'sh000001',
-                    'type': 'BUY',
-                    'price': 3.25,
-                    'quantity': 1000,
-                    'status': 'PENDING'
-                },
-                {
-                    'id': '12346',
-                    'stock_code': 'sz000002',
-                    'type': 'SELL',
-                    'price': 15.80,
-                    'quantity': 500,
-                    'status': 'PENDING'
-                }
-            ]
+            if self._trading_service:
+                active_orders = self._trading_service.get_active_orders()
+                return [
+                    {
+                        'id': o.order_id,
+                        'stock_code': o.symbol,
+                        'type': o.side.value.upper(),
+                        'price': float(o.price) if o.price else 0.0,
+                        'quantity': o.quantity,
+                        'status': o.status.value.upper()
+                    }
+                    for o in active_orders
+                ]
+            return []
 
         except Exception as e:
             logger.error(f"获取待处理订单失败: {str(e)}")
             return []
 
     def _cancel_order(self, order_id: str):
-        """撤销指定订单"""
         try:
-            # 这里实现撤单逻辑
-            # 在实际应用中，应该调用交易接口撤销订单
-            logger.info(f"撤销订单 {order_id}")
+            if self._trading_service:
+                success, message = self._trading_service.cancel_order(order_id)
+                if success:
+                    logger.info(f"订单已撤销: {order_id}")
+                else:
+                    logger.warning(f"撤销订单失败: {order_id}, 原因: {message}")
+                    raise RuntimeError(f"撤销订单失败: {message}")
+            else:
+                logger.warning(f"TradingService 不可用，无法撤销订单: {order_id}")
+                raise RuntimeError("TradingService 不可用")
 
         except Exception as e:
             logger.error(f"撤销订单失败: {str(e)}")

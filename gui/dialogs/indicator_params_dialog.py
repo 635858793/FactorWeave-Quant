@@ -8,7 +8,7 @@ from loguru import logger
 import sys
 from typing import Dict, Any, List, Optional
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QGridLayout,
+    QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QLineEdit, QPushButton, QSpinBox, QDoubleSpinBox,
     QComboBox, QCheckBox, QTabWidget, QWidget, QScrollArea,
     QGroupBox, QMessageBox, QDialogButtonBox, QFormLayout,
@@ -16,6 +16,8 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer
 from PyQt5.QtGui import QFont, QIcon, QPalette, QColor
+
+from .base_dialog import BaseDialog
 
 logger = logger.bind(module=__name__)
 
@@ -162,13 +164,18 @@ class IndicatorParamWidget(QWidget):
                 elif isinstance(widget, QComboBox):
                     widget.setCurrentText(str(default_value))
 
-class IndicatorParamsDialog(QDialog):
+class IndicatorParamsDialog(BaseDialog):
     """指标参数管理对话框"""
 
     params_changed = pyqtSignal(dict)  # 参数变化信号
 
     def __init__(self, selected_indicators: List[str] = None, parent=None):
-        super().__init__(parent)
+        super().__init__(
+            parent,
+            title="指标参数设置",
+            min_size=(800, 600),
+            settings_key="IndicatorParamsDialog"
+        )
         self.selected_indicators = selected_indicators or []
         self.indicator_params = {}
         self.param_widgets = {}
@@ -177,10 +184,6 @@ class IndicatorParamsDialog(QDialog):
 
     def _init_ui(self):
         """初始化UI"""
-        self.setWindowTitle("指标参数设置")
-        self.setModal(True)
-        self.resize(800, 600)
-
         # 主布局
         main_layout = QVBoxLayout()
 

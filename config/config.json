@@ -23,6 +23,27 @@
       "show_bottom_panel": true
     }
   },
+  "trading": {
+    "mode": "paper",
+    "default_symbol": "000001",
+    "default_period": "1d",
+    "initial_cash": 500000.0,
+    "trade_amount": 10000.0,
+    "commission_rate": 0.0003,
+    "slippage": 0.0001,
+    "position_ratio": 0.30,
+    "single_stock_ratio": 0.15,
+    "stop_loss": 0.05,
+    "take_profit": 0.12,
+    "trailing_stop": 0.03,
+    "time_stop": 5,
+    "max_positions": 5,
+    "lot_size": 100,
+    "auto_refresh": true,
+    "refresh_interval": 60,
+    "risk_check_enabled": true,
+    "_source": "模拟交易最优参数固化 | 2025-11-21 3股×60日 Paper Trading 验证"
+  },
   "data": {
     "source": "tdx",
     "cache_enabled": true,
@@ -53,16 +74,12 @@
     "enable_gpu": false
   },
   "_meta": {
-    "last_saved": "2025-08-14T12:02:01.877539",
-    "version": "1.0"
+    "last_saved": "2025-11-21T00:00:00.000000",
+    "version": "2.0",
+    "note": "基于实测模拟交易最优参数固化: 胜率100% Sharpe=1.60 年化7.44% 最大回撤2.17%"
   },
   "window": {
-    "geometry": [
-      0,
-      23,
-      2560,
-      1417
-    ],
+    "geometry": [0, 23, 2560, 1417],
     "maximized": true
   },
   "appearance": {

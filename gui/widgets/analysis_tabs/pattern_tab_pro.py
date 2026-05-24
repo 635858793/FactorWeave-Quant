@@ -401,7 +401,7 @@ class AnalysisThread(QThread):
                             trigger_date = self.kdata.index[index].strftime('%Y-%m-%d')
                         elif isinstance(self.kdata.index[index], str):
                             trigger_date = str(self.kdata.index[index])[:10]
-                    except:
+                    except Exception:
                         pass
                 
                 if trigger_date:
@@ -424,7 +424,7 @@ class AnalysisThread(QThread):
                     effectiveness = pattern_manager.get_pattern_effectiveness(pattern_name, days=90)
                     if effectiveness.get('success_rate', 0) > 0:
                         pattern_stats[pattern_name] = effectiveness
-                except:
+                except Exception:
                     pass
             
             # 更新每个形态的成功率
@@ -2403,11 +2403,12 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
                 if self.analysis_thread.isRunning():
                     logger.info("[一键分析] 检测到正在运行的分析任务，正在取消...")
                     self.analysis_thread.cancel()
-                    self.analysis_thread.wait(2000)  # 等待最多2秒
+                    self.analysis_thread.wait(2000)
                     if self.analysis_thread.isRunning():
                         logger.warning("[一键分析] 旧线程未能及时停止，强制终止")
-                        self.analysis_thread.terminate()
-                        self.analysis_thread.wait(1000)
+                        self.analysis_thread.requestInterruption()
+                        self.analysis_thread.quit()
+                        self.analysis_thread.wait(5000)
 
             # 显示进度条
             self.progress_bar.setVisible(True)
@@ -3214,7 +3215,7 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
                             future_index = index + 5
                             if future_index < len(kdata):
                                 future_price = float(kdata['close'].iloc[future_index])
-                    except:
+                    except Exception:
                         pass
                 
                 if trigger_date:
@@ -3235,7 +3236,7 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
                     effectiveness = pattern_manager.get_pattern_effectiveness(pattern_name, days=90)
                     if effectiveness.get('success_rate', 0) > 0:
                         pattern_stats[pattern_name] = effectiveness
-                except:
+                except Exception:
                     pass
             
             for pattern in patterns:
@@ -3823,7 +3824,7 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
                         trigger_date = kdata.index[index].strftime('%Y-%m-%d')
                     else:
                         trigger_date = str(kdata.index[index])[:10]
-                except:
+                except Exception:
                     pass
         pattern['trigger_date'] = trigger_date
         """填充表格行数据"""
@@ -3919,7 +3920,7 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
                     config = pattern_manager.get_pattern_config(pattern_name)
                     if config and hasattr(config, 'signal_type'):
                         signal = config.signal_type.value
-                except:
+                except Exception:
                     pass
             
             if not signal or signal == 'neutral':

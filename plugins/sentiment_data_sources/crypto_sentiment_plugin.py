@@ -6,7 +6,6 @@ from loguru import logger
 基于加密货币Fear & Greed指数和市场数据分析情绪
 """
 
-import numpy as np
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 
@@ -15,6 +14,8 @@ from plugins.sentiment_data_sources.base_sentiment_plugin import BaseSentimentPl
 from plugins.sentiment_data_sources.config_base import ConfigurablePlugin, PluginConfigField, create_config_file_path, validate_number_range
 from plugins.sentiment_data_source_interface import SentimentData, SentimentResponse
 
+# 此插件当前无真实数据源，所有fetch方法均不可用
+# 需要对接真实加密货币API（如Alternative.me Fear & Greed Index API）后启用
 class CryptoSentimentPlugin(BaseSentimentPlugin, ConfigurablePlugin):
     """加密货币情绪分析插件"""
 
@@ -23,15 +24,16 @@ class CryptoSentimentPlugin(BaseSentimentPlugin, ConfigurablePlugin):
         ConfigurablePlugin.__init__(self)
         self._config_file = create_config_file_path("crypto_sentiment")
 
-        # 联网查询地址配置（endpointhost字段）
-        # 加密货币情绪插件不需要联网查询地址，直接使用API，设为空
         self.endpointhost = []
 
-        # 支持的加密货币
         self.supported_cryptos = [
             "BTC", "ETH", "BNB", "ADA", "XRP", "DOT", "LINK", "LTC",
             "BCH", "XLM", "DOGE", "UNI", "AAVE", "MATIC", "SOL"
         ]
+
+    @property
+    def has_real_data(self) -> bool:
+        return False
 
     @property
     def metadata(self) -> Dict[str, Any]:
@@ -338,7 +340,6 @@ class CryptoSentimentPlugin(BaseSentimentPlugin, ConfigurablePlugin):
         return indicators
 
     def _fetch_raw_sentiment_data(self, **kwargs) -> SentimentResponse:
-        """获取加密货币原始情绪数据"""
         if not self.is_enabled():
             return SentimentResponse(
                 success=False,
@@ -349,294 +350,34 @@ class CryptoSentimentPlugin(BaseSentimentPlugin, ConfigurablePlugin):
                 update_time=datetime.now()
             )
 
-        try:
-            self._safe_log("info", "开始获取加密货币情绪数据...")
-
-            sentiment_data = []
-
-            # 1. 获取Fear & Greed指数
-            fear_greed_data = self._fetch_fear_greed_data()
-            if fear_greed_data:
-                sentiment_data.append(fear_greed_data)
-
-            # 2. 获取比特币主导地位（如果启用）
-            if self.get_config("enable_dominance_analysis", True):
-                dominance_data = self._fetch_btc_dominance_data()
-                if dominance_data:
-                    sentiment_data.append(dominance_data)
-
-            # 3. 获取市场波动率（如果启用）
-            if self.get_config("enable_volatility_analysis", True):
-                volatility_data = self._fetch_crypto_volatility_data()
-                if volatility_data:
-                    sentiment_data.append(volatility_data)
-
-            # 4. 获取DeFi情绪（如果启用）
-            if self.get_config("defi_sentiment_weight", 0.1) > 0:
-                defi_data = self._fetch_defi_sentiment_data()
-                if defi_data:
-                    sentiment_data.append(defi_data)
-
-            # 5. 获取NFT情绪（如果启用）
-            if self.get_config("nft_sentiment_weight", 0.05) > 0:
-                nft_data = self._fetch_nft_sentiment_data()
-                if nft_data:
-                    sentiment_data.append(nft_data)
-
-            if sentiment_data:
-                composite_score = self._calculate_crypto_composite_score(sentiment_data)
-                self._safe_log("info", f"成功获取 {len(sentiment_data)} 项加密货币情绪数据")
-
-                return SentimentResponse(
-                    success=True,
-                    data=sentiment_data,
-                    composite_score=composite_score,
-                    data_quality="simulated",  # 基于模拟数据
-                    update_time=datetime.now()
-                )
-            else:
-                return SentimentResponse(
-                    success=False,
-                    data=[],
-                    composite_score=50.0,
-                    error_message="未获取到加密货币情绪数据",
-                    data_quality="unavailable",
-                    update_time=datetime.now()
-                )
-
-        except Exception as e:
-            self._safe_log("error", f"加密货币情绪数据获取失败: {str(e)}")
-            return SentimentResponse(
-                success=False,
-                data=[],
-                composite_score=50.0,
-                error_message=f"加密货币情绪数据获取失败: {str(e)}",
-                data_quality="error",
-                update_time=datetime.now()
-            )
+        return SentimentResponse(
+            success=False,
+            data=[],
+            composite_score=50.0,
+            error_message="加密货币情绪数据源不可用：当前无真实API数据源，需要配置Alternative.me Fear & Greed Index API或其他加密货币数据源后启用",
+            data_quality="unavailable",
+            update_time=datetime.now()
+        )
 
     def _fetch_fear_greed_data(self) -> Optional[SentimentData]:
-        """获取Fear & Greed指数数据"""
-        try:
-            # 生成模拟Fear & Greed指数 (0-100)
-            fear_greed_index = np.random.normal(50, 20)
-            fear_greed_index = max(0, min(100, fear_greed_index))
-
-            # 应用平滑处理
-            smoothing = self.get_config("sentiment_smoothing", 0.2)
-            if smoothing > 0:
-                # 模拟历史平滑
-                historical_avg = np.random.normal(50, 15)
-                fear_greed_index = fear_greed_index * (1 - smoothing) + historical_avg * smoothing
-                fear_greed_index = max(0, min(100, fear_greed_index))
-
-            # 获取状态和信号
-            status = self._get_fear_greed_status(fear_greed_index)
-            signal = self._get_fear_greed_signal(fear_greed_index)
-
-            return SentimentData(
-                indicator_name="加密货币Fear&Greed指数",
-                value=round(fear_greed_index, 2),
-                status=status,
-                change=round(np.random.normal(0, 3), 2),
-                signal=signal,
-                suggestion=f"加密市场{status}(F&G={fear_greed_index:.0f})，{signal}",
-                timestamp=datetime.now(),
-                source="Crypto-Fear&Greed",
-                confidence=0.85
-            )
-
-        except Exception as e:
-            self._safe_log("warning", f"获取Fear & Greed数据失败: {e}")
-            return None
+        self._safe_log("warning", "Fear & Greed数据不可用：当前无真实API数据源")
+        return None
 
     def _fetch_btc_dominance_data(self) -> Optional[SentimentData]:
-        """获取比特币主导地位数据"""
-        try:
-            # 生成模拟比特币主导地位 (通常在40%-70%)
-            btc_dominance = np.random.normal(55, 8)
-            btc_dominance = max(30, min(80, btc_dominance))
-
-            # 主导地位分析
-            if btc_dominance >= 65:
-                status = "BTC主导强势"
-                signal = "山寨币承压"
-                sentiment_score = 45  # BTC强势时整体情绪趋于保守
-            elif btc_dominance >= 50:
-                status = "BTC主导正常"
-                signal = "市场均衡"
-                sentiment_score = 55
-            else:
-                status = "山寨币活跃"
-                signal = "风险偏好上升"
-                sentiment_score = 65  # 山寨币活跃时风险偏好较高
-
-            return SentimentData(
-                indicator_name="比特币主导地位",
-                value=round(sentiment_score, 2),
-                status=status,
-                change=round(np.random.normal(0, 2), 2),
-                signal=signal,
-                suggestion=f"BTC主导地位{btc_dominance:.1f}%，{status}",
-                timestamp=datetime.now(),
-                source="Crypto-Dominance",
-                confidence=0.75
-            )
-
-        except Exception as e:
-            self._safe_log("warning", f"获取BTC主导地位数据失败: {e}")
-            return None
+        self._safe_log("warning", "BTC主导地位数据不可用：当前无真实API数据源")
+        return None
 
     def _fetch_crypto_volatility_data(self) -> Optional[SentimentData]:
-        """获取加密货币波动率数据"""
-        try:
-            # 生成模拟波动率数据
-            monitored_cryptos = self.get_config("monitored_cryptos", ["BTC", "ETH", "BNB"])
-
-            # 模拟各币种的波动率
-            volatilities = {}
-            for crypto in monitored_cryptos:
-                if crypto == "BTC":
-                    vol = np.random.normal(60, 20)  # BTC波动率相对较低
-                elif crypto == "ETH":
-                    vol = np.random.normal(70, 25)  # ETH波动率中等
-                else:
-                    vol = np.random.normal(80, 30)  # 其他币种波动率较高
-
-                volatilities[crypto] = max(20, min(200, vol))
-
-            # 计算加权平均波动率
-            weights = self._parse_crypto_weights(self.get_config("crypto_weights", ""))
-            weighted_volatility = 0
-            total_weight = 0
-
-            for crypto, vol in volatilities.items():
-                weight = weights.get(crypto, 0.1)
-                weighted_volatility += vol * weight
-                total_weight += weight
-
-            if total_weight > 0:
-                avg_volatility = weighted_volatility / total_weight
-            else:
-                avg_volatility = np.mean(list(volatilities.values()))
-
-            # 波动率转换为情绪分数
-            if avg_volatility <= 40:
-                status = "波动极低"
-                signal = "市场冷淡"
-                sentiment_score = 35
-            elif avg_volatility <= 60:
-                status = "波动较低"
-                signal = "市场平稳"
-                sentiment_score = 50
-            elif avg_volatility <= 100:
-                status = "波动正常"
-                signal = "市场活跃"
-                sentiment_score = 65
-            else:
-                status = "波动剧烈"
-                signal = "高风险高回报"
-                sentiment_score = 80
-
-            return SentimentData(
-                indicator_name="加密市场波动率",
-                value=round(sentiment_score, 2),
-                status=status,
-                change=round(np.random.normal(0, 5), 2),
-                signal=signal,
-                suggestion=f"加密市场平均波动率{avg_volatility:.0f}%，{status}",
-                timestamp=datetime.now(),
-                source="Crypto-Volatility",
-                confidence=0.70
-            )
-
-        except Exception as e:
-            self._safe_log("warning", f"获取加密货币波动率数据失败: {e}")
-            return None
+        self._safe_log("warning", "加密市场波动率数据不可用：当前无真实API数据源")
+        return None
 
     def _fetch_defi_sentiment_data(self) -> Optional[SentimentData]:
-        """获取DeFi市场情绪数据"""
-        try:
-            # 模拟DeFi指标
-            tvl_change = np.random.normal(0, 10)  # TVL变化百分比
-            yield_avg = np.random.normal(8, 4)    # 平均收益率
-            new_protocols = np.random.poisson(2)  # 新协议数量
-
-            # 综合评分
-            defi_score = 50
-            defi_score += tvl_change * 2  # TVL变化影响
-            defi_score += (yield_avg - 5) * 3  # 收益率影响
-            defi_score += new_protocols * 2  # 新协议影响
-
-            defi_score = max(0, min(100, defi_score))
-
-            if defi_score >= 70:
-                status = "DeFi繁荣"
-                signal = "创新活跃"
-            elif defi_score >= 50:
-                status = "DeFi稳定"
-                signal = "发展正常"
-            else:
-                status = "DeFi低迷"
-                signal = "需要关注"
-
-            return SentimentData(
-                indicator_name="DeFi市场情绪",
-                value=round(defi_score, 2),
-                status=status,
-                change=round(tvl_change, 2),
-                signal=signal,
-                suggestion=f"DeFi生态{status}，TVL变化{tvl_change:+.1f}%",
-                timestamp=datetime.now(),
-                source="Crypto-DeFi",
-                confidence=0.65
-            )
-
-        except Exception as e:
-            self._safe_log("warning", f"获取DeFi情绪数据失败: {e}")
-            return None
+        self._safe_log("warning", "DeFi情绪数据不可用：当前无真实API数据源")
+        return None
 
     def _fetch_nft_sentiment_data(self) -> Optional[SentimentData]:
-        """获取NFT市场情绪数据"""
-        try:
-            # 模拟NFT指标
-            trading_volume_change = np.random.normal(0, 25)  # 交易量变化
-            floor_price_change = np.random.normal(0, 15)     # 地板价变化
-            new_collections = np.random.poisson(5)           # 新集合数量
-
-            # 综合评分
-            nft_score = 50
-            nft_score += trading_volume_change * 1.5
-            nft_score += floor_price_change * 2
-            nft_score += (new_collections - 5) * 2
-
-            nft_score = max(0, min(100, nft_score))
-
-            if nft_score >= 70:
-                status = "NFT热潮"
-                signal = "投机活跃"
-            elif nft_score >= 50:
-                status = "NFT正常"
-                signal = "稳定发展"
-            else:
-                status = "NFT冷淡"
-                signal = "关注度下降"
-
-            return SentimentData(
-                indicator_name="NFT市场情绪",
-                value=round(nft_score, 2),
-                status=status,
-                change=round(trading_volume_change, 2),
-                signal=signal,
-                suggestion=f"NFT市场{status}，交易量变化{trading_volume_change:+.1f}%",
-                timestamp=datetime.now(),
-                source="Crypto-NFT",
-                confidence=0.60
-            )
-
-        except Exception as e:
-            self._safe_log("warning", f"获取NFT情绪数据失败: {e}")
-            return None
+        self._safe_log("warning", "NFT情绪数据不可用：当前无真实API数据源")
+        return None
 
     def _get_fear_greed_status(self, index: float) -> str:
         """根据Fear & Greed指数获取状态"""
@@ -728,13 +469,12 @@ class CryptoSentimentPlugin(BaseSentimentPlugin, ConfigurablePlugin):
 
                 # 相关性调整
                 if correlation_adjustment:
-                    # 模拟与传统市场的相关性调整
-                    correlation_factor = np.random.uniform(0.8, 1.2)
+                    correlation_factor = 1.0
                     weight *= correlation_factor
 
                 # 传统市场影响调整
                 if traditional_impact > 0:
-                    impact_adjustment = 1 + traditional_impact * np.random.normal(0, 0.1)
+                    impact_adjustment = 1.0
                     weight *= impact_adjustment
 
                 adjusted_weight = weight * confidence
@@ -751,7 +491,7 @@ class CryptoSentimentPlugin(BaseSentimentPlugin, ConfigurablePlugin):
         except Exception as e:
             self._safe_log("warning", f"计算加密货币综合指数失败: {e}")
             # 使用简单平均作为备选
-            avg_score = np.mean([data.value for data in sentiment_data])
+            avg_score = sum(data.value for data in sentiment_data) / len(sentiment_data)
             return max(0.0, min(100.0, round(avg_score, 2)))
 
 # 插件工厂函数

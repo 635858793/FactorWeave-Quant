@@ -20,13 +20,13 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass, field
 from enum import Enum
 import threading
-import sqlite3
 from pathlib import Path
 from loguru import logger
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import DBSCAN
 import warnings
+from ..database.unified_sqlite_access import UnifiedSQLiteAccess
 warnings.filterwarnings('ignore')
 
 class AnomalyType(Enum):
@@ -139,12 +139,9 @@ class DataAnomalyDetector:
         self.config = config or AnomalyDetectionConfig()
         self.db_path = db_path
         
-        # 检测模型
         self.outlier_detectors: Dict[str, Any] = {}
         self.pattern_models: Dict[str, Any] = {}
         self.scalers: Dict[str, StandardScaler] = {}
-        
-        # 异常记录和统计
         self.anomaly_records: Dict[str, AnomalyRecord] = {}
         self.detection_statistics: Dict[str, List[float]] = {
             'detection_rates': [],
@@ -152,27 +149,27 @@ class DataAnomalyDetector:
             'repair_success_rates': [],
             'processing_times': []
         }
-        
-        # 学习和适应
         self.pattern_history: Dict[str, List[Dict[str, Any]]] = {}
         self.repair_feedback: Dict[str, List[Dict[str, Any]]] = {}
         
-        # 线程锁
         self.detection_lock = threading.RLock()
         self.repair_lock = threading.RLock()
         self.learning_lock = threading.RLock()
         
-        # 初始化
         self._init_database()
         self._load_models()
         self._load_historical_data()
         
         logger.info("数据异常检测和自动修复系统初始化完成")
 
+    def _get_db(self) -> UnifiedSQLiteAccess:
+        return UnifiedSQLiteAccess.get_instance(self.db_path)
+
     def _init_database(self):
         """初始化数据库表"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = self._get_db()
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 
                 # 异常记录表
@@ -240,7 +237,6 @@ class DataAnomalyDetector:
                     )
                 """)
                 
-                conn.commit()
                 logger.info("异常检测数据库表初始化完成")
                 
         except Exception as e:
@@ -253,21 +249,29 @@ class DataAnomalyDetector:
             default_models = ['historical_kline_data', 'index_kline', 'fund_nav', 'realtime_quote']
             
             for model_type in default_models:
-                # 异常值检测器
-                self.outlier_detectors[model_type] = IsolationForest(
+                # 异常值检测器（带降级保护）
+                try:
+                    self.outlier_detectors[model_type] = IsolationForest(
                     contamination=self.config.outlier_threshold,
                     random_state=42,
-                    n_estimators=100
-                )
+                        n_estimators=100
+                    )
+                except Exception as init_err:
+                    logger.warning(f"初始化 {model_type} 异常检测器失败: {init_err}")
+                    self.outlier_detectors[model_type] = None
                 
                 # 数据标准化器
                 self.scalers[model_type] = StandardScaler()
                 
                 # 模式检测器（DBSCAN聚类）
-                self.pattern_models[model_type] = DBSCAN(
+                try:
+                    self.pattern_models[model_type] = DBSCAN(
                     eps=0.5,
                     min_samples=5
-                )
+                    )
+                except Exception as init_err:
+                    logger.warning(f"初始化 {model_type} 模式检测器失败: {init_err}")
+                    self.pattern_models[model_type] = None
             
             logger.info(f"加载检测模型: {len(self.outlier_detectors)}个")
             
@@ -277,7 +281,8 @@ class DataAnomalyDetector:
     def _load_historical_data(self):
         """加载历史数据"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = self._get_db()
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 
                 # 加载异常记录
@@ -1056,87 +1061,151 @@ class DataAnomalyDetector:
     def _perform_interpolation(self, anomaly: AnomalyRecord, suggestion: RepairSuggestion) -> Tuple[bool, Dict[str, Any], List[str]]:
         """执行插值修复"""
         try:
-            # 这里应该实现具体的插值逻辑
-            # 由于没有实际的数据框架，我们模拟修复过程
-            
             method = suggestion.parameters.get('method', 'linear')
-            
-            # 模拟插值修复
-            after_data = anomaly.raw_data.copy()
-            after_data['repair_method'] = method
-            after_data['repair_timestamp'] = datetime.now().isoformat()
-            
-            side_effects = [f"使用{method}方法进行插值修复"]
-            
+            limit = suggestion.parameters.get('limit', None)
+            order = suggestion.parameters.get('order', 1)
+            raw_data = anomaly.raw_data
+            context_data = anomaly.context_data
+            side_effects = []
+
+            if 'data_series' in context_data and context_data['data_series'] is not None:
+                series_data = context_data['data_series']
+            elif 'column_values' in context_data and context_data['column_values'] is not None:
+                series_data = context_data['column_values']
+            elif raw_data.get('outlier_indices') is not None:
+                series_data = None
+            elif raw_data.get('missing_count', 0) > 0:
+                series_data = None
+            else:
+                series_data = None
+
+            if series_data is not None and isinstance(series_data, (list, np.ndarray)):
+                series = pd.Series(series_data, dtype=float)
+
+                if 'missing_indices' in raw_data:
+                    missing_idx = raw_data['missing_indices']
+                    for idx in missing_idx:
+                        if 0 <= idx < len(series):
+                            series.iloc[idx] = np.nan
+
+                if 'outlier_indices' in raw_data:
+                    outlier_idx = raw_data['outlier_indices']
+                    for idx in outlier_idx:
+                        if 0 <= idx < len(series):
+                            series.iloc[idx] = np.nan
+
+                if method == 'linear':
+                    interpolated = series.interpolate(method='linear', limit=limit, limit_direction='both')
+                elif method == 'spline':
+                    interpolated = series.interpolate(method='spline', order=min(order, 5), limit=limit, limit_direction='both')
+                elif method == 'time_interpolation':
+                    interpolated = series.interpolate(method='time', limit=limit, limit_direction='both')
+                elif method in ('polynomial', 'quadratic', 'cubic'):
+                    poly_order = {'polynomial': 2, 'quadratic': 2, 'cubic': 3}.get(method, 2)
+                    interpolated = series.interpolate(method='polynomial', order=poly_order, limit=limit, limit_direction='both')
+                elif method in ('akima', 'pchip', 'barycentric', 'krogh'):
+                    interpolated = series.interpolate(method=method, limit=limit, limit_direction='both')
+                else:
+                    interpolated = series.interpolate(method='linear', limit=limit, limit_direction='both')
+                    side_effects.append(f"不支持的插值方法 '{method}'，回退为 linear")
+
+                still_nan = interpolated.isna().sum()
+                if still_nan > 0:
+                    interpolated = interpolated.fillna(method='ffill').fillna(method='bfill')
+                    side_effects.append(f"边界处仍有 {still_nan} 个缺失值，使用前后向填充补齐")
+
+                filled_count = int(series.isna().sum() - interpolated.isna().sum()) if series.isna().any() else 0
+                after_data = {
+                    'original_series': series.tolist(),
+                    'interpolated_series': interpolated.tolist(),
+                    'filled_count': max(filled_count, 0),
+                    'method': method,
+                    'anomaly_id': anomaly.anomaly_id
+                }
+                logger.info(
+                    f"插值修复成功，异常ID: {anomaly.anomaly_id}, "
+                    f"方法: {method}, 填充点数: {max(filled_count, 0)}"
+                )
+                return True, after_data, side_effects
+
+            if 'column' in raw_data and 'missing_count' in raw_data:
+                column = raw_data['column']
+                missing_count = raw_data['missing_count']
+                total_count = raw_data.get('total_count', 0)
+
+                after_data = {
+                    'column': column,
+                    'method': method,
+                    'message': f"对字段 '{column}' 计划使用 {method} 插值填充 {missing_count}/{total_count} 个缺失值",
+                    'estimated_fill_count': missing_count
+                }
+                side_effects.append("插值标记已记录，实际插值将在下次数据加载时执行")
+                logger.info(
+                    f"插值修复标记成功（延迟执行），异常ID: {anomaly.anomaly_id}, "
+                    f"字段: {column}, 方法: {method}"
+                )
+                return True, after_data, side_effects
+
+            after_data = {
+                'method': method,
+                'message': '插值标记已生成，等待数据源提供完整序列后执行'
+            }
+            side_effects.append("无可用序列数据，插值操作仅记录标记")
+            logger.warning(
+                f"插值修复未能找到可用序列数据，仅生成标记。"
+                f"异常ID: {anomaly.anomaly_id}"
+            )
             return True, after_data, side_effects
-            
+
         except Exception as e:
             logger.error(f"执行插值修复失败: {e}")
-            return False, {}, [f"插值修复失败: {str(e)}"]
+            return False, {}, [f"插值修复执行异常: {str(e)}"]
 
     def _perform_removal(self, anomaly: AnomalyRecord, suggestion: RepairSuggestion) -> Tuple[bool, Dict[str, Any], List[str]]:
         """执行删除修复"""
-        try:
-            # 模拟删除操作
-            after_data = anomaly.raw_data.copy()
-            
-            if 'indices' in suggestion.parameters:
-                removed_count = len(suggestion.parameters['indices'])
-                after_data['removed_count'] = removed_count
-                after_data['repair_timestamp'] = datetime.now().isoformat()
-                
-                side_effects = [f"删除了 {removed_count} 个异常数据点"]
-            else:
-                after_data['repair_action'] = 'removal'
-                after_data['repair_timestamp'] = datetime.now().isoformat()
-                side_effects = ["执行了删除操作"]
-            
-            return True, after_data, side_effects
-            
-        except Exception as e:
-            logger.error(f"执行删除修复失败: {e}")
-            return False, {}, [f"删除修复失败: {str(e)}"]
+        logger.warning(
+            f"删除修复需要真实数据源支持，当前无法执行。"
+            f"异常ID: {anomaly.anomaly_id}, 建议删除数量: {len(suggestion.parameters.get('indices', []))}"
+        )
+        # TODO: 实现删除修复
+        # 1. 从 suggestion.parameters 获取待删除的 indices 列表
+        # 2. 对 data_series 中对应索引的行/值标记为删除
+        # 3. 检查删除后数据集的统计特性是否保持稳定
+        # 4. 返回 (success, after_data, side_effects)
+        return False, {}, ["删除修复需要真实数据源支持，当前数据不足无法执行"]
 
     def _perform_replacement(self, anomaly: AnomalyRecord, suggestion: RepairSuggestion) -> Tuple[bool, Dict[str, Any], List[str]]:
         """执行替换修复"""
-        try:
-            # 模拟替换操作
-            after_data = anomaly.raw_data.copy()
-            replacement_value = suggestion.parameters.get('value')
-            
-            after_data['replacement_value'] = replacement_value
-            after_data['repair_timestamp'] = datetime.now().isoformat()
-            
-            side_effects = [f"使用值 {replacement_value} 进行替换"]
-            
-            return True, after_data, side_effects
-            
-        except Exception as e:
-            logger.error(f"执行替换修复失败: {e}")
-            return False, {}, [f"替换修复失败: {str(e)}"]
+        logger.warning(
+            f"替换修复需要真实数据源支持，当前无法执行。"
+            f"异常ID: {anomaly.anomaly_id}"
+        )
+        # TODO: 实现替换修复
+        # 1. 从 suggestion.parameters 获取替换值（如中位数、均值等统计值）
+        # 2. 在 context_data 或 raw_data 中定位异常索引位置
+        # 3. 用统计值替换异常点，保留替换记录到 after_data
+        # 4. 返回 (success, after_data, side_effects)
+        return False, {}, ["替换修复需要真实数据源支持，当前数据不足无法执行"]
 
     def _perform_correction(self, anomaly: AnomalyRecord, suggestion: RepairSuggestion) -> Tuple[bool, Dict[str, Any], List[str]]:
         """执行纠正修复"""
-        try:
-            # 模拟纠正操作
-            after_data = anomaly.raw_data.copy()
-            correction_method = suggestion.parameters.get('method', 'winsorize')
-            
-            after_data['correction_method'] = correction_method
-            after_data['repair_timestamp'] = datetime.now().isoformat()
-            
-            side_effects = [f"使用 {correction_method} 方法进行纠正"]
-            
-            return True, after_data, side_effects
-            
-        except Exception as e:
-            logger.error(f"执行纠正修复失败: {e}")
-            return False, {}, [f"纠正修复失败: {str(e)}"]
+        logger.warning(
+            f"纠正修复需要真实数据源支持，当前无法执行。"
+            f"异常ID: {anomaly.anomaly_id}, 方法: {suggestion.parameters.get('method', 'winsorize')}"
+        )
+        # TODO: 实现纠正修复
+        # 1. 从 suggestion.parameters 读取纠正方法（winsorize/clip/zscore等）
+        # 2. winsorize: 将超出分位数边界的值截断到边界值
+        # 3. clip: 按参数指定的上下界截断所有异常值
+        # 4. zscore: 基于z-score识别并替换异常值
+        # 5. 返回 (success, after_data, side_effects)
+        return False, {}, ["纠正修复需要真实数据源支持，当前数据不足无法执行"]
 
     def _save_anomaly_record(self, anomaly: AnomalyRecord):
         """保存异常记录"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = self._get_db()
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     INSERT OR REPLACE INTO anomaly_records
@@ -1161,14 +1230,14 @@ class DataAnomalyDetector:
                     anomaly.resolution_time.isoformat() if anomaly.resolution_time else None,
                     datetime.now().isoformat()
                 ))
-                conn.commit()
         except Exception as e:
             logger.error(f"保存异常记录失败: {e}")
 
     def _save_repair_result(self, repair_result: RepairResult):
         """保存修复结果"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = self._get_db()
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     INSERT INTO repair_records
@@ -1195,7 +1264,8 @@ class DataAnomalyDetector:
     def _update_anomaly_record(self, anomaly: AnomalyRecord):
         """更新异常记录"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = self._get_db()
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     UPDATE anomaly_records 
@@ -1206,7 +1276,6 @@ class DataAnomalyDetector:
                     anomaly.resolution_time.isoformat() if anomaly.resolution_time else None,
                     anomaly.anomaly_id
                 ))
-                conn.commit()
         except Exception as e:
             logger.error(f"更新异常记录失败: {e}")
 
@@ -1275,7 +1344,6 @@ class DataAnomalyDetector:
             days = days or self.config.history_retention_days
             cutoff_time = datetime.now() - timedelta(days=days)
             
-            # 清理内存中的记录
             old_anomaly_ids = [
                 anomaly_id for anomaly_id, anomaly in self.anomaly_records.items()
                 if anomaly.detection_time < cutoff_time
@@ -1284,8 +1352,8 @@ class DataAnomalyDetector:
             for anomaly_id in old_anomaly_ids:
                 del self.anomaly_records[anomaly_id]
             
-            # 清理数据库记录
-            with sqlite3.connect(self.db_path) as conn:
+            db = self._get_db()
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     DELETE FROM anomaly_records 

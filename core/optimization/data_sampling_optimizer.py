@@ -84,6 +84,10 @@ class DataAggregator:
         """聚合数据"""
         if len(data) == 0:
             return data
+
+        if target_points is not None and target_points <= 0:
+            logger.warning(f"无效的目标点数 {target_points}，使用默认值")
+            target_points = None
         
         start_time = time.time()
         
@@ -127,29 +131,65 @@ class DataAggregator:
         return data.iloc[::step].reset_index(drop=True)
     
     def _lttb_sampling(self, data: pd.DataFrame, target_points: int) -> pd.DataFrame:
-        """Largest-Triangle-Three-Buckets采样算法"""
-        if len(data) <= target_points:
+        """Largest-Triangle-Three-Buckets (LTTB) 降采样算法
+
+        将数据点按target_points分桶，每个桶内选择能形成最大三角形面积的点保留。
+        相比等距采样，LTTB能更好地保留数据的视觉特征（峰值、谷值、趋势变化）。
+
+        算法复杂度: O(n)
+        参考: Steinarsson, 2013, "Downsampling Time Series for Visual Representation"
+        """
+        n = len(data)
+        if n <= target_points:
             return data
-        
-        # 为简化实现，我们使用一个优化的固定步长采样
-        # 真正的LTTB算法比较复杂，这里提供一个高效的近似实现
-        step = len(data) / target_points
-        
-        # 确保包含第一个和最后一个数据点
-        indices = [0]
-        
-        # 计算中间采样点
-        for i in range(1, target_points - 1):
-            idx = int(i * step)
-            if idx < len(data):
-                indices.append(idx)
-        
-        indices.append(len(data) - 1)  # 最后一个点
-        
-        # 去重并排序
-        indices = sorted(list(set(indices)))
-        
-        return data.iloc[indices].reset_index(drop=True)
+
+        if target_points < 3:
+            return self._fixed_step_sampling(data, target_points)
+
+        value_col = data.select_dtypes(include=[np.number]).columns[0]
+        y = data[value_col].values.astype(np.float64)
+        x = np.arange(n, dtype=np.float64)
+
+        threshold = target_points - 2
+        bucket_size = (n - 2) / threshold
+
+        sampled = np.empty(target_points, dtype=np.int64)
+        sampled[0] = 0
+        sampled[target_points - 1] = n - 1
+
+        a = 0
+        for i in range(threshold):
+            bucket_start = int(np.floor((i + 1) * bucket_size)) + 1
+            bucket_end = int(np.floor((i + 2) * bucket_size)) + 1
+            bucket_end = min(bucket_end, n - 1)
+
+            next_bucket_start = bucket_end
+            next_bucket_end = int(np.floor((i + 3) * bucket_size)) + 1
+            next_bucket_end = min(next_bucket_end, n)
+
+            avg_x = np.mean(x[next_bucket_start:next_bucket_end])
+            avg_y = np.mean(y[next_bucket_start:next_bucket_end])
+
+            max_area = -1.0
+            max_area_idx = bucket_start
+
+            prev_x = x[a]
+            prev_y = y[a]
+
+            for j in range(bucket_start, bucket_end):
+                area = abs(
+                    (prev_x - avg_x) * (y[j] - prev_y) -
+                    (prev_x - x[j]) * (avg_y - prev_y)
+                ) * 0.5
+
+                if area > max_area:
+                    max_area = area
+                    max_area_idx = j
+
+            sampled[i + 1] = max_area_idx
+            a = max_area_idx
+
+        return data.iloc[sampled].reset_index(drop=True)
     
     def _viewport_based_sampling(self, data: pd.DataFrame, target_points: int) -> pd.DataFrame:
         """基于视口的采样"""
@@ -181,7 +221,7 @@ class DataAggregator:
         try:
             content_hash = hash(str(data.values.tobytes()))
             return f"{content_hash}_{target_points}"
-        except:
+        except Exception:
             return f"{id(data)}_{target_points}"
     
     def _aggregate_chunk(self, chunk: DataChunk) -> pd.DataFrame:
@@ -253,6 +293,9 @@ class AdaptiveDataOptimizer:
         """根据性能目标优化数据"""
         if render_time_target is None:
             render_time_target = self.config.performance_threshold_ms
+        elif render_time_target <= 0:
+            logger.warning(f"无效的渲染时间目标 {render_time_target}，使用默认值")
+            render_time_target = self.config.performance_threshold_ms
         
         # 记录原始数据大小
         original_size = len(data)
@@ -276,12 +319,18 @@ class AdaptiveDataOptimizer:
         optimization_time = time.time() - start_time
         
         # 更新统计信息
-        compression_ratio = len(optimized_data) / original_size
+        if original_size > 0:
+            compression_ratio = len(optimized_data) / original_size
+        else:
+            compression_ratio = 0.0
         self.optimization_stats['total_samples_taken'] += len(optimized_data)
-        self.optimization_stats['avg_compression_ratio'] = (
-            (self.optimization_stats['avg_compression_ratio'] * (self.optimization_stats['total_samples_taken'] - len(optimized_data)) + 
-             compression_ratio * len(optimized_data)) / self.optimization_stats['total_samples_taken']
-        )
+        if self.optimization_stats['total_samples_taken'] > 0:
+            self.optimization_stats['avg_compression_ratio'] = (
+                (self.optimization_stats['avg_compression_ratio'] * (self.optimization_stats['total_samples_taken'] - len(optimized_data)) +
+                 compression_ratio * len(optimized_data)) / self.optimization_stats['total_samples_taken']
+            )
+        else:
+            self.optimization_stats['avg_compression_ratio'] = 0.0
         self.optimization_stats['last_optimization_time'] = optimization_time
         
         logger.info(f"数据优化完成: {original_size} -> {len(optimized_data)} "
@@ -314,6 +363,11 @@ class AdaptiveDataOptimizer:
 # 便捷函数
 def create_data_optimizer(data_size: int = None, performance_requirement: str = "balanced") -> AdaptiveDataOptimizer:
     """创建数据优化器"""
+    valid_requirements = {"high_quality", "high_speed", "balanced"}
+    if performance_requirement not in valid_requirements:
+        logger.warning(f"无效的性能需求 '{performance_requirement}'，使用默认值 'balanced'")
+        performance_requirement = "balanced"
+
     if performance_requirement == "high_quality":
         config = SamplingConfig(
             strategy=SamplingStrategy.ADAPTIVE,

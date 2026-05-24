@@ -359,7 +359,7 @@ class AsyncIOManager:
             avg_response_time = 0
             max_response_time = 0
             if self.response_times:
-                avg_response_time = sum(self.response_times) / len(self.response_times)
+                avg_response_time = np.mean(self.response_times)
                 max_response_time = max(self.response_times)
 
             return {
@@ -661,3 +661,4 @@ def migrate_to_unified_cache():
     except Exception as e:
         logger.warning(f"迁移到统一缓存服务失败: {e}")
         return False
+

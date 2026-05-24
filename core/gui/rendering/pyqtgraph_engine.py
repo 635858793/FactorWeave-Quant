@@ -117,48 +117,180 @@ class PyQtGraphChartWidget(QWidget):
         """清空数据"""
         self.data_buffer.clear()
 
+    def set_data(self, data):
+        """设置图表数据"""
+        if data is None:
+            return
+        if isinstance(data, dict):
+            self.add_data_point(data)
+        elif isinstance(data, list):
+            for item in data:
+                self.add_data_point(item)
+
+    def set_dark_theme(self):
+        """设置暗色主题"""
+        self.config.theme = "dark"
+        self.plot_widget.setBackground('#1e1e1e')
+        self.plot_widget.getAxis('left').setPen('#cccccc')
+        self.plot_widget.getAxis('bottom').setPen('#cccccc')
+
+    def set_light_theme(self):
+        """设置亮色主题"""
+        self.config.theme = "light"
+        self.plot_widget.setBackground('white')
+        self.plot_widget.getAxis('left').setPen('#333333')
+        self.plot_widget.getAxis('bottom').setPen('#333333')
+
+    def set_trading_style(self):
+        """设置交易样式-暗色背景+高对比度"""
+        self.set_dark_theme()
+        self.plot_widget.showGrid(x=True, y=True, alpha=0.15)
+
+    def set_professional_style(self):
+        """设置专业样式"""
+        self.plot_widget.setBackground('#f5f5f5')
+        self.plot_widget.getAxis('left').setPen('#2c3e50')
+        self.plot_widget.getAxis('bottom').setPen('#2c3e50')
+        self.plot_widget.showGrid(x=True, y=True, alpha=0.25)
+
+    def set_minimal_style(self):
+        """设置极简样式"""
+        self.plot_widget.setBackground('white')
+        self.plot_widget.showGrid(x=False, y=False)
+        self.plot_widget.getAxis('left').setPen('#999999')
+        self.plot_widget.getAxis('bottom').setPen('#999999')
+
+    def show_grid(self, enabled=True):
+        """显示/隐藏网格"""
+        self.plot_widget.showGrid(x=enabled, y=enabled, alpha=0.3 if enabled else 0)
+
+    def show_legend(self, enabled=True):
+        """显示/隐藏图例"""
+        if enabled:
+            self.plot_widget.addLegend()
+        else:
+            legend = self.plot_widget.plotItem.legend
+            if legend is not None:
+                legend.scene().removeItem(legend)
+
+    def show_tooltip(self, enabled=True):
+        """显示/隐藏工具提示"""
+        self._tooltip_enabled = enabled
+
+    def show_crosshair(self, enabled=True):
+        """显示/隐藏十字光标"""
+        self._crosshair_enabled = enabled
+        if enabled:
+            self._crosshair_vline = pg.InfiniteLine(angle=90, movable=False)
+            self._crosshair_hline = pg.InfiniteLine(angle=0, movable=False)
+            self.plot_widget.addItem(self._crosshair_vline, ignoreBounds=True)
+            self.plot_widget.addItem(self._crosshair_hline, ignoreBounds=True)
+            self.plot_widget.scene().sigMouseMoved.connect(self._on_crosshair_move)
+        else:
+            try:
+                self.plot_widget.scene().sigMouseMoved.disconnect(self._on_crosshair_move)
+                if hasattr(self, '_crosshair_vline'):
+                    self.plot_widget.removeItem(self._crosshair_vline)
+                if hasattr(self, '_crosshair_hline'):
+                    self.plot_widget.removeItem(self._crosshair_hline)
+            except Exception:
+                pass
+
+    def _on_crosshair_move(self, pos):
+        mouse_point = self.plot_widget.plotItem.vb.mapSceneToView(pos)
+        if hasattr(self, '_crosshair_vline'):
+            self._crosshair_vline.setPos(mouse_point.x())
+        if hasattr(self, '_crosshair_hline'):
+            self._crosshair_hline.setPos(mouse_point.y())
+
+    def set_interactive(self, enabled=True):
+        """设置交互模式"""
+        self.plot_widget.setMouseEnabled(x=enabled, y=enabled)
+
+    def set_zoomable(self, enabled=True):
+        """设置缩放模式"""
+        self.plot_widget.getViewBox().setMouseMode(
+            self.plot_widget.getViewBox().RectMode if enabled else self.plot_widget.getViewBox().PanMode
+        )
+
+    def set_pannable(self, enabled=True):
+        """设置平移模式"""
+        view_box = self.plot_widget.getViewBox()
+        try:
+            view_box.setLimits(
+                xMin=None if enabled else 0,
+                xMax=None if enabled else 1,
+                yMin=None if enabled else 0,
+                yMax=None if enabled else 1
+            )
+        except Exception:
+            pass
+
+    def set_selectable(self, enabled=True):
+        """设置选择模式"""
+        self._selectable = enabled
+
+    def enable_animation(self):
+        """启用动画"""
+        self.config.real_time = True
+        self.start_real_time_updates()
+
+    def connect_callback(self, event_type, callback):
+        """连接回调函数"""
+        if not hasattr(self, '_callbacks'):
+            self._callbacks = {}
+        self._callbacks[event_type] = callback
+
 
 class LineChartWidget(PyQtGraphChartWidget):
     """线图组件"""
     
     def __init__(self, config: ChartConfig, parent=None):
         self.line_plots = {}
+        self._line_x_data = {}
+        self._line_y_data = {}
         super().__init__(config, parent)
         
     def setup_chart(self):
         """设置线图样式"""
         super().setup_chart()
         
-        # 设置初始线条
         colors = self.config.colors
         for i, color in enumerate(colors):
             pen = pg.mkPen(color, width=self.config.line_width)
+            plot_name = f"line_{i}"
             plot = self.plot_widget.plot(pen=pen, name=f"线{i+1}")
-            self.line_plots[f"line_{i}"] = plot
+            self.line_plots[plot_name] = plot
+            self._line_x_data[plot_name] = []
+            self._line_y_data[plot_name] = []
             
     def update_chart(self):
-        """更新线图数据"""
+        """更新线图数据（增量追加，O(n) 重构）"""
         try:
             if not self.data_buffer:
                 return
                 
-            # 转换数据格式
             for data_point in self.data_buffer:
-                for line_name, plot in self.line_plots.items():
+                for line_name in self.line_plots:
                     if line_name in data_point:
-                        x_data = []
-                        y_data = []
-                        
-                        # 处理历史数据点
-                        for point in self.data_buffer:
-                            if line_name in point:
-                                x_data.append(point.get('timestamp', 0))
-                                y_data.append(point[line_name])
-                                
-                        if x_data and y_data:
-                            plot.setData(x_data, y_data)
-                            
-            self.data_buffer.clear()  # 清空已处理的数据
+                        self._line_x_data[line_name].append(
+                            data_point.get('timestamp', 0))
+                        self._line_y_data[line_name].append(
+                            data_point[line_name])
+
+            max_points = self.config.max_data_points
+            for line_name, plot in self.line_plots.items():
+                xd = self._line_x_data[line_name]
+                yd = self._line_y_data[line_name]
+                if xd and yd:
+                    if max_points and len(xd) > max_points:
+                        self._line_x_data[line_name] = xd[-max_points:]
+                        self._line_y_data[line_name] = yd[-max_points:]
+                        xd = self._line_x_data[line_name]
+                        yd = self._line_y_data[line_name]
+                    plot.setData(xd, yd)
+                    
+            self.data_buffer.clear()
             
         except Exception as e:
             logger.error(f"更新线图失败: {e}")
@@ -201,9 +333,50 @@ class CandlestickChartWidget(PyQtGraphChartWidget):
             
     def _update_candlestick(self, ohlc_data):
         """更新K线数据"""
-        # 这里实现K线绘制逻辑
-        # 由于PyQtGraph没有内置的K线图，需要使用多条线组合实现
-        pass
+        if not ohlc_data or not isinstance(ohlc_data, dict):
+            return
+        try:
+            self.plot_widget.clear()
+            colors = self.config.colors
+            up_color = colors[0] if len(colors) > 0 else '#00BFFF'
+            down_color = colors[1] if len(colors) > 1 else '#FF6347'
+
+            open_val = ohlc_data.get('open', 0)
+            high_val = ohlc_data.get('high', 0)
+            low_val = ohlc_data.get('low', 0)
+            close_val = ohlc_data.get('close', 0)
+
+            if all(v == 0 for v in [open_val, high_val, low_val, close_val]):
+                return
+
+            is_up = close_val >= open_val
+            body_color = up_color if is_up else down_color
+            wick_color = up_color if is_up else down_color
+
+            body_top = max(open_val, close_val)
+            body_bottom = min(open_val, close_val)
+            body_height = body_top - body_bottom
+            body_width = 0.6
+
+            if low_val != high_val:
+                wick_line = pg.PlotDataItem(
+                    [1, 1], [low_val, high_val],
+                    pen=pg.mkPen(wick_color, width=1)
+                )
+                self.plot_widget.addItem(wick_line)
+
+            if body_height > 0:
+                rect = pg.QtGui.QGraphicsRectItem(
+                    float(1 - body_width / 2), float(body_bottom),
+                    float(body_width), float(body_height)
+                )
+                rect.setPen(pg.mkPen(body_color))
+                rect.setBrush(pg.mkBrush(body_color))
+                self.plot_widget.addItem(rect)
+
+            self.plot_widget.autoRange()
+        except Exception as e:
+            logger.error(f"pyqtgraph K线绘制失败: {e}")
         
     def _update_indicators(self, indicators):
         """更新技术指标"""
@@ -211,7 +384,7 @@ class CandlestickChartWidget(PyQtGraphChartWidget):
             if ma_name in indicators:
                 data = indicators[ma_name]
                 if isinstance(data, list) and len(data) >= 2:
-                    x_data = [i for i in range(len(data))]
+                    x_data = list(range(len(data)))
                     ma_line.setData(x_data, data)
 
 

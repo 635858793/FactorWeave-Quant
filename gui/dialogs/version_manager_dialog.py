@@ -13,7 +13,7 @@ import traceback
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QGridLayout,
+    QVBoxLayout, QHBoxLayout, QGridLayout,
     QTabWidget, QLabel, QLineEdit, QTextEdit, QTableWidget,
     QTableWidgetItem, QPushButton, QComboBox, QDateEdit,
     QFrame, QSplitter, QScrollArea, QGroupBox,
@@ -24,6 +24,8 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, pyqtSignal, QThread, QDate, QTimer
 from PyQt5.QtGui import QFont, QPixmap, QPalette, QIcon
 
+from .base_dialog import BaseDialog
+
 # 导入后端版本管理系统
 try:
     from optimization.version_manager import create_version_manager, VersionManager
@@ -32,7 +34,7 @@ except ImportError:
     VERSION_MANAGER_AVAILABLE = False
     logger.warning("版本管理后端系统不可用，将使用模拟数据")
 
-class VersionManagerDialog(QDialog):
+class VersionManagerDialog(BaseDialog):
     """版本管理对话框"""
 
     # 信号定义
@@ -45,7 +47,6 @@ class VersionManagerDialog(QDialog):
         Args:
             parent: 父窗口
         """
-        super().__init__(parent)
         self.logger = logger.bind(module=__name__)
 
         # 添加初始化标志
@@ -68,6 +69,14 @@ class VersionManagerDialog(QDialog):
         self.selected_version = None
         self.pattern_names = ["头肩顶", "双底", "三重顶", "楔形", "旗形"]  # 可配置的形态列表
 
+        super().__init__(
+            parent,
+            title="版本管理",
+            min_size=(1000, 700),
+            size=(1200, 800),
+            settings_key="VersionManagerDialog"
+        )
+
         # 初始化UI
         self.init_ui()
 
@@ -82,10 +91,6 @@ class VersionManagerDialog(QDialog):
     def init_ui(self):
         """初始化用户界面"""
         try:
-            self.setWindowTitle("版本管理")
-            self.setMinimumSize(1000, 700)
-            self.resize(1200, 800)
-
             # 主布局
             main_layout = QVBoxLayout(self)
             main_layout.setContentsMargins(10, 10, 10, 10)

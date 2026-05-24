@@ -7,7 +7,6 @@
 
 import sys
 import os
-import logging
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Tuple
 from PyQt5.QtWidgets import (
@@ -63,53 +62,7 @@ class MultiAgentStatusPanel(QWidget):
         self._monitoring_service = monitoring_service
         
         # Agent数据
-        self._agents_data = {
-            'sentiment_agent': {
-                'status': '运行中',
-                'cpu_usage': 15.3,
-                'memory_usage': 256.2,
-                'response_time': 0.5,
-                'error_rate': 0.02,
-                'last_update': datetime.now(),
-                'alerts': []
-            },
-            'news_agent': {
-                'status': '运行中',
-                'cpu_usage': 22.1,
-                'memory_usage': 512.8,
-                'response_time': 1.2,
-                'error_rate': 0.01,
-                'last_update': datetime.now(),
-                'alerts': []
-            },
-            'technical_agent': {
-                'status': '运行中',
-                'cpu_usage': 45.7,
-                'memory_usage': 1024.5,
-                'response_time': 0.8,
-                'error_rate': 0.00,
-                'last_update': datetime.now(),
-                'alerts': []
-            },
-            'risk_agent': {
-                'status': '运行中',
-                'cpu_usage': 30.2,
-                'memory_usage': 768.9,
-                'response_time': 1.5,
-                'error_rate': 0.01,
-                'last_update': datetime.now(),
-                'alerts': []
-            },
-            'fusion_engine': {
-                'status': '运行中',
-                'cpu_usage': 18.9,
-                'memory_usage': 384.6,
-                'response_time': 0.7,
-                'error_rate': 0.00,
-                'last_update': datetime.now(),
-                'alerts': []
-            }
-        }
+        self._agents_data = {}
         
         # 定时器用于刷新Agent数据
         self._update_timer = QTimer()
@@ -400,12 +353,16 @@ class MultiAgentStatusPanel(QWidget):
     def _update_agents_data(self):
         """更新Agent数据"""
         try:
-            # 从监控服务获取Agent数据
-            if self._monitoring_service:
-                # 模拟从服务获取数据（实际实现中应调用服务的方法）
+            if self._monitoring_service and hasattr(self._monitoring_service, 'get_agents_status'):
                 agents_data = self._monitoring_service.get_agents_status()
                 if agents_data:
                     self._agents_data.update(agents_data)
+                    if 'performance_history' in agents_data:
+                        self._agents_data['performance_history'] = agents_data['performance_history']
+                    if 'resource_history' in agents_data:
+                        self._agents_data['resource_history'] = agents_data['resource_history']
+                    if 'logs' in agents_data:
+                        self._agents_data['logs'] = agents_data['logs']
             
             # 更新Agent状态表格
             self._update_agent_status_table()
@@ -580,50 +537,42 @@ class MultiAgentStatusPanel(QWidget):
 
     def _update_performance_chart(self):
         """更新性能图表"""
-        # 获取性能数据
         performance_data = self._agents_data.get('performance_history', {})
-        
+
         if not performance_data:
             return
-        
-        # 更新每个Agent的线条
+
         for agent_name, line in self.performance_lines.items():
             agent_performance = performance_data.get(agent_name, {}).get('response_time', [])
-            
+
             if agent_performance:
-                # 更新线条数据
                 line.set_data(range(len(agent_performance)), agent_performance)
-        
-        # 更新坐标轴范围
-        max_length = max(len(self._agents_data.get('performance_history', {}).get(agent_name, {}).get('response_time', []))
-                        for agent_name in self._agents_data.keys()) or 1
+
+        max_length = max((len(performance_data.get(agent_name, {}).get('response_time', []))
+                        for agent_name in self._agents_data.keys()
+                        if agent_name != 'performance_history' and agent_name != 'resource_history' and agent_name != 'logs'), default=0) or 1
         self.performance_ax.set_xlim(0, max_length)
-        
-        # 刷新画布
-        _canvas.draw()
+
+        self.performance_canvas.draw()
     
     def _update_resource_chart(self):
         """更新资源使用图表"""
-        # 获取资源使用数据
         resource_data = self._agents_data.get('resource_history', {})
-        
+
         if not resource_data:
             return
-        
-        # 更新每个Agent的线条
+
         for agent_name, line in self.resource_lines.items():
             agent_resource = resource_data.get(agent_name, {}).get('cpu_usage', [])
-            
+
             if agent_resource:
-                # 更新线条数据
                 line.set_data(range(len(agent_resource)), agent_resource)
-        
-        # 更新坐标轴范围
-        max_length = max(len(self._agents_data.get('resource_history', {}).get(agent_name, {}).get('cpu_usage', []))
-                        for agent_name in self._agents_data.keys()) or 1
+
+        max_length = max((len(resource_data.get(agent_name, {}).get('cpu_usage', []))
+                        for agent_name in self._agents_data.keys()
+                        if agent_name != 'performance_history' and agent_name != 'resource_history' and agent_name != 'logs'), default=0) or 1
         self.resource_ax.set_xlim(0, max_length)
-        
-        # 刷新画布
+
         self.resource_canvas.draw()
 
     def _update_agent_logs(self):

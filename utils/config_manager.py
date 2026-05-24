@@ -1,4 +1,3 @@
-from loguru import logger
 """
 Configuration Manager Module
 
@@ -25,9 +24,8 @@ from .config_types import (
     LoggingConfig
 )
 import traceback
-import sqlite3
-
-logger = logger
+from core.database.unified_sqlite_access import UnifiedSQLiteAccess
+from loguru import logger
 
 DB_PATH = os.path.join(os.path.dirname(
     os.path.dirname(__file__)), 'data', 'factorweave_system.sqlite')
@@ -65,20 +63,20 @@ class ConfigManager(QObject):
     def _init_sqlite_fallback(self):
         """初始化SQLite备用模式"""
         try:
-            self.conn = sqlite3.connect(DB_PATH)
+            self.db = UnifiedSQLiteAccess.get_instance(DB_PATH)
             self._ensure_table()
             logger.info("ConfigManager使用SQLite备用模式")
         except Exception as e:
             logger.error(f"SQLite备用模式初始化失败: {e}")
-            self.conn = None
+            self.db = None
 
     def _ensure_table(self):
         """确保配置表存在"""
-        if self.conn:
-            cursor = self.conn.cursor()
-            cursor.execute(
-                '''CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)''')
-            self.conn.commit()
+        if self.db:
+            with self.db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    '''CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)''')
 
     def get(self, key: str, default=None):
         """获取配置值"""
@@ -86,17 +84,18 @@ class ConfigManager(QObject):
             self._ensure_config_service()
         if self._config_service:
             return self._config_service.get(key, default)
-        elif self.conn:
+        elif self.db:
             # SQLite备用模式
-            cursor = self.conn.cursor()
-            cursor.execute('SELECT value FROM config WHERE key=?', (key,))
-            row = cursor.fetchone()
-            if row:
-                try:
-                    return json.loads(row[0])
-                except Exception:
-                    return row[0]
-            return default
+            with self.db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT value FROM config WHERE key=?', (key,))
+                row = cursor.fetchone()
+                if row:
+                    try:
+                        return json.loads(row[0])
+                    except Exception:
+                        return row[0]
+                return default
         else:
             return default
 
@@ -106,13 +105,13 @@ class ConfigManager(QObject):
             self._ensure_config_service()
         if self._config_service:
             return self._config_service.set(key, value)
-        elif self.conn:
+        elif self.db:
             # SQLite备用模式
             value_str = json.dumps(value, ensure_ascii=False)
-            cursor = self.conn.cursor()
-            cursor.execute(
-                'REPLACE INTO config (key, value) VALUES (?, ?)', (key, value_str))
-            self.conn.commit()
+            with self.db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    'REPLACE INTO config (key, value) VALUES (?, ?)', (key, value_str))
             return True
         else:
             return False
@@ -123,18 +122,19 @@ class ConfigManager(QObject):
             self._ensure_config_service()
         if self._config_service:
             return self._config_service.get_all()
-        elif self.conn:
+        elif self.db:
             # SQLite备用模式
-            cursor = self.conn.cursor()
-            cursor.execute('SELECT key, value FROM config')
-            rows = cursor.fetchall()
-            result = {}
-            for k, v in rows:
-                try:
-                    result[k] = json.loads(v)
-                except Exception:
-                    result[k] = v
-            return result
+            with self.db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT key, value FROM config')
+                rows = cursor.fetchall()
+                result = {}
+                for k, v in rows:
+                    try:
+                        result[k] = json.loads(v)
+                    except Exception:
+                        result[k] = v
+                return result
         else:
             return {}
 
@@ -144,12 +144,12 @@ class ConfigManager(QObject):
             self._ensure_config_service()
         if self._config_service:
             return self._config_service.delete(key) if hasattr(self._config_service, 'delete') else False
-        elif self.conn:
+        elif self.db:
             # SQLite备用模式
-            cursor = self.conn.cursor()
-            cursor.execute('DELETE FROM config WHERE key=?', (key,))
-            self.conn.commit()
-            return cursor.rowcount > 0
+            with self.db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('DELETE FROM config WHERE key=?', (key,))
+                return cursor.rowcount > 0
         else:
             return False
 
@@ -207,8 +207,30 @@ class ConfigManager(QObject):
         """清理资源"""
         if self._config_service and hasattr(self._config_service, 'cleanup'):
             self._config_service.cleanup()
-        elif self.conn:
-            self.conn.close()
+        # UnifiedSQLiteAccess 使用单例模式，连接由上下文管理器自动管理，无需手动关闭
+
+    def save(self) -> bool:
+        """持久化保存所有配置（set() 已即时持久化，此方法作为显式确认点）"""
+        if self._config_service is None:
+            self._ensure_config_service()
+        if self._config_service:
+            if hasattr(self._config_service, 'save'):
+                self._config_service.save()
+                return True
+            else:
+                logger.debug("ConfigService 无 save 方法，跳过")
+                return True
+        elif hasattr(self, '_config') and self.db:
+            for key, value in self._config.items():
+                self.set(key, value)
+            logger.info("ConfigManager: 配置已保存到SQLite")
+            return True
+        elif self.db:
+            logger.debug("ConfigManager: SQLite模式下每次set自动持久化，无需显式save")
+            return True
+        else:
+            logger.warning("ConfigManager.save: 无可用存储后端")
+            return False
 
 # 为了兼容性，保留原有的函数接口
 

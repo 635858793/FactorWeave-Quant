@@ -816,53 +816,54 @@ class VolumeDataProcessor:
     
     def _process_single_batch(self, volumes: np.ndarray, style: Dict[str, Any], offset: int = 0, is_up: np.ndarray = None) -> Tuple[List, List, List]:
         """处理单个批次的数据"""
-        vertices = []
-        colors = []  # 存储每个四边形的颜色，而不是每个顶点的颜色
-        indices = []
+        n = len(volumes)
+        if n == 0:
+            return [], [], []
 
         # 基础样式
         up_color = style.get('up_color', '#ff4444')
         down_color = style.get('down_color', '#44ff44')
-        alpha = style.get('alpha', 0.6)
 
-        # 预计算 max(volumes) 避免重复计算
-        max_volume = max(volumes) if len(volumes) > 0 else 0
-        # 归一化目标范围
+        # 预计算颜色RGB值，避免循环内重复调用 _hex_to_rgb
+        up_color_rgb = self._hex_to_rgb(up_color) if isinstance(up_color, str) else tuple(up_color)
+        down_color_rgb = self._hex_to_rgb(down_color) if isinstance(down_color, str) else tuple(down_color)
+
+        # 过滤有效成交量
+        valid_mask = volumes > 0
+        n_valid = np.sum(valid_mask)
+        if n_valid == 0:
+            return [], [], []
+
+        max_volume = np.max(volumes)
         target_max = 100.0
+        normalized = (volumes / max_volume) * target_max if max_volume > 0 else np.zeros(n, dtype=np.float64)
 
-        for i, volume in enumerate(volumes):
-            if volume > 0:
-                x = offset + i
-                y_bottom = 0
-                # 归一化成交量到 target_max 范围
-                normalized_volume = (volume / max_volume) * target_max if max_volume > 0 else 0
-                y_top = normalized_volume
+        x_positions = offset + np.arange(n, dtype=np.float64)
+        half = 0.5
 
-                # 创建柱子四个顶点的2D坐标 (x, y)
-                quad_vertices = [
-                    x - 0.5, y_bottom,  # 左下
-                    x - 0.5, y_top,     # 左上
-                    x + 0.5, y_top,     # 右上
-                    x + 0.5, y_bottom   # 右下
-                ]
-                vertices.extend(quad_vertices)
+        # 批量构建所有柱子顶点坐标: (n, 8) → 每根柱子4个顶点×2坐标
+        vertices = np.empty((n, 8), dtype=np.float64)
+        vertices[:, 0] = x_positions - half  # 左下 x
+        vertices[:, 1] = 0.0                  # 左下 y
+        vertices[:, 2] = x_positions - half  # 左上 x
+        vertices[:, 3] = normalized           # 左上 y
+        vertices[:, 4] = x_positions + half  # 右上 x
+        vertices[:, 5] = normalized           # 右上 y
+        vertices[:, 6] = x_positions + half  # 右下 x
+        vertices[:, 7] = 0.0                  # 右下 y
 
-                # 根据涨跌选择颜色
-                if is_up is not None and i < len(is_up):
-                    color = up_color if is_up[i] else down_color
-                else:
-                    color = up_color
+        vertices = vertices[valid_mask].ravel().tolist()
 
-                # 将颜色转换为RGB
-                if isinstance(color, str):
-                    color_rgb = self._hex_to_rgb(color)
-                else:
-                    color_rgb = color
+        # 批量构建颜色: (n_valid, 3)
+        if is_up is not None:
+            is_up_valid = is_up[valid_mask]
+            colors = np.where(is_up_valid[:, np.newaxis], up_color_rgb, down_color_rgb)
+        else:
+            colors = np.tile(up_color_rgb, (n_valid, 1))
 
-                # 每个四边形只需要存储一次颜色
-                colors.extend([color_rgb[0], color_rgb[1], color_rgb[2]])
-        
-        return vertices, colors, indices
+        colors = colors.ravel().tolist()
+
+        return vertices, colors, []
     
     def _hex_to_rgb(self, hex_color: str) -> Tuple[float, float, float]:
         """将十六进制颜色转换为RGB"""
@@ -1696,33 +1697,35 @@ class WebGPURenderer(BaseChartRenderer):
         is_up_list = np.zeros(n_points, dtype=bool)
         segments = []
 
-        for i in range(n_points):
-            x_center = float(i)
-            open_price = float(open_prices[i])
-            close_price = float(close_prices[i])
-            high_price = float(high_prices[i])
-            low_price = float(low_prices[i])
+        x_centers = np.arange(n_points, dtype=np.float32)
+        is_up_list = close_prices >= open_prices
+        half_width = candle_width / 2.0
 
-            is_up = close_price >= open_price
-            is_up_list[i] = is_up
-            color = up_color if is_up else down_color
+        body_bottom = np.minimum(open_prices, close_prices)
+        body_top = np.maximum(open_prices, close_prices)
+        body_height = np.maximum(body_top - body_bottom, 0.001)
 
-            half_width = candle_width / 2.0
-            body_bottom = min(open_price, close_price)
-            body_height = abs(close_price - open_price) if abs(close_price - open_price) > 0 else 0.001
+        x_left = np.subtract(x_centers, half_width, dtype=np.float32)
+        x_right = np.add(x_centers, half_width, dtype=np.float32)
 
-            verts_idx = i * 4
-            colors_idx = i * 4
+        vertices[0::4, 0] = x_left
+        vertices[0::4, 1] = body_bottom
+        vertices[1::4, 0] = x_left
+        vertices[1::4, 1] = body_top
+        vertices[2::4, 0] = x_right
+        vertices[2::4, 1] = body_top
+        vertices[3::4, 0] = x_right
+        vertices[3::4, 1] = body_bottom
 
-            vertices[verts_idx] = [x_center - half_width, body_bottom]
-            vertices[verts_idx + 1] = [x_center - half_width, body_bottom + body_height]
-            vertices[verts_idx + 2] = [x_center + half_width, body_bottom + body_height]
-            vertices[verts_idx + 3] = [x_center + half_width, body_bottom]
+        up_color_arr = np.array(up_color, dtype=np.float32)
+        down_color_arr = np.array(down_color, dtype=np.float32)
+        color_per_candle = np.where(is_up_list[:, np.newaxis], up_color_arr, down_color_arr)
+        colors = np.repeat(color_per_candle, 4, axis=0).reshape(-1, 3)
 
-            for j in range(4):
-                colors[colors_idx + j] = color
-
-            segments.append([(x_center, low_price), (x_center, high_price)])
+        segments = [
+            [(float(x), float(lp)), (float(x), float(hp))]
+            for x, lp, hp in zip(x_centers, low_prices, high_prices)
+        ]
 
         return vertices, colors, is_up_list, segments
     
@@ -1750,32 +1753,88 @@ class WebGPURenderer(BaseChartRenderer):
         """CPU降级渲染K线图"""
         try:
             logger.info("使用CPU降级渲染K线图")
-            # 简单的matplotlib渲染
-            import matplotlib.pyplot as plt
-            
-            # 基础K线渲染
-            for i in range(min(100, len(data))):  # 限制渲染数量
-                x = i
-                high = data.iloc[i]['high'] if 'high' in data.columns else data.iloc[i]['Close']
-                low = data.iloc[i]['low'] if 'low' in data.columns else data.iloc[i]['Close']
-                open_price = data.iloc[i]['open'] if 'open' in data.columns else data.iloc[i]['Close']
-                close_price = data.iloc[i]['close'] if 'close' in data.columns else data.iloc[i]['Close']
-                
-                # 绘制高低价线
-                ax.plot([x, x], [low, high], 'k-', linewidth=0.5)
-                
-                # 绘制开收盘价矩形
-                color = 'red' if close_price >= open_price else 'green'
-                rect_height = abs(close_price - open_price)
-                bottom = min(open_price, close_price)
-                
-                # 绘制开收盘价矩形
-                rect = plt.Rectangle((x-0.3, bottom), 0.6, rect_height, 
-                                   facecolor=color, alpha=0.7, edgecolor='black', linewidth=0.5)
-                ax.add_patch(rect)
-            
+
+            from matplotlib.collections import LineCollection, PolyCollection
+
+            if style is None:
+                style = {}
+            up_color = style.get('up_color', '#ff0000')
+            down_color = style.get('down_color', '#00ff00')
+            alpha = style.get('alpha', 0.7)
+
+            has_ohlc = all(c in data.columns for c in ['open', 'high', 'low', 'close'])
+            if has_ohlc:
+                opens = data['open'].values
+                closes = data['close'].values
+                highs = data['high'].values
+                lows = data['low'].values
+            else:
+                closes = data['close'].values if 'close' in data.columns else data['Close'].values
+                opens = data['open'].values if 'open' in data.columns else closes
+                highs = data['high'].values if 'high' in data.columns else closes
+                lows = data['low'].values if 'low' in data.columns else closes
+
+            n = len(data)
+            x = np.arange(n, dtype=np.float64)
+            candle_width = 0.6
+            half_width = candle_width / 2.0
+
+            is_up = closes >= opens
+            up_idx = np.where(is_up)[0]
+            down_idx = np.where(~is_up)[0]
+
+            # 1. High-Low shadows → LineCollection 批量渲染
+            shadows = np.empty((n, 2, 2), dtype=np.float64)
+            shadows[:, 0, 0] = x
+            shadows[:, 0, 1] = lows
+            shadows[:, 1, 0] = x
+            shadows[:, 1, 1] = highs
+
+            lc = LineCollection(shadows, colors='black', linewidth=0.5)
+            ax.add_collection(lc)
+
+            # 2. Up candles (close >= open) → PolyCollection
+            if len(up_idx) > 0:
+                n_up = len(up_idx)
+                verts_up = np.empty((n_up, 4, 2), dtype=np.float64)
+                verts_up[:, 0, 0] = x[up_idx] - half_width
+                verts_up[:, 0, 1] = opens[up_idx]
+                verts_up[:, 1, 0] = x[up_idx] - half_width
+                verts_up[:, 1, 1] = closes[up_idx]
+                verts_up[:, 2, 0] = x[up_idx] + half_width
+                verts_up[:, 2, 1] = closes[up_idx]
+                verts_up[:, 3, 0] = x[up_idx] + half_width
+                verts_up[:, 3, 1] = opens[up_idx]
+
+                pc_up = PolyCollection(
+                    verts_up, facecolor=up_color, edgecolor=up_color,
+                    linewidth=0.5, alpha=alpha)
+                ax.add_collection(pc_up)
+
+            # 3. Down candles (close < open) → PolyCollection
+            if len(down_idx) > 0:
+                n_down = len(down_idx)
+                verts_down = np.empty((n_down, 4, 2), dtype=np.float64)
+                verts_down[:, 0, 0] = x[down_idx] - half_width
+                verts_down[:, 0, 1] = closes[down_idx]
+                verts_down[:, 1, 0] = x[down_idx] - half_width
+                verts_down[:, 1, 1] = opens[down_idx]
+                verts_down[:, 2, 0] = x[down_idx] + half_width
+                verts_down[:, 2, 1] = opens[down_idx]
+                verts_down[:, 3, 0] = x[down_idx] + half_width
+                verts_down[:, 3, 1] = closes[down_idx]
+
+                pc_down = PolyCollection(
+                    verts_down, facecolor=down_color, edgecolor=down_color,
+                    linewidth=0.5, alpha=alpha)
+                ax.add_collection(pc_down)
+
+            if n > 0:
+                ax.autoscale_view()
+
+            logger.info(f"CPU K线图渲染完成: {n}根K线")
             return True
-            
+
         except Exception as e:
             logger.error(f"CPU K线图渲染失败: {e}")
             return False

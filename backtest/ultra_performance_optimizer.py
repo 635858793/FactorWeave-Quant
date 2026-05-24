@@ -144,6 +144,7 @@ class UltraPerformanceOptimizer:
         # 缓存系统
         self.cache = {}
         self.cache_stats = {"hits": 0, "misses": 0}
+        self._cache_lock = threading.Lock()
 
         # 分布式客户端
         self.dask_client = None
@@ -256,7 +257,7 @@ class UltraPerformanceOptimizer:
             logger.error(f"计算环境初始化失败: {e}")
 
     @staticmethod
-    @njit(parallel=True, fastmath=True)
+    @njit(cache=True, fastmath=True)
     def _ultra_fast_backtest_core(prices: np.ndarray,
                                   signals: np.ndarray,
                                   initial_capital: float,
@@ -264,7 +265,7 @@ class UltraPerformanceOptimizer:
                                   commission_pct: float) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         超高速回测核心（Numba优化）
-        使用并行计算和快速数学运算
+        使用快速数学运算
         """
         n = len(prices)
         positions = np.zeros(n, dtype=np.float64)
@@ -272,11 +273,6 @@ class UltraPerformanceOptimizer:
         returns = np.zeros(n, dtype=np.float64)
 
         capital[0] = initial_capital
-
-        # 向量化计算价格变化
-        price_changes = np.zeros(n, dtype=np.float64)
-        for i in prange(1, n):
-            price_changes[i] = (prices[i] - prices[i-1]) / prices[i-1]
 
         # 向量化计算持仓和收益
         current_position = 0.0
@@ -619,11 +615,11 @@ class UltraPerformanceOptimizer:
         try:
             # 检查缓存
             data_hash = hash(str(data.values.tobytes()))
-            if data_hash in self.cache:
-                self.cache_stats["hits"] += 1
-                return self.cache[data_hash]
-
-            self.cache_stats["misses"] += 1
+            with self._cache_lock:
+                if data_hash in self.cache:
+                    self.cache_stats["hits"] += 1
+                    return self.cache[data_hash]
+                self.cache_stats["misses"] += 1
 
             # 数据清理和优化
             processed = data.copy()
@@ -638,8 +634,9 @@ class UltraPerformanceOptimizer:
             processed = processed.dropna()
 
             # 缓存结果
-            if len(self.cache) < self.config["cache_size"]:
-                self.cache[data_hash] = processed
+            with self._cache_lock:
+                if len(self.cache) < self.config["cache_size"]:
+                    self.cache[data_hash] = processed
 
             return processed
 
@@ -732,7 +729,8 @@ class UltraPerformanceOptimizer:
                 self.ray_initialized = False
 
             # 清理缓存
-            self.cache.clear()
+            with self._cache_lock:
+                self.cache.clear()
 
             # 强制垃圾回收
             gc.collect()

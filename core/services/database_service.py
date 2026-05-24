@@ -24,6 +24,7 @@ from collections import defaultdict
 from loguru import logger
 
 from .base_service import BaseService
+from .db_utils import configure_connection
 from ..database.duckdb_manager import DuckDBConnectionManager
 from ..database.duckdb_operations import DuckDBOperations
 from ..database.sqlite_extensions import SQLiteExtensionManager
@@ -855,15 +856,11 @@ class DatabaseService(BaseService):
                 # 设置自动提交模式（相当于 autocommit=True）
                 connection.isolation_level = None
 
-                # 应用配置
-                if config.enable_wal:
-                    connection.execute("PRAGMA journal_mode=WAL")
+                # 应用数据库配置（外键约束、WAL模式、性能优化）
+                configure_connection(connection)
 
                 if config.auto_vacuum:
                     connection.execute("PRAGMA auto_vacuum=INCREMENTAL")
-
-                connection.execute(f"PRAGMA synchronous=NORMAL")
-                connection.execute(f"PRAGMA cache_size=10000")
 
                 return connection
 
@@ -1167,6 +1164,7 @@ class DatabaseService(BaseService):
         """
         transaction_id = str(uuid.uuid4())
         connection = None
+        saved_isolation_level = None
 
         try:
             with self._transaction_lock:
@@ -1177,6 +1175,12 @@ class DatabaseService(BaseService):
             # 获取事务连接
             connection = self._get_connection_from_pool(pool_name)
             self._transaction_connections[transaction_id] = connection
+
+            # 开始事务前检查 autocommit 状态（SQLite），若为 autocommit 则先关闭
+            if connection.db_type == DatabaseType.SQLITE:
+                saved_isolation_level = connection.connection.isolation_level
+                if saved_isolation_level is None:
+                    connection.connection.isolation_level = ''
 
             # 开始事务
             if connection.db_type == DatabaseType.DUCKDB:
@@ -1228,6 +1232,13 @@ class DatabaseService(BaseService):
             raise
 
         finally:
+            # 恢复 SQLite 连接的原始 isolation_level
+            if connection and connection.db_type == DatabaseType.SQLITE and saved_isolation_level is not None:
+                try:
+                    connection.connection.isolation_level = saved_isolation_level
+                except Exception:
+                    pass
+
             # 清理事务资源
             with self._transaction_lock:
                 if transaction_id in self._active_transactions:
@@ -3236,7 +3247,7 @@ class DatabaseService(BaseService):
         
         for result_id, results in all_results.items():
             comparison['stock_counts'][result_id] = len(results)
-            comparison['avg_scores'][result_id] = sum(r['score'] for r in results) / len(results)
+            comparison['avg_scores'][result_id] = np.mean([r['score'] for r in results])
             comparison['score_ranges'][result_id] = {
                 'min': min(r['score'] for r in results),
                 'max': max(r['score'] for r in results)
@@ -4015,7 +4026,7 @@ class DatabaseService(BaseService):
 
                 if param_names:
                     placeholders = ','.join(['?' for _ in param_names])
-                    sql = f"DELETE FROM strategy_parameters WHERE strategy_id = ? AND param_name IN ({placeholders})"
+                    sql = "DELETE FROM strategy_parameters WHERE strategy_id = ? AND param_name IN (" + placeholders + ")"
                     cursor.execute(sql, [strategy_id] + param_names)
                 else:
                     sql = "DELETE FROM strategy_parameters WHERE strategy_id = ?"
@@ -4434,3 +4445,4 @@ class DatabaseService(BaseService):
         with self.get_connection(pool_name) as conn:
             for index_sql in indices:
                 conn.execute(index_sql)
+

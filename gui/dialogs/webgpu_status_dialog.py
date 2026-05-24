@@ -11,7 +11,7 @@ WebGPU状态对话框
 
 from typing import Dict, Any, Optional
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QGroupBox, QFormLayout,
+    QVBoxLayout, QHBoxLayout, QGroupBox, QFormLayout,
     QComboBox, QCheckBox, QPushButton, QProgressBar, QLabel,
     QTextEdit, QMessageBox, QSplitter, QFrame, QTabWidget,
     QTableWidget, QTableWidgetItem, QHeaderView, QSlider,
@@ -21,15 +21,19 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer
 from PyQt5.QtGui import QFont, QIcon, QPalette, QColor
 
+from .base_dialog import BaseDialog
 
-class WebGPUStatusDialog(QDialog):
+
+class WebGPUStatusDialog(BaseDialog):
     """WebGPU状态对话框"""
 
     def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("WebGPU状态")
-        self.setMinimumSize(900, 700)
-        self.setModal(True)
+        super().__init__(
+            parent,
+            title="WebGPU状态",
+            min_size=(900, 700),
+            settings_key="WebGPUStatusDialog"
+        )
 
         self._create_widgets()
         self._load_status()

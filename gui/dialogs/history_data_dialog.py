@@ -11,7 +11,7 @@ import pandas as pd
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
+    QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
     QTableWidget, QTableWidgetItem, QLabel, QLineEdit, QComboBox,
     QGroupBox, QFormLayout, QPushButton, QDateEdit, QSpinBox,
     QHeaderView, QFileDialog, QMessageBox, QProgressDialog,
@@ -20,6 +20,8 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QDate, QThread, pyqtSlot
 from PyQt5.QtGui import QFont, QPixmap
+
+from .base_dialog import BaseDialog
 
 logger = logger
 
@@ -56,7 +58,7 @@ class DataUpdateThread(QThread):
         except Exception as e:
             self.finished_signal.emit(False, f"数据更新失败: {e}")
 
-class HistoryDataDialog(QDialog):
+class HistoryDataDialog(BaseDialog):
     """历史数据管理对话框"""
 
     # 信号
@@ -72,7 +74,13 @@ class HistoryDataDialog(QDialog):
             parent: 父窗口
             stock_service: 股票服务
         """
-        super().__init__(parent)
+        super().__init__(
+            parent,
+            title="历史数据管理",
+            min_size=(1000, 800),
+            size=(1000, 800),
+            settings_key="HistoryDataDialog"
+        )
         self.stock_service = stock_service
         self.current_stock = None
         self.current_data = None
@@ -82,10 +90,6 @@ class HistoryDataDialog(QDialog):
 
     def _setup_ui(self) -> None:
         """设置UI"""
-        self.setWindowTitle("历史数据管理")
-        self.setModal(True)
-        self.resize(1000, 800)
-
         layout = QVBoxLayout(self)
 
         # 创建选项卡

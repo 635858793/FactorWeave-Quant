@@ -1740,16 +1740,256 @@ class StrategyService(BaseService):
                                      optimization_task: OptimizationTask,
                                      param_ranges: Dict[str, Any],
                                      target_metric: str) -> None:
-        """贝叶斯优化（简化实现）"""
-        # 这里是简化的贝叶斯优化实现
-        # 实际应用中可以使用scikit-optimize等库
+        """贝叶斯优化（基于高斯过程回归 + 期望改进采集函数）"""
+        import numpy as np
+        from scipy.stats import norm as scipy_norm
+        from scipy.linalg import cho_solve, cho_factor
+        
         max_iterations = optimization_task.optimization_params.get('max_iterations', 50)
+        
+        def _rbf_kernel(X1, X2, length_scale=1.0):
+            sq_dist = (np.sum(X1**2, 1).reshape(-1, 1) + np.sum(X2**2, 1) - 2 * np.dot(X1, X2.T))
+            return np.exp(-0.5 * sq_dist / (length_scale ** 2))
+        
+        def _gp_predict(X_train, y_train, X_test, noise=1e-5):
+            K = _rbf_kernel(X_train, X_train) + noise * np.eye(len(X_train))
+            try:
+                L = cho_factor(K)
+                K_s = _rbf_kernel(X_train, X_test)
+                alpha = cho_solve(L, y_train)
+                mu = K_s.T @ alpha
+                v = cho_solve(L, K_s)
+                K_ss = _rbf_kernel(X_test, X_test)
+                cov = K_ss - K_s.T @ v
+                sigma = np.sqrt(np.maximum(np.diag(cov), 1e-10))
+            except np.linalg.LinAlgError:
+                mu = np.zeros(len(X_test))
+                sigma = np.ones(len(X_test))
+            return mu, sigma
+        
+        def _expected_improvement(mu, sigma, y_best, xi=0.01):
+            with np.errstate(divide='ignore'):
+                imp = mu - y_best - xi
+                Z = imp / sigma
+                ei = imp * scipy_norm.cdf(Z) + sigma * scipy_norm.pdf(Z)
+                ei[sigma < 1e-10] = 0.0
+            return ei
 
-        # 先进行少量随机搜索作为初始样本
-        await self._random_search_optimization(optimization_task, param_ranges, target_metric)
+        # 步骤1: 生成初始随机样本
+        n_init = max(5, max_iterations // 5)
+        X_samples = []
+        y_samples = []
+        
+        for k in range(n_init):
+            params = self._generate_random_parameters(param_ranges)
+            test_params = optimization_task.strategy_config.parameters.copy()
+            test_params.update(params)
+            
+            plugin = self.create_strategy_plugin(optimization_task.strategy_config.plugin_type)
+            if plugin and plugin.initialize_strategy(optimization_task.context, test_params):
+                if hasattr(plugin, '_current_symbol'):
+                    plugin._current_symbol = optimization_task.market_data.symbol
+                market_data_df = optimization_task.market_data.to_dataframe()
+                self._call_generate_signals(plugin, market_data_df, optimization_task.context)
+                performance = plugin.calculate_performance(optimization_task.context)
+                score = self._evaluate_performance(performance, target_metric)
+                
+                optimization_task.optimization_history.append({
+                    'iteration': k + 1,
+                    'parameters': params.copy(),
+                    'performance': performance,
+                    'score': score
+                })
+                X_samples.append(self._normalize_params(params, param_ranges))
+                y_samples.append(score)
+                
+                optimization_task.progress = (k + 1) / max_iterations
+                self.logger.info(f"[Bayesian] 初始采样 {k + 1}/{n_init}, 分数={score:.4f}")
 
-        # 简化处理：使用随机搜索结果作为贝叶斯优化结果
+        # 步骤2: 使用GP+EI进行贝叶斯优化
+        if len(X_samples) >= 2:
+            X_train = np.array(X_samples)
+            y_train = np.array(y_samples)
+            y_train_std = y_train.std()
+            if y_train_std < 1e-8:
+                y_train_std = 1.0
+            y_train_norm = (y_train - y_train.mean()) / y_train_std
+            y_best = y_train_norm.max()
+            
+            for k in range(n_init, max_iterations):
+                # 在参数空间中随机采样候选点
+                n_candidates = 500
+                X_candidates = np.array([self._normalize_params(
+                    self._generate_random_parameters(param_ranges), param_ranges
+                ) for _ in range(n_candidates)])
+                
+                # GP预测
+                mu, sigma = _gp_predict(X_train, y_train_norm, X_candidates)
+                
+                # 计算EI
+                ei = _expected_improvement(mu, sigma, y_best)
+                best_idx = np.argmax(ei)
+                
+                # 反归一化得到参数
+                candidate_norm = X_candidates[best_idx]
+                params = self._denormalize_params(candidate_norm, param_ranges)
+
+                # 将离散化后的实际评估参数重新归一化，消除离散化偏差
+                evaluated_norm = self._renormalize_discrete_params(params, param_ranges)
+                
+                # 评估
+                test_params = optimization_task.strategy_config.parameters.copy()
+                test_params.update(params)
+                
+                plugin = self.create_strategy_plugin(optimization_task.strategy_config.plugin_type)
+                if plugin and plugin.initialize_strategy(optimization_task.context, test_params):
+                    if hasattr(plugin, '_current_symbol'):
+                        plugin._current_symbol = optimization_task.market_data.symbol
+                    market_data_df = optimization_task.market_data.to_dataframe()
+                    self._call_generate_signals(plugin, market_data_df, optimization_task.context)
+                    performance = plugin.calculate_performance(optimization_task.context)
+                    score = self._evaluate_performance(performance, target_metric)
+                    
+                    optimization_task.optimization_history.append({
+                        'iteration': k + 1,
+                        'parameters': params.copy(),
+                        'performance': performance,
+                        'score': score
+                    })
+                    
+                    X_train = np.vstack([X_train, evaluated_norm])
+                    y_train = np.append(y_train, score)
+                    y_train_norm = (y_train - y_train.mean()) / y_train_std
+                    y_best = y_train_norm.max()
+                    
+                    optimization_task.progress = (k + 1) / max_iterations
+                    self.logger.info(f"[Bayesian] 迭代 {k + 1}/{max_iterations}, 分数={score:.4f}, y_best={y_best:.4f}")
+                
+                if k % 10 == 0:
+                    await asyncio.sleep(0.01)
+        
+        # 从历史中找出最佳结果
+        best_entry = max(optimization_task.optimization_history, key=lambda x: x['score'], default=None)
+        if best_entry:
+            optimization_task.best_parameters = best_entry['parameters']
+            optimization_task.best_performance = best_entry['performance']
+        
         optimization_task.progress = 1.0
+
+    def _normalize_params(self, params: Dict[str, Any], param_ranges: Dict[str, Any]) -> np.ndarray:
+        """将参数字典归一化为 [0, 1] 区间向量"""
+        vec = []
+        for key in sorted(param_ranges.keys()):
+            pr = param_ranges[key]
+            val = params.get(key, 0)
+            if isinstance(pr, dict):
+                lo = pr.get('min', 0)
+                hi = pr.get('max', 1)
+                if hi != lo:
+                    vec.append((float(val) - lo) / (hi - lo))
+                else:
+                    vec.append(0.5)
+            elif isinstance(pr, list) and len(pr) > 0:
+                try:
+                    idx = pr.index(val)
+                except ValueError:
+                    idx = 0
+                vec.append(idx / max(len(pr) - 1, 1))
+            else:
+                vec.append(0.5)
+        return np.array(vec, dtype=float)
+
+    def _denormalize_params(self, vec: np.ndarray, param_ranges: Dict[str, Any]) -> Dict[str, Any]:
+        """将归一化向量反解为参数字典"""
+        params = {}
+        sorted_keys = sorted(param_ranges.keys())
+        for idx, key in enumerate(sorted_keys):
+            pr = param_ranges[key]
+            v = max(0.0, min(1.0, float(vec[idx])))
+            if isinstance(pr, dict):
+                lo = pr.get('min', 0)
+                hi = pr.get('max', 1)
+                if isinstance(lo, int) and isinstance(hi, int):
+                    discrete_val = int(round(lo + v * (hi - lo)))
+                    params[key] = max(lo, min(hi, discrete_val))
+                else:
+                    continuous_val = lo + v * (hi - lo)
+                    params[key] = max(lo, min(hi, continuous_val))
+            elif isinstance(pr, list) and len(pr) > 0:
+                idx_list = int(round(v * (len(pr) - 1)))
+                idx_list = max(0, min(len(pr) - 1, idx_list))
+                params[key] = pr[idx_list]
+        return params
+
+    def _renormalize_discrete_params(self, params: Dict[str, Any], param_ranges: Dict[str, Any]) -> np.ndarray:
+        """将离散化后的参数字典重新归一化为 [0, 1] 向量
+
+        GP 代理模型在连续归一化空间中预测，但整数参数经过 int(round(...)) 离散化后，
+        实际评估点与 GP 认为的连续点之间存在偏差。
+        本方法将实际评估的离散参数重新归一化，消除 GP 训练数据与真实评估点的不一致。
+
+        Args:
+            params: 经 _denormalize_params 离散化后的参数
+            param_ranges: 参数范围定义
+
+        Returns:
+            与离散参数严格对应的归一化向量
+        """
+        return self._normalize_params(params, param_ranges)
+
+    def _adjust_for_discretization(
+        self,
+        candidate_norm: np.ndarray,
+        discrete_params: Dict[str, Any],
+        evaluated_norm: np.ndarray,
+        param_ranges: Dict[str, Any],
+        optimization_history: List[Dict[str, Any]],
+        pull_strength: float = 0.15
+    ) -> np.ndarray:
+        """将 GP 预测值向最近的成功评估点微调，减少离散化误差
+
+        当整数参数因 int(round(...)) 发生离散化时，GP 代理模型曲面与真实评估曲面
+        之间存在系统性偏差。本方法将归一化向量向已评估的最优点方向微调，
+        使后续 GP 探索更贴近真实高分区。
+
+        Args:
+            candidate_norm: GP+EI 选出的候选归一化向量
+            discrete_params: 候选向量经 _denormalize_params 离散化后的参数
+            evaluated_norm: 离散参数重新归一化后的向量
+            param_ranges: 参数范围定义
+            optimization_history: 历史评估记录
+            pull_strength: 微调强度，默认 0.15
+
+        Returns:
+            微调后的归一化向量，用于下一次 GP 训练
+        """
+        sorted_keys = sorted(param_ranges.keys())
+        adjusted = evaluated_norm.copy()
+
+        if len(optimization_history) < 3:
+            return adjusted
+
+        best_history_entry = max(optimization_history, key=lambda x: x.get('score', float('-inf')), default=None)
+        if best_history_entry is None:
+            return adjusted
+
+        best_params = best_history_entry.get('parameters', {})
+        best_norm = self._normalize_params(best_params, param_ranges)
+
+        for idx, key in enumerate(sorted_keys):
+            pr = param_ranges[key]
+            if isinstance(pr, dict):
+                lo = pr.get('min', 0)
+                hi = pr.get('max', 1)
+                if isinstance(lo, int) and isinstance(hi, int):
+                    continuous_val = candidate_norm[idx]
+                    discrete_val_norm = evaluated_norm[idx]
+                    best_val_norm = best_norm[idx]
+
+                    pull = pull_strength * (best_val_norm - discrete_val_norm)
+                    adjusted[idx] = np.clip(discrete_val_norm + pull, 0.0, 1.0)
+
+        return adjusted
 
     def _generate_parameter_combinations(self, param_ranges: Dict[str, Any]) -> List[Dict[str, Any]]:
         """生成参数组合"""
@@ -2156,7 +2396,7 @@ class StrategyService(BaseService):
             if completed_tasks:
                 durations = [(task.completed_at - task.started_at).total_seconds() 
                            for task in completed_tasks]
-                avg_duration = sum(durations) / len(durations)
+                avg_duration = np.mean(durations)
             
             # 计算成功率
             success_count = len(completed_tasks)
@@ -3152,3 +3392,4 @@ class StrategyService(BaseService):
                 
         except Exception as e:
             logger.error(f"清理空闲插件失败: {e}")
+

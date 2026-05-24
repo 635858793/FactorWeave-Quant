@@ -1,10 +1,12 @@
-from loguru import logger
 #!/usr/bin/env python3
 """
-数据导入引擎核心组件
+数据导入引擎核心组件 (已弃用)
 
 实现实时流、批量导入、智能路由等功能
 对标Bloomberg Terminal和Wind万得的数据导入能力
+
+DEPRECATED: 此模块为开发早期的stub实现，已被 unified_data_import_engine.py 替代。
+请使用 core.importdata.unified_data_import_engine.UnifiedDataImportEngine
 """
 
 import asyncio
@@ -16,6 +18,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from queue import Queue, Empty
 import pandas as pd
+from loguru import logger
 
 
 @dataclass
@@ -48,7 +51,7 @@ class DataBuffer:
             with self._lock:
                 self._total_items += 1
             return True
-        except:
+        except Exception:
             return False
 
     def get(self, timeout: float = 1.0) -> Optional[Any]:

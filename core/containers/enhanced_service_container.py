@@ -246,7 +246,6 @@ class EnhancedServiceContainer(ServiceContainer):
             visited = set()
 
         if service_type in visited:
-            # 发现循环依赖
             cycle_path = " -> ".join([t.__name__ for t in visited]) + f" -> {service_type.__name__}"
             error_msg = f"Circular dependency detected: {cycle_path}"
             logger.error(error_msg)
@@ -254,9 +253,10 @@ class EnhancedServiceContainer(ServiceContainer):
 
         visited.add(service_type)
 
-        # 递归检查依赖
         for dependency in self._dependencies.get(service_type, set()):
-            self._check_circular_dependencies(dependency, visited.copy())
+            self._check_circular_dependencies(dependency, visited)
+
+        visited.discard(service_type)
 
     def get_service_health(self, service_type: Optional[Type] = None) -> Union[ServiceHealth, Dict[Type, ServiceHealth]]:
         """
@@ -428,12 +428,11 @@ class EnhancedServiceContainer(ServiceContainer):
         Returns:
             服务释放顺序列表
         """
-        # 简单的拓扑排序逆序
         disposal_order = []
         remaining = set(self._initialization_order)
+        max_iterations = len(remaining) * 2
 
-        while remaining:
-            # 找到没有依赖或依赖已处理的服务
+        while remaining and max_iterations > 0:
             for service_type in list(remaining):
                 dependents = self._dependents.get(service_type, set())
                 if not dependents.intersection(remaining):
@@ -441,9 +440,14 @@ class EnhancedServiceContainer(ServiceContainer):
                     remaining.remove(service_type)
                     break
             else:
-                # 如果没有找到，说明有循环依赖，直接添加剩余的
+                logger.error(
+                    f"Disposal order calculation exceeded max iterations, "
+                    f"remaining services with circular dependencies: "
+                    f"{[t.__name__ for t in remaining]}"
+                )
                 disposal_order.extend(remaining)
                 break
+            max_iterations -= 1
 
         return disposal_order
 

@@ -446,7 +446,7 @@ class ViewportTracker:
         if len(recent_scrolls) < 2:
             return self.last_visible_rect
             
-        avg_velocity = sum(s['velocity'] for s in recent_scrolls) / len(recent_scrolls)
+        avg_velocity = np.mean([s['velocity'] for s in recent_scrolls])
         predicted_y = self.last_visible_rect.y() + avg_velocity * 0.016  # 预测下一帧（60fps）
         
         return QRectF(
@@ -777,7 +777,7 @@ class VirtualScrollRenderer(QObject):
             self._adaptive_quality_adjustment()
         
         # 性能监控
-        avg_frame_time = sum(self.frame_times) / len(self.frame_times)
+        avg_frame_time = np.mean(self.frame_times)
         if avg_frame_time > self.config.max_render_time_ms:
             self.performance_warning.emit(
                 f"平均帧时间过长: {avg_frame_time:.1f}ms", avg_frame_time)
@@ -787,7 +787,7 @@ class VirtualScrollRenderer(QObject):
         if len(self.frame_times) < 10:  # 至少10帧数据
             return
         
-        avg_frame_time = sum(self.frame_times) / len(self.frame_times)
+        avg_frame_time = np.mean(self.frame_times)
         
         if avg_frame_time > self.config.max_render_time_ms * 1.5:
             # 性能严重不达标，大幅降低质量
@@ -805,7 +805,7 @@ class VirtualScrollRenderer(QObject):
     def get_performance_stats(self) -> Dict[str, Any]:
         """获取性能统计，包括缓存统计信息"""
         stats = {
-            'avg_render_time_ms': sum(self.render_times) / len(self.render_times) if self.render_times else 0.0,
+            'avg_render_time_ms': np.mean(self.render_times) if self.render_times else 0.0,
             'max_render_time_ms': max(self.render_times) if self.render_times else 0.0,
             'min_render_time_ms': min(self.render_times) if self.render_times else 0.0,
             'current_quality_level': self.quality_level,
@@ -814,7 +814,7 @@ class VirtualScrollRenderer(QObject):
             'total_data_points': self._total_data_points,
             'virtual_scrolling_enabled': self._is_enabled,
             'gpu_acceleration_enabled': self.gpu_acceleration_enabled,
-            'frame_rate': 1.0 / (sum(self.frame_times) / len(self.frame_times) / 1000.0) if self.frame_times else 0.0
+            'frame_rate': 1.0 / (np.mean(self.frame_times) / 1000.0) if self.frame_times else 0.0
         }
         
         # 添加缓存统计

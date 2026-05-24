@@ -10,17 +10,23 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 
+from .base_dialog import BaseDialog
+from core.real_data_provider import get_real_data_provider
+
 logger = logger
 
-class DataQualityDialog(QDialog):
+class DataQualityDialog(BaseDialog):
     """数据质量检查对话框"""
 
     def __init__(self, parent=None, stock_code: str = None):
-        super().__init__(parent)
         self.parent_window = parent
         self.stock_code = stock_code
-        self.setWindowTitle("数据质量检查")
-        self.setMinimumSize(800, 600)
+        super().__init__(
+            parent,
+            title="数据质量检查",
+            min_size=(800, 600),
+            settings_key="DataQualityDialog"
+        )
         self.setup_ui()
 
     def setup_ui(self):
@@ -185,33 +191,38 @@ class DataQualityDialog(QDialog):
             QMessageBox.critical(self, "错误", f"质量检查失败: {str(e)}")
 
     def check_single_stock(self, stock_code: str):
-        """检查单只股票数据质量"""
         try:
-            # 显示进度
             progress = QProgressDialog("正在检查数据质量...", "取消", 0, 100, self)
             progress.setWindowModality(Qt.WindowModal)
             progress.show()
 
-            # 获取股票数据
+            kdata = None
             if hasattr(self.parent_window, 'stock_service'):
-                kdata = self.parent_window.stock_service.get_stock_data(
-                    stock_code)
-                if kdata is None or len(kdata) == 0:
-                    QMessageBox.warning(self, "提示", f"无法获取股票 {stock_code} 的数据")
-                    progress.close()
-                    return
-            else:
-                # 模拟数据
-                kdata = self.generate_mock_data(stock_code)
+                try:
+                    kdata = self.parent_window.stock_service.get_stock_data(stock_code)
+                except Exception as e:
+                    logger.warning(f"stock_service获取数据失败: {e}")
+
+            if kdata is None or (hasattr(kdata, 'empty') and kdata.empty) or (isinstance(kdata, (list, tuple)) and len(kdata) == 0):
+                progress.setLabelText("正在从数据源获取真实数据...")
+                kdata = self._fetch_real_kdata(stock_code)
+
+            if kdata is None:
+                QMessageBox.warning(self, "提示", f"无法获取股票 {stock_code} 的真实数据，数据源不可用")
+                progress.close()
+                return
+
+            if hasattr(kdata, 'empty') and kdata.empty:
+                QMessageBox.warning(self, "提示", f"股票 {stock_code} 暂无数据")
+                progress.close()
+                return
 
             progress.setValue(30)
 
-            # 生成质量报告
             report = self.generate_quality_report(kdata, stock_code)
 
             progress.setValue(70)
 
-            # 更新UI显示
             self.update_quality_display(report)
 
             progress.setValue(100)
@@ -227,23 +238,26 @@ class DataQualityDialog(QDialog):
             raise
 
     def check_batch_stocks(self):
-        """批量检查股票数据质量"""
-        # 获取要检查的股票列表
         stocks_to_check = []
         if hasattr(self.parent_window, 'stock_service'):
-            all_stocks = self.parent_window.stock_service.get_stock_list()
-            stocks_to_check = all_stocks[:10]  # 限制检查数量
-        else:
-            # 模拟股票列表
-            stocks_to_check = [
-                {'code': '000001', 'name': '平安银行'},
-                {'code': '000002', 'name': '万科A'},
-                {'code': '600000', 'name': '浦发银行'},
-                {'code': '600036', 'name': '招商银行'},
-                {'code': '000858', 'name': '五粮液'}
-            ]
+            try:
+                all_stocks = self.parent_window.stock_service.get_stock_list()
+                stocks_to_check = all_stocks[:10]
+            except Exception:
+                stocks_to_check = []
 
-        # 显示批量检查进度
+        if not stocks_to_check:
+            try:
+                provider = get_real_data_provider()
+                real_stocks = provider.get_real_stock_list(limit=10)
+                stocks_to_check = [{'code': code, 'name': code} for code in real_stocks]
+            except Exception as e:
+                logger.warning(f"无法获取股票列表: {e}")
+
+        if not stocks_to_check:
+            QMessageBox.warning(self, "提示", "无法获取股票列表，请检查数据源")
+            return
+
         progress = QProgressDialog(
             f"正在批量检查 {len(stocks_to_check)} 只股票...", "取消", 0, len(stocks_to_check), self)
         progress.setWindowModality(Qt.WindowModal)
@@ -255,14 +269,15 @@ class DataQualityDialog(QDialog):
                 break
 
             stock_code = stock['code']
-            progress.setLabelText(f"正在检查 {stock_code} - {stock['name']}")
+            progress.setLabelText(f"正在检查 {stock_code} - {stock.get('name', stock_code)}")
 
             try:
-                # 获取股票数据
-                kdata = self.generate_mock_data(stock_code)
-                report = self.generate_quality_report(kdata, stock_code)
-                batch_reports.append(report)
-
+                kdata = self._fetch_real_kdata(stock_code)
+                if kdata is not None and not kdata.empty:
+                    report = self.generate_quality_report(kdata, stock_code)
+                    batch_reports.append(report)
+                else:
+                    logger.warning(f"股票 {stock_code} 无数据，跳过质量检查")
             except Exception as e:
                 logger.warning(f"检查股票 {stock_code} 失败: {str(e)}")
 
@@ -270,11 +285,12 @@ class DataQualityDialog(QDialog):
 
         progress.close()
 
-        # 生成批量报告
         if batch_reports:
             self.update_batch_display(batch_reports)
             self.export_button.setEnabled(True)
             self.current_report = {"type": "batch", "reports": batch_reports}
+        else:
+            QMessageBox.warning(self, "提示", "所有股票均无可用数据，无法生成质量报告")
 
     def check_all_stocks(self):
         """检查全市场股票数据质量"""
@@ -288,34 +304,18 @@ class DataQualityDialog(QDialog):
             # 这里实现全市场检查逻辑
             QMessageBox.information(self, "提示", "全市场检查功能正在开发中...")
 
-    def generate_mock_data(self, stock_code: str) -> pd.DataFrame:
-        """生成模拟K线数据"""
-        dates = pd.date_range(start='2023-01-01', end='2024-01-01', freq='D')
-        np.random.seed(hash(stock_code) % 2**32)
-
-        # 生成模拟价格数据
-        base_price = 10 + np.random.random() * 90
-        prices = []
-        current_price = base_price
-
-        for _ in range(len(dates)):
-            change = np.random.normal(0, 0.02)  # 2%的日波动
-            current_price *= (1 + change)
-            prices.append(current_price)
-
-        data = {
-            'date': dates,
-            'open': [p * (1 + np.random.normal(0, 0.005)) for p in prices],
-            'high': [p * (1 + abs(np.random.normal(0, 0.01))) for p in prices],
-            'low': [p * (1 - abs(np.random.normal(0, 0.01))) for p in prices],
-            'close': prices,
-            'volume': [np.random.randint(1000000, 10000000) for _ in prices]
-        }
-
-        return pd.DataFrame(data)
+    def _fetch_real_kdata(self, stock_code: str) -> Optional[pd.DataFrame]:
+        try:
+            provider = get_real_data_provider()
+            kdata = provider.get_real_kdata(code=stock_code, freq='D', count=250)
+            if kdata is not None and not kdata.empty:
+                return kdata
+            return None
+        except Exception as e:
+            logger.warning(f"获取真实K线数据失败 {stock_code}: {e}")
+            return None
 
     def generate_quality_report(self, kdata: pd.DataFrame, stock_code: str) -> Dict[str, Any]:
-        """生成数据质量报告"""
         report = {
             'stock_code': stock_code,
             'check_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
@@ -327,9 +327,8 @@ class DataQualityDialog(QDialog):
         total_score = 0
         max_score = 0
 
-        # 1. 数据完整性检查
-        missing_count = kdata.isnull().sum().sum()
-        completeness_score = max(0, 100 - (missing_count / len(kdata) * 100))
+        missing_count = int(kdata.isnull().sum().sum())
+        completeness_score = max(0, 100 - (missing_count / max(len(kdata), 1) * 100))
         total_score += completeness_score
         max_score += 100
 
@@ -340,12 +339,10 @@ class DataQualityDialog(QDialog):
             'details': f'缺失数据点: {missing_count}'
         })
 
-        # 2. 价格合理性检查
         if 'close' in kdata.columns:
             price_changes = kdata['close'].pct_change().dropna()
-            extreme_changes = abs(price_changes) > 0.2  # 超过20%的变化
-            price_score = max(
-                0, 100 - (extreme_changes.sum() / len(price_changes) * 100 * 10))
+            extreme_changes = abs(price_changes) > 0.2
+            price_score = max(0, 100 - (extreme_changes.sum() / max(len(price_changes), 1) * 100 * 10))
             total_score += price_score
             max_score += 100
 
@@ -356,25 +353,65 @@ class DataQualityDialog(QDialog):
                 'details': f'异常变动天数: {extreme_changes.sum()}'
             })
 
-        # 3. 交易量合理性检查
         if 'volume' in kdata.columns:
-            volume_score = 100  # 简化处理
+            volume_data = kdata['volume'].dropna()
+            if len(volume_data) >= 20:
+                vol_mean = float(volume_data.mean())
+                vol_std = float(volume_data.std())
+                if vol_mean > 0:
+                    cv = vol_std / vol_mean
+                    if cv < 0.1:
+                        volume_score = max(0, 100 - 80)
+                        vol_status = '较差'
+                        vol_details = f'成交量变异系数过低({cv:.2f})，数据可能异常'
+                        data_limited = True
+                    elif cv < 0.5:
+                        volume_score = max(0, 100 - 30)
+                        vol_status = '需要注意'
+                        vol_details = f'成交量变异系数偏低({cv:.2f})'
+                    elif cv > 5.0:
+                        volume_score = max(0, 100 - 40)
+                        vol_status = '需要注意'
+                        vol_details = f'成交量变异系数偏高({cv:.2f})'
+                    else:
+                        volume_score = 100
+                        vol_status = '良好'
+                        vol_details = f'成交量变异系数合理({cv:.2f})'
+                else:
+                    volume_score = 50
+                    vol_status = '较差'
+                    vol_details = '成交量均值为零，数据异常'
+                    data_limited = True
+            else:
+                volume_score = 60
+                vol_status = '需要注意'
+                vol_details = f'成交量数据不足(仅{len(volume_data)}条)'
+                data_limited = True
+
             total_score += volume_score
             max_score += 100
 
             report['checks'].append({
                 'name': '交易量合理性',
                 'score': volume_score,
-                'status': '良好',
-                'details': '交易量数据正常'
+                'status': vol_status,
+                'details': vol_details
             })
 
-        # 4. 时间序列连续性检查
+        date_col = None
         if 'date' in kdata.columns:
-            date_gaps = pd.to_datetime(kdata['date']).diff().dt.days
-            large_gaps = (date_gaps > 7).sum()  # 超过7天的间隔
-            continuity_score = max(
-                0, 100 - (large_gaps / len(kdata) * 100 * 5))
+            date_col = 'date'
+        elif 'datetime' in kdata.columns:
+            date_col = 'datetime'
+        elif isinstance(kdata.index, pd.DatetimeIndex):
+            date_col = '_index_date'
+            kdata = kdata.copy()
+            kdata['_index_date'] = kdata.index
+
+        if date_col:
+            date_gaps = pd.to_datetime(kdata[date_col]).diff().dt.days
+            large_gaps = int((date_gaps > 7).sum())
+            continuity_score = max(0, 100 - (large_gaps / max(len(kdata), 1) * 100 * 5))
             total_score += continuity_score
             max_score += 100
 
@@ -385,9 +422,7 @@ class DataQualityDialog(QDialog):
                 'details': f'大间隔天数: {large_gaps}'
             })
 
-        # 计算总体质量得分
-        report['quality_score'] = round(
-            total_score / max_score * 100, 2) if max_score > 0 else 0
+        report['quality_score'] = round(total_score / max_score * 100, 2) if max_score > 0 else 0
 
         return report
 
@@ -444,7 +479,7 @@ class DataQualityDialog(QDialog):
     def update_batch_display(self, reports: List[Dict[str, Any]]):
         """更新批量检查显示"""
         # 计算平均得分
-        avg_score = sum(r['quality_score'] for r in reports) / len(reports)
+        avg_score = np.mean([r['quality_score'] for r in reports])
 
         color = "#28a745" if avg_score > 90 else "#ffc107" if avg_score > 70 else "#dc3545"
         self.quality_score_label.setText(f"平均质量得分: {avg_score:.1f}")
@@ -520,3 +555,4 @@ class DataQualityDialog(QDialog):
         except Exception as e:
             logger.error(f"导出报告失败: {str(e)}")
             QMessageBox.critical(self, "错误", f"导出报告失败: {str(e)}")
+

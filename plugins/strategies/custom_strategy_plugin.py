@@ -41,7 +41,7 @@ class CustomStrategyBase:
         self.trades = []
         self.indicators = {}
 
-    def initialize(self, context: StrategyContext, parameters: Dict[str, Any]) -> bool:
+    def initialize(self, config: dict = None) -> bool:
         """初始化策略"""
         self.parameters = parameters
         return True

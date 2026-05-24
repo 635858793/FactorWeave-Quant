@@ -8,14 +8,15 @@
 from loguru import logger
 from optimization.algorithm_optimizer import PerformanceEvaluator
 import pandas as pd
+import sqlite3
 
 from analysis.pattern_manager import PatternManager
 from optimization.database_schema import OptimizationDatabaseManager
 from optimization.version_manager import VersionManager
 from optimization.auto_tuner import AlgorithmAutoTuner
+from core.database.unified_sqlite_access import UnifiedSQLiteAccess
 import sys
 import os
-import sqlite3
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
 import json
@@ -1595,7 +1596,12 @@ class OptimizationDashboard(QMainWindow if GUI_AVAILABLE else object):
                                          "优化仍在进行中，确定要退出吗？",
                                          QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
             if reply == QMessageBox.Yes:
-                self._optimization_thread.terminate()
+                self._optimization_thread.requestInterruption()
+                self._optimization_thread.quit()
+                if not self._optimization_thread.wait(5000):
+                    logger.warning("优化线程未能在5秒内退出，强制终止")
+                    self._optimization_thread.terminate()
+                    self._optimization_thread.wait()
                 event.accept()
             else:
                 event.ignore()

@@ -7,7 +7,6 @@
 
 import sys
 import os
-import logging
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Tuple
 from PyQt5.QtWidgets import (

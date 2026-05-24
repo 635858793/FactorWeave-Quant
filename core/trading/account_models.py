@@ -386,6 +386,18 @@ class Position:
         """是否为空头持仓"""
         return self.side == PositionSide.SHORT
 
+    @property
+    def unrealized_pnl(self) -> float:
+        """浮动盈亏 = (当前价 - 成本价) * 持仓数量"""
+        if self.side == PositionSide.LONG:
+            return (self.current_price - self.cost_price) * self.quantity
+        return (self.cost_price - self.current_price) * self.quantity
+
+    @property
+    def realized_pnl(self) -> float:
+        """已实现盈亏（当前记录值与浮动盈亏的差值）"""
+        return self.profit_loss - self.unrealized_pnl
+
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
         return {

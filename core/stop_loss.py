@@ -45,6 +45,7 @@ class AdaptiveStopLoss(StopLossStrategy):
         # 设置默认参数
         self._atr_period = 14         # ATR周期
         self._atr_multiplier = 2      # ATR倍数
+        self._atr_method = 'sma'      # ATR计算方法: 'sma'/'wilder'/'ema'
         self._ma_period = 20          # 均线周期
         self._volatility_period = 20  # 波动率计算周期
         self._min_stop_loss = 0.02    # 最小止损比例
@@ -83,9 +84,9 @@ class AdaptiveStopLoss(StopLossStrategy):
             stops = {
                 'atr': self._calculate_atr_stop(current_price, atr, trend),
                 'ma': self._calculate_ma_stop(current_price, ma),
-                'trailing': self._calculate_trailing_stop(current_price, position),
-                'volatility': self._calculate_volatility_stop(current_price, volatility),
-                'fixed': self._calculate_fixed_stop(current_price)
+                'trailing': self._calculate_trailing_stop(current_price, position, trend),
+                'volatility': self._calculate_volatility_stop(current_price, volatility, trend),
+                'fixed': self._calculate_fixed_stop(current_price, trend)
             }
 
             # 5. 选择最终的止损价格
@@ -100,9 +101,17 @@ class AdaptiveStopLoss(StopLossStrategy):
             logger.error(f"止损价格计算错误: {str(e)}")
             return 0.0
 
-    def _calculate_atr(self, data: pd.DataFrame) -> float:
-        """计算ATR"""
+    def _calculate_atr(self, data: pd.DataFrame, method: str = None) -> float:
+        """
+        ATR计算，支持三种平滑方式：
+          - 'sma':   简单移动平均SMA（当前默认，与旧版兼容）
+          - 'wilder': Wilder平滑（标准ATR，与indicator库JIT版一致）
+          - 'ema':    指数移动平均EMA（与indicator库ewm版一致）
+        """
         try:
+            if method is None:
+                method = self.get_param("atr_method", "sma")
+
             high = data['high'].values
             low = data['low'].values
             close = data['close'].values
@@ -115,11 +124,31 @@ class AdaptiveStopLoss(StopLossStrategy):
                 )
             )
 
-            return np.mean(tr[-self.get_param("atr_period"):])
+            period = self.get_param("atr_period")
+            if len(tr) < period:
+                return 0.0
+
+            if method == 'wilder':
+                return self._wilder_atr(tr, period)
+            elif method == 'ema':
+                return self._ema_atr(tr, period)
+            else:
+                return np.mean(tr[-period:])
 
         except Exception as e:
             logger.error(f"ATR计算错误: {str(e)}")
             return 0.0
+
+    def _wilder_atr(self, tr: np.ndarray, period: int) -> float:
+        tr_series = pd.Series(tr)
+        atr = tr_series.iloc[:period].mean()
+        for i in range(period, len(tr_series)):
+            atr = (atr * (period - 1) + tr_series.iloc[i]) / period
+        return atr
+
+    def _ema_atr(self, tr: np.ndarray, period: int) -> float:
+        tr_series = pd.Series(tr)
+        return tr_series.ewm(span=period, adjust=False).mean().iloc[-1]
 
     def _calculate_ma(self, data: pd.DataFrame) -> float:
         """计算移动平均"""
@@ -185,12 +214,17 @@ class AdaptiveStopLoss(StopLossStrategy):
             logger.error(f"均线止损计算错误: {str(e)}")
             return 0.0
 
-    def _calculate_trailing_stop(self, price: float, position: Dict[str, Any]) -> float:
+    def _calculate_trailing_stop(self, price: float, position: Dict[str, Any], trend: int = 1) -> float:
         """计算跟踪止损价格"""
         try:
+            if trend < 0:
+                if price < position.get('lowest_price', price):
+                    position['lowest_price'] = price
+                lowest_price = position.get('lowest_price', price)
+                stop_distance = lowest_price * self.get_param("trailing_stop")
+                return lowest_price + stop_distance
             if price > position.get('highest_price', price):
                 position['highest_price'] = price
-
             highest_price = position.get('highest_price', price)
             stop_distance = highest_price * self.get_param("trailing_stop")
             return highest_price - stop_distance
@@ -199,18 +233,22 @@ class AdaptiveStopLoss(StopLossStrategy):
             logger.error(f"跟踪止损计算错误: {str(e)}")
             return 0.0
 
-    def _calculate_volatility_stop(self, price: float, volatility: float) -> float:
+    def _calculate_volatility_stop(self, price: float, volatility: float, trend: int = 1) -> float:
         """计算波动率止损价格"""
         try:
             stop_distance = price * volatility * self.get_param("volatility_factor")
+            if trend < 0:
+                return price + stop_distance
             return price - stop_distance
         except Exception as e:
             logger.error(f"波动率止损计算错误: {str(e)}")
             return 0.0
 
-    def _calculate_fixed_stop(self, price: float) -> float:
+    def _calculate_fixed_stop(self, price: float, trend: int = 1) -> float:
         """计算固定止损价格"""
         try:
+            if trend < 0:
+                return price * (1 + self.get_param("min_stop_loss"))
             return price * (1 - self.get_param("min_stop_loss"))
         except Exception as e:
             logger.error(f"固定止损计算错误: {str(e)}")
@@ -220,35 +258,42 @@ class AdaptiveStopLoss(StopLossStrategy):
                           position: Dict[str, Any], trend: int) -> float:
         """选择最终的止损价格"""
         try:
-            # 1. 根据趋势选择止损策略
             if trend > 0:
-                # 上升趋势，使用较宽松的止损
                 stop_price = min(
                     stops['atr'],
                     stops['ma'],
-                    stops['trailing']
+                    stops['trailing'],
+                    stops['volatility']
                 )
             else:
-                # 下降趋势，使用较严格的止损
                 stop_price = max(
                     stops['atr'],
                     stops['ma'],
+                    stops['trailing'],
                     stops['volatility']
                 )
 
-            # 2. 确保止损价格在合理范围内
-            min_stop = price * (1 - self.get_param("max_stop_loss"))
-            max_stop = price * (1 - self.get_param("min_stop_loss"))
+            if trend < 0:
+                min_stop = price * (1 + self.get_param("min_stop_loss"))
+                max_stop = price * (1 + self.get_param("max_stop_loss"))
+            else:
+                min_stop = price * (1 - self.get_param("max_stop_loss"))
+                max_stop = price * (1 - self.get_param("min_stop_loss"))
             stop_price = max(min_stop, min(stop_price, max_stop))
 
-            # 3. 如果已经盈利，使用更宽松的止损
             entry_price = position.get('entry_price', price)
-            if price > entry_price:
-                profit_ratio = (price - entry_price) / entry_price
-                if profit_ratio > self.get_param("profit_lock"):
-                    # 锁定部分利润
-                    lock_price = entry_price * (1 + self.get_param("profit_lock"))
-                    stop_price = max(stop_price, lock_price)
+            if trend < 0:
+                if price < entry_price:
+                    profit_ratio = (entry_price - price) / entry_price
+                    if profit_ratio > self.get_param("profit_lock"):
+                        lock_price = entry_price * (1 - self.get_param("profit_lock"))
+                        stop_price = min(stop_price, lock_price)
+            else:
+                if price > entry_price:
+                    profit_ratio = (price - entry_price) / entry_price
+                    if profit_ratio > self.get_param("profit_lock"):
+                        lock_price = entry_price * (1 + self.get_param("profit_lock"))
+                        stop_price = max(stop_price, lock_price)
 
             return stop_price
 

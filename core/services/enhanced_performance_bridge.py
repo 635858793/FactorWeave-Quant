@@ -19,6 +19,7 @@ import threading
 import json
 import numpy as np
 import pandas as pd
+import psutil
 from typing import Dict, List, Any, Optional, Tuple, Callable, Union
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field
@@ -244,37 +245,39 @@ class EnhancedPerformanceBridge:
             # 从性能集成器获取基准数据
             if hasattr(self.performance_integrator, 'benchmarks'):
                 for metric_name, benchmark_config in self.performance_integrator.benchmarks.items():
-                    # 模拟当前值（实际应该从真实数据源获取）
                     current_value = self._get_current_benchmark_value(metric_name, benchmark_config)
 
-                    self.performance_history[metric_name].append({
-                        'timestamp': current_time,
-                        'value': current_value,
-                        'source': 'performance_integrator'
-                    })
+                    if current_value is not None:
+                        self.performance_history[metric_name].append({
+                            'timestamp': current_time,
+                            'value': current_value,
+                            'source': 'performance_integrator'
+                        })
 
         except Exception as e:
             logger.error(f"收集性能数据失败: {e}")
 
-    def _get_current_benchmark_value(self, metric_name: str, benchmark_config: Dict[str, float]) -> float:
-        """获取当前基准值（模拟实现）"""
-        import random
+    def _get_current_benchmark_value(self, metric_name: str, benchmark_config: Dict[str, float]) -> Optional[float]:
+        metric_lower = metric_name.lower()
 
-        baseline = benchmark_config.get('baseline', 100)
-        target = benchmark_config.get('target', 50)
-
-        # 模拟在基线和目标之间的随机值，带有一些噪声
-        range_size = abs(baseline - target)
-        noise_factor = 0.1  # 10%噪声
-
-        if baseline > target:  # 越小越好的指标
-            base_value = target + random.uniform(0, range_size * 0.8)
-        else:  # 越大越好的指标
-            base_value = target - random.uniform(0, range_size * 0.8)
-
-        # 添加噪声
-        noise = random.uniform(-base_value * noise_factor, base_value * noise_factor)
-        return max(0, base_value + noise)
+        try:
+            if 'cpu' in metric_lower:
+                return psutil.cpu_percent(interval=0.1)
+            elif 'memory' in metric_lower or 'ram' in metric_lower:
+                return psutil.virtual_memory().percent
+            elif 'disk' in metric_lower:
+                return psutil.disk_usage('/').percent
+            elif 'network' in metric_lower or 'net' in metric_lower:
+                net_io = psutil.net_io_counters()
+                return float(net_io.bytes_sent + net_io.bytes_recv) / (1024 * 1024)
+            elif 'swap' in metric_lower:
+                return psutil.swap_memory().percent
+            else:
+                logger.warning(f"无法获取指标 {metric_name} 的真实性能数据")
+                return None
+        except Exception as e:
+            logger.error(f"获取性能基准值失败 ({metric_name}): {e}")
+            return None
 
     def _perform_deep_analysis(self):
         """执行深度分析"""

@@ -289,7 +289,7 @@ class EnhancedBatchAnalysisMixin:
                 QTimer.singleShot(0, self._reset_batch_ui_state)
 
         self._batch_analysis_running = True
-        self.enhanced_batch_worker = threading.Thread(target=batch_analysis_worker)
+        self.enhanced_batch_worker = threading.Thread(target=batch_analysis_worker, daemon=True)
         self.enhanced_batch_worker.start()
 
     def _get_backtest_engine(self):

@@ -157,6 +157,7 @@ class FactorWeaveAnalyticsDB:
                 max_overflow=pool_config.max_overflow,
                 timeout=pool_config.timeout,
                 pool_recycle=pool_config.pool_recycle,
+                pool_pre_ping=pool_config.pool_pre_ping,
                 use_lifo=pool_config.use_lifo
             )
         else:
@@ -167,7 +168,8 @@ class FactorWeaveAnalyticsDB:
                 pool_size=15,
                 max_overflow=100,
                 timeout=30.0,
-                pool_recycle=3600
+                pool_recycle=1800,
+                pool_pre_ping=True
             )
 
     def reload_pool(self, new_config=None):
@@ -198,6 +200,7 @@ class FactorWeaveAnalyticsDB:
                     max_overflow=new_config.max_overflow,
                     timeout=new_config.timeout,
                     pool_recycle=new_config.pool_recycle,
+                    pool_pre_ping=new_config.pool_pre_ping,
                     use_lifo=new_config.use_lifo
                 )
             else:
@@ -611,7 +614,7 @@ class FactorWeaveAnalyticsDB:
         """析构时清理资源"""
         try:
             self.close()
-        except:
+        except Exception:
             pass
 
 

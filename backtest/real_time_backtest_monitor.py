@@ -16,8 +16,8 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass, field
 from enum import Enum
 import psutil
-import sqlite3
 from pathlib import Path
+from core.database.unified_sqlite_access import UnifiedSQLiteAccess
 import matplotlib.pyplot as plt
 import seaborn as sns
 from matplotlib.animation import FuncAnimation
@@ -148,7 +148,8 @@ class RealTimeBacktestMonitor:
         try:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path), enable_foreign_keys=False)
+            with db.get_connection() as conn:
                 # 创建指标历史表
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS metrics_history (
@@ -185,8 +186,6 @@ class RealTimeBacktestMonitor:
                         recommendation TEXT
                     )
                 """)
-
-                conn.commit()
 
         except Exception as e:
             logger.error(f"初始化数据库失败: {e}")
@@ -649,7 +648,8 @@ class RealTimeBacktestMonitor:
     def _store_metrics(self, metrics: RealTimeMetrics):
         """存储指标到数据库"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path), enable_foreign_keys=False)
+            with db.get_connection() as conn:
                 conn.execute("""
                     INSERT INTO metrics_history (
                         timestamp, current_return, cumulative_return, current_drawdown,
@@ -674,7 +674,6 @@ class RealTimeBacktestMonitor:
                     metrics.memory_usage,
                     metrics.cpu_usage
                 ))
-                conn.commit()
 
         except Exception as e:
             logger.error(f"存储指标失败: {e}")
@@ -685,14 +684,10 @@ class RealTimeBacktestMonitor:
             if not alerts:
                 return
 
-            with sqlite3.connect(self.db_path) as conn:
-                for alert in alerts:
-                    conn.execute("""
-                        INSERT INTO alerts_history (
-                            timestamp, level, category, message, metric_name,
-                            current_value, threshold_value, recommendation
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path), enable_foreign_keys=False)
+            with db.get_connection() as conn:
+                alert_data = [
+                    (
                         alert.timestamp.isoformat(),
                         alert.level.value,
                         alert.category,
@@ -701,8 +696,15 @@ class RealTimeBacktestMonitor:
                         alert.current_value,
                         alert.threshold_value,
                         alert.recommendation
-                    ))
-                conn.commit()
+                    )
+                    for alert in alerts
+                ]
+                conn.executemany("""
+                    INSERT INTO alerts_history (
+                        timestamp, level, category, message, metric_name,
+                        current_value, threshold_value, recommendation
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, alert_data)
 
         except Exception as e:
             logger.error(f"存储预警失败: {e}")

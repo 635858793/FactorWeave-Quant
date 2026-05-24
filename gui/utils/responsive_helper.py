@@ -3,12 +3,10 @@
 提供基于 DPI 的尺寸计算函数，支持 UI 元素等比缩放
 """
 
-import logging
+from loguru import logger
 from typing import Optional, Tuple
 from PyQt5.QtWidgets import QApplication, QWidget
 from PyQt5.QtCore import Qt
-
-logger = logging.getLogger(__name__)
 
 class ResponsiveHelper:
     """响应式计算辅助类"""

@@ -371,7 +371,10 @@ class ChartPerformanceOptimizer:
     def _apply_cache_optimization(self, chart_id: str, data: Any) -> Any:
         """应用缓存优化"""
         try:
-            cache_key = f"{chart_id}_{hash(str(data))}"
+            if hasattr(data, 'to_numpy'):
+                cache_key = f"{chart_id}_{hash(data.to_numpy().tobytes())}"
+            else:
+                cache_key = f"{chart_id}_{hash(str(data))}"
             
             # 检查缓存
             if cache_key in self.cache:
@@ -530,7 +533,7 @@ class ChartPerformanceOptimizer:
             # 更新平均渲染时间
             if hasattr(self, '_render_times'):
                 recent_times = self._render_times[-10:]  # 最近10次渲染时间
-                self.metrics.avg_render_time = sum(recent_times) / len(recent_times)
+                self.metrics.avg_render_time = np.mean(recent_times)
                 
             self.metrics.last_updated = datetime.now()
             

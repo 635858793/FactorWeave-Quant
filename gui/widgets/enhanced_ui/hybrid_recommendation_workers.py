@@ -67,6 +67,9 @@ class HybridRecommendationWorker(QRunnable):
 
     def run(self):
         """在后台线程中获取混合推荐数据"""
+        if self.is_cancelled:
+            self.logger.debug("请求已被取消，跳过执行")
+            return
         try:
             self.logger.debug("开始获取混合推荐数据")
 
@@ -77,6 +80,10 @@ class HybridRecommendationWorker(QRunnable):
 
             # 在后台线程中发送请求（不涉及UI更新）
             response = requests.post(url, json=self.params, headers=headers, timeout=API_TIMEOUT)
+
+            if self.is_cancelled:
+                self.logger.debug("请求执行期间被取消，丢弃结果")
+                return
 
             # 检查响应状态
             if response.status_code != 200:
@@ -116,6 +123,7 @@ class HybridRecommendationWorker(QRunnable):
     def cancel(self):
         """取消请求"""
         self.is_cancelled = True
+        self.logger.info(f"请求已标记为取消: {getattr(self, 'request_type', 'unknown')}")
 
 
 class CacheManagementSignals(QObject):

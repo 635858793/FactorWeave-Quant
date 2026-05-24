@@ -206,9 +206,8 @@ def enhanced_feature_selection(X, y):
             logger.info(f"{i+1}. {row['feature']} (分数: {row['final_score']:.4f})")
 
         # 返回选择的特征索引和完整的特征重要性DataFrame
-        selected_indices = []
-        for feature in selected_features['feature']:
-            selected_indices.append(feature_names.index(feature))
+        name_to_index = {name: idx for idx, name in enumerate(feature_names)}
+        selected_indices = [name_to_index[feature] for feature in selected_features['feature']]
 
         return selected_indices, feature_importance
 

@@ -5,6 +5,7 @@ from loguru import logger
 提供股票搜索、筛选和管理功能。
 """
 
+import time
 from typing import Dict, Any, List, Optional
 from concurrent.futures import ThreadPoolExecutor
 import asyncio  # Added for asyncio.create_task
@@ -1101,25 +1102,21 @@ class LeftPanel(BasePanel):
                 QMessageBox.warning(main_window, "警告", "无效的股票代码")
                 return
 
-            # 获取投资组合管理器
-            portfolio_manager = None
-            try:
-                if hasattr(self.coordinator, 'service_container'):
-                    from core.data.data_access import DataAccess
-
-                    # 创建投资组合管理器（实际应用中应该从服务容器获取）
-                    data_access = DataAccess()
-                    portfolio_manager = None
-            except Exception as e:
-                logger.warning(f"无法创建投资组合管理器: {e}")
-
             # 显示投资组合管理对话框
-            dialog = PortfolioDialog(
-                parent=main_window, portfolio_manager=portfolio_manager)
+            dialog = PortfolioDialog(parent=main_window)
 
-            # 预填充股票代码
-            if hasattr(dialog, 'stock_code_input'):
-                dialog.stock_code_input.setText(stock_code)
+            # 自动跳转到对应股票（如果已选中组合且持仓中有此股票）
+            if hasattr(dialog, 'current_portfolio') and dialog.current_portfolio:
+                holdings = dialog.current_portfolio.get('holdings', [])
+                for h in holdings:
+                    if h.get('code') == stock_code:
+                        # 在持仓表格中找到对应行
+                        for row in range(dialog.holdings_table.rowCount()):
+                            item = dialog.holdings_table.item(row, 0)
+                            if item and item.text() == stock_code:
+                                dialog.holdings_table.selectRow(row)
+                                break
+                        break
 
             # 居中显示
             if self.coordinator:
@@ -1168,11 +1165,11 @@ class LeftPanel(BasePanel):
     def _backtest_stock(self, stock_code: str, stock_name: str) -> None:
         """策略回测"""
         try:
-            from gui.dialogs.enhanced_strategy_manager_dialog import EnhancedStrategyManagerDialog
+            from gui.dialogs.strategy_manager_dialog import StrategyManagerDialog
 
             main_window = self.coordinator.get_main_window() if self.coordinator else None
 
-            dialog = EnhancedStrategyManagerDialog(main_window)
+            dialog = StrategyManagerDialog(main_window)
             if hasattr(dialog, '_switch_view'):
                 dialog._switch_view('backtest')
 
@@ -1225,11 +1222,11 @@ class LeftPanel(BasePanel):
     def _manage_strategy(self, stock_code: str, stock_name: str) -> None:
         """策略管理"""
         try:
-            from gui.dialogs.enhanced_strategy_manager_dialog import EnhancedStrategyManagerDialog
+            from gui.dialogs.strategy_manager_dialog import StrategyManagerDialog
 
             main_window = self.coordinator.get_main_window() if self.coordinator else None
 
-            dialog = EnhancedStrategyManagerDialog(main_window)
+            dialog = StrategyManagerDialog(main_window)
 
             if self.coordinator:
                 self.coordinator.center_dialog(dialog, main_window)
@@ -1478,24 +1475,35 @@ class LeftPanel(BasePanel):
             else:
                 query = base_query
 
-            # 执行查询
-            with duckdb.connect(db_path) as conn:
-                # 检查表是否存在 (DuckDB语法)
-                table_check = "SHOW TABLES"
-                tables_result = conn.execute(table_check).fetchall()
-                table_names = [table[0] for table in tables_result]
+            # 执行查询（带重连重试）
+            max_retries = 3
+            last_error = None
+            for attempt in range(max_retries):
+                try:
+                    with duckdb.connect(db_path) as conn:
+                        table_check = "SHOW TABLES"
+                        tables_result = conn.execute(table_check).fetchall()
+                        table_names = [table[0] for table in tables_result]
 
-                if 'asset_metadata' not in table_names:
-                    logger.debug("asset_metadata表不存在，可能尚未导入数据")
-                    return pd.DataFrame()
+                        if 'asset_metadata' not in table_names:
+                            logger.debug("asset_metadata表不存在，可能尚未导入数据")
+                            return pd.DataFrame()
 
-                # 执行参数化查询
-                if query_params:
-                    result = conn.execute(query, query_params).df()
-                else:
-                    result = conn.execute(query).df()
-                logger.info(f"从asset_metadata表查询成功，返回 {len(result)} 条记录")
-                return result
+                        if query_params:
+                            result = conn.execute(query, query_params).df()
+                        else:
+                            result = conn.execute(query).df()
+                        logger.info(f"从asset_metadata表查询成功，返回 {len(result)} 条记录")
+                        return result
+
+                except Exception as e:
+                    last_error = e
+                    if attempt < max_retries - 1:
+                        logger.warning(f"DuckDB连接/查询失败 (尝试 {attempt+1}/{max_retries}): {e}")
+                        time.sleep(0.1 * (attempt + 1))
+                    else:
+                        logger.error(f"DuckDB重连失败，已尝试 {max_retries} 次: {last_error}")
+                        return pd.DataFrame()
 
         except ImportError:
             logger.debug("duckdb模块不可用")
@@ -2046,7 +2054,14 @@ class LeftPanel(BasePanel):
             if hasattr(self, '_no_data_cache') and self._no_data_cache:
                 self._no_data_cache.clear()
 
-            # 调用父类清理
+            if self.event_bus:
+                try:
+                    from core.events.types import MultiScreenToggleEvent
+                    self.event_bus.unsubscribe(MultiScreenToggleEvent, self.on_multi_screen_toggled)
+                    self.event_bus.unsubscribe(AssetTypeChangedEvent, self._on_own_asset_type_changed)
+                except Exception as e:
+                    logger.warning(f"取消事件订阅失败: {e}")
+
             super()._do_dispose()
 
             logger.info("Left panel disposed")

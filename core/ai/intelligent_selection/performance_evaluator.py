@@ -11,13 +11,10 @@ from typing import Dict, Any, List, Optional, Union
 from dataclasses import dataclass, asdict
 from collections import deque
 import json
-import sqlite3
-import logging
+from loguru import logger
 
 from .config.selector_config import PerformanceEvaluationConfig
-
-logger = logging.getLogger(__name__)
-
+from core.database.unified_sqlite_access import UnifiedSQLiteAccess
 
 @dataclass
 class ModelMetrics:
@@ -66,19 +63,16 @@ class AccuracyCalculator:
             correct = 0
             total = len(predictions)
             
-            for pred, actual in zip(predictions, actuals):
-                # 假设预测和实际数据都有 'value' 字段
+            for i, (pred, actual) in enumerate(zip(predictions, actuals)):
                 pred_value = pred.get('value', 0)
                 actual_value = actual.get('value', 0)
                 
-                # 对于连续值，判断方向是否正确
                 if len(predictions) > 1:
-                    # 计算相邻预测和实际的趋势
-                    if pred.get('is_first', True):
+                    if i == 0:
                         continue
                     
-                    prev_pred = predictions[predictions.index(pred) - 1].get('value', 0)
-                    prev_actual = actuals[actuals.index(actual) - 1].get('value', 0)
+                    prev_pred = predictions[i - 1].get('value', 0)
+                    prev_actual = actuals[i - 1].get('value', 0)
                     
                     pred_direction = 1 if pred_value > prev_pred else (-1 if pred_value < prev_pred else 0)
                     actual_direction = 1 if actual_value > prev_actual else (-1 if actual_value < prev_actual else 0)
@@ -111,14 +105,11 @@ class PrecisionCalculator:
                 return 0.0
             
             # 假设这是一个回归问题，使用预测误差的倒数来模拟精确率
-            errors = []
-            for pred, actual in zip(predictions, actuals):
-                pred_value = pred.get('value', 0)
-                actual_value = actual.get('value', 0)
-                
-                if actual_value != 0:
-                    error = abs(pred_value - actual_value) / abs(actual_value)
-                    errors.append(error)
+            errors = [
+                abs(pred.get('value', 0) - actual.get('value', 0)) / abs(actual.get('value', 0))
+                for pred, actual in zip(predictions, actuals)
+                if actual.get('value', 0) != 0
+            ]
             
             if not errors:
                 return 0.0
@@ -264,30 +255,31 @@ class PerformanceDatabase:
         self.db_path = config.get('path', 'data/performance.sqlite') if isinstance(config, dict) else 'data/performance.sqlite'
         self._init_database()
     
+    def _get_db(self) -> UnifiedSQLiteAccess:
+        return UnifiedSQLiteAccess.get_instance(self.db_path)
+    
     def _init_database(self):
         """初始化数据库"""
         try:
             import os
             os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
             
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS model_performance (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    model_type TEXT NOT NULL,
-                    metrics TEXT NOT NULL,
-                    composite_score REAL NOT NULL,
-                    reliability_score REAL NOT NULL,
-                    sample_size INTEGER NOT NULL,
-                    evaluation_timestamp TEXT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            
-            conn.commit()
-            conn.close()
+            db = self._get_db()
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS model_performance (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        model_type TEXT NOT NULL,
+                        metrics TEXT NOT NULL,
+                        composite_score REAL NOT NULL,
+                        reliability_score REAL NOT NULL,
+                        sample_size INTEGER NOT NULL,
+                        evaluation_timestamp TEXT NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
             
         except Exception as e:
             logger.error(f"数据库初始化失败: {e}")
@@ -295,24 +287,22 @@ class PerformanceDatabase:
     def save_performance(self, performance: ModelPerformance):
         """保存性能数据"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            cursor.execute('''
-                INSERT INTO model_performance 
-                (model_type, metrics, composite_score, reliability_score, sample_size, evaluation_timestamp)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (
-                performance.model_type,
-                json.dumps(asdict(performance.metrics), default=str),
-                performance.composite_score,
-                performance.reliability_score,
-                performance.sample_size,
-                performance.evaluation_timestamp.isoformat()
-            ))
-            
-            conn.commit()
-            conn.close()
+            db = self._get_db()
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute('''
+                    INSERT INTO model_performance 
+                    (model_type, metrics, composite_score, reliability_score, sample_size, evaluation_timestamp)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (
+                    performance.model_type,
+                    json.dumps(asdict(performance.metrics), default=str),
+                    performance.composite_score,
+                    performance.reliability_score,
+                    performance.sample_size,
+                    performance.evaluation_timestamp.isoformat()
+                ))
             
         except Exception as e:
             logger.error(f"保存性能数据失败: {e}")
@@ -321,38 +311,38 @@ class PerformanceDatabase:
                                days: int = 30) -> List[ModelPerformance]:
         """获取历史性能数据"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            since_date = (datetime.now() - timedelta(days=days)).isoformat()
-            
-            cursor.execute('''
-                SELECT model_type, metrics, composite_score, reliability_score, 
-                       sample_size, evaluation_timestamp
-                FROM model_performance
-                WHERE model_type = ? AND evaluation_timestamp >= ?
-                ORDER BY evaluation_timestamp DESC
-            ''', (model_type, since_date))
-            
-            results = cursor.fetchall()
-            conn.close()
-            
-            performances = []
-            for row in results:
-                metrics_dict = json.loads(row[1])
-                metrics = ModelMetrics(**metrics_dict)
+            db = self._get_db()
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
                 
-                performance = ModelPerformance(
-                    model_type=row[0],
-                    metrics=metrics,
-                    composite_score=row[2],
-                    reliability_score=row[3],
-                    sample_size=row[4],
-                    evaluation_timestamp=datetime.fromisoformat(row[5])
-                )
-                performances.append(performance)
-            
-            return performances
+                since_date = (datetime.now() - timedelta(days=days)).isoformat()
+                
+                cursor.execute('''
+                    SELECT model_type, metrics, composite_score, reliability_score, 
+                           sample_size, evaluation_timestamp
+                    FROM model_performance
+                    WHERE model_type = ? AND evaluation_timestamp >= ?
+                    ORDER BY evaluation_timestamp DESC
+                ''', (model_type, since_date))
+                
+                results = cursor.fetchall()
+                
+                performances = []
+                for row in results:
+                    metrics_dict = json.loads(row[1])
+                    metrics = ModelMetrics(**metrics_dict)
+                    
+                    performance = ModelPerformance(
+                        model_type=row[0],
+                        metrics=metrics,
+                        composite_score=row[2],
+                        reliability_score=row[3],
+                        sample_size=row[4],
+                        evaluation_timestamp=datetime.fromisoformat(row[5])
+                    )
+                    performances.append(performance)
+                
+                return performances
             
         except Exception as e:
             logger.error(f"获取历史性能数据失败: {e}")
@@ -499,14 +489,11 @@ class ModelPerformanceEvaluator:
                               actuals: List[Dict[str, Any]]) -> float:
         """计算预测一致性"""
         try:
-            errors = []
-            for pred, actual in zip(predictions, actuals):
-                pred_value = pred.get('value', 0)
-                actual_value = actual.get('value', 0)
-                
-                if actual_value != 0:
-                    error = abs(pred_value - actual_value) / abs(actual_value)
-                    errors.append(error)
+            errors = [
+                abs(pred.get('value', 0) - actual.get('value', 0)) / abs(actual.get('value', 0))
+                for pred, actual in zip(predictions, actuals)
+                if actual.get('value', 0) != 0
+            ]
             
             if not errors:
                 return 0.0

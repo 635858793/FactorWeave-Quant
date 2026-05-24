@@ -4,9 +4,12 @@ import subprocess
 import sys
 import os
 
-test_code = '''
+# 动态解析项目根目录
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+test_code = f'''
 import sys
-sys.path.insert(0, r"d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui")
+sys.path.insert(0, r"{PROJECT_ROOT}")
 
 from gui.widgets.trading_panel import MATPLOTLIB_AVAILABLE
 print("1. matplotlib: " + str(MATPLOTLIB_AVAILABLE))
@@ -38,7 +41,7 @@ result = subprocess.run(
     [sys.executable, '-c', test_code],
     capture_output=True,
     text=True,
-    cwd=r"d:\DevelopTool\FreeCode\HIkyuu-UI\hikyuu-ui",
+    cwd=PROJECT_ROOT,
     env={**os.environ, 'PYTHONUNBUFFERED': '1', 'TF_CPP_MIN_LOG_LEVEL': '3'}
 )
 

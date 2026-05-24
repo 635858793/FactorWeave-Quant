@@ -346,38 +346,59 @@ class MarketService(BaseService):
             logger.error(f"Failed to initialize default watchlist: {e}")
 
     def _load_basic_stocks(self) -> None:
-        """加载基础股票数据"""
+        """加载基础股票数据 - 从真实数据源获取"""
         try:
-            # 添加一些示例股票数据
-            sample_stocks = [
-                ("000001.SZ", "平安银行", MarketType.SHENZHEN, StockType.STOCK, "250000"),
-                ("000002.SZ", "万科A", MarketType.SHENZHEN, StockType.STOCK, "140000"),
-                ("600000.SH", "浦发银行", MarketType.SHANGHAI, StockType.STOCK, "250000"),
-                ("600036.SH", "招商银行", MarketType.SHANGHAI, StockType.STOCK, "250000"),
-                ("600519.SH", "贵州茅台", MarketType.SHANGHAI, StockType.STOCK, "080000"),
-                ("000858.SZ", "五粮液", MarketType.SHENZHEN, StockType.STOCK, "080000"),
-            ]
-
-            with self._stock_lock:
-                for symbol, name, market, stock_type, industry_code in sample_stocks:
-                    stock = StockInfo(
-                        symbol=symbol,
-                        name=name,
-                        market=market,
-                        stock_type=stock_type,
-                        industry_code=industry_code,
-                        industry_name=self._industries.get(industry_code, {}).industry_name if industry_code in self._industries else None
-                    )
-                    self._stocks[symbol] = stock
-                    self._market_metrics.total_stocks += 1
-                    self._market_metrics.active_stocks += 1
-
-                    # 添加到行业股票映射
-                    if industry_code:
-                        self._industry_stocks[industry_code].add(symbol)
-
-            logger.info("✓ Basic stocks loaded")
-
+            logger.info("尝试从真实数据源加载股票数据...")
+            
+            try:
+                from core.real_data_provider import get_real_data_provider
+                provider = get_real_data_provider()
+                stock_list = provider.get_real_stock_list()
+                
+                if stock_list:
+                    with self._stock_lock:
+                        for stock_data in stock_list:
+                            code = stock_data.get('code', '')
+                            name = stock_data.get('name', '')
+                            market_str = stock_data.get('market', '')
+                            
+                            if market_str in ('SH', 'sh', '上海', 'SHANGHAI'):
+                                market = MarketType.SHANGHAI
+                            elif market_str in ('SZ', 'sz', '深圳', 'SHENZHEN'):
+                                market = MarketType.SHENZHEN
+                            elif market_str in ('BJ', 'bj', '北京', 'BEIJING'):
+                                market = MarketType.BEIJING
+                            else:
+                                market = MarketType.SHANGHAI
+                            
+                            industry_code = stock_data.get('industry_code', None)
+                            stock = StockInfo(
+                                symbol=code,
+                                name=name,
+                                market=market,
+                                stock_type=StockType.STOCK,
+                                industry_code=industry_code,
+                                industry_name=self._industries.get(industry_code, IndustryInfo('', '', IndustryLevel.LEVEL1)).industry_name if industry_code and industry_code in self._industries else None
+                            )
+                            self._stocks[code] = stock
+                            self._market_metrics.total_stocks += 1
+                            self._market_metrics.active_stocks += 1
+                            
+                            if industry_code:
+                                self._industry_stocks[industry_code].add(code)
+                        
+                        logger.info(f"真实数据路径: 加载 {len(stock_list)} 只股票成功")
+                        return
+                
+                logger.warning("RealDataProvider 返回空列表")
+                    
+            except ImportError as e:
+                logger.warning(f"RealDataProvider 不可用: {e}")
+            except Exception as e:
+                logger.warning(f"RealDataProvider 加载失败: {e}")
+            
+            logger.warning("降级路径: 无法从真实数据源加载股票数据，股票列表为空")
+            
         except Exception as e:
             logger.error(f"Failed to load basic stocks: {e}")
 
@@ -748,15 +769,61 @@ class MarketService(BaseService):
             return self._market_metrics
 
     def refresh_data(self, force: bool = False) -> bool:
-        """刷新数据"""
+        """刷新数据 - 从真实数据源重新加载"""
         try:
             logger.info("Refreshing market data...")
-
-            # 在真实环境中会从数据源刷新数据
+            
+            try:
+                from core.real_data_provider import get_real_data_provider
+                provider = get_real_data_provider()
+                stock_list = provider.get_real_stock_list()
+                
+                if stock_list:
+                    with self._stock_lock:
+                        self._stocks.clear()
+                        for stock_data in stock_list:
+                            code = stock_data.get('code', '')
+                            name = stock_data.get('name', '')
+                            market_str = stock_data.get('market', '')
+                            
+                            if market_str in ('SH', 'sh', '上海', 'SHANGHAI'):
+                                market = MarketType.SHANGHAI
+                            elif market_str in ('SZ', 'sz', '深圳', 'SHENZHEN'):
+                                market = MarketType.SHENZHEN
+                            elif market_str in ('BJ', 'bj', '北京', 'BEIJING'):
+                                market = MarketType.BEIJING
+                            else:
+                                market = MarketType.SHANGHAI
+                            
+                            industry_code = stock_data.get('industry_code', None)
+                            stock = StockInfo(
+                                symbol=code,
+                                name=name,
+                                market=market,
+                                stock_type=StockType.STOCK,
+                                industry_code=industry_code,
+                                industry_name=self._industries.get(industry_code, IndustryInfo('', '', IndustryLevel.LEVEL1)).industry_name if industry_code and industry_code in self._industries else None
+                            )
+                            self._stocks[code] = stock
+                            
+                            if industry_code:
+                                self._industry_stocks[industry_code].add(code)
+                    
+                    self._market_metrics.data_refresh_count += 1
+                    self._market_metrics.total_stocks = len(self._stocks)
+                    self._market_metrics.active_stocks = len(self._stocks)
+                    logger.info(f"真实数据路径: 市场数据刷新完成, 共 {len(self._stocks)} 只股票")
+                    return True
+                
+                logger.warning("降级路径: RealDataProvider 返回空, 数据刷新未执行")
+                
+            except ImportError as e:
+                logger.warning(f"降级路径: RealDataProvider 不可用: {e}")
+            except Exception as e:
+                logger.warning(f"降级路径: RealDataProvider 刷新失败: {e}")
+            
             self._market_metrics.data_refresh_count += 1
-
-            logger.info("Market data refreshed successfully")
-            return True
+            return False
 
         except Exception as e:
             logger.error(f"Failed to refresh market data: {e}")

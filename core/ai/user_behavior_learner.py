@@ -3,7 +3,7 @@
 建立用户行为模式学习和分析系统，支持个性化推荐和智能配置建议
 """
 
-import logging
+from loguru import logger
 import json
 import hashlib
 from typing import Dict, List, Any, Optional, Tuple, Set, Union
@@ -18,9 +18,7 @@ import threading
 import sqlite3
 import pickle
 import os
-
-logger = logging.getLogger(__name__)
-
+from ..database.unified_sqlite_access import UnifiedSQLiteAccess
 
 class ActionType(Enum):
     """用户行为类型"""
@@ -142,7 +140,8 @@ class UserBehaviorStorage:
     def _ensure_database(self):
         """确保数据库表存在"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = self._get_db()
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 # 用户行为表
@@ -230,7 +229,8 @@ class UserBehaviorStorage:
         """保存用户行为"""
         try:
             with self._lock:
-                with sqlite3.connect(self.db_path) as conn:
+                db = self._get_db()
+                with db.get_connection() as conn:
                     cursor = conn.cursor()
                     cursor.execute("""
                         INSERT INTO user_actions 
@@ -247,7 +247,6 @@ class UserBehaviorStorage:
                         action.error_message,
                         json.dumps(action.metadata)
                     ))
-                    conn.commit()
                     return True
 
         except Exception as e:
@@ -259,7 +258,8 @@ class UserBehaviorStorage:
                          end_date: Optional[datetime] = None) -> List[UserAction]:
         """获取用户行为记录"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = self._get_db()
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 query = "SELECT * FROM user_actions WHERE user_id = ?"
@@ -304,7 +304,8 @@ class UserBehaviorStorage:
         """保存用户画像"""
         try:
             with self._lock:
-                with sqlite3.connect(self.db_path) as conn:
+                db = self._get_db()
+                with db.get_connection() as conn:
                     cursor = conn.cursor()
                     cursor.execute("""
                         INSERT OR REPLACE INTO user_profiles 
@@ -325,7 +326,6 @@ class UserBehaviorStorage:
                         profile.created_at.isoformat(),
                         profile.updated_at.isoformat()
                     ))
-                    conn.commit()
                     return True
 
         except Exception as e:
@@ -335,7 +335,8 @@ class UserBehaviorStorage:
     def get_user_profile(self, user_id: str) -> Optional[UserProfile]:
         """获取用户画像"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = self._get_db()
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT * FROM user_profiles WHERE user_id = ?", (user_id,))
                 row = cursor.fetchone()
@@ -1031,13 +1032,14 @@ class RecommendationEngine:
 
 
 class UserBehaviorLearner:
-    """用户行为学习器主类"""
+    """用户行为学习器主类（基于规则引擎，非ML模型）"""
 
     def __init__(self, storage_path: Optional[str] = None):
         self.storage = UserBehaviorStorage(storage_path)
         self.analyzer = BehaviorAnalyzer()
         self.classifier = UserSegmentClassifier()
         self.recommendation_engine = RecommendationEngine()
+        logger.info("UserBehaviorLearner 初始化: 使用规则引擎模式（非ML训练）")
 
         # 缓存
         self.profile_cache = {}
@@ -1124,7 +1126,11 @@ class UserBehaviorLearner:
             behavior_analysis = self.get_user_behavior_analysis(user_id)
 
             # 生成推荐
-            recommendations = self.recommendation_engine.generate_recommendations(profile, behavior_analysis)
+            try:
+                recommendations = self.recommendation_engine.generate_recommendations(profile, behavior_analysis)
+            except Exception as rec_err:
+                logger.warning(f"规则推荐生成失败: {rec_err}")
+                recommendations = []
 
             # 过滤已过期的推荐
             current_time = datetime.now()

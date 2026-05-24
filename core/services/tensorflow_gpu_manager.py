@@ -20,15 +20,14 @@ import sys
 import platform
 import subprocess
 import ctypes
-import logging
+from loguru import logger
 import time
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
-# 设置日志
-logger = logging.getLogger(__name__)
+
 
 try:
     import tensorflow as tf
@@ -422,8 +421,8 @@ class TensorFlowGPUManager:
                 try:
                     device_details = tf.config.experimental.get_device_details(gpu)
                     device_info.update(device_details)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"获取GPU设备详情失败: {e}")
                 
                 devices.append(device_info)
         except Exception as e:

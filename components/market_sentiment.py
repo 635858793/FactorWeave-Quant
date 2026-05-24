@@ -8,7 +8,6 @@ import time
 from typing import Dict, Any, Optional, List, Union
 from core.services.unified_data_manager import UnifiedDataManager
 from datetime import datetime
-import ptvsd
 from gui.ui_components import BaseAnalysisPanel
 import traceback
 from utils.config_manager import ConfigManager
@@ -164,12 +163,11 @@ class MarketSentimentWidget(BaseAnalysisTab):
                         'raw_data': response.data  # 保留原始数据
                     }
 
-                    if True:  # 使用Loguru日志
-                        logger.info(f" 市场情绪组件使用真实插件数据，情绪指数: {sentiment_index:.3f}")
+                    logger.info(f" 市场情绪组件使用真实插件数据，情绪指数: {sentiment_index:.3f}")
 
                     return result
 
-                elif True:  # 使用Loguru日志
+                else:
                     logger.warning(f" 情绪数据服务返回错误: {response.error_message}")
 
             # 检查原数据管理器
@@ -186,8 +184,7 @@ class MarketSentimentWidget(BaseAnalysisTab):
             }
 
         except Exception as e:
-            if True:  # 使用Loguru日志
-                logger.error(f" 获取市场情绪数据失败: {e}")
+            logger.error(f" 获取市场情绪数据失败: {e}")
 
             # 错误时返回安全的回退数据
             return {
@@ -549,8 +546,7 @@ class MarketSentimentWidget(BaseAnalysisTab):
             if hasattr(self, 'sentiment_chart_view'):
                 self.sentiment_chart_view.update()
         except Exception as e:
-            if True:  # 使用Loguru日志
-                logger.error(f"多市场情绪走势渲染失败: {str(e)}")
+            logger.error(f"多市场情绪走势渲染失败: {str(e)}")
 
     def _update_ui_safely(self, data: dict):
         """在主线程中安全地更新UI，数据缺失时所有UI区域显示暂无数据，并写日志"""
@@ -611,8 +607,7 @@ class MarketSentimentWidget(BaseAnalysisTab):
         """
         try:
             if not hasattr(self, 'sentiment_chart') or not hasattr(self, 'sentiment_series'):
-                if True:  # 使用Loguru日志
-                    logger.warning("情绪图表未初始化")
+                logger.warning("情绪图表未初始化")
                 return
             # 清除现有数据
             self.sentiment_series.clear()
@@ -642,18 +637,16 @@ class MarketSentimentWidget(BaseAnalysisTab):
             if hasattr(self, 'sentiment_chart') and values:
                 max_val = max(values)
                 min_val = min(values)
-                mean_val = sum(values) / len(values)
+                mean_val = np.mean(values)
                 # 通过QChart的title增强显示
                 self.sentiment_chart.setTitle(
                     f"市场情绪（最大: {max_val:.3f}  最小: {min_val:.3f}  均值: {mean_val:.3f}）")
             # 更新图表
             if hasattr(self, 'sentiment_chart_view'):
                 self.sentiment_chart_view.update()
-            if True:  # 使用Loguru日志
-                logger.info("情绪图表更新成功")
+            logger.info("情绪图表更新成功")
         except Exception as e:
-            if True:  # 使用Loguru日志
-                logger.error(f"更新情绪图表失败: {str(e)}")
+            logger.error(f"更新情绪图表失败: {str(e)}")
 
     def _update_heat_indicator(self, data):
         """更新热度指示器"""
@@ -964,8 +957,7 @@ class MarketSentimentWidget(BaseAnalysisTab):
                     result = analysis_func(*args, **kwargs)
                     return result
             except Exception as e:
-                if True:  # 使用Loguru日志
-                    logger.error(f"分析异常: {str(e)}")
+                logger.error(f"分析异常: {str(e)}")
                 return None
             finally:
                 QTimer.singleShot(0, lambda: on_done(None))
@@ -1053,34 +1045,44 @@ class MarketSentimentWidget(BaseAnalysisTab):
     def _initialize_sentiment_service(self):
         """初始化情绪数据服务"""
         try:
-            # 尝试获取服务容器和情绪数据服务
             from core.containers.service_container import get_service_container
-            from core.services.sentiment_data_service import SentimentDataService
+        except ImportError:
+            logger.debug("ServiceContainer不可用，跳过情绪数据服务初始化")
+            self._sentiment_service = None
+            return
 
+        try:
+            from core.services.sentiment_data_service import SentimentDataService
+        except ImportError:
+            logger.debug("SentimentDataService模块不存在（已清理），跳过情绪数据服务初始化")
+            self._sentiment_service = None
+            return
+
+        try:
             container = get_service_container()
             if container:
                 try:
                     self._sentiment_service = container.resolve(SentimentDataService)
-                    if True:  # 使用Loguru日志
-                        logger.info("市场情绪组件：情绪数据服务初始化成功")
+                    logger.info("市场情绪组件：情绪数据服务初始化成功")
                 except Exception as resolve_error:
-                    if True:  # 使用Loguru日志
-                        logger.warning(f" 无法从服务容器获取情绪数据服务: {resolve_error}")
-
-                    # 尝试手动创建服务
+                    logger.warning(f"无法从服务容器获取情绪数据服务: {resolve_error}")
                     self._try_manual_service_creation()
             else:
                 self._try_manual_service_creation()
-
         except Exception as e:
-            if True:  # 使用Loguru日志
-                logger.error(f" 市场情绪组件：初始化情绪数据服务失败: {e}")
+            logger.error(f"市场情绪组件：初始化情绪数据服务失败: {e}")
             self._sentiment_service = None
 
     def _try_manual_service_creation(self):
         """尝试手动创建情绪数据服务"""
         try:
             from core.services.sentiment_data_service import SentimentDataService, SentimentDataServiceConfig
+        except ImportError:
+            logger.debug("SentimentDataService模块不存在（已清理），跳过手动创建情绪数据服务")
+            self._sentiment_service = None
+            return
+
+        try:
             from plugins.sentiment_data_sources import (
                 FMPSentimentPlugin, ExordeSentimentPlugin, NewsSentimentPlugin,
                 VIXSentimentPlugin, CryptoSentimentPlugin, AVAILABLE_PLUGINS
@@ -1112,22 +1114,18 @@ class MarketSentimentWidget(BaseAnalysisTab):
                     plugin_instance = plugin_class()
                     if self._sentiment_service.register_plugin(plugin_name, plugin_instance, priority=priority, weight=weight):
                         registered_count += 1
-                        if True:  # 使用Loguru日志
-                            logger.info(f" 市场情绪组件：注册插件: {plugin_name}")
+                        logger.info(f" 市场情绪组件：注册插件: {plugin_name}")
                 except Exception as e:
-                    if True:  # 使用Loguru日志
-                        logger.warning(f" 市场情绪组件：注册插件 {plugin_name} 失败: {e}")
+                    logger.warning(f" 市场情绪组件：注册插件 {plugin_name} 失败: {e}")
 
             # 初始化服务
             if self._sentiment_service.initialize():
-                if True:  # 使用Loguru日志
-                    logger.info(f" 市场情绪组件：手动创建情绪数据服务成功，已注册 {registered_count} 个插件")
+                logger.info(f" 市场情绪组件：手动创建情绪数据服务成功，已注册 {registered_count} 个插件")
             else:
-                if True:  # 使用Loguru日志
-                    logger.error("市场情绪组件：情绪数据服务初始化失败")
+                logger.error("市场情绪组件：情绪数据服务初始化失败")
                 self._sentiment_service = None
 
         except Exception as e:
-            if True:  # 使用Loguru日志
-                logger.error(f" 市场情绪组件：手动创建情绪数据服务失败: {e}")
+            logger.error(f" 市场情绪组件：手动创建情绪数据服务失败: {e}")
             self._sentiment_service = None
+

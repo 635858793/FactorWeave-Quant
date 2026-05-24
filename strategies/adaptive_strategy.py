@@ -1,4 +1,3 @@
-from loguru import logger
 #!/usr/bin/env python3
 """
 自适应策略模块
@@ -10,6 +9,7 @@ from typing import List, Dict, Any
 import pandas as pd
 import numpy as np
 from datetime import datetime
+from loguru import logger
 
 # 导入统一策略管理系统
 from core.strategy.base_strategy import BaseStrategy, StrategySignal, SignalType, StrategyType
@@ -18,7 +18,12 @@ from core.stop_loss import AdaptiveStopLoss
 from core.take_profit import AdaptiveTakeProfit
 
 # 技术指标库
-import talib
+try:
+    import talib
+    TALIB_AVAILABLE = True
+except ImportError:
+    talib = None
+    TALIB_AVAILABLE = False
 
 logger = logger.bind(module=__name__)
 
@@ -65,6 +70,9 @@ class AdaptiveFactorWeaveStrategy(BaseStrategy):
         # 滑点参数
         self.add_parameter("slippage_percent", 0.01,
                            float, "滑点百分比", 0.001, 0.05)
+
+        # 风险管理参数
+        self.add_parameter("max_risk_per_trade", 0.02, float, "每笔最大风险", 0.01, 0.1)
 
     def generate_signals(self, data: pd.DataFrame) -> List[StrategySignal]:
         """
@@ -115,7 +123,7 @@ class AdaptiveFactorWeaveStrategy(BaseStrategy):
                 return None
 
             # 处理缺失值
-            clean_data = clean_data.fillna(method='ffill').fillna(method='bfill')
+            clean_data = clean_data.fillna(method='ffill')
             
             # 确保数据类型正确
             for col in required_cols:
@@ -164,49 +172,158 @@ class AdaptiveFactorWeaveStrategy(BaseStrategy):
             logger.error(f"技术指标计算失败: {e}")
             return None
 
-    def _generate_adaptive_signals(self, data: pd.DataFrame, indicators: Dict, 
+    def _generate_adaptive_signals(self, data: pd.DataFrame, indicators: Dict,
                                  atr_multiplier: float, volatility_factor: float) -> List[StrategySignal]:
-        """生成自适应交易信号"""
+        """生成自适应交易信号（优先使用向量化，失败回退到循环）"""
+        try:
+            signals = self._generate_adaptive_signals_vectorized(
+                data, indicators, atr_multiplier, volatility_factor)
+            return signals
+        except Exception as e:
+            logger.warning(f"向量化信号生成失败，回退到循环模式: {e}")
+            return self._generate_adaptive_signals_loop(
+                data, indicators, atr_multiplier, volatility_factor)
+
+    def _generate_adaptive_signals_vectorized(self, data: pd.DataFrame, indicators: Dict,
+                                              atr_multiplier: float, volatility_factor: float) -> List[StrategySignal]:
+        """向量化生成自适应交易信号（numpy批量计算替代逐行循环）"""
         signals = []
-        
+
+        try:
+            n = len(data)
+            start_idx = max(20, 50)
+
+            # 提取numpy数组向量化计算
+            close = data['close'].values
+            sma = indicators['sma']
+            rsi = indicators['rsi']
+            macd = indicators['macd']
+            macd_signal = indicators['macd_signal']
+            fixed_stop_loss = self.get_parameter("fixed_stop_loss")
+            min_take_profit = self.get_parameter("min_take_profit")
+
+            # ---- 买入条件向量化 ----
+            # 价格突破SMA: close > sma AND prev_close <= prev_sma
+            prev_close = np.roll(close, 1)
+            prev_sma = np.roll(sma, 1)
+            prev_close[0] = close[0]
+            prev_sma[0] = sma[0]
+            buy_cross_sma = (close > sma) & (prev_close <= prev_sma)
+
+            # RSI在合理区间
+            rsi_zone = (rsi > 30) & (rsi < 70)
+
+            # MACD金叉: macd > macd_signal AND prev_macd <= prev_macd_signal
+            prev_macd = np.roll(macd, 1)
+            prev_macd_sig = np.roll(macd_signal, 1)
+            prev_macd[0] = macd[0]
+            prev_macd_sig[0] = macd_signal[0]
+            macd_golden = (macd > macd_signal) & (prev_macd <= prev_macd_sig)
+
+            buy_mask = buy_cross_sma & rsi_zone & macd_golden
+
+            # ---- 卖出条件向量化 ----
+            # 价格跌破SMA: close < sma AND prev_close >= prev_sma
+            sell_cross_sma = (close < sma) & (prev_close >= prev_sma)
+            # RSI超买
+            rsi_overbought = rsi > 80
+            # MACD死叉: macd < macd_signal AND prev_macd >= prev_macd_signal
+            macd_death = (macd < macd_signal) & (prev_macd >= prev_macd_sig)
+
+            sell_mask = sell_cross_sma | rsi_overbought | macd_death
+
+            # ---- 生成信号（仅遍历命中索引） ----
+            buy_indices = np.where(buy_mask)[0]
+            sell_indices = np.where(sell_mask)[0]
+
+            for i in buy_indices:
+                if i < start_idx:
+                    continue
+                if np.isnan(sma[i]) or np.isnan(rsi[i]) or np.isnan(macd[i]):
+                    continue
+                current_price = close[i]
+                confidence = self._calculate_dynamic_confidence(indicators, i, volatility_factor)
+                stop_loss_price = current_price * (1 - fixed_stop_loss)
+                take_profit_price = current_price * (1 + min_take_profit)
+
+                signals.append(StrategySignal(
+                    timestamp=data.index[i],
+                    signal_type=SignalType.BUY,
+                    price=current_price,
+                    confidence=confidence,
+                    strategy_name=self.name,
+                    reason=f"SMA突破 + MACD金叉，RSI:{rsi[i]:.2f}",
+                    stop_loss=stop_loss_price,
+                    take_profit=take_profit_price
+                ))
+
+            for i in sell_indices:
+                if i < start_idx:
+                    continue
+                if np.isnan(sma[i]) or np.isnan(rsi[i]) or np.isnan(macd[i]):
+                    continue
+                current_price = close[i]
+                confidence = self._calculate_dynamic_confidence(indicators, i, volatility_factor)
+                stop_loss_price = current_price * (1 - fixed_stop_loss)
+                take_profit_price = current_price * (1 + min_take_profit)
+
+                signals.append(StrategySignal(
+                    timestamp=data.index[i],
+                    signal_type=SignalType.SELL,
+                    price=current_price,
+                    confidence=confidence,
+                    strategy_name=self.name,
+                    reason=f"SMA跌破或超买信号，RSI:{rsi[i]:.2f}",
+                    stop_loss=stop_loss_price,
+                    take_profit=take_profit_price
+                ))
+
+        except Exception as e:
+            logger.error(f"向量化信号生成失败: {e}")
+            raise
+
+        return signals
+
+    def _generate_adaptive_signals_loop(self, data: pd.DataFrame, indicators: Dict,
+                                        atr_multiplier: float, volatility_factor: float) -> List[StrategySignal]:
+        """生成自适应交易信号（原始循环版本，作为向量化失败时的fallback）"""
+        signals = []
+
         try:
             # 从指标周期之后开始生成信号
-            start_idx = max(20, 50)  # 确保有足够的指标数据
-            
+            start_idx = max(20, 50)
+
             for i in range(start_idx, len(data)):
                 current_data = data.iloc[i]
                 prev_data = data.iloc[i-1] if i > 0 else current_data
-                
+
                 # 跳过缺失指标值的索引
                 current_sma = indicators['sma'][i]
                 current_rsi = indicators['rsi'][i]
                 current_macd = indicators['macd'][i]
                 current_macd_signal = indicators['macd_signal'][i]
                 current_atr = indicators['atr'][i]
-                
+
                 if np.isnan(current_sma) or np.isnan(current_rsi) or np.isnan(current_macd):
                     continue
-                
+
                 # 自适应止损价格
                 stop_loss_price = current_data['close'] * (1 - self.get_parameter("fixed_stop_loss"))
                 take_profit_price = current_data['close'] * (1 + self.get_parameter("min_take_profit"))
-                
+
                 # 动态置信度计算
                 confidence = self._calculate_dynamic_confidence(
                     indicators, i, volatility_factor)
-                
+
                 # 买入信号逻辑
                 buy_signal = (
-                    # 价格上涨突破SMA
-                    current_data['close'] > current_sma and 
+                    current_data['close'] > current_sma and
                     prev_data['close'] <= indicators['sma'][i-1] if i > 0 else False and
-                    # RSI不过度买入
                     30 < current_rsi < 70 and
-                    # MACD金叉
                     current_macd > current_macd_signal and
                     (indicators['macd'][i-1] <= indicators['macd_signal'][i-1] if i > 0 else False)
                 )
-                
+
                 if buy_signal:
                     signals.append(StrategySignal(
                         timestamp=current_data.name if hasattr(current_data, 'name') else i,
@@ -218,18 +335,16 @@ class AdaptiveFactorWeaveStrategy(BaseStrategy):
                         stop_loss=stop_loss_price,
                         take_profit=take_profit_price
                     ))
-                
+
                 # 卖出信号逻辑
                 sell_signal = (
-                    # 价格跌破SMA或RSI超买
-                    (current_data['close'] < current_sma and 
+                    (current_data['close'] < current_sma and
                      prev_data['close'] >= indicators['sma'][i-1] if i > 0 else False) or
                     current_rsi > 80 or
-                    # MACD死叉
                     (current_macd < current_macd_signal and
                      indicators['macd'][i-1] >= indicators['macd_signal'][i-1] if i > 0 else False)
                 )
-                
+
                 if sell_signal:
                     signals.append(StrategySignal(
                         timestamp=current_data.name if hasattr(current_data, 'name') else i,
@@ -241,10 +356,10 @@ class AdaptiveFactorWeaveStrategy(BaseStrategy):
                         stop_loss=stop_loss_price,
                         take_profit=take_profit_price
                     ))
-        
+
         except Exception as e:
-            logger.error(f"自适应信号生成失败: {e}")
-            
+            logger.error(f"循环信号生成失败: {e}")
+
         return signals
 
     def _calculate_dynamic_confidence(self, indicators: Dict, index: int, volatility_factor: float) -> float:
@@ -406,7 +521,7 @@ class AdaptiveFactorWeaveStrategy(BaseStrategy):
 
 def create_adaptive_strategy():
     """创建自适应策略（无hikyuu版本）"""
-    return AdaptiveHikuuStrategy()
+    return AdaptiveFactorWeaveStrategy()
 
 
 # 已废弃：create_adaptive_hikyuu_strategy函数已被移除，请使用create_adaptive_strategy

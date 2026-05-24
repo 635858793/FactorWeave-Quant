@@ -212,14 +212,14 @@ class AdjustmentCalculator:
             }
         
         price_diff = (adjusted['adj_close'].values - original['close'].values)
+        diff_steps = np.diff(price_diff)
+        nonzero_mask = diff_steps != 0
         
         if adj_type == 'qfq':
-            is_increasing = all(price_diff[i] <= price_diff[i+1] 
-                              for i in range(len(price_diff)-1) if price_diff[i+1] != price_diff[i])
+            is_increasing = not np.any(diff_steps[nonzero_mask] > 0) if np.any(nonzero_mask) else True
             expected_direction = 'decrease'
         else:
-            is_increasing = all(price_diff[i] >= price_diff[i+1] 
-                              for i in range(len(price_diff)-1) if price_diff[i+1] != price_diff[i])
+            is_increasing = not np.any(diff_steps[nonzero_mask] < 0) if np.any(nonzero_mask) else True
             expected_direction = 'increase'
         
         return {

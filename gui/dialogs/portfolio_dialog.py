@@ -18,47 +18,72 @@ from PyQt5.QtWidgets import (
     QTableWidgetItem, QPushButton, QComboBox, QDateEdit,
     QFrame, QSplitter, QScrollArea, QGroupBox,
     QProgressBar, QMessageBox, QHeaderView, QSpinBox,
-    QDoubleSpinBox, QCheckBox
+    QDoubleSpinBox, QCheckBox, QWidget, QInputDialog
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QThread, QDate, QTimer
 from PyQt5.QtGui import QFont, QPixmap, QPalette
 
-class PortfolioDialog(QDialog):
+from gui.dialogs.base_dialog import BaseDialog
+
+
+class PortfolioService:
+    """投资组合服务（桩类，待后续实现）"""
+
+    def __init__(self):
+        pass
+
+
+class PortfolioAnalyzer:
+    """投资组合分析器（桩类，待后续实现）"""
+
+    def __init__(self):
+        pass
+
+
+class PortfolioDialog(BaseDialog):
     """投资组合管理对话框"""
+    
+    portfolio_changed = pyqtSignal(str)
+    stock_selected = pyqtSignal(str)
 
-    # 信号定义
-    portfolio_updated = pyqtSignal(dict)  # 组合更新
-    stock_selected = pyqtSignal(str)  # 股票选择
-
-    def __init__(self, data_manager=None, parent=None):
+    def __init__(self, parent=None):
         """
         初始化投资组合管理对话框
-
+        
         Args:
-            data_manager: 数据管理器
             parent: 父窗口
         """
-        super().__init__(parent)
-        self.data_manager = data_manager
-        self.logger = logger.bind(module=__name__)
-
-        # 投资组合数据
-        self.portfolios = {}  # 组合列表
-        self.current_portfolio = None  # 当前选中组合
-        self.holdings = []  # 持仓列表
-
+        super().__init__(
+            parent,
+            title="投资组合管理",
+            min_size=(1000, 700),
+            size=(1100, 800),
+            settings_key="PortfolioDialog"
+        )
+        
+        self.logger = logger
+        self.portfolio_service = PortfolioService()
+        self.portfolio_analyzer = PortfolioAnalyzer()
+        self.current_portfolio = None
+        self.selected_holdings = []
+        self.update_timer = QTimer()
+        
         self.init_ui()
+        self._connect_signals()
         self.load_portfolios()
+        self._start_auto_refresh()
 
-        self.logger.info("投资组合管理对话框初始化完成")
+    def _connect_signals(self):
+        """连接信号"""
+        pass
+
+    def _start_auto_refresh(self):
+        """启动自动刷新"""
+        pass
 
     def init_ui(self):
         """初始化用户界面"""
         try:
-            self.setWindowTitle("投资组合管理")
-            self.setMinimumSize(1200, 800)
-            self.resize(1400, 900)
-
             # 主布局
             main_layout = QVBoxLayout(self)
             main_layout.setContentsMargins(10, 10, 10, 10)
@@ -645,8 +670,6 @@ class PortfolioDialog(QDialog):
     def create_new_portfolio(self):
         """创建新组合"""
         try:
-            from PyQt5.QtWidgets import QInputDialog
-
             name, ok = QInputDialog.getText(self, "新建组合", "请输入组合名称:")
             if ok and name:
                 if name not in self.portfolios:

@@ -9,7 +9,7 @@
 """
 
 import time
-import logging
+from loguru import logger
 import threading
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Callable
@@ -21,7 +21,7 @@ import numpy as np
 import pandas as pd
 from PyQt5.QtCore import QObject, pyqtSignal, QTimer
 
-logger = logging.getLogger(__name__)
+# loguru logger 已在第12行导入
 
 @dataclass
 class PerformanceMetric:

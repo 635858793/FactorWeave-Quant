@@ -8,14 +8,14 @@ import time
 from typing import Dict, Any, List, Optional, Union
 from dataclasses import dataclass
 from enum import Enum
-import logging
+from loguru import logger
 
 # 导入5个深度优化模块
 from .cache.intelligent_cache import IntelligentCache
 from .performance.virtualization import VirtualScrollRenderer
 from .timing.websocket_client import RealTimeDataProcessor
 from .ai.smart_chart_recommender import UserBehaviorAnalyzer
-from .ui.responsive_adapter import ResponsiveLayoutManager
+from .ui.responsive_adapter import ResponsiveOptimizer
 
 
 class OptimizationMode(Enum):
@@ -75,14 +75,14 @@ class UnifiedOptimizationService:
     
     def __init__(self, config: Optional[OptimizationConfig] = None):
         self.config = config or OptimizationConfig()
-        self.logger = logging.getLogger(__name__)
+        self.logger = logger
         
         # 初始化5个核心模块
         self.cache_manager: Optional[IntelligentCache] = None
         self.virtual_scroll: Optional[VirtualScrollRenderer] = None
         self.realtime_processor: Optional[RealTimeDataProcessor] = None
         self.ai_recommender: Optional[UserBehaviorAnalyzer] = None
-        self.responsive_ui: Optional[ResponsiveLayoutManager] = None
+        self.responsive_ui: Optional[ResponsiveOptimizer] = None
         
         # 服务状态
         self.is_initialized = False
@@ -178,7 +178,7 @@ class UnifiedOptimizationService:
     async def _init_responsive_ui(self) -> bool:
         """初始化响应式UI"""
         try:
-            self.responsive_ui = ResponsiveLayoutManager()
+            self.responsive_ui = ResponsiveOptimizer()
             await self.responsive_ui.configure({
                 'screen_adaptation': self.config.screen_adaptation,
                 'touch_optimization': self.config.touch_optimization,
@@ -220,26 +220,8 @@ class UnifiedOptimizationService:
             self.logger.info("统一优化服务启动成功")
             return True
             
-            # 启动性能监控
-            self._performance_monitor_task = asyncio.create_task(self._performance_monitor())
-            
-            self.is_running = True
-            self.logger.info("统一优化服务启动成功")
-            return True
-            
         except Exception as e:
             self.logger.error(f"❌ 统一优化服务启动失败: {e}")
-            return False
-    
-    async def _init_responsive_ui(self) -> bool:
-        """初始化响应式UI"""
-        try:
-            self.responsive_ui = ResponsiveLayoutManager()
-            # 直接初始化，不需要configure异步方法
-            self.logger.info("响应式UI初始化成功")
-            return True
-        except Exception as e:
-            self.logger.error(f"❌ 响应式UI初始化失败: {e}")
             return False
     
     async def stop(self) -> bool:

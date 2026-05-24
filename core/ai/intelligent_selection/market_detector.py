@@ -10,12 +10,9 @@ from datetime import datetime
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 from enum import Enum
-import logging
+from loguru import logger
 
 from .config.selector_config import MarketDetectionConfig
-
-logger = logging.getLogger(__name__)
-
 
 class VolatilityState(Enum):
     """波动率状态"""

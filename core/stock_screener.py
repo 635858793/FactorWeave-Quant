@@ -17,7 +17,6 @@ from core.services.unified_data_manager import UnifiedDataManager
 import json
 # 替换旧的指标系统导入
 from core.indicator_service import calculate_indicator, get_indicator_categories, get_all_indicators_metadata
-import ptvsd
 
 
 class StockScreener:
@@ -224,35 +223,47 @@ class StockScreener:
         """
         results = []
 
-        for stock in stock_list:
-            try:
-                # 获取股票信息
-                info = self.data_manager.get_stock_info(stock)
-                if not info:
-                    continue
+        all_info = self.data_manager.get_stock_list()
+        if all_info.empty:
+            logger.warning("股票列表为空，无法进行基本面筛选")
+            return pd.DataFrame()
 
-                # 检查条件
-                if (params['pe_min'] <= info['pe'] <= params['pe_max'] and
-                    params['pb_min'] <= info['pb'] <= params['pb_max'] and
-                        info['roe'] >= params['roe_min']):
-                    # 获取K线数据
-                    kdata = self.data_manager.get_kdata(stock)
-                    results.append({
-                        'code': stock,
-                        'name': info['name'],
-                        'industry': info['industry'],
-                        'price': kdata['close'].iloc[-1],
-                        'change': (kdata['close'].iloc[-1] / kdata['close'].iloc[-2] - 1) * 100,
-                        'pe': info['pe'],
-                        'pb': info['pb'],
-                        'roe': info['roe'],
-                        'main_force': self.get_main_force(stock),
-                        'north_money': self.get_north_money(stock)
-                    })
+        if 'code' in all_info.columns:
+            all_info = all_info.set_index('code')
+
+        qualified = all_info[
+            (all_info['pe'] >= params['pe_min']) & (all_info['pe'] <= params['pe_max']) &
+            (all_info['pb'] >= params['pb_min']) & (all_info['pb'] <= params['pb_max']) &
+            (all_info['roe'] >= params['roe_min'])
+        ]
+
+        if stock_list is not None and len(stock_list) > 0:
+            qualified_codes = [s for s in stock_list if s in qualified.index]
+        else:
+            qualified_codes = qualified.index.tolist()
+
+        for code in qualified_codes:
+            try:
+                kdata = self.data_manager.get_kdata(code)
+                if kdata.empty:
+                    continue
+                info = qualified.loc[code].to_dict()
+                results.append({
+                    'code': code,
+                    'name': info['name'],
+                    'industry': info.get('industry', ''),
+                    'price': kdata['close'].iloc[-1],
+                    'change': (kdata['close'].iloc[-1] / kdata['close'].iloc[-2] - 1) * 100,
+                    'pe': info['pe'],
+                    'pb': info['pb'],
+                    'roe': info['roe'],
+                    'main_force': self.get_main_force(code),
+                    'north_money': self.get_north_money(code)
+                })
 
             except Exception as e:
                 logger.warning(
-                    f"处理股票 {stock} 失败: {str(e)}")
+                    f"处理股票 {code} 失败: {str(e)}")
                 continue
 
         return pd.DataFrame(results)
@@ -273,27 +284,27 @@ class StockScreener:
 
         for stock in stock_list:
             try:
-                # 获取资金流向数据
                 main_force = self.get_main_force(
                     stock, params['main_force_days'])
                 north_money = self.get_north_money(stock, params['north_days'])
 
-                # 检查条件
                 if (main_force >= params['main_force_amount'] and
                         north_money >= params['north_amount']):
-                    # 获取股票信息
                     info = self.data_manager.get_stock_info(stock)
-                    # 获取K线数据
+                    if not info:
+                        continue
                     kdata = self.data_manager.get_kdata(stock)
+                    if kdata.empty:
+                        continue
                     results.append({
                         'code': stock,
                         'name': info['name'],
-                        'industry': info['industry'],
+                        'industry': info.get('industry', ''),
                         'price': kdata['close'].iloc[-1],
                         'change': (kdata['close'].iloc[-1] / kdata['close'].iloc[-2] - 1) * 100,
-                        'pe': info['pe'],
-                        'pb': info['pb'],
-                        'roe': info['roe'],
+                        'pe': info.get('pe'),
+                        'pb': info.get('pb'),
+                        'roe': info.get('roe'),
                         'main_force': main_force,
                         'north_money': north_money
                     })

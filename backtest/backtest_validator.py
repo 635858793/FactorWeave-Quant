@@ -374,7 +374,7 @@ class ProfessionalBacktestValidator:
             if 'datetime' in data.columns:
                 try:
                     time_series = pd.to_datetime(data['datetime'])
-                except:
+                except Exception:
                     errors.append("无法解析时间列")
                     return 0.0
             else:
@@ -444,6 +444,55 @@ class ProfessionalBacktestValidator:
                 if extreme_volume > 0:
                     warnings.append(f"发现 {extreme_volume} 个异常成交量")
                     score -= 5
+
+        # 停牌检测：连续日价格不变且成交量为0
+        if all(col in data.columns for col in ["open", "high", "low", "close", "volume"]):
+            price_unchanged = (
+                (data["open"] == data["close"]) &
+                (data["high"] == data["low"]) &
+                (data["open"] == data["high"])
+            )
+            zero_volume = (data["volume"] == 0)
+            suspension_mask = price_unchanged & zero_volume
+            suspension_count = suspension_mask.sum()
+            if suspension_count > 0:
+                suspension_pct = suspension_count / len(data)
+                if suspension_pct > 0.05:
+                    errors.append(f"发现 {suspension_count} 个疑似停牌日（{suspension_pct:.1%}），可能影响回测准确性")
+                    score -= 15
+                else:
+                    warnings.append(f"发现 {suspension_count} 个疑似停牌日（{suspension_pct:.1%}）")
+
+        # 涨跌停边界检测
+        if "close" in data.columns and len(data) > 1:
+            daily_change = data["close"].pct_change().dropna()
+            if len(daily_change) > 0:
+                limit_up = (daily_change >= 0.098)
+                limit_down = (daily_change <= -0.098)
+                limit_up_count = limit_up.sum()
+                limit_down_count = limit_down.sum()
+                limit_total = limit_up_count + limit_down_count
+                if limit_total > 0:
+                    limit_pct = limit_total / len(daily_change)
+                    if limit_pct > 0.10:
+                        warnings.append(
+                            f"发现 {limit_total} 个涨跌停日（涨停{limit_up_count}跌停{limit_down_count}，{limit_pct:.1%}），"
+                            f"可能影响交易执行"
+                        )
+                        score -= 10
+
+        # 交易量为0边界检测
+        if "volume" in data.columns:
+            zero_vol_count = (data["volume"] == 0).sum()
+            if zero_vol_count > 0:
+                zero_vol_pct = zero_vol_count / len(data)
+                if zero_vol_pct > 0.05:
+                    warnings.append(
+                        f"发现 {zero_vol_count} 个交易量为0的日期（{zero_vol_pct:.1%}），无法正常交易"
+                    )
+                    score -= 10
+                else:
+                    warnings.append(f"发现 {zero_vol_count} 个交易量为0的日期")
 
         return max(0, score)
 

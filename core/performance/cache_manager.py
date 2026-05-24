@@ -36,29 +36,25 @@ class MultiLevelCacheManager:
             self._cache[key] = value
             return value
 
-    def set(self, key: str, value: Any, ttl: Optional[int] = None) -> None:
-        """设置缓存值"""
+    def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
+        """设置缓存值，返回是否成功"""
         with self._lock:
-            # 如果已存在，先删除
             if key in self._cache:
                 self._remove(key)
 
-            # 检查容量
             if len(self._cache) >= self.max_size:
-                # 删除最旧的项
                 oldest_key = next(iter(self._cache))
                 self._remove(oldest_key)
 
-            # 添加新项
             self._cache[key] = value
 
-            # 计算过期时间，确保ttl是有效的数值
             ttl_value = ttl if ttl is not None else self.ttl
             if not isinstance(ttl_value, (int, float)):
                 logger.warning(f"Invalid TTL type: {type(ttl_value)}, using default")
                 ttl_value = self.ttl
 
             self._timestamps[key] = time.time() + ttl_value
+            return True
 
     def delete(self, key: str) -> bool:
         """删除缓存项"""

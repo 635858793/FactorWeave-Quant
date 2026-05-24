@@ -7,7 +7,6 @@
 
 import sys
 import os
-import logging
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Tuple
 from PyQt5.QtWidgets import (
@@ -64,13 +63,14 @@ class SentimentMonitorPanel(QWidget):
         
         # 舆情数据
         self._sentiment_data = {
-            'market_sentiment': 0.5,  # 0-1范围，0为极度悲观，1为极度乐观
-            'social_sentiment': 0.5,
-            'news_sentiment': 0.5,
-            'overall_sentiment': 0.5,
-            'sentiment_trend': [],  # 趋势数据
-            'key_events': [],  # 关键事件
-            'sentiment_sources': {},  # 数据源状态
+            'market_sentiment': 0.0,
+            'social_sentiment': 0.0,
+            'news_sentiment': 0.0,
+            'overall_sentiment': 0.0,
+            'sentiment_trend': [],
+            'key_events': [],
+            'sentiment_sources': {},
+            '_data_loaded': False,
         }
         
         # 定时器用于刷新舆情数据
@@ -313,57 +313,55 @@ class SentimentMonitorPanel(QWidget):
     def _update_sentiment_data(self):
         """更新舆情数据"""
         try:
-            # 从BettaFish Agent获取舆情数据
-            if self._bettafish_agent:
-                # 模拟从Agent获取数据（实际实现中应调用Agent的方法）
+            if self._bettafish_agent and hasattr(self._bettafish_agent, 'get_sentiment_analysis'):
                 sentiment_data = self._bettafish_agent.get_sentiment_analysis()
                 if sentiment_data:
                     self._sentiment_data.update(sentiment_data)
-            
-            # 更新仪表盘
+                    self._sentiment_data['_data_loaded'] = True
+
             self._update_gauges()
-            
-            # 更新图表
+
             if CHARTS_AVAILABLE:
                 self._update_chart()
-            
-            # 更新关键事件
+
             self._update_key_events()
-            
-            # 检查告警
+
             self._check_sentiment_alerts()
-            
-            # 发出更新信号
+
             self.sentiment_update.emit(self._sentiment_data)
-            
+
         except Exception as e:
             logger.error(f"更新舆情数据失败: {e}")
 
     def _update_gauges(self):
         """更新舆情仪表盘"""
-        # 整体舆情
-        overall_value = int(self._sentiment_data.get('overall_sentiment', 0.5) * 100)
-        overall_gauge, overall_label = self.整体舆情_gauge
+        if not self._sentiment_data.get('_data_loaded', False):
+            for name in ['\u6574\u4f53\u8206\u60c5', '\u5e02\u573a\u60c5\u7eea', '\u793e\u4ea4\u8206\u60c5', '\u65b0\u95fb\u8206\u60c5']:
+                gauge_widgets = getattr(self, f"{name.replace(' ', '_').lower()}_gauge", None)
+                if gauge_widgets:
+                    gauge_widgets[0].setValue(0)
+                    gauge_widgets[1].setText("\u6570\u636e\u52a0\u8f7d\u4e2d...")
+            return
+
+        overall_value = int(self._sentiment_data.get('overall_sentiment', 0) * 100)
+        overall_gauge, overall_label = getattr(self, '\u6574\u4f53\u8206\u60c5_gauge')
         overall_gauge.setValue(overall_value)
-        overall_label.setText(f"{self._sentiment_data.get('overall_sentiment', 0.5):.2f}")
-        
-        # 市场情绪
-        market_value = int(self._sentiment_data.get('market_sentiment', 0.5) * 100)
-        market_gauge, market_label = self.市场情绪_gauge
+        overall_label.setText(f"{self._sentiment_data.get('overall_sentiment', 0):.2f}")
+
+        market_value = int(self._sentiment_data.get('market_sentiment', 0) * 100)
+        market_gauge, market_label = getattr(self, '\u5e02\u573a\u60c5\u7eea_gauge')
         market_gauge.setValue(market_value)
-        market_label.setText(f"{self._sentiment_data.get('market_sentiment', 0.5):.2f}")
-        
-        # 社交舆情
-        social_value = int(self._sentiment_data.get('social_sentiment', 0.5) * 100)
-        social_gauge, social_label = self.社交舆情_gauge
+        market_label.setText(f"{self._sentiment_data.get('market_sentiment', 0):.2f}")
+
+        social_value = int(self._sentiment_data.get('social_sentiment', 0) * 100)
+        social_gauge, social_label = getattr(self, '\u793e\u4ea4\u8206\u60c5_gauge')
         social_gauge.setValue(social_value)
-        social_label.setText(f"{self._sentiment_data.get('social_sentiment', 0.5):.2f}")
-        
-        # 新闻舆情
-        news_value = int(self._sentiment_data.get('news_sentiment', 0.5) * 100)
-        news_gauge, news_label = self.新闻舆情_gauge
+        social_label.setText(f"{self._sentiment_data.get('social_sentiment', 0):.2f}")
+
+        news_value = int(self._sentiment_data.get('news_sentiment', 0) * 100)
+        news_gauge, news_label = getattr(self, '\u65b0\u95fb\u8206\u60c5_gauge')
         news_gauge.setValue(news_value)
-        news_label.setText(f"{self._sentiment_data.get('news_sentiment', 0.5):.2f}")
+        news_label.setText(f"{self._sentiment_data.get('news_sentiment', 0):.2f}")
 
     def _update_chart(self):
         """更新舆情图表"""

@@ -6,6 +6,7 @@
 
 import sys
 import time
+import asyncio
 import traceback
 from typing import Dict, Any, Optional
 from datetime import datetime
@@ -33,6 +34,13 @@ class TaskExecutor:
         self.running_tasks: Dict[str, Dict[str, Any]] = {}
         self.completed_tasks: Dict[str, TaskResult] = {}
         
+        # 优先级队列 (priority, task_id, task_future)
+        self._task_queue: asyncio.PriorityQueue = asyncio.PriorityQueue()
+        self._semaphore: asyncio.Semaphore = asyncio.Semaphore(
+            config.max_workers if config and hasattr(config, 'max_workers') else 4
+        )
+        self._scheduler_task: Optional[asyncio.Task] = None
+        
         # 统计信息
         self.total_executed = 0
         self.total_failed = 0
@@ -40,20 +48,65 @@ class TaskExecutor:
         
         logger.info("任务执行器初始化完成")
     
-    async def execute_task(self, task_id: str, task_type: TaskType, task_data: Dict[str, Any],
+    def start_scheduler(self):
+        """启动优先级调度器"""
+        if self._scheduler_task is None or self._scheduler_task.done():
+            self._scheduler_task = asyncio.create_task(self._priority_scheduler())
+            logger.info("优先级任务调度器已启动")
+    
+    def stop_scheduler(self):
+        """停止优先级调度器"""
+        if self._scheduler_task and not self._scheduler_task.done():
+            self._scheduler_task.cancel()
+            logger.info("优先级任务调度器已停止")
+
+    async def submit_task(self, task_id: str, task_type: TaskType,
+                          task_data: Dict[str, Any], priority: int = 5,
                           timeout: int = 300) -> TaskResult:
         """
-        执行任务（异步）
+        提交任务到优先级队列
         
         Args:
             task_id: 任务ID
             task_type: 任务类型
             task_data: 任务数据
+            priority: 任务优先级（1-10，数字越小优先级越高）
             timeout: 超时时间（秒）
         
         Returns:
             任务结果
         """
+        future: asyncio.Future = asyncio.Future()
+        await self._task_queue.put((priority, task_id, task_type, task_data, timeout, future))
+        return await future
+
+    async def _priority_scheduler(self):
+        """优先级调度器主循环"""
+        while True:
+            try:
+                priority, task_id, task_type, task_data, timeout, future = \
+                    await self._task_queue.get()
+                
+                async def _execute_with_semaphore():
+                    async with self._semaphore:
+                        result = await self._execute_task_internal(
+                            task_id, task_type, task_data, timeout
+                        )
+                        if not future.done():
+                            future.set_result(result)
+                
+                asyncio.create_task(_execute_with_semaphore())
+                
+            except asyncio.CancelledError:
+                logger.info("优先级调度器已取消")
+                break
+            except Exception as e:
+                logger.error(f"优先级调度器异常: {e}")
+
+    async def _execute_task_internal(self, task_id: str, task_type: TaskType,
+                                     task_data: Dict[str, Any],
+                                     timeout: int = 300) -> TaskResult:
+        """内部任务执行（被调度器调用）"""
         started_at = datetime.now()
         self.running_tasks[task_id] = {
             "task_type": task_type,
@@ -62,21 +115,24 @@ class TaskExecutor:
         }
         
         try:
-            logger.info(f"开始执行任务: {task_id} (类型: {task_type.value})")
+            logger.info(f"开始执行任务: {task_id} (类型: {task_type.value}, 优先级队列)")
             
-            # 根据任务类型调用不同的执行器
-            if task_type == TaskType.DATA_IMPORT:
-                result = await self._execute_data_import(task_id, task_data)
-            elif task_type == TaskType.ANALYSIS:
-                result = await self._execute_analysis(task_id, task_data)
-            elif task_type == TaskType.BACKTEST:
-                result = await self._execute_backtest(task_id, task_data)
-            elif task_type == TaskType.OPTIMIZATION:
-                result = await self._execute_optimization(task_id, task_data)
-            elif task_type == TaskType.CUSTOM:
-                result = await self._execute_custom(task_id, task_data)
-            else:
-                raise ValueError(f"不支持的任务类型: {task_type}")
+            # 根据任务类型调用不同的执行器，带超时控制
+            async def _run_task():
+                if task_type == TaskType.DATA_IMPORT:
+                    return await self._execute_data_import(task_id, task_data)
+                elif task_type == TaskType.ANALYSIS:
+                    return await self._execute_analysis(task_id, task_data)
+                elif task_type == TaskType.BACKTEST:
+                    return await self._execute_backtest(task_id, task_data)
+                elif task_type == TaskType.OPTIMIZATION:
+                    return await self._execute_optimization(task_id, task_data)
+                elif task_type == TaskType.CUSTOM:
+                    return await self._execute_custom(task_id, task_data)
+                else:
+                    raise ValueError(f"不支持的任务类型: {task_type}")
+            
+            result = await asyncio.wait_for(_run_task(), timeout=timeout)
             
             completed_at = datetime.now()
             execution_time = (completed_at - started_at).total_seconds()
@@ -95,6 +151,24 @@ class TaskExecutor:
             self.total_time += execution_time
             
             logger.info(f"任务完成: {task_id}, 耗时: {execution_time:.2f}秒")
+            
+        except asyncio.TimeoutError:
+            completed_at = datetime.now()
+            execution_time = timeout
+            
+            error_msg = f"任务执行超时（{timeout}秒）"
+            logger.error(f"任务超时: {task_id}")
+            
+            task_result = TaskResult(
+                task_id=task_id,
+                status=TaskStatus.FAILED,
+                error=error_msg,
+                started_at=started_at,
+                completed_at=completed_at,
+                execution_time=execution_time
+            )
+            
+            self.total_failed += 1
             
         except Exception as e:
             completed_at = datetime.now()
@@ -121,11 +195,28 @@ class TaskExecutor:
             
             # 保存已完成的任务（限制数量）
             self.completed_tasks[task_id] = task_result
-            if len(self.completed_tasks) > 100:  # 只保留最近100个
+            if len(self.completed_tasks) > 100:
                 oldest_key = next(iter(self.completed_tasks))
                 del self.completed_tasks[oldest_key]
         
         return task_result
+    
+    async def execute_task(self, task_id: str, task_type: TaskType, task_data: Dict[str, Any],
+                          timeout: int = 300, priority: int = 5) -> TaskResult:
+        """
+        执行任务（异步，兼容旧接口）
+        
+        Args:
+            task_id: 任务ID
+            task_type: 任务类型
+            task_data: 任务数据
+            timeout: 超时时间（秒）
+            priority: 任务优先级（1-10，数字越小优先级越高）
+        
+        Returns:
+            任务结果
+        """
+        return await self.submit_task(task_id, task_type, task_data, priority, timeout)
     
     async def _execute_data_import(self, task_id: str, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """执行数据导入任务"""
@@ -230,27 +321,21 @@ class TaskExecutor:
         """执行真实分析任务（节点侧）"""
         stock_code = task_data.get("stock_code", task_data.get("symbol", "000001"))
         analysis_type = task_data.get("analysis_type", "technical")
-        
+
         try:
-            # 真实分析（如果节点有分析能力）
             logger.info(f"节点执行分析: {stock_code}, 类型: {analysis_type}")
-            
-            # 节点可以调用本地分析库或通过HTTP调用主系统API
-            # 这里提供两种方案：
-            
-            # 方案1：节点有独立分析能力
-            # 可以导入分析库进行本地计算
-            
-            # 方案2：节点作为计算代理，调用主系统API
-            # 这种情况下节点主要负责任务调度和结果收集
-            
+
+            raise NotImplementedError("analysis engine not integrated")
+
+        except NotImplementedError:
+            logger.warning(f"分析引擎未集成，使用降级处理: {stock_code}")
             return {
                 "task_type": "analysis",
                 "stock_code": stock_code,
                 "analysis_type": analysis_type,
-                "status": "completed",
-                "message": "节点分析任务完成（待集成具体分析引擎）",
-                "is_mock": False  # 真实任务，但分析引擎待配置
+                "status": "degraded",
+                "message": "分析引擎未集成，节点使用降级模式返回基础数据",
+                "is_mock": False
             }
         except Exception as e:
             logger.error(f"节点分析任务失败: {e}")
@@ -266,20 +351,21 @@ class TaskExecutor:
         stock_code = task_data.get("stock_code", "000001")
         strategy = task_data.get("strategy", "ma_cross")
         period = task_data.get("period", "1y")
-        
+
         try:
             logger.info(f"节点执行回测: {stock_code}, 策略: {strategy}")
-            
-            # 节点执行回测计算
-            # 可以调用本地回测引擎或主系统API
-            
+
+            raise NotImplementedError("backtest engine not integrated")
+
+        except NotImplementedError:
+            logger.warning(f"回测引擎未集成，使用降级处理: {stock_code}")
             return {
                 "task_type": "backtest",
                 "stock_code": stock_code,
                 "strategy": strategy,
                 "period": period,
-                "status": "completed",
-                "message": "节点回测任务完成（待集成回测引擎）",
+                "status": "degraded",
+                "message": "回测引擎未集成，节点使用降级模式返回基础数据",
                 "is_mock": False
             }
         except Exception as e:
@@ -295,19 +381,20 @@ class TaskExecutor:
         """执行真实优化任务（节点侧）"""
         pattern = task_data.get("pattern", "head_shoulders")
         method = task_data.get("method", "genetic")
-        
+
         try:
             logger.info(f"节点执行优化: {pattern}, 方法: {method}")
-            
-            # 节点执行优化计算
-            # 可以调用本地优化引擎或主系统API
-            
+
+            raise NotImplementedError("optimization engine not integrated")
+
+        except NotImplementedError:
+            logger.warning(f"优化引擎未集成，使用降级处理: {pattern}")
             return {
                 "task_type": "optimization",
                 "pattern": pattern,
                 "method": method,
-                "status": "completed",
-                "message": "节点优化任务完成（待集成优化引擎）",
+                "status": "degraded",
+                "message": "优化引擎未集成，节点使用降级模式返回基础数据",
                 "is_mock": False
             }
         except Exception as e:

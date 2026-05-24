@@ -11,12 +11,12 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
-import logging
+from loguru import logger
+
+from scipy.signal import argrelextrema
 
 from core.services.base_service import BaseService
 from core.indicator_service import calculate_indicator
-
-logger = logging.getLogger(__name__)
 
 class TechnicalSignal(Enum):
     """技术信号"""
@@ -87,6 +87,9 @@ class TechnicalAnalysisAgent(BaseService):
         # 缓存
         self._technical_cache = {}
         self._cache_ttl = 900  # 15分钟
+
+        # 数据状态
+        self.has_real_data = False
         
         # 性能统计
         self._stats = {
@@ -189,14 +192,62 @@ class TechnicalAnalysisAgent(BaseService):
 
     async def _get_price_data(self, stock_code: str, 
                             context: Dict[str, Any] = None) -> Optional[pd.DataFrame]:
-        """获取价格数据"""
+        """获取价格数据 - 仅从真实数据源获取"""
         try:
-            logger.warning(f"价格数据不可用({stock_code})，返回None。请配置数据源以获取真实数据。")
+            df = await self._fetch_real_price_data(stock_code)
+            if df is not None and not df.empty and len(df) >= self.config["min_data_points"]:
+                self.has_real_data = True
+                logger.info(f"成功从真实数据源获取{stock_code}价格数据: {len(df)}条")
+                return df
+            self.has_real_data = False
+            logger.warning(f"真实数据源无{stock_code}数据或数据不足(需要>={self.config['min_data_points']}条)，跳过技术分析")
+            return None
+        except Exception as e:
+            self.has_real_data = False
+            logger.warning(f"获取价格数据失败({stock_code}): {str(e)}")
             return None
 
+    async def _fetch_real_price_data(self, stock_code: str) -> Optional[pd.DataFrame]:
+        """从真实数据源获取K线价格数据"""
+        df = None
+        try:
+            from core.services.unified_data_manager import get_unified_data_manager
+            data_manager = get_unified_data_manager()
+            if data_manager:
+                df = data_manager.get_kdata(stock_code, period='D', count=self.config["min_data_points"] + 50)
+                if df is not None and not df.empty:
+                    expected_cols = {'open', 'high', 'low', 'close', 'volume'}
+                    if expected_cols.issubset(set(col.lower() for col in df.columns)):
+                        rename_map = {col: col.lower() for col in df.columns}
+                        df = df.rename(columns=rename_map)
+                    return df
+        except ImportError:
+            logger.debug("UnifiedDataManager 不可用，尝试 StockService")
         except Exception as e:
-            logger.error(f"获取价格数据失败: {str(e)}")
-            return None
+            logger.debug(f"UnifiedDataManager 获取数据失败: {e}")
+
+        try:
+            from core.services.stock_service import StockService
+            from core.containers.service_container import get_service_container
+            container = get_service_container()
+            if container:
+                stock_service = container.resolve(StockService)
+            else:
+                stock_service = None
+            if stock_service and hasattr(stock_service, 'get_kdata'):
+                df = stock_service.get_kdata(stock_code, period='D', count=self.config["min_data_points"] + 50)
+                if df is not None and not df.empty:
+                    expected_cols = {'open', 'high', 'low', 'close', 'volume'}
+                    if expected_cols.issubset(set(col.lower() for col in df.columns)):
+                        rename_map = {col: col.lower() for col in df.columns}
+                        df = df.rename(columns=rename_map)
+                    return df
+        except ImportError:
+            logger.debug("StockService 不可用")
+        except Exception as e:
+            logger.debug(f"StockService 获取数据失败: {e}")
+
+        return df
 
     async def _calculate_indicators(self, price_data: pd.DataFrame) -> List[TechnicalIndicator]:
         """计算技术指标"""
@@ -658,16 +709,12 @@ class TechnicalAnalysisAgent(BaseService):
         try:
             # 简化的双重底识别
             recent_data = close.tail(20)
-            peaks = []
-            troughs = []
-            
-            for i in range(2, len(recent_data) - 2):
-                if (recent_data.iloc[i] > recent_data.iloc[i-1] and 
-                    recent_data.iloc[i] > recent_data.iloc[i+1]):
-                    peaks.append((i, recent_data.iloc[i]))
-                elif (recent_data.iloc[i] < recent_data.iloc[i-1] and 
-                      recent_data.iloc[i] < recent_data.iloc[i+1]):
-                    troughs.append((i, recent_data.iloc[i]))
+            close_array = recent_data.values
+
+            peak_indices = argrelextrema(close_array, np.greater_equal, order=1)[0]
+            trough_indices = argrelextrema(close_array, np.less_equal, order=1)[0]
+            peaks = [(int(idx), close_array[idx]) for idx in peak_indices]
+            troughs = [(int(idx), close_array[idx]) for idx in trough_indices]
             
             # 双重底
             if len(troughs) >= 2:
@@ -783,20 +830,14 @@ class TechnicalAnalysisAgent(BaseService):
             # 寻找近期高点和低点
             recent_highs = high.tail(50)
             recent_lows = low.tail(50)
-            
-            # 阻力位：近期高点
-            resistance_levels = []
-            for i in range(5, len(recent_highs) - 5):
-                if (recent_highs.iloc[i] > recent_highs.iloc[i-5:i].max() and
-                    recent_highs.iloc[i] > recent_highs.iloc[i+1:i+6].max()):
-                    resistance_levels.append(recent_highs.iloc[i])
-            
-            # 支撑位：近期低点
-            support_levels = []
-            for i in range(5, len(recent_lows) - 5):
-                if (recent_lows.iloc[i] < recent_lows.iloc[i-5:i].min() and
-                    recent_lows.iloc[i] < recent_lows.iloc[i+1:i+6].min()):
-                    support_levels.append(recent_lows.iloc[i])
+
+            # 阻力位：局部最大值 (order=5)
+            resistance_indices = argrelextrema(recent_highs.values, np.greater, order=5)[0]
+            resistance_levels = recent_highs.values[resistance_indices].tolist()
+
+            # 支撑位：局部最小值 (order=5)
+            support_indices = argrelextrema(recent_lows.values, np.less, order=5)[0]
+            support_levels = recent_lows.values[support_indices].tolist()
             
             # 选择最重要的支撑阻力位
             key_resistance = min([r for r in resistance_levels if r > current_price], 
@@ -921,7 +962,7 @@ class TechnicalAnalysisAgent(BaseService):
                 return 0.5
             
             # 基于指标置信度
-            indicator_confidence = sum(ind.confidence for ind in indicators) / len(indicators)
+            indicator_confidence = np.mean([ind.confidence for ind in indicators])
             
             # 基于形态置信度
             pattern_confidence = sum(pattern.confidence for pattern in patterns) / max(1, len(patterns))
@@ -957,14 +998,12 @@ class TechnicalAnalysisAgent(BaseService):
     async def cleanup_cache(self):
         """清理过期缓存"""
         current_time = time.time()
-        expired_keys = []
-        
-        for key, value in self._technical_cache.items():
-            if isinstance(value, dict) and "analysis_time" in value:
-                analysis_time = value["analysis_time"]
-                if isinstance(analysis_time, datetime):
-                    if (current_time - analysis_time.timestamp()) > self._cache_ttl:
-                        expired_keys.append(key)
+        expired_keys = [
+            key for key, value in self._technical_cache.items()
+            if isinstance(value, dict) and "analysis_time" in value
+            and isinstance(value["analysis_time"], datetime)
+            and (current_time - value["analysis_time"].timestamp()) > self._cache_ttl
+        ]
         
         for key in expired_keys:
             del self._technical_cache[key]

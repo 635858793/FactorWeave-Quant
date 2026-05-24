@@ -260,8 +260,8 @@ class WenhuaPlugin(HTTPAPIPluginTemplate):
                 self.logger.info("获取文华财经合约信息成功")
                 return response
 
-            # 如果API调用失败，返回模拟数据
-            self.logger.warning("无法从文华财经API获取合约信息，返回模拟数据")
+            # 如果API调用失败，返回空合约列表（不返回硬编码mock数据以避免品种参数错误）
+            self.logger.warning("无法从文华财经API获取合约信息，返回空合约列表")
             return self._get_mock_instruments_info()
 
         except Exception as e:
@@ -269,38 +269,14 @@ class WenhuaPlugin(HTTPAPIPluginTemplate):
             return self._get_mock_instruments_info()
 
     def _get_mock_instruments_info(self) -> Dict[str, Any]:
-        """获取模拟合约信息（用于测试或API不可用时）"""
-        mock_data = {'data': []}
-
-        for symbol in self.major_symbols:
-            # 解析合约代码
-            commodity = ''.join([c for c in symbol if c.isalpha()])
-            contract = ''.join([c for c in symbol if c.isdigit()])
-
-            # 确定交易所
-            exchange = 'SHFE'  # 默认上期所
-            for cat, items in self.config['commodity_categories'].items():
-                if commodity in items:
-                    if cat == 'financial':
-                        exchange = 'CFFEX'
-                    elif cat == 'agriculture':
-                        exchange = 'CZCE'
-                    break
-
-            mock_data['data'].append({
-                'symbol': symbol,
-                'commodity': commodity,
-                'contract': contract,
-                'exchange': exchange,
-                'exchange_name': self.config['exchange_mapping'].get(exchange, ''),
-                'name': f'{commodity}{contract}',
-                'multiplier': 10,  # 合约乘数
-                'price_tick': 1,   # 最小变动价位
-                'margin_rate': 0.1,  # 保证金率
-                'status': 'trading',
-            })
-
-        return mock_data
+        """获取模拟合约信息（用于测试或API不可用时）
+        
+        注意：因不同品种的乘数、最小变动价位、保证金率差异巨大，
+        硬编码mock数据会产生错误数据，此处返回空列表。
+        请确保API可用以获取准确的合约信息。
+        """
+        self.logger.warning("合约信息API不可用，不返回硬编码mock数据，以避免各品种乘数/保证金率等参数错误")
+        return {'data': []}
 
     def get_symbol_list(self) -> pd.DataFrame:
         """

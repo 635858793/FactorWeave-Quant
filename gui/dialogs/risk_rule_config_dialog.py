@@ -7,7 +7,7 @@
 
 from typing import Dict, Optional
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QGroupBox,
+    QVBoxLayout, QHBoxLayout, QFormLayout, QGroupBox,
     QPushButton, QLineEdit, QComboBox, QDoubleSpinBox, QSpinBox,
     QCheckBox, QTextEdit, QLabel, QTabWidget, QWidget, QMessageBox, QGridLayout
 )
@@ -15,23 +15,30 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
 from loguru import logger
 
+from .base_dialog import BaseDialog
 
-class RiskRuleConfigDialog(QDialog):
+
+class RiskRuleConfigDialog(BaseDialog):
     """风险规则配置对话框"""
 
     def __init__(self, rule_data: Optional[Dict] = None, parent=None):
-        super().__init__(parent)
         self.rule_data = rule_data or {}
         self.is_edit_mode = bool(rule_data)
+        
+        title = "编辑风险规则" if self.is_edit_mode else "添加风险规则"
+        
+        super().__init__(
+            parent,
+            title=title,
+            size=(600, 500),
+            settings_key="RiskRuleConfigDialog"
+        )
+        
         self.init_ui()
         self.load_rule_data()
 
     def init_ui(self):
         """初始化UI"""
-        self.setWindowTitle("编辑风险规则" if self.is_edit_mode else "添加风险规则")
-        self.setModal(True)
-        self.resize(600, 500)
-
         layout = QVBoxLayout(self)
 
         # 创建标签页

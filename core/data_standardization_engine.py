@@ -750,16 +750,18 @@ class DataStandardizationEngine:
             with self.asset_db_manager.get_connection(asset_type) as conn:
                 if data_type == DataType.HISTORICAL_KLINE:
                     # 存储K线数据
-                    for _, row in data.iterrows():
-                        conn.execute("""
-                            INSERT OR REPLACE INTO historical_kline_data 
-                            (symbol, data_source, timestamp, open, high, low, close, volume, amount, frequency)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, [
-                            row['symbol'], row['data_source'], row['timestamp'],
-                            row['open'], row['high'], row['low'], row['close'],
-                            row['volume'], row['amount'], row['frequency']
-                        ])
+                    required_cols = ['symbol', 'data_source', 'timestamp', 'open', 'high', 'low', 'close', 'volume', 'amount', 'frequency']
+                    records = [
+                        (row.symbol, row.data_source, row.timestamp,
+                         row.open, row.high, row.low, row.close,
+                         row.volume, row.amount, row.frequency)
+                        for row in data[required_cols].itertuples(index=False)
+                    ]
+                    conn.executemany("""
+                        INSERT OR REPLACE INTO historical_kline_data 
+                        (symbol, data_source, timestamp, open, high, low, close, volume, amount, frequency)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, records)
 
                     # 记录数据源记录
                     record_id = f"{data.iloc[0]['symbol']}_{source.value}_{datetime.now().strftime('%Y%m%d')}"

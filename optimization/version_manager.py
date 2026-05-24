@@ -7,10 +7,10 @@
 
 from loguru import logger
 
+from core.database.unified_sqlite_access import UnifiedSQLiteAccess
 from core.strategy_extensions import PerformanceMetrics, TradingPerformanceMetrics
 from optimization.database_schema import OptimizationDatabaseManager
 import json
-import sqlite3
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, asdict
@@ -127,84 +127,75 @@ class VersionManager:
         return versions
 
     def get_version_by_id(self, version_id: int) -> Optional[AlgorithmVersion]:
-        """根据ID获取特定版本"""
-        conn = sqlite3.connect(self.db_manager.db_path)
-        cursor = conn.cursor()
+        db = UnifiedSQLiteAccess.get_instance(self.db_manager.db_path)
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
 
-        cursor.execute('''
-            SELECT id, pattern_id, pattern_name, version_number, algorithm_code, 
-                   parameters, created_time, created_by, description, is_active,
-                   parent_version_id, optimization_method
-            FROM algorithm_versions 
-            WHERE id = ?
-        ''', (version_id,))
+            cursor.execute('''
+                SELECT id, pattern_id, pattern_name, version_number, algorithm_code, 
+                       parameters, created_time, created_by, description, is_active,
+                       parent_version_id, optimization_method
+                FROM algorithm_versions 
+                WHERE id = ?
+            ''', (version_id,))
 
-        row = cursor.fetchone()
-        conn.close()
+            row = cursor.fetchone()
 
-        if not row:
-            return None
+            if not row:
+                return None
 
-        # 获取性能指标
-        performance_metrics = self._get_version_performance(version_id)
+            performance_metrics = self._get_version_performance(version_id)
 
-        return AlgorithmVersion(
-            id=row[0],
-            pattern_id=row[1],
-            pattern_name=row[2],
-            version_number=row[3],
-            algorithm_code=row[4],
-            parameters=json.loads(row[5]) if row[5] else {},
-            created_time=row[6],
-            created_by=row[7],
-            description=row[8],
-            is_active=bool(row[9]),
-            parent_version_id=row[10],
-            optimization_method=row[11],
-            performance_metrics=performance_metrics
-        )
+            return AlgorithmVersion(
+                id=row[0],
+                pattern_id=row[1],
+                pattern_name=row[2],
+                version_number=row[3],
+                algorithm_code=row[4],
+                parameters=json.loads(row[5]) if row[5] else {},
+                created_time=row[6],
+                created_by=row[7],
+                description=row[8],
+                is_active=bool(row[9]),
+                parent_version_id=row[10],
+                optimization_method=row[11],
+                performance_metrics=performance_metrics
+            )
 
     def activate_version(self, version_id: int) -> bool:
-        """激活指定版本"""
         version = self.get_version_by_id(version_id)
         if not version:
             return False
 
-        conn = sqlite3.connect(self.db_manager.db_path)
-        cursor = conn.cursor()
+        db = UnifiedSQLiteAccess.get_instance(self.db_manager.db_path)
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
 
-        try:
-            # 先将该形态的所有版本设为非激活
-            cursor.execute('''
-                UPDATE algorithm_versions 
-                SET is_active = 0 
-                WHERE pattern_name = ?
-            ''', (version.pattern_name,))
+            try:
+                cursor.execute('''
+                    UPDATE algorithm_versions 
+                    SET is_active = 0 
+                    WHERE pattern_name = ?
+                ''', (version.pattern_name,))
 
-            # 激活指定版本
-            cursor.execute('''
-                UPDATE algorithm_versions 
-                SET is_active = 1 
-                WHERE id = ?
-            ''', (version_id,))
+                cursor.execute('''
+                    UPDATE algorithm_versions 
+                    SET is_active = 1 
+                    WHERE id = ?
+                ''', (version_id,))
 
-            # 同时更新主表中的算法代码
-            cursor.execute('''
-                UPDATE pattern_types 
-                SET algorithm_code = ?, parameters = ?
-                WHERE name = ?
-            ''', (version.algorithm_code, json.dumps(version.parameters), version.pattern_name))
+                cursor.execute('''
+                    UPDATE pattern_types 
+                    SET algorithm_code = ?, parameters = ?
+                    WHERE name = ?
+                ''', (version.algorithm_code, json.dumps(version.parameters), version.pattern_name))
 
-            conn.commit()
-            logger.info(f" 版本 {version.version_number} 已激活: {version.pattern_name}")
-            return True
+                logger.info(f" 版本 {version.version_number} 已激活: {version.pattern_name}")
+                return True
 
-        except Exception as e:
-            conn.rollback()
-            logger.info(f" 激活版本失败: {e}")
-            return False
-        finally:
-            conn.close()
+            except Exception as e:
+                logger.info(f" 激活版本失败: {e}")
+                return False
 
     def rollback_to_version(self, pattern_name: str, version_number: int) -> bool:
         """回滚到指定版本"""
@@ -278,7 +269,6 @@ class VersionManager:
         return history
 
     def delete_version(self, version_id: int) -> bool:
-        """删除指定版本"""
         version = self.get_version_by_id(version_id)
         if not version:
             return False
@@ -287,28 +277,23 @@ class VersionManager:
             logger.info("不能删除激活的版本")
             return False
 
-        conn = sqlite3.connect(self.db_manager.db_path)
-        cursor = conn.cursor()
+        db = UnifiedSQLiteAccess.get_instance(self.db_manager.db_path)
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
 
-        try:
-            # 删除性能指标
-            cursor.execute(
-                'DELETE FROM performance_metrics WHERE version_id = ?', (version_id,))
+            try:
+                cursor.execute(
+                    'DELETE FROM performance_metrics WHERE version_id = ?', (version_id,))
 
-            # 删除版本记录
-            cursor.execute(
-                'DELETE FROM algorithm_versions WHERE id = ?', (version_id,))
+                cursor.execute(
+                    'DELETE FROM algorithm_versions WHERE id = ?', (version_id,))
 
-            conn.commit()
-            logger.info(f" 版本 {version.version_number} 已删除")
-            return True
+                logger.info(f" 版本 {version.version_number} 已删除")
+                return True
 
-        except Exception as e:
-            conn.rollback()
-            logger.info(f" 删除版本失败: {e}")
-            return False
-        finally:
-            conn.close()
+            except Exception as e:
+                logger.info(f" 删除版本失败: {e}")
+                return False
 
     def get_best_version(self, pattern_name: str) -> Optional[AlgorithmVersion]:
         """获取性能最佳的版本"""
@@ -345,56 +330,54 @@ class VersionManager:
         return branch_version_id
 
     def _get_version_performance(self, version_id: int) -> Optional[TradingPerformanceMetrics]:
-        """获取版本的性能指标"""
-        conn = sqlite3.connect(self.db_manager.db_path)
-        cursor = conn.cursor()
+        db = UnifiedSQLiteAccess.get_instance(self.db_manager.db_path)
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
 
-        cursor.execute('''
-            SELECT * FROM performance_metrics 
-            WHERE version_id = ? 
-            ORDER BY test_time DESC 
-            LIMIT 1
-        ''', (version_id,))
+            cursor.execute('''
+                SELECT * FROM performance_metrics 
+                WHERE version_id = ? 
+                ORDER BY test_time DESC 
+                LIMIT 1
+            ''', (version_id,))
 
-        row = cursor.fetchone()
-        conn.close()
+            row = cursor.fetchone()
 
-        if not row:
-            return None
+            if not row:
+                return None
 
-        # 构建PerformanceMetrics对象
-        columns = [
-            'id', 'version_id', 'pattern_name', 'test_dataset_id',
-            'true_positives', 'false_positives', 'true_negatives', 'false_negatives',
-            'precision', 'recall', 'f1_score', 'accuracy',
-            'execution_time', 'memory_usage', 'cpu_usage',
-            'signal_quality', 'confidence_avg', 'confidence_std', 'patterns_found',
-            'robustness_score', 'parameter_sensitivity', 'overall_score',
-            'test_time', 'test_conditions'
-        ]
+            columns = [
+                'id', 'version_id', 'pattern_name', 'test_dataset_id',
+                'true_positives', 'false_positives', 'true_negatives', 'false_negatives',
+                'precision', 'recall', 'f1_score', 'accuracy',
+                'execution_time', 'memory_usage', 'cpu_usage',
+                'signal_quality', 'confidence_avg', 'confidence_std', 'patterns_found',
+                'robustness_score', 'parameter_sensitivity', 'overall_score',
+                'test_time', 'test_conditions'
+            ]
 
-        data = dict(zip(columns, row))
+            data = dict(zip(columns, row))
 
-        return TradingPerformanceMetrics(
-            true_positives=data.get('true_positives', 0),
-            false_positives=data.get('false_positives', 0),
-            true_negatives=data.get('true_negatives', 0),
-            false_negatives=data.get('false_negatives', 0),
-            precision=data.get('precision', 0.0),
-            recall=data.get('recall', 0.0),
-            f1_score=data.get('f1_score', 0.0),
-            accuracy=data.get('accuracy', 0.0),
-            execution_time=data.get('execution_time', 0.0),
-            memory_usage=data.get('memory_usage', 0.0),
-            cpu_usage=data.get('cpu_usage', 0.0),
-            signal_quality=data.get('signal_quality', 0.0),
-            confidence_avg=data.get('confidence_avg', 0.0),
-            confidence_std=data.get('confidence_std', 0.0),
-            patterns_found=data.get('patterns_found', 0),
-            robustness_score=data.get('robustness_score', 0.0),
-            parameter_sensitivity=data.get('parameter_sensitivity', 0.0),
-            overall_score=data.get('overall_score', 0.0)
-        )
+            return TradingPerformanceMetrics(
+                true_positives=data.get('true_positives', 0),
+                false_positives=data.get('false_positives', 0),
+                true_negatives=data.get('true_negatives', 0),
+                false_negatives=data.get('false_negatives', 0),
+                precision=data.get('precision', 0.0),
+                recall=data.get('recall', 0.0),
+                f1_score=data.get('f1_score', 0.0),
+                accuracy=data.get('accuracy', 0.0),
+                execution_time=data.get('execution_time', 0.0),
+                memory_usage=data.get('memory_usage', 0.0),
+                cpu_usage=data.get('cpu_usage', 0.0),
+                signal_quality=data.get('signal_quality', 0.0),
+                confidence_avg=data.get('confidence_avg', 0.0),
+                confidence_std=data.get('confidence_std', 0.0),
+                patterns_found=data.get('patterns_found', 0),
+                robustness_score=data.get('robustness_score', 0.0),
+                parameter_sensitivity=data.get('parameter_sensitivity', 0.0),
+                overall_score=data.get('overall_score', 0.0)
+            )
 
     def _cleanup_old_versions(self, pattern_name: str):
         """清理旧版本"""

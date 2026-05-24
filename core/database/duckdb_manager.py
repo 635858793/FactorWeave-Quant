@@ -350,13 +350,14 @@ class DuckDBConnectionPool:
     def get_connection(self):
         """获取连接（上下文管理器）"""
         conn = None
+        temp_connection = False
         try:
-            # 从池中获取连接
             try:
-                conn = self._pool.get(timeout=30)  # 30秒超时
+                conn = self._pool.get(timeout=30)
             except Empty:
                 logger.warning("连接池已满，创建临时连接")
                 conn = self._create_connection()
+                temp_connection = True
                 if not conn:
                     raise Exception("无法创建数据库连接")
 
@@ -386,34 +387,51 @@ class DuckDBConnectionPool:
             raise
 
         finally:
-            # 归还连接到池中
             if conn:
                 try:
-                    # 关键修复：增强事务状态清理，防止事务污染
-                    # 1. 先尝试 COMMIT 提交任何未提交的事务
-                    # 2. 再尝试 ROLLBACK 回滚任何剩余的事务
-                    # 3. 检查连接是否仍然有效
                     try:
                         conn.execute("COMMIT")
                     except Exception:
-                        pass  # 没有待提交的事务，忽略错误
-                    
+                        pass
+
                     try:
                         conn.execute("ROLLBACK")
                     except Exception:
-                        pass  # 没有活跃事务，忽略错误
-                    
-                    # 验证连接有效性
-                    if self._is_connection_valid(conn):
-                        self._pool.put(conn)
+                        pass
+
+                    if temp_connection:
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+                    elif self._is_connection_valid(conn):
+                        try:
+                            self._pool.put(conn)
+                        except Exception:
+                            logger.warning("归还连接到池中失败，尝试关闭连接")
+                            try:
+                                conn.close()
+                            except Exception:
+                                pass
                     else:
-                        # 连接无效，丢弃并创建新连接
                         logger.warning("连接无效，丢弃并创建新连接")
-                        new_conn = self._create_connection()
-                        if new_conn:
-                            self._pool.put(new_conn)
+                        try:
+                            new_conn = self._create_connection()
+                            if new_conn:
+                                self._pool.put(new_conn)
+                        except Exception:
+                            pass
+                        finally:
+                            try:
+                                conn.close()
+                            except Exception:
+                                pass
                 except Exception as e:
                     logger.error(f"归还连接到池中失败: {e}")
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
 
     def _is_connection_valid(self, conn: duckdb.DuckDBPyConnection) -> bool:
         """检查连接是否有效"""
@@ -424,7 +442,7 @@ class DuckDBConnectionPool:
             return False
 
     def health_check(self) -> Dict[str, Any]:
-        """健康检查"""
+        """健康检查（增强版：包含读写完整性验证）"""
         try:
             # 修复：先获取统计信息，再获取连接（避免health_check本身占用连接影响统计）
             with self._lock:
@@ -433,13 +451,32 @@ class DuckDBConnectionPool:
                 # 修复：活跃连接数 = 总连接数 - 池中可用连接数
                 # 因为连接要么在池中（可用），要么正在使用（活跃）
                 active_connections = max(0, total_connections - available_connections)
-            
-            # 执行健康检查查询
-            with self.get_connection() as conn:
-                # 执行简单查询测试
-                result = conn.execute("SELECT 1 as test").fetchone()
 
-                # 获取数据库信息
+            # 执行增强健康检查查询
+            with self.get_connection() as conn:
+                # 1. DuckDB 版本验证（替代仅 SELECT 1）
+                version_result = conn.execute("SELECT version()").fetchone()
+                duckdb_version = version_result[0] if version_result else "unknown"
+
+                # 2. 读写完整性测试：使用 TEMP TABLE（连接隔离，不影响其他连接）
+                rw_test_passed = False
+                rw_test_error = None
+                try:
+                    conn.execute("CREATE TEMP TABLE IF NOT EXISTS _health_rw_test (id INTEGER, value VARCHAR)")
+                    conn.execute("INSERT INTO _health_rw_test VALUES (1, 'health_check')")
+                    rw_count = conn.execute("SELECT COUNT(*) FROM _health_rw_test").fetchone()
+                    conn.execute("DROP TABLE IF EXISTS _health_rw_test")
+                    rw_test_passed = True
+                    rw_test_rows = rw_count[0] if rw_count else 0
+                except Exception as rw_err:
+                    rw_test_error = str(rw_err)
+                    logger.warning(f"DuckDB 读写完整性测试失败，降级为只读模式: {rw_err}")
+                    try:
+                        conn.execute("DROP TABLE IF EXISTS _health_rw_test")
+                    except Exception:
+                        pass
+
+                # 3. 获取数据库信息
                 db_info = conn.execute("PRAGMA database_list").fetchall()
 
                 # 修复：健康检查完成后，重新获取统计信息（因为get_connection可能改变了连接状态）
@@ -447,7 +484,7 @@ class DuckDBConnectionPool:
                     available_connections_after = self._pool.qsize()
                     total_connections_after = self._total_connections
                     active_connections_after = max(0, total_connections_after - available_connections_after)
-                    
+
                     stats = {
                         'status': 'healthy',
                         'database_path': self.database_path,
@@ -455,8 +492,11 @@ class DuckDBConnectionPool:
                         'total_connections': total_connections_after,
                         'active_connections': active_connections_after,
                         'available_connections': available_connections_after,
+                        'duckdb_version': duckdb_version,
                         'database_info': db_info,
-                        'test_query_result': result,
+                        'rw_test_passed': rw_test_passed,
+                        'rw_test_rows': rw_test_rows if rw_test_passed else None,
+                        'rw_test_error': rw_test_error,
                         'config': self.config.to_dict()
                     }
 
@@ -525,7 +565,7 @@ class DuckDBConnectionPool:
                         # 提交事务
                         try:
                             conn.commit()
-                        except:
+                        except Exception:
                             pass  # 可能没有活跃事务
 
                         # 执行checkpoint（合并WAL）
@@ -550,13 +590,13 @@ class DuckDBConnectionPool:
                         # 提交事务
                         try:
                             conn.commit()
-                        except:
+                        except Exception:
                             pass
 
                         # Checkpoint
                         try:
                             conn.execute("CHECKPOINT")
-                        except:
+                        except Exception:
                             pass
 
                         # 关闭

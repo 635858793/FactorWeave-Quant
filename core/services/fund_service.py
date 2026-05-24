@@ -62,30 +62,18 @@ class FundService(CacheableService, ConfigurableService):
                         fund_list = [f for f in fund_list if f.get('type') == fund_type]
                     self.set_to_cache(cache_key, fund_list)
                     self._fund_list = fund_list
+                    logger.info(f"真实数据路径: 获取基金列表成功, 共 {len(fund_list)} 条")
                     return fund_list
             
+            logger.warning("降级路径: 无法获取真实基金列表")
             return self._get_default_fund_list(fund_type)
         except Exception as e:
             logger.error(f"获取基金列表失败: {e}")
             return self._get_default_fund_list(fund_type)
     
     def _get_default_fund_list(self, fund_type: Optional[str] = None) -> List[Dict[str, Any]]:
-        default_funds = [
-            {'code': '110022', 'name': '华夏成长混合', 'type': '混合型', 'net_value': 1.2345, 'acc_value': 2.4567},
-            {'code': '000001', 'name': '平安货币', 'type': '货币型', 'net_value': 1.0000, 'acc_value': 1.3456},
-            {'code': '161039', 'name': '富国中证全指证券', 'type': '股票型', 'net_value': 1.5678, 'acc_value': 1.8901},
-            {'code': '100032', 'name': '富国中证红利指数增强', 'type': '股票型', 'net_value': 2.1234, 'acc_value': 2.5678},
-            {'code': '110007', 'name': '华夏优选配置混合', 'type': '混合型', 'net_value': 1.4567, 'acc_value': 1.7890},
-            {'code': '001552', 'name': '天弘中证银行指数A', 'type': '股票型', 'net_value': 1.2345, 'acc_value': 1.4567},
-            {'code': '001878', 'name': '嘉实智能汽车股票', 'type': '股票型', 'net_value': 1.8901, 'acc_value': 2.1234},
-            {'code': '000215', 'name': '广发纯债债券A', 'type': '债券型', 'net_value': 1.1234, 'acc_value': 1.3456},
-            {'code': '110011', 'name': '华夏上证50ETF联接', 'type': '股票型', 'net_value': 1.5678, 'acc_value': 2.0123},
-            {'code': '001571', 'name': '嘉实黄金(QDII-FOF)', 'type': 'QDII', 'net_value': 0.9876, 'acc_value': 1.1234},
-        ]
-        
-        if fund_type:
-            return [f for f in default_funds if f.get('type') == fund_type]
-        return default_funds
+        logger.warning("降级路径: 返回空基金列表，真实数据源不可用")
+        return []
     
     def get_kline_data(self, fund_code: str, period: str = 'D', 
                        count: int = 365) -> pd.DataFrame:
@@ -109,46 +97,20 @@ class FundService(CacheableService, ConfigurableService):
                 )
                 if df is not None and not df.empty:
                     self.set_to_cache(cache_key, df)
+                    logger.info(f"真实数据路径: 获取基金 {fund_code} K线数据成功, {len(df)} 条")
                     return df
                 else:
                     self._no_data_cache.add(fund_code)
             
+            logger.warning(f"降级路径: 基金 {fund_code} 无真实K线数据")
             return self._generate_mock_kline_data(fund_code, period, count)
         except Exception as e:
             logger.error(f"获取基金K线数据失败: {fund_code}, {e}")
             return self._generate_mock_kline_data(fund_code, period, count)
     
     def _generate_mock_kline_data(self, fund_code: str, period: str, count: int) -> pd.DataFrame:
-        import numpy as np
-        from datetime import datetime, timedelta
-        
-        fund_info = self.get_fund_info(fund_code)
-        base_price = fund_info.get('net_value', 1.0) if fund_info else 1.0
-        
-        end_date = datetime.now()
-        dates = [end_date - timedelta(days=i) for i in range(count)]
-        dates.reverse()
-        
-        np.random.seed(hash(fund_code) % 10000)
-        price_changes = np.random.normal(0, 0.01, count)
-        
-        prices = [base_price]
-        for change in price_changes[1:]:
-            prices.append(prices[-1] * (1 + change))
-        
-        data = {
-            'date': [d.strftime('%Y-%m-%d') for d in dates],
-            'open': prices,
-            'high': [p * (1 + abs(np.random.normal(0, 0.005))) for p in prices],
-            'low': [p * (1 - abs(np.random.normal(0, 0.005))) for p in prices],
-            'close': [p * (1 + np.random.normal(0, 0.008)) for p in prices],
-            'volume': np.random.randint(100000, 10000000, count),
-            'amount': np.random.randint(10000000, 1000000000, count),
-        }
-        
-        df = pd.DataFrame(data)
-        self.set_to_cache(f"fund_kline_{fund_code}_{period}_{count}", df)
-        return df
+        logger.warning(f"降级路径: 基金 {fund_code} 无真实K线数据，返回空DataFrame")
+        return pd.DataFrame()
     
     def get_fund_info(self, fund_code: str) -> Optional[Dict[str, Any]]:
         self._ensure_initialized()
@@ -189,13 +151,6 @@ class FundService(CacheableService, ConfigurableService):
             if keyword in fund.get('name', '').lower() or keyword in fund.get('code', '').lower()
         ]
         
-        if not results:
-            default_list = self._get_default_fund_list(None)
-            results = [
-                fund for fund in default_list
-                if keyword in fund.get('name', '').lower() or keyword in fund.get('code', '').lower()
-            ]
-        
         return results
     
     def get_fund_nav_history(self, fund_code: str, 
@@ -232,21 +187,19 @@ class FundService(CacheableService, ConfigurableService):
         if cached_result is not None:
             return cached_result
         
-        holdings_map = {
-            '110022': [
-                {'stock_code': '600519', 'stock_name': '贵州茅台', 'hold_ratio': 0.08, 'shares': 100000},
-                {'stock_code': '601318', 'stock_name': '中国平安', 'hold_ratio': 0.06, 'shares': 500000},
-                {'stock_code': '600036', 'stock_name': '招商银行', 'hold_ratio': 0.05, 'shares': 800000},
-            ],
-            '161039': [
-                {'stock_code': '600030', 'stock_name': '中信证券', 'hold_ratio': 0.10, 'shares': 1000000},
-                {'stock_code': '601688', 'stock_name': '中国中车', 'hold_ratio': 0.08, 'shares': 800000},
-            ],
-        }
-        
-        holdings = holdings_map.get(fund_code, [])
-        self.set_to_cache(cache_key, holdings)
-        return holdings
+        try:
+            if self._unified_data_manager:
+                holdings = self._unified_data_manager.get_fund_holdings(fund_code, date) if hasattr(self._unified_data_manager, 'get_fund_holdings') else None
+                if holdings:
+                    self.set_to_cache(cache_key, holdings)
+                    logger.info(f"真实数据路径: 获取基金 {fund_code} 持仓数据成功")
+                    return holdings
+            
+            logger.warning(f"降级路径: 基金 {fund_code} 无真实持仓数据")
+            return []
+        except Exception as e:
+            logger.warning(f"降级路径: 获取基金 {fund_code} 持仓数据失败: {e}")
+            return []
     
     def calculate_fund_return(self, fund_code: str, 
                              days: int = 30) -> Optional[Dict[str, Any]]:
@@ -306,19 +259,10 @@ class FundService(CacheableService, ConfigurableService):
     def clear_cache(self, fund_code: Optional[str] = None):
         if fund_code:
             self._no_data_cache.discard(fund_code)
-            patterns = [
-                f"fund_list_*",
-                f"fund_kline_{fund_code}_*",
-                f"fund_info_{fund_code}",
-                f"fund_nav_{fund_code}_*",
-                f"fund_holdings_{fund_code}_*",
-            ]
-            for pattern in patterns:
-                self._cache.pop(pattern, None)
         else:
-            self._cache.clear()
             self._no_data_cache.clear()
             self._fund_list = []
+        super().clear_cache()
 
 
 _fund_service_instance = None

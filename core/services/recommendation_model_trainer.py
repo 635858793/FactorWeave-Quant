@@ -51,6 +51,8 @@ class SVDModelWrapper:
         self.user_item_matrix = user_item_matrix
         self.user_ids = user_item_matrix.index.tolist()
         self.item_ids = user_item_matrix.columns.tolist()
+        self._user_id_to_index = {uid: idx for idx, uid in enumerate(self.user_ids)}
+        self._item_id_to_index = {iid: idx for idx, iid in enumerate(self.item_ids)}
         
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         """
@@ -64,22 +66,23 @@ class SVDModelWrapper:
         """
         predictions = []
         
-        for _, row in X.iterrows():
-            user_id = row.get('user_id')
-            item_id = row.get('item_id')
+        for row_dict in X.to_dict('records'):
+            user_id = row_dict.get('user_id')
+            item_id = row_dict.get('item_id')
             
             if user_id in self.user_ids and item_id in self.item_ids:
-                user_idx = self.user_ids.index(user_id)
-                item_idx = self.item_ids.index(item_id)
+                user_idx = self._user_id_to_index.get(user_id)
+                item_idx = self._item_id_to_index.get(item_id)
                 
-                # 使用SVD重构评分
-                user_vector = self.svd_model.transform(self.user_item_matrix.iloc[[user_idx]])
-                item_vector = self.svd_model.components_.T[item_idx]
-                prediction = np.dot(user_vector, item_vector)[0]
-                
-                # 确保评分在合理范围内
-                prediction = max(0, min(1, prediction))
-                predictions.append(prediction)
+                if user_idx is not None and item_idx is not None:
+                    user_vector = self.svd_model.transform(self.user_item_matrix.iloc[[user_idx]])
+                    item_vector = self.svd_model.components_.T[item_idx]
+                    prediction = np.dot(user_vector, item_vector)[0]
+                    
+                    prediction = max(0, min(1, prediction))
+                    predictions.append(prediction)
+                else:
+                    predictions.append(0.5)
             else:
                 # 如果用户或物品不在训练数据中，返回默认评分
                 predictions.append(0.5)
@@ -99,6 +102,8 @@ class NMFModelWrapper:
         self.user_item_matrix = user_item_matrix
         self.user_ids = user_item_matrix.index.tolist()
         self.item_ids = user_item_matrix.columns.tolist()
+        self._user_id_to_idx = {uid: i for i, uid in enumerate(self.user_ids)}
+        self._item_id_to_idx = {iid: i for i, iid in enumerate(self.item_ids)}
         
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         """
@@ -112,13 +117,13 @@ class NMFModelWrapper:
         """
         predictions = []
         
-        for _, row in X.iterrows():
-            user_id = row.get('user_id')
-            item_id = row.get('item_id')
+        for row_dict in X.to_dict('records'):
+            user_id = row_dict.get('user_id')
+            item_id = row_dict.get('item_id')
             
-            if user_id in self.user_ids and item_id in self.item_ids:
-                user_idx = self.user_ids.index(user_id)
-                item_idx = self.item_ids.index(item_id)
+            if user_id in self._user_id_to_idx and item_id in self._item_id_to_idx:
+                user_idx = self._user_id_to_idx[user_id]
+                item_idx = self._item_id_to_idx[item_id]
                 
                 # 使用NMF重构评分
                 W = self.nmf_model.transform(self.user_item_matrix.iloc[[user_idx]])
@@ -1027,8 +1032,9 @@ class RecommendationModelTrainer:
         """特征工程"""
         try:
             # 时间特征
-            data['hour'] = pd.to_datetime(data['timestamp'], unit='s').dt.hour
-            data['day_of_week'] = pd.to_datetime(data['timestamp'], unit='s').dt.dayofweek
+            timestamp_dt = pd.to_datetime(data['timestamp'], unit='s')
+            data['hour'] = timestamp_dt.dt.hour
+            data['day_of_week'] = timestamp_dt.dt.dayofweek
 
             # 交互类型编码
             interaction_mapping = {

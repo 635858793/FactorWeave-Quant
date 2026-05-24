@@ -3,6 +3,7 @@
 确保程序退出时所有资源被正确释放，防止数据库文件损坏
 """
 import atexit
+import os
 import signal
 import sys
 import threading
@@ -24,6 +25,7 @@ class GracefulShutdownManager:
     def __init__(self):
         self._cleanup_handlers: List[tuple[str, Callable]] = []
         self._is_shutting_down = False
+        self._shutdown_signaled = False
         self._shutdown_lock = threading.Lock()
         self._register_signal_handlers()
         logger.info("优雅关闭管理器已初始化")
@@ -47,10 +49,15 @@ class GracefulShutdownManager:
         def signal_handler(signum, frame):
             try:
                 signal_name = signal.Signals(signum).name
-            except:
+            except Exception:
                 signal_name = str(signum)
 
-            logger.warning(f"🛑 收到退出信号: {signal_name}")
+            try:
+                logger.warning(f"🛑 收到退出信号: {signal_name}")
+            except Exception:
+                pass
+
+            self._shutdown_signaled = True
             self._perform_shutdown()
             sys.exit(0)
 
@@ -58,13 +65,13 @@ class GracefulShutdownManager:
         try:
             signal.signal(signal.SIGTERM, signal_handler)  # kill命令
             logger.debug("已注册SIGTERM信号处理器")
-        except:
+        except Exception:
             logger.warning("无法注册SIGTERM信号处理器")
 
         try:
             signal.signal(signal.SIGINT, signal_handler)   # Ctrl+C
             logger.debug("已注册SIGINT信号处理器")
-        except:
+        except Exception:
             logger.warning("无法注册SIGINT信号处理器")
 
         # Windows特有信号
@@ -72,18 +79,18 @@ class GracefulShutdownManager:
             try:
                 signal.signal(signal.SIGBREAK, signal_handler)  # Ctrl+Break
                 logger.debug("已注册SIGBREAK信号处理器（Windows）")
-            except:
+            except Exception:
                 logger.warning("无法注册SIGBREAK信号处理器")
 
         # 注册atexit（程序正常退出时）
-        atexit.register(self._perform_shutdown)
+        atexit.register(self._atexit_shutdown)
         logger.debug("已注册atexit处理器")
 
     def _perform_shutdown(self):
         """执行关闭流程"""
         with self._shutdown_lock:
             if self._is_shutting_down:
-                return  # 防止重复执行
+                return
 
             self._is_shutting_down = True
 
@@ -110,6 +117,15 @@ class GracefulShutdownManager:
         logger.info("=" * 70)
         logger.info(f"优雅关闭完成: 成功 {success_count}/{total_handlers}, 失败 {failed_count}")
         logger.info("=" * 70)
+
+    def _atexit_shutdown(self):
+        """atexit 回调：仅在非信号触发的正常退出时执行关闭"""
+        if self._shutdown_signaled:
+            return
+        try:
+            self._perform_shutdown()
+        except Exception:
+            pass
 
     def shutdown_now(self):
         """立即执行关闭流程（手动调用）"""

@@ -14,10 +14,8 @@
     )
 """
 
-import logging
+from loguru import logger
 from typing import Optional, Dict, Any, List
-
-logger = logging.getLogger(__name__)
 
 # 全局单例实例
 _deep_analysis_framework_instance: Optional['DeepAnalysisFramework'] = None

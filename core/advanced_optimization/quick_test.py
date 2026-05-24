@@ -29,7 +29,7 @@ def test_module_imports():
             print(f"  测试导入: {module_path}.{class_name}")
             # 这里我们只检查文件是否存在
             module_file = module_path.replace(".", "/") + ".py"
-            file_path = os.path.join("d:\\DevelopTool\\FreeCode\\FactorWeave-Quant\\factorweave-quant", module_file)
+            file_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), module_file)
             if os.path.exists(file_path):
                 print(f"  {module_path}.py 文件存在")
                 results.append(True)

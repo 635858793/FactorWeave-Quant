@@ -40,6 +40,7 @@ class AddNodeDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setAttribute(Qt.WA_DeleteOnClose)
         self.setWindowTitle("添加分布式节点")
         self.setMinimumWidth(400)
         self.init_ui()
@@ -91,27 +92,28 @@ class AddNodeDialog(QDialog):
         }
 
 
-class DistributedNodeMonitorDialog(QDialog):
+class DistributedNodeMonitorDialog(BaseDialog):
     """分布式节点监控对话框"""
 
     node_status_updated = pyqtSignal(list)  # 节点状态更新信号
 
     def __init__(self, distributed_service, parent=None):
-        super().__init__(parent)
+        super().__init__(
+            parent,
+            title="分布式节点监控",
+            min_size=(1000, 600),
+            settings_key="DistributedNodeMonitorDialog"
+        )
         self.distributed_service = distributed_service
-        self.setWindowTitle("分布式节点监控")
-        self.setMinimumSize(1000, 600)
 
         self.update_timer = QTimer(self)
         self.update_timer.timeout.connect(self.refresh_nodes)
 
-        # 后台工作线程（用于异步获取节点状态）
         self.stats_worker = None
 
         self.init_ui()
         self.refresh_nodes()
 
-        # 每5秒自动刷新
         self.update_timer.start(5000)
 
     def init_ui(self):
@@ -413,4 +415,5 @@ class DistributedNodeMonitorDialog(QDialog):
                 # 对象已被删除，忽略
                 pass
 
+        super().closeEvent(event)
         event.accept()

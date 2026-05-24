@@ -88,6 +88,9 @@ class UnifiedServiceContainer(ServiceContainer):
         self._initializing_services: Set[Type] = set()
         self._initialized_services: Set[Type] = set()
 
+        # 名称到类型的反向索引（O(1)查询）
+        self._name_to_type: Dict[str, Type] = {}
+
         logger.info("UnifiedServiceContainer initialized for architecture simplification")
 
     def register_core_service(self,
@@ -148,22 +151,15 @@ class UnifiedServiceContainer(ServiceContainer):
         with self._initialization_lock:
             self._initialization_status[service_type] = ServiceStatus.REGISTERED
 
+        # 构建名称反向索引（O(1)查询）
+        self._name_to_type[service_type.__name__] = service_type
+
         logger.info(f"Core service {service_type.__name__} registered with priority {priority}")
         return self
 
     def _resolve_service_type_by_name(self, service_name: str) -> Optional[Type]:
-        """根据服务名称解析服务类型"""
-        # 在已注册的服务中查找
-        for service_type in self._dependencies.keys():
-            if service_type.__name__ == service_name:
-                return service_type
-
-        # 在基础容器中查找
-        for service_type in self._service_registry._registrations.keys():
-            if service_type.__name__ == service_name:
-                return service_type
-
-        return None
+        """根据服务名称解析服务类型（O(1)反向索引查询）"""
+        return self._name_to_type.get(service_name)
 
     def resolve_with_lifecycle(self, service_type: Type[T]) -> T:
         """
@@ -412,7 +408,7 @@ _container_lock = threading.Lock()
 
 
 def get_unified_container() -> UnifiedServiceContainer:
-    from .service_container import get_service_container
+    from .service_container import get_service_container, set_service_container
 
     container = get_service_container()
     if isinstance(container, UnifiedServiceContainer):
@@ -424,7 +420,8 @@ def get_unified_container() -> UnifiedServiceContainer:
         with _container_lock:
             if _unified_container is None:
                 _unified_container = UnifiedServiceContainer()
-                logger.info("Global UnifiedServiceContainer created (fallback)")
+                set_service_container(_unified_container)
+                logger.info("Global UnifiedServiceContainer created and set as primary container")
 
     return _unified_container
 

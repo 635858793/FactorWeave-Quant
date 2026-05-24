@@ -11,7 +11,6 @@ import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
 import time
-import random
 import os
 
 from .base_tab import BaseAnalysisTab
@@ -593,7 +592,7 @@ class HotspotAnalysisTab(BaseAnalysisTab):
                 return float(value)
             else:
                 return 0.0
-        except:
+        except Exception:
             return 0.0
 
     def _analyze_capital_flow_from_rankings(self):

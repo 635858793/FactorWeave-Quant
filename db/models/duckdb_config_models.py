@@ -1,4 +1,3 @@
-from loguru import logger
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
@@ -7,14 +6,14 @@ DuckDB配置数据库模型
 管理DuckDB性能优化配置的存储和检索
 """
 
-import sqlite3
 import json
+import sqlite3
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 from pathlib import Path
 from dataclasses import dataclass, asdict
-
-logger = logger
+from loguru import logger
+from core.database.unified_sqlite_access import UnifiedSQLiteAccess
 
 
 @dataclass
@@ -106,7 +105,8 @@ class DuckDBConfigManager:
     def _init_tables(self):
         """初始化配置表"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS duckdb_config_profiles (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -219,8 +219,6 @@ class DuckDBConfigManager:
                         FOREIGN KEY (profile_id) REFERENCES duckdb_config_profiles (id)
                     )
                 """)
-
-                conn.commit()
                 logger.info("DuckDB配置表初始化完成")
 
         except Exception as e:
@@ -230,7 +228,8 @@ class DuckDBConfigManager:
     def create_profile(self, profile: DuckDBConfigProfile) -> int:
         """创建配置配置文件"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 # 如果设置为默认配置，先取消其他默认配置
                 if profile.is_default:
                     conn.execute("UPDATE duckdb_config_profiles SET is_default = 0")
@@ -279,8 +278,6 @@ class DuckDBConfigManager:
 
                 # 记录历史
                 self._record_history(profile_id, 'create', None, profile.to_json(), profile.created_by)
-
-                conn.commit()
                 logger.info(f" 创建DuckDB配置配置文件: {profile.profile_name} (ID: {profile_id})")
                 return profile_id
 
@@ -291,7 +288,8 @@ class DuckDBConfigManager:
     def get_profile(self, profile_id: int) -> Optional[DuckDBConfigProfile]:
         """获取配置配置文件"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute(
                     "SELECT * FROM duckdb_config_profiles WHERE id = ?",
@@ -310,7 +308,8 @@ class DuckDBConfigManager:
     def get_profile_by_name(self, profile_name: str) -> Optional[DuckDBConfigProfile]:
         """根据名称获取配置配置文件"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute(
                     "SELECT * FROM duckdb_config_profiles WHERE profile_name = ?",
@@ -329,7 +328,8 @@ class DuckDBConfigManager:
     def get_active_profile(self) -> Optional[DuckDBConfigProfile]:
         """获取当前活动的配置配置文件"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute(
                     "SELECT * FROM duckdb_config_profiles WHERE is_active = 1 LIMIT 1"
@@ -347,7 +347,8 @@ class DuckDBConfigManager:
     def get_default_profile(self) -> Optional[DuckDBConfigProfile]:
         """获取默认配置配置文件"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute(
                     "SELECT * FROM duckdb_config_profiles WHERE is_default = 1 LIMIT 1"
@@ -365,7 +366,8 @@ class DuckDBConfigManager:
     def list_profiles(self, workload_type: str = None) -> List[DuckDBConfigProfile]:
         """列出所有配置配置文件"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 conn.row_factory = sqlite3.Row
 
                 if workload_type:
@@ -391,7 +393,8 @@ class DuckDBConfigManager:
     def update_profile(self, profile: DuckDBConfigProfile, updated_by: str = 'system') -> bool:
         """更新配置配置文件"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 # 获取旧配置
                 old_profile = self.get_profile(profile.id)
                 if not old_profile:
@@ -443,8 +446,6 @@ class DuckDBConfigManager:
 
                 # 记录历史
                 self._record_history(profile.id, 'update', old_profile.to_json(), profile.to_json(), updated_by)
-
-                conn.commit()
                 logger.info(f" 更新DuckDB配置配置文件: {profile.profile_name}")
                 return True
 
@@ -455,7 +456,8 @@ class DuckDBConfigManager:
     def activate_profile(self, profile_id: int, activated_by: str = 'system') -> bool:
         """激活配置配置文件"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 # 取消所有活动配置
                 conn.execute("UPDATE duckdb_config_profiles SET is_active = 0")
 
@@ -470,8 +472,6 @@ class DuckDBConfigManager:
                     profile = self.get_profile(profile_id)
                     if profile:
                         self._record_history(profile_id, 'activate', None, profile.to_json(), activated_by)
-
-                    conn.commit()
                     logger.info(f" 激活DuckDB配置配置文件: {profile_id}")
                     return True
                 else:
@@ -485,7 +485,8 @@ class DuckDBConfigManager:
     def delete_profile(self, profile_id: int, deleted_by: str = 'system') -> bool:
         """删除配置配置文件"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 # 获取配置信息
                 profile = self.get_profile(profile_id)
                 if not profile:
@@ -504,7 +505,6 @@ class DuckDBConfigManager:
                 cursor = conn.execute("DELETE FROM duckdb_config_profiles WHERE id = ?", (profile_id,))
 
                 if cursor.rowcount > 0:
-                    conn.commit()
                     logger.info(f" 删除DuckDB配置配置文件: {profile.profile_name}")
                     return True
                 else:
@@ -517,7 +517,8 @@ class DuckDBConfigManager:
     def _record_history(self, profile_id: int, action: str, old_config: str, new_config: str, changed_by: str, notes: str = None):
         """记录配置历史"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 conn.execute("""
                     INSERT INTO duckdb_config_history (
                         profile_id, action, old_config, new_config, changed_by, changed_at, notes
@@ -526,15 +527,14 @@ class DuckDBConfigManager:
                     profile_id, action, old_config, new_config, changed_by,
                     datetime.now().isoformat(), notes
                 ))
-                conn.commit()
-
         except Exception as e:
             logger.warning(f"记录配置历史失败: {e}")
 
     def get_profile_history(self, profile_id: int) -> List[Dict[str, Any]]:
         """获取配置历史"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute("""
                     SELECT * FROM duckdb_config_history 
@@ -555,7 +555,8 @@ class DuckDBConfigManager:
     def save_performance_test(self, test_result: Dict[str, Any]) -> int:
         """保存性能测试结果"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 cursor = conn.execute("""
                     INSERT INTO duckdb_performance_tests (
                         profile_id, test_name, test_type, success_rate, average_query_time,
@@ -588,7 +589,6 @@ class DuckDBConfigManager:
                 ))
 
                 test_id = cursor.lastrowid
-                conn.commit()
                 logger.info(f" 保存性能测试结果: {test_id}")
                 return test_id
 
@@ -599,7 +599,8 @@ class DuckDBConfigManager:
     def get_performance_tests(self, profile_id: int = None) -> List[Dict[str, Any]]:
         """获取性能测试结果"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 conn.row_factory = sqlite3.Row
 
                 if profile_id:

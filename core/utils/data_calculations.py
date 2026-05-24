@@ -174,8 +174,8 @@ def calculate_rsi(close: pd.Series, window: int = 14) -> pd.Series:
     """
     try:
         delta = close.diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+        gain = (delta.where(delta > 0, 0)).ewm(alpha=1/window, adjust=False).mean()
+        loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/window, adjust=False).mean()
 
         rs = gain / loss
         rsi = 100 - (100 / (1 + rs))
@@ -274,7 +274,7 @@ def calculate_bollinger_bands(close: pd.Series, window: int = 20,
     """
     try:
         middle = close.rolling(window=window).mean()
-        std = close.rolling(window=window).std()
+        std = close.rolling(window=window).std(ddof=0)
 
         upper = middle + (std * std_dev)
         lower = middle - (std * std_dev)

@@ -4,7 +4,6 @@
 """
 
 import asyncio
-import logging
 import time
 import traceback
 from typing import Dict, Any, List, Optional, Callable, Union
@@ -14,6 +13,7 @@ from datetime import datetime, timedelta
 import json
 import threading
 from collections import defaultdict, deque
+from loguru import logger
 
 
 class ErrorSeverity(Enum):
@@ -156,12 +156,12 @@ class ErrorHandler:
         )
         
         self.error_patterns[pattern_id] = pattern
-        logging.info(f"Registered error pattern: {pattern_id}")
+        logger.info(f"Registered error pattern: {pattern_id}")
     
     def register_recovery_callback(self, service_name: str, callback: Callable):
         """注册服务恢复回调"""
         self.recovery_callbacks[service_name] = callback
-        logging.info(f"Registered recovery callback for service: {service_name}")
+        logger.info(f"Registered recovery callback for service: {service_name}")
     
     def handle_error(self, service_name: str, error: Exception, 
                     context: Dict[str, Any] = None) -> ErrorRecord:
@@ -191,11 +191,11 @@ class ErrorHandler:
                 # 发送错误通知
                 self._send_error_notification(error_record, matched_patterns)
                 
-                logging.error(f"Error handled for {service_name}: {error}")
+                logger.error(f"Error handled for {service_name}: {error}")
                 return error_record
                 
             except Exception as e:
-                logging.error(f"Error handler failed: {e}")
+                logger.error(f"Error handler failed: {e}")
                 # 返回一个基本的错误记录
                 return ErrorRecord(
                     error_id=f"handler_error_{time.time()}",
@@ -347,9 +347,9 @@ class ErrorHandler:
                     "result": result,
                     "timestamp": datetime.now()
                 })
-                
+
             except Exception as e:
-                logging.error(f"Recovery action {action.value} failed: {e}")
+                logger.error(f"Recovery action {action.value} failed: {e}")
                 results.append({
                     "action": action.value,
                     "result": {"status": "failed", "error": str(e)},
@@ -439,8 +439,8 @@ class ErrorHandler:
         }
         
         # 这里应该集成告警系统
-        logging.critical(f"Error escalation: {json.dumps(notification)}")
-        
+        logger.critical(f"Error escalation: {json.dumps(notification)}")
+
         return {
             "status": "escalated",
             "notification": notification
@@ -462,7 +462,7 @@ class ErrorHandler:
     
     def _trigger_circuit_breaker(self, service_name: str, error_record: ErrorRecord):
         """触发熔断器"""
-        logging.critical(f"Circuit breaker triggered for service: {service_name}")
+        logger.critical(f"Circuit breaker triggered for service: {service_name}")
         
         # 这里应该集成熔断器逻辑
         # 可以通过事件总线通知熔断器组件
@@ -473,7 +473,7 @@ class ErrorHandler:
             "error_record": asdict(error_record)
         }
         
-        logging.critical(f"Circuit breaker event: {json.dumps(circuit_breaker_event)}")
+        logger.critical(f"Circuit breaker event: {json.dumps(circuit_breaker_event)}")
     
     def _send_error_notification(self, error_record: ErrorRecord, patterns: List[ErrorPattern]):
         """发送错误通知"""
@@ -488,7 +488,7 @@ class ErrorHandler:
                 "timestamp": error_record.timestamp
             }
             
-            logging.warning(f"Error notification: {json.dumps(notification)}")
+            logger.warning(f"Error notification: {json.dumps(notification)}")
     
     def get_error_statistics(self, service_name: Optional[str] = None) -> Dict[str, Any]:
         """获取错误统计信息"""
@@ -542,7 +542,7 @@ class BettaFishErrorHandler:
         self.fallback_service = fallback_service
         self.feature_control_service = feature_control_service
         self.error_handler = ErrorHandler()
-        self.logger = logging.getLogger(__name__)
+        self.logger = logger
         
         # 注册BettaFish相关的恢复回调
         self._register_bettafish_callbacks()

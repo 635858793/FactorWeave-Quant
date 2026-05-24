@@ -249,90 +249,6 @@ class EnhancedKlineData:
         return cls(**data)
 
 @dataclass
-class FinancialStatement:
-    """
-    财务报表数据模型
-
-    对标Wind财务数据结构，包含资产负债表、利润表、现金流量表等
-    """
-    symbol: str                             # 股票代码
-    report_date: date                       # 报告期
-    report_type: ReportType                 # 报告类型
-
-    # 资产负债表
-    total_assets: Optional[Decimal] = None          # 总资产
-    total_liabilities: Optional[Decimal] = None     # 总负债
-    shareholders_equity: Optional[Decimal] = None   # 股东权益
-    current_assets: Optional[Decimal] = None        # 流动资产
-    current_liabilities: Optional[Decimal] = None   # 流动负债
-    cash_and_equivalents: Optional[Decimal] = None  # 货币资金
-
-    # 利润表
-    total_revenue: Optional[Decimal] = None         # 营业总收入
-    operating_revenue: Optional[Decimal] = None     # 营业收入
-    operating_cost: Optional[Decimal] = None        # 营业成本
-    gross_profit: Optional[Decimal] = None          # 毛利润
-    operating_profit: Optional[Decimal] = None      # 营业利润
-    net_profit: Optional[Decimal] = None            # 净利润
-    net_profit_parent: Optional[Decimal] = None     # 归母净利润
-
-    # 现金流量表
-    operating_cash_flow: Optional[Decimal] = None   # 经营活动现金流
-    investing_cash_flow: Optional[Decimal] = None   # 投资活动现金流
-    financing_cash_flow: Optional[Decimal] = None   # 筹资活动现金流
-    free_cash_flow: Optional[Decimal] = None        # 自由现金流
-
-    # 财务比率
-    current_ratio: Optional[Decimal] = None         # 流动比率
-    quick_ratio: Optional[Decimal] = None           # 速动比率
-    debt_to_equity: Optional[Decimal] = None        # 资产负债率
-    interest_coverage: Optional[Decimal] = None     # 利息保障倍数
-
-    # 扩展字段
-    plugin_specific_data: Dict[str, Any] = field(default_factory=dict)
-
-    # 元数据
-    data_source: str = ""
-    created_at: datetime = field(default_factory=datetime.now)
-    updated_at: datetime = field(default_factory=datetime.now)
-
-@dataclass
-class MacroEconomicData:
-    """
-    宏观经济数据模型
-
-    对标Wind宏观数据库结构
-    """
-    indicator_code: str                     # 指标代码
-    indicator_name: str                     # 指标名称
-    date: date                              # 数据日期
-    value: Optional[Decimal] = None         # 指标值
-    unit: Optional[str] = None              # 单位
-    frequency: Optional[str] = None         # 频率(日/周/月/季/年)
-
-    # 分类信息
-    category_l1: Optional[str] = None       # 一级分类
-    category_l2: Optional[str] = None       # 二级分类
-    category_l3: Optional[str] = None       # 三级分类
-
-    # 地区信息
-    country: Optional[str] = None           # 国家
-    region: Optional[str] = None            # 地区
-
-    # 数据属性
-    is_seasonally_adjusted: bool = False    # 是否季调
-    is_preliminary: bool = False            # 是否初值
-    revision_count: int = 0                 # 修正次数
-
-    # 扩展字段
-    plugin_specific_data: Dict[str, Any] = field(default_factory=dict)
-
-    # 元数据
-    data_source: str = ""
-    created_at: datetime = field(default_factory=datetime.now)
-    data_quality_score: Optional[Decimal] = None
-
-@dataclass
 class DataSourcePlugin:
     """
     数据源插件信息模型
@@ -819,20 +735,23 @@ def normalize_financial_data(data: pd.DataFrame, method: str = 'zscore') -> pd.D
         标准化后的数据
     """
     numeric_columns = data.select_dtypes(include=[float, int]).columns
+    result = data.copy()
 
     if method == 'zscore':
-        # Z-score标准化
-        data[numeric_columns] = (data[numeric_columns] - data[numeric_columns].mean()) / data[numeric_columns].std()
+        std_vals = result[numeric_columns].std()
+        std_vals = std_vals.replace(0, 1)
+        result[numeric_columns] = (result[numeric_columns] - result[numeric_columns].mean()) / std_vals
     elif method == 'minmax':
-        # Min-Max标准化
-        data[numeric_columns] = (data[numeric_columns] - data[numeric_columns].min()) / (data[numeric_columns].max() - data[numeric_columns].min())
+        range_vals = result[numeric_columns].max() - result[numeric_columns].min()
+        range_vals = range_vals.replace(0, 1)
+        result[numeric_columns] = (result[numeric_columns] - result[numeric_columns].min()) / range_vals
     elif method == 'robust':
-        # 鲁棒标准化
-        median = data[numeric_columns].median()
-        mad = (data[numeric_columns] - median).abs().median()
-        data[numeric_columns] = (data[numeric_columns] - median) / mad
+        median = result[numeric_columns].median()
+        mad = (result[numeric_columns] - median).abs().median()
+        mad = mad.replace(0, 1)
+        result[numeric_columns] = (result[numeric_columns] - median) / mad
 
-    return data
+    return result
 
 def calculate_turnover_rate(volume: int, total_shares: int) -> Optional[Decimal]:
     """

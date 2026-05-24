@@ -6,20 +6,24 @@
 提供数据质量检查结果的可视化展示和分析功能
 """
 
+import ast
 import sys
 import os
 import json
 import pandas as pd
 from datetime import datetime
 from typing import List, Dict, Any
+from loguru import logger
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
+    QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QLabel, QComboBox, QLineEdit, QPushButton, QTabWidget, QGroupBox,
     QFormLayout, QHeaderView, QMessageBox, QFileDialog, QWidget,
     QGridLayout, QCheckBox, QSpinBox
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont
+
+from .base_dialog import BaseDialog
 
 # 尝试导入可视化库
 try:
@@ -35,7 +39,7 @@ try:
 except ImportError:
     PLOTLY_AVAILABLE = False
 
-class QualityReportDialog(QDialog):
+class QualityReportDialog(BaseDialog):
     """数据质量报告对话框"""
 
     def __init__(self, reports: List[Dict[str, Any]], parent=None):
@@ -46,7 +50,12 @@ class QualityReportDialog(QDialog):
             reports: 质量报告数据列表
             parent: 父窗口
         """
-        super().__init__(parent)
+        super().__init__(
+            parent,
+            title="数据质量报告",
+            size=(1400, 900),
+            settings_key="QualityReportDialog"
+        )
         self.reports = reports
         self.filtered_reports = reports.copy()
 
@@ -55,9 +64,6 @@ class QualityReportDialog(QDialog):
 
     def init_ui(self):
         """初始化用户界面"""
-        self.setWindowTitle("数据质量报告")
-        self.setGeometry(100, 100, 1400, 900)
-
         layout = QVBoxLayout(self)
 
         # 创建筛选区域
@@ -211,7 +217,7 @@ class QualityReportDialog(QDialog):
             self.fill_table_and_charts()
 
         except Exception as e:
-            print(f"应用筛选失败: {e}")
+            logger.error(f"应用筛选失败: {e}")
 
     def fill_table_and_charts(self):
         """填充表格和图表数据"""
@@ -220,7 +226,7 @@ class QualityReportDialog(QDialog):
             if WEB_ENGINE_AVAILABLE and PLOTLY_AVAILABLE:
                 self.fill_charts()
         except Exception as e:
-            print(f"填充数据失败: {e}")
+            logger.error(f"填充数据失败: {e}")
 
     def fill_table(self):
         """填充表格数据"""
@@ -264,7 +270,7 @@ class QualityReportDialog(QDialog):
                         ", ".join(report.get("warnings", []))))
 
         except Exception as e:
-            print(f"填充表格失败: {e}")
+            logger.error(f"填充表格失败: {e}")
 
     def group_data(self, group_by: str) -> Dict[str, List[Dict]]:
         """根据分组方式组织数据"""
@@ -325,7 +331,7 @@ class QualityReportDialog(QDialog):
             self.create_map(df)
 
         except Exception as e:
-            print(f"创建图表失败: {e}")
+            logger.error(f"创建图表失败: {e}")
             self.clear_charts()
 
     def create_histogram(self, df: pd.DataFrame):
@@ -360,10 +366,12 @@ class QualityReportDialog(QDialog):
                 for stats in df["anomaly_stats"]:
                     try:
                         if isinstance(stats, str):
-                            stats = eval(stats)
+                            stats = ast.literal_eval(stats)
                         count = len(stats) if isinstance(stats, dict) else 0
                         anomaly_counts.append(count)
-                    except:
+                    except (ValueError, SyntaxError):
+                        anomaly_counts.append(0)
+                    except Exception:
                         anomaly_counts.append(0)
 
                 fig = go.Figure(go.Scatter(

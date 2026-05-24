@@ -139,8 +139,8 @@ def calc_rsi(close: pd.Series, n: int = 14) -> pd.Series:
         else:
             # 自定义RSI实现
             delta = close.diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=n).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=n).mean()
+            gain = (delta.where(delta > 0, 0)).ewm(alpha=1/n, adjust=False).mean()
+            loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/n, adjust=False).mean()
             rs = gain / loss
             rsi = 100 - (100 / (1 + rs))
             return rsi.rename(f"RSI{n}")

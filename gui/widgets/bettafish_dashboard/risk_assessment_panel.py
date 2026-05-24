@@ -6,7 +6,7 @@
 """
 
 import sys
-import logging
+import os
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 from PyQt5.QtWidgets import (
@@ -383,71 +383,36 @@ class RiskAssessmentPanel(QWidget):
     def _load_risk_data(self):
         """加载风险数据"""
         try:
-            # 模拟风险数据
-            self._risk_data = {
-                "overall_risk": 25.5,
-                "var_95": 2.8,
-                "max_drawdown": 5.2,
-                "sharpe_ratio": 1.45,
-                "volatility": 12.3,
-                "correlation": 0.35,
-                "concentration": 18.7,
-                "market_risk": "low",
-                "liquidity_risk": "low",
-                "credit_risk": "low",
-                "operational_risk": "low",
-                "concentration_risk": "low"
-            }
-            
-            # 模拟预警数据
-            self._risk_alerts = [
-                {
-                    "timestamp": datetime.now() - timedelta(minutes=15),
-                    "level": "INFO",
-                    "type": "市场风险",
-                    "description": "市场波动率上升，需要关注"
-                },
-                {
-                    "timestamp": datetime.now() - timedelta(minutes=45),
-                    "level": "WARNING",
-                    "type": "集中度风险",
-                    "description": "投资组合集中度偏高"
-                }
-            ]
-            
-            # 模拟历史数据
-            for i in range(24):  # 24小时数据
-                self._risk_history.append({
-                    "timestamp": datetime.now() - timedelta(hours=i),
-                    "risk_level": 20 + (i % 10) * 2 + (i % 3)
-                })
-            
+            if self._bettafish_agent and hasattr(self._bettafish_agent, 'get_risk_assessment'):
+                agent_risk = self._bettafish_agent.get_risk_assessment()
+                if agent_risk:
+                    self._risk_data = agent_risk
+                    return
+
+            self._risk_data = {}
+            self._risk_alerts = []
+            self._risk_history = []
+            logger.info("风险评估数据源未连接，显示暂无数据")
         except Exception as e:
             logger.error(f"加载风险数据失败: {e}")
+            self._risk_data = {}
+            self._risk_alerts = []
+            self._risk_history = []
 
     def _update_risk_data(self):
         """更新风险数据"""
         try:
-            # 从BettaFish代理获取最新风险数据
-            if self._bettafish_agent:
-                # 这里应该调用BettaFish代理的方法获取实时风险数据
-                # 目前使用模拟数据
-                pass
-            
-            # 添加新的历史数据点
-            new_point = {
-                "timestamp": datetime.now(),
-                "risk_level": 20 + (len(self._risk_history) % 10) * 2
-            }
-            self._risk_history.append(new_point)
-            
-            # 保持历史数据在合理范围内
-            if len(self._risk_history) > 168:  # 一周数据
-                self._risk_history = self._risk_history[-168:]
-            
-            # 更新显示
+            if self._bettafish_agent and hasattr(self._bettafish_agent, 'get_risk_assessment'):
+                agent_risk = self._bettafish_agent.get_risk_assessment()
+                if agent_risk:
+                    self._risk_data = agent_risk
+
+            if self._bettafish_agent and hasattr(self._bettafish_agent, 'get_risk_alerts'):
+                agent_alerts = self._bettafish_agent.get_risk_alerts()
+                if agent_alerts:
+                    self._risk_alerts = agent_alerts
+
             self._update_display()
-            
         except Exception as e:
             logger.error(f"更新风险数据失败: {e}")
 
@@ -471,61 +436,78 @@ class RiskAssessmentPanel(QWidget):
 
     def _update_overall_risk(self):
         """更新总体风险"""
-        if self._risk_data:
-            risk_value = self._risk_data.get("overall_risk", 0)
-            self.risk_gauge.set_value(risk_value)
-            
-            # 更新风险等级标签
-            if risk_value <= 30:
-                level = "低风险"
-                color = "green"
-            elif risk_value <= 60:
-                level = "中等风险"
-                color = "orange"
-            elif risk_value <= 80:
-                level = "高风险"
-                color = "red"
-            else:
-                level = "极高风险"
-                color = "darkred"
-                
-            self.risk_level_label.setText(level)
-            self.risk_level_label.setStyleSheet(f"color: {color}; font-weight: bold;")
+        if not self._risk_data:
+            self.risk_gauge.set_value(0)
+            self.risk_level_label.setText("暂无数据")
+            self.risk_level_label.setStyleSheet("color: gray; font-weight: bold;")
+            return
+
+        risk_value = self._risk_data.get("overall_risk", 0)
+        self.risk_gauge.set_value(risk_value)
+
+        if risk_value <= 0:
+            level = "暂无数据"
+            color = "gray"
+        elif risk_value <= 30:
+            level = "低风险"
+            color = "green"
+        elif risk_value <= 60:
+            level = "中等风险"
+            color = "orange"
+        elif risk_value <= 80:
+            level = "高风险"
+            color = "red"
+        else:
+            level = "极高风险"
+            color = "darkred"
+
+        self.risk_level_label.setText(level)
+        self.risk_level_label.setStyleSheet(f"color: {color}; font-weight: bold;")
 
     def _update_detail_metrics(self):
         """更新详细指标"""
-        if self._risk_data:
-            self.var_label.setText(f"{self._risk_data.get('var_95', 0):.2f}%")
-            self.max_drawdown_label.setText(f"{self._risk_data.get('max_drawdown', 0):.2f}%")
-            self.sharpe_ratio_label.setText(f"{self._risk_data.get('sharpe_ratio', 0):.2f}")
-            self.volatility_label.setText(f"{self._risk_data.get('volatility', 0):.2f}%")
-            self.correlation_label.setText(f"{self._risk_data.get('correlation', 0):.2f}")
-            self.concentration_label.setText(f"{self._risk_data.get('concentration', 0):.2f}%")
-            
-            # 更新状态检查
-            risk_types = ["market_risk", "liquidity_risk", "credit_risk", "operational_risk", "concentration_risk"]
-            risk_names = ["市场风险", "流动性风险", "信用风险", "操作风险", "集中度风险"]
-            
-            for i, risk_type in enumerate(risk_types):
-                if risk_type in self._risk_data:
-                    risk_level = self._risk_data[risk_type]
-                    label = self.status_checks[risk_names[i]]
-                    
-                    if risk_level == "low":
-                        label.setText("正常")
-                        label.setStyleSheet("color: green;")
-                    elif risk_level == "medium":
-                        label.setText("警告")
-                        label.setStyleSheet("color: orange;")
-                    else:
-                        label.setText("危险")
-                        label.setStyleSheet("color: red;")
-            
-            # 更新详细表格
-            self._update_detail_table()
-            
-            # 更新风险分解
-            self._update_risk_breakdown()
+        if not self._risk_data:
+            self.var_label.setText("暂无数据")
+            self.max_drawdown_label.setText("暂无数据")
+            self.sharpe_ratio_label.setText("暂无数据")
+            self.volatility_label.setText("暂无数据")
+            self.correlation_label.setText("暂无数据")
+            self.concentration_label.setText("暂无数据")
+            for label in self.status_checks.values():
+                label.setText("未知")
+                label.setStyleSheet("color: gray;")
+            self.detail_table.setRowCount(0)
+            self.breakdown_chart.setText("暂无风险数据")
+            return
+
+        self.var_label.setText(f"{self._risk_data.get('var_95', 0):.2f}%")
+        self.max_drawdown_label.setText(f"{self._risk_data.get('max_drawdown', 0):.2f}%")
+        self.sharpe_ratio_label.setText(f"{self._risk_data.get('sharpe_ratio', 0):.2f}")
+        self.volatility_label.setText(f"{self._risk_data.get('volatility', 0):.2f}%")
+        self.correlation_label.setText(f"{self._risk_data.get('correlation', 0):.2f}")
+        self.concentration_label.setText(f"{self._risk_data.get('concentration', 0):.2f}%")
+
+        risk_types = ["market_risk", "liquidity_risk", "credit_risk", "operational_risk", "concentration_risk"]
+        risk_names = ["市场风险", "流动性风险", "信用风险", "操作风险", "集中度风险"]
+
+        for i, risk_type in enumerate(risk_types):
+            if risk_type in self._risk_data:
+                risk_level = self._risk_data[risk_type]
+                label = self.status_checks[risk_names[i]]
+
+                if risk_level == "low":
+                    label.setText("正常")
+                    label.setStyleSheet("color: green;")
+                elif risk_level == "medium":
+                    label.setText("警告")
+                    label.setStyleSheet("color: orange;")
+                else:
+                    label.setText("危险")
+                    label.setStyleSheet("color: red;")
+
+        self._update_detail_table()
+
+        self._update_risk_breakdown()
 
     def _update_detail_table(self):
         """更新详细指标表格"""
@@ -555,13 +537,28 @@ class RiskAssessmentPanel(QWidget):
 
     def _update_risk_breakdown(self):
         """更新风险分解"""
-        breakdown_text = "风险分解\n\n" + \
-                        "市场风险: ████████████░░░░ 85%\n" + \
-                        "流动性风险: ████████░░░░░░░░ 60%\n" + \
-                        "信用风险: ████░░░░░░░░░░░░░ 30%\n" + \
-                        "操作风险: ██░░░░░░░░░░░░░░░ 15%\n" + \
-                        "集中度风险: ██████░░░░░░░░░░ 45%"
-        self.breakdown_chart.setText(breakdown_text)
+        if not self._risk_data:
+            self.breakdown_chart.setText("暂无风险数据")
+            return
+
+        market_pct = self._risk_data.get('market_risk_pct', 0)
+        liquidity_pct = self._risk_data.get('liquidity_risk_pct', 0)
+        credit_pct = self._risk_data.get('credit_risk_pct', 0)
+        operational_pct = self._risk_data.get('operational_risk_pct', 0)
+        concentration_pct = self._risk_data.get('concentration_risk_pct', 0)
+
+        def bar_chart(value):
+            blocks = min(20, int(value / 5))
+            return '\u2588' * blocks + '\u2591' * (20 - blocks)
+
+        self.breakdown_chart.setText(
+            "\u98ce\u9669\u5206\u89e3\n\n" +
+            f"\u5e02\u573a\u98ce\u9669: {bar_chart(market_pct)} {market_pct:.0f}%\n" +
+            f"\u6d41\u52a8\u6027\u98ce\u9669: {bar_chart(liquidity_pct)} {liquidity_pct:.0f}%\n" +
+            f"\u4fe1\u7528\u98ce\u9669: {bar_chart(credit_pct)} {credit_pct:.0f}%\n" +
+            f"\u64cd\u4f5c\u98ce\u9669: {bar_chart(operational_pct)} {operational_pct:.0f}%\n" +
+            f"\u96c6\u4e2d\u5ea6\u98ce\u9669: {bar_chart(concentration_pct)} {concentration_pct:.0f}%"
+        )
 
     def _update_alerts(self):
         """更新预警信息"""
@@ -592,47 +589,52 @@ class RiskAssessmentPanel(QWidget):
 
     def _update_history(self):
         """更新历史趋势"""
-        if self._risk_history:
-            # 简单的历史趋势文本表示
-            recent_data = self._risk_history[-24:]  # 最近24小时
-            
-            history_text = "最近24小时风险趋势\n\n"
-            for i, point in enumerate(recent_data[::3]):  # 每3小时一个点
-                risk_level = point["risk_level"]
-                if risk_level <= 30:
-                    bar = "█" * int(risk_level / 5) + "░" * (10 - int(risk_level / 5))
-                elif risk_level <= 60:
-                    bar = "▓" * int(risk_level / 5) + "░" * (10 - int(risk_level / 5))
-                else:
-                    bar = "▉" * int(risk_level / 5) + "░" * (10 - int(risk_level / 5))
-                    
-                history_text += f"{point['timestamp'].strftime('%H:%M')}: {bar} {risk_level:.1f}\n"
-            
-            self.history_chart.setText(history_text)
-            
-            # 更新统计信息
-            risk_values = [point["risk_level"] for point in recent_data]
-            avg_risk = sum(risk_values) / len(risk_values)
-            max_risk = max(risk_values)
-            min_risk = min(risk_values)
-            
-            self.avg_risk_label.setText(f"{avg_risk:.1f}")
-            self.max_risk_label.setText(f"{max_risk:.1f}")
-            self.min_risk_label.setText(f"{min_risk:.1f}")
-            
-            # 简单的趋势判断
-            if risk_values[-1] > risk_values[0]:
-                trend = "上升"
-                color = "orange"
-            elif risk_values[-1] < risk_values[0]:
-                trend = "下降"
-                color = "green"
+        if not self._risk_history:
+            self.history_chart.setText("暂无历史风险数据")
+            self.avg_risk_label.setText("暂无数据")
+            self.max_risk_label.setText("暂无数据")
+            self.min_risk_label.setText("暂无数据")
+            self.risk_trend_label.setText("暂无数据")
+            self.risk_trend_label.setStyleSheet("color: gray;")
+            return
+
+        recent_data = self._risk_history[-24:]
+
+        history_text = "最近24小时风险趋势\n\n"
+        for i, point in enumerate(recent_data[::3]):
+            risk_level = point["risk_level"]
+            if risk_level <= 30:
+                bar = "\u2588" * int(risk_level / 5) + "\u2591" * (10 - int(risk_level / 5))
+            elif risk_level <= 60:
+                bar = "\u2593" * int(risk_level / 5) + "\u2591" * (10 - int(risk_level / 5))
             else:
-                trend = "平稳"
-                color = "blue"
-                
-            self.risk_trend_label.setText(trend)
-            self.risk_trend_label.setStyleSheet(f"color: {color};")
+                bar = "\u2589" * int(risk_level / 5) + "\u2591" * (10 - int(risk_level / 5))
+
+            history_text += f"{point['timestamp'].strftime('%H:%M')}: {bar} {risk_level:.1f}\n"
+
+        self.history_chart.setText(history_text)
+
+        risk_values = [point["risk_level"] for point in recent_data]
+        avg_risk = sum(risk_values) / len(risk_values)
+        max_risk = max(risk_values)
+        min_risk = min(risk_values)
+
+        self.avg_risk_label.setText(f"{avg_risk:.1f}")
+        self.max_risk_label.setText(f"{max_risk:.1f}")
+        self.min_risk_label.setText(f"{min_risk:.1f}")
+
+        if risk_values[-1] > risk_values[0]:
+            trend = "上升"
+            color = "orange"
+        elif risk_values[-1] < risk_values[0]:
+            trend = "下降"
+            color = "green"
+        else:
+            trend = "平稳"
+            color = "blue"
+
+        self.risk_trend_label.setText(trend)
+        self.risk_trend_label.setStyleSheet(f"color: {color};")
 
     def refresh_data(self):
         """刷新数据"""

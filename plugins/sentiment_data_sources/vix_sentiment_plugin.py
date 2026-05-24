@@ -7,6 +7,7 @@ VIX恐慌指数插件
 """
 
 import numpy as np
+import os
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 
@@ -245,7 +246,7 @@ class VIXSentimentPlugin(BaseSentimentPlugin, ConfigurablePlugin):
             "moderate_fear_threshold": 30.0,
             "high_fear_threshold": 40.0,
             "vix_source": "yahoo_finance",
-            "alpha_vantage_api_key": "",
+            "alpha_vantage_api_key": os.environ.get("ALPHA_VANTAGE_API_KEY", ""),
             "retry_times": 3,
             "request_timeout": 10,
             "update_interval": 15,
@@ -344,6 +345,7 @@ class VIXSentimentPlugin(BaseSentimentPlugin, ConfigurablePlugin):
 
         try:
             self._safe_log("info", "开始获取VIX恐慌指数数据...")
+            logger.warning("VIX情绪插件：尝试获取真实API数据，如API不可用将无法返回数据")
 
             # 获取配置
             vix_source = self.get_config("vix_source", "yahoo_finance")

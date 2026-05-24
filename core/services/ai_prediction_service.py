@@ -18,6 +18,7 @@ from typing import Dict, List, Any, Optional, Tuple, Union
 from datetime import datetime, timedelta
 import json
 import pickle
+from utils.safe_pickle import safe_load, safe_loads
 import os
 import hashlib
 from pathlib import Path
@@ -57,42 +58,20 @@ def _check_dl_availability():
         import os
         from pathlib import Path
         
-        # 尝试多种方式找到项目根目录
-        project_root = None
-        
-        # 方法1: 使用 __file__ 计算
+        # 统一使用 __file__ 方式查找项目根目录（最稳定）
+        # 不再使用多种方式查找，避免不确定性
         try:
-            project_root = Path(__file__).parent.parent.parent
-            if not (project_root / 'models' / 'deep_learning.py').exists():
-                project_root = None
-        except Exception:
-            project_root = None
-        
-        # 方法2: 使用当前工作目录
-        if project_root is None:
-            cwd = Path(os.getcwd())
-            if (cwd / 'models' / 'deep_learning.py').exists():
-                project_root = cwd
-        
-        # 方法3: 检查 sys.path 中是否已有项目根目录
-        if project_root is None:
-            for p in sys.path:
-                if p:
-                    try:
-                        path_obj = Path(p)
-                        if (path_obj / 'models' / 'deep_learning.py').exists():
-                            project_root = path_obj
-                            break
-                    except Exception:
-                        continue
-        
-        if project_root is None:
-            logger.warning("无法找到项目根目录，深度学习模块不可用")
+            project_root = Path(__file__).resolve().parent.parent.parent
+            # 验证路径是否有效
+            if not project_root.exists():
+                raise ValueError(f"项目根目录不存在: {project_root}")
+        except Exception as e:
+            logger.warning(f"无法确定项目根目录: {e}")
             DL_AVAILABLE = False
             TENSORFLOW_AVAILABLE = False
             return False
         
-        # 规范化路径（解决大小写问题）
+        # 规范化路径（解决大小写和符号链接问题）
         project_root = project_root.resolve()
         project_root_str = str(project_root)
         
@@ -105,11 +84,18 @@ def _check_dl_availability():
         
         if not path_in_sys:
             sys.path.insert(0, project_root_str)
+            logger.info(f"已将项目根目录添加到 sys.path: {project_root_str}")
         
-        # 清理可能冲突的 models 模块缓存
-        models_to_remove = [k for k in sys.modules.keys() if k == 'models' or k.startswith('models.')]
-        for k in models_to_remove:
-            del sys.modules[k]
+        # 安全地清理 models 模块缓存：只清理当前进程加载的旧版本
+        # 使用列表副本避免在迭代时修改字典
+        models_to_remove = [k for k in list(sys.modules.keys()) if k == 'models' or k.startswith('models.')]
+        if models_to_remove:
+            logger.debug(f"清理 {len(models_to_remove)} 个旧的 models 模块缓存")
+            for k in models_to_remove:
+                try:
+                    del sys.modules[k]
+                except KeyError:
+                    pass  # 模块已被其他代码删除，忽略
         
         # 使用 importlib 直接导入模块
         import importlib.util
@@ -212,7 +198,7 @@ MODEL_TYPE_DISPLAY_NAMES = {
     'garch_ewma': 'GARCH-EWMA模型',
     'dcc_garch': 'DCC-GARCH模型',
     'statistical_anomaly': '统计异常检测',
-    'hmm_regime': '隐马尔可夫状态模型',
+    'volatility_quantile_regime': '波动率分位数状态模型',
     'amihud_liquidity': 'Amihud流动性模型',
     'technical_momentum': '技术动量模型',
     'technical_reversal': '技术反转模型',
@@ -1151,7 +1137,7 @@ class AIPredictionService(BaseService):
         """加载由ModelTrainingService保存的.pkl模型"""
         try:
             with open(pickle_path, 'rb') as f:
-                payload = pickle.load(f)
+                payload = safe_load(f)
             model_obj = payload.get('model')
             metadata = payload.get('metadata', {})
             return model_obj, metadata
@@ -2102,9 +2088,12 @@ class AIPredictionService(BaseService):
 
             # 使用模型权重进行简单的线性组合预测
             weights = model.get('weights', {})
-            layer1_weights = np.array(weights.get('layer1', np.random.randn(expected_input_dim, 64)))
+            layer1_weight_data = weights.get('layer1')
+            if layer1_weight_data is None:
+                logger.warning("简化模型缺少layer1权重，无法预测")
+                return None
+            layer1_weights = np.array(layer1_weight_data)
 
-            # 确保权重维度匹配
             if layer1_weights.shape[0] != len(features):
                 layer1_weights = np.resize(layer1_weights, (len(features), 64))
 
@@ -2124,13 +2113,7 @@ class AIPredictionService(BaseService):
 
         except Exception as e:
             logger.warning(f"简化模型预测失败: {e}")
-            # 返回后备预测结果
-            return {
-                'direction': '震荡',
-                'confidence': 0.5,
-                'model_type': 'simplified_model_fallback',
-                'timestamp': datetime.now().isoformat()
-            }
+            return None
 
     def _format_prediction_result(self, predicted_class, confidence, prediction_type):
         """格式化预测结果"""
@@ -2477,11 +2460,11 @@ class AIPredictionService(BaseService):
                                 successful_count += 1
                             else:
                                 failed_count += 1
-                        except:
+                        except Exception:
                             failed_count += 1
                 
                 # 计算真实指标
-                avg_confidence = sum(confidences) / len(confidences) if confidences else 0.0
+                avg_confidence = np.mean(confidences) if confidences else 0.0
                 # 准确率基于置信度阈值（>=0.7视为成功）
                 accuracy = successful_count / total_predictions if total_predictions > 0 else 0.0
                 
@@ -3351,7 +3334,7 @@ class AIPredictionService(BaseService):
             current_vol = volatility.iloc[-1]
             current_trend = trend_strength.iloc[-1]
 
-            # 使用隐马尔可夫模型的简化版本
+            # 使用波动率分位数进行市场状态分类
             if current_vol > volatility.quantile(0.8):
                 if abs(current_trend) > 0.02:
                     regime = "高波动趋势市"
@@ -3399,7 +3382,7 @@ class AIPredictionService(BaseService):
                 'trend_strength': float(current_trend),
                 'regime_duration': len([r for r in regime_history if r == regime_code]),
                 'confidence': 0.75,
-                'model_type': 'hmm_regime',
+                'model_type': 'volatility_quantile_regime',
                 'prediction_type': PredictionType.MARKET_REGIME,
                 'timestamp': datetime.now().isoformat()
             }
@@ -3818,19 +3801,29 @@ class AIPredictionService(BaseService):
             price_min = kdata['low'].min()
             price_max = kdata['high'].max()
             price_bins = np.linspace(price_min, price_max, 20)
+            n_bins = len(price_bins) - 1
 
-            # 计算每个价格区间的成交量
-            volume_profile = np.zeros(len(price_bins) - 1)
+            # 计算每个价格区间的成交量 (向量化)
+            n_samples = 10
+            low_arr = kdata['low'].values
+            high_arr = kdata['high'].values
+            volume_arr = kdata['volume'].values
 
-            for i, row in kdata.iterrows():
-                # 假设成交量在OHLC范围内均匀分布
-                price_range = np.linspace(row['low'], row['high'], 10)
-                volume_per_price = row['volume'] / len(price_range)
+            t = np.linspace(0, 1, n_samples)
+            price_samples = low_arr[:, np.newaxis] + t * (high_arr - low_arr)[:, np.newaxis]
 
-                for price in price_range:
-                    bin_idx = np.digitize(price, price_bins) - 1
-                    if 0 <= bin_idx < len(volume_profile):
-                        volume_profile[bin_idx] += volume_per_price
+            vol_per_sample = volume_arr[:, np.newaxis] / n_samples
+
+            bin_indices = np.digitize(price_samples.ravel(), price_bins) - 1
+            vol_flat = vol_per_sample.ravel()
+
+            valid = (bin_indices >= 0) & (bin_indices < n_bins)
+
+            volume_profile = np.bincount(
+                bin_indices[valid],
+                weights=vol_flat[valid],
+                minlength=n_bins
+            ).astype(float)
 
             # 找到成交量最大的价格区间（POC - Point of Control）
             poc_idx = np.argmax(volume_profile)
@@ -4148,3 +4141,4 @@ class AIPredictionService(BaseService):
             ])
 
         return recommendations
+

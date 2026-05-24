@@ -12,6 +12,7 @@ from analysis.pattern_manager import PatternManager
 from optimization.version_manager import VersionManager
 from optimization.auto_tuner import AlgorithmAutoTuner
 from optimization.main_controller import OptimizationController
+from optimization.algorithm_optimizer import PerformanceEvaluator
 from core.services import (
     ConfigService, StockService,
     ChartService, AnalysisService
@@ -1262,12 +1263,12 @@ class FactorWeaveQuantLauncher:
         """列出已安装插件"""
         print("启动插件管理界面...")
         try:
-            from gui.dialogs.plugin_manager_dialog import PluginManagerDialog
+            from gui.dialogs.plugin_manager_dialog_unified import PluginManagerDialogUnified
 
             if not QApplication.instance():
                 app = QApplication([])
 
-            dialog = PluginManagerDialog(None)
+            dialog = PluginManagerDialogUnified(None)
             dialog.show_installed_plugins()
             dialog.exec_()
 

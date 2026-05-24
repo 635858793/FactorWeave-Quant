@@ -21,6 +21,8 @@ from datetime import datetime
 from contextlib import contextmanager
 import threading
 
+from .unified_sqlite_access import UnifiedSQLiteAccess
+
 from .table_manager import TableType
 
 
@@ -96,12 +98,18 @@ class SQLiteExtensionManager:
 
     @contextmanager
     def get_connection(self):
-        """获取数据库连接"""
+        """获取数据库连接（启用WAL模式、外键、性能优化）"""
         conn = None
         try:
             conn = sqlite3.connect(str(self.db_path), timeout=30.0)
-            conn.row_factory = sqlite3.Row  # 使用字典式访问
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute("PRAGMA foreign_keys=ON")
+            conn.execute("PRAGMA cache_size=-64000")
+            conn.execute("PRAGMA busy_timeout=5000")
             yield conn
+            conn.commit()
         except Exception as e:
             if conn:
                 conn.rollback()

@@ -341,7 +341,7 @@ class PluginManager:
                     try:
                         import json
                         dependencies = json.loads(dependencies_str) if dependencies_str else []
-                    except:
+                    except Exception:
                         dependencies = []
 
                     # 创建插件信息对象 - 使用正确的字段名称
@@ -835,7 +835,7 @@ class PluginManager:
                     # 从plugin_instances中获取插件实例
                     plugin_instance = self.plugin_instances.get(plugin_name)
 
-                    if plugin_instance and self._is_data_source_plugin_instance(plugin_instance):
+                    if plugin_instance and self._is_data_source_plugin(plugin_instance):
                         if hasattr(target_manager, 'register_data_source_plugin'):
                             success = target_manager.register_data_source_plugin(
                                 plugin_name,
@@ -868,46 +868,49 @@ class PluginManager:
         except Exception as e:
             logger.error(f"注册数据源插件到管理器失败: {e}")
 
-    def _is_data_source_plugin(self, plugin_info: PluginInfo) -> bool:
-        """检查插件是否是数据源插件"""
-        try:
-            # 检查插件类型
-            if plugin_info.plugin_type and 'DATA_SOURCE' in str(plugin_info.plugin_type).upper():
-                return True
+    def _is_data_source_plugin(self, plugin_instance, plugin_type=None) -> bool:
+        """
+        检查插件是否为数据源插件
 
-            # 检查插件实例是否实现了数据源接口
-            if plugin_info.instance:
+        Args:
+            plugin_instance: 插件实例
+            plugin_type: 插件类型（可选）
+
+        Returns:
+            bool: 是否为数据源插件
+        """
+        try:
+            if plugin_type:
+                plugin_type_str = str(plugin_type).lower()
+                if 'data_source' in plugin_type_str:
+                    return True
+
+            if hasattr(plugin_instance, 'plugin_type'):
+                instance_type = str(plugin_instance.plugin_type).lower()
+                if 'data_source' in instance_type:
+                    return True
+
+            try:
                 from .data_source_extensions import IDataSourcePlugin
-                if isinstance(plugin_info.instance, IDataSourcePlugin):
+                if isinstance(plugin_instance, IDataSourcePlugin):
                     return True
+            except ImportError:
+                pass
 
-                # 检查是否有必要的数据源方法
-                required_methods = ['get_asset_list', 'get_kdata', 'health_check']
-                if all(hasattr(plugin_info.instance, method) for method in required_methods):
-                    return True
-
-        except Exception as e:
-            logger.warning(f"检查数据源插件时出错: {e}")
-
-        return False
-
-    def _is_data_source_plugin_instance(self, plugin_instance) -> bool:
-        """检查插件实例是否是数据源插件"""
-        try:
-            # 检查插件实例是否实现了数据源接口
-            from .data_source_extensions import IDataSourcePlugin
-            if isinstance(plugin_instance, IDataSourcePlugin):
+            class_name = plugin_instance.__class__.__name__.lower()
+            if any(keyword in class_name for keyword in ['datasource', 'data_source']):
                 return True
 
-            # 检查是否有必要的数据源方法
-            required_methods = ['get_asset_list', 'get_kdata', 'health_check']
-            if all(hasattr(plugin_instance, method) for method in required_methods):
+            data_source_methods = ['get_stock_data', 'get_kline_data', 'fetch_data', 'get_data', 'get_plugin_info',
+                                   'get_asset_list', 'get_kdata', 'health_check']
+            if any(hasattr(plugin_instance, method) for method in data_source_methods):
                 return True
 
-        except Exception as e:
-            logger.warning(f"检查数据源插件实例时出错: {e}")
+            return False
 
-        return False
+        except Exception as e:
+            logger.warning(f"检查数据源插件失败: {e}")
+            return False
 
     def _load_data_source_configs_from_db(self):
         """从数据库加载数据源配置"""
@@ -1325,82 +1328,6 @@ class PluginManager:
         except Exception as e:
             logger.error(f"获取数据源插件统计信息失败: {str(e)}")
             return {}
-
-    def enable_data_source_plugin(self, plugin_id: str) -> bool:
-        """
-        启用数据源插件
-
-        Args:
-            plugin_id: 插件ID
-
-        Returns:
-            bool: 启用是否成功
-        """
-        try:
-            if plugin_id not in self.data_source_plugins:
-                logger.error(f"数据源插件不存在: {plugin_id}")
-                return False
-
-            plugin_info = self.data_source_plugins[plugin_id]
-
-            # 连接插件
-            if hasattr(plugin_info.instance, 'connect'):
-                if plugin_info.instance.connect():
-                    logger.info(f"数据源插件已启用: {plugin_id}")
-
-                    # 发送启用事件
-                    if self.event_bus:
-                        self.event_bus.publish('plugin_enabled', plugin_id=plugin_id, timestamp=datetime.now().isoformat())
-
-                    return True
-                else:
-                    logger.error(f"数据源插件连接失败: {plugin_id}")
-                    return False
-            else:
-                logger.warning(f"数据源插件不支持连接操作: {plugin_id}")
-                return True  # 认为已启用
-
-        except Exception as e:
-            logger.error(f"启用数据源插件失败 {plugin_id}: {str(e)}")
-            return False
-
-    def disable_data_source_plugin(self, plugin_id: str) -> bool:
-        """
-        禁用数据源插件
-
-        Args:
-            plugin_id: 插件ID
-
-        Returns:
-            bool: 禁用是否成功
-        """
-        try:
-            if plugin_id not in self.data_source_plugins:
-                logger.error(f"数据源插件不存在: {plugin_id}")
-                return False
-
-            plugin_info = self.data_source_plugins[plugin_id]
-
-            # 断开插件连接
-            if hasattr(plugin_info.instance, 'disconnect'):
-                if plugin_info.instance.disconnect():
-                    logger.info(f"数据源插件已禁用: {plugin_id}")
-
-                    # 发送禁用事件
-                    if self.event_bus:
-                        self.event_bus.publish('plugin_disabled', plugin_id=plugin_id, timestamp=datetime.now().isoformat())
-
-                    return True
-                else:
-                    logger.error(f"数据源插件断开失败: {plugin_id}")
-                    return False
-            else:
-                logger.warning(f"数据源插件不支持断开操作: {plugin_id}")
-                return True  # 认为已禁用
-
-        except Exception as e:
-            logger.error(f"禁用数据源插件失败 {plugin_id}: {str(e)}")
-            return False
 
     def get_data_source_plugins(self) -> Dict[str, PluginInfo]:
         """
@@ -1846,16 +1773,19 @@ class PluginManager:
                             cfg = self.db_service.get_plugin_config_json(plugin_name) or {}
                         else:
                             cfg = {}
-                        ok = plugin_instance.initialize(cfg)
+                        ok = plugin_instance.initialize(config=cfg)
                         if not ok:
                             logger.warning(f"插件初始化返回失败: {plugin_name}")
                     else:
-                        # 旧逻辑：不再传入 PluginContext，直接尝试无参
+                        # 旧逻辑：不再传入 PluginContext，使用 config=None
                         try:
-                            plugin_instance.initialize()
+                            plugin_instance.initialize(config=None)
                         except TypeError:
-                            # 某些旧插件需要 context，这里不再支持，标记加载但未初始化
-                            logger.warning(f"旧式插件需要上下文，已跳过初始化: {plugin_name}")
+                            # 兼容调用：某些旧插件需要 context，尝试无参调用
+                            try:
+                                plugin_instance.initialize()
+                            except TypeError:
+                                logger.warning(f"旧式插件需要上下文，已跳过初始化: {plugin_name}")
                 except Exception as e:
                     logger.error(f"插件初始化失败 {plugin_name}: {e}")
                     return False
@@ -2789,54 +2719,6 @@ class PluginManager:
             self.plugin_hooks[hook_name] = []
 
         self.plugin_hooks[hook_name].append(callback)
-
-    def _is_data_source_plugin(self, plugin_instance, plugin_type=None) -> bool:
-        """
-        检查插件是否为数据源插件
-
-        Args:
-            plugin_instance: 插件实例
-            plugin_type: 插件类型（可选）
-
-        Returns:
-            bool: 是否为数据源插件
-        """
-        try:
-            # 方法1：检查plugin_type字符串
-            if plugin_type:
-                plugin_type_str = str(plugin_type).lower()
-                if 'data_source' in plugin_type_str:
-                    return True
-
-            # 方法2：检查插件实例的plugin_type属性
-            if hasattr(plugin_instance, 'plugin_type'):
-                instance_type = str(plugin_instance.plugin_type).lower()
-                if 'data_source' in instance_type:
-                    return True
-
-            # 方法3：检查是否实现了IDataSourcePlugin接口
-            try:
-                from .data_source_extensions import IDataSourcePlugin
-                if isinstance(plugin_instance, IDataSourcePlugin):
-                    return True
-            except ImportError:
-                pass
-
-            # 方法4：检查插件类名
-            class_name = plugin_instance.__class__.__name__.lower()
-            if any(keyword in class_name for keyword in ['datasource', 'data_source']):
-                return True
-
-            # 方法5：检查是否有数据源相关方法
-            data_source_methods = ['get_stock_data', 'get_kline_data', 'fetch_data', 'get_data', 'get_plugin_info']
-            if any(hasattr(plugin_instance, method) for method in data_source_methods):
-                return True
-
-            return False
-
-        except Exception as e:
-            logger.warning(f"检查数据源插件失败: {e}")
-            return False
 
     def sync_data_sources_to_unified_manager(self) -> bool:
         """

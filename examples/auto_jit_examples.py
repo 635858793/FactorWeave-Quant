@@ -3,6 +3,12 @@
 展示如何使用auto_jit装饰器来自动优化函数
 """
 
+import sys
+from pathlib import Path
+
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
 import numpy as np
 from backtest.auto_jit_decorator import (
     auto_jit,

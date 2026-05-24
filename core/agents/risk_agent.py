@@ -11,11 +11,9 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
-import logging
+from loguru import logger
 
 from core.services.base_service import BaseService
-
-logger = logging.getLogger(__name__)
 
 class RiskLevel(Enum):
     """风险等级"""
@@ -43,6 +41,7 @@ class RiskMetric:
     description: str
     threshold: float
     current_vs_threshold: float
+    confidence: float = 1.0
 
 @dataclass
 class RiskAlert:
@@ -91,6 +90,9 @@ class RiskAssessmentAgent(BaseService):
         # 缓存
         self._risk_cache = {}
         self._cache_ttl = 1800  # 30分钟
+
+        # 数据状态
+        self.has_real_data = False
         
         # 性能统计
         self._stats = {
@@ -187,75 +189,123 @@ class RiskAssessmentAgent(BaseService):
                 "stock_code": stock_code
             }
 
+    async def analyze_stock(self, stock_code: str, context: Dict[str, Any] = None) -> Dict[str, Any]:
+        """分析单只股票的风险 - 兼容BettaFish Agent调用接口"""
+        try:
+            result = await self.assess_stock_risk(stock_code, context)
+            if result.get("status") == "success" and "assessment_result" in result:
+                assessment = result["assessment_result"]
+                return {
+                    "status": "success",
+                    "stock_code": stock_code,
+                    "risk_level": assessment.overall_risk_level.value,
+                    "risk_score": assessment.risk_score,
+                    "confidence": assessment.confidence,
+                    "assessment_result": assessment,
+                    "recommendations": assessment.recommendations,
+                    "var_estimate": assessment.var_estimate,
+                    "risk_alerts": assessment.risk_alerts
+                }
+            return result
+        except Exception as e:
+            logger.error(f"风险分析失败: {stock_code}, 错误: {str(e)}")
+            return {
+                "stock_code": stock_code,
+                "risk_level": "UNKNOWN",
+                "error": str(e),
+                "status": "error"
+            }
+
     async def _get_price_data(self, stock_code: str, 
                             context: Dict[str, Any] = None) -> Optional[pd.DataFrame]:
-        """获取价格数据"""
+        """获取价格数据 - 仅从真实数据源获取"""
         try:
-            # 模拟获取价格数据
-            dates = pd.date_range(start=datetime.now() - timedelta(days=200), 
-                                end=datetime.now(), freq='D')
-            
-            np.random.seed(hash(stock_code) % 2**32)
-            
-            # 生成模拟数据，添加一些风险特征
-            base_price = 50.0
-            prices = []
-            current_price = base_price
-            
-            # 模拟更高的波动性（增加风险）
-            for i in range(len(dates)):
-                # 更高的随机波动
-                change = np.random.normal(0, 0.025)  # 2.5%标准差，增加风险
-                current_price *= (1 + change)
-                
-                high = current_price * (1 + abs(np.random.normal(0, 0.015)))
-                low = current_price * (1 - abs(np.random.normal(0, 0.015)))
-                open_price = current_price * (1 + np.random.normal(0, 0.008))
-                close_price = current_price
-                
-                # 模拟成交量变化
-                base_volume = 5000000
-                volume_factor = np.random.lognormal(0, 0.5)  # 对数正态分布
-                volume = int(base_volume * volume_factor)
-                
-                prices.append({
-                    'open': open_price,
-                    'high': high,
-                    'low': low,
-                    'close': close_price,
-                    'volume': volume
-                })
-            
-            df = pd.DataFrame(prices, index=dates)
-            
-            logger.debug(f"获取{stock_code}价格数据: {len(df)}个数据点")
-            return df
-            
-        except Exception as e:
-            logger.error(f"获取价格数据失败: {str(e)}")
+            df = await self._fetch_real_price_data(stock_code)
+            if df is not None and not df.empty and len(df) >= self.config["min_data_points"]:
+                self.has_real_data = True
+                logger.info(f"成功从真实数据源获取{stock_code}风险价格数据: {len(df)}条")
+                return df
+            self.has_real_data = False
+            logger.warning(f"真实数据源无{stock_code}数据或数据不足(需要>={self.config['min_data_points']}条)，跳过风险评估")
             return None
+        except Exception as e:
+            self.has_real_data = False
+            logger.warning(f"获取价格数据失败({stock_code}): {str(e)}")
+            return None
+
+    async def _fetch_real_price_data(self, stock_code: str) -> Optional[pd.DataFrame]:
+        """从真实数据源获取K线价格数据"""
+        df = None
+        try:
+            from core.services.unified_data_manager import get_unified_data_manager
+            data_manager = get_unified_data_manager()
+            if data_manager:
+                df = data_manager.get_kdata(stock_code, period='D', count=self.config["min_data_points"] + 100)
+                if df is not None and not df.empty:
+                    expected_cols = {'open', 'high', 'low', 'close', 'volume'}
+                    if expected_cols.issubset(set(col.lower() for col in df.columns)):
+                        rename_map = {col: col.lower() for col in df.columns}
+                        df = df.rename(columns=rename_map)
+                    return df
+        except ImportError:
+            logger.debug("UnifiedDataManager 不可用，尝试 StockService")
+        except Exception as e:
+            logger.debug(f"UnifiedDataManager 获取数据失败: {e}")
+
+        try:
+            from core.services.stock_service import StockService
+            from core.containers.service_container import get_service_container
+            container = get_service_container()
+            if container:
+                stock_service = container.resolve(StockService)
+            else:
+                stock_service = None
+            if stock_service and hasattr(stock_service, 'get_kdata'):
+                df = stock_service.get_kdata(stock_code, period='D', count=self.config["min_data_points"] + 100)
+                if df is not None and not df.empty:
+                    expected_cols = {'open', 'high', 'low', 'close', 'volume'}
+                    if expected_cols.issubset(set(col.lower() for col in df.columns)):
+                        rename_map = {col: col.lower() for col in df.columns}
+                        df = df.rename(columns=rename_map)
+                    return df
+        except ImportError:
+            logger.debug("StockService 不可用")
+        except Exception as e:
+            logger.debug(f"StockService 获取数据失败: {e}")
+
+        return df
 
     async def _get_fundamental_data(self, stock_code: str, 
                                   context: Dict[str, Any] = None) -> Dict[str, Any]:
         """获取基本面数据"""
         try:
-            # 模拟基本面数据
-            return {
-                "market_cap": np.random.uniform(10, 100) * 1e8,  # 市值
-                "pe_ratio": np.random.uniform(8, 30),            # PE比率
-                "pb_ratio": np.random.uniform(0.8, 5),           # PB比率
-                "debt_ratio": np.random.uniform(0.1, 0.8),       # 负债率
-                "current_ratio": np.random.uniform(0.8, 3),      # 流动比率
-                "roe": np.random.uniform(0.05, 0.25),            # ROE
-                "revenue_growth": np.random.uniform(-0.2, 0.4),  # 营收增长率
-                "profit_growth": np.random.uniform(-0.3, 0.5),   # 利润增长率
-                "industry": "technology",                        # 行业
-                "listing_age": np.random.randint(1, 20)          # 上市年限
-            }
-            
+            from core.services.stock_service import StockService
+            from core.containers.service_container import get_service_container
+            container = get_service_container()
+            if container:
+                stock_service = container.resolve(StockService)
+                if stock_service and hasattr(stock_service, 'get_stock_info'):
+                    info = stock_service.get_stock_info(stock_code)
+                    if info and isinstance(info, dict):
+                        return {
+                            "market_cap": info.get("market_cap"),
+                            "pe_ratio": info.get("pe_ratio"),
+                            "pb_ratio": info.get("pb_ratio"),
+                            "debt_ratio": info.get("debt_ratio"),
+                            "current_ratio": info.get("current_ratio"),
+                            "roe": info.get("roe"),
+                            "revenue_growth": info.get("revenue_growth"),
+                            "profit_growth": info.get("profit_growth"),
+                            "industry": info.get("industry", "unknown"),
+                            "listing_age": info.get("listing_age")
+                        }
+        except ImportError:
+            logger.debug("StockService 不可用，无法获取基本面数据")
         except Exception as e:
-            logger.error(f"获取基本面数据失败: {str(e)}")
-            return {}
+            logger.debug(f"获取基本面数据失败: {e}")
+        
+        logger.warning(f"{stock_code}: 无法从真实数据源获取基本面数据")
+        return {}
 
     async def _calculate_risk_metrics(self, price_data: pd.DataFrame, 
                                     fundamental_data: Dict[str, Any]) -> List[RiskMetric]:
@@ -400,18 +450,41 @@ class RiskAssessmentAgent(BaseService):
     async def _calculate_beta(self, returns: pd.Series) -> float:
         """计算Beta系数"""
         try:
-            # 模拟市场收益率（实际应该用真实市场指数）
-            market_returns = np.random.normal(0.0008, 0.015, len(returns))  # 假设年化8%收益
-            
-            covariance = np.cov(returns, market_returns)[0, 1]
-            market_variance = np.var(market_returns)
-            
+            market_returns = await self._fetch_market_returns(len(returns))
+            if market_returns is None or len(market_returns) < 30:
+                logger.warning("无法获取市场指数收益率数据，使用默认Beta=1.0")
+                return 1.0
+
+            min_len = min(len(returns), len(market_returns))
+            aligned_returns = returns.iloc[-min_len:]
+            aligned_market = market_returns.iloc[-min_len:]
+
+            covariance = np.cov(aligned_returns, aligned_market)[0, 1]
+            market_variance = np.var(aligned_market)
+
             beta = covariance / market_variance if market_variance > 0 else 1.0
             return beta
-            
+
         except Exception as e:
-            logger.error(f"计算Beta失败: {str(e)}")
+            logger.warning(f"计算Beta失败: {str(e)}，使用默认Beta=1.0")
             return 1.0
+
+    async def _fetch_market_returns(self, count: int) -> Optional[pd.Series]:
+        """获取市场指数收益率"""
+        try:
+            from core.services.unified_data_manager import get_unified_data_manager
+            data_manager = get_unified_data_manager()
+            if data_manager:
+                df = data_manager.get_kdata('000001', period='D', count=count + 30)
+                if df is not None and not df.empty:
+                    close_col = 'close' if 'close' in df.columns else df.columns[3]
+                    close = df[close_col]
+                    return close.pct_change().dropna()
+        except ImportError:
+            logger.debug("UnifiedDataManager 不可用，无法获取市场指数")
+        except Exception as e:
+            logger.debug(f"获取市场指数收益率失败: {e}")
+        return None
 
     def _calculate_max_drawdown(self, prices: pd.Series) -> float:
         """计算最大回撤"""
@@ -843,7 +916,7 @@ class RiskAssessmentAgent(BaseService):
             if not risk_metrics:
                 return 0.5
             
-            avg_confidence = sum(metric.confidence for metric in risk_metrics) / len(risk_metrics)
+            avg_confidence = np.mean([metric.confidence for metric in risk_metrics])
             return min(0.9, avg_confidence)
             
         except Exception as e:
@@ -872,14 +945,12 @@ class RiskAssessmentAgent(BaseService):
     async def cleanup_cache(self):
         """清理过期缓存"""
         current_time = time.time()
-        expired_keys = []
-        
-        for key, value in self._risk_cache.items():
-            if isinstance(value, dict) and "assessment_time" in value:
-                assessment_time = value["assessment_time"]
-                if isinstance(assessment_time, datetime):
-                    if (current_time - assessment_time.timestamp()) > self._cache_ttl:
-                        expired_keys.append(key)
+        expired_keys = [
+            key for key, value in self._risk_cache.items()
+            if isinstance(value, dict) and "assessment_time" in value
+            and isinstance(value["assessment_time"], datetime)
+            and (current_time - value["assessment_time"].timestamp()) > self._cache_ttl
+        ]
         
         for key in expired_keys:
             del self._risk_cache[key]

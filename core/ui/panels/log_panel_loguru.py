@@ -61,5 +61,3 @@ class LoguruLogPanel(BasePanel):
         """获取日志组件"""
         return self.log_widget
 
-# 为了向后兼容，提供别名
-LogPanel = LoguruLogPanel

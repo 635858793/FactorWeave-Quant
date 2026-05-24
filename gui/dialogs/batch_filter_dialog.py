@@ -10,7 +10,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
+    QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QComboBox, QSpinBox, QDoubleSpinBox,
     QGroupBox, QGridLayout, QCheckBox, QTableWidget,
     QTableWidgetItem, QHeaderView, QFrame, QSplitter,
@@ -21,10 +21,12 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QDate
 from PyQt5.QtGui import QFont, QIcon, QPalette
 
+from .base_dialog import BaseDialog
+
 logger = logger
 
 
-class CompactAdvancedFilterDialog(QDialog):
+class CompactAdvancedFilterDialog(BaseDialog):
     """批量指标选股筛选对话框"""
 
     # 定义信号
@@ -32,10 +34,12 @@ class CompactAdvancedFilterDialog(QDialog):
     preview_requested = pyqtSignal(dict)  # 预览请求信号
 
     def __init__(self, parent=None, columns_config=None):
-        super().__init__(parent)
-        self.setWindowTitle("批量指标选股筛选器")
-        self.setModal(True)
-        self.resize(900, 650)
+        super().__init__(
+            parent,
+            title="批量指标选股筛选器",
+            min_size=(900, 650),
+            settings_key="CompactAdvancedFilterDialog"
+        )
 
         # 筛选配置
         self.columns_config = columns_config or self._get_default_columns_config()

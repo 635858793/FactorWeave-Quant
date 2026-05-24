@@ -53,6 +53,7 @@ class StockMetadataEnhancer:
         self._refreshing_detailed_info: Dict[str, bool] = {}  # 防止多个线程同时刷新同一股票的详细信息
         self._cache_ttl = 24 * 3600  # 缓存有效期：24小时（秒）
         self._detailed_cache_ttl = 24 * 3600  # 详细信息缓存有效期：24小时（秒）
+        self._max_detailed_cache_size = 3000  # 详细信息缓存最大条目数
 
         # 尝试导入AKShare
         try:
@@ -291,8 +292,11 @@ class StockMetadataEnhancer:
                 return None
 
             if detailed_info:
-                # 更新缓存
                 with self._cache_lock:
+                    if len(self._detailed_info_cache) >= self._max_detailed_cache_size:
+                        oldest = min(self._detailed_info_cache_time, key=self._detailed_info_cache_time.get)
+                        del self._detailed_info_cache[oldest]
+                        del self._detailed_info_cache_time[oldest]
                     self._detailed_info_cache[code] = detailed_info.copy()
                     self._detailed_info_cache_time[code] = time.time()
                     self._refreshing_detailed_info[code] = False
@@ -331,12 +335,9 @@ class StockMetadataEnhancer:
 
             if detail_df is not None and not detail_df.empty:
                 # 将DataFrame转换为字典（item -> value）
-                info_dict = {}
-                for _, row in detail_df.iterrows():
-                    item = row.get('item', '')
-                    value = row.get('value', '')
-                    if item and value:
-                        info_dict[item] = value
+                mask = detail_df['item'].notna() & detail_df['value'].notna()
+                filtered = detail_df[mask]
+                info_dict = dict(zip(filtered['item'].astype(str), filtered['value'].astype(str)))
 
                 # 提取行业板块信息
                 result = {}
@@ -366,14 +367,14 @@ class StockMetadataEnhancer:
                 if '总股本' in info_dict:
                     try:
                         result['total_shares'] = float(info_dict['总股本'])
-                    except:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"总股本转换失败: {e}")
 
                 if '流通股' in info_dict:
                     try:
                         result['circulating_shares'] = float(info_dict['流通股'])
-                    except:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"流通股转换失败: {e}")
 
                 logger.debug(f"获取股票详细信息: {code} -> {result}")
                 return result

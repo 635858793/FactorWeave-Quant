@@ -5,13 +5,14 @@
 负责风险告警规则的存储、管理和执行
 """
 
-import sqlite3
 import json
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 from pathlib import Path
 from dataclasses import dataclass, asdict
 from loguru import logger
+
+from .database.unified_sqlite_access import UnifiedSQLiteAccess
 
 @dataclass
 class RiskRule:
@@ -95,7 +96,8 @@ class RiskRuleManager:
     def _init_tables(self):
         """初始化数据库表"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 # 创建风险规则表
@@ -162,46 +164,48 @@ class RiskRuleManager:
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_risk_alerts_created ON risk_alerts(created_at)')
 
                 # 数据库迁移：添加新字段（如果不存在）
-                self._migrate_database(cursor)
+                self._migrate_database(db)
 
-                conn.commit()
-                logger.info("风险规则数据表初始化完成")
+            logger.info("风险规则数据表初始化完成")
 
         except Exception as e:
             logger.error(f"初始化风险规则数据表失败: {e}")
 
-    def _migrate_database(self, cursor: sqlite3.Cursor) -> None:
+    def _migrate_database(self, db: UnifiedSQLiteAccess) -> None:
         """数据库迁移：添加新字段"""
         try:
-            # 获取 risk_rules 表的列信息
-            cursor.execute("PRAGMA table_info(risk_rules)")
-            columns = [column[1] for column in cursor.fetchall()]
-            
-            # 添加新字段（如果不存在）
-            new_columns = {
-                'dingtalk_notification': 'BOOLEAN DEFAULT 0',
-                'email_recipients': 'TEXT DEFAULT \'\'',
-                'sms_recipients': 'TEXT DEFAULT \'\'',
-                'webhook_url': 'TEXT DEFAULT \'\'',
-                'dingtalk_webhook_url': 'TEXT DEFAULT \'\''
-            }
-            
-            for column_name, column_def in new_columns.items():
-                if column_name not in columns:
-                    try:
-                        cursor.execute(f'ALTER TABLE risk_rules ADD COLUMN {column_name} {column_def}')
-                        logger.info(f"已添加新字段: {column_name}")
-                    except sqlite3.OperationalError as e:
-                        if "duplicate column name" not in str(e):
-                            logger.warning(f"添加字段 {column_name} 失败: {e}")
-            
+            with db.get_connection() as conn:
+                # 获取 risk_rules 表的列信息
+                cursor = conn.cursor()
+                cursor.execute("PRAGMA table_info(risk_rules)")
+                columns = [column[1] for column in cursor.fetchall()]
+                
+                # 添加新字段（如果不存在）
+                new_columns = {
+                    'dingtalk_notification': 'BOOLEAN DEFAULT 0',
+                    'email_recipients': 'TEXT DEFAULT \'\'',
+                    'sms_recipients': 'TEXT DEFAULT \'\'',
+                    'webhook_url': 'TEXT DEFAULT \'\'',
+                    'dingtalk_webhook_url': 'TEXT DEFAULT \'\''
+                }
+                
+                for column_name, column_def in new_columns.items():
+                    if column_name not in columns:
+                        try:
+                            cursor.execute(f'ALTER TABLE risk_rules ADD COLUMN {column_name} {column_def}')
+                            logger.info(f"已添加新字段: {column_name}")
+                        except Exception as e:
+                            if "duplicate column name" not in str(e):
+                                logger.warning(f"添加字段 {column_name} 失败: {e}")
+                
         except Exception as e:
             logger.warning(f"数据库迁移失败: {e}")
 
     def add_rule(self, rule: RiskRule) -> bool:
         """添加风险规则"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 cursor.execute('''
@@ -225,22 +229,22 @@ class RiskRuleManager:
                 ))
 
                 rule.id = cursor.lastrowid
-                conn.commit()
 
                 logger.info(f"风险规则已添加: {rule.name}")
                 return True
 
-        except sqlite3.IntegrityError:
-            logger.error(f"风险规则名称已存在: {rule.name}")
-            return False
         except Exception as e:
-            logger.error(f"添加风险规则失败: {e}")
+            if "UNIQUE constraint failed" in str(e):
+                logger.error(f"风险规则名称已存在: {rule.name}")
+            else:
+                logger.error(f"添加风险规则失败: {e}")
             return False
 
     def update_rule(self, rule: RiskRule) -> bool:
         """更新风险规则"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 cursor.execute('''
@@ -265,8 +269,6 @@ class RiskRuleManager:
                     rule.id
                 ))
 
-                conn.commit()
-
                 if cursor.rowcount > 0:
                     logger.info(f"风险规则已更新: {rule.name}")
                     return True
@@ -281,7 +283,8 @@ class RiskRuleManager:
     def delete_rule(self, rule_id: int) -> bool:
         """删除风险规则"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 # 先删除相关的告警记录
@@ -289,8 +292,6 @@ class RiskRuleManager:
 
                 # 删除规则
                 cursor.execute('DELETE FROM risk_rules WHERE id = ?', (rule_id,))
-
-                conn.commit()
 
                 if cursor.rowcount > 0:
                     logger.info(f"风险规则已删除: {rule_id}")
@@ -306,7 +307,8 @@ class RiskRuleManager:
     def get_rule(self, rule_id: int) -> Optional[RiskRule]:
         """获取单个风险规则"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 cursor.execute('SELECT * FROM risk_rules WHERE id = ?', (rule_id,))
@@ -323,7 +325,8 @@ class RiskRuleManager:
     def get_all_rules(self, enabled_only: bool = False) -> List[RiskRule]:
         """获取所有风险规则"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 if enabled_only:
@@ -473,7 +476,8 @@ class RiskRuleManager:
     def _save_alert(self, alert: RiskAlert) -> bool:
         """保存告警记录"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 cursor.execute('''
@@ -488,7 +492,6 @@ class RiskRuleManager:
                 ))
 
                 alert.id = cursor.lastrowid
-                conn.commit()
 
                 return True
 
@@ -499,7 +502,8 @@ class RiskRuleManager:
     def _update_rule_trigger_info(self, rule: RiskRule):
         """更新规则触发信息"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 cursor.execute('''
@@ -509,15 +513,14 @@ class RiskRuleManager:
                     WHERE id = ?
                 ''', (datetime.now().isoformat(), rule.id))
 
-                conn.commit()
-
         except Exception as e:
             logger.error(f"更新规则触发信息失败: {e}")
 
     def get_alerts(self, status: str = None, limit: int = 100) -> List[RiskAlert]:
         """获取告警记录"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 if status:
@@ -541,7 +544,8 @@ class RiskRuleManager:
     def acknowledge_alert(self, alert_id: int) -> bool:
         """确认告警"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 cursor.execute('''
@@ -551,7 +555,6 @@ class RiskRuleManager:
                     WHERE id = ?
                 ''', (datetime.now().isoformat(), alert_id))
 
-                conn.commit()
                 return cursor.rowcount > 0
 
         except Exception as e:
@@ -561,7 +564,8 @@ class RiskRuleManager:
     def resolve_alert(self, alert_id: int) -> bool:
         """解决告警"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 cursor.execute('''
@@ -571,7 +575,6 @@ class RiskRuleManager:
                     WHERE id = ?
                 ''', (datetime.now().isoformat(), alert_id))
 
-                conn.commit()
                 return cursor.rowcount > 0
 
         except Exception as e:

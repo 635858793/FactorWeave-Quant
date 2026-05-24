@@ -1,11 +1,16 @@
-from loguru import logger
 """
 重构后的分析控件模块 - 使用模块化标签页组件
 """
 import matplotlib
 matplotlib.use('Agg')
 from utils.manager_factory import get_config_manager
-from analysis.pattern_manager import PatternManager
+from loguru import logger
+
+try:
+    from analysis.pattern_manager import PatternManager
+except ImportError:
+    PatternManager = None
+    logger.warning("PatternManager导入失败，形态识别功能将受限")
 from .analysis_tabs import (
     TechnicalAnalysisTab,
     PatternAnalysisTab,
@@ -69,6 +74,7 @@ from bs4 import BeautifulSoup
 from analysis.pattern_recognition import PatternRecognizer
 from core.services.unified_data_manager import get_unified_data_manager
 # 移除旧的形态特征导入
+from optimization.update_throttler import get_update_throttler
 # 定义ALL_PATTERN_TYPES常量
 ALL_PATTERN_TYPES = [
     'CDLHAMMER', 'CDLENGULFING', 'CDLDOJI', 'CDLMORNINGSTAR', 'CDLEVENINGSTAR',
@@ -126,7 +132,11 @@ class AnalysisWidget(QWidget):
                 self.service_container = None
 
         # 初始化更新节流器
-        self.update_throttler = get_update_throttler()
+        try:
+            self.update_throttler = get_update_throttler()
+        except (NameError, Exception):
+            self.update_throttler = None
+            logger.debug("更新节流器不可用，将使用默认更新策略")
 
         # 图表更新防抖
         self.chart_update_timer = QTimer()
@@ -782,11 +792,21 @@ class AnalysisWidget(QWidget):
             logger.error(f"批量更新指标失败: {str(e)}")
 
     def _calculate_single_indicator(self, indicator: str):
-        """计算单个指标"""
         try:
-            # 这里应该调用实际的指标计算逻辑
-            # 暂时返回None作为占位符
-            return None
+            if self.current_kdata is None or self.current_kdata.empty:
+                logger.warning(f"无可用K线数据，无法计算指标 {indicator}")
+                return None
+
+            required_columns = ['open', 'high', 'low', 'close', 'volume']
+            if not all(col in self.current_kdata.columns for col in required_columns):
+                logger.warning(f"K线数据缺少必要列，无法计算指标 {indicator}")
+                return None
+
+            result = calculate_indicator(indicator, self.current_kdata)
+            if result is None:
+                logger.warning(f"指标 {indicator} 计算结果为空")
+                return None
+            return result
         except Exception as e:
             logger.error(f"计算指标 {indicator} 失败: {str(e)}")
             return None

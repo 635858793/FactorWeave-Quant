@@ -8,6 +8,7 @@ from enum import Enum
 from loguru import logger
 import json
 import pickle
+from utils.safe_pickle import safe_load
 from collections import deque
 import statistics
 from sklearn.ensemble import RandomForestRegressor
@@ -671,7 +672,7 @@ class DynamicRiskAdjustmentEngine:
         """加载状态"""
         try:
             with open(filepath, 'rb') as f:
-                state_data = pickle.load(f)
+                state_data = safe_load(f)
             
             self.base_params = state_data.get('base_params', self.base_params)
             self.current_params = state_data.get('current_params', self.current_params)
@@ -741,8 +742,8 @@ class DynamicRiskAdjustmentService:
         if self.service_container:
             try:
                 self.advanced_risk_service = self.service_container.get('AdvancedRiskControlService')
-            except:
-                pass
+            except Exception as e:
+                logger.debug(f"获取AdvancedRiskControlService失败: {e}")
     
     async def start_monitoring(self):
         """启动动态风险调整监控"""
@@ -852,54 +853,74 @@ class DynamicRiskAdjustmentService:
             return {}
     
     async def _get_current_performance_metrics(self) -> Optional[PerformanceMetrics]:
-        """获取当前性能指标"""
+        """获取当前性能指标（优先使用回测结果管理器中的真实交易指标）"""
+        market_conditions = await self._get_current_market_conditions()
+        risk_score = market_conditions.get('risk_score', 0.5)
+
         try:
-            # 这里应该从实际的交易系统或回测系统获取性能数据
-            # 为了演示，生成模拟数据
-            
-            # 模拟计算一些指标
-            current_time = datetime.now()
-            
-            # 模拟收益率（随机生成）
-            return_rate = np.random.normal(0.001, 0.02)  # 日收益率
-            
-            # 模拟波动率
-            volatility = abs(np.random.normal(0.15, 0.05))
-            
-            # 计算夏普比率（简化版）
-            risk_free_rate = 0.02 / 252  # 年化2%转换为日收益率
-            excess_return = return_rate - risk_free_rate
-            sharpe_ratio = excess_return / volatility if volatility > 0 else 0
-            
-            # 模拟最大回撤
-            max_drawdown = np.random.uniform(-0.1, 0)
-            
-            # 模拟胜率
-            win_rate = np.random.uniform(0.4, 0.8)
-            
-            # 模拟平均交易收益
-            avg_trade_return = np.random.normal(0.001, 0.01)
-            
-            # 风险评分（从市场条件中获取）
-            market_conditions = await self._get_current_market_conditions()
-            risk_score = market_conditions.get('risk_score', 0.5)
-            
-            performance_metrics = PerformanceMetrics(
-                timestamp=current_time,
-                risk_score=risk_score,
-                return_rate=return_rate,
-                volatility=volatility,
-                sharpe_ratio=sharpe_ratio,
-                max_drawdown=max_drawdown,
-                win_rate=win_rate,
-                avg_trade_return=avg_trade_return
-            )
-            
-            return performance_metrics
-            
+            from core.services.backtest_result_manager import BacktestResultManager
+            from core.containers.service_container import get_service_container
+            container = get_service_container()
+            if container and container.is_registered(BacktestResultManager):
+                result_mgr = container.resolve(BacktestResultManager)
+                if result_mgr:
+                    latest_results = result_mgr.query_results(page=1, page_size=1)
+                    if latest_results and latest_results[0]:
+                        result = latest_results[0][0] if isinstance(latest_results[0], list) else latest_results[0]
+                        perf = result.backtest_results.get('performance', {})
+                        risk = result.backtest_results.get('risk_metrics', {})
+                        if perf or risk:
+                            current_time = datetime.now()
+                            return_rate = perf.get('total_return', perf.get('cumulative_return', 0.0))
+                            sharpe_ratio = perf.get('sharpe_ratio', risk.get('sharpe_ratio', 0.0))
+                            max_drawdown = perf.get('max_drawdown', risk.get('max_drawdown', 0.0))
+                            win_rate = perf.get('win_rate', risk.get('win_rate', 0.0))
+                            volatility = perf.get('volatility', perf.get('annual_volatility', 0.0))
+                            avg_trade_return = perf.get('avg_trade_return', perf.get('avg_return', 0.0))
+
+                            return PerformanceMetrics(
+                                timestamp=current_time,
+                                risk_score=risk_score,
+                                return_rate=return_rate,
+                                volatility=volatility,
+                                sharpe_ratio=sharpe_ratio,
+                                max_drawdown=max_drawdown,
+                                win_rate=win_rate,
+                                avg_trade_return=avg_trade_return
+                            )
+        except ImportError:
+            logger.debug("BacktestResultManager 不可用")
         except Exception as e:
-            logger.error(f"获取性能指标失败: {e}")
-            return None
+            logger.debug(f"通过 BacktestResultManager 获取性能指标失败: {e}")
+
+        try:
+            from core.services.performance_service import PerformanceService
+            from core.containers.service_container import get_service_container
+            container = get_service_container()
+            if container:
+                perf_service = container.resolve(PerformanceService)
+                if perf_service and hasattr(perf_service, 'get_trading_metrics'):
+                    metrics = perf_service.get_trading_metrics()
+                    if metrics:
+                        current_time = datetime.now()
+
+                        return PerformanceMetrics(
+                            timestamp=current_time,
+                            risk_score=risk_score,
+                            return_rate=metrics.get('total_return', 0.0),
+                            volatility=metrics.get('annual_volatility', 0.0),
+                            sharpe_ratio=metrics.get('sharpe_ratio', 0.0),
+                            max_drawdown=metrics.get('max_drawdown', 0.0),
+                            win_rate=metrics.get('win_rate', 0.0),
+                            avg_trade_return=metrics.get('avg_trade_return', 0.0)
+                        )
+        except ImportError:
+            logger.debug("PerformanceService 不可用")
+        except Exception as e:
+            logger.debug(f"通过 PerformanceService 获取性能指标失败: {e}")
+
+        logger.warning("无法获取真实性能指标数据，跳过动态风险调整的性能评估")
+        return None
     
     def get_current_adjustment_status(self) -> Dict[str, Any]:
         """获取当前调整状态"""

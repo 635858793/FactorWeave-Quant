@@ -158,13 +158,12 @@ class EnhancedMoneyManager(MoneyManagerStrategy):
             return 1.0
 
     def _calculate_atr(self, data: pd.DataFrame) -> float:
-        """计算ATR"""
+        """计算ATR（向量化True Range）"""
         try:
             high_low = data['high'] - data['low']
             high_close = np.abs(data['high'] - data['close'].shift())
             low_close = np.abs(data['low'] - data['close'].shift())
-            ranges = pd.concat([high_low, high_close, low_close], axis=1)
-            true_range = np.max(ranges, axis=1)
+            true_range = np.maximum(high_low, np.maximum(high_close, low_close))
             return true_range.rolling(self.get_param("atr_period")).mean().iloc[-1]
         except Exception as e:
             logger.info(f"ATR计算错误: {str(e)}")

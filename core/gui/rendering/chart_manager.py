@@ -12,6 +12,7 @@
 
 import numpy as np
 import pandas as pd
+import threading
 from typing import Dict, Any, List, Optional, Union, Tuple, Callable
 from datetime import datetime, timedelta
 from dataclasses import dataclass
@@ -60,9 +61,30 @@ class ChartManager:
         }
         
         logger.info("图表管理器初始化完成")
-        
+
+    def register_chart(self, chart_id: str, widget: Any, config: Optional[Any] = None):
+        """注册图表到管理器"""
+        try:
+            chart_info = ChartInfo(
+                chart_id=chart_id,
+                chart_type=getattr(config, 'chart_type', ChartType.LINE_CHART) if config else ChartType.LINE_CHART,
+                title=getattr(config, 'title', '') if config else '',
+                created_at=datetime.now(),
+                last_updated=datetime.now(),
+                config=config
+            )
+            self.chart_registry[chart_id] = chart_info
+            self.stats['total_charts_created'] += 1
+            self.stats['active_charts'] += 1
+            logger.debug(f"图表注册成功: {chart_id}")
+            return True
+        except Exception as e:
+            logger.error(f"注册图表失败 {chart_id}: {e}")
+            return False
+
     def create_line_chart(self, 
                          title: str,
+                         data: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
                          width: int = 1000,
                          height: int = 600,
                          colors: Optional[List[str]] = None,
@@ -72,6 +94,8 @@ class ChartManager:
         """创建线图"""
         try:
             start_time = datetime.now()
+            kwargs.pop('data', None)
+            kwargs.pop('show_volume', None)
             
             # 生成唯一图表ID
             chart_id = str(uuid.uuid4())[:8]
@@ -94,7 +118,10 @@ class ChartManager:
             
             # 创建图表
             chart = self.engine.create_chart(chart_id, config)
-            
+
+            if data is not None:
+                self.engine.update_chart_data(chart_id, data)
+
             # 注册图表信息
             chart_info = ChartInfo(
                 chart_id=chart_id,
@@ -134,10 +161,12 @@ class ChartManager:
             
     def create_candlestick_chart(self,
                                 title: str = "K线图",
+                                data: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
                                 width: int = 1000,
                                 height: int = 600,
                                 real_time: bool = False,
                                 update_interval: int = 1000,
+                                show_volume: bool = False,
                                 **kwargs) -> str:
         """创建K线图"""
         try:
@@ -158,7 +187,10 @@ class ChartManager:
             )
             
             chart = self.engine.create_chart(chart_id, config)
-            
+
+            if data is not None:
+                self.engine.update_chart_data(chart_id, data)
+
             chart_info = ChartInfo(
                 chart_id=chart_id,
                 chart_type=ChartType.CANDLESTICK,
@@ -255,6 +287,10 @@ class ChartManager:
             self.stats['errors'] += 1
             raise
             
+    def update_chart_data(self, chart_id: str, data: Union[Dict[str, Any], List[Dict[str, Any]]]):
+        """通用图表数据更新"""
+        self.engine.update_chart_data(chart_id, data)
+
     def update_line_chart_data(self, 
                               chart_id: str, 
                               data: Union[Dict[str, Any], List[Dict[str, Any]]],
@@ -347,31 +383,32 @@ class ChartManager:
             if chart_id not in self.chart_registry:
                 logger.warning(f"图表不存在: {chart_id}")
                 return False
-                
-            # 停止实时更新
+
             chart = self.engine.get_chart(chart_id)
             if chart:
                 chart.stop_real_time_updates()
-                
-            # 移除引擎中的图表
+                chart.clear_data()
+                try:
+                    chart.deleteLater()
+                except Exception:
+                    pass
+
             self.engine.remove_chart(chart_id)
-            
-            # 清理注册信息
+
             del self.chart_registry[chart_id]
             if chart_id in self.chart_callbacks:
                 del self.chart_callbacks[chart_id]
-                
+
             self.stats['active_charts'] -= 1
-            
-            # 发送事件
+
             self._emit_chart_event(
                 EventType.CHART_REMOVED,
                 {'chart_id': chart_id}
             )
-            
+
             logger.info(f"移除图表成功: {chart_id}")
             return True
-            
+
         except Exception as e:
             logger.error(f"移除图表失败 {chart_id}: {e}")
             self.stats['errors'] += 1
@@ -380,6 +417,10 @@ class ChartManager:
     def get_chart_info(self, chart_id: str) -> Optional[ChartInfo]:
         """获取图表信息"""
         return self.chart_registry.get(chart_id)
+
+    def get_chart(self, chart_id: str):
+        """获取图表组件实例"""
+        return self.engine.get_chart(chart_id)
         
     def get_all_chart_ids(self) -> List[str]:
         """获取所有图表ID"""
@@ -401,15 +442,19 @@ class ChartManager:
         
     def clear_all_charts(self):
         """清空所有图表"""
-        try:
-            chart_ids = list(self.chart_registry.keys())
-            for chart_id in chart_ids:
+        errors = []
+        chart_ids = list(self.chart_registry.keys())
+        for chart_id in chart_ids:
+            try:
                 self.remove_chart(chart_id)
-                
+            except Exception as e:
+                errors.append((chart_id, str(e)))
+                logger.error(f"清理图表失败 {chart_id}: {e}")
+
+        if errors:
+            logger.warning(f"清空图表完成，{len(errors)}个图表清理失败: {errors}")
+        else:
             logger.info("清空所有图表完成")
-            
-        except Exception as e:
-            logger.error(f"清空图表失败: {e}")
             
     def _process_line_data(self, data: Union[Dict[str, Any], List[Dict[str, Any]]], lines: Optional[List[str]]) -> List[Dict[str, Any]]:
         """处理线图数据"""
@@ -489,20 +534,23 @@ class ChartManager:
 
 # 全局图表管理器实例
 _chart_manager_instance = None
+_chart_manager_lock = threading.Lock()
 
 def get_chart_manager(event_bus: Optional[EventBus] = None) -> ChartManager:
     """获取图表管理器实例"""
     global _chart_manager_instance
-    if _chart_manager_instance is None:
-        _chart_manager_instance = ChartManager(event_bus)
-    return _chart_manager_instance
+    with _chart_manager_lock:
+        if _chart_manager_instance is None:
+            _chart_manager_instance = ChartManager(event_bus)
+        return _chart_manager_instance
 
 def reset_chart_manager():
     """重置图表管理器"""
     global _chart_manager_instance
-    if _chart_manager_instance:
-        _chart_manager_instance.clear_all_charts()
-        _chart_manager_instance = None
+    with _chart_manager_lock:
+        if _chart_manager_instance:
+            _chart_manager_instance.clear_all_charts()
+            _chart_manager_instance = None
     logger.info("图表管理器已重置")
 
 

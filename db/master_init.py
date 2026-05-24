@@ -15,6 +15,7 @@ import os
 import sys
 from pathlib import Path
 from datetime import datetime
+from ..core.database.unified_sqlite_access import UnifiedSQLiteAccess
 
 # 添加项目根目录到路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -139,21 +140,18 @@ class MasterDatabaseInitializer:
 
     def _verify_sqlite_database(self):
         """验证SQLite数据库"""
-        import sqlite3
-
         try:
-            db_path = self.db_dir / "factorweave_system.sqlite"
-            with sqlite3.connect(db_path) as conn:
+            db_path = str(self.db_dir / "factorweave_system.sqlite")
+            db = UnifiedSQLiteAccess.get_instance(db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
-                # 检查关键表
                 cursor.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table'")
                 table_count = cursor.fetchone()[0]
 
-                if table_count < 10:  # 预期至少有10个表
+                if table_count < 10:
                     return False
 
-                # 检查关键数据
                 cursor.execute("SELECT COUNT(*) FROM config")
                 config_count = cursor.fetchone()[0]
 

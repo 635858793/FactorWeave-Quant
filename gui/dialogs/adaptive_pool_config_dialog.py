@@ -18,16 +18,19 @@ from PyQt5.QtCore import Qt
 from loguru import logger
 from typing import Dict, Any
 
+from .base_dialog import BaseDialog
 
-class AdaptivePoolConfigDialog(QDialog):
+
+class AdaptivePoolConfigDialog(BaseDialog):
     """自适应连接池配置对话框"""
 
     def __init__(self, parent=None):
-        super().__init__(parent)
-
-        self.setWindowTitle("自适应连接池配置")
-        self.setMinimumWidth(500)
-        self.setMinimumHeight(600)
+        super().__init__(
+            parent,
+            title="自适应连接池配置",
+            min_size=(500, 600),
+            settings_key="AdaptivePoolConfigDialog"
+        )
 
         self._init_ui()
         self._load_current_config()

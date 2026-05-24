@@ -5,6 +5,12 @@
 
 import pandas as pd
 import numpy as np
+try:
+    import talib
+    TALIB_AVAILABLE = True
+except ImportError:
+    talib = None
+    TALIB_AVAILABLE = False
 from scipy import stats
 from datetime import datetime
 from typing import Dict, List, Optional, Any
@@ -26,41 +32,21 @@ def calculate_advanced_indicators(df):
         return df
 
     # MACD
-    exp12 = df['close'].ewm(span=12, adjust=False).mean()
-    exp26 = df['close'].ewm(span=26, adjust=False).mean()
-    df['macd'] = exp12 - exp26
-    df['signal'] = df['macd'].ewm(span=9, adjust=False).mean()
-    df['macd_hist'] = df['macd'] - df['signal']
+    df['macd'], df['signal'], df['macd_hist'] = talib.MACD(df['close'], fastperiod=12, slowperiod=26, signalperiod=9)
 
     # RSI
-    delta = df['close'].diff()
-    gain = delta.where(delta > 0, 0)
-    loss = -delta.where(delta < 0, 0)
-    avg_gain = gain.rolling(window=14).mean()
-    avg_loss = loss.rolling(window=14).mean()
-    rs = avg_gain / avg_loss
-    df['rsi'] = 100 - (100 / (1 + rs))
+    df['rsi'] = talib.RSI(df['close'], timeperiod=14)
 
     # Bollinger Bands
-    df['bb_middle'] = df['close'].rolling(window=20).mean()
+    df['bb_upper'], df['bb_middle'], df['bb_lower'] = talib.BBANDS(df['close'], timeperiod=20, nbdevup=2, nbdevdn=2)
     df['bb_std'] = df['close'].rolling(window=20).std()
-    df['bb_upper'] = df['bb_middle'] + 2 * df['bb_std']
-    df['bb_lower'] = df['bb_middle'] - 2 * df['bb_std']
     df['bb_width'] = (df['bb_upper'] - df['bb_lower']) / df['bb_middle']
 
     # ATR
-    high_low = df['high'] - df['low']
-    high_close = np.abs(df['high'] - df['close'].shift())
-    low_close = np.abs(df['low'] - df['close'].shift())
-    ranges = pd.concat([high_low, high_close, low_close], axis=1)
-    true_range = ranges.max(axis=1)
-    df['atr'] = true_range.rolling(14).mean()
+    df['atr'] = talib.ATR(df['high'], df['low'], df['close'], timeperiod=14)
 
     # Stochastic Oscillator
-    low_14 = df['low'].rolling(window=14).min()
-    high_14 = df['high'].rolling(window=14).max()
-    df['stoch_k'] = 100 * ((df['close'] - low_14) / (high_14 - low_14))
-    df['stoch_d'] = df['stoch_k'].rolling(window=3).mean()
+    df['stoch_k'], df['stoch_d'] = talib.STOCHF(df['high'], df['low'], df['close'], fastk_period=14, fastd_period=3)
 
     # Chaikin Money Flow
     clv = ((df['close'] - df['low']) - (df['high'] - df['close'])) / (df['high'] - df['low'])
@@ -68,10 +54,7 @@ def calculate_advanced_indicators(df):
     df['cmf'] = (clv * df['volume']).rolling(window=20).sum() / df['volume'].rolling(window=20).sum()
 
     # OBV (On-Balance Volume)
-    df['daily_ret'] = df['close'].pct_change()
-    df['direction'] = np.where(df['daily_ret'] > 0, 1, np.where(df['daily_ret'] < 0, -1, 0))
-    df['direction_volume'] = df['direction'] * df['volume']
-    df['obv'] = df['direction_volume'].cumsum()
+    df['obv'] = talib.OBV(df['close'], df['volume'])
 
     # KDJ
     df['kdj_k'] = df['stoch_k']
@@ -79,47 +62,23 @@ def calculate_advanced_indicators(df):
     df['kdj_j'] = 3 * df['kdj_k'] - 2 * df['kdj_d']
 
     # Williams %R
-    df['williams_r'] = -100 * (high_14 - df['close']) / (high_14 - low_14)
+    df['williams_r'] = talib.WILLR(df['high'], df['low'], df['close'], timeperiod=14)
 
     # TRIX
-    ex1 = df['close'].ewm(span=9, adjust=False).mean()
-    ex2 = ex1.ewm(span=9, adjust=False).mean()
-    ex3 = ex2.ewm(span=9, adjust=False).mean()
-    df['trix'] = 100 * (ex3.pct_change(1))
+    df['trix'] = talib.TRIX(df['close'], timeperiod=9)
 
     # CCI (Commodity Channel Index)
-    typical_price = (df['high'] + df['low'] + df['close']) / 3
-    moving_avg = typical_price.rolling(window=20).mean()
-    mean_deviation = np.abs(typical_price - moving_avg).rolling(window=20).mean()
-    df['cci'] = (typical_price - moving_avg) / (0.015 * mean_deviation)
+    df['cci'] = talib.CCI(df['high'], df['low'], df['close'], timeperiod=20)
 
     # ROC (Rate of Change)
-    df['roc'] = 100 * ((df['close'] / df['close'].shift(10)) - 1)
+    df['roc'] = talib.ROC(df['close'], timeperiod=10)
 
     # Awesome Oscillator
     median_price = (df['high'] + df['low']) / 2
-    ao1 = median_price.rolling(window=5).mean()
-    ao2 = median_price.rolling(window=34).mean()
-    df['awesome_oscillator'] = ao1 - ao2
+    df['awesome_oscillator'] = median_price.rolling(window=5).mean() - median_price.rolling(window=34).mean()
 
     # MFI (Money Flow Index)
-    typical_price = (df['high'] + df['low'] + df['close']) / 3
-    raw_money_flow = typical_price * df['volume']
-
-    # 计算Positive和Negative Money Flow
-    money_flow_positive = raw_money_flow.where(typical_price > typical_price.shift(1), 0)
-    money_flow_negative = raw_money_flow.where(typical_price < typical_price.shift(1), 0)
-
-    # 计算14天的money flow ratio
-    pos_flow_sum = money_flow_positive.rolling(window=14).sum()
-    neg_flow_sum = money_flow_negative.rolling(window=14).sum()
-
-    # 防止除零错误
-    neg_flow_sum = neg_flow_sum.replace(0, 1e-10)
-    money_flow_ratio = pos_flow_sum / neg_flow_sum
-
-    # 计算MFI
-    df['mfi'] = 100 - (100 / (1 + money_flow_ratio))
+    df['mfi'] = talib.MFI(df['high'], df['low'], df['close'], df['volume'], timeperiod=14)
 
     return df
 
@@ -165,13 +124,34 @@ def create_pattern_recognition_features(df):
     df_new.replace([np.inf, -np.inf], np.nan, inplace=True)
     df_new.fillna(0, inplace=True)
 
-    # 锤子线和上吊线 (小实体，几乎没有上影线，长下影线)
+    # 下降趋势检测（用于锤子线前提条件）
+    df_new['is_downtrend'] = ((df_new['close'] < df_new['close'].shift(1)) &
+                              (df_new['close'].shift(1) < df_new['close'].shift(2)) &
+                              (df_new['close'].shift(2) < df_new['close'].shift(3))).astype(int)
+
+    # 锤子线和上吊线 (小实体，几乎没有上影线，长下影线，在下降趋势中)
     df_new['is_hammer'] = ((df_new['rel_body_size'] < 0.3) &
                            (df_new['rel_upper_shadow'] < 0.1) &
-                           (df_new['rel_lower_shadow'] > 0.6)).astype(int)
+                           (df_new['rel_lower_shadow'] > 0.6) &
+                           (df_new['is_downtrend'])).astype(int)
 
     # 十字星 (极小实体，上下影线均存在)
     df_new['is_doji'] = (df_new['rel_body_size'] < 0.1).astype(int)
+
+    # 蜻蜓十字星：长下影线，几乎无上影线
+    df_new['is_dragonfly_doji'] = (df_new['rel_body_size'] < 0.1) & \
+                                  (df_new['rel_upper_shadow'] < 0.1) & \
+                                  (df_new['rel_lower_shadow'] > 0.6)
+
+    # 墓碑十字星：长上影线，几乎无下影线
+    df_new['is_gravestone_doji'] = (df_new['rel_body_size'] < 0.1) & \
+                                   (df_new['rel_upper_shadow'] > 0.6) & \
+                                   (df_new['rel_lower_shadow'] < 0.1)
+
+    # 长腿十字星：上下影线都较长
+    df_new['is_longlegged_doji'] = (df_new['rel_body_size'] < 0.1) & \
+                                   (df_new['rel_upper_shadow'] > 0.3) & \
+                                   (df_new['rel_lower_shadow'] > 0.3)
 
     # 吞没形态 (看跌吞没)
     df_new['bearish_engulfing'] = ((df_new['open'] > df_new['close'].shift(1)) &
@@ -374,28 +354,16 @@ def add_advanced_indicators(df):
 
     result['cci'] = (typical_price - typical_price.rolling(window=20).mean()) / (0.015 * mean_deviation)
 
-    # 计算威廉姆累积/派发线 (Williams A/D)
-    result['willad'] = np.nan
-    for i in range(1, len(result)):
-        if i == 1:
-            result['willad'].iloc[0] = 0  # 初始化第一个值
-
-        if result['close'].iloc[i] > result['close'].iloc[i-1]:
-            # 上涨，累积应等于(收盘价 - 最低价) / (最高价 - 最低价)
-            if result['high'].iloc[i] != result['low'].iloc[i]:
-                result['willad'].iloc[i] = result['willad'].iloc[i-1] + \
-                    (result['close'].iloc[i] - result['low'].iloc[i]) / \
-                    (result['high'].iloc[i] - result['low'].iloc[i])
-            else:
-                result['willad'].iloc[i] = result['willad'].iloc[i-1]
-        else:
-            # 下跌，派发应等于(收盘价 - 最高价) / (最高价 - 最低价)
-            if result['high'].iloc[i] != result['low'].iloc[i]:
-                result['willad'].iloc[i] = result['willad'].iloc[i-1] + \
-                    (result['close'].iloc[i] - result['high'].iloc[i]) / \
-                    (result['high'].iloc[i] - result['low'].iloc[i])
-            else:
-                result['willad'].iloc[i] = result['willad'].iloc[i-1]
+    # 计算威廉姆累积/派发线 (Williams A/D) - 向量化实现
+    tr_denom = result['high'] - result['low']
+    close_diff = result['close'].diff()
+    is_up = close_diff > 0
+    valid_range = tr_denom != 0
+    up_contrib = np.where(valid_range, (result['close'] - result['low']) / tr_denom, 0.0)
+    down_contrib = np.where(valid_range, (result['close'] - result['high']) / tr_denom, 0.0)
+    daily_contrib = np.where(is_up, up_contrib, down_contrib)
+    daily_contrib[0] = 0
+    result['willad'] = daily_contrib.cumsum()
 
     # 计算资金流量指标 (MFI)
     if 'volume' in result.columns:
@@ -415,13 +383,22 @@ def add_advanced_indicators(df):
         result['mfi'] = 100 - (100 / (1 + money_ratio))
 
     # 计算相对强度指数 (RSI) 的超买超卖信号
-    result['rsi_overbought'] = (result['rsi_14'] > 70).astype(int)
-    result['rsi_oversold'] = (result['rsi_14'] < 30).astype(int)
+    if 'rsi_14' in result.columns:
+        result['rsi_overbought'] = (result['rsi_14'] > 70).astype(int)
+        result['rsi_oversold'] = (result['rsi_14'] < 30).astype(int)
+    else:
+        logger.warning("rsi_14列不存在，跳过超买超卖信号计算，回退到rsi列")
+        if 'rsi' in result.columns:
+            result['rsi_overbought'] = (result['rsi'] > 70).astype(int)
+            result['rsi_oversold'] = (result['rsi'] < 30).astype(int)
+        else:
+            result['rsi_overbought'] = 0
+            result['rsi_oversold'] = 0
 
     # 计算价格动量变化率
     result['roc_change'] = result['close'].pct_change(periods=10).diff()
 
     # 填充缺失值
-    result = result.fillna(method='bfill').fillna(method='ffill').fillna(0)
+    result = result.fillna(method='ffill').fillna(0)
 
     return result

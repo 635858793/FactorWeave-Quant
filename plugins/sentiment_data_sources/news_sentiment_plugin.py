@@ -6,7 +6,6 @@ from loguru import logger
 基于新闻文本分析获取市场情绪数据
 """
 
-import numpy as np
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 
@@ -15,6 +14,8 @@ from plugins.sentiment_data_sources.base_sentiment_plugin import BaseSentimentPl
 from plugins.sentiment_data_sources.config_base import ConfigurablePlugin, PluginConfigField, create_config_file_path, validate_number_range
 from plugins.sentiment_data_source_interface import SentimentData, SentimentResponse
 
+# 此插件当前无真实数据源，所有分析方法均不可用
+# 需要对接真实新闻API（如NewsAPI、Alpha Vantage News等）后启用
 class NewsSentimentPlugin(BaseSentimentPlugin, ConfigurablePlugin):
     """新闻情绪分析插件"""
 
@@ -23,11 +24,14 @@ class NewsSentimentPlugin(BaseSentimentPlugin, ConfigurablePlugin):
         ConfigurablePlugin.__init__(self)
         self._config_file = create_config_file_path("news_sentiment")
 
-        # 新闻源类型
         self.news_sources = [
             "财经新闻", "分析师报告", "公司公告", "行业资讯",
             "政策解读", "市场评论", "研究报告", "券商研报"
         ]
+
+    @property
+    def has_real_data(self) -> bool:
+        return False
 
     @property
     def metadata(self) -> Dict[str, Any]:
@@ -251,135 +255,27 @@ class NewsSentimentPlugin(BaseSentimentPlugin, ConfigurablePlugin):
         return indicators
 
     def _fetch_raw_sentiment_data(self, **kwargs) -> SentimentResponse:
-        """获取原始新闻情绪数据"""
-        try:
-            # 此插件基于模拟数据，已被禁用
-            return SentimentResponse(
-                success=False,
-                data=[],
-                composite_score=50.0,
-                error_message="新闻情绪插件已禁用，请配置真实新闻API数据源",
-                data_quality="unavailable",
-                update_time=datetime.now()
-            )
-        except Exception as e:
-            self._safe_log("error", f"新闻情绪数据获取失败: {str(e)}")
-            return SentimentResponse(
-                success=False,
-                data=[],
-                composite_score=50.0,
-                error_message=f"新闻情绪数据获取失败: {str(e)}",
-                data_quality="error",
-                update_time=datetime.now()
-            )
+        return SentimentResponse(
+            success=False,
+            data=[],
+            composite_score=50.0,
+            error_message="新闻情绪数据源不可用：当前无真实新闻API数据源，需要配置NewsAPI、Alpha Vantage News等新闻数据源后启用",
+            data_quality="unavailable",
+            update_time=datetime.now()
+        )
 
     def _analyze_news_source_sentiment(self, source: str, algorithm: str) -> Optional[SentimentData]:
-        """分析特定新闻源的情绪"""
-        try:
-            # 模拟新闻情绪分析
-            base_score = 50.0
-
-            # 根据新闻源类型调整基础分数
-            if source == "分析师报告":
-                base_score = np.random.normal(55, 10)  # 分析师报告通常更专业
-            elif source == "公司公告":
-                base_score = np.random.normal(52, 15)  # 公司公告波动较大
-            elif source == "财经新闻":
-                base_score = np.random.normal(50, 12)  # 财经新闻相对中性
-            else:
-                base_score = np.random.normal(50, 8)   # 其他新闻源
-
-            # 根据算法类型调整
-            if algorithm == "weighted":
-                # 加权算法，考虑关键词权重
-                sentiment_score = self._apply_keyword_weighting(base_score, source)
-            elif algorithm == "hybrid":
-                # 混合算法，结合多种因素
-                sentiment_score = self._apply_hybrid_analysis(base_score, source)
-            elif algorithm == "advanced":
-                # 高级算法，包含更多复杂因素
-                sentiment_score = self._apply_advanced_analysis(base_score, source)
-            else:
-                # 简单算法
-                sentiment_score = base_score
-
-            # 限制分数范围
-            sentiment_score = max(0, min(100, sentiment_score))
-
-            # 获取状态和信号
-            status = self._get_news_sentiment_status(sentiment_score)
-            signal = self._get_news_sentiment_signal(sentiment_score)
-
-            # 计算置信度
-            confidence = self._calculate_confidence(sentiment_score, source, algorithm)
-
-            # 检查最小置信度要求
-            min_confidence = self.get_config("min_confidence", 0.6)
-            if confidence < min_confidence:
-                self._safe_log("warning", f"{source}情绪置信度({confidence:.2f})低于要求({min_confidence})")
-                return None
-
-            return SentimentData(
-                indicator_name=f"{source}情绪",
-                value=round(sentiment_score, 2),
-                status=status,
-                change=round(np.random.normal(0, 2.5), 2),
-                signal=signal,
-                suggestion=f"{source}情绪{status}，{signal}信号",
-                timestamp=datetime.now(),
-                source=f"新闻-{source}",
-                confidence=confidence
-            )
-
-        except Exception as e:
-            self._safe_log("warning", f"分析{source}情绪失败: {e}")
-            return None
+        logger.warning(f"新闻情绪分析不可用：当前无真实新闻API数据源，无法分析 {source} 情绪")
+        return None
 
     def _apply_keyword_weighting(self, base_score: float, source: str) -> float:
-        """应用关键词权重"""
-        positive_keywords = self.get_config("positive_keywords", "").split(",")
-        negative_keywords = self.get_config("negative_keywords", "").split(",")
-
-        # 模拟关键词匹配
-        positive_matches = np.random.poisson(2)  # 平均2个正面关键词
-        negative_matches = np.random.poisson(1)  # 平均1个负面关键词
-
-        # 根据关键词匹配调整分数
-        keyword_adjustment = (positive_matches - negative_matches) * 3
-
-        return base_score + keyword_adjustment
+        return base_score
 
     def _apply_hybrid_analysis(self, base_score: float, source: str) -> float:
-        """应用混合分析"""
-        # 先应用关键词权重
-        score = self._apply_keyword_weighting(base_score, source)
-
-        # 添加时间衰减因子
-        time_factor = np.random.uniform(0.8, 1.2)
-        score *= time_factor
-
-        # 添加新闻源可信度调整
-        if source == "分析师报告":
-            score += np.random.normal(2, 1)  # 分析师报告通常更可信
-        elif source == "公司公告":
-            score += np.random.normal(1, 2)  # 公司公告权威但可能有偏
-
-        return score
+        return base_score
 
     def _apply_advanced_analysis(self, base_score: float, source: str) -> float:
-        """应用高级分析"""
-        # 先应用混合分析
-        score = self._apply_hybrid_analysis(base_score, source)
-
-        # 添加市场环境因子
-        market_factor = np.random.normal(1.0, 0.1)
-        score *= market_factor
-
-        # 添加情绪波动因子
-        volatility_factor = np.random.uniform(0.9, 1.1)
-        score *= volatility_factor
-
-        return score
+        return base_score
 
     def _get_news_sentiment_status(self, score: float) -> str:
         """根据分数获取新闻情绪状态"""
@@ -410,10 +306,8 @@ class NewsSentimentPlugin(BaseSentimentPlugin, ConfigurablePlugin):
             return "利空"
 
     def _calculate_confidence(self, score: float, source: str, algorithm: str) -> float:
-        """计算置信度"""
         base_confidence = 0.7
 
-        # 根据新闻源调整置信度
         if source == "分析师报告":
             base_confidence = 0.8
         elif source == "公司公告":
@@ -421,50 +315,15 @@ class NewsSentimentPlugin(BaseSentimentPlugin, ConfigurablePlugin):
         elif source == "财经新闻":
             base_confidence = 0.7
 
-        # 根据算法调整置信度
         if algorithm == "advanced":
             base_confidence += 0.05
         elif algorithm == "hybrid":
             base_confidence += 0.03
 
-        # 添加随机波动
-        confidence = base_confidence + np.random.normal(0, 0.05)
-
-        return max(0.1, min(1.0, confidence))
+        return max(0.1, min(1.0, base_confidence))
 
     def _calculate_sentiment_trend(self, sentiment_data: List[SentimentData]) -> Optional[SentimentData]:
-        """计算情绪趋势"""
-        if len(sentiment_data) < 2:
-            return None
-
-        try:
-            # 计算平均情绪和趋势
-            scores = [data.value for data in sentiment_data]
-            avg_score = np.mean(scores)
-            score_std = np.std(scores)
-
-            # 模拟趋势计算
-            trend_direction = "上升" if np.random.random() > 0.5 else "下降"
-            trend_strength = score_std  # 标准差作为趋势强度
-
-            trend_score = avg_score + (5 if trend_direction == "上升" else -5)
-            trend_score = max(0, min(100, trend_score))
-
-            return SentimentData(
-                indicator_name="新闻情绪趋势",
-                value=round(trend_score, 2),
-                status=f"趋势{trend_direction}",
-                change=round(trend_strength, 2),
-                signal=f"趋势{trend_direction}",
-                suggestion=f"新闻情绪整体呈{trend_direction}趋势，强度{trend_strength:.1f}",
-                timestamp=datetime.now(),
-                source="新闻-趋势分析",
-                confidence=0.75
-            )
-
-        except Exception as e:
-            self._safe_log("warning", f"计算情绪趋势失败: {e}")
-            return None
+        return None
 
     def _parse_source_weights(self, weights_str: str) -> Dict[str, float]:
         """解析新闻源权重配置"""
@@ -524,7 +383,7 @@ class NewsSentimentPlugin(BaseSentimentPlugin, ConfigurablePlugin):
         except Exception as e:
             self._safe_log("warning", f"计算新闻综合指数失败: {e}")
             # 使用简单平均作为备选
-            avg_score = np.mean([data.value for data in sentiment_data])
+            avg_score = sum(data.value for data in sentiment_data) / len(sentiment_data)
             return max(0.0, min(100.0, round(avg_score, 2)))
 
 # 插件工厂函数

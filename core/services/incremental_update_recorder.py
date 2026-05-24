@@ -5,8 +5,8 @@ This module provides functionality to track and record incremental update
 history, including update ranges, results, and metadata.
 """
 
+import ast
 import asyncio
-import logging
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple, Any
 from dataclasses import dataclass, asdict
@@ -16,7 +16,7 @@ from ..database.duckdb_manager import DuckDBConnectionManager
 from ..events.event_bus import EventBus
 from ..events.types import UpdateHistoryEvent
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 class UpdateStatus(Enum):
@@ -512,7 +512,7 @@ class IncrementalUpdateRecorder:
                 id=row[0],
                 task_name=row[2],
                 update_type=row[3],
-                symbols_count=len(eval(row[4])),
+                symbols_count=len(ast.literal_eval(row[4])),
                 success_count=row[7],
                 failed_count=row[8],
                 skipped_count=row[9],

@@ -1,4 +1,3 @@
-from loguru import logger
 """
 现代化系统监控标签页（重构版）
 
@@ -8,6 +7,7 @@ from loguru import logger
 from typing import Dict, List, Any
 from collections import defaultdict, deque
 from datetime import datetime
+from loguru import logger
 import psutil
 import gc
 import time

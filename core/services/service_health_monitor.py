@@ -280,7 +280,7 @@ class ServiceHealthMonitor(QObject):
                     # 这里需要更复杂的逻辑来映射服务名到类型
                     # 暂时使用简单的检查
                     registered = True  # 假设已注册
-                except:
+                except Exception:
                     registered = False
 
                 if not registered:
@@ -547,7 +547,7 @@ class ServiceHealthMonitor(QObject):
                     if not self.monitor._service_metrics:
                         return "<p>No services registered for monitoring.</p>"
 
-                    html = ""
+                    parts = []
                     for name, metrics in self.monitor._service_metrics.items():
                         status_class = "healthy"
                         if metrics.error_count > 0:
@@ -555,7 +555,7 @@ class ServiceHealthMonitor(QObject):
                         elif metrics.response_time_ms > 1000:
                             status_class = "warning"
 
-                        html += f"""
+                        parts.append(f"""
                         <div class="service {status_class}">
                             <h3>{name}</h3>
                             <div class="metrics">
@@ -576,8 +576,8 @@ class ServiceHealthMonitor(QObject):
                                 </div>
                             </div>
                         </div>
-                        """
-                    return html
+                        """)
+                    return "".join(parts)
 
                 def _generate_alerts_html(self):
                     active_alerts = [
@@ -588,18 +588,18 @@ class ServiceHealthMonitor(QObject):
                     if not active_alerts:
                         return "<p>No active alerts.</p>"
 
-                    html = '<div class="alerts">'
+                    parts = ['<div class="alerts">']
                     for alert in sorted(active_alerts, key=lambda a: a.timestamp, reverse=True):
-                        html += f"""
+                        parts.append(f"""
                         <div>
-                            <strong>[{alert.level.value.upper()}]</strong> 
+                            <strong>[{alert.level.value.upper()}]</strong>
                             {alert.service_name}: {alert.message}
                             <br><small>{alert.timestamp.strftime('%Y-%m-%d %H:%M:%S')}</small>
                         </div>
                         <hr>
-                        """
-                    html += '</div>'
-                    return html
+                        """)
+                    parts.append('</div>')
+                    return "".join(parts)
 
                 def log_message(self, format, *args):
                     # 静默HTTP服务器日志

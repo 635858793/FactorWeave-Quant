@@ -3,10 +3,8 @@ JIT系统初始化模块
 在系统启动时自动加载配置并初始化JIT系统
 """
 
-import logging
+from loguru import logger
 from pathlib import Path
-
-logger = logging.getLogger(__name__)
 
 
 def initialize_jit_system():
@@ -57,8 +55,8 @@ def initialize_jit_system():
             autojit_enabled = True  # 默认启用
             try:
                 autojit_enabled = jit_config_manager.is_jit_enabled()
-            except:
-                pass
+            except Exception as e:
+                logger.debug(f"JIT配置/状态获取失败: {e}")
             
             if autojit_enabled:
                 enable_auto_jit()
@@ -82,8 +80,8 @@ def initialize_jit_system():
             jit_optimizer_enabled = True  # 默认启用
             try:
                 jit_optimizer_enabled = jit_config_manager.is_jit_enabled()
-            except:
-                pass
+            except Exception as e:
+                logger.debug(f"JIT配置/状态获取失败: {e}")
             
             if jit_optimizer_enabled:
                 jit_optimizer.enable()
@@ -172,8 +170,8 @@ def get_jit_system_status():
         status['autojit_enabled'] = is_auto_jit_enabled()
         summary = get_auto_jit_summary()
         status['autojit_functions'] = summary.get('total_functions', 0)
-    except:
-        pass
+    except Exception as e:
+        logger.debug(f"JIT配置/状态获取失败: {e}")
     
     try:
         # JIT优化器状态
@@ -181,15 +179,15 @@ def get_jit_system_status():
         status['jit_optimizer_enabled'] = jit_optimizer.is_enabled()
         stats = jit_optimizer.get_stats()
         status['jit_optimizer_functions'] = stats.get('compile_count', 0)
-    except:
-        pass
+    except Exception as e:
+        logger.debug(f"JIT配置/状态获取失败: {e}")
     
     try:
         # 配置状态
         from backtest.jit_config_manager import jit_config_manager
         status['config_loaded'] = jit_config_manager.load_config()
-    except:
-        pass
+    except Exception as e:
+        logger.debug(f"JIT配置/状态获取失败: {e}")
     
     return status
 

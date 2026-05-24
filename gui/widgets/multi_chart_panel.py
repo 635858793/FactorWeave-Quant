@@ -1,4 +1,3 @@
-from loguru import logger
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
@@ -16,6 +15,7 @@ from PyQt5.QtWidgets import (
     QFrame, QScrollArea
 )
 from PyQt5.QtCore import pyqtSignal
+from loguru import logger
 
 from gui.widgets.chart_widget import ChartWidget as ChartCanvas
 
@@ -471,7 +471,7 @@ class MultiChartPanel(QWidget):
                     # 尝试使用同步方式调用异步方法
                     loop = asyncio.get_event_loop()
                     return loop.run_until_complete(self.data_manager.get_stock_data(stock_code, 'D'))
-                except:
+                except Exception:
                     # 如果失败，尝试直接调用（可能不是异步方法）
                     return self.data_manager.get_stock_data(stock_code, 'D')
 
@@ -492,7 +492,7 @@ class MultiChartPanel(QWidget):
                 return (rows, cols)
             else:
                 return (2, 2)  # 默认值
-        except:
+        except Exception:
             return (2, 2)
 
     def get_current_chart(self):

@@ -37,7 +37,7 @@ from .cache.intelligent_cache import (
 )
 
 from .ui.responsive_adapter import (
-    ResponsiveLayoutManager,
+    ResponsiveOptimizer,
     ResponsiveChartWidget,
     LayoutMode,
     InteractionMode,
@@ -78,7 +78,7 @@ __all__ = [
     'MLPredictor',
     
     # 响应式界面模块
-    'ResponsiveLayoutManager',
+    'ResponsiveOptimizer',
     'ResponsiveChartWidget',
     'LayoutMode',
     'InteractionMode',

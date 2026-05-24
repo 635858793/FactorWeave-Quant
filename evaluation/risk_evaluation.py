@@ -15,7 +15,7 @@ import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional, Tuple, Any
 from datetime import datetime, timedelta
-import sqlite3
+from core.database.unified_sqlite_access import UnifiedSQLiteAccess
 import json
 from dataclasses import dataclass
 from enum import Enum
@@ -108,21 +108,26 @@ class RiskEvaluator:
                 recommendation=self._get_var_recommendation(level)
             )
 
-        # CVaR计算 - 修复：VaR应该为正值表示损失
-        var_95 = abs(np.percentile(returns, 5))
-        cvar_95 = returns[returns <= -var_95].mean()  # 使用负VaR作为阈值
+        # CVaR计算
+        for confidence in confidence_levels:
+            var_percentile = (1 - confidence) * 100
+            var_value = abs(np.percentile(returns, var_percentile))
+            cvar_value = returns[returns <= -var_value].mean()
 
-        level = self._determine_risk_level(
-            abs(cvar_95), self.risk_thresholds['var_95'])
+            cvar_key = f'cvar_{int(confidence * 100)}'
 
-        metrics['cvar_95'] = RiskMetric(
-            name="CVaR (95%)",
-            value=cvar_95,
-            level=level,
-            type=RiskType.MARKET,
-            description="95%置信水平下的条件在险价值",
-            recommendation=self._get_var_recommendation(level)
-        )
+            level = self._determine_risk_level(
+                abs(cvar_value), self.risk_thresholds[f'var_{int(confidence * 100)}'])
+
+            metrics[cvar_key] = RiskMetric(
+                name=f"CVaR ({confidence:.0%})",
+                value=cvar_value,
+                level=level,
+                type=RiskType.MARKET,
+                description=f"{confidence:.0%}置信水平下的条件在险价值",
+                threshold=self.risk_thresholds[f'var_{int(confidence * 100)}']['high'],
+                recommendation=self._get_var_recommendation(level)
+            )
 
         # 波动率
         volatility = returns.std() * np.sqrt(252)
@@ -451,20 +456,20 @@ class RiskEvaluator:
     def _evaluate_model_performance(self) -> Optional[float]:
         """评估模型性能"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
 
-            # 查询最近的模型性能数据
-            cursor.execute("""
-                SELECT AVG(CASE WHEN is_successful = 1 THEN 1.0 ELSE 0.0 END) as success_rate
-                FROM pattern_history 
-                WHERE trigger_date >= date('now', '-30 days')
-            """)
+                # 查询最近的模型性能数据
+                cursor.execute("""
+                    SELECT AVG(CASE WHEN is_successful = 1 THEN 1.0 ELSE 0.0 END) as success_rate
+                    FROM pattern_history 
+                    WHERE trigger_date >= date('now', '-30 days')
+                """)
 
-            result = cursor.fetchone()
-            conn.close()
+                result = cursor.fetchone()
 
-            return result[0] if result and result[0] is not None else None
+                return result[0] if result and result[0] is not None else None
 
         except Exception:
             return None

@@ -32,11 +32,10 @@ try:
     from core.metrics.app_metrics_service import AppMetricsService
 except ImportError:
     # 备用日志记录
-    import logging
-    logging.basicConfig(level=logging.INFO)
+    from loguru import logger
 
     def get_logger(name):
-        return logging.getLogger(name)
+        return logger
 
     class AppMetricsService:
         def __init__t__(self):

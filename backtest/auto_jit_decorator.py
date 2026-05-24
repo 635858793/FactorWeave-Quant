@@ -10,9 +10,7 @@ import threading
 from typing import Callable, Any, Dict, List, Optional, Tuple
 from numba import njit
 import numpy as np
-import logging
-
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 class AutoJIT:

@@ -62,14 +62,14 @@ class UtilityMixin:
                     try:
                         date_val = pd.to_datetime(kdata.iloc[idx]['datetime'])
                         return date_val.strftime('%Y-%m-%d')
-                    except:
+                    except Exception:
                         pass
 
                 # 尝试转换索引
                 try:
                     date_val = pd.to_datetime(kdata.index[idx])
                     return date_val.strftime('%Y-%m-%d')
-                except:
+                except Exception:
                     # 最后的兜底方案：使用索引位置生成相对日期
                     base_date = datetime(2024, 1, 1)
                     actual_date = base_date + timedelta(days=idx)

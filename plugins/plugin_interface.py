@@ -80,12 +80,12 @@ class IPlugin(ABC):
         pass
 
     @abstractmethod
-    def initialize(self, context: 'PluginContext') -> bool:
+    def initialize(self, config: dict = None) -> bool:
         """
         初始化插件
 
         Args:
-            context: 插件上下文
+            config: 配置字典（向后兼容：保留旧版PluginContext支持）
 
         Returns:
             bool: 初始化是否成功
@@ -366,6 +366,25 @@ class IDataSourcePlugin(IPlugin):
         except Exception as e:
             logger.error(f"[{self.__class__.__name__}] 等待连接异常: {e}")
             return False
+
+    def cleanup(self) -> None:
+        """强制释放线程池资源"""
+        try:
+            if hasattr(self, '_executor') and self._executor is not None:
+                self._executor.shutdown(wait=True, cancel_futures=True)
+                self._executor = None
+        except Exception as e:
+            logger.warning(f"[{self.__class__.__name__}] cleanup failed: {e}")
+        super().cleanup()
+
+    def __del__(self):
+        """析构函数，强制释放线程池"""
+        try:
+            if hasattr(self, '_executor') and self._executor:
+                self._executor.shutdown(wait=True)
+                self._executor = None
+        except Exception:
+            pass
 
 
 class IAnalysisPlugin(IPlugin):

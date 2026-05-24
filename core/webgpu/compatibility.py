@@ -13,7 +13,7 @@ import re
 import platform
 import subprocess
 from typing import Dict, List, Tuple, Optional, Any
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from .environment import GPUSupportLevel, GPUCapabilities
 
@@ -114,19 +114,21 @@ class GPUCompatibilityChecker:
         performance_score = 100.0
         recommendations = []
 
+        corrected_capabilities = self._normalize_capabilities(capabilities)
+
         # 1. 检查内存容量（作为主要评分标准）
-        memory_issues, memory_score = self._check_memory_capacity(capabilities)
+        memory_issues, memory_score = self._check_memory_capacity(corrected_capabilities)
         issues.extend(memory_issues)
         performance_score = min(performance_score, memory_score)
 
         # 2. 检查GPU型号兼容性
-        gpu_issues, gpu_score = self._check_gpu_model(capabilities)
+        gpu_issues, gpu_score = self._check_gpu_model(corrected_capabilities)
         issues.extend(gpu_issues)
         # GPU型号对评分影响较小，只降低最多10分
         performance_score = max(performance_score - (100.0 - gpu_score) * 0.1, 0)
 
         # 3. 检查纹理支持
-        texture_issues, texture_score = self._check_texture_support(capabilities)
+        texture_issues, texture_score = self._check_texture_support(corrected_capabilities)
         issues.extend(texture_issues)
         # 纹理支持对评分影响中等，降低最多20分
         performance_score = max(performance_score - (100.0 - texture_score) * 0.2, 0)
@@ -137,13 +139,13 @@ class GPUCompatibilityChecker:
         compatibility_level = self._determine_compatibility_level(
             issues, performance_score, support_level)
 
-        # 6. 推荐后端
+        # 6. 推荐后端（使用修正后的capabilities确保显存估算值正确传递）
         recommended_backend = self._recommend_backend(
-            compatibility_level, support_level, issues)
+            compatibility_level, support_level, issues, corrected_capabilities)
 
         # 7. 生成建议
         recommendations = self._generate_recommendations(
-            issues, capabilities, support_level)
+            issues, corrected_capabilities, support_level)
 
         report = CompatibilityReport(
             level=compatibility_level,
@@ -156,6 +158,16 @@ class GPUCompatibilityChecker:
         logger.info(f"兼容性检查完成: {compatibility_level.value}, 性能评分: {performance_score:.1f}")
         logger.info(f"显存评分: {memory_score}, GPU型号评分: {gpu_score}, 纹理评分: {texture_score}")
         return report
+
+    def _normalize_capabilities(self, capabilities: GPUCapabilities) -> GPUCapabilities:
+        """规范化capabilities，修正异常的显存检测值"""
+        memory_mb = capabilities.memory_mb
+        if memory_mb <= 0 or memory_mb < 256:
+            estimated = self._estimate_gpu_memory(capabilities.adapter_name, capabilities.vendor)
+            if estimated > 0:
+                logger.warning(f"显存检测异常 ({memory_mb}MB)，使用估算值: {estimated}MB")
+                return replace(capabilities, memory_mb=estimated)
+        return capabilities
 
     def _check_gpu_model(self, capabilities: GPUCapabilities) -> Tuple[List[CompatibilityIssue], float]:
         """检查GPU型号"""
@@ -244,22 +256,6 @@ class GPUCompatibilityChecker:
             score = 95.0
         else:  # 8GB及以上
             score = 100.0
-
-        # 如果检测到的显存为0MB或异常，使用估算值
-        if memory_mb == 0 or memory_mb < 256:
-            estimated_memory = self._estimate_gpu_memory(capabilities.adapter_name, capabilities.vendor)
-            if estimated_memory > 0:
-                logger.warning(f"显存检测异常 (0MB)，使用估算值: {estimated_memory}MB")
-                memory_mb = estimated_memory
-                # 重新评分
-                if memory_mb >= 6000:
-                    score = 95.0
-                elif memory_mb >= 4096:
-                    score = 85.0
-                elif memory_mb >= 2048:
-                    score = 75.0
-                else:
-                    score = 50.0
 
         logger.info(f"显存容量评分: {score:.1f}分 (实际: {memory_mb}MB)")
         return issues, score
@@ -421,7 +417,7 @@ class GPUCompatibilityChecker:
                         parts = line.strip().split()
                         if len(parts) >= 2:
                             return parts[0]  # 返回版本号
-        except:
+        except Exception:
             pass
         
         return None
@@ -441,7 +437,7 @@ class GPUCompatibilityChecker:
             if result.returncode == 0:
                 # 简单的版本提取逻辑
                 return "unknown"
-        except:
+        except Exception:
             pass
         
         return None
@@ -454,7 +450,7 @@ class GPUCompatibilityChecker:
                                   capture_output=True, text=True)
             if result.returncode == 0:
                 return "unknown"  # 简化实现
-        except:
+        except Exception:
             pass
         
         return None
@@ -567,7 +563,7 @@ class GPUCompatibilityChecker:
                 major = int(version.split('.')[0])
                 return major >= 30
             return False
-        except:
+        except Exception:
             return False
 
     def _check_amd_version(self, version: str, requirements: Dict[str, str]) -> Tuple[float, List[CompatibilityIssue]]:
@@ -748,13 +744,8 @@ class GPUCompatibilityChecker:
 
         # 基于显存容量的智能后端选择
         memory_mb = capabilities.memory_mb
-        
-        # 如果显存检测异常，使用估算值
-        if memory_mb == 0 or memory_mb < 256:
-            estimated_memory = self._estimate_gpu_memory(capabilities.adapter_name, capabilities.vendor)
-            if estimated_memory > 0:
-                memory_mb = estimated_memory
-                logger.info(f"使用估算显存容量: {memory_mb}MB")
+
+        logger.info(f"使用显存容量 {memory_mb}MB 进行后端选择")
 
         # 显存容量决定后端选择
         if memory_mb >= 6000:  # 6GB及以上（GTX 1660 SUPER级别）
@@ -781,12 +772,6 @@ class GPUCompatibilityChecker:
         else:  # 2GB以下
             # 低性能GPU，使用基础渲染
             return GPUSupportLevel.BASIC
-
-    def _get_recommended_backend(self, compatibility_level: CompatibilityLevel, 
-                                support_level: GPUSupportLevel,
-                                capabilities: GPUCapabilities = None) -> GPUSupportLevel:
-        """获取推荐后端 - 兼容性包装"""
-        return self._recommend_backend(compatibility_level, support_level, [], capabilities)
 
     def _generate_recommendations(self, issues: List[CompatibilityIssue],
                                   capabilities: GPUCapabilities,

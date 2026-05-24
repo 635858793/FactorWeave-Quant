@@ -322,18 +322,10 @@ class BondService(CacheableService, ConfigurableService):
     def clear_cache(self, bond_code: Optional[str] = None):
         if bond_code:
             self._no_data_cache.discard(bond_code)
-            patterns = [
-                f"bond_list_*",
-                f"bond_kline_{bond_code}_*",
-                f"bond_info_{bond_code}",
-                f"yield_curve_*",
-            ]
-            for pattern in patterns:
-                self._cache.pop(pattern, None)
         else:
-            self._cache.clear()
             self._no_data_cache.clear()
             self._bond_list = []
+        super().clear_cache()
 
 
 _bond_service_instance = None

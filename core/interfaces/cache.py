@@ -238,68 +238,6 @@ class ICache(ABC):
         return False
 
 
-class INone(ABC):
-
-    @abstractmethod
-    async def get_cache(self, level: CacheLevel) -> ICache:
-        """获取指定级别的缓存
-
-        Args:
-            level: 缓存级别
-
-        Returns:
-            ICache: 缓存实例
-        """
-        pass
-
-    @abstractmethod
-    async def get_multi_level(self, key: str) -> Optional[Any]:
-        """多级缓存获取
-
-        Args:
-            key: 缓存键
-
-        Returns:
-            Optional[Any]: 缓存值
-        """
-        pass
-
-    @abstractmethod
-    async def set_multi_level(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
-        """多级缓存设置
-
-        Args:
-            key: 缓存键
-            value: 缓存值
-            ttl: 生存时间(秒)
-
-        Returns:
-            bool: 设置是否成功
-        """
-        pass
-
-    @abstractmethod
-    async def invalidate(self, key: str) -> bool:
-        """使缓存失效（所有级别）
-
-        Args:
-            key: 缓存键
-
-        Returns:
-            bool: 失效是否成功
-        """
-        pass
-
-    @abstractmethod
-    async def get_global_stats(self) -> Dict[CacheLevel, CacheStats]:
-        """获取全局缓存统计
-
-        Returns:
-            Dict[CacheLevel, CacheStats]: 各级别缓存统计
-        """
-        pass
-
-
 class CacheError(Exception):
     """缓存异常基类"""
 

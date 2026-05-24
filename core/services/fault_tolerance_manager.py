@@ -4,7 +4,7 @@
 """
 
 import asyncio
-import logging
+from loguru import logger
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
@@ -16,7 +16,7 @@ import threading
 
 from core.enums import HealthStatus
 
-logger = logging.getLogger(__name__)
+
 
 class RecoveryAction(Enum):
     """恢复动作枚举"""

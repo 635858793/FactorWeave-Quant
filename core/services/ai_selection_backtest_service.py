@@ -5,8 +5,9 @@ AI选股回测服务
 支持个性化策略回测、多维度绩效分析和AI选股特有指标
 """
 
-import logging
 import json
+import traceback
+import random
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Any, Optional, Tuple, Union
@@ -39,7 +40,7 @@ from ..ai.personalized_stock_selection_engine import (
 # 数据库服务
 from .database_service import DatabaseService
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 class BacktestReportType(Enum):
@@ -60,7 +61,7 @@ class AISelectionBacktestConfig:
                  commission_pct: float = 0.0003,
                  slippage_pct: float = 0.0002,
                  min_commission: float = 5.0,
-                 stop_loss_pct: Optional[float] = -0.15,
+                 stop_loss_pct: Optional[float] = 0.15,
                  take_profit_pct: Optional[float] = 0.30,
                  max_holding_periods: Optional[int] = 60,
                  enable_compound: bool = True,
@@ -140,6 +141,18 @@ class AISelectionBacktestResult:
     calculation_timestamp: datetime = field(default_factory=datetime.now)
     execution_time: float = 0.0
     total_simulations: int = 0
+
+    def cleanup(self):
+        """显式清理大型DataFrame引用，释放内存"""
+        import gc
+        if self.backtest_result is not None and not self.backtest_result.empty:
+            del self.backtest_result
+            self.backtest_result = pd.DataFrame()
+        if self.benchmark_data is not None and not self.benchmark_data.empty:
+            del self.benchmark_data
+            self.benchmark_data = None
+        gc.collect()
+        logger.debug(f"AISelectionBacktestResult.cleanup: 内存已释放")
 
 
 @dataclass
@@ -297,7 +310,7 @@ class AISelectionBacktestService:
             
             # 6. 计算AI选股特有指标
             ai_selection_metrics = self._calculate_ai_selection_metrics(
-                backtest_result_data['backtest_result'],
+                self._build_backtest_dataframe(backtest_result_data),
                 ai_signals,
                 historical_data
             )
@@ -306,7 +319,7 @@ class AISelectionBacktestService:
             personalization_impact = None
             if personalized and self.personalization_engine:
                 personalization_impact = self._calculate_personalization_impact(
-                    user_id, backtest_result_data['backtest_result']
+                    user_id, self._build_backtest_dataframe(backtest_result_data)
                 )
             
             # 8. 蒙特卡洛模拟（如果启用）
@@ -320,12 +333,12 @@ class AISelectionBacktestService:
             stress_test_results = None
             if backtest_config.enable_stress_test:
                 stress_test_results = self._run_stress_test(
-                    backtest_result_data['backtest_result'], historical_data
+                    self._build_backtest_dataframe(backtest_result_data), historical_data
                 )
             
             # 10. 因子归因分析
             factor_attribution = self._calculate_factor_attribution(
-                backtest_result_data['backtest_result'], ai_signals
+                self._build_backtest_dataframe(backtest_result_data), ai_signals
             )
             
             # 11. 构建结果
@@ -334,8 +347,8 @@ class AISelectionBacktestService:
                                if backtest_config.enable_monte_carlo else 0)
             
             result = AISelectionBacktestResult(
-                backtest_result=backtest_result_data['backtest_result'],
-                unified_risk_metrics=backtest_result_data['risk_metrics'],
+                backtest_result=self._build_backtest_dataframe(backtest_result_data),
+                unified_risk_metrics=self._extract_risk_metrics(backtest_result_data),
                 benchmark_data=historical_data[historical_data['symbol'] == backtest_config.benchmark_symbol],
                 ai_selection_metrics=ai_selection_metrics,
                 personalization_impact=personalization_impact,
@@ -361,46 +374,81 @@ class AISelectionBacktestService:
             logger.error(traceback.format_exc())
             raise
     
+    def _build_backtest_dataframe(self, result_dict: Dict[str, Any]) -> pd.DataFrame:
+        """从统一回测引擎返回的扁平字典构建包含returns列的DataFrame"""
+        equity_curve = result_dict.get('equity_curve')
+        if equity_curve is not None and len(equity_curve) > 1:
+            returns = equity_curve.pct_change().dropna()
+            df = pd.DataFrame({'returns': returns})
+            df.index.name = 'date'
+            return df
+        return pd.DataFrame(columns=['returns'])
+    
+    def _extract_risk_metrics(self, result_dict: Dict[str, Any]) -> UnifiedRiskMetrics:
+        """从统一回测引擎返回的扁平字典提取UnifiedRiskMetrics对象"""
+        field_names = {f.name for f in UnifiedRiskMetrics.__dataclass_fields__.values()}
+        metrics_kwargs = {k: v for k, v in result_dict.items() if k in field_names}
+        return UnifiedRiskMetrics(**metrics_kwargs)
+    
     def _get_historical_data(self, 
                            start_date: datetime, 
                            end_date: datetime, 
                            benchmark_symbol: str) -> Optional[pd.DataFrame]:
         """获取历史数据"""
         try:
-            # 这里应该从实际的数据源获取数据
-            # 为了演示，我们生成模拟数据
-            date_range = pd.date_range(start=start_date, end=end_date, freq='D')
-            
-            # 生成模拟数据
             symbols = ['000001', '000002', '600000', '600036', benchmark_symbol]
             data_list = []
-            
-            for symbol in symbols:
-                # 生成模拟价格数据
-                np.random.seed(hash(symbol) % 2**32)  # 确保可重复性
-                price_base = 100 + np.random.normal(0, 20)
-                returns = np.random.normal(0.001, 0.02, len(date_range))
-                prices = [price_base]
-                
-                for ret in returns[1:]:
-                    prices.append(prices[-1] * (1 + ret))
-                
-                for i, date in enumerate(date_range):
-                    data_list.append({
-                        'date': date,
-                        'symbol': symbol,
-                        'open': prices[i] * (1 + np.random.normal(0, 0.001)),
-                        'high': prices[i] * (1 + abs(np.random.normal(0, 0.01))),
-                        'low': prices[i] * (1 - abs(np.random.normal(0, 0.01))),
-                        'close': prices[i],
-                        'volume': np.random.randint(1000000, 10000000),
-                        'amount': prices[i] * np.random.randint(1000000, 10000000)
-                    })
-            
-            historical_data = pd.DataFrame(data_list)
-            logger.info(f"获取历史数据完成 - {len(historical_data)}条记录")
-            return historical_data
-            
+
+            if self.database_service:
+                placeholders = ','.join(['?' for _ in symbols])
+                query = f"""
+                SELECT symbol, date, open, high, low, close, volume, amount
+                FROM daily_price_data
+                WHERE symbol IN ({placeholders})
+                AND date BETWEEN ? AND ?
+                ORDER BY symbol, date
+                """
+                try:
+                    results = self.database_service.execute_query(
+                        query,
+                        symbols + [start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')],
+                        pool_name="analytics_duckdb"
+                    )
+                    if results:
+                        historical_data = pd.DataFrame(results)
+                        logger.info(f"从数据库获取历史数据完成 - {len(historical_data)}条记录")
+                        return historical_data
+                except Exception as db_err:
+                    logger.warning(f"数据库查询历史数据失败: {db_err}")
+
+            try:
+                from core.containers import get_service_container
+                from core.services.stock_service import StockService
+                container = get_service_container()
+                if container:
+                    stock_service = container.resolve(StockService)
+                    if stock_service:
+                        total_days = (end_date - start_date).days + 1
+                        # fallback: 仅5个硬编码symbol，且仅在数据库批量查询失败时执行，非热路径
+                        for symbol in symbols:
+                            kdata = stock_service.get_stock_data(symbol, period='D', count=total_days)
+                            if kdata is not None and not kdata.empty:
+                                kdata = kdata.copy()
+                                kdata['symbol'] = symbol
+                                kdata['date'] = pd.to_datetime(kdata.index)
+                                kdata_filtered = kdata[(kdata['date'] >= start_date) & (kdata['date'] <= end_date)]
+                                if not kdata_filtered.empty:
+                                    data_list.append(kdata_filtered)
+                        if data_list:
+                            historical_data = pd.concat(data_list, ignore_index=True)
+                            logger.info(f"从StockService获取历史数据完成 - {len(historical_data)}条记录")
+                            return historical_data
+            except Exception as stock_err:
+                logger.warning(f"StockService获取历史数据失败: {stock_err}")
+
+            logger.warning("无法获取真实历史数据，返回空结果")
+            return None
+
         except Exception as e:
             logger.error(f"获取历史数据失败: {e}")
             return None
@@ -415,49 +463,40 @@ class AISelectionBacktestService:
         """生成AI选股信号"""
         try:
             logger.info(f"生成AI选股信号 - 策略: {strategy.value}")
-            
-            # 获取数据日期范围
+
             data_filtered = data[(data['date'] >= start_date) & (data['date'] <= end_date)].copy()
-            
-            # 按日期分组生成信号
-            signal_data = []
-            date_range = pd.date_range(start=start_date, end=end_date, freq='D')
-            
-            for date in date_range:
-                daily_data = data_filtered[data_filtered['date'] == date].copy()
-                
-                if daily_data.empty:
-                    continue
-                
-                # 为每只股票生成AI选股信号
-                for _, row in daily_data.iterrows():
-                    symbol = row['symbol']
-                    
-                    # 生成AI选股信号（基于策略类型和条件）
-                    signal = self._generate_single_stock_signal(
-                        symbol, row, criteria, strategy
+
+            stock_scores = {}
+            if self.ai_selection_service:
+                try:
+                    result = self.ai_selection_service.select_stocks(
+                        criteria=criteria,
+                        strategy=strategy
                     )
-                    
-                    signal_data.append({
-                        'date': date,
-                        'symbol': symbol,
-                        'open': row['open'],
-                        'high': row['high'],
-                        'low': row['low'],
-                        'close': row['close'],
-                        'volume': row['volume'],
-                        'ai_signal': signal,
-                        'signal_strength': abs(signal) * 0.8 + np.random.uniform(0.1, 0.2),
-                        'confidence': np.random.uniform(0.6, 0.95)
-                    })
-            
-            signal_df = pd.DataFrame(signal_data)
+                    if result.get("success") and result.get("data"):
+                        stock_scores = result["data"].get("stock_scores", {})
+                        logger.info(f"AI选股服务返回 {len(stock_scores)} 只股票的评分")
+                    else:
+                        logger.warning(f"AI选股服务返回失败: {result.get('error', '未知错误')}")
+                except Exception as ai_err:
+                    logger.warning(f"调用AI选股服务失败: {ai_err}")
+
+            data_filtered['score'] = data_filtered['symbol'].map(stock_scores).fillna(0.0)
+            data_filtered['ai_signal'] = np.select(
+                [data_filtered['score'] > 0.6, data_filtered['score'] < 0.3],
+                [1, -1],
+                default=0
+            )
+            data_filtered['signal_strength'] = data_filtered['score'].abs()
+            data_filtered['confidence'] = data_filtered['score']
+
+            signal_df = data_filtered[['date', 'symbol', 'open', 'high', 'low', 'close',
+                                        'volume', 'ai_signal', 'signal_strength', 'confidence']].copy()
             logger.info(f"生成AI选股信号完成 - {len(signal_df)}条记录")
             return signal_df
-            
+
         except Exception as e:
             logger.error(f"生成AI选股信号失败: {e}")
-            # 返回空的信号数据
             empty_data = data[(data['date'] >= start_date) & (data['date'] <= end_date)].copy()
             empty_data['ai_signal'] = 0
             empty_data['signal_strength'] = 0
@@ -468,31 +507,17 @@ class AISelectionBacktestService:
                                     symbol: str,
                                     row: pd.Series,
                                     criteria: Union[StockSelectionCriteria, PersonalizedSelectionCriteria],
-                                    strategy: SelectionStrategy) -> int:
+                                    strategy: SelectionStrategy,
+                                    score: float = 0.0) -> int:
         """为单只股票生成信号"""
         try:
-            # 基于策略类型生成信号
-            if strategy == SelectionStrategy.MOMENTUM:
-                # 动量策略信号
-                signal = np.random.choice([-1, 0, 1], p=[0.1, 0.8, 0.1])
-            elif strategy == SelectionStrategy.VALUE:
-                # 价值策略信号
-                signal = np.random.choice([-1, 0, 1], p=[0.15, 0.7, 0.15])
-            elif strategy == SelectionStrategy.GROWTH:
-                # 成长策略信号
-                signal = np.random.choice([-1, 0, 1], p=[0.1, 0.75, 0.15])
-            elif strategy == SelectionStrategy.QUALITY:
-                # 质量策略信号
-                signal = np.random.choice([-1, 0, 1], p=[0.12, 0.76, 0.12])
-            elif strategy == SelectionStrategy.DIVIDEND:
-                # 股息策略信号
-                signal = np.random.choice([-1, 0, 1], p=[0.08, 0.84, 0.08])
-            else:  # BALANCED
-                # 平衡策略信号
-                signal = np.random.choice([-1, 0, 1], p=[0.12, 0.76, 0.12])
-            
-            return signal
-            
+            if score > 0.6:
+                return 1
+            elif score < 0.3:
+                return -1
+            else:
+                return 0
+
         except Exception as e:
             logger.error(f"生成单股票信号失败: {e}")
             return 0
@@ -524,9 +549,15 @@ class AISelectionBacktestService:
             total_periods = ai_signals['date'].nunique()
             metrics['selection_diversity'] = unique_symbols / total_periods
             
-            # 行业分布分析（如果有行业信息）
-            # 这里需要实际的数据支持
-            metrics['industry_concentration'] = 0.5  # 模拟值
+            if 'industry' in ai_signals.columns:
+                active_signals = ai_signals[ai_signals['ai_signal'] != 0]
+                if len(active_signals) > 0:
+                    industry_weights = active_signals['industry'].value_counts(normalize=True)
+                    metrics['industry_concentration'] = float(np.sum(industry_weights ** 2))
+                else:
+                    metrics['industry_concentration'] = None
+            else:
+                metrics['industry_concentration'] = None
             
             logger.info("AI选股指标计算完成")
             return metrics
@@ -554,9 +585,18 @@ class AISelectionBacktestService:
                     # 计算个性化调整效果
                     base_performance = backtest_result['returns'].mean() * 252  # 年化收益
                     impact['base_performance'] = base_performance
-                    
-                    # 模拟个性化调整效果
-                    personalization_bonus = np.random.uniform(-0.02, 0.05)
+
+                    experience_bonus_map = {
+                        InvestmentExperience.BEGINNER: 0.0,
+                        InvestmentExperience.INTERMEDIATE: 0.01,
+                        InvestmentExperience.ADVANCED: 0.02,
+                        InvestmentExperience.PROFESSIONAL: 0.03,
+                    }
+                    experience_bonus = experience_bonus_map.get(
+                        profile.investment_experience, 0.0
+                    )
+                    risk_factor = profile.risk_tolerance_score
+                    personalization_bonus = risk_factor * 0.02 + experience_bonus
                     impact['personalization_bonus'] = personalization_bonus
                     impact['adjusted_performance'] = base_performance + personalization_bonus
             
@@ -575,15 +615,18 @@ class AISelectionBacktestService:
         try:
             logger.info(f"开始蒙特卡洛模拟 - {config.monte_carlo_simulations}次")
             
+            signal_changes = ai_signals['ai_signal'].diff().dropna().values
+            if len(signal_changes) == 0:
+                logger.warning("信号变化数据不足，无法进行蒙特卡洛模拟")
+                return {}
+
             simulation_results = []
-            
+            signal_changes_list = signal_changes.tolist()
+            rng = random.Random(42)
+
             for i in range(config.monte_carlo_simulations):
-                # 生成随机路径
-                np.random.seed(i)  # 确保可重复性
-                
-                # 模拟信号扰动
                 perturbed_signals = ai_signals.copy()
-                noise = np.random.normal(0, 0.1, len(perturbed_signals))
+                noise = np.array([rng.choice(signal_changes_list) for _ in range(len(perturbed_signals))])
                 perturbed_signals['ai_signal'] = np.clip(
                     perturbed_signals['ai_signal'] + noise, -1, 1
                 )
@@ -596,9 +639,9 @@ class AISelectionBacktestService:
             
             # 计算统计结果
             returns = [r['total_return'] for r in simulation_results]
-            max_drawdowns = [r['max_drawdown'] for r in simulation_results]
+            max_drawdowns = [r['max_drawdown'] for r in simulation_results if r['max_drawdown'] is not None]
             sharpe_ratios = [r['sharpe_ratio'] for r in simulation_results]
-            
+
             monte_carlo_results = {
                 'simulations_count': config.monte_carlo_simulations,
                 'return_statistics': {
@@ -610,9 +653,9 @@ class AISelectionBacktestService:
                     'percentile_95': np.percentile(returns, 95)
                 },
                 'drawdown_statistics': {
-                    'mean': np.mean(max_drawdowns),
-                    'std': np.std(max_drawdowns),
-                    'max': np.max(max_drawdowns)
+                    'mean': np.mean(max_drawdowns) if max_drawdowns else None,
+                    'std': np.std(max_drawdowns) if max_drawdowns else None,
+                    'max': np.max(max_drawdowns) if max_drawdowns else None
                 },
                 'sharpe_statistics': {
                     'mean': np.mean(sharpe_ratios),
@@ -637,44 +680,64 @@ class AISelectionBacktestService:
                                config: AISelectionBacktestConfig) -> Dict[str, Any]:
         """运行简化回测（用于蒙特卡洛模拟）"""
         try:
-            # 简化的回测逻辑
             capital = config.initial_capital
             positions = {}
             trades = 0
-            
-            for _, row in ai_signals.iterrows():
-                signal = row['ai_signal']
-                price = row['close']
-                
-                if signal != 0 and capital > 0:
-                    # 计算仓位大小
-                    position_value = capital * config.position_size
-                    shares = int(position_value / price)
-                    
-                    if shares > 0:
-                        # 执行交易
-                        cost = shares * price * (1 + config.commission_pct)
-                        if capital >= cost:
-                            capital -= cost
-                            positions[row['symbol']] = positions.get(row['symbol'], 0) + shares
-                            trades += 1
-            
-            # 计算最终收益
+            daily_portfolio_values = {}
+
+            for date, day_data in ai_signals.groupby('date'):
+                for row_dict in day_data.to_dict('records'):
+                    signal = row_dict['ai_signal']
+                    price = row_dict['close']
+
+                    if signal != 0 and capital > 0:
+                        position_value = capital * config.position_size
+                        shares = int(position_value / price)
+
+                        if shares > 0:
+                            cost = shares * price * (1 + config.commission_pct)
+                            if capital >= cost:
+                                capital -= cost
+                                positions[row_dict['symbol']] = positions.get(row_dict['symbol'], 0) + shares
+                                trades += 1
+
+                day_total_value = capital
+                for symbol, held_shares in positions.items():
+                    symbol_rows = day_data[day_data['symbol'] == symbol]
+                    if not symbol_rows.empty:
+                        day_total_value += held_shares * symbol_rows.iloc[-1]['close']
+                daily_portfolio_values[date] = day_total_value
+
             final_value = capital
             for symbol, shares in positions.items():
-                # 获取最后价格
                 last_price_data = ai_signals[ai_signals['symbol'] == symbol]
                 if not last_price_data.empty:
                     last_price = last_price_data.iloc[-1]['close']
                     final_value += shares * last_price * (1 - config.commission_pct)
-            
+
             total_return = (final_value - config.initial_capital) / config.initial_capital
-            
-            # 简化的风险指标
-            volatility = 0.2  # 模拟值
-            sharpe_ratio = total_return / volatility if volatility > 0 else 0
-            max_drawdown = -0.15  # 模拟值
-            
+
+            sorted_dates = sorted(daily_portfolio_values.keys())
+            if len(sorted_dates) > 1:
+                portfolio_values = np.array([daily_portfolio_values[d] for d in sorted_dates])
+                daily_returns = np.diff(portfolio_values) / portfolio_values[:-1]
+                volatility = float(np.std(daily_returns) * np.sqrt(252))
+
+                cumulative = np.cumprod(1 + daily_returns)
+                running_max = np.maximum.accumulate(cumulative)
+                drawdowns = (cumulative - running_max) / running_max
+                max_drawdown = float(np.min(drawdowns))
+            else:
+                volatility = None
+                max_drawdown = None
+
+            if volatility is not None and volatility > 0:
+                risk_free_rate = 0.02
+                annual_mean = np.mean(daily_returns) * 252
+                sharpe_ratio = (annual_mean - risk_free_rate) / volatility
+            else:
+                sharpe_ratio = 0.0
+
             return {
                 'total_return': total_return,
                 'max_drawdown': max_drawdown,
@@ -682,12 +745,12 @@ class AISelectionBacktestService:
                 'total_trades': trades,
                 'final_capital': final_value
             }
-            
+
         except Exception as e:
             logger.error(f"简化回测失败: {e}")
             return {
                 'total_return': 0.0,
-                'max_drawdown': 0.0,
+                'max_drawdown': None,
                 'sharpe_ratio': 0.0,
                 'total_trades': 0,
                 'final_capital': config.initial_capital
@@ -811,30 +874,31 @@ class AISelectionBacktestService:
                                     ai_signals: pd.DataFrame) -> Dict[str, Any]:
         """计算因子归因分析"""
         try:
-            attribution = {}
-            
-            # 因子暴露分析
-            factors = ['momentum', 'value', 'growth', 'quality', 'size', 'liquidity']
-            
-            for factor in factors:
-                # 模拟因子暴露和收益贡献
-                exposure = np.random.uniform(-1, 1)
-                factor_return = np.random.normal(0.05, 0.15)
-                contribution = exposure * factor_return
-                
-                attribution[factor] = {
-                    'exposure': exposure,
-                    'factor_return': factor_return,
-                    'contribution': contribution,
-                    'contribution_pct': contribution / backtest_result['returns'].sum() if backtest_result['returns'].sum() != 0 else 0
+            if backtest_result is None or backtest_result.empty or 'returns' not in backtest_result.columns:
+                logger.warning("无法计算因子归因，回测结果数据不足")
+                return {}
+
+            returns = backtest_result['returns'].dropna()
+            if len(returns) < 5:
+                logger.warning("数据点不足，无法进行因子归因分析")
+                return {}
+
+            total_return = float(returns.sum())
+            market_return = float(returns.mean())
+
+            attribution = {
+                'market': {
+                    'exposure': 1.0,
+                    'factor_return': market_return,
+                    'contribution': market_return * len(returns),
+                    'contribution_pct': (market_return * len(returns)) / total_return if total_return != 0 else 0
                 }
-            
-            # 计算总因子收益
-            total_factor_contribution = sum([f['contribution'] for f in attribution.values()])
-            attribution['total_factor_contribution'] = total_factor_contribution
-            attribution['specific_return'] = backtest_result['returns'].sum() - total_factor_contribution
-            
-            logger.info("因子归因分析完成")
+            }
+
+            attribution['total_factor_contribution'] = attribution['market']['contribution']
+            attribution['specific_return'] = total_return - attribution['market']['contribution']
+
+            logger.info("因子归因分析完成（基于市场因子模型）")
             return attribution
             
         except Exception as e:
@@ -844,23 +908,35 @@ class AISelectionBacktestService:
     def _calculate_selection_accuracy(self, ai_signals: pd.DataFrame) -> Dict[str, Any]:
         """计算选股准确性"""
         try:
-            # 计算信号的预测准确性
             accuracy_metrics = {}
-            
-            # 信号准确性（简化计算）
+
             positive_signals = ai_signals[ai_signals['ai_signal'] > 0]
             negative_signals = ai_signals[ai_signals['ai_signal'] < 0]
-            
-            accuracy_metrics['total_signals'] = len(ai_signals[ai_signals['ai_signal'] != 0])
+            non_zero_signals = ai_signals[ai_signals['ai_signal'] != 0]
+
+            accuracy_metrics['total_signals'] = len(non_zero_signals)
             accuracy_metrics['positive_signals'] = len(positive_signals)
             accuracy_metrics['negative_signals'] = len(negative_signals)
-            
-            # 模拟准确率（实际应用中需要真实的预测结果对比）
-            accuracy_metrics['signal_accuracy'] = np.random.uniform(0.6, 0.8)
-            accuracy_metrics['precision'] = np.random.uniform(0.65, 0.85)
-            accuracy_metrics['recall'] = np.random.uniform(0.6, 0.8)
-            accuracy_metrics['f1_score'] = 2 * (accuracy_metrics['precision'] * accuracy_metrics['recall']) / (accuracy_metrics['precision'] + accuracy_metrics['recall'])
-            
+
+            if 'confidence' in ai_signals.columns and len(non_zero_signals) > 0:
+                high_conf_signals = non_zero_signals[non_zero_signals['confidence'] > 0.7]
+                high_conf_positive = high_conf_signals[high_conf_signals['ai_signal'] > 0]
+
+                accuracy_metrics['signal_accuracy'] = len(high_conf_signals) / len(non_zero_signals)
+                accuracy_metrics['precision'] = len(high_conf_positive) / len(high_conf_signals) if len(high_conf_signals) > 0 else 0.0
+                accuracy_metrics['recall'] = len(high_conf_signals) / len(non_zero_signals)
+            else:
+                logger.warning("缺少置信度数据，无法计算真实准确率指标")
+                accuracy_metrics['signal_accuracy'] = 0.0
+                accuracy_metrics['precision'] = 0.0
+                accuracy_metrics['recall'] = 0.0
+
+            accuracy_metrics['f1_score'] = (
+                2 * (accuracy_metrics['precision'] * accuracy_metrics['recall']) /
+                (accuracy_metrics['precision'] + accuracy_metrics['recall'])
+                if (accuracy_metrics['precision'] + accuracy_metrics['recall']) > 0 else 0.0
+            )
+
             logger.info("选股准确性计算完成")
             return accuracy_metrics
             
@@ -883,7 +959,7 @@ class AISelectionBacktestService:
             quality_metrics['signal_strength_variance'] = signal_strengths.var()
             
             # 推荐一致性
-            daily_signals = ai_signals.groupby('date')['ai_signal'].apply(lambda x: len(x[x != 0]))
+            daily_signals = (ai_signals['ai_signal'] != 0).groupby(ai_signals['date']).sum()
             quality_metrics['avg_daily_signals'] = daily_signals.mean()
             quality_metrics['signal_consistency'] = 1 - (daily_signals.std() / daily_signals.mean()) if daily_signals.mean() > 0 else 0
             

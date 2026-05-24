@@ -8,7 +8,7 @@ from loguru import logger
 import os
 from typing import Optional, Dict, Any
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
+    QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
     QGroupBox, QFormLayout, QComboBox, QSpinBox, QCheckBox,
     QListWidget, QPushButton, QTextEdit, QLabel, QDialogButtonBox,
     QMessageBox, QFileDialog, QInputDialog, QLineEdit, QDoubleSpinBox
@@ -16,10 +16,12 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QFont
 
+from .base_dialog import BaseDialog
+
 logger = logger
 
 
-class SettingsDialog(QDialog):
+class SettingsDialog(BaseDialog):
     """设置对话框"""
 
     # 信号
@@ -39,15 +41,18 @@ class SettingsDialog(QDialog):
             config_service: 配置服务
             initial_tab_index: 初始显示的标签页索引
         """
-        super().__init__(parent)
         # 优先使用theme_manager，向后兼容theme_service
         self.theme_service = theme_manager if theme_manager else theme_service
         self.config_service = config_service
         self.initial_tab_index = initial_tab_index
 
-        self.setWindowTitle("设置")
-        self.setMinimumSize(800, 600)
-        self.setModal(True)
+        super().__init__(
+            parent,
+            title="设置",
+            min_size=(800, 600),
+            settings_key="SettingsDialog",
+            theme_manager=theme_manager
+        )
 
         # 创建UI
         self._create_widgets()

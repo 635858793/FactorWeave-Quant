@@ -1,26 +1,26 @@
-QFrame {
+﻿QFrame {
   background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0.960396, y2:0.949, stop:0 rgba(88, 245, 227, 255), stop:0.0940594 rgba(132, 246, 239, 255), stop:0.143564 rgba(130, 246, 233, 255), stop:0.222772 rgba(158, 249, 234, 255), stop:0.25 rgba(144, 248, 248, 255), stop:0.292079 rgba(173, 251, 252, 255), stop:0.326733 rgba(156, 248, 241, 255), stop:0.475248 rgba(158, 230, 226, 255), stop:0.554455 rgba(135, 251, 242, 255), stop:0.628713 rgba(139, 226, 226, 255), stop:0.805 rgba(150, 245, 242, 255), stop:0.866337 rgba(186, 254, 243, 255), stop:0.915842 rgba(188, 254, 250, 255), stop:1 rgba(190, 255, 248, 255));
    color: rgb(0, 0, 0);
-   font: 75 11pt "Bitstream Charter";
+   font-weight: 75; font-size: 11pt; font-family: "Bitstream Charter";
 
 }
 
 QMainWindow{
     background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0.960396, y2:0.949, stop:0 rgba(88, 245, 227, 255), stop:0.0940594 rgba(132, 246, 239, 255), stop:0.143564 rgba(130, 246, 233, 255), stop:0.222772 rgba(158, 249, 234, 255), stop:0.25 rgba(144, 248, 248, 255), stop:0.292079 rgba(173, 251, 252, 255), stop:0.326733 rgba(156, 248, 241, 255), stop:0.475248 rgba(158, 230, 226, 255), stop:0.554455 rgba(135, 251, 242, 255), stop:0.628713 rgba(139, 226, 226, 255), stop:0.805 rgba(150, 245, 242, 255), stop:0.866337 rgba(186, 254, 243, 255), stop:0.915842 rgba(188, 254, 250, 255), stop:1 rgba(190, 255, 248, 255));
    color: rgb(0, 0, 0);
-   font: 75 11pt "Bitstream Charter";
+   font-weight: 75; font-size: 11pt; font-family: "Bitstream Charter";
    
 }
 
 QWidget{
     background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0.960396, y2:0.949, stop:0 rgba(88, 245, 227, 255), stop:0.0940594 rgba(132, 246, 239, 255), stop:0.143564 rgba(130, 246, 233, 255), stop:0.222772 rgba(158, 249, 234, 255), stop:0.25 rgba(144, 248, 248, 255), stop:0.292079 rgba(173, 251, 252, 255), stop:0.326733 rgba(156, 248, 241, 255), stop:0.475248 rgba(158, 230, 226, 255), stop:0.554455 rgba(135, 251, 242, 255), stop:0.628713 rgba(139, 226, 226, 255), stop:0.805 rgba(150, 245, 242, 255), stop:0.866337 rgba(186, 254, 243, 255), stop:0.915842 rgba(188, 254, 250, 255), stop:1 rgba(190, 255, 248, 255));
    color: rgb(0, 0, 0);
-   font: 75 11pt "Bitstream Charter";
+   font-weight: 75; font-size: 11pt; font-family: "Bitstream Charter";
 }
 
 QMenu{
     color: rgb(0, 0, 0);
-    font: 75 11pt "Bitstream Charter";
+    font-weight: 75; font-size: 11pt; font-family: "Bitstream Charter";
 background-color: qconicalgradient(cx:0.5, cy:0.5, angle:0, stop:0 rgba(35, 40, 3, 255), stop:0.16 rgba(136, 106, 22, 255), stop:0.225 rgba(166, 140, 41, 255), stop:0.285 rgba(204, 181, 74, 255), stop:0.345 rgba(235, 219, 102, 255), stop:0.415 rgba(245, 236, 112, 255), stop:0.52 rgba(209, 190, 76, 255), stop:0.57 rgba(187, 156, 51, 255), stop:0.635 rgba(168, 142, 42, 255), stop:0.695 rgba(202, 174, 68, 255), stop:0.75 rgba(218, 202, 86, 255), stop:0.815 rgba(208, 187, 73, 255), stop:0.88 rgba(187, 156, 51, 255), stop:0.935 rgba(137, 108, 26, 255), stop:1 rgba(35, 40, 3, 255));
     border-width: 2px;
     border-color: rgb(255, 255, 255);
@@ -38,13 +38,13 @@ QTreeView{
     border-style: solid;
     border-radius: 10;
    color: rgb(0, 0, 0);
-   font: 75 11pt "Bitstream Charter";
+   font-weight: 75; font-size: 11pt; font-family: "Bitstream Charter";
 }
 
 
 QPushButton {
     color: rgb(0, 0, 0);
-    font: 75 11pt "Bitstream Charter";
+    font-weight: 75; font-size: 11pt; font-family: "Bitstream Charter";
     border-width: 2px;
     background-color: rgb(170, 170, 0);
     border-style: solid;
@@ -72,7 +72,7 @@ QDialogButtonBox {
 }
 QDialogButtonBox QPushButton {
     color: rgb(0, 0, 0);
-    font: 75 11pt "Bitstream Charter";
+    font-weight: 75; font-size: 11pt; font-family: "Bitstream Charter";
     border-width: 2px;
     background-color: rgb(170, 170, 0);
     border-style: solid;
@@ -83,7 +83,7 @@ QDialogButtonBox QPushButton {
 }
 QDialogButtonBox QPushButton:hover {
     color: rgb(0, 0, 0);
-    font: 75 11pt "Bitstream Charter";
+    font-weight: 75; font-size: 11pt; font-family: "Bitstream Charter";
     border-width: 2px;
     background-color: rgb(190, 190, 0);
     border-style: solid;
@@ -92,7 +92,7 @@ QDialogButtonBox QPushButton:hover {
 }
 QDialogButtonBox QPushButton:pressed {
     color: rgb(0, 0, 0);
-    font: 75 11pt "Bitstream Charter";
+    font-weight: 75; font-size: 11pt; font-family: "Bitstream Charter";
     border-width: 2px;
     background-color: rgb(150, 150, 0);
     border-style: solid;
@@ -101,7 +101,7 @@ QDialogButtonBox QPushButton:pressed {
 }
 QDialogButtonBox QPushButton:disabled {
     color: rgb(0, 0, 0);
-    font: 75 11pt "Bitstream Charter";
+    font-weight: 75; font-size: 11pt; font-family: "Bitstream Charter";
     border-width: 2px;
     background-color: rgb(130, 130, 0);
     border-style: solid;
@@ -110,7 +110,7 @@ QDialogButtonBox QPushButton:disabled {
 }
 QDialogButtonBox QPushButton:default {
     color: rgb(0, 0, 0);
-    font: 75 11pt "Bitstream Charter";
+    font-weight: 75; font-size: 11pt; font-family: "Bitstream Charter";
     border-width: 2px;
     background-color: rgb(170, 170, 0);
     border-style: solid;
@@ -122,12 +122,12 @@ QDialogButtonBox QPushButton:default {
 
 QLabel {
    color: rgb(0, 0, 0);
-   font: 75 11pt "Bitstream Charter";
+   font-weight: 75; font-size: 11pt; font-family: "Bitstream Charter";
 }
 
 QLineEdit{
    color: rgb(0, 0, 0);
-   font: 75 11pt "Bitstream Charter";   
+   font-weight: 75; font-size: 11pt; font-family: "Bitstream Charter";   
    background-color: rgb(255, 252, 144);
     border-width: 2px;
     border-color: rgb(255, 255, 255);
@@ -139,7 +139,7 @@ QLineEdit{
 
 QComboBox{
     color: rgb(0, 0, 0);
-    font: 75 11pt "Bitstream Charter";
+    font-weight: 75; font-size: 11pt; font-family: "Bitstream Charter";
     border-width: 2px;
     background-color: rgb(170, 170, 0);
     border-color: rgb(255, 255, 255);
@@ -152,7 +152,7 @@ QComboBox:hover{
 
 QDoubleSpinBox {
     color: rgb(0, 0, 0);
-    font: 75 11pt "Bitstream Charter";
+    font-weight: 75; font-size: 11pt; font-family: "Bitstream Charter";
     border-width: 2px;
     background-color: rgb(170, 170, 0);
     border-color: rgb(255, 255, 255);
@@ -164,7 +164,7 @@ QDoubleSpinBox {
 
 QCheckBox{
     color: rgb(0, 0, 0);
-    font: 75 11pt "Bitstream Charter";
+    font-weight: 75; font-size: 11pt; font-family: "Bitstream Charter";
     border-width: 2px;
     background-color: rgb(170, 170, 0);
     border-color: rgb(255, 255, 255);
@@ -182,7 +182,7 @@ QCheckBox:checked{
 
 QRadioButton{
     color: rgb(0, 0, 0);
-    font: 75 11pt "Bitstream Charter";
+    font-weight: 75; font-size: 11pt; font-family: "Bitstream Charter";
     border-width: 2px;
     background-color: rgb(170, 170, 0);
     border-color: rgb(255, 255, 255);
@@ -200,7 +200,7 @@ QRadioButton:hover {
 QMenuBar {
         background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1, stop:0 rgba(200, 180, 50, 255), stop:1 rgba(170, 150, 0, 255));
         color: rgb(0, 0, 0);
-        font: 75 11pt "Bitstream Charter";
+        font-weight: 75; font-size: 11pt; font-family: "Bitstream Charter";
         padding: 5px;
 }
 QMenuBar::item {
@@ -301,7 +301,7 @@ QTabBar::tab {
         padding: 8px 15px;
         border-top-left-radius: 4px;
         border-top-right-radius: 4px;
-        font: 75 11pt "Bitstream Charter";
+        font-weight: 75; font-size: 11pt; font-family: "Bitstream Charter";
 }
 QTabBar::tab:selected {
         background: rgb(255, 252, 144);
@@ -322,7 +322,7 @@ QHeaderView::section {
         color: rgb(0, 0, 0);
         padding: 5px;
         border: 1px solid rgb(150, 130, 30);
-        font: 75 11pt "Bitstream Charter";
+        font-weight: 75; font-size: 11pt; font-family: "Bitstream Charter";
 }
 QHeaderView::section:hover {
         background: rgb(220, 200, 70);
@@ -392,7 +392,7 @@ QSpinBox {
         padding: 3px 5px;
         background: rgb(255, 252, 144);
         color: rgb(0, 0, 0);
-        font: 75 11pt "Bitstream Charter";
+        font-weight: 75; font-size: 11pt; font-family: "Bitstream Charter";
 }
 QSpinBox::up-button {
         width: 18px;
@@ -415,7 +415,7 @@ QTextEdit {
         border-radius: 5px;
         color: rgb(0, 0, 0);
         background: rgb(255, 252, 144);
-        font: 75 11pt "Bitstream Charter";
+        font-weight: 75; font-size: 11pt; font-family: "Bitstream Charter";
 }
 
 QPlainTextEdit {
@@ -423,7 +423,7 @@ QPlainTextEdit {
         border-radius: 5px;
         color: rgb(0, 0, 0);
         background: rgb(255, 252, 144);
-        font: 75 11pt "Bitstream Charter";
+        font-weight: 75; font-size: 11pt; font-family: "Bitstream Charter";
 }
 
 /**********文本浏览器**********/
@@ -432,7 +432,7 @@ QTextBrowser {
         border-radius: 5px;
         color: rgb(0, 0, 0);
         background: rgb(255, 252, 144);
-        font: 75 11pt "Bitstream Charter";
+        font-weight: 75; font-size: 11pt; font-family: "Bitstream Charter";
 }
 
 /**********分组框**********/
@@ -442,7 +442,7 @@ QGroupBox {
         margin-top: 15px;
         padding-top: 10px;
         color: rgb(0, 0, 0);
-        font: 75 bold 12pt "Bitstream Charter";
+        font-weight: bold; font-size: 12pt; font-family: "Bitstream Charter";
 }
 QGroupBox::title {
         subcontrol-origin: margin;
@@ -517,7 +517,7 @@ QFontComboBox {
         padding: 3px;
         background: rgb(200, 180, 50);
         color: rgb(0, 0, 0);
-        font: 75 11pt "Bitstream Charter";
+        font-weight: 75; font-size: 11pt; font-family: "Bitstream Charter";
 }
 QFontComboBox::drop-down {
         width: 20px;
@@ -538,7 +538,7 @@ QDateEdit, QTimeEdit {
         padding: 3px 5px;
         background: rgb(255, 252, 144);
         color: rgb(0, 0, 0);
-        font: 75 11pt "Bitstream Charter";
+        font-weight: 75; font-size: 11pt; font-family: "Bitstream Charter";
 }
 QDateEdit::drop-down, QTimeEdit::drop-down {
         width: 20px;

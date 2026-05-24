@@ -45,7 +45,7 @@ class DuckDBConnectionPool:
         pool_size: int = 15,
         max_overflow: int = 100,
         timeout: float = 30.0,
-        pool_recycle: int = 3600,
+        pool_recycle: int = 1800,
         pool_pre_ping: bool = True,
         use_lifo: bool = True
     ):
@@ -57,7 +57,7 @@ class DuckDBConnectionPool:
             pool_size: 连接池大小（保持的持久连接数），默认15（从5增加到15，支持批量查询）
             max_overflow: 允许的额外连接数，默认20（从10增加到100，支持高并发）
             timeout: 获取连接的超时时间（秒），默认30
-            pool_recycle: 连接回收时间（秒），超过此时间的连接将被回收，默认3600（1小时）
+            pool_recycle: 连接回收时间（秒），超过此时间的连接将被回收，默认1800（30分钟）
             pool_pre_ping: 是否在使用前检查连接有效性，默认True
             use_lifo: 是否使用后进先出（LIFO）策略，默认True（让空闲连接更容易被回收）
         """
@@ -275,6 +275,41 @@ class DuckDBConnectionPool:
         except Exception as e:
             logger.error(f"重新创建连接池失败: {e}")
 
+    def health_check(self) -> bool:
+        """
+        执行增强健康检查，验证数据库连接和元数据可访问性
+
+        DuckDB 单文件锁限制，不做写测试（如 CREATE TEMP TABLE）。
+        检查项:
+        1. SELECT version() - 验证引擎响应
+        2. SELECT COUNT(*) FROM information_schema.tables - 验证元数据可访问
+
+        Returns:
+            bool: 所有检查通过返回 True，否则返回 False
+        """
+        import time
+        try:
+            with self.get_connection() as conn:
+                start = time.perf_counter()
+                version = conn.execute("SELECT version()").fetchone()
+                elapsed_version = time.perf_counter() - start
+
+                start = time.perf_counter()
+                table_count = conn.execute(
+                    "SELECT COUNT(*) FROM information_schema.tables"
+                ).fetchone()
+                elapsed_meta = time.perf_counter() - start
+
+                logger.debug(
+                    f"健康检查通过 - version={version[0] if version else 'unknown'}, "
+                    f"tables={table_count[0] if table_count else -1}, "
+                    f"version_elapsed={elapsed_version:.3f}s, meta_elapsed={elapsed_meta:.3f}s"
+                )
+                return True
+        except Exception as e:
+            logger.warning(f"健康检查失败: {e}")
+            return False
+
     def __enter__(self):
         """支持上下文管理器协议"""
         return self
@@ -288,7 +323,7 @@ class DuckDBConnectionPool:
         """析构时清理资源"""
         try:
             self.dispose()
-        except:
+        except Exception:
             pass
 
 

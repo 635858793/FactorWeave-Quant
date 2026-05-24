@@ -25,10 +25,10 @@ from loguru import logger
 
 # 导入相关模块
 try:
-    from core.performance.unified_performance_coordinator import get_performance_coordinator, UnifiedPerformanceCoordinator
-    from core.performance.unified_monitor import PerformanceCategory, MetricType
-    from core.performance.real_time_metrics_collector import RealTimeMetricsCollector
-    from core.advanced_optimization.unified_optimization_service import UnifiedOptimizationService, OptimizationConfig, OptimizationMode
+    from ..performance.unified_performance_coordinator import get_performance_coordinator, UnifiedPerformanceCoordinator
+    from ..performance.unified_monitor import PerformanceCategory, MetricType
+    from ..performance.real_time_metrics_collector import RealTimeMetricsCollector
+    from .unified_optimization_service import UnifiedOptimizationService, OptimizationConfig, OptimizationMode
 except ImportError as e:
     logger.warning(f"性能监控模块导入失败: {e}")
 
@@ -81,6 +81,8 @@ class DeepOptimizationMonitor:
         self.optimization_service = optimization_service
         self.unified_monitor = unified_monitor
         
+        self._lock = threading.Lock()
+        
         # 监控状态
         self.status = MonitoringStatus.STOPPED
         self.monitoring_thread = None
@@ -116,12 +118,14 @@ class DeepOptimizationMonitor:
     
     def add_metrics_callback(self, callback: Callable[[OptimizationMetrics], None]):
         """添加指标回调函数"""
-        self.metrics_callbacks.append(callback)
+        with self._lock:
+            self.metrics_callbacks.append(callback)
         logger.debug(f"添加指标回调函数: {callback.__name__}")
-    
+
     def add_alert_callback(self, callback: Callable[[str, Dict[str, Any]], None]):
         """添加告警回调函数"""
-        self.alert_callbacks.append(callback)
+        with self._lock:
+            self.alert_callbacks.append(callback)
         logger.debug(f"添加告警回调函数: {callback.__name__}")
     
     async def start_monitoring(self, interval_seconds: float = 5.0):
@@ -423,29 +427,19 @@ class DeepOptimizationMonitor:
         metrics = {}
         
         try:
-            # 模拟网络指标收集（在实际实现中可能需要从网络模块获取）
-            # 这里使用一些合理的模拟值
-            current_time = time.time()
-            
-            # 基于时间和随机因素生成模拟网络指标
-            np.random.seed(int(current_time) % 1000)  # 基于时间种子的伪随机
-            
-            base_latency = 45.0
-            latency_variation = np.random.normal(0, 15)
-            network_latency = max(10, base_latency + latency_variation)
-            
-            # 网络吞吐量（基于历史数据模拟）
-            base_throughput = 1000.0  # ops/s
-            throughput_variation = np.random.normal(0, 200)
-            network_throughput = max(100, base_throughput + throughput_variation)
-            
-            # 网络错误率（低概率错误）
-            network_error_rate = max(0, np.random.exponential(0.001))
-            
+            import psutil
+            net_io = psutil.net_io_counters()
             metrics.update({
-                'network_latency': network_latency,
-                'network_throughput': network_throughput,
-                'network_error_rate': network_error_rate
+                'network_latency': 0.0,
+                'network_throughput': float(net_io.bytes_sent + net_io.bytes_recv),
+                'network_error_rate': 0.0
+            })
+        except ImportError:
+            logger.warning("psutil不可用，网络指标返回默认零值")
+            metrics.update({
+                'network_latency': 0.0,
+                'network_throughput': 0.0,
+                'network_error_rate': 0.0
             })
             
         except Exception as e:
@@ -666,7 +660,9 @@ class DeepOptimizationMonitor:
     def _notify_metrics_callbacks(self, metrics: OptimizationMetrics):
         """通知指标回调函数"""
         try:
-            for callback in self.metrics_callbacks:
+            with self._lock:
+                callbacks = list(self.metrics_callbacks)
+            for callback in callbacks:
                 try:
                     callback(metrics)
                 except Exception as e:
@@ -676,27 +672,29 @@ class DeepOptimizationMonitor:
     
     def get_current_metrics(self) -> OptimizationMetrics:
         """获取当前指标"""
-        return self.current_metrics
-    
+        with self._lock:
+            return self.current_metrics
+
     def get_metrics_history(self, count: int = 100) -> List[OptimizationMetrics]:
         """获取历史指标"""
-        return list(self.metrics_history)[-count:]
+        with self._lock:
+            return list(self.metrics_history)[-count:]
     
     def get_statistics(self) -> Dict[str, Any]:
         """获取统计信息"""
-        stats = self.stats.copy()
-        
-        # 添加当前状态信息
-        stats.update({
-            'status': self.status.value,
-            'current_metrics': {
-                'overall_score': self.current_metrics.overall_optimization_score,
-                'cache_hit_rate': self.current_metrics.cache_hit_rate,
-                'render_time': self.current_metrics.virtualization_render_time,
-                'network_latency': self.current_metrics.network_latency
-            }
-        })
-        
+        with self._lock:
+            stats = self.stats.copy()
+
+            stats.update({
+                'status': self.status.value,
+                'current_metrics': {
+                    'overall_score': self.current_metrics.overall_optimization_score,
+                    'cache_hit_rate': self.current_metrics.cache_hit_rate,
+                    'render_time': self.current_metrics.virtualization_render_time,
+                    'network_latency': self.current_metrics.network_latency
+                }
+            })
+
         return stats
     
     def export_metrics_data(self, filepath: Optional[str] = None) -> Dict[str, Any]:

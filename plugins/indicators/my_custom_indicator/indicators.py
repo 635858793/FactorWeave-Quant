@@ -6,6 +6,7 @@
 实现自定义指标的计算函数
 """
 
+from loguru import logger
 import pandas as pd
 import numpy as np
 from typing import Dict, Any
@@ -93,26 +94,19 @@ def demo_usage():
     """
     演示如何使用自定义指标
     """
-    # 创建示例数据
+    logger.warning(
+        "demo_usage() 需要真实行情数据，当前使用 NaN 占位。"
+        "请从数据源加载实际 OHLCV 数据替换 df。"
+    )
+
     dates = pd.date_range(start='2020-01-01', periods=100)
-    np.random.seed(42)
-
-    # 模拟价格数据
-    close = np.random.random(100) * 100 + 100
-    for i in range(1, len(close)):
-        close[i] = close[i-1] * (1 + (np.random.random() - 0.5) * 0.05)
-
-    high = close * (1 + np.random.random(100) * 0.03)
-    low = close * (1 - np.random.random(100) * 0.03)
-    open_price = low + np.random.random(100) * (high - low)
-    volume = np.random.random(100) * 1000000 + 500000
 
     df = pd.DataFrame({
-        'open': open_price,
-        'high': high,
-        'low': low,
-        'close': close,
-        'volume': volume
+        'open': np.full(100, np.nan),
+        'high': np.full(100, np.nan),
+        'low': np.full(100, np.nan),
+        'close': np.full(100, np.nan),
+        'volume': np.full(100, np.nan),
     }, index=dates)
 
     # 计算情绪指标

@@ -4,7 +4,7 @@
 基于用户行为学习和画像分析，提供个性化的AI选股推荐和策略调整
 """
 
-import logging
+from loguru import logger
 import json
 import numpy as np
 import pandas as pd
@@ -14,8 +14,9 @@ from enum import Enum
 from datetime import datetime, timedelta
 from collections import defaultdict, Counter
 import threading
-import sqlite3
 from concurrent.futures import ThreadPoolExecutor
+
+from ..database.unified_sqlite_access import UnifiedSQLiteAccess
 
 # 现有用户行为学习系统
 from .user_behavior_learner import (
@@ -27,8 +28,6 @@ from .user_behavior_learner import (
 from ..services.ai_selection_integration_service import (
     AISelectionIntegrationService, StockSelectionCriteria, SelectionStrategy
 )
-
-logger = logging.getLogger(__name__)
 
 
 class SelectionPreferenceType(Enum):
@@ -116,6 +115,7 @@ class PersonalizedStockSelectionEngine:
         self.behavior_learner = behavior_learner
         self.ai_selection_service = ai_selection_service
         self.db_path = db_path or self._get_default_db_path()
+        self._db_instance = UnifiedSQLiteAccess.get_instance(self.db_path)
         self.storage = UserBehaviorStorage(self.db_path)
         self.executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="Personalized_Selection")
         
@@ -140,7 +140,7 @@ class PersonalizedStockSelectionEngine:
     def _init_database(self):
         """初始化数据库表"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._db_instance.get_connection() as conn:
                 cursor = conn.cursor()
                 
                 # 投资画像表
@@ -194,7 +194,6 @@ class PersonalizedStockSelectionEngine:
                     )
                 """)
                 
-                conn.commit()
                 logger.info("个性化选股引擎数据库表初始化完成")
                 
         except Exception as e:
@@ -208,7 +207,7 @@ class PersonalizedStockSelectionEngine:
                 return self._investment_profiles[user_id]
                 
             # 从数据库加载
-            with sqlite3.connect(self.db_path) as conn:
+            with self._db_instance.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT * FROM investment_profiles WHERE user_id = ?", (user_id,))
                 row = cursor.fetchone()
@@ -292,7 +291,7 @@ class PersonalizedStockSelectionEngine:
     def save_investment_profile(self, profile: InvestmentProfile) -> bool:
         """保存投资画像"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._db_instance.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     INSERT OR REPLACE INTO investment_profiles 
@@ -318,7 +317,6 @@ class PersonalizedStockSelectionEngine:
                     profile.created_at.isoformat(),
                     datetime.now().isoformat()
                 ))
-                conn.commit()
                 
                 # 更新缓存
                 self._investment_profiles[profile.user_id] = profile
@@ -625,7 +623,7 @@ class PersonalizedStockSelectionEngine:
         """应用用户反馈"""
         try:
             # 保存反馈到数据库
-            with sqlite3.connect(self.db_path) as conn:
+            with self._db_instance.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     INSERT INTO selection_feedback 
@@ -643,7 +641,6 @@ class PersonalizedStockSelectionEngine:
                     json.dumps(feedback.performance_data) if feedback.performance_data else None,
                     feedback.timestamp.isoformat()
                 ))
-                conn.commit()
                 
             # 更新用户投资画像
             self._update_profile_with_feedback(feedback)
@@ -1024,7 +1021,7 @@ class PersonalizedStockSelectionEngine:
             cutoff_date = datetime.now() - timedelta(days=days_to_keep)
             cutoff_str = cutoff_date.isoformat()
             
-            with sqlite3.connect(self.db_path) as conn:
+            with self._db_instance.get_connection() as conn:
                 cursor = conn.cursor()
                 
                 # 清理旧的反馈数据
@@ -1034,7 +1031,6 @@ class PersonalizedStockSelectionEngine:
                 """, (cutoff_str,))
                 
                 deleted_count = cursor.rowcount
-                conn.commit()
                 
                 logger.info(f"已清理 {deleted_count} 条旧的反馈记录")
                 

@@ -143,7 +143,7 @@ class OptimizationController:
                         latest = history[0]
                         score = latest.get('overall_score', 0)
                         print(f"     最新评分: {score:.3f}")
-                except:
+                except Exception:
                     pass
 
         except Exception as e:

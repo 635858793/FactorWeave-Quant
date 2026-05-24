@@ -7,6 +7,7 @@ Exorde 情绪数据源插件
 """
 
 import requests
+import os
 import numpy as np
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
@@ -19,6 +20,8 @@ from plugins.sentiment_data_source_interface import SentimentData, SentimentResp
 
 class ExordeSentimentPlugin(BaseSentimentPlugin, ConfigurablePlugin):
     """Exorde情绪数据源插件"""
+
+    has_real_data = False
 
     def __init__(self):
         BaseSentimentPlugin.__init__(self)
@@ -182,7 +185,7 @@ class ExordeSentimentPlugin(BaseSentimentPlugin, ConfigurablePlugin):
         """获取默认配置"""
         return {
             "enabled": True,
-            "api_key": "",
+            "api_key": os.environ.get("EXORDE_API_KEY", ""),
             "primary_emotions": ["love", "joy", "optimism", "fear", "anger", "sadness"],
             "emotion_threshold": 0.3,
             "data_weight": 0.20,
@@ -294,7 +297,6 @@ class ExordeSentimentPlugin(BaseSentimentPlugin, ConfigurablePlugin):
             )
 
     def _fetch_real_exorde_data(self, api_key: str) -> List[SentimentData]:
-        """获取真实Exorde数据"""
         sentiment_data = []
         timeout = self.get_config("request_timeout", 15)
         topics = self.get_config("topics", ["stock market"])
@@ -303,7 +305,6 @@ class ExordeSentimentPlugin(BaseSentimentPlugin, ConfigurablePlugin):
 
         for attempt in range(retry_times + 1):
             try:
-                # 调用真实的Exorde API
                 url = "https://api.exorde.io/sentiment"
                 params = {
                     "api_key": api_key,
@@ -323,7 +324,6 @@ class ExordeSentimentPlugin(BaseSentimentPlugin, ConfigurablePlugin):
                 if response.status_code == 200:
                     data = response.json()
                     if data and 'sentiment_data' in data:
-                        # 处理真实API响应
                         for item in data['sentiment_data']:
                             emotion_scores = {
                                 'joy': item.get('joy', 0.0),
@@ -339,77 +339,62 @@ class ExordeSentimentPlugin(BaseSentimentPlugin, ConfigurablePlugin):
                             sentiment_items = self._create_sentiment_data_from_emotions(emotion_scores, "Exorde-Real")
                             sentiment_data.extend(sentiment_items)
 
-                        self._safe_log("info", f" 成功获取Exorde真实数据，包含{len(sentiment_data)}个指标")
-                        break  # 成功获取，跳出重试循环
+                        self._safe_log("info", f"成功获取Exorde真实数据，包含{len(sentiment_data)}个指标")
+                        break
                     else:
-                        self._safe_log("warning", "Exorde API返回空数据或格式错误")
+                        self._safe_log("warning", "Exorde API返回空数据或格式错误，当前无可用数据")
                         if attempt == retry_times:
-                            # 使用模拟数据作为回退
-                            emotion_scores = self._generate_emotion_spectrum()
-                            sentiment_data = self._create_sentiment_data_from_emotions(emotion_scores, "Exorde-Fallback")
+                            logger.warning("Exorde情绪数据: API返回空数据，不生成模拟数据")
 
                 elif response.status_code == 401:
-                    self._safe_log("error", "Exorde API认证失败，API Key无效")
-                    # API Key无效，使用模拟数据
-                    emotion_scores = self._generate_emotion_spectrum()
-                    sentiment_data = self._create_sentiment_data_from_emotions(emotion_scores, "Exorde-Invalid-Key")
+                    self._safe_log("error", "Exorde API认证失败，API Key无效，当前无可用数据")
+                    logger.warning("Exorde情绪数据: API认证失败，不生成模拟数据")
                     break
 
                 elif response.status_code == 429:
                     self._safe_log("warning", f"Exorde API请求限制，等待重试... (尝试 {attempt + 1})")
                     if attempt < retry_times:
                         import time
-                        time.sleep(3 ** attempt)  # 指数退避
+                        time.sleep(3 ** attempt)
                         continue
                     else:
-                        # 超出重试次数，使用模拟数据
-                        emotion_scores = self._generate_emotion_spectrum()
-                        sentiment_data = self._create_sentiment_data_from_emotions(emotion_scores, "Exorde-Rate-Limited")
+                        logger.warning("Exorde情绪数据: API请求限制超次，不生成模拟数据")
                         break
 
                 elif response.status_code == 404:
-                    self._safe_log("warning", "Exorde API端点不存在，可能API已更新")
-                    # API端点问题，使用模拟数据
-                    emotion_scores = self._generate_emotion_spectrum()
-                    sentiment_data = self._create_sentiment_data_from_emotions(emotion_scores, "Exorde-Endpoint-Error")
+                    self._safe_log("warning", "Exorde API端点不存在，可能API已更新，当前无可用数据")
+                    logger.warning("Exorde情绪数据: API端点不存在，不生成模拟数据")
                     break
 
                 else:
                     self._safe_log("warning", f"Exorde API请求失败，状态码: {response.status_code}")
                     if attempt == retry_times:
-                        # 最后一次尝试失败，使用模拟数据
-                        emotion_scores = self._generate_emotion_spectrum()
-                        sentiment_data = self._create_sentiment_data_from_emotions(emotion_scores, "Exorde-API-Error")
+                        logger.warning("Exorde情绪数据: API请求最终失败，不生成模拟数据")
 
             except requests.exceptions.Timeout:
                 self._safe_log("warning", f"Exorde API请求超时 (尝试 {attempt + 1})")
                 if attempt == retry_times:
-                    emotion_scores = self._generate_emotion_spectrum()
-                    sentiment_data = self._create_sentiment_data_from_emotions(emotion_scores, "Exorde-Timeout")
+                    logger.warning("Exorde情绪数据: API请求超时，不生成模拟数据")
 
             except requests.exceptions.ConnectionError:
                 self._safe_log("warning", f"Exorde API连接错误 (尝试 {attempt + 1})")
                 if attempt == retry_times:
-                    emotion_scores = self._generate_emotion_spectrum()
-                    sentiment_data = self._create_sentiment_data_from_emotions(emotion_scores, "Exorde-Connection-Error")
+                    logger.warning("Exorde情绪数据: API连接错误，不生成模拟数据")
 
             except requests.exceptions.RequestException as e:
                 self._safe_log("warning", f"Exorde API网络错误 (尝试 {attempt + 1}): {e}")
                 if attempt == retry_times:
-                    emotion_scores = self._generate_emotion_spectrum()
-                    sentiment_data = self._create_sentiment_data_from_emotions(emotion_scores, "Exorde-Network-Error")
+                    logger.warning("Exorde情绪数据: API网络错误，不生成模拟数据")
 
             except json.JSONDecodeError:
                 self._safe_log("warning", f"Exorde API响应JSON解析失败 (尝试 {attempt + 1})")
                 if attempt == retry_times:
-                    emotion_scores = self._generate_emotion_spectrum()
-                    sentiment_data = self._create_sentiment_data_from_emotions(emotion_scores, "Exorde-JSON-Error")
+                    logger.warning("Exorde情绪数据: API响应JSON解析失败，不生成模拟数据")
 
             except Exception as e:
                 self._safe_log("error", f"Exorde API调用异常 (尝试 {attempt + 1}): {e}")
                 if attempt == retry_times:
-                    emotion_scores = self._generate_emotion_spectrum()
-                    sentiment_data = self._create_sentiment_data_from_emotions(emotion_scores, "Exorde-Exception")
+                    logger.warning("Exorde情绪数据: API调用异常，不生成模拟数据")
 
         return sentiment_data
 
@@ -419,40 +404,27 @@ class ExordeSentimentPlugin(BaseSentimentPlugin, ConfigurablePlugin):
         return []
 
     def _generate_emotion_spectrum(self) -> Dict[str, float]:
-        """生成27种情绪光谱"""
-        primary_emotions = self.get_config("primary_emotions", ["love", "joy", "optimism", "fear", "anger", "sadness"])
-        emotion_threshold = self.get_config("emotion_threshold", 0.3)
-
-        emotion_scores = {}
-
-        # 为主要情绪生成较高的强度
-        for emotion in primary_emotions:
-            emotion_scores[emotion] = max(emotion_threshold, np.random.beta(2, 3))
-
-        # 为其他情绪生成较低的强度
-        for emotion in self.emotions:
-            if emotion not in emotion_scores:
-                emotion_scores[emotion] = np.random.beta(1, 4)  # 更偏向低值
-
-        return emotion_scores
+        logger.warning("Exorde情绪插件: 当前无真实API配置，无法生成情绪光谱数据")
+        return {}
 
     def _create_sentiment_data_from_emotions(self, emotion_scores: Dict[str, float], source: str) -> List[SentimentData]:
-        """从情绪分数创建情绪数据"""
+        if not emotion_scores:
+            logger.warning(f"Exorde情绪数据: emotion_scores为空(source={source})，无法创建情绪数据")
+            return []
+
         sentiment_data = []
         emotion_threshold = self.get_config("emotion_threshold", 0.3)
 
-        # 找出主导情绪
         dominant_emotion = max(emotion_scores, key=emotion_scores.get)
         dominant_score = emotion_scores[dominant_emotion] * 100
 
-        # 创建综合情绪光谱数据
         status, signal = self._get_emotion_status_signal(dominant_emotion, dominant_score)
 
         spectrum_data = SentimentData(
             indicator_name="市场情绪光谱",
             value=round(dominant_score, 2),
             status=f"{status}({dominant_emotion})",
-            change=round(np.random.normal(0, 2), 2),
+            change=0.0,
             signal=signal,
             suggestion=f"市场主导情绪为{dominant_emotion}({dominant_score:.1f}%)，建议{signal}",
             timestamp=datetime.now(),
@@ -461,7 +433,6 @@ class ExordeSentimentPlugin(BaseSentimentPlugin, ConfigurablePlugin):
         )
         sentiment_data.append(spectrum_data)
 
-        # 创建强情绪数据
         strong_emotions = {k: v for k, v in emotion_scores.items() if v >= emotion_threshold}
         if len(strong_emotions) > 1:
             strong_emotion_score = np.mean(list(strong_emotions.values())) * 100
@@ -470,7 +441,7 @@ class ExordeSentimentPlugin(BaseSentimentPlugin, ConfigurablePlugin):
                 indicator_name="情绪强度指数",
                 value=round(strong_emotion_score, 2),
                 status=f"检测到{len(strong_emotions)}种强情绪",
-                change=round(np.random.normal(0, 1.5), 2),
+                change=0.0,
                 signal="情绪波动" if len(strong_emotions) >= 4 else "情绪稳定",
                 suggestion=f"市场情绪复杂度: {len(strong_emotions)}种强情绪",
                 timestamp=datetime.now(),

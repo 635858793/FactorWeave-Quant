@@ -1,167 +1,206 @@
 {
   "light": {
-    "background": "#f7f9fa", // 主窗口背景，明亮灰白
-    "text": "#222b45", // 主文本色，深灰蓝
-    "border": "#e0e0e0", // 边框色
-    "k_up": "#FF5252", // K线阳线，明亮红
-    "k_down": "#4CAF50", // K线阴线，明亮绿
-    "k_edge": "#2c3140", // K线边框
-    "chart_grid": "#e0e0e0", // 图表网格
-    "chart_background": "#ffffff", // 图表背景
-    "chart_text": "#222b45", // 图表文字
-    "volume_up": "#FF5252", // 成交量阳线
-    "volume_down": "#4CAF50", // 成交量阴线
-    "volume_alpha": 1.0, // 成交量透明度
-    "alpha": 1.0, // K线透明度
-    "indicator_colors": ["#fbc02d", "#ab47bc", "#1976d2", "#43a047", "#e53935", "#00bcd4", "#ff9800"], // 指标线
-    "button_bg": "#e3f2fd", // 按钮背景
-    "button_hover": "#90caf9", // 按钮悬停
-    "button_pressed": "#64b5f6", // 按钮按下
-    "button_text": "#1565c0", // 按钮文字
-    "button_border": "#90caf9", // 按钮边框
-    "highlight": "#1976d2", // 高亮色
-    "warning": "#ff9800", // 警告色
-    "error": "#FF0000", // 错误色
-    "success": "#4CAF50", // 成功色
-    "info": "#2196F3", // 信息色
-    "selected_bg": "#E3F2FD", // 选中背景
-    "selected_text": "#1976D2", // 选中字体
-    "hover_bg": "#F5F5F5", // 悬停背景
-    "table_header_bg": "#2196F3", // 表头背景
-    "table_header_text": "#ffffff", // 表头文字
-    "progress_chunk": "#4CAF50", // 进度条
-    "heat_red": "#FF1744", // 热度红
-    "heat_green": "#00C853", // 热度绿
-    "heat_gray": "#757575", // 热度灰
-    "heat_orange": "#FFA500", // 热度橙
-    "background_color": "#FFFFFF", // 兼容旧配置，主背景色
-    "text_color": "#000000", // 兼容旧配置，主文本色
-    "grid_color": "#E0E0E0", // 兼容旧配置，网格色
-    "chart_colors": ["#1F77B4", "#FF7F0E", "#2CA02C", "#D62728"], // 兼容旧配置，备用图表线色
-    "custom_colors": {}, // 兼容旧配置，自定义颜色
-    "overview_background": "#fafdff", // 缩略图背景，更亮
-    "overview_k_up": "#FF867F", // 缩略图阳线，更亮红
-    "overview_k_down": "#80e27e", // 缩略图阴线，更亮绿
-    "main_content_bg": "#ffffff", // 主内容区背景（light）
-    "chart_panel_bg": "#fafdff", // 图表区背景（light）
-    "log_bg": "#f7f9fa", // 日志区背景（light）
-    "divider": "#bdbdbd", // 分割线色（light）
-    "shadow": "rgba(0,0,0,0.06)", // 阴影色（light）
-    "focus": "#1976d2", // 聚焦色（light）
-    "sidebar_bg": "#f3f6fa", // 侧栏背景（light）
-    "sidebar_border": "#e0e0e0", // 侧栏边框（light）
-    "dialog_bg": "#ffffff", // 弹窗背景（light）
-    "dialog_border": "#90caf9", // 弹窗边框（light）
-    "dialog_shadow": "rgba(25,118,210,0.08)" // 弹窗阴影（light）
+    "background": "#f7f9fa",
+    "text": "#222b45",
+    "border": "#e0e0e0",
+    "k_up": "#FF5252",
+    "k_down": "#4CAF50",
+    "k_edge": "#2c3140",
+    "chart_grid": "#e0e0e0",
+    "chart_background": "#ffffff",
+    "chart_text": "#222b45",
+    "volume_up": "#FF5252",
+    "volume_down": "#4CAF50",
+    "volume_alpha": 1.0,
+    "alpha": 1.0,
+    "indicator_colors": [
+      "#fbc02d",
+      "#ab47bc",
+      "#1976d2",
+      "#43a047",
+      "#e53935",
+      "#00bcd4",
+      "#ff9800"
+    ],
+    "button_bg": "#e3f2fd",
+    "button_hover": "#90caf9",
+    "button_pressed": "#64b5f6",
+    "button_text": "#1565c0",
+    "button_border": "#90caf9",
+    "highlight": "#1976d2",
+    "warning": "#ff9800",
+    "error": "#FF0000",
+    "success": "#4CAF50",
+    "info": "#2196F3",
+    "selected_bg": "#E3F2FD",
+    "selected_text": "#1976D2",
+    "hover_bg": "#F5F5F5",
+    "table_header_bg": "#2196F3",
+    "table_header_text": "#ffffff",
+    "progress_chunk": "#4CAF50",
+    "heat_red": "#FF1744",
+    "heat_green": "#00C853",
+    "heat_gray": "#757575",
+    "heat_orange": "#FFA500",
+    "background_color": "#FFFFFF",
+    "text_color": "#000000",
+    "grid_color": "#E0E0E0",
+    "chart_colors": [
+      "#1F77B4",
+      "#FF7F0E",
+      "#2CA02C",
+      "#D62728"
+    ],
+    "custom_colors": {},
+    "overview_background": "#fafdff",
+    "overview_k_up": "#FF867F",
+    "overview_k_down": "#80e27e",
+    "main_content_bg": "#ffffff",
+    "chart_panel_bg": "#fafdff",
+    "log_bg": "#f7f9fa",
+    "divider": "#bdbdbd",
+    "shadow": "rgba(0,0,0,0.06)",
+    "focus": "#1976d2",
+    "sidebar_bg": "#f3f6fa",
+    "sidebar_border": "#e0e0e0",
+    "dialog_bg": "#ffffff",
+    "dialog_border": "#90caf9",
+    "dialog_shadow": "rgba(25,118,210,0.08)"
   },
   "dark": {
-    "background": "#181c24", // 主背景
-    "text": "#e0e6ed", // 主文字
-    "border": "#23293a", // 边框
-    "k_up": "#ff3b30", // 阳线红
-    "k_down": "#00e676", // 阴线绿
-    "k_edge": "#2196f3", // K线边框
-    "chart_grid": "#26324a", // 图表网格
-    "chart_background": "#23293a", // 图表背景
-    "chart_text": "#e0e6ed", // 图表文字
-    "volume_up": "#ff3b30", // 成交量阳线
-    "volume_down": "#00e676", // 成交量阴线
-    "volume_alpha": 1.0, // 成交量透明度
-    "alpha": 1.0, // K线透明度
-    "indicator_colors": ["#fbc02d", "#ab47bc", "#1976d2", "#43a047", "#e53935", "#00bcd4", "#ff9800"], // 指标线
-    "button_bg": "#23293a", // 按钮背景
-    "button_hover": "#1976d2", // 按钮悬浮
-    "button_pressed": "#1565c0", // 按钮按下
-    "button_text": "#e0e6ed", // 按钮文字
-    "button_border": "#1976d2", // 按钮边框
-    "highlight": "#1976d2", // 高亮色
-    "warning": "#ff9800", // 警告色
-    "error": "#FF5252", // 错误色
-    "success": "#4CAF50", // 成功色
-    "info": "#2196F3", // 信息色
-    "selected_bg": "#26324a", // 选中背景
-    "selected_text": "#ffd600", // 选中文字
-    "hover_bg": "#23293a", // 悬浮背景
-    "table_header_bg": "#1976d2", // 表头背景
-    "table_header_text": "#ffd600", // 表头文字
-    "progress_chunk": "#ffd600", // 进度条
-    "heat_red": "#FF1744", // 热度红
-    "heat_green": "#00E676", // 热度绿
-    "heat_gray": "#757575", // 热度灰
-    "heat_orange": "#FFA500", // 热度橙
-    "background_color": "#FFFFFF", // 兼容旧配置，主背景色
-    "text_color": "#000000", // 兼容旧配置，主文本色
-    "grid_color": "#E0E0E0", // 兼容旧配置，网格色
-    "chart_colors": ["#1F77B4", "#FF7F0E", "#2CA02C", "#D62728"], // 兼容旧配置，备用图表线色
-    "custom_colors": {}, // 兼容旧配置，自定义颜色
-    "overview_background": "#23293a", // 缩略图背景
-    "overview_k_up": "#ff867f", // 缩略图阳线
-    "overview_k_down": "#80e27e", // 缩略图阴线
-    "main_content_bg": "#23293a", // 主内容区背景（dark）
-    "chart_panel_bg": "#181c24", // 图表区背景（dark）
-    "log_bg": "#181c24", // 日志区背景（dark）
-    "divider": "#26324a", // 分割线色（dark）
-    "shadow": "rgba(0,0,0,0.18)", // 阴影色（dark）
-    "focus": "#ffd600", // 聚焦色（dark）
-    "sidebar_bg": "#23293a", // 侧栏背景（dark）
-    "sidebar_border": "#26324a", // 侧栏边框（dark）
-    "dialog_bg": "#23293a", // 弹窗背景（dark）
-    "dialog_border": "#1976d2", // 弹窗边框（dark）
-    "dialog_shadow": "rgba(25,118,210,0.18)" // 弹窗阴影（dark）
+    "background": "#181c24",
+    "text": "#e0e6ed",
+    "border": "#23293a",
+    "k_up": "#ff3b30",
+    "k_down": "#00e676",
+    "k_edge": "#2196f3",
+    "chart_grid": "#26324a",
+    "chart_background": "#23293a",
+    "chart_text": "#e0e6ed",
+    "volume_up": "#ff3b30",
+    "volume_down": "#00e676",
+    "volume_alpha": 1.0,
+    "alpha": 1.0,
+    "indicator_colors": [
+      "#fbc02d",
+      "#ab47bc",
+      "#1976d2",
+      "#43a047",
+      "#e53935",
+      "#00bcd4",
+      "#ff9800"
+    ],
+    "button_bg": "#23293a",
+    "button_hover": "#1976d2",
+    "button_pressed": "#1565c0",
+    "button_text": "#e0e6ed",
+    "button_border": "#1976d2",
+    "highlight": "#1976d2",
+    "warning": "#ff9800",
+    "error": "#FF5252",
+    "success": "#4CAF50",
+    "info": "#2196F3",
+    "selected_bg": "#26324a",
+    "selected_text": "#ffd600",
+    "hover_bg": "#23293a",
+    "table_header_bg": "#1976d2",
+    "table_header_text": "#ffd600",
+    "progress_chunk": "#ffd600",
+    "heat_red": "#FF1744",
+    "heat_green": "#00E676",
+    "heat_gray": "#757575",
+    "heat_orange": "#FFA500",
+    "background_color": "#FFFFFF",
+    "text_color": "#000000",
+    "grid_color": "#E0E0E0",
+    "chart_colors": [
+      "#1F77B4",
+      "#FF7F0E",
+      "#2CA02C",
+      "#D62728"
+    ],
+    "custom_colors": {},
+    "overview_background": "#23293a",
+    "overview_k_up": "#ff867f",
+    "overview_k_down": "#80e27e",
+    "main_content_bg": "#23293a",
+    "chart_panel_bg": "#181c24",
+    "log_bg": "#181c24",
+    "divider": "#26324a",
+    "shadow": "rgba(0,0,0,0.18)",
+    "focus": "#ffd600",
+    "sidebar_bg": "#23293a",
+    "sidebar_border": "#26324a",
+    "dialog_bg": "#23293a",
+    "dialog_border": "#1976d2",
+    "dialog_shadow": "rgba(25,118,210,0.18)"
   },
   "gradient": {
-    "background": "linear-gradient(135deg, #1976d2 0%, #7b1fa2 100%)", // 渐变主背景
-    "text": "#f5f5f5", // 主文字
-    "border": "#5e35b1", // 边框
-    "k_up": "#ff6b81", // 阳线红
-    "k_down": "#4dd0e1", // 阴线蓝绿
-    "k_edge": "#ffd600", // K线边框
-    "chart_grid": "#b39ddb", // 图表网格
-    "chart_background": "rgba(25,118,210,0.85)", // 图表背景
-    "chart_text": "#f5f5f5", // 图表文字
-    "volume_up": "#ff6b81", // 成交量阳线
-    "volume_down": "#4dd0e1", // 成交量阴线
-    "volume_alpha": 1.0, // 成交量透明度
-    "alpha": 1.0, // K线透明度
-    "indicator_colors": ["#ffd600", "#00e676", "#00b8d4", "#7c4dff", "#ff4081", "#ffab00", "#18ffff"], // 指标线
-    "button_bg": "rgba(123,31,162,0.8)", // 按钮背景
-    "button_hover": "#1976d2", // 按钮悬浮
-    "button_pressed": "#512da8", // 按钮按下
-    "button_text": "#ffd600", // 按钮文字
-    "button_border": "#ffd600", // 按钮边框
-    "highlight": "#ffd600", // 高亮色
-    "warning": "#ffab00", // 警告色
-    "error": "#FF1744", // 错误色
-    "success": "#00e676", // 成功色
-    "info": "#00b8d4", // 信息色
-    "selected_bg": "rgba(25,118,210,0.3)", // 选中背景
-    "selected_text": "#ffd600", // 选中文字
-    "hover_bg": "rgba(123,31,162,0.2)", // 悬浮背景
-    "table_header_bg": "#7b1fa2", // 表头背景
-    "table_header_text": "#ffd600", // 表头文字
-    "progress_chunk": "#ffd600", // 进度条
-    "heat_red": "#FF1744", // 热度红
-    "heat_green": "#00E676", // 热度绿
-    "heat_gray": "#757575", // 热度灰
-    "heat_orange": "#FFA500", // 热度橙
-    "background_color": "#FFFFFF", // 兼容旧配置，主背景色
-    "text_color": "#000000", // 兼容旧配置，主文本色
-    "grid_color": "#E0E0E0", // 兼容旧配置，网格色
-    "chart_colors": ["#1F77B4", "#FF7F0E", "#2CA02C", "#D62728"], // 兼容旧配置，备用图表线色
-    "custom_colors": {}, // 兼容旧配置，自定义颜色
-    "overview_background": "#23293a", // 缩略图背景
-    "overview_k_up": "#ffb3b3", // 缩略图阳线
-    "overview_k_down": "#b2ffd6", // 缩略图阴线
-    "main_content_bg": "rgba(25,118,210,0.85)", // 主内容区背景（gradient）
-    "chart_panel_bg": "rgba(123,31,162,0.85)", // 图表区背景（gradient）
-    "log_bg": "rgba(25,118,210,0.7)", // 日志区背景（gradient）
-    "divider": "#ffd600", // 分割线色（gradient）
-    "shadow": "rgba(123,31,162,0.18)", // 阴影色（gradient）
-    "focus": "#ffd600", // 聚焦色（gradient）
-    "sidebar_bg": "rgba(123,31,162,0.7)", // 侧栏背景（gradient）
-    "sidebar_border": "#ffd600", // 侧栏边框（gradient）
-    "dialog_bg": "rgba(25,118,210,0.95)", // 弹窗背景（gradient）
-    "dialog_border": "#ffd600", // 弹窗边框（gradient）
-    "dialog_shadow": "rgba(25,118,210,0.18)" // 弹窗阴影（gradient）
+    "background": "linear-gradient(135deg, #1976d2 0%, #7b1fa2 100%)",
+    "text": "#f5f5f5",
+    "border": "#5e35b1",
+    "k_up": "#ff6b81",
+    "k_down": "#4dd0e1",
+    "k_edge": "#ffd600",
+    "chart_grid": "#b39ddb",
+    "chart_background": "rgba(25,118,210,0.85)",
+    "chart_text": "#f5f5f5",
+    "volume_up": "#ff6b81",
+    "volume_down": "#4dd0e1",
+    "volume_alpha": 1.0,
+    "alpha": 1.0,
+    "indicator_colors": [
+      "#ffd600",
+      "#00e676",
+      "#00b8d4",
+      "#7c4dff",
+      "#ff4081",
+      "#ffab00",
+      "#18ffff"
+    ],
+    "button_bg": "rgba(123,31,162,0.8)",
+    "button_hover": "#1976d2",
+    "button_pressed": "#512da8",
+    "button_text": "#ffd600",
+    "button_border": "#ffd600",
+    "highlight": "#ffd600",
+    "warning": "#ffab00",
+    "error": "#FF1744",
+    "success": "#00e676",
+    "info": "#00b8d4",
+    "selected_bg": "rgba(25,118,210,0.3)",
+    "selected_text": "#ffd600",
+    "hover_bg": "rgba(123,31,162,0.2)",
+    "table_header_bg": "#7b1fa2",
+    "table_header_text": "#ffd600",
+    "progress_chunk": "#ffd600",
+    "heat_red": "#FF1744",
+    "heat_green": "#00E676",
+    "heat_gray": "#757575",
+    "heat_orange": "#FFA500",
+    "background_color": "#FFFFFF",
+    "text_color": "#000000",
+    "grid_color": "#E0E0E0",
+    "chart_colors": [
+      "#1F77B4",
+      "#FF7F0E",
+      "#2CA02C",
+      "#D62728"
+    ],
+    "custom_colors": {},
+    "overview_background": "#23293a",
+    "overview_k_up": "#ffb3b3",
+    "overview_k_down": "#b2ffd6",
+    "main_content_bg": "rgba(25,118,210,0.85)",
+    "chart_panel_bg": "rgba(123,31,162,0.85)",
+    "log_bg": "rgba(25,118,210,0.7)",
+    "divider": "#ffd600",
+    "shadow": "rgba(123,31,162,0.18)",
+    "focus": "#ffd600",
+    "sidebar_bg": "rgba(123,31,162,0.7)",
+    "sidebar_border": "#ffd600",
+    "dialog_bg": "rgba(25,118,210,0.95)",
+    "dialog_border": "#ffd600",
+    "dialog_shadow": "rgba(25,118,210,0.18)"
   }
-} 
+}

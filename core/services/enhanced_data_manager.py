@@ -10,7 +10,6 @@ from loguru import logger
 日期: 2025-01-27
 """
 
-import sqlite3
 import pandas as pd
 import duckdb
 from typing import Dict, List, Any, Optional, Tuple
@@ -30,6 +29,7 @@ from ..data.enhanced_models import (
     EnhancedStockInfo, EnhancedKlineData, FinancialStatement,
     MacroEconomicData, DataQualityMetrics, generate_table_name
 )
+from ..database.unified_sqlite_access import UnifiedSQLiteAccess
 
 
 
@@ -388,7 +388,7 @@ class PluginTableManager:
                 [table_name]
             ).fetchone()
             return result is not None
-        except:
+        except Exception:
             return False
 
 
@@ -403,7 +403,8 @@ class DataQualityMonitor:
     def _init_tables(self):
         """初始化数据质量监控表"""
         try:
-            with sqlite3.connect(self.sqlite_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.sqlite_path))
+            with db.get_connection() as conn:
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS data_quality_metrics (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -821,7 +822,7 @@ class DataQualityMonitor:
                     return 0.4
                 else:
                     return 0.2
-            except:
+            except Exception:
                 return 1.0
 
         return 1.0
@@ -860,7 +861,8 @@ class DataQualityMonitor:
             duplicate_records = data.duplicated().sum() if data is not None else 0
 
             # 保存到数据库
-            with sqlite3.connect(self.sqlite_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.sqlite_path))
+            with db.get_connection() as conn:
                 conn.execute("""
                     INSERT OR REPLACE INTO data_quality_metrics (
                         plugin_name, table_name, metric_date,
@@ -891,7 +893,8 @@ class FieldMappingManager:
     def _init_tables(self):
         """初始化字段映射表"""
         try:
-            with sqlite3.connect(self.sqlite_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.sqlite_path))
+            with db.get_connection() as conn:
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS field_mappings (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -924,7 +927,8 @@ class FieldMappingManager:
             if hasattr(plugin.plugin_info, 'capabilities') and plugin.plugin_info.capabilities:
                 field_mappings = plugin.plugin_info.capabilities.get('field_mappings', {})
 
-                with sqlite3.connect(self.sqlite_path) as conn:
+                db = UnifiedSQLiteAccess.get_instance(str(self.sqlite_path))
+                with db.get_connection() as conn:
                     for data_type, mappings in field_mappings.items():
                         for source_field, target_field in mappings.items():
                             conn.execute("""
@@ -943,7 +947,8 @@ class FieldMappingManager:
     def get_field_mapping(self, plugin_name: str, data_type: str) -> Dict[str, str]:
         """获取字段映射"""
         try:
-            with sqlite3.connect(self.sqlite_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.sqlite_path))
+            with db.get_connection() as conn:
                 cursor = conn.execute("""
                     SELECT source_field, target_field FROM field_mappings
                     WHERE plugin_name = ? AND data_type = ?

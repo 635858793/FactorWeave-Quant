@@ -35,14 +35,6 @@ class MarketEnvironment:
         # 更新用户提供的参数
         if params:
             self.params.update(params)
-        
-    def set_param(self, name, value):
-        """设置参数"""
-        self.params[name] = value
-        
-    def get_param(self, name, default=None):
-        """获取参数"""
-        return self.params.get(name, default)
 
         # 初始化市场状态
         self.market_state = {
@@ -52,6 +44,14 @@ class MarketEnvironment:
             'strength': 0.0,         # 趋势强度
             'regime': 'normal'       # 市场状态：bull/bear/neutral
         }
+        
+    def set_param(self, name, value):
+        """设置参数"""
+        self.params[name] = value
+        
+    def get_param(self, name, default=None):
+        """获取参数"""
+        return self.params.get(name, default)
 
     def analyze(self, data):
         """分析市场环境
@@ -288,54 +288,55 @@ class MarketEnvironment:
             current_rsi = rsi_clean.iloc[-1]
             current_close = close_clean.iloc[-1]
 
-            # 2. 计算市场状态得分
-            score = 0
+            # 2. 计算市场状态得分 (Z-Score标准化加权评分)
+            score = 0.0
 
-            # RSI得分
-            if current_rsi > 70:
-                score -= 1  # 超买，可能下跌
-            elif current_rsi < 30:
-                score += 1  # 超卖，可能上涨
+            # RSI得分: Z-Score标准化 (历史均值~50, 标准差~15)
+            # 正值=看涨倾向, 负值=看跌倾向
+            rsi_mean = rsi_clean.mean() if len(rsi_clean) > 0 else 50.0
+            rsi_std = rsi_clean.std() if len(rsi_clean) > 0 else 15.0
+            if rsi_std > 0:
+                rsi_z = (current_rsi - rsi_mean) / rsi_std
+            else:
+                rsi_z = 0.0
+            score += rsi_z * 1.0
 
-            # MACD得分
-            if hasattr(macd_clean, 'diff') and hasattr(macd_clean, 'dea'):
-                # MACD是DataFrame格式
-                if (len(macd_clean) >= 2 and 
-                    macd_clean['diff'].iloc[-1] > 0 and macd_clean['dea'].iloc[-1] > 0):
-                    score += 1  # 金叉向上
-                elif (len(macd_clean) >= 2 and
-                      macd_clean['diff'].iloc[-1] < 0 and macd_clean['dea'].iloc[-1] < 0):
-                    score -= 1  # 死叉向下
+            # MACD得分: diff值相较于历史波动标准化
+            if hasattr(macd_clean, 'diff'):
+                macd_diff = macd_clean['diff'].iloc[-1]
+                macd_hist_std = macd_clean['diff'].std() if len(macd_clean) > 0 else 0.01
+                if macd_hist_std > 0:
+                    macd_z = macd_diff / macd_hist_std
+                else:
+                    macd_z = 0.0
+                score += macd_z * 1.2
             elif isinstance(macd_clean, pd.Series):
-                # MACD是Series格式（金叉死叉需要更复杂的计算）
-                if len(macd_clean) >= 2 and macd_clean.iloc[-1] > 0:
-                    score += 1
-                elif len(macd_clean) >= 2 and macd_clean.iloc[-1] < 0:
-                    score -= 1
+                macd_val = macd_clean.iloc[-1]
+                macd_hist_std = macd_clean.std() if len(macd_clean) > 0 else 0.01
+                if macd_hist_std > 0:
+                    macd_z = macd_val / macd_hist_std
+                else:
+                    macd_z = 0.0
+                score += macd_z * 1.2
 
-            # 布林带得分
+            # 布林带得分: 价格在带宽中的位置
             if hasattr(boll_clean, 'upper') and hasattr(boll_clean, 'lower'):
-                # 布林带是DataFrame格式
-                if (len(boll_clean) >= 1 and 
-                    current_close > boll_clean['upper'].iloc[-1]):
-                    score -= 1  # 突破上轨，可能超买
-                elif (len(boll_clean) >= 1 and
-                      current_close < boll_clean['lower'].iloc[-1]):
-                    score += 1  # 突破下轨，可能超卖
+                upper = boll_clean['upper'].iloc[-1]
+                lower = boll_clean['lower'].iloc[-1]
+                mid = (upper + lower) / 2
+                if upper != lower:
+                    bb_position = (current_close - mid) / (upper - lower) * 2
+                    score += -bb_position * 0.8
             elif isinstance(boll_clean, pd.Series):
-                # 布林带是Series格式
-                if len(boll_clean) >= 2:
-                    upper_band = current_close * 1.02  # 简化判断
-                    lower_band = current_close * 0.98
-                    if current_close > upper_band:
-                        score -= 1
-                    elif current_close < lower_band:
-                        score += 1
+                bb_std = boll_clean.std()
+                if bb_std > 0:
+                    bb_z = (current_close - boll_clean.mean()) / bb_std
+                    score += -bb_z * 0.8
 
             # 3. 判断市场状态
-            if score >= 2:
+            if score >= 1.5:
                 self.market_state['regime'] = 'bull'
-            elif score <= -2:
+            elif score <= -1.5:
                 self.market_state['regime'] = 'bear'
             else:
                 self.market_state['regime'] = 'neutral'

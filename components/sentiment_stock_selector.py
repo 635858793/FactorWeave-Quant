@@ -3,7 +3,7 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtCore import Qt
 import json
 import os
-from trade_api import SimulatedTradeAPI
+from components.trade_api import SimulatedTradeAPI
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from loguru import logger
 
@@ -199,9 +199,7 @@ class SentimentStockSelectorDialog(QDialog):
             if not stock_list:
                 self.selected_stocks = ["000001 平安银行", "600519 贵州茅台", "300750 宁德时代"]
             else:
-                import random
-                selected = random.sample(list(stock_list.head(50)['code']), min(3, len(stock_list)))
-                self.selected_stocks = [f"{code} 股票{code}" for code in selected]
+                self.selected_stocks = self._select_by_real_momentum(stock_list, filter_val)
 
             self.result_list.clear()
             for s in self.selected_stocks:
@@ -218,6 +216,46 @@ class SentimentStockSelectorDialog(QDialog):
             for s in self.selected_stocks:
                 self.result_list.addItem(s)
 
+    def _select_by_real_momentum(self, stock_list, filter_val, top_n=3):
+        try:
+            from core.real_data_provider import get_real_data_provider
+            provider = get_real_data_provider()
+            if not provider:
+                logger.warning("RealDataProvider不可用，无法基于真实数据选股")
+                return []
+
+            codes = list(stock_list.head(50)['code'])
+            momentum_scores = []
+
+            for code in codes:
+                try:
+                    kdata = provider.get_real_kdata(code, count=30)
+                    if kdata is not None and not kdata.empty and 'close' in kdata.columns:
+                        closes = kdata['close'].values
+                        if len(closes) >= 10:
+                            momentum = (closes[-1] - closes[-10]) / closes[-10]
+                            name = code
+                            try:
+                                if 'name' in kdata.columns and len(kdata['name'].values) > 0:
+                                    name = str(kdata['name'].values[-1])
+                            except Exception:
+                                pass
+                            momentum_scores.append((code, name, momentum))
+                except Exception as e:
+                    logger.debug(f"获取{code}动量数据失败: {e}")
+
+            if not momentum_scores:
+                logger.warning("无可用真实价格数据，无法基于动量选股")
+                return []
+
+            momentum_scores.sort(key=lambda x: x[2], reverse=True)
+            selected = momentum_scores[:top_n]
+            return [f"{code} {name}" for code, name, _ in selected]
+
+        except Exception as e:
+            logger.warning(f"基于真实动量选股失败: {e}")
+            return []
+
     def export_result(self):
         if self.selected_stocks:
             file_path, _ = QFileDialog.getSaveFileName(
@@ -231,7 +269,6 @@ class SentimentStockSelectorDialog(QDialog):
         if not self.selected_stocks:
             self.backtest_result.setText("请先选股！")
             return
-        # 多周期回测
         checked_periods = [p for p, cb in zip(
             self.periods, self.period_checks) if cb.isChecked()]
         if not checked_periods:
@@ -240,15 +277,80 @@ class SentimentStockSelectorDialog(QDialog):
         self.backtest_table.setColumnCount(len(checked_periods)*2)
         self.backtest_table.setHorizontalHeaderLabels(
             [f"{p}日收益" for p in checked_periods]+[f"{p}日回撤" for p in checked_periods])
-        import random
-        for i, s in enumerate(self.selected_stocks):
-            for j, p in enumerate(checked_periods):
-                pct = round(random.uniform(-10, 30), 2)
-                mdd = round(random.uniform(2, 15), 2)
-                self.backtest_table.setItem(i, j, QTableWidgetItem(f"{pct}%"))
-                self.backtest_table.setItem(
-                    i, j+len(checked_periods), QTableWidgetItem(f"{mdd}%"))
-        self.backtest_result.setText("回测完成，可点击实盘模拟体验持仓跟踪！")
+
+        engine_available = False
+        try:
+            from backtest.unified_backtest_engine import UnifiedBacktestEngine
+            engine = UnifiedBacktestEngine()
+            engine_available = True
+        except ImportError:
+            logger.warning("回测: UnifiedBacktestEngine不可用，无法执行真实回测")
+        except Exception as e:
+            logger.warning(f"回测: 初始化UnifiedBacktestEngine失败: {e}")
+
+        if not engine_available:
+            for i in range(len(self.selected_stocks)):
+                for j in range(len(checked_periods) * 2):
+                    self.backtest_table.setItem(i, j, QTableWidgetItem("--"))
+            self.backtest_result.setText("回测引擎不可用，无法执行回测。请检查UnifiedBacktestEngine配置。")
+            return
+
+        try:
+            for i, s in enumerate(self.selected_stocks):
+                code = s.split()[0] if ' ' in s else s
+                price_df = None
+                try:
+                    if self.data_manager and hasattr(self.data_manager, 'get_kdata'):
+                        price_df = self.data_manager.get_kdata(code)
+                except Exception as e:
+                    logger.debug(f"获取{code}价格数据失败: {e}")
+
+                if price_df is None or price_df.empty or 'close' not in price_df.columns:
+                    for j in range(len(checked_periods) * 2):
+                        self.backtest_table.setItem(i, j, QTableWidgetItem("无数据"))
+                    continue
+
+                for j, p in enumerate(checked_periods):
+                    pct_str = "--"
+                    mdd_str = "--"
+                    try:
+                        sub_df = price_df.tail(p).copy()
+                        if len(sub_df) < 2:
+                            pct_str = "数据不足"
+                            mdd_str = "数据不足"
+                        else:
+                            sub_df['signal'] = 1
+                            result = engine.run_backtest(
+                                sub_df,
+                                signal_col='signal',
+                                price_col='close',
+                                initial_capital=100000,
+                                stop_loss_pct=None,
+                                take_profit_pct=None,
+                                max_holding_periods=None
+                            )
+                            if result is not None and not result.empty:
+                                metrics = engine.metrics
+                                if metrics:
+                                    total_return = getattr(metrics, 'total_return', None)
+                                    max_dd = getattr(metrics, 'max_drawdown', None)
+                                    if total_return is not None:
+                                        pct_str = f"{total_return * 100:.2f}%"
+                                    if max_dd is not None:
+                                        mdd_str = f"{max_dd * 100:.2f}%"
+                    except Exception as e:
+                        logger.debug(f"{code} {p}日回测失败: {e}")
+
+                    self.backtest_table.setItem(i, j, QTableWidgetItem(pct_str))
+                    self.backtest_table.setItem(i, j + len(checked_periods), QTableWidgetItem(mdd_str))
+
+            self.backtest_result.setText("回测完成(基于UnifiedBacktestEngine真实回测)")
+        except Exception as e:
+            logger.warning(f"回测执行失败: {e}")
+            for i in range(len(self.selected_stocks)):
+                for j in range(len(checked_periods) * 2):
+                    self.backtest_table.setItem(i, j, QTableWidgetItem("--"))
+            self.backtest_result.setText(f"回测失败: {e}")
 
     def simtrade(self):
         # 简单实盘模拟：买入所有选股，持仓跟踪
@@ -331,13 +433,29 @@ class SentimentStockSelectorDialog(QDialog):
         self.backtest_result.setText(result)
 
     def _simulate_score(self, sig, param, target):
-        if target == "最大收益":
-            score = random.uniform(-5, 20)
-        elif target == "最小回撤":
-            score = random.uniform(2, 15)
-        else:
-            score = random.uniform(0.5, 2.5)
-        return sig, param, score
+        try:
+            price_df = None
+            if self.data_manager and hasattr(self.data_manager, 'get_kdata'):
+                price_df = self.data_manager.get_kdata('000001')
+            if price_df is not None and not price_df.empty and 'close' in price_df.columns:
+                returns = price_df['close'].pct_change().dropna()
+                if target == "最大收益":
+                    score = float(returns.sum() * 100)
+                elif target == "最小回撤":
+                    cummax = price_df['close'].cummax()
+                    drawdown = (price_df['close'] - cummax) / cummax
+                    score = float(abs(drawdown.min()) * 100)
+                else:
+                    if returns.std() > 0:
+                        score = float((returns.mean() / returns.std()) * (252 ** 0.5))
+                    else:
+                        score = 0.0
+                return sig, param, round(score, 4)
+        except Exception as e:
+            logger.warning(f"评分计算: 无法基于真实数据计算 {sig} 的 {target}: {e}")
+
+        logger.warning(f"评分计算: 无可用真实价格数据，{sig} 返回0.0")
+        return sig, param, 0.0
 
     def export_report(self):
         # 导出更丰富的回测报告

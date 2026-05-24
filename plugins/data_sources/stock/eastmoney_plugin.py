@@ -410,14 +410,13 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
             df = self.get_stock_list()
             if not df.empty:
                 # 转换为标准格式
-                assets = []
-                for _, row in df.iterrows():
-                    assets.append({
-                        'symbol': row.get('代码', ''),
-                        'name': row.get('名称', ''),
-                        'market': row.get('市场', 'A股'),
-                        'asset_type': 'stock'
-                    })
+                if '市场' not in df.columns:
+                    df['市场'] = 'A股'
+                assets = df.assign(
+                    symbol=df['代码'],
+                    market=df['市场'],
+                    asset_type='stock'
+                ).rename(columns={'名称': 'name'})[['symbol', 'name', 'market', 'asset_type']].to_dict('records')
                 return assets
 
         return []
@@ -706,23 +705,23 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
 
                     if klines:
                         # 解析K线数据
-                        records = []
-                        for kline in klines:
-                            parts = kline.split(',')
-                            if len(parts) >= 11:
-                                records.append({
-                                    'datetime': parts[0],
-                                    'open': float(parts[1]),
-                                    'close': float(parts[2]),
-                                    'high': float(parts[3]),
-                                    'low': float(parts[4]),
-                                    'volume': int(parts[5]),
-                                    'amount': float(parts[6]),
-                                    'amplitude': float(parts[7]) if len(parts) > 7 else 0,
-                                    'pct_change': float(parts[8]) if len(parts) > 8 else 0,
-                                    'change': float(parts[9]) if len(parts) > 9 else 0,
-                                    'turnover': float(parts[10]) if len(parts) > 10 else 0
-                                })
+                        records = [
+                            {
+                                'datetime': parts[0],
+                                'open': float(parts[1]),
+                                'close': float(parts[2]),
+                                'high': float(parts[3]),
+                                'low': float(parts[4]),
+                                'volume': int(parts[5]),
+                                'amount': float(parts[6]),
+                                'amplitude': float(parts[7]) if len(parts) > 7 else 0,
+                                'pct_change': float(parts[8]) if len(parts) > 8 else 0,
+                                'change': float(parts[9]) if len(parts) > 9 else 0,
+                                'turnover': float(parts[10]) if len(parts) > 10 else 0
+                            }
+                            for parts in (kline.split(',') for kline in klines)
+                            if len(parts) >= 11
+                        ]
 
                         df = pd.DataFrame(records)
                         if not df.empty:
@@ -1091,21 +1090,21 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
                             try:
                                 fundamental_data['roe'] = float(item['ROE']) / 100
                             except (ValueError, TypeError):
-                                pass
+                                self.logger.debug(f"字段解析失败: ROE={item['ROE']}")
 
                         # 提取总资产收益率
                         if 'ROA' in item:
                             try:
                                 fundamental_data['roa'] = float(item['ROA']) / 100
                             except (ValueError, TypeError):
-                                pass
+                                self.logger.debug(f"字段解析失败: ROA={item['ROA']}")
 
                         # 提取资产负债率
                         if 'DEBT_RATIO' in item:
                             try:
                                 fundamental_data['debt_ratio'] = float(item['DEBT_RATIO']) / 100
                             except (ValueError, TypeError):
-                                pass
+                                self.logger.debug(f"字段解析失败: DEBT_RATIO={item['DEBT_RATIO']}")
 
                         self.logger.debug(f"成功获取财务指标数据: {symbol}")
             except Exception as e:
@@ -1137,8 +1136,8 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
                                 fundamental_data['pe_ratio'] = float(pe_value)
                                 self.logger.debug(f"成功获取市盈率: {pe_value}")
                         except (ValueError, TypeError):
-                            pass
-                    
+                                self.logger.debug(f"字段解析失败: 市盈率={pe_value}")
+
                     # 提取市净率
                     if 'f57' in item:
                         try:
@@ -1147,7 +1146,7 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
                                 fundamental_data['pb_ratio'] = float(pb_value)
                                 self.logger.debug(f"成功获取市净率: {pb_value}")
                         except (ValueError, TypeError):
-                            pass
+                                self.logger.debug(f"字段解析失败: 市净率={pb_value}")
 
                         self.logger.debug(f"成功获取估值指标数据: {symbol}")
             except Exception as e:

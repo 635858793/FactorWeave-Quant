@@ -269,15 +269,6 @@ class XTPTradingInterface(TradingInterface):
         return f"XTP{timestamp}{order.order_id[-8:]}"
 
     def query_fund_info(self, account_id: str):
-        """
-        查询账户资金信息
-
-        Args:
-            account_id: 账户ID
-
-        Returns:
-            FundInfo: 资金信息
-        """
         try:
             logger.debug(f"查询账户资金信息: {account_id}")
 
@@ -287,34 +278,54 @@ class XTPTradingInterface(TradingInterface):
 
             from core.trading.account_models import FundInfo
 
-            fund_info = FundInfo(
-                account_id=account_id,
-                total_assets=1000000.0,
-                available_cash=500000.0,
-                market_value=500000.0,
-                frozen_cash=0.0,
-                total_profit_loss=0.0,
-                today_profit_loss=0.0,
-                update_time=datetime.now()
-            )
+            try:
+                from core.trading.account_manager import AccountManager
+                from core.services.service_container import ServiceContainer
+                from core.events.event_bus import EventBus
 
-            logger.debug(f"账户资金信息查询成功: {account_id}")
-            return fund_info
+                service_container = ServiceContainer()
+                event_bus = service_container.resolve(EventBus)
+                account_manager = AccountManager(service_container, event_bus)
+
+                fund_info = account_manager.get_fund_info(account_id)
+                if fund_info:
+                    logger.debug(f"通过AccountManager获取资金信息成功: {account_id}")
+                    return fund_info
+
+                account = account_manager.get_account(account_id)
+                if account:
+                    fund_info = FundInfo(
+                        account_id=account_id,
+                        total_balance=account.balance + account.frozen_balance,
+                        available_balance=account.available_balance,
+                        frozen_balance=account.frozen_balance,
+                        market_value=account.market_value,
+                        total_assets=account.total_assets,
+                        profit_loss=account.profit_loss,
+                        profit_loss_ratio=account.profit_loss_ratio,
+                        margin_used=0.0,
+                        margin_available=account.available_balance,
+                        maintenance_margin=account.maintenance_margin,
+                        update_time=datetime.now()
+                    )
+                    logger.debug(f"从Account构建资金信息成功: {account_id}")
+                    return fund_info
+
+                logger.warning(f"AccountManager中未找到账户: {account_id}")
+                return None
+
+            except ImportError as e:
+                logger.warning(f"AccountManager不可用: {e}")
+                return None
+            except Exception as e:
+                logger.warning(f"通过AccountManager获取资金信息失败: {e}")
+                return None
 
         except Exception as e:
             logger.error(f"查询账户资金信息失败: {e}")
             return None
 
     def query_positions(self, account_id: str):
-        """
-        查询账户持仓信息
-
-        Args:
-            account_id: 账户ID
-
-        Returns:
-            List[Position]: 持仓列表
-        """
         try:
             logger.debug(f"查询账户持仓信息: {account_id}")
 
@@ -322,29 +333,29 @@ class XTPTradingInterface(TradingInterface):
                 logger.warning("未登录XTP账户")
                 return []
 
-            from core.trading.account_models import Position
-            from core.trading.account_models import PositionSide
+            try:
+                from core.trading.account_manager import AccountManager
+                from core.services.service_container import ServiceContainer
+                from core.events.event_bus import EventBus
 
-            positions = [
-                Position(
-                    position_id=f"{account_id}_000001",
-                    account_id=account_id,
-                    stock_code="000001",
-                    stock_name="平安银行",
-                    position_side=PositionSide.LONG,
-                    quantity=1000,
-                    available_quantity=1000,
-                    cost_price=10.0,
-                    current_price=11.0,
-                    market_value=11000.0,
-                    profit_loss=1000.0,
-                    profit_loss_ratio=0.1,
-                    update_time=datetime.now()
-                )
-            ]
+                service_container = ServiceContainer()
+                event_bus = service_container.resolve(EventBus)
+                account_manager = AccountManager(service_container, event_bus)
 
-            logger.debug(f"账户持仓信息查询成功: {account_id}, 数量: {len(positions)}")
-            return positions
+                positions = account_manager.get_account_positions(account_id)
+                if positions:
+                    logger.debug(f"通过AccountManager获取持仓信息成功: {account_id}, 数量: {len(positions)}")
+                    return positions
+
+                logger.warning(f"AccountManager中未找到账户持仓: {account_id}")
+                return []
+
+            except ImportError as e:
+                logger.warning(f"AccountManager不可用: {e}")
+                return []
+            except Exception as e:
+                logger.warning(f"通过AccountManager获取持仓信息失败: {e}")
+                return []
 
         except Exception as e:
             logger.error(f"查询账户持仓信息失败: {e}")

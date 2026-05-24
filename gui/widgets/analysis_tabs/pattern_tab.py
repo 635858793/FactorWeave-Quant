@@ -932,7 +932,7 @@ class PatternAnalysisTab(PatternAnalysisTabPro):
                 try:
                     dt = datetime.fromisoformat(generated_time.replace('Z', '+00:00'))
                     time_str = dt.strftime('%Y-%m-%d %H:%M:%S')
-                except:
+                except Exception:
                     time_str = generated_time
             else:
                 time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')

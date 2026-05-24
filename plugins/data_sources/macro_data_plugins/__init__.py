@@ -12,9 +12,26 @@
 日期: 2025-09-21
 """
 
-from .fred_plugin import FREDPlugin
-from .pboc_plugin import PBOCPlugin
-from .nbs_plugin import NBSPlugin
+from loguru import logger
+
+FREDPlugin = None
+PBOCPlugin = None
+NBSPlugin = None
+
+try:
+    from .fred_plugin import FREDPlugin
+except ImportError as e:
+    logger.warning(f"FREDPlugin 导入失败（模块尚未实现）: {e}")
+
+try:
+    from .pboc_plugin import PBOCPlugin
+except ImportError as e:
+    logger.warning(f"PBOCPlugin 导入失败（模块尚未实现）: {e}")
+
+try:
+    from .nbs_plugin import NBSPlugin
+except ImportError as e:
+    logger.warning(f"NBSPlugin 导入失败（模块尚未实现）: {e}")
 
 __all__ = [
     'FREDPlugin',

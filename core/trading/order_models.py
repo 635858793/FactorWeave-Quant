@@ -16,6 +16,8 @@ class OrderType(Enum):
     """订单类型"""
     BUY = "buy"
     SELL = "sell"
+    SHORT = "short"
+    COVER = "cover"
 
 
 class OrderStatus(Enum):
@@ -27,6 +29,19 @@ class OrderStatus(Enum):
     CANCELLED = "cancelled"
     REJECTED = "rejected"
     EXPIRED = "expired"
+    FAILED = "failed"
+
+
+VALID_TRANSITIONS = {
+    OrderStatus.PENDING: {OrderStatus.SUBMITTED, OrderStatus.CANCELLED, OrderStatus.REJECTED, OrderStatus.EXPIRED},
+    OrderStatus.SUBMITTED: {OrderStatus.PARTIALLY_FILLED, OrderStatus.FILLED, OrderStatus.CANCELLED, OrderStatus.REJECTED, OrderStatus.EXPIRED, OrderStatus.FAILED},
+    OrderStatus.PARTIALLY_FILLED: {OrderStatus.FILLED, OrderStatus.CANCELLED, OrderStatus.REJECTED, OrderStatus.EXPIRED, OrderStatus.FAILED},
+    OrderStatus.FILLED: set(),
+    OrderStatus.CANCELLED: set(),
+    OrderStatus.REJECTED: set(),
+    OrderStatus.EXPIRED: set(),
+    OrderStatus.FAILED: set(),
+}
 
 
 class OrderCategory(Enum):
@@ -84,13 +99,19 @@ class Order:
     def is_completed(self) -> bool:
         """是否已完成"""
         return self.order_status in [OrderStatus.FILLED, OrderStatus.CANCELLED, 
-                                   OrderStatus.REJECTED, OrderStatus.EXPIRED]
+                                   OrderStatus.REJECTED, OrderStatus.EXPIRED, OrderStatus.FAILED]
 
     @property
     def is_active(self) -> bool:
         """是否活跃"""
         return self.order_status in [OrderStatus.PENDING, OrderStatus.SUBMITTED, 
                                    OrderStatus.PARTIALLY_FILLED]
+
+    def can_transition_to(self, target_status: 'OrderStatus') -> bool:
+        """检查是否可以从当前状态转换到目标状态"""
+        if target_status not in VALID_TRANSITIONS:
+            return False
+        return target_status in VALID_TRANSITIONS.get(self.order_status, set())
 
     @property
     def total_value(self) -> float:

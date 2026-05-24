@@ -394,22 +394,20 @@ def find_local_extremes(prices: np.ndarray, window: int = 5) -> Tuple[List[int],
     if len(prices) < 2 * window + 1:
         return [], []
 
-    peaks = []
-    troughs = []
+    n = len(prices)
+    windows = np.lib.stride_tricks.sliding_window_view(prices, 2 * window + 1)
 
-    # 使用向量化操作提升性能
-    for i in range(window, len(prices) - window):
-        # 检查是否为峰值
-        left_max = np.max(prices[i-window:i])
-        right_max = np.max(prices[i+1:i+window+1])
-        if prices[i] >= left_max and prices[i] >= right_max:
-            peaks.append(i)
+    middle = prices[window:n - window]
+    left_max = np.max(windows[:, :window], axis=1)
+    right_max = np.max(windows[:, window + 1:], axis=1)
+    is_peak = (middle >= left_max) & (middle >= right_max)
 
-        # 检查是否为谷值
-        left_min = np.min(prices[i-window:i])
-        right_min = np.min(prices[i+1:i+window+1])
-        if prices[i] <= left_min and prices[i] <= right_min:
-            troughs.append(i)
+    left_min = np.min(windows[:, :window], axis=1)
+    right_min = np.min(windows[:, window + 1:], axis=1)
+    is_trough = (middle <= left_min) & (middle <= right_min)
+
+    peaks = (np.arange(window, n - window)[is_peak]).tolist()
+    troughs = (np.arange(window, n - window)[is_trough]).tolist()
 
     return peaks, troughs
 

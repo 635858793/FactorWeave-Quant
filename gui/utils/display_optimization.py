@@ -3,7 +3,7 @@
 实现高DPI显示器和触摸屏的优化支持，确保UI元素在各种显示设备上的清晰度
 """
 
-import logging
+from loguru import logger
 import os
 import sys
 from typing import Dict, List, Optional, Any, Tuple
@@ -20,8 +20,6 @@ from PyQt5.QtGui import (
     QPixmapCache, QTransform, QPalette, QColor
 )
 import threading
-
-logger = logging.getLogger(__name__)
 
 class DisplayType(Enum):
     """显示器类型枚举"""
@@ -632,10 +630,8 @@ class DisplayOptimizationManager(QObject):
             if not app:
                 return
 
-            # 设置高DPI缩放
+            # 设置高DPI pixmap支持（可在应用创建后设置）
             if self.current_display and self.current_display.display_type != DisplayType.STANDARD:
-                # 启用高DPI支持
-                app.setAttribute(Qt.AA_EnableHighDpiScaling, True)
                 app.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
 
                 # 设置缩放因子
@@ -774,12 +770,15 @@ class DisplayOptimizationManager(QObject):
             logger.error(f"获取优化统计失败: {e}")
             return {'error': str(e)}
 
-# 全局实例
-display_optimization_manager = DisplayOptimizationManager()
+_display_optimization_manager: Optional[DisplayOptimizationManager] = None
+
 
 def get_display_optimization_manager() -> DisplayOptimizationManager:
-    """获取显示优化管理器实例"""
-    return display_optimization_manager
+    """获取显示优化管理器实例（延迟初始化）"""
+    global _display_optimization_manager
+    if _display_optimization_manager is None:
+        _display_optimization_manager = DisplayOptimizationManager()
+    return _display_optimization_manager
 
 def optimize_application_for_display():
     """为当前显示器优化应用程序"""
@@ -794,8 +793,6 @@ def optimize_application_for_display():
 def setup_high_dpi_support():
     """设置高DPI支持"""
     try:
-        # 在应用程序创建之前设置
-        QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
         QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
 
         # 设置缩放策略

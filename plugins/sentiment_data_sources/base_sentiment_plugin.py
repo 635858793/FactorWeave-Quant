@@ -51,10 +51,8 @@ class BaseSentimentPlugin(ISentimentDataSource):
     def _safe_log(self, level: str, message: str):
         """安全的日志记录方法"""
         try:
-            logger.level(message)
-
+            getattr(logger, level, logger.info)(message)
         except Exception:
-            # 最后的备用方案，直接打印
             logger.info(f"[{level.upper()}] {message}")
 
     def get_plugin_info(self) -> SentimentPluginInfo:
@@ -103,12 +101,13 @@ class BaseSentimentPlugin(ISentimentDataSource):
                 tags=["情绪分析"]
             )
 
-    def initialize(self, context=None) -> bool:
+    def initialize(self, config: dict = None, context=None) -> bool:
         """初始化插件"""
         try:
-            self.context = context
-
             if context is not None:
+                self.context = context
+
+            if self.context is not None:
                 # log_manager已迁移到Loguru, 'log_manager', None)
                 # 尝试获取插件配置，如果context没有该方法也不会报错
                 if hasattr(context, 'get_plugin_config'):
@@ -296,7 +295,7 @@ class BaseSentimentPlugin(ISentimentDataSource):
         quality_score += timeliness * 0.3
 
         # 检查数据置信度
-        avg_confidence = sum(d.confidence for d in complete_data) / len(complete_data) if complete_data else 0
+        avg_confidence = np.mean([d.confidence for d in complete_data]) if complete_data else 0
         quality_score += avg_confidence * 0.3
 
         return min(1.0, quality_score)
@@ -316,7 +315,7 @@ class BaseSentimentPlugin(ISentimentDataSource):
         try:
             required_fields = ["cache_timeout", "retry_times", "request_timeout"]
             return all(field in config for field in required_fields)
-        except:
+        except Exception:
             return False
 
     def _handle_plugin_error(self, error: Exception, operation: str) -> SentimentResponse:
@@ -332,3 +331,4 @@ class BaseSentimentPlugin(ISentimentDataSource):
             data_quality="error",
             update_time=datetime.now()
         )
+

@@ -19,13 +19,13 @@ from typing import Dict, List, Any, Optional, Tuple, Union, Set
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field
 from enum import Enum
-import sqlite3
 import threading
 from pathlib import Path
 from loguru import logger
 import warnings
 warnings.filterwarnings('ignore')
 
+from ..database.unified_sqlite_access import UnifiedSQLiteAccess
 from ..importdata.import_config_manager import ImportTaskConfig, DataFrequency, ImportMode
 
 class ImpactSeverity(Enum):
@@ -113,6 +113,7 @@ class ConfigImpactAnalyzer:
 
     def __init__(self, db_path: str = "data/factorweave_system.sqlite"):
         self.db_path = db_path
+        self._db_instance = UnifiedSQLiteAccess.get_instance(self.db_path)
         
         # 历史数据缓存
         self.historical_performance: Optional[pd.DataFrame] = None
@@ -242,7 +243,7 @@ class ConfigImpactAnalyzer:
     def _load_historical_data(self):
         """加载历史数据"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._db_instance.get_connection() as conn:
                 # 加载历史性能数据
                 performance_query = """
                     SELECT 
@@ -279,7 +280,7 @@ class ConfigImpactAnalyzer:
                     change_df = pd.read_sql_query(change_query, conn)
                     self.historical_changes = change_df.to_dict('records')
                     
-                except sqlite3.OperationalError:
+                except Exception:
                     # 表不存在时的处理
                     self.historical_changes = []
                 
@@ -506,6 +507,7 @@ class ConfigImpactAnalyzer:
     def _get_performance_baseline(self, config: ImportTaskConfig, context: Optional[Dict[str, Any]]) -> Dict[str, float]:
         """获取性能基线"""
         try:
+            logger.debug(f"获取性能基线: data_source={getattr(config, 'data_source', 'unknown')}")
             # 从历史数据中查找相似配置的性能
             if self.historical_performance is not None and not self.historical_performance.empty:
                 # 筛选相似配置

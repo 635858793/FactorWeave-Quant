@@ -8,7 +8,7 @@ from loguru import logger
 import sys
 from typing import Dict, List, Any, Optional
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QGridLayout,
+    QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QLineEdit, QPushButton, QListWidget, QListWidgetItem,
     QTextEdit, QGroupBox, QMessageBox, QDialogButtonBox,
     QSplitter, QWidget, QComboBox, QCheckBox, QFileDialog,
@@ -19,6 +19,7 @@ from PyQt5.QtCore import Qt, pyqtSignal, QThread, QTimer
 from PyQt5.QtGui import QFont, QIcon, QPalette, QColor
 
 from core.indicator_combination_manager import get_combination_manager, IndicatorCombination
+from .base_dialog import BaseDialog
 
 logger = logger.bind(module=__name__)
 
@@ -49,13 +50,18 @@ class CombinationLoadThread(QThread):
         except Exception as e:
             self.error_occurred.emit(str(e))
 
-class IndicatorCombinationDialog(QDialog):
+class IndicatorCombinationDialog(BaseDialog):
     """指标组合管理对话框"""
 
     combination_selected = pyqtSignal(str, list)  # 组合名称, 指标列表
 
     def __init__(self, parent=None):
-        super().__init__(parent)
+        super().__init__(
+            parent,
+            title="指标组合管理",
+            min_size=(900, 650),
+            settings_key="IndicatorCombinationDialog"
+        )
         self.manager = get_combination_manager()
         self.current_combinations = {}
         self.selected_combination = None
@@ -65,10 +71,6 @@ class IndicatorCombinationDialog(QDialog):
 
     def _init_ui(self):
         """初始化UI"""
-        self.setWindowTitle("指标组合管理")
-        self.setModal(True)
-        self.resize(900, 650)
-
         # 主布局
         main_layout = QVBoxLayout()
 
@@ -292,8 +294,8 @@ class IndicatorCombinationDialog(QDialog):
         try:
             # 如果有正在运行的线程，先停止
             if self.load_thread and self.load_thread.isRunning():
-                self.load_thread.terminate()
-                self.load_thread.wait()
+                self.load_thread.quit()
+                self.load_thread.wait(3000)
 
             # 创建新的加载线程
             self.load_thread = CombinationLoadThread(search_query)
@@ -567,9 +569,10 @@ class IndicatorCombinationDialog(QDialog):
         """关闭事件"""
         # 停止加载线程
         if self.load_thread and self.load_thread.isRunning():
-            self.load_thread.terminate()
-            self.load_thread.wait()
+            self.load_thread.quit()
+            self.load_thread.wait(3000)
 
+        super().closeEvent(event)
         event.accept()
 
 def main():

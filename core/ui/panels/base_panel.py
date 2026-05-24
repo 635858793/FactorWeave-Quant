@@ -119,6 +119,10 @@ class BasePanel(QObject, ABC, metaclass=QObjectMeta):
         """初始化数据（子类可重写）"""
         pass
 
+    def _register_event_handlers(self) -> None:
+        """注册事件处理器（子类可重写）"""
+        pass
+
     def apply_theme(self, theme: Dict[str, Any]) -> None:
         """应用主题"""
         try:
@@ -198,7 +202,7 @@ class BasePanel(QObject, ABC, metaclass=QObjectMeta):
                 try:
                     if hasattr(widget, 'deleteLater'):
                         widget.deleteLater()
-                except:
+                except Exception:
                     pass
 
             self._widgets.clear()
@@ -207,7 +211,7 @@ class BasePanel(QObject, ABC, metaclass=QObjectMeta):
             if self._root_frame:
                 try:
                     self._root_frame.deleteLater()
-                except:
+                except Exception:
                     pass
                 self._root_frame = None
 
@@ -246,3 +250,16 @@ class BasePanel(QObject, ABC, metaclass=QObjectMeta):
         """处理主题变化事件"""
         if hasattr(event, 'theme'):
             self.apply_theme(event.theme)
+
+    # 生命周期方法（子类可重写）
+    def on_show(self) -> None:
+        """面板显示时的回调（子类可重写）"""
+        pass
+
+    def on_hide(self) -> None:
+        """面板隐藏时的回调（子类可重写）"""
+        pass
+
+    def apply_font_size(self, font_size: float) -> None:
+        """应用全局字体大小变更（子类可重写）"""
+        pass

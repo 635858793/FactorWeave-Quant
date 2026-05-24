@@ -422,36 +422,38 @@ class MetricsPanel(QWidget):
     def update_metrics(self, metrics: Dict):
         """更新指标表格"""
         try:
+            def _fmt(key, fmt_str):
+                if key not in metrics:
+                    return "--"
+                return fmt_str.format(metrics[key])
+
+            def _fmt_pct(key):
+                return _fmt(key, "{:.2%}")
+
+            def _fmt_f3(key):
+                return _fmt(key, "{:.3f}")
+
+            def _fmt_f2(key):
+                return _fmt(key, "{:.2f}")
+
+            def _fmt_f0(key):
+                return _fmt(key, "{:.0f}")
+
             total_return = metrics.get('total_return', 0)
             annualized_return = metrics.get('annualized_return', 0)
             sharpe_ratio = metrics.get('sharpe_ratio', 0)
-            sortino_ratio = metrics.get('sortino_ratio', 0)
             max_drawdown = metrics.get('max_drawdown', 0)
             win_rate = metrics.get('win_rate', 0)
 
-            var_95 = metrics.get('var_95', 0)
-            beta = metrics.get('beta', 0)
-            skew = metrics.get('skew', 0)
-            kurtosis = metrics.get('kurtosis', 0)
-            volatility = metrics.get('volatility', 0)
-            alpha = metrics.get('alpha', 0)
-
-            trade_count = metrics.get('trade_count', 0)
-            profit_loss_ratio = metrics.get('profit_loss_ratio', 0)
-            expectancy = metrics.get('expectancy', 0)
-            max_consecutive_wins = metrics.get('max_consecutive_wins', 0)
-            avg_holding_period = metrics.get('avg_holding_period', 0)
-            turnover_rate = metrics.get('turnover_rate', 0)
-
             table_data = [
-                [f"{total_return:.2%}", f"{annualized_return:.2%}", f"{sharpe_ratio:.3f}",
-                 f"{max_drawdown:.2%}", f"{win_rate:.2%}"],
-                [f"VaR: {var_95:.2%}", f"β: {beta:.3f}", f"偏度: {skew:.2f}",
-                 f"峰度: {kurtosis:.2f}", f"波动率: {volatility:.2%}"],
-                [f"交易: {trade_count}次", f"盈亏比: {profit_loss_ratio:.2f}", f"期望: {expectancy:.2%}",
-                 f"连胜: {max_consecutive_wins}次", f"持仓: {avg_holding_period:.0f}天"],
-                [f"换手: {turnover_rate:.2%}", f"α: {alpha:.3f}", f"Sortino: {sortino_ratio:.3f}",
-                 f"盈利因子: {profit_loss_ratio:.2f}", f"期望收益: {annualized_return:.2%}"]
+                [_fmt_pct('total_return'), _fmt_pct('annualized_return'), _fmt_f3('sharpe_ratio'),
+                 _fmt_pct('max_drawdown'), _fmt_pct('win_rate')],
+                [f"VaR: {_fmt_pct('var_95')}", f"β: {_fmt_f3('beta')}", f"偏度: {_fmt_f2('skew')}",
+                 f"峰度: {_fmt_f2('kurtosis')}", f"波动率: {_fmt_pct('volatility')}"],
+                [f"交易: {_fmt_f0('trade_count')}次", f"盈亏比: {_fmt_f2('profit_loss_ratio')}", f"期望: {_fmt_pct('expectancy')}",
+                 f"连胜: {_fmt_f0('max_consecutive_wins')}次", f"持仓: {_fmt_f0('avg_holding_period')}天"],
+                [f"换手: {_fmt_pct('turnover_rate')}", f"α: {_fmt_f3('alpha')}", f"Sortino: {_fmt_f3('sortino_ratio')}",
+                 f"盈利因子: {_fmt_f2('profit_factor')}", f"期望收益: {_fmt_pct('annualized_return')}"]
             ]
 
             for row in range(4):
@@ -460,17 +462,16 @@ class MetricsPanel(QWidget):
                     if item:
                         item.setText(table_data[row][col])
 
-                        # 根据数值和行设置颜色
-                        if row == 0:  # 核心指标行（重要指标，颜色动态变化）
-                            if col == 0:  # 总收益率
+                        if row == 0:
+                            if col == 0:
                                 color = "#10b981" if total_return >= 0 else "#ef4444"
-                            elif col == 1:  # 年化收益
+                            elif col == 1:
                                 color = "#10b981" if annualized_return >= 0 else "#ef4444"
-                            elif col == 2:  # Sharpe比率
+                            elif col == 2:
                                 color = "#10b981" if sharpe_ratio >= 1.0 else "#f59e0b" if sharpe_ratio >= 0.5 else "#ef4444"
-                            elif col == 3:  # 最大回撤
+                            elif col == 3:
                                 color = "#10b981" if max_drawdown <= 0.1 else "#f59e0b" if max_drawdown <= 0.2 else "#ef4444"
-                            else:  # 胜率
+                            else:
                                 color = "#10b981" if win_rate >= 0.6 else "#f59e0b" if win_rate >= 0.5 else "#ef4444"
 
                             item.setForeground(QColor(color))
@@ -479,14 +480,14 @@ class MetricsPanel(QWidget):
                             font.setPointSize(11)
                             item.setFont(font)
 
-                        elif row == 1:  # 风险指标行
-                            item.setForeground(QColor("#fbbf24"))  # 统一黄色
+                        elif row == 1:
+                            item.setForeground(QColor("#fbbf24"))
                             font = item.font()
                             font.setPointSize(10)
                             item.setFont(font)
 
-                        elif row == 2:  # 交易指标行
-                            item.setForeground(QColor("#34d399"))  # 统一绿色
+                        elif row == 2:
+                            item.setForeground(QColor("#34d399"))
                             font = item.font()
                             font.setPointSize(10)
                             item.setFont(font)
@@ -1168,8 +1169,8 @@ class ControlPanel(QWidget):
             try:
                 self.start_backtest.disconnect()
                 self.stop_backtest.disconnect()
-            except:
-                pass
+            except Exception as e:
+                logger.debug(f"断开回测信号失败: {e}")
             
             super().closeEvent(event)
         except Exception as e:
@@ -1534,7 +1535,7 @@ class ControlPanel(QWidget):
     def _open_parameter_optimization(self):
         """打开参数优化功能"""
         try:
-            from gui.dialogs.enhanced_strategy_manager_dialog import EnhancedStrategyManagerDialog
+            from gui.dialogs.strategy_manager_dialog import StrategyManagerDialog
             
             parent_widget = self.parent()
             while parent_widget and not hasattr(parent_widget, '_main_window'):
@@ -1542,7 +1543,7 @@ class ControlPanel(QWidget):
             
             main_window = parent_widget._main_window if parent_widget else None
             
-            dialog = EnhancedStrategyManagerDialog(main_window)
+            dialog = StrategyManagerDialog(main_window)
             dialog._switch_view('optimization')
             dialog.show()
             logger.info("参数优化功能已打开")
@@ -1554,7 +1555,7 @@ class ControlPanel(QWidget):
     def _open_strategy_comparison(self):
         """打开策略对比功能"""
         try:
-            from gui.dialogs.enhanced_strategy_manager_dialog import EnhancedStrategyManagerDialog
+            from gui.dialogs.strategy_manager_dialog import StrategyManagerDialog
             
             parent_widget = self.parent()
             while parent_widget and not hasattr(parent_widget, '_main_window'):
@@ -1562,7 +1563,7 @@ class ControlPanel(QWidget):
             
             main_window = parent_widget._main_window if parent_widget else None
             
-            dialog = EnhancedStrategyManagerDialog(main_window)
+            dialog = StrategyManagerDialog(main_window)
             dialog._switch_view('library')
             dialog.show()
             logger.info("策略对比功能已打开")
@@ -2466,13 +2467,24 @@ class ProfessionalBacktestWidget(QWidget):
                 if self.monitor and hasattr(self.monitor, '_is_running') and self.monitor._is_running:
                     logger.info("复用已有监控器，先停止")
                     self.monitor.stop_monitoring()
-                    import time
-                    time.sleep(0.1)
-                    self.monitor = self._get_monitor()  # 重新获取
+                    QTimer.singleShot(100, lambda: self._do_continue_backtest(stock_data, params, stock_code))
+                    return
             except Exception as e:
                 logger.warning(f'获取监控器失败: {e}，创建新的监控器')
                 self.monitor = self._get_monitor()
 
+            self._do_continue_backtest(stock_data, params, stock_code)
+
+        except Exception as e:
+            logger.error(f"启动回测失败: {e}")
+            self.error_occurred.emit(f"启动回测失败: {str(e)}")
+            self.control_panel.on_stop_backtest()
+            self.control_panel.reset_progress()
+
+    def _do_continue_backtest(self, stock_data, params, stock_code):
+        """异步继续回测启动（在监控器停止后调用）"""
+        try:
+            self.monitor = self._get_monitor()
             self.current_data = stock_data
 
             engine_type = "向量化引擎" if params.get('use_vectorized_engine', True) else "标准引擎"
@@ -2484,7 +2496,6 @@ class ProfessionalBacktestWidget(QWidget):
             if getattr(self, '_is_closing', False):
                 return
             self.alerts_panel.add_alert('info', f'回测已启动，使用{engine_type}，数据: {stock_code}')
-
         except Exception as e:
             logger.error(f"启动回测失败: {e}")
             self.error_occurred.emit(f"启动回测失败: {str(e)}")
@@ -2778,7 +2789,7 @@ class ProfessionalBacktestWidget(QWidget):
 
             price_data = kdata[close_col]
             if hasattr(price_data, 'fillna'):
-                price_data = price_data.fillna(method='ffill').fillna(method='bfill')
+                price_data = price_data.fillna(method='ffill')
 
             kdata = kdata.copy()
             kdata['close'] = price_data
@@ -3052,6 +3063,8 @@ class ProfessionalBacktestWidget(QWidget):
                 return
             import time
 
+            self.backtest_completed.emit(results)
+
             # 记录执行时间
             self.execution_time = time.time() - self.start_time if hasattr(self, 'start_time') else 0.0
 
@@ -3245,8 +3258,8 @@ class ProfessionalBacktestWidget(QWidget):
             try:
                 self.control_panel.update_progress(0, "回测失败", f"回测完成处理失败：{str(e)}")
                 self.control_panel.on_stop_backtest()
-            except:
-                pass
+            except Exception as e:
+                logger.warning(f"回测失败后通知UI失败: {e}")
 
     def _on_progress_update(self, progress: int, stage: str, message: str):
         """进度更新槽函数（在主线程执行）"""
@@ -3319,8 +3332,8 @@ class ProfessionalBacktestWidget(QWidget):
             if os.path.exists(temp_path):
                 try:
                     os.unlink(temp_path)
-                except:
-                    pass
+                except Exception as e:
+                    logger.debug(f"清理临时文件失败: {e}")
             raise RuntimeError(f"保存到本地文件失败: {e}")
 
     def stop_backtest(self):
@@ -3372,8 +3385,8 @@ class ProfessionalBacktestWidget(QWidget):
         from PyQt5.QtCore import QThread
         
         # 检查是否已有清理线程在运行（防止重复创建）
-        if hasattr(self, '_cleanup_worker') and self._cleanup_worker is not None:
-            if self._cleanup_worker.isRunning():
+        if hasattr(self, '_cleanup_thread') and self._cleanup_thread is not None:
+            if self._cleanup_thread.isRunning():
                 logger.warning("已有清理线程在运行，跳过")
                 return
         
@@ -3405,12 +3418,15 @@ class ProfessionalBacktestWidget(QWidget):
         
         # 创建工作线程并保存引用
         try:
-            self._cleanup_worker = QThread()
-            self._cleanup_worker.run = wait_thread
-            self._cleanup_worker.finished.connect(self._on_cleanup_worker_finished)
+            from PyQt5.QtCore import QObject
+            self._cleanup_worker = QObject()
+            self._cleanup_thread = QThread()
+            self._cleanup_worker.moveToThread(self._cleanup_thread)
+            self._cleanup_thread.started.connect(lambda: wait_thread())
+            self._cleanup_thread.finished.connect(self._on_cleanup_worker_finished)
             
             # 启动工作线程
-            self._cleanup_worker.start()
+            self._cleanup_thread.start()
             logger.info("已启动异步线程清理任务")
         except Exception as e:
             logger.error(f"启动清理线程失败：{e}")
@@ -3422,6 +3438,7 @@ class ProfessionalBacktestWidget(QWidget):
         """清理工作线程完成后的处理"""
         logger.debug("清理工作线程已结束")
         self._cleanup_worker = None
+        self._cleanup_thread = None
     
     def _cleanup_thread_sync(self, update_ui=True):
         """同步清理监控线程（用于窗口关闭等场景）

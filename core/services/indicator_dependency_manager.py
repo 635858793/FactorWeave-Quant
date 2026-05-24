@@ -585,9 +585,9 @@ class IndicatorDependencyManager:
 
             from core.services.realtime_compute_engine import IndicatorValue
 
-            # 模拟计算结果
+            logger.warning("指标计算未集成实际计算引擎，返回NaN值")
             mock_values = {
-                'value': 100.0 + np.random.normal(0, 5),  # 模拟指标值
+                'value': np.nan,
                 'signal': 'neutral'
             }
 

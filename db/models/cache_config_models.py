@@ -1,11 +1,9 @@
-import sqlite3
 import json
-import logging
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 from pathlib import Path
-
-logger = logging.getLogger(__name__)
+from loguru import logger
+from core.database.unified_sqlite_access import UnifiedSQLiteAccess
 
 
 class CacheConfigManager:
@@ -24,7 +22,8 @@ class CacheConfigManager:
 
     def _init_database(self):
         """初始化数据库表"""
-        with sqlite3.connect(self.db_path) as conn:
+        db = UnifiedSQLiteAccess.get_instance(self.db_path)
+        with db.get_connection() as conn:
             cursor = conn.cursor()
             
             # 创建缓存配置表
@@ -92,14 +91,13 @@ class CacheConfigManager:
                     0.7, 300, current_time, current_time, 1
                 ))
             
-            conn.commit()
             logger.info("缓存配置数据库初始化完成")
 
     def get_config(self, config_name: str = 'default') -> Optional[Dict[str, Any]]:
         """获取缓存配置"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.row_factory = sqlite3.Row
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 
                 cursor.execute(
@@ -120,7 +118,8 @@ class CacheConfigManager:
                     changed_by: str = "user") -> bool:
         """保存缓存配置"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 
                 # 获取旧配置
@@ -219,7 +218,6 @@ class CacheConfigManager:
                         1
                     ))
                 
-                conn.commit()
                 logger.info(f"缓存配置已保存: {config_name}")
                 return True
                 
@@ -230,8 +228,8 @@ class CacheConfigManager:
     def get_namespace_config(self, namespace: str) -> Optional[Dict[str, Any]]:
         """获取命名空间配置"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.row_factory = sqlite3.Row
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 
                 cursor.execute(
@@ -251,7 +249,8 @@ class CacheConfigManager:
     def save_namespace_config(self, namespace: str, config: Dict[str, Any]) -> bool:
         """保存命名空间配置"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 
                 current_time = datetime.now().isoformat()
@@ -294,7 +293,6 @@ class CacheConfigManager:
                         current_time
                     ))
                 
-                conn.commit()
                 logger.info(f"命名空间配置已保存: {namespace}")
                 return True
                 
@@ -305,7 +303,8 @@ class CacheConfigManager:
     def list_namespaces(self) -> List[str]:
         """列出所有已配置的命名空间"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT namespace FROM cache_namespace_config")
                 return [row[0] for row in cursor.fetchall()]
@@ -317,8 +316,8 @@ class CacheConfigManager:
                           limit: int = 10) -> List[Dict[str, Any]]:
         """获取配置历史"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.row_factory = sqlite3.Row
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 
                 cursor.execute("""

@@ -17,7 +17,7 @@ from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional, Set, Type, Union
-from .types import BaseEvent, EventPriority, EventFilter, RealtimeDataEvent, TickDataEvent, OrderBookEvent, ComputedIndicatorEvent
+from .types import BaseEvent, EventPriority, EventFilter, RealtimeDataEvent, TickDataEvent, OrderBookEvent
 
 Event = BaseEvent
 
@@ -64,6 +64,7 @@ class EventBus:
         self._executor = ThreadPoolExecutor(
             max_workers=max_workers) if async_execution else None
         self._active_futures = set()
+        self._futures_lock = Lock()
 
         self._deduplication_window = deduplication_window
         self._recent_events: Dict[str, float] = {}
@@ -85,6 +86,10 @@ class EventBus:
         self._error_recursion_depth = 0
         self._max_error_recursion = 3
         self._event_key_cache: Dict[str, Set[str]] = defaultdict(set)
+
+        self._cleanup_counter = 0
+        self._CLEANUP_INTERVAL = 200
+        self._orphan_removed_total = 0
 
         logger.info(
             f"Event bus initialized (async={async_execution}, dedup_window={deduplication_window}s, history={enable_history})")
@@ -125,24 +130,20 @@ class EventBus:
         """检查事件是否应该被去重"""
         with self._dedup_lock:
             current_time = time.time()
+            expired_threshold = current_time - self._deduplication_window
 
-            expired_keys = []
-            for key, timestamp in self._recent_events.items():
-                if current_time - timestamp > self._deduplication_window:
-                    expired_keys.append(key)
-
-            for key in expired_keys:
-                del self._recent_events[key]
-
-            if event_key in self._recent_events:
-                time_diff = current_time - self._recent_events[event_key]
-                if time_diff < self._deduplication_window:
-                    logger.debug(
-                        f"Event {event_key} deduplicated (time_diff: {time_diff:.3f}s)")
-                    self._stats['events_deduplicated'] += 1
-                    return True
+            if self._recent_events.get(event_key, 0) > expired_threshold:
+                self._stats['events_deduplicated'] += 1
+                return True
 
             self._recent_events[event_key] = current_time
+
+            if len(self._recent_events) > 2000:
+                self._recent_events = {
+                    k: v for k, v in self._recent_events.items()
+                    if v > expired_threshold
+                }
+
             return False
 
     def _add_to_history(self, event: BaseEvent) -> None:
@@ -163,6 +164,107 @@ class EventBus:
             return True
 
         return event_filter.matches(event)
+
+    def _handle_async_task_exception(self, future):
+        """处理异步任务的异常回调"""
+        try:
+            if future.exception():
+                exc = future.exception()
+                logger.error(f"Async event handler failed: {exc}")
+                self._stats['errors'] += 1
+                
+                if self._error_recursion_depth < self._max_error_recursion:
+                    try:
+                        self._error_recursion_depth += 1
+                        error_event = type('ErrorEvent', (), {
+                            'error': exc,
+                            'original_event': None,
+                            'handler_name': 'async_task'
+                        })()
+                        self.publish(error_event)
+                    except Exception as inner_e:
+                        logger.error(f"Failed to publish error event: {inner_e}")
+                    finally:
+                        self._error_recursion_depth = max(0, self._error_recursion_depth - 1)
+        except Exception as e:
+            logger.error(f"Error in async task exception handler: {e}")
+
+    def _handle_threadpool_exception(self, future):
+        """处理线程池任务的异常回调"""
+        try:
+            exc = future.exception()
+            if exc:
+                logger.error(f"Threadpool event handler failed: {exc}")
+                self._stats['errors'] += 1
+
+                if self._error_recursion_depth < self._max_error_recursion:
+                    try:
+                        self._error_recursion_depth += 1
+                        error_event = type('ErrorEvent', (), {
+                            'error': exc,
+                            'original_event': None,
+                            'handler_name': 'threadpool_task'
+                        })()
+                        self.publish(error_event)
+                    except Exception as inner_e:
+                        logger.error(f"Failed to publish error event: {inner_e}")
+                    finally:
+                        self._error_recursion_depth = max(0, self._error_recursion_depth - 1)
+        except Exception as e:
+            logger.error(f"Error in threadpool exception handler: {e}")
+
+    def _cleanup_completed_futures(self):
+        """清理已完成的任务，防止内存泄漏"""
+        with self._futures_lock:
+            completed = {f for f in self._active_futures if f.done()}
+            self._active_futures -= completed
+
+    def cleanup_orphan_handlers(self) -> int:
+        """
+        清理已销毁组件的孤儿回调处理器
+
+        当订阅了事件的GUI组件被销毁后，其绑定的回调方法不再有效。
+        此方法检测并移除这些孤儿处理器，防止内存泄漏。
+
+        Returns:
+            移除的孤儿处理器数量
+        """
+        removed = 0
+        with self._lock:
+            for event_name in list(self._handlers.keys()):
+                kept = []
+                for h in self._handlers[event_name]:
+                    try:
+                        if hasattr(h.handler, '__self__') and h.handler.__self__ is not None:
+                            wr = weakref.ref(h.handler.__self__)
+                            if wr() is None:
+                                removed += 1
+                                continue
+                    except Exception:
+                        pass
+                    kept.append(h)
+                if kept:
+                    self._handlers[event_name] = kept
+                else:
+                    del self._handlers[event_name]
+
+            global_kept = []
+            for h in self._global_handlers:
+                try:
+                    if hasattr(h.handler, '__self__') and h.handler.__self__ is not None:
+                        wr = weakref.ref(h.handler.__self__)
+                        if wr() is None:
+                            removed += 1
+                            continue
+                except Exception:
+                    pass
+                global_kept.append(h)
+            self._global_handlers = global_kept
+
+        self._orphan_removed_total += removed
+        if removed > 0:
+            logger.debug(f"孤儿处理器清理完成: 移除 {removed} 个 (累计 {self._orphan_removed_total})")
+        return removed
 
     def _execute_handler(self, handler: Callable, event: BaseEvent) -> None:
         """在线程池中执行事件处理器"""
@@ -230,13 +332,16 @@ class EventBus:
 
             logger.debug(f"Subscribed {handler_wrapper.name} to all events")
 
-    def unsubscribe(self, event_type: Union[Type[BaseEvent], str], handler: Callable[[BaseEvent], None]) -> None:
+    def unsubscribe(self, event_type: Union[Type[BaseEvent], str], handler: Callable[[BaseEvent], None]) -> bool:
         """
         取消订阅事件
 
         Args:
             event_type: 事件类型或事件名称字符串
             handler: 事件处理函数
+
+        Returns:
+            是否成功取消订阅
         """
         with self._lock:
             if isinstance(event_type, str):
@@ -245,6 +350,7 @@ class EventBus:
                 event_name = event_type.__name__
 
             if event_name in self._handlers:
+                original_count = len(self._handlers[event_name])
                 self._handlers[event_name] = [
                     h for h in self._handlers[event_name]
                     if h.handler != handler
@@ -255,6 +361,9 @@ class EventBus:
 
                 handler_name = getattr(handler, '__name__', str(handler))
                 logger.debug(f"Unsubscribed {handler_name} from {event_name}")
+                return len(self._handlers.get(event_name, [])) < original_count
+
+            return False
 
     def unsubscribe_global(self, handler: Callable[[BaseEvent], None]) -> bool:
         """
@@ -267,12 +376,16 @@ class EventBus:
             是否成功取消订阅
         """
         with self._lock:
-            for h in self._global_handlers:
-                if h.handler == handler:
-                    self._global_handlers.remove(h)
-                    logger.debug(f"Unsubscribed {h.name} from all events")
-                    return True
-            return False
+            original_count = len(self._global_handlers)
+            self._global_handlers = [
+                h for h in self._global_handlers
+                if h.handler != handler
+            ]
+            removed = len(self._global_handlers) < original_count
+            if removed:
+                handler_name = getattr(handler, '__name__', str(handler))
+                logger.debug(f"Unsubscribed {handler_name} from all events")
+            return removed
 
     def publish(self, event: Union[BaseEvent, str], **kwargs) -> None:
         """
@@ -284,6 +397,10 @@ class EventBus:
         """
         event_key = self._get_event_key(event, **kwargs)
         if self._should_deduplicate(event_key):
+            logger.warning(
+                f"Event deduplicated and skipped: {event_key} "
+                f"(window={self._deduplication_window}s, total_deduplicated={self._stats['events_deduplicated'] + 1})"
+            )
             return
 
         handlers_to_execute = []
@@ -301,10 +418,8 @@ class EventBus:
                 event_name = event.__class__.__name__
                 event_obj = event
 
-            if event_name not in self._handlers:
-                return
-
-            handlers_to_execute = self._handlers[event_name].copy()
+            handlers_to_execute = self._handlers.get(event_name, []).copy()
+            handlers_to_execute.extend(self._global_handlers)
 
             self._stats['events_published'] += 1
 
@@ -312,15 +427,28 @@ class EventBus:
 
         self._add_to_history(event_obj)
 
+        if not handlers_to_execute:
+            logger.debug(f"Event {event_name} published but has no registered handlers (orphan event)")
+
         for handler_wrapper in handlers_to_execute:
             if event_filter and not self._filter_event(event_obj, event_filter):
                 continue
 
             try:
                 if asyncio.iscoroutinefunction(handler_wrapper.handler):
-                    asyncio.create_task(handler_wrapper.handler(event_obj))
+                    try:
+                        loop = asyncio.get_running_loop()
+                        task = asyncio.create_task(handler_wrapper.handler(event_obj))
+                        task.add_done_callback(self._handle_async_task_exception)
+                        with self._futures_lock:
+                            self._active_futures.add(task)
+                    except RuntimeError:
+                        _ = handler_wrapper.handler(event_obj)
                 elif self._async_execution and self._executor:
-                    self._executor.submit(self._execute_handler, handler_wrapper.handler, event_obj)
+                    future = self._executor.submit(self._execute_handler, handler_wrapper.handler, event_obj)
+                    future.add_done_callback(self._handle_threadpool_exception)
+                    with self._futures_lock:
+                        self._active_futures.add(future)
                 else:
                     _ = handler_wrapper.handler(event_obj)
 
@@ -344,6 +472,13 @@ class EventBus:
                         logger.error(f"Failed to publish error event: {inner_e}")
                     finally:
                         self._error_recursion_depth = max(0, self._error_recursion_depth - 1)
+
+        self._cleanup_completed_futures()
+
+        self._cleanup_counter += 1
+        if self._cleanup_counter % self._CLEANUP_INTERVAL == 0:
+            self.cleanup_orphan_handlers()
+            self._cleanup_completed_futures()
 
     def publish_with_filter(self, event: BaseEvent, event_filter: EventFilter) -> None:
         """
@@ -392,9 +527,11 @@ class EventBus:
             self._event_history.clear()
             logger.debug("Event history cleared")
 
-    async def publish_async(self, event: BaseEvent) -> List[Any]:
-        """异步发布事件"""
-        return self.publish(event)
+    async def publish_async(self, event: BaseEvent) -> None:
+        """异步发布事件（在线程池中执行以避免阻塞事件循环）"""
+        import asyncio as _asyncio
+        loop = _asyncio.get_running_loop()
+        await loop.run_in_executor(self._executor, self.publish, event)
 
     def wait_for_completion(self, timeout: Optional[float] = None) -> bool:
         """等待所有异步事件处理完成"""
@@ -402,8 +539,12 @@ class EventBus:
             return True
 
         try:
-            for future in list(self._active_futures):
-                future.result(timeout=timeout)
+            with self._futures_lock:
+                futures_snapshot = list(self._active_futures)
+            import concurrent.futures
+            for future in futures_snapshot:
+                if isinstance(future, concurrent.futures.Future):
+                    future.result(timeout=timeout)
             return True
 
         except Exception as e:
@@ -413,13 +554,18 @@ class EventBus:
     def get_stats(self) -> Dict[str, Any]:
         """获取性能统计信息"""
         with self._lock:
+            with self._futures_lock:
+                active_count = len(self._active_futures) if self._async_execution else 0
             return {
                 **self._stats,
                 'active_handlers': sum(len(handlers) for handlers in self._handlers.values()),
                 'global_handlers': len(self._global_handlers),
                 'event_types': len(self._handlers),
-                'active_futures': len(self._active_futures) if self._async_execution else 0,
-                'history_size': len(self._event_history)
+                'active_futures': active_count,
+                'history_size': len(self._event_history),
+                'orphan_removed_total': self._orphan_removed_total,
+                'cleanup_interval': self._CLEANUP_INTERVAL,
+                'cleanup_counter': self._cleanup_counter,
             }
 
     def clear_stats(self) -> None:

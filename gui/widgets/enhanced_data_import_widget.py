@@ -25,11 +25,7 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass
 from enum import Enum
 
-try:
-    from loguru import logger
-except ImportError:
-    import logging
-    logger = logging.getLogger(__name__)
+from loguru import logger
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
@@ -2792,12 +2788,11 @@ class EnhancedDataImportWidget(QWidget):
                 conn = conn_manager.get_connection()
                 try:
                     # 计算指定日期范围内的数据记录数
-                    result = conn.execute(f"""
-                        SELECT COUNT(*) as count FROM {table_name}
-                        WHERE symbol = '{symbol}'
-                        AND datetime >= '{start_date.strftime('%Y-%m-%d')}'
-                        AND datetime <= '{end_date.strftime('%Y-%m-%d')}'
-                    """).fetchall()
+                    result = conn.execute(
+                        f"SELECT COUNT(*) as count FROM {table_name} "
+                        "WHERE symbol = ? AND datetime >= ? AND datetime <= ?",
+                        [symbol, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')]
+                    ).fetchall()
 
                     if result:
                         actual_records = result[0][0]
@@ -3750,8 +3745,8 @@ class EnhancedDataImportWidget(QWidget):
                 pool_stats = provider.get_pool_status()
                 if hasattr(self, 'download_monitoring') and hasattr(self.download_monitoring, 'update_instance_pool_stats'):
                     self.download_monitoring.update_instance_pool_stats(pool_stats)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"更新实例池统计失败: {e}")
 
             # 新增：更新数据库连接池使用统计
             try:
@@ -4319,8 +4314,8 @@ class EnhancedDataImportWidget(QWidget):
                 if hasattr(label, 'setText'):
                     label.setText(text)
                     return True
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"设置标签文本失败: {e}")
         return False
 
     def update_nodes_table(self, nodes_data: List[Dict]):
@@ -5831,8 +5826,8 @@ class EnhancedDataImportWidget(QWidget):
             if self.theme_manager and hasattr(self.theme_manager, 'theme_changed'):
                 try:
                     self.theme_manager.theme_changed.disconnect()
-                except:
-                    pass
+                except Exception as e:
+                    logger.debug(f"断开主题信号失败: {e}")
 
             logger.info("资源清理完成") if logger else None
 
@@ -6122,7 +6117,7 @@ class EnhancedDataImportWidget(QWidget):
             try:
                 start_dt = dt.strptime(task.start_date, "%Y-%m-%d")
                 start_date_edit.setDate(QDate(start_dt.year, start_dt.month, start_dt.day))
-            except:
+            except Exception:
                 start_date_edit.setDate(QDate.currentDate().addMonths(-3))
             date_layout.addWidget(start_date_edit)
 
@@ -6134,7 +6129,7 @@ class EnhancedDataImportWidget(QWidget):
             try:
                 end_dt = dt.strptime(task.end_date, "%Y-%m-%d")
                 end_date_edit.setDate(QDate(end_dt.year, end_dt.month, end_dt.day))
-            except:
+            except Exception:
                 end_date_edit.setDate(QDate.currentDate())
             date_layout.addWidget(end_date_edit)
 
@@ -6296,7 +6291,7 @@ class EnhancedDataImportWidget(QWidget):
                 return f"{seconds/60:.1f}m"
             else:
                 return f"{seconds/3600:.1f}h"
-        except:
+        except Exception:
             return "0s"
 
     def _on_task_double_clicked(self, item):

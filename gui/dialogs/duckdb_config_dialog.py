@@ -19,7 +19,7 @@ from typing import Dict, List, Any, Optional
 from pathlib import Path
 
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QTabWidget,
+    QVBoxLayout, QHBoxLayout, QGridLayout, QTabWidget,
     QLabel, QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QCheckBox,
     QPushButton, QTableWidget, QTableWidgetItem, QTextEdit, QGroupBox,
     QMessageBox, QProgressBar, QSplitter, QFrame, QScrollArea,
@@ -27,6 +27,8 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt5.QtGui import QFont, QIcon, QPixmap, QPalette, QColor
+
+from .base_dialog import BaseDialog
 
 # 添加项目根目录到路径
 project_root = Path(__file__).parent.parent.parent
@@ -128,23 +130,22 @@ class DuckDBConfigTestThread(QThread):
             logger.error(f"配置测试失败: {e}")
             self.test_failed.emit(str(e))
 
-class DuckDBConfigDialog(QDialog):
+class DuckDBConfigDialog(BaseDialog):
     """DuckDB配置管理对话框"""
 
     def __init__(self, parent=None):
-        super().__init__(parent)
         self.config_manager = get_duckdb_config_manager()
         self.current_profile = None
         self.test_thread = None
 
-        self.setWindowTitle("DuckDB性能配置管理")
-        self.setMinimumSize(1000, 700)
-        self.resize(1200, 800)
+        super().__init__(
+            parent,
+            title="DuckDB性能配置管理",
+            min_size=(1000, 700),
+            size=(1200, 800),
+            settings_key="DuckDBConfigDialog"
+        )
 
-        self.init_ui()
-        self.load_profiles()
-
-        # 设置样式
         self.setStyleSheet("""
             QDialog {
                 background-color: #f5f5f5;
@@ -189,6 +190,9 @@ class DuckDBConfigDialog(QDialog):
                 color: white;
             }
         """)
+
+        self.init_ui()
+        self.load_profiles()
 
     def init_ui(self):
         """初始化UI"""
@@ -1129,7 +1133,7 @@ class DuckDBConfigDialog(QDialog):
                         from datetime import datetime
                         dt = datetime.fromisoformat(tested_at)
                         tested_at = dt.strftime('%Y-%m-%d %H:%M:%S')
-                    except:
+                    except Exception:
                         pass
 
                 self.test_results_table.setItem(row, 0, QTableWidgetItem(tested_at))

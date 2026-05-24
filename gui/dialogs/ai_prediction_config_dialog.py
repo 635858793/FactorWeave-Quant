@@ -24,18 +24,34 @@ from PyQt5.QtGui import QFont, QIcon
 logger = logger
 
 
-class AIPredictionConfigDialog(QDialog):
-    """AI预测配置管理对话框"""
+class AIPredictionConfigDialog(BaseDialog):
+    """AI预测配置对话框"""
+    
+    config_saved = pyqtSignal(object)  # 配置保存信号
 
-    config_changed = pyqtSignal(str, dict)  # 配置改变信号
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.config_manager = None
-        self.current_configs = {}
-        self.init_config_manager()
-        self.setup_ui()
-        self.load_current_configs()
+    def __init__(self, parent=None, config: AIPredictionConfig = None):
+        """
+        初始化AI预测配置对话框
+        
+        Args:
+            parent: 父窗口
+            config: AI预测配置对象，如果为None则使用默认配置
+        """
+        super().__init__(
+            parent,
+            title="AI预测配置",
+            min_size=(800, 700),
+            size=(900, 800),
+            settings_key="AIPredictionConfigDialog"
+        )
+        
+        self.config = config or AIPredictionConfig()
+        self.ai_service = AIPredictionService()
+        self.selected_models = []
+        
+        self._setup_ui()
+        self._load_config()
+        self._connect_signals()
 
     def init_config_manager(self):
         """初始化配置管理器"""
@@ -706,7 +722,7 @@ class AIPredictionConfigDialog(QDialog):
                 try:
                     dt = datetime.fromisoformat(changed_at)
                     time_str = dt.strftime("%Y-%m-%d %H:%M")
-                except:
+                except Exception:
                     time_str = changed_at
                 self.history_table.setItem(row, 2, QTableWidgetItem(time_str))
 
@@ -741,7 +757,7 @@ class AIPredictionConfigDialog(QDialog):
                 old_text.setPlainText(formatted_old)
             else:
                 old_text.setPlainText("(无)")
-        except:
+        except Exception:
             old_text.setPlainText(old_value or "(无)")
         layout.addWidget(old_text)
 
@@ -752,7 +768,7 @@ class AIPredictionConfigDialog(QDialog):
         try:
             formatted_new = json.dumps(json.loads(new_value), indent=2, ensure_ascii=False)
             new_text.setPlainText(formatted_new)
-        except:
+        except Exception:
             new_text.setPlainText(new_value)
         layout.addWidget(new_text)
 
@@ -781,7 +797,8 @@ class AIPredictionConfigDialog(QDialog):
                 elif reply == QMessageBox.Cancel:
                     event.ignore()
                     return
-        except:
+        except Exception:
             pass  # 忽略比较错误
 
+        super().closeEvent(event)
         event.accept()

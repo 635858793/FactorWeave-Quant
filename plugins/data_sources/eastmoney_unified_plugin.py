@@ -18,7 +18,6 @@ Eastmoney Unified Data Plugin
 日期: 2024
 """
 
-import asyncio
 import requests
 import json
 import websocket
@@ -27,8 +26,7 @@ from typing import List, Dict, Any, Optional, Union
 import pandas as pd
 from loguru import logger
 
-from plugins.plugin_interface import IDataSourcePlugin, PluginLifecycle
-from core.data_source_extensions import PluginInfo, HealthCheckResult
+from core.data_source_extensions import IDataSourcePlugin, PluginInfo, HealthCheckResult, ConnectionInfo
 from core.plugin_types import AssetType, DataType, PluginType
 from core.tet_data_pipeline import StandardQuery, StandardData
 
@@ -44,11 +42,6 @@ class EastmoneyUnifiedPlugin(IDataSourcePlugin):
     def __init__(self, plugin_id: str = "eastmoney_unified"):
         self.plugin_id = plugin_id
         self.logger = logger.bind(plugin_id=self.plugin_id)
-
-        # 必须显式初始化这些属性（IDataSourcePlugin是抽象基类，不提供默认实现）
-        self.initialized = False
-        self.last_error = None
-        self.plugin_state = PluginLifecycle.CREATED  # 初始状态（插件对象已创建）
 
         self._is_connected = False
         self.session = requests.Session()
@@ -90,29 +83,22 @@ class EastmoneyUnifiedPlugin(IDataSourcePlugin):
 
         self.logger.info(f"{self.plugin_id} 统一插件初始化完成。")
 
-    def get_plugin_info(self) -> PluginInfo:
-        """返回插件信息"""
+    @property
+    def plugin_info(self) -> PluginInfo:
         return PluginInfo(
             id=self.plugin_id,
             name="Eastmoney Unified Data Plugin",
             description="东方财富统一数据源插件，支持所有数据类型",
             version="1.0.0",
             author="FactorWeave-Quant Team",
-            plugin_type=PluginType.DATA_SOURCE,
+            supported_asset_types=[AssetType.STOCK_A, AssetType.FUND, AssetType.BOND, AssetType.INDEX],
+            supported_data_types=[
+                DataType.REAL_TIME_QUOTE, DataType.LEVEL2_DATA, DataType.TICK_DATA, DataType.ORDER_BOOK,
+                DataType.HISTORICAL_KLINE, DataType.STOCK_LIST,
+                DataType.FINANCIAL_STATEMENT, DataType.ANNOUNCEMENT, DataType.ANALYST_RATING,
+                DataType.MACRO_ECONOMIC_INDICATOR, DataType.MONEY_FLOW
+            ],
             capabilities={
-                'data_types': [
-                    # 实时数据
-                    DataType.REAL_TIME_QUOTE, DataType.LEVEL2_DATA, DataType.TICK_DATA, DataType.ORDER_BOOK,
-                    # 历史数据
-                    DataType.HISTORICAL_KLINE, DataType.STOCK_LIST,
-                    # 基本面数据
-                    DataType.FINANCIAL_STATEMENT, DataType.ANNOUNCEMENT, DataType.ANALYST_RATING,
-                    # 宏观数据
-                    DataType.MACRO_ECONOMIC_INDICATOR,
-                    # 资金流向
-                    DataType.MONEY_FLOW
-                ],
-                'asset_types': [AssetType.STOCK_A, AssetType.FUND, AssetType.BOND, AssetType.INDEX],
                 'features': [
                     'realtime_data', 'historical_data', 'fundamental_data',
                     'macro_data', 'money_flow', 'websocket_support'
@@ -120,12 +106,10 @@ class EastmoneyUnifiedPlugin(IDataSourcePlugin):
             }
         )
 
-    async def connect(self, config: Optional[Dict[str, Any]] = None) -> bool:
-        """连接到东方财富数据服务"""
+    def connect(self, **kwargs) -> bool:
         self.logger.info(f"尝试连接到 {self.plugin_id} 统一数据服务...")
 
         try:
-            # 测试HTTP连接
             test_url = "https://www.eastmoney.com"
             response = self.session.get(test_url, timeout=10)
 
@@ -141,11 +125,9 @@ class EastmoneyUnifiedPlugin(IDataSourcePlugin):
             self.logger.error(f"连接失败: {e}")
             return False
 
-    async def disconnect(self) -> bool:
-        """断开连接"""
+    def disconnect(self) -> bool:
         self.logger.info(f"尝试断开 {self.plugin_id} 统一数据服务...")
 
-        # 关闭WebSocket连接
         if self.websocket_connection:
             try:
                 self.websocket_connection.close()
@@ -153,19 +135,29 @@ class EastmoneyUnifiedPlugin(IDataSourcePlugin):
             except Exception as e:
                 self.logger.warning(f"关闭WebSocket连接失败: {e}")
 
-        # 关闭HTTP会话
         self.session.close()
+        self.session = requests.Session()
         self._is_connected = False
         self.logger.info(f"已从 {self.plugin_id} 统一数据服务断开。")
         return True
 
-    async def health_check(self) -> HealthCheckResult:
-        """执行健康检查"""
+    def is_connected(self) -> bool:
+        return self._is_connected
+
+    def get_connection_info(self) -> ConnectionInfo:
+        return ConnectionInfo(
+            is_connected=self._is_connected,
+            connection_time=None,
+            last_activity=datetime.now(),
+            connection_params={'base_url': 'https://www.eastmoney.com'},
+            error_message=None if self._is_connected else '未连接'
+        )
+
+    def health_check(self) -> HealthCheckResult:
         try:
             if not self._is_connected:
-                await self.connect()
+                self.connect()
 
-            # 测试API连通性
             test_response = self.session.get("https://www.eastmoney.com", timeout=5)
             if test_response.status_code == 200:
                 return HealthCheckResult(is_healthy=True, message="连接正常")
@@ -175,7 +167,7 @@ class EastmoneyUnifiedPlugin(IDataSourcePlugin):
         except Exception as e:
             return HealthCheckResult(is_healthy=False, message=f"健康检查失败: {e}")
 
-    async def get_data(self, query: StandardQuery) -> Union[List[Dict], pd.DataFrame, None]:
+    def get_data(self, query: StandardQuery) -> Union[List[Dict], pd.DataFrame, None]:
         """
         统一数据获取接口
         根据data_type参数调用相应的数据获取方法
@@ -183,43 +175,41 @@ class EastmoneyUnifiedPlugin(IDataSourcePlugin):
         self.logger.info(f"通过统一接口获取数据: {query.symbol} - {query.data_type.value}")
 
         try:
-            # 确保连接
             if not self._is_connected:
-                await self.connect()
+                self.connect()
 
-            # 根据数据类型调用相应方法
             if query.data_type == DataType.REAL_TIME_QUOTE:
-                return await self._get_realtime_quotes([query.symbol], query.asset_type)
+                return self._get_realtime_quotes([query.symbol], query.asset_type)
 
             elif query.data_type == DataType.LEVEL2_DATA:
-                return await self._get_level2_data([query.symbol], query.asset_type)
+                return self._get_level2_data([query.symbol], query.asset_type)
 
             elif query.data_type == DataType.TICK_DATA:
-                return await self._get_tick_data(query.symbol, query.start_date, query.end_date, query.asset_type)
+                return self._get_tick_data(query.symbol, query.start_date, query.end_date, query.asset_type)
 
             elif query.data_type == DataType.ORDER_BOOK:
-                return await self._get_order_book_data([query.symbol], query.asset_type)
+                return self._get_order_book_data([query.symbol], query.asset_type)
 
             elif query.data_type == DataType.HISTORICAL_KLINE:
-                return await self._get_kline_data(query.symbol, query.extra_params.get('period', 'daily'), query.start_date, query.end_date, query.asset_type)
+                return self._get_kline_data(query.symbol, query.extra_params.get('period', 'daily'), query.start_date, query.end_date, query.asset_type)
 
             elif query.data_type == DataType.STOCK_LIST:
-                return await self._get_stock_list(query.asset_type)
+                return self._get_stock_list(query.asset_type)
 
             elif query.data_type == DataType.FINANCIAL_STATEMENT:
-                return await self._get_financial_statements(query.symbol, query.extra_params.get('report_type', 'income_statement'), query.extra_params.get('periods', 4), query.asset_type)
+                return self._get_financial_statements(query.symbol, query.extra_params.get('report_type', 'income_statement'), query.extra_params.get('periods', 4), query.asset_type)
 
             elif query.data_type == DataType.ANNOUNCEMENT:
-                return await self._get_company_announcements(query.symbol, query.extra_params.get('announcement_type'), query.start_date, query.end_date)
+                return self._get_company_announcements(query.symbol, query.extra_params.get('announcement_type'), query.start_date, query.end_date)
 
             elif query.data_type == DataType.ANALYST_RATING:
-                return await self._get_analyst_ratings(query.symbol, query.start_date, query.end_date)
+                return self._get_analyst_ratings(query.symbol, query.start_date, query.end_date)
 
             elif query.data_type == DataType.MACRO_ECONOMIC_INDICATOR:
-                return await self._get_macro_data(query.extra_params.get('indicator_id'), query.extra_params.get('country', 'CN'), query.start_date, query.end_date)
+                return self._get_macro_data(query.extra_params.get('indicator_id'), query.extra_params.get('country', 'CN'), query.start_date, query.end_date)
 
             elif query.data_type == DataType.MONEY_FLOW:
-                return await self._get_money_flow_data(query.symbol, query.start_date, query.end_date, query.asset_type)
+                return self._get_money_flow_data(query.symbol, query.start_date, query.end_date, query.asset_type)
 
             else:
                 self.logger.warning(f"不支持的数据类型: {query.data_type}")
@@ -229,8 +219,17 @@ class EastmoneyUnifiedPlugin(IDataSourcePlugin):
             self.logger.error(f"获取数据失败: {e}")
             return None
 
+    def get_real_time_quotes(self, symbols: List[str]) -> pd.DataFrame:
+        return self._get_realtime_quotes(symbols, AssetType.STOCK_A)
+
+    def get_asset_list(self, asset_type: AssetType) -> List[Dict]:
+        return self._get_stock_list(asset_type)
+
+    def get_kdata(self, symbol: str, period: str, start_date: datetime, end_date: datetime, asset_type: AssetType) -> pd.DataFrame:
+        return self._get_kline_data(symbol, period, start_date, end_date, asset_type)
+
     # 实时数据获取方法
-    async def _get_realtime_quotes(self, symbols: List[str], asset_type: AssetType) -> pd.DataFrame:
+    def _get_realtime_quotes(self, symbols: List[str], asset_type: AssetType) -> pd.DataFrame:
         """获取实时行情数据"""
         try:
             # 构建请求参数
@@ -254,7 +253,7 @@ class EastmoneyUnifiedPlugin(IDataSourcePlugin):
 
         return pd.DataFrame()
 
-    async def _get_level2_data(self, symbols: List[str], asset_type: AssetType) -> List[Dict]:
+    def _get_level2_data(self, symbols: List[str], asset_type: AssetType) -> List[Dict]:
         """获取Level-2数据"""
         level2_data = []
 
@@ -280,7 +279,7 @@ class EastmoneyUnifiedPlugin(IDataSourcePlugin):
 
         return level2_data
 
-    async def _get_tick_data(self, symbol: str, start_date: datetime, end_date: datetime, asset_type: AssetType) -> List[Dict]:
+    def _get_tick_data(self, symbol: str, start_date: datetime, end_date: datetime, asset_type: AssetType) -> List[Dict]:
         """获取Tick数据"""
         try:
             params = {
@@ -303,7 +302,7 @@ class EastmoneyUnifiedPlugin(IDataSourcePlugin):
         return []
 
     # 基本面数据获取方法
-    async def _get_financial_statements(self, symbol: str, report_type: str, periods: int, asset_type: AssetType) -> List[Dict]:
+    def _get_financial_statements(self, symbol: str, report_type: str, periods: int, asset_type: AssetType) -> List[Dict]:
         """获取财务报表数据"""
         try:
             report_type_map = {
@@ -453,12 +452,7 @@ class EastmoneyUnifiedPlugin(IDataSourcePlugin):
         except (ValueError, TypeError):
             return None
 
-    # 其他必需的抽象方法实现
-    async def get_asset_list(self, asset_type: AssetType) -> List[Dict]:
-        """获取资产列表"""
-        return await self._get_stock_list(asset_type)
-
-    async def _get_stock_list(self, asset_type: AssetType) -> List[Dict]:
+    def _get_stock_list(self, asset_type: AssetType) -> List[Dict]:
         """获取股票列表"""
         try:
             params = {
@@ -503,11 +497,7 @@ class EastmoneyUnifiedPlugin(IDataSourcePlugin):
 
         return stocks
 
-    async def get_kline_data(self, symbol: str, period: str, start_date: datetime, end_date: datetime, asset_type: AssetType) -> pd.DataFrame:
-        """获取K线数据"""
-        return await self._get_kline_data(symbol, period, start_date, end_date, asset_type)
-
-    async def _get_kline_data(self, symbol: str, period: str, start_date: datetime, end_date: datetime, asset_type: AssetType) -> pd.DataFrame:
+    def _get_kline_data(self, symbol: str, period: str, start_date: datetime, end_date: datetime, asset_type: AssetType) -> pd.DataFrame:
         """获取K线数据实现"""
         try:
             # 周期映射
@@ -575,27 +565,27 @@ class EastmoneyUnifiedPlugin(IDataSourcePlugin):
         return pd.DataFrame(kline_data)
 
     # 占位方法，用于其他数据类型
-    async def _get_order_book_data(self, symbols: List[str], asset_type: AssetType) -> List[Dict]:
+    def _get_order_book_data(self, symbols: List[str], asset_type: AssetType) -> List[Dict]:
         """获取订单簿数据（占位方法）"""
         self.logger.info("订单簿数据获取功能开发中...")
         return []
 
-    async def _get_company_announcements(self, symbol: str, announcement_type: Optional[str], start_date: Optional[datetime], end_date: Optional[datetime]) -> List[Dict]:
+    def _get_company_announcements(self, symbol: str, announcement_type: Optional[str], start_date: Optional[datetime], end_date: Optional[datetime]) -> List[Dict]:
         """获取公司公告（占位方法）"""
         self.logger.info("公司公告数据获取功能开发中...")
         return []
 
-    async def _get_analyst_ratings(self, symbol: str, start_date: Optional[datetime], end_date: Optional[datetime]) -> List[Dict]:
+    def _get_analyst_ratings(self, symbol: str, start_date: Optional[datetime], end_date: Optional[datetime]) -> List[Dict]:
         """获取分析师评级（占位方法）"""
         self.logger.info("分析师评级数据获取功能开发中...")
         return []
 
-    async def _get_macro_data(self, indicator_id: str, country: str, start_date: datetime, end_date: datetime) -> List[Dict]:
+    def _get_macro_data(self, indicator_id: str, country: str, start_date: datetime, end_date: datetime) -> List[Dict]:
         """获取宏观数据（占位方法）"""
         self.logger.info("宏观数据获取功能开发中...")
         return []
 
-    async def _get_money_flow_data(self, symbol: str, start_date: datetime, end_date: datetime, asset_type: AssetType) -> List[Dict]:
+    def _get_money_flow_data(self, symbol: str, start_date: datetime, end_date: datetime, asset_type: AssetType) -> List[Dict]:
         """获取资金流向数据（占位方法）"""
         self.logger.info("资金流向数据获取功能开发中...")
         return []

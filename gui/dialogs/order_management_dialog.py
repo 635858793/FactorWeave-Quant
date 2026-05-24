@@ -10,7 +10,7 @@ from loguru import logger
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QGridLayout,
+    QVBoxLayout, QHBoxLayout, QGridLayout,
     QTabWidget, QLabel, QLineEdit, QTextEdit, QTableWidget,
     QTableWidgetItem, QPushButton, QComboBox, QDateEdit,
     QFrame, QSplitter, QGroupBox, QMessageBox,
@@ -32,8 +32,10 @@ from core.trading.account_manager import AccountManager
 from core.services.unified_data_manager import UnifiedDataManager
 from core.services.asset_service import AssetService
 
+from .base_dialog import BaseDialog
 
-class OrderManagementDialog(QDialog):
+
+class OrderManagementDialog(BaseDialog):
     """订单管理对话框"""
 
     # 信号定义
@@ -48,7 +50,6 @@ class OrderManagementDialog(QDialog):
         Args:
             parent: 父窗口
         """
-        super().__init__(parent)
         self.service_container = get_service_container()
         self.event_bus = get_event_bus()
         self.order_service = self.service_container.resolve(OrderService)
@@ -56,6 +57,14 @@ class OrderManagementDialog(QDialog):
         self.orders = []
         self.current_order = None
         self.filter_conditions = {}
+
+        super().__init__(
+            parent,
+            title="订单管理",
+            min_size=(1200, 800),
+            size=(1500, 900),
+            settings_key="OrderManagementDialog"
+        )
 
         self.init_ui()
         self.load_orders()
@@ -65,10 +74,6 @@ class OrderManagementDialog(QDialog):
     def init_ui(self):
         """初始化用户界面"""
         try:
-            self.setWindowTitle("订单管理")
-            self.setMinimumSize(1200, 800)
-            self.resize(1500, 900)
-
             # 主布局
             main_layout = QVBoxLayout(self)
             main_layout.setContentsMargins(10, 10, 10, 10)
@@ -635,6 +640,19 @@ class OrderManagementDialog(QDialog):
             self.event_bus.subscribe('order_modified', self.on_order_modified_event)
         except Exception as e:
             logger.error(f"订阅事件失败: {e}")
+
+    def closeEvent(self, event):
+        try:
+            self.event_bus.unsubscribe('order_created', self.on_order_created_event)
+            self.event_bus.unsubscribe('order_updated', self.on_order_updated_event)
+            self.event_bus.unsubscribe('order_cancelled', self.on_order_cancelled_event)
+            self.event_bus.unsubscribe('order_filled', self.on_order_filled_event)
+            self.event_bus.unsubscribe('order_rejected', self.on_order_rejected_event)
+            self.event_bus.unsubscribe('order_submit_failed', self.on_order_submit_failed_event)
+            self.event_bus.unsubscribe('order_modified', self.on_order_modified_event)
+        except Exception as e:
+            logger.error(f"取消事件订阅失败: {e}")
+        super().closeEvent(event)
 
     def load_orders(self):
         """加载订单列表"""
@@ -1945,11 +1963,14 @@ class CreateOrderDialog(QDialog):
                 else:
                     # 构建查询条件
                     query_conditions = []
-                    query_conditions.append(f"asset_type = '{asset_type.value}'")
+                    params = []
+                    query_conditions.append("asset_type = ?")
+                    params.append(asset_type.value)
                     
                     if search_text:
-                        search_condition = f"(symbol LIKE '%{search_text}%' OR name LIKE '%{search_text}%')"
-                        query_conditions.append(search_condition)
+                        query_conditions.append("(symbol LIKE ? OR name LIKE ?)")
+                        params.append(f"%{search_text}%")
+                        params.append(f"%{search_text}%")
                     
                     # 构建查询SQL
                     base_query = "SELECT symbol as code, name, market, industry, sector, asset_type, updated_at as update_time FROM asset_metadata"
@@ -1969,7 +1990,7 @@ class CreateOrderDialog(QDialog):
                         
                         if 'asset_metadata' in table_names:
                             # 执行股票查询
-                            asset_df = conn.execute(query).df()
+                            asset_df = conn.execute(query, params).df()
                             
                             if not asset_df.empty:
                                 # 转换为标准格式
@@ -2224,8 +2245,8 @@ class CreateOrderDialog(QDialog):
                                                      asset.get('symbol', '').upper()]:
                                 asset_valid = True
                                 break
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"验证资产列表失败: {e}")
                 
                 if not asset_valid:
                     try:
@@ -2237,8 +2258,8 @@ class CreateOrderDialog(QDialog):
                             elif 'symbol' in asset_df.columns:
                                 if stock_code.upper() in asset_df['symbol'].astype(str).str.upper().values:
                                     asset_valid = True
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"通过get_asset_list验证资产失败: {e}")
                 
                 if not asset_valid:
                     reply = QMessageBox.question(

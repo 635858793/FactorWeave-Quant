@@ -195,38 +195,84 @@ class TableSchemaRegistry:
                 'report_date': 'DATE NOT NULL',
                 'report_type': 'VARCHAR NOT NULL',
                 'report_period': 'VARCHAR',
-                # 资产负债表
+                'fiscal_year': 'INTEGER',
+                # 资产负债表 - 资产
                 'total_assets': 'DECIMAL(20,2)',
                 'current_assets': 'DECIMAL(20,2)',
                 'non_current_assets': 'DECIMAL(20,2)',
+                'cash_and_equivalents': 'DECIMAL(20,2)',
+                'short_term_investments': 'DECIMAL(20,2)',
+                'accounts_receivable': 'DECIMAL(20,2)',
+                'inventory': 'DECIMAL(20,2)',
+                'prepaid_expenses': 'DECIMAL(20,2)',
+                'fixed_assets': 'DECIMAL(20,2)',
+                'intangible_assets': 'DECIMAL(20,2)',
+                'goodwill': 'DECIMAL(20,2)',
+                # 资产负债表 - 负债
                 'total_liabilities': 'DECIMAL(20,2)',
                 'current_liabilities': 'DECIMAL(20,2)',
                 'non_current_liabilities': 'DECIMAL(20,2)',
+                'accounts_payable': 'DECIMAL(20,2)',
+                'short_term_debt': 'DECIMAL(20,2)',
+                'long_term_debt': 'DECIMAL(20,2)',
+                'accrued_expenses': 'DECIMAL(20,2)',
+                # 资产负债表 - 股东权益
                 'shareholders_equity': 'DECIMAL(20,2)',
                 'paid_in_capital': 'DECIMAL(20,2)',
                 'retained_earnings': 'DECIMAL(20,2)',
+                'accumulated_other_comprehensive_income': 'DECIMAL(20,2)',
                 # 利润表
                 'operating_revenue': 'DECIMAL(20,2)',
                 'operating_costs': 'DECIMAL(20,2)',
                 'gross_profit': 'DECIMAL(20,2)',
                 'operating_expenses': 'DECIMAL(20,2)',
+                'selling_expenses': 'DECIMAL(20,2)',
+                'admin_expenses': 'DECIMAL(20,2)',
+                'rd_expenses': 'DECIMAL(20,2)',
+                'financial_expenses': 'DECIMAL(20,2)',
                 'operating_profit': 'DECIMAL(20,2)',
+                'non_operating_income': 'DECIMAL(20,2)',
+                'non_operating_expenses': 'DECIMAL(20,2)',
+                'profit_before_tax': 'DECIMAL(20,2)',
+                'income_tax': 'DECIMAL(20,2)',
                 'net_profit': 'DECIMAL(20,2)',
+                'net_profit_attributable_to_parent': 'DECIMAL(20,2)',
+                # 每股指标
                 'eps': 'DECIMAL(10,4)',
                 'diluted_eps': 'DECIMAL(10,4)',
+                'book_value_per_share': 'DECIMAL(10,4)',
                 # 现金流量表
                 'operating_cash_flow': 'DECIMAL(20,2)',
                 'investing_cash_flow': 'DECIMAL(20,2)',
                 'financing_cash_flow': 'DECIMAL(20,2)',
                 'net_cash_flow': 'DECIMAL(20,2)',
-                # 财务比率
+                'free_cash_flow': 'DECIMAL(20,2)',
+                # 经营活动现金流明细
+                'cash_from_operations': 'DECIMAL(20,2)',
+                'cash_paid_for_goods': 'DECIMAL(20,2)',
+                'cash_paid_to_employees': 'DECIMAL(20,2)',
+                'cash_paid_for_taxes': 'DECIMAL(20,2)',
+                # 盈利能力比率
                 'roe': 'DECIMAL(10,4)',
                 'roa': 'DECIMAL(10,4)',
-                'debt_to_equity': 'DECIMAL(10,4)',
+                'roic': 'DECIMAL(10,4)',
+                'gross_profit_margin': 'DECIMAL(10,4)',
+                'operating_profit_margin': 'DECIMAL(10,4)',
+                'net_profit_margin': 'DECIMAL(10,4)',
+                # 偿债能力比率
                 'current_ratio': 'DECIMAL(10,4)',
                 'quick_ratio': 'DECIMAL(10,4)',
-                'gross_margin': 'DECIMAL(10,4)',
-                'net_margin': 'DECIMAL(10,4)',
+                'debt_to_equity': 'DECIMAL(10,4)',
+                'debt_to_assets': 'DECIMAL(10,4)',
+                'interest_coverage': 'DECIMAL(10,4)',
+                # 营运能力比率
+                'asset_turnover': 'DECIMAL(10,4)',
+                'inventory_turnover': 'DECIMAL(10,4)',
+                'receivables_turnover': 'DECIMAL(10,4)',
+                # 成长能力比率
+                'revenue_growth': 'DECIMAL(10,4)',
+                'profit_growth': 'DECIMAL(10,4)',
+                'asset_growth': 'DECIMAL(10,4)',
                 # 元数据
                 'plugin_specific_data': 'JSON',
                 'data_source': 'VARCHAR NOT NULL',
@@ -1287,7 +1333,9 @@ CREATE TABLE {table_name} (
                     type_counts[table_type.value] = count
 
                 # 获取数据库大小信息
-                db_size = conn.execute("SELECT pg_database_size(current_database())").fetchone()
+                db_size = conn.execute(
+                    "SELECT database_size FROM pragma_database_size()"
+                ).fetchone()
 
                 return {
                     'database_path': database_path,

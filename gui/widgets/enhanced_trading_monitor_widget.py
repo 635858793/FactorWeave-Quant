@@ -1074,6 +1074,7 @@ class EnhancedTradingMonitorWidget(QWidget):
         if hasattr(self, 'chart_timer'):
             self.chart_timer.stop()
 
+        super().closeEvent(event)
         event.accept()
 
 # 测试代码

@@ -15,7 +15,13 @@ import os
 
 # 导入现有渲染器
 from .chart_renderer import ChartRenderer as BaseChartRenderer
-from core.webgpu import get_webgpu_manager, WebGPUConfig, RenderBackend
+try:
+    from core.webgpu import get_webgpu_manager, WebGPUConfig, RenderBackend
+except ImportError:
+    get_webgpu_manager = None
+    WebGPUConfig = None
+    RenderBackend = None
+    logger.warning("webgpu_chart_renderer: core.webgpu 模块不可用，WebGPU加速功能禁用")
 
 logger = logger
 

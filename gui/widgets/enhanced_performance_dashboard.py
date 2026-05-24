@@ -17,8 +17,7 @@
 """
 
 import sys
-import logging
-import math
+import numpy as np
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
@@ -50,20 +49,11 @@ from PyQt5.QtGui import (
 )
 
 # 导入核心性能监控组件
-try:
-    # 使用统一入口
-    from core.services import get_performance_coordinator
-    from core.performance.unified_performance_coordinator import UnifiedPerformanceCoordinator
-    from core.services.ai_prediction_service import AIPredictionService
-    from core.ui_integration.ui_business_logic_adapter import get_ui_adapter
-    from loguru import logger
-    CORE_AVAILABLE = True
-except ImportError as e:
-    logger = logging.getLogger(__name__)
-    CORE_AVAILABLE = False
-    logger.warning(f"核心性能监控服务不可用: {e}")
-
-logger = logger.bind(module=__name__) if hasattr(logger, 'bind') else logging.getLogger(__name__)
+from core.services import get_performance_coordinator
+from core.performance.unified_performance_coordinator import UnifiedPerformanceCoordinator
+from core.services.ai_prediction_service import AIPredictionService
+from core.ui_integration.ui_business_logic_adapter import get_ui_adapter
+from loguru import logger
 
 
 class MetricType(Enum):
@@ -289,6 +279,27 @@ class RealTimeChart(QGraphicsView):
 class MetricGauge(QWidget):
     """指标仪表盘组件"""
 
+    _METRIC_LABELS = {
+        MetricType.CPU_USAGE: "CPU",
+        MetricType.MEMORY_USAGE: "内存",
+        MetricType.DISK_IO: "磁盘I/O",
+        MetricType.NETWORK_IO: "网络I/O",
+        MetricType.CACHE_HIT_RATE: "缓存命中",
+        MetricType.TASK_EXECUTION_TIME: "执行时间",
+        MetricType.THROUGHPUT: "吞吐量",
+        MetricType.ERROR_RATE: "错误率",
+        MetricType.QUEUE_LENGTH: "队列长度",
+        MetricType.RESPONSE_TIME: "响应时间"
+    }
+
+    _BG_PEN = QPen(QColor(220, 220, 220), 8)
+    _TEXT_PEN = QPen(Qt.black)
+    _FONT_VALUE = QFont("Arial", 14, QFont.Bold)
+    _FONT_LABEL = QFont("Arial", 8)
+    _COLOR_CRITICAL = QColor(231, 76, 60)
+    _COLOR_WARNING = QColor(241, 196, 15)
+    _COLOR_NORMAL = QColor(46, 204, 113)
+
     def __init__(self, metric_type: MetricType, max_value: float = 100, parent=None):
         super().__init__(parent)
         self.metric_type = metric_type
@@ -317,62 +328,39 @@ class MetricGauge(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
-        # 获取绘制区域
         rect = self.rect().adjusted(10, 10, -10, -10)
-        # 转换为QRectF确保类型一致
         rectf = QRectF(rect)
-        center = rectf.center()
         radius = min(rectf.width(), rectf.height()) // 2 - 5
 
-        # 绘制背景圆环
-        painter.setPen(QPen(QColor(220, 220, 220), 8))
+        painter.setPen(self._BG_PEN)
         painter.drawArc(rectf, 0, 360 * 16)
 
-        # 计算角度（从底部开始，顺时针）
-        start_angle = int(180 * 16)  # 底部开始，确保为int类型
-        span_angle = int(-180 * 16)  # 半圆，确保为int类型
+        start_angle = int(180 * 16)
+        span_angle = int(-180 * 16)
 
-        # 绘制数值圆环
         value_ratio = self.current_value / self.max_value
-        value_span = int(span_angle * value_ratio)  # 确保为int类型
+        value_span = int(span_angle * value_ratio)
 
-        # 根据数值选择颜色
         if self.current_value >= self.critical_threshold:
-            color = QColor(231, 76, 60)  # 红色
+            color = self._COLOR_CRITICAL
         elif self.current_value >= self.warning_threshold:
-            color = QColor(241, 196, 15)  # 黄色
+            color = self._COLOR_WARNING
         else:
-            color = QColor(46, 204, 113)  # 绿色
+            color = self._COLOR_NORMAL
 
         painter.setPen(QPen(color, 8))
         painter.drawArc(rectf, start_angle, value_span)
 
-        # 绘制中心数值
-        painter.setPen(QPen(Qt.black))
-        painter.setFont(QFont("Arial", 14, QFont.Bold))
+        painter.setPen(self._TEXT_PEN)
+        painter.setFont(self._FONT_VALUE)
         painter.drawText(rect, Qt.AlignCenter, f"{self.current_value:.1f}")
 
-        # 绘制标签
-        painter.setFont(QFont("Arial", 8))
+        painter.setFont(self._FONT_LABEL)
         label_rect = QRectF(rect.x(), rect.bottom() + 5, rect.width(), 20)
 
-        metric_labels = {
-            MetricType.CPU_USAGE: "CPU",
-            MetricType.MEMORY_USAGE: "内存",
-            MetricType.DISK_IO: "磁盘I/O",
-            MetricType.NETWORK_IO: "网络I/O",
-            MetricType.CACHE_HIT_RATE: "缓存命中",
-            MetricType.TASK_EXECUTION_TIME: "执行时间",
-            MetricType.THROUGHPUT: "吞吐量",
-            MetricType.ERROR_RATE: "错误率",
-            MetricType.QUEUE_LENGTH: "队列长度",
-            MetricType.RESPONSE_TIME: "响应时间"
-        }
-
-        label = metric_labels.get(self.metric_type, "未知")
+        label = self._METRIC_LABELS.get(self.metric_type, "未知")
         painter.drawText(label_rect, Qt.AlignCenter, label)
 
-        # 确保正确结束QPainter
         painter.end()
 
 
@@ -1233,13 +1221,10 @@ class EnhancedPerformanceDashboard(QWidget):
                 # 计算统计信息
                 values = [m.value for m in filtered_metrics]
                 if values:
-                    avg_val = sum(values) / len(values)
-                    max_val = max(values)
-                    min_val = min(values)
-
-                    # 计算标准差
-                    variance = sum((x - avg_val) ** 2 for x in values) / len(values)
-                    std_val = math.sqrt(variance)
+                    avg_val = np.mean(values)
+                    max_val = np.max(values)
+                    min_val = np.min(values)
+                    std_val = np.std(values, ddof=0)
 
                     # 更新统计标签
                     self.avg_value_label.setText(f"{avg_val:.2f}")

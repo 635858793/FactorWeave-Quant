@@ -16,7 +16,6 @@ AI功能控制面板
 """
 
 import sys
-import logging
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
@@ -45,21 +44,13 @@ from PyQt5.QtGui import (
 )
 
 # 导入核心AI服务
-try:
-    from core.services.ai_prediction_service import AIPredictionService
-    from core.ai.user_behavior_learner import UserBehaviorLearner
-    from core.ai.config_recommendation_engine import ConfigRecommendationEngine
-    from core.ai.config_impact_analyzer import ConfigImpactAnalyzer
-    from core.ai.data_anomaly_detector import DataAnomalyDetector
-    from core.ui_integration.ui_business_logic_adapter import get_ui_adapter
-    from loguru import logger
-    CORE_AVAILABLE = True
-except ImportError as e:
-    logger = logging.getLogger(__name__)
-    CORE_AVAILABLE = False
-    logger.warning(f"AI核心服务不可用: {e}")
-
-logger = logger.bind(module=__name__) if hasattr(logger, 'bind') else logging.getLogger(__name__)
+from core.services.ai_prediction_service import AIPredictionService
+from core.ai.user_behavior_learner import UserBehaviorLearner
+from core.ai.config_recommendation_engine import ConfigRecommendationEngine
+from core.ai.config_impact_analyzer import ConfigImpactAnalyzer
+from core.ai.data_anomaly_detector import DataAnomalyDetector
+from core.ui_integration.ui_business_logic_adapter import get_ui_adapter
+from loguru import logger
 
 
 class AIServiceStatus(Enum):
@@ -1811,9 +1802,9 @@ class AIFeaturesControlPanel(QWidget):
     def open_strategy_management_dialog(self):
         """打开策略管理对话框"""
         try:
-            from gui.dialogs.ai_strategy_management_dialog import AIStrategyManagementDialog
+            from gui.dialogs.strategy_manager_dialog import StrategyManagerDialog
 
-            dialog = AIStrategyManagementDialog(self, database_service=self.ui_adapter.database_service if self.ui_adapter else None)
+            dialog = StrategyManagerDialog(self, database_service=self.ui_adapter.database_service if self.ui_adapter else None)
             dialog.strategy_selected.connect(self.on_strategy_selected)
             dialog.strategy_updated.connect(self.on_strategy_updated)
             dialog.exec_()

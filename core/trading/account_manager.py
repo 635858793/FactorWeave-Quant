@@ -94,7 +94,7 @@ class AccountManager:
         Returns:
             bool: 是否初始化成功
         """
-        return len(self._accounts) >= 0
+        return len(self._accounts) > 0
 
     def refresh_accounts(self) -> bool:
         """从数据库刷新所有账户数据
@@ -943,6 +943,128 @@ class AccountManager:
         
         return trading_interface
 
+    def freeze_cash(self, account_id: str, amount: float) -> bool:
+        """
+        冻结资金（开仓时调用）
+
+        Args:
+            account_id: 账户ID
+            amount: 冻结金额
+
+        Returns:
+            bool: 是否冻结成功
+        """
+        try:
+            if amount <= 0:
+                logger.warning(f"冻结金额必须大于0: {amount}")
+                return False
+
+            with self._account_lock:
+                account = self._accounts.get(account_id)
+                if not account:
+                    logger.warning(f"账户不存在: {account_id}")
+                    return False
+
+                if account.available_balance < amount:
+                    logger.warning(f"可用资金不足: 需要{amount:.2f}, 可用{account.available_balance:.2f}")
+                    return False
+
+                account.available_balance -= amount
+                account.frozen_balance += amount
+
+                self.repository.save_account(account)
+                logger.info(f"资金冻结成功: account={account_id}, amount={amount:.2f}, "
+                            f"available={account.available_balance:.2f}, frozen={account.frozen_balance:.2f}")
+
+            self.event_bus.publish('cash_frozen', account_id=account_id, amount=amount,
+                                   available_balance=account.available_balance,
+                                   frozen_balance=account.frozen_balance)
+            return True
+
+        except Exception as e:
+            logger.error(f"冻结资金失败: {e}")
+            return False
+
+    def unfreeze_cash(self, account_id: str, amount: float) -> bool:
+        """
+        解冻资金（平仓/撤单时调用）
+
+        Args:
+            account_id: 账户ID
+            amount: 解冻金额
+
+        Returns:
+            bool: 是否解冻成功
+        """
+        try:
+            if amount <= 0:
+                logger.warning(f"解冻金额必须大于0: {amount}")
+                return False
+
+            with self._account_lock:
+                account = self._accounts.get(account_id)
+                if not account:
+                    logger.warning(f"账户不存在: {account_id}")
+                    return False
+
+                if account.frozen_balance < amount:
+                    logger.warning(f"冻结资金不足: 需要解冻{amount:.2f}, 已冻结{account.frozen_balance:.2f}")
+                    account.available_balance += account.frozen_balance
+                    account.frozen_balance = 0.0
+                else:
+                    account.available_balance += amount
+                    account.frozen_balance -= amount
+
+                self.repository.save_account(account)
+                logger.info(f"资金解冻成功: account={account_id}, amount={amount:.2f}, "
+                            f"available={account.available_balance:.2f}, frozen={account.frozen_balance:.2f}")
+
+            self.event_bus.publish('cash_unfrozen', account_id=account_id, amount=amount,
+                                   available_balance=account.available_balance,
+                                   frozen_balance=account.frozen_balance)
+            return True
+
+        except Exception as e:
+            logger.error(f"解冻资金失败: {e}")
+            return False
+
+    def update_available_balance(self, account_id: str, delta: float) -> bool:
+        """
+        更新可用余额（盈亏结算时调用）
+
+        Args:
+            account_id: 账户ID
+            delta: 变动金额（正数为增加，负数为减少）
+
+        Returns:
+            bool: 是否更新成功
+        """
+        try:
+            with self._account_lock:
+                account = self._accounts.get(account_id)
+                if not account:
+                    logger.warning(f"账户不存在: {account_id}")
+                    return False
+
+                new_available = account.available_balance + delta
+                if new_available < 0:
+                    logger.warning(f"更新后可用余额为负: account={account_id}, delta={delta:.2f}")
+                    return False
+
+                account.available_balance = new_available
+                account.balance += delta
+                account.update_time = datetime.now()
+
+                self.repository.save_account(account)
+                logger.debug(f"可用余额更新: account={account_id}, delta={delta:.2f}, "
+                             f"available={account.available_balance:.2f}")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"更新可用余额失败: {e}")
+            return False
+
     def _setup_position_sync_handlers(self):
         """设置持仓同步事件处理器"""
         try:
@@ -1061,5 +1183,19 @@ class AccountManager:
                     logger.error(f"强制同步持仓失败 {account_id}: {e}")
                     results[account_id] = False
             return results
+
+    def shutdown(self):
+        """关闭账户管理器"""
+        try:
+            self.disable_realtime_sync()
+            try:
+                self.event_bus.unsubscribe('order_submitted_success', self._on_order_submitted)
+                self.event_bus.unsubscribe('order_cancelled', self._on_order_cancelled)
+                self.event_bus.unsubscribe('position_updated', self._on_position_updated)
+            except Exception as e:
+                logger.error(f"取消事件订阅失败: {e}")
+            logger.info("账户管理器已关闭")
+        except Exception as e:
+            logger.error(f"关闭账户管理器失败: {e}")
 
 

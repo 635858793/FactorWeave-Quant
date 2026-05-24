@@ -119,6 +119,16 @@ class OrderMonitor:
     def stop_monitoring(self):
         """停止监控"""
         self._monitoring_enabled = False
+        try:
+            self.event_bus.unsubscribe('order_created', self._on_order_created)
+            self.event_bus.unsubscribe('order_submitted', self._on_order_submitted)
+            self.event_bus.unsubscribe('order_filled', self._on_order_filled)
+            self.event_bus.unsubscribe('order_partially_filled', self._on_order_partially_filled)
+            self.event_bus.unsubscribe('order_cancelled', self._on_order_cancelled)
+            self.event_bus.unsubscribe('order_submitted_failed', self._on_order_submitted_failed)
+            self.event_bus.unsubscribe('order_updated', self._on_order_updated)
+        except Exception as e:
+            logger.error(f"取消订阅事件失败: {e}")
         logger.info("订单监控已停止")
 
     def check_orders(self) -> List[OrderAlert]:

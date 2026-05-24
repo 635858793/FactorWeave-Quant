@@ -22,6 +22,9 @@ from contextlib import contextmanager
 
 from loguru import logger
 
+from core.database.unified_sqlite_access import UnifiedSQLiteAccess
+from core.events.event_bus import EventBus
+
 class EventType(Enum):
     """事件类型"""
     DATA_ACCESS = "data_access"           # 数据访问
@@ -32,6 +35,16 @@ class EventType(Enum):
     ERROR_OCCURRED = "error_occurred"     # 错误发生
     PERFORMANCE_ALERT = "performance_alert" # 性能告警
     SECURITY_EVENT = "security_event"     # 安全事件
+    RISK_MONITOR = "risk_monitor"         # 风险监控
+    RISK_REDUCE_POSITION = "risk_reduce_position"  # 风险减仓
+    RISK_STOP_TRADING = "risk_stop_trading"        # 风险停止交易
+    RISK_EMERGENCY_LIQUIDATION = "risk_emergency_liquidation"  # 风险紧急平仓
+    ORDER_EXECUTED = "order_executed"     # 订单执行
+    ORDER_SUBMITTED = "order_submitted"   # 订单提交
+    ORDER_FAILED = "order_failed"         # 订单失败
+    ORDER_CANCELLED = "order_cancelled"   # 订单取消
+    ORDER_FILLED = "order_filled"         # 订单成交
+    TRADING_CIRCUIT_BREAKER = "trading_circuit_breaker"  # 交易熔断
 
 class ComplianceLevel(Enum):
     """合规级别"""
@@ -333,36 +346,37 @@ class ComplianceAuditLogger:
             db_path: 数据库文件路径
             audit_level: 审计级别
         """
-        self.db_path = Path(db_path)
+        self.db = UnifiedSQLiteAccess.get_instance(db_path)
         self.audit_level = audit_level
         self.compliance_engine = ComplianceRuleEngine()
-        
+
         # 线程安全
         self._lock = threading.RLock()
-        
+
         # 缓存配置
         self.enable_cache = True
         self.cache_size = 1000
         self._record_cache: List[AuditRecord] = []
-        
+
         # 数据保留配置
         self.retention_days = 2555  # 7年（法规要求）
         self.archive_threshold_days = 365  # 1年后归档
-        
+
+        # EventBus订阅管理
+        self._event_bus = EventBus()
+        self._event_subscriptions = []
+
         # 初始化数据库
         self._init_database()
-        
+
         self.logger = logger.bind(module="ComplianceAuditLogger")
         self.logger.info("合规性审计日志系统初始化完成")
     
     def _init_database(self) -> None:
         """初始化数据库"""
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        with sqlite3.connect(self.db_path) as conn:
+        with self.db.get_connection() as conn:
             cursor = conn.cursor()
             
-            # 创建审计记录表
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS audit_records (
                     event_id TEXT PRIMARY KEY,
@@ -397,7 +411,6 @@ class ComplianceAuditLogger:
                 )
             """)
             
-            # 创建合规标志表
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS compliance_flags (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -412,22 +425,282 @@ class ComplianceAuditLogger:
                 )
             """)
             
-            # 创建索引
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_timestamp ON audit_records (timestamp)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_id ON audit_records (user_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_event_type ON audit_records (event_type)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_plugin_id ON audit_records (plugin_id)")
-            
-            conn.commit()
+
+    def _subscribe_risk_events(self):
+        self._event_bus.subscribe('risk.monitor', self._on_risk_monitor)
+        self._event_bus.subscribe('risk.reduce_position', self._on_risk_reduce_position)
+        self._event_bus.subscribe('risk.stop_trading', self._on_risk_stop_trading)
+        self._event_bus.subscribe('risk.emergency_liquidation', self._on_risk_emergency_liquidation)
+        self._event_subscriptions.extend([
+            ('risk.monitor', self._on_risk_monitor),
+            ('risk.reduce_position', self._on_risk_reduce_position),
+            ('risk.stop_trading', self._on_risk_stop_trading),
+            ('risk.emergency_liquidation', self._on_risk_emergency_liquidation),
+        ])
+
+    def _subscribe_order_events(self):
+        self._event_bus.subscribe('order.executed', self._on_order_executed)
+        self._event_bus.subscribe('order_submitted_success', self._on_order_submitted_success)
+        self._event_bus.subscribe('order_submitted_failed', self._on_order_submitted_failed)
+        self._event_bus.subscribe('order_filled', self._on_order_filled)
+        self._event_bus.subscribe('order_partially_filled', self._on_order_partially_filled)
+        self._event_bus.subscribe('order_cancelled', self._on_order_cancelled)
+        self._event_bus.subscribe('order_cancel_failed', self._on_order_cancel_failed)
+        self._event_bus.subscribe('order_terminal_state', self._on_order_terminal_state)
+        self._event_bus.subscribe('trading_interface_circuit_breaker', self._on_trading_circuit_breaker)
+        self._event_bus.subscribe('batch_orders_submitted_success', self._on_batch_orders_success)
+        self._event_bus.subscribe('batch_orders_submitted_failed', self._on_batch_orders_failed)
+        self._event_subscriptions.extend([
+            ('order.executed', self._on_order_executed),
+            ('order_submitted_success', self._on_order_submitted_success),
+            ('order_submitted_failed', self._on_order_submitted_failed),
+            ('order_filled', self._on_order_filled),
+            ('order_partially_filled', self._on_order_partially_filled),
+            ('order_cancelled', self._on_order_cancelled),
+            ('order_cancel_failed', self._on_order_cancel_failed),
+            ('order_terminal_state', self._on_order_terminal_state),
+            ('trading_interface_circuit_breaker', self._on_trading_circuit_breaker),
+            ('batch_orders_submitted_success', self._on_batch_orders_success),
+            ('batch_orders_submitted_failed', self._on_batch_orders_failed),
+        ])
+
+    def _on_risk_monitor(self, event):
+        record = AuditRecord(
+            event_id="",
+            timestamp=datetime.now(),
+            event_type=EventType.RISK_MONITOR,
+            resource_type="risk_alert",
+            operation="monitor",
+            success=True,
+            context={'alert': getattr(event, 'alert', {}), 'timestamp': str(getattr(event, 'timestamp', ''))}
+        )
+        self._log_record(record)
+
+    def _on_risk_reduce_position(self, event):
+        record = AuditRecord(
+            event_id="",
+            timestamp=datetime.now(),
+            event_type=EventType.RISK_REDUCE_POSITION,
+            resource_type="risk_alert",
+            operation="reduce_position",
+            success=True,
+            context={
+                'alert': getattr(event, 'alert', {}),
+                'reduce_ratio': getattr(event, 'reduce_ratio', 0.5),
+                'timestamp': str(getattr(event, 'timestamp', ''))
+            }
+        )
+        self._log_record(record)
+
+    def _on_risk_stop_trading(self, event):
+        record = AuditRecord(
+            event_id="",
+            timestamp=datetime.now(),
+            event_type=EventType.RISK_STOP_TRADING,
+            resource_type="risk_alert",
+            operation="stop_trading",
+            success=True,
+            context={
+                'alert': getattr(event, 'alert', {}),
+                'duration_minutes': getattr(event, 'duration_minutes', 30),
+                'timestamp': str(getattr(event, 'timestamp', ''))
+            }
+        )
+        self._log_record(record)
+
+    def _on_risk_emergency_liquidation(self, event):
+        record = AuditRecord(
+            event_id="",
+            timestamp=datetime.now(),
+            event_type=EventType.RISK_EMERGENCY_LIQUIDATION,
+            resource_type="risk_alert",
+            operation="emergency_liquidation",
+            success=True,
+            context={
+                'alert': getattr(event, 'alert', {}),
+                'timestamp': str(getattr(event, 'timestamp', ''))
+            }
+        )
+        self._log_record(record)
+
+    def _on_order_executed(self, event):
+        record = AuditRecord(
+            event_id="",
+            timestamp=datetime.now(),
+            event_type=EventType.ORDER_EXECUTED,
+            resource_type="order",
+            operation="execute",
+            success=True,
+            context={
+                'order_id': getattr(event, 'order_id', ''),
+                'stock_code': getattr(event, 'stock_code', ''),
+                'order_price': getattr(event, 'order_price', 0),
+                'order_quantity': getattr(event, 'order_quantity', 0),
+                'filled_price': getattr(event, 'filled_price', 0),
+                'asset_type': getattr(event, 'asset_type', ''),
+                'account_id': getattr(event, 'account_id', ''),
+                'exchange_order_id': getattr(event, 'exchange_order_id', ''),
+                'timestamp': str(getattr(event, 'timestamp', ''))
+            }
+        )
+        self._log_record(record)
+
+    def _on_order_submitted_success(self, event):
+        record = AuditRecord(
+            event_id="",
+            timestamp=datetime.now(),
+            event_type=EventType.ORDER_SUBMITTED,
+            resource_type="order",
+            operation="submit",
+            success=True,
+            context={
+                'order_id': getattr(event, 'order_id', ''),
+                'exchange_order_id': getattr(event, 'exchange_order_id', ''),
+                'asset_type': getattr(event, 'asset_type', ''),
+                'account_id': getattr(event, 'account_id', '')
+            }
+        )
+        self._log_record(record)
+
+    def _on_order_submitted_failed(self, event):
+        record = AuditRecord(
+            event_id="",
+            timestamp=datetime.now(),
+            event_type=EventType.ORDER_FAILED,
+            resource_type="order",
+            operation="submit",
+            success=False,
+            error_message=getattr(event, 'error', ''),
+            context={
+                'order_id': getattr(event, 'order_id', ''),
+                'asset_type': getattr(event, 'asset_type', ''),
+                'account_id': getattr(event, 'account_id', '')
+            }
+        )
+        self._log_record(record)
+
+    def _on_order_filled(self, event):
+        record = AuditRecord(
+            event_id="",
+            timestamp=datetime.now(),
+            event_type=EventType.ORDER_FILLED,
+            resource_type="order",
+            operation="fill",
+            success=True,
+            context={
+                'order_id': getattr(event, 'order_id', ''),
+                'fill_price': getattr(event, 'fill_price', 0),
+                'fill_quantity': getattr(event, 'fill_quantity', 0),
+                'asset_type': getattr(event, 'asset_type', '')
+            }
+        )
+        self._log_record(record)
+
+    def _on_order_partially_filled(self, event):
+        record = AuditRecord(
+            event_id="",
+            timestamp=datetime.now(),
+            event_type=EventType.ORDER_FILLED,
+            resource_type="order",
+            operation="partial_fill",
+            success=True,
+            context={
+                'order_id': getattr(event, 'order_id', ''),
+                'fill_price': getattr(event, 'fill_price', 0),
+                'fill_quantity': getattr(event, 'fill_quantity', 0),
+                'asset_type': getattr(event, 'asset_type', '')
+            }
+        )
+        self._log_record(record)
+
+    def _on_order_cancelled(self, event):
+        record = AuditRecord(
+            event_id="",
+            timestamp=datetime.now(),
+            event_type=EventType.ORDER_CANCELLED,
+            resource_type="order",
+            operation="cancel",
+            success=True,
+            context={
+                'order_id': getattr(event, 'order_id', ''),
+                'asset_type': getattr(event, 'asset_type', '')
+            }
+        )
+        self._log_record(record)
+
+    def _on_order_cancel_failed(self, event):
+        record = AuditRecord(
+            event_id="",
+            timestamp=datetime.now(),
+            event_type=EventType.ORDER_FAILED,
+            resource_type="order",
+            operation="cancel",
+            success=False,
+            error_message=getattr(event, 'error', ''),
+            context={
+                'order_id': getattr(event, 'order_id', ''),
+                'asset_type': getattr(event, 'asset_type', '')
+            }
+        )
+        self._log_record(record)
+
+    def _on_order_terminal_state(self, event):
+        self.logger.info(f"订单终态: order_id={getattr(event, 'order_id', '')}, status={getattr(event, 'status', '')}")
+
+    def _on_trading_circuit_breaker(self, event):
+        record = AuditRecord(
+            event_id="",
+            timestamp=datetime.now(),
+            event_type=EventType.TRADING_CIRCUIT_BREAKER,
+            resource_type="trading_interface",
+            operation="circuit_breaker",
+            success=False,
+            context={
+                'asset_type': getattr(event, 'asset_type', ''),
+                'consecutive_failures': getattr(event, 'consecutive_failures', 0)
+            }
+        )
+        self._log_record(record)
+
+    def _on_batch_orders_success(self, event):
+        record = AuditRecord(
+            event_id="",
+            timestamp=datetime.now(),
+            event_type=EventType.ORDER_SUBMITTED,
+            resource_type="order",
+            operation="batch_submit",
+            success=True,
+            context={
+                'count': getattr(event, 'count', 0),
+                'order_ids': getattr(event, 'order_ids', [])
+            }
+        )
+        self._log_record(record)
+
+    def _on_batch_orders_failed(self, event):
+        record = AuditRecord(
+            event_id="",
+            timestamp=datetime.now(),
+            event_type=EventType.ORDER_FAILED,
+            resource_type="order",
+            operation="batch_submit",
+            success=False,
+            context={
+                'count': getattr(event, 'count', 0),
+                'order_ids': getattr(event, 'order_ids', [])
+            }
+        )
+        self._log_record(record)
     
     @contextmanager
     def _get_connection(self):
         """获取数据库连接"""
-        conn = sqlite3.connect(self.db_path, check_same_thread=False)
-        try:
+        with self.db.get_connection() as conn:
             yield conn
-        finally:
-            conn.close()
     
     def log_data_access(self, plugin_id: str, data_type: str, user_id: str = None,
                        symbols: List[str] = None, market: str = None,
@@ -711,8 +984,60 @@ class ComplianceAuditLogger:
     
     def _save_record_with_cursor(self, cursor, record: AuditRecord) -> None:
         """使用游标保存记录"""
-        # 这里可以实现批量插入逻辑
-        self._save_record(record)
+        cursor.execute("""
+            INSERT INTO audit_records (
+                event_id, timestamp, event_type, user_id, session_id,
+                ip_address, user_agent, resource_type, resource_id, operation,
+                plugin_id, from_plugin, to_plugin, switch_reason, data_type,
+                symbols, market, data_size, success, error_message,
+                response_time_ms, sensitive_data_accessed, requires_approval,
+                approved_by, approval_timestamp, context, request_details, checksum
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            record.event_id,
+            record.timestamp.isoformat(),
+            record.event_type.value,
+            record.user_id,
+            record.session_id,
+            record.ip_address,
+            record.user_agent,
+            record.resource_type,
+            record.resource_id,
+            record.operation,
+            record.plugin_id,
+            record.from_plugin,
+            record.to_plugin,
+            record.switch_reason,
+            record.data_type,
+            json.dumps(record.symbols) if record.symbols else None,
+            record.market,
+            record.data_size,
+            record.success,
+            record.error_message,
+            record.response_time_ms,
+            record.sensitive_data_accessed,
+            record.requires_approval,
+            record.approved_by,
+            record.approval_timestamp.isoformat() if record.approval_timestamp else None,
+            json.dumps(record.context) if record.context else None,
+            json.dumps(record.request_details) if record.request_details else None,
+            record.checksum
+        ))
+
+        for flag in record.compliance_flags:
+            cursor.execute("""
+                INSERT INTO compliance_flags (
+                    event_id, regulation, requirement, compliance_level,
+                    mandatory, description
+                ) VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                record.event_id,
+                flag.regulation,
+                flag.requirement,
+                flag.compliance_level.value,
+                flag.mandatory,
+                flag.description
+            ))
     
     def _is_sensitive_data(self, data_type: str, symbols: List[str] = None) -> bool:
         """判断是否为敏感数据"""
@@ -959,8 +1284,18 @@ class ComplianceAuditLogger:
     def close(self) -> None:
         """关闭审计日志记录器"""
         with self._lock:
+            self._unsubscribe_all()
             self._flush_cache()
             self.logger.info("合规性审计日志系统已关闭")
+
+    def _unsubscribe_all(self) -> None:
+        for event_type, handler in self._event_subscriptions:
+            try:
+                self._event_bus.unsubscribe(event_type, handler)
+            except Exception as e:
+                self.logger.warning(f"取消订阅失败 {event_type}: {e}")
+        self._event_subscriptions.clear()
+        self.logger.info(f"已取消所有EventBus订阅")
 
 # 全局审计日志记录器实例
 _audit_logger: Optional[ComplianceAuditLogger] = None

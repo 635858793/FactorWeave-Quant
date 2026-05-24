@@ -427,60 +427,71 @@ class MatplotlibRenderer(BaseRenderer):
                     f"MatplotlibRenderer: 数据缺少必要列: {missing_columns}")
                 return False
 
-            verts_up, verts_down, segments_up, segments_down = [], [], [], []
-            for i, (idx, row) in enumerate(data.iterrows()):
-                try:
-                    open_price = row['open']
-                    close = row['close']
-                    high = row['high']
-                    low = row['low']
-                    left = xvals[i] - 0.3
-                    right = xvals[i] + 0.3
-                    if close >= open_price:
-                        verts_up.append([
-                            (left, open_price), (left, close), (right,
-                                                                close), (right, open_price)
-                        ])
-                        segments_up.append([(xvals[i], low), (xvals[i], high)])
-                    else:
-                        verts_down.append([
-                            (left, open_price), (left, close), (right,
-                                                                close), (right, open_price)
-                        ])
-                        segments_down.append(
-                            [(xvals[i], low), (xvals[i], high)])
-                except Exception as e:
-                    logger.warning(f"处理K线数据行 {i} 时出错: {e}")
-                    continue
+            opens = data['open'].values
+            closes = data['close'].values
+            highs = data['high'].values
+            lows = data['low'].values
 
-            # 使用collections进行高效渲染
+            candle_width = 0.6
+            lefts = xvals - candle_width / 2
+            rights = xvals + candle_width / 2
+
+            is_up = closes >= opens
+            up_indices = np.where(is_up)[0]
+            down_indices = np.where(~is_up)[0]
+
+            def _build_candle_verts(indices_arr):
+                if len(indices_arr) == 0:
+                    return np.empty((0, 4, 2))
+                n = len(indices_arr)
+                verts = np.empty((n, 4, 2), dtype=np.float64)
+                verts[:, 0, 0] = lefts[indices_arr]
+                verts[:, 0, 1] = opens[indices_arr]
+                verts[:, 1, 0] = lefts[indices_arr]
+                verts[:, 1, 1] = closes[indices_arr]
+                verts[:, 2, 0] = rights[indices_arr]
+                verts[:, 2, 1] = closes[indices_arr]
+                verts[:, 3, 0] = rights[indices_arr]
+                verts[:, 3, 1] = opens[indices_arr]
+                return verts
+
+            def _build_shadow_segments(indices_arr):
+                if len(indices_arr) == 0:
+                    return np.empty((0, 2, 2))
+                n = len(indices_arr)
+                segments = np.empty((n, 2, 2), dtype=np.float64)
+                segments[:, 0, 0] = xvals[indices_arr]
+                segments[:, 0, 1] = lows[indices_arr]
+                segments[:, 1, 0] = xvals[indices_arr]
+                segments[:, 1, 1] = highs[indices_arr]
+                return segments
+
+            verts_up = _build_candle_verts(up_indices)
+            verts_down = _build_candle_verts(down_indices)
+            segments_up = _build_shadow_segments(up_indices)
+            segments_down = _build_shadow_segments(down_indices)
+
             if ax:
-                
-                # 阳线（上涨）：空心，只有红色边框
-                if verts_up:
+                if len(verts_up) > 0:
                     collection_up = PolyCollection(
                         verts_up, facecolor='none', edgecolor=up_color, linewidth=1, alpha=alpha)
                     ax.add_collection(collection_up)
 
-                # 阴线（下跌）：实心绿色
-                if verts_down:
+                if len(verts_down) > 0:
                     collection_down = PolyCollection(
                         verts_down, facecolor=down_color, edgecolor=down_color, linewidth=1, alpha=alpha)
                     ax.add_collection(collection_down)
 
-                # 上涨影线
-                if segments_up:
+                if len(segments_up) > 0:
                     collection_shadow_up = LineCollection(
                         segments_up, colors=up_color, linewidth=1, alpha=alpha)
                     ax.add_collection(collection_shadow_up)
 
-                # 下跌影线
-                if segments_down:
+                if len(segments_down) > 0:
                     collection_shadow_down = LineCollection(
                         segments_down, colors=down_color, linewidth=1, alpha=alpha)
                     ax.add_collection(collection_shadow_down)
 
-                # 更新轴范围
                 if len(data) > 0:
                     ax.autoscale_view()
 
@@ -557,72 +568,53 @@ class MatplotlibRenderer(BaseRenderer):
                 # 获取数据（使用优化后的数据）
                 x_values = x if x is not None else np.arange(len(optimized_data))
                 volumes = optimized_data['volume'].values
-                
-                # 默认样式
+
                 if style is None:
                     style = {}
-                    
+
                 color = style.get('color', '#1f77b4')
                 alpha = style.get('alpha', 0.7)
                 edge_color = style.get('edge_color', '#000000')
                 edge_width = style.get('edge_width', 0.5)
-                width = style.get('width', 0.8)
-                
-                # 使用PolyCollection进行批量渲染，优化性能
-                verts = []
-                colors = []
-                
-                for i, (x_val, volume) in enumerate(zip(x_values, volumes)):
-                    if volume > 0:  # 只渲染有成交量的柱子
-                        left = x_val - width / 2
-                        right = x_val + width / 2
-                        bottom = 0
-                        top = volume
-                        
-                        # 创建柱子的四个顶点
-                        verts.append([
-                            (left, bottom), (left, top), (right, top), (right, bottom)
-                        ])
-                        
-                        # 设置颜色（可以是基于成交量的渐变色）
-                        if isinstance(color, str):
-                            colors.append(color)
-                        elif callable(color):
-                            # 支持基于成交量大小的颜色变化
-                            normalized_volume = volume / max(volumes) if max(volumes) > 0 else 0
-                            colors.append(color(normalized_volume))
-                        else:
-                            colors.append(color)
-                
-                if verts:
-                    # 使用PolyCollection进行高效批量渲染
-                    if colors and len(colors) == len(verts):
-                        # 支持多彩色渲染
-                        collection = PolyCollection(
-                            verts, 
-                            facecolors=colors, 
-                            edgecolors=edge_color, 
-                            linewidths=edge_width,
-                            alpha=alpha
-                        )
-                    else:
-                        # 单色渲染
-                        collection = PolyCollection(
-                            verts, 
-                            facecolors=color, 
-                            edgecolors=edge_color, 
-                            linewidths=edge_width,
-                            alpha=alpha
-                        )
-                    
-                    ax.add_collection(collection)
-                    
-                    # 优化轴范围更新
-                    ax.autoscale_view()
-                    
-                    logger.debug(f"PolyCollection成交量渲染完成: {len(verts)}个柱子")
-                else:
+                bar_width = style.get('width', 0.8)
+
+                nonzero_mask = volumes > 0
+                if not np.any(nonzero_mask):
                     logger.debug("没有有效的成交量数据需要渲染")
+                else:
+                    nonzero_indices = np.where(nonzero_mask)[0]
+                    n_bars = len(nonzero_indices)
+                    verts = np.empty((n_bars, 4, 2), dtype=np.float64)
+                    x_vals_nz = x_values[nonzero_indices]
+                    vol_nz = volumes[nonzero_indices]
+
+                    half_w = bar_width / 2
+                    verts[:, 0, 0] = x_vals_nz - half_w
+                    verts[:, 0, 1] = 0
+                    verts[:, 1, 0] = x_vals_nz - half_w
+                    verts[:, 1, 1] = vol_nz
+                    verts[:, 2, 0] = x_vals_nz + half_w
+                    verts[:, 2, 1] = vol_nz
+                    verts[:, 3, 0] = x_vals_nz + half_w
+                    verts[:, 3, 1] = 0
+
+                    if callable(color):
+                        max_vol = vol_nz.max() if len(vol_nz) > 0 else 1
+                        if max_vol == 0:
+                            max_vol = 1
+                        normalized = vol_nz / max_vol
+                        colors_arr = [color(v) for v in normalized]
+                        collection = PolyCollection(
+                            verts, facecolors=colors_arr, edgecolors=edge_color,
+                            linewidths=edge_width, alpha=alpha)
+                    else:
+                        collection = PolyCollection(
+                            verts, facecolors=color, edgecolors=edge_color,
+                            linewidths=edge_width, alpha=alpha)
+
+                    ax.add_collection(collection)
+                    ax.autoscale_view()
+                    logger.debug(f"PolyCollection成交量渲染完成: {n_bars}个柱子")
 
             render_time = time.time() - start_time
             self._update_performance_stats(render_time)

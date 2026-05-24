@@ -10,13 +10,10 @@ Core GUI Performance Widgets 模块
 版本: 1.0
 """
 
-import logging
+from loguru import logger
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
 from datetime import datetime
-
-# 基础日志配置
-logger = logging.getLogger(__name__)
 
 @dataclass
 class PerformanceWidgetConfig:

@@ -869,36 +869,33 @@ class TETDataPipeline:
 
             mapped_data['symbol'] = mapped_data['symbol'].apply(standardize_symbol)
 
-            # 4. 推断market字段
-            def infer_market(row):
-                """从symbol推断market"""
-                # 如果已有market字段且有效，保持不变
-                if 'market' in row and row['market'] and pd.notna(row['market']):
-                    return row['market']
+            # 4. 向量化推断market字段
+            symbols = mapped_data['symbol'].astype(str)
+            result_market = pd.Series('unknown', index=mapped_data.index)
 
-                # 从symbol推断
-                symbol = row['symbol']
-                if not symbol or pd.isna(symbol):
-                    return 'unknown'
+            # 保留已有有效market
+            if 'market' in mapped_data.columns:
+                existing_valid = mapped_data['market'].notna() & (mapped_data['market'] != '') & (mapped_data['market'] != 'unknown')
+                result_market[existing_valid] = mapped_data.loc[existing_valid, 'market']
 
-                if symbol.endswith('.SH'):
-                    return 'SH'
-                elif symbol.endswith('.SZ'):
-                    return 'SZ'
-                elif symbol.endswith('.BJ'):
-                    return 'BJ'
+            # 后缀推断
+            unknown_mask = result_market == 'unknown'
+            result_market[unknown_mask & symbols.str.endswith('.SH')] = 'SH'
+            unknown_mask = result_market == 'unknown'
+            result_market[unknown_mask & symbols.str.endswith('.SZ')] = 'SZ'
+            unknown_mask = result_market == 'unknown'
+            result_market[unknown_mask & symbols.str.endswith('.BJ')] = 'BSE'
 
-                code = symbol.split('.')[0]
-                if code.startswith('6'):
-                    return 'SH'
-                elif code.startswith(('0', '3')):
-                    return 'SZ'
-                elif code.startswith(('4', '8', '9')):
-                    return 'BSE'
+            # 前缀推断
+            unknown_mask = result_market == 'unknown'
+            if unknown_mask.any():
+                codes = symbols[unknown_mask].str.split('.').str[0]
+                first_char = codes.str[0]
+                result_market[unknown_mask & (first_char == '6')] = 'SH'
+                result_market[unknown_mask & first_char.isin(['0', '3'])] = 'SZ'
+                result_market[unknown_mask & first_char.isin(['4', '8', '9'])] = 'BSE'
 
-                return 'unknown'
-
-            mapped_data['market'] = mapped_data.apply(infer_market, axis=1)
+            mapped_data['market'] = result_market
 
             # 5. 补全可选字段（删除了不使用的name_en, full_name, short_name字段）
             optional_fields = {
@@ -1126,7 +1123,7 @@ class TETDataPipeline:
                             numeric_data = pd.to_numeric(data[field], errors='coerce')
                             valid_ratio = numeric_data.notna().sum() / len(data)
                             consistency_score *= valid_ratio
-                        except:
+                        except Exception:
                             consistency_score *= 0.5
                 else:
                     consistency_score *= 0.8  # 缺少必需字段

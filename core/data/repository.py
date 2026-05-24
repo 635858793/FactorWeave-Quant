@@ -45,6 +45,8 @@ class BaseRepository(ABC):
 class StockRepository(BaseRepository):
     """股票信息仓库"""
 
+    _MAX_CACHE_SIZE = 5000
+
     def __init__(self, data_manager=None, uni_plugin_manager=None):
         super().__init__()
         self.uni_plugin_manager = uni_plugin_manager
@@ -146,25 +148,12 @@ class StockRepository(BaseRepository):
                     self.logger.error("备用数据管理器仍缺少get_stock_list方法，返回空列表")
                     return []
 
-            # 调用底层方法，兼容是否接受market参数
             try:
                 raw_list = get_list_fn(market)
             except TypeError:
-                # 方法可能不支持参数；获取全部后再过滤
                 raw_all = get_list_fn()
                 if market:
-                    # 尝试在上层过滤（支持DataFrame或列表）
-                    try:
-                        import pandas as pd  # 局部导入以避免全局依赖
-                        if isinstance(raw_all, pd.DataFrame):
-                            raw_list = raw_all[raw_all['market'].str.lower() == str(market).lower()]
-                        else:
-                            raw_list = [s for s in raw_all if (
-                                (hasattr(s, 'get') and str(s.get('market', '')).lower() == str(market).lower()) or
-                                (hasattr(s, 'market') and str(getattr(s, 'market', '')).lower() == str(market).lower())
-                            )]
-                    except Exception:
-                        raw_list = raw_all
+                    raw_list = self._apply_market_filter(raw_all, market)
                 else:
                     raw_list = raw_all
 
@@ -236,36 +225,17 @@ class StockRepository(BaseRepository):
             if not self.is_connected():
                 self.connect()
 
-            # 如果数据管理器支持搜索，直接使用
             if hasattr(self.data_manager, 'search_stocks'):
                 search_results = self.data_manager.search_stocks(keyword)
             else:
-                # 否则从股票列表中搜索
-                all_stocks = self.data_manager.get_stock_list()
-                keyword_lower = keyword.lower()
-                search_results = []
-                for stock in all_stocks:
-                    # 安全地访问股票信息
-                    code = ''
-                    name = ''
-                    if hasattr(stock, 'get'):
-                        code = stock.get('code', '')
-                        name = stock.get('name', '')
-                    elif hasattr(stock, 'code'):
-                        code = getattr(stock, 'code', '')
-                        name = getattr(stock, 'name', '')
-                    elif isinstance(stock, str):
-                        code = stock
-
-                    if (keyword_lower in code.lower() or keyword_lower in name.lower()):
-                        search_results.append(stock)
+                search_results = self._search_stocks_fallback(keyword)
 
             stock_list = []
 
             for stock_dict in search_results:
-                # 确保stock_dict是字典类型或有get方法的对象
-                if isinstance(stock_dict, str):
-                    # 如果是字符串，可能是股票代码
+                if isinstance(stock_dict, StockInfo):
+                    stock_list.append(stock_dict)
+                elif isinstance(stock_dict, str):
                     stock_info = StockInfo(
                         code=stock_dict,
                         name='',
@@ -274,7 +244,6 @@ class StockRepository(BaseRepository):
                         sector=None
                     )
                 elif hasattr(stock_dict, 'get'):
-                    # 字典或类字典对象
                     stock_info = StockInfo(
                         code=stock_dict.get('code', ''),
                         name=stock_dict.get('name', ''),
@@ -283,7 +252,6 @@ class StockRepository(BaseRepository):
                         sector=stock_dict.get('sector')
                     )
                 elif hasattr(stock_dict, 'code'):
-                    # 对象属性访问
                     stock_info = StockInfo(
                         code=getattr(stock_dict, 'code', ''),
                         name=getattr(stock_dict, 'name', ''),
@@ -292,9 +260,7 @@ class StockRepository(BaseRepository):
                         sector=getattr(stock_dict, 'sector', None)
                     )
                 else:
-                    # 跳过无法处理的数据类型
-                    self.logger.warning(
-                        f"Skipping unsupported stock data type: {type(stock_dict)}")
+                    self.logger.warning(f"Skipping unsupported stock data type: {type(stock_dict)}")
                     continue
 
                 stock_list.append(stock_info)
@@ -302,9 +268,114 @@ class StockRepository(BaseRepository):
             return stock_list
 
         except Exception as e:
-            self.logger.error(
-                f"Failed to search stocks with keyword '{keyword}': {e}")
+            self.logger.error(f"Failed to search stocks with keyword '{keyword}': {e}")
             return []
+
+    def _search_stocks_fallback(self, keyword: str) -> List[Any]:
+        keyword_lower = keyword.lower()
+
+        get_list_fn = getattr(self.data_manager, 'get_stock_list', None)
+        if get_list_fn is not None:
+            try:
+                raw = get_list_fn(keyword=keyword_lower)
+                if raw is not None and (not hasattr(raw, 'empty') or not raw.empty):
+                    return self._normalize_to_records(raw)
+            except TypeError:
+                pass
+
+        all_stocks = self.data_manager.get_stock_list()
+
+        try:
+            import pandas as pd
+            if isinstance(all_stocks, pd.DataFrame):
+                if all_stocks.empty:
+                    return []
+                code_col = 'code' if 'code' in all_stocks.columns else ('symbol' if 'symbol' in all_stocks.columns else None)
+                name_col = 'name' if 'name' in all_stocks.columns else None
+
+                if code_col and name_col:
+                    mask = (
+                        all_stocks[code_col].astype(str).str.lower().str.contains(keyword_lower, na=False) |
+                        all_stocks[name_col].astype(str).str.lower().str.contains(keyword_lower, na=False)
+                    )
+                elif code_col:
+                    mask = all_stocks[code_col].astype(str).str.lower().str.contains(keyword_lower, na=False)
+                elif name_col:
+                    mask = all_stocks[name_col].astype(str).str.lower().str.contains(keyword_lower, na=False)
+                else:
+                    mask = pd.Series(False, index=all_stocks.index)
+
+                return all_stocks[mask].to_dict(orient='records')
+        except Exception:
+            pass
+
+        search_results = []
+        for stock in all_stocks:
+            code = ''
+            name = ''
+            if hasattr(stock, 'get'):
+                code = stock.get('code', '') or stock.get('symbol', '')
+                name = stock.get('name', '')
+            elif hasattr(stock, 'code'):
+                code = getattr(stock, 'code', '')
+                name = getattr(stock, 'name', '')
+            elif isinstance(stock, str):
+                code = stock
+
+            if keyword_lower in str(code).lower() or keyword_lower in str(name).lower():
+                search_results.append(stock)
+
+        return search_results
+
+    def _normalize_to_records(self, raw: Any) -> List[Any]:
+        try:
+            import pandas as pd
+            if isinstance(raw, pd.DataFrame):
+                return [] if raw.empty else raw.to_dict(orient='records')
+            if isinstance(raw, list):
+                return raw
+            return [raw] if raw is not None else []
+        except Exception:
+            return raw if isinstance(raw, list) else []
+
+    def _apply_market_filter(self, raw_all: Any, market: str) -> Any:
+        market_lower = str(market).lower()
+
+        try:
+            import pandas as pd
+            if isinstance(raw_all, pd.DataFrame):
+                if raw_all.empty:
+                    return raw_all
+                if 'market' in raw_all.columns:
+                    return raw_all[raw_all['market'].astype(str).str.lower() == market_lower]
+                return raw_all
+            if isinstance(raw_all, list) and len(raw_all) > 500:
+                records = []
+                for item in raw_all:
+                    if hasattr(item, 'get'):
+                        records.append({
+                            'market': item.get('market', ''),
+                            '_raw': item,
+                        })
+                    elif hasattr(item, 'market'):
+                        records.append({
+                            'market': getattr(item, 'market', ''),
+                            '_raw': item,
+                        })
+                    else:
+                        records.append({'market': '', '_raw': item})
+                if not records:
+                    return raw_all
+                df = pd.DataFrame(records)
+                filtered = df[df['market'].astype(str).str.lower() == market_lower]
+                return [r['_raw'] for r in filtered.to_dict(orient='records')]
+        except Exception:
+            pass
+
+        return [s for s in raw_all if (
+            (hasattr(s, 'get') and str(s.get('market', '')).lower() == market_lower) or
+            (hasattr(s, 'market') and str(getattr(s, 'market', '')).lower() == market_lower)
+        )]
 
     def update_stock(self, stock_code: str, data: Dict[str, Any]) -> bool:
         """更新股票信息"""
@@ -405,12 +476,58 @@ class StockRepository(BaseRepository):
     def get_stocks_by_industry(self, industry: str) -> List[StockInfo]:
         """根据行业获取股票列表"""
         try:
-            all_stocks = self.get_stock_list()
             if not industry:
-                return all_stocks
-            return [s for s in all_stocks if s.industry and industry.lower() in s.industry.lower()]
+                return self.get_stock_list()
+
+            get_list_fn = getattr(self.data_manager, 'get_stock_list', None)
+            if get_list_fn is not None:
+                try:
+                    raw = get_list_fn(industry=industry)
+                    if raw is not None and (not hasattr(raw, 'empty') or not raw.empty):
+                        return self._convert_raw_to_stock_list(raw)
+                except TypeError:
+                    pass
+
+            all_stocks = self.get_stock_list()
+            industry_lower = industry.lower()
+            return [s for s in all_stocks if s.industry and industry_lower in s.industry.lower()]
+
         except Exception as e:
             self.logger.error(f"按行业获取股票失败: {e}")
+            return []
+
+    def _convert_raw_to_stock_list(self, raw: Any) -> List[StockInfo]:
+        try:
+            import pandas as pd
+            if isinstance(raw, pd.DataFrame):
+                items = [] if raw.empty else raw.to_dict(orient='records')
+            elif isinstance(raw, list):
+                items = raw
+            else:
+                return []
+
+            stock_list = []
+            for item in items:
+                if isinstance(item, StockInfo):
+                    stock_list.append(item)
+                elif hasattr(item, 'get'):
+                    stock_list.append(StockInfo(
+                        code=item.get('code', '') or item.get('symbol', ''),
+                        name=item.get('name', ''),
+                        market=item.get('market', ''),
+                        industry=item.get('industry'),
+                        sector=item.get('sector')
+                    ))
+                elif hasattr(item, 'code'):
+                    stock_list.append(StockInfo(
+                        code=getattr(item, 'code', ''),
+                        name=getattr(item, 'name', ''),
+                        market=getattr(item, 'market', ''),
+                        industry=getattr(item, 'industry', None),
+                        sector=getattr(item, 'sector', None)
+                    ))
+            return stock_list
+        except Exception:
             return []
 
     def get_stocks_by_market(self, market: str) -> List[StockInfo]:
@@ -431,6 +548,7 @@ class KlineRepository(BaseRepository):
         self.asset_service = asset_service
         self.uni_plugin_manager = uni_plugin_manager
         self.data_manager = None  # 备用兼容
+        self._cache = {}  # 本地回退缓存
         self._unified_cache = None
         self._cache_namespace = 'kline_repository'
         self._init_unified_cache()
@@ -445,7 +563,8 @@ class KlineRepository(BaseRepository):
             self._unified_cache = container.resolve(CacheService)
             self.logger.debug(f"KlineRepository 已连接到统一缓存服务，命名空间: {self._cache_namespace}")
         else:
-            raise RuntimeError("统一缓存服务未注册，请确保 CacheService 已在服务容器中注册")
+            self._unified_cache = None
+            logger.debug(f"{self.__class__.__name__} 统一缓存服务未注册，缓存功能降级为空操作")
 
     def connect(self) -> bool:
         """连接数据源（TET模式优先）"""
@@ -533,7 +652,10 @@ class KlineRepository(BaseRepository):
             cache_key = f"{asset_type.value}_{params.stock_code}_{params.period}_{params.start_date}_{params.end_date}_{params.count}"
 
             # 检查缓存
-            cached_data = self._unified_cache.get(cache_key, namespace=self._cache_namespace)
+            if self._unified_cache is not None:
+                cached_data = self._unified_cache.get(cache_key, namespace=self._cache_namespace)
+            else:
+                cached_data = None
             if cached_data is not None:
                 self.logger.debug(f"缓存命中: {params.stock_code} ({asset_type.value})")
                 return cached_data
@@ -632,8 +754,9 @@ class KlineRepository(BaseRepository):
             )
 
             # 缓存结果
-            from datetime import timedelta
-            self._unified_cache.set(cache_key, kline_data, ttl=timedelta(minutes=5), namespace=self._cache_namespace)
+            if self._unified_cache is not None:
+                from datetime import timedelta
+                self._unified_cache.set(cache_key, kline_data, ttl=timedelta(minutes=5), namespace=self._cache_namespace)
             return kline_data
 
         except Exception as e:
@@ -670,10 +793,13 @@ class KlineRepository(BaseRepository):
                 return False
 
             cache_key = f"default_{stock_code}_{period}_None_None_None"
-            existing = self._unified_cache.get(cache_key, namespace=self._cache_namespace)
+            existing = None
+            if self._unified_cache is not None:
+                existing = self._unified_cache.get(cache_key, namespace=self._cache_namespace)
             if existing:
                 existing.data = data
-                self._unified_cache.set(cache_key, existing, namespace=self._cache_namespace)
+                if self._unified_cache is not None:
+                    self._unified_cache.set(cache_key, existing, namespace=self._cache_namespace)
                 self.logger.debug(f"K线数据已更新（缓存）: {stock_code} {period}")
                 return True
 

@@ -5,6 +5,7 @@ from loguru import logger
 提供参数验证、优化建议、批量管理等功能，注重性能和准确性
 """
 
+import copy
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Any, Optional, Union, Tuple, Callable
@@ -18,6 +19,11 @@ import hashlib
 import os
 from concurrent.futures import ThreadPoolExecutor
 import warnings
+
+from scipy.optimize import differential_evolution
+from scipy.stats import norm
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import Matern, WhiteKernel, ConstantKernel
 
 from .base_strategy import BaseStrategy, StrategyParameter
 
@@ -317,9 +323,23 @@ class StrategyParameterManager:
                     strategy, data, parameter_ranges, objective_function,
                     max_evaluations, parallel
                 )
+            elif method == ParameterOptimizationMethod.BAYESIAN:
+                result = self._bayesian_optimization(
+                    strategy, data, parameter_ranges, objective_function,
+                    max_evaluations, parallel
+                )
+            elif method == ParameterOptimizationMethod.GENETIC:
+                result = self._genetic_algorithm(
+                    strategy, data, parameter_ranges, objective_function,
+                    max_evaluations, parallel
+                )
+            elif method == ParameterOptimizationMethod.PARTICLE_SWARM:
+                result = self._particle_swarm(
+                    strategy, data, parameter_ranges, objective_function,
+                    max_evaluations, parallel
+                )
             else:
-                # 其他优化方法的占位符
-                result = self._random_search_optimization(
+                result = self._grid_search_optimization(
                     strategy, data, parameter_ranges, objective_function,
                     max_evaluations, parallel
                 )
@@ -405,7 +425,6 @@ class StrategyParameterManager:
         """随机搜索优化"""
         param_combinations = []
 
-        # 生成随机参数组合
         for _ in range(max_evaluations):
             params = {}
             for param_name, param_range in parameter_ranges.items():
@@ -414,9 +433,304 @@ class StrategyParameterManager:
                     params[param_name] = values[0]
             param_combinations.append(params)
 
-        # 使用网格搜索的评估逻辑
-        return self._grid_search_optimization(
-            strategy, data, {}, objective_function, max_evaluations, parallel
+        best_score = float('-inf')
+        best_params = {}
+        evaluation_history = []
+
+        if parallel and len(param_combinations) > 1:
+            futures = []
+            for params in param_combinations:
+                future = self.executor.submit(
+                    self._evaluate_parameters, strategy, data, params, objective_function
+                )
+                futures.append((future, params))
+
+            for future, params in futures:
+                try:
+                    score = future.result(timeout=30)
+                    evaluation_history.append({'parameters': params, 'score': score})
+                    if score > best_score:
+                        best_score = score
+                        best_params = params.copy()
+                except Exception as e:
+                    warnings.warn(f"Parameter evaluation failed: {e}")
+        else:
+            for params in param_combinations:
+                try:
+                    score = self._evaluate_parameters(strategy, data, params, objective_function)
+                    evaluation_history.append({'parameters': params, 'score': score})
+                    if score > best_score:
+                        best_score = score
+                        best_params = params.copy()
+                except Exception as e:
+                    warnings.warn(f"Parameter evaluation failed: {e}")
+
+        return ParameterOptimizationResult(
+            best_parameters=best_params,
+            best_score=best_score,
+            optimization_history=evaluation_history,
+            total_evaluations=len(evaluation_history)
+        )
+
+    def _bayesian_optimization(self, strategy: BaseStrategy, data: pd.DataFrame,
+                               parameter_ranges: Dict[str, ParameterRange],
+                               objective_function: Callable,
+                               max_evaluations: int, parallel: bool) -> ParameterOptimizationResult:
+        """基于sklearn GaussianProcessRegressor的贝叶斯优化"""
+        param_names = list(parameter_ranges.keys())
+        n_params = len(param_names)
+        if n_params == 0:
+            return ParameterOptimizationResult(
+                best_parameters={}, best_score=float('-inf'),
+                optimization_history=[], total_evaluations=0
+            )
+
+        bounds_list = []
+        int_mask = []
+        for name in param_names:
+            pr = parameter_ranges[name]
+            bounds_list.append((float(pr.min_value), float(pr.max_value)))
+            int_mask.append(isinstance(pr.min_value, int) and isinstance(pr.max_value, int))
+        bounds_arr = np.array(bounds_list)
+
+        n_initial = max(5, n_params * 2)
+        n_iter = max(1, max_evaluations - n_initial)
+
+        X_observed = np.empty((0, n_params))
+        y_observed = np.empty((0,))
+
+        best_score_val = float('-inf')
+        best_params_val = {}
+        evaluation_history = []
+
+        def evaluate_candidate(x_arr):
+            params = {}
+            for j, name in enumerate(param_names):
+                val = float(x_arr[j])
+                params[name] = int(round(val)) if int_mask[j] else val
+            score = float(self._evaluate_parameters(strategy, data, params, objective_function))
+            return params, score
+
+        initial_points = np.random.uniform(
+            bounds_arr[:, 0], bounds_arr[:, 1], size=(n_initial, n_params)
+        )
+        for i in range(n_initial):
+            params, score = evaluate_candidate(initial_points[i])
+            X_observed = np.vstack([X_observed, initial_points[i]])
+            y_observed = np.append(y_observed, score)
+            evaluation_history.append({'parameters': params, 'score': score})
+            if score > best_score_val:
+                best_score_val = score
+                best_params_val = params
+
+        kernel = ConstantKernel(1.0) * Matern(length_scale=np.ones(n_params), nu=2.5) + \
+                 WhiteKernel(noise_level=0.01)
+        kappa = 2.576
+
+        for _ in range(n_iter):
+            gp = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=3, normalize_y=True)
+            gp.fit(X_observed, y_observed)
+
+            n_candidates = min(5000, 1000 * n_params)
+            candidates = np.random.uniform(
+                bounds_arr[:, 0], bounds_arr[:, 1], size=(n_candidates, n_params)
+            )
+
+            mu, sigma = gp.predict(candidates, return_std=True)
+            mu_best = float(np.max(y_observed)) if len(y_observed) > 0 else 0.0
+
+            z = np.where(sigma > 1e-8, (mu - mu_best - kappa) / (sigma + 1e-8), 0.0)
+            ei = (mu - mu_best - kappa) * norm.cdf(z) + sigma * norm.pdf(z)
+            ei = np.array([float(v) for v in ei])
+
+            best_candidate_idx = int(np.argmax(ei))
+            next_point = candidates[best_candidate_idx]
+
+            params, score = evaluate_candidate(next_point)
+            X_observed = np.vstack([X_observed, next_point])
+            y_observed = np.append(y_observed, score)
+            evaluation_history.append({'parameters': params, 'score': score})
+
+            if score > best_score_val:
+                best_score_val = score
+                best_params_val = params
+
+        return ParameterOptimizationResult(
+            best_parameters=best_params_val,
+            best_score=best_score_val,
+            optimization_history=evaluation_history,
+            total_evaluations=len(evaluation_history),
+            convergence_info={'method': 'gaussian_process_bayesian', 'n_initial': n_initial,
+                            'n_iter': n_iter}
+        )
+
+    def _genetic_algorithm(self, strategy: BaseStrategy, data: pd.DataFrame,
+                           parameter_ranges: Dict[str, ParameterRange],
+                           objective_function: Callable,
+                           max_evaluations: int, parallel: bool) -> ParameterOptimizationResult:
+        """基于scipy.optimize.differential_evolution的遗传算法（差分进化）优化"""
+        param_names = list(parameter_ranges.keys())
+        if not param_names:
+            return ParameterOptimizationResult(
+                best_parameters={}, best_score=float('-inf'),
+                optimization_history=[], total_evaluations=0
+            )
+
+        bounds = []
+        int_mask = []
+        for name in param_names:
+            pr = parameter_ranges[name]
+            bounds.append((float(pr.min_value), float(pr.max_value)))
+            int_mask.append(isinstance(pr.min_value, int) and isinstance(pr.max_value, int))
+
+        evaluation_history = []
+        best_score_val = float('-inf')
+        best_params_val = {}
+
+        def obj_func(x):
+            params = {}
+            for i, name in enumerate(param_names):
+                raw_val = float(x[i])
+                params[name] = int(round(raw_val)) if int_mask[i] else raw_val
+
+            score = float(self._evaluate_parameters(strategy, data, params, objective_function))
+            evaluation_history.append({'parameters': params.copy(), 'score': score})
+
+            nonlocal best_score_val, best_params_val
+            if score > best_score_val:
+                best_score_val = score
+                best_params_val = params.copy()
+
+            return -score
+
+        pop_size = min(15, max(5, len(param_names) * 3))
+        max_iter = max(1, int(max_evaluations / pop_size))
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            _ = differential_evolution(
+                obj_func,
+                bounds,
+                maxiter=max_iter,
+                popsize=pop_size,
+                mutation=(0.5, 1.0),
+                recombination=0.7,
+                seed=None,
+                polish=False,
+                workers=1
+            )
+
+        return ParameterOptimizationResult(
+            best_parameters=best_params_val,
+            best_score=best_score_val,
+            optimization_history=evaluation_history,
+            total_evaluations=len(evaluation_history),
+            convergence_info={'method': 'differential_evolution', 'pop_size': pop_size,
+                            'max_iter': max_iter}
+        )
+
+    def _particle_swarm(self, strategy: BaseStrategy, data: pd.DataFrame,
+                         parameter_ranges: Dict[str, ParameterRange],
+                         objective_function: Callable,
+                         max_evaluations: int, parallel: bool) -> ParameterOptimizationResult:
+        """粒子群优化"""
+        param_names = list(parameter_ranges.keys())
+        if not param_names:
+            return ParameterOptimizationResult(
+                best_parameters={}, best_score=float('-inf'),
+                optimization_history=[], total_evaluations=0
+            )
+
+        n_particles = max(5, min(15, max_evaluations // 10))
+        w = 0.7
+        c1 = 1.5
+        c2 = 2.0
+        evaluation_history = []
+
+        def _random_params():
+            params = {}
+            for pn, pr in parameter_ranges.items():
+                vals = pr.generate_values(1)
+                if vals:
+                    params[pn] = float(vals[0])
+            return params
+
+        def _random_velocity():
+            velocity = {}
+            for pn, pr in parameter_ranges.items():
+                scale = float(pr.max_value - pr.min_value) * 0.1
+                velocity[pn] = np.random.uniform(-scale, scale)
+            return velocity
+
+        def _clip_params(params):
+            clipped = {}
+            for pn, pr in parameter_ranges.items():
+                clipped[pn] = float(np.clip(params[pn], pr.min_value, pr.max_value))
+            return clipped
+
+        def _evaluate_particle(params):
+            int_params = {}
+            for pn, pr in parameter_ranges.items():
+                if isinstance(pr.min_value, int):
+                    int_params[pn] = int(round(params[pn]))
+                else:
+                    int_params[pn] = params[pn]
+            score = self._evaluate_parameters(strategy, data, int_params, objective_function)
+            evaluation_history.append({'parameters': int_params, 'score': score})
+            return score
+
+        particles = [_random_params() for _ in range(n_particles)]
+        velocities = [_random_velocity() for _ in range(n_particles)]
+        personal_best = [p.copy() for p in particles]
+        personal_best_scores = []
+
+        for i, p in enumerate(particles):
+            try:
+                personal_best_scores.append(_evaluate_particle(p))
+            except Exception as e:
+                warnings.warn(f"PSO initial evaluation failed: {e}")
+                personal_best_scores.append(float('-inf'))
+
+        best_idx = int(np.argmax(personal_best_scores))
+        global_best = particles[best_idx].copy()
+        global_best_score = personal_best_scores[best_idx]
+
+        iterations = max(1, (max_evaluations - n_particles) // n_particles)
+        for _ in range(iterations):
+            for i in range(n_particles):
+                for pn in param_names:
+                    r1, r2 = np.random.random(), np.random.random()
+                    velocities[i][pn] = (
+                        w * velocities[i][pn]
+                        + c1 * r1 * (personal_best[i][pn] - particles[i][pn])
+                        + c2 * r2 * (global_best[pn] - particles[i][pn])
+                    )
+                    particles[i][pn] = particles[i][pn] + velocities[i][pn]
+
+                particles[i] = _clip_params(particles[i])
+
+            for i, p in enumerate(particles):
+                try:
+                    score = _evaluate_particle(p)
+                except Exception as e:
+                    warnings.warn(f"PSO iteration evaluation failed: {e}")
+                    continue
+
+                if score > personal_best_scores[i]:
+                    personal_best_scores[i] = score
+                    personal_best[i] = p.copy()
+
+                if score > global_best_score:
+                    global_best_score = score
+                    global_best = p.copy()
+
+        best = max(evaluation_history, key=lambda x: x['score']) if evaluation_history else {'parameters': {}, 'score': float('-inf')}
+
+        return ParameterOptimizationResult(
+            best_parameters=best['parameters'],
+            best_score=best['score'],
+            optimization_history=evaluation_history,
+            total_evaluations=len(evaluation_history)
         )
 
     def _generate_parameter_combinations(self, parameter_ranges: Dict[str, ParameterRange],
@@ -454,26 +768,16 @@ class StrategyParameterManager:
     def _evaluate_parameters(self, strategy: BaseStrategy, data: pd.DataFrame,
                              parameters: Dict[str, Any], objective_function: Callable) -> float:
         """评估参数组合"""
-        # 设置策略参数
-        original_params = strategy.get_parameters_dict()
+        strategy_copy = copy.deepcopy(strategy)
 
-        try:
-            # 应用新参数
-            for param_name, param_value in parameters.items():
-                strategy.set_parameter(param_name, param_value)
+        for param_name, param_value in parameters.items():
+            strategy_copy.set_parameter(param_name, param_value)
 
-            # 生成信号
-            signals = strategy.generate_signals(data)
+        signals = strategy_copy.generate_signals(data)
 
-            # 计算目标函数值
-            score = objective_function(signals, data)
+        score = objective_function(signals, data)
 
-            return float(score)
-
-        finally:
-            # 恢复原始参数
-            for param_name, param_value in original_params.items():
-                strategy.set_parameter(param_name, param_value)
+        return float(score)
 
     def get_optimization_history(self) -> List[ParameterOptimizationResult]:
         """获取优化历史"""
@@ -528,8 +832,8 @@ class StrategyParameterManager:
         """析构函数"""
         try:
             self.shutdown()
-        except:
-            pass
+        except Exception as e:
+            logger.debug(f"参数管理器shutdown失败: {e}")
 
 # 全局参数管理器实例
 _parameter_manager: Optional[StrategyParameterManager] = None

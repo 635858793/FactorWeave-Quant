@@ -2,12 +2,17 @@
 策略调试工具组件 - 重构版
 集成系统主题管理，提供断点管理、单步执行、变量查看等功能
 功能：真正的断点暂停、单步执行、变量监视、调用栈查看
+
+安全提示：exec() 用于执行用户策略代码，global_vars 中已移除 __builtins__
+以限制代码执行能力。策略代码应在受限环境中运行。
 """
 import os
+import sys
 import bdb
 import inspect
 import traceback
 import tempfile
+import threading
 from typing import Dict, List, Optional, Any, Set
 from enum import Enum
 from loguru import logger
@@ -321,6 +326,66 @@ class ThemeAwareWidget:
         return styles.get(widget_type, '')
 
 
+SAFE_BUILTINS = {
+    'abs': abs, 'all': all, 'any': any, 'bin': bin, 'bool': bool,
+    'bytearray': bytearray, 'bytes': bytes, 'callable': callable, 'chr': chr,
+    'classmethod': classmethod, 'complex': complex, 'delattr': delattr,
+    'dict': dict, 'dir': dir, 'divmod': divmod, 'enumerate': enumerate,
+    'filter': filter, 'float': float, 'format': format, 'frozenset': frozenset,
+    'getattr': getattr, 'hasattr': hasattr, 'hash': hash, 'hex': hex,
+    'id': id, 'int': int, 'isinstance': isinstance, 'issubclass': issubclass,
+    'iter': iter, 'len': len, 'list': list, 'map': map, 'max': max,
+    'min': min, 'next': next, 'object': object, 'oct': oct, 'ord': ord,
+    'pow': pow, 'print': print, 'property': property, 'range': range,
+    'repr': repr, 'reversed': reversed, 'round': round, 'set': set,
+    'setattr': setattr, 'slice': slice, 'sorted': sorted, 'staticmethod': staticmethod,
+    'str': str, 'sum': sum, 'super': super, 'tuple': tuple, 'type': type,
+    'vars': vars, 'zip': zip, 'True': True, 'False': False, 'None': None,
+    'Exception': Exception, 'ValueError': ValueError, 'TypeError': TypeError,
+    'KeyError': KeyError, 'IndexError': IndexError, 'AttributeError': AttributeError,
+    'ImportError': ImportError, 'RuntimeError': RuntimeError, 'StopIteration': StopIteration,
+}
+
+SAFE_IMPORT_WHITELIST = {
+    'numpy', 'pandas', 'math', 'statistics', 'datetime', 'collections',
+    'itertools', 'functools', 'json', 'csv', 'typing', 'dataclasses',
+    'core.strategy', 'core.strategy.base_strategy', 'core.strategy.strategy_factory',
+}
+
+HIKYUU_ALLOWED_SUBMODULES = {
+    'hikyuu',
+    'hikyuu.indicator',
+    'hikyuu.trade_sys',
+    'hikyuu.trade_manage',
+    'hikyuu.data_driver',
+}
+
+
+class SandboxImportHook:
+    @staticmethod
+    def find_module(fullname, path=None):
+        if fullname in SAFE_IMPORT_WHITELIST:
+            return None
+        for allowed in SAFE_IMPORT_WHITELIST:
+            if fullname.startswith(allowed + '.'):
+                return None
+        if fullname.split('.')[0] == 'hikyuu':
+            if fullname in HIKYUU_ALLOWED_SUBMODULES:
+                return None
+            for sub in HIKYUU_ALLOWED_SUBMODULES:
+                if fullname.startswith(sub + '.'):
+                    return None
+            raise ImportError(f"hikyuu子模块 '{fullname}' 不在安全白名单中，允许的子模块: {sorted(HIKYUU_ALLOWED_SUBMODULES)}")
+        raise ImportError(f"模块 '{fullname}' 不在安全白名单中")
+
+
+class SafeDict(dict):
+    def __setitem__(self, key, value):
+        if key == '__builtins__':
+            raise RuntimeError("不允许修改 __builtins__")
+        super().__setitem__(key, value)
+
+
 class DebuggerThread(QThread, bdb.Bdb):
     """调试器线程 - 基于 bdb 实现真正的调试功能"""
     
@@ -340,7 +405,10 @@ class DebuggerThread(QThread, bdb.Bdb):
         self.filename = filename
         self.breakpoints_data = breakpoints
         self.local_vars = {}
-        self.global_vars = {'__name__': '__main__'}
+        self.global_vars = SafeDict({
+            '__builtins__': dict(SAFE_BUILTINS),
+            '__name__': '__main__'
+        })
         
         if context:
             self.global_vars.update(context)
@@ -430,6 +498,11 @@ class DebuggerThread(QThread, bdb.Bdb):
         if self._original_stderr:
             sys.stderr = self._original_stderr
     
+    def _on_timeout(self):
+        self._running = False
+        self.signal_error.emit("代码执行超时（30秒限制）")
+        self._wait_condition.wakeAll()
+    
     def run(self):
         """运行调试会话"""
         self.set_state(DebugState.RUNNING)
@@ -443,10 +516,22 @@ class DebuggerThread(QThread, bdb.Bdb):
             try:
                 self._capture_output()
                 self.global_vars['__file__'] = temp_file
-                code_obj = compile(self.code, temp_file, 'exec')
-                self.set_trace()
-                exec(code_obj, self.global_vars, self.local_vars)
-                
+
+                saved_hooks = sys.meta_path[:]
+                sys.meta_path.insert(0, SandboxImportHook())
+
+                timeout_timer = threading.Timer(30.0, self._on_timeout)
+                timeout_timer.daemon = True
+                timeout_timer.start()
+
+                try:
+                    code_obj = compile(self.code, temp_file, 'exec')
+                    self.set_trace()
+                    exec(code_obj, self.global_vars, self.local_vars)
+                finally:
+                    timeout_timer.cancel()
+                    sys.meta_path = saved_hooks
+
                 result = {
                     'success': True,
                     'local_vars': self._safe_copy_vars(self.local_vars),
@@ -509,7 +594,7 @@ class DebuggerThread(QThread, bdb.Bdb):
                     else:
                         should_pause = True
                         self.set_state(DebugState.PAUSED)
-                except:
+                except Exception:
                     pass
         
         if should_pause:
@@ -578,7 +663,7 @@ class DebuggerThread(QThread, bdb.Bdb):
                     result[key] = f"{{{len(value)} items}}"
                 else:
                     result[key] = f"<{type(value).__name__}>"
-            except:
+            except Exception:
                 result[key] = "<无法显示>"
         return result
 
@@ -1687,14 +1772,14 @@ class StrategyDebugger(QWidget, ThemeAwareWidget):
                     else:
                         try:
                             self._current_strategy_params[param_name] = param.param_type(widget.currentText())
-                        except:
+                        except Exception:
                             self._current_strategy_params[param_name] = widget.currentText()
                 elif isinstance(widget, (QSpinBox, QDoubleSpinBox)):
                     self._current_strategy_params[param_name] = widget.value()
                 else:
                     try:
                         self._current_strategy_params[param_name] = param.param_type(widget.text())
-                    except:
+                    except Exception:
                         self._current_strategy_params[param_name] = widget.text()
             
             self.output_viewer.append_output(f'参数已更新: {self._current_strategy_params}', '#4ec9b0')
@@ -1953,7 +2038,7 @@ timestamp,open,high,low,close,volume,amount
         if self._theme_manager and hasattr(self._theme_manager, 'theme_changed'):
             try:
                 self._theme_manager.theme_changed.disconnect(self._on_theme_changed)
-            except:
+            except Exception:
                 pass
         
         super().closeEvent(event)

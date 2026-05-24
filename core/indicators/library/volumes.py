@@ -38,21 +38,12 @@ def calculate_obv(df: pd.DataFrame) -> pd.DataFrame:
             obv = talib.OBV(close.values, volume.values)
             result['OBV'] = pd.Series(obv, index=close.index)
         else:
-            # 使用pandas实现
-            close_diff = close.diff()
-            obv = pd.Series(0, index=close.index)
+            close_diff = close.diff().fillna(0)
 
-            # 第一个值设为0
-            obv.iloc[0] = 0
-
-            # 计算OBV
-            for i in range(1, len(close)):
-                if close_diff.iloc[i] > 0:
-                    obv.iloc[i] = obv.iloc[i-1] + volume.iloc[i]
-                elif close_diff.iloc[i] < 0:
-                    obv.iloc[i] = obv.iloc[i-1] - volume.iloc[i]
-                else:
-                    obv.iloc[i] = obv.iloc[i-1]
+            # 计算OBV (向量化): OBV = cumsum(sign(Δclose) * volume)
+            volume_arr = volume.values
+            obv_values = (np.sign(close_diff.values) * volume_arr).cumsum()
+            obv = pd.Series(obv_values, index=close.index)
 
             result['OBV'] = obv
 

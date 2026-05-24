@@ -25,38 +25,40 @@ from PyQt5.QtGui import QFont, QColor
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
+from .base_dialog import BaseDialog
 
-class ModelTrainingDialog(QDialog):
+
+class ModelTrainingDialog(BaseDialog):
     """模型训练管理对话框"""
 
-    training_started = pyqtSignal(str)  # 训练任务ID
-    training_completed = pyqtSignal(str)  # 训练任务ID
+    training_started = pyqtSignal(str)
+    training_completed = pyqtSignal(str)
 
     def __init__(self, parent=None):
-        super().__init__(parent)
+        super().__init__(
+            parent,
+            title="模型训练管理",
+            min_size=(1200, 800),
+            settings_key="ModelTrainingDialog",
+            modal=False,
+        )
         self.logger = logger.bind(module=__name__)
 
-        # 服务引用
         self.training_service = None
         self.service_container = None
 
-        # 初始化服务
         self.init_services()
 
-        # 数据
         self.tasks = []
         self.versions = []
         self.current_task_id = None
 
-        # 定时器用于刷新数据
         self.refresh_timer = QTimer()
         self.refresh_timer.timeout.connect(self.refresh_data)
-        self.refresh_timer.start(2000)  # 每2秒刷新一次
+        self.refresh_timer.start(2000)
 
-        # 初始化UI
         self.setup_ui()
 
-        # 加载数据
         self.load_tasks()
         self.load_versions()
         self.load_governance_data()
@@ -80,11 +82,6 @@ class ModelTrainingDialog(QDialog):
 
     def setup_ui(self):
         """设置用户界面"""
-        self.setWindowTitle("模型训练管理")
-        self.setMinimumSize(1200, 800)
-        self.setModal(False)
-
-        # 主布局
         main_layout = QVBoxLayout(self)
 
         # 标题
@@ -299,7 +296,7 @@ class ModelTrainingDialog(QDialog):
                     try:
                         dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
                         created_at = dt.strftime('%Y-%m-%d %H:%M:%S')
-                    except:
+                    except Exception:
                         pass
                 self.tasks_table.setItem(row, 5, QTableWidgetItem(created_at))
                 # 开始时间
@@ -308,7 +305,7 @@ class ModelTrainingDialog(QDialog):
                     try:
                         dt = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
                         started_at = dt.strftime('%Y-%m-%d %H:%M:%S')
-                    except:
+                    except Exception:
                         pass
                 self.tasks_table.setItem(row, 6, QTableWidgetItem(started_at))
                 # 验证Loss
@@ -388,7 +385,7 @@ class ModelTrainingDialog(QDialog):
                     try:
                         dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
                         created_at = dt.strftime('%Y-%m-%d %H:%M:%S')
-                    except:
+                    except Exception:
                         pass
                 self.versions_table.setItem(row, 5, QTableWidgetItem(created_at))
                 # 当前版本

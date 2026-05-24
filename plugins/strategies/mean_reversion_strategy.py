@@ -168,111 +168,123 @@ class MeanReversionStrategyPlugin(IStrategyPlugin):
                 self.logger.warning(f"数据不足，需要至少 {self._config.min_periods} 个周期")
                 return []
             
-            close = df['close']
-            
-            # 计算均值和标准差
-            mean = close.rolling(window=self._config.lookback_period).mean()
-            std = close.rolling(window=self._config.lookback_period).std()
-            
-            # 计算偏离度（Z-score）
-            z_score = (close - mean) / std
-            
-            signals = []
-            current_position = 0
-            
-            for i in range(1, len(df)):
-                if i < self._config.lookback_period:
-                    continue
-                
-                timestamp = df.index[i]
-                current_price = close.iloc[i]
-                z = z_score.iloc[i]
-                
-                signal_type = SignalType.HOLD
-                reason = ""
-                
-                # 入场信号：价格偏离均值超过阈值
-                if z > self._config.entry_threshold and current_position <= 0:
-                    signal_type = SignalType.SELL
-                    current_position = -1
-                    reason = f"价格高估: Z-score={z:.2f}"
-                elif z < -self._config.entry_threshold and current_position >= 0:
-                    signal_type = SignalType.BUY
-                    current_position = 1
-                    reason = f"价格低估: Z-score={z:.2f}"
-                # 出场信号：价格回归均值
-                elif abs(z) < self._config.exit_threshold and current_position != 0:
-                    signal_type = SignalType.HOLD
-                    if current_position > 0:
-                        signal_type = SignalType.SELL
-                        reason = f"价格回归: Z-score={z:.2f}"
-                    else:
-                        signal_type = SignalType.BUY
-                        reason = f"价格回归: Z-score={z:.2f}"
-                    current_position = 0
-                
-                if signal_type != SignalType.HOLD:
-                    stop_loss = None
-                    take_profit = None
-                    
-                    if signal_type == SignalType.BUY:
-                        stop_loss = current_price * (1 - self._config.stop_loss_pct)
-                        take_profit = current_price * (1 + self._config.take_profit_pct)
-                    else:
-                        stop_loss = current_price * (1 + self._config.stop_loss_pct)
-                        take_profit = current_price * (1 - self._config.take_profit_pct)
-                    
-                    confidence = min(abs(z) / self._config.entry_threshold, 1.0)
-                    
-                    signal = Signal(
-                        symbol=market_data.symbol,
-                        signal_type=signal_type,
-                        strength=confidence,
-                        timestamp=timestamp,
-                        price=current_price,
-                        reason=reason,
-                        stop_loss=stop_loss,
-                        take_profit=take_profit,
-                        metadata={
-                            'z_score': z,
-                            'mean': mean.iloc[i] if not pd.isna(mean.iloc[i]) else 0,
-                            'std': std.iloc[i] if not pd.isna(std.iloc[i]) else 0
-                        }
-                    )
-                    signals.append(signal)
-            
-            # 发布信号生成事件
-            if signals:
-                try:
-                    event = SignalGeneratedEvent(
-                        strategy_id=self._plugin_info["name"],
-                        strategy_name=self._plugin_info["display_name"],
-                        signals=[{
-                            'signal_type': s.signal_type.value,
-                            'symbol': s.symbol,
-                            'strength': s.strength,
-                            'timestamp': s.timestamp.isoformat() if hasattr(s.timestamp, 'isoformat') else str(s.timestamp),
-                            'price': s.price,
-                            'reason': s.reason
-                        } for s in signals],
-                        symbol=market_data.symbol,
-                        priority=1,
-                        timestamp=datetime.now(),
-                        source="mean_reversion_strategy",
-                        data={
-                            'plugin_type': 'mean_reversion',
-                            'z_score_range': f"{z_score.min():.2f} ~ {z_score.max():.2f}" if hasattr(z_score, 'min') else "N/A"
-                        }
-                    )
-                    get_event_bus().publish(event)
-                except Exception as event_error:
-                    self.logger.warning(f"发布信号事件失败: {event_error}")
+            signals = self._generate_signals_vectorized(df, market_data)
             
             return signals
             
         except Exception as e:
             self.logger.error(f"均值回归策略信号生成失败: {e}")
             return []
+
+    def _generate_signals_vectorized(
+        self, df: pd.DataFrame, market_data
+    ) -> List[Signal]:
+        """向量化信号生成（性能优化）"""
+        close = df['close']
+        lookback = self._config.lookback_period
+        entry_threshold = self._config.entry_threshold
+        exit_threshold = self._config.exit_threshold
+
+        mean = close.rolling(window=lookback).mean()
+        std = close.rolling(window=lookback).std()
+        z_score = (close - mean) / std
+
+        z_vals = z_score.values
+        close_vals = close.values
+        mean_vals = mean.values
+        std_vals = std.values
+
+        n = len(df)
+        valid_start = lookback
+
+        buy_cond = z_vals < -entry_threshold
+        sell_cond = z_vals > entry_threshold
+        revert_cond = np.abs(z_vals) < exit_threshold
+
+        signals = []
+        position = 0
+
+        for i in range(valid_start, n):
+            z = z_vals[i]
+            current_price = close_vals[i]
+            timestamp = df.index[i]
+
+            signal_type = SignalType.HOLD
+            reason = ""
+
+            if buy_cond[i] and position >= 0:
+                signal_type = SignalType.BUY
+                position = 1
+                reason = f"价格低估: Z-score={z:.2f}"
+            elif sell_cond[i] and position <= 0:
+                signal_type = SignalType.SELL
+                position = -1
+                reason = f"价格高估: Z-score={z:.2f}"
+            elif revert_cond[i] and position != 0:
+                if position > 0:
+                    signal_type = SignalType.SELL
+                else:
+                    signal_type = SignalType.BUY
+                position = 0
+                reason = f"价格回归: Z-score={z:.2f}"
+
+            if signal_type != SignalType.HOLD:
+                stop_loss = None
+                take_profit = None
+
+                if signal_type == SignalType.BUY:
+                    stop_loss = current_price * (1 - self._config.stop_loss_pct)
+                    take_profit = current_price * (1 + self._config.take_profit_pct)
+                else:
+                    stop_loss = current_price * (1 + self._config.stop_loss_pct)
+                    take_profit = current_price * (1 - self._config.take_profit_pct)
+
+                confidence = min(abs(z) / entry_threshold, 1.0)
+
+                signal = Signal(
+                    symbol=market_data.symbol,
+                    signal_type=signal_type,
+                    strength=confidence,
+                    timestamp=timestamp,
+                    price=current_price,
+                    reason=reason,
+                    stop_loss=stop_loss,
+                    take_profit=take_profit,
+                    metadata={
+                        'z_score': z,
+                        'mean': float(mean_vals[i]) if not np.isnan(mean_vals[i]) else 0,
+                        'std': float(std_vals[i]) if not np.isnan(std_vals[i]) else 0
+                    }
+                )
+                signals.append(signal)
+
+        if signals:
+            try:
+                event = SignalGeneratedEvent(
+                    strategy_id=self._plugin_info["name"],
+                    strategy_name=self._plugin_info["display_name"],
+                    signals=[{
+                        'signal_type': s.signal_type.value,
+                        'symbol': s.symbol,
+                        'strength': s.strength,
+                        'timestamp': s.timestamp.isoformat() if hasattr(s.timestamp, 'isoformat') else str(s.timestamp),
+                        'price': s.price,
+                        'reason': s.reason
+                    } for s in signals],
+                    symbol=market_data.symbol,
+                    priority=1,
+                    timestamp=datetime.now(),
+                    source="mean_reversion_strategy",
+                    data={
+                        'plugin_type': 'mean_reversion',
+                        'z_score_range': f"{z_score.min():.2f} ~ {z_score.max():.2f}" if hasattr(z_score, 'min') else "N/A"
+                    }
+                )
+                get_event_bus().publish(event)
+            except Exception as event_error:
+                self.logger.warning(f"发布信号事件失败: {event_error}")
+
+        return signals
     
     def execute_trade(self, signal: Signal, context: StrategyContext) -> TradeResult:
         try:
@@ -382,13 +394,13 @@ class MeanReversionStrategyPlugin(IStrategyPlugin):
                     losses.append(pnl)
         
         if returns:
-            avg_return = sum(returns) / len(returns)
+            avg_return = np.mean(returns)
             std_return = np.std(returns) if len(returns) > 1 else 0.01
             sharpe = (avg_return / std_return * np.sqrt(252)) if std_return > 0 else 0
             max_dd = min(returns) if returns else 0
             annual_return = avg_return * 252
-            avg_win = sum(wins) / len(wins) if wins else 0
-            avg_loss = sum(losses) / len(losses) if losses else 0
+            avg_win = np.mean(wins) if wins else 0
+            avg_loss = np.mean(losses) if losses else 0
             profit_factor = abs(sum(wins) / sum(losses)) if losses and sum(losses) != 0 else 0
         else:
             avg_return = 0
@@ -425,3 +437,4 @@ class MeanReversionStrategyPlugin(IStrategyPlugin):
         self._config = None
         self._trade_history.clear()
         self.logger.info("均值回归策略已清理")
+

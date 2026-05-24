@@ -284,12 +284,12 @@ class AssetService:
         try:
             # 处理不同格式的原始数据
             if isinstance(raw_data, pd.DataFrame):
-                for _, row in raw_data.iterrows():
+                for row_dict in raw_data.to_dict('records'):
                     standardized.append({
-                        'symbol': row.get('symbol', row.get('code', '')),
-                        'name': row.get('name', row.get('名称', '')),
+                        'symbol': row_dict.get('symbol', row_dict.get('code', '')),
+                        'name': row_dict.get('name', row_dict.get('名称', '')),
                         'asset_type': asset_type.value,
-                        'market': row.get('market', row.get('市场', '')),
+                        'market': row_dict.get('market', row_dict.get('市场', '')),
                         'status': 'active'
                     })
             elif isinstance(raw_data, list):

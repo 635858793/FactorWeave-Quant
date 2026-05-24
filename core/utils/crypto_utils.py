@@ -159,12 +159,24 @@ class CryptoUtils:
         sensitive_fields = [
             'ctp_password',
             'ctp_auth_code',
-            'xtp_password'
+            'xtp_password',
+            'miniqmt_password',
+            'binance_secret_key',
+            'binance_futures_secret_key',
+            'okx_secret_key',
+            'okx_passphrase',
+            'okx_futures_secret_key',
+            'okx_futures_passphrase',
+            'huobi_secret_key',
+            'huobi_futures_secret_key',
+            'bitget_secret_key',
+            'bitget_passphrase',
+            'bybit_secret_key',
         ]
-        
+
         for field in sensitive_fields:
             self.encrypt_dict_field(account_data, field)
-        
+
         return account_data
 
     def decrypt_account_data(self, account_data: dict) -> dict:
@@ -180,7 +192,19 @@ class CryptoUtils:
         sensitive_fields = [
             'ctp_password',
             'ctp_auth_code',
-            'xtp_password'
+            'xtp_password',
+            'miniqmt_password',
+            'binance_secret_key',
+            'binance_futures_secret_key',
+            'okx_secret_key',
+            'okx_passphrase',
+            'okx_futures_secret_key',
+            'okx_futures_passphrase',
+            'huobi_secret_key',
+            'huobi_futures_secret_key',
+            'bitget_secret_key',
+            'bitget_passphrase',
+            'bybit_secret_key',
         ]
         
         for field in sensitive_fields:

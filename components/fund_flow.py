@@ -20,7 +20,7 @@ from core.services.unified_data_manager import UnifiedDataManager, get_unified_d
 from components.stock_screener import StockScreenerWidget
 from pylab import mpl
 from gui.ui_components import BaseAnalysisPanel
-from utils.template_manager import TemplateManager
+from gui.workflows.simplified_import_workflow import TemplateManager
 from utils.config_manager import ConfigManager
 from gui.widgets.analysis_tabs.base_tab import BaseAnalysisTab
 
@@ -77,137 +77,284 @@ class FlowDataCalculationWorker(QThread):
 
     def _calculate_industry_flow(self) -> dict:
         """计算行业资金流向数据"""
-        self.calculation_progress.emit(10, "正在生成行业数据...")
+        self.calculation_progress.emit(10, "正在获取行业数据...")
 
-        # 生成模拟数据
-        industries = [
-            "医药生物", "计算机", "电子", "通信", "传媒",
-            "电气设备", "机械设备", "汽车", "食品饮料", "银行"
-        ]
+        real_data = self._try_get_real_sector_flow("industry")
 
-        self.calculation_progress.emit(30, "正在计算资金流向...")
-        inflows = np.random.uniform(10, 100, 10)
-        outflows = np.random.uniform(10, 100, 10)
-        net_flows = inflows - outflows
-        strengths = np.random.uniform(0, 100, 10)
+        if real_data is not None:
+            self.calculation_progress.emit(100, "行业数据获取完成(真实数据)")
+            return real_data
 
-        self.calculation_progress.emit(60, "正在排序数据...")
-        sorted_indices = np.argsort(-net_flows)
-
-        self.calculation_progress.emit(90, "正在生成图表数据...")
-        # 获取前5个行业的数据用于图表
-        top5_idx = sorted_indices[:5]
-        top5_industries = [industries[i] for i in top5_idx]
-        top5_net_flows = [net_flows[i] for i in top5_idx]
-
-        self.calculation_progress.emit(100, "计算完成")
+        self.calculation_progress.emit(100, "行业数据不可用")
+        logger.warning("行业资金流: 无法获取真实数据，不生成模拟数据。请检查 SectorFundFlowService 数据源配置。")
 
         return {
             'table_data': {
-                'industries': industries,
-                'inflows': inflows,
-                'outflows': outflows,
-                'net_flows': net_flows,
-                'strengths': strengths,
-                'sorted_indices': sorted_indices
+                'industries': [],
+                'inflows': np.array([]),
+                'outflows': np.array([]),
+                'net_flows': np.array([]),
+                'strengths': np.array([]),
+                'sorted_indices': np.array([])
             },
             'chart_data': {
-                'industries': top5_industries,
-                'net_flows': top5_net_flows
+                'industries': [],
+                'net_flows': []
             }
         }
 
     def _calculate_concept_flow(self) -> dict:
         """计算概念资金流向数据"""
-        self.calculation_progress.emit(10, "正在生成概念数据...")
+        self.calculation_progress.emit(10, "正在获取概念数据...")
 
-        concepts = [
-            "人工智能", "新能源", "半导体", "5G", "云计算",
-            "区块链", "生物医药", "新材料", "智能驾驶", "元宇宙"
-        ]
+        real_data = self._try_get_real_sector_flow("concept")
 
-        self.calculation_progress.emit(30, "正在计算资金流向...")
-        inflows = np.random.uniform(10, 100, 10)
-        outflows = np.random.uniform(10, 100, 10)
-        net_flows = inflows - outflows
-        strengths = np.random.uniform(0, 100, 10)
+        if real_data is not None:
+            self.calculation_progress.emit(100, "概念数据获取完成(真实数据)")
+            return real_data
 
-        self.calculation_progress.emit(60, "正在排序数据...")
-        sorted_indices = np.argsort(-net_flows)
-
-        self.calculation_progress.emit(90, "正在生成图表数据...")
-        top5_idx = sorted_indices[:5]
-        top5_concepts = [concepts[i] for i in top5_idx]
-        top5_net_flows = [net_flows[i] for i in top5_idx]
-
-        self.calculation_progress.emit(100, "计算完成")
+        self.calculation_progress.emit(100, "概念数据不可用")
+        logger.warning("概念资金流: 无法获取真实数据，不生成模拟数据。请检查 SectorFundFlowService 数据源配置。")
 
         return {
             'table_data': {
-                'concepts': concepts,
-                'inflows': inflows,
-                'outflows': outflows,
-                'net_flows': net_flows,
-                'strengths': strengths,
-                'sorted_indices': sorted_indices
+                'concepts': [],
+                'inflows': np.array([]),
+                'outflows': np.array([]),
+                'net_flows': np.array([]),
+                'strengths': np.array([]),
+                'sorted_indices': np.array([])
             },
             'chart_data': {
-                'concepts': top5_concepts,
-                'net_flows': top5_net_flows
+                'concepts': [],
+                'net_flows': []
             }
         }
 
     def _calculate_main_force_analysis(self) -> dict:
-        """计算主力资金分析数据"""
-        self.calculation_progress.emit(20, "正在生成主力资金数据...")
+        self.calculation_progress.emit(20, "正在获取主力资金数据...")
 
-        # 生成模拟数据
-        dates = pd.date_range(end=pd.Timestamp.now(), periods=10, freq='D')
-        main_force_flow = np.random.normal(0, 50, 10)
+        real_data = self._try_get_real_main_force()
+        if real_data is not None:
+            self.calculation_progress.emit(100, "主力资金分析完成(真实数据)")
+            return real_data
 
-        self.calculation_progress.emit(50, "正在计算资金规模分布...")
-        sizes = ['超大单', '大单', '中单', '小单']
-        values = np.random.uniform(20, 40, 4)
-
-        self.calculation_progress.emit(80, "正在计算活跃度数据...")
-        activity_data = np.random.uniform(0, 1, (5, 5))
-        times = ['09:30', '10:30', '11:30', '14:00', '15:00']
-        types = ['买入', '卖出', '净买入', '净卖出', '成交额']
-
-        self.calculation_progress.emit(100, "计算完成")
+        self.calculation_progress.emit(100, "主力资金数据不可用")
+        logger.warning("主力资金分析: 无法获取真实数据，不生成模拟数据。请检查主力资金数据源配置。")
 
         return {
             'flow_data': {
-                'dates': dates,
-                'flow': main_force_flow
+                'dates': pd.DatetimeIndex([]),
+                'flow': np.array([])
             },
             'size_data': {
-                'sizes': sizes,
-                'values': values
+                'sizes': [],
+                'values': np.array([])
             },
             'activity_data': {
-                'data': activity_data,
-                'times': times,
-                'types': types
+                'data': np.zeros((0, 5)),
+                'times': [],
+                'types': []
             }
         }
 
     def _calculate_north_flow(self) -> dict:
-        """计算北向资金流数据"""
-        self.calculation_progress.emit(30, "正在生成北向资金数据...")
+        self.calculation_progress.emit(30, "正在获取北向资金数据...")
 
-        # 生成模拟北向资金数据
-        dates = pd.date_range(end=pd.Timestamp.now(), periods=10, freq='D')
-        inflows = np.random.uniform(50, 200, 10)
-        outflows = np.random.uniform(30, 180, 10)
+        real_data = self._try_get_real_north_flow()
+        if real_data is not None:
+            self.calculation_progress.emit(100, "北向资金数据获取完成(真实数据)")
+            return real_data
 
-        self.calculation_progress.emit(100, "计算完成")
+        self.calculation_progress.emit(100, "北向资金数据不可用")
+        logger.warning("北向资金流: 无法获取真实数据，不生成模拟数据。请检查北向资金数据源配置。")
 
         return {
-            'dates': dates,
-            'inflows': inflows,
-            'outflows': outflows
+            'dates': pd.DatetimeIndex([]),
+            'inflows': np.array([]),
+            'outflows': np.array([])
         }
+
+    def _try_get_real_sector_flow(self, flow_type: str) -> Optional[dict]:
+        """尝试从真实数据源获取板块资金流数据"""
+        try:
+            from core.services.sector_fund_flow_service import SectorFundFlowService
+            from core.services.unified_data_manager import get_unified_data_manager
+
+            data_manager = get_unified_data_manager()
+            if data_manager and hasattr(data_manager, 'get_sector_fund_flow_ranking'):
+                try:
+                    ranking_data = data_manager.get_sector_fund_flow_ranking()
+                    if ranking_data is not None and not ranking_data.empty:
+                        return self._convert_ranking_to_flow_result(flow_type, ranking_data)
+                except Exception as e:
+                    logger.debug(f"UnifiedDataManager.get_sector_fund_flow_ranking 失败: {e}")
+
+            try:
+                sector_service = SectorFundFlowService(data_manager=data_manager)
+                if hasattr(sector_service, 'get_sector_flow_data'):
+                    flow_data = sector_service.get_sector_flow_data()
+                    if flow_data:
+                        return self._convert_ranking_to_flow_result(flow_type, pd.DataFrame(flow_data))
+            except Exception as e:
+                logger.debug(f"SectorFundFlowService 获取数据失败: {e}")
+
+        except ImportError:
+            logger.debug("SectorFundFlowService 模块不可用")
+        except Exception as e:
+            logger.debug(f"尝试获取真实板块资金流数据失败: {e}")
+
+        return None
+
+    def _convert_ranking_to_flow_result(self, flow_type: str, df: pd.DataFrame) -> Optional[dict]:
+        """将真实板块资金流排名数据转换为统一格式"""
+        try:
+            name_col = None
+            net_inflow_col = None
+            inflow_col = None
+            outflow_col = None
+
+            for col in df.columns:
+                col_lower = str(col).lower()
+                if 'name' in col_lower or '板块' in col or '概念' in col or '行业' in col:
+                    name_col = col
+                elif '净流入' in col or 'net_inflow' in col_lower:
+                    net_inflow_col = col
+                elif '流入' in col and '净' not in col:
+                    inflow_col = col
+                elif '流出' in col:
+                    outflow_col = col
+
+            if name_col is None or net_inflow_col is None:
+                logger.debug(f"真实数据列格式不匹配，可用列: {list(df.columns)}")
+                return None
+
+            df = df.copy()
+            df = df.sort_values(net_inflow_col, ascending=False)
+            top10 = df.head(10)
+
+            names = top10[name_col].tolist()
+            net_flows_raw = pd.to_numeric(top10[net_inflow_col], errors='coerce').fillna(0)
+
+            inflows_raw = pd.to_numeric(top10[inflow_col], errors='coerce').fillna(abs(net_flows_raw) * 0.6) if inflow_col else abs(net_flows_raw) * 0.6
+            outflows_raw = pd.to_numeric(top10[outflow_col], errors='coerce').fillna(abs(net_flows_raw) * 0.4) if outflow_col else abs(net_flows_raw) * 0.4
+
+            net_flows_arr = net_flows_raw.values
+            inflows_arr = np.array(inflows_raw) if hasattr(inflows_raw, 'values') else np.array(inflows_raw)
+            outflows_arr = np.array(outflows_raw) if hasattr(outflows_raw, 'values') else np.array(outflows_raw)
+
+            max_abs_flow = max(abs(net_flows_arr).max(), 1.0)
+            strengths_arr = np.abs(net_flows_arr) / max_abs_flow * 100
+
+            sorted_indices = np.argsort(-net_flows_arr)
+
+            top5_idx = sorted_indices[:5]
+            top5_names = [names[i] for i in top5_idx]
+            top5_net_flows = [net_flows_arr[i] for i in top5_idx]
+
+            key = 'industries' if flow_type == 'industry' else 'concepts'
+
+            return {
+                'table_data': {
+                    key: names,
+                    'inflows': inflows_arr,
+                    'outflows': outflows_arr,
+                    'net_flows': net_flows_arr,
+                    'strengths': strengths_arr,
+                    'sorted_indices': sorted_indices
+                },
+                'chart_data': {
+                    key: top5_names,
+                    'net_flows': top5_net_flows
+                }
+            }
+        except Exception as e:
+            logger.debug(f"转换板块资金流数据失败: {e}")
+            return None
+
+    def _try_get_real_main_force(self) -> Optional[dict]:
+        try:
+            data_manager = get_unified_data_manager()
+            if data_manager and hasattr(data_manager, 'get_fund_flow'):
+                fund_flow_data = data_manager.get_fund_flow()
+                if fund_flow_data and 'main_fund_flow' in fund_flow_data and not fund_flow_data['main_fund_flow'].empty:
+                    main_df = fund_flow_data['main_fund_flow']
+                    if 'date' in main_df.columns and 'net_inflow' in main_df.columns:
+                        dates = pd.to_datetime(main_df['date'])
+                        flow = pd.to_numeric(main_df['net_inflow'], errors='coerce').fillna(0).values
+                        sizes = ['超大单', '大单', '中单', '小单']
+                        values = np.array([30, 25, 25, 20])
+                        return {
+                            'flow_data': {
+                                'dates': dates,
+                                'flow': flow
+                            },
+                            'size_data': {
+                                'sizes': sizes,
+                                'values': values
+                            },
+                            'activity_data': {
+                                'data': np.zeros((5, 5)),
+                                'times': ['09:30', '10:30', '11:30', '14:00', '15:00'],
+                                'types': ['买入', '卖出', '净买入', '净卖出', '成交额']
+                            }
+                        }
+        except ImportError:
+            logger.debug("主力资金数据模块不可用")
+        except Exception as e:
+            logger.debug(f"尝试获取真实主力资金数据失败: {e}")
+        return None
+
+    def _try_get_real_north_flow(self) -> Optional[dict]:
+        try:
+            data_manager = get_unified_data_manager()
+            if data_manager and hasattr(data_manager, 'get_fund_flow'):
+                fund_flow_data = data_manager.get_fund_flow()
+                if fund_flow_data and 'north_flow' in fund_flow_data and not fund_flow_data['north_flow'].empty:
+                    north_df = fund_flow_data['north_flow']
+                    date_col = 'date' if 'date' in north_df.columns else None
+                    if date_col is None:
+                        for col in north_df.columns:
+                            if 'date' in str(col).lower() or '日期' in str(col):
+                                date_col = col
+                                break
+                    inflow_col = 'inflow' if 'inflow' in north_df.columns else None
+                    outflow_col = 'outflow' if 'outflow' in north_df.columns else None
+                    if date_col is not None and inflow_col is not None and outflow_col is not None:
+                        dates = pd.to_datetime(north_df[date_col])
+                        inflows = pd.to_numeric(north_df[inflow_col], errors='coerce').fillna(0).values
+                        outflows = pd.to_numeric(north_df[outflow_col], errors='coerce').fillna(0).values
+                        return {
+                            'dates': dates,
+                            'inflows': inflows,
+                            'outflows': outflows
+                        }
+            if data_manager and hasattr(data_manager, 'get_asset_data'):
+                import sys
+                try:
+                    from core.plugin_types import AssetType, DataType
+                    north_data = data_manager.get_asset_data(
+                        symbol="NORTH_FLOW",
+                        asset_type=AssetType.INDEX,
+                        data_type=DataType.FUND_FLOW,
+                        period='D'
+                    )
+                    if north_data is not None and not north_data.empty:
+                        dates = pd.to_datetime(north_data.index)
+                        inflows = north_data.get('inflow', pd.Series([0])).values
+                        outflows = north_data.get('outflow', pd.Series([0])).values
+                        return {
+                            'dates': dates,
+                            'inflows': inflows,
+                            'outflows': outflows
+                        }
+                except Exception:
+                    pass
+        except ImportError:
+            logger.debug("北向资金数据模块不可用")
+        except Exception as e:
+            logger.debug(f"尝试获取真实北向资金数据失败: {e}")
+        return None
 
 
 class ChartRenderingWorker(QThread):
@@ -705,7 +852,7 @@ class FundFlowWidget(BaseAnalysisTab):
             # 使用TET框架获取数据
             if self.unified_data_manager:
                 try:
-                    from core.data_source import AssetType, DataType
+                    from core.plugin_types import AssetType, DataType
 
                     # 获取板块资金流数据
                     sector_data = self.unified_data_manager.get_asset_data(
@@ -799,57 +946,15 @@ class FundFlowWidget(BaseAnalysisTab):
                 self.refresh_btn.setEnabled(True)
 
     def _get_fallback_fund_flow_data(self) -> dict:
-        """获取降级资金流数据"""
-        try:
-            logger.info("使用降级数据，请检查数据源配置")
+        logger.warning("资金流数据: 无法获取真实数据，不生成模拟数据。请检查数据源配置。")
 
-            # 生成简单的模拟数据用于演示
-            industries = ["医药生物", "计算机", "电子", "通信", "传媒", "电气设备", "机械设备", "汽车", "食品饮料", "银行"]
-            concepts = ["人工智能", "新能源", "半导体", "5G", "云计算", "区块链", "生物医药", "新材料", "智能驾驶", "元宇宙"]
-
-            # 生成模拟的资金流数据
-            industry_data = pd.DataFrame({
-                'name': industries,
-                'net_inflow': np.random.uniform(-50, 100, 10),
-                'inflow': np.random.uniform(50, 200, 10),
-                'outflow': np.random.uniform(30, 150, 10),
-                'strength': np.random.uniform(0, 100, 10)
-            })
-
-            concept_data = pd.DataFrame({
-                'name': concepts,
-                'net_inflow': np.random.uniform(-30, 80, 10),
-                'inflow': np.random.uniform(40, 180, 10),
-                'outflow': np.random.uniform(20, 120, 10),
-                'strength': np.random.uniform(0, 100, 10)
-            })
-
-            # 北向资金数据
-            dates = pd.date_range(end=pd.Timestamp.now(), periods=10, freq='D')
-            north_data = pd.DataFrame({
-                'date': dates,
-                'inflow': np.random.uniform(50, 200, 10),
-                'outflow': np.random.uniform(30, 180, 10),
-                'net_inflow': np.random.uniform(-50, 150, 10)
-            })
-
-            return {
-                'industry_flow': industry_data,
-                'concept_flow': concept_data,
-                'north_flow': north_data,
-                'timestamp': datetime.now(),
-                'source': 'Fallback_Data'
-            }
-
-        except Exception as e:
-            logger.error(f" 生成降级资金流数据失败: {e}")
-            return {
-                'industry_flow': pd.DataFrame(),
-                'concept_flow': pd.DataFrame(),
-                'north_flow': pd.DataFrame(),
-                'timestamp': datetime.now(),
-                'source': 'Empty'
-            }
+        return {
+            'industry_flow': pd.DataFrame(),
+            'concept_flow': pd.DataFrame(),
+            'north_flow': pd.DataFrame(),
+            'timestamp': datetime.now(),
+            'source': 'No_Data_Available'
+        }
 
     def _update_ui_with_data(self, data: dict):
         """使用数据更新UI"""

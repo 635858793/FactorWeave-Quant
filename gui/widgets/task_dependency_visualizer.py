@@ -16,7 +16,6 @@
 
 import sys
 import math
-import logging
 from typing import Dict, List, Set, Tuple, Optional, Any
 from dataclasses import dataclass, field
 from enum import Enum
@@ -41,17 +40,9 @@ from PyQt5.QtGui import (
 )
 
 # 导入核心服务
-try:
-    from core.services.dependency_resolver import DependencyResolver
-    from core.ui_integration.ui_business_logic_adapter import get_ui_adapter
-    from loguru import logger
-    CORE_AVAILABLE = True
-except ImportError as e:
-    logger = logging.getLogger(__name__)
-    CORE_AVAILABLE = False
-    logger.warning(f"核心服务不可用: {e}")
-
-logger = logger.bind(module=__name__) if hasattr(logger, 'bind') else logging.getLogger(__name__)
+from core.services.dependency_resolver import DependencyResolver
+from core.ui_integration.ui_business_logic_adapter import get_ui_adapter
+from loguru import logger
 
 
 class NodeType(Enum):

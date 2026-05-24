@@ -17,20 +17,25 @@ class RiskMetricsCalculator:
             market_variance = np.var(market_returns)
             beta = covariance / market_variance if market_variance != 0 else 0
 
-            # 计算Alpha
-            risk_free_rate = 0.02  # 假设无风险利率为2%
+            # 计算Alpha（日化无风险利率）
+            trading_days = 252
+            risk_free_rate_annual = 0.02
+            risk_free_rate = risk_free_rate_annual / trading_days
             alpha = np.mean(returns) - (risk_free_rate + beta *
                                         (np.mean(market_returns) - risk_free_rate))
 
-            # 计算夏普比率
+            # 计算年化夏普比率
             excess_returns = returns - risk_free_rate
-            sharpe_ratio = np.mean(
-                excess_returns) / np.std(excess_returns) if np.std(excess_returns) != 0 else 0
+            daily_sharpe = np.mean(excess_returns) / np.std(excess_returns) if np.std(excess_returns) != 0 else 0
+            sharpe_ratio = daily_sharpe * np.sqrt(trading_days)
 
-            # 计算索提诺比率
-            downside_returns = returns[returns < 0]
-            sortino_ratio = np.mean(
-                excess_returns) / np.std(downside_returns) if len(downside_returns) > 0 else 0
+            # 计算年化索提诺比率（基于超额收益的下行偏差）
+            downside_excess = excess_returns[excess_returns < 0]
+            if len(downside_excess) > 0:
+                downside_deviation = np.sqrt(np.mean(downside_excess ** 2))
+                sortino_ratio = np.mean(excess_returns) / downside_deviation * np.sqrt(trading_days)
+            else:
+                sortino_ratio = 0.0
 
             return {
                 'beta': beta,
@@ -56,7 +61,8 @@ class RiskMetricsCalculator:
 
             return {
                 'sector_exposure': sector_exposure,
-                'herfindahl_index': herfindahl_index
+                'herfindahl_index': herfindahl_index,
+                'stock_sector_map': sector_data
             }
         except Exception as e:
             logger.info(f"计算行业暴露度时出错: {str(e)}")

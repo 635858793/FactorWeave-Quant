@@ -8,7 +8,6 @@ Yahoo Finance数据源插件示例（V2 对齐）
 """
 
 import pandas as pd
-import numpy as np
 import requests
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
@@ -52,11 +51,11 @@ class YahooFinanceDataSourcePlugin(IDataSourcePlugin):
 
         # 插件类型标识（确保被识别为数据源插件）
         self.plugin_type = PluginType.DATA_SOURCE_STOCK
-        # 连接状态属性
         self.connection_time = None
         self.last_activity = None
         self.last_error = None
         self.config = {}
+        self.has_real_data = False
 
     def get_plugin_info(self) -> PluginInfo:
         return PluginInfo(
@@ -114,10 +113,6 @@ class YahooFinanceDataSourcePlugin(IDataSourcePlugin):
                 self.session.close()
         except Exception:
             pass
-
-    def is_connected(self) -> bool:
-        """检查连接状态"""
-        return getattr(self, 'initialized', False)
 
     def health_check(self) -> HealthCheckResult:
         """健康检查"""
@@ -230,145 +225,120 @@ class YahooFinanceDataSourcePlugin(IDataSourcePlugin):
             return {}
 
     def _fetch_daily_data(self, symbol: str, **params) -> pd.DataFrame:
-        """
-        获取日线数据
-
-        Args:
-            symbol: 股票代码
-            **params: 参数（start_date, end_date等）
-
-        Returns:
-            日线数据DataFrame
-        """
-        # 生成模拟数据
-        dates = pd.date_range('2023-01-01', periods=100, freq='D')
-        np.random.seed(hash(symbol) % 2**32)
-
-        base_price = 100 + (hash(symbol) % 100)
-        returns = np.random.normal(0.001, 0.02, len(dates))
-        prices = base_price * np.exp(np.cumsum(returns))
-
-        data = pd.DataFrame({
-            'open': prices * (1 + np.random.normal(0, 0.005, len(dates))),
-            'high': prices * (1 + np.abs(np.random.normal(0, 0.01, len(dates)))),
-            'low': prices * (1 - np.abs(np.random.normal(0, 0.01, len(dates)))),
-            'close': prices,
-            'volume': np.random.randint(100000, 1000000, len(dates))
-        }, index=dates)
-
-        return data
+        try:
+            import yfinance as yf
+            ticker = yf.Ticker(symbol)
+            hist_params = {'period': '1y', 'interval': '1d'}
+            start_date = params.get('start_date')
+            end_date = params.get('end_date')
+            if start_date:
+                hist_params['start'] = start_date
+            if end_date:
+                hist_params['end'] = end_date
+            df = ticker.history(**hist_params)
+            if df.empty:
+                self.has_real_data = False
+                logger.warning(f"Yahoo Finance: 获取 {symbol} 日线数据为空")
+                return pd.DataFrame()
+            columns_map = {
+                'Open': 'open', 'High': 'high', 'Low': 'low',
+                'Close': 'close', 'Volume': 'volume'
+            }
+            df = df.rename(columns=columns_map)
+            df = df[['open', 'high', 'low', 'close', 'volume']]
+            self.has_real_data = True
+            return df
+        except Exception as e:
+            self.has_real_data = False
+            logger.warning(f"Yahoo Finance: 获取 {symbol} 日线数据失败: {e}")
+            return pd.DataFrame()
 
     def _fetch_intraday_data(self, symbol: str, **params) -> pd.DataFrame:
-        """
-        获取分钟线数据
-
-        Args:
-            symbol: 股票代码
-            **params: 参数（interval等）
-
-        Returns:
-            分钟线数据DataFrame
-        """
-        interval = params.get('interval', '1m')  # 1m, 5m, 15m, 30m, 1h
-        date = params.get('date', datetime.now().date())
-
-        if isinstance(date, str):
-            date = datetime.strptime(date, '%Y-%m-%d').date()
-
-        # 生成分钟级数据
-        start_time = datetime.combine(
-            date, datetime.min.time().replace(hour=9, minute=30))
-        end_time = datetime.combine(
-            date, datetime.min.time().replace(hour=16, minute=0))
-
-        # 根据间隔生成时间序列
-        interval_minutes = {
-            '1m': 1, '5m': 5, '15m': 15, '30m': 30, '1h': 60
-        }.get(interval, 1)
-
-        times = pd.date_range(start_time, end_time,
-                              freq=f'{interval_minutes}min')
-
-        np.random.seed(hash(f"{symbol}_{date}") % 2**32)
-
-        # 生成价格数据
-        base_price = 100 + (hash(symbol) % 100)
-        returns = np.random.normal(0, 0.001, len(times))
-        prices = base_price * (1 + np.cumsum(returns) * 0.01)
-
-        # 生成OHLC数据
-        opens = prices * (1 + np.random.normal(0, 0.001, len(times)))
-        highs = np.maximum(opens, prices) * \
-            (1 + np.abs(np.random.normal(0, 0.002, len(times))))
-        lows = np.minimum(opens, prices) * \
-            (1 - np.abs(np.random.normal(0, 0.002, len(times))))
-        closes = prices
-        volumes = np.random.randint(1000, 10000, len(times))
-
-        data = pd.DataFrame({
-            'open': opens,
-            'high': highs,
-            'low': lows,
-            'close': closes,
-            'volume': volumes
-        }, index=times)
-
-        return data
+        try:
+            import yfinance as yf
+            interval = params.get('interval', '1m')
+            ticker = yf.Ticker(symbol)
+            hist_params = {'period': '5d', 'interval': interval}
+            start_date = params.get('start_date')
+            end_date = params.get('end_date')
+            if start_date:
+                hist_params['start'] = start_date
+            if end_date:
+                hist_params['end'] = end_date
+            df = ticker.history(**hist_params)
+            if df.empty:
+                self.has_real_data = False
+                logger.warning(f"Yahoo Finance: 获取 {symbol} 分钟线数据为空")
+                return pd.DataFrame()
+            columns_map = {
+                'Open': 'open', 'High': 'high', 'Low': 'low',
+                'Close': 'close', 'Volume': 'volume'
+            }
+            df = df.rename(columns=columns_map)
+            df = df[['open', 'high', 'low', 'close', 'volume']]
+            self.has_real_data = True
+            return df
+        except Exception as e:
+            self.has_real_data = False
+            logger.warning(f"Yahoo Finance: 获取 {symbol} 分钟线数据失败: {e}")
+            return pd.DataFrame()
 
     def _fetch_stock_info(self, symbol: str, **params) -> pd.DataFrame:
-        """
-        获取股票基本信息
-
-        Args:
-            symbol: 股票代码
-            **params: 参数
-
-        Returns:
-            股票信息DataFrame
-        """
-        info = {
-            'symbol': symbol,
-            'name': f"Company {symbol}",
-            'sector': 'Technology',
-            'market_cap': 1000000000 + (hash(symbol) % 500000000),
-            'pe_ratio': 15 + (hash(symbol) % 30),
-            'dividend_yield': (hash(symbol) % 500) / 10000
-        }
-
-        data = pd.DataFrame([info])
-        data.set_index('symbol', inplace=True)
-
-        return data
+        try:
+            import yfinance as yf
+            ticker = yf.Ticker(symbol)
+            info = ticker.info
+            if not info:
+                self.has_real_data = False
+                logger.warning(f"Yahoo Finance: 获取 {symbol} 股票信息为空")
+                return pd.DataFrame()
+            data = pd.DataFrame([{
+                'symbol': symbol,
+                'name': info.get('shortName', info.get('longName', symbol)),
+                'sector': info.get('sector', ''),
+                'market_cap': info.get('marketCap', 0),
+                'pe_ratio': info.get('trailingPE', 0),
+                'dividend_yield': info.get('dividendYield', 0)
+            }])
+            data.set_index('symbol', inplace=True)
+            self.has_real_data = True
+            return data
+        except Exception as e:
+            self.has_real_data = False
+            logger.warning(f"Yahoo Finance: 获取 {symbol} 股票信息失败: {e}")
+            return pd.DataFrame()
 
     def _fetch_market_summary(self, **params) -> pd.DataFrame:
-        """
-        获取市场摘要
-
-        Args:
-            **params: 参数
-
-        Returns:
-            市场摘要DataFrame
-        """
-        # 模拟市场摘要数据
-        indices = ['SPY', 'QQQ', 'IWM', 'DIA']
-
-        summary_data = []
-        for index in indices:
-            summary_data.append({
-                'symbol': index,
-                'name': f"Index {index}",
-                'price': 100 + (hash(index) % 300),
-                'change': np.random.normal(0, 2),
-                'change_percent': np.random.normal(0, 0.02),
-                'volume': np.random.randint(1000000, 10000000),
-                'market_cap': np.random.randint(100000000, 1000000000)
-            })
-
-        data = pd.DataFrame(summary_data)
-        data.set_index('symbol', inplace=True)
-
-        return data
+        try:
+            import yfinance as yf
+            indices = ['SPY', 'QQQ', 'IWM', 'DIA']
+            summary_data = []
+            for symbol in indices:
+                try:
+                    ticker = yf.Ticker(symbol)
+                    info = ticker.info
+                    summary_data.append({
+                        'symbol': symbol,
+                        'name': info.get('shortName', info.get('longName', symbol)),
+                        'price': info.get('regularMarketPrice', 0),
+                        'change': info.get('regularMarketChange', 0),
+                        'change_percent': info.get('regularMarketChangePercent', 0),
+                        'volume': info.get('regularMarketVolume', 0),
+                        'market_cap': info.get('marketCap', 0)
+                    })
+                except Exception as e:
+                    logger.warning(f"Yahoo Finance: 获取 {symbol} 市场摘要失败: {e}")
+            if not summary_data:
+                self.has_real_data = False
+                return pd.DataFrame()
+            data = pd.DataFrame(summary_data)
+            data.set_index('symbol', inplace=True)
+            self.has_real_data = True
+            return data
+        except Exception as e:
+            self.has_real_data = False
+            logger.warning(f"Yahoo Finance: 获取市场摘要失败: {e}")
+            return pd.DataFrame()
 
     def get_config_schema(self) -> Dict[str, Any]:
         """获取配置模式"""
@@ -463,27 +433,15 @@ class YahooFinanceDataSourcePlugin(IDataSourcePlugin):
             }
 
     def get_available_symbols(self, **params) -> List[str]:
-        """
-        获取可用的股票代码列表
-
-        Args:
-            **params: 参数（market等）
-
-        Returns:
-            股票代码列表
-        """
-        # 模拟常见股票代码
-        symbols = [
-            'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA',
-            'META', 'NVDA', 'AMD', 'INTC', 'NFLX',
-            'ORCL', 'CRM', 'ADBE', 'PYPL', 'UBER',
-            'SPOT', 'ZOOM', 'DOCU', 'SNOW', 'PLTR'
-        ]
-
         market = params.get('market', 'US')
-        if market == 'US':
+        try:
+            assets = self.get_asset_list(AssetType.STOCK_A, market)
+            symbols = [item['symbol'] for item in assets if item.get('symbol')]
+            if not symbols:
+                logger.warning(f"Yahoo Finance: 获取可用股票列表为空, market={market}")
             return symbols
-        else:
+        except Exception as e:
+            logger.warning(f"Yahoo Finance: 获取可用股票列表失败: {e}")
             return []
 
     def create_config_widget(self, parent: Optional[QWidget] = None) -> QWidget:
@@ -614,17 +572,6 @@ class YahooFinanceDataSourcePlugin(IDataSourcePlugin):
                 "api_timeout": self.config.get('api_timeout', 30)
             },
             error_message=self.last_error
-        )
-
-    def health_check(self):
-        """健康检查"""
-        from core.data_source_extensions import HealthCheckResult
-        from datetime import datetime
-        return HealthCheckResult(
-            is_healthy=self.is_connected(),
-            response_time=0.0,
-            message="健康",
-            last_check_time=datetime.now()
         )
 
     def get_asset_list(self, asset_type: AssetType, market: str = None) -> List[Dict[str, Any]]:

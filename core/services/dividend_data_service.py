@@ -85,8 +85,8 @@ class DividendDataService(BaseService):
             for symbol in self._hot_stocks:
                 try:
                     self.get_dividend_data(symbol)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"预加载分红数据失败 {symbol}: {e}")
         
         threading.Thread(target=_preload, daemon=True).start()
     
@@ -109,9 +109,15 @@ class DividendDataService(BaseService):
             cache_time = self._memory_cache_time.get(symbol, 0)
             if time.time() - cache_time < self._cache_ttl:
                 return self._memory_cache[symbol]
-        
+
         events = self._fetch_dividend_data(symbol)
-        
+
+        max_cache = getattr(self, '_max_cache_size', 2000)
+        if len(self._memory_cache) >= max_cache:
+            oldest = min(self._memory_cache_time, key=self._memory_cache_time.get)
+            del self._memory_cache[oldest]
+            del self._memory_cache_time[oldest]
+
         self._memory_cache[symbol] = events
         self._memory_cache_time[symbol] = time.time()
         
@@ -141,17 +147,17 @@ class DividendDataService(BaseService):
             if df is None or df.empty:
                 return events
             
-            for _, row in df.iterrows():
+            for row_dict in df.to_dict('records'):
                 try:
                     event = DividendEvent(
                         symbol=symbol,
-                        announcement_date=str(row.get('公告日期', '')),
-                        dividend_date=str(row.get('分红送转日期', '')),
-                        cash_dividend=float(row.get('每股现金分红', 0) or 0),
-                        stock_dividend=float(row.get('每股送股比例', 0) or 0),
-                        stock_split=float(row.get('每股转增比例', 0) or 0),
-                        split_ratio=float(row.get('拆股比例', 0) or 0),
-                        bonus_shares=float(row.get('送转股比例', 0) or 0),
+                        announcement_date=str(row_dict.get('公告日期', '')),
+                        dividend_date=str(row_dict.get('分红送转日期', '')),
+                        cash_dividend=float(row_dict.get('每股现金分红', 0) or 0),
+                        stock_dividend=float(row_dict.get('每股送股比例', 0) or 0),
+                        stock_split=float(row_dict.get('每股转增比例', 0) or 0),
+                        split_ratio=float(row_dict.get('拆股比例', 0) or 0),
+                        bonus_shares=float(row_dict.get('送转股比例', 0) or 0),
                         rights_issue_price=None
                     )
                     events.append(event)

@@ -8,11 +8,11 @@
 """
 
 from datetime import date
-from typing import Dict, Any, Type, Optional
+from typing import Dict, Any, Type, Optional, List
 
 from loguru import logger
 
-from core.fundamental_data.fundamental_data_base import FundamentalData
+from core.fundamental_data.fundamental_data_base import FundamentalDataBase
 from core.fundamental_data.stock_fundamental_data import StockFundamentalData
 from core.fundamental_data.futures_fundamental_data import FuturesFundamentalData
 from core.fundamental_data.crypto_fundamental_data import CryptoFundamentalData
@@ -22,7 +22,7 @@ from core.plugin_types import AssetType
 class FundamentalDataFactory:
     """基本面数据工厂类"""
 
-    _registry: Dict[AssetType, Type[FundamentalData]] = {
+    _registry: Dict[AssetType, Type[FundamentalDataBase]] = {
         AssetType.STOCK_A: StockFundamentalData,
         AssetType.STOCK_B: StockFundamentalData,
         AssetType.STOCK_H: StockFundamentalData,
@@ -33,7 +33,7 @@ class FundamentalDataFactory:
     }
 
     @classmethod
-    def create(cls, asset_type: AssetType, symbol: str, data_date: date, raw_data: Dict[str, Any]) -> Optional[FundamentalData]:
+    def create(cls, asset_type: AssetType, symbol: str, data_date: date, raw_data: Dict[str, Any]) -> Optional[FundamentalDataBase]:
         """
         创建基本面数据对象
 
@@ -58,7 +58,7 @@ class FundamentalDataFactory:
             return None
 
     @classmethod
-    def register(cls, asset_type: AssetType, data_class: Type[FundamentalData]) -> None:
+    def register(cls, asset_type: AssetType, data_class: Type[FundamentalDataBase]) -> None:
         """
         注册基本面数据类
 

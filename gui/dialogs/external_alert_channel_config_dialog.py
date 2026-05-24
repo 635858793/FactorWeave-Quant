@@ -9,13 +9,15 @@
 from loguru import logger
 from typing import Dict, Optional, List
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QGroupBox,
+    QVBoxLayout, QHBoxLayout, QFormLayout, QGroupBox,
     QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QCheckBox,
     QPushButton, QTextEdit, QLabel, QDialogButtonBox, QMessageBox,
     QTabWidget, QWidget, QListWidget, QListWidgetItem, QSplitter, QFileDialog
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QFont
+
+from .base_dialog import BaseDialog
 
 logger = logger
 
@@ -543,7 +545,7 @@ class SoundChannelConfigWidget(QWidget):
                         try:
                             import winsound
                             winsound.Beep(1000, 500)
-                        except:
+                        except Exception:
                             pass
                     elif system == "Darwin":
                         import subprocess
@@ -695,13 +697,18 @@ class DesktopChannelConfigWidget(QWidget):
         return True
 
 
-class ExternalAlertChannelConfigDialog(QDialog):
+class ExternalAlertChannelConfigDialog(BaseDialog):
     """外部告警渠道配置对话框"""
 
-    channel_configured = pyqtSignal(str, dict)  # channel_type, config
+    channel_configured = pyqtSignal(str, dict)
 
     def __init__(self, channel_type: str = "email", config: Dict = None, parent=None):
-        super().__init__(parent)
+        super().__init__(
+            parent,
+            title=f"配置{self._get_channel_name() if channel_type else ''}告警渠道",
+            size=(600, 500),
+            settings_key="ExternalAlertChannelConfigDialog",
+        )
         self.channel_type = channel_type
         self.config = config or {}
         self.init_ui()
@@ -709,10 +716,6 @@ class ExternalAlertChannelConfigDialog(QDialog):
 
     def init_ui(self):
         """初始化UI"""
-        self.setWindowTitle(f"配置{self._get_channel_name()}告警渠道")
-        self.setModal(True)
-        self.resize(600, 500)
-
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(10)
@@ -829,13 +832,20 @@ class ExternalAlertChannelConfigDialog(QDialog):
         self.accept()
 
 
-class ExternalAlertChannelManagerDialog(QDialog):
+class ExternalAlertChannelManagerDialog(BaseDialog):
     """外部告警渠道管理对话框"""
 
     def __init__(self, parent=None):
-        super().__init__(parent)
         self.channel_configs = {}
         self.config_persistence = None
+
+        super().__init__(
+            parent,
+            title="外部告警渠道管理",
+            size=(800, 600),
+            settings_key="ExternalAlertChannelManagerDialog"
+        )
+
         self.init_ui()
         self.load_channels()
         self._init_config_persistence()

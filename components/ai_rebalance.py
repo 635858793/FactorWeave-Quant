@@ -1,11 +1,10 @@
-import openai
+from openai import OpenAI
 from loguru import logger
 
 class AIRebalancer:
     def __init__(self, api_key: str):
         self.api_key = api_key
-        # 纯Loguru架构，移除log_manager依赖
-        openai.api_key = api_key
+        self.client = OpenAI(api_key=api_key)
 
     def rebalance(self, positions: list, strategy: str = "", risk_params: dict = None, user_input: str = "") -> dict:
         """
@@ -23,12 +22,12 @@ class AIRebalancer:
 补充说明：{user_input}
 请结构化输出：1. 调仓建议（增减仓、换股、调权重等）；2. 风险分析（如集中度、回撤、流动性等）；3. 预警提示（如单股过重、行业过于集中等）。
 """
-            resp = openai.ChatCompletion.create(
+            resp = self.client.chat.completions.create(
                 model="gpt-4o",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2
             )
-            return {"result": resp['choices'][0]['message']['content']}
+            return {"result": resp.choices[0].message.content}
         except Exception as e:
             logger.error(f"AI调仓/风控失败: {e}")
             return {"error": str(e)}
@@ -36,12 +35,12 @@ class AIRebalancer:
     def ask(self, user_input: str) -> dict:
         """支持自然语言调仓/风控问答"""
         try:
-            resp = openai.ChatCompletion.create(
+            resp = self.client.chat.completions.create(
                 model="gpt-4o",
                 messages=[{"role": "user", "content": user_input}],
                 temperature=0.2
             )
-            return {"result": resp['choices'][0]['message']['content']}
+            return {"result": resp.choices[0].message.content}
         except Exception as e:
             logger.error(f"AI调仓/风控问答失败: {e}")
             return {"error": str(e)}

@@ -10,14 +10,12 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
-import logging
+from loguru import logger
 
 from .sentiment_agent import SentimentAnalysisAgent
 from .news_agent import NewsAnalysisAgent, NewsImpact
 from .technical_agent import TechnicalAnalysisAgent, TechnicalSignal, TrendDirection
 from .risk_agent import RiskAssessmentAgent, RiskLevel
-
-logger = logging.getLogger(__name__)
 
 class FusionStrategy(Enum):
     """融合策略"""
@@ -82,6 +80,31 @@ class SignalFusionEngine:
                 "risk_priority": True,  # 风险优先
                 "technical_priority": False,
                 "sentiment_priority": False
+            },
+            "signal_strength_thresholds": {
+                "very_strong": 0.7,
+                "strong": 0.5,
+                "moderate": 0.3,
+                "weak": 0.1
+            },
+            "decision_thresholds": {
+                "strong_buy": 0.5,
+                "mild_buy": 0.2,
+                "strong_sell": -0.5,
+                "mild_sell": -0.2
+            },
+            "conflict_thresholds": {
+                "significant_divergence": 0.8,
+                "extreme_divergence": 1.0
+            },
+            "risk_warning_thresholds": {
+                "high_risk": -0.6,
+                "low_consensus": 0.3,
+                "extreme_signal": 0.8
+            },
+            "adaptive_thresholds": {
+                "high_consensus": 0.8,
+                "low_consensus": 0.4
             }
         }
         
@@ -165,17 +188,65 @@ class SignalFusionEngine:
                 "stock_code": stock_code
             }
 
+    def _normalize_key_names(self, agent_results: Dict[str, Any]) -> Dict[str, Any]:
+        """标准化bettafish_agent传入的短键名为融合引擎期望的长键名"""
+        key_mapping = {
+            "sentiment": "sentiment_analysis",
+            "news": "news_analysis",
+            "technical": "technical_analysis",
+            "risk": "risk_assessment",
+        }
+        normalized = {}
+        for key, value in agent_results.items():
+            mapped_key = key_mapping.get(key, key)
+            normalized[mapped_key] = value
+        return normalized
+
+    def _normalize_agent_output(self, agent_name: str, output: dict) -> dict:
+        """标准化不同agent的输出键名"""
+        key_mapping = {
+            "sentiment": {"sentiment": "signal_type", "score": "confidence"},
+            "news": {"sentiment": "signal_type", "score": "confidence"},
+            "technical": {"signal": "signal_type", "strength": "confidence"},
+            "risk": {"risk_score": "signal_type", "risk_level": "confidence"},
+        }
+        mapping = key_mapping.get(agent_name, {})
+        return {mapping.get(k, k): v for k, v in output.items()}
+
     def _extract_agent_signals(self, agent_results: Dict[str, Any]) -> List[AgentSignal]:
         """提取Agent信号"""
         signals = []
-        
+
         try:
+            agent_results = self._normalize_key_names(agent_results)
+
             # 舆情分析信号
-            if "sentiment_analysis" in agent_results and agent_results["sentiment_analysis"]["status"] == "success":
-                sentiment_data = agent_results["sentiment_analysis"]["analysis_result"]
-                sentiment_score = sentiment_data.sentiment_score
-                sentiment_confidence = sentiment_data.confidence
-                
+            if "sentiment_analysis" in agent_results:
+                sentiment_entry = agent_results["sentiment_analysis"]
+                if isinstance(sentiment_entry, dict):
+                    if sentiment_entry.get("status") == "success" and "analysis_result" in sentiment_entry:
+                        sentiment_data = sentiment_entry["analysis_result"]
+                    else:
+                        sentiment_data = sentiment_entry
+                else:
+                    sentiment_data = sentiment_entry
+
+                if hasattr(sentiment_data, 'sentiment_score'):
+                    sentiment_score = sentiment_data.sentiment_score
+                    sentiment_confidence = sentiment_data.confidence
+                    news_count = getattr(sentiment_data, 'news_count', 0)
+                    key_themes = getattr(sentiment_data, 'key_themes', [])
+                elif isinstance(sentiment_data, dict):
+                    sentiment_score = sentiment_data.get('sentiment_score', 0.0)
+                    sentiment_confidence = sentiment_data.get('confidence', 0.5)
+                    news_count = sentiment_data.get('news_count', sentiment_data.get('source_count', 0))
+                    key_themes = sentiment_data.get('key_themes', sentiment_data.get('keyword_analysis', []))
+                else:
+                    sentiment_score = 0.0
+                    sentiment_confidence = 0.5
+                    news_count = 0
+                    key_themes = []
+
                 signals.append(AgentSignal(
                     agent_name="sentiment",
                     signal_type="sentiment",
@@ -183,17 +254,38 @@ class SignalFusionEngine:
                     confidence=sentiment_confidence,
                     timestamp=datetime.now(),
                     metadata={
-                        "news_count": sentiment_data.news_count,
-                        "key_themes": sentiment_data.key_themes
+                        "news_count": news_count,
+                        "key_themes": key_themes
                     }
                 ))
-            
+
             # 新闻分析信号
-            if "news_analysis" in agent_results and agent_results["news_analysis"]["status"] == "success":
-                news_data = agent_results["news_analysis"]["analysis_result"]
-                news_sentiment = news_data.sentiment_score
-                news_confidence = news_data.confidence
-                
+            if "news_analysis" in agent_results:
+                news_entry = agent_results["news_analysis"]
+                if isinstance(news_entry, dict):
+                    if news_entry.get("status") == "success" and "analysis_result" in news_entry:
+                        news_data = news_entry["analysis_result"]
+                    else:
+                        news_data = news_entry
+                else:
+                    news_data = news_entry
+
+                if hasattr(news_data, 'sentiment_score'):
+                    news_sentiment = news_data.sentiment_score
+                    news_confidence = news_data.confidence
+                    news_count = getattr(news_data, 'news_count', 0)
+                    impact_analysis = getattr(news_data, 'impact_analysis', [])
+                elif isinstance(news_data, dict):
+                    news_sentiment = news_data.get('sentiment_score', 0.0)
+                    news_confidence = news_data.get('confidence', 0.5)
+                    news_count = news_data.get('news_count', 0)
+                    impact_analysis = news_data.get('impact_analysis', [])
+                else:
+                    news_sentiment = 0.0
+                    news_confidence = 0.5
+                    news_count = 0
+                    impact_analysis = []
+
                 signals.append(AgentSignal(
                     agent_name="news",
                     signal_type="news",
@@ -201,19 +293,43 @@ class SignalFusionEngine:
                     confidence=news_confidence,
                     timestamp=datetime.now(),
                     metadata={
-                        "news_count": news_data.news_count,
-                        "impact_analysis": news_data.impact_analysis
+                        "news_count": news_count,
+                        "impact_analysis": impact_analysis
                     }
                 ))
-            
+
             # 技术分析信号
-            if "technical_analysis" in agent_results and agent_results["technical_analysis"]["status"] == "success":
-                tech_data = agent_results["technical_analysis"]["analysis_result"]
-                
-                # 将技术信号转换为数值
-                tech_signal_value = self._technical_signal_to_value(tech_data.overall_signal)
-                tech_confidence = tech_data.confidence
-                
+            if "technical_analysis" in agent_results:
+                tech_entry = agent_results["technical_analysis"]
+                if isinstance(tech_entry, dict):
+                    if tech_entry.get("status") == "success" and "analysis_result" in tech_entry:
+                        tech_data = tech_entry["analysis_result"]
+                    else:
+                        tech_data = tech_entry
+                else:
+                    tech_data = tech_entry
+
+                if hasattr(tech_data, 'overall_signal'):
+                    tech_signal_value = self._technical_signal_to_value(tech_data.overall_signal)
+                    tech_confidence = tech_data.confidence
+                    trend_direction = tech_data.trend_direction.value
+                    indicators_count = len(tech_data.indicators)
+                    patterns_count = len(tech_data.patterns)
+                elif isinstance(tech_data, dict):
+                    tech_signal_value = tech_data.get('signal_value', tech_data.get('overall_signal', 0.0))
+                    if isinstance(tech_signal_value, str):
+                        tech_signal_value = 0.0
+                    tech_confidence = tech_data.get('confidence', 0.5)
+                    trend_direction = tech_data.get('trend_direction', 'unknown')
+                    indicators_count = tech_data.get('indicators_count', 0)
+                    patterns_count = tech_data.get('patterns_count', 0)
+                else:
+                    tech_signal_value = 0.0
+                    tech_confidence = 0.5
+                    trend_direction = 'unknown'
+                    indicators_count = 0
+                    patterns_count = 0
+
                 signals.append(AgentSignal(
                     agent_name="technical",
                     signal_type="technical",
@@ -221,20 +337,47 @@ class SignalFusionEngine:
                     confidence=tech_confidence,
                     timestamp=datetime.now(),
                     metadata={
-                        "trend_direction": tech_data.trend_direction.value,
-                        "indicators_count": len(tech_data.indicators),
-                        "patterns_count": len(tech_data.patterns)
+                        "trend_direction": trend_direction,
+                        "indicators_count": indicators_count,
+                        "patterns_count": patterns_count
                     }
                 ))
-            
+
             # 风险评估信号（风险评估的信号是反向的）
-            if "risk_assessment" in agent_results and agent_results["risk_assessment"]["status"] == "success":
-                risk_data = agent_results["risk_assessment"]["assessment_result"]
-                
-                # 将风险等级转换为信号（高风险 -> 负信号）
-                risk_signal_value = self._risk_level_to_signal(risk_data.overall_risk_level)
-                risk_confidence = risk_data.confidence
-                
+            if "risk_assessment" in agent_results:
+                risk_entry = agent_results["risk_assessment"]
+                if isinstance(risk_entry, dict):
+                    if risk_entry.get("status") == "success":
+                        if "assessment_result" in risk_entry:
+                            risk_data = risk_entry["assessment_result"]
+                        else:
+                            risk_data = risk_entry
+                    else:
+                        risk_data = risk_entry
+                else:
+                    risk_data = risk_entry
+
+                if hasattr(risk_data, 'overall_risk_level'):
+                    risk_signal_value = self._risk_level_to_signal(risk_data.overall_risk_level)
+                    risk_confidence = risk_data.confidence
+                    risk_score = risk_data.risk_score
+                    risk_level = risk_data.overall_risk_level.value
+                    alerts_count = len(risk_data.risk_alerts)
+                elif isinstance(risk_data, dict):
+                    risk_level_str = risk_data.get('risk_level', 'MEDIUM')
+                    risk_level_enum = getattr(RiskLevel, risk_level_str.upper(), RiskLevel.MEDIUM)
+                    risk_signal_value = self._risk_level_to_signal(risk_level_enum)
+                    risk_confidence = risk_data.get('confidence', 0.5)
+                    risk_score = risk_data.get('risk_score', 50.0)
+                    risk_level = risk_level_str
+                    alerts_count = risk_data.get('alerts_count', len(risk_data.get('risk_alerts', [])))
+                else:
+                    risk_signal_value = 0.0
+                    risk_confidence = 0.5
+                    risk_score = 50.0
+                    risk_level = 'MEDIUM'
+                    alerts_count = 0
+
                 signals.append(AgentSignal(
                     agent_name="risk",
                     signal_type="risk",
@@ -242,15 +385,15 @@ class SignalFusionEngine:
                     confidence=risk_confidence,
                     timestamp=datetime.now(),
                     metadata={
-                        "risk_score": risk_data.risk_score,
-                        "risk_level": risk_data.overall_risk_level.value,
-                        "alerts_count": len(risk_data.risk_alerts)
+                        "risk_score": risk_score,
+                        "risk_level": risk_level,
+                        "alerts_count": alerts_count
                     }
                 ))
-            
+
             logger.debug(f"提取了{len(signals)}个Agent信号")
             return signals
-            
+
         except Exception as e:
             logger.error(f"提取Agent信号失败: {str(e)}")
             return []
@@ -281,30 +424,31 @@ class SignalFusionEngine:
                              agent_signals: List[AgentSignal]) -> FusionResult:
         """自适应融合"""
         try:
-            # 分析信号一致性
+            base_weights = self.config["default_weights"]
+            current_weights = dict(base_weights)
+            
             consensus = self._calculate_consensus(agent_signals)
             
-            # 根据一致性调整权重
-            if consensus["level"] > 0.8:
-                # 高一致性，增加所有信号权重
-                for agent in self._adaptive_weights:
-                    self._adaptive_weights[agent] *= 1.1
-            elif consensus["level"] < 0.4:
-                # 低一致性，风险优先，降低争议信号权重
+            at = self.config["adaptive_thresholds"]
+
+            if consensus["level"] > at["high_consensus"]:
+                for agent in current_weights:
+                    current_weights[agent] *= 1.1
+            elif consensus["level"] < at["low_consensus"]:
                 if self.config["conflict_resolution"]["risk_priority"]:
-                    self._adaptive_weights["risk"] *= 1.2
-                    self._adaptive_weights["technical"] *= 0.9
-                    self._adaptive_weights["sentiment"] *= 0.9
-                    self._adaptive_weights["news"] *= 0.9
+                    current_weights["risk"] *= 1.2
+                    current_weights["technical"] *= 0.9
+                    current_weights["sentiment"] *= 0.9
+                    current_weights["news"] *= 0.9
             
-            # 归一化权重
-            total_weight = sum(self._adaptive_weights.values())
+            total_weight = sum(current_weights.values())
             if total_weight > 0:
-                for agent in self._adaptive_weights:
-                    self._adaptive_weights[agent] /= total_weight
+                for agent in current_weights:
+                    current_weights[agent] /= total_weight
             
-            # 应用加权平均
-            final_signal, confidence = self._apply_weighted_fusion(agent_signals, self._adaptive_weights)
+            self._adaptive_weights = current_weights
+            
+            final_signal, confidence = self._apply_weighted_fusion(agent_signals, current_weights)
             
             # 冲突解决
             conflict_resolution = self._resolve_conflicts(agent_signals)
@@ -489,7 +633,7 @@ class SignalFusionEngine:
             max_signal = max(signals)
             min_signal = min(signals)
             
-            if abs(max_signal - min_signal) > 1.0:  # 信号差异过大
+            if abs(max_signal - min_signal) > self.config["conflict_thresholds"]["extreme_divergence"]:  # 信号差异过大
                 final_signal = 0.0  # 趋于中性
                 confidence *= 0.5   # 降低置信度
             
@@ -535,9 +679,9 @@ class SignalFusionEngine:
                 agent_name = signal.agent_name
                 weight = weights.get(agent_name, 0.25)  # 默认权重
                 
-                weighted_signal = signal.signal_value * weight * signal.confidence
+                weighted_signal = signal.signal_value * weight
                 total_weighted_signal += weighted_signal
-                total_weight += weight * signal.confidence
+                total_weight += weight
                 total_confidence += signal.confidence
             
             if total_weight > 0:
@@ -597,7 +741,7 @@ class SignalFusionEngine:
             conflicts = []
             resolution_strategy = None
             
-            if signal_range > 0.8:  # 信号差异较大
+            if signal_range > self.config["conflict_thresholds"]["significant_divergence"]:  # 信号差异较大
                 conflicts.append("Agent信号存在显著分歧")
                 
                 # 找出最积极和最消极的信号
@@ -634,33 +778,35 @@ class SignalFusionEngine:
     def _determine_signal_strength(self, final_signal: float) -> SignalStrength:
         """确定信号强度"""
         abs_signal = abs(final_signal)
-        
-        if abs_signal > 0.7:
+        thresholds = self.config["signal_strength_thresholds"]
+
+        if abs_signal > thresholds["very_strong"]:
             return SignalStrength.VERY_STRONG
-        elif abs_signal > 0.5:
+        elif abs_signal > thresholds["strong"]:
             return SignalStrength.STRONG
-        elif abs_signal > 0.3:
+        elif abs_signal > thresholds["moderate"]:
             return SignalStrength.MODERATE
-        elif abs_signal > 0.1:
+        elif abs_signal > thresholds["weak"]:
             return SignalStrength.WEAK
         else:
             return SignalStrength.VERY_WEAK
 
-    def _generate_fusion_recommendations(self, agent_signals: List[AgentSignal], 
-                                       final_signal: float, 
+    def _generate_fusion_recommendations(self, agent_signals: List[AgentSignal],
+                                       final_signal: float,
                                        consensus: Dict[str, Any]) -> List[str]:
         """生成融合建议"""
         recommendations = []
-        
+
         try:
-            # 基于最终信号的建议
-            if final_signal > 0.5:
+            dt = self.config["decision_thresholds"]
+
+            if final_signal > dt["strong_buy"]:
                 recommendations.append("综合分析显示积极信号，可考虑买入")
-            elif final_signal > 0.2:
+            elif final_signal > dt["mild_buy"]:
                 recommendations.append("综合分析偏向积极，可适度关注")
-            elif final_signal < -0.5:
+            elif final_signal < dt["strong_sell"]:
                 recommendations.append("综合分析显示消极信号，建议减仓或观望")
-            elif final_signal < -0.2:
+            elif final_signal < dt["mild_sell"]:
                 recommendations.append("综合分析偏向消极，需谨慎操作")
             else:
                 recommendations.append("信号不明确，建议等待更明确信号")
@@ -688,31 +834,32 @@ class SignalFusionEngine:
             logger.error(f"生成融合建议失败: {str(e)}")
             return ["融合建议生成失败，请谨慎操作"]
 
-    def _generate_risk_warning(self, agent_signals: List[AgentSignal], 
+    def _generate_risk_warning(self, agent_signals: List[AgentSignal],
                              consensus: Dict[str, Any]) -> Optional[str]:
         """生成风险警告"""
         try:
             warnings = []
-            
+            rwt = self.config["risk_warning_thresholds"]
+
             # 检查风险Agent警告
             risk_signal = next((s for s in agent_signals if s.agent_name == "risk"), None)
-            if risk_signal and risk_signal.signal_value < -0.6:
+            if risk_signal and risk_signal.signal_value < rwt["high_risk"]:
                 warnings.append("风险评估显示极高风险")
-            
+
             # 检查一致性警告
-            if consensus["level"] < 0.3:
+            if consensus["level"] < rwt["low_consensus"]:
                 warnings.append("Agent信号分歧极大，决策风险较高")
-            
+
             # 检查信号强度警告
             final_signal = np.mean([s.signal_value for s in agent_signals])
-            if abs(final_signal) > 0.8:
+            if abs(final_signal) > rwt["extreme_signal"]:
                 warnings.append("信号强度极高，需谨防过度乐观或悲观")
-            
+
             if warnings:
                 return "⚠️ " + "; ".join(warnings)
             else:
                 return None
-                
+
         except Exception as e:
             logger.error(f"生成风险警告失败: {str(e)}")
             return None

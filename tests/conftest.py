@@ -1,8 +1,51 @@
+import sys
+import os
+from unittest.mock import MagicMock
+
+os.environ.setdefault('MPLBACKEND', 'Agg')
+
+_QT_MOCK_MODULES = [
+    'matplotlib.backends.backend_qt',
+    'matplotlib.backends.backend_qtagg',
+    'matplotlib.backends.backend_qt5agg',
+]
+
+_GUI_MOCK_MODULES = [
+    'gui',
+    'gui.dialogs',
+    'gui.dialogs.strategy_manager_dialog',
+    'gui.widgets',
+    'gui.widgets.backtest_widget',
+    'gui.widgets.trading_panel',
+    'gui.widgets.enhanced_ui',
+    'gui.widgets.enhanced_ui.order_book_widget',
+    'gui.widgets.enhanced_ui.level2_data_panel',
+    'gui.widgets.performance',
+    'gui.widgets.performance.tabs',
+    'gui.utils',
+    'gui.utils.responsive_helper',
+    'core.ui',
+    'core.ui.panels',
+    'core.ui.panels.base_panel',
+    'core.ui.panels.left_panel',
+    'core.ui.panels.middle_panel',
+    'core.ui.panels.right_panel',
+    'core.ui.panels.bottom_panel',
+    'core.ui.widgets',
+    'core.coordinators.main_window_coordinator',
+]
+
+for _mod in _QT_MOCK_MODULES + _GUI_MOCK_MODULES:
+    if _mod not in sys.modules:
+        _mock = MagicMock()
+        _mock.__name__ = _mod
+        _mock.__file__ = f'<mock:{_mod}>'
+        sys.modules[_mod] = _mock
+
 import pytest
 import tempfile
 import shutil
-import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from typing import Generator, Dict, Any
 import sqlite3
 import pandas as pd

@@ -334,32 +334,28 @@ class AKSharePlugin(IDataSourcePlugin):
                 self.logger.warning("AKShare未返回板块资金流数据")
                 return pd.DataFrame()
 
-            # 数据标准化
-            standardized_data = []
-            for idx, row in raw_data.iterrows():
-                try:
-                    sector_info = {
-                        'sector_code': f'AK_{idx+1:03d}',
-                        'sector_name': str(row.get('名称', '')),
-                        'change_percent': self._safe_float(row.get('今日涨跌幅', 0)),
-                        'main_net_inflow': self._safe_float(row.get('今日主力净流入-净额', 0)),
-                        'main_net_inflow_pct': self._safe_float(row.get('今日主力净流入-净占比', 0)),
-                        'super_large_net_inflow': self._safe_float(row.get('今日超大单净流入-净额', 0)),
-                        'super_large_net_inflow_pct': self._safe_float(row.get('今日超大单净流入-净占比', 0)),
-                        'large_net_inflow': self._safe_float(row.get('今日大单净流入-净额', 0)),
-                        'large_net_inflow_pct': self._safe_float(row.get('今日大单净流入-净占比', 0)),
-                        'medium_net_inflow': self._safe_float(row.get('今日中单净流入-净额', 0)),
-                        'medium_net_inflow_pct': self._safe_float(row.get('今日中单净流入-净占比', 0)),
-                        'small_net_inflow': self._safe_float(row.get('今日小单净流入-净额', 0)),
-                        'small_net_inflow_pct': self._safe_float(row.get('今日小单净流入-净占比', 0)),
-                        'top_stock': str(row.get('今日主力净流入最大股', '')),
-                        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                        'data_source': 'akshare'
-                    }
-                    standardized_data.append(sector_info)
-                except Exception as e:
-                    self.logger.warning(f"处理第{idx}行数据时出错: {e}")
-                    continue
+            # 数据标准化（向量化处理）
+            raw_data = raw_data.reset_index(drop=True)
+            standardized_data = raw_data.apply(
+                lambda row: {
+                    'sector_code': f'AK_{int(row.name) + 1:03d}',
+                    'sector_name': str(row.get('名称', '')),
+                    'change_percent': self._safe_float(row.get('今日涨跌幅', 0)),
+                    'main_net_inflow': self._safe_float(row.get('今日主力净流入-净额', 0)),
+                    'main_net_inflow_pct': self._safe_float(row.get('今日主力净流入-净占比', 0)),
+                    'super_large_net_inflow': self._safe_float(row.get('今日超大单净流入-净额', 0)),
+                    'super_large_net_inflow_pct': self._safe_float(row.get('今日超大单净流入-净占比', 0)),
+                    'large_net_inflow': self._safe_float(row.get('今日大单净流入-净额', 0)),
+                    'large_net_inflow_pct': self._safe_float(row.get('今日大单净流入-净占比', 0)),
+                    'medium_net_inflow': self._safe_float(row.get('今日中单净流入-净额', 0)),
+                    'medium_net_inflow_pct': self._safe_float(row.get('今日中单净流入-净占比', 0)),
+                    'small_net_inflow': self._safe_float(row.get('今日小单净流入-净额', 0)),
+                    'small_net_inflow_pct': self._safe_float(row.get('今日小单净流入-净占比', 0)),
+                    'top_stock': str(row.get('今日主力净流入最大股', '')),
+                    'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'data_source': 'akshare'
+                }, axis=1
+            ).tolist()
 
             if not standardized_data:
                 self.logger.warning("没有有效的板块数据")
@@ -448,16 +444,12 @@ class AKSharePlugin(IDataSourcePlugin):
                 import akshare as ak
                 stock_list = ak.stock_info_a_code_name()
                 if not stock_list.empty:
-                    assets = []
-                    for _, row in stock_list.iterrows():
-                        assets.append({
-                            'symbol': row.get('code', ''),
-                            'name': row.get('name', ''),
-                            'market': 'A股',
-                            'asset_type': 'stock',
-                            'code': row.get('code', ''),
-                            'category': '股票'
-                        })
+                    assets = stock_list.assign(
+                        symbol=stock_list['code'],
+                        market='A股',
+                        asset_type='stock',
+                        category='股票'
+                    )[['symbol', 'name', 'market', 'asset_type', 'code', 'category']].to_dict('records')
                     self.logger.info(f"AKShare获取股票列表成功: {len(assets)} 只股票")
                     return assets
             return []
@@ -675,11 +667,10 @@ class AKSharePlugin(IDataSourcePlugin):
 
                 if df is not None and not df.empty:
                     # 将DataFrame转换为字典，便于查找
-                    info_dict = {}
-                    for _, row in df.iterrows():
-                        item = str(row.get('item', '')).strip()
-                        value = row.get('value', None)
-                        info_dict[item] = value
+                    info_dict = pd.Series(
+                        df['value'].values,
+                        index=df['item'].astype(str).str.strip()
+                    ).to_dict()
 
                     # 提取总股本
                     if '总股本' in info_dict:
@@ -743,7 +734,7 @@ class AKSharePlugin(IDataSourcePlugin):
                                 fundamental_data['roe'] = float(roe_value) / 100  # 转换为小数
                                 self.logger.debug(f"成功获取净资产收益率: {roe_value}")
                         except (ValueError, TypeError):
-                            pass
+                            self.logger.debug(f"字段解析失败: 净资产收益率={roe_value}")
 
                     # 查找总资产收益率指标 - 尝试多个可能的名称
                     roa_row = financial_abstract_df[financial_abstract_df['指标'].str.contains('总资产报酬率|总资产收益率', na=False)]
@@ -758,7 +749,7 @@ class AKSharePlugin(IDataSourcePlugin):
                                     fundamental_data['roa'] = float(roa_value) / 100  # 转换为小数
                                     self.logger.debug(f"成功获取总资产收益率: {roa_value}")
                         except (ValueError, TypeError):
-                            pass
+                            self.logger.debug(f"字段解析失败: 总资产收益率={roa_value}")
 
                     # 查找资产负债率指标
                     debt_ratio_row = financial_abstract_df[financial_abstract_df['指标'].str.contains('资产负债率', na=False)]
@@ -769,7 +760,7 @@ class AKSharePlugin(IDataSourcePlugin):
                                 fundamental_data['debt_ratio'] = float(debt_ratio_value) / 100  # 转换为小数
                                 self.logger.debug(f"成功获取资产负债率: {debt_ratio_value}")
                         except (ValueError, TypeError):
-                            pass
+                            self.logger.debug(f"字段解析失败: 资产负债率={debt_ratio_value}")
 
                     self.logger.info(f"成功从财务摘要获取部分财务指标数据")
             except Exception as e:
@@ -792,7 +783,7 @@ class AKSharePlugin(IDataSourcePlugin):
                                 fundamental_data['pe_ratio'] = float(pe_value)
                                 self.logger.debug(f"成功获取市盈率: {pe_value}")
                         except (KeyError, ValueError, TypeError):
-                            pass
+                            self.logger.debug(f"字段解析失败: 市盈率={pe_value}")
                         
                         try:
                             pb_value = stock_row.iloc[0]['市净率']
@@ -800,7 +791,7 @@ class AKSharePlugin(IDataSourcePlugin):
                                 fundamental_data['pb_ratio'] = float(pb_value)
                                 self.logger.debug(f"成功获取市净率: {pb_value}")
                         except (KeyError, ValueError, TypeError):
-                            pass
+                            self.logger.debug(f"字段解析失败: 市净率={pb_value}")
                         
                         self.logger.info(f"成功从实时行情获取估值指标数据")
             except Exception as e:

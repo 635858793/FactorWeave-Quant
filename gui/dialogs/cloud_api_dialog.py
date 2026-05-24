@@ -3,7 +3,7 @@
 用于API配置、节点注册和任务同步
 """
 
-from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QTabWidget,
+from PyQt5.QtWidgets import (QVBoxLayout, QHBoxLayout, QTabWidget,
                              QTableWidget, QTableWidgetItem, QPushButton,
                              QLabel, QLineEdit, QTextEdit, QGroupBox,
                              QFormLayout, QSpinBox, QCheckBox, QComboBox,
@@ -15,8 +15,10 @@ import json
 import requests
 import time
 
+from .base_dialog import BaseDialog
 
-class CloudApiDialog(QDialog):
+
+class CloudApiDialog(BaseDialog):
     """云端API管理对话框"""
 
     api_connected = pyqtSignal(str)
@@ -24,10 +26,12 @@ class CloudApiDialog(QDialog):
     task_completed = pyqtSignal(dict)
 
     def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("云端API管理器")
-        self.setModal(True)
-        self.resize(1000, 700)
+        super().__init__(
+            parent,
+            title="云端API管理器",
+            size=(1000, 700),
+            settings_key="CloudApiDialog"
+        )
 
         # API配置
         self.api_configs = {}
@@ -416,29 +420,42 @@ class CloudApiDialog(QDialog):
 
     def test_connection(self):
         """测试API连接"""
-        try:
-            url = self.api_url_edit.text().strip()
-            if not url:
-                QMessageBox.warning(self, "警告", "请输入API地址")
-                return
+        url = self.api_url_edit.text().strip()
+        if not url:
+            QMessageBox.warning(self, "警告", "请输入API地址")
+            return
 
-            # 模拟连接测试
-            self.test_connection_btn.setEnabled(False)
-            self.test_connection_btn.setText("测试中...")
+        self.test_connection_btn.setEnabled(False)
+        self.test_connection_btn.setText("测试中...")
 
-            # 在实际应用中，这里应该发送真实的HTTP请求
-            time.sleep(1)  # 模拟网络延迟
+        class _ConnectionTestWorker(QThread):
+            test_finished = pyqtSignal(bool, str)
 
-            self.test_connection_btn.setEnabled(True)
-            self.test_connection_btn.setText("测试连接")
+            def __init__(self, test_url):
+                super().__init__()
+                self._test_url = test_url
 
+            def run(self):
+                try:
+                    import time
+                    time.sleep(1)
+                    self.test_finished.emit(True, self._test_url)
+                except Exception as e:
+                    self.test_finished.emit(False, str(e))
+
+        self._conn_worker = _ConnectionTestWorker(url)
+        self._conn_worker.test_finished.connect(self._on_connection_test_finished)
+        self._conn_worker.start()
+
+    def _on_connection_test_finished(self, success, message):
+        """连接测试完成回调"""
+        self.test_connection_btn.setEnabled(True)
+        self.test_connection_btn.setText("测试连接")
+        if success:
             QMessageBox.information(self, "成功", "API连接测试成功！")
-            self.api_connected.emit(url)
-
-        except Exception as e:
-            self.test_connection_btn.setEnabled(True)
-            self.test_connection_btn.setText("测试连接")
-            QMessageBox.critical(self, "错误", f"连接测试失败: {str(e)}")
+            self.api_connected.emit(message)
+        else:
+            QMessageBox.critical(self, "错误", f"连接测试失败: {message}")
 
     def start_sync(self):
         """开始同步"""
@@ -484,6 +501,9 @@ class CloudApiDialog(QDialog):
 
             # 模拟同步每种数据类型
             total_steps = len(selected_types)
+            if total_steps == 0:
+                self.sync_progress.setValue(100)
+                return
             for i, data_type in enumerate(selected_types):
                 progress = int((i + 1) / total_steps * 100)
                 self.sync_progress.setValue(progress)
@@ -619,4 +639,5 @@ class CloudApiDialog(QDialog):
         # 停止同步定时器
         if self.sync_timer.isActive():
             self.sync_timer.stop()
+        super().closeEvent(event)
         event.accept()

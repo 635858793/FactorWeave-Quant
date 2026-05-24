@@ -253,7 +253,7 @@ class BaseAnalysisTab(QWidget):
             # 安全的日志记录，避免LogManager被删除的问题
             try:
                 logger.error(f"数据验证失败: {e}")
-            except:
+            except Exception:
                 logger.info(f"[{self.__class__.__name__}] 数据验证失败: {e}")
             return False
 
@@ -281,15 +281,14 @@ class BaseAnalysisTab(QWidget):
 
         return True
 
-    def _calculate_data_hash(self, kdata) -> str:
+    def _calculate_data_hash(self, kdata: Any) -> str:
         """计算数据哈希值用于变化检测"""
         try:
             if isinstance(kdata, pd.DataFrame):
-                # 使用数据长度和最后几行的哈希
                 if len(kdata) > 0:
                     last_rows = kdata.tail(5).to_string()
                     return f"{len(kdata)}_{hash(last_rows)}"
-            return str(hash(str(kdata)))
+            return str(hash(kdata.to_numpy().tobytes()))
         except Exception:
             return str(time.time())  # fallback
 
@@ -446,8 +445,8 @@ class BaseAnalysisTab(QWidget):
                 try:
                     export_data['data_statistics'] = self.current_kdata.describe(
                     ).to_dict()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"获取数据统计信息失败: {e}")
 
             return export_data
 
@@ -1097,6 +1096,10 @@ class BaseAnalysisTab(QWidget):
 
         return self.create_button_layout(buttons)
 
+    def export_results(self):
+        """导出结果 - 默认实现"""
+        self.show_info_message("导出", "导出功能正在开发中，敬请期待！")
+
     def show_alert_dialog(self):
         """显示预警设置对话框 - 默认实现"""
         self.show_info_message("预警功能", "预警功能正在开发中，敬请期待！")
@@ -1700,11 +1703,12 @@ class BaseExportThread(QThread):
     error_occurred = pyqtSignal(str)  # 错误信号
     progress_updated = pyqtSignal(int, str)  # 进度更新信号
 
-    def __init__(self, export_func: Callable, file_path: str, data):
+    def __init__(self, export_func: Callable, file_path: str, data, **kwargs):
         super().__init__()
         self.export_func = export_func
         self.file_path = file_path
         self.data = data
+        self.kwargs = kwargs
 
     @measure_performance("BaseExportThread.run")
     def run(self):

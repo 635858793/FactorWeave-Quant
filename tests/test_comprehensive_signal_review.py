@@ -179,7 +179,7 @@ def analyze_signal_definitions():
                                     'file': file_path,
                                     'definition': match
                                 })
-                except:
+                except Exception:
                     pass
     
     if found_issues:

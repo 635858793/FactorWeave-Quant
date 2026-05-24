@@ -14,9 +14,12 @@ from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QThread
 from PyQt5.QtGui import QFont, QColor
 
 from core.services.integrated_signal_aggregator_service import IntegratedSignalAggregatorService
-from gui.widgets.sentiment_overview_widget import SentimentOverviewWidget
+try:
+    from gui.widgets.sentiment_overview_widget import SentimentOverviewWidget
+except ImportError:
+    SentimentOverviewWidget = None
 from gui.widgets.smart_alert_widget import SmartAlertWidget
-from gui.widgets.signal_aggregator import AggregatedAlert
+from gui.widgets.signal_aggregator import AggregatedAlert, TradingSignal
 
 logger = logger
 
@@ -391,8 +394,9 @@ class ProfessionalTradingInterface(QWidget):
         self.price_widget.setMaximumHeight(150)
 
         # 2. 情绪概览（轻量级）
-        self.sentiment_widget = SentimentOverviewWidget()
-        self.sentiment_widget.setMaximumHeight(200)
+        if SentimentOverviewWidget is not None:
+            self.sentiment_widget = SentimentOverviewWidget()
+            self.sentiment_widget.setMaximumHeight(200)
 
         # 3. 技术指标摘要
         self.indicator_summary = TechnicalIndicatorSummary()
@@ -419,6 +423,13 @@ class ProfessionalTradingInterface(QWidget):
         # 情绪数据更新连接
         if self.sentiment_widget:
             self.sentiment_widget.sentiment_updated.connect(self.on_sentiment_updated)
+
+        # 信号聚合器连接
+        if self.signal_service and self.signal_service.signal_aggregator:
+            self.signal_service.signal_aggregator.alert_generated.connect(
+                self.alert_widget.add_alert)
+            self.signal_service.signal_aggregator.signal_detected.connect(
+                self._on_signal_detected)
 
     def set_stock_code(self, stock_code: str):
         """设置股票代码"""
@@ -494,10 +505,17 @@ class ProfessionalTradingInterface(QWidget):
     def on_sentiment_updated(self, sentiment_data: Dict[str, Any]):
         """情绪数据更新回调"""
         try:
-            # 可以在这里添加情绪数据变化的响应逻辑
             logger.debug(f"情绪数据已更新: {list(sentiment_data.keys())}")
         except Exception as e:
             logger.error(f"处理情绪数据更新失败: {e}")
+
+    def _on_signal_detected(self, signal: TradingSignal):
+        """单个信号检测回调"""
+        try:
+            logger.info(f"检测到交易信号: {signal.direction} {signal.message} "
+                       f"(强度: {signal.strength.name}, 置信度: {signal.confidence:.0%})")
+        except Exception as e:
+            logger.error(f"处理信号检测失败: {e}")
 
     def cleanup(self):
         """清理资源"""

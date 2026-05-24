@@ -38,12 +38,16 @@ sys.path.insert(0, str(project_root))
 # 导入新的20字段标准策略
 
 
+# ⚠️ 此文件为简化版适配器（模拟数据），完整版请使用 strategies/adj_vwap_strategies.py
 class AdjMomentumPlugin(IStrategyPlugin):
     """
-    复权价格动量策略插件（适配器）
+    复权价格动量策略插件（适配器）- 简化版
 
     将简单的AdjPriceMomentumStrategy适配到IStrategyPlugin接口，
     使其可以被现有的策略管理系统使用。
+
+    ⚠️ 注意：此为简化版实现，包含模拟数据逻辑。完整版（含真实性能计算、持仓管理等）
+    请使用 strategies/adj_vwap_strategies.py 中的同名类。
     """
 
     def __init__(self):
@@ -337,11 +341,15 @@ class AdjMomentumPlugin(IStrategyPlugin):
 
 
 
+# ⚠️ 此文件为简化版适配器（模拟数据），完整版请使用 strategies/adj_vwap_strategies.py
 class VWAPReversionPlugin(IStrategyPlugin):
     """
-    VWAP均值回归策略插件（适配器）
+    VWAP均值回归策略插件（适配器）- 简化版
 
     将简单的VWAPMeanReversionStrategy适配到IStrategyPlugin接口。
+
+    ⚠️ 注意：此为简化版实现，包含模拟数据逻辑。完整版（含真实VWAP计算、流动性过滤等）
+    请使用 strategies/adj_vwap_strategies.py 中的同名类。
     """
 
     def __init__(self):

@@ -4,12 +4,12 @@
 """
 
 import asyncio
-import logging
 import time
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 from enum import Enum
 import json
+from loguru import logger
 
 
 class ServiceStatus(Enum):
@@ -46,7 +46,7 @@ class FallbackService:
     
     def __init__(self, event_bus=None):
         self.event_bus = event_bus
-        self.logger = logging.getLogger(__name__)
+        self.logger = logger
         
         # 服务状态管理
         self.service_status = {

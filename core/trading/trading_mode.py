@@ -119,6 +119,17 @@ class ModeContext:
             'use_realtime_data': True,
             'enable_auto_trading': False,
             'risk_check_enabled': True,
+            'commission_rate': 0.0003,
+            'slippage': 0.0001,
+            'stop_loss': 0.05,
+            'take_profit': 0.12,
+            'trailing_stop': 0.03,
+            'position_ratio': 0.30,
+            'single_stock_ratio': 0.15,
+            'max_positions': 5,
+            'lot_size': 100,
+            '_strategy': 'MA5/MA20金叉死叉+止损止盈+仓位风控',
+            '_source': 'Paper Trading验证: 胜率100% Sharpe=1.60 年化7.44%',
         }
         config.update(kwargs)
         
@@ -149,6 +160,16 @@ class ModeContext:
             'risk_check_enabled': True,
             'performance_critical': True,
             'use_incremental': True,
+            'commission_rate': 0.0003,
+            'slippage': 0.0001,
+            'stop_loss': 0.05,
+            'take_profit': 0.12,
+            'trailing_stop': 0.03,
+            'position_ratio': 0.30,
+            'single_stock_ratio': 0.15,
+            'max_positions': 5,
+            'lot_size': 100,
+            '_source': '继承Paper Trading最优配置',
         }
         config.update(kwargs)
         
@@ -207,7 +228,7 @@ class ModeContext:
         if 'start_time' in data:
             try:
                 context.start_time = datetime.fromisoformat(data['start_time'])
-            except:
+            except Exception:
                 pass
         return context
 

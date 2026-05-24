@@ -715,8 +715,8 @@ class ResponsiveChartWidget(QWidget):
         self.debug_mode = enabled
         self.update()
 
-class ResponsiveLayoutManager:
-    """响应式布局管理器"""
+class ResponsiveOptimizer:
+    """响应式图表组件布局优化器"""
     
     def __init__(self, config: Optional[ResponsiveConfig] = None):
         self.config = config or ResponsiveConfig()
@@ -775,6 +775,6 @@ def create_responsive_widget(config: Optional[ResponsiveConfig] = None) -> Respo
     """创建响应式图表组件"""
     return ResponsiveChartWidget(config)
 
-def create_layout_manager(config: Optional[ResponsiveConfig] = None) -> ResponsiveLayoutManager:
+def create_layout_manager(config: Optional[ResponsiveConfig] = None) -> ResponsiveOptimizer:
     """创建布局管理器"""
-    return ResponsiveLayoutManager(config)
+    return ResponsiveOptimizer(config)

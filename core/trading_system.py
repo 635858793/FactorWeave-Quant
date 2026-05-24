@@ -8,6 +8,7 @@ from loguru import logger
 from typing import *
 from datetime import datetime
 import pandas as pd
+import numpy as np
 from dataclasses import asdict
 
 # LogManager, LogLevel 已删除 - 使用纯Loguru架构
@@ -158,22 +159,41 @@ class TradingSystem:
                     ma5_values = ma5_result.data
                     ma20_values = ma20_result.data
 
-                    # 生成交叉信号
-                    for i in range(1, min(len(ma5_values), len(ma20_values))):
-                        if ma5_values[i-1] <= ma20_values[i-1] and ma5_values[i] > ma20_values[i]:
-                            signals.append({
-                                'datetime': self.current_kdata.index[i] if hasattr(self.current_kdata.index, '__getitem__') else datetime.now(),
-                                'signal': 'BUY',
-                                'price': float(self.current_kdata.iloc[i]['close']),
-                                'reason': 'MA5上穿MA20'
-                            })
-                        elif ma5_values[i-1] >= ma20_values[i-1] and ma5_values[i] < ma20_values[i]:
-                            signals.append({
-                                'datetime': self.current_kdata.index[i] if hasattr(self.current_kdata.index, '__getitem__') else datetime.now(),
-                                'signal': 'SELL',
-                                'price': float(self.current_kdata.iloc[i]['close']),
-                                'reason': 'MA5下穿MA20'
-                            })
+                    ma5 = np.array(ma5_values, dtype=np.float64)
+                    ma20 = np.array(ma20_values, dtype=np.float64)
+                    n = min(len(ma5), len(ma20))
+
+                    ma5_prev = np.roll(ma5, 1)
+                    ma20_prev = np.roll(ma20, 1)
+
+                    golden_cross = (ma5 > ma20) & (ma5_prev <= ma20_prev)
+                    dead_cross = (ma5 < ma20) & (ma5_prev >= ma20_prev)
+
+                    golden_cross[0] = False
+                    dead_cross[0] = False
+
+                    has_datetime_index = hasattr(self.current_kdata.index, '__getitem__')
+                    close_col = self.current_kdata['close']
+
+                    for i in np.where(golden_cross)[0]:
+                        if i >= n:
+                            continue
+                        signals.append({
+                            'datetime': self.current_kdata.index[i] if has_datetime_index else datetime.now(),
+                            'signal': 'BUY',
+                            'price': float(close_col.iloc[i]),
+                            'reason': 'MA5上穿MA20'
+                        })
+
+                    for i in np.where(dead_cross)[0]:
+                        if i >= n:
+                            continue
+                        signals.append({
+                            'datetime': self.current_kdata.index[i] if has_datetime_index else datetime.now(),
+                            'signal': 'SELL',
+                            'price': float(close_col.iloc[i]),
+                            'reason': 'MA5下穿MA20'
+                        })
 
             return signals
 

@@ -14,7 +14,6 @@
 版本: 1.0
 """
 
-import logging
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 from dataclasses import asdict
@@ -33,12 +32,7 @@ from PyQt5.QtCore import (
 )
 from PyQt5.QtGui import QFont, QColor, QIcon
 
-try:
-    from loguru import logger
-    LOGURU_AVAILABLE = True
-except ImportError:
-    logger = logging.getLogger(__name__)
-    LOGURU_AVAILABLE = False
+from loguru import logger
 
 try:
     from core.services.incremental_update_scheduler import (
@@ -433,7 +427,7 @@ class IncrementalSchedulerConfigWidget(QWidget):
                     try:
                         last_run = datetime.fromisoformat(last_run_str)
                         last_run_text = last_run.strftime("%Y-%m-%d %H:%M")
-                    except:
+                    except Exception:
                         last_run_text = last_run_str
                 else:
                     last_run_text = "-"
@@ -444,7 +438,7 @@ class IncrementalSchedulerConfigWidget(QWidget):
                     try:
                         next_run = datetime.fromisoformat(next_run_str)
                         next_run_text = next_run.strftime("%Y-%m-%d %H:%M")
-                    except:
+                    except Exception:
                         next_run_text = next_run_str
                 else:
                     next_run_text = "-"

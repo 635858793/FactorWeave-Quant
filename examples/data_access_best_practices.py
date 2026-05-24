@@ -5,6 +5,12 @@
 演示如何正确使用系统框架获取数据，而不是直接实例化DataAccess类。
 """
 
+import sys
+from pathlib import Path
+
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
 from loguru import logger

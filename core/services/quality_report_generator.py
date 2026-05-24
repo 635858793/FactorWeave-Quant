@@ -24,6 +24,7 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from matplotlib.figure import Figure
 import seaborn as sns
+from scipy import stats
 
 from loguru import logger
 from core.services.enhanced_data_quality_monitor import EnhancedDataQualityMonitor, QualityMetrics, DataAnomaly
@@ -409,8 +410,8 @@ class QualityReportGenerator:
             std_error = np.std(residuals)
 
             confidence_interval = (
-                predicted_score - 1.96 * std_error,
-                predicted_score + 1.96 * std_error
+                predicted_score - stats.norm.ppf(0.975) * std_error,
+                predicted_score + stats.norm.ppf(0.975) * std_error
             )
 
             # 确保预测值在合理范围内
@@ -477,7 +478,7 @@ class QualityReportGenerator:
             # 添加移动平均线
             if len(scores) >= 5:
                 window_size = min(5, len(scores) // 3)
-                moving_avg = pd.Series(scores).rolling(window=window_size, center=True).mean()
+                moving_avg = pd.Series(scores).rolling(window=window_size, center=False).mean()
                 ax.plot(times, moving_avg, '--', alpha=0.7, label=f'{window_size}期移动平均')
 
             # 设置图表

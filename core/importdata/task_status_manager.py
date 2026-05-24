@@ -17,6 +17,8 @@ from enum import Enum
 from pathlib import Path
 from loguru import logger
 
+from ..database.unified_sqlite_access import UnifiedSQLiteAccess
+
 
 class TaskStatus(Enum):
     """任务状态枚举"""
@@ -195,7 +197,8 @@ class TaskStatusManager:
             # 确保数据目录存在
             Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
 
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS task_status (
                         task_id TEXT PRIMARY KEY,
@@ -220,8 +223,6 @@ class TaskStatusManager:
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_created_time ON task_status(created_time)")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_priority ON task_status(priority)")
 
-                conn.commit()
-
             logger.info(f"任务状态数据库初始化完成: {self.db_path}")
 
         except Exception as e:
@@ -234,7 +235,8 @@ class TaskStatusManager:
             return
 
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute("SELECT * FROM task_status")
 
@@ -268,7 +270,8 @@ class TaskStatusManager:
 
         try:
             with self._db_lock:
-                with sqlite3.connect(self.db_path) as conn:
+                db = UnifiedSQLiteAccess.get_instance(self.db_path)
+                with db.get_connection() as conn:
                     data = status_info.to_dict()
 
                     conn.execute("""
@@ -285,8 +288,6 @@ class TaskStatusManager:
                         data['retry_count'], data['max_retries'], data['timeout_seconds'],
                         json.dumps(data['metadata'])
                     ])
-
-                    conn.commit()
 
         except Exception as e:
             logger.error(f"保存任务状态到数据库失败 {status_info.task_id}: {e}")
@@ -448,9 +449,9 @@ class TaskStatusManager:
             # 从数据库删除
             if self.enable_persistence:
                 with self._db_lock:
-                    with sqlite3.connect(self.db_path) as conn:
+                    db = UnifiedSQLiteAccess.get_instance(self.db_path)
+                    with db.get_connection() as conn:
                         conn.execute("DELETE FROM task_status WHERE task_id = ?", [task_id])
-                        conn.commit()
 
             logger.info(f"移除任务: {task_id}")
             return True
@@ -480,11 +481,11 @@ class TaskStatusManager:
             # 从数据库批量删除
             if self.enable_persistence and tasks_to_remove:
                 with self._db_lock:
-                    with sqlite3.connect(self.db_path) as conn:
+                    db = UnifiedSQLiteAccess.get_instance(self.db_path)
+                    with db.get_connection() as conn:
                         placeholders = ','.join(['?'] * len(tasks_to_remove))
                         conn.execute(f"DELETE FROM task_status WHERE task_id IN ({placeholders})",
                                      tasks_to_remove)
-                        conn.commit()
 
             logger.info(f"清理了 {removed_count} 个旧任务")
             return removed_count

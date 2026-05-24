@@ -182,7 +182,7 @@ class DynamicConfigManager:
             if connection_info.get('optimizer'):
                 try:
                     connection_info['optimizer'].close()
-                except:
+                except Exception:
                     pass
 
             # 创建新的优化器
@@ -363,7 +363,7 @@ class DynamicConfigManager:
             # 删除测试数据库文件
             try:
                 Path(test_db_path).unlink(missing_ok=True)
-            except:
+            except Exception:
                 pass
 
             return {

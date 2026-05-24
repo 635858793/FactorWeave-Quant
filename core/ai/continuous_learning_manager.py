@@ -3,7 +3,7 @@ AI模型持续学习机制
 实现AI模型的在线学习和持续优化，支持模型性能监控和自动更新
 """
 
-import logging
+from loguru import logger
 import json
 import pickle
 import hashlib
@@ -22,9 +22,6 @@ import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor, Future
 import queue
-
-logger = logging.getLogger(__name__)
-
 
 class LearningMode(Enum):
     """学习模式"""
@@ -819,8 +816,7 @@ class ContinuousLearningManager:
 
             logger.info(f"执行学习任务: {task.task_id} (模型: {task.model_id})")
 
-            # 模拟学习过程
-            result = self._simulate_model_training(task)
+            result = self._compute_baseline_training(task)
 
             task.completed_at = datetime.now()
             task.status = "completed"
@@ -839,51 +835,35 @@ class ContinuousLearningManager:
             task.error_message = str(e)
             return {'success': False, 'error': str(e)}
 
-    def _simulate_model_training(self, task: LearningTask) -> Dict[str, Any]:
-        """模拟模型训练（实际应用中应替换为真实的训练逻辑）"""
+    def _compute_baseline_training(self, task: LearningTask) -> Dict[str, Any]:
+        """检查是否可以执行训练（需要真实数据源支持）"""
         try:
-            # 获取当前最佳模型作为基线
-            current_version = self.version_manager.get_best_version(task.model_id)
-
-            # 模拟训练过程
-            training_time = np.random.uniform(30, 120)  # 30-120秒
-
-            # 模拟进度更新
-            for progress in [0.2, 0.4, 0.6, 0.8, 1.0]:
-                task.progress = progress
-                time.sleep(training_time / 5)
-
-            # 模拟性能提升
-            if current_version:
-                base_accuracy = current_version.metrics.accuracy
-                # 有一定概率提升性能
-                improvement = np.random.uniform(-0.02, 0.05)  # -2% 到 +5%
-                new_accuracy = min(max(base_accuracy + improvement, 0.0), 1.0)
-            else:
-                new_accuracy = np.random.uniform(0.7, 0.9)
-
-            # 生成新的性能指标
-            new_metrics = ModelMetrics(
-                model_id=task.model_id,
-                version=self._generate_version_id(),
-                accuracy=new_accuracy,
-                precision=np.random.uniform(0.6, 0.95),
-                recall=np.random.uniform(0.6, 0.95),
-                f1_score=np.random.uniform(0.6, 0.95),
-                training_time=training_time,
-                sample_count=np.random.randint(1000, 10000)
+            logger.warning(
+                f"持续学习管理器无法执行真实模型训练：缺少真实训练数据源。"
+                f"模型ID: {task.model_id}, 触发: {task.trigger.value}"
             )
 
+            current_version = self.version_manager.get_best_version(task.model_id)
+            if current_version:
+                logger.info(
+                    f"模型 {task.model_id} 当前最佳版本: {current_version.version}, "
+                    f"准确率: {current_version.metrics.accuracy:.4f}。跳过训练，保持当前版本。"
+                )
+            else:
+                logger.warning(
+                    f"模型 {task.model_id} 没有现有版本，且无训练数据可用，无法创建新版本。"
+                )
+
+            task.progress = 1.0
             return {
-                'success': True,
-                'metrics': new_metrics,
-                'training_time': training_time,
-                'improvement': improvement if current_version else 0.0,
-                'learning_mode': task.learning_mode.value
+                'success': False,
+                'error': '缺少真实训练数据源，无法执行模型训练',
+                'learning_mode': task.learning_mode.value,
+                'training_skipped': True
             }
 
         except Exception as e:
-            logger.error(f"模拟模型训练失败: {e}")
+            logger.error(f"训练准备失败: {e}")
             return {'success': False, 'error': str(e)}
 
     def _create_new_model_version(self, task: LearningTask, result: Dict[str, Any]):
@@ -896,7 +876,6 @@ class ContinuousLearningManager:
             model_dir.mkdir(parents=True, exist_ok=True)
             model_file = model_dir / f"model_{metrics.version}.pkl"
 
-            # 模拟保存模型文件
             model_data = {
                 'model_id': task.model_id,
                 'version': metrics.version,

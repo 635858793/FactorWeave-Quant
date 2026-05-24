@@ -17,8 +17,6 @@
 - 数据源服务可用
 """
 
-from loguru import logger
-from core.services.unified_data_manager import get_unified_data_manager
 import sys
 import os
 import asyncio
@@ -28,6 +26,9 @@ from datetime import datetime, timedelta
 
 # 添加项目根目录到Python路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from loguru import logger
+from core.services.unified_data_manager import get_unified_data_manager
 
 class SectorFundFlowExample:
     """板块资金流功能使用示例类"""

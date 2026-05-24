@@ -170,7 +170,7 @@ class Calculator(QDialog):
                         self.display.setText(str(result))
                     else:
                         self.display.setText("0")
-                except:
+                except Exception:
                     self.display.setText("错误")
                     logger.warning(f"计算错误: {current_text}")
             else:

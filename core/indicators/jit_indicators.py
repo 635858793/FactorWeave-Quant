@@ -67,7 +67,7 @@ def get_cache_stats() -> Dict[str, Any]:
 @njit(cache=True, fastmath=True)
 def calculate_sma_jit(prices: 'np.ndarray', period: int) -> 'np.ndarray':
     """
-    计算简单移动平均（JIT优化版）
+    计算简单移动平均（JIT优化版 - 滑动窗口O(n)）
     Args:
         prices: 价格数组
         period: 计算周期
@@ -77,10 +77,17 @@ def calculate_sma_jit(prices: 'np.ndarray', period: int) -> 'np.ndarray':
     """
     n = len(prices)
     sma = np.zeros(n, dtype=np.float64)
-    
-    for i in range(period - 1, n):
-        sma[i] = np.mean(prices[i - period + 1:i + 1])
-    
+
+    if n < period:
+        return sma
+
+    running_sum = np.sum(prices[:period])
+    sma[period - 1] = running_sum / period
+
+    for i in range(period, n):
+        running_sum += prices[i] - prices[i - period]
+        sma[i] = running_sum / period
+
     return sma
 
 @njit(cache=True, fastmath=True)
@@ -144,6 +151,10 @@ def calculate_rsi_jit(prices: 'np.ndarray', period: int = 14) -> 'np.ndarray':
     for i in range(period, n):
         avg_gains[i] = np.mean(gains[i - period + 1:i + 1])
         avg_losses[i] = np.mean(losses[i - period + 1:i + 1])
+
+    for i in range(period + 1, n):
+        avg_gains[i] = (avg_gains[i - 1] * (period - 1) + gains[i]) / period
+        avg_losses[i] = (avg_losses[i - 1] * (period - 1) + losses[i]) / period
     
     # 计算RSI
     for i in range(period, n):
@@ -185,10 +196,10 @@ def calculate_macd_jit(prices: 'np.ndarray', fast_period: int = 12, slow_period:
     
     return macd, signal, histogram
 
-@njit(cache=True, fastmath=True)
+@njit(cache=True, fastmath=True, parallel=True)
 def calculate_bollinger_bands_jit(prices: 'np.ndarray', period: int = 20, num_std: float = 2.0) -> Tuple['np.ndarray', 'np.ndarray', 'np.ndarray']:
     """
-    计算布林带（JIT优化版）
+    计算布林带（JIT优化版 - 并行化窗口计算）
     Args:
         prices: 价格数组
         period: 计算周期
@@ -202,7 +213,7 @@ def calculate_bollinger_bands_jit(prices: 'np.ndarray', period: int = 20, num_st
     middle = np.zeros(n, dtype=np.float64)
     lower = np.zeros(n, dtype=np.float64)
     
-    for i in range(period - 1, n):
+    for i in prange(period - 1, n):
         window = prices[i - period + 1:i + 1]
         middle[i] = np.mean(window)
         std = np.std(window)
@@ -225,18 +236,22 @@ def calculate_atr_jit(high: 'np.ndarray', low: 'np.ndarray', close: 'np.ndarray'
         ATR数组
     """
     n = len(close)
-    atr = np.zeros(n, dtype=np.float64)
+    atr = np.full(n, np.nan, dtype=np.float64)
+    trues = np.zeros(n, dtype=np.float64)
     
     for i in range(1, n):
         tr1 = high[i] - low[i]
         tr2 = abs(high[i] - close[i - 1])
         tr3 = abs(low[i] - close[i - 1])
-        tr = max(tr1, tr2, tr3)
-        
+        trues[i] = max(tr1, tr2, tr3)
+    
+    for i in range(1, n):
         if i < period:
-            atr[i] = tr
+            atr[i] = np.nan
+        elif i == period:
+            atr[i] = np.mean(trues[1:period + 1])
         else:
-            atr[i] = (atr[i - 1] * (period - 1) + tr) / period
+            atr[i] = (atr[i - 1] * (period - 1) + trues[i]) / period
     
     return atr
 
@@ -259,7 +274,7 @@ def calculate_stochastic_jit(high: 'np.ndarray', low: 'np.ndarray', close: 'np.n
     k = np.zeros(n, dtype=np.float64)
     d = np.zeros(n, dtype=np.float64)
     
-    for i in range(k_period - 1, n):
+    for i in prange(k_period - 1, n):
         window_high = np.max(high[i - k_period + 1:i + 1])
         window_low = np.min(low[i - k_period + 1:i + 1])
         
@@ -268,15 +283,15 @@ def calculate_stochastic_jit(high: 'np.ndarray', low: 'np.ndarray', close: 'np.n
         else:
             k[i] = 100.0 * (close[i] - window_low) / (window_high - window_low)
     
-    for i in range(d_period - 1, n):
+    for i in prange(d_period - 1, n):
         d[i] = np.mean(k[i - d_period + 1:i + 1])
     
     return k, d
 
-@njit(cache=True, fastmath=True)
+@njit(cache=True, fastmath=True, parallel=True)
 def calculate_williams_r_jit(high: 'np.ndarray', low: 'np.ndarray', close: 'np.ndarray', period: int = 14) -> 'np.ndarray':
     """
-    计算威廉指标（JIT优化版）
+    计算威廉指标（JIT优化版 - 并行化窗口计算）
     Args:
         high: 最高价数组
         low: 最低价数组
@@ -289,7 +304,7 @@ def calculate_williams_r_jit(high: 'np.ndarray', low: 'np.ndarray', close: 'np.n
     n = len(close)
     williams_r = np.zeros(n, dtype=np.float64)
     
-    for i in range(period - 1, n):
+    for i in prange(period - 1, n):
         window_high = np.max(high[i - period + 1:i + 1])
         window_low = np.min(low[i - period + 1:i + 1])
         
@@ -300,7 +315,7 @@ def calculate_williams_r_jit(high: 'np.ndarray', low: 'np.ndarray', close: 'np.n
     
     return williams_r
 
-@njit(cache=True, fastmath=True, parallel=True)
+@njit(cache=True, fastmath=True)
 def batch_calculate_indicators_jit(prices: 'np.ndarray', high: 'np.ndarray', low: 'np.ndarray', close: 'np.ndarray', indicators: list) -> Dict[str, 'np.ndarray']:
     """
     批量计算技术指标（JIT优化版）

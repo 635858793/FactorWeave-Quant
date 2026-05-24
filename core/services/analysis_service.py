@@ -232,12 +232,13 @@ class AnalysisService(BaseService):
             self._unified_cache = self._service_container.resolve(CacheService)
             logger.debug(f"AnalysisService 已连接到统一缓存服务，命名空间: {self._cache_namespace}")
         else:
-            raise RuntimeError("统一缓存服务未注册，请确保 CacheService 已在服务容器中注册")
+            self._unified_cache = None
+            logger.debug(f"{self.__class__.__name__} 统一缓存服务未注册，缓存功能降级为空操作")
 
     def _get_from_cache(self, key: str, cache_type: str = 'indicator') -> Optional[Any]:
         """从缓存获取数据 - 使用统一缓存服务"""
         if self._unified_cache is None:
-            raise RuntimeError("统一缓存服务未初始化")
+            return None
         
         namespaced_key = f"{cache_type}:{key}"
         return self._unified_cache.get(namespaced_key, namespace=self._cache_namespace)
@@ -245,9 +246,7 @@ class AnalysisService(BaseService):
     def _put_to_cache(self, key: str, value: Any, cache_type: str = 'indicator', ttl: Optional[Any] = None) -> None:
         """将数据放入缓存 - 使用统一缓存服务"""
         if self._unified_cache is None:
-            raise RuntimeError("统一缓存服务未初始化")
-        
-        from datetime import timedelta
+            return
         namespaced_key = f"{cache_type}:{key}"
         ttl_delta = None
         if ttl is not None:
@@ -409,17 +408,19 @@ class AnalysisService(BaseService):
         values = []
         if "ma" in config.indicator_id:
             period = config.parameters.get("period", 20)
-            prices = [float(data.close_price) for data in market_data]
+            prices = np.array([float(data.close_price) for data in market_data])
 
-            for i in range(period - 1, len(market_data)):
-                ma_value = sum(prices[i - period + 1:i + 1]) / period
-                values.append(IndicatorValue(
-                    indicator_id=config.indicator_id,
-                    symbol=market_data[i].symbol,
-                    timestamp=market_data[i].timestamp,
-                    value=ma_value,
-                    timeframe=TimeFrame.DAILY
-                ))
+            if len(prices) >= period:
+                ma_values = np.convolve(prices, np.ones(period) / period, mode='valid')
+                for idx, ma_value in enumerate(ma_values):
+                    data_idx = period - 1 + idx
+                    values.append(IndicatorValue(
+                        indicator_id=config.indicator_id,
+                        symbol=market_data[data_idx].symbol,
+                        timestamp=market_data[data_idx].timestamp,
+                        value=float(ma_value),
+                        timeframe=TimeFrame.DAILY
+                    ))
 
         return values
 
@@ -467,32 +468,33 @@ class AnalysisService(BaseService):
             return values
         except Exception as e:
             logger.warning(f"统一服务计算RSI失败，使用本地计算: {e}")
-            prices = [float(data.close_price) for data in market_data]
-            gains = []
-            losses = []
+            prices = np.array([float(data.close_price) for data in market_data])
 
-            for i in range(1, len(prices)):
-                change = prices[i] - prices[i-1]
-                gains.append(max(change, 0))
-                losses.append(max(-change, 0))
+            if len(prices) < period + 1:
+                return values
 
-            for i in range(period - 1, len(gains)):
-                avg_gain = sum(gains[i - period + 1:i + 1]) / period
-                avg_loss = sum(losses[i - period + 1:i + 1]) / period
+            deltas = np.diff(prices)
+            gains = np.where(deltas > 0, deltas, 0.0)
+            losses = np.where(deltas < 0, -deltas, 0.0)
 
-                if avg_loss == 0:
-                    rsi = 100
-                else:
-                    rs = avg_gain / avg_loss
-                    rsi = 100 - (100 / (1 + rs))
+            avg_gains = np.convolve(gains, np.ones(period) / period, mode='valid')
+            avg_losses = np.convolve(losses, np.ones(period) / period, mode='valid')
 
-                values.append(IndicatorValue(
-                    indicator_id="rsi",
-                    symbol=market_data[i + 1].symbol,
-                    timestamp=market_data[i + 1].timestamp,
-                    value=rsi,
-                    timeframe=TimeFrame.DAILY
-                ))
+            rsi_values = np.full(len(avg_gains), 100.0)
+            valid_mask = avg_losses != 0
+            rs = np.divide(avg_gains, avg_losses, where=valid_mask, out=np.zeros_like(avg_gains))
+            rsi_values[valid_mask] = 100.0 - (100.0 / (1.0 + rs[valid_mask]))
+
+            for idx, rsi_val in enumerate(rsi_values):
+                data_idx = period + idx
+                if data_idx < len(market_data):
+                    values.append(IndicatorValue(
+                        indicator_id="rsi",
+                        symbol=market_data[data_idx].symbol,
+                        timestamp=market_data[data_idx].timestamp,
+                        value=float(rsi_val),
+                        timeframe=TimeFrame.DAILY
+                    ))
 
             return values
 
@@ -565,17 +567,11 @@ class AnalysisService(BaseService):
             return values
 
     def _calculate_ema(self, prices: List[float], period: int) -> List[float]:
-        """计算指数移动平均"""
+        """计算指数移动平均（向量化）"""
         if not prices or len(prices) < period:
             return []
 
-        multiplier = 2 / (period + 1)
-        ema = [sum(prices[:period]) / period]  # 第一个值用SMA
-
-        for price in prices[period:]:
-            ema.append((price * multiplier) + (ema[-1] * (1 - multiplier)))
-
-        return ema
+        return pd.Series(prices).ewm(span=period, adjust=False).mean().tolist()
 
     def _calculate_volatility_indicator(self, config: IndicatorConfig, market_data: List[MarketData]) -> List[IndicatorValue]:
         """计算波动率指标"""
@@ -588,27 +584,25 @@ class AnalysisService(BaseService):
         return values
 
     def _calculate_bollinger_bands(self, market_data: List[MarketData], period: int, std_dev: int) -> List[IndicatorValue]:
-        """计算布林带"""
+        """计算布林带（向量化）"""
         values = []
-        prices = [float(data.close_price) for data in market_data]
+        prices = pd.Series([float(data.close_price) for data in market_data])
+
+        if len(prices) < period:
+            return values
+
+        ma = prices.rolling(window=period).mean().values
+        std = prices.rolling(window=period).std(ddof=0).values
 
         for i in range(period - 1, len(market_data)):
-            window_prices = prices[i - period + 1:i + 1]
-            ma = sum(window_prices) / period
-            variance = sum((p - ma) ** 2 for p in window_prices) / period
-            std = variance ** 0.5
-
-            upper_band = ma + (std_dev * std)
-            lower_band = ma - (std_dev * std)
-
             values.append(IndicatorValue(
                 indicator_id="bollinger",
                 symbol=market_data[i].symbol,
                 timestamp=market_data[i].timestamp,
                 value={
-                    "upper": upper_band,
-                    "middle": ma,
-                    "lower": lower_band
+                    "upper": float(ma[i] + std_dev * std[i]),
+                    "middle": float(ma[i]),
+                    "lower": float(ma[i] - std_dev * std[i])
                 },
                 timeframe=TimeFrame.DAILY
             ))

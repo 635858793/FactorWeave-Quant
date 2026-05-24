@@ -538,19 +538,36 @@ class MarketDataAggregator(BaseAggregator):
             if not ticks:
                 return None
 
-            opens = [t.get('open', t.get('price', 0)) for t in ticks]
-            highs = [t.get('high', t.get('price', 0)) for t in ticks]
-            lows = [t.get('low', t.get('price', 0)) for t in ticks]
-            closes = [t.get('close', t.get('price', 0)) for t in ticks]
-            volumes = [t.get('volume', 0) for t in ticks]
+            open_val = None
+            high_val = None
+            low_val = None
+            close_val = None
+            vol_sum = 0
+
+            for t in ticks:
+                price = t.get('price', 0)
+                o = t.get('open', price)
+                h = t.get('high', price)
+                l = t.get('low', price)
+                c = t.get('close', price)
+                v = t.get('volume', 0)
+
+                if open_val is None:
+                    open_val = o
+                if high_val is None or h > high_val:
+                    high_val = h
+                if low_val is None or l < low_val:
+                    low_val = l
+                close_val = c
+                vol_sum += v
 
             return {
                 'symbol': symbol,
-                'open': opens[0],
-                'high': max(highs) if highs else 0,
-                'low': min(lows) if lows else 0,
-                'close': closes[-1] if closes else 0,
-                'volume': sum(volumes),
+                'open': open_val if open_val is not None else 0,
+                'high': high_val if high_val is not None else 0,
+                'low': low_val if low_val is not None else 0,
+                'close': close_val if close_val is not None else 0,
+                'volume': vol_sum,
                 'tick_count': len(ticks),
                 'timestamp': datetime.now().isoformat()
             }

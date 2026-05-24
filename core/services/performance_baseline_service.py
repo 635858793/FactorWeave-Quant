@@ -14,13 +14,13 @@ from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 import statistics
-import sqlite3
 
 from loguru import logger
 
 from ..services.base_service import BaseService
 from ..events import EventBus, get_event_bus
 from ..containers import get_service_container
+from ..database.unified_sqlite_access import UnifiedSQLiteAccess
 
 
 @dataclass
@@ -115,7 +115,8 @@ class PerformanceBaselineService(BaseService):
     def _init_database(self) -> None:
         """初始化SQLite数据库"""
         try:
-            with sqlite3.connect(str(self._db_path)) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self._db_path))
+            with db.get_connection() as conn:
                 conn.execute('''
                     CREATE TABLE IF NOT EXISTS benchmarks (
                         id TEXT PRIMARY KEY,
@@ -484,7 +485,8 @@ class PerformanceBaselineService(BaseService):
     def _save_benchmark(self, benchmark: PerformanceBenchmark) -> None:
         """保存基准到数据库"""
         try:
-            with sqlite3.connect(str(self._db_path)) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self._db_path))
+            with db.get_connection() as conn:
                 # 保存基准记录
                 conn.execute('''
                     INSERT INTO benchmarks 
@@ -516,8 +518,6 @@ class PerformanceBaselineService(BaseService):
                         json.dumps(metric.metadata)
                     ))
 
-                conn.commit()
-
             logger.info(f"Benchmark {benchmark.id} saved to database")
 
         except Exception as e:
@@ -526,7 +526,8 @@ class PerformanceBaselineService(BaseService):
     def _load_latest_baseline(self) -> None:
         """加载最新的基准"""
         try:
-            with sqlite3.connect(str(self._db_path)) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self._db_path))
+            with db.get_connection() as conn:
                 cursor = conn.execute('''
                     SELECT id, name, description, timestamp, duration_seconds, success, error_message, system_info
                     FROM benchmarks 
@@ -658,7 +659,8 @@ class PerformanceBaselineService(BaseService):
         history = []
 
         try:
-            with sqlite3.connect(str(self._db_path)) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self._db_path))
+            with db.get_connection() as conn:
                 cursor = conn.execute('''
                     SELECT id, name, description, timestamp, duration_seconds, success, error_message, system_info
                     FROM benchmarks 
@@ -766,7 +768,8 @@ class PerformanceBaselineService(BaseService):
             是否成功
         """
         try:
-            with sqlite3.connect(str(self._db_path)) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self._db_path))
+            with db.get_connection() as conn:
                 cursor = conn.execute('''
                     SELECT id, name, description, timestamp, duration_seconds, success, error_message, system_info
                     FROM benchmarks 

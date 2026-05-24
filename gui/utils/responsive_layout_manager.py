@@ -3,7 +3,7 @@
 为EnhancedDataImportWidget提供响应式布局支持，实现自适应屏幕尺寸的界面调整
 """
 
-import logging
+from loguru import logger
 from typing import Dict, List, Optional, Any, Callable, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
@@ -14,8 +14,6 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import QObject, pyqtSignal, QTimer, QSize, QRect
 from PyQt5.QtGui import QResizeEvent, QScreen
 import threading
-
-logger = logging.getLogger(__name__)
 
 class ScreenSize(Enum):
     """屏幕尺寸分类枚举"""
@@ -368,9 +366,21 @@ class ResponsiveLayoutManager(QObject):
     def _scale_fonts(self, scale: float):
         """缩放字体"""
         try:
-            # 这里可以实现字体缩放逻辑
-            # 例如遍历所有子组件并调整字体大小
-            pass
+            from PyQt5.QtGui import QFont
+
+            def _apply_scale(widget: QWidget):
+                current_font = widget.font()
+                if current_font.pointSize() > 0:
+                    new_size = max(6, int(current_font.pointSize() * scale))
+                    current_font.setPointSize(new_size)
+                elif current_font.pixelSize() > 0:
+                    new_size = max(8, int(current_font.pixelSize() * scale))
+                    current_font.setPixelSize(new_size)
+                widget.setFont(current_font)
+                for child in widget.findChildren(QWidget):
+                    _apply_scale(child)
+
+            _apply_scale(self.target_widget)
 
         except Exception as e:
             logger.error(f"缩放字体失败: {e}")

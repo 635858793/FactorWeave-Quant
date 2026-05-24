@@ -21,7 +21,6 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-import sqlite3
 import threading
 from loguru import logger
 
@@ -30,6 +29,7 @@ from .import_config_manager import (
     ImportProgress, ImportStatus, DataFrequency, ImportMode
 )
 from ..services.ai_prediction_service import AIPredictionService, PredictionType
+from ..database.unified_sqlite_access import UnifiedSQLiteAccess
 
 
 class ConfigOptimizationLevel(Enum):
@@ -161,7 +161,8 @@ class IntelligentConfigManager(ImportConfigManager):
 
     def _init_intelligent_tables(self):
         """初始化智能配置相关数据表"""
-        with sqlite3.connect(self.db_path) as conn:
+        db = UnifiedSQLiteAccess.get_instance(self.db_path)
+        with db.get_connection() as conn:
             cursor = conn.cursor()
 
             # 配置模板表
@@ -255,7 +256,8 @@ class IntelligentConfigManager(ImportConfigManager):
 
     def _load_intelligent_data(self):
         """加载智能配置数据"""
-        with sqlite3.connect(self.db_path) as conn:
+        db = UnifiedSQLiteAccess.get_instance(self.db_path)
+        with db.get_connection() as conn:
             cursor = conn.cursor()
 
             # 加载配置模板
@@ -313,7 +315,8 @@ class IntelligentConfigManager(ImportConfigManager):
     def _load_auto_config_rules(self):
         """加载自动配置规则"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     SELECT rule_id, rule_name, rule_type, conditions, actions, enabled, priority
@@ -340,7 +343,8 @@ class IntelligentConfigManager(ImportConfigManager):
     def _load_environment_profiles(self):
         """加载环境配置文件"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     SELECT profile_id, profile_name, environment_data, baseline_metrics
@@ -406,7 +410,8 @@ class IntelligentConfigManager(ImportConfigManager):
 
         # 保存默认规则到数据库（如果不存在）
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 for rule in default_rules:
@@ -428,7 +433,6 @@ class IntelligentConfigManager(ImportConfigManager):
                             datetime.now().isoformat()
                         ))
 
-                        # 添加到内存中
                         self._config_adaptation_rules[rule['rule_id']] = {
                             'name': rule['name'],
                             'type': rule['type'],
@@ -438,7 +442,6 @@ class IntelligentConfigManager(ImportConfigManager):
                             'priority': rule['priority']
                         }
 
-                conn.commit()
                 logger.info("初始化默认配置适应规则完成")
 
         except Exception as e:
@@ -1407,7 +1410,8 @@ class IntelligentConfigManager(ImportConfigManager):
     def _save_recommendations(self, config_id: str, recommendations: List[ConfigRecommendation]):
         """保存推荐到数据库"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 for rec in recommendations:
@@ -1430,15 +1434,14 @@ class IntelligentConfigManager(ImportConfigManager):
                         False
                     ))
 
-                conn.commit()
-
         except Exception as e:
             logger.error(f"保存推荐失败: {e}")
 
     def _save_conflicts(self, conflicts: List[ConfigConflict]):
         """保存冲突到数据库"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 for conflict in conflicts:
@@ -1460,8 +1463,6 @@ class IntelligentConfigManager(ImportConfigManager):
                         datetime.now().isoformat()
                     ))
 
-                conn.commit()
-
         except Exception as e:
             logger.error(f"保存冲突失败: {e}")
 
@@ -1479,8 +1480,8 @@ class IntelligentConfigManager(ImportConfigManager):
             config_str = f"{config.data_source}_{config.asset_type}_{config.frequency.value}_{config.max_workers}_{config.batch_size}"
             config_hash = hashlib.md5(config_str.encode()).hexdigest()
 
-            # 保存性能数据
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 cursor.execute("""
@@ -1503,8 +1504,6 @@ class IntelligentConfigManager(ImportConfigManager):
                     throughput,
                     datetime.now().isoformat()
                 ))
-
-                conn.commit()
 
             # 更新内存中的性能历史
             self._performance_history.append({
@@ -1770,10 +1769,10 @@ class IntelligentConfigManager(ImportConfigManager):
     def _log_auto_optimization(self, original_config: ImportTaskConfig, optimized_config: ImportTaskConfig, metrics: Dict[str, float]):
         """记录自动优化日志"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
-                # 计算性能改进估算
                 performance_improvement = self._estimate_performance_improvement(original_config, optimized_config, metrics)
 
                 cursor.execute("""
@@ -1789,8 +1788,6 @@ class IntelligentConfigManager(ImportConfigManager):
                     True,
                     datetime.now().isoformat()
                 ))
-
-                conn.commit()
 
         except Exception as e:
             logger.error(f"记录自动优化日志失败: {e}")
@@ -1814,7 +1811,8 @@ class IntelligentConfigManager(ImportConfigManager):
         try:
             profile_id = f"env_profile_{datetime.now().strftime('%Y%m%d%H%M%S')}"
 
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     INSERT INTO environment_profiles
@@ -1828,9 +1826,7 @@ class IntelligentConfigManager(ImportConfigManager):
                     datetime.now().isoformat(),
                     datetime.now().isoformat()
                 ))
-                conn.commit()
 
-            # 添加到内存
             self._environment_profiles[profile_id] = {
                 'name': profile_name,
                 'environment_data': environment_data,
@@ -1849,7 +1845,8 @@ class IntelligentConfigManager(ImportConfigManager):
         try:
             rule_id = f"auto_rule_{datetime.now().strftime('%Y%m%d%H%M%S')}"
 
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     INSERT INTO auto_config_rules
@@ -1866,9 +1863,7 @@ class IntelligentConfigManager(ImportConfigManager):
                     datetime.now().isoformat(),
                     datetime.now().isoformat()
                 ))
-                conn.commit()
 
-            # 添加到内存
             self._config_adaptation_rules[rule_id] = {
                 'name': rule_name,
                 'type': rule_type,
@@ -1898,7 +1893,8 @@ class IntelligentConfigManager(ImportConfigManager):
     def get_auto_optimization_logs(self, config_id: Optional[str] = None, limit: int = 100) -> List[Dict[str, Any]]:
         """获取自动优化日志"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 if config_id:
@@ -1972,21 +1968,23 @@ class IntelligentConfigManager(ImportConfigManager):
     def _count_active_recommendations(self) -> int:
         """统计活跃推荐数量"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT COUNT(*) FROM config_recommendations WHERE applied = FALSE")
                 return cursor.fetchone()[0]
-        except:
+        except Exception:
             return 0
 
     def _count_resolved_conflicts(self) -> int:
         """统计已解决冲突数量"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT COUNT(*) FROM config_conflicts WHERE resolved = TRUE")
                 return cursor.fetchone()[0]
-        except:
+        except Exception:
             return 0
 
     def _calculate_average_improvement(self) -> float:
@@ -2004,27 +2002,29 @@ class IntelligentConfigManager(ImportConfigManager):
             success_rates = [h['success_rate'] for h in recent_performance]
             return np.mean(success_rates) if success_rates else 0.0
 
-        except:
+        except Exception:
             return 0.0
 
     def _count_auto_optimizations(self) -> int:
         """统计自动优化总数"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT COUNT(*) FROM auto_optimization_logs")
                 return cursor.fetchone()[0]
-        except:
+        except Exception:
             return 0
 
     def _count_successful_auto_optimizations(self) -> int:
         """统计成功的自动优化数量"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT COUNT(*) FROM auto_optimization_logs WHERE success = TRUE")
                 return cursor.fetchone()[0]
-        except:
+        except Exception:
             return 0
 
     def _calculate_auto_optimization_success_rate(self) -> float:
@@ -2033,7 +2033,7 @@ class IntelligentConfigManager(ImportConfigManager):
             total = self._count_auto_optimizations()
             successful = self._count_successful_auto_optimizations()
             return successful / total if total > 0 else 0.0
-        except:
+        except Exception:
             return 0.0
 
 

@@ -501,14 +501,14 @@ class FunctionalityValidator:
             try:
                 result = calculate_indicator('INVALID', self.test_data)
                 print("  ✓ 无效指标正确处理")
-            except:
+            except Exception:
                 passed = False
                 print("  ✗ 无效指标处理异常")
             
             try:
                 result = calculate_indicator('MA', pd.DataFrame())
                 print("  ✓ 空数据正确处理")
-            except:
+            except Exception:
                 passed = False
                 print("  ✗ 空数据处理异常")
             

@@ -19,7 +19,14 @@ RESTful API主服务
     # 混合推荐
     curl -X POST http://localhost:8000/api/hybrid/recommendation -H "Content-Type: application/json" -d '{"user_id": "user_1", "context": {"risk_level": "medium"}, "stock_codes": ["000001", "000002"]}'
 """
-from fastapi import FastAPI, Query, HTTPException, BackgroundTasks
+import os
+import secrets
+from collections import defaultdict
+
+from fastapi import FastAPI, Query, HTTPException, BackgroundTasks, Request
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from typing import List, Dict, Any, Optional
 import uvicorn
 import asyncio
@@ -83,7 +90,50 @@ def get_strategy_service() -> Optional[StrategyService]:
         logger.error(f"获取策略服务失败: {e}")
         return None
 
+
+_rate_limit_store = defaultdict(list)
+
+
+def rate_limit_check(client_ip: str, max_requests: int = 60, window: int = 60) -> bool:
+    now = time.time()
+    _rate_limit_store[client_ip] = [t for t in _rate_limit_store[client_ip] if now - t < window]
+    if len(_rate_limit_store[client_ip]) >= max_requests:
+        return False
+    _rate_limit_store[client_ip].append(now)
+    return True
+
+
+_default_key_warning = False
+_env_key = os.environ.get("HIKYUU_API_KEY")
+if _env_key:
+    API_KEY = _env_key
+else:
+    API_KEY = secrets.token_urlsafe(32)
+    _default_key_warning = True
+
+
+class SecurityMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path.startswith("/api/"):
+            if request.headers.get("X-API-Key") != API_KEY:
+                return JSONResponse(status_code=401, content={"detail": "Invalid or missing API key"})
+            client_ip = request.client.host if request.client else "unknown"
+            if not rate_limit_check(client_ip):
+                return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded. Max 60 requests per minute."})
+        response = await call_next(request)
+        return response
+
+
 app = FastAPI(title="FactorWeave-Quant量化交易API", version="1.0.0")
+
+app.add_middleware(SecurityMiddleware)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:8000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/")
@@ -2306,79 +2356,9 @@ async def clear_hybrid_cache():
 # 后续可扩展：用户认证、插件注册、WebHook等
 
 
-def _kdata_preprocess(df, context="分析"):
-    """K线数据预处理：检查并修正所有关键字段，统一处理datetime字段"""
-
-    if not isinstance(df, pd.DataFrame):
-        return df
-
-    # 检查datetime是否在索引中或列中
-    has_datetime = False
-    datetime_in_index = False
-
-    # 检查datetime是否在索引中
-    if isinstance(df.index, pd.DatetimeIndex) or (hasattr(df.index, 'name') and df.index.name == 'datetime'):
-        has_datetime = True
-        datetime_in_index = True
-    # 检查datetime是否在列中
-    elif 'datetime' in df.columns:
-        has_datetime = True
-        datetime_in_index = False
-
-    # 如果datetime不存在，尝试从索引推断或创建
-    if not has_datetime:
-        if isinstance(df.index, pd.DatetimeIndex):
-            # 索引是DatetimeIndex但名称不是datetime，复制到列中
-            df = df.copy()
-            df['datetime'] = df.index
-            has_datetime = True
-            logger.info(f"[{context}] 从DatetimeIndex推断datetime字段")
-        else:
-            # 完全没有datetime信息，需要补全
-            logger.info(f"[{context}] 缺少datetime字段，自动补全")
-            df = df.copy()
-            df['datetime'] = pd.date_range(
-                start='2023-01-01', periods=len(df), freq='D')
-            has_datetime = True
-
-    # 检查其他必要字段
-    required_cols = ['code', 'open', 'high', 'low', 'close', 'volume']
-    missing_cols = [col for col in required_cols if col not in df.columns]
-    if missing_cols:
-        logger.info(f"[{context}] 缺少字段: {missing_cols}，自动补全为默认值")
-        df = df.copy()
-        for col in missing_cols:
-            if col == 'code':
-                df['code'] = ''
-            elif col == 'volume':
-                df[col] = 0.0
-            elif col in ['open', 'high', 'low', 'close']:
-                # 用收盘价填充其他价格字段
-                if 'close' in df.columns:
-                    df[col] = df['close']
-                else:
-                    df[col] = 0.0
-            else:
-                df[col] = 0.0
-
-    # 检查数值字段异常
-    for col in ['open', 'high', 'low', 'close', 'volume']:
-        if col in df.columns:
-            before = len(df)
-            df = df[df[col].notna() & (df[col] >= 0)]
-            after = len(df)
-            if after < before:
-                logger.info(f"[{context}] 已过滤{before-after}行{col}异常数据")
-
-    # 检查code字段
-    if 'code' in df.columns:
-        df = df[df['code'].notna() & (df['code'] != '')]
-
-    if df.empty:
-        logger.info(f"[{context}] 数据全部无效，返回空")
-
-    return df.reset_index(drop=True)
-
-
 if __name__ == "__main__":
+    if _default_key_warning:
+        import sys
+        print(f"WARNING: HIKYUU_API_KEY not set, using auto-generated key: {API_KEY}", file=sys.stderr)
+        print("Set HIKYUU_API_KEY environment variable for production use.", file=sys.stderr)
     uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -360,7 +360,7 @@ class EnhancedDataQualityMonitor:
                 return 0.0
 
             # 查找时间戳列
-            timestamp_cols = ['timestamp', 'datetime', 'time', 'date']
+            timestamp_cols = ['trade_date', 'datetime', 'timestamp', 'time', 'date']
             timestamp_col = None
 
             for col in timestamp_cols:
@@ -410,7 +410,7 @@ class EnhancedDataQualityMonitor:
             for col in data.columns:
                 if data[col].dtype == 'object':
                     # 字符串列格式一致性检查
-                    unique_formats = data[col].dropna().apply(lambda x: type(x).__name__).nunique()
+                    unique_formats = data[col].dropna().map(lambda x: type(x).__name__).nunique()
                     if unique_formats > 1:
                         consistency_score -= 0.1
 
@@ -690,7 +690,7 @@ class EnhancedDataQualityMonitor:
                 return {'message': '指定时间范围内无质量数据'}
 
             # 统计分析
-            avg_overall_score = sum(m.overall_score for m in filtered_metrics) / len(filtered_metrics)
+            avg_overall_score = np.mean([m.overall_score for m in filtered_metrics])
 
             # 按数据源分组统计
             source_stats = {}
@@ -748,3 +748,4 @@ class EnhancedDataQualityMonitor:
             logger.info("增强数据质量监控器资源清理完成")
         except Exception as e:
             logger.error(f"资源清理失败: {e}")
+

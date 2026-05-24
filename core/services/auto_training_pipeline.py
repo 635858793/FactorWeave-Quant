@@ -532,9 +532,9 @@ class AutoTrainingPipeline:
                 model_path = version_info['model_path']
                 
                 # 加载模型
-                import pickle
+                from utils.safe_pickle import safe_load
                 with open(model_path, 'rb') as f:
-                    model = pickle.load(f)
+                    model = safe_load(f)
                 
                 # 更新 AI 选股器
                 # 这里需要根据实际情况更新

@@ -9,7 +9,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
+    QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QComboBox, QSpinBox, QDoubleSpinBox,
     QGroupBox, QGridLayout, QCheckBox, QTableWidget,
     QTableWidgetItem, QHeaderView, QFrame, QSplitter,
@@ -17,6 +17,8 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QThread
 from PyQt5.QtGui import QFont
+
+from .base_dialog import BaseDialog
 
 logger = logger
 
@@ -32,44 +34,60 @@ class SearchWorker(QThread):
         super().__init__()
         self.search_params = search_params
 
-    # def run(self):
-    #     """执行搜索"""
-    #     try:
-    #         # 这里模拟搜索过程
-    #         # 实际项目中需要连接到数据源进行搜索
-    #         import time
+    def run(self):
+        """执行搜索"""
+        try:
+            import time
 
-    #         results = []
-    #         total_stocks = 100  # 假设有100只股票
+            results = []
 
-    #         for i in range(total_stocks):
-    #             # 模拟搜索进度
-    #             time.sleep(0.01)
-    #             progress = int((i + 1) / total_stocks * 100)
-    #             self.search_progress.emit(progress)
+            try:
+                from core.containers import get_service_container
+                from core.services.unified_data_manager import UnifiedDataManager
+                container = get_service_container()
+                if container and container.is_registered(UnifiedDataManager):
+                    data_manager = container.resolve(UnifiedDataManager)
+                    stock_df = data_manager.get_stock_list()
+                    stocks = stock_df.to_dict('records') if stock_df is not None and not stock_df.empty else []
+                else:
+                    stocks = []
+            except Exception as e:
+                logger.warning(f"数据管理器不可用，搜索返回空: {e}")
+                stocks = []
 
-    #             # 模拟符合条件的股票
-    #             if i % 3 == 0:  # 每3只股票中有1只符合条件
-    #                 stock = {
-    #                     'code': f'00000{i:02d}',
-    #                     'name': f'测试股票{i}',
-    #                     'market': '沪市主板' if i % 2 == 0 else '深市主板',
-    #                     'industry': '电子信息' if i % 4 == 0 else '制造业',
-    #                     'price': 10.0 + i * 0.1,
-    #                     'market_cap': 100000000 + i * 1000000,
-    #                     'volume': 1000000 + i * 10000,
-    #                     'turnover_rate': 1.0 + i * 0.01
-    #                 }
+            total_stocks = len(stocks) if stocks else 0
 
-    #                 # 应用筛选条件
-    #                 if self._matches_criteria(stock):
-    #                     results.append(stock)
+            if total_stocks == 0:
+                self.search_completed.emit([])
+                return
 
-    #         self.search_completed.emit(results)
+            for i, stock_info in enumerate(stocks):
+                if i % 10 == 0:
+                    progress = int((i + 1) / total_stocks * 100)
+                    self.search_progress.emit(progress)
 
-    #     except Exception as e:
-    #         logger.error(f"Search failed: {e}")
-    #         self.search_error.emit(str(e))
+                code = stock_info.get('code', '') if isinstance(stock_info, dict) else str(stock_info)
+                name = stock_info.get('name', code) if isinstance(stock_info, dict) else code
+
+                stock = {
+                    'code': code,
+                    'name': name,
+                    'market': stock_info.get('market', '未知') if isinstance(stock_info, dict) else '未知',
+                    'industry': stock_info.get('industry', '未知') if isinstance(stock_info, dict) else '未知',
+                    'price': stock_info.get('price', 0) if isinstance(stock_info, dict) else 0,
+                    'market_cap': stock_info.get('market_cap', 0) if isinstance(stock_info, dict) else 0,
+                    'volume': stock_info.get('volume', 0) if isinstance(stock_info, dict) else 0,
+                    'turnover_rate': stock_info.get('turnover_rate', 0) if isinstance(stock_info, dict) else 0
+                }
+
+                if self._matches_criteria(stock):
+                    results.append(stock)
+
+            self.search_completed.emit(results)
+
+        except Exception as e:
+            logger.error(f"Search failed: {e}")
+            self.search_error.emit(str(e))
 
     def _matches_criteria(self, stock: Dict[str, Any]) -> bool:
         """检查股票是否符合搜索条件"""
@@ -123,7 +141,7 @@ class SearchWorker(QThread):
             return False
 
 
-class AdvancedSearchDialog(QDialog):
+class AdvancedSearchDialog(BaseDialog):
     """高级搜索对话框"""
 
     # 定义信号
@@ -137,13 +155,16 @@ class AdvancedSearchDialog(QDialog):
             parent: 父窗口
             stock_service: 股票服务（可选，用于真实搜索）
         """
-        super().__init__(parent)
         self.search_worker = None
         self.stock_service = stock_service
 
-        self.setWindowTitle("高级搜索")
-        self.setMinimumSize(800, 600)
-        self.resize(900, 700)
+        super().__init__(
+            parent,
+            title="高级搜索",
+            min_size=(800, 600),
+            size=(900, 700),
+            settings_key="AdvancedSearchDialog"
+        )
 
         self._init_ui()
         self._init_data()
@@ -566,7 +587,9 @@ class AdvancedSearchDialog(QDialog):
                 self.search_worker.quit()
                 self.search_worker.wait()
 
+            super().closeEvent(event)
             event.accept()
         except Exception as e:
             logger.error(f"Failed to close dialog: {e}")
+            super().closeEvent(event)
             event.accept()

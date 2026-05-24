@@ -5,7 +5,8 @@
 动态选择策略和预测结果融合。
 """
 
-import logging
+from loguru import logger
+import time
 import numpy as np
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Union
@@ -22,7 +23,122 @@ from .fusion_engine import (
 from .config.selector_config import IntelligentSelectorConfig
 from .config.model_profiles import ModelProfile, MarketCondition
 
-logger = logging.getLogger(__name__)
+TF_DL_AVAILABLE = False
+try:
+    import tensorflow as tf
+    from tensorflow.keras.models import Sequential
+    from tensorflow.keras.layers import Dense, Dropout, LSTM as TFLSTM, GRU as TFGRU
+    from tensorflow.keras.callbacks import EarlyStopping
+    from tensorflow.keras.optimizers import Adam
+    TF_DL_AVAILABLE = True
+except ImportError:
+    pass
+
+
+class TFDeepLearningWrapper:
+
+    def __init__(self, model_type='lstm', hidden_layer_sizes=(64, 128), learning_rate=0.001,
+                 sequence_length=10, batch_size=32, epochs=50, random_state=42):
+        self.model_type = model_type
+        self.hidden_layer_sizes = hidden_layer_sizes
+        self.learning_rate = learning_rate
+        self.sequence_length = sequence_length
+        self.batch_size = batch_size
+        self.epochs = epochs
+        self.random_state = random_state
+        self._model = None
+        self.is_fitted = False
+        self._input_features = None
+
+    def _build_tf_model(self, n_features, n_outputs=1):
+        tf.random.set_seed(self.random_state)
+        model = Sequential()
+        rnn_layer = TFLSTM if self.model_type == 'lstm' else TFGRU
+
+        if len(self.hidden_layer_sizes) == 1:
+            model.add(rnn_layer(self.hidden_layer_sizes[0], input_shape=(self.sequence_length, n_features)))
+        else:
+            model.add(rnn_layer(self.hidden_layer_sizes[0], input_shape=(self.sequence_length, n_features),
+                                return_sequences=True))
+            for units in self.hidden_layer_sizes[1:-1]:
+                model.add(rnn_layer(units, return_sequences=True))
+            model.add(rnn_layer(self.hidden_layer_sizes[-1]))
+
+        model.add(Dense(32, activation='relu'))
+        model.add(Dense(n_outputs))
+        model.compile(optimizer=Adam(learning_rate=self.learning_rate), loss='mse')
+        return model
+
+    def _reshape_to_sequences(self, X):
+        X = np.asarray(X, dtype=np.float32)
+        n_samples = X.shape[0]
+        n_features = X.shape[1]
+        seq_len = min(self.sequence_length, n_samples)
+
+        sequences = []
+        for i in range(n_samples - seq_len + 1):
+            sequences.append(X[i:i + seq_len])
+        return np.array(sequences, dtype=np.float32)
+
+    def fit(self, X, y, verbose=False):
+        if not TF_DL_AVAILABLE:
+            raise RuntimeError("TensorFlow not available")
+
+        X = np.asarray(X, dtype=np.float32)
+        y = np.asarray(y, dtype=np.float32)
+
+        if y.ndim == 1:
+            y = y.reshape(-1, 1)
+
+        self._input_features = X.shape[1]
+        X_seq = self._reshape_to_sequences(X)
+
+        if X_seq.shape[0] == 0:
+            X_seq = X[:1].reshape(1, 1, -1)
+            y = y[:1]
+
+        y_seq = y[self.sequence_length - 1:X_seq.shape[0] + self.sequence_length - 1]
+
+        self._model = self._build_tf_model(X_seq.shape[2], y_seq.shape[1])
+        self._model.fit(
+            X_seq, y_seq,
+            epochs=self.epochs, batch_size=self.batch_size,
+            verbose=1 if verbose else 0,
+            validation_split=0.1,
+            callbacks=[EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)]
+        )
+        self.is_fitted = True
+        return self
+
+    def predict(self, X):
+        X = np.asarray(X, dtype=np.float32)
+        n_features = X.shape[1]
+        X_seq = self._reshape_to_sequences(X)
+
+        if X_seq.shape[0] == 0:
+            fallback_val = np.mean(self._model.predict(
+                np.zeros((1, self.sequence_length, n_features), dtype=np.float32), verbose=0
+            ))
+            return np.full(len(X), fallback_val)
+
+        predictions = self._model.predict(X_seq, verbose=0)
+
+        full_preds = np.full(len(X), np.nan)
+        start_idx = self.sequence_length - 1
+        for i in range(len(predictions)):
+            full_preds[start_idx + i] = predictions[i]
+
+        valid_preds = predictions.flatten()
+        full_preds[:start_idx] = valid_preds[0]
+
+        return full_preds
+
+    def get_model_info(self):
+        return {
+            'model_type': f'tensorflow_{self.model_type}',
+            'hidden_layer_sizes': self.hidden_layer_sizes,
+            'framework': 'tensorflow'
+        }
 
 
 @dataclass
@@ -79,6 +195,7 @@ class IntelligentModelSelector:
         self.model_initialization_status: Dict[str, Dict[str, Any]] = {}
         
         # 缓存和统计
+        self._using_fallback_model = False
         self.selection_cache = {}
         self.statistics = {
             'total_selections': 0,
@@ -194,333 +311,221 @@ class IntelligentModelSelector:
             return self._create_fallback_model(model_type, profile)
     
     def _create_neural_network_model(self, model_type: str, profile: ModelProfile) -> Any:
-        """
-        创建神经网络模型（LSTM/GRU）
-        
-        使用简化的神经网络实现，确保在没有深度学习库时也能工作
-        """
+        hyperparameters = profile.hyperparameters
+
+        hidden_units_raw = hyperparameters.get('hidden_units', [64, 128])
+        hidden_layer_sizes = tuple(hidden_units_raw)
+        learning_rate = hyperparameters.get('learning_rate', 0.001)
+        lr = learning_rate[0] if isinstance(learning_rate, list) else learning_rate
+
+        if TF_DL_AVAILABLE:
+            try:
+                model = TFDeepLearningWrapper(
+                    model_type=model_type,
+                    hidden_layer_sizes=hidden_layer_sizes,
+                    learning_rate=lr,
+                    sequence_length=hyperparameters.get('sequence_length', 10),
+                    batch_size=hyperparameters.get('batch_size', 32),
+                    epochs=hyperparameters.get('epochs', 50)
+                )
+                logger.info(f"使用 TensorFlow {model_type.upper()} 创建真实深度学习模型: "
+                            f"hidden_layer_sizes={hidden_layer_sizes}")
+                return model
+            except Exception as e:
+                logger.warning(f"TensorFlow {model_type.upper()} 创建失败: {e}，"
+                               f"降级到 sklearn.MLPRegressor")
+
+        logger.warning(f"TensorFlow 不可用，{model_type.upper()} 降级为 sklearn.MLPRegressor "
+                       f"(非真实{model_type.upper()}，不包含循环结构)")
+
         try:
-            import numpy as np
-            
-            hyperparameters = profile.hyperparameters
-            
-            class SimpleNeuralNetwork:
-                """简化的神经网络模型"""
-                def __init__(self, model_type, hidden_units, layers, dropout, learning_rate):
-                    self.model_type = model_type
-                    self.hidden_units = hidden_units
-                    self.layers = layers
-                    self.dropout = dropout
-                    self.learning_rate = learning_rate
-                    self.weights = []
-                    self.biases = []
-                    self.is_fitted = False
-                    
-                    self._initialize_weights()
-                    
-                def _initialize_weights(self):
-                    """初始化网络权重"""
-                    np.random.seed(42)
-                    units = self.hidden_units
-                    
-                    for i in range(len(units) - 1):
-                        weight_matrix = np.random.randn(units[i], units[i + 1]) * 0.1
-                        bias_vector = np.zeros((1, units[i + 1]))
-                        self.weights.append(weight_matrix)
-                        self.biases.append(bias_vector)
-                
-                def fit(self, X, y, epochs=100, verbose=False):
-                    """训练模型"""
-                    self.is_fitted = True
-                    return self
-                
-                def predict(self, X):
-                    """进行预测"""
-                    if not self.is_fitted:
-                        return np.zeros(len(X))
-                    
-                    output = X
-                    for i, (w, b) in enumerate(zip(self.weights, self.biases)):
-                        output = np.maximum(0, output @ w + b)
-                    
-                    return output.flatten()
-                
-                def get_model_info(self):
-                    """获取模型信息"""
-                    return {
-                        'model_type': self.model_type,
-                        'hidden_units': self.hidden_units,
-                        'layers': len(self.layers),
-                        'dropout': self.dropout,
-                        'learning_rate': self.learning_rate
-                    }
-            
-            hidden_units = hyperparameters.get('hidden_units', [64, 128])
-            layers_count = hyperparameters.get('layers', [2, 3])
-            dropout = hyperparameters.get('dropout', 0.2)
-            learning_rate = hyperparameters.get('learning_rate', 0.001)
-            
-            return SimpleNeuralNetwork(model_type, hidden_units, layers_count, dropout, learning_rate)
-            
+            from sklearn.neural_network import MLPRegressor
+
+            model = MLPRegressor(
+                hidden_layer_sizes=hidden_layer_sizes,
+                activation='relu',
+                solver='adam',
+                learning_rate_init=lr,
+                max_iter=200,
+                random_state=42,
+                early_stopping=True,
+                validation_fraction=0.1
+            )
+            logger.info(f"使用 sklearn.MLPRegressor 创建 {model_type} 降级模型")
+            return model
+
         except ImportError:
-            logger.warning("numpy 不可用，创建简化模型")
-            return None
+            logger.warning(f"sklearn 不可用，无法创建 {model_type} 神经网络模型")
+            return self._create_fallback_model(model_type, profile)
+        except Exception as e:
+            logger.error(f"创建 {model_type} 降级模型失败: {e}")
+            return self._create_fallback_model(model_type, profile)
     
     def _create_xgboost_model(self, profile: ModelProfile) -> Any:
         """
-        创建XGBoost模型
-        
-        使用简化的梯度提升实现
+        创建XGBoost/梯度提升模型
         """
+        hyperparameters = profile.hyperparameters
+
         try:
-            import numpy as np
-            
-            hyperparameters = profile.hyperparameters
-            
-            class SimpleGradientBoosting:
-                """简化的梯度提升模型"""
-                def __init__(self, n_estimators, max_depth, learning_rate, subsample):
-                    self.n_estimators = n_estimators
-                    self.max_depth = max_depth
-                    self.learning_rate = learning_rate
-                    self.subsample = subsample
-                    self.trees = []
-                    self.is_fitted = False
-                    
-                def fit(self, X, y, verbose=False):
-                    """训练模型"""
-                    self.is_fitted = True
-                    n_estimators = self.n_estimators[0] if isinstance(self.n_estimators, list) else self.n_estimators
-                    
-                    for _ in range(n_estimators):
-                        tree = self._create_simple_tree(X.shape[1], self.max_depth)
-                        residual = y - self._predict_with_trees(X)
-                        self.trees.append({'tree': tree, 'lr': self.learning_rate})
-                    
-                    return self
-                
-                def _create_simple_tree(self, n_features, max_depth):
-                    """创建简化决策树"""
-                    return {
-                        'feature': np.random.randint(0, n_features),
-                        'threshold': np.random.uniform(-1, 1),
-                        'left': None,
-                        'right': None,
-                        'value': 0.0
-                    }
-                
-                def _predict_with_trees(self, X):
-                    """使用已有树进行预测"""
-                    if not self.trees:
-                        return np.zeros(len(X))
-                    return np.mean([self._predict_single_tree(X, t['tree']) for t in self.trees], axis=0)
-                
-                def _predict_single_tree(self, X, tree):
-                    """单棵树预测"""
-                    return np.zeros(len(X))
-                
-                def predict(self, X):
-                    """进行预测"""
-                    if not self.is_fitted:
-                        return np.zeros(len(X))
-                    return self._predict_with_trees(X)
-                
-                def get_model_info(self):
-                    """获取模型信息"""
-                    return {
-                        'model_type': 'xgboost',
-                        'n_estimators': self.n_estimators,
-                        'max_depth': self.max_depth,
-                        'learning_rate': self.learning_rate
-                    }
-            
             n_estimators = hyperparameters.get('n_estimators', [100, 200])
             max_depth = hyperparameters.get('max_depth', [3, 6])
             learning_rate = hyperparameters.get('learning_rate', [0.05, 0.1])
             subsample = hyperparameters.get('subsample', 0.8)
-            
-            return SimpleGradientBoosting(n_estimators, max_depth, learning_rate, subsample)
-            
+
+            n_est = n_estimators[0] if isinstance(n_estimators, list) else n_estimators
+            md = max_depth[0] if isinstance(max_depth, list) else max_depth
+            lr = learning_rate[0] if isinstance(learning_rate, list) else learning_rate
+
+            try:
+                import xgboost as xgb
+                model = xgb.XGBRegressor(
+                    n_estimators=n_est,
+                    max_depth=md,
+                    learning_rate=lr,
+                    subsample=subsample,
+                    random_state=42,
+                    n_jobs=-1,
+                    verbosity=0
+                )
+                logger.info(f"使用 xgboost.XGBRegressor 创建模型: n_estimators={n_est}")
+                return model
+            except ImportError:
+                from sklearn.ensemble import GradientBoostingRegressor
+                model = GradientBoostingRegressor(
+                    n_estimators=n_est,
+                    max_depth=md,
+                    learning_rate=lr,
+                    subsample=subsample,
+                    random_state=42
+                )
+                logger.info(f"使用 sklearn.GradientBoostingRegressor 创建模型: n_estimators={n_est}")
+                return model
+
         except ImportError:
-            logger.warning("numpy 不可用，创建简化模型")
-            return None
+            logger.warning("sklearn/xgboost 不可用，无法创建梯度提升模型")
+            return self._create_fallback_model(model_type='xgboost', profile=profile)
+        except Exception as e:
+            logger.error(f"创建梯度提升模型失败: {e}")
+            return self._create_fallback_model(model_type='xgboost', profile=profile)
     
     def _create_random_forest_model(self, profile: ModelProfile) -> Any:
         """
         创建随机森林模型
         """
+        hyperparameters = profile.hyperparameters
+
         try:
-            import numpy as np
-            
-            hyperparameters = profile.hyperparameters
-            
-            class SimpleRandomForest:
-                """简化的随机森林模型"""
-                def __init__(self, n_estimators, max_depth, min_samples_split, max_features):
-                    self.n_estimators = n_estimators
-                    self.max_depth = max_depth
-                    self.min_samples_split = min_samples_split
-                    self.max_features = max_features
-                    self.trees = []
-                    self.is_fitted = False
-                    
-                def fit(self, X, y, verbose=False):
-                    """训练模型"""
-                    self.is_fitted = True
-                    n = self.n_estimators[0] if isinstance(self.n_estimators, list) else self.n_estimators
-                    
-                    for _ in range(n):
-                        indices = np.random.choice(len(X), len(X), replace=True)
-                        tree = self._create_simple_tree(X.shape[1])
-                        self.trees.append(tree)
-                    
-                    return self
-                
-                def _create_simple_tree(self, n_features):
-                    """创建简化决策树"""
-                    return {'feature': 0, 'threshold': 0, 'leaf': True}
-                
-                def predict(self, X):
-                    """进行预测"""
-                    if not self.is_fitted:
-                        return np.zeros(len(X))
-                    return np.zeros(len(X))
-                
-                def get_model_info(self):
-                    """获取模型信息"""
-                    return {
-                        'model_type': 'random_forest',
-                        'n_estimators': self.n_estimators,
-                        'max_depth': self.max_depth
-                    }
-            
+            from sklearn.ensemble import RandomForestRegressor
+
             n_estimators = hyperparameters.get('n_estimators', [50, 100])
             max_depth = hyperparameters.get('max_depth', [5, 10])
             min_samples_split = hyperparameters.get('min_samples_split', 5)
             max_features = hyperparameters.get('max_features', 'sqrt')
-            
-            return SimpleRandomForest(n_estimators, max_depth, min_samples_split, max_features)
-            
+
+            n_est = n_estimators[0] if isinstance(n_estimators, list) else n_estimators
+            md = max_depth[0] if isinstance(max_depth, list) else max_depth
+
+            model = RandomForestRegressor(
+                n_estimators=n_est,
+                max_depth=md,
+                min_samples_split=min_samples_split,
+                max_features=max_features,
+                random_state=42,
+                n_jobs=-1
+            )
+            logger.info(f"使用 sklearn.RandomForestRegressor 创建模型: n_estimators={n_est}")
+            return model
+
         except ImportError:
-            return None
+            logger.warning("sklearn 不可用，无法创建随机森林模型")
+            return self._create_fallback_model(model_type='random_forest', profile=profile)
+        except Exception as e:
+            logger.error(f"创建随机森林模型失败: {e}")
+            return self._create_fallback_model(model_type='random_forest', profile=profile)
     
     def _create_linear_regression_model(self, profile: ModelProfile) -> Any:
         """
         创建线性回归模型
         """
+        hyperparameters = profile.hyperparameters
+
         try:
-            import numpy as np
-            
-            hyperparameters = profile.hyperparameters
-            
-            class SimpleLinearRegression:
-                """线性回归模型"""
-                def __init__(self, fit_intercept, normalize):
-                    self.fit_intercept = fit_intercept
-                    self.normalize = normalize
-                    self.coefficients = None
-                    self.intercept = None
-                    self.is_fitted = False
-                    
-                def fit(self, X, y, verbose=False):
-                    """训练模型"""
-                    if self.normalize:
-                        X = (X - X.mean(axis=0)) / (X.std(axis=0) + 1e-8)
-                    
-                    if self.fit_intercept:
-                        X = np.column_stack([np.ones(len(X)), X])
-                    
-                    self.coefficients = np.linalg.lstsq(X, y, rcond=None)[0]
-                    
-                    if self.fit_intercept:
-                        self.intercept = self.coefficients[0]
-                        self.coefficients = self.coefficients[1:]
-                    
-                    self.is_fitted = True
-                    return self
-                
-                def predict(self, X):
-                    """进行预测"""
-                    if not self.is_fitted:
-                        return np.zeros(len(X))
-                    
-                    if self.normalize:
-                        X = (X - X.mean(axis=0)) / (X.std(axis=0) + 1e-8)
-                    
-                    prediction = X @ self.coefficients
-                    
-                    if self.fit_intercept:
-                        prediction = prediction + self.intercept
-                    
-                    return prediction
-                
-                def get_model_info(self):
-                    """获取模型信息"""
-                    return {
-                        'model_type': 'linear_regression',
-                        'fit_intercept': self.fit_intercept,
-                        'normalize': self.normalize
-                    }
-            
+            from sklearn.linear_model import LinearRegression
+
             fit_intercept = hyperparameters.get('fit_intercept', True)
             normalize = hyperparameters.get('normalize', False)
-            
-            return SimpleLinearRegression(fit_intercept, normalize)
-            
+
+            model = LinearRegression(fit_intercept=fit_intercept)
+            logger.info(f"使用 sklearn.LinearRegression 创建模型")
+            return model
+
         except ImportError:
-            return None
+            logger.warning("sklearn 不可用，无法创建线性回归模型")
+            return self._create_fallback_model(model_type='linear_regression', profile=profile)
+        except Exception as e:
+            logger.error(f"创建线性回归模型失败: {e}")
+            return self._create_fallback_model(model_type='linear_regression', profile=profile)
     
     def _create_ensemble_model(self, profile: ModelProfile) -> Any:
         """
         创建集成模型
         """
+        hyperparameters = profile.hyperparameters
+
         try:
-            import numpy as np
-            
-            hyperparameters = profile.hyperparameters
-            base_models = hyperparameters.get('base_models', ['lstm', 'xgboost', 'gru'])
+            from sklearn.ensemble import VotingRegressor
+            from sklearn.linear_model import LinearRegression
+            from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+            from sklearn.neural_network import MLPRegressor
+
+            base_models_config = hyperparameters.get('base_models', ['lstm', 'xgboost', 'gru'])
             fusion_method = hyperparameters.get('fusion_method', 'weighted_average')
-            weight_update = hyperparameters.get('weight_update', True)
-            
-            class SimpleEnsembleModel:
-                """简化的集成模型"""
-                def __init__(self, base_model_types, fusion_method, weight_update):
-                    self.base_model_types = base_model_types
-                    self.fusion_method = fusion_method
-                    self.weight_update = weight_update
-                    self.base_models = {}
-                    self.weights = None
-                    self.is_fitted = False
-                    
-                    for model_type in base_model_types:
-                        self.base_models[model_type] = None
-                    
-                    self.weights = {mt: 1.0 / len(base_model_types) for mt in base_model_types}
-                
-                def fit(self, X, y, verbose=False):
-                    """训练集成模型"""
-                    self.is_fitted = True
-                    return self
-                
-                def predict(self, X):
-                    """进行预测"""
-                    if not self.is_fitted:
-                        return np.zeros(len(X))
-                    return np.zeros(len(X))
-                
-                def get_model_info(self):
-                    """获取模型信息"""
-                    return {
-                        'model_type': 'ensemble',
-                        'base_models': self.base_model_types,
-                        'fusion_method': self.fusion_method,
-                        'weights': self.weights
-                    }
-            
-            return SimpleEnsembleModel(base_models, fusion_method, weight_update)
-            
+
+            estimators = []
+            for bm_type in base_models_config:
+                if bm_type in ['lstm', 'gru']:
+                    if TF_DL_AVAILABLE:
+                        try:
+                            dl_model = TFDeepLearningWrapper(
+                                model_type=bm_type,
+                                hidden_layer_sizes=(64, 32),
+                                sequence_length=10,
+                                batch_size=32,
+                                epochs=30
+                            )
+                            estimators.append((bm_type, dl_model))
+                            continue
+                        except Exception as e:
+                            logger.warning(f"集成模型中 TensorFlow {bm_type} 创建失败: {e}，降级 MLP")
+                    estimators.append((bm_type, MLPRegressor(
+                        hidden_layer_sizes=(64, 32), max_iter=100, random_state=42
+                    )))
+                elif bm_type == 'xgboost':
+                    estimators.append((bm_type, GradientBoostingRegressor(
+                        n_estimators=100, max_depth=3, random_state=42
+                    )))
+                elif bm_type == 'random_forest':
+                    estimators.append((bm_type, RandomForestRegressor(
+                        n_estimators=100, random_state=42, n_jobs=-1
+                    )))
+                elif bm_type == 'linear_regression':
+                    estimators.append((bm_type, LinearRegression()))
+
+            if not estimators:
+                logger.warning("无有效子模型，回退到默认随机森林")
+                estimators = [('rf', RandomForestRegressor(n_estimators=50, random_state=42))]
+
+            model = VotingRegressor(estimators=estimators)
+            logger.info(f"使用 sklearn.VotingRegressor 创建集成模型: {len(estimators)} 个子模型")
+            return model
+
         except ImportError:
-            return None
+            logger.warning("sklearn 不可用，无法创建集成模型")
+            return self._create_fallback_model(model_type='ensemble', profile=profile)
+        except Exception as e:
+            logger.error(f"创建集成模型失败: {e}")
+            return self._create_fallback_model(model_type='ensemble', profile=profile)
     
     def _create_time_series_model(self, model_type: str, profile: ModelProfile) -> Any:
         """
@@ -539,13 +544,19 @@ class IntelligentModelSelector:
                 def fit(self, X, verbose=False):
                     """训练模型"""
                     self.is_fitted = True
+                    if hasattr(X, '__len__') and len(X) > 0:
+                        x_arr = np.asarray(X)
+                        self._last_value = float(np.mean(x_arr[-min(10, len(x_arr)):]))
+                        self._trend = 0.0
                     return self
                 
                 def predict(self, steps):
                     """预测未来值"""
                     if not self.is_fitted:
                         return np.zeros(steps)
-                    return np.zeros(steps)
+                    last_val = getattr(self, '_last_value', 0.0)
+                    trend = getattr(self, '_trend', 0.0)
+                    return np.array([last_val + trend * (i + 1) for i in range(steps)])
                 
                 def get_model_info(self):
                     """获取模型信息"""
@@ -562,37 +573,77 @@ class IntelligentModelSelector:
     def _create_fallback_model(self, model_type: str, profile: ModelProfile) -> Any:
         """
         创建兜底简化模型
-        
-        当所有模型加载失败时使用的最小化实现
+
+        当所有模型加载失败时使用的最小化实现，
+        基于 sklearn.dummy.DummyRegressor(strategy='mean') 提供有意义的预测。
         """
-        class FallbackModel:
-            """兜底模型"""
-            def __init__(self, model_type, profile):
-                self.model_type = model_type
-                self.profile = profile
-                self.is_fitted = False
-                
-            def fit(self, X, y, verbose=False):
-                """训练模型"""
-                self.is_fitted = True
-                return self
-            
-            def predict(self, X):
-                """进行预测"""
-                import numpy as np
-                if not self.is_fitted:
-                    return np.zeros(len(X) if hasattr(len(X), '__len__') else 1)
-                return np.zeros(len(X) if hasattr(len(X), '__len__') else 1)
-            
-            def get_model_info(self):
-                """获取模型信息"""
+        try:
+            from sklearn.dummy import DummyRegressor
+
+            model = DummyRegressor(strategy='mean')
+            model.model_type = model_type
+            model.profile = profile
+            model.is_fitted = False
+            model._original_fit = model.fit
+            model._original_predict = model.predict
+
+            def fit_wrapper(X, y, verbose=False):
+                result = model._original_fit(X, y)
+                model.is_fitted = True
+                if verbose:
+                    logger.info(f"[FallbackModel] {model_type} 已用 DummyRegressor(mean) 训练, "
+                                f"样本数={len(y) if hasattr(y, '__len__') else 1}")
+                return result
+
+            def predict_wrapper(X):
+                if not model.is_fitted:
+                    logger.warning(f"[FallbackModel] {model_type} 未训练，返回零预测")
+                    return np.zeros(len(X) if hasattr(X, '__len__') else 1)
+                return model._original_predict(X)
+
+            def get_model_info():
                 return {
-                    'model_type': self.model_type,
-                    'name': self.profile.name if self.profile else model_type,
-                    'status': 'fallback'
+                    'model_type': model.model_type,
+                    'name': model.profile.name if model.profile else model_type,
+                    'status': 'fallback_dummy_regressor',
+                    'strategy': 'mean'
                 }
-        
-        return FallbackModel(model_type, profile)
+
+            model.fit = fit_wrapper
+            model.predict = predict_wrapper
+            model.get_model_info = get_model_info
+
+            logger.info(f"[FallbackModel] {model_type} 使用 DummyRegressor(strategy='mean') "
+                        f"替代零预测 fallback")
+            return model
+
+        except ImportError:
+            logger.warning(f"[FallbackModel] sklearn 不可用，{model_type} 使用零预测兜底")
+
+            class FallbackModel:
+                def __init__(self, model_type, profile):
+                    self.model_type = model_type
+                    self.profile = profile
+                    self.is_fitted = False
+
+                def fit(self, X, y, verbose=False):
+                    self.is_fitted = True
+                    self._y_mean = float(np.mean(y)) if hasattr(y, '__len__') else float(y)
+                    return self
+
+                def predict(self, X):
+                    if not self.is_fitted:
+                        return np.zeros(len(X) if hasattr(X, '__len__') else 1)
+                    return np.full(len(X) if hasattr(X, '__len__') else 1, self._y_mean)
+
+                def get_model_info(self):
+                    return {
+                        'model_type': self.model_type,
+                        'name': self.profile.name if self.profile else model_type,
+                        'status': 'fallback_pure_python'
+                    }
+
+            return FallbackModel(model_type, profile)
     
     def get_model(self, model_type: str) -> Optional[Any]:
         """
@@ -684,9 +735,8 @@ class IntelligentModelSelector:
             logger.info("评估模型性能")
             performance_evaluation = {}
             for model_type in request.available_models:
-                # 模拟性能评估（实际应用中应该基于历史数据）
                 performance = self._simulate_performance_evaluation(
-                    model_type, market_state
+                    model_type, market_state, request
                 )
                 performance_evaluation[model_type] = performance
             
@@ -739,38 +789,93 @@ class IntelligentModelSelector:
             # 返回默认选择结果
             return self._get_fallback_result(request)
     
-    def _simulate_performance_evaluation(self, model_type: str, 
-                                       market_state: MarketState) -> ModelPerformance:
-        """模拟模型性能评估"""
+    def _simulate_performance_evaluation(self, model_type: str,
+                                       market_state: MarketState,
+                                       request: SelectionRequest = None) -> ModelPerformance:
+        """模型性能评估
+
+        优先使用真实评估路径：
+        1. performance_evaluator 的历史评估数据
+        2. 已初始化模型的交叉验证评分
+        3. 仅在完全无数据时才降级为启发式评分并记录 warning。
+        """
         try:
-            # 基于市场状态和模型类型模拟性能评估
-            # 实际应用中这里应该基于真实的历史数据
-            
-            base_accuracy = self._get_base_accuracy(model_type)
-            volatility_factor = self._get_volatility_factor(market_state.volatility.level.value)
-            trend_factor = self._get_trend_factor(market_state.trend_strength.level.value)
-            
-            adjusted_accuracy = base_accuracy * volatility_factor * trend_factor
-            
-            return ModelPerformance(
-                model_type=model_type,
-                metrics=self._create_mock_metrics(adjusted_accuracy),
-                composite_score=adjusted_accuracy,
-                reliability_score=min(adjusted_accuracy * 1.1, 1.0),
-                sample_size=100,  # 模拟样本数
-                evaluation_timestamp=datetime.now()
+            # 路径 1: 尝试从 performance_evaluator 获取缓存评估
+            if self.performance_evaluator is not None:
+                cached_eval = self._try_get_cached_evaluation(model_type)
+                if cached_eval is not None:
+                    logger.info(f"[性能评估] {model_type} 使用 performance_evaluator 缓存评估 "
+                                f"score={cached_eval.composite_score:.4f}")
+                    return cached_eval
+
+            # 路径 2: 尝试用已初始化模型做交叉验证
+            model_instance = self.initialized_models.get(model_type)
+            if model_instance is not None and hasattr(model_instance, 'predict') and request is not None:
+                X = self._extract_features_from_request(request)
+                y = self._extract_target_from_request(request)
+                if X is not None and y is not None and len(X) > 0 and len(y) > 0:
+                    try:
+                        from sklearn.model_selection import cross_val_score
+                        min_len = min(len(X), len(y))
+                        X_cv = X[:min_len]
+                        y_cv = y[:min_len]
+                        n_splits = min(3, len(X_cv) - 1)
+                        if n_splits >= 2:
+                            scores = cross_val_score(
+                                model_instance, X_cv, y_cv,
+                                cv=n_splits, scoring='neg_mean_squared_error'
+                            )
+                            performance_score = float(np.mean(scores))
+                            adjusted_score = max(0.0, min(1.0, 1.0 / (1.0 + abs(performance_score))))
+                            logger.info(f"[性能评估] {model_type} 使用 cross_val_score, "
+                                        f"n_splits={n_splits}, raw_score={performance_score:.4f}, "
+                                        f"adjusted={adjusted_score:.4f}")
+                            real_metrics = ModelMetrics(
+                                accuracy=adjusted_score,
+                                precision=0.0,
+                                recall=0.0,
+                                f1_score=0.0,
+                                mape=0.0,
+                                sharpe_ratio=0.0,
+                                timestamp=datetime.now()
+                            )
+                            return ModelPerformance(
+                                model_type=model_type,
+                                metrics=real_metrics,
+                                composite_score=adjusted_score,
+                                reliability_score=min(adjusted_score * 1.1, 1.0),
+                                sample_size=len(X_cv),
+                                evaluation_timestamp=datetime.now()
+                            )
+                    except ImportError:
+                        logger.debug(f"[性能评估] sklearn.model_selection 不可用，降级到启发式")
+                    except Exception as cv_err:
+                        logger.warning(f"[性能评估] {model_type} 交叉验证失败: {cv_err}，降级到启发式")
+
+            logger.warning(
+                f"[性能评估] {model_type} 无可用的真实评估数据，"
+                f"无法进行有效评估，返回空结果"
             )
-            
+            return None
+
         except Exception as e:
-            logger.warning(f"模拟{model_type}性能评估失败: {e}")
-            return ModelPerformance(
-                model_type=model_type,
-                metrics=self._create_mock_metrics(0.5),
-                composite_score=0.5,
-                reliability_score=0.5,
-                sample_size=0,
-                evaluation_timestamp=datetime.now()
-            )
+            logger.warning(f"{model_type} 性能评估失败: {e}")
+            return None
+
+    def _try_get_cached_evaluation(self, model_type: str) -> Optional[ModelPerformance]:
+        """尝试从 performance_evaluator 获取缓存的评估结果"""
+        try:
+            if not hasattr(self.performance_evaluator, '_recent_evaluations'):
+                return None
+            recent = getattr(self.performance_evaluator, '_recent_evaluations', None)
+            if recent is None:
+                return None
+            for evaluation in reversed(list(recent)):
+                if hasattr(evaluation, 'model_type') and evaluation.model_type == model_type:
+                    return evaluation
+            return None
+        except Exception:
+            return None
     
     def _get_base_accuracy(self, model_type: str) -> float:
         """获取模型基础准确率"""
@@ -807,18 +912,8 @@ class IntelligentModelSelector:
         return factors.get(trend_level, 1.0)
     
     def _create_mock_metrics(self, accuracy: float) -> 'ModelMetrics':
-        """创建模拟的模型指标"""
-        from .performance_evaluator import ModelMetrics
-        
-        return ModelMetrics(
-            accuracy=accuracy,
-            precision=max(accuracy - 0.05, 0.0),
-            recall=max(accuracy - 0.03, 0.0),
-            f1_score=max(accuracy - 0.04, 0.0),
-            mape=max(100.0 - accuracy * 80.0, 5.0),  # 模拟MAPE
-            sharpe_ratio=max((accuracy - 0.5) * 2, -1.0),
-            timestamp=datetime.now()
-        )
+        logger.warning("_create_mock_metrics 不再生成假指标，模型不可用")
+        return None
     
     def _build_selection_criteria(self, request: SelectionRequest,
                                 market_state: MarketState,
@@ -937,43 +1032,167 @@ class IntelligentModelSelector:
                        request: SelectionRequest) -> Optional[EnsemblePredictionResult]:
         """执行预测结果融合"""
         try:
-            # 模拟模型预测结果
-            mock_predictions = self._generate_mock_predictions(selected_models)
-            
-            # 执行融合
+            predictions = self._generate_real_predictions(selected_models, request)
+
             fusion_result = self.fusion_engine.fuse_predictions(
-                mock_predictions, FusionMethod.WEIGHTED_AVERAGE
+                predictions, FusionMethod.WEIGHTED_AVERAGE
             )
-            
+
             return fusion_result
-            
+
         except Exception as e:
             logger.warning(f"预测融合失败: {e}")
             return None
     
-    def _generate_mock_predictions(self, selected_models: List[ModelSelection]) -> List[ModelPrediction]:
-        """生成模拟预测结果"""
+    def _generate_real_predictions(self, selected_models: List[ModelSelection],
+                                request: SelectionRequest) -> List[ModelPrediction]:
+        """使用真实模型链路生成预测结果
+
+        优先使用已初始化的子模型进行预测；若子模型不可用，
+        则通过 _create_fallback_model 训练后再预测。
+        仅当连特征数据都不可用时才返回零预测并记录 warning。
+        """
         predictions = []
-        
-        for model_selection in selected_models:
-            # 模拟预测值（实际应用中应该调用真实的模型预测）
-            import random
-            random.seed(hash(model_selection.model_type) % 1000)
-            
-            prediction_value = random.uniform(-0.1, 0.1)  # 模拟小幅变动
-            confidence = model_selection.confidence * 0.8 + 0.1  # 基于置信度的预测置信度
-            
-            # 创建模型预测对象
-            prediction = ModelPrediction(
-                model_type=model_selection.model_type,
-                prediction_value=prediction_value,
-                confidence=confidence,
-                timestamp=datetime.now(),
-                metadata={'selection_weight': model_selection.weight, 'selection_confidence': model_selection.confidence}
+
+        X = self._extract_features_from_request(request)
+        y = self._extract_target_from_request(request)
+
+        if X is None or len(X) == 0:
+            logger.warning(
+                f"[融合] 无可用的特征数据（{len(selected_models)} 个模型），"
+                f"所有预测值设为 0.0"
             )
-            predictions.append(prediction)
-        
+            for model_selection in selected_models:
+                predictions.append(ModelPrediction(
+                    model_type=model_selection.model_type,
+                    prediction_value=0.0,
+                    confidence=model_selection.confidence,
+                    timestamp=datetime.now(),
+                    metadata={
+                        'selection_weight': model_selection.weight,
+                        'selection_confidence': model_selection.confidence,
+                        'is_real': False,
+                        'reason': 'no_feature_data'
+                    }
+                ))
+            return predictions
+
+        self._using_fallback_model = False
+
+        for model_selection in selected_models:
+            model_type = model_selection.model_type
+            try:
+                model_instance = self.initialized_models.get(model_type)
+                use_fallback = False
+
+                if model_instance is not None and hasattr(model_instance, 'predict'):
+                    pred_values = model_instance.predict(X)
+                else:
+                    profile = self.model_profiles.get(model_type)
+                    model_instance = self._create_fallback_model(model_type, profile) if profile else self._create_fallback_model(model_type, None)
+                    if y is not None and len(y) > 0:
+                        model_instance.fit(X, y)
+                    use_fallback = True
+                    self._using_fallback_model = True
+                    pred_values = model_instance.predict(X)
+
+                pred_values = np.atleast_1d(np.asarray(pred_values, dtype=np.float64))
+                if len(pred_values) == 0:
+                    pred_value = 0.0
+                else:
+                    pred_value = float(np.mean(pred_values[-1:]))
+
+                predictions.append(ModelPrediction(
+                    model_type=model_type,
+                    prediction_value=pred_value,
+                    confidence=model_selection.confidence,
+                    timestamp=datetime.now(),
+                    metadata={
+                        'selection_weight': model_selection.weight,
+                        'selection_confidence': model_selection.confidence,
+                        'is_real': True,
+                        'using_fallback': use_fallback
+                    }
+                ))
+
+                if use_fallback:
+                    logger.info(f"[融合] {model_type} 使用 fallback 模型生成预测 "
+                                f"value={pred_value:.4f}")
+                else:
+                    logger.debug(f"[融合] {model_type} 使用已初始化模型生成预测 "
+                                 f"value={pred_value:.4f}")
+            except Exception as exc:
+                logger.warning(f"[融合] {model_type} 预测失败: {exc}，使用零值")
+                predictions.append(ModelPrediction(
+                    model_type=model_type,
+                    prediction_value=0.0,
+                    confidence=model_selection.confidence,
+                    timestamp=datetime.now(),
+                    metadata={
+                        'selection_weight': model_selection.weight,
+                        'selection_confidence': model_selection.confidence,
+                        'is_real': False,
+                        'reason': f'prediction_error: {exc}'
+                    }
+                ))
+
         return predictions
+
+    def _extract_features_from_request(self, request: SelectionRequest) -> Optional[np.ndarray]:
+        """从 SelectionRequest 中提取特征矩阵 X"""
+        try:
+            if request.kline_data:
+                fields = ['open', 'high', 'low', 'close', 'volume']
+                values = []
+                for f in fields:
+                    v = request.kline_data.get(f)
+                    if v is not None:
+                        if hasattr(v, '__len__') and not isinstance(v, str):
+                            values.append(np.atleast_1d(np.asarray(v, dtype=np.float64)))
+                        else:
+                            values.append(np.full(1, float(v), dtype=np.float64))
+                if values:
+                    X = np.column_stack([v.reshape(-1, 1) if v.ndim == 1 else v for v in values])
+                    return X
+
+            if request.market_data:
+                numeric_values = []
+                for v in request.market_data.values():
+                    try:
+                        numeric_values.append(float(v))
+                    except (TypeError, ValueError):
+                        pass
+                if numeric_values:
+                    return np.array(numeric_values, dtype=np.float64).reshape(1, -1)
+
+            return None
+        except Exception as e:
+            logger.warning(f"[融合] 特征提取失败: {e}")
+            return None
+
+    def _extract_target_from_request(self, request: SelectionRequest) -> Optional[np.ndarray]:
+        """从 SelectionRequest 中提取目标变量 y"""
+        try:
+            if request.kline_data:
+                for field in ('close', 'price', 'target', 'y', 'label'):
+                    v = request.kline_data.get(field)
+                    if v is not None:
+                        y = np.atleast_1d(np.asarray(v, dtype=np.float64))
+                        return y
+
+            if request.market_data:
+                for field in ('close', 'price', 'target', 'y', 'label'):
+                    v = request.market_data.get(field)
+                    if v is not None:
+                        try:
+                            return np.array([float(v)], dtype=np.float64)
+                        except (TypeError, ValueError):
+                            pass
+
+            return None
+        except Exception as e:
+            logger.warning(f"[融合] 目标变量提取失败: {e}")
+            return None
     
     def _assess_data_quality(self, request: SelectionRequest) -> float:
         """评估数据质量"""
@@ -1097,7 +1316,55 @@ class IntelligentModelSelector:
             'max_cache_size': self.config.max_cache_size,
             'cache_keys': list(self.selection_cache.keys())
         }
-    
+
+    def predict(self, features: np.ndarray) -> np.ndarray:
+        t_start = time.perf_counter()
+
+        if features is None or not isinstance(features, np.ndarray):
+            logger.error("[AI预测] 输入特征为 None 或非 numpy 数组")
+            return self._fallback_predict(np.atleast_2d(features) if features is not None else np.zeros((1, 1)))
+
+        features = np.atleast_2d(features).astype(np.float32)
+        n_samples = features.shape[0]
+        logger.info(f"[AI预测] 开始 | 特征={features.shape} | 样本数={n_samples}")
+
+        if np.any(np.isnan(features)) or np.any(np.isinf(features)):
+            logger.warning("[AI预测] 输入包含 NaN 或 Inf，已替换为 0")
+            features = np.nan_to_num(features, nan=0.0, posinf=0.0, neginf=0.0)
+
+        if self.initialized_models:
+            preds = []
+            for name, model in self.initialized_models.items():
+                if hasattr(model, 'predict'):
+                    try:
+                        p = model.predict(features)
+                        p = np.atleast_1d(np.asarray(p, dtype=np.float32))
+                        if len(p) != n_samples:
+                            logger.warning(f"[AI预测] {name} 输出形状 {p.shape} 与输入样本数 {n_samples} 不匹配，已截断/填充至一致")
+                            if len(p) > n_samples:
+                                p = p[:n_samples]
+                            else:
+                                p = np.pad(p, (0, n_samples - len(p)), 'edge')
+                        preds.append(p)
+                    except Exception as exc:
+                        logger.warning(f"[AI预测] 模型 {name} 预测失败: {exc}")
+            if preds:
+                predictions = np.mean(np.column_stack(preds), axis=1)
+            else:
+                predictions = self._fallback_predict(features)
+        else:
+            predictions = self._fallback_predict(features)
+
+        logger.info(f"[AI预测] 完成 | 耗时={time.perf_counter()-t_start:.4f}s | range=[{predictions.min():.4f}, {predictions.max():.4f}]")
+
+        return predictions
+
+    def _fallback_predict(self, features: np.ndarray) -> np.ndarray:
+        if features.ndim == 2:
+            weights = np.ones(features.shape[1]) / features.shape[1]
+            return np.clip(features @ weights * 0.1, -1, 1)
+        return np.zeros(len(features))
+
     def intelligent_predict(self, 
                           prediction_type: str, 
                           data: Dict[str, Any],
@@ -1114,6 +1381,8 @@ class IntelligentModelSelector:
             智能选择后的预测结果
         """
         start_time = datetime.now()
+        t_start = time.perf_counter()
+        logger.info(f"[AI预测] 开始 | 预测类型={prediction_type} | 数据字段数={len(data)}")
         
         try:
             # 1. 数据预处理和验证
@@ -1155,8 +1424,8 @@ class IntelligentModelSelector:
                 return self._fallback_prediction(prediction_type, data)
             
             # 6. 执行多模型预测
-            predictions = self._execute_model_predictions(
-                selection_result.selected_models, processed_data
+            predictions = self._generate_real_predictions(
+                selection_result.selected_models, request
             )
             
             if not predictions:
@@ -1165,11 +1434,15 @@ class IntelligentModelSelector:
             
             # 7. 融合预测结果
             if self.config.enable_fusion and len(predictions) > 1:
+                t_fusion = time.perf_counter()
                 from .fusion_engine import FusionMethod
                 final_prediction = self.fusion_engine.fuse_predictions(
                     predictions,
                     FusionMethod.WEIGHTED_AVERAGE
                 )
+                elapsed = time.perf_counter() - t_fusion
+                logger.info(f"[AI融合] 模型数={len(predictions)} | 耗时={elapsed:.4f}s | "
+                           f"方法=weighted_average")
             else:
                 final_prediction = predictions[0]
             
@@ -1223,6 +1496,8 @@ class IntelligentModelSelector:
             self.statistics['successful_predictions'] += 1
             self.statistics['total_predictions'] += 1
             
+            elapsed_total = time.perf_counter() - t_start
+            logger.info(f"[AI预测] 完成 | 总耗时={elapsed_total:.4f}s | 预测类型={prediction_type}")
             return final_prediction
             
         except Exception as e:
@@ -1233,6 +1508,7 @@ class IntelligentModelSelector:
     
     def _preprocess_data(self, data: Dict[str, Any], prediction_type: str) -> Optional[Dict[str, Any]]:
         """预处理输入数据"""
+        t_pre = time.perf_counter()
         try:
             processed = data.copy()
             
@@ -1249,6 +1525,8 @@ class IntelligentModelSelector:
                             'volume': processed['market_data'].get('volume', 1000000)
                         }
             
+            elapsed = time.perf_counter() - t_pre
+            logger.debug(f"[AI预处理] 耗时={elapsed:.4f}s | 预测类型={prediction_type}")
             return processed
             
         except Exception as e:
@@ -1289,46 +1567,22 @@ class IntelligentModelSelector:
     def _execute_model_predictions(self, 
                                  selected_models: List[ModelSelection], 
                                  data: Dict[str, Any]) -> List[ModelPrediction]:
-        """执行模型预测"""
         predictions = []
         
         for selection in selected_models:
             try:
-                # 模拟模型预测
                 prediction = self._simulate_model_prediction(selection.model_type, data)
-                predictions.append(prediction)
+                if prediction is not None:
+                    predictions.append(prediction)
             except Exception as e:
                 logger.warning(f"模型 {selection.model_type} 预测失败: {e}")
                 continue
         
         return predictions
     
-    def _simulate_model_prediction(self, model_type: str, data: Dict[str, Any]) -> ModelPrediction:
-        """模拟模型预测"""
-        # 简化的预测逻辑
-        base_value = 100.0
-        
-        # 根据模型类型生成不同的预测结果
-        if model_type == 'linear_regression':
-            prediction_value = base_value * 1.02
-            confidence = 0.75
-        elif model_type == 'random_forest':
-            prediction_value = base_value * 1.015
-            confidence = 0.80
-        elif model_type == 'svm':
-            prediction_value = base_value * 1.018
-            confidence = 0.70
-        else:
-            prediction_value = base_value * 1.01
-            confidence = 0.65
-        
-        return ModelPrediction(
-            model_type=model_type,
-            prediction_value=prediction_value,
-            confidence=confidence,
-            timestamp=datetime.now(),
-            metadata={'selection_weight': None, 'data_keys': list(data.keys())}
-        )
+    def _simulate_model_prediction(self, model_type: str, data: Dict[str, Any]) -> Optional[ModelPrediction]:
+        logger.warning(f"[AI预测] _simulate_model_prediction 已弃用，模型 {model_type} 未训练，不返回假预测值")
+        return None
     
     def _cache_result(self, cache_key: str, result: Dict[str, Any]):
         """缓存结果"""
@@ -1527,13 +1781,14 @@ class IntelligentModelSelector:
             置信度说明字典
         """
         try:
+            trend_dir = self._safe_get_market_attr(market_state, 'trend_direction', '未知')
             if confidence >= 0.85:
                 level = 'very_high'
                 level_text = '非常高'
                 reason_parts = [
                     f"模型置信度 {confidence:.2%} 处于较高水平",
                     f"基于{model_type}模型的稳定表现",
-                    f"当前市场状态（{market_state.trend}趋势）较为明确"
+                    f"当前市场状态（{trend_dir}趋势）较为明确"
                 ]
             elif confidence >= 0.70:
                 level = 'high'
@@ -1541,7 +1796,7 @@ class IntelligentModelSelector:
                 reason_parts = [
                     f"模型置信度 {confidence:.2%} 达到预期水平",
                     f"{model_type}模型在该场景下表现良好",
-                    f"市场趋势（{market_state.trend}）提供了有效的参考依据"
+                    f"市场趋势（{trend_dir}）提供了有效的参考依据"
                 ]
             elif confidence >= 0.55:
                 level = 'medium'
@@ -1557,7 +1812,7 @@ class IntelligentModelSelector:
                 reason_parts = [
                     f"模型置信度 {confidence:.2%} 较低",
                     f"{model_type}模型对该类型数据的预测能力有限",
-                    f"当前市场状态（{market_state.trend}趋势）可能存在波动",
+                    f"当前市场状态（{trend_dir}趋势）可能存在波动",
                     f"建议等待更多数据或使用其他模型进行验证"
                 ]
             else:
@@ -1570,14 +1825,16 @@ class IntelligentModelSelector:
                     f"强烈建议结合人工分析和其他信息源"
                 ]
             
-            if market_state.volatility == 'high':
+            vol_level = self._safe_get_market_attr(market_state, 'volatility_level', 'normal')
+            liq_level = self._safe_get_market_attr(market_state, 'liquidity_level', 'normal')
+            if vol_level == 'high':
                 reason_parts.append("市场波动性较高，增加了预测的不确定性")
-            elif market_state.volatility == 'low':
+            elif vol_level == 'low':
                 reason_parts.append("市场波动性较低，预测相对稳定")
             
-            if market_state.liquidity == 'high':
+            if liq_level == 'high':
                 reason_parts.append("市场流动性充足，预测结果更可靠")
-            elif market_state.liquidity == 'low':
+            elif liq_level == 'low':
                 reason_parts.append("市场流动性不足，可能影响预测准确性")
             
             return {
@@ -1614,25 +1871,25 @@ class IntelligentModelSelector:
             
             trend_factor = {
                 'name': '趋势因素',
-                'value': market_state.trend,
-                'impact': self._get_trend_impact(market_state.trend),
-                'description': f'当前市场呈现{market_state.trend}趋势'
+                'value': self._safe_get_market_attr(market_state, 'trend_direction', 'unknown'),
+                'impact': self._get_trend_impact(self._safe_get_market_attr(market_state, 'trend_direction', 'unknown')),
+                'description': f'当前市场呈现{self._safe_get_market_attr(market_state, "trend_direction", "unknown")}趋势'
             }
             factors['trend'] = trend_factor
             
             volatility_factor = {
                 'name': '波动性因素',
-                'value': market_state.volatility,
-                'impact': self._get_volatility_impact(market_state.volatility),
-                'description': f'市场波动性{market_state.volatility}'
+                'value': self._safe_get_market_attr(market_state, 'volatility_level', 'normal'),
+                'impact': self._get_volatility_impact(self._safe_get_market_attr(market_state, 'volatility_level', 'normal')),
+                'description': f'市场波动性{self._safe_get_market_attr(market_state, "volatility_level", "normal")}'
             }
             factors['volatility'] = volatility_factor
             
             liquidity_factor = {
                 'name': '流动性因素',
-                'value': market_state.liquidity,
-                'impact': self._get_liquidity_impact(market_state.liquidity),
-                'description': f'市场流动性{market_state.liquidity}'
+                'value': self._safe_get_market_attr(market_state, 'liquidity_level', 'normal'),
+                'impact': self._get_liquidity_impact(self._safe_get_market_attr(market_state, 'liquidity_level', 'normal')),
+                'description': f'市场流动性{self._safe_get_market_attr(market_state, "liquidity_level", "normal")}'
             }
             factors['liquidity'] = liquidity_factor
             
@@ -1809,6 +2066,27 @@ class IntelligentModelSelector:
             logger.error(f"识别预测局限性失败: {e}")
             return ['局限性分析失败']
     
+
+    def _safe_get_market_attr(self, market_state: MarketState, attr_name: str, default: str = 'normal') -> str:
+        try:
+            if hasattr(market_state, 'volatility') and hasattr(market_state.volatility, 'level'):
+                if attr_name == 'volatility_level':
+                    return market_state.volatility.level.value
+            if hasattr(market_state, 'liquidity') and hasattr(market_state.liquidity, 'level'):
+                if attr_name == 'liquidity_level':
+                    return market_state.liquidity.level.value
+            if hasattr(market_state, 'trend_strength') and hasattr(market_state.trend_strength, 'direction'):
+                if attr_name == 'trend_direction':
+                    return market_state.trend_strength.direction
+            if hasattr(market_state, 'trend_strength') and hasattr(market_state.trend_strength, 'level'):
+                if attr_name == 'trend_level':
+                    return market_state.trend_strength.level.value
+            logger.warning(f'无法获取MarketState属性 {attr_name}，使用默认值 {default}')
+            return default
+        except Exception as e:
+            logger.warning(f'获取MarketState属性 {attr_name} 失败: {e}')
+            return default
+
     def _get_trend_impact(self, trend: str) -> str:
         """获取趋势影响"""
         impact_mapping = {

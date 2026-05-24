@@ -694,6 +694,17 @@ class RealtimeComputeEngine:
     def create_custom_formula(self, formula_code: str) -> Optional[Callable]:
         """创建自定义公式函数"""
         try:
+            forbidden_words = ['import', 'exec', 'eval', 'open', '__', 'class',
+                             'lambda', 'def ', 'global', 'nonlocal', 'del ', 'yield']
+            code_lower = formula_code.lower()
+            for word in forbidden_words:
+                if word in code_lower:
+                    logger.warning(f"公式包含禁用关键词: {word}")
+                    return None
+
+            if len(formula_code) > 500:
+                logger.warning("公式代码过长")
+                return None
             # 安全的命名空间，只包含必要的函数和模块
             safe_namespace = {
                 'pd': pd,
@@ -744,6 +755,13 @@ class RealtimeComputeEngine:
     def cleanup(self):
         """清理资源"""
         try:
+            if self.event_bus:
+                try:
+                    self.event_bus.unsubscribe(TickDataEvent, self._handle_tick_data)
+                    self.event_bus.unsubscribe(RealtimeDataEvent, self._handle_realtime_data)
+                except Exception as e:
+                    logger.warning(f"取消事件订阅失败: {e}")
+
             with self._lock:
                 self.processors.clear()
                 self.indicator_configs.clear()

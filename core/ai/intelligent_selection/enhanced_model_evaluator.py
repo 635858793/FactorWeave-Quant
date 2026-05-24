@@ -14,7 +14,7 @@ from dataclasses import dataclass, asdict
 from collections import deque
 import json
 import sqlite3
-import logging
+from loguru import logger
 
 try:
     from sklearn.metrics import (
@@ -35,9 +35,6 @@ except ImportError:
     MATPLOTLIB_AVAILABLE = False
 
 from .performance_evaluator import ModelPerformanceEvaluator, ModelPerformance, ModelMetrics
-
-logger = logging.getLogger(__name__)
-
 
 @dataclass
 class EnhancedModelMetrics:

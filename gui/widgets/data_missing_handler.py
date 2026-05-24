@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 
 """
-from core.services.unified_data_manager import get_unified_data_manager
 数据缺失智能处理UI组件
 提供数据缺失时的智能提示和引导功能
 """
@@ -30,14 +29,10 @@ from PyQt5.QtGui import (
 )
 
 # 导入核心组件
-try:
-    from core.plugin_types import AssetType, DataType, PluginType
-    from core.asset_type_identifier import AssetTypeIdentifier
-    from core.data_router import DataRouter
-    from loguru import logger
-except ImportError as e:
-    print(f"导入核心组件失败: {e}")
-    logger = None
+from core.plugin_types import AssetType, DataType, PluginType
+from core.asset_type_identifier import AssetTypeIdentifier
+from core.data_router import DataRouter
+from loguru import logger
 
 
 class DataMissingReason(Enum):

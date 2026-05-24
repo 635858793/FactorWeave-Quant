@@ -687,6 +687,37 @@ class PerformanceService(BaseService):
         """获取当前性能指标"""
         return self._collect_all_metrics()
 
+    def get_trading_metrics(self) -> Dict[str, float]:
+        try:
+            from core.services.backtest_result_manager import BacktestResultManager
+            from core.containers.service_container import get_service_container
+            container = get_service_container()
+            if container and container.is_registered(BacktestResultManager):
+                result_mgr = container.resolve(BacktestResultManager)
+                if result_mgr:
+                    results, _ = result_mgr.get_filtered_results(page=1, page_size=1)
+                    if results and results[0]:
+                        result = results[0]
+                        perf = result.backtest_results.get('performance', {})
+                        risk = result.backtest_results.get('risk_metrics', {})
+                        if perf or risk:
+                            return {
+                                'total_return': perf.get('total_return', perf.get('cumulative_return', 0.0)),
+                                'sharpe_ratio': perf.get('sharpe_ratio', risk.get('sharpe_ratio', 0.0)),
+                                'max_drawdown': perf.get('max_drawdown', risk.get('max_drawdown', 0.0)),
+                                'win_rate': perf.get('win_rate', risk.get('win_rate', 0.0)),
+                                'annual_volatility': perf.get('volatility', perf.get('annual_volatility', 0.0)),
+                                'avg_trade_return': perf.get('avg_trade_return', perf.get('avg_return', 0.0)),
+                                'calmar_ratio': perf.get('calmar_ratio', risk.get('calmar_ratio', 0.0)),
+                                'sortino_ratio': perf.get('sortino_ratio', risk.get('sortino_ratio', 0.0)),
+                            }
+        except ImportError:
+            logger.debug("BacktestResultManager 不可用")
+        except Exception as e:
+            logger.debug(f"通过 BacktestResultManager 获取交易指标失败: {e}")
+
+        return {}
+
     def get_metrics_history(self, metric_name: str, hours: int = 1) -> List[Dict[str, Any]]:
         """获取指标历史数据"""
         with self._metrics_lock:

@@ -1097,7 +1097,7 @@ class ChartRenderer(QObject):
                 try:
                     # 如果索引是日期类型
                     x_values = mdates.date2num(data.index.to_pydatetime())
-                except:
+                except Exception:
                     # 如果不是日期类型，使用序号作为横坐标
                     x_values = np.arange(len(y_values))
         elif isinstance(data, np.ndarray):

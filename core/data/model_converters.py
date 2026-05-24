@@ -300,13 +300,12 @@ class FinancialStatementConverter:
         """
         statements = []
 
-        for _, row in df.iterrows():
+        for row_dict in df.to_dict('records'):
             try:
-                data = row.to_dict()
-                statement = FinancialStatementConverter.from_dict(data)
+                statement = FinancialStatementConverter.from_dict(row_dict)
                 statements.append(statement)
             except Exception as e:
-                logger.error(f"转换财务报表数据失败: {e}, 数据: {row.to_dict()}")
+                logger.error(f"转换财务报表数据失败: {e}, 数据: {row_dict}")
 
         return statements
 
@@ -547,13 +546,12 @@ class MacroEconomicDataConverter:
         """
         macro_data_list = []
 
-        for _, row in df.iterrows():
+        for row_dict in df.to_dict('records'):
             try:
-                data = row.to_dict()
-                macro_data = MacroEconomicDataConverter.from_dict(data)
+                macro_data = MacroEconomicDataConverter.from_dict(row_dict)
                 macro_data_list.append(macro_data)
             except Exception as e:
-                logger.error(f"转换宏观经济数据失败: {e}, 数据: {row.to_dict()}")
+                logger.error(f"转换宏观经济数据失败: {e}, 数据: {row_dict}")
 
         return macro_data_list
 

@@ -1528,7 +1528,7 @@ class UnifiedDataImportEngine(QObject):
                     try:
                         if hasattr(self, 'asset_identifier'):
                             asset_type = self.asset_identifier.identify_asset_type_by_symbol(symbol)
-                    except:
+                    except Exception:
                         pass
 
                     # 3. 标准化K线数据字段
@@ -1632,7 +1632,7 @@ class UnifiedDataImportEngine(QObject):
             try:
                 if hasattr(self, 'asset_identifier') and task_config.symbols:
                     asset_type = self.asset_identifier.identify_asset_type_by_symbol(task_config.symbols[0])
-            except:
+            except Exception:
                 pass
             
             # 执行基本面数据下载
@@ -1658,7 +1658,7 @@ class UnifiedDataImportEngine(QObject):
                 finally:
                     loop.close()
             
-            thread = threading.Thread(target=run_async)
+            thread = threading.Thread(target=run_async, daemon=True)
             thread.start()
             thread.join(timeout=300)  # 5 分钟超时
             
@@ -1751,7 +1751,7 @@ class UnifiedDataImportEngine(QObject):
                     try:
                         if hasattr(self, 'asset_identifier'):
                             asset_type = self.asset_identifier.identify_asset_type_by_symbol(symbol)
-                    except:
+                    except Exception:
                         pass
 
                     # 3. 标准化K线数据字段

@@ -5,7 +5,7 @@ class AIAssistant:
     def __init__(self, api_key: str):
         self.api_key = api_key
         # 纯Loguru架构，移除log_manager依赖
-        openai.api_key = api_key
+        self._client = openai.OpenAI(api_key=api_key)
         self.history = []
 
     def chat(self, user_input: str) -> dict:
@@ -15,12 +15,12 @@ class AIAssistant:
             logger.info(f"AI助手识别意图: {intent}")
 
             if intent['action'] == 'query':
-                resp = openai.ChatCompletion.create(
+                resp = self._client.chat.completions.create(
                     model="gpt-4o",
                     messages=self.history,
                     temperature=0.2
                 )
-                reply = resp['choices'][0]['message']['content']
+                reply = resp.choices[0].message.content
             elif intent['action'] == 'backtest':
                 reply = self._execute_backtest_intent(user_input)
             elif intent['action'] == 'screening':
@@ -28,12 +28,12 @@ class AIAssistant:
             elif intent['action'] == 'alert':
                 reply = self._execute_alert_intent(user_input)
             else:
-                resp = openai.ChatCompletion.create(
+                resp = self._client.chat.completions.create(
                     model="gpt-4o",
                     messages=self.history,
                     temperature=0.2
                 )
-                reply = resp['choices'][0]['message']['content']
+                reply = resp.choices[0].message.content
 
             self.history.append({"role": "assistant", "content": reply})
             return {"reply": reply, "intent": intent}

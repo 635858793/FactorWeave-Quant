@@ -8,7 +8,12 @@ import numpy as np
 from typing import List, Dict, Tuple, Optional, Any
 from datetime import datetime
 import pandas as pd
-import talib as ta
+try:
+    import talib as ta
+    TALIB_AVAILABLE = True
+except ImportError:
+    ta = None
+    TALIB_AVAILABLE = False
 from core.services.unified_data_manager import get_unified_data_manager
 
 class TechnicalAnalyzer:
@@ -47,6 +52,9 @@ class TechnicalAnalyzer:
     def analyze_trend(self, data: pd.DataFrame) -> Dict[str, Any]:
         """分析趋势"""
         try:
+            if 'close' not in data.columns:
+                return {'trend_direction': 'NEUTRAL', 'trend_strength': 0.0}
+
             # 使用多个移动平均线判断趋势
             ma_short = data['close'].rolling(20).mean()
             ma_medium = data['close'].rolling(50).mean()
@@ -94,19 +102,22 @@ class TechnicalAnalyzer:
     def analyze_support_resistance(self, data: pd.DataFrame, window: int = 20) -> Dict[str, List[float]]:
         """寻找支撑阻力位"""
         try:
+            if 'high' not in data.columns or 'low' not in data.columns:
+                return {'support_levels': [], 'resistance_levels': []}
+
             support_levels = []
             resistance_levels = []
 
-            highs = data['high'].rolling(window, center=True).max()
-            lows = data['low'].rolling(window, center=True).min()
+            highs = data['high'].rolling(window, center=False).max()
+            lows = data['low'].rolling(window, center=False).min()
 
-            for i in range(window, len(data) - window):
-                if data['high'].iloc[i] == highs.iloc[i]:
-                    resistance_levels.append(data['high'].iloc[i])
+            window_slice = slice(window, len(data) - window) if len(data) > 2 * window else slice(0, 0)
+            data_slice = data.iloc[window_slice]
+            highs_slice = highs.iloc[window_slice]
+            lows_slice = lows.iloc[window_slice]
 
-            for i in range(window, len(data) - window):
-                if data['low'].iloc[i] == lows.iloc[i]:
-                    support_levels.append(data['low'].iloc[i])
+            resistance_levels = data_slice.loc[data_slice['high'] == highs_slice, 'high'].tolist()
+            support_levels = data_slice.loc[data_slice['low'] == lows_slice, 'low'].tolist()
 
             support_levels = sorted(list(set(support_levels)))[-5:]
             resistance_levels = sorted(list(set(resistance_levels)), reverse=True)[:5]
@@ -129,6 +140,8 @@ class TechnicalAnalyzer:
         """
         try:
             if isinstance(kdata, pd.DataFrame):
+                if 'close' not in kdata.columns:
+                    return {'rsi': 0, 'macd': 0, 'macd_signal': 0, 'macd_histogram': 0, 'roc': 0.0, 'momentum_score': 0.0}
                 closes = kdata['close'].values
                 rsi = ta.RSI(closes, timeperiod=14)
                 macd, macd_signal, macd_hist = ta.MACD(closes, fastperiod=12, slowperiod=26, signalperiod=9)
@@ -138,12 +151,13 @@ class TechnicalAnalyzer:
                 macd, macd_signal, macd_hist = ta.MACD(closes, fastperiod=12, slowperiod=26, signalperiod=9)
             
             roc = np.diff(closes) / closes[:-1] * 100
+            roc_value = float(roc[-1]) if len(roc) > 0 else 0.0
             return {
                 'rsi': rsi[-1] if len(rsi) > 0 else 0,
                 'macd': macd[-1] if len(macd) > 0 else 0,
                 'macd_signal': macd_signal[-1] if len(macd_signal) > 0 else 0,
                 'macd_histogram': macd_hist[-1] if len(macd_hist) > 0 else 0,
-                'roc': roc,
+                'roc': roc_value,
                 'momentum_score': self._calculate_momentum_score(rsi, macd, roc, closes)
             }
         except Exception as e:

@@ -23,6 +23,7 @@ import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Any, Optional
+from core.database.unified_sqlite_access import UnifiedSQLiteAccess
 
 
 class CompleteDatabaseInitializer:
@@ -71,8 +72,17 @@ class CompleteDatabaseInitializer:
         """初始化FactorWeave-Quant系统数据库（已移除hikyuu依赖）"""
         logger.info("创建FactorWeave-Quant系统数据库表...")
 
-        with sqlite3.connect(self.sqlite_db_path) as conn:
+        db = UnifiedSQLiteAccess.get_instance(str(self.sqlite_db_path))
+        with db.get_connection() as conn:
             cursor = conn.cursor()
+            
+            # 启用WAL模式和外键约束
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.execute("PRAGMA cache_size=-64000")
+            cursor.execute("PRAGMA busy_timeout=5000")
+            logger.info("数据库PRAGMA配置已应用（WAL、外键、性能优化）")
 
             # 1. 系统配置表
             cursor.execute('''
@@ -260,26 +270,8 @@ class CompleteDatabaseInitializer:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )''')
 
-            # 15. 插件表
-            cursor.execute('''
-            CREATE TABLE IF NOT EXISTS plugins (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT UNIQUE NOT NULL,
-                version TEXT NOT NULL,
-                plugin_type TEXT NOT NULL,
-                category TEXT,
-                description TEXT,
-                author TEXT,
-                status TEXT DEFAULT 'disabled',
-                config TEXT,
-                metadata TEXT,
-                file_path TEXT,
-                class_name TEXT,
-                priority INTEGER DEFAULT 50,
-                last_enabled_at TIMESTAMP,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )''')
+            # 15. 插件表（已由plugin_models.py管理，此处不再重复定义）
+            # 插件相关表请参考 db/models/plugin_models.py
 
             # 16. AI预测配置表
             cursor.execute('''
@@ -377,33 +369,10 @@ class CompleteDatabaseInitializer:
                 FOREIGN KEY (profile_id) REFERENCES duckdb_config_profiles (id)
             )''')
 
-            # 20. 数据源插件配置表
-            cursor.execute('''
-            CREATE TABLE IF NOT EXISTS data_source_plugin_configs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                plugin_id TEXT NOT NULL,
-                config_data TEXT NOT NULL,
-                priority INTEGER DEFAULT 50,
-                weight REAL DEFAULT 1.0,
-                enabled BOOLEAN DEFAULT 1,
-                health_check_interval INTEGER DEFAULT 30,
-                timeout_seconds INTEGER DEFAULT 30,
-                retry_count INTEGER DEFAULT 3,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(plugin_id)
-            )''')
+            # 20. 数据源插件配置表（已由plugin_models.py管理，此处不再重复定义）
+            # 数据源配置表请参考 db/models/plugin_models.py
 
-            # 21. 数据源路由配置表
-            cursor.execute('''
-            CREATE TABLE IF NOT EXISTS data_source_routing_configs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                asset_type TEXT NOT NULL,
-                plugin_priorities TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(asset_type)
-            )''')
+            # 21. 数据源路由配置表（已由plugin_models.py管理，此处不再重复定义）
 
             # 22. 策略表
             cursor.execute('''
@@ -447,7 +416,8 @@ class CompleteDatabaseInitializer:
         """初始化FactorWeave系统数据库"""
         logger.info("创建FactorWeave系统数据库表...")
 
-        with sqlite3.connect(self.factorweave_db_path) as conn:
+        db = UnifiedSQLiteAccess.get_instance(str(self.factorweave_db_path))
+        with db.get_connection() as conn:
             cursor = conn.cursor()
 
             # FactorWeave特有的系统配置表
@@ -484,7 +454,8 @@ class CompleteDatabaseInitializer:
         """插入SQLite初始数据"""
         logger.info("插入SQLite初始数据...")
 
-        with sqlite3.connect(self.sqlite_db_path) as conn:
+        db = UnifiedSQLiteAccess.get_instance(str(self.sqlite_db_path))
+        with db.get_connection() as conn:
             cursor = conn.cursor()
 
             # 插入系统配置
@@ -856,7 +827,8 @@ class CompleteDatabaseInitializer:
         logger.info("验证数据库完整性...")
 
         # 验证SQLite数据库
-        with sqlite3.connect(self.sqlite_db_path) as conn:
+        db = UnifiedSQLiteAccess.get_instance(str(self.sqlite_db_path))
+        with db.get_connection() as conn:
             cursor = conn.cursor()
 
             # 检查表数量
@@ -901,7 +873,8 @@ class CompleteDatabaseInitializer:
         logger.info("创建性能优化索引...")
 
         # SQLite索引
-        with sqlite3.connect(self.sqlite_db_path) as conn:
+        db = UnifiedSQLiteAccess.get_instance(str(self.sqlite_db_path))
+        with db.get_connection() as conn:
             cursor = conn.cursor()
 
             sqlite_indexes = [
@@ -921,8 +894,6 @@ class CompleteDatabaseInitializer:
                     cursor.execute(index_sql)
                 except sqlite3.OperationalError as e:
                     logger.warning(f"创建SQLite索引失败: {e}")
-
-            conn.commit()
 
         logger.info("索引创建完成")
 

@@ -7,6 +7,7 @@ from loguru import logger
 import pandas as pd
 import numpy as np
 from datetime import datetime
+from functools import lru_cache
 from typing import Optional, Union, Any
 
 # 日志系统已迁移到Loguru
@@ -238,6 +239,7 @@ def validate_kdata(df: pd.DataFrame, context: str = "验证") -> bool:
     logger.debug(f"[{context}] 数据验证通过")
     return True
 
+@lru_cache(maxsize=256)
 def standardize_stock_code(code: str) -> str:
     """
     标准化股票代码格式

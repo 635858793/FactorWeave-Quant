@@ -5,12 +5,10 @@ AkShare网络配置管理器
 
 import requests
 import time
-import logging
+from loguru import logger
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 import random
-
-logger = logging.getLogger(__name__)
 
 class AkShareNetworkConfig:
     """AkShare网络配置管理器"""
@@ -178,10 +176,6 @@ class AkShareNetworkConfig:
         Raises:
             Exception: 请求失败时抛出异常
         """
-        # 检查频率限制
-        if not self.check_rate_limit():
-            raise Exception("IP被封禁或频率限制")
-
         # 设置超时
         if 'timeout' not in kwargs:
             kwargs['timeout'] = self.timeout
@@ -190,6 +184,10 @@ class AkShareNetworkConfig:
         retry_delay = 1.0
 
         for attempt in range(max_retries):
+            # 每次重试前检查频率限制
+            if not self.check_rate_limit():
+                raise Exception("IP被封禁或频率限制")
+
             try:
                 # 发起请求
                 response = self.session.request(method, url, **kwargs)

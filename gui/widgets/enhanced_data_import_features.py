@@ -470,18 +470,12 @@ class PerformanceMonitorWidget(QWidget):
             self.memory_progress.setValue(int(memory_percent))
             self.memory_label.setText(f"{memory_used:.0f} MB / {memory_total:.0f} MB")
 
-            # 模拟导入速度和错误率
-            import random
-            speed = random.randint(100, 1000)
-            error_rate = random.randint(0, 5)
+            self.speed_label.setText("暂无数据")
+            self.error_progress.setValue(0)
+            self.error_label.setText("0 错误")
 
-            self.speed_label.setText(f"{speed:,} 记录/秒")
-            self.error_progress.setValue(error_rate)
-            self.error_label.setText(f"{error_rate} 错误")
-
-            # 添加到历史记录
             timestamp = datetime.now().strftime("%H:%M:%S")
-            history_line = f"[{timestamp}] CPU: {cpu_percent:.1f}%, 内存: {memory_percent:.1f}%, 速度: {speed}/s"
+            history_line = f"[{timestamp}] CPU: {cpu_percent:.1f}%, 内存: {memory_percent:.1f}%"
 
             # 保持最近10条记录
             current_text = self.history_text.toPlainText()
@@ -494,12 +488,13 @@ class PerformanceMonitorWidget(QWidget):
             self.history_text.moveCursor(self.history_text.textCursor().End)
 
         except ImportError:
-            # psutil不可用时的模拟数据
-            import random
-            self.cpu_progress.setValue(random.randint(10, 80))
-            self.memory_progress.setValue(random.randint(30, 70))
-            self.speed_label.setText(f"{random.randint(100, 1000):,} 记录/秒")
-            self.error_progress.setValue(random.randint(0, 5))
+            self.cpu_progress.setValue(0)
+            self.cpu_label.setText("暂无数据")
+            self.memory_progress.setValue(0)
+            self.memory_label.setText("暂无数据")
+            self.speed_label.setText("暂无数据")
+            self.error_progress.setValue(0)
+            self.error_label.setText("暂无数据")
 
 
 class DataQualityWidget(QWidget):

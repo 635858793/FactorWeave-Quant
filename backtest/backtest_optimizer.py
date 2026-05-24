@@ -20,6 +20,7 @@ import warnings
 from dataclasses import dataclass
 from enum import Enum
 from core.performance_optimizer import ProfessionalPerformanceOptimizer, OptimizationLevel
+from .jit_optimizer import jit_optimizer, optimized_backtest_core
 
 class BacktestOptimizationLevel(Enum):
     """回测优化级别枚举"""
@@ -50,7 +51,7 @@ class VectorizedBacktestEngine:
         self.logger = logger
 
     @staticmethod
-    @jit(nopython=True, parallel=True, cache=True, fastmath=True)  # 启用并行、缓存和快速数学
+    @jit(nopython=True, cache=True, fastmath=True)
     def _vectorized_backtest_core(prices: np.ndarray, signals: np.ndarray,
                                   initial_capital: float, position_size: float,
                                   commission_pct: float, slippage_pct: float) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -83,15 +84,22 @@ class VectorizedBacktestEngine:
 
             # 处理交易信号（简化逻辑）
             if signal == 1 and current_position == 0:  # 买入信号且无持仓
-                # 计算交易成本
                 trade_cost = price * (commission_pct + slippage_pct)
                 shares = (current_capital * position_size) / (price + trade_cost)
                 current_position = shares
                 current_capital -= shares * (price + trade_cost)
-            elif signal == -1 and current_position > 0:  # 卖出信号且有持仓
-                # 计算交易成本
+            elif signal == -1 and current_position > 0:  # 卖出信号且有多头持仓
                 trade_cost = price * (commission_pct + slippage_pct)
                 current_capital += current_position * (price - trade_cost)
+                current_position = 0
+            elif signal == -1 and current_position == 0:  # 做空信号且无持仓
+                trade_cost = price * (commission_pct + slippage_pct)
+                shares = (current_capital * position_size) / (price + trade_cost)
+                current_position = -shares
+                current_capital += shares * (price - trade_cost)
+            elif signal == 1 and current_position < 0:  # 买入信号且有做空持仓(平空买入)
+                trade_cost = price * (commission_pct + slippage_pct)
+                current_capital -= abs(current_position) * (price + trade_cost)
                 current_position = 0
 
             positions[i] = current_position
@@ -100,7 +108,7 @@ class VectorizedBacktestEngine:
             if current_position > 0:
                 equity = current_capital + current_position * price
             elif current_position < 0:
-                equity = current_capital - current_position * price
+                equity = current_capital + current_position * price
             else:
                 equity = current_capital
 
@@ -183,15 +191,15 @@ class VectorizedBacktestEngine:
             elif current_position < 0:
                 if use_stop_loss and price >= entry_price * (1 + stop_loss_pct):
                     exit_reason = 1
-                    current_capital += abs(current_position) * price * (1 - commission_pct - slippage_pct)
+                    current_capital -= abs(current_position) * price * (1 + commission_pct + slippage_pct)
                     current_position = 0
                 elif use_take_profit and price <= entry_price * (1 - take_profit_pct):
                     exit_reason = 2
-                    current_capital += abs(current_position) * price * (1 - commission_pct - slippage_pct)
+                    current_capital -= abs(current_position) * price * (1 + commission_pct + slippage_pct)
                     current_position = 0
                 elif use_max_holding and holding_days >= max_holding_periods:
                     exit_reason = 3
-                    current_capital += abs(current_position) * price * (1 - commission_pct - slippage_pct)
+                    current_capital -= abs(current_position) * price * (1 + commission_pct + slippage_pct)
                     current_position = 0
 
             # 如果没有退出，检查交易信号
@@ -207,8 +215,8 @@ class VectorizedBacktestEngine:
                     trade_cost = price * (commission_pct + slippage_pct)
                     shares = (current_capital * position_size) / (price + trade_cost)
                     current_position = -shares
-                    current_capital -= shares * (price + trade_cost)
-                    entry_price = price + trade_cost
+                    current_capital += shares * (price - trade_cost)
+                    entry_price = price - trade_cost
                     holding_days = 0
 
             positions[i] = current_position
@@ -217,7 +225,7 @@ class VectorizedBacktestEngine:
             if current_position > 0:
                 equity = current_capital + current_position * price
             elif current_position < 0:
-                equity = current_capital - current_position * price
+                equity = current_capital + current_position * price
             else:
                 equity = current_capital
 
@@ -320,7 +328,6 @@ class VectorizedBacktestEngine:
 
             # 运行向量化回测
             # 使用优化的JIT函数
-            from .jit_optimizer import jit_optimizer, optimized_backtest_core
 
             # 尝试使用预编译函数，如果失败则使用原始函数
             try:
@@ -476,30 +483,38 @@ class ParallelBacktestEngine:
 
             self.logger.info(f"开始参数优化 - 参数组合数: {len(param_combinations)}")
 
-            # 时间序列交叉验证
-            fold_size = len(data) // cv_folds
+            # 严格时间序列前向交叉验证（Walk-Forward, 不shuffle）
+            fold_size = len(data) // (cv_folds + 1)
+            if fold_size < 2:
+                self.logger.error(f"数据量不足，无法进行{cv_folds}折交叉验证")
+                return {
+                    'best_params': None,
+                    'best_score': None,
+                    'all_results': [],
+                    'optimization_metric': optimization_metric
+                }
+
             optimization_results = []
 
             for params in param_combinations:
                 fold_scores = []
 
-                for fold in range(cv_folds):
-                    # 划分训练和测试集
-                    start_idx = fold * fold_size
-                    end_idx = start_idx + fold_size * 2  # 使用两个fold的数据
+                for fold in range(1, cv_folds + 1):
+                    train_end = fold * fold_size
+                    test_start = train_end
+                    test_end = min(test_start + fold_size, len(data))
 
-                    if end_idx > len(data):
+                    if test_end <= test_start:
                         break
 
-                    fold_data = data.iloc[start_idx:end_idx]
+                    train_data = data.iloc[:train_end]
+                    test_data = data.iloc[test_start:test_end]
 
                     try:
-                        # 运行回测
-                        data_with_signals = strategy_func(fold_data, **params)
+                        data_with_signals = strategy_func(test_data, **params)
                         result = self.vectorized_engine.run_vectorized_backtest(
                             data_with_signals)
 
-                        # 计算评估指标
                         score = self._calculate_optimization_metric(
                             result, optimization_metric)
                         fold_scores.append(score)
@@ -659,17 +674,19 @@ class MemoryOptimizedBacktestEngine:
                 raise
 
     def _recalculate_cumulative_metrics(self, result: pd.DataFrame) -> pd.DataFrame:
-        """重新计算累积指标"""
+        """重新计算累积指标（向量化版本）"""
         try:
             if 'returns' in result.columns:
-                result['cumulative_returns'] = (
-                    1 + result['returns']).cumprod() - 1
+                result['cumulative_returns'] = (1 + result['returns']).cumprod() - 1
 
             if 'capital' in result.columns:
-                # 确保资金连续性
-                for i in range(1, len(result)):
-                    if pd.isna(result.loc[i, 'capital']) or result.loc[i, 'capital'] == 0:
-                        result.loc[i, 'capital'] = result.loc[i-1, 'capital']
+                capital = result['capital']
+                mask = capital.isna() | (capital == 0)
+                if mask.any():
+                    good_mask = ~mask
+                    if good_mask.any():
+                        capital[mask] = capital[good_mask].iloc[-1]
+                    result['capital'] = capital.fillna(method='ffill')
 
             return result
 

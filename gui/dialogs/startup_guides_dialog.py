@@ -7,7 +7,7 @@
 """
 
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTabWidget, QWidget, QTextEdit, QCheckBox, QScrollArea,
     QFrame, QGridLayout, QGroupBox, QProgressBar, QListWidget,
     QListWidgetItem, QSplitter
@@ -17,20 +17,24 @@ from PyQt5.QtGui import QFont, QPixmap, QIcon
 from loguru import logger
 from pathlib import Path
 
+from .base_dialog import BaseDialog
+
 logger = logger
 
 
-class StartupGuidesDialog(QDialog):
+class StartupGuidesDialog(BaseDialog):
     """启动向导对话框"""
 
     # 信号
     guide_completed = pyqtSignal(str)  # 向导完成信号
 
     def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("FactorWeave-Quant 启动向导")
-        self.setModal(True)
-        self.resize(800, 600)
+        super().__init__(
+            parent,
+            title="FactorWeave-Quant 启动向导",
+            size=(800, 600),
+            settings_key="StartupGuidesDialog"
+        )
 
         # 初始化UI
         self._init_ui()
@@ -419,4 +423,5 @@ class StartupGuidesDialog(QDialog):
     def closeEvent(self, event):
         """关闭事件处理"""
         # 可以在这里添加关闭确认逻辑
+        super().closeEvent(event)
         event.accept()

@@ -9,6 +9,7 @@ from loguru import logger
 import joblib
 import json
 import pickle
+from utils.safe_pickle import safe_load
 from sklearn.ensemble import IsolationForest, RandomForestRegressor
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
@@ -214,12 +215,13 @@ class AdvancedRiskControlService:
                 await asyncio.sleep(self.monitoring_interval)
     
     async def _collect_and_process_risk_data(self):
-        """收集和处理风险数据"""
         try:
-            # 获取市场数据
             market_data = await self._get_market_data()
-            
-            # 计算基础风险指标
+
+            if market_data is None:
+                logger.warning("市场数据不可用，跳过本轮风险数据收集")
+                return
+
             basic_risk_metrics = await self._calculate_basic_risk_metrics(market_data)
             
             # 计算高级风险指标
@@ -253,38 +255,44 @@ class AdvancedRiskControlService:
         except Exception as e:
             logger.error(f"收集风险数据失败: {e}")
     
-    async def _get_market_data(self) -> Dict[str, Any]:
-        """获取市场数据"""
+    async def _get_market_data(self) -> Optional[Dict[str, Any]]:
         try:
-            # 这里应该从实际的数据源获取市场数据
-            # 为了演示，生成模拟数据
-            current_time = datetime.now()
-            
-            # 模拟价格数据
-            price_data = np.random.normal(100, 5, 10).tolist()  # 10个资产的价格
-            
-            # 模拟成交量数据
-            volume_data = np.random.lognormal(10, 1, 10).tolist()
-            
-            # 模拟波动率数据
-            volatility_data = np.random.uniform(0.1, 0.4, 10).tolist()
-            
-            market_data = {
-                'timestamp': current_time,
-                'prices': price_data,
-                'volumes': volume_data,
-                'volatilities': volatility_data,
-                'indices': {
-                    'market_index': np.random.normal(0, 0.02),
-                    'vix': np.random.uniform(15, 35)
-                }
-            }
-            
-            return market_data
-            
+            if self.service_container and hasattr(self.service_container, 'get_market_data_service'):
+                market_service = self.service_container.get_market_data_service()
+                if market_service and hasattr(market_service, 'get_current_market_data'):
+                    data = await market_service.get_current_market_data()
+                    if data:
+                        return data
+
+            if self.service_container and hasattr(self.service_container, 'data_provider'):
+                provider = self.service_container.data_provider
+                if hasattr(provider, 'get_realtime_quotes'):
+                    quotes = await provider.get_realtime_quotes()
+                    if quotes:
+                        return self._transform_quotes_to_market_data(quotes)
+
+            logger.warning("无法获取真实市场数据，跳过本轮风险分析")
+            return None
+
         except Exception as e:
             logger.error(f"获取市场数据失败: {e}")
-            return {}
+            return None
+
+    def _transform_quotes_to_market_data(self, quotes: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        prices = [q.get('price', 0.0) for q in quotes if q.get('price') is not None]
+        volumes = [q.get('volume', 0.0) for q in quotes if q.get('volume') is not None]
+        volatilities = [q.get('volatility', q.get('amplitude', 0.0)) for q in quotes]
+
+        if not prices:
+            return None
+
+        return {
+            'timestamp': datetime.now(),
+            'prices': prices,
+            'volumes': volumes if volumes else [0.0] * len(prices),
+            'volatilities': volatilities if volatilities else [0.0] * len(prices),
+            'indices': {}
+        }
     
     async def _calculate_basic_risk_metrics(self, market_data: Dict[str, Any]) -> Dict[str, float]:
         """计算基础风险指标"""
@@ -719,6 +727,7 @@ class AdvancedRiskControlService:
             latest_data = self.risk_data_history[-1]
             
             assessment = {
+                'status': 'success',
                 'timestamp': latest_data['timestamp'].isoformat(),
                 'risk_score': latest_data['risk_score'],
                 'risk_level': self._get_risk_level(latest_data['risk_score']),
@@ -876,7 +885,7 @@ class AdvancedRiskControlService:
         """加载机器学习模型"""
         try:
             with open(filepath, 'rb') as f:
-                model_data = pickle.load(f)
+                model_data = safe_load(f)
             
             self.ml_models = model_data.get('models', {})
             self.scalers = model_data.get('scalers', {})

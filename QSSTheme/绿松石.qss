@@ -46,7 +46,7 @@ QTreeWidget{
      spacing: 3px; /* spacing between menu bar items */
      padding: 1px 4px;			
      border-radius: 1px;
-     font:#BBDDFF;
+     color: #BBDDFF;
     background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,	/*菜单最顶层如“Flie”的背景颜色*/
                                  stop: 0 #113845,
                                  stop: 1.0 #15A8FF);
@@ -54,13 +54,13 @@ QTreeWidget{
 
  QMenuBar::item:selected { /* when selected using mouse or keyboard */
      background: #1A2432;			/*当鼠标移动到菜单项上面或者通过键盘使菜单项得到光标时显示的颜色*/
-     font:#FFFFFF;
+     color: #FFFFFF;
  }
 
  QMenuBar::item:pressed {
      background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                                        stop:0 #10151E, stop:1 #2C547E);
-     font:#FFFFFF;
+     color: #FFFFFF;
 
  }
  QMenuBar::item:hover{
@@ -68,7 +68,7 @@ QTreeWidget{
     border-color:#516589;
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                                        stop:0 #9979A, stop:1 #2D567F);
-    font:#FFFFFF;
+    color: #FFFFFF;
 
  }
   QMenu {
@@ -748,11 +748,9 @@ QListWidget::item:selected {
 
 /**********工具栏**********/
 QToolBar {
-        background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 #113845, stop: 1.0 #15A8FF);
-        border: 1px solid #32435E;
-        spacing: 5px;
-        padding: 3px;
-}
+     background: qlineargradient(spread:reflect, x1:0.5, y1:0.5, x2:0.5, y2:0, stop:0 rgba(0, 0, 0, 255), stop:1 rgba(170, 170, 170, 255));
+     spacing: 3px; /* spacing between items in the tool bar */
+ }
 QToolBar::separator {
         width: 1px;
         background: #32435E;

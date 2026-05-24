@@ -10,7 +10,7 @@
 - 准确性跟踪
 """
 
-import logging
+from loguru import logger
 import json
 import math
 from datetime import datetime, timedelta
@@ -35,8 +35,6 @@ from PyQt5.QtGui import (
     QPainterPath, QPen, QPixmap, QLinearGradient,
     QTextCharFormat, QTextCursor
 )
-
-logger = logging.getLogger(__name__)
 
 
 class PredictionResultsPanel(QWidget):
@@ -805,44 +803,62 @@ class PredictionResultsPanel(QWidget):
     
     def start_monitoring(self):
         """开始监控"""
-        # 启动更新定时器
         self.update_timer.timeout.connect(self._update_display_data)
-        self.update_timer.start(5000)  # 每5秒更新一次
-        
-        # 初始化模拟数据
-        self._generate_initial_data()
-        
+        self.update_timer.start(5000)
+
+        self._initialize_real_results()
+
         logger.info("预测结果展示界面监控已启动")
     
-    def _generate_initial_data(self):
-        """生成初始模拟数据"""
-        # 生成一些历史预测记录
-        models = ["LSTM预测模型", "ARIMA模型", "XGBoost模型", "随机森林模型"]
-        
-        for i in range(20):
-            result = {
-                'id': f'PRED_{i+1:04d}',
-                'timestamp': self.current_time - timedelta(hours=i),
-                'type': ['价格预测', '趋势预测', '波动率预测', '成交量预测'][i % 4],
-                'predicted_value': 100 + random.uniform(-10, 10),
-                'actual_value': 100 + random.uniform(-8, 8) if i < 15 else None,
-                'confidence': random.uniform(0.7, 0.95),
-                'models_used': random.sample(models, random.randint(2, 4)),
-                'model_weights': {model: random.uniform(0.1, 0.4) for model in random.sample(models, random.randint(2, 4))},
-                'status': '已完成' if i < 15 else '预测中',
-                'error': random.uniform(0, 0.1) if i < 15 else None,
-                'accuracy': 1 - random.uniform(0, 0.1) if i < 15 else None
-            }
-            
-            # 标准化权重
-            total_weight = sum(result['model_weights'].values())
-            result['model_weights'] = {k: v/total_weight for k, v in result['model_weights'].items()}
-            
-            self.historical_results.append(result)
-        
-        # 更新显示
+    def _initialize_real_results(self):
+        """从AI选股服务获取真实选股结果"""
+        service_available = False
+        try:
+            from core.services.ai_selection_integration_service import get_ai_selection_service
+            service = get_ai_selection_service()
+            if service:
+                service_available = True
+        except Exception as e:
+            logger.warning(f"AI选股服务不可用: {e}")
+
+        if not service_available:
+            self._show_no_data_message()
+            return
+
         self._update_display_data()
-    
+
+    def _show_no_data_message(self):
+        """显示无数据降级提示"""
+        self.historical_results.clear()
+        self.current_result = {
+            'id': 'NODATA',
+            'timestamp': datetime.now(),
+            'type': '暂无选股结果',
+            'predicted_value': 0.0,
+            'actual_value': None,
+            'confidence': 0.0,
+            'models_used': [],
+            'model_weights': {},
+            'status': '无数据',
+            'error': None,
+            'accuracy': None
+        }
+        self.historical_results.append(self.current_result)
+        self._update_display_data()
+        self.overall_status_label.setText("🟡 暂无选股结果")
+        self.overall_status_label.setStyleSheet("""
+            QLabel {
+                font-size: 12px;
+                font-weight: bold;
+                padding: 6px 12px;
+                border-radius: 4px;
+                background-color: #fff3cd;
+                color: #856404;
+                border: 1px solid #ffeaa7;
+            }
+        """)
+        logger.warning("选股结果不可用，显示降级提示")
+
     def _update_display_data(self):
         """更新显示数据"""
         try:
@@ -1149,32 +1165,16 @@ class PredictionResultsPanel(QWidget):
             logger.error(f"刷新数据时出错: {e}")
     
     def _generate_sample_result(self):
-        """生成示例结果"""
-        models = ["LSTM预测模型", "ARIMA模型", "XGBoost模型", "随机森林模型"]
-        
-        result = {
-            'id': f'PRED_{self.result_id_counter + 1:04d}',
-            'timestamp': self.current_time,
-            'type': ['价格预测', '趋势预测', '波动率预测', '成交量预测'][self.result_id_counter % 4],
-            'predicted_value': 100 + random.uniform(-10, 10),
-            'actual_value': None,
-            'confidence': random.uniform(0.7, 0.95),
-            'models_used': random.sample(models, random.randint(2, 4)),
-            'model_weights': {model: random.uniform(0.1, 0.4) for model in random.sample(models, random.randint(2, 4))},
-            'status': '预测中',
-            'error': None,
-            'accuracy': None
-        }
-        
-        # 标准化权重
-        total_weight = sum(result['model_weights'].values())
-        result['model_weights'] = {k: v/total_weight for k, v in result['model_weights'].items()}
-        
-        self.historical_results.append(result)
-        self.result_id_counter += 1
-        
-        # 更新显示
-        self._update_display_data()
+        """从服务获取最新选股结果"""
+        try:
+            from core.services.ai_selection_integration_service import get_ai_selection_service
+            service = get_ai_selection_service()
+            if not service:
+                return
+
+            self._update_display_data()
+        except Exception as e:
+            logger.warning(f"获取选股结果失败: {e}")
     
     def _export_results(self):
         """导出结果"""
@@ -1387,11 +1387,9 @@ class PredictionResultsPanel(QWidget):
 if __name__ == "__main__":
     import sys
     from PyQt5.QtWidgets import QApplication
-    import random
 
     app = QApplication(sys.argv)
 
-    # 创建并显示预测结果界面
     panel = PredictionResultsPanel()
     panel.show()
 

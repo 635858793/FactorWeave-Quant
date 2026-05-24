@@ -20,13 +20,13 @@ import warnings
 from loguru import logger
 
 try:
-    import matplotlib.pyplot as plt
     import matplotlib
-    from matplotlib.figure import Figure
-    from matplotlib.axes import Axes
+    import matplotlib.pyplot as plt
+    from matplotlib.ticker import FuncFormatter, MaxNLocator
     HAS_MATPLOTLIB = True
 except ImportError:
     HAS_MATPLOTLIB = False
+    logger.warning("matplotlib未安装，将使用PyQtGraph作为唯一依赖")
 
 from .pyqtgraph_engine import PyQtGraphEngine, ChartType
 from ...events.event_bus import EventBus
@@ -249,34 +249,50 @@ class MatplotlibFigure:
             logger.error(f"绘制柱状图失败: {e}")
             
     def plot_candlestick(self, ohlc_data, label: str = ""):
-        """绘制K线图"""
+        """绘制K线图（向量化批量渲染）"""
         try:
             if not self.axes:
                 logger.warning("matplotlib图形未初始化")
                 return
-                
+
             if isinstance(ohlc_data, pd.DataFrame):
-                # 确保数据格式正确
                 if not all(col in ohlc_data.columns for col in ['open', 'high', 'low', 'close']):
                     raise ValueError("OHLC数据缺少必要字段")
-                    
-                # 简化的K线图实现
-                for i in range(len(ohlc_data)):
-                    row = ohlc_data.iloc[i]
-                    
-                    # 实体颜色
-                    color = 'red' if row['close'] >= row['open'] else 'green'
-                    
-                    # 绘制K线实体
-                    self.axes.plot([i, i], [row['open'], row['close']], 
-                                 color=color, linewidth=3)
-                    
-                    # 绘制影线
-                    self.axes.plot([i, i], [row['low'], row['high']], 
-                                 color=color, linewidth=1)
-                                 
-            logger.debug("matplotlib K线图绘制完成")
-            
+
+                df = ohlc_data.reset_index(drop=True)
+                open_arr = df['open'].values
+                close_arr = df['close'].values
+                n = len(df)
+                x_indices = np.arange(n)
+                body_width = 0.6
+
+                is_up = close_arr >= open_arr
+                up_mask = is_up
+                down_mask = ~is_up
+
+                self.axes.vlines(x_indices[up_mask],
+                               df['low'].values[up_mask],
+                               df['high'].values[up_mask],
+                               color='red', linewidth=0.8)
+                self.axes.vlines(x_indices[down_mask],
+                               df['low'].values[down_mask],
+                               df['high'].values[down_mask],
+                               color='green', linewidth=0.8)
+
+                if up_mask.any():
+                    self.axes.bar(x_indices[up_mask],
+                                  close_arr[up_mask] - open_arr[up_mask],
+                                  body_width, bottom=open_arr[up_mask],
+                                  color='red', edgecolor='red', linewidth=0.5)
+
+                if down_mask.any():
+                    self.axes.bar(x_indices[down_mask],
+                                  open_arr[down_mask] - close_arr[down_mask],
+                                  body_width, bottom=close_arr[down_mask],
+                                  color='green', edgecolor='green', linewidth=0.5)
+
+            logger.debug("matplotlib K线图批量绘制完成")
+
         except Exception as e:
             logger.error(f"绘制matplotlib K线图失败: {e}")
             
@@ -574,14 +590,18 @@ class MatplotlibAdapter:
             
     def close_all(self):
         """关闭所有图形"""
-        try:
-            for figure_id in list(self.figures.keys()):
+        errors = []
+        for figure_id in list(self.figures.keys()):
+            try:
                 self.close_figure(figure_id)
-                
+            except Exception as e:
+                errors.append((figure_id, str(e)))
+                logger.error(f"关闭图形失败 {figure_id}: {e}")
+
+        if errors:
+            logger.warning(f"关闭所有图形完成，{len(errors)}个失败: {errors}")
+        else:
             logger.info("关闭所有matplotlib图形")
-            
-        except Exception as e:
-            logger.error(f"关闭所有图形失败: {e}")
             
     def get_figure_info(self, figure_id: str) -> Optional[Dict[str, Any]]:
         """获取图形信息"""

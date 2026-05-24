@@ -87,6 +87,37 @@ class PluginCenter:
         self.last_health_check = datetime.now()
 
         logger.info("插件中心初始化完成")
+    # ==================== 从PluginManager获取插件列表的委托方法 ====================
+    def get_all_plugin_instances(self) -> Dict[str, Any]:
+        """从PluginManager获取所有插件实例（统一注册源）"""
+        if hasattr(self.plugin_manager, 'get_all_plugins'):
+            return self.plugin_manager.get_all_plugins()
+        return {}
+
+    def get_enhanced_plugins(self) -> Dict[str, Any]:
+        """从PluginManager获取增强插件列表（统一注册源）"""
+        if hasattr(self.plugin_manager, 'get_all_enhanced_plugins'):
+            return self.plugin_manager.get_all_enhanced_plugins()
+        return {}
+
+    def get_plugin_from_manager(self, plugin_id: str):
+        """从PluginManager获取插件实例"""
+        if hasattr(self.plugin_manager, 'get_plugin'):
+            return self.plugin_manager.get_plugin(plugin_id)
+        return self.data_source_plugins.get(plugin_id)
+
+    def sync_from_plugin_manager(self) -> int:
+        """从PluginManager同步插件列表到PluginCenter"""
+        count = 0
+        all_instances = self.get_all_plugin_instances()
+        for plugin_name, plugin_instance in all_instances.items():
+            if plugin_name not in self.data_source_plugins and self._is_data_source_plugin(plugin_instance):
+                self._register_data_source_plugin(plugin_name, plugin_instance)
+                count += 1
+        if count > 0:
+            self._build_capability_indexes()
+        return count
+
 
     def discover_and_register_plugins(self) -> Dict[str, str]:
         """
@@ -99,7 +130,12 @@ class PluginCenter:
 
         try:
             with self._lock:
-                # 1. 获取所有已加载的插件
+                # 0. 首先从PluginManager同步（统一注册源）
+                synced = self.sync_from_plugin_manager()
+                if synced > 0:
+                    logger.info(f"从PluginManager同步了 {synced} 个新插件")
+
+                # 1. 获取所有已加载的插件（从PluginManager统一注册源）
                 all_plugins = self.plugin_manager.get_all_plugins()
 
                 logger.info(f"开始插件发现和注册，共发现 {len(all_plugins)} 个插件")

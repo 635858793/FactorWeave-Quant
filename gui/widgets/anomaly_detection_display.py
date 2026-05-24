@@ -16,7 +16,6 @@
 """
 
 import sys
-import logging
 import math
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
@@ -48,17 +47,9 @@ from PyQt5.QtGui import (
 )
 
 # 导入核心异常检测组件
-try:
-    from core.ai.data_anomaly_detector import DataAnomalyDetector
-    from core.ui_integration.ui_business_logic_adapter import get_ui_adapter
-    from loguru import logger
-    CORE_AVAILABLE = True
-except ImportError as e:
-    logger = logging.getLogger(__name__)
-    CORE_AVAILABLE = False
-    logger.warning(f"核心异常检测服务不可用: {e}")
-
-logger = logger.bind(module=__name__) if hasattr(logger, 'bind') else logging.getLogger(__name__)
+from core.ai.data_anomaly_detector import DataAnomalyDetector
+from core.ui_integration.ui_business_logic_adapter import get_ui_adapter
+from loguru import logger
 
 
 class AnomalySeverity(Enum):
@@ -271,6 +262,22 @@ class AnomalyChart(QGraphicsView):
 class AnomalySeverityPie(QWidget):
     """异常严重程度饼图"""
 
+    _SEVERITY_COLORS = {
+        AnomalySeverity.LOW: QColor(52, 152, 219),
+        AnomalySeverity.MEDIUM: QColor(241, 196, 15),
+        AnomalySeverity.HIGH: QColor(230, 126, 34),
+        AnomalySeverity.CRITICAL: QColor(231, 76, 60)
+    }
+    _SEVERITY_NAMES = {
+        AnomalySeverity.LOW: "低",
+        AnomalySeverity.MEDIUM: "中",
+        AnomalySeverity.HIGH: "高",
+        AnomalySeverity.CRITICAL: "严重"
+    }
+    _DEFAULT_COLOR = QColor(128, 128, 128)
+    _PEN_WHITE = QPen(Qt.white, 2)
+    _FONT_LEGEND = QFont("Arial", 8)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.severity_counts: Dict[AnomalySeverity, int] = {}
@@ -292,55 +299,35 @@ class AnomalySeverityPie(QWidget):
             painter.drawText(self.rect(), Qt.AlignCenter, "暂无数据")
             return
 
-        # 计算总数
         total = sum(self.severity_counts.values())
 
-        # 绘制区域
         rect = self.rect().adjusted(20, 20, -20, -20)
 
-        # 颜色映射
-        colors = {
-            AnomalySeverity.LOW: QColor(52, 152, 219),
-            AnomalySeverity.MEDIUM: QColor(241, 196, 15),
-            AnomalySeverity.HIGH: QColor(230, 126, 34),
-            AnomalySeverity.CRITICAL: QColor(231, 76, 60)
-        }
-
-        # 绘制饼图
         start_angle = 0
         for severity, count in self.severity_counts.items():
             if count > 0:
                 span_angle = int(360 * count / total * 16)
-                color = colors.get(severity, QColor(128, 128, 128))
+                color = self._SEVERITY_COLORS.get(severity, self._DEFAULT_COLOR)
 
                 painter.setBrush(QBrush(color))
-                painter.setPen(QPen(Qt.white, 2))
+                painter.setPen(self._PEN_WHITE)
                 painter.drawPie(rect, start_angle, span_angle)
 
                 start_angle += span_angle
 
-        # 绘制图例
         legend_y = rect.bottom() + 10
         legend_x = rect.left()
 
-        severity_names = {
-            AnomalySeverity.LOW: "低",
-            AnomalySeverity.MEDIUM: "中",
-            AnomalySeverity.HIGH: "高",
-            AnomalySeverity.CRITICAL: "严重"
-        }
-
-        painter.setFont(QFont("Arial", 8))
+        painter.setFont(self._FONT_LEGEND)
         for severity, count in self.severity_counts.items():
             if count > 0:
-                color = colors.get(severity, QColor(128, 128, 128))
+                color = self._SEVERITY_COLORS.get(severity, self._DEFAULT_COLOR)
 
-                # 颜色块
                 color_rect = QRectF(legend_x, legend_y, 10, 10)
                 painter.fillRect(color_rect, color)
 
                 # 标签
-                text = f"{severity_names.get(severity, severity.value)}: {count}"
+                text = f"{self._SEVERITY_NAMES.get(severity, severity.value)}: {count}"
                 painter.drawText(legend_x + 15, legend_y + 8, text)
 
                 legend_y += 15
@@ -354,6 +341,7 @@ class AnomalyDetailsDialog(QDialog):
 
     def __init__(self, anomaly: AnomalyResult, parent=None):
         super().__init__(parent)
+        self.setAttribute(Qt.WA_DeleteOnClose)
         self.anomaly = anomaly
         self.setup_ui()
 
@@ -1009,9 +997,6 @@ class AnomalyDetectionDisplay(QWidget):
         self.generate_sample_anomalies()
 
     def generate_sample_anomalies(self):
-        """生成示例异常数据"""
-        import random
-
         sample_anomalies = [
             AnomalyResult(
                 "anomaly_001", AnomalyType.OUTLIER, AnomalySeverity.HIGH,
@@ -1051,58 +1036,19 @@ class AnomalyDetectionDisplay(QWidget):
             )
         ]
 
-        # 设置随机检测时间
         for i, anomaly in enumerate(sample_anomalies):
-            anomaly.detected_at = datetime.now() - timedelta(hours=random.randint(1, 48))
-
-            # 随机设置一些异常为已修复
-            if random.random() < 0.3:
-                anomaly.status = AnomalyStatus.FIXED
-                anomaly.resolution_note = "自动修复"
+            anomaly.detected_at = datetime.now()
+            anomaly.status = AnomalyStatus.PENDING
 
         self.anomalies = sample_anomalies
         self.update_displays()
 
     def update_anomaly_detection(self):
-        """更新异常检测"""
-        # 模拟新异常的产生
-        import random
-
-        if random.random() < 0.1:  # 10%概率产生新异常
-            new_anomaly = self.generate_random_anomaly()
-            self.anomalies.append(new_anomaly)
-            self.anomaly_history.append(new_anomaly)
-
-            # 更新显示
-            self.update_displays()
-
-            # 检查是否需要通知
-            if self.should_notify_anomaly(new_anomaly):
-                self.show_anomaly_notification(new_anomaly)
-
-        # 更新状态
         self.last_detection_label.setText(f"最后检测: {datetime.now().strftime('%H:%M:%S')}")
 
-    def generate_random_anomaly(self) -> AnomalyResult:
-        """生成随机异常"""
-        import random
-
-        types = list(AnomalyType)
-        severities = list(AnomalySeverity)
-        columns = ["price", "volume", "symbol", "date", "amount"]
-
-        anomaly_type = random.choice(types)
-        severity = random.choice(severities)
-        column = random.choice(columns)
-
-        return AnomalyResult(
-            f"anomaly_{int(datetime.now().timestamp())}",
-            anomaly_type, severity, column,
-            f"异常值_{random.randint(1000, 9999)}",
-            confidence=random.uniform(0.7, 0.98),
-            description=f"在{column}列检测到{anomaly_type.value}异常",
-            suggestion="建议进行人工检查和处理"
-        )
+    def generate_random_anomaly(self) -> Optional[AnomalyResult]:
+        logger.warning("异常检测随机模拟数据不可用")
+        return None
 
     def update_displays(self):
         """更新所有显示"""
@@ -1177,7 +1123,7 @@ class AnomalyDetectionDisplay(QWidget):
         self.recent_anomalies_list.clear()
 
         # 按时间排序，取最近的10个
-        recent = sorted(self.anomalies, key=lambda a: a.detected_at, reverse=True)[:10]
+        recent = heapq.nlargest(10, self.anomalies, key=lambda a: a.detected_at)
 
         for anomaly in recent:
             severity_icons = {

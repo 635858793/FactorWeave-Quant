@@ -91,6 +91,9 @@ class CustomIndicatorDialog(QDialog):
     def _test_indicator(self, formula: str):
         """测试指标公式"""
         try:
+            if len(formula) > 200 or not re.match(r'^[a-zA-Z0-9_+\-*/.()<>=!&\|\s,:\'\"]*$', formula):
+                QMessageBox.warning(self, "无效公式", "公式包含非法字符")
+                return
             test_data = {
                 'bid_volume': 1000,
                 'ask_volume': 1200,
@@ -218,6 +221,7 @@ class HistoricalReplayDialog(QDialog):
 
     def __init__(self, parent=None, historical_data: List[Dict] = None):
         super().__init__(parent)
+        self.setAttribute(Qt.WA_DeleteOnClose)
         self.setWindowTitle("历史数据回放")
         self.setMinimumWidth(800)
         self.setMinimumHeight(600)
@@ -1017,6 +1021,10 @@ class Level2DataPanel(QWidget):
 
             for row, (name, formula) in enumerate(self.custom_indicators.items()):
                 try:
+                    if len(formula) > 200 or not re.match(r'^[a-zA-Z0-9_+\-*/.()<>=!&\|\s,:\'\"]*$', formula):
+                        self.custom_indicator_table.setItem(row, 0, QTableWidgetItem(name))
+                        self.custom_indicator_table.setItem(row, 1, QTableWidgetItem("公式无效"))
+                        continue
                     result = eval(formula, {"__builtins__": None}, calc_data)
                     self.custom_indicator_table.setItem(row, 0, QTableWidgetItem(name))
                     self.custom_indicator_table.setItem(row, 1, QTableWidgetItem(f"{result:.2f}"))
@@ -1262,6 +1270,9 @@ class Level2DataPanel(QWidget):
 
             # 取消订阅事件
             if self.event_bus:
+                self.event_bus.unsubscribe(RealtimeDataEvent, self._handle_realtime_data)
+                self.event_bus.unsubscribe(TickDataEvent, self._handle_tick_data)
+                self.event_bus.unsubscribe(OrderBookEvent, self._handle_order_book_data)
                 self.event_bus.unsubscribe(StockSelectedEvent, self._on_stock_selected)
 
             # 停止防抖定时器
@@ -1276,4 +1287,5 @@ class Level2DataPanel(QWidget):
         except Exception as e:
             logger.error(f"关闭面板失败: {e}")
 
+        super().closeEvent(event)
         event.accept()

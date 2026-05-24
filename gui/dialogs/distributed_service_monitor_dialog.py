@@ -2,7 +2,7 @@
 分布式服务综合监控对话框
 增强版：包含节点监控和任务监控功能
 """
-from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
+from PyQt5.QtWidgets import (QVBoxLayout, QHBoxLayout, QPushButton,
                              QTableWidget, QTableWidgetItem, QLabel, QGroupBox,
                              QHeaderView, QMessageBox, QLineEdit, QSpinBox,
                              QFormLayout, QDialogButtonBox, QTabWidget, QWidget,
@@ -13,6 +13,8 @@ from loguru import logger
 from datetime import datetime
 from typing import List, Dict, Any
 import uuid
+
+from .base_dialog import BaseDialog
 
 
 class NodeStatsWorker(QThread):
@@ -112,6 +114,7 @@ class CreateTaskDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setAttribute(Qt.WA_DeleteOnClose)
         self.setWindowTitle("创建分布式任务")
         self.setMinimumWidth(450)
         self.init_ui()
@@ -183,14 +186,18 @@ class CreateTaskDialog(QDialog):
         }
 
 
-class DistributedServiceMonitorDialog(QDialog):
+class DistributedServiceMonitorDialog(BaseDialog):
     """分布式服务综合监控对话框"""
 
     def __init__(self, distributed_service, parent=None):
-        super().__init__(parent)
         self.distributed_service = distributed_service
-        self.setWindowTitle("分布式服务监控")
-        self.setMinimumSize(1200, 700)
+
+        super().__init__(
+            parent,
+            title="分布式服务监控",
+            min_size=(1200, 700),
+            settings_key="DistributedServiceMonitorDialog"
+        )
 
         self.update_timer = QTimer(self)
         self.update_timer.timeout.connect(self.refresh_all)
@@ -798,4 +805,5 @@ class DistributedServiceMonitorDialog(QDialog):
             except RuntimeError:
                 pass
 
+        super().closeEvent(event)
         event.accept()

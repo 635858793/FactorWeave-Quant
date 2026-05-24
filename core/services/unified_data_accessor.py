@@ -52,7 +52,7 @@ class UnifiedDataAccessor:
                 if not self.data_standardizer:
                     try:
                         self.data_standardizer = container.get('DataStandardizer')
-                    except:
+                    except Exception:
                         # 兼容旧版本：如果没有DataStandardizer，则使用data_standardizer服务
                         self.data_standardizer = container.get('data_standardizer')
 

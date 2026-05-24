@@ -6,7 +6,7 @@ missing data ranges and generating optimal download plans.
 """
 
 import asyncio
-import logging
+from loguru import logger
 from datetime import datetime, timedelta
 from typing import List, Dict, Set, Optional, Tuple
 from dataclasses import dataclass
@@ -18,7 +18,7 @@ from ..events.event_bus import EventBus
 from ..events.types import DataAnalysisEvent
 from .data_completeness_checker import DataCompletenessChecker
 
-logger = logging.getLogger(__name__)
+
 
 
 class DownloadStrategy(Enum):

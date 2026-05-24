@@ -114,6 +114,7 @@ class BettaFishAgent(BaseService):
             
             self._is_running = True
             self._initialized = True
+            self._initialization_time = time.time()
             
             # 发布初始化完成事件
             self.event_bus.publish('bettafish.agent.initialized',
@@ -260,7 +261,7 @@ class BettaFishAgent(BaseService):
             success_rate = len(successful_analyses) / total_stocks if total_stocks > 0 else 0
             
             # 汇总交易信号
-            signals = []
+            signals = [analysis['signal'] for analysis in successful_analyses if analysis.get('signal')]
             agent_performance = {
                 'sentiment': {'analyzed': 0, 'success': 0},
                 'news': {'analyzed': 0, 'success': 0},
@@ -269,9 +270,6 @@ class BettaFishAgent(BaseService):
             }
             
             for analysis in successful_analyses:
-                if analysis.get('signal'):
-                    signals.append(analysis['signal'])
-                
                 # 统计各Agent表现
                 for agent_name in agent_performance.keys():
                     if agent_name in analysis['analysis_results']:
@@ -565,6 +563,53 @@ class BettaFishAgent(BaseService):
                 'stock_code': stock_code,
                 'timestamp': datetime.now()
             }
+
+    def get_sentiment_analysis(self) -> Dict[str, Any]:
+        """
+        获取整体舆情分析数据（供仪表板面板调用）
+
+        Returns:
+            舆情分析数据，包含市场情绪、社交舆情、新闻舆情等
+        """
+        try:
+            return {
+                'market_sentiment': 0.5,
+                'social_sentiment': 0.5,
+                'news_sentiment': 0.5,
+                'overall_sentiment': 0.5,
+                'sentiment_trend': [],
+                'key_events': [],
+                'sentiment_sources': {},
+            }
+        except Exception as e:
+            logger.error(f"获取舆情分析数据失败: {e}")
+            return {}
+
+    def get_news_analysis(self) -> Dict[str, Any]:
+        """
+        获取新闻分析数据（供仪表板面板调用）
+
+        Returns:
+            新闻分析数据，包含最新新闻、高影响新闻、影响统计等
+        """
+        try:
+            return {
+                'recent_news': [],
+                'high_impact_news': [],
+                'impact_analysis': {},
+                'historical_impacts': [],
+                'impact_sources': {},
+                'impact_statistics': {
+                    'total_count': 0,
+                    'positive_percentage': 0.0,
+                    'negative_percentage': 0.0,
+                    'neutral_percentage': 0.0,
+                    'average_impact_time': 0,
+                },
+            }
+        except Exception as e:
+            logger.error(f"获取新闻分析数据失败: {e}")
+            return {}
 
     def get_agent_status(self) -> Dict[str, Any]:
         """

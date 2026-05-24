@@ -26,6 +26,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.decomposition import TruncatedSVD
 import pickle
+from utils.safe_pickle import safe_load
 
 from loguru import logger
 from ..plugin_types import AssetType
@@ -1351,7 +1352,7 @@ class SmartRecommendationEngine:
         """加载推荐模型"""
         try:
             with open(file_path, 'rb') as f:
-                model_data = pickle.load(f)
+                model_data = safe_load(f)
 
             self.user_item_matrix = model_data.get('user_item_matrix')
             self.user_similarity_matrix = model_data.get('user_similarity_matrix')

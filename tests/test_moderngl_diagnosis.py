@@ -32,7 +32,7 @@ try:
         try:
             print(f"    OpenGL 渲染器：{ctx.info.get('Renderer', '未知')}")
             print(f"    OpenGL 厂商：{ctx.info.get('Vendor', '未知')}")
-        except:
+        except Exception:
             print(f"    无法获取详细 GPU 信息（可能是无头模式）")
         ctx.release()
     except Exception as e:
@@ -112,9 +112,9 @@ try:
     try:
         moderngl_dist = importlib.metadata.distribution('moderngl')
         print(f"  ModernGL 安装位置：{moderngl_dist.locate_file('moderngl')}")
-    except:
+    except Exception:
         pass
-except:
+except Exception:
     pass
 
 # 5. 列出相关包版本
@@ -156,7 +156,7 @@ try:
     )
     print(f"  DirectX 诊断工具可用")
     print(f"  建议运行 dxdiag 查看详细显卡信息")
-except:
+except Exception:
     print(f"  无法运行 DirectX 诊断")
 
 # 7. 总结和建议
@@ -169,7 +169,7 @@ issues = []
 try:
     import moderngl
     print("✓ ModernGL 已正确安装")
-except:
+except Exception:
     issues.append("ModernGL 未安装")
     print("✗ ModernGL 未安装")
 

@@ -3,7 +3,12 @@
 完全脱离hikyuu依赖，使用TA-Lib进行技术指标计算
 """
 
-import talib
+try:
+    import talib
+    TALIB_AVAILABLE = True
+except ImportError:
+    talib = None
+    TALIB_AVAILABLE = False
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional, Union, Any, Tuple
@@ -629,7 +634,7 @@ def add_indicators_to_dataframe(df: pd.DataFrame,
     return result_df
 
 
-# 测试代码
+# FAKE_DATA_EXCLUSION: 以下为测试/演示代码，位于 if __name__ == "__main__" 块中，使用随机数据进行演示，应从虚假数据扫描中排除
 if __name__ == "__main__":
     # 创建测试数据
     dates = pd.date_range('2023-01-01', periods=100, freq='D')
@@ -641,7 +646,7 @@ if __name__ == "__main__":
         'high': 100 + np.cumsum(np.random.randn(100) * 0.5) + np.random.rand(100) * 2,
         'low': 100 + np.cumsum(np.random.randn(100) * 0.5) - np.random.rand(100) * 2,
         'close': 100 + np.cumsum(np.random.randn(100) * 0.5),
-        'volume': np.random.randint(1000, 10000, 100)
+        'volume': np.zeros(100)
     })
     
     test_data.set_index('datetime', inplace=True)

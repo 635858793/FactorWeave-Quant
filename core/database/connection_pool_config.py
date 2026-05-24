@@ -24,7 +24,8 @@ class ConnectionPoolConfig:
     pool_size: int = 15
     max_overflow: int = 100
     timeout: float = 30.0
-    pool_recycle: int = 3600
+    pool_recycle: int = 1800
+    pool_pre_ping: bool = True
     use_lifo: bool = True
 
     # 验证范围

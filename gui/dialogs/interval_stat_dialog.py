@@ -11,19 +11,21 @@ import numpy as np
 from datetime import datetime
 
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget,
+    QVBoxLayout, QHBoxLayout, QLabel, QTableWidget,
     QTableWidgetItem, QPushButton, QTabWidget, QWidget,
     QHeaderView, QFrame, QGridLayout, QTextEdit, QSplitter
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QFont, QColor
 
+from .base_dialog import BaseDialog
+
 # Matplotlib 延迟导入标志
 MATPLOTLIB_AVAILABLE = False
 
 logger = logger
 
-class IntervalStatDialog(QDialog):
+class IntervalStatDialog(BaseDialog):
     """区间统计对话框"""
 
     def __init__(self, kdata: pd.DataFrame, stat_data: Dict[str, Any], parent=None):
@@ -35,13 +37,15 @@ class IntervalStatDialog(QDialog):
             stat_data: 统计数据
             parent: 父窗口
         """
-        super().__init__(parent)
+        super().__init__(
+            parent,
+            title="区间统计分析",
+            min_size=(800, 600),
+            size=(1000, 700),
+            settings_key="IntervalStatDialog"
+        )
         self.kdata = kdata
         self.stat_data = stat_data
-
-        self.setWindowTitle("区间统计分析")
-        self.setMinimumSize(800, 600)
-        self.resize(1000, 700)
 
         self._init_ui()
 

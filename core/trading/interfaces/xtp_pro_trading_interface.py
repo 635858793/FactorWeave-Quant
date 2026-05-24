@@ -391,15 +391,6 @@ class XTPProTradingInterface(TradingInterface):
             )
 
     def query_fund_info(self, account_id: str):
-        """
-        查询账户资金信息
-
-        Args:
-            account_id: 账户ID
-
-        Returns:
-            FundInfo: 资金信息
-        """
         try:
             logger.debug(f"查询XTP Pro账户资金信息: {account_id}")
 
@@ -407,60 +398,76 @@ class XTPProTradingInterface(TradingInterface):
                 logger.warning("未登录XTP Pro账户")
                 return None
 
-            if not XTP_AVAILABLE:
-                # 模拟模式
-                from core.trading.account_models import FundInfo
-                fund_info = FundInfo(
-                    account_id=account_id,
-                    total_balance=1000000.0,
-                    available_balance=500000.0,
-                    frozen_balance=0.0,
-                    market_value=500000.0,
-                    total_assets=1000000.0,
-                    profit_loss=0.0,
-                    profit_loss_ratio=0.0,
-                    margin_used=0.0,
-                    margin_available=500000.0,
-                    maintenance_margin=0.0,
-                    update_time=datetime.now()
-                )
-                logger.debug(f"XTP Pro账户资金信息查询成功（模拟模式）: {account_id}")
-                return fund_info
+            try:
+                from core.trading.account_manager import AccountManager
+                from core.services.service_container import ServiceContainer
+                from core.events.event_bus import EventBus
 
-            # 真实模式：使用XTP API查询资金
-            asset = self._xtp_api.QueryAsset()
-            if asset:
-                from core.trading.account_models import FundInfo
-                fund_info = FundInfo(
-                    account_id=account_id,
-                    total_assets=asset.total_asset,
-                    available_cash=asset.cash,
-                    market_value=asset.total_asset - asset.cash,
-                    frozen_cash=asset.frozen_cash,
-                    total_profit_loss=asset.total_asset - 1000000.0,  # 假设初始资金100万
-                    today_profit_loss=asset.today_profit,
-                    update_time=datetime.now()
-                )
-                logger.debug(f"XTP Pro账户资金信息查询成功: {account_id}")
-                return fund_info
-            else:
-                logger.warning(f"获取XTP Pro账户资金失败: {account_id}")
-                return None
+                service_container = ServiceContainer()
+                event_bus = service_container.resolve(EventBus)
+                account_manager = AccountManager(service_container, event_bus)
+
+                fund_info = account_manager.get_fund_info(account_id)
+                if fund_info:
+                    logger.debug(f"通过AccountManager获取资金信息成功: {account_id}")
+                    return fund_info
+
+                account = account_manager.get_account(account_id)
+                if account:
+                    from core.trading.account_models import FundInfo
+                    fund_info = FundInfo(
+                        account_id=account_id,
+                        total_balance=account.balance + account.frozen_balance,
+                        available_balance=account.available_balance,
+                        frozen_balance=account.frozen_balance,
+                        market_value=account.market_value,
+                        total_assets=account.total_assets,
+                        profit_loss=account.profit_loss,
+                        profit_loss_ratio=account.profit_loss_ratio,
+                        margin_used=0.0,
+                        margin_available=account.available_balance,
+                        maintenance_margin=account.maintenance_margin,
+                        update_time=datetime.now()
+                    )
+                    logger.debug(f"从Account构建资金信息成功: {account_id}")
+                    return fund_info
+
+                logger.warning(f"AccountManager中未找到账户: {account_id}")
+
+            except ImportError as e:
+                logger.warning(f"AccountManager不可用: {e}")
+            except Exception as e:
+                logger.warning(f"通过AccountManager获取资金信息失败: {e}")
+
+            if XTP_AVAILABLE:
+                asset = self._xtp_api.QueryAsset()
+                if asset:
+                    from core.trading.account_models import FundInfo
+                    fund_info = FundInfo(
+                        account_id=account_id,
+                        total_balance=asset.cash + asset.frozen_cash,
+                        available_balance=asset.cash,
+                        frozen_balance=asset.frozen_cash,
+                        market_value=asset.total_asset - asset.cash,
+                        total_assets=asset.total_asset,
+                        profit_loss=asset.total_asset - asset.balance if hasattr(asset, 'balance') else 0.0,
+                        profit_loss_ratio=0.0,
+                        margin_used=0.0,
+                        margin_available=asset.cash,
+                        maintenance_margin=0.0,
+                        update_time=datetime.now()
+                    )
+                    logger.debug(f"通过XTP API获取资金信息成功: {account_id}")
+                    return fund_info
+
+            logger.warning(f"无法获取XTP Pro账户资金信息: {account_id}")
+            return None
 
         except Exception as e:
             logger.error(f"查询XTP Pro账户资金信息失败: {e}")
             return None
 
     def query_positions(self, account_id: str):
-        """
-        查询账户持仓信息
-
-        Args:
-            account_id: 账户ID
-
-        Returns:
-            List[Position]: 持仓列表
-        """
         try:
             logger.debug(f"查询XTP Pro账户持仓信息: {account_id}")
 
@@ -468,71 +475,63 @@ class XTPProTradingInterface(TradingInterface):
                 logger.warning("未登录XTP Pro账户")
                 return []
 
-            if not XTP_AVAILABLE:
-                # 模拟模式
-                from core.trading.account_models import Position
-                from core.trading.account_models import PositionSide
-                from core.plugin_types import AssetType
-                positions = [
-                    Position(
-                        position_id=f"{account_id}_000001",
-                        account_id=account_id,
-                        asset_type=AssetType.STOCK_A,
-                        stock_code="000001",
-                        stock_name="平安银行",
-                        side=PositionSide.LONG,
-                        quantity=1000,
-                        available_quantity=1000,
-                        open_price=10.0,
-                        current_price=11.0,
-                        market_value=11000.0,
-                        cost_price=10.0,
-                        cost_value=10000.0,
-                        profit_loss=1000.0,
-                        profit_loss_ratio=0.1,
-                        open_time=datetime.now(),
-                        update_time=datetime.now()
-                    )
-                ]
-                logger.debug(f"XTP Pro账户持仓信息查询成功（模拟模式）: {account_id}, 数量: {len(positions)}")
-                return positions
+            try:
+                from core.trading.account_manager import AccountManager
+                from core.services.service_container import ServiceContainer
+                from core.events.event_bus import EventBus
 
-            # 真实模式：使用XTP API查询持仓
-            positions_data = self._xtp_api.QueryPosition()
-            positions = []
-            
-            if positions_data:
-                from core.trading.account_models import Position
-                from core.trading.account_models import PositionSide
-                from core.plugin_types import AssetType
-                
-                for pos in positions_data:
-                    position = Position(
-                        position_id=f"{account_id}_{pos.ticker}",
-                        account_id=account_id,
-                        asset_type=AssetType.STOCK_A,
-                        stock_code=pos.ticker,
-                        stock_name=pos.ticker,  # 需要从行情数据获取股票名称
-                        side=PositionSide.LONG if pos.quantity > 0 else PositionSide.SHORT,
-                        quantity=abs(pos.quantity),
-                        available_quantity=abs(pos.can_use_quantity),
-                        open_price=pos.open_price,
-                        current_price=pos.last_price,
-                        market_value=pos.market_value,
-                        cost_price=pos.open_price,
-                        cost_value=pos.open_price * abs(pos.quantity),
-                        profit_loss=pos.unrealized_pnl,
-                        profit_loss_ratio=pos.unrealized_pnl / pos.open_price if pos.open_price > 0 else 0,
-                        open_time=datetime.now(),
-                        update_time=datetime.now()
-                    )
-                    positions.append(position)
+                service_container = ServiceContainer()
+                event_bus = service_container.resolve(EventBus)
+                account_manager = AccountManager(service_container, event_bus)
 
-                logger.debug(f"XTP Pro账户持仓信息查询成功: {account_id}, 数量: {len(positions)}")
-                return positions
-            else:
-                logger.warning(f"获取XTP Pro账户持仓失败: {account_id}")
-                return []
+                positions = account_manager.get_account_positions(account_id)
+                if positions:
+                    logger.debug(f"通过AccountManager获取持仓信息成功: {account_id}, 数量: {len(positions)}")
+                    return positions
+
+                logger.warning(f"AccountManager中未找到账户持仓: {account_id}")
+
+            except ImportError as e:
+                logger.warning(f"AccountManager不可用: {e}")
+            except Exception as e:
+                logger.warning(f"通过AccountManager获取持仓信息失败: {e}")
+
+            if XTP_AVAILABLE:
+                positions_data = self._xtp_api.QueryPosition()
+                positions = []
+
+                if positions_data:
+                    from core.trading.account_models import Position
+                    from core.trading.account_models import PositionSide
+                    from core.plugin_types import AssetType
+
+                    for pos in positions_data:
+                        position = Position(
+                            position_id=f"{account_id}_{pos.ticker}",
+                            account_id=account_id,
+                            asset_type=AssetType.STOCK_A,
+                            stock_code=pos.ticker,
+                            stock_name=pos.ticker,
+                            side=PositionSide.LONG if pos.quantity > 0 else PositionSide.SHORT,
+                            quantity=abs(pos.quantity),
+                            available_quantity=abs(pos.can_use_quantity),
+                            open_price=pos.open_price,
+                            current_price=pos.last_price,
+                            market_value=pos.market_value,
+                            cost_price=pos.open_price,
+                            cost_value=pos.open_price * abs(pos.quantity),
+                            profit_loss=pos.unrealized_pnl,
+                            profit_loss_ratio=pos.unrealized_pnl / pos.open_price if pos.open_price > 0 else 0,
+                            open_time=datetime.now(),
+                            update_time=datetime.now()
+                        )
+                        positions.append(position)
+
+                    logger.debug(f"通过XTP API获取持仓信息成功: {account_id}, 数量: {len(positions)}")
+                    return positions
+
+            logger.warning(f"无法获取XTP Pro账户持仓信息: {account_id}")
+            return []
 
         except Exception as e:
             logger.error(f"查询XTP Pro账户持仓信息失败: {e}")

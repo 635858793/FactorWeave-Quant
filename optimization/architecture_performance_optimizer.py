@@ -13,7 +13,11 @@ Task: 18 - Performance optimization and final validation
 import os
 import sys
 import time
-import psutil
+try:
+    import psutil
+except ImportError:
+    psutil = None
+    logger.warning("architecture_performance_optimizer: psutil 不可用，系统监控功能受限")
 import asyncio
 import json
 import threading
@@ -615,8 +619,8 @@ class ArchitecturePerformanceOptimizer:
             import core.containers.enhanced_service_container
             import core.services.unified_data_service
             import core.services.unified_plugin_service
-        except ImportError:
-            pass
+        except ImportError as e:
+            logger.debug(f"模块导入失败: {e}")
         return time.time() - start_time
 
     def _optimize_memory_usage(self) -> Optional[OptimizationResult]:

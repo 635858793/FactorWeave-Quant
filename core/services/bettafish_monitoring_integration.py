@@ -4,7 +4,6 @@ BettaFish监控服务集成
 """
 
 import asyncio
-import logging
 from typing import Dict, Any, Optional, List
 from loguru import logger
 
@@ -292,14 +291,24 @@ class BettaFishMonitoringIntegration:
         try:
             if not self.is_initialized:
                 return
-            
-            # 停止监控服务
+
+            try:
+                self.event_bus.unsubscribe("service.started", self._on_service_started)
+                self.event_bus.unsubscribe("service.stopped", self._on_service_stopped)
+                self.event_bus.unsubscribe("service.error", self._on_service_error)
+                self.event_bus.unsubscribe("bettafish.agent.started", self._on_bettafish_agent_started)
+                self.event_bus.unsubscribe("bettafish.agent.stopped", self._on_bettafish_agent_stopped)
+                self.event_bus.unsubscribe("bettafish.analysis.completed", self._on_bettafish_analysis_completed)
+                self.event_bus.unsubscribe("bettafish.analysis.failed", self._on_bettafish_analysis_failed)
+            except Exception as e:
+                logger.error(f"Failed to unsubscribe event listeners: {e}")
+
             if self.advanced_monitoring_service:
                 await self.advanced_monitoring_service.shutdown()
-            
+
             self.is_initialized = False
             logger.info("BettaFish monitoring integration shutdown complete")
-            
+
         except Exception as e:
             logger.error(f"Error during shutdown: {e}")
 

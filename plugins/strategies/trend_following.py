@@ -60,55 +60,49 @@ class MovingAverageTrendStrategy(BaseStrategy):
         Returns:
             交易信号列表
         """
-        signals = []
         short_period = self.get_parameter("short_period")
         long_period = self.get_parameter("long_period")
-        signal_period = self.get_parameter("signal_period")
 
         if len(data) < long_period:
-            return signals
+            return []
 
-        # 计算移动平均线
-        data = data.copy()
-        data['MA_short'] = data['close'].rolling(window=short_period).mean()
-        data['MA_long'] = data['close'].rolling(window=long_period).mean()
+        close = data['close']
+        ma_short = close.rolling(window=short_period).mean()
+        ma_long = close.rolling(window=long_period).mean()
 
-        # 计算信号
-        data['signal'] = 0
-        data.loc[data['MA_short'] > data['MA_long'], 'signal'] = 1
-        data.loc[data['MA_short'] < data['MA_long'], 'signal'] = -1
+        signal = np.where(ma_short.values > ma_long.values, 1,
+                          np.where(ma_short.values < ma_long.values, -1, 0))
+        signal_change = np.diff(signal, prepend=signal[0])
 
-        # 信号变化点
-        data['signal_change'] = data['signal'].diff()
+        buy_indices = np.where(signal_change == 2)[0]
+        sell_indices = np.where(signal_change == -2)[0]
 
-        for i in range(long_period, len(data)):
-            if data.iloc[i]['signal_change'] == 2:  # 从-1变为1，买入信号
-                confidence = self.calculate_confidence(data, i)
-
-                signals.append(StrategySignal(
-                    timestamp=data.index[i],
-                    signal_type=SignalType.BUY,
-                    price=data.iloc[i]['close'],
-                    confidence=confidence,
-                    strategy_name=self.name,
-                    reason=f"短期MA({short_period})上穿长期MA({long_period})",
-                    stop_loss=data.iloc[i]['close'] * 0.95,
-                    take_profit=data.iloc[i]['close'] * 1.1
-                ))
-
-            elif data.iloc[i]['signal_change'] == -2:  # 从1变为-1，卖出信号
-                confidence = self.calculate_confidence(data, i)
-
-                signals.append(StrategySignal(
-                    timestamp=data.index[i],
-                    signal_type=SignalType.SELL,
-                    price=data.iloc[i]['close'],
-                    confidence=confidence,
-                    strategy_name=self.name,
-                    reason=f"短期MA({short_period})下穿长期MA({long_period})",
-                    stop_loss=data.iloc[i]['close'] * 1.05,
-                    take_profit=data.iloc[i]['close'] * 0.9
-                ))
+        signals = [
+            StrategySignal(
+                timestamp=data.index[i],
+                signal_type=SignalType.BUY,
+                price=float(close.iloc[i]),
+                confidence=self.calculate_confidence(data, i),
+                strategy_name=self.name,
+                reason=f"短期MA({short_period})上穿长期MA({long_period})",
+                stop_loss=float(close.iloc[i]) * 0.95,
+                take_profit=float(close.iloc[i]) * 1.1
+            )
+            for i in buy_indices if i >= long_period
+        ]
+        signals += [
+            StrategySignal(
+                timestamp=data.index[i],
+                signal_type=SignalType.SELL,
+                price=float(close.iloc[i]),
+                confidence=self.calculate_confidence(data, i),
+                strategy_name=self.name,
+                reason=f"短期MA({short_period})下穿长期MA({long_period})",
+                stop_loss=float(close.iloc[i]) * 1.05,
+                take_profit=float(close.iloc[i]) * 0.9
+            )
+            for i in sell_indices if i >= long_period
+        ]
 
         return signals
 
@@ -158,59 +152,62 @@ class BreakoutStrategy(BaseStrategy):
 
     def generate_signals(self, data: pd.DataFrame) -> List[StrategySignal]:
         """生成突破信号"""
-        signals = []
         lookback_period = self.get_parameter("lookback_period")
         volume_threshold = self.get_parameter("volume_threshold")
         min_breakout_pct = self.get_parameter("min_breakout_pct")
 
         if len(data) < lookback_period:
-            return signals
+            return []
 
-        # 计算支撑阻力位
-        data = data.copy()
-        data['resistance'] = data['high'].rolling(window=lookback_period).max()
-        data['support'] = data['low'].rolling(window=lookback_period).min()
-        data['avg_volume'] = data['volume'].rolling(
-            window=lookback_period).mean()
+        close = data['close']
+        high = data['high']
+        low = data['low']
+        volume = data['volume']
 
-        for i in range(lookback_period, len(data)):
-            current = data.iloc[i]
-            prev = data.iloc[i-1]
+        resistance = high.rolling(window=lookback_period).max()
+        support = low.rolling(window=lookback_period).min()
+        avg_volume = volume.rolling(window=lookback_period).mean()
 
-            # 向上突破
-            if (current['close'] > prev['resistance'] and
-                (current['close'] - prev['resistance']) / prev['resistance'] > min_breakout_pct and
-                    current['volume'] > prev['avg_volume'] * volume_threshold):
+        c_vals = close.values
+        r_vals = resistance.values
+        s_vals = support.values
+        v_vals = volume.values
+        a_vals = avg_volume.values
 
-                confidence = self.calculate_confidence(data, i)
+        n = len(data)
+        signals = []
 
+        for i in range(lookback_period, n):
+            c = c_vals[i]
+            prev_r = r_vals[i-1]
+            prev_s = s_vals[i-1]
+            prev_avg_v = a_vals[i-1]
+
+            if (c > prev_r
+                and (c - prev_r) / prev_r > min_breakout_pct
+                and v_vals[i] > prev_avg_v * volume_threshold):
                 signals.append(StrategySignal(
                     timestamp=data.index[i],
                     signal_type=SignalType.BUY,
-                    price=current['close'],
-                    confidence=confidence,
+                    price=c,
+                    confidence=self.calculate_confidence(data, i),
                     strategy_name=self.name,
-                    reason=f"向上突破阻力位{prev['resistance']:.3f}，成交量放大",
-                    stop_loss=prev['resistance'] * 0.98,
-                    take_profit=current['close'] * 1.15
+                    reason=f"向上突破阻力位{prev_r:.3f}，成交量放大",
+                    stop_loss=prev_r * 0.98,
+                    take_profit=c * 1.15
                 ))
-
-            # 向下突破
-            elif (current['close'] < prev['support'] and
-                  (prev['support'] - current['close']) / prev['support'] > min_breakout_pct and
-                  current['volume'] > prev['avg_volume'] * volume_threshold):
-
-                confidence = self.calculate_confidence(data, i)
-
+            elif (c < prev_s
+                  and (prev_s - c) / prev_s > min_breakout_pct
+                  and v_vals[i] > prev_avg_v * volume_threshold):
                 signals.append(StrategySignal(
                     timestamp=data.index[i],
                     signal_type=SignalType.SELL,
-                    price=current['close'],
-                    confidence=confidence,
+                    price=c,
+                    confidence=self.calculate_confidence(data, i),
                     strategy_name=self.name,
-                    reason=f"向下突破支撑位{prev['support']:.3f}，成交量放大",
-                    stop_loss=prev['support'] * 1.02,
-                    take_profit=current['close'] * 0.85
+                    reason=f"向下突破支撑位{prev_s:.3f}，成交量放大",
+                    stop_loss=prev_s * 1.02,
+                    take_profit=c * 0.85
                 ))
 
         return signals
@@ -258,52 +255,50 @@ class MomentumStrategy(BaseStrategy):
 
     def generate_signals(self, data: pd.DataFrame) -> List[StrategySignal]:
         """生成动量信号"""
-        signals = []
         momentum_period = self.get_parameter("momentum_period")
         rsi_period = self.get_parameter("rsi_period")
         rsi_oversold = self.get_parameter("rsi_oversold")
         rsi_overbought = self.get_parameter("rsi_overbought")
 
-        if len(data) < max(momentum_period, rsi_period):
-            return signals
+        min_period = max(momentum_period, rsi_period)
+        if len(data) < min_period:
+            return []
 
-        # 计算动量和RSI
-        data = data.copy()
-        data['momentum'] = data['close'].pct_change(momentum_period)
-        data['rsi'] = self._calculate_rsi(data['close'], rsi_period)
+        close = data['close']
+        momentum = close.pct_change(momentum_period)
+        rsi = self._calculate_rsi(close, rsi_period)
 
-        for i in range(max(momentum_period, rsi_period), len(data)):
-            current = data.iloc[i]
+        m_vals = momentum.values
+        r_vals = rsi.values
+        c_vals = close.values
 
-            # 买入信号：动量向上且RSI超卖
-            if current['momentum'] > 0 and current['rsi'] < rsi_oversold:
-                confidence = self.calculate_confidence(data, i)
-
-                signals.append(StrategySignal(
-                    timestamp=data.index[i],
-                    signal_type=SignalType.BUY,
-                    price=current['close'],
-                    confidence=confidence,
-                    strategy_name=self.name,
-                    reason=f"动量向上({current['momentum']:.3f})且RSI超卖({current['rsi']:.1f})",
-                    stop_loss=current['close'] * 0.95,
-                    take_profit=current['close'] * 1.1
-                ))
-
-            # 卖出信号：动量向下且RSI超买
-            elif current['momentum'] < 0 and current['rsi'] > rsi_overbought:
-                confidence = self.calculate_confidence(data, i)
-
-                signals.append(StrategySignal(
-                    timestamp=data.index[i],
-                    signal_type=SignalType.SELL,
-                    price=current['close'],
-                    confidence=confidence,
-                    strategy_name=self.name,
-                    reason=f"动量向下({current['momentum']:.3f})且RSI超买({current['rsi']:.1f})",
-                    stop_loss=current['close'] * 1.05,
-                    take_profit=current['close'] * 0.9
-                ))
+        signals = [
+            StrategySignal(
+                timestamp=data.index[i],
+                signal_type=SignalType.BUY,
+                price=c_vals[i],
+                confidence=self.calculate_confidence(data, i),
+                strategy_name=self.name,
+                reason=f"动量向上({m_vals[i]:.3f})且RSI超卖({r_vals[i]:.1f})",
+                stop_loss=c_vals[i] * 0.95,
+                take_profit=c_vals[i] * 1.1
+            )
+            for i in range(min_period, len(data))
+            if m_vals[i] > 0 and r_vals[i] < rsi_oversold
+        ] + [
+            StrategySignal(
+                timestamp=data.index[i],
+                signal_type=SignalType.SELL,
+                price=c_vals[i],
+                confidence=self.calculate_confidence(data, i),
+                strategy_name=self.name,
+                reason=f"动量向下({m_vals[i]:.3f})且RSI超买({r_vals[i]:.1f})",
+                stop_loss=c_vals[i] * 1.05,
+                take_profit=c_vals[i] * 0.9
+            )
+            for i in range(min_period, len(data))
+            if m_vals[i] < 0 and r_vals[i] > rsi_overbought
+        ]
 
         return signals
 
@@ -558,6 +553,7 @@ def create_trend_following_manager() -> TrendFollowingManager:
 
 if __name__ == "__main__":
     # 测试代码
+    # EXCLUSION: np.random usage in if __name__ block for local testing only
     import matplotlib.pyplot as plt
 
     # 生成模拟数据

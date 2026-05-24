@@ -447,7 +447,7 @@ class AIExplainabilityService(BaseService):
                     'name': f.factor_name,
                     'score': f.contribution_score
                 }
-                for f in sorted(contributions, key=lambda x: x.importance_rank)[:10]
+                for f in heapq.nsmallest(10, contributions, key=lambda x: x.importance_rank)
             ]
         }
         

@@ -15,7 +15,6 @@
 """
 
 import sys
-import logging
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
@@ -43,20 +42,9 @@ from PyQt5.QtGui import (
 )
 
 # 导入核心服务
-try:
-    # ImportOrchestrationService 不存在，暂时注释掉
-    # from core.services.import_orchestration_service import ImportOrchestrationService
-    from core.ui_integration.ui_business_logic_adapter import get_ui_adapter
-    from loguru import logger
-    CORE_AVAILABLE = True
-    ImportOrchestrationService = None  # 标记为不可用
-except ImportError as e:
-    logger = logging.getLogger(__name__)
-    CORE_AVAILABLE = False
-    ImportOrchestrationService = None
-    logger.warning(f"核心服务不可用: {e}")
-
-logger = logger.bind(module=__name__) if hasattr(logger, 'bind') else logging.getLogger(__name__)
+from core.ui_integration.ui_business_logic_adapter import get_ui_adapter
+from loguru import logger
+ImportOrchestrationService = None
 
 
 class TaskPriority(Enum):
@@ -914,11 +902,17 @@ class TaskSchedulerControl(QWidget):
         # 更新队列长度
         self.queue_length_label.setText(str(pending_tasks))
 
-        # 模拟资源使用情况
-        import random
-        self.cpu_progress.setValue(random.randint(30, 80))
-        self.memory_progress.setValue(random.randint(20, 70))
-        self.network_progress.setValue(random.randint(10, 60))
+        try:
+            import psutil
+            self.cpu_progress.setValue(int(psutil.cpu_percent(interval=0)))
+            self.memory_progress.setValue(int(psutil.virtual_memory().percent))
+            net_io = psutil.net_io_counters()
+            self.network_progress.setValue(min(100, int((net_io.bytes_sent + net_io.bytes_recv) / (1024 * 1024))))
+        except Exception:
+            logger.warning("psutil不可用，资源使用情况无法获取")
+            self.cpu_progress.setValue(0)
+            self.memory_progress.setValue(0)
+            self.network_progress.setValue(0)
 
 
 if __name__ == "__main__":

@@ -14,7 +14,7 @@
 """
 
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout,
+    QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout,
     QLabel, QPushButton, QComboBox, QLineEdit, QSpinBox, QCheckBox,
     QGroupBox, QRadioButton, QDialogButtonBox, QMessageBox,
     QDateTimeEdit, QTabWidget, QWidget, QTextEdit, QTableWidget,
@@ -27,6 +27,8 @@ from loguru import logger
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
+from .base_dialog import BaseDialog
+
 try:
     from croniter import croniter
     CRONITER_AVAILABLE = True
@@ -35,22 +37,24 @@ except ImportError:
     logger.warning("croniter 未安装，Cron表达式验证功能受限")
 
 
-class ScheduledTaskDialog(QDialog):
+class ScheduledTaskDialog(BaseDialog):
     """定时任务配置对话框"""
 
     task_scheduled = pyqtSignal(str, str)  # task_id, schedule_cron
 
     def __init__(self, config_manager, import_engine=None, parent=None, preselected_task_ids=None):
-        super().__init__(parent)
+        super().__init__(
+            parent,
+            title="⏰ 定时任务配置",
+            min_size=(700, 650),
+            size=(700, 650),
+            settings_key="ScheduledTaskDialog"
+        )
         self.config_manager = config_manager
         self.import_engine = import_engine
         self.preselected_task_ids = preselected_task_ids or []
         self.selected_task_ids = []
         self.schedule_cron = None
-
-        self.setWindowTitle("⏰ 定时任务配置")
-        self.setModal(True)
-        self.resize(700, 650)
 
         self._create_ui()
 

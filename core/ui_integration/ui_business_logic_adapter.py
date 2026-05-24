@@ -14,7 +14,6 @@ UI业务逻辑适配器
 版本: 1.0
 """
 
-import logging
 import threading
 from typing import Dict, List, Any, Optional, Union, Callable, Type
 from dataclasses import dataclass, field
@@ -26,8 +25,8 @@ from PyQt5.QtCore import QObject, pyqtSignal, QTimer, QThread
 from PyQt5.QtWidgets import QApplication
 
 # 导入核心服务
+from loguru import logger
 try:
-    from loguru import logger
     from core.containers.service_container import ServiceContainer
     try:
         from core.containers import get_service_container
@@ -57,8 +56,6 @@ try:
     logger.info("UI适配器核心服务导入成功")
 
 except ImportError as e:
-    import logging
-    logger = logging.getLogger(__name__)
     CORE_SERVICES_AVAILABLE = False
     ImportOrchestrationService = None
     logger.warning(f"核心服务导入失败: {e}")
@@ -72,7 +69,7 @@ except ImportError as e:
     except ImportError:
         pass
 
-logger = logger.bind(module=__name__) if hasattr(logger, 'bind') else logging.getLogger(__name__)
+logger = logger.bind(module=__name__)
 
 
 class ServiceStatus(Enum):
@@ -782,8 +779,8 @@ class UIBusinessLogicAdapter(QObject):
                 try:
                     stats = import_engine.get_statistics()
                     status_data['statistics'] = stats
-                except:
-                    pass
+                except Exception as e:
+                    logger.debug(f"获取导入统计信息失败: {e}")
 
             status_data['capabilities'] = capabilities
 
@@ -989,7 +986,7 @@ class UIBusinessLogicAdapter(QObject):
                 return {
                     'available': True,
                     'models': model_info.get('available_models', []),
-                    'accuracy': performance_metrics.get('prediction_accuracy', 0.75),
+                    'accuracy': performance_metrics.get('prediction_accuracy', 0.0),
                     'total_predictions': performance_metrics.get('total_predictions', 0),
                     'successful_predictions': performance_metrics.get('successful_predictions', 0),
                     'failed_predictions': performance_metrics.get('failed_predictions', 0),
@@ -1002,7 +999,7 @@ class UIBusinessLogicAdapter(QObject):
                 return {
                     'available': True,
                     'models': model_info.get('available_models', []),
-                    'accuracy': 0.75,
+                    'accuracy': 0.0,
                     'total_predictions': 0
                 }
 
@@ -1345,14 +1342,50 @@ class UIBusinessLogicAdapter(QObject):
             recommendation_engine = self._get_service('config_recommendation')
             anomaly_detector = self._get_service('anomaly_detector')
 
+            # 从实际服务获取真实状态值
+            actual_accuracy = 0.0
+            actual_learning_progress = 0.0
+            actual_active_models = []
+            actual_recommendations_count = 0
+            actual_anomaly_count = 0
+            actual_last_prediction_time = None
+
+            if ai_service and hasattr(ai_service, 'get_model_status'):
+                try:
+                    model_status = ai_service.get_model_status()
+                    actual_accuracy = model_status.get('accuracy', 0.0)
+                    actual_active_models = model_status.get('active_models', [])
+                    actual_last_prediction_time = model_status.get('last_prediction_time')
+                except Exception as e:
+                    self.logger.warning(f"获取AI模型状态失败: {e}")
+
+            if behavior_learner and hasattr(behavior_learner, 'get_learning_progress'):
+                try:
+                    learning_data = behavior_learner.get_learning_progress()
+                    actual_learning_progress = learning_data.get('progress', 0.0)
+                except Exception as e:
+                    self.logger.warning(f"获取学习进度失败: {e}")
+
+            if recommendation_engine and hasattr(recommendation_engine, 'get_recommendation_count'):
+                try:
+                    actual_recommendations_count = recommendation_engine.get_recommendation_count()
+                except Exception as e:
+                    self.logger.warning(f"获取推荐计数失败: {e}")
+
+            if anomaly_detector and hasattr(anomaly_detector, 'get_anomaly_count'):
+                try:
+                    actual_anomaly_count = anomaly_detector.get_anomaly_count()
+                except Exception as e:
+                    self.logger.warning(f"获取异常计数失败: {e}")
+
             # 构建状态模型
             ai_status = AIStatusUIModel(
-                prediction_accuracy=0.92 if ai_service else 0.0,
-                active_models=['prediction_model', 'optimization_model'] if ai_service else [],
-                learning_progress=0.75 if behavior_learner else 0.0,
-                recommendations_count=15 if recommendation_engine else 0,
-                anomaly_alerts_count=3 if anomaly_detector else 0,
-                last_prediction_time=datetime.now() if ai_service else None,
+                prediction_accuracy=actual_accuracy if ai_service else 0.0,
+                active_models=actual_active_models if ai_service else [],
+                learning_progress=actual_learning_progress if behavior_learner else 0.0,
+                recommendations_count=actual_recommendations_count if recommendation_engine else 0,
+                anomaly_alerts_count=actual_anomaly_count if anomaly_detector else 0,
+                last_prediction_time=actual_last_prediction_time if ai_service else None,
                 source_service='ui_adapter'
             )
 
@@ -1365,8 +1398,8 @@ class UIBusinessLogicAdapter(QObject):
             ai_status.prediction_model_status = "正常" if ai_service else "不可用"
             ai_status.user_behavior_learner_status = "学习中" if behavior_learner else "不可用"
             ai_status.last_update_time = datetime.now()
-            ai_status.model_version = "v2.1.0"
-            ai_status.data_quality_score = 0.88
+            ai_status.model_version = ""
+            ai_status.data_quality_score = 0.0
 
             return ai_status
 
@@ -1417,20 +1450,20 @@ class UIBusinessLogicAdapter(QObject):
             if hasattr(cache_coordinator, 'get_cache_statistics'):
                 stats = cache_coordinator.get_cache_statistics()
                 return {
-                    'hit_rate': stats.get('hit_rate', 0.85),
-                    'memory_usage': stats.get('memory_usage', '256MB'),
-                    'total_entries': stats.get('total_entries', 1024),
-                    'adaptive_strategy': stats.get('strategy', 'LRU'),
-                    'performance_score': stats.get('performance_score', 0.92)
+                    'hit_rate': stats.get('hit_rate', 0.0),
+                    'memory_usage': stats.get('memory_usage', '0MB'),
+                    'total_entries': stats.get('total_entries', 0),
+                    'adaptive_strategy': stats.get('strategy', 'N/A'),
+                    'performance_score': stats.get('performance_score', 0.0)
                 }
             else:
-                # 返回模拟数据
+                logger.warning("get_cache_status: cache_coordinator 不支持 get_cache_statistics，返回零值")
                 return {
-                    'hit_rate': 0.85,
-                    'memory_usage': '256MB',
-                    'total_entries': 1024,
-                    'adaptive_strategy': 'LRU',
-                    'performance_score': 0.92
+                    'hit_rate': 0.0,
+                    'memory_usage': '0MB',
+                    'total_entries': 0,
+                    'adaptive_strategy': 'N/A',
+                    'performance_score': 0.0
                 }
 
         except Exception as e:
@@ -1461,13 +1494,13 @@ class UIBusinessLogicAdapter(QObject):
                     'resource_utilization': status.get('resource_utilization', 0.65)
                 }
             else:
-                # 返回模拟数据
+                logger.warning("get_distributed_status: distributed_service 不支持 get_cluster_status，返回零值")
                 return {
-                    'node_count': 3,
-                    'active_nodes': 3,
-                    'load_distribution': {'node1': 0.6, 'node2': 0.7, 'node3': 0.5},
-                    'fault_status': 'healthy',
-                    'resource_utilization': 0.65
+                    'node_count': 0,
+                    'active_nodes': 0,
+                    'load_distribution': {},
+                    'fault_status': 'unavailable',
+                    'resource_utilization': 0.0
                 }
 
         except Exception as e:
@@ -1496,22 +1529,23 @@ class UIBusinessLogicAdapter(QObject):
             if hasattr(quality_monitor, 'get_quality_summary'):
                 summary = quality_monitor.get_quality_summary()
                 quality_data.update({
-                    'overall_score': summary.get('overall_score', 0.88),
-                    'completeness': summary.get('completeness', 0.95),
-                    'accuracy': summary.get('accuracy', 0.92),
-                    'consistency': summary.get('consistency', 0.87),
-                    'validity': summary.get('validity', 0.85)
+                    'overall_score': summary.get('overall_score', 0.0),
+                    'completeness': summary.get('completeness', 0.0),
+                    'accuracy': summary.get('accuracy', 0.0),
+                    'consistency': summary.get('consistency', 0.0),
+                    'validity': summary.get('validity', 0.0)
                 })
 
             if anomaly_detector and hasattr(anomaly_detector, 'get_anomaly_count'):
                 quality_data.update({
                     'anomaly_count': anomaly_detector.get_anomaly_count(),
-                    'critical_issues': anomaly_detector.get_critical_count() if hasattr(anomaly_detector, 'get_critical_count') else 2
+                    'critical_issues': anomaly_detector.get_critical_count() if hasattr(anomaly_detector, 'get_critical_count') else 0
                 })
             else:
+                logger.warning("get_data_quality_status: anomaly_detector 不可用，返回零值")
                 quality_data.update({
-                    'anomaly_count': 12,
-                    'critical_issues': 2
+                    'anomaly_count': 0,
+                    'critical_issues': 0
                 })
 
             return quality_data
@@ -1525,13 +1559,8 @@ class UIBusinessLogicAdapter(QObject):
         try:
             orchestration_service = self._get_service('orchestration_service')
             if not orchestration_service:
-                # 返回模拟依赖关系
-                return {
-                    'task_001': ['task_002', 'task_003'],
-                    'task_002': ['task_004'],
-                    'task_003': [],
-                    'task_004': []
-                }
+                logger.warning("get_task_dependencies: orchestration_service 不可用，返回空数据")
+                return {}
 
             if hasattr(orchestration_service, 'get_task_dependencies'):
                 return orchestration_service.get_task_dependencies(task_id)
@@ -1566,22 +1595,23 @@ class UIBusinessLogicAdapter(QObject):
             orchestration_service = self._get_service('orchestration_service')
             if not orchestration_service:
                 return {
-                    'max_concurrent_tasks': 5,
-                    'priority_weights': {'高': 1.0, '中': 0.5, '低': 0.2},
-                    'auto_retry': True,
-                    'retry_limit': 3,
-                    'timeout_minutes': 60
+                    'max_concurrent_tasks': 0,
+                    'priority_weights': {},
+                    'auto_retry': False,
+                    'retry_limit': 0,
+                    'timeout_minutes': 0
                 }
 
             if hasattr(orchestration_service, 'get_scheduling_config'):
                 return orchestration_service.get_scheduling_config()
             else:
+                logger.warning("get_scheduling_config: orchestration_service 不支持 get_scheduling_config，返回零值")
                 return {
-                    'max_concurrent_tasks': 5,
-                    'priority_weights': {'高': 1.0, '中': 0.5, '低': 0.2},
-                    'auto_retry': True,
-                    'retry_limit': 3,
-                    'timeout_minutes': 60
+                    'max_concurrent_tasks': 0,
+                    'priority_weights': {},
+                    'auto_retry': False,
+                    'retry_limit': 0,
+                    'timeout_minutes': 0
                 }
 
         except Exception as e:

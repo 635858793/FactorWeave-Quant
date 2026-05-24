@@ -589,7 +589,7 @@ class PredictionTrackingService(BaseService):
                             'correct_predictions': stat['correct_predictions'],
                             'avg_confidence': stat['avg_confidence']
                         })
-                except:
+                except Exception:
                     continue
             
             # 按日期排序

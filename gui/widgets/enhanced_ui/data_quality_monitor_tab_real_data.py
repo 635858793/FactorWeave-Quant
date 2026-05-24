@@ -67,7 +67,7 @@ class RealDataQualityProvider:
                 # 尝试从容器获取
                 try:
                     self.quality_monitor = container.get('DataQualityMonitor')
-                except:
+                except Exception:
                     self.quality_monitor = None
 
                 # 如果容器中没有，创建新实例
@@ -190,7 +190,7 @@ class RealDataQualityProvider:
                 else:
                     return 0.80
             return 0.90
-        except:
+        except Exception:
             return 0.90
 
     def _calculate_consistency(self, stats: Dict) -> float:
@@ -382,7 +382,7 @@ class RealDataQualityProvider:
         try:
             # 简化实现 - 可以扩展为真实的数据库查询
             return 100000  # 占位符
-        except:
+        except Exception:
             return 0
 
     def _assess_datatype_quality(self, datatype: str, count: int) -> Dict[str, Any]:

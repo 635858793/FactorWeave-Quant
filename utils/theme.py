@@ -23,10 +23,9 @@ import threading
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from utils.theme_utils import load_theme_json_with_comments
-import sqlite3
+from core.database.unified_sqlite_access import UnifiedSQLiteAccess
 from datetime import datetime
 from PyQt5.QtGui import *
-from PyQt5.QtCore import *
 from core.events.event_bus import get_event_bus
 from core.events.types import ThemeChangedEvent
 
@@ -210,18 +209,18 @@ class ThemeManager(QObject):
         self._tracked_widgets = set()
 
     def _init_db(self):
-        self.conn = sqlite3.connect(DB_PATH)
-        self.conn.execute('''CREATE TABLE IF NOT EXISTS themes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT UNIQUE,
-            type TEXT,
-            content TEXT,
-            base_type TEXT DEFAULT 'light',
-            origin TEXT,
-            created_at TEXT,
-            updated_at TEXT
-        )''')
-        self.conn.commit()
+        self.db = UnifiedSQLiteAccess.get_instance(DB_PATH)
+        with self.db.get_connection() as conn:
+            conn.execute('''CREATE TABLE IF NOT EXISTS themes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE,
+                type TEXT,
+                content TEXT,
+                base_type TEXT DEFAULT 'light',
+                origin TEXT,
+                created_at TEXT,
+                updated_at TEXT
+            )''')
 
     def _restore_last_theme(self):
         """从配置服务恢复上次保存的主题
@@ -322,7 +321,7 @@ class ThemeManager(QObject):
                         return 'gradient'
                     else:
                         return 'light'
-            except:
+            except Exception:
                 pass
 
         # 默认: light
@@ -339,20 +338,21 @@ class ThemeManager(QObject):
             base_type: 基础类型 (dark/light/gradient)，默认light
         """
         now = datetime.now().isoformat()
-        cur = self.conn.cursor()
-        cur.execute('SELECT id FROM themes WHERE name=?', (name,))
-        if cur.fetchone():
-            cur.execute('UPDATE themes SET type=?, content=?, base_type=?, origin=?, updated_at=? WHERE name=?',
-                        (type_, content, base_type, origin, now, name))
-        else:
-            cur.execute('INSERT INTO themes (name, type, content, base_type, origin, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                        (name, type_, content, base_type, origin, now, now))
-        self.conn.commit()
+        with self.db.get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute('SELECT id FROM themes WHERE name=?', (name,))
+            if cur.fetchone():
+                cur.execute('UPDATE themes SET type=?, content=?, base_type=?, origin=?, updated_at=? WHERE name=?',
+                            (type_, content, base_type, origin, now, name))
+            else:
+                cur.execute('INSERT INTO themes (name, type, content, base_type, origin, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                            (name, type_, content, base_type, origin, now, now))
 
     def _get_all_themes_from_db(self):
-        cur = self.conn.cursor()
-        cur.execute('SELECT name, type, content, origin, created_at, updated_at FROM themes ORDER BY id')
-        return cur.fetchall()
+        with self.db.get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute('SELECT name, type, content, origin, created_at, updated_at FROM themes ORDER BY id')
+            return cur.fetchall()
 
     def _get_theme_content(self, name):
         """获取主题内容
@@ -360,9 +360,10 @@ class ThemeManager(QObject):
         Returns:
             tuple: (type, content, base_type) 或 None
         """
-        cur = self.conn.cursor()
-        cur.execute('SELECT type, content, base_type FROM themes WHERE name=?', (name,))
-        return cur.fetchone()
+        with self.db.get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute('SELECT type, content, base_type FROM themes WHERE name=?', (name,))
+            return cur.fetchone()
 
     def get_theme_config(self, theme_name: str) -> Optional[dict]:
         """获取主题配置（兼容性方法）
@@ -1051,7 +1052,7 @@ class ThemeManager(QObject):
                 widget.style().unpolish(widget)
                 widget.style().polish(widget)
                 widget.update()
-            except:
+            except Exception:
                 pass  # 忽略单个组件错误
 
     def _refresh_widget_tree(self, widget):
@@ -1067,7 +1068,7 @@ class ThemeManager(QObject):
                     child.style().unpolish(child)
                     child.style().polish(child)
                     child.update()
-                except:
+                except Exception:
                     pass  # 某些组件可能不支持，跳过
 
         except Exception as e:
@@ -1079,8 +1080,8 @@ class ThemeManager(QObject):
         self._upsert_theme(name, type_, content, origin)
 
     def delete_theme(self, name):
-        self.conn.execute('DELETE FROM themes WHERE name=?', (name,))
-        self.conn.commit()
+        with self.db.get_connection() as conn:
+            conn.execute('DELETE FROM themes WHERE name=?', (name,))
 
     def rename_theme(self, old_name: str, new_name: str) -> bool:
         """重命名主题
@@ -1107,11 +1108,11 @@ class ThemeManager(QObject):
                 return False
 
             # 更新数据库
-            self.conn.execute(
-                'UPDATE themes SET name=?, updated_at=? WHERE name=?',
-                (new_name, datetime.now().isoformat(), old_name)
-            )
-            self.conn.commit()
+            with self.db.get_connection() as conn:
+                conn.execute(
+                    'UPDATE themes SET name=?, updated_at=? WHERE name=?',
+                    (new_name, datetime.now().isoformat(), old_name)
+                )
 
             logger.info(f"主题已重命名: {old_name} -> {new_name}")
             return True
@@ -1122,9 +1123,9 @@ class ThemeManager(QObject):
 
     def update_theme(self, name, content):
         now = datetime.now().isoformat()
-        self.conn.execute(
-            'UPDATE themes SET content=?, updated_at=? WHERE name=?', (content, now, name))
-        self.conn.commit()
+        with self.db.get_connection() as conn:
+            conn.execute(
+                'UPDATE themes SET content=?, updated_at=? WHERE name=?', (content, now, name))
 
     def edit_theme(self, name: str, new_content: str) -> bool:
         """

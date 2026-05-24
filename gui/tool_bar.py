@@ -99,16 +99,19 @@ class MainToolBar(QToolBar):
         self.new_action = QAction(QIcon("icons/new.png"), "新建", self)
         self.new_action.setStatusTip("创建新的策略")
         self.new_action.setShortcut("Ctrl+N")
+        self.new_action.triggered.connect(self.new_file)
         self.addAction(self.new_action)
 
         self.open_action = QAction(QIcon("icons/open.png"), "打开", self)
         self.open_action.setStatusTip("打开策略文件")
         self.open_action.setShortcut("Ctrl+O")
+        self.open_action.triggered.connect(self.open_file)
         self.addAction(self.open_action)
 
         self.save_action = QAction(QIcon("icons/save.png"), "保存", self)
         self.save_action.setStatusTip("保存当前策略")
         self.save_action.setShortcut("Ctrl+S")
+        self.save_action.triggered.connect(self.save_file)
         self.addAction(self.save_action)
 
         self.addSeparator()
@@ -117,16 +120,19 @@ class MainToolBar(QToolBar):
         self.analyze_action = QAction(QIcon("icons/analyze.png"), "分析", self)
         self.analyze_action.setStatusTip("分析当前股票")
         self.analyze_action.setShortcut("F5")
+        self.analyze_action.triggered.connect(self.analyze_stock)
         self.addAction(self.analyze_action)
 
         self.backtest_action = QAction(QIcon("icons/backtest.png"), "回测", self)
         self.backtest_action.setStatusTip("回测当前策略")
         self.backtest_action.setShortcut("F6")
+        self.backtest_action.triggered.connect(self.run_backtest)
         self.addAction(self.backtest_action)
 
         self.optimize_action = QAction(QIcon("icons/optimize.png"), "优化", self)
         self.optimize_action.setStatusTip("优化策略参数")
         self.optimize_action.setShortcut("F7")
+        self.optimize_action.triggered.connect(self.optimize_strategy)
         self.addAction(self.optimize_action)
 
         self.addSeparator()
@@ -164,17 +170,20 @@ class MainToolBar(QToolBar):
             QIcon("icons/calculator.png"), "计算器", self)
         self.calculator_action.setStatusTip("打开计算器")
         self.calculator_action.setShortcut("Ctrl+K")
+        self.calculator_action.triggered.connect(self.show_calculator)
         self.addAction(self.calculator_action)
 
         self.converter_action = QAction(
             QIcon("icons/converter.png"), "单位转换", self)
         self.converter_action.setStatusTip("打开单位转换器")
         self.converter_action.setShortcut("Ctrl+U")
+        self.converter_action.triggered.connect(self.show_converter)
         self.addAction(self.converter_action)
 
         self.settings_action = QAction(QIcon("icons/settings.png"), "设置", self)
         self.settings_action.setStatusTip("打开设置对话框")
         self.settings_action.setShortcut("Ctrl+,")
+        self.settings_action.triggered.connect(self.show_settings)
         self.addAction(self.settings_action)
 
         # 策略参数优化（快捷入口）
@@ -190,6 +199,7 @@ class MainToolBar(QToolBar):
         self.search_box = QLineEdit()
         self.search_box.setPlaceholderText("搜索股票代码或名称...")
         self.search_box.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.search_box.returnPressed.connect(self.search_stock)
         self.addWidget(self.search_box)
 
     def log_message(self, message: str, level: str = "info") -> None:
@@ -255,23 +265,140 @@ class MainToolBar(QToolBar):
             QMessageBox.critical(self, "错误", f"打开文件失败：{str(e)}")
 
     def save_file(self):
-        """Save current file"""
+        """Save current chart/strategy data to file"""
         try:
             file_path, _ = QFileDialog.getSaveFileName(
                 self,
                 "保存文件",
                 "",
-                "All Files (*);;Python Files (*.py);;Text Files (*.txt)"
+                "JSON Files (*.json);;CSV Files (*.csv);;All Files (*)"
             )
 
-            if file_path:
-                # TODO: Get current content and save
-                with open(file_path, 'w', encoding='utf-8') as f:
-                    f.write("")
-                QMessageBox.information(self, "成功", "文件保存成功")
+            if not file_path:
+                return
+
+            content = self._get_current_content()
+
+            if content is None:
+                QMessageBox.warning(self, "警告", "当前没有可保存的数据")
+                return
+
+            try:
+                if file_path.endswith('.json'):
+                    import json
+                    with open(file_path, 'w', encoding='utf-8') as f:
+                        json.dump(content, f, ensure_ascii=False, indent=2)
+                elif file_path.endswith('.csv'):
+                    self._save_csv_content(file_path, content)
+                else:
+                    import json
+                    with open(file_path, 'w', encoding='utf-8') as f:
+                        json.dump(content, f, ensure_ascii=False, indent=2)
+
+                QMessageBox.information(self, "成功", f"文件已保存到：{file_path}")
+                logger.info(f"文件保存成功: {file_path}")
+
+            except Exception as write_error:
+                QMessageBox.critical(self, "错误", f"写入文件失败：{str(write_error)}")
+                logger.error(f"文件写入失败: {write_error}")
 
         except Exception as e:
             QMessageBox.critical(self, "错误", f"保存文件失败：{str(e)}")
+            logger.error(f"保存文件操作失败: {e}")
+
+    def _get_current_content(self):
+        """Get current chart/strategy data from parent window
+
+        Returns:
+            dict: Current data or None if no data available
+        """
+        try:
+            parent = self.parentWidget()
+            if parent is None:
+                logger.debug("ToolBar没有父窗口，尝试其他方式获取数据")
+                return self._get_fallback_content()
+
+            if hasattr(parent, '_current_asset_data') and parent._current_asset_data:
+                data = parent._current_asset_data.copy()
+                if hasattr(parent, '_current_symbol'):
+                    data['symbol'] = parent._current_symbol
+                if hasattr(parent, '_current_market'):
+                    data['market'] = parent._current_market
+                logger.debug(f"从主窗口获取资产数据: {data.get('symbol', 'unknown')}")
+                return data
+
+            if hasattr(parent, '_panels'):
+                for panel_name, panel in parent._panels.items():
+                    if hasattr(panel, 'get_export_data'):
+                        try:
+                            data = panel.get_export_data()
+                            if data:
+                                logger.debug(f"从面板获取导出数据: {panel_name}")
+                                return data
+                        except Exception as e:
+                            logger.debug(f"从面板获取导出数据失败: {e}")
+
+            if hasattr(parent, 'current_kdata'):
+                try:
+                    kdata = parent.current_kdata
+                    if kdata is not None and len(kdata) > 0:
+                        data = {
+                            'type': 'kdata',
+                            'symbol': getattr(parent, '_current_symbol', 'unknown'),
+                            'data': kdata.to_dict('records') if hasattr(kdata, 'to_dict') else list(kdata)
+                        }
+                        logger.debug("从主窗口获取K线数据")
+                        return data
+                except Exception as e:
+                    logger.debug(f"从主窗口获取K线数据失败: {e}")
+
+            if hasattr(parent, 'get_export_data'):
+                try:
+                    data = parent.get_export_data()
+                    if data:
+                        logger.debug("从主窗口直接获取导出数据")
+                        return data
+                except Exception as e:
+                    logger.debug(f"从主窗口直接获取导出数据失败: {e}")
+
+            logger.debug("未找到可导出的数据，使用默认内容")
+            return self._get_fallback_content()
+
+        except Exception as e:
+            logger.warning(f"获取当前内容失败: {e}")
+            return self._get_fallback_content()
+
+    def _get_fallback_content(self):
+        """Get fallback content when no real data is available"""
+        return {
+            'type': 'toolbar_export',
+            'timestamp': pd.Timestamp.now().isoformat() if 'pandas' in dir() else str(datetime.now()),
+            'symbol': getattr(self, '_last_symbol', 'N/A'),
+            'data': {},
+            'note': '当前无实时数据，这是占位导出内容'
+        }
+
+    def _save_csv_content(self, file_path: str, content: dict):
+        """Save content as CSV file
+
+        Args:
+            file_path: Target file path
+            content: Data dictionary to save
+        """
+        import csv
+
+        with open(file_path, 'w', encoding='utf-8', newline='') as f:
+            if content.get('type') == 'kdata' and 'data' in content:
+                if content['data']:
+                    writer = csv.DictWriter(f, fieldnames=content['data'][0].keys())
+                    writer.writeheader()
+                    writer.writerows(content['data'])
+            else:
+                writer = csv.writer(f)
+                writer.writerow(['key', 'value'])
+                for key, value in content.items():
+                    if key not in ('data',):
+                        writer.writerow([key, value])
 
     def show_settings(self):
         """Show settings dialog"""
@@ -280,6 +407,64 @@ class MainToolBar(QToolBar):
                 self.parent().show_settings()
         except Exception as e:
             logger.error(f"显示设置对话框失败：{str(e)}")
+
+    def analyze_stock(self):
+        """分析当前股票（委托父窗口处理）"""
+        try:
+            parent = self.parentWidget()
+            if parent and hasattr(parent, 'analyze_current_stock'):
+                parent.analyze_current_stock()
+            elif parent and hasattr(parent, 'show_analysis'):
+                parent.show_analysis()
+            else:
+                logger.info("分析功能：父窗口不支持分析操作")
+                QMessageBox.information(self, "提示", "请先在主窗口中选择股票数据后再进行分析")
+        except Exception as e:
+            logger.error(f"执行分析操作失败：{str(e)}")
+
+    def run_backtest(self):
+        """回测当前策略（委托父窗口处理）"""
+        try:
+            parent = self.parentWidget()
+            if parent and hasattr(parent, 'run_backtest'):
+                parent.run_backtest()
+            elif parent and hasattr(parent, 'show_backtest'):
+                parent.show_backtest()
+            else:
+                logger.info("回测功能：父窗口不支持回测操作")
+                QMessageBox.information(self, "提示", "请先打开策略并加载数据后再进行回测")
+        except Exception as e:
+            logger.error(f"执行回测操作失败：{str(e)}")
+
+    def optimize_strategy(self):
+        """优化当前策略参数（委托父窗口处理）"""
+        try:
+            parent = self.parentWidget()
+            if parent and hasattr(parent, 'optimize_strategy'):
+                parent.optimize_strategy()
+            elif parent and hasattr(parent, 'show_optimization'):
+                parent.show_optimization()
+            else:
+                logger.info("优化功能：父窗口不支持优化操作，打开参数优化器")
+                self.show_parameter_optimizer()
+        except Exception as e:
+            logger.error(f"执行优化操作失败：{str(e)}")
+
+    def search_stock(self):
+        """搜索股票代码或名称（委托父窗口处理）"""
+        try:
+            query = self.search_box.text().strip()
+            if not query:
+                return
+            parent = self.parentWidget()
+            if parent and hasattr(parent, 'search_stock'):
+                parent.search_stock(query)
+            elif parent and hasattr(parent, 'on_search'):
+                parent.on_search(query)
+            else:
+                logger.info(f"搜索 '{query}'：父窗口不支持搜索操作")
+        except Exception as e:
+            logger.error(f"搜索股票失败：{str(e)}")
 
     def show_calculator(self):
         """Show calculator"""

@@ -96,7 +96,9 @@ class TrainingDataCollector:
         stock_codes: List[str],
         lookback_days: int = 252,
         min_return: float = 0.05,
-        max_return: float = 0.30
+        max_return: float = 0.30,
+        max_samples: int = 100000,
+        batch_size: int = 50
     ) -> TrainingDataset:
         """收集训练数据
         
@@ -105,6 +107,8 @@ class TrainingDataCollector:
             lookback_days: 回溯天数（默认252天，约1年）
             min_return: 最小收益率阈值（用于标记正样本）
             max_return: 最大收益率阈值（用于标记正样本）
+            max_samples: 最大样本数量上限（默认10000），防止无界增长
+            batch_size: 每批处理的股票数量（默认50）
             
         Returns:
             训练数据集
@@ -112,29 +116,42 @@ class TrainingDataCollector:
         import uuid
         dataset_id = str(uuid.uuid4())
         
-        logger.info(f"开始收集训练数据: {len(stock_codes)} 只股票，回溯 {lookback_days} 天")
+        logger.info(f"开始收集训练数据: {len(stock_codes)} 只股票，回溯 {lookback_days} 天, max_samples={max_samples}, batch_size={batch_size}")
         
         samples = []
         feature_columns = set()
         
-        # 并行收集股票数据
-        tasks = []
-        for stock_code in stock_codes:
-            task = self._collect_stock_data(stock_code, lookback_days, min_return, max_return)
-            tasks.append(task)
-        
-        # 等待所有任务完成
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        # 处理结果
-        for result in results:
-            if isinstance(result, Exception):
-                logger.warning(f"收集股票数据失败: {result}")
-                continue
+        # 分批处理，防止单次 asyncio.gather 创建过多协程耗尽资源
+        for batch_start in range(0, len(stock_codes), batch_size):
+            if len(samples) >= max_samples:
+                logger.warning(f"已达到最大样本数上限 {max_samples}，停止收集")
+                break
             
-            if result:
-                samples.append(result)
-                feature_columns.update(result.features.keys())
+            batch = stock_codes[batch_start:batch_start + batch_size]
+            
+            tasks = []
+            for stock_code in batch:
+                task = self._collect_stock_data(stock_code, lookback_days, min_return, max_return)
+                tasks.append(task)
+            
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            for result in results:
+                if len(samples) >= max_samples:
+                    break
+                if isinstance(result, Exception):
+                    logger.warning(f"收集股票数据失败: {result}")
+                    continue
+                if result:
+                    samples.append(result)
+                    feature_columns.update(result.features.keys())
+        
+        actual_stocks = batch_start + len(batch) if batch_start < len(stock_codes) else len(stock_codes)
+        if len(samples) >= max_samples and len(stock_codes) > max_samples:
+            logger.warning(
+                f"样本数已达上限: 已收集 {len(samples)}/{max_samples} 个样本，"
+                f"已处理 {actual_stocks}/{len(stock_codes)} 只股票，剩余股票已跳过"
+            )
         
         # 创建数据集
         dataset = TrainingDataset(
@@ -304,8 +321,8 @@ class TrainingDataCollector:
     def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
         """计算RSI指标"""
         delta = prices.diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+        gain = (delta.where(delta > 0, 0)).ewm(alpha=1/period, adjust=False).mean()
+        loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/period, adjust=False).mean()
         rs = gain / loss
         rsi = 100 - (100 / (1 + rs))
         return rsi
@@ -360,32 +377,53 @@ class TrainingDataCollector:
             return {}
     
     async def _save_dataset(self, dataset: TrainingDataset) -> None:
-        """保存数据集到磁盘"""
+        """保存数据集到磁盘（分块写入，降低内存峰值）"""
         try:
-            # 转换为 DataFrame
-            data_rows = []
-            for sample in dataset.samples:
-                row = {
-                    'stock_code': sample.stock_code,
-                    'stock_name': sample.stock_name,
-                    'label': sample.label,
-                    'timestamp': sample.timestamp.isoformat(),
-                    'return_5d': sample.return_5d,
-                    'return_20d': sample.return_20d,
-                    'market_cap': sample.market_cap,
-                    'pe_ratio': sample.pe_ratio,
-                    'pb_ratio': sample.pb_ratio,
-                    'roe': sample.roe
-                }
-                row.update(sample.features)
-                data_rows.append(row)
-            
-            df = pd.DataFrame(data_rows)
-            
-            # 保存为 CSV
+            samples = dataset.samples
+            total_samples = len(samples)
+            chunk_size = 5000
+
             file_path = self._data_storage_path / f"{dataset.dataset_id}.csv"
-            df.to_csv(file_path, index=False, encoding='utf-8-sig')
-            
+
+            all_feature_keys = set()
+            for sample in samples:
+                all_feature_keys.update(sample.features.keys())
+
+            base_columns = [
+                'stock_code', 'stock_name', 'label', 'timestamp',
+                'return_5d', 'return_20d', 'market_cap', 'pe_ratio',
+                'pb_ratio', 'roe'
+            ]
+            feature_columns_sorted = sorted(all_feature_keys)
+            all_columns = base_columns + feature_columns_sorted
+
+            for chunk_start in range(0, total_samples, chunk_size):
+                chunk_end = min(chunk_start + chunk_size, total_samples)
+                data_rows = []
+
+                for sample in samples[chunk_start:chunk_end]:
+                    row = {
+                        'stock_code': sample.stock_code,
+                        'stock_name': sample.stock_name,
+                        'label': sample.label,
+                        'timestamp': sample.timestamp.isoformat(),
+                        'return_5d': sample.return_5d,
+                        'return_20d': sample.return_20d,
+                        'market_cap': sample.market_cap,
+                        'pe_ratio': sample.pe_ratio,
+                        'pb_ratio': sample.pb_ratio,
+                        'roe': sample.roe
+                    }
+                    row.update(sample.features)
+                    data_rows.append(row)
+
+                df_chunk = pd.DataFrame(data_rows, columns=all_columns)
+
+                if chunk_start == 0:
+                    df_chunk.to_csv(file_path, index=False, encoding='utf-8-sig', mode='w')
+                else:
+                    df_chunk.to_csv(file_path, index=False, encoding='utf-8-sig', mode='a', header=False)
+
             # 保存元数据
             metadata = {
                 'dataset_id': dataset.dataset_id,
@@ -394,16 +432,16 @@ class TrainingDataCollector:
                 'updated_at': dataset.updated_at.isoformat(),
                 'feature_columns': dataset.feature_columns,
                 'label_column': dataset.label_column,
-                'num_samples': len(dataset.samples),
+                'num_samples': total_samples,
                 'metadata': dataset.metadata
             }
-            
+
             metadata_path = self._data_storage_path / f"{dataset.dataset_id}_metadata.json"
             with open(metadata_path, 'w', encoding='utf-8') as f:
                 json.dump(metadata, f, ensure_ascii=False, indent=2)
-            
-            logger.info(f"数据集已保存: {file_path}")
-            
+
+            logger.info(f"数据集已保存: {file_path} ({total_samples} 个样本, {len(feature_columns_sorted)} 个特征列)")
+
         except Exception as e:
             logger.error(f"保存数据集失败: {e}")
     
@@ -438,23 +476,22 @@ class TrainingDataCollector:
             
             df = pd.read_csv(file_path, encoding='utf-8-sig')
             
-            # 转换为样本
+            # 转换为样本（使用to_dict('records')替代iterrows()，性能提升2-3倍）
             samples = []
-            for _, row in df.iterrows():
-                features = {col: row[col] for col in metadata['feature_columns'] if col in row}
-                
+            for row_dict in df.to_dict('records'):
+                features = {col: row_dict[col] for col in metadata['feature_columns'] if col in row_dict}
                 sample = TrainingDataSample(
-                    stock_code=row['stock_code'],
-                    stock_name=row['stock_name'],
+                    stock_code=row_dict['stock_code'],
+                    stock_name=row_dict['stock_name'],
                     features=features,
-                    label=row['label'],
-                    timestamp=datetime.fromisoformat(row['timestamp']),
-                    return_5d=row['return_5d'],
-                    return_20d=row['return_20d'],
-                    market_cap=row['market_cap'],
-                    pe_ratio=row['pe_ratio'],
-                    pb_ratio=row['pb_ratio'],
-                    roe=row['roe']
+                    label=row_dict['label'],
+                    timestamp=datetime.fromisoformat(row_dict['timestamp']),
+                    return_5d=row_dict['return_5d'],
+                    return_20d=row_dict['return_20d'],
+                    market_cap=row_dict['market_cap'],
+                    pe_ratio=row_dict['pe_ratio'],
+                    pb_ratio=row_dict['pb_ratio'],
+                    roe=row_dict['roe']
                 )
                 samples.append(sample)
             

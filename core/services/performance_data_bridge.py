@@ -149,11 +149,9 @@ class PerformanceDataBridge:
             self.deep_analysis_service.record_metric("disk_usage", disk_percent, "system")
 
         except ImportError:
-            # 如果psutil不可用，生成模拟数据
-            import random
-            self.deep_analysis_service.record_metric("cpu_usage", random.uniform(20, 80), "system")
-            self.deep_analysis_service.record_metric("memory_usage", random.uniform(30, 70), "system")
-            self.deep_analysis_service.record_metric("disk_usage", random.uniform(40, 90), "system")
+            self.deep_analysis_service.record_metric("cpu_usage", 0.0, "system")
+            self.deep_analysis_service.record_metric("memory_usage", 0.0, "system")
+            self.deep_analysis_service.record_metric("disk_usage", 0.0, "system")
 
         except Exception as e:
             try:

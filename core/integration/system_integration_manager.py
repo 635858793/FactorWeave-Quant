@@ -298,8 +298,8 @@ class SystemIntegrationManager:
             # 应用财务比率计算（如果是财务数据）
             elif query.data_type == DataType.FINANCIAL_STATEMENT:
                 if not standardized_data.empty:
-                    for idx, row in standardized_data.iterrows():
-                        ratios = calculate_financial_ratios(row.to_dict())
+                    for idx, row_dict in zip(standardized_data.index, standardized_data.to_dict('records')):
+                        ratios = calculate_financial_ratios(row_dict)
                         for ratio_name, ratio_value in ratios.items():
                             standardized_data.at[idx, ratio_name] = ratio_value
 

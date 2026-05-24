@@ -251,7 +251,7 @@ class OrderValidator:
                 logger.warning(f"账户不存在: {account_id}，跳过资金验证")
                 return ValidationResult(passed=True)
 
-            order_value = request.price * request.quantity
+            order_value = request.order_price * request.order_quantity
             available_fund = getattr(account, 'available_fund', float('inf'))
             max_order_value_ratio = self._config.get('max_order_value_ratio', 0.1)
             max_order_value = available_fund * max_order_value_ratio

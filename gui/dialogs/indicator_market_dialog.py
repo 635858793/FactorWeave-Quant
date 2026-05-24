@@ -3,7 +3,7 @@
 用于在线指标市场浏览、安装、上传和评价
 """
 
-from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QTabWidget,
+from PyQt5.QtWidgets import (QVBoxLayout, QHBoxLayout, QTabWidget,
                              QTableWidget, QTableWidgetItem, QPushButton,
                              QLabel, QLineEdit, QTextEdit, QGroupBox,
                              QFormLayout, QSpinBox, QCheckBox, QComboBox,
@@ -16,6 +16,8 @@ from PyQt5.QtGui import QFont, QPixmap, QIcon, QPainter, QColor
 import json
 import os
 import time
+
+from .base_dialog import BaseDialog
 
 
 class StarRatingWidget(QWidget):
@@ -178,19 +180,21 @@ class IndicatorCard(QFrame):
         layout.addLayout(button_layout)
 
 
-class IndicatorMarketDialog(QDialog):
+class IndicatorMarketDialog(BaseDialog):
     """指标市场对话框"""
 
     indicator_installed = pyqtSignal(dict)
     indicator_uploaded = pyqtSignal(dict)
 
     def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("指标市场")
-        self.setModal(True)
-        self.resize(1200, 800)
+        super().__init__(
+            parent,
+            title="指标市场",
+            min_size=(1200, 800),
+            size=(1200, 800),
+            settings_key="IndicatorMarketDialog"
+        )
 
-        # 市场数据
         self.indicators = []
         self.categories = ["全部", "趋势指标", "震荡指标", "成交量指标", "动量指标", "自定义指标"]
         self.current_category = "全部"

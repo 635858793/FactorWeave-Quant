@@ -253,7 +253,7 @@ class StrategyLifecycleManager:
         """析构函数"""
         try:
             self.shutdown()
-        except:
+        except Exception:
             pass
 
 # 全局生命周期管理器实例

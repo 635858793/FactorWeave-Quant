@@ -148,6 +148,7 @@ class RealTimeDataProcessor(QObject):
         self.config = config or ConnectionConfig("ws://localhost:8080")
         self.state = ConnectionState.DISCONNECTED
         self.websocket = None
+        self._listen_task = None
         self.message_queue = MessageQueue()
         self.data_processors: Dict[str, Callable] = {}
         
@@ -208,11 +209,11 @@ class RealTimeDataProcessor(QObject):
             
             self._change_state(ConnectionState.CONNECTED)
             self.stats['reconnect_count'] = 0
-            
-            # 启动消息监听
-            asyncio.create_task(self._listen_messages())
-            
-            # 发送初始消息
+
+            if self._listen_task and not self._listen_task.done():
+                self._listen_task.cancel()
+            self._listen_task = asyncio.create_task(self._listen_messages())
+
             await self._send_initial_messages()
             
         except Exception as e:
@@ -223,11 +224,14 @@ class RealTimeDataProcessor(QObject):
     async def disconnect(self):
         """断开连接"""
         self._change_state(ConnectionState.CLOSING)
-        
+
+        if self._listen_task and not self._listen_task.done():
+            self._listen_task.cancel()
+
         if self.websocket:
             await self.websocket.close()
             self.websocket = None
-        
+
         self._change_state(ConnectionState.DISCONNECTED)
     
     async def _listen_messages(self):

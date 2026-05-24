@@ -3,7 +3,7 @@ from loguru import logger
 """
 进度持久化管理器
 
-实现保存和恢复导入进度功能，包括：
+实现保存和恢复导入进度功能,包括:
 - 任务进度保存
 - 断点续传
 - 进度状态管理
@@ -19,6 +19,7 @@ from pathlib import Path
 from dataclasses import dataclass, asdict
 from enum import Enum
 from PyQt5.QtCore import QObject, QTimer, pyqtSignal
+from ..database.unified_sqlite_access import UnifiedSQLiteAccess
 
 class ProgressStatus(Enum):
     """进度状态"""
@@ -117,7 +118,8 @@ class ProgressDatabase:
     def _init_database(self):
         """初始化数据库"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 conn.execute('''
                     CREATE TABLE IF NOT EXISTS task_progress (
                         task_id TEXT PRIMARY KEY,
@@ -163,8 +165,6 @@ class ProgressDatabase:
                     ON progress_checkpoints (task_id, timestamp)
                 ''')
 
-                conn.commit()
-
         except Exception as e:
             logger.error(f"初始化进度数据库失败: {e}")
             raise
@@ -173,7 +173,8 @@ class ProgressDatabase:
         """保存任务进度"""
         try:
             with self._lock:
-                with sqlite3.connect(self.db_path) as conn:
+                db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+                with db.get_connection() as conn:
                     # 保存任务进度
                     conn.execute('''
                         INSERT OR REPLACE INTO task_progress 
@@ -208,7 +209,6 @@ class ProgressDatabase:
                             checkpoint.status.value
                         ))
 
-                    conn.commit()
                     return True
 
         except Exception as e:
@@ -219,9 +219,8 @@ class ProgressDatabase:
         """加载任务进度"""
         try:
             with self._lock:
-                with sqlite3.connect(self.db_path) as conn:
-                    conn.row_factory = sqlite3.Row
-
+                db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+                with db.get_connection() as conn:
                     # 加载任务进度
                     cursor = conn.execute('''
                         SELECT * FROM task_progress WHERE task_id = ?
@@ -282,10 +281,10 @@ class ProgressDatabase:
         """删除任务进度"""
         try:
             with self._lock:
-                with sqlite3.connect(self.db_path) as conn:
+                db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+                with db.get_connection() as conn:
                     conn.execute('DELETE FROM progress_checkpoints WHERE task_id = ?', (task_id,))
                     conn.execute('DELETE FROM task_progress WHERE task_id = ?', (task_id,))
-                    conn.commit()
                     return True
 
         except Exception as e:
@@ -296,9 +295,8 @@ class ProgressDatabase:
         """获取所有任务进度"""
         try:
             with self._lock:
-                with sqlite3.connect(self.db_path) as conn:
-                    conn.row_factory = sqlite3.Row
-
+                db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+                with db.get_connection() as conn:
                     cursor = conn.execute('SELECT task_id FROM task_progress')
                     task_ids = [row['task_id'] for row in cursor.fetchall()]
 
@@ -314,7 +312,8 @@ class ProgressDatabase:
             cutoff_date = (datetime.now() - timedelta(days=days)).isoformat()
 
             with self._lock:
-                with sqlite3.connect(self.db_path) as conn:
+                db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+                with db.get_connection() as conn:
                     # 删除旧的已完成任务
                     cursor = conn.execute('''
                         DELETE FROM progress_checkpoints 
@@ -334,7 +333,6 @@ class ProgressDatabase:
                     ''', (cutoff_date,))
 
                     deleted_tasks = cursor.rowcount
-                    conn.commit()
 
                     logger.info(f"清理了 {deleted_tasks} 个旧任务和 {deleted_checkpoints} 个检查点")
                     return deleted_tasks

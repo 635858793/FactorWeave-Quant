@@ -924,7 +924,15 @@ class HybridRecommendationEngine(BaseService):
         """关闭混合推荐引擎"""
         try:
             logger.info("开始关闭混合推荐引擎...")
-            
+
+            try:
+                self.event_bus.unsubscribe(
+                    "HybridRecommendationRequested",
+                    self._handle_recommendation_request
+                )
+            except Exception as e:
+                logger.error(f"取消事件订阅失败: {e}")
+
             # 关闭性能监控
             if self.performance_monitor:
                 await self.performance_monitor.stop_monitoring()
@@ -1628,7 +1636,7 @@ class HybridRecommendationEngine(BaseService):
                         # 尝试获取缓存大小和使用情况
                         cache_detail['cache_size'] = getattr(cache_instance, '_cache', {}).__len__() if hasattr(cache_instance, '_cache') else 0
                         cache_detail['memory_usage'] = f"{cache_detail['cache_size']} items"
-                    except:
+                    except Exception:
                         pass
                         
                 stats['cache_details'][cache_name] = cache_detail

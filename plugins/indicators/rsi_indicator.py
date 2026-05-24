@@ -100,17 +100,13 @@ class RSIIndicatorPlugin(IIndicatorPluginV2):
         price_changes = close_prices.diff()
         gains = price_changes.where(price_changes > 0, 0)
         losses = -price_changes.where(price_changes < 0, 0)
-        avg_gain = self._calculate_sma(gains, period)
-        avg_loss = self._calculate_sma(losses, period)
+        avg_gain = gains.ewm(alpha=1.0 / period, adjust=False).mean()
+        avg_loss = losses.ewm(alpha=1.0 / period, adjust=False).mean()
         rs = avg_gain / avg_loss.replace(0, np.inf)
         rsi = 100 - (100 / (1 + rs))
         rsi = rsi.fillna(50)
         return {'rsi': rsi}
 
-    def _calculate_sma(self, data: pd.Series, period: int) -> pd.Series:
-        return data.rolling(window=period, min_periods=1).mean()
-
-    # 可选：配置小部件示例（不影响新接口）
     def create_config_widget(self, parent: Optional[QWidget] = None) -> QWidget:
         widget = QWidget(parent)
         layout = QFormLayout(widget)

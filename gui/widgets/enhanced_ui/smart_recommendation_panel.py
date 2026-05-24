@@ -31,7 +31,10 @@ from core.services.bettafish_monitoring_service import BettaFishMonitoringServic
 from gui.widgets.enhanced_ui.hybrid_recommendation_workers import (
     HybridRecommendationWorker, CacheWarmupWorker, CacheClearWorker, CacheStatsWorker
 )
-from gui.widgets.bettafish_dashboard import BettaFishDashboard
+try:
+    from gui.widgets.bettafish_dashboard import BettaFishDashboard
+except ImportError:
+    BettaFishDashboard = None
 from core.services.config_service import ConfigService
 
 
@@ -1115,6 +1118,16 @@ class SmartRecommendationPanel(QWidget):
         widget = QWidget()
         layout = QVBoxLayout(widget)
         
+        if BettaFishDashboard is None:
+            info_frame = QFrame()
+            info_layout = QVBoxLayout(info_frame)
+            info_label = QLabel("BettaFish仪表板组件暂不可用")
+            info_label.setAlignment(Qt.AlignCenter)
+            info_label.setStyleSheet("color: #888; font-size: 14px;")
+            info_layout.addWidget(info_label)
+            layout.addWidget(info_frame)
+            return layout
+        
         try:
             # 创建BettaFish仪表板组件
             if self._bettafish_agent:
@@ -1192,6 +1205,10 @@ class SmartRecommendationPanel(QWidget):
                 logger.info("从服务容器获取BettaFish监控服务成功")
             
             # 重新创建仪表板
+            if BettaFishDashboard is None:
+                logger.warning("BettaFishDashboard 组件不可用，跳过仪表板重建")
+                return
+            
             if hasattr(self, 'bettafish_dashboard'):
                 self.bettafish_dashboard.setParent(None)
                 
@@ -1999,11 +2016,9 @@ class SmartRecommendationPanel(QWidget):
                 content_layout.addWidget(no_data_label)
             else:
                 # 添加统计信息
-                for key, value in stats.items():
-                    # 格式化键名
+                for idx, (key, value) in enumerate(stats.items()):
                     formatted_key = key.replace('_', ' ').title()
                     
-                    # 创建统计项
                     item_layout = QHBoxLayout()
                     
                     key_label = QLabel(f"{formatted_key}:")
@@ -2014,7 +2029,6 @@ class SmartRecommendationPanel(QWidget):
                     value_label.setFont(QFont("Arial", 10))
                     value_label.setStyleSheet("color: #2C3E50;")
                     
-                    # 根据数据类型设置颜色
                     if isinstance(value, (int, float)):
                         if 'size' in key.lower() or 'count' in key.lower():
                             value_label.setStyleSheet("color: #E67E22; font-weight: bold;")
@@ -2027,8 +2041,7 @@ class SmartRecommendationPanel(QWidget):
                     item_layout.addWidget(value_label)
                     item_layout.addStretch()
                     
-                    # 添加分隔线
-                    if list(stats.keys()).index(key) < len(stats) - 1:
+                    if idx < len(stats) - 1:
                         separator = QLabel()
                         separator.setFixedHeight(1)
                         separator.setStyleSheet("background-color: #E0E0E0; margin: 5px 0px;")

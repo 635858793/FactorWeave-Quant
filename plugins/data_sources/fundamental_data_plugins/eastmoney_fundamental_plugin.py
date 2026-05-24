@@ -17,7 +17,6 @@ Eastmoney Fundamental Data Plugin
 日期: 2024
 """
 
-import asyncio
 import requests
 import json
 from datetime import datetime, timedelta
@@ -25,8 +24,7 @@ from typing import List, Dict, Any, Optional, Union
 import pandas as pd
 from loguru import logger
 
-from plugins.plugin_interface import IDataSourcePlugin, PluginLifecycle
-from core.data_source_extensions import PluginInfo, HealthCheckResult
+from core.data_source_extensions import IDataSourcePlugin, PluginInfo, HealthCheckResult, ConnectionInfo
 from core.plugin_types import AssetType, DataType, PluginType
 from core.tet_data_pipeline import StandardQuery, StandardData
 
@@ -43,12 +41,14 @@ class EastmoneyFundamentalPlugin(IDataSourcePlugin):
         self.plugin_id = plugin_id
         self.logger = logger.bind(plugin_id=self.plugin_id)
 
-        # 必须显式初始化这些属性（IDataSourcePlugin是抽象基类，不提供默认实现）
         self.initialized = False
         self.last_error = None
-        self.plugin_state = PluginLifecycle.CREATED  # 初始状态（插件对象已创建）
+        self.plugin_state = "created"
 
         self._is_connected = False
+        self._connection_time = None
+        self._last_activity = None
+        self._connection_params = {}
         self.session = requests.Session()
 
         # 设置请求头
@@ -68,33 +68,34 @@ class EastmoneyFundamentalPlugin(IDataSourcePlugin):
 
         self.logger.info(f"{self.plugin_id} 初始化完成。")
 
-    def get_plugin_info(self) -> PluginInfo:
-        """返回插件信息"""
+    @property
+    def plugin_info(self) -> PluginInfo:
         return PluginInfo(
             id=self.plugin_id,
             name="Eastmoney Fundamental Data Plugin",
             description="提供东方财富的财务报表、公司公告、分析师评级数据",
             version="1.0.0",
             author="FactorWeave-Quant Team",
-            plugin_type=PluginType.DATA_SOURCE,
+            chinese_name="东方财富基本面数据源",
+            supported_asset_types=[AssetType.STOCK_A, AssetType.FUND],
+            supported_data_types=[DataType.FINANCIAL_STATEMENT, DataType.ANNOUNCEMENT, DataType.ANALYST_RATING],
             capabilities={
-                'data_types': [DataType.FINANCIAL_STATEMENT, DataType.ANNOUNCEMENT, DataType.ANALYST_RATING],
-                'asset_types': [AssetType.STOCK_A, AssetType.FUND],
                 'features': ['financial_reports', 'company_news', 'analyst_research']
             }
         )
 
-    async def connect(self, config: Optional[Dict[str, Any]] = None) -> bool:
-        """连接到东方财富数据服务"""
+    def connect(self, **kwargs) -> bool:
         self.logger.info(f"尝试连接到 {self.plugin_id} 数据服务...")
 
         try:
-            # 测试连接
             test_url = "https://www.eastmoney.com"
             response = self.session.get(test_url, timeout=10)
 
             if response.status_code == 200:
                 self._is_connected = True
+                self._connection_time = datetime.now()
+                self._last_activity = datetime.now()
+                self._connection_params = kwargs
                 self.logger.info(f"成功连接到 {self.plugin_id} 数据服务。")
                 return True
             else:
@@ -105,21 +106,19 @@ class EastmoneyFundamentalPlugin(IDataSourcePlugin):
             self.logger.error(f"连接失败: {e}")
             return False
 
-    async def disconnect(self) -> bool:
-        """断开连接"""
+    def disconnect(self) -> bool:
         self.logger.info(f"尝试断开 {self.plugin_id} 数据服务...")
         self.session.close()
         self._is_connected = False
+        self._connection_time = None
         self.logger.info(f"已从 {self.plugin_id} 数据服务断开。")
         return True
 
-    async def health_check(self) -> HealthCheckResult:
-        """执行健康检查"""
+    def health_check(self) -> HealthCheckResult:
         try:
             if not self._is_connected:
-                await self.connect()
+                self.connect()
 
-            # 简单的健康检查
             test_response = self.session.get("https://www.eastmoney.com", timeout=5)
             if test_response.status_code == 200:
                 return HealthCheckResult(is_healthy=True, message="连接正常")
@@ -129,22 +128,16 @@ class EastmoneyFundamentalPlugin(IDataSourcePlugin):
         except Exception as e:
             return HealthCheckResult(is_healthy=False, message=f"健康检查失败: {e}")
 
-    async def get_data(self, query: StandardQuery) -> Union[List[Dict], pd.DataFrame, None]:
-        """通用数据获取接口"""
+    def get_data(self, query: StandardQuery) -> Union[List[Dict], pd.DataFrame, None]:
         self.logger.warning(f"基本面数据插件 {self.plugin_id} 不通过 get_data 方法获取数据，请使用具体方法。")
         return None
 
-    async def get_financial_statements(self, symbol: str, report_type: str, periods: int, asset_type: AssetType) -> Optional[List[Dict]]:
-        """
-        获取财务报表数据
-        使用东方财富真实API获取数据
-        """
+    def get_financial_statements(self, symbol: str, report_type: str, periods: int, asset_type: AssetType) -> Optional[List[Dict]]:
         self.logger.info(f"从 {self.plugin_id} 获取 {symbol} 的 {report_type} 报表数据 (最近 {periods} 期)...")
 
         try:
-            # 确保连接
             if not self._is_connected:
-                await self.connect()
+                self.connect()
 
             # 构建API请求参数
             report_type_map = {
@@ -254,17 +247,12 @@ class EastmoneyFundamentalPlugin(IDataSourcePlugin):
         except (ValueError, TypeError):
             return None
 
-    async def get_company_announcements(self, symbol: str, announcement_type: Optional[str] = None, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None) -> List[Dict]:
-        """
-        获取公司公告
-        使用东方财富真实API获取公告数据
-        """
+    def get_company_announcements(self, symbol: str, announcement_type: Optional[str] = None, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None) -> List[Dict]:
         self.logger.info(f"从 {self.plugin_id} 获取 {symbol} 的公司公告 (类型: {announcement_type})...")
 
         try:
-            # 确保连接
             if not self._is_connected:
-                await self.connect()
+                self.connect()
 
             # 设置默认时间范围
             if not end_date:
@@ -380,17 +368,12 @@ class EastmoneyFundamentalPlugin(IDataSourcePlugin):
 
         return 'low'
 
-    async def get_analyst_ratings(self, symbol: str, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None) -> Optional[List[Dict]]:
-        """
-        获取分析师评级数据
-        使用东方财富真实API获取研报数据
-        """
+    def get_analyst_ratings(self, symbol: str, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None) -> Optional[List[Dict]]:
         self.logger.info(f"从 {self.plugin_id} 获取 {symbol} 的分析师评级数据...")
 
         try:
-            # 确保连接
             if not self._is_connected:
-                await self.connect()
+                self.connect()
 
             # 构建API请求参数
             params = {
@@ -499,11 +482,26 @@ class EastmoneyFundamentalPlugin(IDataSourcePlugin):
 
         return rating_map.get(rating_text, None)
 
-    # 其他必需的抽象方法实现
-    async def get_asset_list(self, asset_type: AssetType) -> List[Dict]:
+    def is_connected(self) -> bool:
+        return self._is_connected
+
+    def get_connection_info(self) -> ConnectionInfo:
+        return ConnectionInfo(
+            is_connected=self._is_connected,
+            connection_time=self._connection_time,
+            last_activity=self._last_activity,
+            connection_params=self._connection_params
+        )
+
+    def get_asset_list(self, asset_type: AssetType, market: str = None) -> List[Dict[str, Any]]:
         self.logger.warning(f"基本面数据插件 {self.plugin_id} 不提供资产列表功能。")
         return []
 
-    async def get_kline_data(self, symbol: str, period: str, start_date: datetime, end_date: datetime, asset_type: AssetType) -> pd.DataFrame:
+    def get_kdata(self, symbol: str, freq: str = "D", start_date: str = None,
+                  end_date: str = None, count: int = None) -> pd.DataFrame:
         self.logger.warning(f"基本面数据插件 {self.plugin_id} 不提供K线数据功能。")
+        return pd.DataFrame()
+
+    def get_real_time_quotes(self, symbols: List[str]) -> pd.DataFrame:
+        self.logger.warning(f"基本面数据插件 {self.plugin_id} 不提供实时行情功能。")
         return pd.DataFrame()

@@ -5,6 +5,7 @@
 """
 
 from .data_router import DataRouter
+from .system_integration_manager import SystemIntegrationManager
 
 __all__ = [
     'DataRouter',

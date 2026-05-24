@@ -489,21 +489,23 @@ QCheckBox {
 
  QMenuBar::item {
      spacing: 3px; /* spacing between menu bar items */
-     padding: 1px 4px;
-     background: #10151E;
-     border-radius: 4px;
-     font:#BBDDFF;
+     padding: 1px 4px;			
+     border-radius: 1px;
+     color: #BBDDFF;
+    background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,	/*菜单最顶层如"Flie"的背景颜色*/
+                                 stop: 0 #113845,
+                                 stop: 1.0 #15A8FF);
  }
 
  QMenuBar::item:selected { /* when selected using mouse or keyboard */
-     background: #1A2432;
-     font:#FFFFFF;
+     background: #1A2432;			/*当鼠标移动到菜单项上面或者通过键盘使菜单项得到光标时显示的颜色*/
+     color: #FFFFFF;
  }
 
  QMenuBar::item:pressed {
      background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                                        stop:0 #10151E, stop:1 #2C547E);
-     font:#FFFFFF;
+     color: #FFFFFF;
 
  }
  QMenuBar::item:hover{
@@ -511,7 +513,7 @@ QCheckBox {
     border-color:#516589;
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                                        stop:0 #9979A, stop:1 #2D567F);
-    font:#FFFFFF;
+    color: #FFFFFF;
 
  }
 
@@ -1002,7 +1004,7 @@ QWidget#InfoAreaWidget *
 {
     background-color: rgba( 93, 93, 93, 100 );
     color:#FFFFFF;
-    font: 75 12pt "宋体";
+    font-weight: 75; font-size: 12pt; font-family: "宋体";
 }
 
 QWidget#InfoAreaWidget QLabel

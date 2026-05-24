@@ -121,7 +121,7 @@ def reduce_noise_with_filtering(df, columns=None, window=5, method='ewm'):
         df: 输入DataFrame
         columns: 要处理的列名列表，None表示处理所有数值列
         window: 滑动窗口大小
-        method: 滤波方法 ('sma', 'ewm', 'kalman')
+        method: 滤波方法 ('sma', 'ewm', 'kalman', 'savgol')
 
     返回:
         DataFrame: 处理后的DataFrame
@@ -143,9 +143,14 @@ def reduce_noise_with_filtering(df, columns=None, window=5, method='ewm'):
             df_filtered[col] = df[col].ewm(span=window, adjust=False).mean()
         elif method == 'kalman':  # 简化的卡尔曼滤波
             df_filtered[col] = simple_kalman_filter(df[col])
+        elif method == 'savgol':  # Savitzky-Golay多项式滤波
+            from scipy.signal import savgol_filter
+            win_len = max(window, 3)
+            if win_len % 2 == 0:
+                win_len += 1
+            df_filtered[col] = savgol_filter(df[col].ffill().values, window_length=min(win_len, len(df) - 1), polyorder=2)
 
     # 对滤波后产生的缺失值进行处理
-    df_filtered = df_filtered.fillna(method='bfill')
     df_filtered = df_filtered.fillna(method='ffill')
 
     return df_filtered
@@ -275,7 +280,7 @@ def preprocess_data(df):
             try:
                 # 尝试将当前索引转换为日期类型
                 result.index = pd.to_datetime(result.index)
-            except:
+            except Exception:
                 warnings.warn("无法将索引转换为日期类型")
 
     # 排序索引
@@ -297,19 +302,19 @@ def preprocess_data(df):
         # 确保交易量非负
         result['volume'] = result['volume'].abs()
 
-    # 检查数据一致性
-    for i, row in result.iterrows():
-        if 'open' in result.columns and 'high' in result.columns and 'low' in result.columns and 'close' in result.columns:
-            # 确保high >= low
-            if row['high'] < row['low']:
-                result.loc[i, 'high'], result.loc[i,
-                                                  'low'] = row['low'], row['high']
+    # 检查数据一致性 - 向量化
+    if all(col in result.columns for col in ['open', 'high', 'low', 'close']):
+        ohlc_cols = ['open', 'high', 'low', 'close']
+        ohlc_mask = result[ohlc_cols].notna().all(axis=1)
 
-            # 确保high >= open, close
-            result.loc[i, 'high'] = max(row['high'], row['open'], row['close'])
+        low_gt_high_mask = ohlc_mask & (result['high'] < result['low'])
+        if low_gt_high_mask.any():
+            hl_swapped = result.loc[low_gt_high_mask, ['low', 'high']].values
+            result.loc[low_gt_high_mask, 'high'] = hl_swapped[:, 0]
+            result.loc[low_gt_high_mask, 'low'] = hl_swapped[:, 1]
 
-            # 确保low <= open, close
-            result.loc[i, 'low'] = min(row['low'], row['open'], row['close'])
+        result.loc[ohlc_mask, 'high'] = result.loc[ohlc_mask, ['high', 'open', 'close']].max(axis=1)
+        result.loc[ohlc_mask, 'low'] = result.loc[ohlc_mask, ['low', 'open', 'close']].min(axis=1)
 
     # 添加基本计算列
     if 'high' in result.columns and 'low' in result.columns:

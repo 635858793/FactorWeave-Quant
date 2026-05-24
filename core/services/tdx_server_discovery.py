@@ -5,7 +5,7 @@ TDX服务器发现服务
 
 import asyncio
 import json
-import logging
+from loguru import logger
 import socket
 import time
 from datetime import datetime
@@ -13,7 +13,7 @@ from typing import Dict, List, Optional, Tuple
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-logger = logging.getLogger(__name__)
+
 
 class TdxServerDiscoveryService:
     """TDX服务器发现服务"""

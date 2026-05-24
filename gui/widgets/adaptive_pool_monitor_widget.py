@@ -255,7 +255,7 @@ class AdaptivePoolMonitorWidget(QWidget):
                 dt = datetime.fromisoformat(last_adjustment)
                 time_str = dt.strftime('%H:%M:%S')
                 self.last_adjustment_label.setText(f"最后调整: {time_str}")
-            except:
+            except Exception:
                 self.last_adjustment_label.setText("最后调整: -")
         else:
             self.last_adjustment_label.setText("最后调整: -")
@@ -301,7 +301,7 @@ class AdaptivePoolMonitorWidget(QWidget):
                 }}
             """)
             self.usage_rate_label.setStyleSheet(f"font-weight: bold; color: {color};")
-        except:
+        except Exception:
             pass
 
         # Connections (需要从连接池状态获取)
@@ -314,7 +314,7 @@ class AdaptivePoolMonitorWidget(QWidget):
                 self.checked_out_label.setText(str(pool_status.get('checked_out', 0)))
                 self.checked_in_label.setText(str(pool_status.get('checked_in', 0)))
                 self.overflow_label.setText(str(pool_status.get('overflow', 0)))
-            except:
+            except Exception:
                 pass
 
     def _clear_history(self):
@@ -354,4 +354,5 @@ class AdaptivePoolMonitorWidget(QWidget):
         """关闭事件"""
         if self.update_timer:
             self.update_timer.stop()
+        super().closeEvent(event)
         event.accept()

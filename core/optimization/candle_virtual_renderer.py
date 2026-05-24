@@ -8,123 +8,51 @@ K线图虚拟滚动渲染器
 实现IVirtualRenderer通用接口，支持统一管理和扩展
 
 作者: FactorWeave-Quant团队
-版本: 1.0
+版本: 1.1
 """
 
 import numpy as np
 import pandas as pd
 from typing import Dict, Any, List, Optional, Tuple, Union, Callable
-from PyQt5.QtCore import QObject, pyqtSignal, QRectF, QPointF, QTimer
+from PyQt5.QtCore import QRectF
 from loguru import logger
 import time
-from collections import deque
-import threading
-# 导入虚拟滚动模块
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.advanced_optimization.performance.virtualization import (
-    VirtualScrollRenderer, 
-    VirtualizationConfig, 
+    VirtualizationConfig,
     RenderChunk,
-    ViewportState,
-    IVirtualRenderer,
     VirtualRenderStyle
 )
 
-class CandleVirtualRenderer(QObject):
-    """K线图虚拟滚动渲染器，实现IVirtualRenderer接口"""
-    
-    # 信号定义
-    data_rendered = pyqtSignal(int, object)  # chunk_id, RenderChunk
-    rendering_progress = pyqtSignal(float)  # 进度百分比
-    performance_warning = pyqtSignal(str, float)  # 警告信息, 数值
-    virtual_scroll_enabled = pyqtSignal(bool)  # 虚拟滚动状态变化
-    
-    def __init__(self, 
+from core.optimization.base_virtual_renderer import BaseVirtualRenderer
+
+
+class CandleVirtualRenderer(BaseVirtualRenderer):
+    """K线图虚拟滚动渲染器，继承自BaseVirtualRenderer"""
+
+    _chart_type_name: str = "K线图"
+    _data_attr_name: str = "candle_data"
+    _default_chunk_size: int = 1000
+    _default_overlap_size: int = 100
+    _default_max_visible_chunks: int = 4
+
+    def __init__(self,
                  config: Optional[VirtualizationConfig] = None,
                  style: Optional[VirtualRenderStyle] = None):
-        super().__init__()
-        
-        # 配置和样式
-        self.config = config or self._create_optimized_config()
-        self.style = style or VirtualRenderStyle()
-        
-        # 虚拟滚动渲染器
-        self.virtual_renderer = VirtualScrollRenderer(self.config)
-        self.virtual_renderer.data_rendered.connect(self.data_rendered.emit)
-        self.virtual_renderer.performance_warning.connect(self.performance_warning.emit)
-        
-        # K线数据缓存
         self.candle_data = None
         self.candle_axis = None
-        
-        # 渲染状态
-        self._is_enabled = True
-        self._total_data_points = 0
-        self.rendered_chunks = {}
-        
-        # 性能统计
-        self.render_stats = {
-            'total_render_time_ms': 0.0,
-            'chunks_rendered': 0,
-            'data_points_processed': 0,
-            'memory_usage_estimate_mb': 0.0
-        }
-        
-        logger.info("K线图虚拟滚动渲染器初始化完成，配置: {}".format({
-            'chunk_size': self.config.chunk_size,
-            'adaptive_quality': self.config.adaptive_quality,
-            'cache_size': self.config.cache_size
-        }))
-    
-    def _create_optimized_config(self) -> VirtualizationConfig:
-        """创建优化的虚拟滚动配置"""
-        return VirtualizationConfig(
-            # 针对K线数据优化的配置
-            chunk_size=1000,  # K线图块大小适中
-            overlap_size=100,  # 适中的重叠区域
-            max_visible_chunks=4,  # 显示4个块
-            
-            # 性能配置
-            max_render_time_ms=8.33,  # 120fps目标
-            memory_threshold_mb=50,   # 50MB内存限制
-            cleanup_threshold=0.7,    # 70%内存使用率时清理
-            
-            # 质量配置
-            adaptive_quality=True,
-            min_quality=0.5,
-            quality_levels=[1, 2, 4, 8],  # 4个质量级别
-            
-            # 交互配置
-            scroll_threshold=30,
-            preload_distance=500,
-            
-            # 缓存配置
-            cache_size=50,  # 缓存50个块
-            cache_policy="lru"  # LRU缓存策略
-        )
-    
-    def enable_virtual_scrolling(self, enabled: bool):
-        """启用/禁用虚拟滚动"""
-        self._is_enabled = enabled
-        self.virtual_scroll_enabled.emit(enabled)
-        self.virtual_renderer.enable_virtual_scrolling(enabled)
-        
-        if not enabled:
-            # 禁用时清理所有缓存
-            self.cleanup()
-        
-        logger.info(f"K线图虚拟滚动{'启用' if enabled else '禁用'}")
+        super().__init__(config=config, style=style)
     
     def set_data_source(self, data: Union[np.ndarray, pd.DataFrame, pd.Series]):
         """设置数据源，实现IVirtualRenderer接口"""
         self.candle_data = data
-        
+
         if isinstance(data, pd.DataFrame) and len(data) > 0:
             self._total_data_points = len(data)
-            
+
             # 验证K线数据是否包含必要的列
             required_columns = ['open', 'high', 'low', 'close']
             missing_columns = [col for col in required_columns if col not in data.columns]
@@ -132,12 +60,14 @@ class CandleVirtualRenderer(QObject):
                 logger.warning(f"K线数据缺少必要列: {missing_columns}")
                 self._total_data_points = 0
                 return
-            
+
             # 将K线数据转换为适合虚拟滚动的格式
-            # 这里简化处理，实际项目中可以根据需要进行数据转换
             self.virtual_renderer.set_data_source(data)
-            
+
             logger.info(f"K线图虚拟滚动数据源已设置: {self._total_data_points}个数据点")
+        elif isinstance(data, (np.ndarray, pd.Series)):
+            self._total_data_points = 0
+            logger.warning(f"K线图需要DataFrame类型的OHLC数据，不支持{type(data).__name__}类型")
         else:
             self._total_data_points = 0
             logger.warning(f"无效的K线图数据源，数据点数量: {self._total_data_points}")
@@ -153,40 +83,13 @@ class CandleVirtualRenderer(QObject):
                                         x: np.ndarray = None, 
                                         use_datetime_axis: bool = True) -> bool:
         """使用虚拟滚动渲染K线图，实现IVirtualRenderer接口"""
-        if not self._is_enabled or self.candle_data is None:
-            # 降级到常规渲染
-            logger.info(f"K线图虚拟滚动未启用或数据源为空，降级到常规渲染")
-            return self._render_candle_regular(ax, data, style, x, use_datetime_axis)
-        
-        try:
-            start_time = time.time()
-            
-            logger.info(f"开始使用虚拟滚动渲染K线图: {len(data)}个数据点")
-            
-            # 更新视口信息
-            visible_rect = self._get_visible_rect(ax)
-            self.virtual_renderer.update_viewport(visible_rect)
-            
-            # 检查数据量是否需要虚拟滚动
-            if self._total_data_points < self.config.chunk_size * 2:
-                # 数据量不大，使用常规渲染
-                logger.info(f"K线图数据量较小({self._total_data_points} < {self.config.chunk_size * 2})，使用常规渲染")
-                return self._render_candle_regular(ax, data, style, x, use_datetime_axis)
-            
-            # 使用虚拟滚动渲染
-            success = self._render_candle_virtual(ax, data, style, x, use_datetime_axis)
-            
-            render_time = time.time() - start_time
-            self.render_stats['total_render_time_ms'] += render_time * 1000
-            self.render_stats['data_points_processed'] += len(data)
-            
-            logger.info(f"K线图虚拟滚动渲染完成: {render_time*1000:.2f}ms, 渲染块数量: {len(self.rendered_chunks)}")
-            return success
-            
-        except Exception as e:
-            logger.error(f"虚拟滚动K线图渲染失败: {e}")
-            # 降级到常规渲染
-            return self._render_candle_regular(ax, data, style, x, use_datetime_axis)
+        return super().render_with_virtual_scroll(ax, data, style=style, x=x, use_datetime_axis=use_datetime_axis)
+
+    def _render_regular(self, ax, data, style, x, use_datetime_axis) -> bool:
+        return self._render_candle_regular(ax, data, style, x, use_datetime_axis)
+
+    def _render_virtual(self, ax, data, style, x, use_datetime_axis) -> bool:
+        return self._render_candle_virtual(ax, data, style, x, use_datetime_axis)
     
     def _render_candle_regular(self, ax, data: pd.DataFrame, 
                               style: Dict[str, Any] = None,
@@ -317,8 +220,8 @@ class CandleVirtualRenderer(QObject):
             
             # 获取当前可见的渲染块
             visible_rect = self._get_visible_rect(ax)
-            chunk_start = max(0, int(visible_rect.y() / self.config.chunk_size) - 1)
-            chunk_end = int((visible_rect.y() + visible_rect.height()) / self.config.chunk_size) + 1
+            chunk_start = max(0, int(visible_rect.x() / self.config.chunk_size) - 1)
+            chunk_end = int((visible_rect.x() + visible_rect.width()) / self.config.chunk_size) + 1
             
             rendered_any = False
             
@@ -374,12 +277,19 @@ class CandleVirtualRenderer(QObject):
         chunk_data = self.candle_data.iloc[start_idx:end_idx]
         
         # 创建RenderChunk并添加到缓存
-        # 注意：这里简化处理，实际项目中可以根据需要创建更完整的RenderChunk
+        viewport_height = 100.0
+        if self.candle_axis is not None:
+            try:
+                ylim = self.candle_axis.get_ylim()
+                viewport_height = float(ylim[1] - ylim[0])
+            except Exception:
+                if self.candle_data is not None and not self.candle_data.empty:
+                    viewport_height = float(self.candle_data['high'].max() - self.candle_data['low'].min())
         chunk = RenderChunk(
             start_index=start_idx,
             end_index=end_idx,
             data_points=chunk_data,
-            bounding_rect=QRectF(start_idx, 0, len(chunk_data), 100),  # 简化的边界矩形
+            bounding_rect=QRectF(start_idx, 0, len(chunk_data), viewport_height),
             render_time=0.0,
             quality_level=self.virtual_renderer.quality_level
         )
@@ -461,7 +371,7 @@ class CandleVirtualRenderer(QObject):
             if verts_down:
                 collection_down = PolyCollection(
                     verts_down, 
-                    facecolor='none',  # 阴线空心
+                    facecolor=style.candle_down_color,  # 阴线实心
                     edgecolor=style.candle_down_color,
                     linewidth=0.8,
                     alpha=style.alpha
@@ -500,71 +410,19 @@ class CandleVirtualRenderer(QObject):
             return False
     
     def _get_visible_rect(self, ax) -> QRectF:
-        """获取当前可见区域"""
-        if ax is None:
-            return QRectF(0, 0, 100, 100)
-        
-        try:
-            # 获取当前轴的显示范围
-            xlim = ax.get_xlim()
-            ylim = ax.get_ylim()
-            
-            return QRectF(xlim[0], ylim[0], xlim[1] - xlim[0], ylim[1] - ylim[0])
-            
-        except Exception as e:
-            logger.warning(f"获取可见区域失败: {e}")
-            return QRectF(0, 0, 100, 100)
-    
-    def _draw_chunk_boundary(self, ax, start_index: int, length: int, 
+        return super()._get_visible_rect(ax)
+
+    def _draw_chunk_boundary(self, ax, start_index: int, length: int,
                            color: str, width: float):
-        """绘制块边界（调试用）"""
-        try:
-            import matplotlib.patches as patches
-            
-            rect = patches.Rectangle(
-                (start_index - 0.5, ax.get_ylim()[0]),
-                length + 1,
-                ax.get_ylim()[1] - ax.get_ylim()[0],
-                linewidth=width,
-                edgecolor=color,
-                facecolor='none',
-                alpha=0.3
-            )
-            ax.add_patch(rect)
-            
-        except Exception as e:
-            logger.warning(f"绘制块边界失败: {e}")
-    
-    def get_performance_stats(self) -> Dict[str, Any]:
-        """获取性能统计信息，实现IVirtualRenderer接口"""
-        stats = self.render_stats.copy()
-        
-        # 添加虚拟滚动统计
-        if hasattr(self.virtual_renderer, 'get_performance_stats'):
-            virtual_stats = self.virtual_renderer.get_performance_stats()
-            stats.update(virtual_stats)
-        
-        # 添加总体统计
-        stats.update({
-            'total_data_points': self._total_data_points,
-            'virtual_scrolling_enabled': self._is_enabled,
-            'rendered_chunks_count': len(self.rendered_chunks),
-            'memory_estimate_mb': len(self.rendered_chunks) * 0.1  # 估算
-        })
-        
-        return stats
-    
+        from core.optimization.render_utils import draw_chunk_boundary
+        draw_chunk_boundary(ax, start_index, length, color, width)
+
     def cleanup(self):
-        """清理资源，实现IVirtualRenderer接口"""
+        """清理资源"""
         logger.info("清理K线图虚拟滚动渲染器资源")
-        
-        if self._is_enabled and hasattr(self.virtual_renderer, 'cleanup'):
-            self.virtual_renderer.cleanup()
-        
-        self.rendered_chunks.clear()
         self.candle_data = None
         self.candle_axis = None
-        
+        super().cleanup()
         logger.info("K线图虚拟滚动渲染器资源清理完成")
     
     def update_viewport(self, visible_rect: QRectF):
@@ -581,12 +439,7 @@ class CandleVirtualRenderer(QObject):
         """总数据点数量，实现IVirtualRenderer接口"""
         return self._total_data_points
     
-    def _render_chunk_boundaries(self, ax):
-        """渲染所有块边界（调试用）"""
-        # 简化实现，实际项目中可以根据需要实现
-        pass
-
-# 便捷函数
+    # 便捷函数
 def create_candle_virtual_renderer(data: pd.DataFrame, 
                                  ax,
                                  config: Optional[VirtualizationConfig] = None,

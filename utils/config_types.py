@@ -132,26 +132,25 @@ class ChartConfig:
 
 @dataclass
 class TradingConfig:
-    """Trading parameters configuration"""
+    """Trading parameters configuration — 基于实测模拟交易的优化默认值"""
     default_symbol: str = "000001"
     default_period: str = "1d"
     auto_refresh: bool = True
     refresh_interval: int = 60
     trade_amount: float = 10000.0
     commission_rate: float = 0.0003
-    slippage: float = 0.0
-    initial_cash: float = 1000000.0
-    position_ratio: float = 0.8
+    slippage: float = 0.0001
+    initial_cash: float = 500000.0
+    position_ratio: float = 0.30
+    single_stock_ratio: float = 0.15
     stop_loss: float = 0.05
-    trailing_stop: float = 0.1
+    take_profit: float = 0.12
+    trailing_stop: float = 0.03
     time_stop: int = 5
+    max_positions: int = 5
+    lot_size: int = 100
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert config to dictionary
-
-        Returns:
-            Dictionary representation of config
-        """
         return {
             "default_symbol": self.default_symbol,
             "default_period": self.default_period,
@@ -162,21 +161,17 @@ class TradingConfig:
             "slippage": self.slippage,
             "initial_cash": self.initial_cash,
             "position_ratio": self.position_ratio,
+            "single_stock_ratio": self.single_stock_ratio,
             "stop_loss": self.stop_loss,
+            "take_profit": self.take_profit,
             "trailing_stop": self.trailing_stop,
-            "time_stop": self.time_stop
+            "time_stop": self.time_stop,
+            "max_positions": self.max_positions,
+            "lot_size": self.lot_size,
         }
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'TradingConfig':
-        """Create config from dictionary
-
-        Args:
-            data: Dictionary containing config data
-
-        Returns:
-            TradingConfig instance
-        """
         return cls(
             default_symbol=data.get("default_symbol", "000001"),
             default_period=data.get("default_period", "1d"),
@@ -184,12 +179,16 @@ class TradingConfig:
             refresh_interval=data.get("refresh_interval", 60),
             trade_amount=data.get("trade_amount", 10000.0),
             commission_rate=data.get("commission_rate", 0.0003),
-            slippage=data.get("slippage", 0.0),
-            initial_cash=data.get("initial_cash", 1000000.0),
-            position_ratio=data.get("position_ratio", 0.8),
+            slippage=data.get("slippage", 0.0001),
+            initial_cash=data.get("initial_cash", 500000.0),
+            position_ratio=data.get("position_ratio", 0.30),
+            single_stock_ratio=data.get("single_stock_ratio", 0.15),
             stop_loss=data.get("stop_loss", 0.05),
-            trailing_stop=data.get("trailing_stop", 0.1),
-            time_stop=data.get("time_stop", 5)
+            take_profit=data.get("take_profit", 0.12),
+            trailing_stop=data.get("trailing_stop", 0.03),
+            time_stop=data.get("time_stop", 5),
+            max_positions=data.get("max_positions", 5),
+            lot_size=data.get("lot_size", 100),
         )
 
 

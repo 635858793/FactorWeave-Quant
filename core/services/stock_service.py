@@ -56,7 +56,7 @@ class StockService(CacheableService, ConfigurableService):
         self._current_stock = None
         self._stock_list = []
         self._favorites = set()
-        self.use_mock_data = False  # 是否使用模拟数据
+        self.use_mock_data = False  # 数据源是否降级
 
         # 添加负缓存机制
         self._no_data_cache = set()  # 缓存没有数据的股票
@@ -91,7 +91,7 @@ class StockService(CacheableService, ConfigurableService):
 
                 # 回退到默认数据访问层
                 if not self._data_access.connect():
-                    logger.warning("Data access layer connection failed, using mock data mode")
+                    logger.warning("Data access layer connection failed, entering degraded mode")
                     self.use_mock_data = True
                 else:
                     self.use_mock_data = False
@@ -109,8 +109,7 @@ class StockService(CacheableService, ConfigurableService):
 
         except Exception as e:
             logger.error(f"Failed to initialize stock service: {e}")
-            # 如果初始化失败，使用模拟数据模式
-            logger.warning("Falling back to mock data mode")
+            logger.warning("Entering degraded mode")
             self.use_mock_data = True
             self._create_mock_data_access()
             self._stock_manager = StockManager(self._data_access)
@@ -118,18 +117,15 @@ class StockService(CacheableService, ConfigurableService):
             self._load_favorites()
 
     def _create_mock_data_access(self) -> None:
-        """创建模拟数据访问层"""
+        """创建降级数据访问层（返回空数据）"""
         try:
-            # 创建基本的数据访问层，如果连接失败则使用模拟数据
             self._data_access = DataAccess()
-            # 强制设置为已连接状态，让仓库使用模拟数据
             self._data_access._connected = True
-            logger.info("Created mock data access layer")
+            logger.info("Created degraded data access layer")
         except Exception as e:
-            logger.error(f"Failed to create mock data access: {e}")
-            # 最后的备用方案：创建一个最简单的数据访问对象
+            logger.error(f"Failed to create degraded data access: {e}")
 
-            class MockDataAccess:
+            class DegradedDataAccess:
                 def __init__(self):
                     self._connected = True
 
@@ -155,8 +151,8 @@ class StockService(CacheableService, ConfigurableService):
                 def search_stocks(self, keyword):
                     return []
 
-            self._data_access = MockDataAccess()
-            logger.info("Created minimal mock data access")
+            self._data_access = DegradedDataAccess()
+            logger.info("Created minimal degraded data access")
 
     def get_stock_list(self, market: Optional[str] = None,
                        industry: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -529,9 +525,8 @@ class StockService(CacheableService, ConfigurableService):
         """加载股票列表"""
         try:
             if self.use_mock_data:
-                # 使用模拟数据
-                self._stock_list = self._generate_mock_stock_list()
-                logger.info(f"Loaded {len(self._stock_list)} mock stocks")
+                self._stock_list = []
+                logger.warning("真实数据源不可用，股票列表为空")
             else:
                 stock_info_list = self._data_access.get_stock_list()
                 self._stock_list = [stock_info.to_dict()
@@ -539,11 +534,8 @@ class StockService(CacheableService, ConfigurableService):
                 logger.debug(f"Loaded {len(self._stock_list)} stocks")
         except Exception as e:
             logger.error(f"Failed to load stock list: {e}")
-            # 如果加载失败，回退到模拟数据
-            self._stock_list = self._generate_mock_stock_list()
-            self.use_mock_data = True
-            logger.info(
-                f"Fallback to mock data: {len(self._stock_list)} stocks")
+            self._stock_list = []
+            logger.warning("加载股票列表失败，返回空列表。请检查数据源连接。")
 
     def _load_favorites(self) -> None:
         """加载收藏列表"""
@@ -631,37 +623,52 @@ class StockService(CacheableService, ConfigurableService):
         try:
             logger.info(f"开始执行高级搜索... 资产类型: {asset_type.value}")
 
-            # 获取所有资产
             all_stocks = self.get_stock_list()
+            
+            if not all_stocks:
+                logger.info("高级搜索完成，找到 0 只符合条件的资产")
+                return []
+
+            df = pd.DataFrame(all_stocks)
+
+            code_filter = conditions.get("code")
+            if code_filter:
+                code_mask = df['code'].str.contains(code_filter, na=False)
+                df = df[code_mask]
+
+            name_filter = conditions.get("name")
+            if name_filter:
+                name_mask = df['name'].str.contains(name_filter, na=False)
+                df = df[name_mask]
+
+            industry_filter = conditions.get("industry")
+            if industry_filter and industry_filter != "全部":
+                industry_mask = df['industry'] == industry_filter
+                df = df[industry_mask]
+
+            market_filter = conditions.get("market")
+            if market_filter and market_filter != "全部":
+                market_mask = df['code'].map(
+                    lambda code: self._check_market_match(code, market_filter)
+                )
+                df = df[market_mask]
+
+            if df.empty:
+                logger.info("高级搜索完成，找到 0 只符合条件的资产")
+                return []
+
             filtered_stocks = []
+            _realtime_cache: Dict[str, Optional[Dict[str, Any]]] = {}
 
-            for stock_info in all_stocks:
+            for _, stock_info in df.iterrows():
                 try:
-                    # 检查资产代码
-                    if conditions.get("code") and conditions["code"] not in stock_info.get('code', ''):
-                        continue
+                    stock_info_dict = stock_info.to_dict()
+                    code = stock_info_dict.get('code', '')
 
-                    # 检查资产名称
-                    if conditions.get("name") and conditions["name"] not in stock_info.get('name', ''):
-                        continue
+                    if code not in _realtime_cache:
+                        _realtime_cache[code] = self._get_stock_realtime_data(code, asset_type)
+                    asset_data = _realtime_cache[code]
 
-                    # 检查市场
-                    if conditions.get("market") and conditions["market"] != "全部":
-                        market_match = self._check_market_match(
-                            stock_info.get('code', ''), conditions["market"])
-                        if not market_match:
-                            continue
-
-                    # 检查行业
-                    if conditions.get("industry") and conditions["industry"] != "全部":
-                        if stock_info.get('industry') != conditions["industry"]:
-                            continue
-
-                    # 获取资产的实时数据进行价格、市值、成交量等筛选
-                    asset_data = self._get_stock_realtime_data(
-                        stock_info.get('code', ''), asset_type)
-                    
-                    # 如果没有获取到实时数据，使用默认值
                     if not asset_data:
                         asset_data = {
                             'price': 0,
@@ -670,39 +677,31 @@ class StockService(CacheableService, ConfigurableService):
                             'market_cap': 0,
                             'metric_type': 'market_cap'
                         }
-                        logger.debug(f"资产 {stock_info.get('code')} 没有实时数据，使用默认值")
-                    
-                    # 检查价格范围
+                        logger.debug(f"资产 {code} 没有实时数据，使用默认值")
+
                     latest_price = asset_data.get('price', 0)
                     if latest_price < conditions.get("min_price", 0) or latest_price > conditions.get("max_price", 10000):
                         continue
 
-                    # 检查市值范围（根据指标类型）
                     metric_type = asset_data.get('metric_type', 'market_cap')
                     if metric_type == 'market_cap':
                         market_cap = asset_data.get('market_cap', 0)
                         if market_cap < conditions.get("min_cap", 0) or market_cap > conditions.get("max_cap", 1000000):
                             continue
                     else:
-                        # 对于非市值指标（如持仓量、交易量），跳过市值筛选
-                        logger.debug(f"资产 {stock_info.get('code')} 使用替代指标: {metric_type}")
+                        logger.debug(f"资产 {code} 使用替代指标: {metric_type}")
 
-                    # 检查成交量范围
-                    volume = asset_data.get('volume', 0) / 10000  # 转换为万手
+                    volume = asset_data.get('volume', 0) / 10000
                     if volume < conditions.get("min_volume", 0) or volume > conditions.get("max_volume", 1000000):
                         continue
 
-                    # 检查换手率范围（仅股票有效）
                     if 'stock' in asset_type.value:
                         turnover_rate = asset_data.get('turnover_rate', 0)
                         if turnover_rate < conditions.get("min_turnover", 0) or turnover_rate > conditions.get("max_turnover", 100):
                             continue
 
-                    # 将实时数据合并到资产信息中
-                    stock_info_dict = dict(stock_info)
                     stock_info_dict.update(asset_data)
 
-                    # 添加到筛选结果
                     filtered_stocks.append(stock_info_dict)
 
                 except Exception as e:
@@ -922,78 +921,76 @@ class StockService(CacheableService, ConfigurableService):
             
             logger.info(f"开始批量更新 {len(stock_codes)} 只股票的股本数据...")
             
+            # Phase 1: 采集所有股票数据
+            records = []
             for stock_code in stock_codes:
                 try:
-                    # 获取股本数据
                     shares_data = self._get_stock_shares_data(stock_code)
                     
                     if shares_data and shares_data.get('total_shares'):
-                        # 保存到数据库
-                        self._save_stock_shares_to_db(stock_code, shares_data)
-                        
-                        result['success_count'] += 1
+                        records.append((stock_code, shares_data))
                         result['updated_stocks'].append(stock_code)
                         
-                        # 每更新100只股票记录一次进度
-                        if result['success_count'] % 100 == 0:
-                            logger.info(f"已更新 {result['success_count']}/{len(stock_codes)} 只股票的股本数据")
+                        if len(records) % 100 == 0:
+                            logger.info(f"已采集 {len(records)} 只股票的股本数据")
                     else:
                         result['failed_count'] += 1
                         result['failed_stocks'].append(stock_code)
                         
                 except Exception as e:
-                    logger.warning(f"更新股票 {stock_code} 股本数据失败: {e}")
+                    logger.warning(f"获取股票 {stock_code} 股本数据失败: {e}")
                     result['failed_count'] += 1
                     result['failed_stocks'].append(stock_code)
+            
+            # Phase 2: 批量写入数据库 (单连接 + executemany)
+            if records:
+                try:
+                    self._batch_save_stock_shares_to_db(records)
+                    result['success_count'] = len(records)
+                except Exception as e:
+                    logger.error(f"批量写入股本数据失败: {e}")
+                    result['success_count'] = 0
+                    result['failed_count'] = len(stock_codes)
+                    result['updated_stocks'] = []
+                    result['failed_stocks'] = list(stock_codes)
             
             logger.info(f"批量更新完成: 成功 {result['success_count']}, 失败 {result['failed_count']}")
             return result
             
         except Exception as e:
             logger.error(f"批量更新股票股本数据失败: {e}")
-            return result
+            return {'success_count': 0, 'failed_count': len(stock_codes), 'updated_stocks': [], 'failed_stocks': stock_codes}
 
-    def _save_stock_shares_to_db(self, stock_code: str, shares_data: Dict[str, Any]):
+    def _batch_save_stock_shares_to_db(self, records: List[tuple]):
         """
-        保存股票股本数据到数据库
+        批量写入股本数据到数据库 (单连接 + executemany)
         
         Args:
-            stock_code: 股票代码
-            shares_data: 股本数据
+            records: [(stock_code, shares_data), ...] 元组列表
         """
-        try:
-            from datetime import datetime
-            
-            # 获取当前日期
-            update_date = datetime.now()
-            
-            # 准备数据
-            data = {
-                'stock_code': stock_code,
-                'stock_name': shares_data.get('stock_name', ''),
-                'total_shares': shares_data.get('total_shares', 0),
-                'circulating_shares': shares_data.get('circulating_shares', 0),
-                'total_market_cap': shares_data.get('total_market_cap', 0),
-                'circulating_market_cap': shares_data.get('circulating_market_cap', 0),
-                'update_date': update_date
-            }
-            
-            # 保存到数据库（使用AssetSeparatedDatabaseManager）
-            if self._data_access and hasattr(self._data_access, 'uni_plugin_manager'):
-                uni_plugin_manager = self._data_access.uni_plugin_manager
-                if uni_plugin_manager and hasattr(uni_plugin_manager, 'asset_db_manager'):
-                    asset_db_manager = uni_plugin_manager.asset_db_manager
-                    
-                    # 获取股票数据库路径
-                    from core.plugin_types import AssetType
-                    db_path = asset_db_manager.get_database_path(AssetType.STOCK_A)
-                    
-                    # 使用DuckDB插入数据
-                    import duckdb
-                    conn = duckdb.connect(db_path)
-                    
-                    # 插入或更新数据
-                    conn.execute("""
+        from datetime import datetime
+        
+        update_date = datetime.now()
+        
+        batch_data = []
+        for stock_code, shares_data in records:
+            batch_data.append((
+                stock_code,
+                shares_data.get('stock_name', ''),
+                shares_data.get('total_shares', 0),
+                shares_data.get('circulating_shares', 0),
+                shares_data.get('total_market_cap', 0),
+                shares_data.get('circulating_market_cap', 0),
+                update_date
+            ))
+        
+        if self._data_access and hasattr(self._data_access, 'uni_plugin_manager'):
+            uni_plugin_manager = self._data_access.uni_plugin_manager
+            if uni_plugin_manager and hasattr(uni_plugin_manager, 'asset_db_manager'):
+                asset_db_manager = uni_plugin_manager.asset_db_manager
+                
+                with asset_db_manager.get_connection(AssetType.STOCK_A) as conn:
+                    conn.executemany("""
                         INSERT INTO stock_shares 
                         (stock_code, stock_name, total_shares, circulating_shares, 
                          total_market_cap, circulating_market_cap, update_date)
@@ -1005,21 +1002,9 @@ class StockService(CacheableService, ConfigurableService):
                             circulating_shares = excluded.circulating_shares,
                             total_market_cap = excluded.total_market_cap,
                             circulating_market_cap = excluded.circulating_market_cap
-                    """, (
-                        data['stock_code'],
-                        data['stock_name'],
-                        data['total_shares'],
-                        data['circulating_shares'],
-                        data['total_market_cap'],
-                        data['circulating_market_cap'],
-                        data['update_date']
-                    ))
-                    
-                    conn.close()
-                    logger.debug(f"股票 {stock_code} 股本数据已保存到数据库")
-            
-        except Exception as e:
-            logger.error(f"保存股票 {stock_code} 股本数据到数据库失败: {e}")
+                    """, batch_data)
+        
+        logger.info(f"批量写入 {len(records)} 条股本数据完成")
     
     def _get_crypto_supply_data(self, crypto_code: str) -> Dict[str, Any]:
         """
@@ -1160,50 +1145,13 @@ class StockService(CacheableService, ConfigurableService):
             return {}
 
     def _generate_mock_stock_list(self) -> List[Dict[str, Any]]:
-        """生成模拟股票列表"""
-        mock_stocks = [
-            {'code': '000001', 'name': '平安银行', 'market': '深圳',
-                'industry': '银行', 'type': '股票'},
-            {'code': '000002', 'name': '万科A', 'market': '深圳',
-                'industry': '房地产', 'type': '股票'},
-            {'code': '000858', 'name': '五粮液', 'market': '深圳',
-                'industry': '食品饮料', 'type': '股票'},
-            {'code': '600000', 'name': '浦发银行', 'market': '上海',
-                'industry': '银行', 'type': '股票'},
-            {'code': '600036', 'name': '招商银行', 'market': '上海',
-                'industry': '银行', 'type': '股票'},
-            {'code': '600519', 'name': '贵州茅台', 'market': '上海',
-                'industry': '食品饮料', 'type': '股票'},
-            {'code': '000166', 'name': '申万宏源', 'market': '深圳',
-                'industry': '证券', 'type': '股票'},
-            {'code': '600887', 'name': '伊利股份', 'market': '上海',
-                'industry': '食品饮料', 'type': '股票'},
-            {'code': '002415', 'name': '海康威视', 'market': '深圳',
-                'industry': '电子', 'type': '股票'},
-            {'code': '300059', 'name': '东方财富', 'market': '深圳',
-                'industry': '互联网', 'type': '股票'},
-        ]
-
-        # 扩展到更多股票
-        extended_stocks = []
-        for i in range(100):
-            for base_stock in mock_stocks:
-                new_stock = base_stock.copy()
-                new_stock['code'] = f"{int(base_stock['code']) + i:06d}"
-                new_stock['name'] = f"{base_stock['name']}{i}" if i > 0 else base_stock['name']
-                extended_stocks.append(new_stock)
-
-        return extended_stocks[:500]  # 返回500只模拟股票
+        """真实数据不可用时的降级处理"""
+        logger.warning("真实数据不可用，无法生成股票列表。请检查数据源连接。")
+        return []
 
     def _clear_stock_list_cache(self) -> None:
         """清除股票列表相关缓存"""
-        keys_to_remove = []
-        for key in self._cache.keys():
-            if key.startswith('stock_list_'):
-                keys_to_remove.append(key)
-
-        for key in keys_to_remove:
-            del self._cache[key]
+        self.clear_cache(cache_type='data')
 
     def _do_dispose(self) -> None:
         """清理资源"""

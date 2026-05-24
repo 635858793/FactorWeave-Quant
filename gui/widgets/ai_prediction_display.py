@@ -17,7 +17,6 @@ AI预测结果展示组件
 
 import sys
 import math
-import logging
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
@@ -48,17 +47,9 @@ from PyQt5.QtGui import (
 )
 
 # 导入核心AI服务
-try:
-    from core.services.ai_prediction_service import AIPredictionService
-    from core.ui_integration.ui_business_logic_adapter import get_ui_adapter
-    from loguru import logger
-    CORE_AVAILABLE = True
-except ImportError as e:
-    logger = logging.getLogger(__name__)
-    CORE_AVAILABLE = False
-    logger.warning(f"AI核心服务不可用: {e}")
-
-logger = logger.bind(module=__name__) if hasattr(logger, 'bind') else logging.getLogger(__name__)
+from core.services.ai_prediction_service import AIPredictionService
+from core.ui_integration.ui_business_logic_adapter import get_ui_adapter
+from loguru import logger
 
 
 class PredictionType(Enum):
@@ -586,46 +577,63 @@ class RealTimePredictionWidget(QWidget):
     def setup_timer(self):
         """设置定时器"""
         self.prediction_timer = QTimer()
-        self.prediction_timer.timeout.connect(self.simulate_prediction)
-        self.prediction_timer.start(5000)  # 每5秒模拟一次预测
+        self.prediction_timer.timeout.connect(self._on_prediction_tick)
+        self.prediction_timer.start(5000)  # 每5秒触发一次预测
 
         self.monitoring_active = True
 
-    def simulate_prediction(self):
-        """模拟预测"""
+    def _on_prediction_tick(self):
+        """
+        预测定时器回调
+
+        优先尝试从AI服务获取真实预测结果，当AI服务不可用时降级使用模拟数据。
+        """
         if not self.monitoring_active:
             return
 
-        import random
+        if self._try_fetch_realtime_prediction():
+            return
 
-        # 随机生成预测数据
-        prediction_types = list(PredictionType)
-        prediction_type = random.choice(prediction_types)
+        self.simulate_prediction()
 
-        # 生成预测值
-        if prediction_type == PredictionType.EXECUTION_TIME:
-            predicted_value = f"{random.randint(30, 180)} 分钟"
-        elif prediction_type == PredictionType.PERFORMANCE:
-            predicted_value = f"{random.randint(1000, 5000)} 条/秒"
-        elif prediction_type == PredictionType.RESOURCE_USAGE:
-            predicted_value = f"CPU: {random.randint(40, 80)}%"
-        elif prediction_type == PredictionType.ANOMALY_DETECTION:
-            predicted_value = "正常" if random.random() > 0.2 else "异常"
-        else:
-            predicted_value = f"优化建议 #{random.randint(1, 10)}"
+    def _try_fetch_realtime_prediction(self) -> bool:
+        """
+        尝试从AI预测服务获取真实预测结果
 
-        # 创建预测数据
-        prediction = PredictionData(
-            id=f"pred_{datetime.now().timestamp()}",
-            prediction_type=prediction_type,
-            timestamp=datetime.now(),
-            input_features={},
-            predicted_value=predicted_value,
-            confidence=random.uniform(0.6, 0.95),
-            execution_time_ms=random.uniform(50, 200)
-        )
+        Returns:
+            True 如果成功获取并添加了真实预测，False 表示需要降级到模拟数据
+        """
+        try:
+            if not CORE_AVAILABLE or self.ui_adapter is None:
+                return False
 
-        self.add_prediction(prediction)
+            result = self.ui_adapter.get_latest_prediction()
+            if result is None or not hasattr(result, 'prediction_type'):
+                return False
+
+            prediction = PredictionData(
+                id=f"pred_{datetime.now().timestamp()}",
+                prediction_type=result.prediction_type,
+                timestamp=datetime.now(),
+                input_features=getattr(result, 'input_features', {}),
+                predicted_value=result.predicted_value,
+                confidence=getattr(result, 'confidence', 0.5),
+                execution_time_ms=getattr(result, 'execution_time_ms', 0.0)
+            )
+
+            self.add_prediction(prediction)
+            logger.debug(f"AI实时预测获取成功: {prediction.prediction_type}")
+            return True
+
+        except Exception as e:
+            logger.debug(f"AI实时预测获取失败，降级到模拟: {e}")
+            return False
+
+    def simulate_prediction(self):
+        if not self.monitoring_active:
+            return
+
+        logger.warning("AI预测服务不可用，暂无预测数据")
 
     def add_prediction(self, prediction: PredictionData):
         """添加预测结果"""

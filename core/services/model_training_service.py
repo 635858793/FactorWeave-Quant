@@ -15,6 +15,7 @@ from pathlib import Path
 import json
 import math
 import pickle
+from utils.safe_pickle import safe_loads
 import shutil
 import threading
 from enum import Enum
@@ -1020,7 +1021,7 @@ class ModelTrainingService(BaseService):
             # Restore best model if needed
             if best_model_state:
                 try:
-                    model = pickle.loads(best_model_state)
+                    model = safe_loads(best_model_state)
                     self.log_training_event(task_id, "INFO", f"加载最佳模型状态(验证Loss={best_val_loss:.6f})")
                 except Exception as restore_err:
                     logger.warning(f"恢复最佳模型失败: {restore_err}")
@@ -1105,22 +1106,24 @@ class ModelTrainingService(BaseService):
 
             if df is None or len(df.index) < min_samples:
                 if symbol:
-                    reason = f"获取K线数据失败或数据量不足(当前:{len(df.index) if df is not None else 0}条, 需要:{min_samples}条)"
                     logger.warning(
-                        f"{reason} - 符号:{symbol}, 日期范围:{start_date}至{end_date}，使用合成数据训练 {model_type} 模型")
+                        f"获取K线数据失败或数据量不足 "
+                        f"(当前:{len(df.index) if df is not None else 0}条, 需要:{min_samples}条) "
+                        f"- 符号:{symbol}, 日期范围:{start_date}至{end_date}，"
+                        f"真实数据不足，无法训练 {model_type} 模型")
                 else:
                     logger.warning(
-                        f"未提供股票代码(symbol)，无法获取真实K线数据，使用合成数据训练 {model_type} 模型。"
-                        f"请在训练配置中提供'data.symbol'参数。")
-                features, targets = self._generate_synthetic_training_data(model_type, config)
-                synthetic_returns = targets.astype(np.float32) if np is not None else targets
+                        f"未提供股票代码(symbol)，无法获取真实K线数据，"
+                        f"无法训练 {model_type} 模型。请在训练配置中提供'data.symbol'参数。")
+                empty_features = np.empty((0, 0))
+                empty_targets = np.array([])
                 return {
                     'kdata': None,
                     'symbol': symbol,
-                    'features': features,
-                    'targets': targets,
-                    'future_returns': synthetic_returns,
-                    'source': 'synthetic'
+                    'features': empty_features,
+                    'targets': empty_targets,
+                    'future_returns': empty_targets,
+                    'source': 'insufficient_data'
                 }
 
             features, targets, future_returns = self._build_training_matrices(df, model_type, config, horizon)
@@ -1196,28 +1199,10 @@ class ModelTrainingService(BaseService):
         return df
 
     def _generate_synthetic_training_data(self, model_type: str, config: Dict[str, Any]) -> Tuple[Any, Any]:
-        """当真实数据不可用时生成可控的合成样本"""
+        logger.warning(f"真实数据不可用，无法为 {model_type} 生成训练数据，返回空结果")
         if np is None:
-            raise RuntimeError("NumPy不可用，无法生成合成训练数据")
-
-        sample_size = int(config.get('synthetic_samples', 1024))
-        seed = int(config.get('seed', 42))
-        rng = np.random.default_rng(seed)
-
-        if model_type == 'price':
-            feature_dim = 25
-            features = rng.normal(loc=0.0, scale=1.0, size=(sample_size, feature_dim)).astype(np.float32)
-            base_trend = rng.normal(0, 0.2, sample_size)
-            noise = rng.normal(0, 0.05, sample_size)
-            targets = (base_trend + noise).astype(np.float32)
-        else:
-            feature_dim = 15
-            features = rng.normal(loc=0.0, scale=1.0, size=(sample_size, feature_dim)).astype(np.float32)
-            logits = features[:, 0] * 0.6 + features[:, 1] * -0.3 + rng.normal(0, 0.2, sample_size)
-            low, high = np.percentile(logits, [33, 66])
-            targets = np.where(logits > high, 1, np.where(logits < low, -1, 0)).astype(np.int32)
-
-        return features, targets
+            return [], []
+        return np.empty((0, 0)), np.array([])
 
     def _split_training_validation(self, features: Any, targets: Any, future_returns: Any,
                                    config: Dict[str, Any]) -> Dict[str, Any]:

@@ -1,8 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-import sqlite3
 import os
+import sys
 import glob
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from core.database.unified_sqlite_access import UnifiedSQLiteAccess
 
 print("=" * 80)
 print("一、数据库文件统计")
@@ -33,19 +36,17 @@ print("=" * 80)
 def analyze_sqlite(db_path):
     print(f"\n=== {db_path} ===")
     try:
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        tables = [t[0] for t in cursor.fetchall()]
-        print(f"表数量: {len(tables)}")
-        
-        for t in tables:
-            cursor.execute(f"SELECT COUNT(*) FROM \"{t}\"")
-            count = cursor.fetchone()[0]
-            print(f"  - {t}: {count} 条记录")
-        
-        conn.close()
+        db = UnifiedSQLiteAccess.get_instance(db_path)
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            tables = [t[0] for t in cursor.fetchall()]
+            print(f"表数量: {len(tables)}")
+            
+            for t in tables:
+                cursor.execute(f"SELECT COUNT(*) FROM \"{t}\"")
+                count = cursor.fetchone()[0]
+                print(f"  - {t}: {count} 条记录")
         return True
     except Exception as e:
         print(f"  错误: {e}")
@@ -74,7 +75,7 @@ def analyze_duckdb(db_path):
                 cursor.execute(f'SELECT COUNT(*) FROM "{t}"')
                 count = cursor.fetchone()[0]
                 print(f"  - {t}: {count} 条记录")
-            except:
+            except Exception:
                 print(f"  - {t}: 查询失败")
         
         if len(tables) > 10:
@@ -125,16 +126,16 @@ print("=" * 80)
 all_tables = {}
 for db in sqlite_files:
     try:
-        conn = sqlite3.connect(db)
-        cursor = conn.cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        tables = [t[0] for t in cursor.fetchall()]
-        for t in tables:
-            if t not in all_tables:
-                all_tables[t] = []
-            all_tables[t].append(db)
-        conn.close()
-    except:
+        db_instance = UnifiedSQLiteAccess.get_instance(db)
+        with db_instance.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            tables = [t[0] for t in cursor.fetchall()]
+            for t in tables:
+                if t not in all_tables:
+                    all_tables[t] = []
+                all_tables[t].append(db)
+    except Exception:
         pass
 
 duplicates = {t: dbs for t, dbs in all_tables.items() if len(dbs) > 1}

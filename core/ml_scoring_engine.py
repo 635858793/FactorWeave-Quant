@@ -14,6 +14,7 @@ from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 import pickle
+from utils.safe_pickle import safe_load
 import json
 from pathlib import Path
 import statistics
@@ -91,17 +92,18 @@ class BayesianPrior:
 class MultiArmedBandit:
     """多臂老虎机算法"""
 
-    def __init__(self, epsilon: float = 0.1, decay_rate: float = 0.99):
+    def __init__(self, epsilon: float = 0.1, decay_rate: float = 0.99, min_epsilon: float = 0.01):
         self.epsilon = epsilon
         self.decay_rate = decay_rate
+        self.min_epsilon = min_epsilon
         self.arm_rewards: Dict[str, List[float]] = {}
         self.arm_counts: Dict[str, int] = {}
         self.total_plays = 0
 
     def select_arm(self, available_arms: List[str]) -> str:
         """选择臂"""
-        # ε-贪婪策略
-        if np.random.random() < self.epsilon:
+        current_epsilon = max(self.epsilon, self.min_epsilon)
+        if np.random.random() < current_epsilon:
             # 探索：随机选择
             return np.random.choice(available_arms)
         else:
@@ -125,8 +127,8 @@ class MultiArmedBandit:
         self.arm_counts[arm] += 1
         self.total_plays += 1
 
-        # 应用衰减
-        self.epsilon *= self.decay_rate
+        # 应用衰减（保持不低于下限）
+        self.epsilon = max(self.epsilon * self.decay_rate, self.min_epsilon)
 
         # 保持历史记录在合理范围内
         if len(self.arm_rewards[arm]) > 1000:
@@ -148,7 +150,8 @@ class MLScoringEngine:
         # 多臂老虎机
         self.bandit = MultiArmedBandit(
             epsilon=self.config.get('bandit_epsilon', 0.1),
-            decay_rate=self.config.get('bandit_decay', 0.99)
+            decay_rate=self.config.get('bandit_decay', 0.99),
+            min_epsilon=self.config.get('bandit_min_epsilon', 0.01)
         )
 
         # 模型参数
@@ -426,7 +429,7 @@ class MLScoringEngine:
         score += volume_score * self.feature_weights.get('request_volume', 0.07)
 
         # 季节性因子
-        score *= features.seasonal_factor * self.feature_weights.get('seasonal_factor', 0.05)
+        score *= features.seasonal_factor
 
         return max(0.0, min(1.0, score))
 
@@ -564,14 +567,14 @@ class MLScoringEngine:
             bayesian_file = self.model_save_path / 'bayesian_priors.pkl'
             if bayesian_file.exists():
                 with open(bayesian_file, 'rb') as f:
-                    self.bayesian_priors = pickle.load(f)
+                    self.bayesian_priors = safe_load(f)
                 logger.info("贝叶斯先验模型已加载")
 
             # 加载多臂老虎机
             bandit_file = self.model_save_path / 'bandit_model.pkl'
             if bandit_file.exists():
                 with open(bandit_file, 'rb') as f:
-                    self.bandit = pickle.load(f)
+                    self.bandit = safe_load(f)
                 logger.info("多臂老虎机模型已加载")
 
         except Exception as e:

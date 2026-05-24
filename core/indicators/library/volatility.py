@@ -51,7 +51,7 @@ def calculate_atr(df: pd.DataFrame, timeperiod: int = 14) -> pd.DataFrame:
             tr = pd.DataFrame({'tr1': tr1, 'tr2': tr2, 'tr3': tr3}).max(axis=1)
 
             # 计算ATR
-            atr = tr.rolling(window=timeperiod).mean()
+            atr = tr.ewm(alpha=1.0/timeperiod, adjust=False).mean()
 
             result['ATR'] = atr
 
@@ -93,10 +93,9 @@ def calculate_natr(df: pd.DataFrame, timeperiod: int = 14) -> pd.DataFrame:
             tr = pd.DataFrame({'tr1': tr1, 'tr2': tr2, 'tr3': tr3}).max(axis=1)
 
             # 计算ATR
-            atr = tr.rolling(window=timeperiod).mean()
+            atr = tr.ewm(alpha=1.0/timeperiod, adjust=False).mean()
 
-            # 计算NATR
-            natr = 100 * atr / close
+            natr = 100 * atr / close.replace(0, np.nan)
 
             result['NATR'] = natr
 

@@ -3,14 +3,114 @@
 提供基础的形态识别功能
 """
 
+import re
+import ast
+import hashlib
+import builtins as _builtins
+from loguru import logger
 from typing import List, Dict, Any, Optional
 import pandas as pd
 import numpy as np
-import logging
+from loguru import logger
 
 from .pattern_base import BasePatternRecognizer, PatternResult, SignalType
 
-logger = logging.getLogger(__name__)
+ALLOWED_AST_NODES = frozenset({
+    ast.Module,
+    ast.Expr,
+    ast.Assign,
+    ast.AugAssign,
+    ast.For,
+    ast.If,
+    ast.Continue,
+    ast.Break,
+    ast.Pass,
+    ast.Try,
+    ast.ExceptHandler,
+    ast.Return,
+    ast.Raise,
+    ast.Name,
+    ast.Constant,
+    ast.BinOp,
+    ast.UnaryOp,
+    ast.BoolOp,
+    ast.Compare,
+    ast.IfExp,
+    ast.Call,
+    ast.Subscript,
+    ast.Slice,
+    ast.Attribute,
+    ast.List,
+    ast.Dict,
+    ast.Tuple,
+    ast.GeneratorExp,
+    ast.comprehension,
+    ast.keyword,
+    ast.Load,
+    ast.Store,
+    ast.Del,
+    ast.Add,
+    ast.Sub,
+    ast.Mult,
+    ast.Div,
+    ast.Mod,
+    ast.Pow,
+    ast.FloorDiv,
+    ast.MatMult,
+    ast.And,
+    ast.Or,
+    ast.Eq,
+    ast.NotEq,
+    ast.Lt,
+    ast.Gt,
+    ast.LtE,
+    ast.GtE,
+    ast.Is,
+    ast.IsNot,
+    ast.In,
+    ast.NotIn,
+    ast.Not,
+    ast.USub,
+    ast.UAdd,
+    ast.Invert,
+    ast.BitAnd,
+    ast.BitOr,
+    ast.BitXor,
+    ast.LShift,
+    ast.RShift,
+})
+
+ALLOWED_BUILTIN_NAMES = frozenset({
+    'abs', 'all', 'any', 'bool', 'dict', 'enumerate',
+    'False', 'float', 'int', 'len', 'list',
+    'max', 'min', 'None', 'print', 'range',
+    'round', 'sorted', 'str', 'sum', 'True',
+    'tuple', 'zip',
+})
+
+_ALGO_CACHE = {}
+
+
+def _noop_print(*args, **kwargs):
+    pass
+
+
+def _validate_ast(code: str) -> None:
+    try:
+        tree = ast.parse(code, mode='exec')
+    except SyntaxError as e:
+        raise ValueError(f"算法代码语法错误: {e}")
+
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            raise ValueError("算法代码不允许使用import语句")
+
+        if isinstance(node, ast.Attribute):
+            if isinstance(node.attr, str) and node.attr.startswith('__'):
+                raise ValueError(f"算法代码不允许访问双下划线属性: {node.attr}")
+
+        if type(node) not in ALLOWED_AST_NODES:
+            raise ValueError(f"算法代码包含不支持的语法结构: {type(node).__name__}")
 
 
 class PatternRecognizer(BasePatternRecognizer):
@@ -75,15 +175,15 @@ class PatternRecognizer(BasePatternRecognizer):
                 algorithm_code = self.config.algorithm_code.strip()
                 if algorithm_code and algorithm_code != 'basic':
                     if self.debug_mode:
-                        print(f"[recognize_patterns] 开始执行算法: {self.config.name}")
+                        logger.debug(f"[recognize_patterns] 开始执行算法: {self.config.name}")
                     try:
                         results = self._execute_algorithm_code(algorithm_code, data)
                         algorithm_executed = True
                         if self.debug_mode:
-                            print(f"[recognize_patterns] 执行算法代码成功，检测到 {len(results)} 个形态: {self.config.name}")
+                            logger.debug(f"[recognize_patterns] 执行算法代码成功，检测到 {len(results)} 个形态: {self.config.name}")
                     except Exception as e:
                         if self.debug_mode:
-                            print(f"[recognize_patterns] 执行算法代码失败: {e}，回退到默认识别")
+                            logger.warning(f"[recognize_patterns] 执行算法代码失败: {e}，回退到默认识别")
                         import traceback
                         if self.debug_mode:
                             traceback.print_exc()
@@ -142,7 +242,7 @@ class PatternRecognizer(BasePatternRecognizer):
                         elif 'datetime' in kdata.columns and index < len(kdata):
                             return str(kdata.iloc[index]['datetime'])
                     return None
-                except:
+                except Exception:
                     return None
 
             try:
@@ -166,7 +266,26 @@ class PatternRecognizer(BasePatternRecognizer):
                 'is_trend_compatible': self.is_trend_compatible,
             }
 
-            exec(algorithm_code, {}, local_vars)
+            if not re.match(r'^[\s\w\d.,;:()\[\]{}\+\-*/%=<>!&|@\'\"#\n]*$', algorithm_code):
+                logger.warning("算法代码包含非法字符，跳过执行")
+                return []
+
+            _validate_ast(algorithm_code)
+
+            code_hash = hashlib.sha256(algorithm_code.encode('utf-8')).hexdigest()
+            if code_hash not in _ALGO_CACHE:
+                _ALGO_CACHE[code_hash] = compile(algorithm_code, '<pattern_algorithm>', 'exec')
+
+            restricted_builtins = {}
+            for name in ALLOWED_BUILTIN_NAMES:
+                if name == 'print':
+                    restricted_builtins[name] = _noop_print
+                elif name in ('True', 'False', 'None'):
+                    restricted_builtins[name] = getattr(_builtins, name)
+                else:
+                    restricted_builtins[name] = getattr(_builtins, name)
+
+            exec(_ALGO_CACHE[code_hash], {"__builtins__": restricted_builtins}, local_vars)
 
             raw_results = local_vars.get('results', [])
             
@@ -182,7 +301,7 @@ class PatternRecognizer(BasePatternRecognizer):
                             r._trend_reason = reason
                         results.append(r)
                     elif self.debug_mode:
-                        print(f"[趋势过滤] {r.pattern_name} 在位置 {r.index} 被过滤: {reason}")
+                        logger.debug(f"[趋势过滤] {r.pattern_name} 在位置 {r.index} 被过滤: {reason}")
                 elif isinstance(r, dict):
                     signal_str = r.get('signal_type', 'neutral')
                     
@@ -199,11 +318,11 @@ class PatternRecognizer(BasePatternRecognizer):
                             result.confidence_level = self.calculate_confidence_level(result.confidence)
                             results.append(result)
                     elif self.debug_mode:
-                        print(f"[趋势过滤] {r.get('pattern_name', 'unknown')} 在位置 {r.get('index', 0)} 被过滤: {reason}")
+                        logger.debug(f"[趋势过滤] {r.get('pattern_name', 'unknown')} 在位置 {r.get('index', 0)} 被过滤: {reason}")
 
         except Exception as e:
             if self.debug_mode:
-                print(f"[_execute_algorithm_code] 执行算法失败: {e}")
+                logger.warning(f"[_execute_algorithm_code] 执行算法失败: {e}")
             raise
 
         return results
@@ -234,9 +353,9 @@ class PatternRecognizer(BasePatternRecognizer):
                     )
                     
                     if self.debug_mode:
-                        print(f"[智能信号] {pattern_name}: {base_signal.value} -> {final_signal.value} "
+                        logger.debug(f"[智能信号] {pattern_name}: {base_signal.value} -> {final_signal.value} "
                               f"(置信度: {confidence:.2f} -> {adjusted_confidence:.2f})")
-                        print(f"  原因: {reason}")
+                        logger.debug(f"  原因: {reason}")
                     
                     signal_type = final_signal
                     confidence = adjusted_confidence
@@ -247,7 +366,7 @@ class PatternRecognizer(BasePatternRecognizer):
                     
                 except Exception as e:
                     if self.debug_mode:
-                        print(f"[智能信号计算失败] 使用原始信号: {e}")
+                        logger.warning(f"[智能信号计算失败] 使用原始信号: {e}")
                     signal_type = base_signal
                     confidence = data.get('confidence', 0.5)
             else:
@@ -270,72 +389,57 @@ class PatternRecognizer(BasePatternRecognizer):
             )
         except Exception as e:
             if self.debug_mode:
-                print(f"[_convert_dict_to_pattern_result] 转换失败: {e}")
+                logger.warning(f"[_convert_dict_to_pattern_result] 转换失败: {e}")
             return None
 
     def _detect_hammer(self, data: pd.DataFrame) -> List[dict]:
-        """检测锤子线和上吊线形态 - 返回字典列表以支持智能信号计算"""
+        """检测锤子线和上吊线形态 - 向量化版本，返回字典列表以支持智能信号计算"""
         results = []
 
         if len(data) < 2:
             return results
 
         try:
-            min_body_ratio = self.parameters.get('min_body_ratio', 0.1)
             shadow_ratio_threshold = self.parameters.get('shadow_ratio_threshold', 2.0)
             confidence_threshold = self.parameters.get('confidence_threshold', 0.7)
 
-            for i in range(len(data)):
-                row = data.iloc[i]
-                open_price = row['open']
-                high_price = row['high']
-                low_price = row['low']
-                close_price = row['close']
+            opens = data['open'].values.astype(np.float64)
+            highs = data['high'].values.astype(np.float64)
+            lows = data['low'].values.astype(np.float64)
+            closes = data['close'].values.astype(np.float64)
 
-                body = abs(close_price - open_price)
-                upper_shadow = high_price - max(open_price, close_price)
-                lower_shadow = min(open_price, close_price) - low_price
-                total_range = high_price - low_price
+            body = np.abs(closes - opens)
+            upper_shadow = highs - np.maximum(opens, closes)
+            lower_shadow = np.minimum(opens, closes) - lows
+            total_range = highs - lows
 
-                if total_range <= 0:
-                    continue
+            valid = total_range > 0
+            body_ratio = np.where(valid, body / total_range, 1.0)
 
-                body_ratio = body / total_range if total_range > 0 else 0
-                
-                is_small_body = body_ratio < 0.3
-                has_long_lower_shadow = lower_shadow > shadow_ratio_threshold * body
-                has_small_upper_shadow = upper_shadow < body * 0.2
-                
-                is_hammer_shape = has_long_lower_shadow and has_small_upper_shadow and is_small_body
-                
-                if not is_hammer_shape:
-                    continue
-                
-                if i < 1:
-                    continue
-                
-                prev_data = data.iloc[max(0, i-1):i]
-                if len(prev_data) > 0:
-                    prev_close = prev_data['close'].iloc[-1]
-                    prev_avg = data.iloc[max(0, i-5):i]['close'].mean() if i >= 5 else data['close'].mean()
-                else:
-                    prev_close = close_price
-                    prev_avg = close_price
-                
-                is_bullish = close_price > open_price
-                
-                if is_bullish:
+            is_small_body = body_ratio < 0.3
+            has_long_lower_shadow = lower_shadow > shadow_ratio_threshold * body
+            has_small_upper_shadow = upper_shadow < body * 0.2
+            is_hammer_shape = has_long_lower_shadow & has_small_upper_shadow & is_small_body & valid
+
+            is_hammer_shape[0] = False
+
+            is_bullish = closes > opens
+
+            match_indices = np.where(is_hammer_shape)[0]
+
+            for i in match_indices:
+                if is_bullish[i]:
                     results.append({
                         'pattern_type': 'candlestick',
                         'pattern_name': '锤子线',
                         'pattern_category': '反转形态',
                         'signal_type': 'buy',
                         'confidence': confidence_threshold,
-                        'index': i,
+                        'index': int(i),
                         'datetime_val': None,
-                        'price': float(close_price),
-                        'start_index': i,
-                        'end_index': i,
+                        'price': float(closes[i]),
+                        'start_index': int(i),
+                        'end_index': int(i),
                         'description': '检测到锤子线形态，潜在的反转买入信号'
                     })
                 else:
@@ -345,21 +449,21 @@ class PatternRecognizer(BasePatternRecognizer):
                         'pattern_category': '反转形态',
                         'signal_type': 'sell',
                         'confidence': confidence_threshold * 0.9,
-                        'index': i,
+                        'index': int(i),
                         'datetime_val': None,
-                        'price': float(close_price),
-                        'start_index': i,
-                        'end_index': i,
+                        'price': float(closes[i]),
+                        'start_index': int(i),
+                        'end_index': int(i),
                         'description': '检测到上吊线形态，潜在的反转卖出信号'
                     })
 
         except Exception as e:
-            print(f"锤子线检测错误: {e}")
+            logger.warning(f"锤子线检测错误: {e}")
 
         return results
 
     def _detect_doji(self, data: pd.DataFrame) -> List[dict]:
-        """检测十字星形态 - 返回字典列表以支持智能信号计算"""
+        """检测十字星形态 - 向量化版本，返回字典列表以支持智能信号计算"""
         results = []
 
         if len(data) < 2:
@@ -369,74 +473,84 @@ class PatternRecognizer(BasePatternRecognizer):
             body_ratio_threshold = self.parameters.get('body_ratio_threshold', 0.1)
             confidence_threshold = self.parameters.get('confidence_threshold', 0.6)
 
-            for i in range(len(data)):
-                if i < 1:
-                    continue
-                    
-                row = data.iloc[i]
-                prev_row = data.iloc[i-1]
-                open_price = row['open']
-                high_price = row['high']
-                low_price = row['low']
-                close_price = row['close']
+            opens = data['open'].values.astype(np.float64)
+            highs = data['high'].values.astype(np.float64)
+            lows = data['low'].values.astype(np.float64)
+            closes = data['close'].values.astype(np.float64)
 
-                body = abs(close_price - open_price)
-                total_range = high_price - low_price
+            body = np.abs(closes - opens)
+            total_range = highs - lows
 
-                if total_range <= 0 or body / total_range >= body_ratio_threshold:
-                    continue
-                
-                prev_close = prev_row['close']
-                prev_open = prev_row['open']
-                prev_body = abs(prev_close - prev_open)
-                prev_body_ratio = prev_body / (prev_row['high'] - prev_row['low']) if (prev_row['high'] - prev_row['low']) > 0 else 1.0
-                
-                if prev_body_ratio > 0.3:
-                    if close_price > prev_close and close_price > open_price:
-                        results.append({
-                            'pattern_type': 'candlestick',
-                            'pattern_name': '十字星',
-                            'pattern_category': '反转形态',
-                            'signal_type': 'buy',
-                            'confidence': confidence_threshold,
-                            'index': i,
-                            'datetime_val': None,
-                            'price': float(close_price),
-                            'start_index': i,
-                            'end_index': i,
-                            'description': '检测到十字星形态，看涨反转信号'
-                        })
-                    elif close_price < prev_close and close_price < open_price:
-                        results.append({
-                            'pattern_type': 'candlestick',
-                            'pattern_name': '十字星',
-                            'pattern_category': '反转形态',
-                            'signal_type': 'sell',
-                            'confidence': confidence_threshold,
-                            'index': i,
-                            'datetime_val': None,
-                            'price': float(close_price),
-                            'start_index': i,
-                            'end_index': i,
-                            'description': '检测到十字星形态，看跌反转信号'
-                        })
-                    else:
-                        results.append({
-                            'pattern_type': 'candlestick',
-                            'pattern_name': '十字星',
-                            'pattern_category': '反转形态',
-                            'signal_type': 'neutral',
-                            'confidence': confidence_threshold * 0.8,
-                            'index': i,
-                            'datetime_val': None,
-                            'price': float(close_price),
-                            'start_index': i,
-                            'end_index': i,
-                            'description': '检测到十字星形态，市场犹豫信号'
-                        })
+            prev_opens = np.roll(opens, 1)
+            prev_closes = np.roll(closes, 1)
+            prev_highs = np.roll(highs, 1)
+            prev_lows = np.roll(lows, 1)
+            prev_body = np.abs(prev_closes - prev_opens)
+            prev_total_range = prev_highs - prev_lows
+
+            valid = total_range > 0
+            body_ratio = np.where(valid, body / total_range, 1.0)
+            is_doji_candidate = body_ratio < body_ratio_threshold
+
+            prev_valid = prev_total_range > 0
+            prev_body_ratio = np.where(prev_valid, prev_body / prev_total_range, 0.0)
+            has_large_prev_body = prev_body_ratio > 0.3
+
+            bullish = is_doji_candidate & has_large_prev_body & (closes > prev_closes) & (closes > opens)
+            bearish = is_doji_candidate & has_large_prev_body & (closes < prev_closes) & (closes < opens)
+            neutral = is_doji_candidate & has_large_prev_body & ~(bullish | bearish)
+
+            bullish[0] = False
+            bearish[0] = False
+            neutral[0] = False
+
+            for i in np.where(bullish)[0]:
+                results.append({
+                    'pattern_type': 'candlestick',
+                    'pattern_name': '十字星',
+                    'pattern_category': '反转形态',
+                    'signal_type': 'buy',
+                    'confidence': confidence_threshold,
+                    'index': int(i),
+                    'datetime_val': None,
+                    'price': float(closes[i]),
+                    'start_index': int(i),
+                    'end_index': int(i),
+                    'description': '检测到十字星形态，看涨反转信号'
+                })
+
+            for i in np.where(bearish)[0]:
+                results.append({
+                    'pattern_type': 'candlestick',
+                    'pattern_name': '十字星',
+                    'pattern_category': '反转形态',
+                    'signal_type': 'sell',
+                    'confidence': confidence_threshold,
+                    'index': int(i),
+                    'datetime_val': None,
+                    'price': float(closes[i]),
+                    'start_index': int(i),
+                    'end_index': int(i),
+                    'description': '检测到十字星形态，看跌反转信号'
+                })
+
+            for i in np.where(neutral)[0]:
+                results.append({
+                    'pattern_type': 'candlestick',
+                    'pattern_name': '十字星',
+                    'pattern_category': '反转形态',
+                    'signal_type': 'neutral',
+                    'confidence': confidence_threshold * 0.8,
+                    'index': int(i),
+                    'datetime_val': None,
+                    'price': float(closes[i]),
+                    'start_index': int(i),
+                    'end_index': int(i),
+                    'description': '检测到十字星形态，市场犹豫信号'
+                })
 
         except Exception as e:
-            print(f"十字星检测错误: {e}")
+            logger.warning(f"十字星检测错误: {e}")
 
         return results
 
@@ -478,7 +592,7 @@ class EnhancedPatternRecognizer(PatternRecognizer):
             形态识别结果列表
         """
         if self.debug_mode:
-            print(f"开始增强版形态识别，数据量: {len(kdata)}")
+            logger.debug(f"开始增强版形态识别，数据量: {len(kdata)}")
 
         # 调用基础识别方法
         basic_results = super().recognize(kdata)
@@ -496,7 +610,7 @@ class EnhancedPatternRecognizer(PatternRecognizer):
             enhanced_results.append(result)
 
         if self.debug_mode:
-            print(f"识别完成，发现 {len(enhanced_results)} 个形态")
+            logger.debug(f"识别完成，发现 {len(enhanced_results)} 个形态")
 
         return enhanced_results
 
@@ -522,7 +636,7 @@ class EnhancedPatternRecognizer(PatternRecognizer):
 
         except Exception as e:
             if self.debug_mode:
-                print(f"调整置信度失败: {e}")
+                logger.warning(f"调整置信度失败: {e}")
             return pattern_result.confidence  # 返回原始置信度
 
     def identify_patterns(self, kdata: pd.DataFrame, 
@@ -565,7 +679,7 @@ class EnhancedPatternRecognizer(PatternRecognizer):
             if not pattern_configs:
                 logger.warning(f"[identify_patterns] 没有找到可用的形态配置，pattern_types={pattern_types}")
                 if self.debug_mode:
-                    print(f"[identify_patterns] 没有找到可用的形态配置")
+                    logger.debug(f"[identify_patterns] 没有找到可用的形态配置")
                 return []
             
             # 执行形态识别
@@ -583,7 +697,7 @@ class EnhancedPatternRecognizer(PatternRecognizer):
                     except (ValueError, AttributeError) as e:
                         # 如果工厂无法创建识别器，使用基础识别器
                         if self.debug_mode:
-                            print(f"[identify_patterns] 无法通过工厂创建识别器，使用基础识别器: {e}")
+                            logger.debug(f"[identify_patterns] 无法通过工厂创建识别器，使用基础识别器: {e}")
                         recognizer = PatternRecognizer(config, debug_mode=self.debug_mode)
                     
                     # 验证数据
@@ -603,7 +717,7 @@ class EnhancedPatternRecognizer(PatternRecognizer):
                     
                 except Exception as e:
                     if self.debug_mode:
-                        print(f"[identify_patterns] 识别形态 {config.name} 时出错: {e}")
+                        logger.debug(f"[identify_patterns] 识别形态 {config.name} 时出错: {e}")
                     continue
             
             # 按置信度排序
@@ -613,13 +727,13 @@ class EnhancedPatternRecognizer(PatternRecognizer):
             all_results = self._deduplicate_signals(all_results)
             
             if self.debug_mode:
-                print(f"[identify_patterns] 识别完成，发现 {len(all_results)} 个形态（去重后）")
+                logger.debug(f"[identify_patterns] 识别完成，发现 {len(all_results)} 个形态（去重后）")
             
             return all_results
             
         except Exception as e:
             if self.debug_mode:
-                print(f"[identify_patterns] 形态识别失败: {e}")
+                logger.warning(f"[identify_patterns] 形态识别失败: {e}")
             # 如果 PatternManager 不可用，回退到基础识别方法
             return self.recognize(kdata)
 
@@ -662,7 +776,7 @@ class EnhancedPatternRecognizer(PatternRecognizer):
                 last_kept_index = idx
             elif self.debug_mode:
                 skipped_name = r.pattern_name if hasattr(r, 'pattern_name') else 'unknown'
-                print(f"[去重] 跳过 {skipped_name} 在位置 {idx}，距离上次信号不足 {min_gap} 根K线")
+                logger.debug(f"[去重] 跳过 {skipped_name} 在位置 {idx}，距离上次信号不足 {min_gap} 根K线")
         
         return deduplicated
 

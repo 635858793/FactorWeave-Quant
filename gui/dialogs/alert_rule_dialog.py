@@ -7,7 +7,7 @@
 from loguru import logger
 from typing import Dict, Optional
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QGroupBox,
+    QVBoxLayout, QHBoxLayout, QFormLayout, QGroupBox,
     QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QCheckBox,
     QPushButton, QTextEdit, QLabel, QDialogButtonBox, QMessageBox,
     QTabWidget, QWidget, QSlider, QFrame
@@ -15,22 +15,28 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QFont
 
+from .base_dialog import BaseDialog
+
 logger = logger
 
 
-class AlertRuleDialog(QDialog):
+class AlertRuleDialog(BaseDialog):
     """告警规则编辑对话框"""
 
     rule_saved = pyqtSignal(dict)  # 规则保存信号
 
     def __init__(self, parent=None, rule_data: Optional[Dict] = None):
-        super().__init__(parent)
         self.rule_data = rule_data or {}
         self.is_edit_mode = bool(rule_data)
 
-        self.setWindowTitle("编辑告警规则" if self.is_edit_mode else "新增告警规则")
-        self.setModal(True)
-        self.resize(600, 500)
+        title = "编辑告警规则" if self.is_edit_mode else "新增告警规则"
+        
+        super().__init__(
+            parent,
+            title=title,
+            size=(600, 500),
+            settings_key="AlertRuleDialog"
+        )
 
         self.init_ui()
         self.load_rule_data()

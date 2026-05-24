@@ -3,16 +3,14 @@ TDX服务器数据库管理器
 负责TDX服务器信息的数据库存储和管理
 """
 
-import sqlite3
-import logging
-from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
+from datetime import datetime
 import json
+from loguru import logger
+from ...database.unified_sqlite_access import UnifiedSQLiteAccess
 
-logger = logging.getLogger(__name__)
-
-class TdxServerDatabaseManager:
+class TdxServerManager:
     """TDX服务器数据库管理器"""
 
     def __init__(self, db_path: str = None):
@@ -22,14 +20,19 @@ class TdxServerDatabaseManager:
 
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        self._db_instance = UnifiedSQLiteAccess.get_instance(str(self.db_path))
 
         # 初始化数据库
         self._init_database()
 
+    def _get_db(self) -> UnifiedSQLiteAccess:
+        return self._db_instance
+
     def _init_database(self):
         """初始化数据库表结构"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_db().get_connection() as conn:
                 cursor = conn.cursor()
 
                 # 创建服务器信息表
@@ -75,7 +78,6 @@ class TdxServerDatabaseManager:
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_tdx_servers_location ON tdx_servers(location)")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_tdx_servers_priority ON tdx_servers(priority)")
 
-                conn.commit()
                 logger.info("TDX服务器数据库初始化完成")
 
         except Exception as e:
@@ -104,7 +106,7 @@ class TdxServerDatabaseManager:
             是否保存成功
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_db().get_connection() as conn:
                 cursor = conn.cursor()
 
                 # 使用UPSERT语法（INSERT OR REPLACE）
@@ -127,7 +129,6 @@ class TdxServerDatabaseManager:
                     VALUES (?)
                 """, (server_id,))
 
-                conn.commit()
                 logger.debug(f"保存TDX服务器成功: {host}:{port}")
                 return True
 
@@ -146,7 +147,7 @@ class TdxServerDatabaseManager:
             服务器列表
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_db().get_connection() as conn:
                 cursor = conn.cursor()
 
                 query = """
@@ -189,7 +190,7 @@ class TdxServerDatabaseManager:
             可用服务器列表，按响应时间排序
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_db().get_connection() as conn:
                 cursor = conn.cursor()
 
                 query = """
@@ -219,7 +220,7 @@ class TdxServerDatabaseManager:
     def get_fastest_servers(self, limit: int = 5) -> List[Dict]:
         """获取最快的服务器"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_db().get_connection() as conn:
                 cursor = conn.cursor()
 
                 cursor.execute("""
@@ -245,7 +246,7 @@ class TdxServerDatabaseManager:
                              response_time: float = None) -> bool:
         """更新服务器状态"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_db().get_connection() as conn:
                 cursor = conn.cursor()
 
                 cursor.execute("""
@@ -259,7 +260,6 @@ class TdxServerDatabaseManager:
                     host, port
                 ))
 
-                conn.commit()
                 return cursor.rowcount > 0
 
         except Exception as e:
@@ -270,7 +270,7 @@ class TdxServerDatabaseManager:
                                   response_time: float = None) -> bool:
         """记录连接尝试统计"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_db().get_connection() as conn:
                 cursor = conn.cursor()
 
                 # 获取服务器ID
@@ -321,7 +321,6 @@ class TdxServerDatabaseManager:
                     server_id   # NOT EXISTS中的server_id
                 ))
 
-                conn.commit()
                 return True
 
         except Exception as e:
@@ -331,7 +330,7 @@ class TdxServerDatabaseManager:
     def delete_server(self, host: str, port: int) -> bool:
         """删除服务器"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_db().get_connection() as conn:
                 cursor = conn.cursor()
 
                 # 获取服务器ID
@@ -349,7 +348,6 @@ class TdxServerDatabaseManager:
                 # 删除服务器
                 cursor.execute("DELETE FROM tdx_servers WHERE id = ?", (server_id,))
 
-                conn.commit()
                 logger.info(f"删除服务器成功: {host}:{port}")
                 return True
 
@@ -360,7 +358,7 @@ class TdxServerDatabaseManager:
     def set_server_priority(self, host: str, port: int, priority: int) -> bool:
         """设置服务器优先级"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_db().get_connection() as conn:
                 cursor = conn.cursor()
 
                 cursor.execute("""
@@ -369,7 +367,6 @@ class TdxServerDatabaseManager:
                     WHERE host = ? AND port = ?
                 """, (priority, datetime.now().isoformat(), host, port))
 
-                conn.commit()
                 return cursor.rowcount > 0
 
         except Exception as e:
@@ -379,7 +376,7 @@ class TdxServerDatabaseManager:
     def deactivate_server(self, host: str, port: int) -> bool:
         """停用服务器（软删除）"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_db().get_connection() as conn:
                 cursor = conn.cursor()
 
                 cursor.execute("""
@@ -388,7 +385,6 @@ class TdxServerDatabaseManager:
                     WHERE host = ? AND port = ?
                 """, (datetime.now().isoformat(), host, port))
 
-                conn.commit()
                 return cursor.rowcount > 0
 
         except Exception as e:
@@ -398,7 +394,7 @@ class TdxServerDatabaseManager:
     def get_server_statistics(self) -> Dict:
         """获取服务器统计信息"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_db().get_connection() as conn:
                 cursor = conn.cursor()
 
                 # 总体统计
@@ -488,9 +484,9 @@ class TdxServerDatabaseManager:
 # 全局数据库管理器实例
 _db_manager = None
 
-def get_tdx_db_manager() -> TdxServerDatabaseManager:
+def get_tdx_db_manager() -> TdxServerManager:
     """获取TDX服务器数据库管理器实例"""
     global _db_manager
     if _db_manager is None:
-        _db_manager = TdxServerDatabaseManager()
+        _db_manager = TdxServerManager()
     return _db_manager

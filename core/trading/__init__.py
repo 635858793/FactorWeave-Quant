@@ -4,7 +4,8 @@
 交易模块
 """
 
-# 延迟导入，避免在模块级别导入时崩�?from .trading_types import TradingInterface, ExecutionResult, ExecutionStatus
+# 延迟导入，避免在模块级别导入时崩溃
+from .trading_types import TradingInterface, ExecutionResult, ExecutionStatus
 from .order_models import Order, OrderStatus, OrderType, OrderCategory
 
 __all__ = [

@@ -1568,7 +1568,10 @@ class SectorFlowTabPro(BaseAnalysisTab):
             return
 
         self.show_loading("正在生成资金流预测...")
-        self.run_analysis_async(self._flow_prediction_async)
+        if hasattr(self, '_flow_prediction_async'):
+            self.run_analysis_async(self._flow_prediction_async)
+        else:
+            logger.warning("_flow_prediction_async 方法未定义")
 
     def _flow_prediction_async(self):
         """异步资金流预测"""
@@ -2006,7 +2009,8 @@ class SectorFlowTabPro(BaseAnalysisTab):
         """刷新数据显示"""
         try:
             # 重新获取实时数据
-            self._start_real_time_monitoring()
+            if hasattr(self, 'realtime_monitoring'):
+                self.realtime_monitoring()
 
             # 发射数据更新信号
             if hasattr(self, 'data_updated'):
@@ -2445,7 +2449,9 @@ class SectorFlowTabPro(BaseAnalysisTab):
                 """取消下载"""
                 nonlocal download_worker
                 if download_worker and download_worker.isRunning():
-                    download_worker.terminate()
+                    download_worker.requestInterruption()
+                    download_worker.quit()
+                    download_worker.wait(5000)
                     log_text.append("下载已取消")
                     status_label.setText("已取消")
                     download_btn.setEnabled(True)

@@ -8,115 +8,44 @@
 实现IVirtualRenderer通用接口，支持统一管理和扩展
 
 作者: FactorWeave-Quant团队
-版本: 1.0
+版本: 1.1
 """
 
 import numpy as np
 import pandas as pd
 from typing import Dict, Any, List, Optional, Tuple, Union, Callable
-from PyQt5.QtCore import QObject, pyqtSignal, QRectF, QPointF, QTimer
+from PyQt5.QtCore import QRectF
 from loguru import logger
 import time
-from collections import deque
-import threading
-# 导入虚拟滚动模块
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.advanced_optimization.performance.virtualization import (
-    VirtualScrollRenderer, 
-    VirtualizationConfig, 
+    VirtualizationConfig,
     RenderChunk,
-    ViewportState,
-    IVirtualRenderer,
     VirtualRenderStyle
 )
 
-class BarVirtualRenderer(QObject):
-    """柱状图虚拟滚动渲染器，实现IVirtualRenderer接口"""
-    
-    # 信号定义
-    data_rendered = pyqtSignal(int, object)  # chunk_id, RenderChunk
-    rendering_progress = pyqtSignal(float)  # 进度百分比
-    performance_warning = pyqtSignal(str, float)  # 警告信息, 数值
-    virtual_scroll_enabled = pyqtSignal(bool)  # 虚拟滚动状态变化
-    
-    def __init__(self, 
+from core.optimization.render_utils import normalize_value
+from core.optimization.base_virtual_renderer import BaseVirtualRenderer
+
+
+class BarVirtualRenderer(BaseVirtualRenderer):
+    """柱状图虚拟滚动渲染器，继承自BaseVirtualRenderer"""
+
+    _chart_type_name: str = "柱状图"
+    _data_attr_name: str = "bar_data"
+    _default_chunk_size: int = 2000
+    _default_overlap_size: int = 200
+    _default_max_visible_chunks: int = 3
+
+    def __init__(self,
                  config: Optional[VirtualizationConfig] = None,
                  style: Optional[VirtualRenderStyle] = None):
-        super().__init__()
-        
-        # 配置和样式
-        self.config = config or self._create_optimized_config()
-        self.style = style or VirtualRenderStyle()
-        
-        # 虚拟滚动渲染器
-        self.virtual_renderer = VirtualScrollRenderer(self.config)
-        self.virtual_renderer.data_rendered.connect(self.data_rendered.emit)
-        self.virtual_renderer.performance_warning.connect(self.performance_warning.emit)
-        
-        # 柱状数据缓存
         self.bar_data = None
         self.bar_axis = None
-        
-        # 渲染状态
-        self._is_enabled = True
-        self._total_data_points = 0
-        self.rendered_chunks = {}
-        
-        # 性能统计
-        self.render_stats = {
-            'total_render_time_ms': 0.0,
-            'chunks_rendered': 0,
-            'data_points_processed': 0,
-            'memory_usage_estimate_mb': 0.0
-        }
-        
-        logger.info("柱状图虚拟滚动渲染器初始化完成，配置: {}".format({
-            'chunk_size': self.config.chunk_size,
-            'adaptive_quality': self.config.adaptive_quality,
-            'cache_size': self.config.cache_size
-        }))
-    
-    def _create_optimized_config(self) -> VirtualizationConfig:
-        """创建优化的虚拟滚动配置"""
-        return VirtualizationConfig(
-            # 针对柱状数据优化的配置
-            chunk_size=2000,  # 柱状图块大小适中
-            overlap_size=200,  # 适中的重叠区域
-            max_visible_chunks=3,  # 显示3个块
-            
-            # 性能配置
-            max_render_time_ms=8.33,  # 120fps目标
-            memory_threshold_mb=50,   # 50MB内存限制
-            cleanup_threshold=0.7,    # 70%内存使用率时清理
-            
-            # 质量配置
-            adaptive_quality=True,
-            min_quality=0.5,
-            quality_levels=[1, 2, 4, 8],  # 4个质量级别
-            
-            # 交互配置
-            scroll_threshold=30,
-            preload_distance=500,
-            
-            # 缓存配置
-            cache_size=50,  # 缓存50个块
-            cache_policy="lru"  # LRU缓存策略
-        )
-    
-    def enable_virtual_scrolling(self, enabled: bool):
-        """启用/禁用虚拟滚动"""
-        self._is_enabled = enabled
-        self.virtual_scroll_enabled.emit(enabled)
-        self.virtual_renderer.enable_virtual_scrolling(enabled)
-        
-        if not enabled:
-            # 禁用时清理所有缓存
-            self.cleanup()
-        
-        logger.info(f"柱状图虚拟滚动{'启用' if enabled else '禁用'}")
+        super().__init__(config=config, style=style)
     
     def set_data_source(self, data: Union[np.ndarray, pd.DataFrame, pd.Series]):
         """设置数据源，实现IVirtualRenderer接口"""
@@ -146,46 +75,19 @@ class BarVirtualRenderer(QObject):
         self.bar_data = bar_data
         self.bar_axis = bar_axis
         self.set_data_source(bar_data)
-    
-    def render_with_virtual_scroll(self, ax, data: Union[pd.DataFrame, pd.Series, np.ndarray], 
+
+    def render_with_virtual_scroll(self, ax, data: Union[pd.DataFrame, pd.Series, np.ndarray],
                                         style: Dict[str, Any] = None,
-                                        x: np.ndarray = None, 
+                                        x: np.ndarray = None,
                                         use_datetime_axis: bool = True) -> bool:
         """使用虚拟滚动渲染柱状图，实现IVirtualRenderer接口"""
-        if not self._is_enabled or self.bar_data is None:
-            # 降级到常规渲染
-            logger.info(f"柱状图虚拟滚动未启用或数据源为空，降级到常规渲染")
-            return self._render_bar_regular(ax, data, style, x, use_datetime_axis)
-        
-        try:
-            start_time = time.time()
-            
-            logger.info(f"开始使用虚拟滚动渲染柱状图: {len(data)}个数据点")
-            
-            # 更新视口信息
-            visible_rect = self._get_visible_rect(ax)
-            self.virtual_renderer.update_viewport(visible_rect)
-            
-            # 检查数据量是否需要虚拟滚动
-            if self._total_data_points < self.config.chunk_size * 2:
-                # 数据量不大，使用常规渲染
-                logger.info(f"柱状图数据量较小({self._total_data_points} < {self.config.chunk_size * 2})，使用常规渲染")
-                return self._render_bar_regular(ax, data, style, x, use_datetime_axis)
-            
-            # 使用虚拟滚动渲染
-            success = self._render_bar_virtual(ax, data, style, x, use_datetime_axis)
-            
-            render_time = time.time() - start_time
-            self.render_stats['total_render_time_ms'] += render_time * 1000
-            self.render_stats['data_points_processed'] += len(data)
-            
-            logger.info(f"柱状图虚拟滚动渲染完成: {render_time*1000:.2f}ms, 渲染块数量: {len(self.rendered_chunks)}")
-            return success
-            
-        except Exception as e:
-            logger.error(f"虚拟滚动柱状图渲染失败: {e}")
-            # 降级到常规渲染
-            return self._render_bar_regular(ax, data, style, x, use_datetime_axis)
+        return super().render_with_virtual_scroll(ax, data, style=style, x=x, use_datetime_axis=use_datetime_axis)
+
+    def _render_regular(self, ax, data, style, x, use_datetime_axis) -> bool:
+        return self._render_bar_regular(ax, data, style, x, use_datetime_axis)
+
+    def _render_virtual(self, ax, data, style, x, use_datetime_axis) -> bool:
+        return self._render_bar_virtual(ax, data, style, x, use_datetime_axis)
     
     def _render_bar_regular(self, ax, data: Union[pd.DataFrame, pd.Series, np.ndarray], 
                               style: Dict[str, Any] = None,
@@ -276,8 +178,8 @@ class BarVirtualRenderer(QObject):
             
             # 获取当前可见的渲染块
             visible_rect = self._get_visible_rect(ax)
-            chunk_start = max(0, int(visible_rect.y() / self.config.chunk_size) - 1)
-            chunk_end = int((visible_rect.y() + visible_rect.height()) / self.config.chunk_size) + 1
+            chunk_start = max(0, int(visible_rect.x() / self.config.chunk_size) - 1)
+            chunk_end = int((visible_rect.x() + visible_rect.width()) / self.config.chunk_size) + 1
             
             rendered_any = False
             
@@ -388,7 +290,7 @@ class BarVirtualRenderer(QObject):
                     ])
                     
                     if callable(style.color):
-                        normalized_value = y_val / max(chunk_data) if max(chunk_data) > 0 else 0
+                        normalized_value = normalize_value(y_val, max(chunk_data))
                         colors.append(style.color(normalized_value))
                     else:
                         colors.append(style.color)
@@ -419,71 +321,19 @@ class BarVirtualRenderer(QObject):
             return False
     
     def _get_visible_rect(self, ax) -> QRectF:
-        """获取当前可见区域"""
-        if ax is None:
-            return QRectF(0, 0, 100, 100)
-        
-        try:
-            # 获取当前轴的显示范围
-            xlim = ax.get_xlim()
-            ylim = ax.get_ylim()
-            
-            return QRectF(xlim[0], ylim[0], xlim[1] - xlim[0], ylim[1] - ylim[0])
-            
-        except Exception as e:
-            logger.warning(f"获取可见区域失败: {e}")
-            return QRectF(0, 0, 100, 100)
-    
-    def _draw_chunk_boundary(self, ax, start_index: int, length: int, 
+        return super()._get_visible_rect(ax)
+
+    def _draw_chunk_boundary(self, ax, start_index: int, length: int,
                            color: str, width: float):
-        """绘制块边界（调试用）"""
-        try:
-            import matplotlib.patches as patches
-            
-            rect = patches.Rectangle(
-                (start_index - 0.5, ax.get_ylim()[0]),
-                length + 1,
-                ax.get_ylim()[1] - ax.get_ylim()[0],
-                linewidth=width,
-                edgecolor=color,
-                facecolor='none',
-                alpha=0.3
-            )
-            ax.add_patch(rect)
-            
-        except Exception as e:
-            logger.warning(f"绘制块边界失败: {e}")
-    
-    def get_performance_stats(self) -> Dict[str, Any]:
-        """获取性能统计信息，实现IVirtualRenderer接口"""
-        stats = self.render_stats.copy()
-        
-        # 添加虚拟滚动统计
-        if hasattr(self.virtual_renderer, 'get_performance_stats'):
-            virtual_stats = self.virtual_renderer.get_performance_stats()
-            stats.update(virtual_stats)
-        
-        # 添加总体统计
-        stats.update({
-            'total_data_points': self._total_data_points,
-            'virtual_scrolling_enabled': self._is_enabled,
-            'rendered_chunks_count': len(self.rendered_chunks),
-            'memory_estimate_mb': len(self.rendered_chunks) * 0.1  # 估算
-        })
-        
-        return stats
-    
+        from core.optimization.render_utils import draw_chunk_boundary
+        draw_chunk_boundary(ax, start_index, length, color, width)
+
     def cleanup(self):
-        """清理资源，实现IVirtualRenderer接口"""
+        """清理资源"""
         logger.info("清理柱状图虚拟滚动渲染器资源")
-        
-        if self._is_enabled and hasattr(self.virtual_renderer, 'cleanup'):
-            self.virtual_renderer.cleanup()
-        
-        self.rendered_chunks.clear()
         self.bar_data = None
         self.bar_axis = None
-        
+        super().cleanup()
         logger.info("柱状图虚拟滚动渲染器资源清理完成")
     
     def update_viewport(self, visible_rect: QRectF):
@@ -499,11 +349,6 @@ class BarVirtualRenderer(QObject):
     def total_data_points(self) -> int:
         """总数据点数量，实现IVirtualRenderer接口"""
         return self._total_data_points
-    
-    def _render_chunk_boundaries(self, ax):
-        """渲染所有块边界（调试用）"""
-        # 简化实现，实际项目中可以根据需要实现
-        pass
 
 # 便捷函数
 def create_bar_virtual_renderer(data: Union[pd.DataFrame, pd.Series, np.ndarray], 

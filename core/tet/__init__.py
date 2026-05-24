@@ -8,13 +8,24 @@ TET (Transform-Extract-Transform) 统一数据源框架
 - 智能路由和故障转移
 """
 
-from .pipeline.enhanced_tet_pipeline import EnhancedTETDataPipeline
-from .data_sources.registry.tet_provider_registry import TETProviderRegistry
-from .data_sources.registry.tet_provider_factory import TETProviderFactory
+try:
+    from .pipeline.enhanced_tet_pipeline import EnhancedTETDataPipeline
+except ImportError:
+    EnhancedTETDataPipeline = None
+
+try:
+    from .data_sources.registry.tet_provider_registry import TETProviderRegistry
+except ImportError:
+    TETProviderRegistry = None
+
+try:
+    from .data_sources.registry.tet_provider_factory import TETProviderFactory
+except ImportError:
+    TETProviderFactory = None
 
 __all__ = [
     'EnhancedTETDataPipeline',
-    'TETProviderRegistry', 
+    'TETProviderRegistry',
     'TETProviderFactory'
 ]
 

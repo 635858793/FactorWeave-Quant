@@ -18,44 +18,31 @@ DATA_SOURCE_FALLBACK = {
 }
 
 def get_fallback_stock_list():
-    """获取降级股票列表"""
+    """获取降级股票列表 — 仅供紧急降级使用，不反映真实市场数据"""
     import pandas as pd
-    
-    # 生成基本的A股股票列表
+    from loguru import logger
+
+    logger.warning("正在使用降级模拟股票列表！请检查数据源连接是否正常。")
+
     stock_codes = []
-    
-    # 沪市主板 (600000-603999)
-    for i in range(600000, 600100):  # 简化版本，只生成100个
+
+    for i in range(600000, 600100):
         stock_codes.append(f"{i:06d}.SH")
-    
-    # 深市主板 (000001-000999)  
-    for i in range(1, 100):  # 简化版本
+
+    for i in range(1, 100):
         stock_codes.append(f"{i:06d}.SZ")
-        
-    # 创建DataFrame
+
     df = pd.DataFrame({
         'code': stock_codes,
-        'name': [f'股票{i:04d}' for i in range(len(stock_codes))],
-        'market': ['SH' if code.endswith('.SH') else 'SZ' for code in stock_codes]
+        'name': [f'[模拟]股票{i:04d}' for i in range(len(stock_codes))],
+        'market': ['SH' if code.endswith('.SH') else 'SZ' for code in stock_codes],
+        'is_simulated': True
     })
-    
+
     return df
 
 def get_fallback_realtime_quotes(codes):
     """获取降级实时行情"""
     import pandas as pd
-    import random
-    
-    data = []
-    for code in codes[:10]:  # 限制数量
-        data.append({
-            'code': code,
-            'name': f'股票{code[:6]}',
-            'price': round(random.uniform(10, 100), 2),
-            'change': round(random.uniform(-5, 5), 2),
-            'change_pct': round(random.uniform(-10, 10), 2),
-            'volume': random.randint(1000000, 100000000),
-            'amount': random.randint(10000000, 1000000000)
-        })
-    
-    return pd.DataFrame(data)
+
+    return pd.DataFrame(columns=['code', 'name', 'price', 'change', 'change_pct', 'volume', 'amount'])

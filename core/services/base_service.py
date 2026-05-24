@@ -41,6 +41,7 @@ class BaseService(ABC):
         self._dependencies: List[str] = []
         self._service_id = f"{self._name}_{id(self)}"
         self._lock = threading.RLock()
+        self._shutdown_event = threading.Event()
         self._metrics: Dict[str, Any] = {
             "initialization_count": 0,
             "error_count": 0,
@@ -439,30 +440,23 @@ class CacheableService(BaseService):
         self._init_unified_cache()
 
     def _init_unified_cache(self) -> None:
-        """初始化统一缓存服务（强制）"""
+        """初始化统一缓存服务（强制的优雅降级）"""
         from core.containers import get_service_container
         from core.services.cache_service import CacheService
-        
+
         container = get_service_container()
         if container and container.is_registered(CacheService):
             self._unified_cache = container.resolve(CacheService)
             logger.debug(f"{self.__class__.__name__} 已连接到统一缓存服务，命名空间: {self._namespace}")
         else:
-            raise RuntimeError(f"统一缓存服务未注册，请确保 CacheService 已在服务容器中注册")
+            self._unified_cache = None
+            logger.debug(f"{self.__class__.__name__} 统一缓存服务未注册，缓存功能降级为空操作")
 
     def get_from_cache(self, key: str) -> Optional[Any]:
-        """
-        从缓存获取数据
-
-        Args:
-            key: 缓存键
-
-        Returns:
-            缓存的数据或None
-        """
         if self._unified_cache is None:
-            raise RuntimeError("统一缓存服务未初始化")
-        
+            self._cache_misses += 1
+            return None
+
         value = self._unified_cache.get(key, namespace=self._namespace)
         if value is not None:
             self._cache_hits += 1
@@ -472,17 +466,9 @@ class CacheableService(BaseService):
             return None
 
     def put_to_cache(self, key: str, value: Any, ttl: Optional[Any] = None) -> None:
-        """
-        将数据放入缓存
-
-        Args:
-            key: 缓存键
-            value: 缓存值
-            ttl: 生存时间（可选）
-        """
         if self._unified_cache is None:
-            raise RuntimeError("统一缓存服务未初始化")
-        
+            return
+
         from datetime import timedelta
         ttl_delta = None
         if ttl is not None:
@@ -490,14 +476,13 @@ class CacheableService(BaseService):
                 ttl_delta = timedelta(seconds=ttl)
             elif isinstance(ttl, timedelta):
                 ttl_delta = ttl
-        
+
         self._unified_cache.set(key, value, ttl=ttl_delta, namespace=self._namespace)
 
     def clear_cache(self) -> None:
-        """清空缓存"""
         if self._unified_cache is None:
-            raise RuntimeError("统一缓存服务未初始化")
-        
+            return
+
         self._unified_cache.clear_namespace(self._namespace)
         logger.debug(f"统一缓存命名空间 {self._namespace} 已清空")
 

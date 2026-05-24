@@ -258,7 +258,7 @@ class CompleteSystemIntegrationTest:
                             try:
                                 metrics = service_instance.get_metrics()
                                 self.service_metrics[service_name] = metrics
-                            except:
+                            except Exception:
                                 pass  # 某些服务可能没有实现指标
 
                     else:
@@ -586,7 +586,7 @@ class CompleteSystemIntegrationTest:
                         price=Decimal('10.00')
                     )
                     return success
-                except:
+                except Exception:
                     return False
 
             # 启动多个并发订单创建
@@ -776,7 +776,7 @@ class CompleteSystemIntegrationTest:
                     health = service_instance.perform_health_check()
                     if isinstance(health, dict) and health.get("status") == "healthy":
                         healthy_services += 1
-                except:
+                except Exception:
                     pass
 
             print(f"  健康服务数量: {healthy_services}")

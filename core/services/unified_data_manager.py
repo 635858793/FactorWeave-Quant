@@ -18,14 +18,41 @@ import pandas as pd
 import asyncio
 from asyncio import Future as AsyncioFuture
 import numpy as np
-import sqlite3
 import os
 import traceback
 
-from ..events import EventBus, DataUpdateEvent
-from ..containers import ServiceContainer, get_service_container
-from ..plugin_types import AssetType, DataType
-from ..tet_data_pipeline import TETDataPipeline, StandardQuery, StandardData
+from ..database.unified_sqlite_access import UnifiedSQLiteAccess
+
+try:
+    from ..events import EventBus, DataUpdateEvent
+    EVENTS_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"events模块导入失败: {e}")
+    EventBus = None
+    DataUpdateEvent = None
+    EVENTS_AVAILABLE = False
+
+try:
+    from ..containers import ServiceContainer, get_service_container
+except ImportError as e:
+    logger.warning(f"containers模块导入失败: {e}")
+    ServiceContainer = None
+    get_service_container = None
+
+try:
+    from ..plugin_types import AssetType, DataType
+except ImportError as e:
+    logger.warning(f"plugin_types模块导入失败: {e}")
+    AssetType = None
+    DataType = None
+
+try:
+    from ..tet_data_pipeline import TETDataPipeline, StandardQuery, StandardData
+except ImportError as e:
+    logger.warning(f"tet_data_pipeline模块导入失败: {e}")
+    TETDataPipeline = None
+    StandardQuery = None
+    StandardData = None
 
 try:
     from .asset_fallback_loader import AssetFallbackLoader
@@ -183,6 +210,8 @@ class UnifiedDataManager:
 
         self._cache_ttl = 300  # 5分钟缓存TTL
 
+        self._stock_info_cache = None
+
         # SQL注入防护：允许的列名白名单
         self._ALLOWED_STOCK_COLUMNS = frozenset({
             'code', 'name', 'industry', 'area', 'market', 'list_date',
@@ -206,13 +235,14 @@ class UnifiedDataManager:
         except Exception as e:
             logger.warning(f"获取统一缓存服务失败: {e}，将使用延迟初始化")
 
-        # 数据库连接
+        # 数据库连接（兼容模式：提供与sqlite3.connect相同的接口）
         try:
-            self.conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+            self.db_access = UnifiedSQLiteAccess.get_instance(DB_PATH)
+            # 兼容旧代码：提供一个获取连接的上下文管理器
             self._db_lock = threading.Lock()
         except Exception as e:
             logger.error(f"数据库连接失败: {e}")
-            self.conn = None
+            self.db_access = None
             self._db_lock = None
 
         # 初始化UniPluginDataManager (延迟模式)
@@ -1397,17 +1427,18 @@ class UnifiedDataManager:
                         # 为视图结果添加data_source列，默认值为'best_quality'
                         df['data_source'] = 'best_quality'
                         
-                        # 缓存质量评分（从查询结果中提取）
-                        if 'quality_score' in df.columns:
-                            for idx, row in df.iterrows():
-                                check_date = row['datetime'].date() if pd.notna(row['datetime']) else datetime.now().date()
-                                self._set_quality_score_to_cache(
-                                    symbol=stock_code,
-                                    frequency=frequency,
-                                    data_source='best_quality',
-                                    check_date=check_date.isoformat(),
-                                    score=row.get('quality_score', 0.0)
-                                )
+                        # 仅缓存最新一条记录的评分（数据按timestamp DESC排序，iloc[0]即最新）
+                        if 'quality_score' in df.columns and len(df) > 0:
+                            latest_ts = df['datetime'].iloc[0]
+                            latest_score = df['quality_score'].iloc[0]
+                            check_date = pd.Timestamp(latest_ts).date() if pd.notna(latest_ts) else datetime.now().date()
+                            self._set_quality_score_to_cache(
+                                symbol=stock_code,
+                                frequency=frequency,
+                                data_source='best_quality',
+                                check_date=check_date.isoformat(),
+                                score=float(latest_score) if pd.notna(latest_score) else 0.0
+                            )
                         
                         # 修复：对从DuckDB获取的数据进行标准化和排序
                         df = self._standardize_kdata_format(df, stock_code)
@@ -1663,7 +1694,7 @@ class UnifiedDataManager:
             if 'amount' not in df.columns:
                 df['amount'] = 0.0
 
-            # 数据类型转换
+            # 数据类型转换 — pd.to_numeric本身已是C级优化，直接逐列调用
             for col in ['open', 'high', 'low', 'close', 'volume', 'amount']:
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors='coerce')
@@ -1672,9 +1703,6 @@ class UnifiedDataManager:
             # 这是解决K线数据展示顺序错乱问题的关键修复
             if 'datetime' in df.columns and not df.empty:
                 try:
-                    # 确保datetime列是datetime类型（之前已经处理过，这里再次确认）
-                    df['datetime'] = pd.to_datetime(df['datetime'])
-                    # 按datetime升序排序（时间从旧到新）
                     df = df.sort_values(by='datetime', ascending=True).reset_index(drop=True)
                     logger.debug(f"K线数据已按时间升序排序: {stock_code}, 记录数={len(df)}, 时间范围={df['datetime'].min()} ~ {df['datetime'].max()}")
                 except Exception as sort_error:
@@ -1687,17 +1715,30 @@ class UnifiedDataManager:
             logger.error(f"标准化K线数据格式失败: {e}")
             return pd.DataFrame()
 
-    def get_stock_info(self, stock_code: str) -> Optional[Dict[str, Any]]:
-        """获取股票信息"""
-        try:
-            # FactorWeave-Quant已移除，使用TET框架获取股票信息
+    def invalidate_stock_info_cache(self):
+        """使股票信息缓存失效，下次调用 get_stock_info() 将重新加载全表"""
+        self._stock_info_cache = None
+        logger.debug("股票信息缓存已失效")
 
-            # 从股票列表中查找
-            stock_list = self.get_stock_list()
-            if not stock_list.empty:
-                matches = stock_list[stock_list['code'] == stock_code]
-                if not matches.empty:
-                    return matches.iloc[0].to_dict()
+    def get_stock_info(self, stock_code: str) -> Optional[Dict[str, Any]]:
+        """获取股票信息（带内存缓存，首次调用加载全表并 set_index('code')，后续 O(1) 查找）"""
+        try:
+            if self._stock_info_cache is None:
+                stock_list = self.get_stock_list()
+                if stock_list.empty:
+                    self._stock_info_cache = pd.DataFrame()
+                else:
+                    self._stock_info_cache = stock_list.set_index('code')
+                    logger.debug(f"股票信息缓存已初始化，共 {len(self._stock_info_cache)} 条记录")
+
+            if self._stock_info_cache.empty:
+                return None
+
+            if stock_code in self._stock_info_cache.index:
+                record = self._stock_info_cache.loc[stock_code]
+                if isinstance(record, pd.DataFrame):
+                    return record.iloc[0].to_dict()
+                return record.to_dict()
 
             return None
 
@@ -1897,13 +1938,16 @@ class UnifiedDataManager:
     def test_connection(self) -> bool:
         """测试数据源连接"""
         try:
-            # FactorWeave-Quant已移除，使用TET框架测试连接
+            if not self._data_sources:
+                logger.warning("无可用数据源，连接测试失败")
+                return False
+
             if self._current_source in self._data_sources:
-                # 尝试获取股票列表来测试连接
                 test_list = self._data_sources[self._current_source].get_stock_list('sh')
                 return not test_list.empty
             else:
-                return True  # 模拟模式总是可用
+                logger.warning(f"当前数据源 {self._current_source} 未在可用数据源中找到")
+                return False
 
         except Exception as e:
             logger.error(f"测试数据源连接失败: {e}")
@@ -1930,9 +1974,7 @@ class UnifiedDataManager:
             if hasattr(self, '_executor'):
                 self._executor.shutdown(wait=True)
 
-            # 关闭数据库连接
-            if self.conn:
-                self.conn.close()
+            # UnifiedSQLiteAccess 自动管理连接，无需手动关闭
 
             logger.info("统一数据管理器资源清理完成")
 
@@ -2357,15 +2399,16 @@ class UnifiedDataManager:
         if asset_data.empty:
             return []
 
-        result = []
-        for _, row in asset_data.iterrows():
-            result.append({
-                'symbol': row.get('symbol', ''),
-                'name': row.get('name', ''),
-                'asset_type': row.get('asset_type', ''),
-                'market': row.get('market', ''),
-                'status': row.get('status', 'active')
-            })
+        cols = ['symbol', 'name', 'asset_type', 'market']
+        df = asset_data[cols].copy()
+        for c in cols:
+            if c not in df.columns:
+                df[c] = ''
+        if 'status' not in asset_data.columns:
+            df['status'] = 'active'
+        else:
+            df['status'] = asset_data['status']
+        result = df.fillna('').to_dict('records')
 
         return result
 
@@ -2562,7 +2605,7 @@ class UnifiedDataManager:
                         'enabled': True,
                         'database_path': str(getattr(self.duckdb_manager, 'db_path', 'unknown'))
                     }
-                except:
+                except Exception:
                     duckdb_stats = {'enabled': False}
             else:
                 duckdb_stats = {'enabled': False}
@@ -2642,7 +2685,7 @@ class UnifiedDataManager:
         if isinstance(end_date, str):
             try:
                 end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
-            except:
+            except ValueError:
                 return True
 
         if isinstance(end_date, datetime):
@@ -3396,18 +3439,20 @@ class UnifiedDataManager:
                         # ========== 数据标准化阶段性能监控 ==========
                         standardization_start = time.time()
                         
-                        # 缓存质量评分（从查询结果中提取）
-                        if 'quality_score' in df.columns:
+                        # 仅缓存最新一条记录的评分（数据按timestamp DESC排序，iloc[0]即最新）
+                        if 'quality_score' in df.columns and len(df) > 0:
                             cache_start = time.time()
-                            for idx, row in df.iterrows():
-                                check_date = row['datetime'].date() if pd.notna(row['datetime']) else datetime.now().date()
-                                self._set_quality_score_to_cache(
-                                    symbol=row['code'],
-                                    frequency=frequency,
-                                    data_source='best_quality',
-                                    check_date=check_date.isoformat(),
-                                    score=row.get('quality_score', 0.0)
-                                )
+                            latest_code = df['code'].iloc[0]
+                            latest_ts = df['datetime'].iloc[0]
+                            latest_score = df['quality_score'].iloc[0]
+                            check_date = pd.Timestamp(latest_ts).date() if pd.notna(latest_ts) else datetime.now().date()
+                            self._set_quality_score_to_cache(
+                                symbol=latest_code,
+                                frequency=frequency,
+                                data_source='best_quality',
+                                check_date=check_date.isoformat(),
+                                score=float(latest_score) if pd.notna(latest_score) else 0.0
+                            )
                             cache_end = time.time()
                             logger.debug(f"⏱️ 质量评分缓存耗时: {cache_end - cache_start:.3f}秒")
 
@@ -4134,7 +4179,7 @@ class UnifiedDataManager:
                 try:
                     from ..plugin_manager import PluginManager
                     plugin_manager = self.service_container.resolve(PluginManager)
-                except:
+                except Exception:
                     logger.warning("无法获取插件管理器，跳过插件自动发现")
                     return
 
@@ -4239,8 +4284,8 @@ class UnifiedDataManager:
                 from core.containers import get_service_container
                 container = get_service_container()
                 plugin_manager = container.resolve(PluginManager) if container else None
-            except:
-                pass
+            except Exception as e:
+                logger.debug(f"无法通过ServiceContainer获取PluginManager: {e}")
 
         if not plugin_manager:
             logger.warning("⚠️ 插件管理器未初始化，无法注册插件")
@@ -4614,22 +4659,29 @@ class UnifiedDataManager:
                 else:
                     logger.warning(f"DuckDB添加失败，尝试SQLite: {stock_code}")
 
-            if self.conn and self._db_lock:
+            if self.db_access and self._db_lock:
                 with self._db_lock:
-                    cursor = self.conn.cursor()
-                    cursor.execute('''
-                        INSERT OR REPLACE INTO stocks (code, name, market, industry, list_date, delist_date, status)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                    ''', (
-                        stock_data.get('code'),
-                        stock_data.get('name'),
-                        stock_data.get('market'),
-                        stock_data.get('industry'),
-                        stock_data.get('list_date'),
-                        stock_data.get('delist_date'),
-                        stock_data.get('status', 'active')
-                    ))
-                    self.conn.commit()
+                    with self.db_access.get_connection() as conn:
+                        cursor = conn.cursor()
+                        cursor.execute('''
+                            INSERT INTO stocks (code, name, market, industry, list_date, delist_date, status)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                            ON CONFLICT(code) DO UPDATE SET
+                                name = excluded.name,
+                                market = excluded.market,
+                                industry = excluded.industry,
+                                list_date = excluded.list_date,
+                                delist_date = excluded.delist_date,
+                                status = excluded.status
+                        ''', (
+                            stock_data.get('code'),
+                            stock_data.get('name'),
+                            stock_data.get('market'),
+                            stock_data.get('industry'),
+                            stock_data.get('list_date'),
+                            stock_data.get('delist_date'),
+                            stock_data.get('status', 'active')
+                        ))
 
                 logger.info(f"股票信息已添加到SQLite: {stock_code}")
                 self._cache_data(cache_key, stock_data)
@@ -4661,27 +4713,27 @@ class UnifiedDataManager:
                         self._cache_data(cache_key, cached_data)
                     return True
 
-            if self.conn and self._db_lock:
+            if self.db_access and self._db_lock:
                 with self._db_lock:
-                    cursor = self.conn.cursor()
-                    # SQL注入防护：验证列名白名单
-                    validated_keys = self._validate_columns(list(data.keys()), self._ALLOWED_STOCK_COLUMNS)
-                    if not validated_keys:
-                        logger.error(f"股票数据列名验证失败，无有效列: {list(data.keys())}")
-                        return False
-                    set_clause = ', '.join([f"{key} = ?" for key in validated_keys])
-                    sql = f"UPDATE stocks SET {set_clause} WHERE code = ?"
-                    params = [data[key] for key in validated_keys] + [stock_code]
-                    cursor.execute(sql, params)
-                    self.conn.commit()
+                    with self.db_access.get_connection() as conn:
+                        cursor = conn.cursor()
+                        # SQL注入防护：验证列名白名单
+                        validated_keys = self._validate_columns(list(data.keys()), self._ALLOWED_STOCK_COLUMNS)
+                        if not validated_keys:
+                            logger.error(f"股票数据列名验证失败，无有效列: {list(data.keys())}")
+                            return False
+                        set_clause = ', '.join([f"{key} = ?" for key in validated_keys])
+                        sql = f"UPDATE stocks SET {set_clause} WHERE code = ?"
+                        params = [data[key] for key in validated_keys] + [stock_code]
+                        cursor.execute(sql, params)
 
-                    if cursor.rowcount > 0:
-                        logger.info(f"股票信息已在SQLite更新: {stock_code}")
-                        cached_data = self._get_cached_data(cache_key)
-                        if cached_data:
-                            cached_data.update(data)
-                            self._cache_data(cache_key, cached_data)
-                        return True
+                        if cursor.rowcount > 0:
+                            logger.info(f"股票信息已在SQLite更新: {stock_code}")
+                            cached_data = self._get_cached_data(cache_key)
+                            if cached_data:
+                                cached_data.update(data)
+                                self._cache_data(cache_key, cached_data)
+                            return True
 
             logger.error("数据库不可用，无法更新股票信息")
             return False
@@ -4706,15 +4758,15 @@ class UnifiedDataManager:
                     logger.info(f"股票信息已从DuckDB删除: {stock_code}")
                     deleted = True
 
-            if self.conn and self._db_lock:
+            if self.db_access and self._db_lock:
                 with self._db_lock:
-                    cursor = self.conn.cursor()
-                    cursor.execute("DELETE FROM stocks WHERE code = ?", (stock_code,))
-                    self.conn.commit()
+                    with self.db_access.get_connection() as conn:
+                        cursor = conn.cursor()
+                        cursor.execute("DELETE FROM stocks WHERE code = ?", (stock_code,))
 
-                    if cursor.rowcount > 0:
-                        logger.info(f"股票信息已从SQLite删除: {stock_code}")
-                        deleted = True
+                        if cursor.rowcount > 0:
+                            logger.info(f"股票信息已从SQLite删除: {stock_code}")
+                            deleted = True
 
             if deleted:
                 self._invalidate_cache(cache_key)
@@ -4728,36 +4780,66 @@ class UnifiedDataManager:
             return False
 
     def add_kline(self, stock_code: str, period: str, data: pd.DataFrame) -> bool:
-        """添加K线数据"""
         try:
             if not stock_code or data.empty:
                 logger.error("股票代码或K线数据无效")
                 return False
 
             cache_key = f"kdata_{stock_code}_{period}"
+            total_input = len(data)
 
             if self.duckdb_available and self.duckdb_operations:
                 success = self.duckdb_operations.insert_kline_data(stock_code, period, data)
                 if success:
-                    logger.info(f"K线数据已添加到DuckDB: {stock_code} ({period}), {len(data)} 条")
+                    logger.info(f"K线数据已添加到DuckDB: {stock_code} ({period}), {total_input} 条")
                     self._cache_data(cache_key, data)
                     return True
 
-            if self.conn and self._db_lock:
+            if self.db_access and self._db_lock:
                 with self._db_lock:
-                    cursor = self.conn.cursor()
-                    for _, row in data.iterrows():
-                        cursor.execute('''
-                            INSERT OR REPLACE INTO kline (stock_code, period, trade_date, open, high, low, close, volume, amount)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ''', (
-                            stock_code, period, row.get('trade_date'),
-                            row.get('open'), row.get('high'), row.get('low'),
-                            row.get('close'), row.get('volume'), row.get('amount')
-                        ))
-                    self.conn.commit()
+                    with self.db_access.get_connection() as conn:
+                        cursor = conn.cursor()
 
-                logger.info(f"K线数据已添加到SQLite: {stock_code} ({period}), {len(data)} 条")
+                        cursor.execute(
+                            "SELECT COUNT(*) FROM kline WHERE stock_code = ? AND period = ?",
+                            (stock_code, period)
+                        )
+                        before_count = cursor.fetchone()[0]
+
+                        inserted = 0
+                        records = [
+                            (stock_code, period, row.trade_date, row.open, row.high,
+                             row.low, row.close, row.volume, row.amount)
+                            for row in data.itertuples(index=False)
+                        ]
+                        cursor.executemany('''
+                            INSERT INTO kline (stock_code, period, trade_date, open, high, low, close, volume, amount)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ON CONFLICT(stock_code, period, trade_date) DO UPDATE SET
+                                open = excluded.open,
+                                high = excluded.high,
+                                low = excluded.low,
+                                close = excluded.close,
+                                volume = excluded.volume,
+                                amount = excluded.amount
+                        ''', records)
+                        inserted = len(records)
+
+                        cursor.execute(
+                            "SELECT COUNT(*) FROM kline WHERE stock_code = ? AND period = ?",
+                            (stock_code, period)
+                        )
+                        after_count = cursor.fetchone()[0]
+                        new_records = after_count - before_count
+                        duplicates = total_input - new_records
+
+                if duplicates > 0:
+                    logger.info(
+                        f"K线数据已添加到SQLite: {stock_code} ({period}), "
+                        f"总: {total_input} 条, 新增: {new_records} 条, 重复(跳过): {duplicates} 条"
+                    )
+                else:
+                    logger.info(f"K线数据已添加到SQLite: {stock_code} ({period}), {total_input} 条")
                 self._cache_data(cache_key, data)
                 return True
 
@@ -4801,28 +4883,28 @@ class UnifiedDataManager:
                     logger.info(f"K线数据已从DuckDB删除: {stock_code}")
                     deleted = True
 
-            if self.conn and self._db_lock:
+            if self.db_access and self._db_lock:
                 with self._db_lock:
-                    cursor = self.conn.cursor()
-                    sql = "DELETE FROM kline WHERE stock_code = ?"
-                    params = [stock_code]
+                    with self.db_access.get_connection() as conn:
+                        cursor = conn.cursor()
+                        sql = "DELETE FROM kline WHERE stock_code = ?"
+                        params = [stock_code]
 
-                    if period:
-                        sql += " AND period = ?"
-                        params.append(period)
-                    if start_date:
-                        sql += " AND trade_date >= ?"
-                        params.append(start_date)
-                    if end_date:
-                        sql += " AND trade_date <= ?"
-                        params.append(end_date)
+                        if period:
+                            sql += " AND period = ?"
+                            params.append(period)
+                        if start_date:
+                            sql += " AND trade_date >= ?"
+                            params.append(start_date)
+                        if end_date:
+                            sql += " AND trade_date <= ?"
+                            params.append(end_date)
 
-                    cursor.execute(sql, params)
-                    self.conn.commit()
+                        cursor.execute(sql, params)
 
-                    if cursor.rowcount > 0:
-                        logger.info(f"K线数据已从SQLite删除: {stock_code}")
-                        deleted = True
+                        if cursor.rowcount > 0:
+                            logger.info(f"K线数据已从SQLite删除: {stock_code}")
+                            deleted = True
 
             if deleted:
                 self._invalidate_cache(cache_pattern)
@@ -4836,7 +4918,6 @@ class UnifiedDataManager:
             return False
 
     def add_market_data(self, market_data: Dict[str, Any]) -> bool:
-        """添加行情数据"""
         try:
             if not market_data or 'code' not in market_data:
                 logger.error("行情数据无效，必须包含 'code' 字段")
@@ -4853,22 +4934,40 @@ class UnifiedDataManager:
                     self._cache_data(cache_key, market_data)
                     return True
 
-            if self.conn and self._db_lock:
+            if self.db_access and self._db_lock:
                 with self._db_lock:
-                    cursor = self.conn.cursor()
-                    cursor.execute('''
-                        INSERT OR REPLACE INTO market (code, trade_date, open, high, low, close, volume, amount, change_pct)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (
-                        stock_code, trade_date,
-                        market_data.get('open'), market_data.get('high'),
-                        market_data.get('low'), market_data.get('close'),
-                        market_data.get('volume'), market_data.get('amount'),
-                        market_data.get('change_pct')
-                    ))
-                    self.conn.commit()
+                    with self.db_access.get_connection() as conn:
+                        cursor = conn.cursor()
 
-                logger.info(f"行情数据已添加到SQLite: {stock_code} ({trade_date})")
+                        cursor.execute(
+                            "SELECT COUNT(*) FROM market WHERE code = ? AND trade_date = ?",
+                            (stock_code, trade_date)
+                        )
+                        existed = cursor.fetchone()[0] > 0
+
+                        cursor.execute('''
+                            INSERT INTO market (code, trade_date, open, high, low, close, volume, amount, change_pct)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ON CONFLICT(code, trade_date) DO UPDATE SET
+                                open = excluded.open,
+                                high = excluded.high,
+                                low = excluded.low,
+                                close = excluded.close,
+                                volume = excluded.volume,
+                                amount = excluded.amount,
+                                change_pct = excluded.change_pct
+                        ''', (
+                            stock_code, trade_date,
+                            market_data.get('open'), market_data.get('high'),
+                            market_data.get('low'), market_data.get('close'),
+                            market_data.get('volume'), market_data.get('amount'),
+                            market_data.get('change_pct')
+                        ))
+
+                if existed:
+                    logger.info(f"行情数据已更新(覆盖重复): {stock_code} ({trade_date})")
+                else:
+                    logger.info(f"行情数据已添加到SQLite: {stock_code} ({trade_date})")
                 self._cache_data(cache_key, market_data)
                 return True
 
@@ -4903,29 +5002,29 @@ class UnifiedDataManager:
                         self._cache_data(cache_key, cached_data)
                     return True
 
-            if self.conn and self._db_lock:
+            if self.db_access and self._db_lock:
                 with self._db_lock:
-                    cursor = self.conn.cursor()
-                    # SQL注入防护：验证列名白名单
-                    data_keys = [key for key in data.keys() if key != 'trade_date']
-                    validated_keys = self._validate_columns(data_keys, self._ALLOWED_MARKET_COLUMNS)
-                    if not validated_keys:
-                        logger.error(f"行情数据列名验证失败，无有效列: {data_keys}")
-                        return False
-                    set_clause = ', '.join([f"{key} = ?" for key in validated_keys])
-                    sql = f"UPDATE market SET {set_clause} WHERE code = ? AND trade_date = ?"
-                    params = [data[key] for key in validated_keys]
-                    params.extend([index_code, trade_date])
-                    cursor.execute(sql, params)
-                    self.conn.commit()
+                    with self.db_access.get_connection() as conn:
+                        cursor = conn.cursor()
+                        # SQL注入防护：验证列名白名单
+                        data_keys = [key for key in data.keys() if key != 'trade_date']
+                        validated_keys = self._validate_columns(data_keys, self._ALLOWED_MARKET_COLUMNS)
+                        if not validated_keys:
+                            logger.error(f"行情数据列名验证失败，无有效列: {data_keys}")
+                            return False
+                        set_clause = ', '.join([f"{key} = ?" for key in validated_keys])
+                        sql = f"UPDATE market SET {set_clause} WHERE code = ? AND trade_date = ?"
+                        params = [data[key] for key in validated_keys]
+                        params.extend([index_code, trade_date])
+                        cursor.execute(sql, params)
 
-                    if cursor.rowcount > 0:
-                        logger.info(f"行情数据已在SQLite更新: {index_code} ({trade_date})")
-                        cached_data = self._get_cached_data(cache_key)
-                        if cached_data:
-                            cached_data.update(data)
-                            self._cache_data(cache_key, cached_data)
-                        return True
+                        if cursor.rowcount > 0:
+                            logger.info(f"行情数据已在SQLite更新: {index_code} ({trade_date})")
+                            cached_data = self._get_cached_data(cache_key)
+                            if cached_data:
+                                cached_data.update(data)
+                                self._cache_data(cache_key, cached_data)
+                            return True
 
             logger.error("数据库不可用，无法更新行情数据")
             return False
@@ -4950,22 +5049,22 @@ class UnifiedDataManager:
                     logger.info(f"行情数据已从DuckDB删除: {index_code}")
                     deleted = True
 
-            if self.conn and self._db_lock:
+            if self.db_access and self._db_lock:
                 with self._db_lock:
-                    cursor = self.conn.cursor()
-                    sql = "DELETE FROM market WHERE code = ?"
-                    params = [index_code]
+                    with self.db_access.get_connection() as conn:
+                        cursor = conn.cursor()
+                        sql = "DELETE FROM market WHERE code = ?"
+                        params = [index_code]
 
-                    if date:
-                        sql += " AND trade_date = ?"
-                        params.append(date)
+                        if date:
+                            sql += " AND trade_date = ?"
+                            params.append(date)
 
-                    cursor.execute(sql, params)
-                    self.conn.commit()
+                        cursor.execute(sql, params)
 
-                    if cursor.rowcount > 0:
-                        logger.info(f"行情数据已从SQLite删除: {index_code}")
-                        deleted = True
+                        if cursor.rowcount > 0:
+                            logger.info(f"行情数据已从SQLite删除: {index_code}")
+                            deleted = True
 
             if deleted:
                 self._invalidate_cache(cache_pattern)

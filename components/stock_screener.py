@@ -13,7 +13,6 @@ import numpy as np
 from typing import Dict, Any, Optional, List, Union
 from core.services.unified_data_manager import UnifiedDataManager
 from core.stock_screener import StockScreener
-from loguru import logger
 import traceback
 import time
 import json
@@ -22,13 +21,10 @@ import os
 from datetime import datetime
 from matplotlib.backends.backend_qt5agg import FigureCanvas
 from matplotlib.figure import Figure
-import json
-import traceback
 from core.indicator_adapter import calc_ma, calc_macd, calc_rsi, calc_kdj, calc_boll, calc_atr, calc_obv, calc_cci, calc_wr, calc_talib_indicator, get_talib_indicator_list
 from core.indicator_service import get_indicator_categories, get_all_indicators_metadata, get_indicator_metadata
 from gui.ui_components import BaseAnalysisPanel, AnalysisToolsPanel
 from concurrent.futures import ThreadPoolExecutor
-import os
 
 
 class PagedTableWidget(QWidget):

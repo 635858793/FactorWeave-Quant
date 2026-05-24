@@ -6,9 +6,7 @@ JIT配置管理器
 import yaml
 from pathlib import Path
 from typing import Dict, List, Any, Optional
-import logging
-
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 class JITConfigManager:

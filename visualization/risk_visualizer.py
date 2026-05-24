@@ -29,7 +29,7 @@ class RiskVisualizer:
             try:
                 # 如果seaborn不可用，尝试使用ggplot样式
                 plt.style.use('ggplot')
-            except:
+            except Exception:
                 # 如果ggplot也不可用，使用默认样式
                 plt.style.use('default')
                 logger.warning("无法设置seaborn或ggplot样式，使用默认样式")

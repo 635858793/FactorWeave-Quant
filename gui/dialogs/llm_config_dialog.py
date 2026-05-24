@@ -5,7 +5,7 @@ LLM配置对话框
 """
 
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QTabWidget,
+    QVBoxLayout, QHBoxLayout, QTabWidget,
     QGroupBox, QFormLayout, QComboBox, QLineEdit,
     QPushButton, QLabel, QSpinBox, QDoubleSpinBox,
     QCheckBox, QTextEdit, QMessageBox, QTableWidget,
@@ -15,6 +15,8 @@ from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QFont
 from loguru import logger
 from typing import Optional, Dict, Any
+
+from .base_dialog import BaseDialog
 
 try:
     from core.services.llm_config_service import (
@@ -28,7 +30,7 @@ except ImportError:
     LLMProviderInfo = None
 
 
-class LLMConfigDialog(QDialog):
+class LLMConfigDialog(BaseDialog):
     """LLM配置对话框"""
 
     config_updated = pyqtSignal()
@@ -41,14 +43,16 @@ class LLMConfigDialog(QDialog):
             parent: 父窗口
             llm_config_service: LLM配置服务
         """
-        super().__init__(parent)
         self.llm_config_service = llm_config_service
         self.current_provider = None
         self.current_config = None
 
-        self.setWindowTitle("LLM配置")
-        self.setMinimumSize(900, 700)
-        self.setModal(True)
+        super().__init__(
+            parent,
+            title="LLM配置",
+            min_size=(900, 700),
+            settings_key="LLMConfigDialog"
+        )
 
         self.setup_ui()
         self.load_current_config()

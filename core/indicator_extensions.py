@@ -375,11 +375,11 @@ class IIndicatorPlugin(ABC, INetworkConfigurable):
             # 创建测试数据
             dates = pd.date_range('2023-01-01', periods=100, freq='D')
             test_data = pd.DataFrame({
-                'open': np.random.randn(100).cumsum() + 100,
-                'high': np.random.randn(100).cumsum() + 105,
-                'low': np.random.randn(100).cumsum() + 95,
-                'close': np.random.randn(100).cumsum() + 100,
-                'volume': np.random.randint(1000, 10000, 100)
+                'open': np.linspace(95, 105, 100),
+                'high': np.linspace(100, 110, 100),
+                'low': np.linspace(90, 100, 100),
+                'close': np.linspace(95, 105, 100),
+                'volume': np.full(100, 5000)
             }, index=dates)
 
             kline_data = StandardKlineData.from_dataframe(test_data)

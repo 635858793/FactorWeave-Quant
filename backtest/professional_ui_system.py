@@ -24,9 +24,10 @@ import base64
 from io import BytesIO
 import matplotlib.pyplot as plt
 import seaborn as sns
+import psutil
 from backtest.real_time_backtest_monitor import RealTimeBacktestMonitor, MonitoringLevel
 from backtest.ultra_performance_optimizer import UltraPerformanceOptimizer, PerformanceLevel
-from backtest.unified_backtest_engine import UnifiedBacktestEngine, BacktestLevel
+from backtest.unified_backtest_engine import UnifiedBacktestEngine, BacktestLevel, UnifiedRiskMetrics
 
 
 class UITheme:
@@ -101,6 +102,8 @@ class ProfessionalUISystem:
                 'cumulative_return', 'drawdown', 'sharpe_ratio']
         if 'alerts' not in st.session_state:
             st.session_state.alerts = []
+        if 'backtest_data' not in st.session_state:
+            st.session_state.backtest_data = None
         if 'backtest_engine' not in st.session_state:
             st.session_state.backtest_engine = None
         if 'monitor' not in st.session_state:
@@ -409,6 +412,7 @@ class ProfessionalUISystem:
             col1, col2 = st.columns(2)
             with col1:
                 if st.button("开始回测", use_container_width=True):
+                    st.session_state['_monitoring_level'] = monitoring_level
                     self._start_backtest(
                         initial_capital, position_size, commission_pct, professional_level, performance_level)
 
@@ -976,95 +980,193 @@ class ProfessionalUISystem:
         try:
             st.info("正在启动回测...")
 
-            # 生成模拟数据进行演示
-            backtest_result = self._generate_mock_backtest_result(
-                initial_capital)
+            monitoring_level = st.session_state.get('_monitoring_level', 'REAL_TIME')
+            backtest_result = self._run_backtest(
+                initial_capital, position_size, commission_pct,
+                professional_level, performance_level, monitoring_level)
 
-            # 存储结果
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             st.session_state.backtest_results[timestamp] = backtest_result
 
-            # 启动实时监控
             self._start_real_time_monitoring()
 
-            st.success("回测启动成功！")
+            if backtest_result.get('_error'):
+                st.warning(f"回测完成但存在问题: {backtest_result.get('_error')}")
+            elif backtest_result.get('_warning'):
+                st.warning(backtest_result.get('_warning'))
+            else:
+                st.success("回测启动成功！")
 
         except Exception as e:
             st.error(f"回测启动失败: {str(e)}")
             logger.error(f"回测启动失败: {e}")
 
-    def _generate_mock_backtest_result(self, initial_capital: float) -> Dict:
-        """生成模拟回测结果用于演示"""
+    def _run_backtest(self, initial_capital: float, position_size: float,
+                    commission_pct: float, professional_level: str,
+                    performance_level: str, monitoring_level: str) -> Dict:
+        """运行真实回测引擎"""
+
+        level_map = {
+            "RETAIL": BacktestLevel.BASIC,
+            "INSTITUTIONAL": BacktestLevel.INSTITUTIONAL,
+            "HEDGE_FUND": BacktestLevel.PROFESSIONAL,
+            "INVESTMENT_BANK": BacktestLevel.INVESTMENT_BANK
+        }
+        backtest_level = level_map.get(professional_level, BacktestLevel.PROFESSIONAL)
+
+        perf_level_map = {
+            "STANDARD": PerformanceLevel.STANDARD,
+            "HIGH": PerformanceLevel.HIGH,
+            "ULTRA": PerformanceLevel.ULTRA,
+            "EXTREME": PerformanceLevel.EXTREME
+        }
+        perf_level = perf_level_map.get(performance_level, PerformanceLevel.ULTRA)
+
+        mon_level_map = {
+            "BASIC": MonitoringLevel.BASIC,
+            "STANDARD": MonitoringLevel.STANDARD,
+            "ADVANCED": MonitoringLevel.ADVANCED,
+            "REAL_TIME": MonitoringLevel.REAL_TIME
+        }
+        mon_level = mon_level_map.get(monitoring_level, MonitoringLevel.REAL_TIME)
+
         try:
-            # 生成模拟数据
-            dates = pd.date_range(start='2023-01-01',
-                                  end='2023-12-31', freq='D')
-            n_days = len(dates)
+            engine = UnifiedBacktestEngine(backtest_level=backtest_level)
+            st.session_state.backtest_engine = engine
 
-            # 模拟价格数据
-            np.random.seed(42)
-            returns = np.random.normal(0.0005, 0.02, n_days)  # 日收益率
-            prices = 100 * np.cumprod(1 + returns)
+            data = st.session_state.get('backtest_data')
+            if data is None or (isinstance(data, pd.DataFrame) and data.empty):
+                logger.warning("无可用的回测数据，返回空结果")
+                return {
+                    'backtest_result': pd.DataFrame(),
+                    'risk_metrics': UnifiedRiskMetrics(),
+                    'performance_metrics': {
+                        'execution_time': 0.0,
+                        'memory_usage': 0.0,
+                        'cpu_usage': 0.0,
+                        'vectorization_ratio': 0.0
+                    },
+                    'trade_statistics': {
+                        'total_trades': 0,
+                        'win_rate': 0.0,
+                        'profit_factor': 0.0
+                    },
+                    '_warning': '无可用的回测数据，请先加载数据后重试'
+                }
 
-            # 模拟交易信号
-            signals = np.random.choice([-1, 0, 1], n_days, p=[0.1, 0.8, 0.1])
+            signal_col = 'signal' if 'signal' in data.columns else None
+            price_col = 'close' if 'close' in data.columns else None
 
-            # 创建DataFrame
-            backtest_df = pd.DataFrame({
-                'close': prices,
-                'signal': signals,
-                'returns': returns,
-                'position': np.random.uniform(0, 1000, n_days),
-                'capital': initial_capital * np.cumprod(1 + returns),
-                'trades': np.random.choice([0, 1, -1], n_days, p=[0.9, 0.05, 0.05])
-            }, index=dates)
+            if signal_col is None or price_col is None:
+                logger.warning("数据缺少必需的signal或close列")
+                return {
+                    'backtest_result': data if isinstance(data, pd.DataFrame) else pd.DataFrame(),
+                    'risk_metrics': UnifiedRiskMetrics(),
+                    'performance_metrics': {
+                        'execution_time': 0.0,
+                        'memory_usage': 0.0,
+                        'cpu_usage': 0.0,
+                        'vectorization_ratio': 0.0
+                    },
+                    'trade_statistics': {
+                        'total_trades': 0,
+                        'win_rate': 0.0,
+                        'profit_factor': 0.0
+                    },
+                    '_warning': '数据缺少必需的signal或close列，请检查数据格式'
+                }
 
-            # 计算风险指标
-            total_return = (
-                backtest_df['capital'].iloc[-1] / initial_capital) - 1
-            annualized_return = (1 + total_return) ** (252 / n_days) - 1
-            volatility = returns.std() * np.sqrt(252)
-            sharpe_ratio = annualized_return / volatility if volatility != 0 else 0
+            t_start = time.perf_counter()
 
-            # 计算最大回撤
-            cumulative = backtest_df['capital'] / initial_capital
-            running_max = cumulative.cummax()
-            drawdown = (cumulative - running_max) / running_max
-            max_drawdown = abs(drawdown.min())
+            engine_result = engine.run_backtest(
+                data=data,
+                signal_col=signal_col,
+                price_col=price_col,
+                initial_capital=initial_capital,
+                position_size=position_size,
+                commission_pct=commission_pct
+            )
 
-            # 模拟风险指标对象
-            class MockRiskMetrics:
-                def __init__(self):
-                    self.total_return = total_return
-                    self.annualized_return = annualized_return
-                    self.volatility = volatility
-                    self.sharpe_ratio = sharpe_ratio
-                    self.max_drawdown = max_drawdown
-                    self.win_rate = 0.55
-                    self.profit_factor = 1.2
-                    self.var_95 = abs(np.percentile(returns, 5))  # 修复：VaR应该为正值表示损失
-                    self.sortino_ratio = sharpe_ratio * 1.2
-                    self.calmar_ratio = annualized_return / max_drawdown if max_drawdown != 0 else 0
+            backtest_df = engine.results
+            if backtest_df is not None:
+                if 'signal' in backtest_df.columns and 'trades' not in backtest_df.columns:
+                    backtest_df['trades'] = backtest_df['signal']
+            else:
+                backtest_df = pd.DataFrame()
+
+            risk_metrics = engine.metrics if engine.metrics is not None else UnifiedRiskMetrics()
+
+            try:
+                optimizer = UltraPerformanceOptimizer(performance_level=perf_level)
+                opt_result, perf_metrics = optimizer.optimize_backtest(
+                    data,
+                    initial_capital=initial_capital,
+                    position_size=position_size,
+                    commission_pct=commission_pct
+                )
+                backtest_df = opt_result if opt_result is not None else backtest_df
+                if 'signal' in backtest_df.columns and 'trades' not in backtest_df.columns:
+                    backtest_df['trades'] = backtest_df['signal']
+                performance_metrics = {
+                    'execution_time': perf_metrics.execution_time,
+                    'memory_usage': perf_metrics.memory_usage,
+                    'cpu_usage': perf_metrics.cpu_utilization,
+                    'vectorization_ratio': perf_metrics.parallel_efficiency
+                }
+            except Exception as e:
+                logger.warning(f"UltraPerformanceOptimizer执行失败，使用直接测量: {e}")
+                execution_time = time.perf_counter() - t_start
+                performance_metrics = {
+                    'execution_time': execution_time,
+                    'memory_usage': psutil.virtual_memory().percent,
+                    'cpu_usage': psutil.cpu_percent(interval=None),
+                    'vectorization_ratio': 1.0
+                }
+
+            trade_stats = {
+                'total_trades': engine_result.get('total_trades', 0) if isinstance(engine_result, dict) else 0,
+                'win_rate': risk_metrics.win_rate,
+                'profit_factor': risk_metrics.profit_factor
+            }
+
+            try:
+                monitor = RealTimeBacktestMonitor(monitoring_level=mon_level)
+                monitor.start_monitoring(engine, data,
+                                         initial_capital=initial_capital,
+                                         position_size=position_size,
+                                         commission_pct=commission_pct,
+                                         signal_col=signal_col,
+                                         price_col=price_col)
+                st.session_state.monitor = monitor
+                logger.info(f"RealTimeBacktestMonitor已启动，级别: {mon_level.value}")
+            except Exception as e:
+                logger.warning(f"RealTimeBacktestMonitor启动失败: {e}")
 
             return {
                 'backtest_result': backtest_df,
-                'risk_metrics': MockRiskMetrics(),
-                'performance_metrics': {
-                    'execution_time': np.random.uniform(0.5, 2.0),
-                    'memory_usage': np.random.uniform(50, 200),
-                    'cpu_usage': np.random.uniform(20, 80),
-                    'vectorization_ratio': np.random.uniform(0.8, 1.0)
-                },
-                'trade_statistics': {
-                    'total_trades': int(np.sum(signals != 0)),
-                    'win_rate': 0.55,
-                    'profit_factor': 1.2
-                }
+                'risk_metrics': risk_metrics,
+                'performance_metrics': performance_metrics,
+                'trade_statistics': trade_stats
             }
 
         except Exception as e:
-            logger.error(f"生成模拟回测结果失败: {e}")
-            return {}
+            logger.error(f"运行回测失败: {e}")
+            return {
+                'backtest_result': pd.DataFrame(),
+                'risk_metrics': UnifiedRiskMetrics(),
+                'performance_metrics': {
+                    'execution_time': 0.0,
+                    'memory_usage': 0.0,
+                    'cpu_usage': 0.0,
+                    'vectorization_ratio': 0.0
+                },
+                'trade_statistics': {
+                    'total_trades': 0,
+                    'win_rate': 0.0,
+                    'profit_factor': 0.0
+                },
+                '_error': str(e)
+            }
 
     def _start_real_time_monitoring(self):
         """启动实时监控"""
@@ -1077,36 +1179,33 @@ class ProfessionalUISystem:
             """监控循环"""
             while self.is_running:
                 try:
-                    # 生成模拟监控数据
-                    current_time = datetime.now()
+                    monitor = st.session_state.get('monitor')
+                    if monitor is not None and monitor.is_monitoring:
+                        latest_metrics = monitor.get_latest_metrics()
+                        if latest_metrics is not None:
+                            monitoring_data = {
+                                'timestamp': latest_metrics.timestamp,
+                                'current_return': latest_metrics.current_return,
+                                'cumulative_return': latest_metrics.cumulative_return,
+                                'current_drawdown': latest_metrics.current_drawdown,
+                                'max_drawdown': latest_metrics.max_drawdown,
+                                'sharpe_ratio': latest_metrics.sharpe_ratio,
+                                'volatility': latest_metrics.volatility,
+                                'var_95': latest_metrics.var_95,
+                                'execution_time': latest_metrics.execution_time
+                            }
 
-                    # 模拟实时指标
-                    monitoring_data = {
-                        'timestamp': current_time,
-                        'current_return': np.random.normal(0.001, 0.02),
-                        'cumulative_return': np.random.uniform(-0.1, 0.3),
-                        'current_drawdown': np.random.uniform(0, 0.15),
-                        'max_drawdown': np.random.uniform(0.05, 0.2),
-                        'sharpe_ratio': np.random.uniform(-0.5, 2.5),
-                        'volatility': np.random.uniform(0.1, 0.4),
-                        'var_95': np.random.uniform(-0.05, -0.01),
-                        'execution_time': np.random.uniform(0.1, 1.0)
-                    }
+                            st.session_state.monitoring_data.append(monitoring_data)
 
-                    # 添加到监控数据
-                    st.session_state.monitoring_data.append(monitoring_data)
+                            if len(st.session_state.monitoring_data) > 1000:
+                                st.session_state.monitoring_data = st.session_state.monitoring_data[-1000:]
 
-                    # 保持最近1000个数据点
-                    if len(st.session_state.monitoring_data) > 1000:
-                        st.session_state.monitoring_data = st.session_state.monitoring_data[-1000:]
-
-                    time.sleep(2)  # 每2秒更新一次
+                    time.sleep(2)
 
                 except Exception as e:
                     logger.error(f"监控循环异常: {e}")
                     break
 
-        # 启动监控线程
         self.update_thread = threading.Thread(
             target=monitoring_loop, daemon=True)
         self.update_thread.start()
@@ -1116,6 +1215,15 @@ class ProfessionalUISystem:
         self.is_running = False
         if self.update_thread and self.update_thread.is_alive():
             self.update_thread.join(timeout=1)
+
+        monitor = st.session_state.get('monitor')
+        if monitor is not None and monitor.is_monitoring:
+            try:
+                monitor.stop_monitoring()
+                logger.info("RealTimeBacktestMonitor已停止")
+            except Exception as e:
+                logger.warning(f"停止RealTimeBacktestMonitor失败: {e}")
+            st.session_state.monitor = None
 
     def run(self):
         """运行UI系统"""

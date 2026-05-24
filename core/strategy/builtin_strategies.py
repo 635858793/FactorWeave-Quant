@@ -54,34 +54,33 @@ class MAStrategy(BaseStrategy):
         # 信号变化点
         data['signal_change'] = data['signal'].diff()
 
-        for i in range(long_period, len(data)):
-            if data.iloc[i]['signal_change'] == 2:  # 从-1变为1，买入信号
-                confidence = self.calculate_confidence(data, i)
-                if confidence >= min_confidence:
-                    signals.append(StrategySignal(
-                        timestamp=data.index[i],
-                        signal_type=SignalType.BUY,
-                        price=data.iloc[i]['close'],
-                        confidence=confidence,
-                        strategy_name=self.name,
-                        reason=f"短期MA({short_period})上穿长期MA({long_period})",
-                        stop_loss=data.iloc[i]['close'] * 0.95,
-                        take_profit=data.iloc[i]['close'] * 1.1
-                    ))
+        buy_mask = data['signal_change'] == 2
+        sell_mask = data['signal_change'] == -2
+        signal_indices = data.index[buy_mask | sell_mask]
+        if len(signal_indices) == 0:
+            return signals
 
-            elif data.iloc[i]['signal_change'] == -2:  # 从1变为-1，卖出信号
-                confidence = self.calculate_confidence(data, i)
-                if confidence >= min_confidence:
-                    signals.append(StrategySignal(
-                        timestamp=data.index[i],
-                        signal_type=SignalType.SELL,
-                        price=data.iloc[i]['close'],
-                        confidence=confidence,
-                        strategy_name=self.name,
-                        reason=f"短期MA({short_period})下穿长期MA({long_period})",
-                        stop_loss=data.iloc[i]['close'] * 1.05,
-                        take_profit=data.iloc[i]['close'] * 0.9
-                    ))
+        for idx in signal_indices:
+            i = data.index.get_loc(idx)
+            if i < long_period:
+                continue
+            row = data.iloc[i]
+            sc = row['signal_change']
+            confidence = self.calculate_confidence(data, i)
+            if confidence < min_confidence:
+                continue
+            if sc == 2:
+                signals.append(StrategySignal(
+                    timestamp=idx, signal_type=SignalType.BUY, price=row['close'],
+                    confidence=confidence, strategy_name=self.name,
+                    reason=f"短期MA({short_period})上穿长期MA({long_period})",
+                    stop_loss=row['close'] * 0.95, take_profit=row['close'] * 1.1))
+            elif sc == -2:
+                signals.append(StrategySignal(
+                    timestamp=idx, signal_type=SignalType.SELL, price=row['close'],
+                    confidence=confidence, strategy_name=self.name,
+                    reason=f"短期MA({short_period})下穿长期MA({long_period})",
+                    stop_loss=row['close'] * 1.05, take_profit=row['close'] * 0.9))
 
         return signals
 
@@ -157,34 +156,34 @@ class MACDStrategy(BaseStrategy):
         # 信号变化点
         data['signal_change'] = data['macd_signal'].diff()
 
-        for i in range(slow_period + signal_period, len(data)):
-            if data.iloc[i]['signal_change'] == 2:  # 金叉
-                confidence = self.calculate_confidence(data, i)
-                if confidence >= min_confidence:
-                    signals.append(StrategySignal(
-                        timestamp=data.index[i],
-                        signal_type=SignalType.BUY,
-                        price=data.iloc[i]['close'],
-                        confidence=confidence,
-                        strategy_name=self.name,
-                        reason="MACD金叉",
-                        stop_loss=data.iloc[i]['close'] * 0.95,
-                        take_profit=data.iloc[i]['close'] * 1.1
-                    ))
+        buy_mask = data['signal_change'] == 2
+        sell_mask = data['signal_change'] == -2
+        signal_indices = data.index[buy_mask | sell_mask]
+        if len(signal_indices) == 0:
+            return signals
 
-            elif data.iloc[i]['signal_change'] == -2:  # 死叉
-                confidence = self.calculate_confidence(data, i)
-                if confidence >= min_confidence:
-                    signals.append(StrategySignal(
-                        timestamp=data.index[i],
-                        signal_type=SignalType.SELL,
-                        price=data.iloc[i]['close'],
-                        confidence=confidence,
-                        strategy_name=self.name,
-                        reason="MACD死叉",
-                        stop_loss=data.iloc[i]['close'] * 1.05,
-                        take_profit=data.iloc[i]['close'] * 0.9
-                    ))
+        start_pos = slow_period + signal_period
+        for idx in signal_indices:
+            i = data.index.get_loc(idx)
+            if i < start_pos:
+                continue
+            row = data.iloc[i]
+            sc = row['signal_change']
+            confidence = self.calculate_confidence(data, i)
+            if confidence < min_confidence:
+                continue
+            if sc == 2:
+                signals.append(StrategySignal(
+                    timestamp=idx, signal_type=SignalType.BUY, price=row['close'],
+                    confidence=confidence, strategy_name=self.name,
+                    reason="MACD金叉", stop_loss=row['close'] * 0.95,
+                    take_profit=row['close'] * 1.1))
+            elif sc == -2:
+                signals.append(StrategySignal(
+                    timestamp=idx, signal_type=SignalType.SELL, price=row['close'],
+                    confidence=confidence, strategy_name=self.name,
+                    reason="MACD死叉", stop_loss=row['close'] * 1.05,
+                    take_profit=row['close'] * 0.9))
 
         return signals
 
@@ -250,39 +249,35 @@ class RSIStrategy(BaseStrategy):
         rs = gain / loss
         data['rsi'] = 100 - (100 / (1 + rs))
 
-        for i in range(period + 1, len(data)):
-            current_rsi = data.iloc[i]['rsi']
+        data['prev_rsi'] = data['rsi'].shift(1)
+        buy_mask = (data['prev_rsi'] <= oversold) & (data['rsi'] > oversold)
+        sell_mask = (data['prev_rsi'] >= overbought) & (data['rsi'] < overbought)
+        signal_indices = data.index[buy_mask | sell_mask]
+        if len(signal_indices) == 0:
+            return signals
+
+        start_pos = period + 2
+        for idx in signal_indices:
+            i = data.index.get_loc(idx)
+            if i < start_pos:
+                continue
+            row = data.iloc[i]
+            confidence = self.calculate_confidence(data, i)
+            if confidence < min_confidence:
+                continue
             prev_rsi = data.iloc[i-1]['rsi']
-
-            # 超卖反弹信号
-            if prev_rsi <= oversold and current_rsi > oversold:
-                confidence = self.calculate_confidence(data, i)
-                if confidence >= min_confidence:
-                    signals.append(StrategySignal(
-                        timestamp=data.index[i],
-                        signal_type=SignalType.BUY,
-                        price=data.iloc[i]['close'],
-                        confidence=confidence,
-                        strategy_name=self.name,
-                        reason=f"RSI从超卖区({oversold})反弹",
-                        stop_loss=data.iloc[i]['close'] * 0.95,
-                        take_profit=data.iloc[i]['close'] * 1.1
-                    ))
-
-            # 超买回落信号
-            elif prev_rsi >= overbought and current_rsi < overbought:
-                confidence = self.calculate_confidence(data, i)
-                if confidence >= min_confidence:
-                    signals.append(StrategySignal(
-                        timestamp=data.index[i],
-                        signal_type=SignalType.SELL,
-                        price=data.iloc[i]['close'],
-                        confidence=confidence,
-                        strategy_name=self.name,
-                        reason=f"RSI从超买区({overbought})回落",
-                        stop_loss=data.iloc[i]['close'] * 1.05,
-                        take_profit=data.iloc[i]['close'] * 0.9
-                    ))
+            if prev_rsi <= oversold:
+                signals.append(StrategySignal(
+                    timestamp=idx, signal_type=SignalType.BUY, price=row['close'],
+                    confidence=confidence, strategy_name=self.name,
+                    reason=f"RSI从超卖区({oversold})反弹",
+                    stop_loss=row['close'] * 0.95, take_profit=row['close'] * 1.1))
+            else:
+                signals.append(StrategySignal(
+                    timestamp=idx, signal_type=SignalType.SELL, price=row['close'],
+                    confidence=confidence, strategy_name=self.name,
+                    reason=f"RSI从超买区({overbought})回落",
+                    stop_loss=row['close'] * 1.05, take_profit=row['close'] * 0.9))
 
         return signals
 
@@ -355,41 +350,37 @@ class KDJStrategy(BaseStrategy):
         data['d'] = data['k'].ewm(alpha=1/d_period).mean()
         data['j'] = 3 * data['k'] - 2 * data['d']
 
-        for i in range(period + k_period + d_period, len(data)):
-            k_val = data.iloc[i]['k']
-            d_val = data.iloc[i]['d']
+        data['prev_k'] = data['k'].shift(1)
+        data['prev_d'] = data['d'].shift(1)
+        buy_mask = (data['prev_k'] <= data['prev_d']) & (data['k'] > data['d']) & (data['k'] < oversold + 10)
+        sell_mask = (data['prev_k'] >= data['prev_d']) & (data['k'] < data['d']) & (data['k'] > overbought - 10)
+        signal_indices = data.index[buy_mask | sell_mask]
+        if len(signal_indices) == 0:
+            return signals
+
+        start_pos = period + k_period + d_period + 2
+        for idx in signal_indices:
+            i = data.index.get_loc(idx)
+            if i < start_pos:
+                continue
+            row = data.iloc[i]
+            confidence = self.calculate_confidence(data, i)
+            if confidence < min_confidence:
+                continue
             prev_k = data.iloc[i-1]['k']
             prev_d = data.iloc[i-1]['d']
-
-            # 金叉且在超卖区
-            if prev_k <= prev_d and k_val > d_val and k_val < oversold + 10:
-                confidence = self.calculate_confidence(data, i)
-                if confidence >= min_confidence:
-                    signals.append(StrategySignal(
-                        timestamp=data.index[i],
-                        signal_type=SignalType.BUY,
-                        price=data.iloc[i]['close'],
-                        confidence=confidence,
-                        strategy_name=self.name,
-                        reason="KDJ金叉且处于超卖区",
-                        stop_loss=data.iloc[i]['close'] * 0.95,
-                        take_profit=data.iloc[i]['close'] * 1.1
-                    ))
-
-            # 死叉且在超买区
-            elif prev_k >= prev_d and k_val < d_val and k_val > overbought - 10:
-                confidence = self.calculate_confidence(data, i)
-                if confidence >= min_confidence:
-                    signals.append(StrategySignal(
-                        timestamp=data.index[i],
-                        signal_type=SignalType.SELL,
-                        price=data.iloc[i]['close'],
-                        confidence=confidence,
-                        strategy_name=self.name,
-                        reason="KDJ死叉且处于超买区",
-                        stop_loss=data.iloc[i]['close'] * 1.05,
-                        take_profit=data.iloc[i]['close'] * 0.9
-                    ))
+            if prev_k <= prev_d:
+                signals.append(StrategySignal(
+                    timestamp=idx, signal_type=SignalType.BUY, price=row['close'],
+                    confidence=confidence, strategy_name=self.name,
+                    reason="KDJ金叉且处于超卖区",
+                    stop_loss=row['close'] * 0.95, take_profit=row['close'] * 1.1))
+            else:
+                signals.append(StrategySignal(
+                    timestamp=idx, signal_type=SignalType.SELL, price=row['close'],
+                    confidence=confidence, strategy_name=self.name,
+                    reason="KDJ死叉且处于超买区",
+                    stop_loss=row['close'] * 1.05, take_profit=row['close'] * 0.9))
 
         return signals
 
@@ -452,43 +443,39 @@ class BollingerBandsStrategy(BaseStrategy):
         data['bb_upper'] = data['bb_middle'] + (data['bb_std'] * std_dev)
         data['bb_lower'] = data['bb_middle'] - (data['bb_std'] * std_dev)
 
-        for i in range(period, len(data)):
-            close_price = data.iloc[i]['close']
-            prev_close = data.iloc[i-1]['close']
-            bb_upper = data.iloc[i]['bb_upper']
-            bb_lower = data.iloc[i]['bb_lower']
-            prev_bb_upper = data.iloc[i-1]['bb_upper']
-            prev_bb_lower = data.iloc[i-1]['bb_lower']
+        data['prev_close'] = data['close'].shift(1)
+        data['prev_bb_upper'] = data['bb_upper'].shift(1)
+        data['prev_bb_lower'] = data['bb_lower'].shift(1)
+        buy_mask = (data['prev_close'] <= data['prev_bb_lower']) & (data['close'] > data['bb_lower'])
+        sell_mask = (data['prev_close'] >= data['prev_bb_upper']) & (data['close'] < data['bb_upper'])
+        signal_indices = data.index[buy_mask | sell_mask]
+        if len(signal_indices) == 0:
+            return signals
 
-            # 下穿下轨买入
-            if prev_close <= prev_bb_lower and close_price > bb_lower:
-                confidence = self.calculate_confidence(data, i)
-                if confidence >= min_confidence:
-                    signals.append(StrategySignal(
-                        timestamp=data.index[i],
-                        signal_type=SignalType.BUY,
-                        price=close_price,
-                        confidence=confidence,
-                        strategy_name=self.name,
-                        reason="价格从下轨反弹",
-                        stop_loss=bb_lower * 0.98,
-                        take_profit=data.iloc[i]['bb_middle']
-                    ))
-
-            # 上穿上轨卖出
-            elif prev_close >= prev_bb_upper and close_price < bb_upper:
-                confidence = self.calculate_confidence(data, i)
-                if confidence >= min_confidence:
-                    signals.append(StrategySignal(
-                        timestamp=data.index[i],
-                        signal_type=SignalType.SELL,
-                        price=close_price,
-                        confidence=confidence,
-                        strategy_name=self.name,
-                        reason="价格从上轨回落",
-                        stop_loss=bb_upper * 1.02,
-                        take_profit=data.iloc[i]['bb_middle']
-                    ))
+        start_pos = period + 2
+        for idx in signal_indices:
+            i = data.index.get_loc(idx)
+            if i < start_pos:
+                continue
+            row = data.iloc[i]
+            close_price = row['close']
+            confidence = self.calculate_confidence(data, i)
+            if confidence < min_confidence:
+                continue
+            prev_close = row['prev_close']
+            prev_bb_lower = row['prev_bb_lower']
+            if prev_close <= prev_bb_lower:
+                signals.append(StrategySignal(
+                    timestamp=idx, signal_type=SignalType.BUY, price=close_price,
+                    confidence=confidence, strategy_name=self.name,
+                    reason="价格从下轨反弹",
+                    stop_loss=row['bb_lower'] * 0.98, take_profit=row['bb_middle']))
+            else:
+                signals.append(StrategySignal(
+                    timestamp=idx, signal_type=SignalType.SELL, price=close_price,
+                    confidence=confidence, strategy_name=self.name,
+                    reason="价格从上轨回落",
+                    stop_loss=row['bb_upper'] * 1.02, take_profit=row['bb_middle']))
 
         return signals
 
@@ -546,11 +533,11 @@ class PatternAnalysisStrategy(BaseStrategy):
         pattern_results = self.recognizer.recognize_all(data)
 
         for result in pattern_results:
-            # result 格式: {'pattern_name': 'ThreeWhiteSoldiers', 'stock_code': 'SH.600000', 'start_date': Timestamp('2023-01-03 00:00:00'), 'end_date': Timestamp('2023-01-05 00:00:00'), 'signal': 'buy', 'confidence': 0.8, 'description': '...', 'index': 2}
+            end_date = result['end_date']
             signals.append(StrategySignal(
-                timestamp=result['end_date'],
+                timestamp=end_date,
                 signal_type=SignalType.BUY if result['signal'] == 'buy' else SignalType.SELL if result['signal'] == 'sell' else SignalType.HOLD,
-                price=data.loc[result['end_date']]['close'],
+                price=data.loc[end_date, 'close'],
                 confidence=result.get('confidence', 0.5),
                 strategy_name=self.name,
                 reason=result.get('pattern_name', '未知形态')))

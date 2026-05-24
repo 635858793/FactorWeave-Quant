@@ -3,14 +3,12 @@
 在应用启动时自动初始化所有必要的组件和配置
 """
 
-import logging
+from loguru import logger
 import asyncio
 from typing import Dict, Any, List
 from pathlib import Path
 
 from core.network.plugin_auto_register import initialize_plugin_network_configs, get_plugin_auto_register
-
-logger = logging.getLogger(__name__)
 
 class AppInitializer:
     """应用初始化器"""
@@ -22,31 +20,24 @@ class AppInitializer:
     def initialize_all(self) -> Dict[str, Any]:
         """初始化所有组件"""
         logger.info("开始应用初始化...")
-        
-        try:
-            # 1. 初始化网络配置
-            network_results = self._initialize_network_configs()
-            self.initialization_results['network_config'] = network_results
-            
-            # 2. 初始化数据库
-            database_results = self._initialize_databases()
-            self.initialization_results['database'] = database_results
-            
-            # 3. 初始化其他组件
-            other_results = self._initialize_other_components()
-            self.initialization_results['other_components'] = other_results
-            
-            self.initialized = True
-            
-            # 记录初始化摘要
-            self._log_initialization_summary()
-            
-            return self.initialization_results
-            
-        except Exception as e:
-            logger.error(f"应用初始化失败: {e}")
-            self.initialization_results['error'] = str(e)
-            return self.initialization_results
+
+        # 1. 初始化网络配置
+        network_results = self._initialize_network_configs()
+        self.initialization_results['network_config'] = network_results
+
+        # 2. 初始化数据库
+        database_results = self._initialize_databases()
+        self.initialization_results['database'] = database_results
+
+        # 3. 初始化其他组件
+        other_results = self._initialize_other_components()
+        self.initialization_results['other_components'] = other_results
+
+        self.initialized = True
+
+        self._log_initialization_summary()
+
+        return self.initialization_results
 
     def _initialize_network_configs(self) -> Dict[str, Any]:
         """初始化网络配置"""
@@ -120,27 +111,108 @@ class AppInitializer:
             }
 
     def _initialize_other_components(self) -> Dict[str, Any]:
-        """初始化其他组件"""
+        """初始化其他组件并验证其可用性"""
         logger.info("初始化其他组件...")
-        
+
+        components_initialized = []
+        components_failed = []
+        components_status = {}
+
+        # 1. 日志系统检测
         try:
-            # 这里可以添加其他组件的初始化逻辑
-            # 例如：缓存系统、日志系统、监控系统等
-            
-            other_results = {
-                'status': 'success',
-                'components': ['logging', 'config_management']
-            }
-            
-            logger.info("其他组件初始化完成")
-            return other_results
-            
+            logger.debug("日志系统自检")
+            components_initialized.append('logging')
+            components_status['logging'] = True
         except Exception as e:
-            logger.error(f"其他组件初始化失败: {e}")
-            return {
-                'status': 'failed',
-                'error': str(e)
-            }
+            logger.warning(f"日志系统初始化失败: {e}")
+            components_failed.append('logging')
+            components_status['logging'] = False
+
+        # 2. 配置管理检测
+        try:
+            from utils.config_manager import ConfigManager
+            cfg = ConfigManager()
+            test_val = cfg.get('app.name', None)
+            components_initialized.append('config_management')
+            components_status['config_management'] = True
+            logger.debug(f"配置管理已就绪, app.name={test_val}")
+        except Exception as e:
+            logger.warning(f"配置管理检测失败: {e}")
+            components_failed.append('config_management')
+            components_status['config_management'] = False
+
+        # 3. 事件总线检测
+        try:
+            from core.events.event_bus import EventBus, get_event_bus
+            bus = get_event_bus()
+            stats = bus.get_stats()
+            logger.debug(f"事件总线自检通过: handlers={len(bus)}, stats={stats}")
+            components_initialized.append('event_bus')
+            components_status['event_bus'] = True
+        except Exception as e:
+            logger.warning(f"事件总线检测失败: {e}")
+            components_failed.append('event_bus')
+            components_status['event_bus'] = False
+
+        # 4. 数据库连接检测
+        try:
+            from core.database.unified_sqlite_access import UnifiedSQLiteAccess
+            db = UnifiedSQLiteAccess.get_instance()
+            if db is not None:
+                components_initialized.append('database')
+                components_status['database'] = True
+            else:
+                components_failed.append('database')
+                components_status['database'] = False
+        except Exception as e:
+            logger.warning(f"数据库连接检测失败: {e}")
+            components_failed.append('database')
+            components_status['database'] = False
+
+        # 5. 插件系统检测
+        try:
+            from core.plugin_manager import PluginManager
+            pm = PluginManager()
+            if pm is not None:
+                components_initialized.append('plugin_system')
+                components_status['plugin_system'] = True
+            else:
+                components_failed.append('plugin_system')
+                components_status['plugin_system'] = False
+        except Exception as e:
+            logger.warning(f"插件系统检测失败: {e}")
+            components_failed.append('plugin_system')
+            components_status['plugin_system'] = False
+
+        # 6. 指标服务检测
+        try:
+            from core.metrics.app_metrics_service import get_app_metrics_service
+            svc = get_app_metrics_service()
+            if svc is not None and svc.is_enabled():
+                components_initialized.append('metrics_service')
+                components_status['metrics_service'] = True
+            else:
+                components_failed.append('metrics_service')
+                components_status['metrics_service'] = False
+        except Exception as e:
+            logger.warning(f"指标服务检测失败: {e}")
+            components_failed.append('metrics_service')
+            components_status['metrics_service'] = False
+
+        other_results = {
+            'status': 'success' if len(components_failed) == 0 else 'partial',
+            'components': components_initialized,
+            'components_failed': components_failed,
+            'components_status': components_status,
+            'summary': f'{len(components_initialized)}/{len(components_initialized) + len(components_failed)} 组件可用'
+        }
+
+        if components_failed:
+            logger.warning(f"部分组件初始化失败: {components_failed}")
+        else:
+            logger.info(f"所有组件初始化完成: {components_initialized}")
+
+        return other_results
 
     def _log_initialization_summary(self):
         """记录初始化摘要"""
@@ -225,21 +297,34 @@ def get_app_status() -> Dict[str, Any]:
     initializer = get_app_initializer()
     return initializer.get_initialization_status()
 
-# 这个函数应该在应用的main.py或__init__.py中调用
 def startup_initialization():
-    """启动时的初始化"""
+    """
+    启动时的初始化
+
+    .. deprecated::
+        此函数未被项目任何代码调用，属于死代码。
+        如需应用启动初始化，请直接调用 initialize_application()。
+        计划在后续版本中移除此函数。
+    """
+    import warnings
+    warnings.warn(
+        "startup_initialization() is deprecated. Use initialize_application() instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+
     logger.info("开始应用启动初始化...")
-    
+
     try:
         results = initialize_application()
-        
+
         if results.get('error'):
             logger.error(f"应用初始化包含错误: {results['error']}")
         else:
             logger.info("应用启动初始化成功完成")
-        
+
         return results
-        
+
     except Exception as e:
         logger.error(f"应用启动初始化失败: {e}")
         return {'error': str(e)}

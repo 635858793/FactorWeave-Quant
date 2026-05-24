@@ -195,6 +195,7 @@ class PluginPriority(Enum):
     NORMAL = 3                           # 普通优先级
     LOW = 4                              # 低优先级
     BACKGROUND = 5                       # 后台优先级
+    OPTIONAL = 6                         # 可选插件（对齐plugin_service.history）
 
 
 class Period(Enum):

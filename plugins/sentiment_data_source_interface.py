@@ -63,6 +63,7 @@ class SentimentResponse:
     data_quality: str = "unknown"  # 数据质量评级
     update_time: datetime = field(default_factory=datetime.now)  # 更新时间
     cache_used: bool = False  # 是否使用了缓存
+    has_real_data: bool = False  # 是否包含真实数据（非模拟/假数据）
 
 class ISentimentDataSource(ABC):
     """情绪数据源插件接口"""
@@ -256,7 +257,7 @@ class BaseSentimentPlugin(ISentimentDataSource):
         self._cache_duration = timedelta(minutes=5)  # 默认缓存5分钟
         self._last_fetch_time: Optional[datetime] = None
 
-    def initialize(self) -> bool:
+    def initialize(self, config: dict = None) -> bool:
         """初始化插件"""
         return True
 

@@ -29,6 +29,7 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.metrics import mean_squared_error, r2_score
 import joblib
 import warnings
+from ..database.unified_sqlite_access import UnifiedSQLiteAccess
 warnings.filterwarnings('ignore')
 
 from ..importdata.import_config_manager import ImportTaskConfig, DataFrequency, ImportMode
@@ -100,28 +101,26 @@ class ConfigRecommendationEngine:
         self.model_cache_dir = Path(model_cache_dir)
         self.model_cache_dir.mkdir(parents=True, exist_ok=True)
 
-        # 机器学习模型
         self.models: Dict[str, Any] = {}
         self.scalers: Dict[str, StandardScaler] = {}
         self.label_encoders: Dict[str, LabelEncoder] = {}
         
-        # 历史数据缓存
         self.historical_data: Optional[pd.DataFrame] = None
         self.feature_importance: Dict[str, Dict[str, float]] = {}
         
-        # 推荐缓存
         self.recommendation_cache: Dict[str, ConfigRecommendation] = {}
-        self.cache_ttl: int = 3600  # 1小时缓存
+        self.cache_ttl: int = 3600
         
-        # 线程锁
         self._model_lock = threading.Lock()
         self._cache_lock = threading.Lock()
         
-        # 初始化
         self._init_models()
         self._load_historical_data()
         
         logger.info("配置推荐引擎初始化完成")
+
+    def _get_db(self) -> UnifiedSQLiteAccess:
+        return UnifiedSQLiteAccess.get_instance(self.db_path)
 
     def _init_models(self):
         """初始化机器学习模型"""
@@ -187,7 +186,8 @@ class ConfigRecommendationEngine:
     def _load_historical_data(self):
         """加载历史性能数据"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = self._get_db()
+            with db.get_connection() as conn:
                 # 加载配置性能历史数据
                 query = """
                     SELECT 
@@ -207,26 +207,17 @@ class ConfigRecommendationEngine:
                 
                 if len(self.historical_data) > 0:
                     # 解析性能数据JSON
-                    performance_details = []
-                    for _, row in self.historical_data.iterrows():
-                        try:
-                            perf_data = json.loads(row['performance_data'])
-                            perf_data.update({
-                                'execution_time': row['execution_time'],
-                                'success_rate': row['success_rate'],
-                                'error_rate': row['error_rate'],
-                                'throughput': row['throughput'],
-                                'created_at': row['created_at']
-                            })
-                            performance_details.append(perf_data)
-                        except json.JSONDecodeError:
-                            continue
-                    
-                    if performance_details:
-                        self.historical_data = pd.DataFrame(performance_details)
+                    perf_json = self.historical_data['performance_data'].apply(
+                        lambda x: json.loads(x) if isinstance(x, str) else x
+                    )
+                    perf_df = pd.json_normalize(perf_json)
+                    valid_mask = perf_json.notna()
+                    if valid_mask.any():
+                        perf_df = perf_df[valid_mask].reset_index(drop=True)
+                        perf_cols = ['execution_time', 'success_rate', 'error_rate', 'throughput', 'created_at']
+                        extra = self.historical_data.loc[valid_mask, perf_cols].reset_index(drop=True)
+                        self.historical_data = pd.concat([perf_df, extra], axis=1)
                         logger.info(f"加载历史性能数据: {len(self.historical_data)} 条记录")
-                        
-                        # 训练模型
                         self._train_models()
                     else:
                         logger.warning("历史性能数据解析失败")
@@ -309,8 +300,8 @@ class ConfigRecommendationEngine:
 
     def _train_models(self):
         """训练机器学习模型"""
-        if self.historical_data.empty:
-            logger.warning("历史数据为空，无法训练模型")
+        if self.historical_data is None or (hasattr(self.historical_data, 'empty') and self.historical_data.empty):
+            logger.warning("历史数据为空，无法训练模型，将使用回退推荐")
             return
         
         with self._model_lock:
@@ -355,7 +346,10 @@ class ConfigRecommendationEngine:
                         
                         # 训练模型
                         if target in self.models:
-                            self.models[target].fit(X_scaled, y_valid)
+                            if self.models[target] is not None:
+                                self.models[target].fit(X_scaled, y_valid)
+                            else:
+                                logger.warning(f"模型 {target} 未初始化，跳过训练")
                             
                             # 计算特征重要性
                             if hasattr(self.models[target], 'feature_importances_'):
@@ -559,8 +553,8 @@ class ConfigRecommendationEngine:
                 search_space['batch_size'] = [b for b in search_space['batch_size'] if b <= 2000]
             elif memory_gb < 16:
                 search_space['batch_size'] = [b for b in search_space['batch_size'] if b <= 3000]
-        except:
-            pass
+        except Exception as e:
+            logger.debug(f"内存检查失败，使用默认搜索空间: {e}")
         
         return search_space
 
@@ -633,7 +627,7 @@ class ConfigRecommendationEngine:
             
             for target, model in self.models.items():
                 try:
-                    if target in self.scalers and hasattr(model, 'predict'):
+                    if target in self.scalers and hasattr(model, 'predict') and model is not None:
                         X_scaled = self.scalers[target].transform(X)
                         pred = model.predict(X_scaled)[0]
                         

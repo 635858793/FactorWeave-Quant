@@ -4,11 +4,15 @@
 包含所有期货交易相关的数据源插件
 """
 
-# 插件列表
-FUTURES_PLUGINS = [
-    'ctp_plugin',             # CTP（中国期货标准）
-    'wenhua_plugin',          # 文华财经
-    'futures_universal_plugin'  # 通用接口
-]
+from loguru import logger
+
+FUTURES_PLUGINS = []
+
+for _name in ['ctp_plugin', 'wenhua_plugin', 'futures_universal_plugin']:
+    try:
+        __import__(f'plugins.data_sources.futures.{_name}', fromlist=[_name])
+        FUTURES_PLUGINS.append(_name)
+    except ImportError as e:
+        logger.warning(f"期货插件 {_name} 导入失败（模块尚未实现）: {e}")
 
 __all__ = FUTURES_PLUGINS

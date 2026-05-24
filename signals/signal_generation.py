@@ -1,3 +1,7 @@
+# ⚠️ 此文件为 legacy 代码，功能已迁移至 core/signal/
+# 新代码请使用 from core.signal import ...
+# 保留此文件仅用于向后兼容
+
 import numpy as np
 import pandas as pd
 from loguru import logger
@@ -48,19 +52,17 @@ def generate_enhanced_trading_signals(df):
     # 信号消除 - 当信号持续少于min_hold_periods天时取消信号
     min_hold_periods = 2
 
-    # 处理买入信号的短期取消
     buy_signals = result_df['signal'] == 1
-    for i in range(len(result_df) - min_hold_periods):
-        if buy_signals.iloc[i] and not buy_signals.iloc[i:i+min_hold_periods].all():
-            # 如果买入信号不能持续min_hold_periods，则改为持有
-            result_df.loc[result_df.index[i], 'signal'] = 0
+    buy_runs = buy_signals.astype(int).diff().ne(0).cumsum()
+    buy_run_lengths = buy_signals.groupby(buy_runs).transform('sum')
+    short_buy_mask = buy_signals & (buy_run_lengths < min_hold_periods)
+    result_df.loc[short_buy_mask, 'signal'] = 0
 
-    # 处理卖出信号的短期取消
     sell_signals = result_df['signal'] == -1
-    for i in range(len(result_df) - min_hold_periods):
-        if sell_signals.iloc[i] and not sell_signals.iloc[i:i+min_hold_periods].all():
-            # 如果卖出信号不能持续min_hold_periods，则改为持有
-            result_df.loc[result_df.index[i], 'signal'] = 0
+    sell_runs = sell_signals.astype(int).diff().ne(0).cumsum()
+    sell_run_lengths = sell_signals.groupby(sell_runs).transform('sum')
+    short_sell_mask = sell_signals & (sell_run_lengths < min_hold_periods)
+    result_df.loc[short_sell_mask, 'signal'] = 0
 
     # 应用市场状态过滤（如果有）
     if 'market_state' in result_df.columns:
@@ -72,35 +74,10 @@ def generate_enhanced_trading_signals(df):
         bull_market = result_df['market_state'] == 1
         result_df.loc[bull_market & (result_df['signal'] == -1), 'signal'] = 0
 
-    # 计算实际的交易信号（只在信号改变时发出交易指令）
-    # 初始化交易信号列
-    result_df['trade_signal'] = 0
-
-    # 遍历数据帧计算交易信号
-    prev_signal = 0
-    for i in range(len(result_df)):
-        current_signal = result_df['signal'].iloc[i]
-
-        # 只有当信号改变时才进行交易
-        if current_signal != prev_signal:
-            result_df.loc[result_df.index[i], 'trade_signal'] = current_signal
-
-        prev_signal = current_signal
-
-    # 添加持仓状态
-    result_df['position'] = 0
-    current_position = 0
-
-    for i in range(len(result_df)):
-        trade = result_df['trade_signal'].iloc[i]
-
-        if trade == 1:  # 买入信号
-            current_position = 1
-        elif trade == -1:  # 卖出信号
-            current_position = -1
-        # 持有信号不改变当前持仓
-
-        result_df.loc[result_df.index[i], 'position'] = current_position
+    signals = result_df['signal'].values
+    changed = np.concatenate([[True], signals[1:] != signals[:-1]])
+    result_df['trade_signal'] = np.where(changed, signals, 0)
+    result_df['position'] = result_df['trade_signal'].replace(0, np.nan).ffill().fillna(0).astype(int)
 
     return result_df
 
@@ -179,15 +156,20 @@ def optimize_signal_generation(df):
     # 跟踪上次交易日期
     last_trade_idx = -min_trade_interval - 1
 
-    for i in range(len(result_df)):
-        if result_df['optimized_signal'].iloc[i] != 0:  # 有交易信号
-            # 检查与上次交易的间隔
-            if i - last_trade_idx <= min_trade_interval:
-                # 间隔太小，取消信号
-                result_df.loc[result_df.index[i], 'optimized_signal'] = 0
+    opt_sig_col = result_df.columns.get_loc('optimized_signal')
+
+    sig_mask = result_df.iloc[:, opt_sig_col] != 0
+    sig_idxs = np.where(sig_mask)[0]
+    if len(sig_idxs) > 0:
+        last_trade_idx = -min_trade_interval - 1
+        zero_idxs = []
+        for idx in sig_idxs:
+            if idx - last_trade_idx <= min_trade_interval:
+                zero_idxs.append(idx)
             else:
-                # 记录这次交易
-                last_trade_idx = i
+                last_trade_idx = idx
+        if zero_idxs:
+            result_df.iloc[zero_idxs, opt_sig_col] = 0
 
     # 6. 应用止损策略
     if 'position' in result_df.columns and 'close' in result_df.columns:
@@ -203,38 +185,16 @@ def optimize_signal_generation(df):
 
                 # 如果下跌超过止损线，生成卖出信号
                 if price_change < -stop_loss_pct:
-                    result_df.loc[result_df.index[i], 'optimized_signal'] = -1
-                    last_trade_idx = i  # 更新最近交易日期
+                    result_df.iloc[i, opt_sig_col] = -1
+                    last_trade_idx = i
 
     # 计算最终的交易信号和持仓
     result_df['final_signal'] = result_df['optimized_signal']
 
     # 计算实际的交易信号（只在信号改变时发出交易指令）
-    result_df['trade_signal'] = 0
-    prev_signal = 0
-
-    for i in range(len(result_df)):
-        current_signal = result_df['final_signal'].iloc[i]
-
-        # 只有当信号改变时才进行交易
-        if current_signal != prev_signal:
-            result_df.loc[result_df.index[i], 'trade_signal'] = current_signal
-
-        prev_signal = current_signal
-
-    # 更新持仓状态
-    result_df['position'] = 0
-    current_position = 0
-
-    for i in range(len(result_df)):
-        trade = result_df['trade_signal'].iloc[i]
-
-        if trade == 1:  # 买入信号
-            current_position = 1
-        elif trade == -1:  # 卖出信号
-            current_position = -1
-        # 持有信号不改变当前持仓
-
-        result_df.loc[result_df.index[i], 'position'] = current_position
+    signals = result_df['final_signal'].values
+    changed = np.concatenate([[True], signals[1:] != signals[:-1]])
+    result_df['trade_signal'] = np.where(changed, signals, 0)
+    result_df['position'] = result_df['trade_signal'].replace(0, np.nan).ffill().fillna(0).astype(int)
 
     return result_df

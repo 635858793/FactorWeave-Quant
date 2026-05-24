@@ -374,14 +374,18 @@ class ContentBasedRecommender:
         # 计算相似度矩阵
         self.similarity_matrix = cosine_similarity(tfidf_matrix)
         self.chart_ids = chart_ids
+        self._chart_id_index = {cid: idx for idx, cid in enumerate(chart_ids)}
         self.is_trained = True
     
     def get_similar_charts(self, chart_id: str, top_k: int = 5) -> List[Tuple[str, float]]:
         """获取相似图表"""
-        if not self.is_trained or chart_id not in self.chart_ids:
+        if not self.is_trained:
             return []
-        
-        chart_index = self.chart_ids.index(chart_id)
+
+        chart_index = self._chart_id_index.get(chart_id)
+        if chart_index is None:
+            return []
+
         similarities = self.similarity_matrix[chart_index]
         
         # 获取相似度最高的图表
@@ -1011,11 +1015,11 @@ def create_sample_user_behavior(user_id: str, chart_type: ChartType,
         chart_type=chart_type,
         timestamp=time.time(),
         session_id=f"session_{int(time.time())}",
-        duration_seconds=np.random.uniform(10, 300),
-        satisfaction_score=np.random.uniform(0.3, 1.0),
+        duration_seconds=60.0,
+        satisfaction_score=0.7,
         context_data={
-            'complexity_score': np.random.uniform(0.2, 0.9),
-            'data_size': np.random.randint(10, 10000)
+            'complexity_score': 0.5,
+            'data_size': 1000
         }
     )
 
@@ -1025,11 +1029,11 @@ def create_sample_chart_context(chart_id: str, chart_type: ChartType) -> ChartCo
         chart_id=chart_id,
         chart_type=chart_type,
         data_source="sample_data",
-        data_size=np.random.randint(100, 10000),
+        data_size=1000,
         time_range="2023-01-01 to 2023-12-31",
-        categories=[f"Category_{i}" for i in range(np.random.randint(2, 10))],
+        categories=["Category_1", "Category_2", "Category_3", "Category_4", "Category_5"],
         tags=["sample", "demo", chart_type.value],
-        complexity_score=np.random.uniform(0.3, 0.9),
+        complexity_score=0.5,
         visual_elements={
             'color_scheme': 'default',
             'show_legend': True,
@@ -1038,6 +1042,6 @@ def create_sample_chart_context(chart_id: str, chart_type: ChartType) -> ChartCo
         created_by="demo_user",
         created_at=time.time(),
         last_modified=time.time(),
-        view_count=np.random.randint(1, 1000),
-        rating=np.random.uniform(3.0, 5.0)
+        view_count=100,
+        rating=4.0
     )

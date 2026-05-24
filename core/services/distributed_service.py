@@ -67,6 +67,9 @@ class NodeInfo:
         if 'last_heartbeat' in data and data['last_heartbeat']:
             data['last_heartbeat'] = datetime.fromisoformat(
                 data['last_heartbeat'])
+        if 'created_at' in data and data['created_at']:
+            data['created_at'] = datetime.fromisoformat(
+                data['created_at'])
         return cls(**data)
 
 
@@ -295,13 +298,13 @@ class DistributedTaskScheduler:
                     node_id=node_id,
                     ip_address=host,
                     port=port,
-                    status="wait",
+                    status="active",
                     node_type=node_type,
                     cpu_usage=0.0,
                     memory_usage=0.0,
                     task_count=0,
                     last_heartbeat=datetime.now(),
-                    capabilities=[""]
+                    capabilities=["data_fetch", "data_process"]
                 )
                 self.nodes[node_id] = new_node
                 logger.info(f"添加节点: {node_id} ({host}:{port})")
@@ -411,7 +414,7 @@ class DistributedTaskScheduler:
                         logger.info(f"节点 {node.node_id} 能力已获取: {node.capabilities}")
 
                 return
-        except:
+        except Exception:
             # HTTP调用失败，继续fallback逻辑
             pass
 
@@ -850,7 +853,7 @@ class DistributedTaskScheduler:
 
                 price_data = kdata[close_col].copy()
                 if hasattr(price_data, 'fillna'):
-                    price_data = price_data.fillna(method='ffill').fillna(method='bfill')
+                    price_data = price_data.fillna(method='ffill')
 
                 kdata = kdata.copy()
                 kdata['close'] = price_data
@@ -1683,14 +1686,14 @@ class DistributedService:
             logger.info(f"⚠️  Fallback: 本地执行任务 {task.task_id} (类型: {task.task_type})")
 
             # 从队列中移除
-            if task in self.task_queue:
-                self.task_queue.remove(task)
+            if task in self.task_scheduler.task_queue:
+                self.task_scheduler.task_queue.remove(task)
 
             # 标记为本地执行
             task.status = "running_locally"
             task.assigned_node = "local"
             task.start_time = datetime.now()
-            self.running_tasks[task.task_id] = task
+            self.task_scheduler.running_tasks[task.task_id] = task
 
             # 创建虚拟本地节点
             local_node = NodeInfo(
@@ -1702,8 +1705,8 @@ class DistributedService:
             )
 
             # 提交到线程池执行（使用相同的执行逻辑）
-            future = self.executor.submit(
-                self._execute_task_on_node, task, local_node)
+            future = self.task_scheduler.executor.submit(
+                self.task_scheduler._execute_task_on_node, task, local_node)
 
             logger.info(f"任务 {task.task_id} 已提交本地执行")
 
@@ -1713,6 +1716,6 @@ class DistributedService:
             task.error_message = f"本地执行失败: {str(e)}"
             task.end_time = datetime.now()
 
-            if task.task_id in self.running_tasks:
-                del self.running_tasks[task.task_id]
-            self.completed_tasks.append(task)
+            if task.task_id in self.task_scheduler.running_tasks:
+                del self.task_scheduler.running_tasks[task.task_id]
+            self.task_scheduler.completed_tasks.append(task)

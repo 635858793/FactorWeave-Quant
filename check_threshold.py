@@ -41,7 +41,7 @@ for param in ['signal_threshold', 'init_cash', 'vectorized_enabled']:
     try:
         val = strategy.get_parameter(param, 'NOT_FOUND')
         print(f"  {param} = {val}")
-    except:
+    except Exception:
         pass
 
 # 生成测试数据

@@ -30,8 +30,10 @@ class RiskControlStrategy:
                 market_contribution = weight * beta
 
                 # 计算行业风险贡献
-                sector = sector_risk.get('sector_exposure', {}).get(asset, 0)
-                sector_contribution = weight * sector
+                stock_sector_map = sector_risk.get('stock_sector_map', {})
+                sector_name = stock_sector_map.get(asset, 'Unknown')
+                sector_exposure_val = sector_risk.get('sector_exposure', {}).get(sector_name, 0)
+                sector_contribution = weight * sector_exposure_val
 
                 # 计算流动性风险贡献
                 liquidity = liquidity_risk.get(
@@ -115,7 +117,7 @@ class RiskControlStrategy:
             beta = market_risk.get('beta', 1.0)
 
             # 计算基础止损
-            base_stop = price * (1 - volatility * beta)
+            base_stop = max(price * (1 - volatility * beta), price * 0.80)
 
             # 根据持仓规模调整
             position_ratio = position / self.position_limits.get(asset, 1.0)
@@ -137,6 +139,45 @@ class RiskControlStrategy:
         except Exception as e:
             logger.error(f"计算止损水平时出错: {str(e)}")
             return price * 0.9  # 默认10%止损
+
+    def check_stop_loss_trigger(self, asset: str, position: float,
+                                 entry_price: float, current_price: float,
+                                 current_time: Optional[datetime] = None) -> Tuple[bool, str]:
+        """
+        检查是否触发止损（供回测与实盘共同使用）
+
+        Args:
+            asset: 资产标识
+            position: 当前持仓（正=多头，负=空头）
+            entry_price: 入场价格
+            current_price: 当前价格
+            current_time: 当前时间（可选）
+
+        Returns:
+            Tuple[bool, str]: (是否触发止损, 触发原因)
+        """
+        try:
+            if position == 0 or entry_price <= 0 or current_price <= 0:
+                return False, ""
+
+            stop_price = self.stop_loss_levels.get(asset)
+            if stop_price is None or stop_price <= 0:
+                return False, ""
+
+            if position > 0:
+                if current_price <= stop_price:
+                    loss_pct = (current_price - entry_price) / entry_price
+                    return True, f"多头止损触发: 当前价{current_price:.4f} <= 止损价{stop_price:.4f} ({loss_pct:.2%})"
+            elif position < 0:
+                if current_price >= stop_price:
+                    loss_pct = (entry_price - current_price) / entry_price
+                    return True, f"空头止损触发: 当前价{current_price:.4f} >= 止损价{stop_price:.4f} ({loss_pct:.2%})"
+
+            return False, ""
+
+        except Exception as e:
+            logger.error(f"检查止损触发时出错: {str(e)}")
+            return False, f"止损检查异常: {str(e)}"
 
     def setup_hedge(self, asset: str, position: float,
                     risk_metrics: Dict) -> Optional[Tuple[str, float]]:
@@ -515,6 +556,24 @@ class RiskMonitor:
             return [snapshot for snapshot in self.risk_snapshots
                     if start_time <= snapshot['timestamp'] <= end_time]
         return self.risk_snapshots
+
+    def get_risk_metrics(self) -> dict:
+        """获取当前风险指标，桥接professional_risk_metrics的计算结果"""
+        try:
+            from core.performance.professional_risk_metrics import calculate_risk_metrics
+            if hasattr(self, '_position_records') and self._position_records:
+                returns = pd.Series([p.get('daily_return', 0) for p in self._position_records])
+                return calculate_risk_metrics(returns=returns) if len(returns) > 0 else self._default_metrics()
+        except ImportError:
+            pass
+        return self._default_metrics()
+
+    def _default_metrics(self) -> dict:
+        return {
+            'volatility': 0.0, 'beta': 0.0, 'var_95': 0.0, 'var_99': 0.0,
+            'cvar_95': 0.0, 'max_drawdown': 0.0, 'herfindahl_index': 0.0,
+            'sector_concentration': 0.0, 'sharpe_ratio': 0.0, 'sortino_ratio': 0.0
+        }
 
 class RiskReportGenerator:
     """风险报告生成器"""

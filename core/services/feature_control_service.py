@@ -6,7 +6,7 @@
 
 import asyncio
 import json
-import logging
+from loguru import logger
 import time
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, asdict
@@ -48,7 +48,7 @@ class FeatureControlService:
     
     def __init__(self, config_path: str = "config/feature_config.json"):
         self.config_path = config_path
-        self.logger = logging.getLogger(__name__)
+        self.logger = logger
         
         # 功能配置
         self.features = {}

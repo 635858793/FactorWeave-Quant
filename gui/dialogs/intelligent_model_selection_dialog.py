@@ -10,7 +10,7 @@
 - 性能监控
 """
 
-import logging
+from loguru import logger
 import traceback
 from typing import Dict, Any, Optional
 from datetime import datetime
@@ -32,8 +32,7 @@ from core.containers import get_service_container
 from core.services.unified_data_manager import get_unified_data_manager
 from core.services.ai_prediction_service import AIPredictionService
 from core.services.prediction_tracking_service import PredictionTrackingService
-
-logger = logging.getLogger(__name__)
+from .base_dialog import BaseDialog
 
 
 class EnhancedEvaluationWorker(QThread):
@@ -131,11 +130,17 @@ class VisualizationWorker(QThread):
             self.error.emit(str(e))
 
 
-class IntelligentModelSelectionDialog(QDialog):
+class IntelligentModelSelectionDialog(BaseDialog):
     """智能模型选择对话框"""
     
     def __init__(self, parent=None, service_container=None):
-        super().__init__(parent)
+        super().__init__(
+            parent,
+            title="智能模型选择 - 增强评估与可视化",
+            min_size=(1000, 700),
+            settings_key="IntelligentModelSelectionDialog",
+            modal=True
+        )
         self.service_container = service_container or get_service_container()
         self.intelligent_selector = None
         self.evaluation_worker = None
@@ -153,8 +158,6 @@ class IntelligentModelSelectionDialog(QDialog):
     
     def init_ui(self):
         """初始化用户界面"""
-        self.setWindowTitle("智能模型选择 - 增强评估与可视化")
-        self.setMinimumSize(1000, 700)
         
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
@@ -617,28 +620,90 @@ class IntelligentModelSelectionDialog(QDialog):
                 
                 if 'close' in kdata.columns:
                     if task_type == 'classification':
-                        # 分类任务：预测涨跌
                         price_change = kdata['close'].pct_change().dropna()
                         y_true = (price_change > 0).astype(int).values
-                        
-                        # 简单预测：基于移动平均
-                        ma = kdata['close'].rolling(window=5).mean().dropna()
-                        y_pred = ((kdata['close'].shift(-1) > ma).dropna() > 0).astype(int).values
-                        y_pred_proba = np.random.rand(len(y_true))
-                        
-                        # 确保长度一致
-                        min_len = min(len(y_true), len(y_pred))
-                        y_true = y_true[:min_len]
-                        y_pred = y_pred[:min_len]
-                        y_pred_proba = y_pred_proba[:min_len]
-                        
+
+                        try:
+                            from sklearn.linear_model import LogisticRegression
+                            from sklearn.preprocessing import StandardScaler
+
+                            kdata_clean = kdata.dropna()
+                            feature_cols = []
+                            for col in ['open', 'high', 'low', 'volume']:
+                                if col in kdata_clean.columns:
+                                    feature_cols.append(col)
+                            rsi_period = 14
+                            delta = kdata_clean['close'].diff()
+                            gain = (delta.where(delta > 0, 0)).rolling(window=rsi_period).mean()
+                            loss = (-delta.where(delta < 0, 0)).rolling(window=rsi_period).mean()
+                            rs = gain / loss.replace(0, 1e-10)
+                            rsi = 100 - (100 / (1 + rs))
+                            rsi.name = 'rsi'
+                            ma_5 = kdata_clean['close'].rolling(window=5).mean()
+                            ma_5.name = 'ma_5'
+                            ma_20 = kdata_clean['close'].rolling(window=20).mean()
+                            ma_20.name = 'ma_20'
+                            vol_ratio = kdata_clean['volume'] / kdata_clean['volume'].rolling(window=20).mean() if 'volume' in kdata_clean.columns else pd.Series(1, index=kdata_clean.index)
+                            vol_ratio.name = 'vol_ratio'
+
+                            features = pd.DataFrame({
+                                'returns': kdata_clean['close'].pct_change(),
+                                'rsi': rsi,
+                                'ma_5': ma_5,
+                                'ma_20': ma_20,
+                                'vol_ratio': vol_ratio,
+                            })
+                            if feature_cols:
+                                for fc in feature_cols:
+                                    features[fc] = kdata_clean[fc].pct_change()
+                            features = features.dropna()
+
+                            y_train = (features['returns'] > 0).astype(int)
+                            features = features.drop(columns=['returns'])
+
+                            scaler = StandardScaler()
+                            X_scaled = scaler.fit_transform(features)
+
+                            model = LogisticRegression(max_iter=1000, solver='lbfgs')
+                            model.fit(X_scaled, y_train.values)
+                            y_pred_proba = model.predict_proba(X_scaled)[:, 1]
+                            y_pred = (y_pred_proba > 0.5).astype(int)
+
+                            min_len = min(len(y_true), len(y_pred), len(y_pred_proba))
+                            y_true = y_true[:min_len]
+                            y_pred = y_pred[:min_len]
+                            y_pred_proba = y_pred_proba[:min_len]
+
+                            logger.info(f"LogisticRegression预测完成: 样本数={min_len}, 正类比例={(y_pred==1).mean():.2f}")
+                            return y_true, y_pred, y_pred_proba
+                        except Exception as _skl_err:
+                            logger.warning(f"sklearn模型不可用，回退到RSI启发式: {_skl_err}")
+
+                        price_change = kdata['close'].pct_change().dropna()
+                        rsi_data = pd.Series(index=price_change.index, dtype=float)
+                        delta = kdata['close'].diff()
+                        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+                        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+                        rs = gain / loss.replace(0, 1e-10)
+                        rsi_data = 100 - (100 / (1 + rs))
+                        rsi_data = rsi_data.dropna()
+
+                        common_idx = price_change.index.intersection(rsi_data.index)
+                        if len(common_idx) < 10:
+                            logger.warning("模型选择数据不可用")
+                            return None, None, None
+
+                        y_true = (price_change.loc[common_idx] > 0).astype(int).values
+                        rsi_vals = rsi_data.loc[common_idx].values
+                        y_pred = (rsi_vals < 70).astype(int)
+                        y_pred_proba = np.clip(0.5 + (rsi_vals - 50) / 100, 0.01, 0.99)
+
                         return y_true, y_pred, y_pred_proba
                     else:
-                        # 回归任务：预测价格
                         y_true = kdata['close'].values
-                        y_pred = kdata['close'].rolling(window=5).mean().fillna(method='bfill').values
+                        y_pred = kdata['close'].rolling(window=5).mean().fillna(method='ffill').values
                         y_pred_proba = None
-                        
+
                         return y_true, y_pred, y_pred_proba
                 
             logger.warning("无法准备评估数据")
@@ -772,6 +837,59 @@ class IntelligentModelSelectionDialog(QDialog):
         self.evaluate_btn.setEnabled(True)
         QMessageBox.critical(self, "错误", f"评估失败: {error_message}")
     
+    def _get_feature_importance(self, model_type: str, task_type: str):
+        """从已训练的模型中获取真实特征重要性"""
+        try:
+            import numpy as np
+
+            if not self.intelligent_selector:
+                logger.warning("智能选择器未初始化，无法获取特征重要性")
+                return None, None
+
+            model = self.intelligent_selector.get_model(model_type)
+            if model is None:
+                logger.warning(f"模型 {model_type} 未在智能选择器中初始化，特征重要性不可用")
+                return None, None
+
+            importances = None
+            feature_names = None
+
+            if hasattr(model, 'feature_importances_'):
+                importances = model.feature_importances_
+                if hasattr(model, 'feature_names_in_'):
+                    feature_names = list(model.feature_names_in_)
+                else:
+                    feature_names = [f'feature_{i}' for i in range(len(importances))]
+                logger.info(f"从 {model_type} 获取 feature_importances_: {len(importances)} 个特征")
+            elif hasattr(model, 'coef_'):
+                coef = model.coef_
+                if coef.ndim > 1:
+                    coef = coef[0]
+                importances = np.abs(coef)
+                if hasattr(model, 'feature_names_in_'):
+                    feature_names = list(model.feature_names_in_)
+                else:
+                    feature_names = [f'feature_{i}' for i in range(len(importances))]
+                logger.info(f"从 {model_type} 获取 |coef_| 作为特征重要性: {len(importances)} 个特征")
+            else:
+                logger.warning(f"模型 {model_type} 不支持 feature_importances_ 或 coef_，特征重要性不可用")
+                return None, None
+
+            if task_type != 'classification':
+                logger.warning(f"任务类型为 {task_type}，跳过特征重要性（仅分类任务支持）")
+                return None, None
+
+            if importances is not None and len(importances) > 0:
+                importances = np.asarray(importances, dtype=np.float64)
+                importances = importances / importances.sum()
+                return feature_names, importances
+
+            return None, None
+
+        except Exception as e:
+            logger.warning(f"获取模型 {model_type} 特征重要性失败: {e}")
+            return None, None
+
     def _on_browse_directory(self):
         """浏览目录"""
         directory = QFileDialog.getExistingDirectory(
@@ -813,14 +931,7 @@ class IntelligentModelSelectionDialog(QDialog):
                 self.viz_result_text.setText("可视化失败：无法获取数据")
                 return
             
-            # 生成特征名称和重要性（仅用于演示）
-            import numpy as np
-            if task_type == 'classification':
-                feature_names = [f'feature_{i}' for i in range(10)]
-                feature_importance = np.random.rand(10)
-            else:
-                feature_names = None
-                feature_importance = None
+            feature_names, feature_importance = self._get_feature_importance(model_type, task_type)
             
             # 创建工作线程
             self.visualization_worker = VisualizationWorker(

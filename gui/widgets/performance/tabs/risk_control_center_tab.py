@@ -2491,9 +2491,11 @@ class ModernRiskControlCenterTab(QWidget):
         """关闭事件"""
         try:
             self.cleanup()
+            super().closeEvent(event)
             event.accept()
         except Exception as e:
             logger.error(f"关闭风险控制中心失败: {e}")
+            super().closeEvent(event)
             event.accept()
 
     def _on_theme_changed(self):

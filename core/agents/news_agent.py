@@ -6,15 +6,13 @@ BettaFish新闻分析Agent
 import asyncio
 import time
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
 from enum import Enum
-import logging
+from loguru import logger
 
 from core.services.base_service import BaseService
-
-logger = logging.getLogger(__name__)
 
 class NewsType(Enum):
     """新闻类型"""
@@ -44,6 +42,7 @@ class NewsItem:
     confidence: float
     url: Optional[str] = None
     keywords: List[str] = None
+    source_type: str = 'price_proxy'
 
 @dataclass
 class NewsAnalysisResult:
@@ -58,7 +57,13 @@ class NewsAnalysisResult:
     confidence: float
 
 class NewsAnalysisAgent(BaseService):
-    """新闻分析Agent"""
+    """
+    新闻分析Agent
+
+    当前版本使用实时行情价格代理(price_proxy)作为新闻数据源。
+    _collect_news_data基于真实行情快照生成市场动态类NewsItem，NewsItem.source_type标记为'price_proxy'。
+    如需启用真实新闻数据源（新闻API抓取等），请调用 enable_real_sources()。
+    """
     
     def __init__(self, event_bus: Optional[Any] = None):
         super().__init__(event_bus)
@@ -71,6 +76,8 @@ class NewsAnalysisAgent(BaseService):
             "10jqka",
             "xueqiu"
         ]
+
+        self._use_real_sources = False
         
         # 分析配置
         self.config = {
@@ -94,6 +101,23 @@ class NewsAnalysisAgent(BaseService):
             "avg_processing_time": 0.0
         }
 
+    def enable_real_sources(self):
+        """
+        启用真实新闻数据源（框架预留接口）
+        
+        当前版本未实现真实新闻API连接，调用此方法后仅更改为标记状态。
+        待后续版本集成新闻抓取API后生效。
+        """
+        self._use_real_sources = True
+        logger.info("新闻Agent: 已标记启用真实数据源（框架预留）")
+
+    def disable_real_sources(self):
+        """
+        禁用真实新闻数据源，回退到行情价格代理模式
+        """
+        self._use_real_sources = False
+        logger.info("新闻Agent: 已回退到价格代理模式")
+
     async def analyze_stock(self, stock_code: str, 
                           context: Dict[str, Any] = None) -> Dict[str, Any]:
         """分析指定股票的新闻"""
@@ -112,17 +136,20 @@ class NewsAnalysisAgent(BaseService):
             
             # 收集新闻数据
             news_items = await self._collect_news_data(stock_code, context)
+            has_real_data = len(news_items) > 0
             
             if not news_items:
                 logger.warning(f"未找到{stock_code}相关新闻")
                 return {
                     "status": "no_news",
                     "message": "未找到相关新闻数据",
-                    "stock_code": stock_code
+                    "stock_code": stock_code,
+                    "has_real_data": False
                 }
             
             # 分析新闻内容
             analysis_result = await self._analyze_news_content(news_items, stock_code)
+            analysis_result["has_real_data"] = has_real_data
             
             # 缓存结果
             self._news_cache[cache_key] = analysis_result
@@ -140,50 +167,59 @@ class NewsAnalysisAgent(BaseService):
             return {
                 "status": "error",
                 "message": f"新闻分析失败: {str(e)}",
-                "stock_code": stock_code
+                "stock_code": stock_code,
+                "has_real_data": False
             }
 
-    async def _collect_news_data(self, stock_code: str, 
+    async def _collect_news_data(self, stock_code: str,
                                context: Dict[str, Any] = None) -> List[NewsItem]:
-        """收集新闻数据"""
         try:
-            # 模拟新闻数据收集（实际项目中需要接入真实新闻API）
-            mock_news_data = [
-                NewsItem(
-                    title=f"{stock_code}公司发布Q3财报，业绩超预期",
-                    content="公司第三季度营收同比增长25%，净利润增长30%，超出市场预期...",
-                    source="新浪财经",
-                    publish_time=datetime.now() - timedelta(hours=2),
-                    news_type=NewsType.FINANCIAL_NEWS,
-                    impact_level=NewsImpact.POSITIVE,
-                    confidence=0.85,
-                    keywords=["财报", "业绩", "超预期", "增长"]
-                ),
-                NewsItem(
-                    title=f"{stock_code}行业迎来政策利好，相关板块涨幅显著",
-                    content="政府发布行业扶持政策，预计将带来积极影响...",
-                    source="东方财富",
-                    publish_time=datetime.now() - timedelta(hours=4),
-                    news_type=NewsType.INDUSTRY_NEWS,
-                    impact_level=NewsImpact.POSITIVE,
-                    confidence=0.75,
-                    keywords=["政策", "利好", "扶持"]
-                ),
-                NewsItem(
-                    title=f"分析师上调{stock_code}目标价至XX元",
-                    content="多家券商分析师上调目标价，认为公司基本面持续改善...",
-                    source="和讯网",
-                    publish_time=datetime.now() - timedelta(hours=6),
-                    news_type=NewsType.COMPANY_NEWS,
-                    impact_level=NewsImpact.POSITIVE,
-                    confidence=0.80,
-                    keywords=["分析师", "目标价", "上调"]
-                )
-            ]
-            
-            logger.debug(f"收集到{len(mock_news_data)}条新闻数据")
-            return mock_news_data
-            
+            from core.real_data_provider import get_real_data_provider
+
+            provider = get_real_data_provider()
+            quote = provider.get_real_quote(stock_code)
+
+            if not quote:
+                logger.warning(f"无法获取{stock_code}真实行情数据，新闻列表为空")
+                return []
+
+            price = quote.get('price', 0)
+            change_pct = quote.get('change_pct', 0)
+            name = quote.get('name', stock_code)
+            volume = quote.get('volume', 0)
+
+            news_items = []
+
+            if change_pct is not None and price > 0:
+                pct_str = f"{change_pct:+.2f}%"
+                if change_pct > 0:
+                    direction = "上涨"
+                    impact = NewsImpact.POSITIVE
+                elif change_pct < 0:
+                    direction = "下跌"
+                    impact = NewsImpact.NEGATIVE
+                else:
+                    direction = "持平"
+                    impact = NewsImpact.NEUTRAL
+
+                news_items.append(NewsItem(
+                    title=f"{name}({stock_code})今日{direction}{abs(change_pct):.2f}%",
+                    content=f"{name}({stock_code})当前价格{price:.2f}元，今日{direction}{abs(change_pct):.2f}%，成交量{volume}",
+                    source="实时行情",
+                    publish_time=datetime.now(),
+                    news_type=NewsType.MARKET_NEWS,
+                    impact_level=impact,
+                    confidence=0.9,
+                    keywords=["行情", "涨跌", stock_code],
+                    source_type='price_proxy'
+                ))
+
+            logger.debug(f"基于真实行情生成{len(news_items)}条市场动态")
+            return news_items
+
+        except ImportError as e:
+            logger.warning(f"RealDataProvider不可用: {e}")
+            return []
         except Exception as e:
             logger.error(f"收集新闻数据失败: {str(e)}")
             return []
@@ -368,14 +404,12 @@ class NewsAnalysisAgent(BaseService):
     async def cleanup_cache(self):
         """清理过期缓存"""
         current_time = time.time()
-        expired_keys = []
-        
-        for key, value in self._news_cache.items():
-            if isinstance(value, dict) and "analysis_time" in value:
-                analysis_time = value["analysis_time"]
-                if isinstance(analysis_time, datetime):
-                    if (current_time - analysis_time.timestamp()) > self._cache_ttl:
-                        expired_keys.append(key)
+        expired_keys = [
+            key for key, value in self._news_cache.items()
+            if isinstance(value, dict) and "analysis_time" in value
+            and isinstance(value["analysis_time"], datetime)
+            and (current_time - value["analysis_time"].timestamp()) > self._cache_ttl
+        ]
         
         for key in expired_keys:
             del self._news_cache[key]

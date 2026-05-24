@@ -107,7 +107,7 @@ class BacktestResultManager:
             try:
                 ctx = self._connection_manager.get_connection(self._db_path)
                 ctx.__exit__(None, None, None)
-            except:
+            except Exception:
                 pass
     
     def _execute_sql(self, sql: str, params: list = None) -> Any:
@@ -135,7 +135,7 @@ class BacktestResultManager:
             logger.error(f"SQL执行失败: {sql[:100]}... 错误: {e}")
             try:
                 conn.rollback()
-            except:
+            except Exception:
                 pass
             raise
         finally:

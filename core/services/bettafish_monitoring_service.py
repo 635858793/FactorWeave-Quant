@@ -5,7 +5,6 @@ BettaFish性能监控和告警服务
 
 import asyncio
 import time
-import logging
 from typing import Dict, Any, List, Optional, Callable
 from dataclasses import dataclass, field
 from enum import Enum
@@ -87,7 +86,7 @@ class BettaFishMonitoringService:
     
     def __init__(self, event_bus=None):
         self.event_bus = event_bus
-        self.logger = logging.getLogger(__name__)
+        self.logger = logger
         
         # 监控配置
         self.monitoring_config = {

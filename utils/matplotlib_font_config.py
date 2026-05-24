@@ -110,7 +110,7 @@ class MatplotlibFontConfig:
                 if font in current_fonts:
                     return True
             return False
-        except:
+        except Exception:
             return False
 
     @classmethod

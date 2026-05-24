@@ -601,8 +601,7 @@ class EnhancedRealtimeDataManager:
         """处理实时数据"""
         try:
             # 数据标准化
-            for _, row in raw_data.iterrows():
-                standard_data = row.to_dict()
+            for standard_data in raw_data.to_dict('records'):
 
                 if self.data_standardizer:
                     standard_data = self.data_standardizer.standardize_realtime_data(standard_data, data_type, plugin_id)
@@ -624,6 +623,10 @@ class EnhancedRealtimeDataManager:
                     # 发布事件
                     event = RealtimeDataEvent(realtime_data=standard_data)
                     await self.event_bus.publish(event)
+
+                    # 发布成功后清理缓冲区，避免deque+DuckDB双重存储
+                    if symbol:
+                        self._flush_buffered_data(symbol)
 
         except Exception as e:
             logger.error(f"处理实时数据失败，插件 {plugin_id}: {e}")
@@ -658,6 +661,9 @@ class EnhancedRealtimeDataManager:
                     # 发布事件
                     event = TickDataEvent(tick_data=standard_tick)
                     await self.event_bus.publish(event)
+
+                    # 发布成功后清理缓冲区，避免deque+DuckDB双重存储
+                    self._flush_buffered_data(symbol)
 
         except Exception as e:
             logger.error(f"处理Tick数据失败，插件 {plugin_id}: {e}")
@@ -697,7 +703,10 @@ class EnhancedRealtimeDataManager:
                     data_type='level2_data'
                 )
                 await self.event_bus.publish(event)
-                
+
+                # 发布成功后清理缓冲区，避免deque+DuckDB双重存储
+                self._flush_buffered_data(symbol)
+
                 logger.debug(f"Level-2 数据处理完成并发布事件：{symbol}")
 
         except Exception as e:
@@ -733,6 +742,9 @@ class EnhancedRealtimeDataManager:
                 # 发布事件
                 event = OrderBookEvent(order_book_data=standard_order_book)
                 await self.event_bus.publish(event)
+
+                # 发布成功后清理缓冲区，避免deque+DuckDB双重存储
+                self._flush_buffered_data(symbol)
 
         except Exception as e:
             logger.error(f"处理订单簿数据失败，插件 {plugin_id}: {e}")
@@ -826,6 +838,23 @@ class EnhancedRealtimeDataManager:
         """获取缓冲的数据"""
         buffer = self.data_buffers.get(symbol, deque())
         return list(buffer)[-limit:] if buffer else []
+
+    def _flush_buffered_data(self, symbol: str, keep_last: int = 10) -> None:
+        """
+        清理指定symbol的缓冲区数据，保留最近keep_last条记录
+
+        数据已通过EventBus发布给DuckDB持久化子系统，缓冲区仅作临时缓存。
+        清理避免deque+DuckDB双重存储导致的内存浪费。
+
+        Args:
+            symbol: 股票代码
+            keep_last: 保留最近N条记录，默认10条用于前端获取最近数据
+        """
+        buffer = self.data_buffers.get(symbol)
+        if buffer is not None and len(buffer) > keep_last:
+            while len(buffer) > keep_last:
+                buffer.popleft()
+            logger.debug(f"已清理 {symbol} 缓冲区，保留最近 {keep_last} 条记录")
     
     # ========== 监控和统计方法 ==========
     

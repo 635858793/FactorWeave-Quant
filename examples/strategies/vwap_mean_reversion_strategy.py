@@ -23,6 +23,70 @@ import numpy as np
 from typing import List, Dict, Tuple
 from loguru import logger
 
+try:
+    from numba import jit
+    _NUMBA_AVAILABLE = True
+except ImportError:
+    _NUMBA_AVAILABLE = False
+
+    def jit(*args, **kwargs):
+        """numba不可用时的空装饰器fallback"""
+        return lambda f: f
+
+
+if _NUMBA_AVAILABLE:
+    @jit(nopython=True, cache=True)
+    def _vwap_backtest_numba_core(close, buy, sell, hold_period, n):
+        """numba加速的回测核心循环
+
+        遍历K线数组，维护持仓状态，生成交易记录。
+
+        Args:
+            close: close价格数组 (float64)
+            buy: 买入信号布尔数组
+            sell: 卖出信号布尔数组
+            hold_period: 最大持有周期
+            n: 数组长度
+
+        Returns:
+            entry_indices: 买入索引数组
+            exit_indices: 卖出索引数组
+            ret_values: 每笔交易的收益率数组
+            pos_arr: 每个bar的持仓状态数组
+            trade_count: 实际交易笔数
+        """
+        max_trades = n
+        entry_indices = np.zeros(max_trades, dtype=np.int64)
+        exit_indices = np.zeros(max_trades, dtype=np.int64)
+        ret_values = np.zeros(max_trades, dtype=np.float64)
+        pos_arr = np.zeros(n, dtype=np.int64)
+
+        position = 0
+        entry_price = 0.0
+        hold_days = 0
+        trade_count = 0
+
+        for i in range(n):
+            if position == 0 and buy[i]:
+                position = 1
+                entry_price = close[i]
+                hold_days = 0
+                entry_indices[trade_count] = i
+            elif position == 1:
+                hold_days += 1
+                if hold_days >= hold_period or sell[i]:
+                    exit_price = close[i]
+                    ret = (exit_price - entry_price) / entry_price
+                    exit_indices[trade_count] = i
+                    ret_values[trade_count] = ret
+                    trade_count += 1
+                    position = 0
+                    hold_days = 0
+
+            pos_arr[i] = position
+
+        return entry_indices, exit_indices, ret_values, pos_arr, trade_count
+
 
 class VWAPMeanReversionStrategy:
     """VWAP均值回归策略"""
@@ -45,6 +109,11 @@ class VWAPMeanReversionStrategy:
         self.hold_period = hold_period
         self.use_turnover_filter = use_turnover_filter
         self.min_turnover_rate = min_turnover_rate
+
+    def set_parameters(self, **kwargs):
+        for key, value in kwargs.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
         
     def validate_vwap_data(self, df: pd.DataFrame) -> bool:
         """
@@ -164,60 +233,39 @@ class VWAPMeanReversionStrategy:
     
     def backtest(self, df: pd.DataFrame) -> Dict:
         """
-        简单回测
-        
+        简单回测（优先使用numba加速，
+              若numba不可用则使用纯Python循环）
+
         Args:
             df: 包含信号的K线数据
-            
+
         Returns:
             回测结果字典
         """
         if 'buy_signal' not in df.columns:
             df = self.generate_signals(df)
-        
+
         # 初始化持仓和收益
-        df['position'] = 0  # 0=空仓, 1=持有
+        df['position'] = 0
         df['returns'] = 0.0
-        
-        position = 0
-        entry_price = 0
-        hold_days = 0
-        trades = []
-        
-        for i in range(len(df)):
-            # 持仓逻辑
-            if position == 0 and df.iloc[i]['buy_signal']:
-                # 开仓
-                position = 1
-                entry_price = df.iloc[i]['close']
-                hold_days = 0
-                trades.append({
-                    'type': 'buy',
-                    'date': df.iloc[i]['datetime'],
-                    'price': entry_price
-                })
-                
-            elif position == 1:
-                hold_days += 1
-                
-                # 平仓条件：1) 达到持有周期 或 2) 触发卖出信号
-                if hold_days >= self.hold_period or df.iloc[i]['sell_signal']:
-                    exit_price = df.iloc[i]['close']
-                    ret = (exit_price - entry_price) / entry_price
-                    df.loc[df.index[i], 'returns'] = ret
-                    
-                    trades.append({
-                        'type': 'sell',
-                        'date': df.iloc[i]['datetime'],
-                        'price': exit_price,
-                        'return': ret
-                    })
-                    
-                    position = 0
-                    hold_days = 0
-            
-            df.loc[df.index[i], 'position'] = position
-        
+
+        # 提取numpy数组用于numba加速
+        close_arr = df['close'].values
+        buy_arr = df['buy_signal'].values.astype(np.bool_)
+        sell_arr = df['sell_signal'].values.astype(np.bool_)
+        n = len(df)
+
+        if _NUMBA_AVAILABLE:
+            logger.info("使用numba加速回测循环")
+            entry_indices, exit_indices, ret_values, pos_arr, trade_count = \
+                _vwap_backtest_numba_core(close_arr, buy_arr, sell_arr, self.hold_period, n)
+            trades = self._build_trades_from_indices(df, entry_indices, exit_indices, ret_values, trade_count)
+            for i in range(n):
+                df.loc[df.index[i], 'position'] = pos_arr[i]
+        else:
+            logger.info("numba不可用，使用纯Python循环回测")
+            trades = self._backtest_python_loop(df, close_arr, buy_arr, sell_arr, n)
+
         # 计算策略表现
         total_trades = len([t for t in trades if t['type'] == 'sell'])
         if total_trades > 0:
@@ -228,7 +276,7 @@ class VWAPMeanReversionStrategy:
             avg_return = 0
             win_rate = 0
             total_return = 0
-        
+
         results = {
             'total_trades': total_trades,
             'avg_return': avg_return,
@@ -236,14 +284,70 @@ class VWAPMeanReversionStrategy:
             'total_return': total_return,
             'trades': trades
         }
-        
-        logger.info(f"\n📈 回测结果:")
+
+        logger.info(f"\n 回测结果:")
         logger.info(f"  总交易次数: {total_trades}")
         logger.info(f"  平均收益: {avg_return:.2%}")
         logger.info(f"  胜率: {win_rate:.1%}")
         logger.info(f"  累计收益: {total_return:.2%}")
-        
+
         return results
+
+    def _backtest_python_loop(self, df, close_arr, buy_arr, sell_arr, n):
+        """纯Python回测循环（numba不可用时的fallback）"""
+        trades = []
+        position = 0
+        entry_price = 0.0
+        hold_days = 0
+
+        for i in range(n):
+            if position == 0 and buy_arr[i]:
+                position = 1
+                entry_price = close_arr[i]
+                hold_days = 0
+                trades.append({
+                    'type': 'buy',
+                    'date': df.iloc[i]['datetime'],
+                    'price': entry_price
+                })
+            elif position == 1:
+                hold_days += 1
+                if hold_days >= self.hold_period or sell_arr[i]:
+                    exit_price = close_arr[i]
+                    ret = (exit_price - entry_price) / entry_price
+                    df.loc[df.index[i], 'returns'] = ret
+                    trades.append({
+                        'type': 'sell',
+                        'date': df.iloc[i]['datetime'],
+                        'price': exit_price,
+                        'return': ret
+                    })
+                    position = 0
+                    hold_days = 0
+
+            df.loc[df.index[i], 'position'] = position
+
+        return trades
+
+    def _build_trades_from_indices(self, df, entry_indices, exit_indices, ret_values, trade_count):
+        """将numba核心输出的索引数组转换为交易记录列表"""
+        trades = []
+        for j in range(trade_count):
+            entry_i = entry_indices[j]
+            exit_i = exit_indices[j]
+            trades.append({
+                'type': 'buy',
+                'date': df.iloc[entry_i]['datetime'],
+                'price': float(df.iloc[entry_i]['close'])
+            })
+            trades.append({
+                'type': 'sell',
+                'date': df.iloc[exit_i]['datetime'],
+                'price': float(df.iloc[exit_i]['close']),
+                'return': float(ret_values[j])
+            })
+            df.loc[df.index[exit_i], 'returns'] = ret_values[j]
+        return trades
     
     def analyze_vwap_pattern(self, df: pd.DataFrame) -> Dict:
         """

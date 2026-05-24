@@ -169,7 +169,7 @@ class BaseAnalysisPanel(QWidget):
         """析构函数"""
         try:
             self.cleanup_resources()
-        except:
+        except Exception:
             pass
 
 
@@ -352,6 +352,10 @@ class AnalysisToolsPanel(BaseAnalysisPanel, EnhancedBatchAnalysisMixin):
             if hasattr(self, 'analyze_btn'):
                 self.analyze_btn.clicked.connect(self.on_tools_panel_analyze)
 
+            # 连接交易执行信号
+            if hasattr(self, 'trading_widget') and self.trading_widget is not None:
+                self.trading_widget.trade_executed.connect(self._on_trade_executed)
+
             logger.info("信号连接完成")
         except Exception as e:
             logger.error(f"信号连接失败: {str(e)}")
@@ -418,6 +422,20 @@ class AnalysisToolsPanel(BaseAnalysisPanel, EnhancedBatchAnalysisMixin):
             self.analysis_progress.emit(message)
         except Exception as e:
             logger.error(f"进度更新失败: {str(e)}")
+
+    def _on_trade_executed(self, trade_record: dict):
+        """处理交易执行信号"""
+        try:
+            trade_type = trade_record.get('type', 'UNKNOWN')
+            stock_code = trade_record.get('stock_code', 'N/A')
+            price = trade_record.get('price', 0)
+            quantity = trade_record.get('quantity', 0)
+            amount = trade_record.get('amount', 0)
+            logger.info(f"交易已执行: {trade_type} {stock_code} "
+                       f"{quantity}股 @ {price:.2f} 金额: {amount:.2f}")
+            self.update_status(f"交易完成: {trade_type} {stock_code}")
+        except Exception as e:
+            logger.error(f"处理交易执行信号失败: {e}")
 
     def get_analysis_results(self):
         """获取分析结果"""
@@ -739,7 +757,7 @@ class AnalysisToolsPanel(BaseAnalysisPanel, EnhancedBatchAnalysisMixin):
             if hasattr(self, 'async_manager'):
                 self.async_manager.shutdown(wait=False)
             super().__del__()
-        except:
+        except Exception:
             pass
 
 

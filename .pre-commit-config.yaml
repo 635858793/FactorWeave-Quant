@@ -1,0 +1,37 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+      - id: detect-private-key
+      - id: check-merge-conflict
+
+  - repo: local
+    hooks:
+      - id: p0-critical-risk-gate
+        name: P0致命风险门禁 (风控fail-closed + 做空止损方向)
+        entry: python -m pytest tests/test_p0_risk_fixes.py -v --tb=short --strict-markers -p no:warnings
+        language: system
+        pass_filenames: false
+        always_run: true
+        verbose: true
+        stages: [pre-commit, pre-push]
+
+      - id: pytest-unit
+        name: 单元测试
+        entry: python -m pytest tests/ -m "unit" -v --tb=short -p no:warnings
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: ruff-check
+        name: Ruff 代码检查
+        entry: ruff check --line-length 120 core/ tests/ scripts/
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]

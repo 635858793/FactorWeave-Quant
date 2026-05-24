@@ -10,7 +10,7 @@ import pandas as pd
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
+    QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
     QTableWidget, QTableWidgetItem, QLabel, QLineEdit, QComboBox,
     QGroupBox, QFormLayout, QPushButton, QTextEdit, QSpinBox,
     QDoubleSpinBox, QCheckBox, QSplitter, QListWidget, QListWidgetItem,
@@ -20,9 +20,11 @@ from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QFont
 from core.indicator_service import calculate_indicator
 
+from .base_dialog import BaseDialog
+
 logger = logger
 
-class TechnicalAnalysisDialog(QDialog):
+class TechnicalAnalysisDialog(BaseDialog):
     """技术分析对话框"""
 
     # 信号
@@ -39,22 +41,26 @@ class TechnicalAnalysisDialog(QDialog):
             stock_name: 股票名称
             analysis_service: 分析服务
         """
-        super().__init__(parent)
         self.stock_code = stock_code
         self.stock_name = stock_name or stock_code or ''
         self.analysis_service = analysis_service
         self.current_data = None
         self.indicators_data = {}
+        
+        display_name = f"{self.stock_name} ({self.stock_code})" if self.stock_name and self.stock_code else (self.stock_code or '未选择股票')
+        
+        super().__init__(
+            parent,
+            title=f"技术分析 - {display_name}",
+            size=(1000, 700),
+            settings_key="TechnicalAnalysisDialog"
+        )
+        
         self._setup_ui()
         self._load_stock_data()
 
     def _setup_ui(self) -> None:
         """设置UI"""
-        display_name = f"{self.stock_name} ({self.stock_code})" if self.stock_name and self.stock_code else (self.stock_code or '未选择股票')
-        self.setWindowTitle(f"技术分析 - {display_name}")
-        self.setModal(True)
-        self.resize(1000, 700)
-
         layout = QVBoxLayout(self)
 
         # 创建选项卡

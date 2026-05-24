@@ -37,6 +37,7 @@ def get_task_executor() -> TaskExecutor:
     if _task_executor is None:
         config = get_node_config()
         _task_executor = TaskExecutor(config)
+        _task_executor.start_scheduler()
     return _task_executor
 
 
@@ -124,14 +125,15 @@ async def execute_task(
                 detail=f"节点繁忙，当前任务数: {stats['active_tasks']}/{config.max_workers}"
             )
 
-        # 异步执行任务（在后台）
+        # 异步执行任务（在后台），传递优先级和超时
         import asyncio
         asyncio.create_task(
             executor.execute_task(
                 task_request.task_id,
                 task_request.task_type,
                 task_request.task_data,
-                task_request.timeout
+                task_request.timeout,
+                task_request.priority
             )
         )
 

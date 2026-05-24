@@ -161,3 +161,39 @@ class StrategyManager:
         except Exception as e:
             logger.error(f"获取策略列表失败: {e}")
             return {}
+
+
+_strategy_manager_instance: Optional[StrategyManager] = None
+
+
+def get_strategy_manager(service_container=None) -> Optional[StrategyManager]:
+    """
+    获取全局策略管理器实例
+
+    Args:
+        service_container: 服务容器，首次调用时需要提供
+
+    Returns:
+        StrategyManager: 策略管理器实例，如果未初始化且未提供容器则返回 None
+    """
+    global _strategy_manager_instance
+
+    if _strategy_manager_instance is not None:
+        return _strategy_manager_instance
+
+    if service_container is not None:
+        _strategy_manager_instance = StrategyManager(service_container)
+        logger.info("全局策略管理器实例已创建")
+        return _strategy_manager_instance
+
+    logger.warning("策略管理器未初始化且未提供服务容器")
+    return None
+
+
+def reset_strategy_manager():
+    """重置全局策略管理器实例"""
+    global _strategy_manager_instance
+    if _strategy_manager_instance is not None:
+        _strategy_manager_instance.clear_cache()
+    _strategy_manager_instance = None
+    logger.info("全局策略管理器实例已重置")

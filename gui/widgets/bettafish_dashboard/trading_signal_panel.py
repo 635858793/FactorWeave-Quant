@@ -6,7 +6,7 @@
 """
 
 import sys
-import logging
+import os
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 from PyQt5.QtWidgets import (
@@ -234,54 +234,27 @@ class TradingSignalPanel(QWidget):
     def _load_historical_signals(self):
         """加载历史信号数据"""
         try:
-            # 模拟信号数据
-            sample_signals = [
-                {
-                    "timestamp": datetime.now() - timedelta(minutes=30),
-                    "symbol": "000001",
-                    "signal_type": "BUY",
-                    "strength": 0.8,
-                    "confidence": 0.85,
-                    "status": "活跃",
-                    "description": "技术面买入信号，MACD金叉"
-                },
-                {
-                    "timestamp": datetime.now() - timedelta(minutes=45),
-                    "symbol": "000002",
-                    "signal_type": "SELL",
-                    "strength": 0.7,
-                    "confidence": 0.75,
-                    "status": "活跃",
-                    "description": "基本面卖出信号，业绩下滑"
-                },
-                {
-                    "timestamp": datetime.now() - timedelta(minutes=60),
-                    "symbol": "000001",
-                    "signal_type": "HOLD",
-                    "strength": 0.3,
-                    "confidence": 0.60,
-                    "status": "已确认",
-                    "description": "中性信号，观望为主"
-                }
-            ]
-            
-            self._signals_data = sample_signals
-            
+            if self._bettafish_agent and hasattr(self._bettafish_agent, 'get_trading_signals'):
+                agent_signals = self._bettafish_agent.get_trading_signals()
+                if agent_signals:
+                    self._signals_data = agent_signals
+                    return
+
+            self._signals_data = []
+            logger.info("交易信号数据源未连接，显示暂无数据")
         except Exception as e:
             logger.error(f"加载历史信号数据失败: {e}")
+            self._signals_data = []
 
     def _update_signals(self):
         """更新信号数据"""
         try:
-            # 从BettaFish代理获取最新信号
-            if self._bettafish_agent:
-                # 这里应该调用BettaFish代理的方法获取实时信号
-                # 目前使用模拟数据
-                pass
-            
-            # 更新显示
+            if self._bettafish_agent and hasattr(self._bettafish_agent, 'get_trading_signals'):
+                agent_signals = self._bettafish_agent.get_trading_signals()
+                if agent_signals:
+                    self._signals_data = agent_signals
+
             self._update_display()
-            
         except Exception as e:
             logger.error(f"更新信号数据失败: {e}")
 
@@ -350,16 +323,46 @@ class TradingSignalPanel(QWidget):
 
     def _update_statistics(self):
         """更新统计信息"""
-        # 模拟统计数据
-        self.success_rate_label.setText("72.5%")
-        self.accuracy_label.setText("68.3%")
-        self.profit_rate_label.setText("45.2%")
-        
-        # 更新信号强度图表（简单文本表示）
-        self.strength_chart.setText("信号强度分布图\n\n" + 
-                                   "强信号 (0.7-1.0): ████████░░ 80%\n" +
-                                   "中信号 (0.4-0.7): ██████░░░░ 60%\n" +
-                                   "弱信号 (0.0-0.4): ████░░░░░░ 40%")
+        if not self._signals_data:
+            self.success_rate_label.setText("暂无数据")
+            self.accuracy_label.setText("暂无数据")
+            self.profit_rate_label.setText("暂无数据")
+            self.strength_chart.setText("暂无信号数据")
+            return
+
+        total = len(self._signals_data)
+        if total == 0:
+            self.success_rate_label.setText("0.0%")
+            self.accuracy_label.setText("0.0%")
+            self.profit_rate_label.setText("0.0%")
+            self.strength_chart.setText("暂无信号数据")
+            return
+
+        strong = sum(1 for s in self._signals_data if s.get('strength', 0) >= 0.7)
+        medium = sum(1 for s in self._signals_data if 0.4 <= s.get('strength', 0) < 0.7)
+        weak = total - strong - medium
+
+        confirmed = sum(1 for s in self._signals_data if s.get('status') == '已确认')
+        success_rate = (confirmed / total * 100) if total > 0 else 0.0
+        self.success_rate_label.setText(f"{success_rate:.1f}%")
+
+        high_confidence = sum(1 for s in self._signals_data if s.get('confidence', 0) >= 0.7)
+        accuracy = (high_confidence / total * 100) if total > 0 else 0.0
+        self.accuracy_label.setText(f"{accuracy:.1f}%")
+
+        profitable = sum(1 for s in self._signals_data if s.get('signal_type') == 'BUY')
+        profit_rate = (profitable / total * 100) if total > 0 else 0.0
+        self.profit_rate_label.setText(f"{profit_rate:.1f}%")
+
+        block = '\u2588'
+        shade = '\u2591'
+
+        self.strength_chart.setText(
+            "信号强度分布图\n\n" +
+            f"\u5f3a\u4fe1\u53f7 (0.7-1.0): {block * min(10, int(strong / max(1, total) * 10))}{shade * max(0, 10 - int(strong / max(1, total) * 10))} {strong / max(1, total) * 100:.0f}%\n" +
+            f"\u4e2d\u4fe1\u53f7 (0.4-0.7): {block * min(10, int(medium / max(1, total) * 10))}{shade * max(0, 10 - int(medium / max(1, total) * 10))} {medium / max(1, total) * 100:.0f}%\n" +
+            f"\u5f31\u4fe1\u53f7 (0.0-0.4): {block * min(10, int(weak / max(1, total) * 10))}{shade * max(0, 10 - int(weak / max(1, total) * 10))} {weak / max(1, total) * 100:.0f}%"
+        )
 
     def _confirm_signal(self):
         """确认信号"""

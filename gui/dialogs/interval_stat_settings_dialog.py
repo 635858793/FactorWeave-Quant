@@ -3,6 +3,8 @@ import os
 from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSpinBox, QDoubleSpinBox, QSlider, QPushButton, QListWidget, QListWidgetItem, QLineEdit, QMessageBox, QFormLayout, QGroupBox, QDialogButtonBox, QFileDialog, QInputDialog, QGridLayout, QListView
 from PyQt5.QtCore import Qt
 
+from .base_dialog import BaseDialog
+
 SETTINGS_FILE = os.path.join(os.path.dirname(
     __file__), '../../config/interval_stat_settings.json')
 
@@ -50,12 +52,15 @@ def save_settings(settings):
     with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
         json.dump(settings, f, ensure_ascii=False, indent=2)
 
-class IntervalStatSettingsDialog(QDialog):
+class IntervalStatSettingsDialog(BaseDialog):
     def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("区间统计设置")
-        self.setMinimumSize(500, 500)
         self.settings = load_settings()
+        super().__init__(
+            parent,
+            title="区间统计设置",
+            min_size=(500, 500),
+            settings_key="IntervalStatSettingsDialog"
+        )
         self.init_ui()
 
     def init_ui(self):

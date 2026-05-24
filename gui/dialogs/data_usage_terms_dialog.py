@@ -7,18 +7,23 @@ from PyQt5.QtGui import *
 from pathlib import Path
 from loguru import logger
 
+from .base_dialog import BaseDialog
+
 logger = logger
 
 
-class DataUsageTermsDialog(QDialog):
+class DataUsageTermsDialog(BaseDialog):
     """数据使用条款对话框"""
 
     def __init__(self, parent=None, show_agreement=False):
-        super().__init__(parent)
+        super().__init__(
+            parent,
+            title="数据使用条款",
+            min_size=(800, 600),
+            settings_key="DataUsageTermsDialog"
+        )
         self.show_agreement = show_agreement
         self.user_agreed = False
-        self.setWindowTitle("数据使用条款")
-        self.setMinimumSize(800, 600)
         self.setup_ui()
         self.load_terms()
 

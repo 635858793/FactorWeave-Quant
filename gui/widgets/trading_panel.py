@@ -739,6 +739,9 @@ class TradingPanel(QWidget):
             from core.trading.account_manager import AccountManager
             from core.trading.account_models import TradingInterfaceType
             
+            if not hasattr(self, '_service_container') or self._service_container is None:
+                logger.warning("服务容器不可用，跳过CTP账户加载")
+                return
             account_manager = self._service_container.resolve(AccountManager)
             accounts = account_manager.get_all_accounts()
             

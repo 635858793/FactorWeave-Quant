@@ -12,7 +12,12 @@ import warnings
 from dataclasses import dataclass
 from enum import Enum
 from scipy import stats
-import talib
+try:
+    import talib
+    TALIB_AVAILABLE = True
+except ImportError:
+    talib = None
+    TALIB_AVAILABLE = False
 
 # 导入自定义模块
 from core.data_validator import ProfessionalDataValidator, ValidationLevel

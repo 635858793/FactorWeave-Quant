@@ -585,12 +585,11 @@ class MacroEconomicDataManager:
             correlation, p_value = pearsonr(x, y)
             return float(correlation), float(p_value)
         except ImportError:
-            # 如果没有scipy，使用numpy计算
             correlation = np.corrcoef(x, y)[0, 1]
-            # 简单的p值估计（不够精确，建议安装scipy）
             n = len(x)
+            from scipy.stats import t
             t_stat = correlation * np.sqrt((n - 2) / (1 - correlation**2))
-            p_value = 2 * (1 - abs(t_stat) / np.sqrt(n - 2))  # 简化估计
+            p_value = 2 * t.sf(abs(t_stat), df=n - 2)
             return float(correlation), float(p_value)
 
     def _calculate_spearman_correlation(self, x: np.ndarray, y: np.ndarray) -> Tuple[float, float]:
@@ -629,7 +628,8 @@ class MacroEconomicDataManager:
 
             # 置信区间
             alpha = 1 - confidence_level
-            z_critical = 1.96  # 95%置信区间的z值
+            from scipy.stats import norm
+            z_critical = norm.ppf(1 - alpha / 2)
 
             z_lower = z - z_critical * se
             z_upper = z + z_critical * se

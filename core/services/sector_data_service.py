@@ -598,30 +598,35 @@ class SectorDataService:
         """
         try:
             # 创建标准化数据框
-            standardized_data = []
             current_date = datetime.now().strftime('%Y-%m-%d')
 
-            for _, row in df.iterrows():
-                record = {
-                    'date': current_date,
-                    'sector_name': row.get('名称', ''),
-                    'sector_code': row.get('代码', ''),
-                    'period': period,
-                    'main_net_inflow': self._safe_float_convert(row.get('主力净流入', 0)),
-                    'main_net_inflow_ratio': self._safe_float_convert(row.get('主力净流入占比', 0)),
-                    'super_large_net_inflow': self._safe_float_convert(row.get('超大单净流入', 0)),
-                    'large_net_inflow': self._safe_float_convert(row.get('大单净流入', 0)),
-                    'medium_net_inflow': self._safe_float_convert(row.get('中单净流入', 0)),
-                    'small_net_inflow': self._safe_float_convert(row.get('小单净流入', 0)),
-                    'change_percent': self._safe_float_convert(row.get('涨跌幅', 0)),
-                    'turnover_rate': self._safe_float_convert(row.get('换手率', 0)),
-                    'volume': self._safe_float_convert(row.get('成交量', 0)),
-                    'amount': self._safe_float_convert(row.get('成交额', 0)),
-                    'created_at': datetime.now().isoformat()
-                }
-                standardized_data.append(record)
+            result = {}
+            result['date'] = current_date
+            result['period'] = period
+            result['created_at'] = datetime.now().isoformat()
 
-            return pd.DataFrame(standardized_data)
+            result['sector_name'] = df['名称'].fillna('') if '名称' in df.columns else pd.Series('', index=df.index)
+            result['sector_code'] = df['代码'].fillna('') if '代码' in df.columns else pd.Series('', index=df.index)
+
+            float_field_map = {
+                '主力净流入': 'main_net_inflow',
+                '主力净流入占比': 'main_net_inflow_ratio',
+                '超大单净流入': 'super_large_net_inflow',
+                '大单净流入': 'large_net_inflow',
+                '中单净流入': 'medium_net_inflow',
+                '小单净流入': 'small_net_inflow',
+                '涨跌幅': 'change_percent',
+                '换手率': 'turnover_rate',
+                '成交量': 'volume',
+                '成交额': 'amount',
+            }
+            for src_col, dst_col in float_field_map.items():
+                if src_col in df.columns:
+                    result[dst_col] = pd.to_numeric(df[src_col], errors='coerce').fillna(0.0)
+                else:
+                    result[dst_col] = pd.Series(0.0, index=df.index)
+
+            return pd.DataFrame(result)
 
         except Exception as e:
             logger.error(f"标准化板块数据失败: {e}")
@@ -692,10 +697,7 @@ class SectorDataService:
             """
 
             # 准备批量插入的数据
-            records = []
-            for _, row in data.iterrows():
-                record = tuple(row[col] for col in columns)
-                records.append(record)
+            records = [tuple(x) for x in data[columns].values.tolist()]
 
             # 执行批量插入
             conn.executemany(insert_sql, records)

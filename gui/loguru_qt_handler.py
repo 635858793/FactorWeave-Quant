@@ -189,7 +189,7 @@ class LoguruQtHandler(QObject):
         try:
             if hasattr(self, 'sink_id'):
                 logger.remove(self.sink_id)
-        except:
+        except Exception:
             pass  # 忽略移除错误
 
         self.clear_queue()
@@ -199,7 +199,7 @@ class LoguruQtHandler(QObject):
         """析构函数"""
         try:
             self.shutdown()
-        except:
+        except Exception:
             pass  # 忽略析构错误
 
 class LoguruQtSignalBridge:

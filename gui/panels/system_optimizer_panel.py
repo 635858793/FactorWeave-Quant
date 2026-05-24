@@ -536,4 +536,5 @@ class SystemOptimizerPanel(QWidget):
         except Exception as e:
             logger.error(f"清理维护服务失败: {e}")
 
+        super().closeEvent(event)
         event.accept()

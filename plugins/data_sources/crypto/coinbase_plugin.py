@@ -254,20 +254,20 @@ class CoinbasePlugin(HTTPAPIPluginTemplate):
             if not products_info:
                 return pd.DataFrame()
 
-            symbols_data = []
-
-            for product in products_info:
-                if product.get('status') == 'online' and not product.get('trading_disabled', False):
-                    symbols_data.append({
-                        'symbol': product.get('id', ''),
-                        'base_asset': product.get('base_currency', ''),
-                        'quote_asset': product.get('quote_currency', ''),
-                        'status': product.get('status', ''),
-                        'base_min_size': float(product.get('base_min_size', 0)),
-                        'base_max_size': float(product.get('base_max_size', 0)),
-                        'quote_increment': float(product.get('quote_increment', 0)),
-                        'base_increment': float(product.get('base_increment', 0)),
-                    })
+            symbols_data = [
+                {
+                    'symbol': product.get('id', ''),
+                    'base_asset': product.get('base_currency', ''),
+                    'quote_asset': product.get('quote_currency', ''),
+                    'status': product.get('status', ''),
+                    'base_min_size': float(product.get('base_min_size', 0)),
+                    'base_max_size': float(product.get('base_max_size', 0)),
+                    'quote_increment': float(product.get('quote_increment', 0)),
+                    'base_increment': float(product.get('base_increment', 0)),
+                }
+                for product in products_info
+                if product.get('status') == 'online' and not product.get('trading_disabled', False)
+            ]
 
             df = pd.DataFrame(symbols_data)
             self.logger.info(f"获取Coinbase交易对列表成功，共 {len(df)} 个交易对")

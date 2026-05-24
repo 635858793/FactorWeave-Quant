@@ -348,7 +348,8 @@ class NetworkService(BaseService):
             self._unified_cache = self._service_container.resolve(CacheService)
             logger.debug(f"NetworkService 已连接到统一缓存服务，命名空间: {self._cache_namespace}")
         else:
-            raise RuntimeError("统一缓存服务未注册，请确保 CacheService 已在服务容器中注册")
+            self._unified_cache = None
+            logger.debug(f"{self.__class__.__name__} 统一缓存服务未注册，缓存功能降级为空操作")
 
     def _do_initialize(self) -> None:
         """执行具体的初始化逻辑"""
@@ -483,7 +484,7 @@ class NetworkService(BaseService):
                     if response and not response.error:
                         successful_tests += 1
                         break  # 只要有一个成功就行
-                except:
+                except Exception:
                     continue
 
             if successful_tests == 0:
@@ -662,7 +663,7 @@ class NetworkService(BaseService):
             try:
                 if response.headers.get('content-type', '').startswith('application/json'):
                     network_response.json_data = response.json()
-            except:
+            except Exception:
                 pass
 
             # 检查状态码
@@ -706,7 +707,7 @@ class NetworkService(BaseService):
         """更新缓存 - 使用统一缓存服务"""
         try:
             if self._unified_cache is None:
-                raise RuntimeError("统一缓存服务未初始化")
+                return
 
             cache_entry = (response, datetime.now())
             self._unified_cache.set(url, cache_entry, ttl=self._cache_ttl, namespace=self._cache_namespace)
@@ -856,7 +857,7 @@ class NetworkService(BaseService):
             try:
                 response = self.get("https://httpbin.org/status/200", timeout=5.0)
                 connectivity_test = (response and not response.error)
-            except:
+            except Exception:
                 pass
 
             circuit_status = self.get_circuit_breaker_status()

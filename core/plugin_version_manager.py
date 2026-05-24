@@ -8,13 +8,10 @@ from typing import Dict, List, Optional, Tuple, Set, Any
 from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime
-import logging
+from loguru import logger
 import json
 from pathlib import Path
 import re
-
-logger = logging.getLogger(__name__)
-
 
 class VersionComparison(Enum):
     """版本比较结果"""

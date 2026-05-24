@@ -1,0 +1,15 @@
+{
+  "updated_at": "2026-05-24T21:10:25.960391",
+  "metrics": {
+    "chart.update": {
+      "name": "chart.update",
+      "avg_duration": 0.060478500001408975,
+      "max_duration": 0.060478500001408975,
+      "total_duration": 0.060478500001408975,
+      "call_count": 1,
+      "error_count": 0,
+      "success_rate": 1.0,
+      "last_execution_time": 1779628209.398911
+    }
+  }
+}

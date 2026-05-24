@@ -7,6 +7,7 @@ Financial Modeling Prep (FMP) 情绪数据源插件
 """
 
 import requests
+import os
 import numpy as np
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
@@ -158,7 +159,7 @@ class FMPSentimentPlugin(BaseSentimentPlugin, ConfigurablePlugin):
         """获取默认配置"""
         return {
             "enabled": True,
-            "api_key": "",
+            "api_key": os.environ.get("FMP_API_KEY", ""),
             "symbols": ["AAPL", "MSFT", "GOOGL"],
             "max_symbols": 3,
             "data_weight": 0.25,
@@ -253,6 +254,7 @@ class FMPSentimentPlugin(BaseSentimentPlugin, ConfigurablePlugin):
                 sentiment_data = self._fetch_real_fmp_data(api_key, limited_symbols)
             else:
                 # 没有有效API Key，返回失败
+                logger.warning("FMP情绪插件：未配置有效API Key，无法获取真实数据")
                 return SentimentResponse(
                     success=False,
                     data=[],

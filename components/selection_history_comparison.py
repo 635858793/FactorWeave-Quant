@@ -302,11 +302,10 @@ class SelectionComparisonDialog(QDialog):
                 result_list = results.get(result_id, [])
                 found = False
                 
-                for result in result_list:
+                for rank_idx, result in enumerate(result_list):
                     if result['stock_code'] == stock_code:
-                        # 显示评分和排名
                         score = result.get('score', 0)
-                        rank = result_list.index(result) + 1
+                        rank = rank_idx + 1
                         self.results_table.setItem(
                             row, 
                             col + 1, 

@@ -3,7 +3,7 @@
 建立用户个性化界面配置系统，支持布局、主题、快捷键等个性化设置
 """
 
-import logging
+from loguru import logger
 import json
 import os
 from typing import Dict, List, Any, Optional, Union, Callable
@@ -25,8 +25,6 @@ from PyQt5.QtCore import (
 )
 from PyQt5.QtGui import QFont, QColor, QIcon, QPixmap, QPalette, QKeySequence
 import threading
-
-logger = logging.getLogger(__name__)
 
 
 class PreferenceCategory(Enum):
@@ -173,7 +171,7 @@ class PreferenceValidator:
         try:
             if not prefs.accent_color.startswith('#') or len(prefs.accent_color) != 7:
                 errors.append("强调色格式无效")
-        except:
+        except Exception:
             errors.append("强调色格式无效")
 
         return errors

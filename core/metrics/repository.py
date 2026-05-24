@@ -1,5 +1,4 @@
 # core/metrics/repository.py
-import sqlite3
 import threading
 from pathlib import Path
 from typing import List, Tuple, Dict, Any, Optional
@@ -8,6 +7,8 @@ import json
 import time
 from threading import Lock
 from loguru import logger
+
+from ..database.unified_sqlite_access import UnifiedSQLiteAccess
 
 
 # 获取项目根目录的绝对路径
@@ -43,7 +44,8 @@ class MetricsRepository:
     def _init_database(self):
         """初始化数据库表结构"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 # 创建指标数据表
@@ -63,8 +65,7 @@ class MetricsRepository:
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_metrics_name_time ON metrics(metric_name, timestamp)')
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_metrics_category ON metrics(category)')
 
-                conn.commit()
-                logger.info("数据库初始化完成")
+            logger.info("数据库初始化完成")
 
         except Exception as e:
             logger.error(f"数据库初始化失败: {e}")
@@ -75,13 +76,13 @@ class MetricsRepository:
             timestamp = int(time.time())
             metadata_json = json.dumps(metadata) if metadata else None
 
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     INSERT INTO metrics (metric_name, value, timestamp, category, metadata)
                     VALUES (?, ?, ?, ?, ?)
                 ''', (metric_name, value, timestamp, category, metadata_json))
-                conn.commit()
 
         except Exception as e:
             logger.error(f"存储指标失败: {e}")
@@ -92,14 +93,14 @@ class MetricsRepository:
             timestamp = int(time.time())
             metadata_json = json.dumps(metadata) if metadata else None
 
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     UPDATE metrics
                     SET value = ?, timestamp = ?, metadata = ?
                     WHERE id = ?
                 ''', (value, timestamp, metadata_json, metric_id))
-                conn.commit()
 
                 if cursor.rowcount > 0:
                     logger.debug(f"指标更新成功: id={metric_id}, value={value}")
@@ -115,10 +116,10 @@ class MetricsRepository:
     def delete_metric(self, metric_id: int) -> bool:
         """删除单个指标"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("DELETE FROM metrics WHERE id = ?", (metric_id,))
-                conn.commit()
 
                 if cursor.rowcount > 0:
                     logger.debug(f"指标删除成功: id={metric_id}")
@@ -151,7 +152,8 @@ class MetricsRepository:
             指标数据列表
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 query = "SELECT * FROM metrics WHERE metric_name = ?"
@@ -230,7 +232,8 @@ class MetricsRepository:
 
             elif table == "app_metrics_summary":
                 # 查询应用性能数据
-                with sqlite3.connect(self.db_path) as conn:
+                db = UnifiedSQLiteAccess.get_instance(self.db_path)
+                with db.get_connection() as conn:
                     cursor = conn.cursor()
 
                     query = '''
@@ -271,7 +274,8 @@ class MetricsRepository:
     def get_latest_metric(self, metric_name: str, category: str = None) -> Optional[Dict[str, Any]]:
         """获取最新的指标值"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 query = "SELECT * FROM metrics WHERE metric_name = ?"
@@ -301,11 +305,11 @@ class MetricsRepository:
         try:
             cutoff_time = int(time.time()) - (days * 24 * 3600)
 
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("DELETE FROM metrics WHERE timestamp < ?", (cutoff_time,))
                 deleted_count = cursor.rowcount
-                conn.commit()
 
                 logger.info(f"清理了 {deleted_count} 条旧数据")
 

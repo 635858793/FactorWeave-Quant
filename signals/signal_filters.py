@@ -1,3 +1,7 @@
+# ⚠️ 此文件为 legacy 代码，功能已迁移至 core/signal/
+# 新代码请使用 from core.signal import ...
+# 保留此文件仅用于向后兼容
+
 import numpy as np
 import pandas as pd
 from loguru import logger
@@ -188,22 +192,14 @@ def combine_signal_filters(df, original_signal_col='signal', filter_cols=None):
     # 创建一个新列来存储合并后的信号
     result['combined_signal'] = result[original_signal_col]
 
-    # 如果任何一个过滤器过滤掉了信号，最终信号也被过滤掉
-    for i in range(len(result)):
-        original_signal = result[original_signal_col].iloc[i]
+    # 如果任何一个过滤器过滤掉了信号，最终信号也被过滤掉 - 向量化版本
+    combined = result[original_signal_col].values.astype(np.float64)
 
-        # 如果原始信号为0，组合信号也为0
-        if original_signal == 0:
-            continue
+    for filter_col in filter_cols:
+        filter_vals = result[filter_col].values.astype(np.float64)
+        combined[filter_vals == 0] = 0
 
-        # 检查所有过滤器
-        for filter_col in filter_cols:
-            filtered_signal = result[filter_col].iloc[i]
-
-            # 如果任何一个过滤器将信号设为0，组合信号也设为0
-            if filtered_signal == 0:
-                result.loc[result.index[i], 'combined_signal'] = 0
-                break
+    result['combined_signal'] = combined
 
     # 计算过滤掉的信号数量
     filtered_out = sum(result[original_signal_col] !=

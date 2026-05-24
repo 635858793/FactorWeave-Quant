@@ -350,7 +350,9 @@ class ChartService(CacheableService, ConfigurableService):
         ]
 
     def get_chart_data(self, stock_code: str, period: str = None,
-                       indicators: List[str] = None, time_range: int = 365) -> Dict[str, Any]:
+                       indicators: List[str] = None, time_range: int = 365,
+                       start_date: Optional[str] = None,
+                       end_date: Optional[str] = None) -> Dict[str, Any]:
         """
         获取图表数据（为UI层提供的便捷方法）
 
@@ -359,6 +361,8 @@ class ChartService(CacheableService, ConfigurableService):
             period: 周期
             indicators: 指标列表
             time_range: 时间范围
+            start_date: 起始日期（可选，格式: YYYY-MM-DD），不传则全量加载
+            end_date: 结束日期（可选，格式: YYYY-MM-DD），不传则全量加载
 
         Returns:
             包含K线数据和指标数据的字典
@@ -403,24 +407,30 @@ class ChartService(CacheableService, ConfigurableService):
                     'period': period
                 }
 
-            # 转换K线数据为列表格式（适合UI显示）
-            kline_list = []
-            for _, row in kline_data.iterrows():
-                # 格式化日期字符串（只保留日期部分，适合日线图显示）
-                if hasattr(row.name, 'strftime'):
-                    date_str = row.name.strftime('%Y-%m-%d')
-                else:
-                    date_str = str(row.name)[:10]  # 取前10个字符作为日期
+            # 按日期过滤可见范围（向后兼容：不传日期参数则全量加载）
+            if start_date is not None or end_date is not None:
+                kline_data = self._filter_kline_by_date(kline_data, start_date, end_date)
+                if kline_data is None or kline_data.empty:
+                    logger.warning(f"No kline data in range [{start_date}, {end_date}] for {stock_code}")
+                    return {
+                        'stock_code': stock_code,
+                        'stock_name': stock_name,
+                        'kline_data': [],
+                        'indicators': {},
+                        'period': period
+                    }
 
-                kline_list.append({
-                    'date': date_str,  # 使用'date'字段名，与middle_panel保持一致
-                    'datetime': row.name.strftime('%Y-%m-%d %H:%M:%S') if hasattr(row.name, 'strftime') else str(row.name),
-                    'open': float(row.get('open', 0)),
-                    'high': float(row.get('high', 0)),
-                    'low': float(row.get('low', 0)),
-                    'close': float(row.get('close', 0)),
-                    'volume': int(row.get('volume', 0))
-                })
+            ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
+            kline_df = kline_data[ohlcv_cols].copy()
+            for col in ['open', 'high', 'low', 'close']:
+                if col in kline_df.columns:
+                    kline_df[col] = kline_df[col].astype(float)
+            if 'volume' in kline_df.columns:
+                kline_df['volume'] = kline_df['volume'].astype(int)
+            idx_dt = pd.to_datetime(kline_df.index)
+            kline_df['date'] = idx_dt.strftime('%Y-%m-%d')
+            kline_df['datetime'] = idx_dt.strftime('%Y-%m-%d %H:%M:%S')
+            kline_list = kline_df.to_dict('records')
 
             # 计算技术指标（这里是简化版本，实际应该调用专门的指标计算服务）
             indicators_data = self._calculate_indicators(
@@ -438,6 +448,25 @@ class ChartService(CacheableService, ConfigurableService):
         except Exception as e:
             logger.error(f"Failed to get chart data for {stock_code}: {e}")
             return {}
+
+    @staticmethod
+    def _filter_kline_by_date(kline_data: pd.DataFrame,
+                               start_date: Optional[str] = None,
+                               end_date: Optional[str] = None) -> pd.DataFrame:
+        """按日期范围过滤K线数据"""
+        if kline_data is None or kline_data.empty:
+            return kline_data
+        if start_date is None and end_date is None:
+            return kline_data
+        idx_dt = pd.to_datetime(kline_data.index)
+        mask = pd.Series(True, index=kline_data.index)
+        if start_date is not None:
+            start_dt = pd.to_datetime(start_date)
+            mask = mask & (idx_dt >= start_dt)
+        if end_date is not None:
+            end_dt = pd.to_datetime(end_date)
+            mask = mask & (idx_dt <= end_dt)
+        return kline_data[mask.values]
 
     def _calculate_indicators(self, kline_data: pd.DataFrame, indicators: List[str]) -> Dict[str, Any]:
         """
@@ -744,24 +773,11 @@ class ChartService(CacheableService, ConfigurableService):
 
     def _clear_period_cache(self) -> None:
         """清除周期相关缓存"""
-        keys_to_remove = []
-        for key in self._cache.keys():
-            if 'chart_' in key and f'_{self._current_period}_' in key:
-                keys_to_remove.append(key)
-
-        for key in keys_to_remove:
-            del self._cache[key]
+        self.clear_cache()
 
     def _clear_indicator_cache(self) -> None:
         """清除指标相关缓存"""
-        # 由于指标列表变化，清除所有图表缓存
-        keys_to_remove = []
-        for key in self._cache.keys():
-            if key.startswith('chart_'):
-                keys_to_remove.append(key)
-
-        for key in keys_to_remove:
-            del self._cache[key]
+        self.clear_cache()
 
     def _do_dispose(self) -> None:
         """清理资源"""

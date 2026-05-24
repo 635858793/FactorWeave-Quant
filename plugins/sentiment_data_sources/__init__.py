@@ -1,6 +1,17 @@
 """
 情绪数据源插件包
 提供多种情绪分析数据源的统一接口
+
+⚠️ 模拟数据警告：以下3个插件为模拟数据插件，生产环境不可用（需对接真实数据源）：
+  - NewsSentimentPlugin (news_sentiment_plugin.py) - 新闻情绪分析
+  - CryptoSentimentPlugin (crypto_sentiment_plugin.py) - 加密货币情绪分析
+  - MultiSourceSentimentPlugin (multi_source_sentiment_plugin.py) - 多源情绪数据
+  这些插件已标记 self._simulated = True，需对接真实数据源后方可启用。
+
+  可用的真实数据源插件：
+  - FMPSentimentPlugin - Financial Modeling Prep API (需要 API Key)
+  - ExordeSentimentPlugin - Exorde 27种情绪分析 API (免费/付费)
+  - VIXSentimentPlugin - Yahoo Finance / AlphaVantage 恐慌指数 (免费)
 """
 
 from plugins.sentiment_data_sources.base_sentiment_plugin import BaseSentimentPlugin

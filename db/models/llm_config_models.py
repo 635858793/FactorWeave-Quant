@@ -4,13 +4,13 @@ LLM配置数据库模型
 用于在数据库中存储和管理LLM配置
 """
 
-import sqlite3
 import json
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 from cryptography.fernet import Fernet
 from loguru import logger
+from core.database.unified_sqlite_access import UnifiedSQLiteAccess
 
 
 class LLMConfigManager:
@@ -32,7 +32,8 @@ class LLMConfigManager:
     def _init_database(self):
         """初始化数据库表"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 # 创建LLM配置表
@@ -78,8 +79,6 @@ class LLMConfigManager:
                         operation TEXT NOT NULL
                     )
                 """)
-
-                conn.commit()
                 logger.info("LLM配置数据库表初始化完成")
 
         except Exception as e:
@@ -159,7 +158,8 @@ class LLMConfigManager:
             if not provider:
                 raise ValueError("provider不能为空")
 
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 # 获取旧配置
@@ -225,8 +225,6 @@ class LLMConfigManager:
                         config.get('temperature', 0.7), config.get('max_tokens', 2000), config.get('timeout', 30),
                         1 if config.get('enabled', True) else 0, config.get('proxy'), extra_params_json, current_time, current_time
                     ))
-
-                conn.commit()
                 logger.info(f"LLM配置 {provider} 已保存")
                 return True
 
@@ -245,7 +243,8 @@ class LLMConfigManager:
             配置字典，如果不存在返回None
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     SELECT provider, api_key_encrypted, api_secret_encrypted, base_url, model, temperature, max_tokens, timeout, enabled, proxy, extra_params
@@ -282,7 +281,8 @@ class LLMConfigManager:
             配置字典
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     SELECT provider, api_key_encrypted, api_secret_encrypted, base_url, model, temperature, max_tokens, timeout, enabled, proxy, extra_params
@@ -324,7 +324,8 @@ class LLMConfigManager:
             是否成功
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 # 获取旧配置
@@ -352,7 +353,6 @@ class LLMConfigManager:
 
                     # 删除配置
                     cursor.execute("DELETE FROM llm_config WHERE provider = ?", (provider,))
-                    conn.commit()
                     logger.info(f"LLM配置 {provider} 已删除")
                     return True
                 else:
@@ -375,7 +375,8 @@ class LLMConfigManager:
             历史记录列表
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 if provider:
@@ -419,7 +420,8 @@ class LLMConfigManager:
             当前提供商名称，如果未设置返回None
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     SELECT config_value FROM llm_global_config 
@@ -446,7 +448,8 @@ class LLMConfigManager:
             是否成功
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 current_time = datetime.now().isoformat()
@@ -468,8 +471,6 @@ class LLMConfigManager:
                         INSERT INTO llm_global_config (config_key, config_value, created_at, updated_at)
                         VALUES (?, ?, ?, ?)
                     """, ('current_provider', provider, current_time, current_time))
-
-                conn.commit()
                 logger.info(f"当前提供商已设置为 {provider}")
                 return True
 
@@ -485,7 +486,8 @@ class LLMConfigManager:
             提供商名称列表
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self.db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     SELECT provider FROM llm_config WHERE enabled = 1

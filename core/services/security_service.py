@@ -8,6 +8,7 @@
 
 import hashlib
 import hmac
+import os
 import secrets
 import time
 import threading
@@ -210,7 +211,7 @@ class SecurityService(BaseService):
         # 加密管理
         self._encryption_key: Optional[bytes] = None
         self._cipher_suite: Optional[Fernet] = None
-        self._jwt_secret: str = secrets.token_urlsafe(32)
+        self._jwt_secret: str = self._load_or_create_jwt_secret()
 
         # 服务指标 - 区分BaseService的基础指标和SecurityService的业务指标
         self._security_metrics = SecurityMetrics()
@@ -269,9 +270,27 @@ class SecurityService(BaseService):
     def _initialize_encryption(self) -> None:
         """初始化加密系统"""
         try:
-            # 生成主加密密钥
-            password = b"default_master_password"  # 在实际应用中应从安全配置读取
-            salt = b"salt_1234567890"  # 在实际应用中应随机生成并保存
+            password_str = os.environ.get("HIKYUU_ENCRYPTION_KEY")
+            if not password_str:
+                logger.warning(
+                    "HIKYUU_ENCRYPTION_KEY 环境变量未配置，加密系统将禁用。"
+                    "生产环境必须通过环境变量设置安全的加密密钥。"
+                )
+                self._cipher_suite = None
+                return
+
+            password = password_str.encode("utf-8")
+
+            salt_str = os.environ.get("HIKYUU_ENCRYPTION_SALT")
+            if not salt_str:
+                logger.warning(
+                    "HIKYUU_ENCRYPTION_SALT 环境变量未配置，加密系统将禁用。"
+                    "生产环境必须通过环境变量设置安全的加密盐值。"
+                )
+                self._cipher_suite = None
+                return
+
+            salt = salt_str.encode("utf-8")[:16]
 
             from cryptography.hazmat.backends import default_backend
 
@@ -289,10 +308,10 @@ class SecurityService(BaseService):
             logger.info("✓ Encryption system initialized")
 
         except Exception as e:
-            logger.error(f"Failed to initialize encryption: {e}")
-            # 不要抛出异常，而是记录错误并继续
+            logger.critical(f"❌ FAIL-OPEN: 加密系统初始化失败，敏感数据将以明文传输！错误: {e}")
+            logger.critical("请立即配置 HIKYUU_ENCRYPTION_KEY 和 HIKYUU_ENCRYPTION_SALT 环境变量")
             self._cipher_suite = None
-            logger.warning("Encryption system will be disabled")
+            self._encryption_failure_reason = str(e)
 
     def _initialize_default_rbac(self) -> None:
         """初始化默认的RBAC权限和角色"""
@@ -334,7 +353,10 @@ class SecurityService(BaseService):
         """创建默认管理员账户"""
         try:
             admin_username = "admin"
-            admin_password = "admin123"  # 在实际应用中应使用强密码
+            admin_password = os.environ.get(
+                "HIKYUU_ADMIN_PASSWORD",
+                secrets.token_urlsafe(16)
+            )
 
             if admin_username not in self._credentials:
                 self.create_user(
@@ -343,6 +365,11 @@ class SecurityService(BaseService):
                     roles={"admin"}
                 )
                 logger.info("✓ Default admin user created")
+                if "HIKYUU_ADMIN_PASSWORD" not in os.environ:
+                    logger.warning(
+                        "默认管理员密码为随机生成，请通过环境变量 "
+                        "HIKYUU_ADMIN_PASSWORD 设置自定义密码"
+                    )
             else:
                 logger.info("✓ Default admin user already exists")
 
@@ -360,6 +387,47 @@ class SecurityService(BaseService):
 
         except Exception as e:
             logger.error(f"Failed to start background tasks: {e}")
+
+    def _load_or_create_jwt_secret(self) -> str:
+        """加载或创建JWT密钥，确保重启后保持一致"""
+        try:
+            # 优先从环境变量读取
+            env_secret = os.environ.get("HIKYUU_JWT_SECRET")
+            if env_secret:
+                logger.info("已从环境变量加载 JWT_SECRET")
+                return env_secret
+
+            # 尝试从配置文件读取
+            config_dir = Path(__file__).parent.parent.parent / "config"
+            secret_file = config_dir / "jwt_secret.key"
+
+            if secret_file.exists():
+                with open(secret_file, "r", encoding="utf-8") as f:
+                    secret = f.read().strip()
+                    if secret:
+                        logger.info("已从配置文件加载 JWT_SECRET")
+                        return secret
+
+            # 创建新的JWT密钥并保存到文件
+            new_secret = secrets.token_urlsafe(32)
+            try:
+                config_dir.mkdir(parents=True, exist_ok=True)
+                with open(secret_file, "w", encoding="utf-8") as f:
+                    f.write(new_secret)
+                # 设置文件权限（仅当前用户可读写）
+                if os.name != "nt":  # Windows 不支持 chmod
+                    os.chmod(secret_file, 0o600)
+                logger.warning("已创建新的JWT密钥并保存到 config/jwt_secret.key")
+            except Exception as e:
+                logger.error(f"保存JWT密钥文件失败: {e}")
+                logger.warning("JWT密钥将仅在当前会话有效，重启后token将失效")
+
+            return new_secret
+
+        except Exception as e:
+            logger.error(f"加载/创建JWT密钥失败: {e}")
+            # 降级：使用随机密钥
+            return secrets.token_urlsafe(32)
 
     def _validate_security_config(self) -> None:
         """验证安全配置"""
@@ -687,12 +755,15 @@ class SecurityService(BaseService):
             data: 要加密的数据
 
         Returns:
-            加密后的数据（Base64编码）
+            加密后的数据（Base64编码），若加密未初始化则返回明文
         """
         try:
             if self._cipher_suite is None:
-                logger.error("Encryption system not initialized")
-                return None
+                logger.critical("FAIL-OPEN: 加密密钥未配置，敏感数据以明文通过！"
+                                "请设置 HIKYUU_ENCRYPTION_KEY 环境变量")
+                if isinstance(data, bytes):
+                    return data.decode('utf-8', errors='replace')
+                return data
 
             if isinstance(data, str):
                 data = data.encode('utf-8')
@@ -712,12 +783,13 @@ class SecurityService(BaseService):
             encrypted_data: 加密的数据（Base64编码）
 
         Returns:
-            解密后的数据
+            解密后的数据，若加密未初始化则返回原数据
         """
         try:
             if self._cipher_suite is None:
-                logger.error("Encryption system not initialized")
-                return None
+                logger.critical("FAIL-OPEN: 加密密钥未配置，解密操作以明文通过！"
+                                "请设置 HIKYUU_ENCRYPTION_KEY 环境变量")
+                return encrypted_data
 
             encrypted_bytes = base64.b64decode(encrypted_data.encode('utf-8'))
             decrypted_data = self._cipher_suite.decrypt(encrypted_bytes)

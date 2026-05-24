@@ -154,44 +154,50 @@ class AdjMomentumPlugin(IStrategyPlugin):
             
             # 计算动量
             data['momentum'] = data[price_column].pct_change(lookback)
-            
-            # 生成信号
-            for i in range(len(data)):
-                if i < lookback:  # 跳过初始数据
-                    continue
-                
-                current_date = data.index[i]
-                current_close = data.iloc[i]['close']
-                momentum = data.iloc[i]['momentum']
-                
-                signal_type = SignalType.HOLD
-                strength = 0.0
-                reason = ""
-                
-                if momentum > threshold:
-                    signal_type = SignalType.BUY
-                    strength = min(momentum, 1.0)
-                    reason = f"动量为正且超过阈值: {momentum:.4f}"
-                elif momentum < -threshold:
-                    signal_type = SignalType.SELL
-                    strength = min(abs(momentum), 1.0)
-                    reason = f"动量为负且超过阈值: {momentum:.4f}"
-                
-                if signal_type != SignalType.HOLD:
-                    signal = Signal(
-                        symbol=symbol,
-                        signal_type=signal_type,
-                        strength=strength,
-                        timestamp=current_date,
-                        price=current_close,
-                        reason=reason,
-                        metadata={
-                            'momentum': momentum,
-                            'lookback_period': lookback,
-                            'price_column': price_column
-                        }
-                    )
-                    signals.append(signal)
+
+            # 生成信号 - 向量化版本
+            momentum_values = data['momentum'].values.astype(np.float64)
+            close_values = data['close'].values.astype(np.float64)
+            date_index = data.index
+
+            valid_mask = np.arange(len(data)) >= lookback
+
+            buy_mask = valid_mask & (momentum_values > threshold)
+            sell_mask = valid_mask & (momentum_values < -threshold)
+
+            for i in np.where(buy_mask)[0]:
+                momentum = float(momentum_values[i])
+                signal = Signal(
+                    symbol=symbol,
+                    signal_type=SignalType.BUY,
+                    strength=min(momentum, 1.0),
+                    timestamp=date_index[i],
+                    price=float(close_values[i]),
+                    reason=f"动量为正且超过阈值: {momentum:.4f}",
+                    metadata={
+                        'momentum': momentum,
+                        'lookback_period': lookback,
+                        'price_column': price_column
+                    }
+                )
+                signals.append(signal)
+
+            for i in np.where(sell_mask)[0]:
+                momentum = float(momentum_values[i])
+                signal = Signal(
+                    symbol=symbol,
+                    signal_type=SignalType.SELL,
+                    strength=min(abs(momentum), 1.0),
+                    timestamp=date_index[i],
+                    price=float(close_values[i]),
+                    reason=f"动量为负且超过阈值: {momentum:.4f}",
+                    metadata={
+                        'momentum': momentum,
+                        'lookback_period': lookback,
+                        'price_column': price_column
+                    }
+                )
+                signals.append(signal)
             
             logger.info(f"生成了 {len(signals)} 个信号: {symbol}")
             

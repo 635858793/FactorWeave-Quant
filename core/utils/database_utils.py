@@ -1,4 +1,3 @@
-from loguru import logger
 """
 数据库工具函数库
 
@@ -17,12 +16,26 @@ from loguru import logger
 import re
 import sqlite3
 import pandas as pd
+from functools import lru_cache
 from typing import Dict, List, Optional, Union, Tuple, Any
 from datetime import datetime, date
 from pathlib import Path
 import json
 
+from loguru import logger
+
 from ..plugin_types import DataType, AssetType
+from ..database.unified_sqlite_access import UnifiedSQLiteAccess
+
+ALLOWED_TABLE_NAME_PATTERN = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
+ALLOWED_INDEX_NAME_PATTERN = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
+
+
+def _validate_identifier(name: str, pattern: re.Pattern, label: str = "identifier") -> str:
+    if not pattern.match(name):
+        raise ValueError(f"Invalid {label}: {name}")
+    return name
+
 
 def generate_table_name(plugin_name: str, data_type: Union[DataType, str],
                         period: Optional[str] = None) -> str:
@@ -64,6 +77,7 @@ def generate_table_name(plugin_name: str, data_type: Union[DataType, str],
         logger.error(f"生成表名失败: {e}")
         return f"unknown_table_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
+@lru_cache(maxsize=128)
 def validate_symbol_format(symbol: str, market: Optional[str] = None) -> bool:
     """
     验证股票代码格式
@@ -122,6 +136,7 @@ def validate_symbol_format(symbol: str, market: Optional[str] = None) -> bool:
         logger.error(f"验证股票代码格式失败: {e}")
         return False
 
+@lru_cache(maxsize=128)
 def standardize_market_code(market: str) -> str:
     """
     标准化市场代码
@@ -177,6 +192,7 @@ def standardize_market_code(market: str) -> str:
         logger.error(f"标准化市场代码失败: {e}")
         return "UNKNOWN"
 
+@lru_cache(maxsize=128)
 def normalize_symbol(symbol: str, market: Optional[str] = None) -> str:
     """
     标准化股票代码
@@ -215,7 +231,7 @@ def normalize_symbol(symbol: str, market: Optional[str] = None) -> str:
 def build_select_query(table_name: str, columns: Optional[List[str]] = None,
                        where_conditions: Optional[Dict[str, Any]] = None,
                        order_by: Optional[str] = None,
-                       limit: Optional[int] = None) -> str:
+                       limit: Optional[int] = None) -> Tuple[str, List[Any]]:
     """
     构建SELECT查询语句
 
@@ -227,46 +243,46 @@ def build_select_query(table_name: str, columns: Optional[List[str]] = None,
         limit: 限制记录数
 
     Returns:
-        SQL查询语句
+        (SQL查询语句, 参数列表) 的元组
     """
     try:
-        # 构建SELECT子句
+        _validate_identifier(table_name, ALLOWED_TABLE_NAME_PATTERN, "table name")
+
         if columns:
             columns_str = ', '.join(f'"{col}"' for col in columns)
         else:
             columns_str = '*'
 
         query = f'SELECT {columns_str} FROM "{table_name}"'
+        params: List[Any] = []
 
-        # 构建WHERE子句
         if where_conditions:
             where_clauses = []
             for column, value in where_conditions.items():
                 if isinstance(value, (list, tuple)):
-                    # IN条件
-                    value_str = ', '.join(f"'{v}'" if isinstance(v, str) else str(v) for v in value)
-                    where_clauses.append(f'"{column}" IN ({value_str})')
-                elif isinstance(value, str):
-                    where_clauses.append(f'"{column}" = \'{value}\'')
+                    placeholders = ', '.join(['?' for _ in value])
+                    where_clauses.append(f'"{column}" IN ({placeholders})')
+                    params.extend(value)
                 else:
-                    where_clauses.append(f'"{column}" = {value}')
+                    where_clauses.append(f'"{column}" = ?')
+                    params.append(value)
 
             if where_clauses:
                 query += ' WHERE ' + ' AND '.join(where_clauses)
 
-        # 添加ORDER BY
         if order_by:
+            _validate_identifier(order_by, ALLOWED_TABLE_NAME_PATTERN, "order by column")
             query += f' ORDER BY "{order_by}"'
 
-        # 添加LIMIT
         if limit:
-            query += f' LIMIT {limit}'
+            query += f' LIMIT ?'
+            params.append(limit)
 
-        return query
+        return query, params
 
     except Exception as e:
         logger.error(f"构建SELECT查询失败: {e}")
-        return f'SELECT * FROM "{table_name}"'
+        return f'SELECT * FROM "{table_name}"', []
 
 def build_insert_query(table_name: str, data: Dict[str, Any],
                        on_conflict: str = 'REPLACE') -> Tuple[str, List[Any]]:
@@ -284,6 +300,8 @@ def build_insert_query(table_name: str, data: Dict[str, Any],
     try:
         if not data:
             raise ValueError("插入数据不能为空")
+
+        _validate_identifier(table_name, ALLOWED_TABLE_NAME_PATTERN, "table name")
 
         columns = list(data.keys())
         values = list(data.values())
@@ -324,7 +342,8 @@ def build_update_query(table_name: str, data: Dict[str, Any],
         if not where_conditions:
             raise ValueError("WHERE条件不能为空")
 
-        # 构建SET子句
+        _validate_identifier(table_name, ALLOWED_TABLE_NAME_PATTERN, "table name")
+
         set_clauses = []
         set_values = []
         for column, value in data.items():
@@ -362,14 +381,14 @@ def execute_query(db_path: str, query: str, params: Optional[List[Any]] = None,
         查询结果DataFrame（如果fetch_results为True）
     """
     try:
-        with sqlite3.connect(db_path) as conn:
+        db = UnifiedSQLiteAccess.get_instance(db_path)
+        with db.get_connection() as conn:
             if fetch_results:
                 df = pd.read_sql_query(query, conn, params=params or [])
                 return df
             else:
                 cursor = conn.cursor()
                 cursor.execute(query, params or [])
-                conn.commit()
                 return None
 
     except Exception as e:
@@ -396,7 +415,8 @@ def batch_insert_data(db_path: str, table_name: str, data: pd.DataFrame,
             logger.warning("没有数据需要插入")
             return True
 
-        with sqlite3.connect(db_path) as conn:
+        db = UnifiedSQLiteAccess.get_instance(db_path)
+        with db.get_connection() as conn:
             # 分批插入数据
             for i in range(0, len(data), chunk_size):
                 chunk = data.iloc[i:i + chunk_size]
@@ -427,8 +447,8 @@ def export_table_to_csv(db_path: str, table_name: str, output_path: str,
         是否成功
     """
     try:
-        query = build_select_query(table_name, where_conditions=where_conditions)
-        df = execute_query(db_path, query, fetch_results=True)
+        query, params = build_select_query(table_name, where_conditions=where_conditions)
+        df = execute_query(db_path, query, params=params, fetch_results=True)
 
         if df is not None and not df.empty:
             df.to_csv(output_path, index=False, encoding='utf-8-sig')
@@ -484,18 +504,18 @@ def get_table_info(db_path: str, table_name: str) -> Optional[Dict[str, Any]]:
         表信息字典
     """
     try:
-        with sqlite3.connect(db_path) as conn:
+        _validate_identifier(table_name, ALLOWED_TABLE_NAME_PATTERN, "table name")
+
+        db = UnifiedSQLiteAccess.get_instance(db_path)
+        with db.get_connection() as conn:
             cursor = conn.cursor()
 
-            # 获取表结构
             cursor.execute(f'PRAGMA table_info("{table_name}")')
             columns_info = cursor.fetchall()
 
-            # 获取记录数
             cursor.execute(f'SELECT COUNT(*) FROM "{table_name}"')
             row_count = cursor.fetchone()[0]
 
-            # 获取表大小（近似）
             cursor.execute(f'SELECT SUM(LENGTH(quote(c0))) FROM "{table_name}"')
             size_result = cursor.fetchone()
             table_size = size_result[0] if size_result and size_result[0] else 0
@@ -532,7 +552,8 @@ def list_all_tables(db_path: str) -> List[str]:
         表名列表
     """
     try:
-        with sqlite3.connect(db_path) as conn:
+        db = UnifiedSQLiteAccess.get_instance(db_path)
+        with db.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
             tables = [row[0] for row in cursor.fetchall()]
@@ -561,8 +582,12 @@ def create_index(db_path: str, table_name: str, columns: List[str],
         if not columns:
             raise ValueError("索引列不能为空")
 
+        _validate_identifier(table_name, ALLOWED_TABLE_NAME_PATTERN, "table name")
+
         if not index_name:
             index_name = f"idx_{table_name}_{'_'.join(columns)}"
+
+        _validate_identifier(index_name, ALLOWED_INDEX_NAME_PATTERN, "index name")
 
         columns_str = ', '.join(f'"{col}"' for col in columns)
         unique_str = 'UNIQUE ' if unique else ''
@@ -592,7 +617,8 @@ def optimize_database(db_path: str) -> bool:
         是否成功
     """
     try:
-        with sqlite3.connect(db_path) as conn:
+        db = UnifiedSQLiteAccess.get_instance(db_path)
+        with db.get_connection() as conn:
             cursor = conn.cursor()
 
             # 分析查询计划
@@ -604,14 +630,33 @@ def optimize_database(db_path: str) -> bool:
             # 重建索引
             cursor.execute('REINDEX')
 
-            conn.commit()
-
         logger.info(f"数据库优化完成: {db_path}")
         return True
 
     except Exception as e:
         logger.error(f"数据库优化失败: {e}")
         return False
+
+def validate_stock_code(symbol: str, market: Optional[str] = None) -> bool:
+    """
+    验证股票代码格式（validate_symbol_format 的别名，向后兼容）
+    """
+    return validate_symbol_format(symbol, market)
+
+
+def format_stock_code(symbol: str, market: Optional[str] = None) -> str:
+    """
+    格式化股票代码（normalize_symbol 的别名，向后兼容）
+    """
+    return normalize_symbol(symbol, market)
+
+
+def get_market_code(market: str) -> str:
+    """
+    获取市场代码（standardize_market_code 的别名，向后兼容）
+    """
+    return standardize_market_code(market)
+
 
 def backup_database(source_db_path: str, backup_db_path: str) -> bool:
     """
@@ -629,8 +674,11 @@ def backup_database(source_db_path: str, backup_db_path: str) -> bool:
         backup_dir = Path(backup_db_path).parent
         backup_dir.mkdir(parents=True, exist_ok=True)
 
-        with sqlite3.connect(source_db_path) as source_conn:
-            with sqlite3.connect(backup_db_path) as backup_conn:
+        source_db = UnifiedSQLiteAccess.get_instance(source_db_path)
+        backup_db = UnifiedSQLiteAccess.get_instance(backup_db_path)
+        
+        with source_db.get_connection() as source_conn:
+            with backup_db.get_connection() as backup_conn:
                 source_conn.backup(backup_conn)
 
         logger.info(f"数据库备份完成: {source_db_path} -> {backup_db_path}")

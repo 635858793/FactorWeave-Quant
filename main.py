@@ -27,37 +27,37 @@ from core.services.service_bootstrap import bootstrap_services
 from core.graceful_shutdown import shutdown_manager  # 优雅关闭管理器
 logger.info("所有模块导入完成")
 logger.info("开始导入Qt相关模块...")
-try:
-    logger.info("导入 PyQt5.QtWidgets...")
-    from PyQt5.QtWidgets import QApplication, QMessageBox
-    logger.info("✓ PyQt5.QtWidgets 导入完成")
-    
-    logger.info("导入 PyQt5.QtCore...")
-    from PyQt5.QtCore import Qt
-    logger.info("✓ PyQt5.QtCore 导入完成")
-    
-    logger.info("导入 PyQt5.QtGui...")
-    from PyQt5.QtGui import QIcon
-    logger.info("✓ PyQt5.QtGui 导入完成")
-    
-    logger.info("导入 qasync...")
-    from qasync import QEventLoop
-    logger.info("✓ qasync 导入完成")
-    
-    logger.info("✓ Qt相关模块导入完成")
-    
-    # 设置Qt应用程序属性
-    logger.info("设置Qt应用程序属性...")
-    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
-    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
-    # 设置OpenGL上下文共享，解决QtWebEngineWidgets问题
-    QApplication.setAttribute(Qt.AA_ShareOpenGLContexts, True)
-    logger.info("✓ Qt应用程序属性设置完成")
 
+try:
+    from PyQt5.QtWidgets import QApplication, QMessageBox
 except ImportError as e:
-    logger.info(f"PyQt5导入失败: {e}")
-    logger.info("请安装PyQt5: pip install PyQt5")
+    logger.error(f"PyQt5.QtWidgets 导入失败: {e}")
+    logger.error("请安装PyQt5: pip install PyQt5")
+    QApplication = None
+    QMessageBox = None
+
+try:
+    from PyQt5.QtCore import Qt
+except ImportError as e:
+    logger.error(f"PyQt5.QtCore 导入失败: {e}")
+    logger.error("请安装PyQt5: pip install PyQt5")
+    Qt = None
+
+try:
+    from PyQt5.QtGui import QIcon
+except ImportError as e:
+    logger.warning(f"PyQt5.QtGui 导入失败: {e}")
+    QIcon = None
+
+try:
+    from qasync import QEventLoop
+except ImportError as e:
+    logger.warning(f"qasync 导入失败: {e}")
+    logger.warning("请安装qasync: pip install qasync")
     QEventLoop = None
+
+if QApplication is not None and Qt is not None:
+    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
 
 class FactorWeaveQuantApplication:
     """
@@ -144,6 +144,14 @@ class FactorWeaveQuantApplication:
         os.makedirs(cache_dir, exist_ok=True)
         os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = f"--user-data-dir={cache_dir}"
 
+        # 初始化高DPI支持（必须在QApplication创建前调用）
+        try:
+            from gui.utils.display_optimization import setup_high_dpi_support
+            setup_high_dpi_support()
+            logger.info("✓ 高DPI支持已设置")
+        except Exception as e:
+            logger.warning(f"高DPI支持设置失败: {e}")
+
         # 创建应用程序实例
         self.app = QApplication(sys.argv)
         self.app.setApplicationName("FactorWeave-Quant")
@@ -154,14 +162,6 @@ class FactorWeaveQuantApplication:
         icon_path = project_root / "icons" / "logo.png"
         if icon_path.exists():
             self.app.setWindowIcon(QIcon(str(icon_path)))
-
-        # 初始化显示优化管理器（响应式UI支持）
-        try:
-            from gui.utils.display_optimization import setup_high_dpi_support
-            setup_high_dpi_support()
-            logger.info("✓ 显示优化管理器已初始化")
-        except Exception as e:
-            logger.warning(f"显示优化管理器初始化失败: {e}")
 
         # 初始化全局字体管理器（字体缩放功能）
         try:
@@ -359,14 +359,54 @@ def main():
         except Exception as e:
             logger.warning(f"注册DuckDB清理失败: {e}")
 
+        # 检查核心依赖是否可用
+        if QApplication is None:
+            logger.error("PyQt5 未正确安装，无法创建 Qt 应用程序")
+            logger.error("请执行: pip install PyQt5")
+            sys.exit(1)
+
+        if Qt is None:
+            logger.error("PyQt5.QtCore 未正确安装，无法创建 Qt 应用程序")
+            logger.error("请执行: pip install PyQt5")
+            sys.exit(1)
+
         # 创建并运行应用程序
         if QEventLoop is not None:
             logger.info("开始创建QApplication实例...")
-            
+
+            # 初始化高DPI支持（必须在QApplication创建前调用）
+            try:
+                from gui.utils.display_optimization import setup_high_dpi_support
+                setup_high_dpi_support()
+                logger.info("高DPI支持已设置")
+            except Exception as e:
+                logger.warning(f"高DPI支持设置失败: {e}")
+
             # 创建QApplication实例
             app = QApplication(sys.argv)
+            app.setApplicationName("FactorWeave-Quant")
+            app.setApplicationVersion("2.0")
+            app.setOrganizationName("FactorWeave 团队")
+
+            cache_dir = os.path.join(os.path.expanduser("~"), ".factorweave", "cache")
+            os.makedirs(cache_dir, exist_ok=True)
+            os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = f"--user-data-dir={cache_dir}"
             logger.info("QApplication实例创建完成")
-            
+
+            icon_path = project_root / "icons" / "logo.png"
+            if icon_path.exists():
+                app.setWindowIcon(QIcon(str(icon_path)))
+                logger.info("应用程序图标已设置")
+            else:
+                logger.warning(f"应用程序图标不存在: {icon_path}")
+
+            try:
+                from gui.utils.global_font_manager import get_global_font_manager
+                font_manager = get_global_font_manager()
+                logger.info(f"全局字体管理器已初始化，当前字体大小: {font_manager.get_font_size()}")
+            except Exception as e:
+                logger.warning(f"全局字体管理器初始化失败: {e}")
+
             # WebGPU硬件加速渲染初始化（在QApplication创建后进行）
             try:
                 from optimization.webgpu_chart_renderer import get_webgpu_chart_renderer
@@ -413,13 +453,10 @@ def main():
             sys.exit(0) # Let the application exit naturally
 
         else:
-            # Fallback for systems without qasync
-            logger.error(
-                "qasync is not installed. Please install it with 'pip install qasync'")
-            app = FactorWeaveQuantApplication()
-            # This part will likely not work correctly without an event loop manager.
-            exit_code = app.run()
-            sys.exit(exit_code)
+            logger.error("qasync 未安装，应用程序需要 qasync 来管理异步事件循环")
+            logger.error("请执行: pip install qasync")
+            logger.error("程序无法在没有 qasync 的情况下运行，正在退出")
+            sys.exit(1)
 
     except Exception as e:
         logger.info(f"程序启动失败: {e}")

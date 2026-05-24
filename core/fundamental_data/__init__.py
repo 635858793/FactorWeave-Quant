@@ -7,14 +7,14 @@
 日期: 2024-09-19
 """
 
-from .fundamental_data_base import FundamentalData, FundamentalScoreLevel
+from .fundamental_data_base import FundamentalDataBase, FundamentalScoreLevel
 from .stock_fundamental_data import StockFundamentalData
 from .futures_fundamental_data import FuturesFundamentalData
 from .crypto_fundamental_data import CryptoFundamentalData
 from .fundamental_data_factory import FundamentalDataFactory
 
 __all__ = [
-    'FundamentalData',
+    'FundamentalDataBase',
     'FundamentalScoreLevel',
     'StockFundamentalData',
     'FuturesFundamentalData',

@@ -24,6 +24,8 @@ from PyQt5.QtWidgets import (
     QHeaderView, QAbstractItemView
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
+
+from gui.dialogs.base_dialog import BaseDialog
 from PyQt5.QtGui import QFont, QIcon, QPalette
 
 # 添加项目根目录到路径
@@ -154,26 +156,43 @@ class ParameterWidget(QFrame):
                 self.input_widget.setCurrentIndex(index)
 
 
-class IndicatorSelectionDialog(QDialog):
-    """指标选择对话框"""
-
-    def __init__(self, parent=None, service=None, sample_data=None):
-        super().__init__(parent)
-        self.service = service or UnifiedIndicatorServiceEnhanced()
-        self.sample_data = sample_data
+class IndicatorSelectionDialog(BaseDialog):
+    """指标选择对话框
+    
+    用于选择、添加和管理指标
+    """
+    
+    indicators_selected = pyqtSignal(list)  # 信号：选择的指标列表
+    
+    def __init__(self, parent=None, category_manager=None):
+        """
+        初始化指标选择对话框
+        
+        Args:
+            parent: 父窗口
+            category_manager: 指标分类管理器
+        """
+        super().__init__(
+            parent,
+            title="选择指标",
+            min_size=(900, 600),
+            size=(1000, 700),
+            settings_key="IndicatorSelectionDialog"
+        )
+        
+        self.category_manager = category_manager
         self.selected_indicators = []
         self.parameter_widgets = {}
         self.preview_thread = None
-
+        self.service = None
+        self.sample_data = None
+        
         self.setup_ui()
         self.load_indicators()
         self.setup_connections()
 
     def setup_ui(self):
         """设置用户界面"""
-        self.setWindowTitle("指标选择器")
-        self.setMinimumSize(1000, 700)
-
         # 主布局
         main_layout = QVBoxLayout(self)
 
@@ -660,35 +679,8 @@ class IndicatorSelectionDialog(QDialog):
 
 
 if __name__ == "__main__":
-    from PyQt5.QtWidgets import QApplication
-    import pandas as pd
-    import numpy as np
-    from datetime import datetime, timedelta
+    from PyQt5.QtWidgets import QApplication, QMessageBox
 
     app = QApplication(sys.argv)
-
-    # 创建样本数据
-    dates = pd.date_range(start=datetime.now() - timedelta(days=100), periods=100, freq='D')
-    np.random.seed(42)
-    prices = 100 + np.cumsum(np.random.randn(100) * 0.5)
-
-    sample_data = pd.DataFrame({
-        'open': prices * (1 + np.random.uniform(-0.02, 0.02, 100)),
-        'high': prices * (1 + np.random.uniform(0, 0.05, 100)),
-        'low': prices * (1 - np.random.uniform(0, 0.05, 100)),
-        'close': prices,
-        'volume': np.random.uniform(1000000, 10000000, 100),
-        'amount': prices * np.random.uniform(1000000, 10000000, 100)
-    }, index=dates)
-
-    # 创建对话框
-    dialog = IndicatorSelectionDialog(sample_data=sample_data)
-
-    if dialog.exec_() == QDialog.Accepted:
-        selected = dialog.get_selected_indicators()
-        print(f"选中了 {len(selected)} 个指标:")
-        for indicator in selected:
-            print(f"  {indicator['display_name']} ({indicator['plugin_id']})")
-            print(f"    参数: {indicator['parameters']}")
-
+    QMessageBox.information(None, "提示", "暂无数据，请通过主界面加载实际数据后使用")
     sys.exit(app.exec_())

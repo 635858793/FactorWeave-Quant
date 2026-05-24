@@ -474,18 +474,18 @@ QCheckBox {
      padding: 1px 4px;
      background: #10151E;
      border-radius: 4px;
-     font:#BBDDFF;
+     color: #BBDDFF;
  }
 
  QMenuBar::item:selected { /* when selected using mouse or keyboard */
      background: #1A2432;
-     font:#FFFFFF;
+     color: #FFFFFF;
  }
 
  QMenuBar::item:pressed {
      background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                                        stop:0 #10151E, stop:1 #2C547E);
-     font:#FFFFFF;
+     color: #FFFFFF;
 
  }
  QMenuBar::item:hover{
@@ -493,7 +493,7 @@ QCheckBox {
     border-color:#516589;
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                                        stop:0 #9979A, stop:1 #2D567F);
-    font:#FFFFFF;
+    color: #FFFFFF;
 
  }
 
@@ -934,7 +934,7 @@ QWidget#InfoAreaWidget *
 {
     background-color: rgba( 93, 93, 93, 100 );
     color:#000080;
-    font: 75 12pt "宋体";
+    font-weight: 75; font-size: 12pt; font-family: "宋体";
 }
 
 QWidget#InfoAreaWidget QLabel

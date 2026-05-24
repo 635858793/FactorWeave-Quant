@@ -462,12 +462,22 @@ class BasePluginTemplate(IDataSourcePlugin, ABC):
         return self.get_plugin_info()
 
     def __del__(self):
-        """析构函数，清理线程池"""
+        """析构函数，强制释放线程池资源"""
         try:
-            if hasattr(self, '_executor'):
-                self._executor.shutdown(wait=False)
-        except:
+            if hasattr(self, '_executor') and self._executor:
+                self._executor.shutdown(wait=True)
+                self._executor = None
+        except Exception:
             pass
+
+    def cleanup(self) -> None:
+        """清理资源（线程池等）"""
+        try:
+            if hasattr(self, '_executor') and self._executor:
+                self._executor.shutdown(wait=True)
+                self._executor = None
+        except Exception as e:
+            self.logger.warning(f"cleanup failed: {e}")
 
 
 # 使用示例

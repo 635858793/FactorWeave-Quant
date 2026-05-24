@@ -111,6 +111,16 @@ class UnifiedThreadPoolManager(QObject):
 
         logger.info(f"统一线程池管理器已初始化，最大工作线程数: {max_workers}")
 
+    def _cleanup_completed_futures(self):
+        """清理已完成的Future，防止内存泄漏"""
+        with self._lock:
+            completed_ids = [
+                tid for tid, f in self._futures.items()
+                if f.done()
+            ]
+            for tid in completed_ids:
+                del self._futures[tid]
+
     def set_event_bus(self, event_bus):
         """设置事件总线"""
         self._event_bus = event_bus
@@ -299,6 +309,8 @@ class UnifiedThreadPoolManager(QObject):
             else:
                 logger.warning(f"任务无法取消: {task_id}")
 
+            self._cleanup_completed_futures()
+
             return cancelled
 
         except Exception as e:
@@ -328,6 +340,8 @@ class UnifiedThreadPoolManager(QObject):
                 result = future.result(timeout=timeout)
             else:
                 result = future.result()
+
+            self._cleanup_completed_futures()
 
             return result
 
@@ -374,6 +388,7 @@ class UnifiedThreadPoolManager(QObject):
 
     def get_stats(self) -> Dict[str, Any]:
         """获取统计信息"""
+        self._cleanup_completed_futures()
         with self._lock:
             return {
                 **self._stats,

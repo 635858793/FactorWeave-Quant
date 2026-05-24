@@ -115,7 +115,8 @@ class UniPluginDataManager:
             self._unified_cache = container.resolve(CacheService)
             logger.debug(f"UniPluginDataManager 已连接到统一缓存服务，命名空间: {self._cache_namespace}")
         else:
-            raise RuntimeError("统一缓存服务未注册，请确保 CacheService 已在服务容器中注册")
+            self._unified_cache = None
+            logger.debug(f"{self.__class__.__name__} 统一缓存服务未注册，缓存功能降级为空操作")
 
         logger.info("UniPluginDataManager依赖装配完成")
 
@@ -830,7 +831,7 @@ class UniPluginDataManager:
     def _get_from_cache(self, cache_key: str) -> Optional[Any]:
         """从缓存获取数据 - 使用统一缓存服务"""
         if self._unified_cache is None:
-            raise RuntimeError("统一缓存服务未初始化")
+            return None
         
         return self._unified_cache.get(cache_key, namespace=self._cache_namespace)
 
@@ -838,7 +839,7 @@ class UniPluginDataManager:
         """缓存结果 - 使用统一缓存服务"""
         try:
             if self._unified_cache is None:
-                raise RuntimeError("统一缓存服务未初始化")
+                return
             
             self._unified_cache.set(cache_key, result, ttl=self._cache_ttl, namespace=self._cache_namespace)
 
@@ -850,7 +851,10 @@ class UniPluginDataManager:
         total_requests = self.stats["total_requests"]
         current_avg = self.stats["avg_response_time"]
 
-        # 计算新的平均值
+        if total_requests == 0:
+            self.stats["avg_response_time"] = execution_time
+            return
+
         self.stats["avg_response_time"] = (current_avg * (total_requests - 1) + execution_time) / total_requests
 
     def get_statistics(self) -> Dict[str, Any]:

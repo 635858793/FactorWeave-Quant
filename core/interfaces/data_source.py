@@ -66,7 +66,7 @@ class ConnectionConfig:
     # 连接池配置
     pool_size: int = 10
     max_overflow: int = 20
-    pool_recycle: int = 3600
+    pool_recycle: int = 1800
 
     # 重试配置
     retry_attempts: int = 3

@@ -18,7 +18,6 @@
 import asyncio
 import json
 import os
-import sqlite3
 import threading
 import time
 import uuid
@@ -32,6 +31,7 @@ from typing import Any, Callable, Dict, List, Optional, Set, Type, Union, Tuple,
 import weakref
 from loguru import logger
 
+from ..database.unified_sqlite_access import UnifiedSQLiteAccess
 from ..events import get_event_bus, EventPriority
 
 
@@ -283,9 +283,13 @@ class TaskPersistence:
         self.db_path = Path(db_path)
         self._init_database()
 
+    def _get_db(self) -> UnifiedSQLiteAccess:
+        return UnifiedSQLiteAccess.get_instance(self.db_path)
+
     def _init_database(self):
         """初始化数据库"""
-        with sqlite3.connect(self.db_path) as conn:
+        db = self._get_db()
+        with db.get_connection() as conn:
             cursor = conn.cursor()
 
             # 任务表
@@ -329,7 +333,8 @@ class TaskPersistence:
     def save_task(self, task: AsyncTask):
         """保存任务"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = self._get_db()
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     INSERT OR REPLACE INTO async_tasks 
@@ -346,14 +351,14 @@ class TaskPersistence:
                     json.dumps(task.result) if task.result else None,
                     str(task.error) if task.error else None
                 ))
-                conn.commit()
         except Exception as e:
             logger.error(f"保存任务失败: {e}")
 
     def update_task_status(self, task_id: str, status: TaskStatus, result: Any = None, error: Exception = None):
         """更新任务状态"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = self._get_db()
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     UPDATE async_tasks 
@@ -372,7 +377,8 @@ class TaskPersistence:
     def get_tasks_by_status(self, status: TaskStatus, limit: int = 100) -> List[Dict[str, Any]]:
         """根据状态获取任务"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = self._get_db()
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     SELECT id, name, func_name, args, kwargs, metadata, status, result, error
@@ -405,7 +411,8 @@ class TaskPersistence:
                                  error_message: str = None):
         """记录执行历史"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = self._get_db()
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     INSERT INTO task_execution_history 

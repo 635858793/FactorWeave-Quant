@@ -1,4 +1,3 @@
-from loguru import logger
 #!/usr/bin/env python3
 """
 系统优化器使用示例
@@ -6,11 +5,6 @@ from loguru import logger
 展示如何在FactorWeave-Quant 中使用系统优化器的各种功能
 """
 
-from gui.panels.system_optimizer_panel import SystemOptimizerPanel
-from gui.dialogs import show_system_optimizer_dialog
-from core.services.system_optimizer import SystemOptimizerService, OptimizationLevel
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPushButton, QHBoxLayout
 import sys
 import asyncio
 from pathlib import Path
@@ -18,6 +12,13 @@ from pathlib import Path
 # 添加项目根目录到Python路径
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
+
+from loguru import logger
+from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPushButton, QHBoxLayout
+from gui.panels.system_optimizer_panel import SystemOptimizerPanel
+from gui.dialogs import show_system_optimizer_dialog
+from core.services.system_optimizer import SystemOptimizerService, OptimizationLevel
 
 
 class SystemOptimizerExample(QMainWindow):

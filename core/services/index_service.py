@@ -222,18 +222,10 @@ class IndexService(CacheableService, ConfigurableService):
     def clear_cache(self, index_code: Optional[str] = None):
         if index_code:
             self._no_data_cache.discard(index_code)
-            patterns = [
-                f"index_list_*",
-                f"index_kline_{index_code}_*",
-                f"index_info_{index_code}",
-                f"index_components_{index_code}",
-            ]
-            for pattern in patterns:
-                self._cache.pop(pattern, None)
         else:
-            self._cache.clear()
             self._no_data_cache.clear()
             self._index_list = []
+        super().clear_cache()
 
 
 _index_service_instance = None

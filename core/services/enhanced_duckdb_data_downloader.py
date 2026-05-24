@@ -91,6 +91,39 @@ class EnhancedDuckDBDataDownloader:
 
         logger.info("EnhancedDuckDBDataDownloader 初始化完成")
 
+    async def _retry_async_with_backoff(
+        self,
+        coro_func,
+        max_retries: int = 3,
+        initial_delay: float = 2.0,
+        backoff_factor: float = 1.5,
+        timeout: float = 30.0
+    ):
+        last_exception = None
+        delay = initial_delay
+        for attempt in range(max_retries):
+            try:
+                return await asyncio.wait_for(coro_func(), timeout=timeout)
+            except asyncio.TimeoutError:
+                last_exception = TimeoutError(f"操作超时 (>{timeout}秒)")
+                logger.warning(f"请求超时 (尝试 {attempt + 1}/{max_retries})")
+            except Exception as e:
+                last_exception = e
+                error_str = str(e).lower()
+                is_transient = any(kw in error_str for kw in [
+                    'connection', 'timeout', 'disconnect', 'refused',
+                    'reset', 'broken pipe', 'timed out', 'aborted',
+                    'closed connection', 'without response'
+                ])
+                if not is_transient and attempt < max_retries - 1:
+                    raise
+                logger.warning(f"下载请求失败 (尝试 {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                logger.info(f"等待 {delay:.1f} 秒后重试...")
+                await asyncio.sleep(delay)
+                delay *= backoff_factor
+        raise last_exception
+
     async def download_historical_kline_data(self,
                                              symbols: List[str],
                                              period: str = 'D',
@@ -122,11 +155,16 @@ class EnhancedDuckDBDataDownloader:
 
         results = {}
 
+        # Phase 1: 批量获取所有symbol的最新日期 (单次查询消除N+1)
+        latest_dates = {}
+        if not force_update:
+            latest_dates = await self._get_latest_data_dates_batch(symbols, period, asset_type)
+
         for symbol in symbols:
             try:
                 # 检查是否需要更新
                 if not force_update:
-                    latest_date = await self._get_latest_data_date(symbol, period, asset_type)
+                    latest_date = latest_dates.get(symbol)
                     if latest_date and (end_date - latest_date).days < 1:
                         logger.debug(f"股票 {symbol} 数据已是最新，跳过下载")
                         continue
@@ -519,39 +557,43 @@ class EnhancedDuckDBDataDownloader:
         start_date, end_date = download_range
 
         try:
-            # 构建查询
             query = StandardQuery(
                 symbol=symbol,
                 data_type=DataType.HISTORICAL_KLINE,
                 asset_type=AssetType.STOCK_A,
                 start_date=start_date,
                 end_date=end_date,
-                extra_params={'period': 'D'}  # 日线数据
+                extra_params={'period': 'D'}
             )
 
-            # 获取数据源
             if self.data_source_router:
                 data_source = self.data_source_router.get_best_data_source('HISTORICAL_KLINE')
-            else:
-                # 通过插件管理器获取
                 context = await self.uni_plugin_manager.create_request_context(query)
-                data = await self.uni_plugin_manager.execute_data_request(context)
+                data = await self._retry_async_with_backoff(
+                    lambda ctx=context: self.uni_plugin_manager.execute_data_request(ctx),
+                    max_retries=self.config.get('retry_count', 3),
+                    timeout=self.config.get('timeout', 30.0)
+                )
+            else:
+                context = await self.uni_plugin_manager.create_request_context(query)
+                data = await self._retry_async_with_backoff(
+                    lambda ctx=context: self.uni_plugin_manager.execute_data_request(ctx),
+                    max_retries=self.config.get('retry_count', 3),
+                    timeout=self.config.get('timeout', 30.0)
+                )
 
             if data is None or data.empty:
                 logger.info(f"未获取到 {symbol} 的数据 (范围: {start_date} 到 {end_date})")
                 return {'records_count': 0}
 
-            # 转换数据格式
             if hasattr(data, 'empty') and data.empty:
                 return {'records_count': 0}
 
-            # 数据质量验证
             cleaned_data = self._validate_and_clean_kline_data(data, symbol)
             if cleaned_data.empty:
                 logger.warning(f"{symbol} 数据质量验证失败")
                 return {'records_count': 0}
 
-            # 存储数据（智能增量存储）
             records_count = await self._store_kline_data_incremental(cleaned_data, symbol, strategy)
 
             logger.info(f"下载并存储 {symbol} 数据: {records_count} 条")
@@ -772,73 +814,28 @@ class EnhancedDuckDBDataDownloader:
         if data.empty:
             return 0
 
-        # 按日期排序
         data = data.sort_values('datetime')
 
-        # 分块批量插入
-        chunk_size = 1000
-        total_stored = 0
+        db_path = self.asset_db_manager.get_database_path(AssetType.STOCK_A)
 
-        for i in range(0, len(data), chunk_size):
-            chunk = data.iloc[i:i + chunk_size]
+        result = self.duckdb_operations.insert_dataframe(
+            database_path=db_path,
+            table_name='kline_data_daily',
+            data=data,
+            batch_size=1000,
+            upsert=True,
+            conflict_columns=['symbol', 'datetime']
+        )
 
-            # 转换为元组列表
-            records = []
-            for _, row in chunk.iterrows():
-                records.append((
-                    row['symbol'],
-                    row['datetime'],
-                    row['open'],
-                    row['high'],
-                    row['low'],
-                    row['close'],
-                    row['volume'],
-                    row['amount']
-                ))
+        if result.success:
+            return result.rows_inserted
 
-            # 智能冲突解决
-            try:
-                for record in records:
-                    query = """
-                    INSERT INTO kline_data_daily
-                    (symbol, datetime, open, high, low, close, volume, amount)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(symbol, datetime) DO UPDATE SET
-                        open = excluded.open,
-                        high = excluded.high,
-                        low = excluded.low,
-                        close = excluded.close,
-                        volume = excluded.volume,
-                        amount = excluded.amount
-                    """
-                    self.duckdb_operations.execute_query(self.asset_db_manager.get_database_path(AssetType.STOCK_A), query, record)
+        if result.failed_batches:
+            logger.error(f"批量存储 {symbol} 部分失败: {len(result.failed_batches)} 个批次失败, 错误: {result.error_message}")
+        else:
+            logger.error(f"批量存储 {symbol} 数据失败: {result.error_message}")
 
-                total_stored += len(records)
-
-            except Exception as e:
-                logger.error(f"批量存储 {symbol} 数据失败: {str(e)}")
-                # 尝试单条插入
-                for record in records:
-                    try:
-                        query = """
-                        INSERT INTO kline_data_daily
-                        (symbol, datetime, open, high, low, close, volume, amount)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT(symbol, datetime) DO UPDATE SET
-                            open = excluded.open,
-                            high = excluded.high,
-                            low = excluded.low,
-                            close = excluded.close,
-                            volume = excluded.volume,
-                            amount = excluded.amount
-                        """
-                        self.duckdb_operations.execute_query(self.asset_db_manager.get_database_path(AssetType.STOCK_A), query, record)
-                        total_stored += 1
-                    except Exception as inner_e:
-                        logger.warning(f"存储 {symbol} 单条记录失败: {str(inner_e)}")
-                        continue
-
-        return total_stored
+        return result.rows_inserted
 
     def _validate_and_clean_kline_data(self, data: pd.DataFrame, symbol: str) -> pd.DataFrame:
         """验证和清洗K线数据"""
@@ -904,6 +901,34 @@ class EnhancedDuckDBDataDownloader:
             logger.error(f"股票列表数据验证失败: {e}")
             return pd.DataFrame()
 
+    async def _get_latest_data_dates_batch(self, symbols: List[str], period: str, asset_type: AssetType = AssetType.STOCK_A) -> Dict[str, datetime]:
+        """批量获取多只股票的最新数据日期 (单次GROUP BY查询消除N+1)"""
+        try:
+            db_path = self.asset_db_manager.get_database_path(asset_type)
+            if not db_path or not symbols:
+                return {}
+
+            table_name = f"kline_data_{period.lower()}"
+            placeholders = ','.join(['?' for _ in symbols])
+            query = f"""
+                SELECT symbol, MAX(datetime) as latest_date
+                FROM {table_name}
+                WHERE symbol IN ({placeholders})
+                GROUP BY symbol
+            """
+
+            result = self.duckdb_operations.execute_query(db_path, query, symbols)
+            if not result.empty:
+                filtered = result.dropna(subset=['latest_date'])
+                if not filtered.empty:
+                    dates = pd.to_datetime(filtered['latest_date'])
+                    return dict(zip(filtered['symbol'], dates))
+
+        except Exception as e:
+            logger.debug(f"批量获取最新数据日期失败: {e}")
+
+        return {}
+
     async def _get_latest_data_date(self, symbol: str, period: str, data_category: str, asset_type: AssetType = AssetType.STOCK_A) -> Optional[datetime]:
         """获取最新数据日期"""
         try:
@@ -941,11 +966,12 @@ class EnhancedDuckDBDataDownloader:
             result = self.duckdb_operations.insert_dataframe(
                 database_path=db_path,
                 table_name=table_name,
-                dataframe=data,
-                conflict_resolution='replace'
+                data=data,
+                upsert=True,
+                conflict_columns=['symbol', 'datetime']
             )
 
-            if result.get('success'):
+            if result.success:
                 logger.debug(f"K线数据存储成功: {symbol}, {len(data)} 条")
             else:
                 logger.warning(f"K线数据存储失败: {symbol}")
@@ -987,11 +1013,12 @@ class EnhancedDuckDBDataDownloader:
             result = self.duckdb_operations.insert_dataframe(
                 database_path=db_path,
                 table_name=table_name,
-                dataframe=df,
-                conflict_resolution='replace'
+                data=df,
+                upsert=True,
+                conflict_columns=['symbol', 'update_time']
             )
 
-            if result.get('success'):
+            if result.success:
                 logger.debug(f"基本面数据存储成功: {symbol} {data_type}")
 
         except Exception as e:
@@ -1016,11 +1043,12 @@ class EnhancedDuckDBDataDownloader:
             result = self.duckdb_operations.insert_dataframe(
                 database_path=db_path,
                 table_name=table_name,
-                dataframe=data,
-                conflict_resolution='replace'
+                data=data,
+                upsert=True,
+                conflict_columns=['code']
             )
 
-            if result.get('success'):
+            if result.success:
                 logger.debug(f"股票列表存储成功: {len(data)} 只股票")
 
         except Exception as e:

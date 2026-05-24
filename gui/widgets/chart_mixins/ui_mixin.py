@@ -104,8 +104,12 @@ class UIMixin:
             if hasattr(self, 'figure'):
                 self.figure.clear()
 
-            # 创建新的子图用于显示消息
-            ax = self.figure.add_subplot(111)
+            # 重新创建子图布局
+            self.price_ax = self.figure.add_subplot(311)
+            self.volume_ax = self.figure.add_subplot(312)
+            self.indicator_ax = self.figure.add_subplot(313)
+
+            ax = self.price_ax
             ax.text(0.5, 0.5, message,
                     horizontalalignment='center',
                     verticalalignment='center',
@@ -115,6 +119,8 @@ class UIMixin:
             ax.set_xlim(0, 1)
             ax.set_ylim(0, 1)
             ax.axis('off')
+            self.volume_ax.axis('off')
+            self.indicator_ax.axis('off')
 
             # 更新画布
             if hasattr(self, 'canvas'):
@@ -136,8 +142,12 @@ class UIMixin:
             if hasattr(self, 'figure'):
                 self.figure.clear()
 
-            # 创建新的子图用于显示消息
-            ax = self.figure.add_subplot(111)
+            # 重新创建子图布局
+            self.price_ax = self.figure.add_subplot(311)
+            self.volume_ax = self.figure.add_subplot(312)
+            self.indicator_ax = self.figure.add_subplot(313)
+
+            ax = self.price_ax
             ax.text(0.5, 0.5, message,
                     horizontalalignment='center',
                     verticalalignment='center',
@@ -147,6 +157,8 @@ class UIMixin:
             ax.set_xlim(0, 1)
             ax.set_ylim(0, 1)
             ax.axis('off')
+            self.volume_ax.axis('off')
+            self.indicator_ax.axis('off')
 
             # 更新画布
             if hasattr(self, 'canvas'):

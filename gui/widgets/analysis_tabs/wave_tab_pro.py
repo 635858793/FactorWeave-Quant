@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
+from scipy.signal import argrelextrema
 from .base_tab import BaseAnalysisTab
 
 
@@ -503,32 +504,28 @@ class WaveAnalysisTabPro(BaseAnalysisTab):
         return confidence
 
     def _find_extremes(self, high_prices, low_prices):
-        """寻找极值点"""
-        extremes = []
+        """寻找极值点（向量化）"""
         window = 5
 
-        for i in range(window, len(high_prices) - window):
-            # 检查是否为局部最高点
-            if all(high_prices[i] >= high_prices[i-j] for j in range(1, window+1)) and \
-               all(high_prices[i] >= high_prices[i+j] for j in range(1, window+1)):
-                extremes.append({
-                    'index': i,
-                    'price': high_prices[i],
-                    'type': 'high',
-                    'date': self.current_kdata.index[i]
-                })
+        high_peak_indices = argrelextrema(high_prices, np.greater_equal, order=window)[0]
+        low_trough_indices = argrelextrema(low_prices, np.less_equal, order=window)[0]
 
-            # 检查是否为局部最低点
-            if all(low_prices[i] <= low_prices[i-j] for j in range(1, window+1)) and \
-               all(low_prices[i] <= low_prices[i+j] for j in range(1, window+1)):
-                extremes.append({
-                    'index': i,
-                    'price': low_prices[i],
-                    'type': 'low',
-                    'date': self.current_kdata.index[i]
-                })
+        extremes = []
+        for i in high_peak_indices:
+            extremes.append({
+                'index': int(i),
+                'price': float(high_prices[i]),
+                'type': 'high',
+                'date': self.current_kdata.index[int(i)]
+            })
+        for i in low_trough_indices:
+            extremes.append({
+                'index': int(i),
+                'price': float(low_prices[i]),
+                'type': 'low',
+                'date': self.current_kdata.index[int(i)]
+            })
 
-        # 按时间排序
         extremes.sort(key=lambda x: x['index'])
         return extremes
 
@@ -644,6 +641,7 @@ class WaveAnalysisTabPro(BaseAnalysisTab):
 
         high_prices = self.current_kdata['high'].values
         low_prices = self.current_kdata['low'].values
+        close_prices = self.current_kdata['close'].values
 
         if len(high_prices) < 10:
             return levels
@@ -655,25 +653,29 @@ class WaveAnalysisTabPro(BaseAnalysisTab):
         if price_range <= 0:
             return levels
 
-        current_price = close_prices[-1] if 'close_prices' in dir() else high_prices[-1]
+        current_price = close_prices[-1]
 
         for ratio in self.elliott_config['fibonacci_ratios']:
             retracement_level = recent_high - price_range * ratio
+            extension_level = recent_high + price_range * ratio
 
             if recent_low <= retracement_level <= recent_high:
                 strength = '强' if ratio in [0.382, 0.618] else '中'
             else:
                 strength = '弱'
 
+            distance_from_current = abs(current_price - retracement_level) / price_range if price_range > 0 else 0
+            proximity = '当前价位附近' if distance_from_current < 0.05 else ('距当前5%内' if distance_from_current < 0.1 else '')
+
             levels.append({
                 'ratio': f"{ratio:.3f}",
                 'price': retracement_level,
                 'type': '回调位',
                 'strength': strength,
-                'validity': '有效'
+                'validity': '有效',
+                'distance': distance_from_current,
+                'proximity': proximity
             })
-
-            extension_level = recent_high + price_range * ratio
 
             strength_ext = '强' if ratio in [1.618, 2.618] else '中'
 

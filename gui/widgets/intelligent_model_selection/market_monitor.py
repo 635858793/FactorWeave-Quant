@@ -10,7 +10,7 @@
 - 市场阶段识别
 """
 
-import logging
+from loguru import logger
 import time
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Tuple
@@ -30,8 +30,6 @@ from PyQt5.QtGui import (
     QFont, QPalette, QBrush, QColor, QPainter, 
     QPainterPath, QPen, QPixmap
 )
-
-logger = logging.getLogger(__name__)
 
 
 class MarketStateMonitor(QWidget):
@@ -760,71 +758,115 @@ class MarketStateMonitor(QWidget):
     def update_market_data(self):
         """更新市场数据"""
         try:
-            # 模拟获取市场数据
             current_time = datetime.now()
-            
-            # 生成模拟数据
-            market_data = self._generate_mock_market_data(current_time)
-            
-            # 更新UI显示
+
+            market_data = self._fetch_real_market_data(current_time)
+
             self._update_ui_display(market_data)
-            
-            # 保存历史数据
+
             self.current_market_data = market_data
             self.historical_data.append({
                 'timestamp': current_time,
                 'data': market_data.copy()
             })
-            
-            # 保持历史数据在合理范围内
+
             if len(self.historical_data) > 1000:
                 self.historical_data.pop(0)
-            
-            # 触发信号
+
             self.market_state_changed.emit(market_data)
-            
-            # 更新最后更新时间
+
             self.last_update_time = current_time
             self.update_time_display()
-            
+
         except Exception as e:
             logger.error(f"更新市场数据失败: {e}")
     
-    def _generate_mock_market_data(self, timestamp: datetime) -> Dict[str, Any]:
-        """生成模拟市场数据"""
-        import random
-        import math
-        
-        # 基于时间生成伪随机但相对稳定的数据
-        time_factor = timestamp.hour * 3600 + timestamp.minute * 60 + timestamp.second
-        
-        # 波动率 (0.05 - 0.3)
-        volatility = 0.15 + 0.1 * math.sin(time_factor * 0.001) + random.uniform(-0.05, 0.05)
-        volatility = max(0.05, min(0.3, volatility))
-        
-        # 趋势强度 (0.2 - 0.9)
-        trend_strength = 0.5 + 0.3 * math.cos(time_factor * 0.0008) + random.uniform(-0.1, 0.1)
-        trend_strength = max(0.2, min(0.9, trend_strength))
-        
-        # 流动性 (0.3 - 1.0)
-        liquidity = 0.7 + 0.2 * math.sin(time_factor * 0.0005) + random.uniform(-0.15, 0.15)
-        liquidity = max(0.3, min(1.0, liquidity))
-        
-        # 市场阶段判断
-        regime = self._determine_market_regime(volatility, trend_strength, liquidity)
-        
+    def _fetch_real_market_data(self, timestamp: datetime) -> Dict[str, Any]:
+        """从RealDataProvider获取真实市场数据"""
+        try:
+            from core.real_data_provider import get_real_data_provider
+            provider = get_real_data_provider()
+            if not provider:
+                return self._get_no_data_market_state(timestamp)
+
+            default_stocks = ['000001', '000002', '000858', '600519']
+            quotes = []
+            for symbol in default_stocks:
+                try:
+                    quote = provider.get_real_quote(symbol)
+                    if quote:
+                        quotes.append(quote)
+                except Exception:
+                    continue
+
+            if not quotes:
+                return self._get_no_data_market_state(timestamp)
+
+            import numpy as np
+
+            prices = [q.get('price', 0) for q in quotes if q.get('price', 0) > 0]
+            change_pcts = [q.get('change_pct', 0) for q in quotes]
+            volumes = [q.get('volume', 0) for q in quotes if q.get('volume', 0) > 0]
+
+            avg_price = sum(prices) / len(prices) if prices else 0
+            total_volume = sum(volumes)
+
+            raw_volatility = np.std(change_pcts) if len(change_pcts) > 1 else 0.0
+            volatility = min(raw_volatility / 10.0, 1.0)
+
+            up_count = sum(1 for c in change_pcts if c > 0)
+            trend_strength = up_count / len(change_pcts) if change_pcts else 0.5
+
+            if trend_strength > 0.55:
+                trend_direction = 'up'
+            elif trend_strength < 0.45:
+                trend_direction = 'down'
+            else:
+                trend_direction = 'sideways'
+
+            if volumes:
+                vol_min = min(volumes)
+                vol_max = max(volumes)
+                if vol_max > vol_min:
+                    normalized_volumes = [(v - vol_min) / (vol_max - vol_min) for v in volumes]
+                    liquidity = sum(normalized_volumes) / len(normalized_volumes)
+                else:
+                    liquidity = 0.5
+            else:
+                liquidity = 0.0
+
+            regime = self._determine_market_regime(volatility, trend_strength, liquidity)
+            regime_confidence = len(quotes) / len(default_stocks)
+
+            return {
+                'timestamp': timestamp,
+                'volatility': volatility,
+                'trend_strength': trend_strength,
+                'trend_direction': trend_direction,
+                'liquidity': liquidity,
+                'volume': total_volume,
+                'regime': regime,
+                'regime_confidence': regime_confidence,
+                'alerts': []
+            }
+        except Exception as e:
+            logger.warning(f"获取真实市场数据失败: {e}")
+            return self._get_no_data_market_state(timestamp)
+
+    def _get_no_data_market_state(self, timestamp: datetime) -> Dict[str, Any]:
+        """返回市场数据不可用状态"""
         return {
             'timestamp': timestamp,
-            'volatility': volatility,
-            'trend_strength': trend_strength,
-            'trend_direction': 'upward' if trend_strength > 0.6 else 'downward' if trend_strength < 0.4 else 'sideways',
-            'liquidity': liquidity,
-            'volume': int(1000000 * liquidity + random.uniform(-100000, 100000)),
-            'regime': regime,
-            'regime_confidence': random.uniform(0.7, 0.95),
-            'alerts': self._check_alert_conditions(volatility, trend_strength, liquidity)
+            'volatility': 0.0,
+            'trend_strength': 0.0,
+            'trend_direction': 'unknown',
+            'liquidity': 0.0,
+            'volume': 0,
+            'regime': '市场数据不可用',
+            'regime_confidence': 0.0,
+            'alerts': ['数据不可用']
         }
-    
+
     def _determine_market_regime(self, volatility: float, trend_strength: float, liquidity: float) -> str:
         """确定市场阶段"""
         if volatility > 0.25 and trend_strength > 0.7:

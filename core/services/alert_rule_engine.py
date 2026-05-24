@@ -110,12 +110,12 @@ class RuleCondition:
             values = [float(v) for v in historical_values] + [float(current_value)]
 
             if self.operator == "increasing":
-                return all(values[i] < values[i+1] for i in range(len(values)-1))
+                return all(a < b for a, b in zip(values, values[1:]))
             elif self.operator == "decreasing":
-                return all(values[i] > values[i+1] for i in range(len(values)-1))
+                return all(a > b for a, b in zip(values, values[1:]))
             elif self.operator == "stable":
                 threshold = float(self.threshold_value)
-                return all(abs(values[i] - values[i+1]) <= threshold for i in range(len(values)-1))
+                return all(abs(a - b) <= threshold for a, b in zip(values, values[1:]))
             else:
                 return False
         except (ValueError, TypeError):

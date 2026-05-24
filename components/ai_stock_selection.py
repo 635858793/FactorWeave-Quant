@@ -68,6 +68,12 @@ class AISelectionWorker(QThread):
         """取消选股"""
         self._cancelled = True
         logger.info("AI选股已取消")
+
+    def stop(self):
+        """安全停止线程"""
+        self._cancelled = True
+        self.requestInterruption()
+        logger.info("AI选股线程已请求停止")
         
     def run(self):
         try:
@@ -220,12 +226,20 @@ class AIStockSelectionPanel(BaseAnalysisPanel):
             container = get_service_container()
             if container:
                 if AISelectionIntegrationService:
-                    self.ai_selection_service = container.resolve(AISelectionIntegrationService)
-                    logger.info("AI选股集成服务加载成功")
+                    try:
+                        self.ai_selection_service = container.resolve(AISelectionIntegrationService)
+                        logger.info("AI选股集成服务加载成功")
+                    except Exception as svc_err:
+                        logger.warning(f"AI选股集成服务解析失败: {svc_err}，将使用降级模式")
+                        self.ai_selection_service = None
                 
                 if AIExplainabilityService:
-                    self.explainability_service = container.resolve(AIExplainabilityService)
-                    logger.info("AI可解释性服务加载成功")
+                    try:
+                        self.explainability_service = container.resolve(AIExplainabilityService)
+                        logger.info("AI可解释性服务加载成功")
+                    except Exception as svc_err:
+                        logger.warning(f"AI可解释性服务解析失败: {svc_err}，将使用降级模式")
+                        self.explainability_service = None
                 
                 # 初始化缓存服务
                 from core.services.cache_service import CacheService
@@ -1637,13 +1651,14 @@ class AIStockSelectionPanel(BaseAnalysisPanel):
                 colors = plt.cm.Set3(np.linspace(0, 1, len(categories)))
                 
                 # Min-Max 归一化到 [0, 100] 范围，使所有因子都能清晰显示
-                min_val = min(values) if values else 0
-                max_val = max(values) if values else 1
-                
+                values_arr = np.array(values)
+                min_val = values_arr.min() if len(values_arr) > 0 else 0
+                max_val = values_arr.max() if len(values_arr) > 0 else 1
+
                 if max_val > min_val:
-                    normalized_values = [(v - min_val) / (max_val - min_val) * 100 for v in values]
+                    normalized_values = ((values_arr - min_val) / (max_val - min_val) * 100).tolist()
                 else:
-                    normalized_values = [50.0] * len(values)
+                    normalized_values = [50.0] * len(values_arr)
                 
                 # 创建柱状图（使用归一化后的值）
                 bars = ax.barh(categories, normalized_values, color=colors)
@@ -1860,11 +1875,14 @@ class AIStockSelectionPanel(BaseAnalysisPanel):
     
     def closeEvent(self, event):
         """窗口关闭事件"""
-        # 停止工作线程
         if hasattr(self, 'worker') and self.worker.isRunning():
-            self.worker.terminate()
-            self.worker.wait()
-            
+            self.worker.stop()
+            self.worker.quit()
+            if not self.worker.wait(5000):
+                logger.warning("AISelectionWorker未能在5秒内退出，强制终止")
+                self.worker.terminate()
+                self.worker.wait()
+
         event.accept()
 
 

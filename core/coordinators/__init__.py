@@ -6,8 +6,16 @@
 
 from .base_coordinator import BaseCoordinator
 from .main_window_coordinator import MainWindowCoordinator
+from .panel_coordinator import PanelCoordinator
+from .event_coordinator import EventCoordinator
+from .dialog_coordinator import DialogCoordinator
+from .theme_coordinator import ThemeCoordinator
 
 __all__ = [
     'BaseCoordinator',
-    'MainWindowCoordinator'
+    'MainWindowCoordinator',
+    'PanelCoordinator',
+    'EventCoordinator',
+    'DialogCoordinator',
+    'ThemeCoordinator'
 ]

@@ -551,7 +551,7 @@ class ModernUnifiedPerformanceWidget(QWidget):
                         try:
                             if hasattr(conn, 'disconnect'):
                                 conn.disconnect()
-                        except:
+                        except Exception:
                             pass
                     self._signal_connections.clear()
 
@@ -1158,7 +1158,7 @@ class ModernUnifiedPerformanceWidget(QWidget):
                 if hasattr(self, 'strategy_tab') and self.strategy_tab:
                     # 在出错时也要确保UI状态正确
                     pass
-            except:
+            except Exception:
                 pass
 
     def _on_strategy_calculation_finished(self, cache_key: str, current_time):
@@ -1296,6 +1296,7 @@ class ModernUnifiedPerformanceWidget(QWidget):
         """关闭事件 - 立即关闭，异步清理资源"""
         try:
             # 立即接受关闭事件，不等待清理完成
+            super().closeEvent(event)
             event.accept()
             logger.info("性能监控窗口关闭事件已接受")
 

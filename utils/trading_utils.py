@@ -1,6 +1,11 @@
 from utils.imports import np, pd
 from loguru import logger
 
+try:
+    from core.performance import calc_full_metrics
+except ImportError:
+    calc_full_metrics = None
+
 # 日志系统已迁移到Loguru
 # 直接使用 logger.info(), logger.error() 等方法
 
@@ -91,6 +96,78 @@ def calculate_sharpe_ratio(returns, risk_free_rate=0.0, periods_per_year=252):
 
     logger.info(f"夏普比率计算完成，年化夏普比率={annual_sharpe:.4f}")
     return annual_sharpe
+
+def calc_full_metrics(returns_df):
+    """计算完整的性能指标
+
+    Args:
+        returns_df: DataFrame, 必须包含 'daily_return' 列
+
+    Returns:
+        dict: 完整的性能指标字典
+    """
+    logger.info("calc_full_metrics: 开始计算完整性能指标")
+
+    try:
+        if 'daily_return' in returns_df.columns:
+            returns = returns_df['daily_return'].dropna().values
+        elif 'returns' in returns_df.columns:
+            returns = returns_df['returns'].dropna().values
+        else:
+            logger.warning("calc_full_metrics: 未找到 daily_return 或 returns 列")
+            return {}
+        if len(returns) == 0:
+            logger.warning("calc_full_metrics: 收益率序列为空")
+            return {}
+
+        cumulative = np.cumprod(1 + returns)
+        total_return = cumulative[-1] - 1
+        n_periods = len(returns)
+        annualized_return = (1 + total_return) ** (252 / max(n_periods, 1)) - 1
+
+        annualized_volatility = np.std(returns) * np.sqrt(252)
+        sharpe_ratio = (annualized_return - 0.0) / annualized_volatility if annualized_volatility > 0 else 0
+
+        running_max = np.maximum.accumulate(cumulative)
+        drawdown_series = (cumulative - running_max) / running_max
+        max_drawdown = np.min(drawdown_series)
+
+        calmar_ratio = annualized_return / abs(max_drawdown) if max_drawdown != 0 else 0
+
+        winning_days = np.sum(returns > 0)
+        total_days = len(returns)
+        win_rate = winning_days / total_days if total_days > 0 else 0
+
+        positive_returns = returns[returns > 0]
+        negative_returns = returns[returns < 0]
+        avg_win = np.mean(positive_returns) if len(positive_returns) > 0 else 0
+        avg_loss = np.mean(negative_returns) if len(negative_returns) > 0 else 0
+        profit_factor = abs(avg_win / avg_loss) if avg_loss != 0 else float('inf')
+
+        sortino_ratio = annualized_return / (np.sqrt(np.mean(negative_returns ** 2)) * np.sqrt(252)) if len(negative_returns) > 0 else 0
+
+        metrics = {
+            'total_return': float(total_return),
+            'annualized_return': float(annualized_return),
+            'annualized_volatility': float(annualized_volatility),
+            'sharpe_ratio': float(sharpe_ratio),
+            'sortino_ratio': float(sortino_ratio),
+            'max_drawdown': float(max_drawdown),
+            'calmar_ratio': float(calmar_ratio),
+            'win_rate': float(win_rate),
+            'profit_factor': float(profit_factor),
+            'avg_win': float(avg_win),
+            'avg_loss': float(avg_loss),
+            'total_periods': total_days,
+        }
+
+        logger.info(f"calc_full_metrics: 计算完成, 总收益率={total_return:.4f}, 夏普比率={sharpe_ratio:.4f}")
+        return metrics
+
+    except Exception as e:
+        logger.error(f"calc_full_metrics 计算失败: {e}")
+        return {}
+
 
 def calculate_performance_metrics(trades=None, equity_curve=None, returns_df=None):
     """

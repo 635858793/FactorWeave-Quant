@@ -13,14 +13,14 @@ from typing import Dict, Any, Optional, List
 from loguru import logger
 
 from core.fundamental_data.fundamental_data_base import (
-    FundamentalData,
+    FundamentalDataBase,
     FundamentalIndicator,
     FundamentalScoreLevel
 )
 from core.plugin_types import AssetType
 
 
-class FuturesFundamentalData(FundamentalData):
+class FuturesFundamentalData(FundamentalDataBase):
     """期货基本面数据类"""
 
     def __init__(self, symbol: str, data_date: date, raw_data: Dict[str, Any]):

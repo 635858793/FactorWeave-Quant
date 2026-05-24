@@ -83,15 +83,39 @@ class ChartRenderingManager:
 
     def _simple_candlestick_fallback(self, ax, data, style):
         """简单蜡烛图后备实现"""
-        # 这里实现简单的蜡烛图绘制
-        logger.info("使用简单蜡烛图后备实现")
-        return True
+        try:
+            import numpy as np
+            if data is None or len(data) == 0:
+                logger.warning("后备渲染: 无有效K线数据")
+                return False
+            x = np.arange(len(data))
+            colors = np.where(data.close >= data.open, 'red', 'green')
+            ax.bar(x, data.close - data.open, bottom=data.open,
+                   color=colors, width=0.8, align='center')
+            ax.plot(x, data.high, color='black', linewidth=0.5)
+            ax.plot(x, data.low, color='black', linewidth=0.5)
+            logger.info("使用简单蜡烛图后备实现完成")
+            return True
+        except Exception as e:
+            logger.error(f"后备蜡烛图渲染失败: {e}")
+            return False
 
     def _simple_ohlc_fallback(self, ax, data, style):
         """简单OHLC图后备实现"""
-        # 这里实现简单的OHLC图绘制
-        logger.info("使用简单OHLC图后备实现")
-        return True
+        try:
+            import numpy as np
+            if data is None or len(data) == 0:
+                logger.warning("后备渲染: 无有效OHLC数据")
+                return False
+            x = np.arange(len(data))
+            colors = np.where(data.close >= data.open, 'red', 'green')
+            ax.bar(x, data.close - data.open, bottom=data.open,
+                   color=colors, width=0.6, align='center')
+            logger.info("使用简单OHLC图后备实现完成")
+            return True
+        except Exception as e:
+            logger.error(f"后备OHLC图渲染失败: {e}")
+            return False
 
 
 # 全局图表渲染管理器实例

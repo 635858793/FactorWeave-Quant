@@ -113,12 +113,8 @@ class AKShareWrapper:
         
         @wraps(original_func)
         def wrapper(*args, **kwargs):
-            # 应用频率限制
+            # 应用频率限制（已包含反爬虫延迟逻辑，无需重复调用）
             self._apply_rate_limit()
-            
-            # 如果启用反爬虫，添加随机延迟
-            if self.enable_anti_crawler:
-                apply_anti_crawler_delay(self.min_delay, self.max_delay)
             
             # 调用原始函数
             try:

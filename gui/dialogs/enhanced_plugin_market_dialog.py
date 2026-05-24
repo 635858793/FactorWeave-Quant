@@ -7,7 +7,7 @@
 import os
 from typing import List, Optional, Dict, Any
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
+    QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
     QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem,
     QComboBox, QTextEdit, QProgressBar, QListWidget, QListWidgetItem,
     QSplitter, QGroupBox, QFormLayout, QSpinBox, QCheckBox,
@@ -16,6 +16,8 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt5.QtGui import QPixmap, QIcon, QFont, QColor
+
+from .base_dialog import BaseDialog
 
 from plugins.plugin_market import PluginMarket, PluginInfo as MarketPluginInfo
 from core.plugin_types import PluginType, PluginCategory
@@ -160,7 +162,7 @@ class PluginCard(QFrame):
 
         layout.addLayout(button_layout)
 
-class EnhancedPluginMarketDialog(QDialog):
+class EnhancedPluginMarketDialog(BaseDialog):
     """增强插件市场对话框"""
 
     def __init__(self, plugin_manager: PluginManager, parent=None):
@@ -171,7 +173,6 @@ class EnhancedPluginMarketDialog(QDialog):
             plugin_manager: 插件管理器
             parent: 父窗口
         """
-        super().__init__(parent)
         self.plugin_manager = plugin_manager
 
         # 初始化插件市场和SDK
@@ -185,14 +186,18 @@ class EnhancedPluginMarketDialog(QDialog):
         self.search_thread = None
         self.current_plugins = []
 
+        super().__init__(
+            parent,
+            title="FactorWeave-Quant  插件市场",
+            min_size=(1000, 700),
+            settings_key="EnhancedPluginMarketDialog"
+        )
+
         self.setup_ui()
         self.load_initial_data()
 
     def setup_ui(self):
         """设置UI"""
-        self.setWindowTitle("FactorWeave-Quant  插件市场")
-        self.setMinimumSize(1000, 700)
-
         layout = QVBoxLayout(self)
 
         # 创建标签页

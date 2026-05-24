@@ -90,7 +90,8 @@ class SectorFundFlowService(QObject):
             self._unified_cache = container.resolve(CacheService)
             logger.debug(f"SectorFundFlowService 已连接到统一缓存服务，命名空间: {self._cache_namespace}")
         else:
-            raise RuntimeError("统一缓存服务未注册，请确保 CacheService 已在服务容器中注册")
+            self._unified_cache = None
+            logger.debug(f"{self.__class__.__name__} 统一缓存服务未注册，缓存功能降级为空操作")
 
     def _ensure_refresh_timer(self):
         """确保刷新定时器已初始化"""
@@ -359,15 +360,7 @@ class SectorFundFlowService(QObject):
             return False
 
         if self._unified_cache is None:
-            raise RuntimeError("统一缓存服务未初始化")
-
-        cached_data = self._unified_cache.get(cache_key, namespace=self._cache_namespace)
-        return cached_data is not None
-
-    def _get_from_cache(self, cache_key: str) -> Any:
-        """从缓存获取数据 - 使用统一缓存服务"""
-        if self._unified_cache is None:
-            raise RuntimeError("统一缓存服务未初始化")
+            return False
 
         return self._unified_cache.get(cache_key, namespace=self._cache_namespace)
 
@@ -377,7 +370,7 @@ class SectorFundFlowService(QObject):
             return
 
         if self._unified_cache is None:
-            raise RuntimeError("统一缓存服务未初始化")
+            return
 
         from datetime import timedelta
         ttl = timedelta(minutes=self.config.cache_duration_minutes)
@@ -386,7 +379,7 @@ class SectorFundFlowService(QObject):
     def _clear_cache(self) -> None:
         """清理缓存"""
         if self._unified_cache is None:
-            raise RuntimeError("统一缓存服务未初始化")
+            return
 
         self._unified_cache.clear_namespace(self._cache_namespace)
         logger.info("缓存已清理")

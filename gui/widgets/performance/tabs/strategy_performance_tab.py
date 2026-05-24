@@ -702,54 +702,29 @@ class ModernStrategyPerformanceTab(QWidget):
 
             for code in stock_codes:
                 try:
-                    # 生成合理的模拟收益率数据（实际环境中应通过TET获取真实数据）
-                    np.random.seed(hash(code) % 2147483647)
+                    kdata = data_manager.get_kdata(stock_code=code, period='D', count=60)
+                    if kdata is None or kdata.empty:
+                        logger.warning(f"股票 {code} 无可用K线数据")
+                        continue
 
-                    # 生成约60个交易日的数据
-                    trading_days = 60 + np.random.randint(-5, 6)
+                    if 'close' not in kdata.columns:
+                        logger.warning(f"股票 {code} K线数据缺少close列")
+                        continue
 
-                    # 生成合理的日收益率：均值接近0，标准差约1-3%
-                    daily_returns = np.random.normal(0.0005, 0.015, trading_days)
+                    close_prices = kdata['close'].astype(float)
+                    if len(close_prices) < 2:
+                        logger.warning(f"股票 {code} 数据点不足")
+                        continue
 
-                    # 添加趋势性和异常值
-                    trend = np.random.uniform(-0.0002, 0.0002)
-                    daily_returns += np.arange(trading_days) * trend / trading_days
+                    daily_returns = close_prices.pct_change().dropna()
+                    if daily_returns.empty:
+                        logger.warning(f"股票 {code} 无法计算日收益率")
+                        continue
 
-                    # 添加少量异常值
-                    outlier_indices = np.random.choice(trading_days, size=max(1, trading_days//20), replace=False)
-                    daily_returns[outlier_indices] += np.random.normal(0, 0.03, len(outlier_indices))
-
-                    # **修复：使用统一的交易日期确保数据对齐**
-                    # 使用固定的基准日期，确保所有股票使用相同的日期范围
-                    if 'common_dates' not in locals():
-                        # 只生成一次共同的日期序列
-                        end_date = datetime.datetime.now().date()
-                        common_dates = []
-                        current_date = end_date - datetime.timedelta(days=80)  # 足够的日期范围
-
-                        # 生成60个交易日（跳过周末）
-                        while len(common_dates) < 60:
-                            if current_date.weekday() < 5:  # 周一到周五
-                                common_dates.append(current_date)
-                            current_date += datetime.timedelta(days=1)
-
-                    # 为每只股票使用相同的日期序列，但可能缺少部分数据
-                    stock_data_length = min(trading_days, len(common_dates))
-                    stock_dates = common_dates[:stock_data_length]
-
-                    # 调整收益率数据长度以匹配日期
-                    if len(daily_returns) > stock_data_length:
-                        daily_returns = daily_returns[:stock_data_length]
-                    elif len(daily_returns) < stock_data_length:
-                        # 如果数据不够，重复最后几个数据点
-                        additional_points = stock_data_length - len(daily_returns)
-                        daily_returns = np.concatenate([daily_returns, daily_returns[-additional_points:]])
-
-                    # 存储该股票的收益率数据
-                    stock_returns_data[code] = pd.Series(daily_returns, index=stock_dates)
+                    stock_returns_data[code] = daily_returns
                     stock_daily_data[code] = len(daily_returns)
 
-                    logger.info(f" 生成股票 {code} 的 {len(daily_returns)} 个收益率数据点")
+                    logger.info(f" 获取股票 {code} 真实收益率数据: {len(daily_returns)} 个数据点")
 
                 except Exception as e:
                     logger.warning(f"处理股票 {code} 数据失败: {e}")

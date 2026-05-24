@@ -52,7 +52,7 @@ class LogHandler:
         """移除处理器"""
         try:
             logger.remove(self.handler_id)
-        except:
+        except Exception:
             pass
 
     def update_level(self, level: str):
@@ -61,7 +61,7 @@ class LogHandler:
             # 移除旧的handler
             try:
                 logger.remove(self.handler_id)
-            except:
+            except Exception:
                 pass
 
             # 添加新的handler with new level
@@ -412,6 +412,9 @@ class BottomPanel(BasePanel):
             # 调整面板大小为最小高度
             self._root_frame.setFixedHeight(0)
 
+            # 调用生命周期回调
+            self.on_hide()
+
             # 发送隐藏信号
             self.panel_hidden.emit()
 
@@ -426,6 +429,9 @@ class BottomPanel(BasePanel):
 
             # 恢复面板大小 - 使用响应式布局
             self._update_responsive_layout()
+
+            # 调用生命周期回调
+            self.on_show()
 
             logger.debug("日志面板已显示")
 

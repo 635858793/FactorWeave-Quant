@@ -1,5 +1,11 @@
 import numpy as np
 import pandas as pd
+try:
+    import talib
+    TALIB_AVAILABLE = True
+except ImportError:
+    talib = None
+    TALIB_AVAILABLE = False
 import warnings
 from typing import Dict, Any, Optional
 from loguru import logger
@@ -17,53 +23,25 @@ def add_basic_indicators(df: pd.DataFrame) -> pd.DataFrame:
     result = df.copy()
 
     # 计算移动平均线
+    close_data = result['close']
+    if not isinstance(close_data, pd.Series):
+        close_data = pd.Series(close_data)
     for window in [5, 10, 20, 50, 200]:
-        close_data = result['close']
-        if isinstance(close_data, pd.Series):
-            result[f'MA{window}'] = close_data.rolling(window=window).mean()
-        else:
-            # 转换为Series类型
-            close_data = pd.Series(close_data)
-            result[f'MA{window}'] = close_data.rolling(window=window).mean()
+        result[f'MA{window}'] = talib.MA(close_data, timeperiod=window, matype=0)
 
     # 计算MACD
     close_data = result['close']
-    if isinstance(close_data, pd.Series):
-        result['ema12'] = close_data.ewm(span=12, adjust=False).mean()
-        result['ema26'] = close_data.ewm(span=26, adjust=False).mean()
-        result['macd'] = result['ema12'] - result['ema26']
-        result['signal_line'] = result['macd'].ewm(span=9, adjust=False).mean()
-        result['macd_hist'] = result['macd'] - result['signal_line']
-    else:
-        # 转换为Series类型
+    if not isinstance(close_data, pd.Series):
         close_data = pd.Series(close_data)
-        result['ema12'] = close_data.ewm(span=12, adjust=False).mean()
-        result['ema26'] = close_data.ewm(span=26, adjust=False).mean()
-        result['macd'] = result['ema12'] - result['ema26']
-        result['signal_line'] = result['macd'].ewm(span=9, adjust=False).mean()
-        result['macd_hist'] = result['macd'] - result['signal_line']
+    result['macd'], result['signal_line'], result['macd_hist'] = talib.MACD(
+        close_data, fastperiod=12, slowperiod=26, signalperiod=9)
 
     # 计算RSI
-    delta = result['close'].diff()
-    gain = delta.where(delta > 0, 0)
-    loss = -delta.where(delta < 0, 0)
-    avg_gain = gain.rolling(window=14).mean()
-    avg_loss = loss.rolling(window=14).mean()
-
-    # 计算RSI一阶段
-    avg_gain = gain.rolling(window=14).mean()
-    avg_loss = loss.rolling(window=14).mean()
-
-    # 避免除以零
-    avg_loss = avg_loss.replace(0, 0.00001)
-    rs = avg_gain / avg_loss
-    result['rsi'] = 100 - (100 / (1 + rs))
+    result['rsi'] = talib.RSI(result['close'], timeperiod=14)
 
     # 计算布林带
-    result['upper_band'] = result['MA20'] + \
-        (result['close'].rolling(window=20).std() * 2)
-    result['lower_band'] = result['MA20'] - \
-        (result['close'].rolling(window=20).std() * 2)
+    result['upper_band'], _, result['lower_band'] = talib.BBANDS(
+        result['close'], timeperiod=20, nbdevup=2, nbdevdn=2)
 
     # 计算变动率指标
     result['roc_5'] = result['close'].pct_change(periods=5) * 100
@@ -84,8 +62,8 @@ def add_basic_indicators(df: pd.DataFrame) -> pd.DataFrame:
     denom = denom.replace(0, 0.00001)
 
     result['k_percent'] = 100 * ((result['close'] - low_min) / denom)
-    result['k'] = result['k_percent'].rolling(window=3).mean()
-    result['d'] = result['k'].rolling(window=3).mean()
+    result['k'] = result['k_percent'].ewm(alpha=1/3, adjust=False).mean()
+    result['d'] = result['k'].ewm(alpha=1/3, adjust=False).mean()
     result['j'] = 3 * result['k'] - 2 * result['d']
 
     # 计算成交量指标
@@ -95,7 +73,7 @@ def add_basic_indicators(df: pd.DataFrame) -> pd.DataFrame:
         result['volume_ratio'] = result['volume'] / result['volume_ma5']
 
     # 填充NaN值
-    result = result.fillna(method='bfill').fillna(method='ffill').fillna(0)
+    result = result.fillna(method='ffill').fillna(0)
 
     return result
 
@@ -114,18 +92,12 @@ def calculate_base_indicators(df):
 
     # 计算移动平均线
     close_data = df['close']
-    if isinstance(close_data, pd.Series):
-        df['MA5'] = close_data.rolling(window=5).mean()
-        df['MA10'] = close_data.rolling(window=10).mean()
-        df['MA20'] = close_data.rolling(window=20).mean()
-        df['MA60'] = close_data.rolling(window=60).mean()
-    else:
-        # 转换为Series类型
+    if not isinstance(close_data, pd.Series):
         close_data = pd.Series(close_data)
-        df['MA5'] = close_data.rolling(window=5).mean()
-        df['MA10'] = close_data.rolling(window=10).mean()
-        df['MA20'] = close_data.rolling(window=20).mean()
-        df['MA60'] = close_data.rolling(window=60).mean()
+    df['MA5'] = talib.MA(close_data, timeperiod=5, matype=0)
+    df['MA10'] = talib.MA(close_data, timeperiod=10, matype=0)
+    df['MA20'] = talib.MA(close_data, timeperiod=20, matype=0)
+    df['MA60'] = talib.MA(close_data, timeperiod=60, matype=0)
 
     # 计算量价指标
     df['volume_ma5'] = df['volume'].rolling(window=5).mean()
@@ -158,20 +130,12 @@ def calculate_base_indicators(df):
         window=10).corr(df['volume'])
 
     # 添加布林带指标
-    if isinstance(close_data, pd.Series):
-        df['bbands_middle'] = close_data.rolling(window=20).mean()
-        df['bbands_std'] = close_data.rolling(window=20).std()
-        df['bbands_upper'] = df['bbands_middle'] + 2 * df['bbands_std']
-        df['bbands_lower'] = df['bbands_middle'] - 2 * df['bbands_std']
-        df['bbands_width'] = (df['bbands_upper'] - df['bbands_lower']) / df['bbands_middle']
-    else:
-        # 转换为Series类型
+    if not isinstance(close_data, pd.Series):
         close_data = pd.Series(close_data)
-        df['bbands_middle'] = close_data.rolling(window=20).mean()
-        df['bbands_std'] = close_data.rolling(window=20).std()
-        df['bbands_upper'] = df['bbands_middle'] + 2 * df['bbands_std']
-        df['bbands_lower'] = df['bbands_middle'] - 2 * df['bbands_std']
-        df['bbands_width'] = (df['bbands_upper'] - df['bbands_lower']) / df['bbands_middle']
+    df['bbands_upper'], df['bbands_middle'], df['bbands_lower'] = talib.BBANDS(
+        close_data, timeperiod=20, nbdevup=2, nbdevdn=2)
+    df['bbands_std'] = close_data.rolling(window=20).std()
+    df['bbands_width'] = (df['bbands_upper'] - df['bbands_lower']) / df['bbands_middle']
 
     # 添加移动平均线交叉信号
     df['ma5_cross_ma10'] = ((df['MA5'] > df['MA10']) & (df['MA5'].shift(1) <= df['MA10'].shift(1))).astype(int) - \
@@ -191,38 +155,19 @@ def calculate_base_indicators(df):
     df['volume_shrink'] = (df['volume'] < 0.5 * df['volume_ma5']).astype(int)
 
     # 计算MACD
-    if isinstance(close_data, pd.Series):
-        ema12 = close_data.ewm(span=12, adjust=False).mean()
-        ema26 = close_data.ewm(span=26, adjust=False).mean()
-        df['macd'] = ema12 - ema26
-        df['signal_line'] = df['macd'].ewm(span=9, adjust=False).mean()
-        df['macd_hist'] = df['macd'] - df['signal_line']
-    else:
-        # 转换为Series类型
+    if not isinstance(close_data, pd.Series):
         close_data = pd.Series(close_data)
-        ema12 = close_data.ewm(span=12, adjust=False).mean()
-        ema26 = close_data.ewm(span=26, adjust=False).mean()
-        df['macd'] = ema12 - ema26
-        df['signal_line'] = df['macd'].ewm(span=9, adjust=False).mean()
-        df['macd_hist'] = df['macd'] - df['signal_line']
+    df['macd'], df['signal_line'], df['macd_hist'] = talib.MACD(
+        close_data, fastperiod=12, slowperiod=26, signalperiod=9)
 
     # 添加ATR指标 (真实波动幅度)
-    high_low = df['high'] - df['low']
-    high_close = np.abs(df['high'] - df['close'].shift())
-    low_close = np.abs(df['low'] - df['close'].shift())
-    true_range = np.maximum(high_low, np.maximum(high_close, low_close))
-    df['atr'] = true_range.rolling(window=14).mean()
+    df['atr'] = talib.ATR(df['high'], df['low'], df['close'], timeperiod=14)
     
     # 添加OBV指标 (能量潮)
-    price_change = df['close'].diff()
-    df['obv'] = np.where(price_change > 0, df['volume'], 
-                        np.where(price_change < 0, -df['volume'], 0)).cumsum()
+    df['obv'] = talib.OBV(df['close'], df['volume'])
     
     # 添加CCI指标 (商品通道指数)
-    typical_price = (df['high'] + df['low'] + df['close']) / 3
-    mean_typical_price = typical_price.rolling(window=14).mean()
-    mean_deviation = np.abs(typical_price - mean_typical_price).rolling(window=14).mean()
-    df['cci'] = (typical_price - mean_typical_price) / (0.015 * mean_deviation)
+    df['cci'] = talib.CCI(df['high'], df['low'], df['close'], timeperiod=14)
 
     return df
 

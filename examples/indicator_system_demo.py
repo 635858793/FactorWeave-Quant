@@ -6,22 +6,30 @@
 展示如何使用新的指标系统计算各种指标
 """
 
+import os
+import sys
+
+# 添加项目根目录到Python路径
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.insert(0, parent_dir)
+
 from core.indicator_service import (
     calculate_indicator,
     get_indicator_metadata,
     get_all_indicators_metadata
 )
-import os
-import sys
 import pandas as pd
-import matplotlib.pyplot as plt
-from matplotlib.gridspec import GridSpec
 import numpy as np
 from loguru import logger
-# 添加项目根目录到Python路径
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
-sys.path.insert(0, parent_dir)
+from matplotlib.gridspec import GridSpec
+
+try:
+    import matplotlib.pyplot as plt
+    _MPL_AVAILABLE = True
+except ImportError:
+    _MPL_AVAILABLE = False
+    plt = None
 
 # 导入指标计算模块
 
@@ -202,8 +210,11 @@ def main():
     logger.info("-" * 50)
 
     # 绘制指标图表
-    logger.info("绘制指标图表...")
-    plot_indicators(df_kdj)
+    if _MPL_AVAILABLE:
+        logger.info("绘制指标图表...")
+        plot_indicators(df_kdj)
+    else:
+        logger.warning("matplotlib 不可用，跳过图表绘制")
 
 if __name__ == "__main__":
     main()

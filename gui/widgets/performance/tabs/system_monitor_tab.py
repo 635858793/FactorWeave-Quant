@@ -531,7 +531,7 @@ class ModernSystemMonitorTab(QWidget):
             if self.performance_monitor:
                 try:
                     self.recommendations = self.performance_monitor.get_recommendations()
-                except:
+                except Exception:
                     self.recommendations = []
             self.update_recommendations_display()
             logger.info(f"优化建议刷新完成，共{len(self.recommendations)}条")
@@ -887,10 +887,9 @@ class ModernSystemMonitorTab(QWidget):
 
             # 更新风险分析延迟
             if "风险分析延迟" in self.cards:
-                # 模拟延迟数据，实际应该从风险监控系统获取
-                import random
-                delay = random.randint(50, 200)  # 50-200ms
-                trend = "up" if delay > 150 else "down" if delay < 100 else "neutral"
+                delay = 0
+                logger.warning("风险分析延迟数据不可用，使用默认值0")
+                trend = "neutral"
                 self.cards["风险分析延迟"].update_value(str(delay), trend)
 
         except Exception as e:

@@ -193,7 +193,7 @@ def test_analysis_manager():
         try:
             data_access = DataAccess()
             manager = AnalysisManager(data_access=data_access)
-        except:
+        except Exception:
             manager = AnalysisManager.__new__(AnalysisManager)
             manager.logger = __import__('logging').getLogger(__name__)
         

@@ -6,7 +6,7 @@
 """
 
 import os
-import logging
+from loguru import logger
 from typing import Dict, Any, List, Optional, Type, Union
 
 from .interfaces import IChartRenderer, IRendererFactory
@@ -31,7 +31,7 @@ class ChartRendererFactory(IRendererFactory):
         self._renderers = {}
         self._renderer_classes = {}
         self._default_config = {}
-        self._logger = logging.getLogger(__name__)
+        self._logger = logger
         
         # 注册默认渲染器
         self._register_default_renderers()

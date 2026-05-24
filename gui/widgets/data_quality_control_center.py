@@ -16,7 +16,6 @@
 """
 
 import sys
-import logging
 import json
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
@@ -47,15 +46,16 @@ try:
     from core.services.unified_data_quality_monitor import UnifiedDataQualityMonitor
     from core.ai.data_anomaly_detector import DataAnomalyDetector
     from core.ui_integration.ui_business_logic_adapter import get_ui_adapter
-    from loguru import logger
     from gui.widgets.enhanced_ui.data_quality_monitor_tab_real_data import get_real_data_provider
     CORE_AVAILABLE = True
-except ImportError as e:
-    logger = logging.getLogger(__name__)
+except ImportError:
+    UnifiedDataQualityMonitor = None
+    DataAnomalyDetector = None
+    get_ui_adapter = None
+    get_real_data_provider = None
     CORE_AVAILABLE = False
-    logger.warning(f"核心数据质量服务不可用: {e}")
 
-logger = logger.bind(module=__name__) if hasattr(logger, 'bind') else logging.getLogger(__name__)
+from loguru import logger
 
 
 class QualityMetricType(Enum):
@@ -129,6 +129,15 @@ class QualityIssue:
 class QualityScoreGauge(QWidget):
     """质量评分仪表盘"""
 
+    _BG_PEN = QPen(QColor(230, 230, 230), 8)
+    _TARGET_PEN = QPen(QColor(189, 195, 199), 3)
+    _TEXT_PEN = QPen(Qt.black)
+    _FONT_VALUE = QFont("Arial", 14, QFont.Bold)
+    _FONT_TITLE = QFont("Arial", 10)
+    _COLOR_GREEN = QColor(46, 204, 113)
+    _COLOR_YELLOW = QColor(241, 196, 15)
+    _COLOR_RED = QColor(231, 76, 60)
+
     def __init__(self, title: str, parent=None):
         super().__init__(parent)
         self.title = title
@@ -153,42 +162,33 @@ class QualityScoreGauge(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
-        # 获取绘制区域
         rect = self.rect().adjusted(10, 10, -10, -10)
-        center = rect.center()
         radius = min(rect.width(), rect.height()) // 2 - 5
 
-        # 绘制背景圆环
-        painter.setPen(QPen(QColor(230, 230, 230), 8))
+        painter.setPen(self._BG_PEN)
         painter.drawArc(rect, 0, 360 * 16)
 
-        # 绘制目标线
         target_angle = int(self.target_score * 360 * 16)
-        painter.setPen(QPen(QColor(189, 195, 199), 3))
+        painter.setPen(self._TARGET_PEN)
         painter.drawArc(rect, 90 * 16 - target_angle, 10 * 16)
 
-        # 绘制评分圆环
         score_angle = int(self.score * 360 * 16)
 
-        # 根据评分选择颜色
         if self.score >= self.target_score:
-            color = QColor(46, 204, 113)  # 绿色 - 达标
+            color = self._COLOR_GREEN
         elif self.score >= self.target_score * 0.8:
-            color = QColor(241, 196, 15)  # 黄色 - 接近
+            color = self._COLOR_YELLOW
         else:
-            color = QColor(231, 76, 60)   # 红色 - 不达标
+            color = self._COLOR_RED
 
         painter.setPen(QPen(color, 8))
         painter.drawArc(rect, 90 * 16, -score_angle)
 
-        # 绘制中心评分
-        painter.setPen(QPen(Qt.black))
-        painter.setFont(QFont("Arial", 14, QFont.Bold))
-        score_text = f"{self.score:.1%}"
-        painter.drawText(rect, Qt.AlignCenter, score_text)
+        painter.setPen(self._TEXT_PEN)
+        painter.setFont(self._FONT_VALUE)
+        painter.drawText(rect, Qt.AlignCenter, f"{self.score:.1%}")
 
-        # 绘制标题
-        painter.setFont(QFont("Arial", 10))
+        painter.setFont(self._FONT_TITLE)
         title_rect = rect.adjusted(0, rect.height() + 5, 0, rect.height() + 25)
         painter.drawText(title_rect, Qt.AlignCenter, self.title)
 
@@ -812,41 +812,8 @@ class DataQualityControlCenter(QWidget):
 
         self.report_preview = QTextEdit()
         self.report_preview.setReadOnly(True)
-        self.report_preview.setText("""
- 数据质量综合报告
-
-生成时间: 2024-01-15 14:30:00
-数据源: 股票行情数据
-记录总数: 1,234,567
-
-质量指标总览:
-• 整体质量评分: 85.2%
-• 完整性: 92.1%
-• 准确性: 88.5%
-• 一致性: 91.3%
-• 有效性: 87.2%
-• 唯一性: 94.8%
-
- 质量问题统计:
-• 严重问题: 3个
-• 高级问题: 12个
-• 中级问题: 45个
-• 低级问题: 156个
-
- 规则执行情况:
-• 活跃规则: 24个
-• 规则通过率: 94.8%
-• 平均执行时间: 125ms
-
-[INFO] 改进建议:
-• 加强价格数据的范围检查
-• 完善交易量的异常检测
-• 优化重复数据的清理流程
-
-📞 联系信息:
-质量团队: quality@factorweave.com
-技术支持: support@factorweave.com
-        """)
+        self.report_preview.setText("暂无数据")
+        self.report_preview.setPlaceholderText("生成质量报告后将在此处显示预览...")
         preview_layout.addWidget(self.report_preview)
 
         layout.addWidget(preview_group)
@@ -892,9 +859,6 @@ class DataQualityControlCenter(QWidget):
             self.generate_sample_issues()
 
     def generate_sample_metrics(self):
-        """生成示例质量指标"""
-        import random
-
         metric_types = [
             QualityMetricType.COMPLETENESS,
             QualityMetricType.ACCURACY,
@@ -906,7 +870,7 @@ class DataQualityControlCenter(QWidget):
         for metric_type in metric_types:
             metric = QualityMetric(
                 metric_type=metric_type,
-                value=random.uniform(0.75, 0.95),
+                value=0.0,
                 threshold=0.8
             )
             self.quality_metrics[metric_type] = metric
@@ -947,9 +911,6 @@ class DataQualityControlCenter(QWidget):
         self.filter_rules()
 
     def generate_sample_issues(self):
-        """生成示例质量问题"""
-        import random
-
         sample_issues = [
             QualityIssue(
                 "issue_001", "rule_002", "价格范围检查",
@@ -974,7 +935,7 @@ class DataQualityControlCenter(QWidget):
         ]
 
         for issue in sample_issues:
-            issue.detected_at = datetime.now() - timedelta(hours=random.randint(1, 24))
+            issue.detected_at = datetime.now()
 
         self.quality_issues = sample_issues
         self.filter_issues()
@@ -1003,12 +964,7 @@ class DataQualityControlCenter(QWidget):
                             self.quality_metrics[metric_type].value = value
                             self.quality_metrics[metric_type].timestamp = datetime.now()
             else:
-                # 降级到模拟数据
-                import random
-                for metric_type, metric in self.quality_metrics.items():
-                    change = random.uniform(-0.02, 0.02)
-                    metric.value = max(0.5, min(1.0, metric.value + change))
-                    metric.timestamp = datetime.now()
+                pass
         except Exception as e:
             logger.error(f"更新质量指标失败: {e}")
 
@@ -1046,8 +1002,7 @@ class DataQualityControlCenter(QWidget):
                 total_records = sum(dt.get('count', 0) for dt in datatypes)
                 self.total_records_label.setText(f"{total_records:,}")
             else:
-                # 降级到模拟数据
-                self.total_records_label.setText("1,234,567")
+                self.total_records_label.setText("暂无数据")
         except Exception as e:
             logger.error(f"更新概览统计失败: {e}")
             self.total_records_label.setText("N/A")
@@ -1544,12 +1499,12 @@ class DataQualityControlCenter(QWidget):
                 for issue in unresolved_issues:
                     try:
                         # 尝试自动修复
-                        repair_result = self.anomaly_detector.auto_repair_anomaly(issue.issue_id)
+                        repair_result = self.anomaly_detector.auto_repair_anomaly(issue.id)
 
                         if repair_result and repair_result.success:
                             cleaning_results['repaired_count'] += 1
                             cleaning_results['repairs'].append({
-                                'issue_id': issue.issue_id,
+                                'issue_id': issue.id,
                                 'repair_action': repair_result.action_taken.value if hasattr(repair_result.action_taken, 'value') else str(repair_result.action_taken),
                                 'success': True
                             })
@@ -1615,7 +1570,8 @@ class DataQualityControlCenter(QWidget):
             if hasattr(quality_report, 'issues') and quality_report.issues:
                 for issue in quality_report.issues:
                     ui_issue = QualityIssue(
-                        issue_id=getattr(issue, 'issue_id', f"issue_{len(issues)}"),
+                        id=getattr(issue, 'issue_id', f"issue_{len(issues)}"),
+                        rule_id=getattr(issue, 'rule_id', ''),
                         rule_name=getattr(issue, 'title', 'Unknown Rule'),
                         severity=self._map_issue_level_to_severity(getattr(issue, 'level', None)),
                         column=getattr(issue, 'field_name', 'Unknown'),
@@ -1665,7 +1621,7 @@ class DataQualityControlCenter(QWidget):
                 return QualitySeverity.MEDIUM
             else:
                 return QualitySeverity.LOW
-        except:
+        except Exception:
             return QualitySeverity.MEDIUM
 
     def _map_dimension_to_metric_type(self, dimension) -> Optional[QualityMetricType]:
@@ -1689,7 +1645,7 @@ class DataQualityControlCenter(QWidget):
                     return metric_type
 
             return QualityMetricType.COMPLETENESS  # 默认值
-        except:
+        except Exception:
             return QualityMetricType.COMPLETENESS
 
     def _update_quality_metrics_from_scan(self, scan_results: Dict[str, Any]):
@@ -1697,7 +1653,6 @@ class DataQualityControlCenter(QWidget):
         try:
             metrics_data = scan_results.get('metrics', {})
             for metric_name, metric_data in metrics_data.items():
-                # 查找对应的指标类型
                 metric_type = None
                 for mt in QualityMetricType:
                     if mt.value == metric_name:
@@ -1705,19 +1660,14 @@ class DataQualityControlCenter(QWidget):
                         break
 
                 if metric_type:
-                    # 更新或创建指标
                     self.quality_metrics[metric_type] = QualityMetric(
                         metric_type=metric_type,
                         value=metric_data.get('value', 0.0),
                         threshold=metric_data.get('threshold', 0.8),
-                        status=QualityStatus.GOOD if metric_data.get('status') == 'good' else
-                        QualityStatus.WARNING if metric_data.get('status') == 'warning' else
-                        QualityStatus.CRITICAL,
-                        last_updated=datetime.now()
+                        timestamp=datetime.now()
                     )
 
-            # 刷新指标显示
-            self.update_metrics_display()
+            self.update_quality_gauges()
 
         except Exception as e:
             logger.error(f"从扫描结果更新质量指标失败: {e}")
@@ -1758,7 +1708,7 @@ class DataQualityControlCenter(QWidget):
 
                 # 查找对应的问题并更新状态
                 for issue in self.quality_issues:
-                    if issue.issue_id == issue_id:
+                    if issue.id == issue_id:
                         if success:
                             issue.resolved = True
                             issue.resolution_note = f"自动修复成功: {repair.get('repair_action', '未知操作')}"
@@ -1825,7 +1775,7 @@ class DataQualityControlCenter(QWidget):
             for idx, anomaly in enumerate(anomalies):
                 if anomaly.get('severity') not in ['正常', 'INFO']:
                     issue = QualityIssue(
-                        issue_id=f"issue_{idx:03d}",
+                        id=f"issue_{idx:03d}",
                         rule_id="auto_detected",
                         rule_name=anomaly.get('type', 'Unknown'),
                         severity=severity_map.get(anomaly.get('severity'), QualitySeverity.MEDIUM),

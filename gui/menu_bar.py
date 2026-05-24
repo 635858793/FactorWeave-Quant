@@ -297,6 +297,14 @@ class MainMenuBar(QMenuBar):
             self.account_management_action.setStatusTip("打开账户管理窗口")
             self.strategy_menu.addAction(self.account_management_action)
 
+            self.strategy_menu.addSeparator()
+
+            # 投资组合管理
+            self.portfolio_management_action = QAction("投资组合管理", self)
+            self.portfolio_management_action.setStatusTip("打开投资组合管理对话框")
+            self.portfolio_management_action.setShortcut("Ctrl+Shift+P")
+            self.strategy_menu.addAction(self.portfolio_management_action)
+
             # 注意：信号连接已在connect_signals方法中统一处理，这里不再重复连接
 
         except Exception as e:
@@ -1005,6 +1013,7 @@ class MainMenuBar(QMenuBar):
                 ('trading_monitor_action', '_on_trading_monitor'),
                 ('order_management_action', '_on_order_management'),
                 ('account_management_action', '_on_account_management'),
+                ('portfolio_management_action', '_on_portfolio_management'),
 
                 # 数据相关
                 ('import_data_action', '_on_import_data'),
@@ -1275,7 +1284,7 @@ class MainMenuBar(QMenuBar):
     def _create_plugin_dialog(self, target_tab=None):
         """创建插件对话框的通用方法"""
         try:
-            from gui.dialogs.enhanced_plugin_manager_dialog import EnhancedPluginManagerDialog
+            from gui.dialogs.plugin_manager_dialog_unified import PluginManagerDialogUnified
             from core.containers import get_service_container
             from core.plugin_manager import PluginManager
 
@@ -1291,12 +1300,10 @@ class MainMenuBar(QMenuBar):
                     except Exception as e:
                         logger.info(f" 获取插件管理器失败: {e}")
 
-            # 情绪数据服务已删除，传递None保持兼容性
-            # 创建增强版插件管理器对话框
-            dialog = EnhancedPluginManagerDialog(
-                plugin_manager=plugin_manager,
-                sentiment_service=None,
-                parent=self.parent()
+            # 创建统一插件管理器对话框
+            dialog = PluginManagerDialogUnified(
+                plugin_manager,
+                self.parent()
             )
 
             # 切换到指定标签页

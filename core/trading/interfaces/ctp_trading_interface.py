@@ -8,6 +8,7 @@ CTP（综合交易平台）是中国期货市场的主要交易接口，支持�
 """
 
 from typing import Dict, Optional, List, Any
+from datetime import datetime
 from loguru import logger
 import threading
 import time
@@ -468,9 +469,92 @@ class CTPTradingInterface(TradingInterface):
                 error_code="QUERY_FAILED"
             )
 
+    def query_fund_info(self, account_id: str):
+        """
+        查询账户资金信息（基类接口适配）
+
+        Args:
+            account_id: 账户ID
+
+        Returns:
+            FundInfo 或 Dict: 资金信息
+        """
+        try:
+            from core.trading.account_models import FundInfo
+            account_data = self.get_account()
+            if not account_data:
+                return None
+            return FundInfo(
+                account_id=account_id,
+                total_assets=account_data.get('balance', 0),
+                available_cash=account_data.get('available', 0),
+                market_value=0.0,
+                frozen_cash=account_data.get('frozen_cash', 0),
+                total_profit_loss=0.0,
+                today_profit_loss=0.0,
+                update_time=datetime.now()
+            )
+        except Exception as e:
+            logger.error(f"查询CTP账户资金信息失败: {e}")
+            return None
+
+    def query_positions(self, account_id: str):
+        """
+        查询账户持仓信息（基类接口适配）
+
+        Args:
+            account_id: 账户ID
+
+        Returns:
+            List[Position]: 持仓列表
+        """
+        try:
+            from core.trading.account_models import Position, PositionSide
+            raw_positions = self.get_position()
+            positions = []
+            for symbol, pos_data in raw_positions.items():
+                long_qty = pos_data.get('long_pos', 0)
+                short_qty = pos_data.get('short_pos', 0)
+                if long_qty > 0:
+                    positions.append(Position(
+                        position_id=f"{account_id}_{symbol}_L",
+                        account_id=account_id,
+                        stock_code=symbol,
+                        stock_name=symbol,
+                        position_side=PositionSide.LONG,
+                        quantity=long_qty,
+                        available_quantity=long_qty - pos_data.get('long_frozen', 0),
+                        cost_price=0.0,
+                        current_price=0.0,
+                        market_value=0.0,
+                        profit_loss=0.0,
+                        profit_loss_ratio=0.0,
+                        update_time=datetime.now()
+                    ))
+                if short_qty > 0:
+                    positions.append(Position(
+                        position_id=f"{account_id}_{symbol}_S",
+                        account_id=account_id,
+                        stock_code=symbol,
+                        stock_name=symbol,
+                        position_side=PositionSide.SHORT,
+                        quantity=short_qty,
+                        available_quantity=short_qty - pos_data.get('short_frozen', 0),
+                        cost_price=0.0,
+                        current_price=0.0,
+                        market_value=0.0,
+                        profit_loss=0.0,
+                        profit_loss_ratio=0.0,
+                        update_time=datetime.now()
+                    ))
+            return positions
+        except Exception as e:
+            logger.error(f"查询CTP账户持仓信息失败: {e}")
+            return []
+
     def get_position(self, symbol: str = None) -> Dict[str, Any]:
         """
-        获取持仓信息
+        获取持仓信息（原始CTP格式）
 
         Args:
             symbol: 合约代码，如果为None则返回所有持仓
@@ -511,7 +595,7 @@ class CTPTradingInterface(TradingInterface):
 
     def get_account(self) -> Dict[str, Any]:
         """
-        获取账户资金信息
+        获取账户资金信息（原始CTP格式）
 
         Returns:
             Dict: 账户资金信息

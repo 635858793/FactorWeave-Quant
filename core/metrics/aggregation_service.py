@@ -296,11 +296,24 @@ class MetricsAggregationService:
         # 这样可以避免重复告警，并支持更灵活的规则配置
 
         logger.debug(f"资源指标更新: CPU={event.cpu_percent:.1f}%, "
-                     f"内存={event.memory_percent:.1f}%, "
-                     f"磁盘={event.disk_percent:.1f}%")
+                 f"内存={event.memory_percent:.1f}%, "
+                 f"磁盘={event.disk_percent:.1f}%")
 
-        # 如果需要告警，请通过 AlertRuleEngine 配置相应的告警规则
-        # 告警规则可以通过 GUI 界面或数据库直接配置
+        # 通过 EventBus 发出阈值超标告警事件，重新连通已废弃的告警调用链
+        # 下游订阅者（如 AlertRuleEngine、UI通知组件）可监听这些事件进行处理
+        if event.cpu_percent > 80 or event.memory_percent > 80 or event.disk_percent > 90:
+            if self.event_bus:
+                try:
+                    self.event_bus.publish("ResourceThresholdExceeded",
+                        cpu_percent=event.cpu_percent,
+                        memory_percent=event.memory_percent,
+                        disk_percent=event.disk_percent,
+                        timestamp=time.time()
+                    )
+                    logger.info(f"发布资源阈值超标告警: CPU={event.cpu_percent:.1f}%, "
+                                f"内存={event.memory_percent:.1f}%, 磁盘={event.disk_percent:.1f}%")
+                except Exception as pub_error:
+                    logger.error(f"发布资源告警事件失败: {pub_error}")
 
     def _check_app_thresholds(self, event: ApplicationMetricRecorded) -> None:
         """
@@ -316,11 +329,23 @@ class MetricsAggregationService:
         # 应用指标告警判断现在由 AlertRuleEngine 统一处理
 
         logger.debug(f"应用指标记录: 操作={event.operation_name}, "
-                     f"持续时间={event.duration:.2f}秒, "
-                     f"成功={event.was_successful}")
+                 f"持续时间={event.duration:.2f}秒, "
+                 f"成功={event.was_successful}")
 
-        # 如果需要告警，请通过 AlertRuleEngine 配置相应的告警规则
-        # 告警规则可以通过 GUI 界面或数据库直接配置
+        # 通过 EventBus 发出应用指标阈值超标告警事件，重新连通已废弃的告警调用链
+        if event.duration > 5.0 or not event.was_successful:
+            if self.event_bus:
+                try:
+                    self.event_bus.publish("ApplicationThresholdExceeded",
+                        operation_name=event.operation_name,
+                        duration=event.duration,
+                        was_successful=event.was_successful,
+                        timestamp=time.time()
+                    )
+                    logger.info(f"发布应用阈值超标告警: 操作={event.operation_name}, "
+                                f"耗时={event.duration:.2f}秒, 成功={event.was_successful}")
+                except Exception as pub_error:
+                    logger.error(f"发布应用告警事件失败: {pub_error}")
 
     def set_aggregation_interval(self, interval: int) -> None:
         """

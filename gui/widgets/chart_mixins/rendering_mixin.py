@@ -303,7 +303,7 @@ class RenderingMixin:
         """优化的指标样式获取方法，使用缓存"""
         try:
             theme_version = hash(str(getattr(self, 'theme_manager', {}).get_theme_colors() if hasattr(self.theme_manager, 'get_theme_colors') else {}))
-        except:
+        except Exception:
             theme_version = 0
         
         cached_style = self._performance_optimizer.get_cached_style(name, index, theme_version)
@@ -449,7 +449,8 @@ class RenderingMixin:
                 logger.warning("kdata为空，设置默认Y轴范围")
 
             for ax in [self.price_ax, self.volume_ax, self.indicator_ax]:
-                ax.cla()
+                for artist in ax.lines + ax.collections + ax.texts:
+                    artist.remove()
 
             render_time = (time.time() - start_time) * 1000  # 转换为毫秒
             logger.info(f"K线price_ax，耗时: {render_time:.2f}ms")
@@ -1295,14 +1296,14 @@ class RenderingMixin:
                     for line in self._crosshair_lines.values():
                         try:
                             line.remove()
-                        except:
+                        except Exception:
                             pass
                 else:
                     # 兼容处理列表类型
                     for line in self._crosshair_lines:
                         try:
                             line.remove()
-                        except:
+                        except Exception:
                             pass
                 # 重置为空字典，与CrosshairMixin保持一致
                 self._crosshair_lines = {}
@@ -1310,7 +1311,7 @@ class RenderingMixin:
             if hasattr(self, '_crosshair_text') and self._crosshair_text:
                 try:
                     self._crosshair_text.remove()
-                except:
+                except Exception:
                     pass
                 self._crosshair_text = None
 
@@ -1318,7 +1319,7 @@ class RenderingMixin:
             if hasattr(self, '_stock_info_text') and self._stock_info_text:
                 try:
                     self._stock_info_text.remove()
-                except:
+                except Exception:
                     pass
                 self._stock_info_text = None
 

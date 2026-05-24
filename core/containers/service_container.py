@@ -272,7 +272,7 @@ class ServiceContainer:
                     try:
                         dependency = self.resolve(param.annotation)
                         injected_kwargs[param.name] = dependency
-                    except:
+                    except Exception:
                         # 如果按类型解析失败，尝试按名称解析
                         if self._registry.get_service_info_by_name(param.name):
                             injected_kwargs[param.name] = self.resolve_by_name(
@@ -319,11 +319,17 @@ class ServiceContainer:
         Returns:
             是否成功移除
         """
-        # 这个功能需要在ServiceRegistry中实现
-        # 暂时返回False
-        logger.warning(
-            f"Remove service '{name}' is not implemented in new architecture")
-        return False
+        service_info = self._registry.get_service_info_by_name(name)
+        if service_info is None:
+            return False
+
+        service_type = service_info.service_type
+        success = self._registry.unregister(service_type)
+        if success:
+            with self._lock:
+                self._instances.pop(service_type, None)
+            logger.debug(f"Removed service '{name}' ({service_type.__name__})")
+        return success
 
     def clear(self) -> None:
         """

@@ -239,7 +239,10 @@ class DataAdapter:
                 return None
                 
             # 检查缓存
-            cache_key = f"normalize_{hash(str(data))}_{target_schema}"
+            if hasattr(data, 'to_numpy'):
+                cache_key = f"normalize_{hash(data.to_numpy().tobytes())}_{target_schema}"
+            else:
+                cache_key = f"normalize_{hash(str(data))}_{target_schema}"
             if cache_key in self.cache:
                 logger.debug("从缓存获取标准化数据")
                 return self.cache[cache_key]
@@ -443,18 +446,14 @@ class DataAdapter:
         try:
             if data.empty:
                 return 0.0
-                
-            total_required = len(schema.required_columns)
-            if total_required == 0:
-                return 1.0
-                
-            complete_rows = 0
-            for _, row in data.iterrows():
-                if all(pd.notna(row[col]) for col in schema.required_columns):
-                    complete_rows += 1
-                    
-            return complete_rows / len(data)
-            
+
+            required_cols = [col for col in schema.required_columns if col in data.columns]
+            if not required_cols:
+                return 0.0
+
+            complete_rows = data[required_cols].notna().all(axis=1).sum()
+            return float(complete_rows) / len(data)
+
         except Exception as e:
             logger.error(f"计算完整性失败: {e}")
             return 0.0
@@ -769,18 +768,18 @@ class DataAdapter:
         try:
             if 'timestamp' in data.columns and 'value' in data.columns:
                 return {
-                    'x': data['timestamp'].tolist(),
-                    'y': data['value'].tolist()
+                    'x': data['timestamp'].values,
+                    'y': data['value'].values
                 }
             elif len(data.columns) >= 2:
                 return {
-                    'x': data.iloc[:, 0].tolist(),
-                    'y': data.iloc[:, 1].tolist()
+                    'x': data.iloc[:, 0].values,
+                    'y': data.iloc[:, 1].values
                 }
             else:
                 return {
                     'x': list(range(len(data))),
-                    'y': data.iloc[:, 0].tolist() if len(data.columns) > 0 else []
+                    'y': data.iloc[:, 0].values if len(data.columns) > 0 else []
                 }
                 
         except Exception as e:
@@ -793,12 +792,12 @@ class DataAdapter:
             required_cols = ['open', 'high', 'low', 'close']
             if all(col in data.columns for col in required_cols):
                 return {
-                    'timestamp': data.index.tolist() if data.index.name else list(range(len(data))),
-                    'open': data['open'].tolist(),
-                    'high': data['high'].tolist(),
-                    'low': data['low'].tolist(),
-                    'close': data['close'].tolist(),
-                    'volume': data['volume'].tolist() if 'volume' in data.columns else [0] * len(data)
+                    'timestamp': data.index.values if data.index.name else list(range(len(data))),
+                    'open': data['open'].values,
+                    'high': data['high'].values,
+                    'low': data['low'].values,
+                    'close': data['close'].values,
+                    'volume': data['volume'].values if 'volume' in data.columns else [0] * len(data)
                 }
             else:
                 logger.warning("K线图数据缺少必要字段")
@@ -813,13 +812,13 @@ class DataAdapter:
         try:
             if len(data.columns) >= 2:
                 return {
-                    'x': data.iloc[:, 0].tolist(),
-                    'y': data.iloc[:, 1].tolist()
+                    'x': data.iloc[:, 0].values,
+                    'y': data.iloc[:, 1].values
                 }
             else:
                 return {
                     'x': list(range(len(data))),
-                    'y': data.iloc[:, 0].tolist() if len(data.columns) > 0 else []
+                    'y': data.iloc[:, 0].values if len(data.columns) > 0 else []
                 }
                 
         except Exception as e:
@@ -831,8 +830,8 @@ class DataAdapter:
         try:
             if len(data.columns) >= 2:
                 return {
-                    'x': data.iloc[:, 0].tolist(),
-                    'y': data.iloc[:, 1].tolist()
+                    'x': data.iloc[:, 0].values,
+                    'y': data.iloc[:, 1].values
                 }
             else:
                 return {'x': [], 'y': []}
@@ -844,11 +843,10 @@ class DataAdapter:
     def _convert_heatmap_data(self, data: pd.DataFrame) -> Dict[str, Any]:
         """转换为热力图数据"""
         try:
-            # 将DataFrame转换为矩阵格式
             numeric_data = data.select_dtypes(include=[np.number])
             if not numeric_data.empty:
                 return {
-                    'matrix': numeric_data.values.tolist(),
+                    'matrix': numeric_data.values,
                     'x_labels': list(numeric_data.columns),
                     'y_labels': list(numeric_data.index)
                 }

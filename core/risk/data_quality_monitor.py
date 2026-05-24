@@ -337,26 +337,21 @@ class DataQualityMonitor:
         if len(available_fields) < len(required_fields):
             return 0.5  # 缺少必需字段
         
-        for _, row in df.iterrows():
-            total_checks += 1
-            
-            # 检查 high >= max(open, close) 和 low <= min(open, close)
-            open_price = row.get('open', 0)
-            high_price = row.get('high', 0)
-            low_price = row.get('low', 0)
-            close_price = row.get('close', 0)
-            
-            if pd.isna(open_price) or pd.isna(high_price) or pd.isna(low_price) or pd.isna(close_price):
-                accuracy_issues += 1
-                continue
-            
-            if high_price < max(open_price, close_price) or low_price > min(open_price, close_price):
-                accuracy_issues += 1
-            
-            # 检查价格是否为负数
-            if any(price < 0 for price in [open_price, high_price, low_price, close_price]):
-                accuracy_issues += 1
-        
+        total_checks = len(df)
+
+        nan_mask = df[available_fields].isna().any(axis=1)
+        accuracy_issues += nan_mask.sum()
+
+        valid_mask = ~nan_mask
+        if valid_mask.any():
+            max_oc = df.loc[valid_mask, ['open', 'close']].max(axis=1)
+            min_oc = df.loc[valid_mask, ['open', 'close']].min(axis=1)
+            ohlc_issue = (df.loc[valid_mask, 'high'] < max_oc) | (df.loc[valid_mask, 'low'] > min_oc)
+            accuracy_issues += ohlc_issue.sum()
+
+            neg_price = (df.loc[valid_mask, available_fields] < 0).any(axis=1)
+            accuracy_issues += neg_price.sum()
+
         return 1.0 - (accuracy_issues / total_checks) if total_checks > 0 else 1.0
     
     def _assess_quote_accuracy(self, df: pd.DataFrame) -> float:
@@ -364,18 +359,18 @@ class DataQualityMonitor:
         accuracy_issues = 0
         total_checks = len(df)
         
-        for _, row in df.iterrows():
-            # 检查价格字段
-            price = row.get('price', 0)
-            if pd.isna(price) or price <= 0:
-                accuracy_issues += 1
-                continue
-            
-            # 检查涨跌幅是否合理（不超过±20%）
-            change_pct = row.get('change_pct', 0)
-            if not pd.isna(change_pct) and abs(change_pct) > 20:
-                accuracy_issues += 1
-        
+        if 'price' in df.columns:
+            price_issue = df['price'].isna() | (df['price'] <= 0)
+        else:
+            price_issue = pd.Series(True, index=df.index)
+        accuracy_issues += price_issue.sum()
+
+        valid_price_mask = ~price_issue
+        if valid_price_mask.any() and 'change_pct' in df.columns:
+            change_pct = df.loc[valid_price_mask, 'change_pct']
+            change_issue = change_pct.notna() & (change_pct.abs() > 20)
+            accuracy_issues += change_issue.sum()
+
         return 1.0 - (accuracy_issues / total_checks) if total_checks > 0 else 1.0
     
     def _assess_generic_accuracy(self, df: pd.DataFrame) -> float:
@@ -481,36 +476,34 @@ class DataQualityMonitor:
         try:
             # 根据数据类型进行特定的有效性检查
             if data_type.lower() in ["kline", "ohlc", "kdata"]:
-                for _, row in df.iterrows():
-                    total_checks += 1
-                    
-                    # 检查价格合理性
-                    for price_col in ['open', 'high', 'low', 'close']:
-                        if price_col in df.columns:
-                            price = row.get(price_col)
-                            if pd.notna(price) and (price <= 0 or price > 10000):  # 价格范围检查
-                                validity_issues += 1
-                                break
-                    
-                    # 检查成交量合理性
-                    if 'volume' in df.columns:
-                        volume = row.get('volume')
-                        if pd.notna(volume) and volume < 0:
-                            validity_issues += 1
+                total_checks = len(df)
+
+                price_cols = [col for col in ['open', 'high', 'low', 'close'] if col in df.columns]
+                if price_cols:
+                    price_issue = pd.Series(False, index=df.index)
+                    for col in price_cols:
+                        col_issue = df[col].notna() & ((df[col] <= 0) | (df[col] > 10000))
+                        price_issue = price_issue | col_issue
+                    validity_issues += price_issue.sum()
+
+                if 'volume' in df.columns:
+                    volume_issue = df['volume'].notna() & (df['volume'] < 0)
+                    validity_issues += volume_issue.sum()
             
             elif data_type.lower() in ["quote", "real_time"]:
-                for _, row in df.iterrows():
-                    total_checks += 1
-                    
-                    # 检查股票代码格式
-                    symbol = row.get('symbol', '')
-                    if symbol and not self._is_valid_symbol(symbol):
-                        validity_issues += 1
-                    
-                    # 检查价格合理性
-                    price = row.get('price')
-                    if pd.notna(price) and (price <= 0 or price > 10000):
-                        validity_issues += 1
+                total_checks = len(df)
+
+                if 'symbol' in df.columns:
+                    combined_pattern = r'^(\d{6}\.(SH|SZ|BJ)|\d{1,5}\.HK|[A-Z]{1,5}\.US)$'
+                    symbol_series = df['symbol'].astype(str)
+                    non_empty = symbol_series != ''
+                    if non_empty.any():
+                        invalid_symbol = non_empty & ~symbol_series.str.match(combined_pattern).fillna(False)
+                        validity_issues += invalid_symbol.sum()
+
+                if 'price' in df.columns:
+                    price_issue = df['price'].notna() & ((df['price'] <= 0) | (df['price'] > 10000))
+                    validity_issues += price_issue.sum()
             
             validity_score = 1.0 - (validity_issues / max(total_checks, 1))
             

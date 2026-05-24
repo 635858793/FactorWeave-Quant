@@ -77,6 +77,13 @@ class TradingEngine:
     2. 仓位管理
     3. 订单执行
     4. 风险控制
+
+    设计债务（TECH_DEBT-001）：持仓三分问题
+    本模块通过 self.positions: Dict[str, Position] 维护了独立的持仓数据结构，
+    与 core/position_manager.py 和 core/risk_manager.py 中的持仓数据无同步机制。
+    三个模块各自独立维护持仓，可能导致数据不一致。
+    建议通过事件总线（EventBus）同步：当任一处持仓变更时，发布
+    'position_updated' 事件，由其他两模块订阅并更新。
     """
 
     def __init__(self, service_container: ServiceContainer, event_bus: EventBus):

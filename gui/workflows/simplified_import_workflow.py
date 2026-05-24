@@ -3,7 +3,7 @@
 重新设计和简化数据导入的操作流程，减少用户需要的步骤和学习成本
 """
 
-import logging
+from loguru import logger
 from typing import Dict, List, Optional, Any, Callable, Union, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
@@ -18,8 +18,6 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, pyqtSignal, QObject, QTimer, QThread, QSize
 from PyQt5.QtGui import QFont, QIcon, QPixmap, QPalette, QColor
 import threading
-
-logger = logging.getLogger(__name__)
 
 
 class WorkflowStep(Enum):

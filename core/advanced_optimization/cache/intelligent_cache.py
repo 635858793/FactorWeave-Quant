@@ -15,6 +15,7 @@ import pandas as pd
 import time
 import threading
 import pickle
+from utils.safe_pickle import safe_load
 import hashlib
 from typing import Any, Dict, List, Optional, Callable, Union, Tuple, Set
 from dataclasses import dataclass, field
@@ -299,7 +300,7 @@ class L2DiskCache:
             if key in self.index and os.path.exists(file_path):
                 try:
                     with open(file_path, 'rb') as f:
-                        data = pickle.load(f)
+                        data = safe_load(f)
                     
                     # 检查TTL
                     timestamp = self.index[key].get('timestamp', 0)
@@ -607,15 +608,15 @@ class IntelligentCache:
     def _execute_preload(self, key: str):
         """执行预加载"""
         try:
-            # 这里应该根据实际业务逻辑实现数据获取
-            # 目前只是模拟
             logger.debug(f"预加载数据: {key}")
-            
-            # 模拟数据加载
-            simulated_data = f"preloaded_data_for_{key}"
-            self.l1_cache.set(key, simulated_data, ttl_seconds=1800)
+
+            logger.warning(
+                f"预加载功能尚未实现真实数据加载器，键 '{key}' 存入了空占位标记。"
+                "请根据实际业务逻辑实现具体的数据获取逻辑。"
+            )
+            self.l1_cache.set(key, None, ttl_seconds=1800)
             self.preload_stats['hits'] += 1
-            
+
         except Exception as e:
             logger.error(f"预加载失败 {key}: {e}")
             self.preload_stats['skipped'] += 1

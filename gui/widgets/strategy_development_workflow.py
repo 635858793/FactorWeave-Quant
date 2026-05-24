@@ -311,6 +311,8 @@ class StrategyDevelopmentWorkflow(QWidget):
         super().__init__(parent)
         self.theme_manager = theme_manager
         self.current_stage = WorkflowStage.DESIGN
+        self._stages = list(WorkflowStage)
+        self._stage_index_map = {stage: idx for idx, stage in enumerate(self._stages)}
         self.steps: Dict[WorkflowStage, List[WorkflowStep]] = {
             WorkflowStage.DESIGN: [
                 WorkflowStep(WorkflowStage.DESIGN, "策略思路", "描述策略的基本思路和逻辑"),
@@ -359,7 +361,7 @@ class StrategyDevelopmentWorkflow(QWidget):
         if self.theme_manager:
             try:
                 self.theme_manager.theme_changed.connect(self._on_theme_changed)
-            except:
+            except Exception:
                 pass
 
     def _on_theme_changed(self, theme):
@@ -943,26 +945,23 @@ class StrategyDevelopmentWorkflow(QWidget):
             """)
 
     def _on_stage_indicator_clicked(self, index: int):
-        stages = list(WorkflowStage)
-        if 0 <= index < len(stages):
-            self._set_stage(stages[index])
+        if 0 <= index < len(self._stages):
+            self._set_stage(self._stages[index])
 
     def _on_stage_card_clicked(self, index: int):
-        stages = list(WorkflowStage)
-        if 0 <= index < len(stages):
-            self._set_stage(stages[index])
+        if 0 <= index < len(self._stages):
+            self._set_stage(self._stages[index])
 
     def _on_stage_changed(self, row: int):
-        stages = list(WorkflowStage)
-        if 0 <= row < len(stages):
-            self._set_stage(stages[row])
+        if 0 <= row < len(self._stages):
+            self._set_stage(self._stages[row])
 
     def _set_stage(self, stage: WorkflowStage):
         self.current_stage = stage
         self.stage_label.setText(f"当前阶段: {stage.value}")
         self.stage_changed.emit(stage.value)
 
-        stage_index = list(WorkflowStage).index(stage)
+        stage_index = self._stage_index_map[stage]
         self.content_stack.setCurrentIndex(stage_index)
         self.stage_indicator.set_current_stage(stage_index)
 
@@ -978,19 +977,18 @@ class StrategyDevelopmentWorkflow(QWidget):
             logger.info(f"步骤点击: {step.name}")
 
     def _update_navigation(self):
-        stage_index = list(WorkflowStage).index(self.current_stage)
+        stage_index = self._stage_index_map[self.current_stage]
         for i, card in enumerate(self.stage_cards):
             card.set_active(i == stage_index)
             card.set_completed(i < stage_index)
         self.stage_indicator.set_current_stage(stage_index)
 
     def _update_button_states(self):
-        stages = list(WorkflowStage)
-        current_index = stages.index(self.current_stage)
+        current_index = self._stage_index_map[self.current_stage]
         
         self.prev_btn.setEnabled(current_index > 0)
         
-        if current_index == len(stages) - 1:
+        if current_index == len(self._stages) - 1:
             self.next_btn.setVisible(False)
             self.finish_btn.setVisible(True)
         else:
@@ -998,24 +996,21 @@ class StrategyDevelopmentWorkflow(QWidget):
             self.finish_btn.setVisible(False)
 
     def _update_progress(self):
-        stages = list(WorkflowStage)
-        current_index = stages.index(self.current_stage)
-        progress = int((current_index + 1) / len(stages) * 100)
+        current_index = self._stage_index_map[self.current_stage]
+        progress = int((current_index + 1) / len(self._stages) * 100)
         self.progress_bar.setValue(progress)
 
     def _prev_stage(self):
-        stages = list(WorkflowStage)
-        current_index = stages.index(self.current_stage)
+        current_index = self._stage_index_map[self.current_stage]
         if current_index > 0:
-            self._set_stage(stages[current_index - 1])
+            self._set_stage(self._stages[current_index - 1])
 
     def _next_stage(self):
-        stages = list(WorkflowStage)
-        current_index = stages.index(self.current_stage)
-        if current_index < len(stages) - 1:
+        current_index = self._stage_index_map[self.current_stage]
+        if current_index < len(self._stages) - 1:
             self.stage_cards[current_index].set_completed(True)
             self.stage_indicator.set_completed(current_index, True)
-            self._set_stage(stages[current_index + 1])
+            self._set_stage(self._stages[current_index + 1])
 
     def _finish_workflow(self):
         self.workflow_data = {
@@ -1097,9 +1092,9 @@ class StrategyDevelopmentWorkflow(QWidget):
 
     def _open_optimization(self):
         try:
-            from gui.dialogs.enhanced_strategy_manager_dialog import EnhancedStrategyManagerDialog
+            from gui.dialogs.strategy_manager_dialog import StrategyManagerDialog
             
-            dialog = EnhancedStrategyManagerDialog(self)
+            dialog = StrategyManagerDialog(self)
             dialog._switch_view('optimization')
             dialog.show()
             

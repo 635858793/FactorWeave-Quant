@@ -614,18 +614,31 @@ def optimized_backtest_core(prices: np.ndarray, signals: np.ndarray,
         # 处理交易信号
         if signal == 1 and current_position == 0:  # 买入信号且无持仓
             trade_cost = price * (commission_pct + slippage_pct)
-            shares = (current_capital * position_size) / (price + trade_cost)
+            denominator = max(price + trade_cost, 1e-10)
+            shares = (current_capital * position_size) / denominator
             current_position = shares
             current_capital -= shares * (price + trade_cost)
-        elif signal == -1 and current_position > 0:  # 卖出信号且有持仓
+        elif signal == -1 and current_position > 0:  # 卖出信号且有多头持仓
             trade_cost = price * (commission_pct + slippage_pct)
             current_capital += current_position * (price - trade_cost)
+            current_position = 0
+        elif signal == -1 and current_position == 0:  # 做空信号且无持仓
+            trade_cost = price * (commission_pct + slippage_pct)
+            denominator = max(price - trade_cost, 1e-10)
+            shares = (current_capital * position_size) / denominator
+            current_position = -shares
+            current_capital += shares * (price - trade_cost)
+        elif signal == 1 and current_position < 0:  # 买入信号且有做空持仓(平空买入)
+            trade_cost = price * (commission_pct + slippage_pct)
+            current_capital -= abs(current_position) * (price + trade_cost)
             current_position = 0
 
         positions[i] = current_position
 
-        # 计算当前权益
+        # 计算当前权益（做多：资金+持仓市值；做空：资金-持仓负债）
         if current_position > 0:
+            equity = current_capital + current_position * price
+        elif current_position < 0:
             equity = current_capital + current_position * price
         else:
             equity = current_capital
@@ -639,7 +652,7 @@ def optimized_backtest_core(prices: np.ndarray, signals: np.ndarray,
     return positions, capital, returns
 
 # 并行优化的风险指标计算
-@njit(cache=True, fastmath=True, parallel=True)
+@njit(cache=True, fastmath=True)
 def calculate_sharpe_ratio_jit(returns: np.ndarray, risk_free_rate: float = 0.02) -> float:
     """计算夏普比率（JIT优化）"""
     if len(returns) == 0:
@@ -675,7 +688,7 @@ def calculate_max_drawdown_jit(returns: np.ndarray) -> float:
 
     return np.min(drawdown)
 
-@njit(cache=True, fastmath=True, parallel=True)
+@njit(cache=True, fastmath=True)
 def calculate_volatility_jit(returns: np.ndarray) -> float:
     """计算波动率（JIT优化）"""
     if len(returns) == 0:

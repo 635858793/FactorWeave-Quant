@@ -215,23 +215,38 @@ class RiskAlertSystem:
             self.risk_controls[action](alert)
 
     def _monitor_risk(self, alert: Dict):
-        """监控风险"""
         logger.warning(f"风险监控: {alert['message']}")
+        from core.events.event_bus import EventBus
+        EventBus().publish('risk.monitor', {
+            'alert': alert,
+            'timestamp': datetime.now()
+        })
 
     def _reduce_position(self, alert: Dict):
-        """减少持仓"""
-        logger.warning(f"执行减仓: {alert['message']}")
-        # 实现减仓逻辑
+        logger.warning(f"触发减仓: {alert}")
+        from core.events.event_bus import EventBus
+        EventBus().publish('risk.reduce_position', {
+            'alert': alert,
+            'reduce_ratio': alert.get('reduce_ratio', 0.5),
+            'timestamp': datetime.now()
+        })
 
     def _stop_trading(self, alert: Dict):
-        """停止交易"""
-        logger.error(f"停止交易: {alert['message']}")
-        # 实现停止交易逻辑
+        logger.critical(f"触发停止交易: {alert}")
+        from core.events.event_bus import EventBus
+        EventBus().publish('risk.stop_trading', {
+            'alert': alert,
+            'duration_minutes': alert.get('duration', 30),
+            'timestamp': datetime.now()
+        })
 
     def _emergency_liquidation(self, alert: Dict):
-        """紧急平仓"""
-        logger.critical(f"执行紧急平仓: {alert['message']}")
-        # 实现紧急平仓逻辑
+        logger.critical(f"触发紧急平仓: {alert}")
+        from core.events.event_bus import EventBus
+        EventBus().publish('risk.emergency_liquidation', {
+            'alert': alert,
+            'timestamp': datetime.now()
+        })
 
     def _record_alerts(self, alerts: List[Dict]):
         """记录预警历史"""

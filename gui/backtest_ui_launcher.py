@@ -552,6 +552,7 @@ class BacktestUILauncher(QMainWindow if PYQT5_AVAILABLE else object):
                 self.backtest_window.close()
 
             logger.info("应用程序已关闭")
+            super().closeEvent(event)
             event.accept()
 
 

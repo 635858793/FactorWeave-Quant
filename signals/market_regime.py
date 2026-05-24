@@ -1,7 +1,10 @@
+# ⚠️ 此文件为 legacy 代码，功能已迁移至 core/signal/
+# 新代码请使用 from core.signal import ...
+# 保留此文件仅用于向后兼容
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from scipy import stats
 from loguru import logger
 
 def detect_market_regime(df, price_col='close', window=200, threshold=0.1, regime_window=20):
@@ -28,10 +31,16 @@ def detect_market_regime(df, price_col='close', window=200, threshold=0.1, regim
     result_df['price_dev'] = (result_df[price_col] / result_df['ma_long'] - 1)
 
     # 计算趋势强度（斜率）
-    result_df['slope'] = result_df['ma_long'].rolling(window=20).apply(
-        lambda x: stats.linregress(np.arange(len(x)), x)[0] / x.mean(),
-        raw=False
-    ).fillna(0)
+    def _rolling_slope(series, window):
+        x = np.arange(window)
+        x = x - x.mean()
+        denom = (x * x).sum()
+        def _slope(y):
+            return ((y - y.mean()) * x).sum() / denom
+        return series.rolling(window).apply(_slope, raw=True)
+
+    result_df['slope_raw'] = _rolling_slope(result_df['ma_long'], 20)
+    result_df['slope'] = (result_df['slope_raw'] / result_df['ma_long']).fillna(0)
 
     # 确定原始市场状态
     # 1: 牛市, -1: 熊市, 0: 震荡市
@@ -127,8 +136,8 @@ def identify_trend_reversal(df, price_col='close', short_window=20, long_window=
     delta = result_df[price_col].diff()
     gain = delta.where(delta > 0, 0)
     loss = -delta.where(delta < 0, 0)
-    avg_gain = gain.rolling(window=14).mean()
-    avg_loss = loss.rolling(window=14).mean()
+    avg_gain = gain.ewm(alpha=1.0/14, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1.0/14, adjust=False).mean()
 
     # 避免除零错误
     avg_loss_nonzero = avg_loss.replace(0, 1e-10)
@@ -138,55 +147,35 @@ def identify_trend_reversal(df, price_col='close', short_window=20, long_window=
     # 初始化趋势反转信号
     result_df['trend_reversal'] = 0  # 0: 无信号, 1: 看涨反转, -1: 看跌反转
 
-    # 找出潜在的趋势反转点
-    for i in range(long_window, len(result_df)):
-        # 看涨反转条件
-        bullish_ma_crossover = (result_df['short_ma'].iloc[i-1] <= result_df['long_ma'].iloc[i-1]) and \
-            (result_df['short_ma'].iloc[i] > result_df['long_ma'].iloc[i])
+    # 找出潜在的趋势反转点 (向量化)
+    price_series = result_df[price_col]
 
-        rsi_oversold = result_df['rsi'].iloc[i -
-                                             1] < 30 and result_df['rsi'].iloc[i] > 30
+    ma_cross_bull = (result_df['short_ma'].shift(1) <= result_df['long_ma'].shift(1)) & \
+                    (result_df['short_ma'] > result_df['long_ma'])
+    ma_cross_bear = (result_df['short_ma'].shift(1) >= result_df['long_ma'].shift(1)) & \
+                    (result_df['short_ma'] < result_df['long_ma'])
 
-        price_higher_low = all(
-            result_df[price_col].iloc[i-3:i] > result_df[price_col].iloc[i-4])
+    rsi_bull = (result_df['rsi'].shift(1) < 30) & (result_df['rsi'] > 30)
+    rsi_bear = (result_df['rsi'].shift(1) > 70) & (result_df['rsi'] < 70)
 
-        # 看跌反转条件
-        bearish_ma_crossover = (result_df['short_ma'].iloc[i-1] >= result_df['long_ma'].iloc[i-1]) and \
-            (result_df['short_ma'].iloc[i] < result_df['long_ma'].iloc[i])
+    price_higher_low = (price_series > price_series.shift(1)) & \
+                       (price_series.shift(1) > price_series.shift(2)) & \
+                       (price_series.shift(2) > price_series.shift(3))
+    price_lower_high = (price_series < price_series.shift(1)) & \
+                       (price_series.shift(1) < price_series.shift(2)) & \
+                       (price_series.shift(2) < price_series.shift(3))
 
-        rsi_overbought = result_df['rsi'].iloc[i -
-                                               1] > 70 and result_df['rsi'].iloc[i] < 70
+    result_df.loc[(ma_cross_bull | rsi_bull) & price_higher_low, 'trend_reversal'] = 1
+    result_df.loc[(ma_cross_bear | rsi_bear) & price_lower_high, 'trend_reversal'] = -1
 
-        price_lower_high = all(
-            result_df[price_col].iloc[i-3:i] < result_df[price_col].iloc[i-4])
+    # 确认反转信号 (向量化)
+    future_5d_ret = price_series.shift(-5) / price_series - 1
 
-        # 判断看涨反转
-        if (bullish_ma_crossover or rsi_oversold) and price_higher_low:
-            result_df.loc[result_df.index[i], 'trend_reversal'] = 1
+    bull_to_cancel = (result_df['trend_reversal'] == 1) & (future_5d_ret < signal_threshold)
+    bear_to_cancel = (result_df['trend_reversal'] == -1) & (future_5d_ret > -signal_threshold)
 
-        # 判断看跌反转
-        if (bearish_ma_crossover or rsi_overbought) and price_lower_high:
-            result_df.loc[result_df.index[i], 'trend_reversal'] = -1
-
-    # 确认反转信号
-    # 看涨反转后价格需要上涨超过阈值才确认
-    for i in range(1, len(result_df)):
-        if result_df['trend_reversal'].iloc[i-1] == 1:
-            # 检查后续5个交易日价格是否上涨超过阈值
-            if i+5 < len(result_df):
-                future_return = result_df[price_col].iloc[i +
-                                                          5] / result_df[price_col].iloc[i] - 1
-                if future_return < signal_threshold:
-                    result_df.loc[result_df.index[i-1], 'trend_reversal'] = 0
-
-        # 看跌反转后价格需要下跌超过阈值才确认
-        elif result_df['trend_reversal'].iloc[i-1] == -1:
-            # 检查后续5个交易日价格是否下跌超过阈值
-            if i+5 < len(result_df):
-                future_return = result_df[price_col].iloc[i +
-                                                          5] / result_df[price_col].iloc[i] - 1
-                if future_return > -signal_threshold:
-                    result_df.loc[result_df.index[i-1], 'trend_reversal'] = 0
+    result_df.loc[bull_to_cancel, 'trend_reversal'] = 0
+    result_df.loc[bear_to_cancel, 'trend_reversal'] = 0
 
     return result_df
 

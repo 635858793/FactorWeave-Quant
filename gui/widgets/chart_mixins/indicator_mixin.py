@@ -31,8 +31,8 @@ class IndicatorMixin:
     def _calculate_rsi(self, data: pd.DataFrame, period: int = 14) -> pd.Series:
         """计算RSI指标"""
         delta = data['close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+        gain = (delta.where(delta > 0, 0)).ewm(alpha=1/period, adjust=False).mean()
+        loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/period, adjust=False).mean()
         rs = gain / loss
         return 100 - (100 / (1 + rs))
 
@@ -568,14 +568,10 @@ class IndicatorMixin:
             lows = kdata['low']
             x = np.arange(len(kdata))
 
-            # 绘制K线简化版
-            for i in range(len(kdata)):
-                color = k_up if closes.iloc[i] >= opens.iloc[i] else k_down
-                ax.plot([x[i], x[i]], [lows.iloc[i], highs.iloc[i]],
-                        color=color, linewidth=0.5)
-                ax.plot([x[i], x[i]], [opens.iloc[i], closes.iloc[i]],
-                        color=color, linewidth=1.5)
-
+                        # 绘制K线简化版（向量化）
+            colors = np.where(closes.values >= opens.values, k_up, k_down)
+            ax.vlines(x, lows.values, highs.values, colors=colors, linewidth=0.5)
+            ax.vlines(x, opens.values, closes.values, colors=colors, linewidth=1.5)
             ax.set_xlim(0, len(kdata))
             ax.set_ylim(lows.min() * 0.98, highs.max() * 1.02)
             ax.tick_params(axis='both', which='major', labelsize=6)

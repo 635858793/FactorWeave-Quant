@@ -39,6 +39,7 @@ class StrategyType(Enum):
     FUNDAMENTAL = "fundamental"              # 基本面
     QUANTITATIVE = "quantitative"            # 量化策略
     MACHINE_LEARNING = "machine_learning"    # 机器学习
+    PATTERN = "pattern"                      # 形态识别
     CUSTOM = "custom"                        # 自定义策略
 
 class StrategyStatus(Enum):
@@ -113,7 +114,7 @@ class StrategyParameter:
                 return False
 
             return True
-        except:
+        except Exception:
             return False
 
 
@@ -152,8 +153,8 @@ class BaseStrategy(ABC, ModeAwareMixin):
         if self._event_bus is None and EVENT_BUS_AVAILABLE:
             try:
                 self._event_bus = get_event_bus()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"获取事件总线失败: {e}")
         return self._event_bus
 
     def publish_event(self, event_type: str, data: Dict[str, Any]) -> None:
@@ -172,8 +173,8 @@ class BaseStrategy(ABC, ModeAwareMixin):
 
         try:
             bus.publish(f"strategy.{event_type}", **data)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"发布策略事件失败: {e}")
 
     def subscribe_event(self, event_type: str, handler: Callable) -> str:
         """订阅事件

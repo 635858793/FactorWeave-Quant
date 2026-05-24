@@ -25,27 +25,138 @@ from typing import Optional
 
 
 class MockTradingInterface(TradingInterface):
-    """模拟交易接口"""
+    """模拟交易接口 - 整合真实计算链路（AccountManager + TradingEngine）"""
 
-    def __init__(self):
+    def __init__(self, service_container=None, event_bus=None):
         self._orders: Dict[str, Order] = {}
         self._order_counter = 0
+        self._connected = True
+        self._logged_in = True
+
+        self._service_container = service_container
+        self._event_bus = event_bus
+        self._trading_engine = None
+        self._account_manager = None
+        self._fill_records: List[Dict[str, Any]] = []
+
+        self._init_real_components()
+
+    def _init_real_components(self):
+        if self._service_container:
+            try:
+                from core.trading.account_manager import AccountManager
+                self._account_manager = self._service_container.resolve(AccountManager)
+                logger.info("MockTradingInterface: 使用真实AccountManager")
+            except Exception as e:
+                self._account_manager = None
+                logger.warning(f"MockTradingInterface: AccountManager不可用，使用默认值: {e}")
+
+            try:
+                from core.trading_engine import TradingEngine
+                self._trading_engine = TradingEngine(self._service_container, self._event_bus or EventBus())
+                logger.info("MockTradingInterface: 使用真实TradingEngine计算链路")
+            except Exception as e:
+                self._trading_engine = None
+                logger.warning(f"MockTradingInterface: TradingEngine初始化失败，使用默认计算: {e}")
+
+    def connect(self) -> bool:
+        self._connected = True
+        return True
+
+    def login(self) -> bool:
+        self._logged_in = True
+        return True
+
+    def disconnect(self):
+        self._logged_in = False
+        self._connected = False
 
     def submit_order(self, order: Order) -> ExecutionResult:
-        """提交订单（模拟）"""
+        """提交订单（整合真实计算：滑点 + 手续费 + TradingEngine同步）"""
         try:
             self._order_counter += 1
             exchange_order_id = f"EXC{self._order_counter:08d}"
 
+            commission_pct, slippage_pct = self._get_trading_config(order)
+            asset_type = getattr(order, 'asset_type', None)
+            is_sell = order.order_type.value in ('sell', 'short')
+            is_buy = not is_sell
+
+            order_category = getattr(order, 'order_category', None)
+            order_category_value = getattr(order_category, 'value', '') if order_category else ''
+            is_market_order = (order_category_value.upper() == 'MARKET')
+
+            if is_market_order:
+                spread_pct = 0.001
+                if is_buy:
+                    filled_price = order.order_price * (1.0 + spread_pct + slippage_pct)
+                else:
+                    filled_price = order.order_price * (1.0 - spread_pct - slippage_pct)
+            else:
+                if is_sell:
+                    filled_price = order.order_price * (1.0 - slippage_pct)
+                else:
+                    filled_price = order.order_price * (1.0 + slippage_pct)
+
+            # 计算手续费
+            if self._trading_engine and asset_type:
+                commission = self._trading_engine._calculate_cost(
+                    filled_price, order.order_quantity, is_buy=is_buy, asset_type=asset_type
+                )
+            else:
+                commission = filled_price * order.order_quantity * commission_pct
+
+            # 记录成交信息到 TradingEngine 内置交易日志
+            fill_record = {
+                'fill_id': f"FILL_{exchange_order_id}",
+                'order_id': order.order_id,
+                'stock_code': order.stock_code,
+                'fill_price': round(filled_price, 4),
+                'fill_quantity': order.order_quantity,
+                'commission': round(commission, 4),
+                'fill_time': datetime.now(),
+                'slippage_pct': slippage_pct,
+                'commission_pct': commission_pct,
+            }
+            self._fill_records.append(fill_record)
+            order.filled_price = filled_price
+            order.commission = commission
+
+            if self._trading_engine:
+                try:
+                    from core.trading_engine import TradingSignal, SignalType
+                    signal = TradingSignal(
+                        symbol=order.stock_code,
+                        signal_type=SignalType.BUY if is_buy else SignalType.SELL,
+                        timestamp=datetime.now(),
+                        price=filled_price,
+                        volume=order.order_quantity,
+                        asset_type=asset_type,
+                    )
+                    self._trading_engine.signals.append(signal)
+                    logger.info(f"MockTradingInterface: 已同步订单到TradingEngine: {order.order_id}")
+                except Exception as e:
+                    logger.warning(f"MockTradingInterface: TradingEngine同步失败: {e}")
+
             self._orders[order.order_id] = order
 
-            logger.info(f"模拟提交订单: {order.order_id} -> {exchange_order_id}")
+            logger.info(
+                f"MockTradingInterface: 订单提交 | {order.order_id} -> {exchange_order_id} | "
+                f"请求价={order.order_price:.4f} 成交价={filled_price:.4f} "
+                f"滑点={slippage_pct:.4%} 佣金={commission:.4f}"
+            )
 
             return ExecutionResult(
                 order_id=order.order_id,
                 status=ExecutionStatus.SUCCESS,
-                message="订单提交成功",
-                exchange_order_id=exchange_order_id
+                message=f"订单提交成功（滑点调整: {filled_price:.4f}）",
+                exchange_order_id=exchange_order_id,
+                details={
+                    'filled_price': filled_price,
+                    'commission': commission,
+                    'slippage_pct': slippage_pct,
+                    'commission_pct': commission_pct,
+                }
             )
 
         except Exception as e:
@@ -56,6 +167,32 @@ class MockTradingInterface(TradingInterface):
                 message=f"订单提交失败: {str(e)}",
                 error_code="SUBMIT_FAILED"
             )
+
+    def _get_trading_config(self, order=None):
+        commission_pct = 0.0003
+        slippage_pct = 0.0001
+
+        try:
+            if self._trading_engine and order and hasattr(order, 'asset_type') and order.asset_type:
+                commission_pct = self._trading_engine.commission_rates.get(
+                    order.asset_type, self._trading_engine.commission_rate
+                )
+        except Exception as e:
+            logger.debug(f"获取资产类型佣金费率失败: {e}")
+
+        try:
+            from core.trading.trading_mode import ModeContext
+            paper_ctx = ModeContext.create_paper()
+            slippage_pct = paper_ctx.config.get('slippage', 0.0001)
+            commission_pct = paper_ctx.config.get('commission_rate', commission_pct)
+        except Exception as e:
+            logger.debug(f"获取模拟交易滑点配置失败: {e}")
+
+        return commission_pct, slippage_pct
+
+    def get_fill_records(self) -> List[Dict[str, Any]]:
+        """获取Mock交易成交记录（模拟TradingEngine日志）"""
+        return self._fill_records.copy()
 
     def cancel_order(self, order_id: str) -> ExecutionResult:
         """取消订单（模拟）"""
@@ -112,6 +249,91 @@ class MockTradingInterface(TradingInterface):
                 message=f"查询失败: {str(e)}",
                 error_code="QUERY_FAILED"
             )
+
+    def query_fund_info(self, account_id: str):
+        """查询账户资金信息（整合真实AccountManager）"""
+        try:
+            from core.trading.account_models import FundInfo
+
+            if self._account_manager:
+                account = self._account_manager.get_account(account_id or 'default')
+                if account:
+                    fund_info = self._account_manager.get_fund_info(account_id or 'default')
+                    if fund_info:
+                        logger.info(f"MockTradingInterface: 使用真实AccountManager查询资金: {account_id}")
+                        return fund_info
+                    logger.info(f"MockTradingInterface: 使用真实AccountManager查询资金（从Account构建）: {account_id}")
+                    return FundInfo(
+                        account_id=account_id or 'default',
+                        total_balance=account.balance + account.frozen_balance,
+                        available_balance=account.available_balance,
+                        frozen_balance=account.frozen_balance,
+                        market_value=account.market_value,
+                        total_assets=account.total_assets,
+                        profit_loss=account.profit_loss,
+                        profit_loss_ratio=account.profit_loss_ratio,
+                        margin_used=0.0,
+                        margin_available=account.available_balance,
+                        maintenance_margin=account.maintenance_margin,
+                        update_time=datetime.now()
+                    )
+
+            logger.warning("MockTradingInterface: AccountManager不可用，使用默认资金值")
+            return FundInfo(
+                account_id=account_id,
+                total_balance=1000000.0,
+                available_balance=500000.0,
+                frozen_balance=0.0,
+                market_value=500000.0,
+                total_assets=1000000.0,
+                profit_loss=0.0,
+                profit_loss_ratio=0.0,
+                margin_used=0.0,
+                margin_available=500000.0,
+                maintenance_margin=0.0,
+                update_time=datetime.now()
+            )
+        except Exception as e:
+            logger.error(f"模拟查询资金信息失败: {e}")
+            return None
+
+    def query_positions(self, account_id: str):
+        """查询账户持仓信息（整合真实AccountManager）"""
+        try:
+            if self._account_manager:
+                positions = self._account_manager.get_account_positions(account_id or 'default')
+                if positions:
+                    logger.info(f"MockTradingInterface: 使用真实AccountManager查询持仓: {account_id}, 持仓数={len(positions)}")
+                    return positions
+
+            logger.warning("MockTradingInterface: AccountManager不可用或无持仓，使用默认空持仓")
+            from core.trading.account_models import Position, PositionSide
+            from core.plugin_types import AssetType
+            now = datetime.now()
+            return [
+                Position(
+                    position_id=f"{account_id}_mock_000001",
+                    account_id=account_id,
+                    asset_type=AssetType.STOCK_A,
+                    stock_code="000001",
+                    stock_name="平安银行(模拟-默认值)",
+                    side=PositionSide.LONG,
+                    quantity=0,
+                    available_quantity=0,
+                    open_price=0.0,
+                    current_price=0.0,
+                    market_value=0.0,
+                    cost_price=0.0,
+                    cost_value=0.0,
+                    profit_loss=0.0,
+                    profit_loss_ratio=0.0,
+                    open_time=now,
+                    update_time=now
+                )
+            ]
+        except Exception as e:
+            logger.error(f"模拟查询持仓信息失败: {e}")
+            return []
 
 
 class OrderExecutor:
@@ -179,27 +401,54 @@ class OrderExecutor:
         
         logger.info("交易接口注册完成")
 
+        # 交易接口健康状态跟踪
+        self._interface_health: Dict[AssetType, Dict[str, Any]] = {}
+        self._interface_failover_map: Dict[AssetType, List[AssetType]] = {}  # 故障转移映射
+        self._max_retry_count = 3  # 最大重试次数
+        self._retry_delay_ms = 500  # 重试延迟（毫秒）
+
         # 初始化所有交易接口
         self._initialize_trading_interfaces()
 
     def _initialize_trading_interfaces(self):
-        """初始化所有交易接口"""
+        """初始化所有交易接口，记录健康状态"""
         # 先从账户管理器获取账户信息
         self._load_account_info_to_interfaces()
         
         # 然后初始化所有交易接口
         for asset_type, interface in self._trading_interfaces.items():
+            health_info = {
+                "connected": False, 
+                "logged_in": False, 
+                "last_error": None, 
+                "retry_count": 0,
+                "last_health_check": None,
+                "consecutive_failures": 0,  # 连续失败次数
+                "circuit_breaker": False,  # 熔断状态
+                "total_requests": 0,
+                "failed_requests": 0
+            }
             try:
                 if interface.connect():
                     logger.info(f"{asset_type.value} 交易接口连接成功")
+                    health_info["connected"] = True
                     if interface.login():
                         logger.info(f"{asset_type.value} 交易接口登录成功")
+                        health_info["logged_in"] = True
                     else:
                         logger.warning(f"{asset_type.value} 交易接口登录失败")
+                        health_info["last_error"] = "登录失败"
                 else:
                     logger.warning(f"{asset_type.value} 交易接口连接失败")
+                    health_info["last_error"] = "连接失败"
             except Exception as e:
                 logger.error(f"{asset_type.value} 交易接口初始化失败: {e}")
+                health_info["last_error"] = str(e)
+            
+            self._interface_health[asset_type] = health_info
+        
+        # 设置故障转移映射（当主接口失败时，切换到备用接口）
+        self._setup_failover_mapping()
 
     def _load_account_info_to_interfaces(self):
         """从账户管理器加载账户信息到交易接口"""
@@ -254,14 +503,112 @@ class OrderExecutor:
         # 暂时默认返回STOCK_A
         from core.plugin_types import AssetType
         return AssetType.STOCK_A
+    
+    def _setup_failover_mapping(self):
+        """设置故障转移映射"""
+        # 股票接口失败时，尝试使用模拟接口
+        self._interface_failover_map[AssetType.STOCK_A] = [AssetType.FUND]  # 备用接口
+        self._interface_failover_map[AssetType.STOCK_HK] = [AssetType.STOCK_A]  # 港股失败尝试A股接口
+        self._interface_failover_map[AssetType.STOCK_US] = [AssetType.STOCK_A]  # 美股失败尝试A股接口
+    
+    def check_interface_health(self, asset_type: AssetType) -> Dict[str, Any]:
+        """
+        检查交易接口健康状态
+        
+        Args:
+            asset_type: 资产类型
+            
+        Returns:
+            健康状态信息
+        """
+        if asset_type not in self._interface_health:
+            return {"connected": False, "error": "接口未初始化"}
+        
+        health = self._interface_health[asset_type]
+        interface = self._trading_interfaces.get(asset_type)
+        
+        if not interface:
+            health["connected"] = False
+            health["last_error"] = "接口对象不存在"
+            return health
+        
+        # 如果处于熔断状态，尝试恢复
+        if health.get("circuit_breaker") and health.get("consecutive_failures", 0) >= self._max_retry_count:
+            logger.warning(f"{asset_type.value} 接口处于熔断状态，尝试恢复连接")
+            self._try_reconnect_interface(asset_type)
+        
+        from datetime import datetime
+        health["last_health_check"] = datetime.now().isoformat()
+        return health
+    
+    def _try_reconnect_interface(self, asset_type: AssetType):
+        """
+        尝试重新连接交易接口
+        
+        Args:
+            asset_type: 资产类型
+        """
+        health = self._interface_health[asset_type]
+        interface = self._trading_interfaces.get(asset_type)
+        
+        if not interface:
+            logger.error(f"无法重新连接：{asset_type.value} 接口对象不存在")
+            return
+        
+        try:
+            logger.info(f"尝试重新连接 {asset_type.value} 交易接口...")
+            health["retry_count"] += 1
+            
+            # 尝试重新连接和登录
+            if interface.connect():
+                health["connected"] = True
+                if interface.login():
+                    health["logged_in"] = True
+                    health["consecutive_failures"] = 0
+                    health["circuit_breaker"] = False
+                    logger.info(f"{asset_type.value} 接口重新连接成功")
+                else:
+                    logger.warning(f"{asset_type.value} 接口重新登录失败")
+            else:
+                logger.error(f"{asset_type.value} 接口重新连接失败")
+                health["consecutive_failures"] += 1
+                
+                # 如果连续失败次数过多，触发熔断
+                if health["consecutive_failures"] >= self._max_retry_count:
+                    health["circuit_breaker"] = True
+                    logger.error(f"{asset_type.value} 接口连续失败 {self._max_retry_count} 次，触发熔断")
+                    self.event_bus.publish('trading_interface_circuit_breaker',
+                        asset_type=asset_type.value,
+                        consecutive_failures=health["consecutive_failures"]
+                    )
+                    
+        except Exception as e:
+            logger.error(f"重新连接 {asset_type.value} 接口异常: {e}")
+            health["last_error"] = str(e)
+            health["consecutive_failures"] += 1
 
     def _get_trading_interface(self, asset_type: AssetType) -> TradingInterface:
-        """根据资产类型获取对应的交易接口"""
-        trading_interface = self._trading_interfaces.get(asset_type)
-        if not trading_interface:
-            logger.warning(f"未找到资产类型 {asset_type.value} 的交易接口，使用默认接口")
-            return self.trading_interface
-        return trading_interface
+        """根据资产类型获取对应的交易接口（带健康检查和故障转移）"""
+        # 先检查健康状态
+        health = self.check_interface_health(asset_type)
+        
+        # 如果主接口不可用，尝试故障转移
+        if not health.get("connected") or not health.get("logged_in"):
+            if health.get("circuit_breaker"):
+                logger.warning(f"{asset_type.value} 接口处于熔断状态，尝试故障转移")
+            
+            # 尝试使用备用接口
+            failover_list = self._interface_failover_map.get(asset_type, [])
+            for backup_asset_type in failover_list:
+                backup_health = self.check_interface_health(backup_asset_type)
+                if backup_health.get("connected") and backup_health.get("logged_in"):
+                    logger.info(f"使用备用接口: {backup_asset_type.value} 替代 {asset_type.value}")
+                    return self._trading_interfaces.get(backup_asset_type)
+            
+            logger.error(f"所有接口都不可用: {asset_type.value}")
+            return None
+        
+        return self._trading_interfaces.get(asset_type)
 
     def _validate_order_integrity(self, order: Order) -> Optional[str]:
         """
@@ -427,7 +774,8 @@ class OrderExecutor:
             except ImportError:
                 logger.debug("EnhancedRiskMonitor不可用，跳过高级风控检查")
             except Exception as e:
-                logger.warning(f"风控检查异常: {e}")
+                logger.critical(f"高级风控检查异常，订单被拒绝: {order.order_id}, 错误: {e}")
+                return {'passed': False, 'reason': f'风控检查异常，订单被拒绝: {str(e)}', 'warnings': [], 'error_code': 'RISK_CHECK_FAILED'}
             
             try:
                 from core.trading.account_manager import AccountManager
@@ -450,7 +798,8 @@ class OrderExecutor:
                                 result['warnings'].append(f"持仓数量接近限制: {len(positions)}/{account.position_limit}")
                                 
             except Exception as e:
-                logger.warning(f"账户风控检查异常: {e}")
+                logger.critical(f"账户风控检查异常，订单被拒绝: {order.order_id}, 错误: {e}")
+                return {'passed': False, 'reason': f'账户风控检查异常，订单被拒绝: {str(e)}', 'warnings': [], 'error_code': 'RISK_CHECK_FAILED'}
             
             if order.order_quantity <= 0:
                 result['passed'] = False
@@ -475,8 +824,8 @@ class OrderExecutor:
             return result
             
         except Exception as e:
-            logger.error(f"交易前风控检查异常: {e}")
-            return {'passed': True, 'reason': f'风控检查异常: {str(e)}', 'warnings': []}
+            logger.critical(f"交易前风控检查异常，订单被拒绝: {order.order_id}, 错误: {e}")
+            return {'passed': False, 'reason': f'风控检查异常，订单被拒绝: {str(e)}', 'warnings': [], 'error_code': 'RISK_CHECK_FAILED'}
 
     def _get_trading_interface_for_account(self, account: Account) -> Optional[TradingInterface]:
         """
@@ -621,7 +970,7 @@ class OrderExecutor:
             order.update_time = datetime.now()
             self.repository.update_order(order)
 
-            # 3. 根据账号获取对应的交易接口
+            # 3. 根据账号获取对应的交易接口（带健康检查和故障转移）
             trading_interface = self._get_trading_interface_for_account(account)
             if not trading_interface:
                 logger.error(f"无法获取账号 {account.account_id} 的交易接口")
@@ -632,10 +981,15 @@ class OrderExecutor:
                     error_code="INTERFACE_NOT_FOUND"
                 )
 
+            # 3.5 更新健康状态统计
+            health = self._interface_health.get(order.asset_type)
+            if health:
+                health["total_requests"] = health.get("total_requests", 0) + 1
+
             # 4. 提交到交易接口
             result = trading_interface.submit_order(order)
 
-            # 5. 处理执行结果
+            # 5. 处理执行结果并更新健康状态
             if result.status == ExecutionStatus.SUCCESS:
                 order.execute_time = datetime.now()
                 order.update_time = datetime.now()
@@ -643,8 +997,24 @@ class OrderExecutor:
                 order.metadata['account_id'] = account.account_id
 
                 self.repository.update_order(order)
+                
+                # 成功时重置连续失败计数
+                if health:
+                    health["consecutive_failures"] = 0
 
                 logger.info(f"订单提交成功: {order.order_id} ({order.asset_type.value}) -> {result.exchange_order_id}, 账号: {account.account_id}")
+
+                self.event_bus.publish('order.executed',
+                    order_id=order.order_id,
+                    stock_code=order.stock_code,
+                    order_price=order.order_price,
+                    order_quantity=order.order_quantity,
+                    filled_price=result.details.get('filled_price', order.order_price) if result.details else order.order_price,
+                    asset_type=order.asset_type.value,
+                    account_id=account.account_id,
+                    exchange_order_id=result.exchange_order_id,
+                    timestamp=datetime.now()
+                )
 
                 self.event_bus.publish('order_submitted_success',
                     order_id=order.order_id,
@@ -655,6 +1025,21 @@ class OrderExecutor:
 
                 return result
             else:
+                # 失败时更新健康状态
+                if health:
+                    health["failed_requests"] = health.get("failed_requests", 0) + 1
+                    health["consecutive_failures"] = health.get("consecutive_failures", 0) + 1
+                    health["last_error"] = result.message
+                    
+                    # 检查是否触发熔断
+                    if health["consecutive_failures"] >= self._max_retry_count:
+                        health["circuit_breaker"] = True
+                        logger.error(f"{order.asset_type.value} 接口连续失败 {health['consecutive_failures']} 次，触发熔断")
+                        self.event_bus.publish('trading_interface_circuit_breaker',
+                            asset_type=order.asset_type.value,
+                            consecutive_failures=health["consecutive_failures"]
+                        )
+
                 order.order_status = OrderStatus.REJECTED
                 order.error_message = result.message
                 order.update_time = datetime.now()
@@ -715,11 +1100,55 @@ class OrderExecutor:
 
             # 按资产类型批量提交
             for asset_type, asset_orders in orders_by_asset_type.items():
-                trading_interface = self._get_trading_interface(asset_type)
 
                 for order in asset_orders:
                     try:
-                        # 提交到交易接口
+                        validation_error = self._validate_order_integrity(order)
+                        if validation_error:
+                            order.order_status = OrderStatus.REJECTED
+                            order.error_message = f"订单完整性验证失败: {validation_error}"
+                            order.update_time = datetime.now()
+                            results.append(ExecutionResult(
+                                order_id=order.order_id,
+                                status=ExecutionStatus.FAILED,
+                                message=f"订单完整性验证失败: {validation_error}",
+                                error_code="ORDER_VALIDATION_FAILED"
+                            ))
+                            failed_count += 1
+                            continue
+
+                        risk_check_result = self._pre_trade_risk_check(order)
+                        if not risk_check_result['passed']:
+                            logger.warning(f"批量订单风控检查未通过: {order.order_id} - {risk_check_result['reason']}")
+                            order.order_status = OrderStatus.REJECTED
+                            order.error_message = f"风控检查未通过: {risk_check_result['reason']}"
+                            order.update_time = datetime.now()
+                            results.append(ExecutionResult(
+                                order_id=order.order_id,
+                                status=ExecutionStatus.FAILED,
+                                message=f"风控检查未通过: {risk_check_result['reason']}",
+                                error_code="RISK_CHECK_FAILED"
+                            ))
+                            failed_count += 1
+                            continue
+
+                        account = self._resolve_account_for_order(order)
+                        if not account:
+                            logger.error(f"批量订单无法解析账号: {order.order_id}")
+                            order.order_status = OrderStatus.REJECTED
+                            order.error_message = "无法解析订单使用的账号"
+                            order.update_time = datetime.now()
+                            results.append(ExecutionResult(
+                                order_id=order.order_id,
+                                status=ExecutionStatus.FAILED,
+                                message="无法解析订单使用的账号",
+                                error_code="ACCOUNT_NOT_FOUND"
+                            ))
+                            failed_count += 1
+                            continue
+
+                        trading_interface = self._get_trading_interface_for_account(account)
+
                         result = trading_interface.submit_order(order)
 
                         # 处理执行结果
@@ -727,6 +1156,24 @@ class OrderExecutor:
                             order.execute_time = datetime.now()
                             order.update_time = datetime.now()
                             order.metadata['exchange_order_id'] = result.exchange_order_id
+
+                            self.event_bus.publish('order.executed',
+                                order_id=order.order_id,
+                                stock_code=order.stock_code,
+                                order_price=order.order_price,
+                                order_quantity=order.order_quantity,
+                                filled_price=order.order_price,
+                                asset_type=order.asset_type.value,
+                                account_id=account.account_id,
+                                exchange_order_id=result.exchange_order_id,
+                                timestamp=order.execute_time.isoformat()
+                            )
+                            self.event_bus.publish('order_submitted_success',
+                                order_id=order.order_id,
+                                exchange_order_id=result.exchange_order_id,
+                                asset_type=order.asset_type.value,
+                                account_id=account.account_id
+                            )
 
                             success_count += 1
                         else:
@@ -836,7 +1283,16 @@ class OrderExecutor:
 
                 self.repository.update_order(order)
 
+                # 解冻被冻结的资金
+                self._unfreeze_order_funds(order)
+
                 logger.info(f"订单取消成功: {order_id} ({order.asset_type.value})")
+
+                # 发布订单终态事件，通知清理资源
+                self.event_bus.publish('order_terminal_state',
+                    order_id=order_id,
+                    status=OrderStatus.CANCELLED.value
+                )
 
                 self.event_bus.publish('order_cancelled',
                     order_id=order_id,
@@ -916,6 +1372,8 @@ class OrderExecutor:
 
             self.repository.update_order(order)
 
+            commission_rate = self._get_commission_rate()
+
             # 4. 保存成交记录
             fill = OrderFill(
                 fill_id=self.repository.generate_fill_id(),
@@ -924,7 +1382,7 @@ class OrderExecutor:
                 fill_price=fill_price,
                 fill_quantity=fill_quantity,
                 fill_time=datetime.now(),
-                commission=fill_price * fill_quantity * 0.0003  # 假设手续费率为0.03%
+                commission=fill_price * fill_quantity * commission_rate
             )
 
             self.repository.save_order_fill(fill, order.asset_type)
@@ -933,6 +1391,11 @@ class OrderExecutor:
 
             # 5. 发布事件
             if order.order_status == OrderStatus.FILLED:
+                # 订单达到终态（FILLED），发布终态事件通知清理锁
+                self.event_bus.publish('order_terminal_state',
+                    order_id=order_id,
+                    status=OrderStatus.FILLED.value
+                )
                 self.event_bus.publish('order_filled',
                     order_id=order_id,
                     fill_price=fill_price,
@@ -957,3 +1420,30 @@ class OrderExecutor:
         """设置交易接口"""
         self.trading_interface = trading_interface
         logger.info("交易接口已更新")
+
+    def _get_commission_rate(self) -> float:
+        """获取手续费率（从配置读取，默认万三）"""
+        try:
+            from core.config import config_manager
+            trading_cfg = config_manager.get('trading', {})
+            return trading_cfg.get('commission_rate', 0.0003)
+        except Exception:
+            return 0.0003
+
+    def _unfreeze_order_funds(self, order) -> None:
+        """解冻订单对应的冻结资金"""
+        try:
+            if order.order_category and order.order_category.value == 'market':
+                return
+
+            account_id = getattr(order, 'account_id', None)
+            if not account_id or account_id == 'default':
+                return
+
+            frozen_amount = order.order_price * order.order_quantity
+            from core.trading.account_manager import AccountManager
+            account_manager = self.service_container.resolve(AccountManager)
+            account_manager.unfreeze_cash(account_id, frozen_amount)
+            logger.info(f"订单取消，解冻资金: account={account_id}, amount={frozen_amount:.2f}")
+        except Exception as e:
+            logger.warning(f"解冻订单资金失败: {e}")

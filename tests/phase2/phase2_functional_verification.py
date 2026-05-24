@@ -723,7 +723,7 @@ class Phase2FunctionalVerification:
                         service = self.container.resolve(service_type)
                         if service:
                             service.dispose()
-                    except:
+                    except Exception:
                         pass
 
             # 清理临时目录

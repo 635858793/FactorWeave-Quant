@@ -9,15 +9,12 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
-import logging
+from loguru import logger
 
 from .market_detector import MarketState
 from .performance_evaluator import ModelPerformance
 from .config.model_profiles import ModelType, MarketCondition
 from .config.selector_config import SelectionStrategyConfig
-
-logger = logging.getLogger(__name__)
-
 
 class DecisionMethod(Enum):
     """决策方法"""
@@ -237,8 +234,8 @@ class MultiCriteriaDecisionMatrix:
     
     def _normalize_matrix(self, matrix: np.ndarray) -> np.ndarray:
         """标准化决策矩阵"""
-        # 使用向量归一化
         norms = np.sqrt(np.sum(matrix ** 2, axis=0))
+        norms = np.where(norms == 0, 1.0, norms)
         return matrix / norms
     
     def _topsis_ranking(self, options: List[Dict[str, Any]]) -> List[RankedOption]:

@@ -7,7 +7,7 @@
 - 快捷操作控制
 """
 
-import logging
+from loguru import logger
 from typing import Dict, Any, Optional
 from datetime import datetime
 
@@ -19,8 +19,6 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer
 from PyQt5.QtGui import QFont
 from core.ai.intelligent_selection import IntelligentModelSelector
-
-logger = logging.getLogger(__name__)
 
 
 class IntelligentModelControlPanel(QWidget):
@@ -583,8 +581,10 @@ class IntelligentModelControlPanel(QWidget):
                 self.monitor_timer.stop()
             
             logger.info("智能模型选择控制面板已关闭")
+            super().closeEvent(event)
             event.accept()
             
         except Exception as e:
             logger.error(f"面板关闭处理失败: {e}")
+            super().closeEvent(event)
             event.accept()

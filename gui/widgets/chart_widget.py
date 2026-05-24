@@ -1,4 +1,3 @@
-from loguru import logger
 """
 图表控件模块 - 基于Mixin模式的重构版本
 
@@ -13,6 +12,7 @@ from core.metrics.app_metrics_service import measure
 from optimization.progressive_loading_manager import load_chart_progressive, get_progressive_loader
 from gui.widgets.async_data_processor import AsyncDataProcessor
 from utils.config_manager import ConfigManager
+from loguru import logger
 
 # 延迟导入主题管理器，避免在模块级别导入时崩溃
 THEME_MANAGER_AVAILABLE = False
@@ -48,6 +48,7 @@ except ImportError:
         NORMAL = 2
         HIGH = 3
 import traceback
+from collections import deque
 from typing import Optional, List, Dict, Any
 from PyQt5.QtCore import pyqtSignal, QTimer, QMutex, QMutexLocker, Qt
 from PyQt5.QtWidgets import QWidget
@@ -127,6 +128,7 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
             self.current_period = 'D'
             self._update_lock = QMutex()
             self._render_lock = QMutex()
+            self._update_queue = deque()
             self.crosshair_enabled = True
             self.active_indicators = None  # 初始化为None，用于区分"未设置"vs"用户设置"
             logger.info(f"ChartWidget __init__: crosshair_enabled 设置为 {self.crosshair_enabled}")
@@ -139,7 +141,10 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
 
             # 5. 在UI元素创建后，显式初始化RenderingMixin（用于修复性能优化器初始化问题）
             logger.info("ChartWidget __init__: 正在初始化 RenderingMixin...")
-            self.__class__.__bases__[3].__init__(self)  # RenderingMixin.__init__(self)
+            for base in self.__class__.__mro__:
+                if base.__name__ == 'RenderingMixin':
+                    base.__init__(self)
+                    break
             logger.info("ChartWidget __init__: RenderingMixin 初始化完成")
 
             # 6. 在UI元素创建后，再初始化依赖它们的Mixin
@@ -1168,7 +1173,34 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
         except Exception as e:
             logger.error(f"清空数据失败：{e}")
 
+    def _cleanup_resources(self):
+        try:
+            if hasattr(self, 'event_bus') and self.event_bus:
+                self.event_bus.unsubscribe(PatternSignalsDisplayEvent, self._handle_pattern_signals_display)
+        except Exception as e:
+            logger.error(f"取消事件订阅失败: {e}")
+        if hasattr(self, 'renderer') and self.renderer:
+            try:
+                self.renderer.blockSignals(True)
+                self.renderer.disconnect()
+            except Exception as e:
+                logger.debug(f"断开渲染器信号失败: {e}")
+            self.renderer = None
+        if hasattr(self, 'canvas') and self.canvas:
+            try:
+                self.canvas.close()
+            except Exception as e:
+                logger.debug(f"关闭canvas失败: {e}")
+            self.canvas = None
+        if hasattr(self, 'figure'):
+            try:
+                from matplotlib import pyplot
+                pyplot.close(self.figure)
+            except Exception as e:
+                logger.debug(f"关闭matplotlib图形失败: {e}")
+            self.figure = None
+
     def closeEvent(self, event):
         logger.info("ChartWidget closeEvent 触发")
-        self.__del__()
+        self._cleanup_resources()
         super().closeEvent(event)

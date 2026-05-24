@@ -1701,7 +1701,7 @@ class DataImportExecutionEngine(QObject):
                     grouped = data.groupby('symbol')
                     
                     # 向量化计算缺失值和完整性评分
-                    missing_counts = grouped.apply(lambda x: x.isnull().sum().sum())
+                    missing_counts = data.isnull().groupby(data['symbol']).sum().sum(axis=1)
                     total_cells = grouped.size()
                     completeness_scores = 1.0 - (missing_counts / total_cells)
                     
@@ -1826,8 +1826,9 @@ class DataImportExecutionEngine(QObject):
             # 方法2: 检查数据新鲜度（及时性）
             if 'datetime' in data.columns and not data.empty:
                 try:
-                    latest_time = pd.to_datetime(data['datetime']).max()
-                    earliest_time = pd.to_datetime(data['datetime']).min()
+                    datetime_series = pd.to_datetime(data['datetime'])
+                    latest_time = datetime_series.max()
+                    earliest_time = datetime_series.min()
                     current_time = pd.Timestamp.now()
                     delay_minutes = (current_time - latest_time).total_seconds() / 60
                     time_span_days = (latest_time - earliest_time).days
@@ -3598,34 +3599,38 @@ class DataImportExecutionEngine(QObject):
                     if not asset_list_df.empty:
                         # 准备映射字典
                         symbol_to_info = {}
-                        for _, row in asset_list_df.iterrows():
-                            symbol = row.get('symbol', row.get('code', ''))
-                            symbol_to_info[symbol] = {
-                                'name': row.get('name', ''),
-                                'market': row.get('market', '')
-                            }
+                        if 'symbol' in asset_list_df.columns:
+                            sym_col = 'symbol'
+                        elif 'code' in asset_list_df.columns:
+                            sym_col = 'code'
+                        else:
+                            sym_col = asset_list_df.columns[0]
+                        for row in asset_list_df.itertuples(index=False):
+                            key = getattr(row, sym_col, '')
+                            name_val = str(getattr(row, 'name', '')) if pd.notna(getattr(row, 'name', None)) else ''
+                            market_val = str(getattr(row, 'market', '')) if pd.notna(getattr(row, 'market', None)) else ''
+                            if key:
+                                symbol_to_info[key] = {'name': name_val, 'market': market_val}
 
                         # 补全name字段
                         if 'name' in df.columns:
-                            def enrich_name(row):
-                                if pd.notna(row['name']) and row['name']:
-                                    return row['name']  # 已有name，保持不变
-                                info = symbol_to_info.get(row['symbol'], {})
-                                return info.get('name', None)
-
-                            df['name'] = df.apply(enrich_name, axis=1)
+                            missing_name = df['name'].isna() | (df['name'] == '')
+                            if missing_name.any():
+                                lookup = df.loc[missing_name, 'symbol'].map(
+                                    lambda s: symbol_to_info.get(s, {}).get('name', None)
+                                )
+                                df.loc[missing_name, 'name'] = lookup
                             enriched_count = df['name'].notna().sum()
                             logger.info(f"从资产列表补全了 {enriched_count} 条记录的name字段")
 
                         # 补全market字段
                         if 'market' in df.columns:
-                            def enrich_market(row):
-                                if pd.notna(row['market']) and row['market']:
-                                    return row['market']  # 已有market，保持不变
-                                info = symbol_to_info.get(row['symbol'], {})
-                                return info.get('market', None)
-
-                            df['market'] = df.apply(enrich_market, axis=1)
+                            missing_market = df['market'].isna() | (df['market'] == '')
+                            if missing_market.any():
+                                lookup = df.loc[missing_market, 'symbol'].map(
+                                    lambda s: symbol_to_info.get(s, {}).get('market', None)
+                                )
+                                df.loc[missing_market, 'market'] = lookup
                             enriched_count = df['market'].notna().sum()
                             logger.info(f"从资产列表补全了 {enriched_count} 条记录的market字段")
                     else:
@@ -3638,34 +3643,33 @@ class DataImportExecutionEngine(QObject):
 
             # 策略2: 从symbol推断market（作为后备或补充）
             if 'market' in df.columns:
-                def infer_market_from_symbol(row):
-                    """从symbol推断market"""
-                    # 如果已有有效market，保持不变
-                    if pd.notna(row['market']) and row['market'] and row['market'] != 'unknown':
-                        return row['market']
+                # 向量化: 基于symbol的前缀/后缀批量推断market
+                symbols = df['symbol'].astype(str)
+                result_market = pd.Series('unknown', index=df.index)
 
-                    symbol = str(row['symbol'])
+                # 保留已有有效market
+                if 'market' in df.columns:
+                    existing_valid = df['market'].notna() & (df['market'] != '') & (df['market'] != 'unknown')
+                    result_market[existing_valid] = df.loc[existing_valid, 'market']
 
-                    # 根据后缀判断
-                    if symbol.endswith('.SH'):
-                        return 'SH'
-                    elif symbol.endswith('.SZ'):
-                        return 'SZ'
-                    elif symbol.endswith('.BJ'):
-                        return 'BSE'
+                # 后缀推断
+                unknown_mask = result_market == 'unknown'
+                result_market[unknown_mask & symbols.str.endswith('.SH')] = 'SH'
+                unknown_mask = result_market == 'unknown'
+                result_market[unknown_mask & symbols.str.endswith('.SZ')] = 'SZ'
+                unknown_mask = result_market == 'unknown'
+                result_market[unknown_mask & symbols.str.endswith('.BJ')] = 'BSE'
 
-                    # 根据前缀判断（去除后缀后）
-                    code = symbol.split('.')[0]
-                    if code.startswith('6'):
-                        return 'SH'  # 沪市A股
-                    elif code.startswith(('0', '3')):
-                        return 'SZ'  # 深市A股/创业板
-                    elif code.startswith(('4', '8', '9')):
-                        return 'BSE'  # 北交所（43xxxx-89xxxx, 92xxxx-92xxxx）
+                # 前缀推断
+                unknown_mask = result_market == 'unknown'
+                if unknown_mask.any():
+                    codes = symbols[unknown_mask].str.split('.').str[0]
+                    first_char = codes.str[0]
+                    result_market[unknown_mask & (first_char == '6')] = 'SH'
+                    result_market[unknown_mask & first_char.isin(['0', '3'])] = 'SZ'
+                    result_market[unknown_mask & first_char.isin(['4', '8', '9'])] = 'BSE'
 
-                    return 'unknown'
-
-                df['market'] = df.apply(infer_market_from_symbol, axis=1)
+                df['market'] = result_market
                 inferred_count = (df['market'] != 'unknown').sum()
                 logger.info(f"从symbol推断了 {inferred_count} 条记录的market字段")
 
@@ -4997,6 +5001,16 @@ class DataImportExecutionEngine(QObject):
     def cleanup(self):
         """清理资源"""
         try:
+            # 取消事件总线订阅
+            try:
+                if hasattr(self, 'event_bus') and self.event_bus:
+                    self.event_bus.unsubscribe("import_task_started", self._handle_import_task_started_event)
+                    self.event_bus.unsubscribe("import_task_progress", self._handle_import_task_progress_event)
+                    self.event_bus.unsubscribe("import_task_completed", self._handle_import_task_completed_event)
+                    self.event_bus.unsubscribe("import_task_failed", self._handle_import_task_failed_event)
+            except Exception as e:
+                logger.error(f"取消事件订阅失败: {e}")
+
             # 停止进度定时器
             if self.progress_timer.isActive():
                 self.progress_timer.stop()

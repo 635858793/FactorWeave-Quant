@@ -78,7 +78,7 @@ def calculate_bbands(df: pd.DataFrame, timeperiod: int = 20, nbdevup: float = 2.
         else:
             # 使用pandas实现
             middle = close.rolling(window=timeperiod).mean()
-            std = close.rolling(window=timeperiod).std()
+            std = close.rolling(window=timeperiod).std(ddof=0)
             upper = middle + nbdevup * std
             lower = middle - nbdevdn * std
 
@@ -106,6 +106,7 @@ def calculate_adx(df: pd.DataFrame, timeperiod: int = 14) -> pd.DataFrame:
     """
     result = df.copy()
     try:
+        EPSILON = 1e-10
         high = df['high']
         low = df['low']
         close = df['close']
@@ -123,31 +124,30 @@ def calculate_adx(df: pd.DataFrame, timeperiod: int = 14) -> pd.DataFrame:
             tr2 = abs(high - close.shift(1))
             tr3 = abs(low - close.shift(1))
             tr = pd.DataFrame({'tr1': tr1, 'tr2': tr2, 'tr3': tr3}).max(axis=1)
-            atr = tr.rolling(window=timeperiod).mean()
+            atr = tr.ewm(alpha=1.0/timeperiod, adjust=False).mean()
 
-            # 计算方向运动(DM)
             up_move = high - high.shift(1)
             down_move = low.shift(1) - low
 
-            # 正方向运动(+DM)
             plus_dm = np.where((up_move > down_move) &
                                (up_move > 0), up_move, 0)
             plus_dm = pd.Series(plus_dm, index=close.index)
 
-            # 负方向运动(-DM)
             minus_dm = np.where((down_move > up_move) &
                                 (down_move > 0), down_move, 0)
             minus_dm = pd.Series(minus_dm, index=close.index)
 
-            # 平滑化+DM和-DM
-            plus_di = 100 * (plus_dm.rolling(window=timeperiod).mean() / atr)
-            minus_di = 100 * (minus_dm.rolling(window=timeperiod).mean() / atr)
+            plus_dm_smooth = plus_dm.ewm(alpha=1.0/timeperiod, adjust=False).mean()
+            plus_di = 100 * (plus_dm_smooth / atr.replace(0, np.nan)).fillna(0)
+            minus_dm_smooth = minus_dm.ewm(alpha=1.0/timeperiod, adjust=False).mean()
+            minus_di = 100 * (minus_dm_smooth / atr.replace(0, np.nan)).fillna(0)
 
-            # 计算方向指数(DX)
-            dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di)
+            denom = plus_di + minus_di
+            denom_safe = denom.replace(0, np.nan)
+            dx = 100 * abs(plus_di - minus_di) / denom_safe
+            dx = dx.fillna(0)
 
-            # 计算ADX
-            result['ADX'] = dx.rolling(window=timeperiod).mean()
+            result['ADX'] = dx.ewm(alpha=1.0/timeperiod, adjust=False).mean()
 
     except Exception as e:
         # 返回全NaN

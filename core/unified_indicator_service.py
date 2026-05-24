@@ -6,6 +6,7 @@ from loguru import logger
 支持指标计算、形态识别、参数管理等全部功能
 """
 
+import ast
 import os
 import sys
 import json
@@ -42,6 +43,97 @@ except ImportError:
     TALIB_AVAILABLE = False
     logger.warning("TA-Lib 未安装或无法导入，将使用自定义实现")
 
+ALLOWED_AST_NODES = frozenset({
+    ast.Module,
+    ast.Expr,
+    ast.Assign,
+    ast.AugAssign,
+    ast.For,
+    ast.If,
+    ast.Continue,
+    ast.Break,
+    ast.Pass,
+    ast.Try,
+    ast.ExceptHandler,
+    ast.Return,
+    ast.Raise,
+    ast.Name,
+    ast.Constant,
+    ast.BinOp,
+    ast.UnaryOp,
+    ast.BoolOp,
+    ast.Compare,
+    ast.IfExp,
+    ast.Call,
+    ast.Subscript,
+    ast.Slice,
+    ast.Attribute,
+    ast.List,
+    ast.Dict,
+    ast.Tuple,
+    ast.GeneratorExp,
+    ast.comprehension,
+    ast.keyword,
+    ast.Load,
+    ast.Store,
+    ast.Del,
+    ast.Add,
+    ast.Sub,
+    ast.Mult,
+    ast.Div,
+    ast.Mod,
+    ast.Pow,
+    ast.FloorDiv,
+    ast.MatMult,
+    ast.And,
+    ast.Or,
+    ast.Eq,
+    ast.NotEq,
+    ast.Lt,
+    ast.Gt,
+    ast.LtE,
+    ast.GtE,
+    ast.Is,
+    ast.IsNot,
+    ast.In,
+    ast.NotIn,
+    ast.Not,
+    ast.USub,
+    ast.UAdd,
+    ast.Invert,
+    ast.BitAnd,
+    ast.BitOr,
+    ast.BitXor,
+    ast.LShift,
+    ast.RShift,
+})
+
+ALLOWED_BUILTIN_NAMES = frozenset({
+    'abs', 'all', 'any', 'bool', 'dict', 'enumerate',
+    'False', 'float', 'int', 'len', 'list',
+    'max', 'min', 'None', 'print', 'range',
+    'round', 'sorted', 'str', 'sum', 'True',
+    'tuple', 'zip',
+})
+
+
+def _validate_ast(code: str) -> None:
+    try:
+        tree = ast.parse(code, mode='exec')
+    except SyntaxError as e:
+        raise ValueError(f"算法代码语法错误: {e}")
+
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            raise ValueError("算法代码不允许使用import语句")
+
+        if isinstance(node, ast.Attribute):
+            if isinstance(node.attr, str) and node.attr.startswith('__'):
+                raise ValueError(f"算法代码不允许访问双下划线属性: {node.attr}")
+
+        if type(node) not in ALLOWED_AST_NODES:
+            raise ValueError(f"算法代码包含不支持的语法结构: {type(node).__name__}")
+
 
 def _worker_calculate_indicator(args: Tuple) -> pd.DataFrame:
     """
@@ -53,13 +145,13 @@ def _worker_calculate_indicator(args: Tuple) -> pd.DataFrame:
     Returns:
         pd.DataFrame: 计算结果
     """
-    import pickle
+    from utils.safe_pickle import safe_loads
     import pandas as pd
     
     indicator_name, df_bytes, params, db_path = args
     
     try:
-        df = pickle.loads(df_bytes)
+        df = safe_loads(df_bytes)
         
         service = UnifiedIndicatorService(db_path)
         result = service.calculate_indicator(indicator_name, df, params)
@@ -82,11 +174,12 @@ def _worker_batch_calculate(args: Tuple) -> pd.DataFrame:
         pd.DataFrame: 计算结果
     """
     import pickle
-    
+    from utils.safe_pickle import safe_loads
+
     indicators, df_bytes, db_path = args
-    
+
     try:
-        df = pickle.loads(df_bytes)
+        df = safe_loads(df_bytes)
         
         service = UnifiedIndicatorService(db_path)
         result = service.batch_calculate_indicators(indicators, df)
@@ -926,7 +1019,8 @@ class UnifiedIndicatorService:
             return self._custom_functions[cache_key]
 
         try:
-            namespace = {'np': np, 'pd': pd}
+            namespace = {'np': np, 'pd': pd, '__builtins__': {}}
+            _validate_ast(code)
             exec(code, namespace)
 
             if function_name not in namespace:
@@ -1262,16 +1356,22 @@ class UnifiedIndicatorService:
     def _execute_custom_pattern_algorithm(self, name: str, df: pd.DataFrame, params: Dict[str, Any], algorithm_code: str) -> Union[pd.Series, Dict[str, pd.Series]]:
         """执行自定义形态算法"""
         try:
-            # 创建执行环境
+            import re
+            if not re.match(r'^[\s\w\d.,;:()\[\]{}\+\-*/%=<>!&|@\'\"#\n]*$', algorithm_code):
+                logger.warning(f"形态算法 {name} 代码包含非法字符，已拒绝执行")
+                return pd.Series(0, index=df.index)
+
             namespace = {
                 'np': np,
                 'pd': pd,
                 'df': df,
                 'params': params,
-                'name': name
+                'name': name,
+                '__builtins__': {}
             }
 
-            # 执行算法代码
+            # 执行算法代码（先进行AST安全验证）
+            _validate_ast(algorithm_code)
             exec(algorithm_code, namespace)
 
             # 获取结果 - 约定算法代码应该设置result变量
@@ -2154,7 +2254,7 @@ class UnifiedIndicatorServiceEnhanced(UnifiedIndicatorService):
                     supported_indicators = plugin_adapter.get_supported_indicators()
                     if indicator_name in supported_indicators:
                         available_plugins.append((plugin_id, plugin_adapter))
-                except:
+                except Exception:
                     continue
 
             if len(available_plugins) < 2:

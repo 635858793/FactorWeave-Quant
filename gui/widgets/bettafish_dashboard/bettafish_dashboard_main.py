@@ -7,7 +7,6 @@ BettaFish仪表板主组件
 
 import sys
 import os
-import logging
 import traceback
 from datetime import datetime
 from typing import Dict, Any, List, Optional
@@ -202,24 +201,21 @@ class BettaFishDashboard(QWidget):
         status_frame = QFrame()
         status_frame.setMaximumHeight(40)
         status_frame.setFrameStyle(QFrame.StyledPanel)
-        
+
         status_layout = QHBoxLayout(status_frame)
-        
-        # 系统状态指示
-        self.system_status_label = QLabel("● 系统状态：运行中")
-        self.system_status_label.setStyleSheet("color: green; font-weight: bold;")
-        
-        # 最后更新时间
-        self.last_update_label = QLabel(f"最后更新：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        
-        # 数据源状态
-        self.data_source_label = QLabel("● 数据源：已连接")
-        self.data_source_label.setStyleSheet("color: green; font-weight: bold;")
-        
+
+        self.system_status_label = QLabel("● 系统状态：检查中...")
+        self.system_status_label.setStyleSheet("color: gray; font-weight: bold;")
+
+        self.last_update_label = QLabel(f"\u6700\u540e\u66f4\u65b0\uff1a{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+        self.data_source_label = QLabel("● 数据源：检查中...")
+        self.data_source_label.setStyleSheet("color: gray; font-weight: bold;")
+
         status_layout.addWidget(self.system_status_label)
         status_layout.addWidget(self.last_update_label)
         status_layout.addWidget(self.data_source_label)
-        
+
         layout.addWidget(status_frame)
 
     def _init_monitoring_service(self):
@@ -236,19 +232,52 @@ class BettaFishDashboard(QWidget):
     def _update_dashboard(self):
         """更新仪表板数据"""
         try:
-            # 更新各个面板
             for panel in self._panels.values():
                 if hasattr(panel, 'update_data'):
                     panel.update_data()
-            
-            # 更新状态栏
-            self.last_update_label.setText(f"最后更新：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-            
-            # 发出数据更新信号
+
+            self.last_update_label.setText(f"\u6700\u540e\u66f4\u65b0\uff1a{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+            self._update_status_indicators()
+
             self.data_updated.emit()
-            
+
         except Exception as e:
             logger.error(f"更新仪表板失败: {e}")
+
+    def _update_status_indicators(self):
+        """更新状态指示器"""
+        try:
+            if self._monitoring_service and hasattr(self._monitoring_service, 'is_connected'):
+                connected = self._monitoring_service.is_connected()
+                if connected:
+                    self.system_status_label.setText("● 系统状态：运行中")
+                    self.system_status_label.setStyleSheet("color: green; font-weight: bold;")
+                    self.data_source_label.setText("● 数据源：已连接")
+                    self.data_source_label.setStyleSheet("color: green; font-weight: bold;")
+                else:
+                    self.system_status_label.setText("● 系统状态：已停止")
+                    self.system_status_label.setStyleSheet("color: red; font-weight: bold;")
+                    self.data_source_label.setText("● 数据源：未连接")
+                    self.data_source_label.setStyleSheet("color: red; font-weight: bold;")
+            elif self._bettafish_agent and hasattr(self._bettafish_agent, 'is_ready'):
+                if self._bettafish_agent.is_ready():
+                    self.system_status_label.setText("● 系统状态：运行中")
+                    self.system_status_label.setStyleSheet("color: green; font-weight: bold;")
+                    self.data_source_label.setText("● 数据源：已连接")
+                    self.data_source_label.setStyleSheet("color: green; font-weight: bold;")
+                else:
+                    self.system_status_label.setText("● 系统状态：未就绪")
+                    self.system_status_label.setStyleSheet("color: orange; font-weight: bold;")
+                    self.data_source_label.setText("● 数据源：未连接")
+                    self.data_source_label.setStyleSheet("color: orange; font-weight: bold;")
+            else:
+                self.system_status_label.setText("● 系统状态：未连接")
+                self.system_status_label.setStyleSheet("color: gray; font-weight: bold;")
+                self.data_source_label.setText("● 数据源：未连接")
+                self.data_source_label.setStyleSheet("color: gray; font-weight: bold;")
+        except Exception as e:
+            logger.error(f"更新状态指示器失败: {e}")
 
     def _refresh_dashboard(self):
         """刷新仪表板"""

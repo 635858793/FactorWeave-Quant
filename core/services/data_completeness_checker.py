@@ -6,7 +6,7 @@ by identifying missing dates and gaps in the data timeline.
 """
 
 import asyncio
-import logging
+from loguru import logger
 from datetime import datetime, timedelta
 from typing import List, Dict, Set, Optional, Tuple
 from dataclasses import dataclass
@@ -16,7 +16,7 @@ from ..database.duckdb_manager import DuckDBConnectionManager
 from ..events.event_bus import EventBus
 from ..events.types import DataIntegrityEvent
 
-logger = logging.getLogger(__name__)
+
 
 
 @dataclass

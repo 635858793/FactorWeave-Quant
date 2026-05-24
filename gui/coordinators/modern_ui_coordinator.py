@@ -3,7 +3,7 @@
 建立统一的UI组件管理和协调系统，整合Enhanced和Modern两套UI风格
 """
 
-import logging
+from loguru import logger
 from typing import Dict, List, Optional, Any, Callable, Type
 from dataclasses import dataclass, field
 from enum import Enum
@@ -20,8 +20,6 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from core.enums import ComponentState, ComponentType
-
-logger = logging.getLogger(__name__)
 
 class UIStyle(Enum):
     """UI风格枚举"""

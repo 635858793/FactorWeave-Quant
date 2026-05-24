@@ -775,6 +775,7 @@ class ServiceBootstrap:
                 plugin_manager = self.service_container.resolve(PluginManager)
                 if hasattr(plugin_manager, 'initialize'):
                     plugin_manager.initialize()
+                    plugin_manager._initialized = True
                 logger.info("插件管理器初始化完成")
 
             # 阶段2: 初始化UniPluginDataManager
@@ -1022,6 +1023,11 @@ class ServiceBootstrap:
             unified_data_manager = self.service_container.resolve(UnifiedDataManager)
             event_bus = self.event_bus
 
+            # DuckDB可用性检查：不可用时优雅降级，跳过所有增量服务
+            if not hasattr(unified_data_manager, 'duckdb_manager') or unified_data_manager.duckdb_manager is None:
+                logger.warning("DuckDB不可用，跳过增量下载服务注册")
+                return
+
             # 1. 注册数据完整性检查器
             logger.info("注册数据完整性检查器...")
             from ..services.data_completeness_checker import DataCompletenessChecker
@@ -1127,7 +1133,8 @@ class ServiceBootstrap:
             # PluginManager和UniPluginDataManager已经在业务服务阶段注册，这里只需要初始化
             if self.service_container.is_registered(PluginManager):
                 plugin_manager = self.service_container.resolve(PluginManager)
-                plugin_manager.initialize()
+                if not getattr(plugin_manager, '_initialized', False):
+                    plugin_manager.initialize()
                 logger.info("插件管理器初始化完成")
             else:
                 logger.warning("PluginManager未注册，跳过初始化")
@@ -1169,7 +1176,7 @@ class ServiceBootstrap:
                 logger.info("策略注册器注册完成（使用全局单例）")
             else:
                 # 如果已注册，替换为全局单例以确保一致性
-                self.service_container._singletons[StrategyRegistry] = strategy_registry
+                self.service_container._instances[StrategyRegistry] = strategy_registry
                 logger.warning("StrategyRegistry已注册，已同步为全局单例")
 
             # 处理待注册的策略（在模块导入时使用装饰器注册的策略）
@@ -2138,23 +2145,23 @@ class ServiceBootstrap:
     def _register_responsive_adapter(self) -> None:
         """注册响应式界面适配器"""
         try:
-            from core.advanced_optimization.ui.responsive_adapter import ResponsiveLayoutManager
+            from core.advanced_optimization.ui.responsive_adapter import ResponsiveOptimizer
             
             def create_responsive_adapter():
                 """创建响应式界面适配器服务实例"""
-                adapter = ResponsiveLayoutManager()
+                adapter = ResponsiveOptimizer()
                 return adapter
             
             # 按类型注册（主注册）
             self.service_container.register_factory(
-                ResponsiveLayoutManager,
+                ResponsiveOptimizer,
                 create_responsive_adapter,
                 scope=ServiceScope.SINGLETON
             )
             
             # 添加名称注册
             self.service_container.register_factory(
-                ResponsiveLayoutManager,
+                ResponsiveOptimizer,
                 create_responsive_adapter,
                 scope=ServiceScope.SINGLETON,
                 name='responsive_adapter'
@@ -2162,7 +2169,7 @@ class ServiceBootstrap:
             
             # 添加常用名称
             self.service_container.register_factory(
-                ResponsiveLayoutManager,
+                ResponsiveOptimizer,
                 create_responsive_adapter,
                 scope=ServiceScope.SINGLETON,
                 name='ui_adapter'

@@ -194,11 +194,11 @@ class OrderAnalyzer:
             fill_rate = filled_orders / total_orders if total_orders > 0 else 0
 
             # 6. 计算平均执行时间
-            execution_times = []
-            for order in period_orders:
-                if order.execute_time and order.create_time:
-                    execution_time = (order.execute_time - order.create_time).total_seconds()
-                    execution_times.append(execution_time)
+            execution_times = [
+                (order.execute_time - order.create_time).total_seconds()
+                for order in period_orders
+                if order.execute_time and order.create_time
+            ]
 
             avg_execution_time = statistics.mean(execution_times) if execution_times else 0
 
@@ -263,11 +263,11 @@ class OrderAnalyzer:
                 return self._empty_slippage_analysis(period.value)
 
             # 4. 计算滑点（假设滑点 = (成交价格 - 订单价格) / 订单价格）
-            slippages = []
-            for order in period_orders:
-                if order.order_price > 0 and order.filled_price > 0:
-                    slippage = (order.filled_price - order.order_price) / order.order_price
-                    slippages.append(slippage)
+            slippages = [
+                (order.filled_price - order.order_price) / order.order_price
+                for order in period_orders
+                if order.order_price > 0 and order.filled_price > 0
+            ]
 
             if not slippages:
                 logger.warning("没有可计算的滑点数据")
@@ -628,11 +628,11 @@ class OrderAnalyzer:
 
         fill_rate = filled_orders / total_orders if total_orders > 0 else 0
 
-        execution_times = []
-        for order in orders:
-            if order.execute_time and order.create_time:
-                execution_time = (order.execute_time - order.create_time).total_seconds()
-                execution_times.append(execution_time)
+        execution_times = [
+            (order.execute_time - order.create_time).total_seconds()
+            for order in orders
+            if order.execute_time and order.create_time
+        ]
 
         avg_execution_time = statistics.mean(execution_times) if execution_times else 0
 

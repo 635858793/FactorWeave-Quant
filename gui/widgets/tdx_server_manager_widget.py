@@ -159,6 +159,7 @@ class AddServerDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setAttribute(Qt.WA_DeleteOnClose)
         self.setWindowTitle("添加TDX服务器")
         self.setModal(True)
         self.resize(400, 200)
@@ -394,7 +395,7 @@ class TdxServerManagerWidget(QWidget):
                 try:
                     dt = datetime.fromisoformat(last_test.replace('Z', '+00:00'))
                     test_text = dt.strftime('%H:%M:%S')
-                except:
+                except Exception:
                     test_text = last_test
             else:
                 test_text = "未测试"
@@ -654,4 +655,5 @@ class TdxServerManagerWidget(QWidget):
             self.discovery_worker.wait()
 
         self.refresh_timer.stop()
+        super().closeEvent(event)
         event.accept()

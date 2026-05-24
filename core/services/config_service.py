@@ -8,13 +8,13 @@ from loguru import logger
 
 import json
 import os
-import sqlite3
 import yaml
 import threading
 from typing import Dict, List, Optional, Any, Union
 from pathlib import Path
 from datetime import datetime
 from .base_service import BaseService
+from ..database.unified_sqlite_access import UnifiedSQLiteAccess
 
 # PyQt5相关导入
 try:
@@ -104,6 +104,7 @@ class ConfigService(BaseService):
         # SQLite相关
         self._db_path = DB_PATH
         self._db_lock = threading.Lock()
+        self._db_conn = None
 
         # 初始化配置存储
         self._initialize_storage()
@@ -169,14 +170,13 @@ class ConfigService(BaseService):
     def _init_sqlite(self):
         """初始化SQLite数据库"""
         try:
-            # 确保数据库目录存在
             db_dir = os.path.dirname(self._db_path)
             os.makedirs(db_dir, exist_ok=True)
 
-            with sqlite3.connect(self._db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self._db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
-                # 创建配置表
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS app_config (
                         key TEXT PRIMARY KEY,
@@ -187,7 +187,6 @@ class ConfigService(BaseService):
                     )
                 ''')
 
-                conn.commit()
                 logger.info("SQLite配置数据库初始化成功")
 
         except Exception as e:
@@ -254,7 +253,8 @@ class ConfigService(BaseService):
     def _load_config_from_sqlite(self):
         """从SQLite加载配置"""
         try:
-            with sqlite3.connect(self._db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(self._db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('SELECT key, value, type FROM app_config')
                 rows = cursor.fetchall()
@@ -274,7 +274,6 @@ class ConfigService(BaseService):
                         else:
                             parsed_value = value
 
-                        # 设置嵌套配置
                         keys = key.split('.')
                         current = self._config_data
                         for k in keys[:-1]:
@@ -317,8 +316,9 @@ class ConfigService(BaseService):
             self._save_config()
 
             # 关闭数据库连接
-            if self._db_conn:
+            if hasattr(self, '_db_conn') and self._db_conn:
                 self._db_conn.close()
+                self._db_conn = None
 
             logger.info("配置服务资源清理完成")
 
@@ -415,32 +415,29 @@ class ConfigService(BaseService):
     def _save_config_to_sqlite(self, key: str, value: Any):
         """保存单个配置到SQLite"""
         try:
-            with sqlite3.connect(self._db_path) as conn:
+            if isinstance(value, (dict, list)):
+                value_str = json.dumps(value, ensure_ascii=False)
+                value_type = 'json'
+            elif isinstance(value, bool):
+                value_str = str(value).lower()
+                value_type = 'bool'
+            elif isinstance(value, int):
+                value_str = str(value)
+                value_type = 'int'
+            elif isinstance(value, float):
+                value_str = str(value)
+                value_type = 'float'
+            else:
+                value_str = str(value)
+                value_type = 'str'
+
+            db = UnifiedSQLiteAccess.get_instance(self._db_path)
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
-
-                # 确定值类型
-                if isinstance(value, (dict, list)):
-                    value_str = json.dumps(value, ensure_ascii=False)
-                    value_type = 'json'
-                elif isinstance(value, bool):
-                    value_str = str(value).lower()
-                    value_type = 'bool'
-                elif isinstance(value, int):
-                    value_str = str(value)
-                    value_type = 'int'
-                elif isinstance(value, float):
-                    value_str = str(value)
-                    value_type = 'float'
-                else:
-                    value_str = str(value)
-                    value_type = 'str'
-
                 cursor.execute('''
                     INSERT OR REPLACE INTO app_config (key, value, type, updated_at) 
                     VALUES (?, ?, ?, CURRENT_TIMESTAMP)
                 ''', (key, value_str, value_type))
-
-                conn.commit()
 
         except Exception as e:
             logger.error(f"保存配置到SQLite失败 '{key}': {e}")
@@ -473,33 +470,33 @@ class ConfigService(BaseService):
 
             flat_config = flatten_dict(self._config_data)
 
-            with sqlite3.connect(self._db_path) as conn:
-                cursor = conn.cursor()
+            operations = []
+            for key, value in flat_config.items():
+                if isinstance(value, (dict, list)):
+                    value_str = json.dumps(value, ensure_ascii=False)
+                    value_type = 'json'
+                elif isinstance(value, bool):
+                    value_str = str(value).lower()
+                    value_type = 'bool'
+                elif isinstance(value, int):
+                    value_str = str(value)
+                    value_type = 'int'
+                elif isinstance(value, float):
+                    value_str = str(value)
+                    value_type = 'float'
+                else:
+                    value_str = str(value)
+                    value_type = 'str'
 
-                for key, value in flat_config.items():
-                    # 确定值类型
-                    if isinstance(value, (dict, list)):
-                        value_str = json.dumps(value, ensure_ascii=False)
-                        value_type = 'json'
-                    elif isinstance(value, bool):
-                        value_str = str(value).lower()
-                        value_type = 'bool'
-                    elif isinstance(value, int):
-                        value_str = str(value)
-                        value_type = 'int'
-                    elif isinstance(value, float):
-                        value_str = str(value)
-                        value_type = 'float'
-                    else:
-                        value_str = str(value)
-                        value_type = 'str'
+                operations.append((
+                    '''INSERT OR REPLACE INTO app_config (key, value, type, updated_at) 
+                       VALUES (?, ?, ?, CURRENT_TIMESTAMP)''',
+                    (key, value_str, value_type)
+                ))
 
-                    cursor.execute('''
-                        INSERT OR REPLACE INTO app_config (key, value, type, updated_at) 
-                        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-                    ''', (key, value_str, value_type))
-
-                conn.commit()
+            db = UnifiedSQLiteAccess.get_instance(self._db_path)
+            if operations:
+                db.execute_in_transaction(operations)
 
         except Exception as e:
             logger.error(f"保存所有配置到SQLite失败: {e}")

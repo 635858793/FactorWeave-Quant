@@ -98,6 +98,8 @@ class EnhancedSignal(BaseSignal):
         self.last_signal = 0      # 上一个信号
         self.market_regime = "neutral"  # 市场状态
         self.volatility = 0.0     # 市场波动率
+        self._prev_macd_state = None  # MACD先前交叉状态: True=金叉, False=死叉, None=初始
+        self._prev_ma_state = None    # MA先前交叉状态: True=金叉, False=死叉, None=初始
         self.ml_model = None
         try:
             from core.containers import get_service_container
@@ -187,6 +189,8 @@ class EnhancedSignal(BaseSignal):
         cloned.last_signal = self.last_signal
         cloned.market_regime = self.market_regime
         cloned.volatility = self.volatility
+        cloned._prev_macd_state = self._prev_macd_state
+        cloned._prev_ma_state = self._prev_ma_state
         cloned.ml_model = self.ml_model
         return cloned
 
@@ -289,17 +293,23 @@ class EnhancedSignal(BaseSignal):
         signal = 0.0
         
         try:
-            # 趋势信号
-            if indicators.get('ma_fast', 0) > indicators.get('ma_slow', 0):
-                signal += 0.3
-            else:
-                signal -= 0.1
+            # 趋势信号 - 仅金叉/死叉时刻触发
+            curr_ma_state = indicators.get('ma_fast', 0) > indicators.get('ma_slow', 0)
+            if self._prev_ma_state is not None:
+                if curr_ma_state and not self._prev_ma_state:
+                    signal += 0.3
+                elif not curr_ma_state and self._prev_ma_state:
+                    signal -= 0.3
+            self._prev_ma_state = curr_ma_state
                 
-            # MACD信号
-            if indicators.get('macd', 0) > indicators.get('macd_signal', 0):
-                signal += 0.3
-            else:
-                signal -= 0.1
+            # MACD信号 - 仅金叉/死叉时刻触发
+            curr_macd_state = indicators.get('macd', 0) > indicators.get('macd_signal', 0)
+            if self._prev_macd_state is not None:
+                if curr_macd_state and not self._prev_macd_state:
+                    signal += 0.3
+                elif not curr_macd_state and self._prev_macd_state:
+                    signal -= 0.3
+            self._prev_macd_state = curr_macd_state
                 
             # RSI信号
             rsi = indicators.get('rsi', 50)
@@ -313,6 +323,81 @@ class EnhancedSignal(BaseSignal):
         except Exception as e:
             logger.warning(f"计算基础信号错误: {str(e)}")
             return 0.0
+
+    def _calculate_base_signals_batch(self, data: pd.DataFrame) -> np.ndarray:
+        """批量计算所有bar的基础信号（numpy向量化实现，替代逐bar状态跟踪）
+
+        使用np.roll检测MA金叉/死叉和MACD金叉/死叉，
+        与RSI信号综合后返回每个bar的信号强度数组。
+
+        Args:
+            data: 完整的K线DataFrame
+
+        Returns:
+            信号强度数组，正值为买入偏多，负值为卖出偏多
+        """
+        try:
+            n = len(data)
+            signals = np.zeros(n, dtype=np.float64)
+
+            n_fast = self.get_param("n_fast", 12)
+            n_slow = self.get_param("n_slow", 26)
+            n_signal = self.get_param("n_signal", 9)
+
+            close = data['close'].values
+
+            # MA趋势信号 - 批量金叉/死叉检测
+            ma_fast = pd.Series(close).rolling(window=n_fast).mean().values
+            ma_slow = pd.Series(close).rolling(window=n_slow).mean().values
+
+            ma_bull = ma_fast > ma_slow
+            prev_ma_bull = np.roll(ma_bull, 1)
+            prev_ma_bull[0] = ma_bull[0]
+
+            ma_golden = ma_bull & (~prev_ma_bull)
+            ma_death = (~ma_bull) & prev_ma_bull
+
+            signals[ma_golden] += 0.3
+            signals[ma_death] -= 0.3
+
+            # MACD信号 - 批量金叉/死叉检测
+            ema_fast = pd.Series(close).ewm(span=n_fast).mean().values
+            ema_slow = pd.Series(close).ewm(span=n_slow).mean().values
+            macd_line = ema_fast - ema_slow
+            signal_line = pd.Series(macd_line).ewm(span=n_signal).mean().values
+
+            macd_bull = macd_line > signal_line
+            prev_macd_bull = np.roll(macd_bull, 1)
+            prev_macd_bull[0] = macd_bull[0]
+
+            macd_golden = macd_bull & (~prev_macd_bull)
+            macd_death = (~macd_bull) & prev_macd_bull
+
+            signals[macd_golden] += 0.3
+            signals[macd_death] -= 0.3
+
+            # RSI信号
+            delta = np.diff(close, prepend=close[0])
+            gain = np.maximum(delta, 0)
+            loss = np.abs(np.minimum(delta, 0))
+            rsi_window = self.get_param("rsi_window", 14)
+
+            avg_gain = pd.Series(gain).rolling(window=rsi_window).mean().values
+            avg_loss = pd.Series(loss).rolling(window=rsi_window).mean().values
+            rs = np.divide(avg_gain, avg_loss, out=np.ones_like(avg_gain), where=avg_loss != 0)
+            rsi = 100.0 - (100.0 / (1.0 + rs))
+
+            rsi_buy_threshold = self.get_param("rsi_buy_threshold", 30)
+            rsi_sell_threshold = self.get_param("rsi_sell_threshold", 70)
+
+            signals[rsi < rsi_buy_threshold] += 0.2
+            signals[rsi > rsi_sell_threshold] -= 0.2
+
+            return signals
+
+        except Exception as e:
+            logger.warning(f"批量基础信号计算错误: {str(e)}")
+            return np.zeros(len(data), dtype=np.float64)
     
     def _calculate_final_signal(self, base_signal: float, ml_signal: float) -> float:
         """计算最终信号"""
@@ -331,25 +416,6 @@ class EnhancedSignal(BaseSignal):
             
         return final_signal
         
-    def _detect_market_regime(self, data: pd.DataFrame, indicators: Dict[str, float]) -> str:
-        """检测市场状态"""
-        try:
-            trend_strength = self.get_param("trend_strength", 0.02)
-            ma_fast = indicators.get('ma_fast', 0)
-            ma_slow = indicators.get('ma_slow', 0)
-            
-            if ma_slow != 0:
-                relative_strength = (ma_fast - ma_slow) / ma_slow
-                if relative_strength > trend_strength:
-                    return "bullish"
-                elif relative_strength < -trend_strength:
-                    return "bearish"
-            
-            return "neutral"
-        except Exception as e:
-            logger.warning(f"市场状态检测错误: {str(e)}")
-            return "neutral"
-    
     def _calculate_volatility_pandas(self, data: pd.DataFrame) -> float:
         """计算市场波动率"""
         try:
@@ -404,24 +470,60 @@ class EnhancedSignal(BaseSignal):
         try:
             if data.empty:
                 return {"signal": 0.0, "info": {"error": "Empty data"}}
-                
+
             signal_value = self._calculate(data)
-            
+
             signal_info = self.get_signal_info()
             signal_info.update({
                 "current_signal": signal_value,
                 "timestamp": data.index[-1] if hasattr(data.index, 'tolist') else datetime.now(),
                 "data_points": len(data)
             })
-            
+
             return {
                 "signal": signal_value,
                 "info": signal_info
             }
-            
+
         except Exception as e:
             logger.warning(f"EnhancedSignal计算信号错误: {str(e)}")
             return {"signal": 0.0, "info": {"error": str(e)}}
+
+    def calculate_signals_batch(self, data: pd.DataFrame) -> np.ndarray:
+        """批量计算所有bar的交易信号（numpy向量化，单次遍历）
+
+        一次性对完整历史数据计算所有bar的MA/MACD/RSI信号，
+        使用np.roll向量化检测交叉点，避免逐bar状态跟踪的开销。
+        适用于回测场景或需要完整信号序列的场景。
+
+        Args:
+            data: 完整的K线DataFrame
+
+        Returns:
+            信号强度数组 (n,) float64，正=买入偏多，负=卖出偏多
+        """
+        try:
+            if data.empty:
+                return np.array([], dtype=np.float64)
+
+            base_signals = self._calculate_base_signals_batch(data)
+
+            ml_signals = np.zeros(len(data), dtype=np.float64)
+            if self.get_param("enable_ml") and self.ml_model:
+                ml_signal_value = self._calculate_ml_signal(data)
+                ml_signals[-1] = ml_signal_value
+
+            weights = self.get_param("signal_weights", {
+                "trend": 0.3, "momentum": 0.2, "volume": 0.15, "volatility": 0.15, "ml": 0.2
+            })
+            ml_weight = weights.get('ml', 0.2)
+            final_signals = base_signals * (1 - ml_weight) + ml_signals * ml_weight
+
+            return final_signals
+
+        except Exception as e:
+            logger.warning(f"批量信号计算错误: {str(e)}")
+            return np.zeros(len(data), dtype=np.float64)
 
     def update_params(self, **params):
         """更新参数"""

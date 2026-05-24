@@ -16,7 +16,6 @@
 """
 
 import sys
-import logging
 import math
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
@@ -49,18 +48,10 @@ from PyQt5.QtGui import (
 )
 
 # 导入核心缓存组件
-try:
-    from core.services.cache_service import CacheService
-    from core.performance.adaptive_cache_strategy import AdaptiveCacheStrategy
-    from core.ui_integration.ui_business_logic_adapter import get_ui_adapter
-    from loguru import logger
-    CORE_AVAILABLE = True
-except ImportError as e:
-    logger = logging.getLogger(__name__)
-    CORE_AVAILABLE = False
-    logger.warning(f"核心缓存服务不可用: {e}")
-
-logger = logger.bind(module=__name__) if hasattr(logger, 'bind') else logging.getLogger(__name__)
+from core.services.cache_service import CacheService
+from core.performance.adaptive_cache_strategy import AdaptiveCacheStrategy
+from core.ui_integration.ui_business_logic_adapter import get_ui_adapter
+from loguru import logger
 
 
 class CacheLevel(Enum):
@@ -110,6 +101,15 @@ class CacheHotspot:
 class CacheGauge(QWidget):
     """缓存指标仪表盘"""
 
+    _BG_PEN = QPen(QColor(230, 230, 230), 10)
+    _TEXT_PEN = QPen(Qt.black)
+    _FONT_VALUE = QFont("Arial", 16, QFont.Bold)
+    _FONT_TITLE = QFont("Arial", 10)
+    _COLOR_GREEN = QColor(46, 204, 113)
+    _COLOR_YELLOW = QColor(241, 196, 15)
+    _COLOR_ORANGE = QColor(230, 126, 34)
+    _COLOR_RED = QColor(231, 76, 60)
+
     def __init__(self, title: str, max_value: float = 100, unit: str = "%", parent=None):
         super().__init__(parent)
         self.title = title
@@ -122,64 +122,52 @@ class CacheGauge(QWidget):
         self.setMinimumSize(140, 140)
         self.setMaximumSize(140, 140)
 
-        # 动画
         self.animation = QPropertyAnimation(self, b"current_value")
         self.animation.setDuration(500)
         self.animation.setEasingCurve(QEasingCurve.OutCubic)
 
     def set_value(self, value: float):
-        """设置数值（带动画）"""
         self.target_value = max(0, min(value, self.max_value))
-
         self.animation.setStartValue(self.current_value)
         self.animation.setEndValue(self.target_value)
         self.animation.start()
 
     def get_current_value(self) -> float:
-        """获取当前数值"""
         return self.current_value
 
     def set_current_value(self, value: float):
-        """设置当前数值（内部使用）"""
         self.current_value = value
         self.update()
 
     current_value = property(get_current_value, set_current_value)
 
     def paintEvent(self, event):
-        """绘制仪表盘"""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
-        # 获取绘制区域
         rect = self.rect().adjusted(15, 15, -15, -15)
-        center = rect.center()
         radius = min(rect.width(), rect.height()) // 2 - 5
 
-        # 绘制背景圆环
-        painter.setPen(QPen(QColor(230, 230, 230), 10))
+        painter.setPen(self._BG_PEN)
         painter.drawArc(rect, 0, 360 * 16)
 
-        # 绘制数值圆环
         value_ratio = self.current_value / self.max_value if self.max_value > 0 else 0
-        value_span = -360 * 16 * value_ratio  # 从顶部开始，顺时针
+        value_span = -360 * 16 * value_ratio
 
-        # 根据数值选择颜色
         if value_ratio >= 0.9:
-            color = QColor(46, 204, 113)  # 绿色 - 优秀
+            color = self._COLOR_GREEN
         elif value_ratio >= 0.7:
-            color = QColor(241, 196, 15)  # 黄色 - 良好
+            color = self._COLOR_YELLOW
         elif value_ratio >= 0.5:
-            color = QColor(230, 126, 34)  # 橙色 - 一般
+            color = self._COLOR_ORANGE
         else:
-            color = QColor(231, 76, 60)   # 红色 - 较差
+            color = self._COLOR_RED
 
         painter.setPen(QPen(color, 10))
         painter.drawArc(rect, 90 * 16, value_span)
 
-        # 绘制中心数值
-        painter.setPen(QPen(Qt.black))
-        painter.setFont(QFont("Arial", 16, QFont.Bold))
+        painter.setPen(self._TEXT_PEN)
+        painter.setFont(self._FONT_VALUE)
 
         if self.unit == "%":
             value_text = f"{self.current_value:.1f}%"
@@ -195,8 +183,7 @@ class CacheGauge(QWidget):
 
         painter.drawText(rect, Qt.AlignCenter, value_text)
 
-        # 绘制标题
-        painter.setFont(QFont("Arial", 10))
+        painter.setFont(self._FONT_TITLE)
         title_rect = QRectF(rect.x(), rect.bottom() + 5, rect.width(), 20)
         painter.drawText(title_rect, Qt.AlignCenter, self.title)
 
@@ -395,20 +382,37 @@ class CacheHitRateChart(QGraphicsView):
 class CacheMemoryChart(QWidget):
     """缓存内存使用图表"""
 
+    _COLORS = {
+        CacheLevel.L1_MEMORY: QColor(52, 152, 219),
+        CacheLevel.L2_DISK: QColor(46, 204, 113),
+        CacheLevel.L3_DISTRIBUTED: QColor(241, 196, 15),
+        CacheLevel.L4_REMOTE: QColor(231, 76, 60)
+    }
+    _LEVEL_NAMES = {
+        CacheLevel.L1_MEMORY: "L1内存缓存",
+        CacheLevel.L2_DISK: "L2磁盘缓存",
+        CacheLevel.L3_DISTRIBUTED: "L3分布式缓存",
+        CacheLevel.L4_REMOTE: "L4远程缓存"
+    }
+    _DEFAULT_COLOR = QColor(128, 128, 128)
+    _PEN_BG = QPen(QColor(220, 220, 220), 1)
+    _PEN_TEXT = QPen(Qt.black)
+    _BRUSH_BG = QBrush(QColor(240, 240, 240))
+    _FONT_LABEL = QFont("Arial", 10)
+    _FONT_USAGE = QFont("Arial", 8)
+
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.cache_data: Dict[CacheLevel, Tuple[int, int]] = {}  # (used, total)
+        self.cache_data: Dict[CacheLevel, Tuple[int, int]] = {}
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         self.setMinimumHeight(200)
         self.setMaximumHeight(200)
 
     def set_cache_data(self, data: Dict[CacheLevel, Tuple[int, int]]):
-        """设置缓存数据"""
         self.cache_data = data
         self.update()
 
     def paintEvent(self, event):
-        """绘制内存使用图表"""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
@@ -416,61 +420,38 @@ class CacheMemoryChart(QWidget):
             painter.drawText(self.rect(), Qt.AlignCenter, "暂无数据")
             return
 
-        # 计算布局
         rect = self.rect().adjusted(20, 20, -20, -20)
         bar_height = rect.height() // len(self.cache_data)
 
-        # 颜色映射
-        colors = {
-            CacheLevel.L1_MEMORY: QColor(52, 152, 219),
-            CacheLevel.L2_DISK: QColor(46, 204, 113),
-            CacheLevel.L3_DISTRIBUTED: QColor(241, 196, 15),
-            CacheLevel.L4_REMOTE: QColor(231, 76, 60)
-        }
-
-        level_names = {
-            CacheLevel.L1_MEMORY: "L1内存缓存",
-            CacheLevel.L2_DISK: "L2磁盘缓存",
-            CacheLevel.L3_DISTRIBUTED: "L3分布式缓存",
-            CacheLevel.L4_REMOTE: "L4远程缓存"
-        }
-
-        # 绘制每个缓存级别的内存使用
         for i, (level, (used, total)) in enumerate(self.cache_data.items()):
             y = rect.y() + i * bar_height
             bar_rect = QRectF(rect.x(), y, rect.width() - 100, bar_height - 10)
 
-            # 背景条
-            painter.setPen(QPen(QColor(220, 220, 220), 1))
-            painter.setBrush(QBrush(QColor(240, 240, 240)))
+            painter.setPen(self._PEN_BG)
+            painter.setBrush(self._BRUSH_BG)
             painter.drawRect(bar_rect)
 
-            # 使用量条
             if total > 0:
                 used_ratio = used / total
                 used_width = bar_rect.width() * used_ratio
                 used_rect = QRectF(bar_rect.x(), bar_rect.y(), used_width, bar_rect.height())
 
-                color = colors.get(level, QColor(128, 128, 128))
-                painter.setBrush(QBrush(color))
+                painter.setBrush(QBrush(self._COLORS.get(level, self._DEFAULT_COLOR)))
                 painter.drawRect(used_rect)
 
-            # 标签
-            painter.setPen(QPen(Qt.black))
-            painter.setFont(QFont("Arial", 10))
+            painter.setPen(self._PEN_TEXT)
+            painter.setFont(self._FONT_LABEL)
 
-            # 级别名称
             name_rect = QRectF(bar_rect.right() + 10, bar_rect.y(), 80, bar_rect.height() / 2)
-            painter.drawText(name_rect, Qt.AlignLeft | Qt.AlignTop, level_names.get(level, str(level)))
+            painter.drawText(name_rect, Qt.AlignLeft | Qt.AlignTop, self._LEVEL_NAMES.get(level, str(level)))
 
-            # 使用量信息
             if total > 0:
                 usage_text = f"{self._format_bytes(used)}/{self._format_bytes(total)} ({used/total:.1%})"
             else:
                 usage_text = "未使用"
 
             usage_rect = QRectF(bar_rect.right() + 10, bar_rect.y() + bar_rect.height() / 2, 80, bar_rect.height() / 2)
-            painter.setFont(QFont("Arial", 8))
+            painter.setFont(self._FONT_USAGE)
             painter.drawText(usage_rect, Qt.AlignLeft | Qt.AlignTop, usage_text)
 
     def _format_bytes(self, bytes_value: int) -> str:
@@ -661,31 +642,8 @@ class CacheHotspotWidget(QWidget):
         self.generate_sample_hotspots()
 
     def generate_sample_hotspots(self):
-        """生成示例热点数据"""
-        import random
-
-        sample_keys = [
-            "market_data:AAPL:daily", "market_data:TSLA:daily", "market_data:MSFT:daily",
-            "user_profile:12345", "stock_analysis:600000", "financial_report:Q1_2024",
-            "cache_key:frequent_query_1", "session:user_98765", "config:system_settings"
-        ]
-
-        levels = list(CacheLevel)
-        hotspots = []
-
-        for i, key in enumerate(sample_keys):
-            hotspot = CacheHotspot(
-                key=key,
-                access_count=random.randint(50, 1000),
-                hit_rate=random.uniform(0.6, 0.98),
-                size=random.randint(1024, 1024*1024),  # 1KB to 1MB
-                last_access=datetime.now() - timedelta(seconds=random.randint(0, 3600)),
-                cache_level=random.choice(levels),
-                frequency_score=random.uniform(0.5, 1.0)
-            )
-            hotspots.append(hotspot)
-
-        self.set_hotspots(hotspots)
+        logger.warning("缓存热点真实数据不可用，显示空列表")
+        self.set_hotspots([])
 
     def update_statistics(self):
         """更新统计信息"""
@@ -1120,72 +1078,20 @@ class CacheStatusMonitor(QWidget):
         self.hotspot_widget.generate_sample_hotspots()
 
     def generate_sample_metrics(self):
-        """生成示例缓存指标"""
-        import random
-
-        # 生成各级缓存的示例数据
-        cache_data = {}
-        for level in CacheLevel:
-            used_memory = random.randint(100 * 1024 * 1024, 1024 * 1024 * 1024)  # 100MB - 1GB
-            total_memory = used_memory + random.randint(100 * 1024 * 1024, 500 * 1024 * 1024)
-            cache_data[level] = (used_memory, total_memory)
-
-        self.memory_chart.set_cache_data(cache_data)
-
-        # 更新仪表盘数据
-        self.hit_rate_gauge.set_value(random.uniform(75, 95))
-        self.memory_usage_gauge.set_value(random.uniform(40, 80))
-        self.response_time_gauge.set_value(random.uniform(20, 80))
-        self.eviction_rate_gauge.set_value(random.uniform(5, 25))
+        logger.warning("缓存指标真实数据不可用")
+        self.memory_chart.set_cache_data({})
+        self.hit_rate_gauge.set_value(0)
+        self.memory_usage_gauge.set_value(0)
+        self.response_time_gauge.set_value(0)
+        self.eviction_rate_gauge.set_value(0)
 
     def update_cache_metrics(self):
-        """更新缓存指标"""
-        import random
-
-        # 生成新的实时数据
-        metrics = {}
-        for level in CacheLevel:
-            metric = CacheMetrics(
-                level=level,
-                hit_rate=random.uniform(70, 95),
-                miss_rate=random.uniform(5, 30),
-                memory_used=random.randint(100 * 1024 * 1024, 1024 * 1024 * 1024),
-                memory_total=random.randint(1024 * 1024 * 1024, 2048 * 1024 * 1024),
-                item_count=random.randint(1000, 10000),
-                average_access_time=random.uniform(10, 100),
-                eviction_count=random.randint(0, 50)
-            )
-            metrics[level] = metric
-
-        # 更新命中率图表
-        self.hit_rate_chart.add_metrics(metrics)
-
-        # 更新详细指标表格
-        self.update_metrics_table(metrics)
-
-        # 更新仪表盘（带动画效果）
-        overall_hit_rate = sum(m.hit_rate for m in metrics.values()) / len(metrics)
-        self.hit_rate_gauge.set_value(overall_hit_rate)
-
-        overall_memory_usage = sum(m.memory_used for m in metrics.values()) / sum(m.memory_total for m in metrics.values()) * 100
-        self.memory_usage_gauge.set_value(overall_memory_usage)
-
-        avg_response_time = sum(m.average_access_time for m in metrics.values()) / len(metrics)
-        self.response_time_gauge.set_value(avg_response_time)
-
-        # 更新统计标签
-        total_items = sum(m.item_count for m in metrics.values())
-        self.total_items_label.setText(f"{total_items:,}")
-
-        total_size = sum(m.memory_used for m in metrics.values())
-        self.cache_size_label.setText(self._format_bytes(total_size))
-
-        # 模拟日累计数据
-        self.daily_hits_label.setText(f"{random.randint(10000, 50000):,}")
-        self.daily_evictions_label.setText(f"{random.randint(100, 1000):,}")
-
-        # 更新状态
-        self.last_update_label.setText(f"最后更新: {datetime.now().strftime('%H:%M:%S')}")
+        logger.warning("缓存实时指标数据不可用")
+        self.last_update_label.setText(f"最后更新: {datetime.now().strftime('%H:%M:%S')} (无数据)")
+        self.total_items_label.setText("N/A")
+        self.cache_size_label.setText("N/A")
+        self.daily_hits_label.setText("N/A")
+        self.daily_evictions_label.setText("N/A")
 
     def update_metrics_table(self, metrics: Dict[CacheLevel, CacheMetrics]):
         """更新指标表格"""

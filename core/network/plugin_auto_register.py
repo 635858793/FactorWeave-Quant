@@ -3,14 +3,12 @@
 在应用启动时自动注册所有支持网络配置的插件
 """
 
-import logging
+from loguru import logger
 import asyncio
 from typing import Dict, Any, List
 from pathlib import Path
 
 from core.network.plugin_network_registry import get_plugin_network_registry, auto_register_plugins
-
-logger = logging.getLogger(__name__)
 
 class PluginAutoRegister:
     """插件自动注册器"""

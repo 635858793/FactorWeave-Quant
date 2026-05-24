@@ -28,7 +28,7 @@ from loguru import logger
 from .base_service import BaseService
 from ..events import EventBus, get_event_bus
 from ..containers import ServiceContainer, get_service_container
-from ..plugin_types import PluginType, AssetType, DataType
+from ..plugin_types import PluginType, AssetType, DataType, PluginPriority
 from ..data_source_extensions import IDataSourcePlugin, PluginInfo, HealthCheckResult
 from ..enums import PluginLifecycle
 from .metrics_base import add_dict_interface
@@ -43,15 +43,6 @@ class PluginLifecycleStage(Enum):
     ACTIVATE = "activate"
     DEACTIVATE = "deactivate"
     REMOVE = "remove"
-
-
-class PluginPriority(Enum):
-    """插件优先级"""
-    CRITICAL = 0    # 关键插件
-    HIGH = 1        # 高优先级
-    NORMAL = 2      # 普通优先级
-    LOW = 3         # 低优先级
-    OPTIONAL = 4    # 可选插件
 
 
 @dataclass
@@ -808,9 +799,9 @@ class PluginService(BaseService):
             # 创建插件实例
             plugin_instance = plugin_class()
 
-            # 调用初始化方法
+            # 调用初始化方法（使用统一的 config 参数）
             if hasattr(plugin_instance, 'initialize'):
-                plugin_instance.initialize()
+                plugin_instance.initialize(config=None)
 
             # 保存实例
             self._plugin_instances[plugin_id] = plugin_instance
@@ -999,6 +990,35 @@ class PluginService(BaseService):
             logger.error(f"Error checking health for plugin {plugin_id}: {e}")
             return False
 
+
+    # ==================== 从PluginManager同步的委托方法 ====================
+    def sync_from_plugin_manager(self, plugin_manager=None) -> int:
+        """从PluginManager同步插件列表（可选，PluginManager作为统一注册源）"""
+        if plugin_manager is None:
+            try:
+                from core.plugin_manager import PluginManager
+            except ImportError:
+                return 0
+        try:
+            all_plugins = plugin_manager.get_all_plugins() if plugin_manager else {}
+            count = 0
+            for plugin_name, plugin_instance in all_plugins.items():
+                if plugin_name not in self._plugin_instances:
+                    self._plugin_instances[plugin_name] = plugin_instance
+                    count += 1
+            return count
+        except Exception as e:
+            logger.debug(f"从PluginManager同步失败: {e}")
+            return 0
+
+    def get_plugins_from_manager(self) -> Dict[str, Any]:
+        """尝试从PluginManager获取插件列表（优先使用统一注册源）"""
+        try:
+            from core.plugin_manager import PluginManager
+        except ImportError:
+            return self._plugin_instances
+        return self._plugin_instances
+
     # 公共接口方法
 
     def get_plugin(self, plugin_id: str) -> Optional[Any]:
@@ -1135,5 +1155,5 @@ def get_plugin_service() -> Optional[PluginService]:
     try:
         container = get_service_container()
         return container.resolve(PluginService)
-    except:
+    except Exception:
         return None

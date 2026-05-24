@@ -6,6 +6,7 @@
 from typing import Dict, Any, Optional, List, Tuple
 from loguru import logger
 import numpy as np
+from numpy.lib.stride_tricks import sliding_window_view
 from dataclasses import dataclass
 from enum import Enum
 import pandas as pd
@@ -125,7 +126,10 @@ class FeatureEngineer:
         period_cci = self.config.get('cci_period', 20)
         tp = (high + low + close) / 3
         sma_tp = tp.rolling(window=period_cci).mean()
-        mad = tp.rolling(window=period_cci).apply(lambda x: np.abs(x - x.mean()).mean())
+        tp_sw = sliding_window_view(tp.values, period_cci)
+        tp_window_means = tp_sw.mean(axis=1)
+        mad_values = np.abs(tp_sw - tp_window_means[:, None]).mean(axis=1)
+        mad = pd.Series(np.pad(mad_values, (period_cci - 1, 0), constant_values=np.nan), index=tp.index)
         df['cci'] = (tp - sma_tp) / (0.015 * mad + 1e-10)
         
         df['williams_r'] = -100 * (high.rolling(window=14).max() - close) / (high.rolling(window=14).max() - low.rolling(window=14).min() + 1e-10)
@@ -183,8 +187,10 @@ class FeatureEngineer:
         df['minus_di'] = minus_di
         
         period_aroon = 25
-        df['aroon_up'] = high.rolling(window=period_aroon + 1).apply(lambda x: float(np.argmax(x)) / period_aroon * 100, raw=True)
-        df['aroon_down'] = low.rolling(window=period_aroon + 1).apply(lambda x: float(np.argmin(x)) / period_aroon * 100, raw=True)
+        aroon_sw_high = sliding_window_view(high.values, period_aroon + 1)
+        df['aroon_up'] = pd.Series(np.pad(np.argmax(aroon_sw_high, axis=1).astype(float) / period_aroon * 100, (period_aroon, 0), constant_values=np.nan), index=high.index)
+        aroon_sw_low = sliding_window_view(low.values, period_aroon + 1)
+        df['aroon_down'] = pd.Series(np.pad(np.argmin(aroon_sw_low, axis=1).astype(float) / period_aroon * 100, (period_aroon, 0), constant_values=np.nan), index=low.index)
         df['aroon_osc'] = df['aroon_up'] - df['aroon_down']
         
         return df
@@ -255,8 +261,8 @@ class FeatureEngineer:
         gain = delta.where(delta > 0, 0)
         loss = -delta.where(delta < 0, 0)
         
-        avg_gain = gain.rolling(window=period).mean()
-        avg_loss = loss.rolling(window=period).mean()
+        avg_gain = gain.ewm(alpha=1/period, adjust=False).mean()
+        avg_loss = loss.ewm(alpha=1/period, adjust=False).mean()
         
         rs = avg_gain / (avg_loss + 1e-10)
         rsi = 100 - (100 / (1 + rs))
@@ -266,7 +272,7 @@ class FeatureEngineer:
     def _clean_infinite_na(self, df: pd.DataFrame) -> pd.DataFrame:
         """清理无穷值和NA"""
         df = df.replace([np.inf, -np.inf], np.nan)
-        df = df.fillna(method='ffill').fillna(method='bfill').fillna(0)
+        df = df.fillna(method='ffill').fillna(0)
         return df
     
     def select_features(

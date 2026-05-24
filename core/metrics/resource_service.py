@@ -85,7 +85,7 @@ class SystemResourceService:
             except Exception as e:
                 try:
                     logger.info(f"资源监控线程错误: {str(e)}")
-                except:
+                except Exception:
                     logger.info(f"资源监控线程错误: {type(e).__name__}")
                 import traceback
                 traceback.print_exc()
@@ -97,5 +97,8 @@ class SystemResourceService:
         """停止后台监控线程。"""
         if self._thread is not None and self._thread.is_alive():
             self._stop_event.set()
-            self._thread.join()  # 等待线程完全停止
-            logger.info("系统资源监控服务已停止。")
+            self._thread.join(timeout=5)
+            if self._thread.is_alive():
+                logger.warning("系统资源监控线程未能在5秒内停止")
+            else:
+                logger.info("系统资源监控服务已停止。")

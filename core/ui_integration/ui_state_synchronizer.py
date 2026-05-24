@@ -14,7 +14,6 @@ UI状态同步器
 版本: 1.0
 """
 
-import logging
 import threading
 import json
 from typing import Dict, List, Any, Optional, Callable, Set, Union
@@ -28,16 +27,15 @@ from PyQt5.QtCore import QObject, pyqtSignal, QTimer, QMutex, QMutexLocker
 from PyQt5.QtWidgets import QApplication
 
 # 导入事件系统
+from loguru import logger
 try:
     from core.events.event_bus import EventBus, get_event_bus, Event
-    from loguru import logger
     EVENT_BUS_AVAILABLE = True
 except ImportError as e:
-    logger = logging.getLogger(__name__)
     EVENT_BUS_AVAILABLE = False
     logger.warning(f"事件总线不可用: {e}")
 
-logger = logger.bind(module=__name__) if hasattr(logger, 'bind') else logging.getLogger(__name__)
+logger = logger.bind(module=__name__)
 
 class StateChangeType(Enum):
     """状态变更类型"""

@@ -53,45 +53,41 @@ class PerformanceEvaluator:
         signals = pd.DataFrame(index=data.index)
         signals['signal'] = 0  # 0: 无信号, 1: 买入, -1: 卖出
 
-        # 创建形态索引集合，用于快速查找
+        signal_col = signals.columns.get_loc('signal')
+        signal_values = signals.iloc[:, signal_col].values.astype(float)
+
         pattern_indices = set()
         for result in pattern_results:
             if result.index < len(signals):
                 if result.signal_type.value == 'buy':
-                    signals.loc[result.index, 'signal'] = 1
+                    signal_values[result.index] = 1
                     pattern_indices.add(result.index)
                 elif result.signal_type.value == 'sell':
-                    signals.loc[result.index, 'signal'] = -1
+                    signal_values[result.index] = -1
                     pattern_indices.add(result.index)
 
-        # 持仓状态管理
-        current_position = 0  # 0: 无持仓, 1: 有持仓
-        holding_periods = 0  # 持仓周期数
-        max_holding_periods = 5  # 最大持仓周期数
+        current_position = 0
+        holding_periods = 0
+        max_holding_periods = 5
 
-        # 遍历所有信号，添加持仓状态管理
         for i in range(len(signals)):
-            # 检查是否有形态识别结果
             if i in pattern_indices:
-                signal = signals.iloc[i]['signal']
+                signal = signal_values[i]
                 
                 if signal == 1 and current_position == 0:
-                    # 买入信号且无持仓，开仓
                     current_position = 1
                     holding_periods = 0
                 elif signal == -1 and current_position == 1:
-                    # 卖出信号且有持仓，平仓
                     current_position = 0
                     holding_periods = 0
             elif current_position == 1:
-                # 有持仓，增加持仓周期数
                 holding_periods += 1
-                # 如果超过最大持仓周期数，强制平仓
                 if holding_periods >= max_holding_periods:
-                    signals.iloc[i, signals.columns.get_loc('signal')] = -1
+                    signal_values[i] = -1
                     current_position = 0
                     holding_periods = 0
 
+        signals.iloc[:, signal_col] = signal_values
         return signals
 
     def evaluate_algorithm(self, pattern_name: str, test_datasets: List[pd.DataFrame],
@@ -842,119 +838,53 @@ class AlgorithmOptimizer:
     def _gradient_optimization(self, pattern_name: str, pattern_config,
                                config: OptimizationConfig, test_datasets: List[pd.DataFrame],
                                baseline_metrics: TradingPerformanceMetrics) -> Dict[str, Any]:
-        """梯度优化（数值梯度 + Adam优化器）"""
-        logger.info("↑ 使用梯度优化（Adam优化器）...")
+        """梯度优化（基于scipy.optimize.minimize L-BFGS-B）"""
+        from scipy.optimize import minimize
 
-        # 这是一个改进的梯度优化实现，使用Adam优化器
-        # Adam结合了动量法和自适应学习率
+        logger.info("↑ 使用scipy.optimize.minimize (L-BFGS-B) 梯度优化...")
 
         current_params = self._extract_numeric_parameters(pattern_config)
-        best_params = current_params.copy()
+        param_names = list(current_params.keys())
+        x0 = np.array([current_params[name] for name in param_names], dtype=float)
+        bounds = [(0.001, 100.0) for _ in param_names]
         best_score = baseline_metrics.overall_score
         optimization_log = []
 
-        # Adam优化器参数
-        learning_rate = 0.1  # 初始学习率
-        beta1 = 0.9  # 一阶矩估计的指数衰减率
-        beta2 = 0.999  # 二阶矩估计的指数衰减率
-        epsilon = 1e-8  # 数值稳定常数
-        
-        # 初始化Adam变量
-        m = {key: 0.0 for key in current_params.keys()}  # 一阶矩估计（梯度均值）
-        v = {key: 0.0 for key in current_params.keys()}  # 二阶矩估计（梯度平方均值）
-        t = 0  # 时间步
-
-        # 梯度计算参数
-        gradient_epsilon = 0.1  # 梯度计算的扰动值
-        noise_scale = 0.02  # 随机扰动尺度
+        def objective(x):
+            params = {name: float(x[i]) for i, name in enumerate(param_names)}
+            score = self._evaluate_params(pattern_config, params, test_datasets, config.target_metric)
+            optimization_log.append({
+                "iteration": len(optimization_log) + 1,
+                "parameters": params.copy(),
+                "score": score,
+                "method": "L-BFGS-B"
+            })
+            return -score
 
         logger.info(f"  初始参数: {current_params}")
         logger.info(f"  基准评分: {best_score:.3f}")
-        logger.info(f"  学习率: {learning_rate}")
-        logger.info(f"  Beta1: {beta1}")
-        logger.info(f"  Beta2: {beta2}")
-        logger.info(f"  扰动值: {gradient_epsilon}")
 
-        for iteration in range(config.max_iterations):
-            logger.info(f"  第 {iteration + 1}/{config.max_iterations} 次迭代")
-            t += 1
+        result = minimize(
+            objective,
+            x0,
+            method='L-BFGS-B',
+            bounds=bounds,
+            options={'maxiter': config.max_iterations, 'disp': False}
+        )
 
-            # 计算数值梯度
-            gradients = {}
-            for param_name, param_value in current_params.items():
-                if isinstance(param_value, (int, float)):
-                    # 使用更大的扰动值
-                    epsilon_param = max(gradient_epsilon, abs(param_value) * 0.1)
+        optimized_params = {name: float(result.x[i]) for i, name in enumerate(param_names)}
+        optimized_score = -result.fun if result.success else best_score
 
-                    # 正向扰动
-                    params_plus = current_params.copy()
-                    params_plus[param_name] = param_value + epsilon_param
-                    score_plus = self._evaluate_params(
-                        pattern_config, params_plus, test_datasets, config.target_metric)
+        if result.success and optimized_score > best_score:
+            best_score = optimized_score
+        else:
+            optimized_params = current_params
 
-                    # 负向扰动
-                    params_minus = current_params.copy()
-                    params_minus[param_name] = param_value - epsilon_param
-                    score_minus = self._evaluate_params(
-                        pattern_config, params_minus, test_datasets, config.target_metric)
+        logger.info(f"  优化完成: success={result.success}, nit={result.nit}, nfev={result.nfev}, 最佳评分={best_score:.3f}")
 
-                    # 计算梯度
-                    gradient = (score_plus - score_minus) / (2 * epsilon_param)
-                    gradients[param_name] = gradient
-
-            logger.info(f"    梯度: {gradients}")
-
-            # 使用Adam优化器更新参数
-            for param_name, gradient in gradients.items():
-                old_value = current_params[param_name]
-                
-                # 更新一阶矩估计
-                m[param_name] = beta1 * m[param_name] + (1 - beta1) * gradient
-                
-                # 更新二阶矩估计
-                v[param_name] = beta2 * v[param_name] + (1 - beta2) * (gradient ** 2)
-                
-                # 计算偏差修正后的一阶矩估计
-                m_hat = m[param_name] / (1 - beta1 ** t)
-                
-                # 计算偏差修正后的二阶矩估计
-                v_hat = v[param_name] / (1 - beta2 ** t)
-                
-                # 添加随机扰动
-                noise = np.random.normal(0, noise_scale * abs(gradient)) if gradient != 0 else 0
-                
-                # 更新参数
-                current_params[param_name] += learning_rate * m_hat / (np.sqrt(v_hat) + epsilon) + noise
-
-                # 参数约束
-                current_params[param_name] = max(
-                    0.001, min(100.0, current_params[param_name]))
-                
-                logger.info(f"    {param_name}: {old_value:.6f} -> {current_params[param_name]:.6f} (梯度: {gradient:.6f}, m_hat: {m_hat:.6f}, v_hat: {v_hat:.6f})")
-
-            # 评估当前参数
-            current_score = self._evaluate_params(
-                pattern_config, current_params, test_datasets, config.target_metric)
-
-            logger.info(f"    当前评分: {current_score:.3f}")
-
-            # 更新最佳参数
-            if current_score > best_score:
-                best_score = current_score
-                best_params = current_params.copy()
-                logger.info(f"   发现更好的解: {current_score:.3f}")
-
-            optimization_log.append({
-                "iteration": iteration + 1,
-                "parameters": current_params.copy(),
-                "score": current_score,
-                "gradients": gradients.copy()
-            })
-
-        # 保存最佳版本
         best_version_id = self._save_optimized_version(
-            pattern_name, pattern_config, best_params,
-            f"梯度优化(Adam) - {len(optimization_log)}次迭代", best_score
+            pattern_name, pattern_config, optimized_params,
+            f"scipy L-BFGS-B优化 - {len(optimization_log)}次迭代", best_score
         )
 
         improvement_percentage = 0.0
@@ -963,13 +893,19 @@ class AlgorithmOptimizer:
                 best_score - baseline_metrics.overall_score) / baseline_metrics.overall_score * 100
 
         return {
-            "method": "gradient",
+            "method": "scipy_L-BFGS-B",
             "best_score": best_score,
             "baseline_score": baseline_metrics.overall_score,
             "improvement_percentage": improvement_percentage,
             "iterations": len(optimization_log),
             "best_version_id": best_version_id,
-            "optimization_log": optimization_log
+            "optimization_log": optimization_log,
+            "scipy_result": {
+                "success": result.success,
+                "nit": result.nit,
+                "nfev": result.nfev,
+                "message": result.message
+            }
         }
 
     def _initialize_population(self, pattern_config, population_size: int) -> List[Dict[str, Any]]:
@@ -1177,7 +1113,7 @@ class AlgorithmOptimizer:
             temp_config = self._create_temp_config(pattern_config, parameters)
             metrics = self._evaluate_individual(temp_config, test_datasets)
             return getattr(metrics, target_metric, 0)
-        except:
+        except Exception:
             return 0.0
 
     def _evolve_population(self, population: List[Dict[str, Any]],

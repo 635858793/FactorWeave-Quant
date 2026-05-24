@@ -37,6 +37,14 @@ class AdjPriceMomentumStrategy:
         """
         self.lookback_period = lookback_period
         self.top_n = top_n
+
+    def set_parameters(self, **kwargs):
+        for key, value in kwargs.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+
+    def validate_data(self, df):
+        return self.validate_adj_data(df)
         
     def calculate_momentum(self, df: pd.DataFrame) -> pd.Series:
         """

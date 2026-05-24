@@ -17,7 +17,7 @@ from datetime import datetime
 from dataclasses import dataclass, field, asdict
 
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
+    QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
     QTableWidget, QTableWidgetItem, QLabel, QTextEdit, QLineEdit,
     QGroupBox, QFormLayout, QPushButton, QScrollArea, QSplitter,
     QHeaderView, QComboBox, QSpinBox, QDoubleSpinBox, QCheckBox,
@@ -28,6 +28,8 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QSettings, QDateTime
 from PyQt5.QtGui import QFont, QPixmap, QIcon, QColor, QPalette
+
+from .base_dialog import BaseDialog
 
 # 导入服务
 from core.services.strategy_service import StrategyService
@@ -664,7 +666,7 @@ class SystemConfigWidget(QWidget):
         )
 
 
-class EnhancedConfigManagementDialog(QDialog):
+class EnhancedConfigManagementDialog(BaseDialog):
     """增强配置管理对话框"""
 
     # 信号
@@ -683,18 +685,20 @@ class EnhancedConfigManagementDialog(QDialog):
             trading_service: 交易服务
             data_manager: 数据管理器
         """
-        super().__init__(parent)
         self.strategy_service = strategy_service
         self.trading_service = trading_service
         self.data_manager = data_manager
 
-        self.setWindowTitle("系统配置管理")
-        self.setModal(True)
-        self.resize(800, 600)
-
         # 配置存储
         self.config_file = "config/system_config.json"
         self._ensure_config_dir()
+
+        super().__init__(
+            parent,
+            title="系统配置管理",
+            size=(800, 600),
+            settings_key="EnhancedConfigManagementDialog"
+        )
 
         self._setup_ui()
         self._load_all_configs()

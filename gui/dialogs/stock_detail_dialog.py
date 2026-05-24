@@ -10,6 +10,7 @@ from loguru import logger
 import sys
 import os
 import traceback
+import pandas as pd
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 from PyQt5.QtWidgets import (
@@ -21,6 +22,8 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QThread, QDate, QTimer
 from PyQt5.QtGui import QFont, QPixmap, QPalette
+
+from gui.dialogs.base_dialog import BaseDialog
 
 class StockDataWorker(QThread):
     """股票数据获取工作线程"""
@@ -90,31 +93,50 @@ class StockDataWorker(QThread):
             self.error_occurred.emit(str(e))
 
     def get_basic_info(self) -> Dict[str, Any]:
-        """获取基本信息"""
         try:
-            # 模拟获取基本信息
             info = {
                 'code': self.stock_code,
-                'name': f"股票{self.stock_code}",
                 'market': '深圳' if self.stock_code.startswith('00') else '上海',
-                'industry': '银行业',
-                'concept': '银行,金融',
-                'listing_date': '2000-01-01',
-                'total_share': 1000000000,
-                'float_share': 800000000,
-                'market_cap': 50000000000,
-                'pe_ratio': 8.5,
-                'pb_ratio': 0.9,
-                'dividend_yield': 0.035,
-                'roe': 0.12,
-                'debt_ratio': 0.85
             }
 
-            # 如果有数据管理器，尝试获取真实数据
+            try:
+                from core.real_data_provider import get_real_data_provider
+                provider = get_real_data_provider()
+                quote = provider.get_real_quote(self.stock_code)
+                if quote:
+                    info['name'] = quote.get('name', '')
+                    info['price'] = quote.get('price', 0)
+                    info['change_pct'] = quote.get('change_pct', 0)
+                    info['change'] = quote.get('change', 0)
+                    info['volume'] = quote.get('volume', 0)
+                    info['amount'] = quote.get('amount', 0)
+                    cap = quote.get('market_cap') or quote.get('total_market_cap', 0)
+                    if cap:
+                        info['market_cap'] = cap
+            except Exception as e:
+                self.logger.warning(f"获取实时行情失败: {e}")
+
             if self.data_manager and hasattr(self.data_manager, 'get_stock_info'):
                 real_info = self.data_manager.get_stock_info(self.stock_code)
                 if real_info:
-                    info.update(real_info)
+                    for key, value in real_info.items():
+                        if value is not None and value != '':
+                            info[key] = value
+            elif self.data_manager and hasattr(self.data_manager, 'get_stock_list'):
+                stock_list = self.data_manager.get_stock_list()
+                for stock in stock_list:
+                    s_code = stock.get('code') if isinstance(stock, dict) else getattr(stock, 'code', None)
+                    if s_code == self.stock_code:
+                        if isinstance(stock, dict):
+                            for key, value in stock.items():
+                                if value is not None and value != '':
+                                    info[key] = value
+                        else:
+                            for attr in ['name', 'industry', 'market', 'pe_ratio', 'pb_ratio']:
+                                val = getattr(stock, attr, None)
+                                if val is not None and val != '':
+                                    info[attr] = val
+                        break
 
             return info
 
@@ -154,51 +176,85 @@ class StockDataWorker(QThread):
             return {}
 
     def get_finance_data(self) -> Dict[str, Any]:
-        """获取财务数据"""
         try:
-            # 模拟财务数据
-            finance_data = {
-                'revenue': [100000, 110000, 120000, 130000],  # 营业收入
-                'profit': [20000, 22000, 24000, 26000],  # 净利润
-                'assets': [1000000, 1100000, 1200000, 1300000],  # 总资产
-                'liability': [800000, 850000, 900000, 950000],  # 总负债
-                'equity': [200000, 250000, 300000, 350000],  # 净资产
-                'cash_flow': [30000, 35000, 40000, 45000],  # 经营现金流
-                'years': ['2020', '2021', '2022', '2023']
-            }
-
-            # 如果有数据管理器，尝试获取真实数据
             if self.data_manager and hasattr(self.data_manager, 'get_finance_data'):
                 real_data = self.data_manager.get_finance_data(self.stock_code)
                 if real_data:
-                    finance_data.update(real_data)
+                    return real_data
 
-            return finance_data
+            return {}
 
         except Exception as e:
             self.logger.error(f"获取财务数据失败: {e}")
             return {}
 
     def get_indicators(self) -> Dict[str, Any]:
-        """获取技术指标"""
         try:
-            # 模拟技术指标数据
-            indicators = {
-                'ma5': 10.5,
-                'ma10': 10.3,
-                'ma20': 10.1,
-                'ma60': 9.8,
-                'rsi': 55.2,
-                'macd': 0.12,
-                'kdj_k': 45.6,
-                'kdj_d': 42.3,
-                'boll_upper': 11.2,
-                'boll_lower': 9.8,
-                'volume_ratio': 1.25,
-                'turnover_rate': 0.85
-            }
+            try:
+                from core.real_data_provider import get_real_data_provider
+                provider = get_real_data_provider()
+                kdata = provider.get_real_kdata(code=self.stock_code, freq='D', count=250)
+                if kdata is not None and not kdata.empty and 'close' in kdata.columns:
+                    close = kdata['close'].astype(float)
+                    high = kdata.get('high', close).astype(float)
+                    low = kdata.get('low', close).astype(float)
+                    volume = kdata.get('volume', pd.Series(0, index=close.index)).astype(float)
 
-            return indicators
+                    indicators = {}
+
+                    for period in [5, 10, 20, 60]:
+                        ma = close.rolling(window=min(period, len(close))).mean()
+                        val = ma.iloc[-1]
+                        indicators[f'ma{period}'] = float(val) if not pd.isna(val) else 0.0
+
+                    delta = close.diff()
+                    gain = delta.where(delta > 0, 0.0).rolling(window=14, min_periods=1).mean()
+                    loss = (-delta.where(delta < 0, 0.0)).rolling(window=14, min_periods=1).mean()
+                    rs = gain / loss.replace(0, float('nan'))
+                    rsi = 100.0 - (100.0 / (1.0 + rs))
+                    indicators['rsi'] = float(rsi.iloc[-1]) if not pd.isna(rsi.iloc[-1]) else 0.0
+
+                    ema12 = close.ewm(span=12, adjust=False).mean()
+                    ema26 = close.ewm(span=26, adjust=False).mean()
+                    macd_line = ema12 - ema26
+                    signal_line = macd_line.ewm(span=9, adjust=False).mean()
+                    macd_hist = macd_line - signal_line
+                    indicators['macd'] = float(macd_hist.iloc[-1]) if not pd.isna(macd_hist.iloc[-1]) else 0.0
+
+                    low_min = low.rolling(window=9, min_periods=1).min()
+                    high_max = high.rolling(window=9, min_periods=1).max()
+                    h_l_diff = (high_max - low_min).replace(0, float('nan'))
+                    rsv = (close - low_min) / h_l_diff * 100.0
+                    k = rsv.ewm(com=2, adjust=False).mean()
+                    d = k.ewm(com=2, adjust=False).mean()
+                    indicators['kdj_k'] = float(k.iloc[-1]) if not pd.isna(k.iloc[-1]) else 0.0
+                    indicators['kdj_d'] = float(d.iloc[-1]) if not pd.isna(d.iloc[-1]) else 0.0
+
+                    ma20 = close.rolling(window=min(20, len(close))).mean()
+                    std20 = close.rolling(window=min(20, len(close))).std()
+                    indicators['boll_upper'] = float((ma20 + 2 * std20).iloc[-1]) if not pd.isna(ma20.iloc[-1]) else 0.0
+                    indicators['boll_lower'] = float((ma20 - 2 * std20).iloc[-1]) if not pd.isna(ma20.iloc[-1]) else 0.0
+
+                    vol_ma5 = volume.rolling(window=5, min_periods=1).mean()
+                    if vol_ma5.iloc[-1] and vol_ma5.iloc[-1] > 0:
+                        indicators['volume_ratio'] = float(volume.iloc[-1] / vol_ma5.iloc[-1])
+                    else:
+                        indicators['volume_ratio'] = 0.0
+
+                    if 'turnover_rate' in kdata.columns:
+                        val = kdata['turnover_rate'].iloc[-1]
+                        indicators['turnover_rate'] = float(val) if not pd.isna(val) else 0.0
+                    elif 'turn' in kdata.columns:
+                        val = kdata['turn'].iloc[-1]
+                        indicators['turnover_rate'] = float(val) if not pd.isna(val) else 0.0
+                    else:
+                        indicators['turnover_rate'] = 0.0
+
+                    return indicators
+            except Exception as e:
+                self.logger.warning(f"使用RealDataProvider计算技术指标失败: {e}")
+
+            return {}
 
         except Exception as e:
             self.logger.error(f"获取技术指标失败: {e}")
@@ -229,24 +285,80 @@ class StockDataWorker(QThread):
             return {}
 
     def get_related_stocks(self) -> List[Dict[str, Any]]:
-        """获取相关股票"""
         try:
-            # 模拟相关股票数据
-            related = [
-                {'code': '000002', 'name': '万科A', 'correlation': 0.75},
-                {'code': '600036', 'name': '招商银行', 'correlation': 0.82},
-                {'code': '600000', 'name': '浦发银行', 'correlation': 0.78},
-                {'code': '601318', 'name': '中国平安', 'correlation': 0.65},
-                {'code': '000858', 'name': '五粮液', 'correlation': 0.45}
-            ]
+            related = []
 
-            return related
+            if self.data_manager:
+                try:
+                    if hasattr(self.data_manager, 'get_stock_info'):
+                        stock_info = self.data_manager.get_stock_info(self.stock_code)
+                        industry = None
+                        if isinstance(stock_info, dict):
+                            industry = stock_info.get('industry')
+                        elif stock_info is not None:
+                            industry = getattr(stock_info, 'industry', None)
+
+                        if industry:
+                            if hasattr(self.data_manager, 'get_industry_stocks'):
+                                industry_stocks = self.data_manager.get_industry_stocks(industry)
+                                if industry_stocks:
+                                    for s in industry_stocks:
+                                        code = s.get('code', '') if isinstance(s, dict) else getattr(s, 'code', '')
+                                        name = s.get('name', '') if isinstance(s, dict) else getattr(s, 'name', '')
+                                        if code and code != self.stock_code:
+                                            related.append({
+                                                'code': code,
+                                                'name': name or code,
+                                                'correlation': 0.0
+                                            })
+                                            if len(related) >= 5:
+                                                break
+
+                    if not related and hasattr(self.data_manager, 'get_stock_list'):
+                        stock_list = self.data_manager.get_stock_list()
+                        for stock in stock_list:
+                            code = stock.get('code', '') if isinstance(stock, dict) else getattr(stock, 'code', '')
+                            name = stock.get('name', '') if isinstance(stock, dict) else getattr(stock, 'name', '')
+                            if code and code != self.stock_code:
+                                related.append({
+                                    'code': code,
+                                    'name': name or code,
+                                    'correlation': 0.0
+                                })
+                            if len(related) >= 5:
+                                break
+                except Exception as e:
+                    self.logger.warning(f"通过数据管理器获取关联股票失败: {e}")
+
+            if not related:
+                try:
+                    from core.real_data_provider import get_real_data_provider
+                    provider = get_real_data_provider()
+                    stocks = provider.get_default_test_stocks(10)
+                    for code in stocks:
+                        if code != self.stock_code:
+                            try:
+                                quote = provider.get_real_quote(code)
+                                name = quote.get('name', code) if quote else code
+                            except Exception:
+                                name = code
+                            related.append({
+                                'code': code,
+                                'name': name,
+                                'correlation': 0.0
+                            })
+                        if len(related) >= 5:
+                            break
+                except Exception as e:
+                    self.logger.warning(f"通过RealDataProvider获取关联股票失败: {e}")
+
+            return related[:5]
 
         except Exception as e:
             self.logger.error(f"获取相关股票失败: {e}")
             return []
 
-class StockDetailDialog(QDialog):
+class StockDetailDialog(BaseDialog):
     """股票详情对话框"""
 
     # 信号定义
@@ -262,7 +374,14 @@ class StockDetailDialog(QDialog):
             data_manager: 数据管理器
             parent: 父窗口
         """
-        super().__init__(parent)
+        super().__init__(
+            parent,
+            title="股票详情",
+            min_size=(1000, 700),
+            size=(1100, 800),
+            settings_key="StockDetailDialog"
+        )
+        
         self.stock_code = stock_code
         self.data_manager = data_manager
         self.logger = logger.bind(module=__name__)
@@ -279,10 +398,6 @@ class StockDetailDialog(QDialog):
     def init_ui(self):
         """初始化用户界面"""
         try:
-            self.setWindowTitle(f"股票详情 - {self.stock_code}")
-            self.setMinimumSize(1000, 700)
-            self.resize(1200, 800)
-
             # 主布局
             main_layout = QVBoxLayout(self)
             main_layout.setContentsMargins(10, 10, 10, 10)

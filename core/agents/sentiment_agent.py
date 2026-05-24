@@ -5,9 +5,11 @@
 
 import asyncio
 import time
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime, timedelta
 from dataclasses import dataclass
+
+import numpy as np
 from loguru import logger
 
 from ..services.base_service import BaseService
@@ -29,12 +31,23 @@ class SentimentData:
 
 
 class SentimentAnalysisAgent(BaseService):
-    """舆情分析Agent"""
+    """
+    舆情分析Agent
+
+    当前版本使用K线价格代理(price_proxy)作为舆情数据源。
+    各_fetch_*方法均基于真实K线数据计算动量、成交量、波动率、均线排列等指标来模拟舆情情绪。
+    如需启用真实舆情数据源（新闻API、社交媒体等），请调用 enable_real_sources()。
+    """
 
     def __init__(self, event_bus: Optional[EventBus] = None):
         super().__init__(event_bus)
         
-        # 模拟数据源配置
+        self.has_real_data = False
+        
+        self._use_real_sources = False
+        
+        self._data_provider = None
+        
         self.data_sources = [
             "news_api",
             "social_media",
@@ -42,14 +55,12 @@ class SentimentAnalysisAgent(BaseService):
             "analyst_reports"
         ]
         
-        # 舆情关键词库
         self.sentiment_keywords = {
             'positive': ['利好', '上涨', '突破', '买入', '推荐', '乐观', '前景'],
             'negative': ['利空', '下跌', '破位', '卖出', '警告', '悲观', '风险'],
             'neutral': ['持平', '震荡', '观望', '等待', '中性']
         }
         
-        # 性能指标
         self._metrics = {
             'analyses_count': 0,
             'successful_analyses': 0,
@@ -57,6 +68,23 @@ class SentimentAnalysisAgent(BaseService):
             'average_response_time': 0.0,
             'data_sources_status': {source: 'active' for source in self.data_sources}
         }
+
+    def enable_real_sources(self):
+        """
+        启用真实舆情数据源（框架预留接口）
+        
+        当前版本未实现真实数据源连接，调用此方法后仅更改为标记状态。
+        待后续版本集成新闻API、社交媒体API等真实数据源后生效。
+        """
+        self._use_real_sources = True
+        logger.info("舆情Agent: 已标记启用真实数据源（框架预留）")
+
+    def disable_real_sources(self):
+        """
+        禁用真实舆情数据源，回退到K线价格代理模式
+        """
+        self._use_real_sources = False
+        logger.info("舆情Agent: 已回退到价格代理模式")
 
     async def initialize(self) -> None:
         """初始化舆情分析Agent"""
@@ -81,15 +109,54 @@ class SentimentAnalysisAgent(BaseService):
 
     async def _initialize_data_sources(self):
         """初始化数据源连接"""
-        # 模拟初始化各个数据源
         for source in self.data_sources:
             try:
-                # 实际项目中这里会连接真实的数据源API
                 logger.debug(f"连接数据源: {source}")
-                await asyncio.sleep(0.1)  # 模拟连接时间
+                await asyncio.sleep(0.1)
             except Exception as e:
                 logger.error(f"数据源 {source} 连接失败: {e}")
                 self._metrics['data_sources_status'][source] = 'error'
+
+    def _get_data_provider(self):
+        if self._data_provider is None:
+            from core.real_data_provider import get_real_data_provider
+            self._data_provider = get_real_data_provider()
+        return self._data_provider
+
+    def _compute_ema(self, data: np.ndarray, period: int) -> float:
+        if len(data) < 2:
+            return float(data[-1])
+        alpha = 2.0 / (period + 1.0)
+        ema = float(data[0])
+        for i in range(1, len(data)):
+            ema = alpha * float(data[i]) + (1.0 - alpha) * ema
+        return ema
+
+    def _compute_macd(self, close: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        n = len(close)
+        alpha12 = 2.0 / 13.0
+        alpha26 = 2.0 / 27.0
+        alpha9 = 2.0 / 10.0
+        
+        ema12 = np.zeros(n)
+        ema26 = np.zeros(n)
+        ema12[0] = float(close[0])
+        ema26[0] = float(close[0])
+        
+        for i in range(1, n):
+            ema12[i] = alpha12 * float(close[i]) + (1.0 - alpha12) * ema12[i - 1]
+            ema26[i] = alpha26 * float(close[i]) + (1.0 - alpha26) * ema26[i - 1]
+        
+        macd_line = ema12 - ema26
+        
+        signal = np.zeros(n)
+        signal[0] = macd_line[0]
+        for i in range(1, n):
+            signal[i] = alpha9 * macd_line[i] + (1.0 - alpha9) * signal[i - 1]
+        
+        histogram = macd_line - signal
+        
+        return macd_line, signal, histogram
 
     async def analyze_stock(self, stock_code: str, 
                           context: Dict[str, Any] = None) -> Dict[str, Any]:
@@ -105,6 +172,7 @@ class SentimentAnalysisAgent(BaseService):
         """
         start_time = time.time()
         context = context or {}
+        context.setdefault('stock_code', stock_code)
         
         try:
             logger.debug(f"开始舆情分析: {stock_code}")
@@ -136,6 +204,7 @@ class SentimentAnalysisAgent(BaseService):
                 'trending_score': sentiment_data.get('trending_score', 0.0),
                 'recommendation': self._generate_sentiment_recommendation(sentiment_score, confidence),
                 'risk_factors': self._identify_risk_factors(sentiment_data),
+                'data_quality': 'price_proxy',
                 'timestamp': datetime.now()
             }
             
@@ -162,31 +231,27 @@ class SentimentAnalysisAgent(BaseService):
     async def _collect_sentiment_data(self, stock_code: str, 
                                     context: Dict[str, Any]) -> Dict[str, Any]:
         """收集舆情数据"""
-        # 模拟从多个数据源收集舆情数据
         sentiment_data = {
+            'stock_code': stock_code,
             'raw_data': {},
             'sources': [],
             'keywords': [],
             'trending_score': 0.0,
-            'volume': 0  # 讨论量
+            'volume': 0
         }
         
-        # 模拟从新闻API收集数据
         news_data = await self._fetch_news_sentiment(stock_code)
         sentiment_data['raw_data']['news'] = news_data
         sentiment_data['sources'].append('news_api')
         
-        # 模拟从社交媒体收集数据
         social_data = await self._fetch_social_sentiment(stock_code)
         sentiment_data['raw_data']['social'] = social_data
         sentiment_data['sources'].append('social_media')
         
-        # 模拟从财经论坛收集数据
         forum_data = await self._fetch_forum_sentiment(stock_code)
         sentiment_data['raw_data']['forum'] = forum_data
         sentiment_data['sources'].append('financial_forums')
         
-        # 模拟从分析师报告收集数据
         analyst_data = await self._fetch_analyst_sentiment(stock_code)
         sentiment_data['raw_data']['analyst'] = analyst_data
         sentiment_data['sources'].append('analyst_reports')
@@ -194,86 +259,323 @@ class SentimentAnalysisAgent(BaseService):
         return sentiment_data
 
     async def _fetch_news_sentiment(self, stock_code: str) -> Dict[str, Any]:
-        """获取新闻舆情数据"""
-        # 模拟API调用延迟
-        await asyncio.sleep(0.1)
-        
-        # 模拟新闻数据
-        import random
-        return {
-            'articles_count': random.randint(5, 50),
-            'sentiment_distribution': {
-                'positive': random.uniform(0.2, 0.6),
-                'negative': random.uniform(0.1, 0.4),
-                'neutral': random.uniform(0.1, 0.3)
-            },
-            'keywords': random.sample(['业绩', '增长', '投资', '合作', '创新'], 3),
-            'trending_score': random.uniform(0.1, 0.9)
-        }
+        """获取新闻舆情数据 (价格动量代理)"""
+        try:
+            provider = self._get_data_provider()
+            df = provider.get_real_kdata(stock_code, freq='D', count=30)
+            
+            if df.empty or len(df) < 5:
+                logger.warning(f"新闻情绪代理: {stock_code} 无法获取足够K线数据")
+                return {'articles_count': 0, 'sentiment_distribution': {'positive': 0.0, 'negative': 0.0, 'neutral': 0.0}, 'keywords': [], 'trending_score': 0.0}
+            
+            close = df['close'].values.astype(np.float64)
+            n = len(close)
+            
+            pct_5d = float((close[-1] - close[-5]) / close[-5]) if n >= 5 else 0.0
+            
+            recent_delta = np.diff(close[-min(15, n):])
+            gain = float(np.sum(recent_delta[recent_delta > 0]))
+            loss = float(-np.sum(recent_delta[recent_delta < 0]))
+            rs = gain / loss if loss > 1e-10 else 100.0
+            rsi = 100.0 - (100.0 / (1.0 + rs))
+            rsi_signal = (rsi - 50.0) / 50.0
+            
+            ema12 = self._compute_ema(close[-min(26, n):], 12)
+            ema26 = self._compute_ema(close[-min(26, n):], 26)
+            macd_raw = ema12 - ema26
+            
+            trend_score = float(np.tanh(pct_5d * 10.0 + rsi_signal * 2.0 + macd_raw * 5.0))
+            
+            if trend_score > 0.15:
+                pos = 0.45 + trend_score * 0.25
+                neg = 0.20 - trend_score * 0.12
+                neu = 1.0 - pos - neg
+            elif trend_score < -0.15:
+                neg = 0.45 - trend_score * 0.25
+                pos = 0.20 + trend_score * 0.12
+                neu = 1.0 - pos - neg
+            else:
+                pos, neg = 0.30, 0.28
+                neu = 0.42
+            
+            pos = float(np.clip(pos, 0.05, 0.75))
+            neg = float(np.clip(neg, 0.05, 0.75))
+            neu = float(np.clip(neu, 0.05, 0.75))
+            total = pos + neg + neu
+            pos, neg, neu = pos / total, neg / total, neu / total
+            
+            trending = float(np.clip(abs(pct_5d * 5.0) + abs(trend_score), 0.05, 0.95))
+            
+            keywords = ['动量']
+            if trend_score > 0.3:
+                keywords = ['上涨动量', '价格强势', '突破']
+            elif trend_score < -0.3:
+                keywords = ['下跌动量', '价格弱势', '破位']
+            
+            return {
+                'articles_count': len(df),
+                'sentiment_distribution': {'positive': pos, 'negative': neg, 'neutral': neu},
+                'keywords': keywords,
+                'trending_score': trending,
+                'data_source': 'price_proxy'
+            }
+        except Exception as e:
+            logger.warning(f"新闻情绪代理获取失败 {stock_code}: {e}")
+            return {'articles_count': 0, 'sentiment_distribution': {'positive': 0.0, 'negative': 0.0, 'neutral': 0.0}, 'keywords': [], 'trending_score': 0.0, 'data_source': 'price_proxy'}
 
     async def _fetch_social_sentiment(self, stock_code: str) -> Dict[str, Any]:
-        """获取社交媒体舆情数据"""
-        await asyncio.sleep(0.1)
-        
-        import random
-        return {
-            'posts_count': random.randint(10, 200),
-            'sentiment_distribution': {
-                'positive': random.uniform(0.3, 0.7),
-                'negative': random.uniform(0.1, 0.3),
-                'neutral': random.uniform(0.1, 0.4)
-            },
-            'keywords': random.sample(['热门', '关注', '讨论', '看法', '建议'], 3),
-            'trending_score': random.uniform(0.2, 0.8)
-        }
+        """获取社交媒体舆情数据 (成交量情绪代理)"""
+        try:
+            provider = self._get_data_provider()
+            df = provider.get_real_kdata(stock_code, freq='D', count=30)
+            
+            if df.empty or len(df) < 5:
+                logger.warning(f"社交媒体情绪代理: {stock_code} 无法获取足够K线数据")
+                return {'posts_count': 0, 'sentiment_distribution': {'positive': 0.0, 'negative': 0.0, 'neutral': 0.0}, 'keywords': [], 'trending_score': 0.0}
+            
+            close = df['close'].values.astype(np.float64)
+            volume = df['volume'].values.astype(np.float64)
+            n = len(close)
+            
+            price_chg = np.diff(close[-min(10, n):])
+            vol_chg = np.diff(volume[-min(10, n):])
+            
+            if len(price_chg) > 2:
+                corr_matrix = np.corrcoef(price_chg, vol_chg)
+                vol_price_corr = float(corr_matrix[0, 1]) if not np.isnan(corr_matrix[0, 1]) else 0.0
+            else:
+                vol_price_corr = 0.0
+            
+            avg_vol_ratio = float(volume[-min(5, n):].mean() / volume[-min(20, n):].mean()) if n >= 20 else 1.0
+            
+            recent_pct = float((close[-1] - close[-min(5, n)]) / close[-min(5, n)])
+            
+            score = float(np.tanh(recent_pct * 8.0 + vol_price_corr * 2.0))
+            
+            if avg_vol_ratio > 1.3:
+                if recent_pct > 0:
+                    pos, neg, neu = 0.55, 0.15, 0.30
+                else:
+                    pos, neg, neu = 0.15, 0.55, 0.30
+            elif score > 0.1:
+                pos, neg, neu = 0.45, 0.20, 0.35
+            elif score < -0.1:
+                pos, neg, neu = 0.20, 0.45, 0.35
+            else:
+                pos, neg, neu = 0.30, 0.30, 0.40
+            
+            pos = float(np.clip(pos, 0.05, 0.75))
+            neg = float(np.clip(neg, 0.05, 0.75))
+            neu = float(np.clip(neu, 0.05, 0.75))
+            total = pos + neg + neu
+            pos, neg, neu = pos / total, neg / total, neu / total
+            
+            trending = float(np.clip(abs(vol_price_corr) * avg_vol_ratio * 0.5, 0.05, 0.9))
+            
+            keywords = ['量价']
+            if vol_price_corr > 0.5:
+                keywords = ['放量', '量价齐升' if recent_pct > 0 else '放量下跌', '关注']
+            elif vol_price_corr < -0.3:
+                keywords = ['缩量', '背离']
+            
+            return {
+                'posts_count': int(np.clip(volume[-min(5, n):].mean() / 1000.0, 1, 500)),
+                'sentiment_distribution': {'positive': pos, 'negative': neg, 'neutral': neu},
+                'keywords': keywords,
+                'trending_score': trending,
+                'data_source': 'price_proxy'
+            }
+        except Exception as e:
+            logger.warning(f"社交媒体情绪代理获取失败 {stock_code}: {e}")
+            return {'posts_count': 0, 'sentiment_distribution': {'positive': 0.0, 'negative': 0.0, 'neutral': 0.0}, 'keywords': [], 'trending_score': 0.0, 'data_source': 'price_proxy'}
 
     async def _fetch_forum_sentiment(self, stock_code: str) -> Dict[str, Any]:
-        """获取财经论坛舆情数据"""
-        await asyncio.sleep(0.1)
-        
-        import random
-        return {
-            'threads_count': random.randint(3, 30),
-            'sentiment_distribution': {
-                'positive': random.uniform(0.2, 0.5),
-                'negative': random.uniform(0.2, 0.4),
-                'neutral': random.uniform(0.2, 0.4)
-            },
-            'keywords': random.sample(['分析', '观点', '预测', '评价', '讨论'], 3),
-            'trending_score': random.uniform(0.1, 0.6)
-        }
+        """获取财经论坛舆情数据 (波动率情绪代理)"""
+        try:
+            provider = self._get_data_provider()
+            df = provider.get_real_kdata(stock_code, freq='D', count=30)
+            
+            if df.empty or len(df) < 5:
+                logger.warning(f"论坛情绪代理: {stock_code} 无法获取足够K线数据")
+                return {'threads_count': 0, 'sentiment_distribution': {'positive': 0.0, 'negative': 0.0, 'neutral': 0.0}, 'keywords': [], 'trending_score': 0.0}
+            
+            close = df['close'].values.astype(np.float64)
+            high = df['high'].values.astype(np.float64)
+            low = df['low'].values.astype(np.float64)
+            n = len(close)
+            
+            daily_range = (high - low) / close
+            atr = float(daily_range[-min(14, n):].mean())
+            
+            returns = np.diff(close) / close[:-1]
+            volatility = float(returns[-min(20, len(returns)):].std() * np.sqrt(252))
+            
+            trend_10d = float((close[-1] - close[-min(10, n)]) / close[-min(10, n)])
+            
+            vol_ratio = volatility / 0.3
+            
+            if vol_ratio > 1.5:
+                pos, neg, neu = 0.20, 0.25, 0.55
+            elif vol_ratio > 0.8:
+                if trend_10d > 0.02:
+                    pos, neg, neu = 0.40, 0.20, 0.40
+                elif trend_10d < -0.02:
+                    pos, neg, neu = 0.20, 0.40, 0.40
+                else:
+                    pos, neg, neu = 0.28, 0.28, 0.44
+            else:
+                if trend_10d > 0.02:
+                    pos, neg, neu = 0.50, 0.15, 0.35
+                elif trend_10d < -0.02:
+                    pos, neg, neu = 0.15, 0.50, 0.35
+                else:
+                    pos, neg, neu = 0.30, 0.30, 0.40
+            
+            pos = float(np.clip(pos, 0.05, 0.75))
+            neg = float(np.clip(neg, 0.05, 0.75))
+            neu = float(np.clip(neu, 0.05, 0.75))
+            total = pos + neg + neu
+            pos, neg, neu = pos / total, neg / total, neu / total
+            
+            trending = float(np.clip(volatility * 2.0, 0.05, 0.8))
+            
+            keywords = ['波动']
+            if volatility > 0.4:
+                keywords = ['高波动', '分歧', '观望']
+            elif trend_10d > 0.03:
+                keywords = ['趋势向上', '共识']
+            elif trend_10d < -0.03:
+                keywords = ['趋势向下', '共识']
+            
+            return {
+                'threads_count': max(1, n // 2),
+                'sentiment_distribution': {'positive': pos, 'negative': neg, 'neutral': neu},
+                'keywords': keywords,
+                'trending_score': trending,
+                'data_source': 'price_proxy'
+            }
+        except Exception as e:
+            logger.warning(f"论坛情绪代理获取失败 {stock_code}: {e}")
+            return {'threads_count': 0, 'sentiment_distribution': {'positive': 0.0, 'negative': 0.0, 'neutral': 0.0}, 'keywords': [], 'trending_score': 0.0, 'data_source': 'price_proxy'}
 
     async def _fetch_analyst_sentiment(self, stock_code: str) -> Dict[str, Any]:
-        """获取分析师报告舆情数据"""
-        await asyncio.sleep(0.1)
-        
-        import random
-        return {
-            'reports_count': random.randint(1, 10),
-            'sentiment_distribution': {
-                'positive': random.uniform(0.3, 0.6),
-                'negative': random.uniform(0.1, 0.3),
-                'neutral': random.uniform(0.2, 0.4)
-            },
-            'keywords': random.sample(['评级', '目标价', '评级', '前景', '建议'], 3),
-            'trending_score': random.uniform(0.3, 0.9)
-        }
+        """获取分析师报告舆情数据 (均线排列情绪代理)"""
+        try:
+            provider = self._get_data_provider()
+            df = provider.get_real_kdata(stock_code, freq='D', count=120)
+            
+            if df.empty or len(df) < 60:
+                logger.warning(f"分析师情绪代理: {stock_code} 无法获取足够K线数据，尝试较少数据")
+                df = provider.get_real_kdata(stock_code, freq='D', count=30)
+                if df.empty or len(df) < 20:
+                    return {'reports_count': 0, 'sentiment_distribution': {'positive': 0.0, 'negative': 0.0, 'neutral': 0.0}, 'keywords': [], 'trending_score': 0.0}
+            
+            close = df['close'].values.astype(np.float64)
+            n = len(close)
+            
+            ma5 = float(close[-min(5, n):].mean())
+            ma20 = float(close[-min(20, n):].mean())
+            ma60 = float(close[-min(60, n):].mean()) if n >= 60 else float(close.mean())
+            
+            if ma5 > ma20 > ma60:
+                pos, neg, neu = 0.55, 0.15, 0.30
+                alignment = 'bullish'
+                report_count = 5
+            elif ma5 < ma20 < ma60:
+                pos, neg, neu = 0.15, 0.55, 0.30
+                alignment = 'bearish'
+                report_count = 5
+            elif abs(ma5 - ma20) / ma20 < 0.02:
+                pos, neg, neu = 0.30, 0.30, 0.40
+                alignment = 'sideways'
+                report_count = 2
+            else:
+                ma5_20_diff = (ma5 - ma20) / ma20
+                if ma5_20_diff > 0:
+                    pos, neg, neu = 0.40, 0.25, 0.35
+                else:
+                    pos, neg, neu = 0.25, 0.40, 0.35
+                alignment = 'mixed'
+                report_count = 3
+            
+            pos = float(np.clip(pos, 0.05, 0.75))
+            neg = float(np.clip(neg, 0.05, 0.75))
+            neu = float(np.clip(neu, 0.05, 0.75))
+            total = pos + neg + neu
+            pos, neg, neu = pos / total, neg / total, neu / total
+            
+            trending = float(np.clip(abs(ma5 - ma60) / ma60 * 5.0, 0.1, 0.95))
+            
+            keywords = ['均线']
+            if alignment == 'bullish':
+                keywords = ['多头排列', '趋势向上', '看多']
+            elif alignment == 'bearish':
+                keywords = ['空头排列', '趋势向下', '看空']
+            
+            return {
+                'reports_count': report_count,
+                'sentiment_distribution': {'positive': pos, 'negative': neg, 'neutral': neu},
+                'keywords': keywords,
+                'trending_score': trending,
+                'data_source': 'price_proxy'
+            }
+        except Exception as e:
+            logger.warning(f"分析师情绪代理获取失败 {stock_code}: {e}")
+            return {'reports_count': 0, 'sentiment_distribution': {'positive': 0.0, 'negative': 0.0, 'neutral': 0.0}, 'keywords': [], 'trending_score': 0.0, 'data_source': 'price_proxy'}
 
     async def _analyze_sentiment_trend(self, sentiment_data: Dict[str, Any],
                                      context: Dict[str, Any]) -> Dict[str, Any]:
-        """分析舆情趋势"""
-        # 模拟趋势分析
-        import random
-        
-        trend_analysis = {
-            'direction': random.choice(['improving', 'declining', 'stable']),
-            'momentum': random.uniform(-1.0, 1.0),  # -1到1，负数表示下降趋势
-            'volatility': random.uniform(0.1, 0.8),  # 舆情波动性
-            'peak_activity': datetime.now() - timedelta(minutes=random.randint(5, 60)),
-            'trend_strength': random.uniform(0.0, 1.0)
-        }
-        
-        return trend_analysis
+        """分析舆情趋势 (基于MACD柱状图变化方向)"""
+        try:
+            stock_code = sentiment_data.get('stock_code', context.get('stock_code', ''))
+            if not stock_code:
+                logger.warning("舆情趋势分析: 未提供股票代码")
+                return {'direction': 'stable', 'momentum': 0.0, 'volatility': 0.2, 'peak_activity': datetime.now(), 'trend_strength': 0.0}
+            
+            provider = self._get_data_provider()
+            df = provider.get_real_kdata(stock_code, freq='D', count=60)
+            
+            if df.empty or len(df) < 26:
+                logger.warning(f"舆情趋势分析: {stock_code} 无法获取足够K线数据")
+                return {'direction': 'stable', 'momentum': 0.0, 'volatility': 0.2, 'peak_activity': datetime.now(), 'trend_strength': 0.0}
+            
+            close = df['close'].values.astype(np.float64)
+            
+            macd_line, signal, histogram = self._compute_macd(close)
+            
+            recent_hist = histogram[-min(10, len(histogram)):]
+            if len(recent_hist) >= 2:
+                x = np.arange(len(recent_hist), dtype=np.float64)
+                slope = float(np.polyfit(x, recent_hist, 1)[0])
+            else:
+                slope = 0.0
+            
+            if slope > 0.001:
+                direction = 'improving'
+                momentum = float(np.clip(slope * 500.0, 0.1, 1.0))
+            elif slope < -0.001:
+                direction = 'declining'
+                momentum = float(np.clip(slope * 500.0, -1.0, -0.1))
+            else:
+                direction = 'stable'
+                momentum = 0.0
+            
+            returns = np.diff(close[-20:]) / close[-21:-1]
+            hist_volatility = float(np.std(returns) * 100)
+            volatility = float(np.clip(hist_volatility / 5.0, 0.05, 0.8))
+            
+            trend_strength = float(np.clip(abs(momentum), 0.0, 1.0))
+            
+            return {
+                'direction': direction,
+                'momentum': momentum,
+                'volatility': volatility,
+                'peak_activity': datetime.now(),
+                'trend_strength': trend_strength
+            }
+        except Exception as e:
+            logger.warning(f"舆情趋势分析失败: {e}")
+            return {'direction': 'stable', 'momentum': 0.0, 'volatility': 0.2, 'peak_activity': datetime.now(), 'trend_strength': 0.0}
 
     def _calculate_sentiment_score(self, sentiment_data: Dict[str, Any],
                                  trend_analysis: Dict[str, Any]) -> float:
@@ -355,22 +657,20 @@ class SentimentAnalysisAgent(BaseService):
             return 0.5
         
         # 简化的数据一致性计算
-        scores = []
-        for source_data in raw_data.values():
-            if 'sentiment_distribution' in source_data:
-                dist = source_data['sentiment_distribution']
-                score = dist['positive'] - dist['negative']
-                scores.append(score)
+        scores = [
+            source_data['sentiment_distribution']['positive'] - source_data['sentiment_distribution']['negative']
+            for source_data in raw_data.values()
+            if 'sentiment_distribution' in source_data
+        ]
         
         if len(scores) < 2:
             return 0.5
         
         # 计算得分方差（方差越小，一致性越高）
-        import statistics
         try:
-            variance = statistics.variance(scores)
+            variance = float(np.var(scores, ddof=1)) if len(scores) >= 2 else 0.0
             consistency = max(0.0, 1.0 - variance)
-        except:
+        except Exception:
             consistency = 0.5
         
         return consistency
@@ -439,15 +739,22 @@ class SentimentAnalysisAgent(BaseService):
         """监控舆情趋势（后台任务）"""
         while self._is_running:
             try:
-                # 模拟舆情趋势监控
-                await asyncio.sleep(300)  # 5分钟检查一次
+                await asyncio.sleep(300)
                 
-                # 这里可以实现实时舆情趋势监控
-                # 例如：检测异常舆情波动、热点事件等
+                provider = self._get_data_provider()
+                if provider is not None:
+                    try:
+                        test_df = provider.get_real_kdata('000001', freq='D', count=1)
+                        if test_df.empty:
+                            logger.warning("舆情趋势监控: 数据提供器返回空数据，可能存在连接问题")
+                        else:
+                            logger.debug("舆情趋势监控: 数据提供器连接正常")
+                    except Exception as probe_error:
+                        logger.warning(f"舆情趋势监控: 数据提供器探测失败: {probe_error}")
                 
             except Exception as e:
                 logger.error(f"舆情趋势监控异常: {e}")
-                await asyncio.sleep(60)  # 异常时等待1分钟再继续
+                await asyncio.sleep(60)
 
     def _update_metrics(self, response_time: float, success: bool):
         """更新性能指标"""

@@ -191,8 +191,8 @@ class ConnectionPool:
                     'response_time': response_time,
                     'success': True
                 }
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"通达信连接测试失败: {e}")
 
         return {
             'server': server,
@@ -771,7 +771,7 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
                 if self.api_client:
                     try:
                         self.api_client.disconnect()
-                    except:
+                    except Exception:
                         pass  # 忽略断开连接时的错误
                     self.api_client = None
                 return True
@@ -787,7 +787,7 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
                     return False
                 # 简单的连接测试
                 return self._test_connection()
-        except:
+        except Exception:
             return False
 
     def get_connection_info(self):
@@ -815,18 +815,17 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
             if stock_df is None or stock_df.empty:
                 return []
 
-            # 转换为标准格式
-            asset_list = []
-            for _, row in stock_df.iterrows():
-                asset_info = {
-                    "symbol": row.get('code', ''),
-                    "name": row.get('name', ''),
-                    "market": row.get('market', ''),
-                    "asset_type": asset_type.value,
-                    "currency": "CNY",
-                    "exchange": row.get('market', '')
-                }
-                asset_list.append(asset_info)
+            for col in ('code', 'name', 'market'):
+                if col not in stock_df.columns:
+                    stock_df[col] = ''
+
+            stock_df['asset_type'] = asset_type.value
+            stock_df['currency'] = 'CNY'
+            stock_df['exchange'] = stock_df['market']
+
+            asset_list = stock_df[['code', 'name', 'market', 'asset_type', 'currency', 'exchange']].rename(
+                columns={'code': 'symbol'}
+            ).to_dict('records')
 
             return asset_list
         except Exception as e:
@@ -1043,7 +1042,7 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
                 if self.api_client:
                     try:
                         self.api_client.disconnect()
-                    except:
+                    except Exception:
                         pass
                     self.api_client = None
 
@@ -1315,7 +1314,7 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
             if self.api_client:
                 try:
                     self.api_client.disconnect()
-                except:
+                except Exception:
                     pass
                 self.api_client = None
             return False
@@ -1369,7 +1368,7 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
                 else:
                     try:
                         self.api_client.disconnect()
-                    except:
+                    except Exception:
                         pass
             return False
 
@@ -1417,7 +1416,7 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
                             logger.debug(f"连接质量验证失败: {host}:{port}")
                             try:
                                 self.api_client.disconnect()
-                            except:
+                            except Exception:
                                 pass
 
                 except Exception as e:

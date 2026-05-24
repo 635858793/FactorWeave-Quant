@@ -11,6 +11,7 @@ import asyncio
 import traceback
 import sys
 import os
+import re
 from datetime import datetime
 import pandas as pd
 
@@ -19,7 +20,7 @@ from PyQt5.QtWidgets import (
     QSplitter, QStatusBar, QMenuBar, QMessageBox, QDockWidget, QLabel, QPushButton, QFrame,
     QApplication, QSizePolicy
 )
-from PyQt5.QtCore import QThread, Qt, pyqtSignal, QEvent
+from PyQt5.QtCore import QThread, QTimer, Qt, pyqtSignal, QEvent
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import pyqtSlot
 
@@ -60,6 +61,10 @@ from gui.widgets.modern_performance_widget import ModernUnifiedPerformanceWidget
 
 from core.performance import measure_performance
 from gui.menu_bar import MainMenuBar
+from core.coordinators.panel_coordinator import PanelCoordinator
+from core.coordinators.event_coordinator import EventCoordinator
+from core.coordinators.dialog_coordinator import DialogCoordinator
+from core.coordinators.theme_coordinator import ThemeCoordinator
 
 
 
@@ -106,9 +111,22 @@ class MainWindowCoordinator(BaseCoordinator):
         self._message_timer.setSingleShot(True)
         self._message_timer.timeout.connect(self._process_message_queue)
 
-        # UI面板
+        # 面板协调器（负责所有UI面板管理）
+        self._panel_coordinator: Optional[PanelCoordinator] = None
+        
+        # 事件协调器（负责所有事件订阅和处理）
+        self._event_coordinator: Optional[EventCoordinator] = None
+        
+        # 对话框协调器（负责所有对话框管理）
+        self._dialog_coordinator: Optional[DialogCoordinator] = None
+        
+        # 主题协调器（负责主题管理和样式应用）
+        self._theme_coordinator: Optional[ThemeCoordinator] = None
+        
+        # UI面板（向后兼容，实际由PanelCoordinator管理）
         self._panels: Dict[str, Any] = {}
         self._optimization_dashboard = None
+        self._toolbar = None
 
         # 窗口状态
         self._window_state = {
@@ -118,12 +136,11 @@ class MainWindowCoordinator(BaseCoordinator):
             'is_maximized': False
         }
 
-        # 布局配置
+        # 布局配置（向后兼容，实际由PanelCoordinator管理）
         self._layout_config = {
             'left_panel_width': 300,
             'right_panel_width': 350,
             'bottom_panel_height': 200,
-            # 'panel_padding': 5
         }
 
         # 中央数据状态（支持多资产类型）
@@ -192,23 +209,57 @@ class MainWindowCoordinator(BaseCoordinator):
             window_time = time.time() - window_start
             logger.info(f"窗口设置耗时: {window_time:.3f}秒")
 
-            # 创建UI面板
+            # 初始化面板协调器并创建UI面板
             panels_start = time.time()
-            self._create_panels()
+            self._panel_coordinator = PanelCoordinator(
+                main_window_coordinator=self,
+                service_container=self.service_container,
+                event_bus=self.event_bus
+            )
+            self._panel_coordinator.initialize_panels()
+            # 向后兼容：同步面板引用
+            self._panels = self._panel_coordinator.get_all_panels()
+            self._layout_config = self._panel_coordinator.get_layout_config()
             panels_time = time.time() - panels_start
             logger.info(f"面板创建耗时: {panels_time:.3f}秒")
+
+            # 初始化事件协调器并订阅所有事件
+            events_coord_start = time.time()
+            self._event_coordinator = EventCoordinator(
+                main_window_coordinator=self,
+                service_container=self.service_container,
+                event_bus=self.event_bus
+            )
+            self._event_coordinator.subscribe_all_events()
+            events_coord_time = time.time() - events_coord_start
+            logger.info(f"事件协调器初始化耗时: {events_coord_time:.3f}秒")
+
+            # 初始化对话框协调器
+            dialog_coord_start = time.time()
+            self._dialog_coordinator = DialogCoordinator(
+                main_window_coordinator=self,
+                main_window=self._main_window
+            )
+            dialog_coord_time = time.time() - dialog_coord_start
+            logger.info(f"对话框协调器初始化耗时: {dialog_coord_time:.3f}秒")
+
+            # 初始化主题协调器
+            theme_coord_start = time.time()
+            self._theme_coordinator = ThemeCoordinator(
+                main_window_coordinator=self,
+                main_window=self._main_window,
+                service_container=self.service_container,
+                event_bus=self.event_bus,
+                theme_manager=self._theme_manager if hasattr(self, '_theme_manager') else None
+            )
+            theme_coord_time = time.time() - theme_coord_start
+            logger.info(f"主题协调器初始化耗时: {theme_coord_time:.3f}秒")
 
             # 设置布局
             layout_start = time.time()
             self._setup_layout()
             layout_time = time.time() - layout_start
             logger.info(f"布局设置耗时: {layout_time:.3f}秒")
-
-            # 注册事件处理器
-            events_start = time.time()
-            self._register_event_handlers()
-            events_time = time.time() - events_start
-            logger.info(f"事件注册耗时: {events_time:.3f}秒")
 
             # 应用主题
             theme_start = time.time()
@@ -236,6 +287,12 @@ class MainWindowCoordinator(BaseCoordinator):
             from PyQt5.QtCore import QTimer
             QTimer.singleShot(0, self._initialize_enhanced_ui_components_async)
 
+            # 连接全局字体大小变更信号
+            from gui.utils.global_font_manager import get_global_font_manager
+            font_mgr = get_global_font_manager()
+            font_mgr.font_size_changed.connect(self._on_font_size_changed)
+            logger.info("全局字体大小变更信号已连接")
+
             total_time = time.time() - start_time
             logger.info(f"Main window coordinator initialized successfully, 总耗时: {total_time:.3f}秒")
 
@@ -250,8 +307,8 @@ class MainWindowCoordinator(BaseCoordinator):
             try:
                 icon_path = "icons/logo.png"
                 self._main_window.setWindowIcon(QIcon(icon_path))
-            except:
-                pass
+            except Exception as e:
+                logger.debug(f"设置窗口图标失败: {e}")
 
             # 设置状态栏
             self._status_bar = QStatusBar()
@@ -295,6 +352,9 @@ class MainWindowCoordinator(BaseCoordinator):
             # 设置菜单栏 - 使用MainMenuBar
             self._setup_menu_bar()
 
+            # 设置工具栏
+            self._setup_toolbar()
+
             logger.info("Main window setup completed")
 
         except Exception as e:
@@ -315,266 +375,28 @@ class MainWindowCoordinator(BaseCoordinator):
             logger.error(f"Failed to setup menu bar: {e}")
             raise
 
-    def _create_panels(self) -> None:
-        """创建所有UI面板"""
+    def _setup_toolbar(self) -> None:
+        """设置工具栏"""
         try:
-            # 创建中央窗口部件
-            central_widget = QWidget()
-            self._main_window.setCentralWidget(central_widget)
+            from gui.tool_bar import MainToolBar
 
-            # 创建主布局
-            main_layout = QVBoxLayout(central_widget)
-            main_layout.setContentsMargins(5, 5, 5, 5)
-            main_layout.setSpacing(5)
+            main_window = self._main_window
+            main_window.analyze_current_stock = self.analyze_current_stock
+            main_window.show_analysis = self.show_analysis
+            main_window.run_backtest = self.run_backtest
+            main_window.show_backtest = self.show_backtest
+            main_window.optimize_strategy = self.optimize_strategy
+            main_window.show_optimization = self.show_optimization
+            main_window.search_stock = self.search_stock
+            main_window.on_search = self.on_search
 
-            # 创建垂直分割器（主面板区域 + 底部面板）
-            vertical_splitter = QSplitter(Qt.Vertical)
-            main_layout.addWidget(vertical_splitter)
+            toolbar = MainToolBar(main_window)
+            main_window.addToolBar(toolbar)
+            self._toolbar = toolbar
 
-            # 创建水平分割器（左中右布局）
-            horizontal_splitter = QSplitter(Qt.Horizontal)
-            vertical_splitter.addWidget(horizontal_splitter)
-
-            # 导入真实的面板类
-            from core.ui.panels.left_panel import LeftPanel
-            from core.ui.panels.middle_panel import MiddlePanel
-            from core.ui.panels.right_panel import RightPanel
-
-            # 创建左侧面板（股票列表面板）
-            left_panel = LeftPanel(
-                stock_service=self._stock_service,
-                data_manager=self._data_manager,
-                parent=self._main_window,
-                coordinator=self
-            )
-            left_panel._root_frame.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
-            horizontal_splitter.addWidget(left_panel._root_frame)
-            self._panels['left'] = left_panel
-
-            # 创建中间面板（图表显示面板）
-            middle_panel = MiddlePanel(
-                parent=self._main_window,
-                coordinator=self
-            )
-            # 优化：设置中间面板的合理尺寸限制，确保K线图有足够的显示空间
-            # 设置最小宽度为800像素，确保K线图能够清晰显示
-            middle_panel._root_frame.setMinimumWidth(800)
-            # 设置尺寸策略为扩展，让中间面板能够充分利用可用空间
-            middle_panel._root_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-            horizontal_splitter.addWidget(middle_panel._root_frame)
-            self._panels['middle'] = middle_panel
-
-            # 修复：将右侧面板改为 QDockWidget，提供灵活的布局调整能力
-            # 创建右侧面板（技术分析面板）
-            right_panel = RightPanel(
-                parent=self._main_window,
-                coordinator=self,
-                width=self._layout_config['right_panel_width']
-            )
-
-            # 创建 QDockWidget 包装右侧面板
-            right_dock = QDockWidget("技术分析", self._main_window)
-            right_dock.setWidget(right_panel._root_frame)
-            right_dock.setAllowedAreas(Qt.RightDockWidgetArea | Qt.LeftDockWidgetArea)
-
-            # 设置尺寸限制
-            right_dock.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
-
-            # 添加到主窗口右侧停靠区域
-            self._main_window.addDockWidget(Qt.RightDockWidgetArea, right_dock)
-
-            # 保存引用
-            self._panels['right'] = right_panel
-            self._panels['right_dock'] = right_dock
-
-            logger.info("右侧技术分析面板已创建为 QDockWidget")
-
-            # 优化：设置分割器比例，增加中间面板的宽度比例
-            # 使用更大的中间面板宽度，确保K线图有足够的显示空间
-            # 左侧面板250像素，中间面板根据窗口大小自适应（建议至少1200像素）
-            horizontal_splitter.setSizes([250, 1200])
-
-            # 创建底部面板（日志面板）
-            from core.ui.panels.bottom_panel import BottomPanel
-            bottom_panel = BottomPanel(
-                parent=self._main_window,
-                coordinator=self
-            )
-            vertical_splitter.addWidget(bottom_panel._root_frame)
-            self._panels['bottom'] = bottom_panel
-
-            # 设置分割器的初始大小
-            vertical_splitter.setSizes([700, 200])  # 主区域和底部面板的比例
-
-            # 创建专业回测组件（作为停靠窗口）
-            self._create_professional_backtest_widget()
-
-            logger.info("All UI panels and components created successfully")
-
-            # 连接面板之间的信号
-            self._connect_panel_signals()
-
-            logger.info("UI panels created successfully")
-
+            logger.info("ToolBar setup completed")
         except Exception as e:
-            logger.error(f"Failed to create UI panels: {e}")
-            raise
-
-    def _connect_panel_signals(self) -> None:
-        """连接面板间的信号"""
-        try:
-            # 左侧面板选择股票 -> 中间面板更新图表
-            # 注意：现在通过事件总线通信，不需要直接信号连接
-            # 事件订阅已在_register_event_handlers中完成，这里不需要重复订阅
-
-            # 连接底部面板的隐藏信号
-            bottom_panel = self._panels.get('bottom')
-            if bottom_panel and hasattr(bottom_panel, 'panel_hidden'):
-                bottom_panel.panel_hidden.connect(self._on_bottom_panel_hidden)
-
-            logger.debug("Panel signals connected successfully")
-
-        except Exception as e:
-            logger.error(f"Failed to connect panel signals: {e}")
-            raise
-
-    def _create_professional_backtest_widget(self) -> None:
-        """创建专业回测组件作为停靠窗口"""
-        try:
-            from gui.widgets.backtest_widget import ProfessionalBacktestWidget
-
-            # 创建专业回测组件
-            self._backtest_widget = ProfessionalBacktestWidget(parent=self._main_window)
-
-            # 创建停靠窗口
-            backtest_dock = QDockWidget("专业回测系统", self._main_window)
-            backtest_dock.setWidget(self._backtest_widget)
-            backtest_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea | Qt.BottomDockWidgetArea)
-
-            # 添加到主窗口（默认停靠在右侧）
-            self._main_window.addDockWidget(Qt.RightDockWidgetArea, backtest_dock)
-
-            # 默认隐藏，用户可以通过菜单显示
-            backtest_dock.hide()
-
-            # 保存引用
-            self._panels['backtest_dock'] = backtest_dock
-            self._panels['backtest'] = self._backtest_widget
-
-            logger.info("专业回测组件创建成功")
-
-        except Exception as e:
-            logger.error(f"创建专业回测组件失败: {e}")
-            # 创建一个占位符，避免后续引用错误
-            self._backtest_widget = None
-
-    def _on_bottom_panel_hidden(self) -> None:
-        """处理底部面板隐藏事件"""
-        try:
-            # 获取垂直分割器
-            central_widget = self._main_window.centralWidget()
-            if not central_widget:
-                return
-
-            # 查找垂直分割器
-            vertical_splitter = None
-            for child in central_widget.children():
-                if isinstance(child, QSplitter) and child.orientation() == Qt.Vertical:
-                    vertical_splitter = child
-                    break
-
-            if vertical_splitter:
-                # 调整分割器大小，使主面板区域扩展
-                sizes = vertical_splitter.sizes()
-                if len(sizes) >= 2:
-                    # 保留底部面板的最小高度（用于显示切换按钮）
-                    bottom_panel = self._panels.get('bottom')
-                    bottom_height = 30 if bottom_panel else 0
-
-                    # 将底部面板的大部分大小添加到主面板区域，但保留切换按钮的空间
-                    new_sizes = [sizes[0] + sizes[1] -
-                                 bottom_height, bottom_height]
-                    vertical_splitter.setSizes(new_sizes)
-                    logger.debug(f"调整垂直分割器大小: {sizes} -> {new_sizes}")
-
-            # 更新菜单项
-            self._update_bottom_panel_menu_item(False)
-
-        except Exception as e:
-            logger.error(f"处理底部面板隐藏事件失败: {e}")
-
-    def _update_bottom_panel_menu_item(self, is_visible: bool) -> None:
-        """更新底部面板菜单项"""
-        try:
-            # 查找视图菜单
-            menu_bar = self._main_window.menuBar()
-            view_menu = None
-            for action in menu_bar.actions():
-                if action.text() == '视图(&V)':
-                    view_menu = action.menu()
-                    break
-
-            if view_menu:
-                # 查找或创建底部面板菜单项
-                bottom_panel_action = None
-                for action in view_menu.actions():
-                    if action.text() == '显示日志面板':
-                        bottom_panel_action = action
-                        break
-
-                if not bottom_panel_action and not is_visible:
-                    # 如果面板隐藏且菜单项不存在，创建菜单项
-                    bottom_panel_action = view_menu.addAction('显示日志面板')
-                    bottom_panel_action.triggered.connect(
-                        self._show_bottom_panel)
-                elif bottom_panel_action and is_visible:
-                    # 如果面板可见且菜单项存在，移除菜单项
-                    view_menu.removeAction(bottom_panel_action)
-
-        except Exception as e:
-            logger.error(f"更新底部面板菜单项失败: {e}")
-
-    def _show_bottom_panel(self) -> None:
-        """显示底部面板"""
-        try:
-            # 获取底部面板
-            bottom_panel = self._panels.get('bottom')
-            if bottom_panel:
-                # 如果面板有_show_panel方法，调用它
-                if hasattr(bottom_panel, '_show_panel'):
-                    bottom_panel._show_panel()
-                # 否则使用旧方法
-                elif hasattr(bottom_panel, '_root_frame'):
-                    bottom_panel._root_frame.setVisible(True)
-
-            # 获取垂直分割器
-            central_widget = self._main_window.centralWidget()
-            if not central_widget:
-                return
-
-            # 查找垂直分割器
-            vertical_splitter = None
-            for child in central_widget.children():
-                if isinstance(child, QSplitter) and child.orientation() == Qt.Vertical:
-                    vertical_splitter = child
-                    break
-
-            if vertical_splitter:
-                # 调整分割器大小，恢复底部面板
-                sizes = vertical_splitter.sizes()
-                if len(sizes) >= 2:
-                    # 分配一部分空间给底部面板
-                    total_height = sum(sizes)
-                    new_sizes = [int(total_height * 0.8),
-                                 int(total_height * 0.2)]
-                    vertical_splitter.setSizes(new_sizes)
-                    logger.debug(f"调整垂直分割器大小: {sizes} -> {new_sizes}")
-
-            # 更新菜单项
-            self._update_bottom_panel_menu_item(True)
-
-        except Exception as e:
-            logger.error(f"显示底部面板失败: {e}")
+            logger.error(f"Failed to setup toolbar: {e}")
 
     def _register_event_handlers(self) -> None:
         """注册事件处理器 - 在_setup_layout中实现"""
@@ -583,42 +405,7 @@ class MainWindowCoordinator(BaseCoordinator):
     def _setup_layout(self) -> None:
         """设置布局"""
         # 布局已在_create_panels中设置
-        try:
-            # 修复：注册股票选择事件处理器
-            # 注意：_on_stock_selected是异步方法，需要用QTimer或其他机制调度
-            self.event_bus.subscribe(StockSelectedEvent, self._handle_stock_selected_sync)
-
-            # 注册通用资产选择事件处理器
-            self.event_bus.subscribe(
-                AssetSelectedEvent, self._on_asset_selected)
-
-            # 注册图表更新事件处理器
-            self.event_bus.subscribe(ChartUpdateEvent, self._on_chart_updated)
-
-            # 注册分析完成事件处理器
-            self.event_bus.subscribe(
-                AnalysisCompleteEvent, self._on_analysis_completed)
-
-            # 注册数据更新事件处理器
-            self.event_bus.subscribe(DataUpdateEvent, self._on_data_update)
-
-            # 注册错误事件处理器
-            self.event_bus.subscribe(ErrorEvent, self._on_error)
-
-            # 注册UI数据就绪事件处理器（向后兼容）
-            self.event_bus.subscribe(UIDataReadyEvent, self._on_ui_data_ready)
-
-            # 注册通用资产数据就绪事件处理器
-            self.event_bus.subscribe(AssetDataReadyEvent, self._on_asset_data_ready)
-
-            # 注册主题变化事件处理器
-            self.event_bus.subscribe(ThemeChangedEvent, self._on_theme_changed)
-
-            logger.info("Event handlers registered successfully")
-
-        except Exception as e:
-            logger.error(f"Failed to register event handlers: {e}")
-            raise
+        logger.info("布局设置完成（事件订阅已迁移到EventCoordinator）")
 
     def _apply_theme(self) -> None:
         """应用主题"""
@@ -640,30 +427,9 @@ class MainWindowCoordinator(BaseCoordinator):
             logger.error(f"Failed to apply theme: {e}")
 
     def _notify_panels_theme_change(self) -> None:
-        """通知所有面板主题变化（用于JSON主题）"""
-        try:
-            # 遍历所有面板，调用它们的主题更新方法
-            for panel_name, panel in self._panels.items():
-                try:
-                    # 如果面板有_on_theme_changed方法，调用它
-                    if hasattr(panel, '_on_theme_changed'):
-                        panel._on_theme_changed(self._theme_manager.current_theme)
-
-                    # 如果面板有update_theme方法，调用它
-                    elif hasattr(panel, 'update_theme'):
-                        panel.update_theme()
-
-                    # 强制重绘
-                    if hasattr(panel, 'update'):
-                        panel.update()
-
-                except Exception as e:
-                    logger.warning(f"Panel {panel_name} theme update failed: {e}")
-
-            logger.info("Notified all panels of theme change")
-
-        except Exception as e:
-            logger.error(f"Failed to notify panels: {e}")
+        """面板主题通知已迁移到 PanelCoordinator"""
+        if self._panel_coordinator:
+            self._panel_coordinator._notify_panels_theme_change()
 
     def _load_window_config(self) -> None:
         """加载窗口配置"""
@@ -702,554 +468,24 @@ class MainWindowCoordinator(BaseCoordinator):
         except Exception as e:
             logger.error(f"Failed to save window configuration: {e}")
 
-    def _handle_stock_selected_sync(self, event: StockSelectedEvent) -> None:
-        """同步包装器：处理股票选择事件"""
-        try:
-            from PyQt5.QtCore import QTimer
-            
-            def schedule_handler():
-                coro = self._on_stock_selected(event)
-                self._run_async_handler(coro)
-            
-            # 使用QTimer.singleShot在主线程中异步执行
-            QTimer.singleShot(0, schedule_handler)
-        except Exception as e:
-            logger.error(f"调度股票选择事件处理失败: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-
-    def _run_async_handler(self, coro):
-        """运行异步处理器"""
-        import asyncio
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                asyncio.ensure_future(coro)
-            else:
-                loop.run_until_complete(coro)
-        except Exception as e:
-            logger.error(f"运行异步处理器失败: {e}")
-
-    @measure_performance("MainWindowCoordinator._on_stock_selected")
-    async def _on_stock_selected(self, event: StockSelectedEvent) -> None:
-        """处理股票选择事件 - 新的统一数据加载流程"""
-        if not event or not event.stock_code or self._is_loading:
-            return
-
-        # 在开始新任务前，取消之前所有相关的请求
-        previous_stock_code = getattr(self, '_current_stock_code', '未知')
-        try:
-            await self._chart_service.cancel_previous_requests()
-            await self._analysis_service.cancel_previous_requests()
-            logger.info(f"已取消先前为 {previous_stock_code} 发出的请求。")
-        except Exception as e:
-            logger.error(f"取消先前请求时出错: {e}", exc_info=True)
-
-        self._is_loading = True
-        self._current_stock_code = event.stock_code
-        self.show_message(
-            f"正在加载 {event.stock_name} ({event.stock_code}) 的数据...", level='info')
-
-        try:
-            # 从事件中提取参数
-            period = event.period if event.period else 'D'  # 默认日线
-            time_range = event.time_range if event.time_range else "最近1年"  # 默认最近1年
-            chart_type = event.chart_type if event.chart_type else "K线图"  # 默认K线图
-
-            logger.info(f"加载数据，股票：{event.stock_code}，周期：{period}，时间范围：{time_range}，图表类型：{chart_type}")
-
-            # 1. 优化：优先使用事件中的K线数据，避免重复查询
-            kline_data = None
-            if hasattr(event, 'kline_data') and event.kline_data is not None:
-                logger.info(f"使用LeftPanel预加载的K线数据: {event.stock_code}")
-                kline_data = event.kline_data
-                logger.debug(f"预加载数据行数: {len(kline_data) if hasattr(kline_data, '__len__') else 'N/A'}")
-            else:
-                # 降级：重新查询K线数据
-                # 从事件中获取资产类型（默认为股票）
-                asset_type = getattr(event, 'asset_type', AssetType.STOCK_A)
-                logger.info(f"事件中无K线数据，开始请求K线数据: {event.stock_code} ({asset_type.value})")
-                kline_data_response = await self._data_manager.request_data(
-                    stock_code=event.stock_code,
-                    data_type='kdata',
-                    period=period,          # 传递周期
-                    time_range=time_range,  # 传递时间范围
-                    asset_type=asset_type   # 传递资产类型
-                )
-
-                if isinstance(kline_data_response, dict):
-                    kline_data = kline_data_response.get('kline_data')
-                else:
-                    kline_data = kline_data_response
-
-            # 关键检查点：确认核心数据是否存在
-            if kline_data is None or kline_data.empty:
-                logger.warning(f"无法获取 {event.stock_name} 的K线数据。")
-                self.show_message(
-                    f"无法获取 {event.stock_name} ({event.stock_code}) 的K线数据，请尝试其他股票。", level='warning')
-                return
-
-            logger.info(f"K线数据加载完成: {event.stock_code}, 开始请求分析数据...")
-
-            # 2. 再获取分析数据，传入已获取的K线数据（可选，失败不影响K线显示）
-            analysis_data = None
-            try:
-                analysis_data = await self._analysis_service.analyze_stock(
-                    stock_code=event.stock_code,
-                    analysis_type='comprehensive',
-                    kline_data=kline_data
-                )
-                logger.info(f"分析数据加载完成: {event.stock_code}")
-            except Exception as analysis_error:
-                logger.warning(f"分析数据加载失败（继续显示K线）: {analysis_error}")
-                analysis_data = {'data_available': False, 'error': str(analysis_error)}
-
-            # 3. 存储到中央数据状态 - 增强数据验证和日志
-            logger.info(f"=== 准备中央数据状态 ===")
-            logger.info(f"K线数据类型: {type(kline_data).__name__}")
-            if hasattr(kline_data, 'shape'):
-                logger.info(f"K线数据形状: {kline_data.shape}")
-            elif hasattr(kline_data, '__len__'):
-                logger.info(f"K线数据长度: {len(kline_data)}")
-
-            self._current_stock_data = {
-                'stock_code': event.stock_code,
-                'stock_name': event.stock_name,
-                'market': event.market,
-                'kline_data': kline_data,  # 确保使用正确的键名
-                'kdata': kline_data,       # 向后兼容
-                'analysis': analysis_data,
-                'period': period,
-                'time_range': time_range,
-                'chart_type': chart_type
-            }
-
-            # 验证数据完整性
-            if analysis_data:
-                logger.info(f"分析数据包含键: {list(analysis_data.keys()) if isinstance(analysis_data, dict) else 'Not a dict'}")
-                # 如果分析数据中包含指标数据，添加到主数据中
-                if isinstance(analysis_data, dict):
-                    if 'indicators' in analysis_data:
-                        self._current_stock_data['indicators'] = analysis_data['indicators']
-                        self._current_stock_data['indicators_data'] = analysis_data['indicators']
-                    if 'technical_analysis' in analysis_data:
-                        self._current_stock_data['technical_analysis'] = analysis_data['technical_analysis']
-
-            logger.info(f"中央数据状态键: {list(self._current_stock_data.keys())}")
-            logger.info(f"数据已存储到中央状态，准备发布UIDataReadyEvent事件: {event.stock_code}")
-
-            # 4. 发布数据准备就绪事件 - 增强事件数据
-            logger.info(f"=== 创建UIDataReadyEvent ===")
-            data_ready_event = UIDataReadyEvent(
-                source="MainWindowCoordinator",
-                stock_code=event.stock_code,
-                stock_name=event.stock_name,
-                ui_data=self._current_stock_data
-            )
-
-            self.event_bus.publish(data_ready_event)
-            logger.info(f"已发布UIDataReadyEvent事件: {event.stock_code}")
-
-            self.show_message(f"{event.stock_name} 数据加载完成", level='success')
-
-            # 5. 相关股票预加载功能已移除，不再需要
-
-        except Exception as e:
-            logger.error(f"加载股票 {event.stock_code} 数据时出错: {e}", exc_info=True)
-            self.show_message(
-                f"加载 {event.stock_name} 数据失败", level='error')
-
-            error_event = ErrorEvent(
-                source='MainWindowCoordinator',
-                error_type=type(e).__name__,
-                error_message=str(e),
-                error_traceback=traceback.format_exc(),
-                severity='high'
-            )
-            self.event_bus.publish(error_event)
-
-        finally:
-            self._is_loading = False
-
-    @measure_performance("MainWindowCoordinator._on_asset_selected")
-    async def _on_asset_selected(self, event: AssetSelectedEvent) -> None:
-        """处理通用资产选择事件（支持多资产类型）"""
-        if not event or not event.symbol or self._is_loading:
-            return
-
-        # 在开始新任务前，取消之前所有相关的请求
-        try:
-            await self._chart_service.cancel_previous_requests()
-            await self._analysis_service.cancel_previous_requests()
-            logger.info(f"已取消先前为 {self._current_symbol} 发出的请求。")
-        except Exception as e:
-            logger.error(f"取消先前请求时出错: {e}", exc_info=True)
-
-        self._is_loading = True
-
-        # 更新当前资产状态
-        self._current_symbol = event.symbol
-        self._current_asset_name = event.name
-        self._current_asset_type = event.asset_type
-        self._current_market = event.market
-
-        # 更新窗口标题
-        asset_type_name = self._get_asset_type_display_name(event.asset_type)
-        self._main_window.setWindowTitle(f"FactorWeave-Quant  2.0 - {event.name} ({event.symbol}) - {asset_type_name}")
-
-        self.show_message(
-            f"正在加载 {event.name} ({event.symbol}) 的{asset_type_name}数据...", level='info')
-
-        try:
-            # 从事件中提取参数
-            period = event.period if event.period else 'D'  # 默认日线
-            time_range = event.time_range if event.time_range else "最近1年"  # 默认最近1年
-            chart_type = event.chart_type if event.chart_type else "K线图"  # 默认K线图
-
-            logger.info(f"加载数据，资产：{event.symbol}，类型：{event.asset_type.value}，周期：{period}，时间范围：{time_range}")
-
-            # 尝试使用资产服务获取数据
-            asset_data = None
-            try:
-                if hasattr(self, '_asset_service') and self._asset_service:
-                    asset_data = self._asset_service.get_historical_data(
-                        symbol=event.symbol,
-                        asset_type=event.asset_type,
-                        period=period
-                    )
-                else:
-                    # 降级到统一数据管理器
-                    asset_data = self._data_manager.get_asset_data(
-                        symbol=event.symbol,
-                        asset_type=event.asset_type,
-                        period=period
-                    )
-            except Exception as e:
-                logger.warning(f"使用TET模式获取数据失败，尝试传统方式: {e}")
-
-                # 降级到传统request_data方式（支持所有资产类型）
-                kline_data_response = await self._data_manager.request_data(
-                    stock_code=event.symbol,
-                    data_type='kdata',
-                    period=period,
-                    time_range=time_range,
-                    asset_type=event.asset_type  # 传递资产类型
-                )
-
-                if isinstance(kline_data_response, dict):
-                    asset_data = kline_data_response.get('kline_data')
-                else:
-                    asset_data = kline_data_response
-
-            # 关键检查点：确认核心数据是否存在
-            if asset_data is None or asset_data.empty:
-                logger.warning(f"无法获取 {event.name} 的数据。")
-                self.show_message(
-                    f"无法获取 {event.name} ({event.symbol}) 的数据，请尝试其他{asset_type_name}。", level='warning')
-                return
-
-            logger.info(f"资产数据加载完成: {event.symbol}, 开始分析...")
-
-            # 如果是股票类型，进行传统分析
-            analysis_data = None
-            if event.asset_type == AssetType.STOCK_A:
-                try:
-                    analysis_data = await self._analysis_service.analyze_stock(
-                        stock_code=event.symbol,
-                        analysis_type='comprehensive',
-                        kline_data=asset_data
-                    )
-                    logger.info(f"股票分析数据加载完成: {event.symbol}")
-                except Exception as e:
-                    logger.warning(f"股票分析失败: {e}")
-
-            # 存储到中央数据状态
-            self._current_asset_data = {
-                'symbol': event.symbol,
-                'name': event.name,
-                'asset_type': event.asset_type.value,
-                'market': event.market,
-                'period': period,
-                'time_range': time_range,
-                'chart_type': chart_type,
-                'kline_data': asset_data,
-                'analysis_data': analysis_data or {}
-            }
-
-            # 发送资产数据就绪事件
-            asset_data_ready_event = AssetDataReadyEvent(
-                symbol=event.symbol,
-                name=event.name,
-                asset_type=event.asset_type,
-                market=event.market,
-                data_type="kline",
-                data=asset_data
-            )
-
-            # 同时发送向后兼容的UIDataReadyEvent（如果是股票）
-            if event.asset_type == AssetType.STOCK_A:
-                ui_data_ready_event = UIDataReadyEvent(
-                    stock_code=event.symbol,
-                    stock_name=event.name,
-                    kline_data=asset_data,
-                    market=event.market
-                )
-                self.event_bus.publish(ui_data_ready_event)
-
-            self.event_bus.publish(asset_data_ready_event)
-
-            # 更新状态栏
-            self.show_message(
-                f"{event.name} ({event.symbol}) 数据加载完成", level='success')
-
-            logger.info(f"资产数据流程完成: {event.symbol}")
-
-        except Exception as e:
-            logger.error(f"加载资产 {event.symbol} 数据时出错: {e}", exc_info=True)
-            self.show_message(
-                f"加载 {event.name} 数据失败", level='error')
-
-            error_event = ErrorEvent(
-                source='MainWindowCoordinator',
-                error_type=type(e).__name__,
-                error_message=str(e),
-                error_traceback=traceback.format_exc(),
-                severity='high'
-            )
-            self.event_bus.publish(error_event)
-
-        finally:
-            self._is_loading = False
-
-    def _get_asset_type_display_name(self, asset_type: AssetType) -> str:
-        """获取资产类型的显示名称"""
-        display_names = {
-            AssetType.STOCK_A: "股票",
-            AssetType.CRYPTO: "加密货币",
-            AssetType.FUTURES: "期货",
-            AssetType.FOREX: "外汇",
-            AssetType.INDEX: "指数",
-            AssetType.FUND: "基金",
-            AssetType.BOND: "债券",
-            AssetType.COMMODITY: "商品"
-        }
-        return display_names.get(asset_type, "未知资产")
-
-    def _on_asset_data_ready(self, event: AssetDataReadyEvent) -> None:
-        """处理通用资产数据就绪事件"""
-        try:
-            if not event or not event.symbol:
-                return
-
-            # 更新窗口标题
-            asset_type_name = self._get_asset_type_display_name(event.asset_type)
-            title = f"FactorWeave-Quant  2.0 - {event.name} ({event.symbol}) - {asset_type_name}"
-            if event.market:
-                title += f" [{event.market}]"
-
-            self._main_window.setWindowTitle(title)
-
-            # 更新状态栏
-            status_text = f"当前资产: {event.name} ({event.symbol}) | 类型: {asset_type_name}"
-            if event.market:
-                status_text += f" | 市场: {event.market}"
-
-            self.show_message(status_text, level='info')
-
-            logger.info(f"资产数据就绪事件处理完成: {event.symbol}")
-
-        except Exception as e:
-            logger.error(f"处理资产数据就绪事件失败: {e}")
-
-    def _on_ui_data_ready(self, event: UIDataReadyEvent) -> None:
-        """处理UI数据就绪事件，更新主窗口状态栏并重新渲染图表"""
-        try:
-            # 兼容两种事件格式：ui_data.kline_data 和 直接的 kline_data
-            kdata = None
-            ui_data = {}
-            
-            # 尝试从 event.ui_data 获取数据（新型事件格式）
-            if hasattr(event, 'ui_data') and event.ui_data:
-                kdata = event.ui_data.get('kline_data')
-                ui_data = event.ui_data
-                logger.debug(f"从event.ui_data获取K线数据: {type(kdata)}")
-            
-            # 如果没有从 ui_data 获取到，尝试从 event.kline_data 获取（传统事件格式）
-            if kdata is None and hasattr(event, 'kline_data') and event.kline_data is not None:
-                kdata = event.kline_data
-                ui_data = {'kline_data': kdata}
-                logger.debug(f"从event.kline_data获取K线数据: {type(kdata)}")
-            
-            if kdata is not None and not kdata.empty:
-                # 更新状态标签显示加载数量
-                self._status_label.setText(f"已加载 ({len(kdata)})")
-
-                # 更新数据时间标签
-                latest_date = kdata.index[-1]
-                if isinstance(latest_date, (datetime, pd.Timestamp)):
-                    time_str = latest_date.strftime('%Y-%m-%d')
-                else:
-                    time_str = str(latest_date)
-                self._data_time_label.setText(f"数据时间: {time_str}")
-                
-                # 🔧 修复技术指标刷新问题：触发图表更新以重新渲染指标
-                self._trigger_chart_update_with_indicators(ui_data, event.stock_code)
-            else:
-                self._status_label.setText("已加载 (0)")
-                self._data_time_label.setText("数据时间: -")
-                logger.warning("未获取到有效的K线数据，无法更新图表")
-        except Exception as e:
-            logger.error(f"更新主窗口状态栏失败: {e}", exc_info=True)
-            self._status_label.setText("状态更新失败")
-            self._data_time_label.setText("数据时间: -")
-            
-    def _trigger_chart_update_with_indicators(self, ui_data: dict, stock_code: str) -> None:
-        """触发图表更新并重新渲染指标"""
-        try:
-            # 获取中间面板的图表控件
-            middle_panel = self._panels.get('middle')
-            if not middle_panel or not hasattr(middle_panel, 'chart_widget'):
-                return
-                
-            chart_widget = middle_panel.chart_widget
-            if not chart_widget:
-                logger.warning("图表控件不存在，跳过指标刷新")
-                return
-            
-            # 🔧 确保在数据更新前保留当前指标状态
-            current_indicators = getattr(chart_widget, 'active_indicators', None)
-            if current_indicators:
-                logger.info(f"保留当前指标状态: {[ind.get('name', 'unknown') for ind in current_indicators]}")
-                
-            # 构建更新数据，确保包含指标数据
-            update_data = {
-                'kline_data': ui_data.get('kline_data'),
-                'stock_code': stock_code,
-                'title': getattr(chart_widget, 'current_stock', stock_code)
-            }
-            
-            # 如果有指标数据，也传递过去
-            indicators_data = ui_data.get('indicators_data', {})
-            if indicators_data:
-                update_data['indicators_data'] = indicators_data
-                logger.info(f"传递指标数据到图表: {list(indicators_data.keys())}")
-            
-            # 🔧 如果没有通过indicators_data传递指标，则通过active_indicators字段传递
-            if not indicators_data and current_indicators:
-                update_data['active_indicators'] = current_indicators
-                logger.info(f"通过active_indicators字段传递指标: {[ind.get('name', 'unknown') for ind in current_indicators]}")
-            
-            # 触发图表更新，这将重新渲染所有指标
-            logger.info(f"触发图表更新，股票代码: {stock_code}")
-            chart_widget.update_chart(update_data)
-            logger.info("图表更新完成，指标将重新渲染")
-            
-        except Exception as e:
-            logger.error(f"触发图表更新失败: {e}", exc_info=True)
-
-    def _on_chart_updated(self, event: ChartUpdateEvent) -> None:
-        """处理图表更新事件"""
-        try:
-            stock_code = getattr(event, 'stock_code', '')
-            period = getattr(event, 'period', '')
-
-            logger.info(f"Chart updated: {stock_code} - {period}")
-
-        except Exception as e:
-            logger.error(f"Failed to handle chart update: {e}")
-
-    def _on_analysis_completed(self, event) -> None:
-        """处理分析完成事件"""
-        try:
-            stock_code = getattr(event, 'stock_code', '')
-            analysis_type = getattr(event, 'analysis_type', '')
-
-            logger.info(f"Analysis completed: {stock_code} - {analysis_type}")
-
-        except Exception as e:
-            logger.error(f"Failed to handle analysis completion: {e}")
-
-    def _on_error(self, event: Union[ErrorEvent, dict]):
-        """
-        健壮的错误事件处理器，能同时处理事件对象和字典。
-        """
-        try:
-            error_type = "UnknownError"
-            error_message = "An unknown error occurred."
-            event_id = "N/A"
-
-            if isinstance(event, ErrorEvent):
-                # 标准事件对象
-                error_type = event.data.get('error_type', 'UnknownError')
-                error_message = event.data.get('error_message', 'An unknown error occurred.')
-                event_id = event.event_id
-            elif isinstance(event, dict):
-                # 兼容字典形式的事件
-                error_type = event.get('error_type', 'UnknownError')
-                error_message = event.get('error_message', 'An unknown error occurred.')
-                event_id = event.get('event_id', 'N/A')
-
-            logger.error(f"[ERROR] {error_type}: {error_message}",
-                         extra={'trace_id': event_id})
-
-            self.show_message(f"发生错误: {error_message}", level='error')
-
-        except Exception as e:
-            logger.critical(f"在处理错误事件时发生严重错误: {e}", exc_info=True)
-            self.show_message("发生严重错误，请检查日志", level='critical')
-
-    def _on_data_update(self, event: DataUpdateEvent):
-        """处理数据更新事件"""
-        try:
-            data_type = event.data.get('data_type', 'N/A')
-            logger.info(f"Data update: {data_type}")
-            self.show_message(f"数据已更新: {data_type}", level='info')
-        except Exception as e:
-            logger.error(f"Failed to handle data update event: {e}", exc_info=True)
-
-    def _on_theme_changed(self, theme_data) -> None:
-        """智能主题变更处理 - 支持事件对象和字符串参数"""
-        try:
-            # 智能参数识别
-            if hasattr(theme_data, 'theme_name'):
-                # 事件对象
-                theme_name = theme_data.theme_name
-                logger.info(f"Theme changed via event: {theme_name}")
-
-                # 重新应用主题
-                self._apply_theme()
-
-                # 更新状态栏
-                if hasattr(self, '_status_label') and self._status_label:
-                    self._status_label.setText(f"主题已更改: {theme_name}")
-
-            elif isinstance(theme_data, str):
-                # 字符串参数
-                theme_name = theme_data
-                logger.info(f"Theme changed via menu: {theme_name}")
-
-                # 使用ThemeManager
-                if hasattr(self, '_theme_manager') and self._theme_manager:
-                    self._theme_manager.set_theme(theme_name)
-                    self.show_message(f"主题已切换为: {theme_name}")
-                else:
-                    # 降级到应用主题
-                    self._apply_theme()
-                    self.show_message(f"主题已切换为: {theme_name}")
-            else:
-                logger.warning(f"未知的主题数据类型: {type(theme_data)}")
-
-        except Exception as e:
-            logger.error(f"Failed to handle theme change: {e}")
-            if hasattr(self, 'show_message'):
-                self.show_message(f"主题切换失败: {e}")
+    @property
+    def event_coordinator(self) -> Optional[EventCoordinator]:
+        """获取事件协调器实例"""
+        return self._event_coordinator
+
+    @property
+    def panel_coordinator(self) -> Optional[PanelCoordinator]:
+        """获取面板协调器实例"""
+        return self._panel_coordinator
 
     def get_main_window(self) -> QMainWindow:
         """获取主窗口"""
         return self._main_window
 
     def get_panel(self, panel_name: str) -> Optional[QWidget]:
-        """获取面板"""
+        """获取面板 - 代理到 PanelCoordinator"""
+        if self._panel_coordinator:
+            return self._panel_coordinator.get_panel(panel_name)
         return self._panels.get(panel_name)
 
     def show_message(self, message: str, level: str = 'info') -> None:
@@ -1306,6 +542,37 @@ class MainWindowCoordinator(BaseCoordinator):
             logger.error(f"Failed to run main window: {e}")
             raise
 
+    def _cleanup_dialogs(self) -> None:
+        """清理对话框引用，防止内存泄漏"""
+        dialog_attrs = [
+            '_plugin_manager_dialog',
+            '_intelligent_model_selection_dialog',
+            '_strategy_manager_dialog',
+            '_trading_monitor_window',
+            '_order_management_dialog',
+            '_account_management_dialog',
+            '_data_management_dialog',
+            'enhanced_import_window',
+        ]
+        
+        for attr in dialog_attrs:
+            if hasattr(self, attr):
+                dialog = getattr(self, attr)
+                if dialog is not None:
+                    try:
+                        # 断开信号连接
+                        try:
+                            dialog.disconnect()
+                        except Exception as e:
+                            logger.debug(f"对话框断开信号失败: {e}")
+                        
+                        # 关闭并删除对话框
+                        dialog.close()
+                        dialog.deleteLater()
+                    except Exception as e:
+                        logger.warning(f"清理对话框 {attr} 异常: {e}")
+                setattr(self, attr, None)
+
     def _do_dispose(self) -> None:
         """清理资源"""
         try:
@@ -1314,8 +581,33 @@ class MainWindowCoordinator(BaseCoordinator):
             if hasattr(self, '_message_timer'):
                 self._message_timer.stop()
 
+            if self._event_coordinator:
+                self._event_coordinator.dispose()
+                self._event_coordinator = None
+
+            self._cleanup_dialogs()
+            if self._dialog_coordinator:
+                self._dialog_coordinator.dispose()
+                self._dialog_coordinator = None
+
+            if self._panel_coordinator:
+                self._panel_coordinator.dispose()
+                self._panel_coordinator = None
+
+            if self._theme_coordinator:
+                self._theme_coordinator.dispose()
+                self._theme_coordinator = None
+
             if 'performance_dashboard' in self._panels:
                 self._panels['performance_dashboard'].dispose()
+
+            if self._optimization_dashboard is not None:
+                try:
+                    self._optimization_dashboard.close()
+                    self._optimization_dashboard.deleteLater()
+                except Exception as e:
+                    logger.warning(f"清理优化仪表盘异常: {e}")
+                self._optimization_dashboard = None
 
             self._save_window_config()
 
@@ -1370,13 +662,9 @@ class MainWindowCoordinator(BaseCoordinator):
 
     # 视图菜单方法
     def _on_refresh(self) -> None:
-        """刷新数据"""
+        """刷新数据 - 代理到 PanelCoordinator"""
         try:
-            # 刷新左侧面板数据
-            left_panel = self._panels.get('left')
-            if left_panel and hasattr(left_panel, '_on_refresh_clicked'):
-                left_panel._on_refresh_clicked()
-
+            self._panel_coordinator.refresh_panel_data('left')
             self.show_message("数据已刷新")
             logger.info("Data refreshed")
 
@@ -1419,6 +707,19 @@ class MainWindowCoordinator(BaseCoordinator):
         except Exception as e:
             logger.error(f"重置字体失败: {e}")
             self.show_message(f"重置字体失败: {e}")
+
+    def _on_font_size_changed(self, size: float) -> None:
+        """全局字体大小变更通知所有面板"""
+        try:
+            logger.info(f"全局字体大小变更为: {size}，通知所有面板更新")
+            for name, panel in self._panels.items():
+                try:
+                    if hasattr(panel, 'apply_font_size'):
+                        panel.apply_font_size(size)
+                except Exception as e:
+                    logger.warning(f"面板 {name} 应用字体大小失败: {e}")
+        except Exception as e:
+            logger.error(f"处理字体大小变更失败: {e}")
 
     # 工具菜单方法
     def _on_data_export(self) -> None:
@@ -1610,7 +911,7 @@ FactorWeave-Quant  2.0 (重构版本)
                 self._plugin_manager_dialog = None
 
         try:
-            from gui.dialogs.enhanced_plugin_manager_dialog import EnhancedPluginManagerDialog
+            from gui.dialogs.plugin_manager_dialog_unified import PluginManagerDialogUnified
             from core.plugin_manager import PluginManager
 
             # 智能获取插件管理器实例
@@ -1693,10 +994,9 @@ FactorWeave-Quant  2.0 (重构版本)
             logger.info(f" 插件管理器状态: {plugin_status}")
 
             # 创建并显示增强版对话框
-            self._plugin_manager_dialog = EnhancedPluginManagerDialog(
-                plugin_manager=plugin_manager,
-                sentiment_service=sentiment_service,  # 传递None，保持兼容性
-                parent=self._main_window
+            self._plugin_manager_dialog = PluginManagerDialogUnified(
+                plugin_manager,
+                self._main_window
             )
 
             # 设置对话框属性
@@ -1913,9 +1213,9 @@ FactorWeave-Quant  2.0 (重构版本)
                 self._strategy_manager_dialog = None
 
         try:
-            from gui.dialogs.enhanced_strategy_manager_dialog import EnhancedStrategyManagerDialog
+            from gui.dialogs.strategy_manager_dialog import StrategyManagerDialog
 
-            self._strategy_manager_dialog = EnhancedStrategyManagerDialog(self._main_window)
+            self._strategy_manager_dialog = StrategyManagerDialog(self._main_window)
 
             self._strategy_manager_dialog.finished.connect(self._on_strategy_manager_dialog_closed)
 
@@ -2010,11 +1310,10 @@ FactorWeave-Quant  2.0 (重构版本)
             # 检查是否已经创建了订单管理窗口
             if not hasattr(self, '_order_management_dialog') or self._order_management_dialog is None:
                 # 创建订单管理窗口
-                self._order_management_dialog = OrderManagementDialog(parent=None)
+                self._order_management_dialog = OrderManagementDialog(parent=self._main_window)
 
                 # 设置窗口属性
                 self._order_management_dialog.setWindowTitle("订单管理")
-                self._order_management_dialog.resize(1400, 900)
 
                 # 设置窗口不置顶
                 self._order_management_dialog.setWindowFlags(
@@ -2051,7 +1350,7 @@ FactorWeave-Quant  2.0 (重构版本)
             # 检查是否已经创建了账户管理窗口
             if not hasattr(self, '_account_management_dialog') or self._account_management_dialog is None:
                 # 创建账户管理窗口
-                self._account_management_dialog = AccountManagementDialog(parent=None)
+                self._account_management_dialog = AccountManagementDialog(parent=self._main_window)
 
                 # 设置窗口属性
                 self._account_management_dialog.setWindowTitle("账户管理")
@@ -2083,6 +1382,44 @@ FactorWeave-Quant  2.0 (重构版本)
             logger.error(f"打开账户管理窗口失败: {e}")
             QMessageBox.critical(self._main_window, "错误",
                                  f"打开账户管理窗口失败: {str(e)}")
+
+    def _on_portfolio_management(self) -> None:
+        """投资组合管理"""
+        try:
+            if hasattr(self, '_portfolio_dialog') and self._portfolio_dialog is not None:
+                if self._portfolio_dialog.isVisible():
+                    self._portfolio_dialog.raise_()
+                    self._portfolio_dialog.activateWindow()
+                    logger.info("投资组合管理对话框已存在，激活现有窗口")
+                    return
+                else:
+                    self._portfolio_dialog = None
+
+            from gui.dialogs.portfolio_dialog import PortfolioDialog
+
+            self._portfolio_dialog = PortfolioDialog(self._main_window)
+            self._portfolio_dialog.setWindowTitle("投资组合管理")
+            self._portfolio_dialog.resize(1100, 800)
+
+            def on_portfolio_closed():
+                self._portfolio_dialog = None
+
+            def close_event_handler(event):
+                on_portfolio_closed()
+                event.accept()
+
+            self._portfolio_dialog.closeEvent = close_event_handler
+
+            self._portfolio_dialog.show()
+            self._portfolio_dialog.activateWindow()
+            self._portfolio_dialog.raise_()
+
+            logger.info("投资组合管理对话框已打开")
+
+        except Exception as e:
+            logger.error(f"打开投资组合管理对话框失败: {e}")
+            QMessageBox.critical(self._main_window, "错误",
+                                 f"打开投资组合管理对话框失败: {str(e)}")
 
     def _on_optimization_dashboard(self) -> None:
         """显示优化仪表板"""
@@ -2460,12 +1797,9 @@ FactorWeave-Quant  2.0 (重构版本)
         try:
             logger.info("打开数据库管理界面")
 
-            from gui.dialogs.database_admin_dialog import DatabaseAdminDialog
+            from gui.dialogs.data_management_dialog_unified import UnifiedDataManagementDialog
 
-            # 使用默认数据库路径
-            default_db = "data/factorweave_system.sqlite"
-
-            dialog = DatabaseAdminDialog(default_db, self._main_window)
+            dialog = UnifiedDataManagementDialog(self._main_window)
             self.center_dialog(dialog)
             dialog.exec_()
 
@@ -2633,8 +1967,8 @@ FactorWeave-Quant  2.0 (重构版本)
             try:
                 from gui.dialogs import DataUsageTermsDialog
                 DataUsageTermsDialog.show_terms(self._main_window)
-            except:
-                pass
+            except Exception as e:
+                logger.warning(f"显示数据使用条款对话框失败: {e}")
 
     def _on_show_data_usage_terms(self) -> None:
         """显示数据使用条款"""
@@ -2761,26 +2095,18 @@ FactorWeave-Quant  2.0 (重构版本)
             QMessageBox.warning(self._main_window, "错误", f"无法导出性能报告: {e}")
 
     def _toggle_log_panel(self):
-        """切换日志面板的显示/隐藏状态"""
-        bottom_panel = self._panels.get('bottom')
-        if bottom_panel:
-            if hasattr(bottom_panel, '_toggle_panel'):
-                bottom_panel._toggle_panel()
-            elif hasattr(bottom_panel, '_root_frame'):
-                is_visible = bottom_panel._root_frame.isVisible()
-                bottom_panel._root_frame.setVisible(not is_visible)
-                self._log_toggle_btn.setText("显示日志" if is_visible else "隐藏日志")
+        """切换日志面板的显示/隐藏状态 - 代理到 PanelCoordinator"""
+        if self._panel_coordinator:
+            self._panel_coordinator.toggle_log_panel()
 
     def _set_all_tables_readonly(self):
         """设置所有表格为只读"""
         try:
             logger.info("设置所有表格为只读模式...")
 
-            # 递归查找所有 QTableWidget 和 QTableView
             def set_tables_readonly(widget):
                 from PyQt5.QtWidgets import QTableWidget, QTableView
 
-                # 如果是表格控件，设置为只读
                 if isinstance(widget, QTableWidget):
                     widget.setEditTriggers(QTableWidget.NoEditTriggers)
                     logger.debug(f"设置 QTableWidget 为只读: {widget.objectName()}")
@@ -2788,11 +2114,9 @@ FactorWeave-Quant  2.0 (重构版本)
                     widget.setEditTriggers(QTableView.NoEditTriggers)
                     logger.debug(f"设置 QTableView 为只读: {widget.objectName()}")
 
-                # 递归处理子控件
                 for child in widget.findChildren(QWidget):
                     set_tables_readonly(child)
 
-            # 从主窗口开始递归设置
             set_tables_readonly(self._main_window)
             logger.info("所有表格已设置为只读模式")
 
@@ -2800,9 +2124,10 @@ FactorWeave-Quant  2.0 (重构版本)
             logger.error(f"设置表格只读模式失败: {e}")
 
     def toggle_log_panel(self) -> None:
-        """切换日志面板显示/隐藏 - 菜单专用版本"""
+        """切换日志面板显示/隐藏 - 菜单专用版本 - 代理到 PanelCoordinator"""
         try:
-            self._toggle_log_panel()
+            if self._panel_coordinator:
+                self._panel_coordinator.toggle_log_panel()
         except Exception as e:
             logger.error(f"切换日志面板失败: {e}")
 
@@ -2960,8 +2285,8 @@ FactorWeave-Quant  2.0 (重构版本)
         try:
             # 使用增强版策略管理对话框V2（包含完整回测功能）
             try:
-                from gui.dialogs.enhanced_strategy_manager_dialog import EnhancedStrategyManagerDialog
-                dialog = EnhancedStrategyManagerDialog(self._main_window)
+                from gui.dialogs.strategy_manager_dialog import StrategyManagerDialog
+                dialog = StrategyManagerDialog(self._main_window)
                 # 直接切换到回测视图
                 if hasattr(dialog, 'current_view'):
                     dialog.current_view = 'backtest'
@@ -3104,36 +2429,61 @@ FactorWeave-Quant  2.0 (重构版本)
                     logger.warning(f"无法获取DatabaseService: {e}")
 
                 try:
+                    table_name = "imported_data"
+
                     if file_path.endswith('.csv'):
-                        df = pd.read_csv(file_path)
+                        if db_service:
+                            csv_cols = pd.read_csv(file_path, nrows=0).columns.tolist()
+                            for col in csv_cols:
+                                if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', str(col)):
+                                    raise ValueError(f"无效列名: {col}")
+                            with db_service.get_connection("data_duckdb") as conn:
+                                safe_path = file_path.replace("'", "''")
+                                conn.execute(f"""
+                                    CREATE OR REPLACE TABLE {table_name} AS
+                                    SELECT row_number() OVER () - 1 AS idx, *
+                                    FROM read_csv_auto('{safe_path}', header=true, all_varchar=false)
+                                """)
+                                result = conn.execute(f"SELECT COUNT(*) AS cnt FROM {table_name}")
+                                row_count = result[0]['cnt'] if result else 0
+                                cols_result = conn.execute(f"SELECT column_name FROM information_schema.columns WHERE table_name='{table_name}'")
+                                columns = [r['column_name'] for r in cols_result] if cols_result else []
+                            QMessageBox.information(self._main_window, "成功", f"数据导入成功: {row_count}行")
+                            logger.info(f"数据导入成功: {file_path}, {row_count}行, 列: {columns}")
+                        else:
+                            df = pd.read_csv(file_path)
+                            QMessageBox.information(self._main_window, "提示", f"数据加载成功: {len(df)}行，但数据库服务不可用")
                     elif file_path.endswith('.xlsx'):
                         df = pd.read_excel(file_path)
+                        columns = df.columns.tolist()
+                        for col in columns:
+                            if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', str(col)):
+                                raise ValueError(f"无效列名: {col}")
+                        logger.info(f"导入数据: {file_path}, 行数: {len(df)}, 列: {columns}")
+
+                        if db_service:
+                            with db_service.get_connection("data_duckdb") as conn:
+                                conn.execute(f"CREATE TABLE IF NOT EXISTS {table_name} (idx INTEGER)")
+                                for col in columns:
+                                    col_safe = col.replace(' ', '_').replace('(', '').replace(')', '').replace('"', '""')
+                                    try:
+                                        conn.execute(f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS \"{col_safe}\" TEXT")
+                                    except Exception as e:
+                                        logger.debug(f"添加列失败: {e}")
+
+                                # 批量插入: register DataFrame + 单条 INSERT ... SELECT
+                                conn.register('_import_temp', df)
+                                col_names = ', '.join(f'"{col}"' for col in df.columns)
+                                conn.execute(f"INSERT INTO {table_name} ({col_names}) SELECT {col_names} FROM _import_temp")
+                                conn.unregister('_import_temp')
+
+                            QMessageBox.information(self._main_window, "成功", f"数据导入成功: {len(df)}行")
+                            logger.info(f"数据导入成功: {file_path}, {len(df)}行")
+                        else:
+                            QMessageBox.information(self._main_window, "提示", f"数据加载成功: {len(df)}行，但数据库服务不可用")
                     else:
                         QMessageBox.warning(self._main_window, "错误", "不支持的文件格式")
                         return
-
-                    columns = df.columns.tolist()
-                    logger.info(f"导入数据: {file_path}, 行数: {len(df)}, 列: {columns}")
-
-                    if db_service:
-                        table_name = "imported_data"
-                        with db_service.get_connection("data_duckdb") as conn:
-                            conn.execute(f"CREATE TABLE IF NOT EXISTS {table_name} (idx INTEGER)")
-                            for col in columns:
-                                col_safe = col.replace(' ', '_').replace('(', '').replace(')', '')
-                                try:
-                                    conn.execute(f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS \"{col_safe}\" TEXT")
-                                except:
-                                    pass
-
-                            for i, row in df.iterrows():
-                                values = [f"'{str(v)}'" if pd.notna(v) else 'NULL' for v in row.values]
-                                conn.execute(f"INSERT INTO {table_name} VALUES ({i}, {','.join(values)})")
-
-                        QMessageBox.information(self._main_window, "成功", f"数据导入成功: {len(df)}行")
-                        logger.info(f"数据导入成功: {file_path}, {len(df)}行")
-                    else:
-                        QMessageBox.information(self._main_window, "提示", f"数据加载成功: {len(df)}行，但数据库服务不可用")
 
                 except Exception as e:
                     logger.error(f"数据导入失败: {e}")
@@ -3156,7 +2506,7 @@ FactorWeave-Quant  2.0 (重构版本)
     def _on_data_management_center(self) -> None:
         """打开数据管理中心"""
         try:
-            from gui.dialogs.data_management_dialog import DataManagementDialog
+            from gui.dialogs.data_management_dialog_unified import UnifiedDataManagementDialog
 
             # 检查是否已经打开了数据管理中心
             if hasattr(self, '_data_management_dialog') and self._data_management_dialog:
@@ -3166,7 +2516,7 @@ FactorWeave-Quant  2.0 (重构版本)
                 return
 
             # 创建数据管理中心对话框
-            self._data_management_dialog = DataManagementDialog(self._main_window)
+            self._data_management_dialog = UnifiedDataManagementDialog(self._main_window)
 
             # 连接信号
             self._data_management_dialog.data_downloaded.connect(self._on_data_downloaded_from_center)
@@ -3305,9 +2655,9 @@ FactorWeave-Quant  2.0 (重构版本)
     def _on_import_history(self) -> None:
         """查看导入历史记录"""
         try:
-            from gui.dialogs.import_history_dialog import ImportHistoryDialog
+            from gui.dialogs.data_management_dialog_unified import UnifiedDataManagementDialog
 
-            dialog = ImportHistoryDialog(self._main_window)
+            dialog = UnifiedDataManagementDialog(self._main_window)
             self.center_dialog(dialog)
             dialog.exec_()
 
@@ -3324,12 +2674,12 @@ FactorWeave-Quant  2.0 (重构版本)
     def _on_export_data(self) -> None:
         """导出数据"""
         try:
-            from gui.dialogs.data_export_dialog import DataExportDialog
+            from gui.dialogs.data_management_dialog_unified import UnifiedDataManagementDialog
 
             # 使用通用对话框管理方法
             dialog = self._manage_dialog(
                 'data_export',
-                DataExportDialog,
+                UnifiedDataManagementDialog,
                 self._main_window
             )
 
@@ -3518,8 +2868,8 @@ FactorWeave-Quant  2.0 (重构版本)
                     logger.warning(f"检测到已删除的窗口引用，将创建新窗口：{e}")
                     try:
                         del self._standalone_backtest_window
-                    except:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"清理旧窗口引用失败: {e}")
 
             # 创建新的独立浮动窗口
             self._standalone_backtest_window = QMainWindow()
@@ -3577,8 +2927,8 @@ FactorWeave-Quant  2.0 (重构版本)
                     if hasattr(self, '_standalone_backtest_window'):
                         try:
                             del self._standalone_backtest_window
-                        except:
-                            pass
+                        except Exception as e:
+                            logger.debug(f"删除独立回测窗口引用失败: {e}")
                     logger.info("专业回测独立窗口已关闭并清理")
 
             # 重写关闭事件：允许窗口正常关闭（WA_DeleteOnClose 会处理删除）
@@ -3600,26 +2950,10 @@ FactorWeave-Quant  2.0 (重构版本)
             QMessageBox.critical(self._main_window, "错误", f"无法创建专业回测窗口: {e}")
 
     def _on_toggle_backtest_panel(self) -> None:
-        """切换专业回测面板的显示/隐藏"""
+        """切换专业回测面板的显示/隐藏 - 代理到 PanelCoordinator"""
         try:
-            backtest_dock = self._panels.get('backtest_dock')
-            if backtest_dock:
-                if backtest_dock.isVisible():
-                    backtest_dock.hide()
-                    logger.info("专业回测面板已隐藏")
-                else:
-                    backtest_dock.show()
-                    backtest_dock.raise_()
-                    logger.info("专业回测面板已显示")
-            else:
-                # 如果停靠窗口不存在，创建它
-                self._create_professional_backtest_widget()
-                backtest_dock = self._panels.get('backtest_dock')
-                if backtest_dock:
-                    backtest_dock.show()
-                    backtest_dock.raise_()
-                    logger.info("专业回测面板已创建并显示")
-
+            if self._panel_coordinator:
+                self._panel_coordinator.toggle_backtest_panel()
         except Exception as e:
             logger.error(f"切换专业回测面板失败: {e}")
             QMessageBox.warning(self._main_window, "错误", f"无法切换专业回测面板: {e}")
@@ -3633,6 +2967,50 @@ FactorWeave-Quant  2.0 (重构版本)
         except Exception as e:
             logger.error(f"启动优化失败: {e}")
             QMessageBox.warning(self._main_window, "错误", f"无法启动优化: {e}")
+
+    def analyze_current_stock(self) -> None:
+        """分析当前股票（ToolBar委托）"""
+        self._on_analyze()
+
+    def show_analysis(self) -> None:
+        """显示分析面板（ToolBar委托）"""
+        self._on_analyze()
+
+    def run_backtest(self) -> None:
+        """运行回测（ToolBar委托）"""
+        self._on_backtest()
+
+    def show_backtest(self) -> None:
+        """显示回测面板（ToolBar委托）"""
+        self._on_backtest()
+
+    def optimize_strategy(self) -> None:
+        """优化策略（ToolBar委托）"""
+        self._on_optimize()
+
+    def show_optimization(self) -> None:
+        """显示优化面板（ToolBar委托）"""
+        self._on_optimize()
+
+    def search_stock(self, query: str) -> None:
+        """搜索股票（ToolBar委托）"""
+        self._search_stock(query)
+
+    def on_search(self, query: str) -> None:
+        """搜索股票（ToolBar委托别名）"""
+        self._search_stock(query)
+
+    def _search_stock(self, query: str) -> None:
+        """内部搜索股票实现"""
+        try:
+            if query and query.strip():
+                self.event_bus.publish(StockSelectedEvent(
+                    symbol=query.strip(),
+                    source="toolbar_search"
+                ))
+                logger.info(f"搜索股票: {query}")
+        except Exception as e:
+            logger.error(f"搜索股票失败: {e}")
 
     def _on_gpu_config(self) -> None:
         """配置GPU加速"""
@@ -4083,12 +3461,12 @@ FactorWeave-Quant  2.0 (重构版本)
                 
                 try:
                     recommendation_engine = container.resolve(SmartRecommendationEngine)
-                except:
+                except Exception:
                     logger.warning("无法获取SmartRecommendationEngine服务")
                 
                 try:
                     model_trainer = container.resolve(RecommendationModelTrainer)
-                except:
+                except Exception:
                     logger.warning("无法获取RecommendationModelTrainer服务")
                 
                 self._enhanced_components['smart_recommendation_panel'] = SmartRecommendationPanel(
@@ -4285,103 +3663,43 @@ FactorWeave-Quant  2.0 (重构版本)
     # ==================== 增强功能菜单事件处理 ====================
 
     def _on_toggle_level2_panel(self):
-        """切换Level-2数据面板显示/隐藏"""
+        """切换Level-2数据面板显示/隐藏 - 代理到 PanelCoordinator"""
         try:
-            dock_widgets = self._main_window.findChildren(QDockWidget)
-            for dock in dock_widgets:
-                if dock.windowTitle() == "Level-2 数据":
-                    dock.setVisible(not dock.isVisible())
-                    logger.info(f"Level-2数据面板已{'显示' if dock.isVisible() else '隐藏'}")
-                    return
-            logger.warning("Level-2数据面板未找到")
+            if self._panel_coordinator:
+                self._panel_coordinator.toggle_level2_panel()
         except Exception as e:
             logger.error(f"切换Level-2数据面板失败: {e}")
 
     def _on_toggle_orderbook_panel(self):
-        """切换订单簿面板显示/隐藏"""
+        """切换订单簿面板显示/隐藏 - 代理到 PanelCoordinator"""
         try:
-            dock_widgets = self._main_window.findChildren(QDockWidget)
-            for dock in dock_widgets:
-                if dock.windowTitle() == "订单簿深度":
-                    dock.setVisible(not dock.isVisible())
-                    logger.info(f"订单簿面板已{'显示' if dock.isVisible() else '隐藏'}")
-                    return
-            logger.warning("订单簿面板未找到")
+            if self._panel_coordinator:
+                self._panel_coordinator.toggle_orderbook_panel()
         except Exception as e:
             logger.error(f"切换订单簿面板失败: {e}")
 
     def _on_toggle_fundamental_panel(self):
-        """切换基本面分析面板显示/隐藏"""
+        """切换基本面分析面板显示/隐藏 - 代理到 PanelCoordinator"""
         try:
-            # 基本面分析在分析标签页中，通过切换标签页显示
-            if hasattr(self, '_analysis_tabs'):
-                for i in range(self._analysis_tabs.count()):
-                    if self._analysis_tabs.tabText(i) == " 基本面分析":
-                        self._analysis_tabs.setCurrentIndex(i)
-                        logger.info("基本面分析标签页已激活")
-                        return
-            logger.warning("基本面分析标签页未找到")
+            if self._panel_coordinator:
+                self._panel_coordinator.toggle_fundamental_panel()
         except Exception as e:
             logger.error(f"切换基本面分析面板失败: {e}")
 
     def _on_toggle_smart_recommendation_panel(self):
-        """切换智能推荐面板显示/隐藏"""
+        """切换智能推荐面板显示/隐藏 - 代理到 PanelCoordinator"""
         try:
-            dock_widgets = self._main_window.findChildren(QDockWidget)
-            for dock in dock_widgets:
-                if dock.windowTitle() == "智能推荐":
-                    dock.setVisible(not dock.isVisible())
-                    logger.info(f"智能推荐面板已{'显示' if dock.isVisible() else '隐藏'}")
-                    return
-            logger.warning("智能推荐面板未找到")
+            if self._panel_coordinator:
+                self._panel_coordinator.toggle_smart_recommendation_panel()
         except Exception as e:
             logger.error(f"切换智能推荐面板失败: {e}")
 
     def _update_responsive_layout(self):
-        """更新响应式布局"""
+        """更新响应式布局 - 代理到 PanelCoordinator"""
         try:
-            if not self._main_window:
-                return
-
-            window_width = self._main_window.width()
-            window_height = self._main_window.height()
-
-            logger.debug(f"MainWindowCoordinator 响应式布局更新: {window_width}x{window_height}")
-
-            # 更新数据时间标签宽度
-            if hasattr(self, '_data_time_label'):
-                label_width = max(120, int(window_width * 0.1))
-                self._data_time_label.setMinimumWidth(label_width)
-                self._data_time_label.setMaximumWidth(int(window_width * 0.15))
-
-            # 更新日志切换按钮宽度
-            if hasattr(self, '_log_toggle_btn'):
-                btn_width = max(70, int(window_width * 0.06))
-                self._log_toggle_btn.setMinimumWidth(btn_width)
-                self._log_toggle_btn.setMaximumWidth(int(window_width * 0.1))
-
-            # 更新左侧面板宽度
-            if 'left' in self._panels:
-                left_panel = self._panels['left']
-                if hasattr(left_panel, '_root_frame'):
-                    panel_width = max(200, int(window_width * 0.2))
-                    left_panel._root_frame.setMinimumWidth(panel_width)
-                    left_panel._root_frame.setMaximumWidth(int(window_width * 0.3))
-
-            # 更新中间面板宽度
-            if 'middle' in self._panels:
-                middle_panel = self._panels['middle']
-                if hasattr(middle_panel, '_root_frame'):
-                    panel_width = max(500, int(window_width * 0.4))
-                    middle_panel._root_frame.setMinimumWidth(panel_width)
-
-            # 更新右侧停靠面板宽度
-            # dock_widgets = self._main_window.findChildren(QDockWidget)
-            # for dock in dock_widgets:
-            #     if dock.windowTitle() == "技术分析":
-            #         dock_width = max(250, int(window_width * 0.25))
-            #         dock.setMinimumWidth(dock_width)
-            #         dock.setMaximumWidth(int(window_width * 0.4))
-
+            if self._panel_coordinator:
+                self._panel_coordinator.update_responsive_layout()
+            else:
+                logger.warning("PanelCoordinator 未初始化，无法更新响应式布局")
         except Exception as e:
             logger.error(f"更新响应式布局失败: {e}")

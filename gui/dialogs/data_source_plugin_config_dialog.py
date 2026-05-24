@@ -28,6 +28,8 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread
 from PyQt5.QtGui import QFont, QColor, QPalette, QIcon
 
+from gui.dialogs.base_dialog import BaseDialog
+
 
 logger = logger.bind(module=__name__)
 
@@ -80,13 +82,19 @@ class HealthCheckWorker(QThread):
         self.running = False
 
 
-class DataSourcePluginConfigDialog(QDialog):
+class DataSourcePluginConfigDialog(BaseDialog):
     """数据源插件配置对话框"""
 
     config_changed = pyqtSignal(str, dict)  # source_id, config
 
     def __init__(self, source_id: str, parent=None):
-        super().__init__(parent)
+        super().__init__(
+            parent,
+            title=f"配置数据源插件 - {source_id}",
+            min_size=(800, 600),
+            size=(800, 600),
+            settings_key=f"DataSourcePluginConfigDialog_{source_id}"
+        )
         self.source_id = source_id
         self.adapter = None
         self.plugin_info = None
@@ -95,10 +103,6 @@ class DataSourcePluginConfigDialog(QDialog):
 
         # 初始化logger
         self.logger = logger
-
-        self.setWindowTitle(f"配置数据源插件 - {source_id}")
-        self.setModal(True)
-        self.resize(800, 600)
 
         self.init_ui()
         self.load_plugin_info()
@@ -1853,7 +1857,7 @@ class DataSourcePluginConfigDialog(QDialog):
                         host, port = address.split(":", 1)
                         try:
                             port = int(port)
-                        except:
+                        except Exception:
                             port = 80
                     else:
                         host = address
@@ -1982,7 +1986,7 @@ class DataSourcePluginConfigDialog(QDialog):
                                     "response_time": response_time,
                                     "details": f"股票数量: {count}"
                                 }
-                            except:
+                            except Exception:
                                 api.disconnect()
                                 end_time = time.time()
                                 response_time = int((end_time - start_time) * 1000)
@@ -2343,7 +2347,7 @@ class DataSourcePluginConfigDialog(QDialog):
             if ':' in url:
                 return url.split(':', 1)[0]
             return url
-        except:
+        except Exception:
             return url
 
     def _extract_port_from_url(self, url: str) -> int:
@@ -2363,7 +2367,7 @@ class DataSourcePluginConfigDialog(QDialog):
 
             # 根据协议返回默认端口
             return 443 if protocol == 'https' else 80
-        except:
+        except Exception:
             return 443
 
     def _update_server_status_table(self, servers):
@@ -2547,20 +2551,11 @@ class DataSourcePluginConfigDialog(QDialog):
 
             self.server_status_table.setRowCount(len(addresses))
 
-            import random
             for i, addr in enumerate(addresses):
                 self.server_status_table.setItem(i, 0, QTableWidgetItem(addr))
-
-                # 模拟测试结果
-                is_available = random.choice([True, False])
-                if is_available:
-                    self.server_status_table.setItem(i, 1, QTableWidgetItem("🟢 可用"))
-                    self.server_status_table.setItem(i, 2, QTableWidgetItem(f"{random.randint(50, 200)}ms"))
-                else:
-                    self.server_status_table.setItem(i, 1, QTableWidgetItem("🔴 不可用"))
-                    self.server_status_table.setItem(i, 2, QTableWidgetItem("超时"))
-
-                self.server_status_table.setItem(i, 3, QTableWidgetItem("测试服务器"))
+                self.server_status_table.setItem(i, 1, QTableWidgetItem("暂无数据"))
+                self.server_status_table.setItem(i, 2, QTableWidgetItem("暂无数据"))
+                self.server_status_table.setItem(i, 3, QTableWidgetItem("暂无数据"))
 
         except Exception as e:
             from PyQt5.QtWidgets import QMessageBox
@@ -2637,9 +2632,10 @@ class DataSourcePluginConfigDialog(QDialog):
         if hasattr(self, 'tdx_server_manager') and self.tdx_server_manager:
             try:
                 self.tdx_server_manager.close()
-            except:
+            except Exception:
                 pass
 
+        super().closeEvent(event)
         event.accept()
 
 

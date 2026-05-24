@@ -45,6 +45,7 @@ class AdaptiveTakeProfit(TakeProfitStrategy):
         # 设置默认参数
         self.set_param("atr_period", 14)         # ATR周期
         self.set_param("atr_multiplier", 2)      # ATR倍数
+        self.set_param("atr_method", "sma")      # ATR计算方法: 'sma'/'wilder'/'ema'
         self.set_param("ma_period", 20)          # 均线周期
         self.set_param("volatility_period", 20)  # 波动率计算周期
         self.set_param("min_take_profit", 0.02)  # 最小止盈比例
@@ -71,10 +72,10 @@ class AdaptiveTakeProfit(TakeProfitStrategy):
             # 2. 计算不同类型的止盈价格
             profits = {
                 'atr': self._calculate_atr_profit(current_price, atr, trend),
-                'ma': self._calculate_ma_profit(current_price, ma),
-                'trailing': self._calculate_trailing_profit(current_price, position_info),
-                'volatility': self._calculate_volatility_profit(current_price, volatility),
-                'fixed': self._calculate_fixed_profit(current_price)
+                'ma': self._calculate_ma_profit(current_price, ma, trend),
+                'trailing': self._calculate_trailing_profit(current_price, position_info, trend),
+                'volatility': self._calculate_volatility_profit(current_price, volatility, trend),
+                'fixed': self._calculate_fixed_profit(current_price, trend)
             }
 
             # 3. 选择最终的止盈价格
@@ -87,9 +88,17 @@ class AdaptiveTakeProfit(TakeProfitStrategy):
             logger.error(f"止盈价格计算错误: {str(e)}")
             return 0.0
 
-    def _calculate_atr(self, data: pd.DataFrame) -> float:
-        """计算ATR"""
+    def _calculate_atr(self, data: pd.DataFrame, method: str = None) -> float:
+        """
+        ATR计算，支持三种平滑方式：
+          - 'sma':   简单移动平均SMA（当前默认，与旧版兼容）
+          - 'wilder': Wilder平滑（标准ATR，与indicator库JIT版一致）
+          - 'ema':    指数移动平均EMA（与indicator库ewm版一致）
+        """
         try:
+            if method is None:
+                method = self.get_param("atr_method", "sma")
+
             high = data['high'].values
             low = data['low'].values
             close = data['close'].values
@@ -102,11 +111,31 @@ class AdaptiveTakeProfit(TakeProfitStrategy):
                 )
             )
 
-            return np.mean(tr[-self.get_param("atr_period"):])
+            period = self.get_param("atr_period")
+            if len(tr) < period:
+                return 0.0
+
+            if method == 'wilder':
+                return self._wilder_atr(tr, period)
+            elif method == 'ema':
+                return self._ema_atr(tr, period)
+            else:
+                return np.mean(tr[-period:])
 
         except Exception as e:
             logger.error(f"ATR计算错误: {str(e)}")
             return 0.0
+
+    def _wilder_atr(self, tr: np.ndarray, period: int) -> float:
+        tr_series = pd.Series(tr)
+        atr = tr_series.iloc[:period].mean()
+        for i in range(period, len(tr_series)):
+            atr = (atr * (period - 1) + tr_series.iloc[i]) / period
+        return atr
+
+    def _ema_atr(self, tr: np.ndarray, period: int) -> float:
+        tr_series = pd.Series(tr)
+        return tr_series.ewm(span=period, adjust=False).mean().iloc[-1]
 
     def _calculate_ma(self, data: pd.DataFrame) -> float:
         """计算移动平均"""
@@ -146,40 +175,54 @@ class AdaptiveTakeProfit(TakeProfitStrategy):
             logger.error(f"ATR止盈计算错误: {str(e)}")
             return 0.0
 
-    def _calculate_ma_profit(self, price: float, ma: float) -> float:
+    def _calculate_ma_profit(self, price: float, ma: float, trend: int) -> float:
         """计算均线止盈价格"""
         try:
-            return ma
+            profit_distance = self.get_param("min_take_profit")
+            if trend > 0:
+                return ma * (1 + profit_distance)
+            else:
+                return ma * (1 - profit_distance)
         except Exception as e:
             logger.error(f"均线止盈计算错误: {str(e)}")
             return 0.0
 
-    def _calculate_trailing_profit(self, price: float, position_info: Dict[str, Any]) -> float:
+    def _calculate_trailing_profit(self, price: float, position_info: Dict[str, Any], trend: int) -> float:
         """计算跟踪止盈价格"""
         try:
-            highest_price = position_info.get('highest_price', price)
-            if price > highest_price:
-                highest_price = price
-
-            profit_distance = highest_price * self.get_param("trailing_profit")
-            return highest_price + profit_distance
-
+            trailing_pct = self.get_param("trailing_profit")
+            if trend > 0:
+                highest_price = position_info.get('highest_price', price)
+                if price > highest_price:
+                    highest_price = price
+                    position_info['highest_price'] = highest_price
+                return highest_price * (1 - trailing_pct)
+            else:
+                lowest_price = position_info.get('lowest_price', price)
+                if price < lowest_price:
+                    lowest_price = price
+                    position_info['lowest_price'] = lowest_price
+                return lowest_price * (1 + trailing_pct)
         except Exception as e:
             logger.error(f"跟踪止盈计算错误: {str(e)}")
             return 0.0
 
-    def _calculate_volatility_profit(self, price: float, volatility: float) -> float:
+    def _calculate_volatility_profit(self, price: float, volatility: float, trend: int = 1) -> float:
         """计算波动率止盈价格"""
         try:
             profit_distance = price * volatility * self.get_param("volatility_factor")
+            if trend < 0:
+                return price - profit_distance
             return price + profit_distance
         except Exception as e:
             logger.error(f"波动率止盈计算错误: {str(e)}")
             return 0.0
 
-    def _calculate_fixed_profit(self, price: float) -> float:
+    def _calculate_fixed_profit(self, price: float, trend: int = 1) -> float:
         """计算固定止盈价格"""
         try:
+            if trend < 0:
+                return price * (1 - self.get_param("min_take_profit"))
             return price * (1 + self.get_param("min_take_profit"))
         except Exception as e:
             logger.error(f"固定止盈计算错误: {str(e)}")
@@ -191,34 +234,41 @@ class AdaptiveTakeProfit(TakeProfitStrategy):
         try:
             entry_price = position_info.get('entry_price', price)
             
-            # 1. 根据趋势选择止盈策略
             if trend > 0:
-                # 上升趋势，使用较宽松的止盈
                 profit_price = max(
                     profits['atr'],
                     profits['ma'],
-                    profits['trailing']
+                    profits['trailing'],
+                    profits['volatility']
                 )
             else:
-                # 下降趋势，使用较严格的止盈
                 profit_price = min(
                     profits['atr'],
                     profits['ma'],
+                    profits['trailing'],
                     profits['volatility']
                 )
 
-            # 2. 确保止盈价格在合理范围内
-            min_profit = price * (1 + self.get_param("min_take_profit"))
-            max_profit = price * (1 + self.get_param("max_take_profit"))
+            if trend < 0:
+                min_profit = price * (1 - self.get_param("max_take_profit"))
+                max_profit = price * (1 - self.get_param("min_take_profit"))
+            else:
+                min_profit = price * (1 + self.get_param("min_take_profit"))
+                max_profit = price * (1 + self.get_param("max_take_profit"))
             profit_price = min(max_profit, max(profit_price, min_profit))
 
-            # 3. 如果已经盈利，使用更宽松的止盈
-            if price > entry_price:
-                profit_ratio = (price - entry_price) / entry_price
-                if profit_ratio > self.get_param("profit_lock"):
-                    # 锁定部分利润
-                    lock_price = entry_price * (1 + self.get_param("profit_lock"))
-                    profit_price = max(profit_price, lock_price)
+            if trend < 0:
+                if price < entry_price:
+                    profit_ratio = (entry_price - price) / entry_price
+                    if profit_ratio > self.get_param("profit_lock"):
+                        lock_price = entry_price * (1 - self.get_param("profit_lock"))
+                        profit_price = max(profit_price, lock_price)
+            else:
+                if price > entry_price:
+                    profit_ratio = (price - entry_price) / entry_price
+                    if profit_ratio > self.get_param("profit_lock"):
+                        lock_price = entry_price * (1 + self.get_param("profit_lock"))
+                        profit_price = max(profit_price, lock_price)
 
             return profit_price
 

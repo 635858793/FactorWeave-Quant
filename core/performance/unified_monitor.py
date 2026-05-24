@@ -581,7 +581,7 @@ class SmartUpdater:
         """计算数据哈希"""
         try:
             return hashlib.md5(str(data).encode()).hexdigest()
-        except:
+        except Exception:
             return str(time.time())
 
 
@@ -728,7 +728,7 @@ class PerformanceAutoTuner:
                     improvement = abs(record['new_value'] - record['old_value']) / record['old_value'] * 100
                     recent_improvements.append(improvement)
 
-            stats['性能提升'] = sum(recent_improvements) / len(recent_improvements) if recent_improvements else 0
+            stats['性能提升'] = np.mean(recent_improvements) if recent_improvements else 0
 
             # 参数空间覆盖率
             param_coverage = []
@@ -737,10 +737,10 @@ class PerformanceAutoTuner:
                     coverage = (param_state.value - param_state.min_value) / (param_state.max_value - param_state.min_value) * 100
                     param_coverage.append(coverage)
 
-            stats['参数空间'] = sum(param_coverage) / len(param_coverage) if param_coverage else 0
+            stats['参数空间'] = np.mean(param_coverage) if param_coverage else 0
 
             # 收敛速度（基于momentum）
-            avg_momentum = sum(p.momentum for p in self.tuning_params.values()) / len(self.tuning_params)
+            avg_momentum = np.mean([p.momentum for p in self.tuning_params.values()])
             stats['收敛速度'] = min(avg_momentum * 20, 100)  # 标准化到0-100
 
             # 最优解质量（基于稳定参数的比例）
@@ -1096,7 +1096,7 @@ class UnifiedPerformanceMonitor:
             # 3. 索提诺比率 (下行风险调整收益)
             downside_returns = returns[returns < 0]
             if len(downside_returns) > 0:
-                downside_deviation = downside_returns.std() * np.sqrt(252)
+                downside_deviation = np.sqrt(np.mean(downside_returns ** 2)) * np.sqrt(252)
                 sortino_ratio = (annual_return - 0.02) / downside_deviation
                 metrics['sortino_ratio'] = sortino_ratio
             else:
@@ -1219,7 +1219,7 @@ class UnifiedPerformanceMonitor:
         if loss_rate > 0 and win_rate > 0:
             avg_win = returns[returns > 0].mean() if len(returns[returns > 0]) > 0 else 0
             avg_loss = abs(returns[returns < 0].mean()) if len(returns[returns < 0]) > 0 else 0.001
-            kelly_ratio = (win_rate * avg_win - loss_rate * avg_loss) / avg_loss
+            kelly_ratio = (win_rate * avg_win - loss_rate * avg_loss) / avg_win if avg_win > 0 else 0
             metrics['kelly_ratio'] = max(0, min(1, kelly_ratio))  # 限制在0-1之间
 
         # 记录所有指标
@@ -1284,7 +1284,7 @@ class UnifiedPerformanceMonitor:
 
             # 计算真实的渲染帧率（基于响应时间历史）
             if 'response_time' in self.history and self.history['response_time']:
-                avg_response = sum(self.history['response_time']) / len(self.history['response_time'])
+                avg_response = np.mean(self.history['response_time'])
                 metrics['渲染帧率'] = min(60, max(30, 1000 / max(avg_response, 1)))
             else:
                 metrics['渲染帧率'] = 60
@@ -1311,14 +1311,14 @@ class UnifiedPerformanceMonitor:
             load_start = time.perf_counter()
             try:
                 _ = psutil.virtual_memory()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"psutil虚拟内存获取失败: {e}")
             load_time = (time.perf_counter() - load_start) * 1000
             metrics['加载时间'] = round(load_time, 2)
 
             # 计算真实的计算速度（基于响应时间）
             if 'response_time' in self.history and self.history['response_time']:
-                avg_rt = sum(self.history['response_time']) / len(self.history['response_time'])
+                avg_rt = np.mean(self.history['response_time'])
                 metrics['计算速度'] = min(100, max(0, 100 - avg_rt))
             else:
                 metrics['计算速度'] = 100
@@ -1428,7 +1428,7 @@ class UnifiedPerformanceMonitor:
             # 索提诺比率
             downside_returns = returns[returns < 0]
             if len(downside_returns) > 0:
-                downside_deviation = downside_returns.std() * np.sqrt(252)
+                downside_deviation = np.sqrt(np.mean(downside_returns ** 2)) * np.sqrt(252)
                 sortino_ratio = (annual_return - risk_free_rate) / downside_deviation
                 metrics['sortino_ratio'] = sortino_ratio
             else:

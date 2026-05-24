@@ -237,12 +237,17 @@ class ProfessionalRiskMetrics:
         """
         results = {}
 
-        # 估计返回分布参数
-        daily_mean = returns.mean()
-        daily_vol = returns.std()
+        # 过滤NaN并估计返回分布参数
+        clean_returns = returns.dropna()
+        if len(clean_returns) < 2:
+            logger.warning("蒙特卡洛VaR: 清理后数据不足")
+            return results
+
+        daily_mean = clean_returns.mean()
+        daily_vol = clean_returns.std()
 
         # 检验正态性假设
-        _, p_value = stats.normaltest(returns.dropna())
+        _, p_value = stats.normaltest(clean_returns)
         distribution_type = 'normal' if p_value > 0.05 else 'empirical'
 
         for conf in confidence_levels:
@@ -259,8 +264,9 @@ class ProfessionalRiskMetrics:
                     )
                 else:
                     # 使用经验分布重采样
+                    clean_values = clean_returns.values
                     simulated_returns = np.random.choice(
-                        returns.values,
+                        clean_values,
                         size=(num_simulations, horizon),
                         replace=True
                     ).sum(axis=1)
@@ -447,7 +453,7 @@ class ProfessionalRiskMetrics:
                 # Sharpe比率的标准误
                 sharpe_se = np.sqrt((1 + 0.5 * sharpe_ratio**2) / n)
                 # 95%置信区间
-                confidence_95 = 1.96 * sharpe_se
+                confidence_95 = stats.norm.ppf(0.975) * sharpe_se
             else:
                 confidence_95 = float('inf')
 

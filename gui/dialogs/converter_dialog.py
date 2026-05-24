@@ -7,12 +7,17 @@ from PyQt5.QtGui import *
 from typing import Optional, Dict, Any
 from loguru import logger
 
-class ConverterDialog(QDialog):
+from .base_dialog import BaseDialog
+
+class ConverterDialog(BaseDialog):
     """单位转换器对话框，优化UI和功能"""
 
     def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("单位转换器")
+        super().__init__(
+            parent,
+            title="单位转换器",
+            settings_key="ConverterDialog"
+        )
         self.setStyleSheet("""
             QDialog {
                 font-family: 'Microsoft YaHei', 'SimHei', sans-serif;
@@ -33,7 +38,7 @@ class ConverterDialog(QDialog):
         """)
 
         self.setup_ui()
-        self.add_shadow()
+        self.add_shadow_effect()
 
     def setup_ui(self):
         """设置UI界面"""
@@ -194,14 +199,3 @@ class ConverterDialog(QDialog):
         else:  # 摄氏度
             return celsius
 
-    def add_shadow(self):
-        """添加阴影效果"""
-        try:
-            shadow = QGraphicsDropShadowEffect()
-            shadow.setBlurRadius(32)
-            shadow.setXOffset(0)
-            shadow.setYOffset(12)
-            shadow.setColor(QColor(0, 0, 0, 80))
-            self.setGraphicsEffect(shadow)
-        except Exception as e:
-            logger.warning(f"添加阴影效果失败: {str(e)}")

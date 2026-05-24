@@ -17,6 +17,71 @@ from distributed_node.api.routes import app
 from distributed_node.node_config import get_node_config, set_node_config, NodeConfig
 
 
+def register_with_master(config: NodeConfig) -> bool:
+    """
+    向主控节点注册当前Worker节点
+
+    Args:
+        config: 节点配置
+
+    Returns:
+        注册是否成功
+    """
+    if not config.auto_register:
+        logger.info("自动注册已禁用，跳过向主控注册")
+        return False
+
+    try:
+        import requests
+        import socket
+
+        master_url = f"http://{config.master_host}:{config.master_port}/api/v1/nodes/register"
+
+        node_info = {
+            "node_id": config.node_id,
+            "node_name": config.node_name,
+            "host": socket.gethostbyname(socket.gethostname()),
+            "port": config.port,
+            "max_workers": config.max_workers,
+            "capabilities": config.capabilities or [],
+            "status": "active"
+        }
+
+        headers = {}
+        if config.api_key:
+            headers["X-API-Key"] = config.api_key
+
+        logger.info(f"正在向主控节点注册: {master_url}")
+        logger.info(f"节点信息: {node_info}")
+
+        response = requests.post(
+            master_url,
+            json=node_info,
+            headers=headers,
+            timeout=10
+        )
+
+        if response.status_code in (200, 201):
+            logger.info(f"向主控节点注册成功: {config.node_name} ({config.node_id})")
+            return True
+        elif response.status_code == 409:
+            logger.warning(f"节点已存在于主控: {config.node_name}")
+            return True
+        else:
+            logger.warning(f"向主控节点注册失败: HTTP {response.status_code} - {response.text}")
+            return False
+
+    except requests.exceptions.ConnectionError:
+        logger.warning(f"无法连接到主控节点 {config.master_host}:{config.master_port}，跳过注册")
+        return False
+    except requests.exceptions.Timeout:
+        logger.warning(f"向主控节点注册超时 {config.master_host}:{config.master_port}")
+        return False
+    except Exception as e:
+        logger.error(f"向主控节点注册异常: {e}")
+        return False
+
+
 def setup_logging(config: NodeConfig):
     """设置日志"""
     log_file = Path(config.log_file)
@@ -90,6 +155,9 @@ def start_server(config: NodeConfig = None, debug: bool = False):
     logger.info(f"任务超时: {config.task_timeout}秒")
     logger.info(f"API认证: {'启用' if config.api_key else '禁用'}")
     logger.info("="*80)
+    
+    # 自动向主控节点注册
+    register_with_master(config)
     
     # 启动FastAPI服务器
     try:

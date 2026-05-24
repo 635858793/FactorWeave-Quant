@@ -7,7 +7,7 @@
 from typing import Dict, List, Optional, Callable, Any
 from dataclasses import dataclass, field
 from enum import Enum
-import logging
+from loguru import logger
 import importlib
 import sys
 import threading
@@ -15,8 +15,6 @@ from pathlib import Path
 from datetime import datetime
 import hashlib
 import json
-
-logger = logging.getLogger(__name__)
 
 
 class ReloadStatus(Enum):

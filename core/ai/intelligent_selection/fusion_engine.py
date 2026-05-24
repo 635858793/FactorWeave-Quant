@@ -4,7 +4,7 @@
 提供多种融合策略对多个模型的预测结果进行综合处理。
 """
 
-import logging
+from loguru import logger
 import numpy as np
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Union
@@ -13,9 +13,6 @@ from enum import Enum
 
 from .config.selector_config import FusionConfig
 from .config.model_profiles import ModelProfile
-
-logger = logging.getLogger(__name__)
-
 
 class FusionMethod(Enum):
     """融合方法枚举"""
@@ -76,6 +73,9 @@ class WeightedAverageFusion:
                 pred.prediction_value * weights.get(pred.model_type, 0.0)
                 for pred in predictions
             )
+            missing_weights = [p.model_type for p in predictions if p.model_type not in weights]
+            if missing_weights:
+                logger.warning(f"以下模型在权重计算中缺失，将获得0权重: {missing_weights}")
             final_prediction = weighted_sum / total_weight
             
             # 计算综合置信度

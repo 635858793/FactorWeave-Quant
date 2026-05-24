@@ -357,7 +357,7 @@ class SmartDataMissingPrompt(QWidget):
                 try:
                     identifier = AssetTypeIdentifier.get_instance()
                     asset_type = identifier.identify_asset_type(symbol)
-                except:
+                except Exception:
                     asset_type = AssetType.STOCK_A  # 默认值
 
             # 获取推荐数据源

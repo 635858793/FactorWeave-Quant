@@ -3,7 +3,8 @@
 实现丰富的界面交互反馈和状态提示系统，提供清晰的操作确认和进度指示
 """
 
-import logging
+from loguru import logger
+import os
 from typing import Dict, List, Optional, Any, Callable, Union, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
@@ -11,7 +12,7 @@ from datetime import datetime, timedelta
 from PyQt5.QtWidgets import (
     QWidget, QLabel, QPushButton, QFrame, QVBoxLayout, QHBoxLayout,
     QProgressBar, QApplication, QGraphicsOpacityEffect, QMessageBox,
-    QToolTip, QSystemTrayIcon, QMenu, QAction, QDialog, QDialogButtonBox
+    QToolTip, QSystemTrayIcon, QMenu, QAction, QDialog, QDialogButtonBox, QStyle
 )
 from PyQt5.QtCore import (
     Qt, QTimer, QPropertyAnimation, QEasingCurve, QRect, QPoint,
@@ -21,9 +22,8 @@ from PyQt5.QtGui import (
     QFont, QPalette, QColor, QIcon, QPixmap, QPainter, QBrush, QPen,
     QLinearGradient, QMovie, QCursor
 )
+import os
 import threading
-
-logger = logging.getLogger(__name__)
 
 
 class FeedbackType(Enum):
@@ -575,7 +575,13 @@ class InteractionFeedbackSystem(QObject):
         try:
             if QSystemTrayIcon.isSystemTrayAvailable():
                 self.tray_icon = QSystemTrayIcon()
-                self.tray_icon.setIcon(QIcon("🔔"))  # 简化图标
+
+                icon_path = os.path.join(os.path.dirname(__file__), '..', '..', 'icons', 'logo.png')
+                icon_path = os.path.abspath(icon_path)
+                if os.path.exists(icon_path):
+                    self.tray_icon.setIcon(QIcon(icon_path))
+                else:
+                    self.tray_icon.setIcon(QApplication.style().standardIcon(QStyle.SP_ComputerIcon))
 
                 # 创建托盘菜单
                 tray_menu = QMenu()
@@ -588,9 +594,26 @@ class InteractionFeedbackSystem(QObject):
 
                 self.tray_icon.setContextMenu(tray_menu)
 
+                show_action.triggered.connect(self._restore_main_window)
+                quit_action.triggered.connect(QApplication.quit)
+
+                self.tray_icon.activated.connect(self._on_tray_activated)
+
+                self.tray_icon.show()
+
         except Exception as e:
             logger.error(f"设置系统托盘失败: {e}")
             self.tray_icon = None
+
+    def _restore_main_window(self):
+        if self.parent_widget:
+            self.parent_widget.show()
+            self.parent_widget.activateWindow()
+            self.parent_widget.raise_()
+
+    def _on_tray_activated(self, reason):
+        if reason == QSystemTrayIcon.DoubleClick:
+            self._restore_main_window()
 
     def show_notification(self, message: str, feedback_type: FeedbackType = FeedbackType.INFO,
                           config: Optional[FeedbackConfig] = None) -> ToastNotification:

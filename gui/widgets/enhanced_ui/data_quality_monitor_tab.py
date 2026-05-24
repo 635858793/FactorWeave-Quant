@@ -5,7 +5,6 @@
 提供数据质量评估、异常检测、质量报告等功能
 """
 
-import random
 import math
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Tuple
@@ -163,10 +162,7 @@ class QualityTrendChart:
             else:
                 current_score = 0.85
 
-            # 生成历史趋势（基于当前分数的微小波动）
             quality_scores = np.full(24, current_score)
-            # 添加小幅随机波动（±3%）
-            quality_scores = quality_scores + np.random.normal(0, 0.03, 24)
             quality_scores = np.clip(quality_scores, 0, 1)
 
             # 增量更新质量评分趋势图
@@ -1642,11 +1638,7 @@ class DataQualityMonitorTab(QWidget):
             else:
                 current_score = 0.85
 
-            # 生成历史趋势（基于当前分数的微小波动）
-            # 实际应用中，应该从数据库获取历史记录
             scores = np.full(periods, current_score)
-            # 添加小幅随机波动（±3%）
-            scores = scores + np.random.normal(0, 0.03, periods)
             scores = np.clip(scores, 0, 1)
 
             return scores
@@ -1670,7 +1662,7 @@ class DataQualityMonitorTab(QWidget):
 
             # 生成历史数据（基于平均值的泊松分布）
             if avg_per_hour > 0:
-                counts = np.random.poisson(avg_per_hour, periods)
+                counts = np.full(periods, int(np.ceil(avg_per_hour)), dtype=int)
             else:
                 counts = np.zeros(periods, dtype=int)
 
@@ -2704,13 +2696,13 @@ class DataQualityMonitorTab(QWidget):
                 self.datasource_table.setItem(row, 3, quality_item)
 
                 # 延迟（模拟）
-                delay = random.randint(10, 200) if connected else 0
-                delay_item = QTableWidgetItem(str(delay))
+                delay = "暂无数据" if connected else "--"
+                delay_item = QTableWidgetItem(delay)
                 self.datasource_table.setItem(row, 4, delay_item)
 
                 # 吞吐量（模拟）
-                throughput = random.randint(100, 1000) if connected else 0
-                throughput_item = QTableWidgetItem(str(throughput))
+                throughput = "暂无数据" if connected else "--"
+                throughput_item = QTableWidgetItem(throughput)
                 self.datasource_table.setItem(row, 5, throughput_item)
 
                 # 错误率（基于评分）
@@ -2724,8 +2716,8 @@ class DataQualityMonitorTab(QWidget):
                 self.datasource_table.setItem(row, 7, update_item)
 
                 # 数据量（模拟）
-                data_size = random.randint(1000, 10000) if connected else 0
-                size_item = QTableWidgetItem(str(data_size))
+                data_size = "暂无数据" if connected else "--"
+                size_item = QTableWidgetItem(data_size)
                 self.datasource_table.setItem(row, 8, size_item)
 
                 # 操作按钮
@@ -2773,11 +2765,11 @@ class DataQualityMonitorTab(QWidget):
                 quality_item = QTableWidgetItem(quality)
                 self.datasource_table.setItem(row, 3, quality_item)
 
-                delay = random.randint(10, 200) if connected else 0
+                delay = "暂无数据" if connected else "--"
                 delay_item = QTableWidgetItem(str(delay))
                 self.datasource_table.setItem(row, 4, delay_item)
 
-                throughput = random.randint(100, 1000) if connected else 0
+                throughput = "暂无数据" if connected else "--"
                 throughput_item = QTableWidgetItem(str(throughput))
                 self.datasource_table.setItem(row, 5, throughput_item)
 
@@ -2789,7 +2781,7 @@ class DataQualityMonitorTab(QWidget):
                 update_item = QTableWidgetItem(last_update)
                 self.datasource_table.setItem(row, 7, update_item)
 
-                data_size = random.randint(1000, 10000) if connected else 0
+                data_size = "暂无数据" if connected else "--"
                 size_item = QTableWidgetItem(str(data_size))
                 self.datasource_table.setItem(row, 8, size_item)
 
@@ -2846,13 +2838,7 @@ class DataQualityMonitorTab(QWidget):
         try:
             logger.info(f"测试数据源连接: {name}")
 
-            # 模拟连接测试
-            success = random.choice([True, True, True, False])
-
-            if success:
-                QMessageBox.information(self, "连接测试", f"{name} 连接成功")
-            else:
-                QMessageBox.warning(self, "连接测试", f"{name} 连接失败")
+            QMessageBox.information(self, "连接测试", f"{name} 暂不支持连接测试")
 
         except Exception as e:
             logger.error(f"测试数据源连接失败: {e}")
@@ -2949,62 +2935,8 @@ class DataQualityMonitorTab(QWidget):
     def _init_rule_management_data(self):
         """初始化规则管理数据"""
         try:
-            # 初始化质量规则（模拟数据）
-            self.quality_rules = [
-                {
-                    'id': 'R001',
-                    'name': '价格非空检查',
-                    'type': 'NOT_NULL',
-                    'column': 'close',
-                    'severity': 'HIGH',
-                    'enabled': True,
-                    'description': '检查收盘价是否为空'
-                },
-                {
-                    'id': 'R002',
-                    'name': '成交量范围检查',
-                    'type': 'RANGE_CHECK',
-                    'column': 'volume',
-                    'severity': 'MEDIUM',
-                    'enabled': True,
-                    'description': '检查成交量是否在合理范围内'
-                },
-                {
-                    'id': 'R003',
-                    'name': '日期格式检查',
-                    'type': 'FORMAT_CHECK',
-                    'column': 'datetime',
-                    'severity': 'LOW',
-                    'enabled': True,
-                    'description': '检查日期格式是否正确'
-                }
-            ]
-
-            # 初始化质量问题（模拟数据）
-            self.quality_issues = [
-                {
-                    'id': 'I001',
-                    'rule_id': 'R001',
-                    'rule_name': '价格非空检查',
-                    'severity': 'HIGH',
-                    'description': '发现空值',
-                    'affected_rows': 15,
-                    'column': 'close',
-                    'detected_at': datetime.now() - timedelta(hours=1),
-                    'resolved': False
-                },
-                {
-                    'id': 'I002',
-                    'rule_id': 'R002',
-                    'rule_name': '成交量范围检查',
-                    'severity': 'MEDIUM',
-                    'description': '成交量超出范围',
-                    'affected_rows': 8,
-                    'column': 'volume',
-                    'detected_at': datetime.now() - timedelta(hours=2),
-                    'resolved': False
-                }
-            ]
+            self.quality_rules = []
+            self.quality_issues = []
 
             # 更新规则表格
             self._update_rules_table()

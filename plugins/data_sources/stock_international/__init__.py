@@ -4,10 +4,15 @@
 包含国际股票市场的数据源插件（非A股）
 """
 
-# 插件列表
-INTERNATIONAL_STOCK_PLUGINS = [
-    'wind_plugin',           # Wind万得（专业）
-    'yahoo_finance_plugin'   # 雅虎财经（美股）
-]
+from loguru import logger
+
+INTERNATIONAL_STOCK_PLUGINS = []
+
+for _name in ['wind_plugin', 'yahoo_finance_plugin']:
+    try:
+        __import__(f'plugins.data_sources.stock_international.{_name}', fromlist=[_name])
+        INTERNATIONAL_STOCK_PLUGINS.append(_name)
+    except ImportError as e:
+        logger.warning(f"国际股票插件 {_name} 导入失败（模块尚未实现）: {e}")
 
 __all__ = INTERNATIONAL_STOCK_PLUGINS

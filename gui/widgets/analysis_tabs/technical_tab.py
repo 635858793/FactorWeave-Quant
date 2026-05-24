@@ -305,7 +305,7 @@ class BatchCalculateWorker(QThread):
                 else:
                     return f"{value:.4f}"
             return str(value)
-        except:
+        except Exception:
             return str(value)
     
     def _generate_signal_advice(self, indicator_name: str, value_name: str, 

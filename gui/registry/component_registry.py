@@ -3,7 +3,7 @@ UI组件注册管理系统
 实现UI组件的统一注册和生命周期管理，支持组件的动态加载和卸载
 """
 
-import logging
+from loguru import logger
 import weakref
 from typing import Dict, List, Optional, Any, Callable, Type, Set, Union
 from dataclasses import dataclass, field
@@ -21,8 +21,6 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from core.enums import ComponentState, ComponentType
-
-logger = logging.getLogger(__name__)
 
 class LoadingStrategy(Enum):
     """加载策略枚举"""

@@ -5,13 +5,13 @@
 用于存储风险监控和执行监控的历史数据
 """
 
-import sqlite3
 import json
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 from pathlib import Path
 from dataclasses import dataclass, asdict
 from loguru import logger
+from core.database.unified_sqlite_access import UnifiedSQLiteAccess
 
 @dataclass
 class RiskHistoryRecord:
@@ -70,7 +70,8 @@ class PerformanceHistoryManager:
     def _init_tables(self):
         """初始化数据库表"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 # 创建风险历史表
@@ -132,8 +133,6 @@ class PerformanceHistoryManager:
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_execution_timestamp ON execution_history(timestamp)')
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_execution_symbol ON execution_history(symbol)')
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_execution_order_id ON execution_history(order_id)')
-
-                conn.commit()
                 self.logger.info("性能历史数据表初始化完成")
 
         except Exception as e:
@@ -142,7 +141,8 @@ class PerformanceHistoryManager:
     def save_risk_record(self, record: RiskHistoryRecord) -> bool:
         """保存风险历史记录"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 cursor.execute('''
@@ -172,8 +172,6 @@ class PerformanceHistoryManager:
                     record.portfolio_value,
                     record.notes
                 ))
-
-                conn.commit()
                 self.logger.debug(f"风险历史记录已保存: {record.symbol} at {record.timestamp}")
                 return True
 
@@ -184,7 +182,8 @@ class PerformanceHistoryManager:
     def save_execution_record(self, record: ExecutionHistoryRecord) -> bool:
         """保存执行历史记录"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 cursor.execute('''
@@ -216,8 +215,6 @@ class PerformanceHistoryManager:
                     record.venue,
                     record.notes
                 ))
-
-                conn.commit()
                 self.logger.debug(f"执行历史记录已保存: {record.order_id}")
                 return True
 
@@ -229,7 +226,8 @@ class PerformanceHistoryManager:
                          end_time: datetime = None, limit: int = 1000) -> List[RiskHistoryRecord]:
         """获取风险历史记录"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 # 构建查询条件
@@ -298,7 +296,8 @@ class PerformanceHistoryManager:
                               end_time: datetime = None, limit: int = 1000) -> List[ExecutionHistoryRecord]:
         """获取执行历史记录"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 # 构建查询条件
@@ -447,7 +446,8 @@ class PerformanceHistoryManager:
         try:
             cutoff_time = datetime.now() - timedelta(days=days_to_keep)
 
-            with sqlite3.connect(self.db_path) as conn:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
 
                 # 删除旧的风险记录
@@ -463,9 +463,6 @@ class PerformanceHistoryManager:
                     (cutoff_time.isoformat(),)
                 )
                 execution_deleted = cursor.rowcount
-
-                conn.commit()
-
                 self.logger.info(f"清理完成: 删除{risk_deleted}条风险记录, {execution_deleted}条执行记录")
                 return True
 

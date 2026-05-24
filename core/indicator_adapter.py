@@ -407,6 +407,24 @@ def calc_cci(df: pd.DataFrame, n=14) -> pd.Series:
     else:
         return pd.Series([float('nan')] * len(df), index=df.index, name=f"CCI{n}")
 
+def calc_wr(df: pd.DataFrame, n=14) -> pd.Series:
+    """
+    计算Williams %R指标的适配函数
+
+    参数:
+        df: 输入DataFrame，包含high, low, close列
+        n: 周期
+
+    返回:
+        Series: Williams %R序列
+    """
+    result = calculate_indicator('WILLR', df, {'timeperiod': n})
+
+    if 'WILLR' in result.columns:
+        return result['WILLR']
+    else:
+        return pd.Series([float('nan')] * len(df), index=df.index, name=f"WR{n}")
+
 def get_talib_indicator_list() -> List[str]:
     """
     获取TA-Lib指标列表

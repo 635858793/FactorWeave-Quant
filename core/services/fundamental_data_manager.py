@@ -47,6 +47,7 @@ class FundamentalDataManager:
         self.data_validator = data_validator
         self.announcement_parser = announcement_parser
         self.uni_plugin_manager = uni_plugin_manager  # 通过TET框架调用插件
+        self.fundamental_plugins: Dict[str, Any] = {}
         logger.info("FundamentalDataManager 初始化完成，集成TET框架。")
 
     async def register_fundamental_plugin(self, plugin_id: str, plugin: IDataSourcePlugin):

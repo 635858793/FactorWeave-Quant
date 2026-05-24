@@ -261,19 +261,19 @@ class HuobiPlugin(HTTPAPIPluginTemplate):
             if not symbols_info or 'data' not in symbols_info:
                 return pd.DataFrame()
 
-            symbols_data = []
-
-            for symbol_info in symbols_info['data']:
-                if symbol_info.get('state') == 'online':
-                    symbols_data.append({
-                        'symbol': symbol_info.get('symbol', ''),
-                        'base_asset': symbol_info.get('base-currency', ''),
-                        'quote_asset': symbol_info.get('quote-currency', ''),
-                        'status': symbol_info.get('state', ''),
-                        'price_precision': symbol_info.get('price-precision', 8),
-                        'amount_precision': symbol_info.get('amount-precision', 8),
-                        'value_precision': symbol_info.get('value-precision', 8),
-                    })
+            symbols_data = [
+                {
+                    'symbol': symbol_info.get('symbol', ''),
+                    'base_asset': symbol_info.get('base-currency', ''),
+                    'quote_asset': symbol_info.get('quote-currency', ''),
+                    'status': symbol_info.get('state', ''),
+                    'price_precision': symbol_info.get('price-precision', 8),
+                    'amount_precision': symbol_info.get('amount-precision', 8),
+                    'value_precision': symbol_info.get('value-precision', 8),
+                }
+                for symbol_info in symbols_info['data']
+                if symbol_info.get('state') == 'online'
+            ]
 
             df = pd.DataFrame(symbols_data)
             self.logger.info(f"获取火币交易对列表成功，共 {len(df)} 个交易对")
@@ -532,10 +532,11 @@ class HuobiPlugin(HTTPAPIPluginTemplate):
                 return pd.DataFrame()
 
             # 展开嵌套的data结构
-            trades = []
-            for item in data:
-                for trade in item.get('data', []):
-                    trades.append(trade)
+            trades = [
+                trade
+                for item in data
+                for trade in item.get('data', [])
+            ]
 
             df = pd.DataFrame(trades)
 

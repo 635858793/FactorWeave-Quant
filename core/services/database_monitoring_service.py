@@ -18,6 +18,7 @@ from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 import json
 import statistics
+import numpy as np
 from loguru import logger
 
 from .base_service import BaseService
@@ -217,8 +218,8 @@ class DatabaseMonitoringService(BaseService):
             
             return {
                 "P50": statistics.median(latencies),
-                "P95": self._percentile(latencies, 95),
-                "P99": self._percentile(latencies, 99),
+                "P95": float(np.percentile(latencies, 95)),
+                "P99": float(np.percentile(latencies, 99)),
                 "avg": statistics.mean(latencies)
             }
             
@@ -243,21 +244,6 @@ class DatabaseMonitoringService(BaseService):
         except Exception as e:
             logger.error(f"计算错误率失败 {pool_name}: {e}")
             return 0.0
-    
-    def _percentile(self, data: List[float], percentile: int) -> float:
-        """计算百分位数"""
-        if not data:
-            return 0.0
-        
-        sorted_data = sorted(data)
-        index = (percentile / 100) * (len(sorted_data) - 1)
-        
-        if index.is_integer():
-            return sorted_data[int(index)]
-        else:
-            lower = sorted_data[int(index)]
-            upper = sorted_data[int(index) + 1]
-            return lower + (upper - lower) * (index - int(index))
     
     def _update_performance_stats(self, pool_name: str, query_performance: Dict[str, float]) -> None:
         """更新性能统计"""

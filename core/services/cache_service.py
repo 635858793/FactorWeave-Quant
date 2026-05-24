@@ -8,6 +8,7 @@
 
 from .metrics_base import add_dict_interface
 import asyncio
+import sys
 import threading
 import time
 import hashlib
@@ -25,6 +26,7 @@ import gc
 
 from loguru import logger
 
+from utils.safe_pickle import safe_load
 from .base_service import BaseService
 from ..events import EventBus, get_event_bus
 from ..containers import ServiceContainer, get_service_container
@@ -249,11 +251,15 @@ class MemoryCache:
     def set(self, key: str, value: Any, ttl: Optional[timedelta] = None) -> None:
         """设置缓存值"""
         with self._lock:
-            # 计算值大小
             try:
-                size = len(pickle.dumps(value))
-            except:
-                size = len(str(value))  # 备用计算方法
+                try:
+                    size = len(value)
+                except TypeError:
+                    size = sys.getsizeof(value)
+                if size > 1048576:
+                    size = len(pickle.dumps(value))
+            except Exception:
+                size = len(str(value))
 
             # 创建缓存条目
             entry = CacheEntry(
@@ -421,7 +427,7 @@ class DiskCache:
                     return None
 
                 with open(cache_path, 'rb') as f:
-                    value = pickle.load(f)
+                    value = safe_load(f)
 
                 # 更新访问信息
                 entry_info['last_accessed'] = datetime.now().isoformat()
@@ -1227,7 +1233,7 @@ class CacheService(BaseService):
                     result = self._l1_cache.get(test_key)
                     self._l1_cache.delete(test_key)
                     l1_healthy = (result == "test")
-                except:
+                except Exception:
                     l1_healthy = False
 
             # 测试L2缓存
@@ -1238,7 +1244,7 @@ class CacheService(BaseService):
                     result = self._l2_cache.get(test_key)
                     self._l2_cache.delete(test_key)
                     l2_healthy = (result == "test")
-                except:
+                except Exception:
                     l2_healthy = False
 
             stats = self.get_stats()

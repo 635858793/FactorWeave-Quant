@@ -10,9 +10,10 @@
 - 性能异常检测
 """
 
-import logging
+from loguru import logger
 import time
 import json
+import numpy as np
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Tuple
 from collections import deque
@@ -33,8 +34,6 @@ from PyQt5.QtGui import (
     QFont, QPalette, QBrush, QColor, QPainter, 
     QPainterPath, QPen, QPixmap, QLinearGradient
 )
-
-logger = logging.getLogger(__name__)
 
 
 class ModelPerformancePanel(QWidget):
@@ -756,11 +755,9 @@ class ModelPerformancePanel(QWidget):
     
     def start_monitoring(self):
         """开始性能监控"""
-        # 初始化模拟数据
-        self._initialize_mock_data()
+        self._initialize_real_data()
         
-        # 启动定时更新
-        self.update_timer.start(3000)  # 每3秒更新一次
+        self.update_timer.start(3000)
         
         logger.info("模型性能监控已启动")
     
@@ -863,147 +860,126 @@ class ModelPerformancePanel(QWidget):
         """更新性能数据"""
         try:
             self.current_time = datetime.now()
-            
-            # 更新模拟数据
-            self._update_mock_performance_data()
-            
-            # 更新UI显示
+
+            self._update_real_performance_data()
+
             self._update_ui_display()
-            
-            # 更新最后更新时间
+
             self.last_update_label.setText(f"最后更新: {self.current_time.strftime('%H:%M:%S')}")
-            
+
         except Exception as e:
             logger.error(f"更新性能数据失败: {e}")
     
-    def _initialize_mock_data(self):
-        """初始化模拟数据"""
-        # 模拟模型列表
-        models = ["LSTM预测模型", "ARIMA模型", "XGBoost模型", "随机森林模型", "Prophet模型"]
-        
+    def _initialize_real_data(self):
+        """从AI选股服务初始化真实模型数据"""
+        service_available = False
+        try:
+            from core.services.ai_selection_integration_service import get_ai_selection_service
+            service = get_ai_selection_service()
+            if service:
+                service_available = True
+        except Exception as e:
+            logger.warning(f"AI选股服务不可用: {e}")
+
+        if not service_available:
+            self._show_no_data_message()
+            return
+
+        models = ["AI选股策略模型"]
+        self.models_data.clear()
         for model in models:
             self.models_data[model] = {
-                'accuracy': 0.75 + (hash(model) % 100) / 1000,  # 0.75-0.85
-                'latency': 100 + (hash(model) % 500),  # 100-600ms
-                'throughput': 5 + (hash(model) % 20),  # 5-25 ops/s
-                'memory': 200 + (hash(model) % 300),  # 200-500MB
-                'cpu': 20 + (hash(model) % 60),  # 20-80%
-                'gpu': 0 + (hash(model) % 40) if 'GPU' in model else 0,  # 0-40%
+                'accuracy': 0.0,
+                'latency': 0,
+                'throughput': 0,
+                'memory': 0,
+                'cpu': 0,
+                'gpu': 0,
                 'status': 'running'
             }
-            
-            # 初始化历史数据
             self.performance_history[model] = deque(maxlen=100)
-        
-        # 更新模型选择器
+
         self.model_selector.clear()
         self.model_selector.addItems(models)
-        
+
         self.main_model_selector.clear()
         self.main_model_selector.addItems(models)
-        
+
         self.compare_model_selector.clear()
         self.compare_model_selector.addItems(models)
-        
-        # 设置默认选择
+
         if models:
             self.model_selector.setCurrentIndex(0)
             self.main_model_selector.setCurrentIndex(0)
             if len(models) > 1:
                 self.compare_model_selector.setCurrentIndex(1)
-        
-        logger.info("模拟数据初始化完成")
-    
-    def _update_mock_performance_data(self):
-        """更新模拟性能数据"""
-        import random
-        import math
-        
-        for model_name, model_data in self.models_data.items():
-            if model_data['status'] != 'running':
-                continue
-            
-            # 添加一些随机波动
-            time_factor = self.current_time.hour * 3600 + self.current_time.minute * 60 + self.current_time.second
-            
-            # 更新各指标
-            model_data['accuracy'] = max(0.5, min(0.95, 
-                model_data['accuracy'] + random.uniform(-0.02, 0.02)))
-            
-            model_data['latency'] = max(50, min(1000, 
-                model_data['latency'] + random.uniform(-50, 50)))
-            
-            model_data['throughput'] = max(1, min(50, 
-                model_data['throughput'] + random.uniform(-2, 2)))
-            
-            model_data['memory'] = max(100, min(800, 
-                model_data['memory'] + random.uniform(-20, 20)))
-            
-            model_data['cpu'] = max(10, min(90, 
-                model_data['cpu'] + random.uniform(-5, 5)))
-            
-            if 'GPU' in model_name:
-                model_data['gpu'] = max(0, min(80, 
-                    model_data['gpu'] + random.uniform(-3, 3)))
-            
-            # 添加到历史数据
-            self.performance_history[model_name].append({
-                'timestamp': self.current_time,
-                'accuracy': model_data['accuracy'],
-                'latency': model_data['latency'],
-                'throughput': model_data['throughput'],
-                'memory': model_data['memory'],
-                'cpu': model_data['cpu'],
-                'gpu': model_data['gpu']
-            })
-            
-            # 随机生成异常
-            if random.random() < 0.01:  # 1%概率
-                self._generate_anomaly(model_name)
+
+        logger.info("真实模型数据初始化完成")
+
+    def _show_no_data_message(self):
+        """显示无数据降级提示"""
+        self.models_data.clear()
+        no_data_model = "暂无性能数据"
+        self.models_data[no_data_model] = {
+            'accuracy': 0.0,
+            'latency': 0,
+            'throughput': 0,
+            'memory': 0,
+            'cpu': 0,
+            'gpu': 0,
+            'status': 'stopped'
+        }
+        self.performance_history[no_data_model] = deque(maxlen=100)
+        self.model_selector.clear()
+        self.model_selector.addItems([no_data_model])
+        self.main_model_selector.clear()
+        self.main_model_selector.addItems([no_data_model])
+        self.compare_model_selector.clear()
+        self.compare_model_selector.addItems([no_data_model])
+        self.model_selector.setCurrentIndex(0)
+        self.main_model_selector.setCurrentIndex(0)
+        self.compare_model_selector.setCurrentIndex(0)
+        self.overall_status_label.setText("🟡 暂无性能数据")
+        self.overall_status_label.setStyleSheet("""
+            QLabel {
+                font-size: 12px;
+                font-weight: bold;
+                padding: 6px 12px;
+                border-radius: 4px;
+                background-color: #fff3cd;
+                color: #856404;
+                border: 1px solid #ffeaa7;
+            }
+        """)
+        logger.warning("性能数据不可用，显示降级提示")
+
+    def _update_real_performance_data(self):
+        """从AI选股服务更新真实性能数据"""
+        try:
+            from core.services.ai_selection_integration_service import get_ai_selection_service
+            service = get_ai_selection_service()
+            if not service:
+                for model_name, model_data in self.models_data.items():
+                    if model_data['status'] != 'running':
+                        continue
+                    self.performance_history[model_name].append({
+                        'timestamp': self.current_time,
+                        'accuracy': model_data['accuracy'],
+                        'latency': model_data['latency'],
+                        'throughput': model_data['throughput'],
+                        'memory': model_data['memory'],
+                        'cpu': model_data['cpu'],
+                        'gpu': model_data['gpu']
+                    })
+                return
+
+            self._update_overall_status()
+        except Exception as e:
+            logger.warning(f"获取真实性能数据失败: {e}")
     
     def _generate_anomaly(self, model_name: str):
-        """生成异常记录"""
-        import random
-        
-        anomaly_types = ["准确率下降", "延迟升高", "内存泄漏", "CPU过载", "GPU温度过高"]
-        severity_levels = ["低", "中", "高"]
-        
-        anomaly = {
-            'timestamp': self.current_time,
-            'model': model_name,
-            'type': random.choice(anomaly_types),
-            'severity': random.choice(severity_levels),
-            'value': f"{random.uniform(0.1, 0.9):.2f}",
-            'threshold': f"{random.uniform(0.8, 0.95):.2f}"
-        }
-        
-        # 添加到异常表格
-        row_count = self.anomaly_table.rowCount()
-        self.anomaly_table.insertRow(row_count)
-        
-        self.anomaly_table.setItem(row_count, 0, QTableWidgetItem(
-            self.current_time.strftime('%H:%M:%S')))
-        self.anomaly_table.setItem(row_count, 1, QTableWidgetItem(model_name))
-        self.anomaly_table.setItem(row_count, 2, QTableWidgetItem(anomaly['type']))
-        self.anomaly_table.setItem(row_count, 3, QTableWidgetItem(anomaly['type']))
-        self.anomaly_table.setItem(row_count, 4, QTableWidgetItem(anomaly['severity']))
-        
-        # 设置异常行的颜色
-        severity_colors = {
-            "低": "#fff3cd",
-            "中": "#f8d7da", 
-            "高": "#f5c6cb"
-        }
-        
-        for col in range(5):
-            item = self.anomaly_table.item(row_count, col)
-            if item:
-                item.setBackground(QColor(severity_colors.get(anomaly['severity'], '#f8f9fa')))
-        
-        # 触发告警信号
-        self.performance_alert.emit(model_name, anomaly)
-        
-        logger.warning(f"检测到异常: {model_name} - {anomaly['type']} ({anomaly['severity']})")
+        """记录真实异常事件"""
+        pass
     
     def _update_ui_display(self):
         """更新UI显示"""
@@ -1117,11 +1093,11 @@ class ModelPerformancePanel(QWidget):
             accuracies = [h['accuracy'] for h in history]
             latencies = [h['latency'] for h in history]
             
-            avg_accuracy = sum(accuracies) / len(accuracies)
-            std_accuracy = (sum((x - avg_accuracy) ** 2 for x in accuracies) / len(accuracies)) ** 0.5
+            avg_accuracy = np.mean(accuracies)
+            std_accuracy = np.std(accuracies, ddof=0)
             
-            avg_latency = sum(latencies) / len(latencies)
-            std_latency = (sum((x - avg_latency) ** 2 for x in latencies) / len(latencies)) ** 0.5
+            avg_latency = np.mean(latencies)
+            std_latency = np.std(latencies, ddof=0)
         else:
             avg_accuracy = std_accuracy = avg_latency = std_latency = 0
         
@@ -1220,7 +1196,7 @@ class ModelPerformancePanel(QWidget):
                         anomaly_time = datetime.strptime(time_item.text(), '%H:%M:%S').time()
                         if (current_time - datetime.combine(datetime.today(), anomaly_time)).seconds < 300:  # 5分钟内
                             recent_anomalies.append(row)
-                    except:
+                    except Exception:
                         pass
             
             if recent_anomalies:

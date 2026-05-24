@@ -3,7 +3,7 @@
 为所有需要网络配置的插件提供统一的配置界面
 """
 
-import logging
+from loguru import logger
 from typing import Dict, Any, List, Optional
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout,
@@ -18,8 +18,6 @@ from PyQt5.QtGui import QFont, QColor, QPalette
 from core.network.universal_network_config import (
     get_universal_network_manager, PluginNetworkConfig, NetworkEndpoint
 )
-
-logger = logging.getLogger(__name__)
 
 
 class UniversalNetworkConfigWidget(QWidget):

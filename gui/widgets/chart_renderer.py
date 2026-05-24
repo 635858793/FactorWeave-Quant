@@ -625,41 +625,147 @@ class ChartRenderer(QObject):
     def _downsample_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """智能降采样，保持关键特征
 
+        对于OHLC数据：将数据分成等大小桶，每个桶内计算 OHLC 聚合值，
+        确保降采样后开盘/最高/最低/收盘价都来自同一数据窗口。
+        对于非OHLC线图数据：使用 LTTB（最大三角形三桶）算法保留视觉关键点。
+
         Args:
             data: 原始数据
 
         Returns:
             降采样后的数据
         """
-        if len(data) <= self._downsampling_threshold:
+        n = len(data)
+        if n <= self._downsampling_threshold:
             return data
 
-        # 使用 OHLCV 保持降采样
-        sample_size = len(data) // self._downsampling_threshold
+        target_size = self._downsampling_threshold
+        has_ohlc = all(col in data.columns for col in ['open', 'high', 'low', 'close'])
+        has_volume = 'volume' in data.columns
 
-        # 创建结果DataFrame
-        result = pd.DataFrame(index=data.index[::sample_size])
+        if has_ohlc:
+            return self._downsample_ohlc(data, n, target_size, has_volume)
+        else:
+            return self._downsample_lttb(data, n, target_size)
 
-        # 处理OHLC数据
-        if all(col in data.columns for col in ['open', 'high', 'low', 'close']):
-            result['open'] = data['open'].iloc[::sample_size]
-            result['high'] = data['high'].rolling(
-                sample_size, min_periods=1).max()
-            result['low'] = data['low'].rolling(
-                sample_size, min_periods=1).min()
-            result['close'] = data['close'].iloc[::sample_size]
+    def _downsample_ohlc(self, data: pd.DataFrame, n: int, target_size: int,
+                         has_volume: bool) -> pd.DataFrame:
+        """对OHLC数据进行分桶聚合降采样"""
+        bucket_size = max(1, n // target_size)
+        num_buckets = (n + bucket_size - 1) // bucket_size
 
-        # 处理成交量
-        if 'volume' in data.columns:
-            result['volume'] = data['volume'].rolling(
-                sample_size, min_periods=1).sum()
+        result_indices = []
+        result_data = {
+            'open': np.empty(num_buckets, dtype=np.float64),
+            'high': np.empty(num_buckets, dtype=np.float64),
+            'low': np.empty(num_buckets, dtype=np.float64),
+            'close': np.empty(num_buckets, dtype=np.float64),
+        }
+        if has_volume:
+            result_data['volume'] = np.empty(num_buckets, dtype=np.float64)
 
-        # 处理其他列（使用平均值）
-        other_cols = [col for col in data.columns if col not in [
-            'open', 'high', 'low', 'close', 'volume']]
+        open_arr = data['open'].values
+        high_arr = data['high'].values
+        low_arr = data['low'].values
+        close_arr = data['close'].values
+        vol_arr = data['volume'].values if has_volume else None
+
+        for b in range(num_buckets):
+            start = b * bucket_size
+            end = min(start + bucket_size, n)
+            result_indices.append(data.index[start])
+
+            result_data['open'][b] = open_arr[start]
+            result_data['high'][b] = high_arr[start:end].max()
+            result_data['low'][b] = low_arr[start:end].min()
+            result_data['close'][b] = close_arr[end - 1]
+            if has_volume:
+                result_data['volume'][b] = vol_arr[start:end].sum()
+
+        result = pd.DataFrame(result_data, index=result_indices)
+
+        other_cols = [col for col in data.columns
+                      if col not in ['open', 'high', 'low', 'close', 'volume']]
         for col in other_cols:
-            result[col] = data[col].rolling(sample_size, min_periods=1).mean()
+            col_arr = data[col].values
+            agg = np.empty(num_buckets, dtype=np.float64)
+            for b in range(num_buckets):
+                start = b * bucket_size
+                end = min(start + bucket_size, n)
+                agg[b] = col_arr[start:end].mean()
+            result[col] = agg
 
+        return result
+
+    def _downsample_lttb(self, data: pd.DataFrame, n: int,
+                         target_size: int) -> pd.DataFrame:
+        """使用LTTB（最大三角形三桶）算法对线图数据进行降采样
+
+        LTTB算法在保持视觉趋势的同时，保留关键极值点，
+        避免简单步长采样丢失重要特征。
+        """
+        if n <= target_size:
+            return data
+
+        value_col = data.columns[0]
+        y = data[value_col].values.astype(np.float64)
+        x = np.arange(n, dtype=np.float64)
+
+        if n <= 2:
+            return data
+
+        threshold = target_size - 2
+        bucket_size = (n - 2) / threshold
+
+        sampled = np.empty(target_size, dtype=np.int64)
+        sampled[0] = 0
+        sampled[target_size - 1] = n - 1
+
+        a = 0
+        for i in range(threshold):
+            avg_x_start = int(np.floor((i + 0) * bucket_size)) + 1
+            avg_x_end = int(np.floor((i + 1) * bucket_size)) + 1
+            avg_x_end = min(avg_x_end, n - 1)
+
+            avg_range_start = int(np.floor((i + 0) * bucket_size)) + 1
+            avg_range_end = int(np.floor((i + 1) * bucket_size)) + 1
+            avg_range_end = min(avg_range_end, n - 1)
+
+            if avg_range_start >= avg_range_end:
+                avg_range_start = avg_range_end - 1
+
+            avg_x = np.mean(x[avg_range_start:avg_range_end + 1])
+            avg_y = np.mean(y[avg_range_start:avg_range_end + 1])
+
+            next_avg_x_start = int(np.floor((i + 1) * bucket_size)) + 1
+            next_avg_x_end = int(np.floor((i + 2) * bucket_size)) + 1
+            next_avg_x_end = min(next_avg_x_end, n - 1)
+
+            if next_avg_x_start >= next_avg_x_end:
+                next_avg_x_start = next_avg_x_end - 1
+
+            next_avg_x = np.mean(x[next_avg_x_start:next_avg_x_end + 1])
+            next_avg_y = np.mean(y[next_avg_x_start:next_avg_x_end + 1])
+
+            max_area = -1.0
+            max_area_idx = avg_range_start
+
+            prev_x = x[a]
+            prev_y = y[a]
+
+            for j in range(avg_range_start, avg_range_end + 1):
+                area = abs(
+                    (prev_x - next_avg_x) * (y[j] - prev_y) -
+                    (prev_x - x[j]) * (next_avg_y - prev_y)
+                ) * 0.5
+                if area > max_area:
+                    max_area = area
+                    max_area_idx = j
+
+            sampled[i + 1] = max_area_idx
+            a = max_area_idx
+
+        result = data.iloc[sampled].copy()
         return result
 
     def _optimize_display(self, ax, use_datetime_axis: bool = False):

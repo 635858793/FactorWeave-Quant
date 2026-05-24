@@ -1,4 +1,3 @@
-from loguru import logger
 # core/metrics/app_metrics_service.py
 """
 应用性能度量服务模块
@@ -8,11 +7,15 @@ from loguru import logger
 
 import time
 import threading
+import json
+import os
 from typing import Dict, Any, Optional, List, Callable
 from functools import wraps
 from dataclasses import dataclass
 from datetime import datetime
 from threading import Lock
+from pathlib import Path
+from loguru import logger
 
 from ..events import EventBus
 from .events import ApplicationMetricRecorded
@@ -82,6 +85,16 @@ class ApplicationMetricsService:
         self._metrics_lock = Lock()
         self._enabled = True
 
+        self._metrics_file = Path("data") / "app_metrics.json"
+        self._auto_persist = True
+        self._flush_interval = 30
+        self._flush_timer: Optional[threading.Timer] = None
+        self._dirty = False
+        self._lock = threading.Lock()
+        self._disposed = False
+
+        self._start_flush_timer()
+
     def measure(self, operation_name: Optional[str] = None) -> Callable:
         """
         测量函数执行时间的装饰器
@@ -123,15 +136,16 @@ class ApplicationMetricsService:
             duration: 执行时间（秒）
             success: 是否成功
         """
+        if self._disposed:
+            return
+
         with self._metrics_lock:
-            # 获取或创建操作指标
             if operation_name not in self.metrics:
                 self.metrics[operation_name] = OperationMetrics(
                     name=operation_name)
 
             metrics = self.metrics[operation_name]
 
-            # 更新指标
             metrics.total_duration += duration
             metrics.call_count += 1
             metrics.last_execution_time = time.time()
@@ -141,6 +155,8 @@ class ApplicationMetricsService:
 
             if not success:
                 metrics.error_count += 1
+
+        self._dirty = True
 
         # 发布事件
         if self.event_bus:
@@ -241,6 +257,96 @@ class ApplicationMetricsService:
             是否启用
         """
         return self._enabled
+
+    def _start_flush_timer(self) -> None:
+        """启动定期刷新定时器"""
+        if not self._auto_persist or self._disposed:
+            return
+        self._flush_timer = threading.Timer(self._flush_interval, self._flush_metrics)
+        self._flush_timer.daemon = True
+        self._flush_timer.start()
+
+    def _stop_flush_timer(self) -> None:
+        """停止定期刷新定时器"""
+        if self._flush_timer is not None:
+            self._flush_timer.cancel()
+            self._flush_timer = None
+
+    def _flush_metrics(self) -> None:
+        """定期刷新回调"""
+        try:
+            if self._dirty:
+                self.flush()
+        finally:
+            if not self._disposed:
+                self._start_flush_timer()
+
+    def flush(self) -> bool:
+        """
+        将当前指标数据持久化到磁盘
+
+        Returns:
+            是否成功
+        """
+        if self._disposed:
+            return False
+        try:
+            self._metrics_file.parent.mkdir(parents=True, exist_ok=True)
+            data = self.get_metrics()
+            serializable = {
+                "updated_at": datetime.now().isoformat(),
+                "metrics": data
+            }
+            with open(self._metrics_file, 'w', encoding='utf-8') as f:
+                json.dump(serializable, f, ensure_ascii=False, indent=2)
+            self._dirty = False
+            logger.debug(f"指标数据已持久化到 {self._metrics_file}")
+            return True
+        except Exception as e:
+            logger.error(f"持久化指标数据失败: {e}")
+            return False
+
+    def load_metrics(self) -> bool:
+        """
+        从磁盘加载之前持久化的指标数据
+
+        Returns:
+            是否成功加载
+        """
+        try:
+            if not self._metrics_file.exists():
+                return False
+            with open(self._metrics_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            saved_metrics = data.get("metrics", {})
+            with self._metrics_lock:
+                for name, metric_data in saved_metrics.items():
+                    if name not in self.metrics:
+                        m = OperationMetrics(name=name)
+                        m.total_duration = metric_data.get("total_duration", 0.0)
+                        m.max_duration = metric_data.get("max_duration", 0.0)
+                        m.call_count = metric_data.get("call_count", 0)
+                        m.error_count = metric_data.get("error_count", 0)
+                        m.last_execution_time = metric_data.get("last_execution_time")
+                        self.metrics[name] = m
+            logger.info(f"从 {self._metrics_file} 加载了 {len(saved_metrics)} 条指标记录")
+            return True
+        except Exception as e:
+            logger.error(f"加载指标数据失败: {e}")
+            return False
+
+    def dispose(self) -> None:
+        """
+        停止服务并强制持久化所有缓存指标
+        """
+        if self._disposed:
+            return
+        self._disposed = True
+        self._stop_flush_timer()
+        self._enabled = False
+        if self._dirty:
+            self.flush()
+        logger.info("应用性能度量服务已停止，指标数据已持久化")
 
     def measure_time(self, operation_name: Optional[str] = None) -> Callable:
         """

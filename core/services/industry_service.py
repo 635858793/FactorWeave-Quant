@@ -496,13 +496,5 @@ class IndustryService(CacheableService, ConfigurableService):
         if cache_type == 'all':
             super().clear_cache()
         else:
-            # 清除特定类型的缓存
-            keys_to_remove = []
-            for key in self._cache.keys():
-                if key.startswith(cache_type):
-                    keys_to_remove.append(key)
-
-            for key in keys_to_remove:
-                self._cache.pop(key, None)
-
+            super().clear_cache()
             logger.debug(f"Cleared {cache_type} cache")

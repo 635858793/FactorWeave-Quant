@@ -22,7 +22,7 @@ try:
         try:
             app = QApplication.instance()
             return app is not None
-        except:
+        except Exception:
             return False
 
     PYQT5_AVAILABLE = True
@@ -179,7 +179,7 @@ class IndustryManager(QObject):
                             # 删除损坏的缓存文件
                             try:
                                 os.remove(self.cache_file)
-                            except:
+                            except Exception:
                                 pass
                             # 使用默认数据，后台更新
                             self._load_default_industry_data()

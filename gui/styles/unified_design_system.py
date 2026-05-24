@@ -3,7 +3,7 @@
 建立统一的UI设计规范和组件标准，定义颜色、字体、间距等设计元素
 """
 
-import logging
+from loguru import logger
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
@@ -12,8 +12,6 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QApplication
 import json
 import os
-
-logger = logging.getLogger(__name__)
 
 class ColorScheme(Enum):
     """颜色方案枚举"""

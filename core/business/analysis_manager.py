@@ -267,15 +267,15 @@ class AnalysisManager:
                     df['rsi'] = result['RSI']
                 else:
                     delta = df['close'].diff()
-                    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-                    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+                    gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14, adjust=False).mean()
+                    loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
                     rs = gain / loss
                     df['rsi'] = 100 - (100 / (1 + rs))
             except Exception as e:
                 self.logger.warning(f"统一服务计算RSI失败，使用本地计算: {e}")
                 delta = df['close'].diff()
-                gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-                loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+                gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14, adjust=False).mean()
+                loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
                 rs = gain / loss
                 df['rsi'] = 100 - (100 / (1 + rs))
 
@@ -385,7 +385,7 @@ class AnalysisManager:
             except Exception as e:
                 self.logger.warning(f"统一服务计算布林带失败，使用本地计算: {e}")
                 df['bb_middle'] = df['close'].rolling(window=20).mean()
-                bb_std = df['close'].rolling(window=20).std()
+                bb_std = df['close'].rolling(window=20).std(ddof=0)
                 df['bb_upper'] = df['bb_middle'] + (bb_std * 2)
                 df['bb_lower'] = df['bb_middle'] - (bb_std * 2)
 

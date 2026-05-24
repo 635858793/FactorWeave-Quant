@@ -145,7 +145,7 @@ class ThreadMonitor:
             self.cpu_cores = psutil.cpu_count(logical=True) * 2
             # 根据CPU核心数动态调整活跃线程阈值
             self.alert_thresholds['active_threads_max'] = max(400, self.cpu_cores * 4)
-        except:
+        except Exception:
             self.cpu_cores = 24  # 默认值
             self.alert_thresholds['active_threads_max'] = 400
         
@@ -370,7 +370,7 @@ class ThreadMonitor:
             try:
                 ctx_switches = psutil.cpu_stats().ctx_switches
                 interrupts = psutil.cpu_stats().interrupts
-            except:
+            except Exception:
                 ctx_switches = 0
                 interrupts = 0
             
@@ -406,7 +406,7 @@ class ThreadMonitor:
                             # 通过系统核心数来估算活跃线程
                             if active_threads < cpu_cores:
                                 active_threads += 1
-                    except:
+                    except Exception:
                         continue
                 
                 # 如果基于线程列表的统计结果不合理，使用改进的估算方法

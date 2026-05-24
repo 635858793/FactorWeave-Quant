@@ -1,4 +1,4 @@
-﻿﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 账户管理对话框
@@ -10,7 +10,7 @@ from loguru import logger
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QGridLayout,
+    QVBoxLayout, QHBoxLayout, QGridLayout,
     QTabWidget, QLabel, QLineEdit, QTextEdit, QTableWidget,
     QTableWidgetItem, QPushButton, QComboBox, QFrame,
     QGroupBox, QMessageBox, QHeaderView, QAbstractItemView,
@@ -28,8 +28,10 @@ from core.containers import get_service_container
 from core.events import get_event_bus
 from core.plugin_types import AssetType
 
+from .base_dialog import BaseDialog
 
-class AccountManagementDialog(QDialog):
+
+class AccountManagementDialog(BaseDialog):
     """账户管理对话框"""
 
     def __init__(self, parent=None):
@@ -39,7 +41,6 @@ class AccountManagementDialog(QDialog):
         Args:
             parent: 父窗口
         """
-        super().__init__(parent)
         self.service_container = get_service_container()
         self.event_bus = get_event_bus()
         self.account_manager = self.service_container.resolve(AccountManager)
@@ -48,6 +49,13 @@ class AccountManagementDialog(QDialog):
         self.positions: List[Position] = []
         self.fund_infos: Dict[str, FundInfo] = {}
 
+        super().__init__(
+            parent,
+            title="账户管理",
+            min_size=(1350, 800),
+            settings_key="AccountManagementDialog"
+        )
+
         self.init_ui()
         self.subscribe_events()
         self.load_accounts()
@@ -55,9 +63,6 @@ class AccountManagementDialog(QDialog):
     def init_ui(self):
         """初始化用户界面"""
         try:
-            self.setWindowTitle("账户管理")
-            self.setMinimumSize(1350, 800)
-
             layout = QVBoxLayout(self)
 
             # 创建标签页
@@ -262,6 +267,18 @@ class AccountManagementDialog(QDialog):
             self.event_bus.subscribe('fund_updated', self.on_fund_updated_event)
         except Exception as e:
             logger.error(f"订阅事件失败: {e}")
+
+    def closeEvent(self, event):
+        try:
+            self.event_bus.unsubscribe('account_created', self.on_account_created_event)
+            self.event_bus.unsubscribe('account_updated', self.on_account_updated_event)
+            self.event_bus.unsubscribe('account_deleted', self.on_account_deleted_event)
+            self.event_bus.unsubscribe('position_created', self.on_position_created_event)
+            self.event_bus.unsubscribe('position_updated', self.on_position_updated_event)
+            self.event_bus.unsubscribe('fund_updated', self.on_fund_updated_event)
+        except Exception as e:
+            logger.error(f"取消事件订阅失败: {e}")
+        super().closeEvent(event)
 
     def load_accounts(self):
         """加载账户列表"""

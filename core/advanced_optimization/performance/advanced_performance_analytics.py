@@ -185,7 +185,7 @@ class TrendPredictor:
             max_freq_idx = np.argmax(power_spectrum[1:len(values)//2]) + 1
             dominant_freq = frequencies[max_freq_idx]
             cyclical_strength = power_spectrum[max_freq_idx] / np.sum(power_spectrum)
-        except:
+        except Exception:
             cyclical_strength = 0
         
         # 模型选择逻辑
@@ -214,7 +214,7 @@ class TrendPredictor:
         # 置信区间
         prediction_std = np.std(values) * 0.5  # 简化的不确定性估计
         confidence_intervals = [
-            (pred - 1.96 * prediction_std, pred + 1.96 * prediction_std)
+            (pred - stats.norm.ppf(0.975) * prediction_std, pred + stats.norm.ppf(0.975) * prediction_std)
             for pred in predicted_values
         ]
         
@@ -253,7 +253,7 @@ class TrendPredictor:
         prediction_std = np.sqrt(mse)
         
         confidence_intervals = [
-            (pred - 1.96 * prediction_std, pred + 1.96 * prediction_std)
+            (pred - stats.norm.ppf(0.975) * prediction_std, pred + stats.norm.ppf(0.975) * prediction_std)
             for pred in predicted_values
         ]
         
@@ -289,13 +289,12 @@ class TrendPredictor:
         # 置信区间
         prediction_std = np.std(values) * 0.3
         confidence_intervals = [
-            (pred - 1.96 * prediction_std, pred + 1.96 * prediction_std)
+            (pred - stats.norm.ppf(0.975) * prediction_std, pred + stats.norm.ppf(0.975) * prediction_std)
             for pred in predicted_values
         ]
         
         # 趋势方向
         trend_dir = TrendDirection.DECLINING if slope < 0 else TrendDirection.IMPROVING
-        
         return PerformanceForecast(
             metric_name=metric_name,
             forecast_horizon=horizon,
@@ -335,7 +334,7 @@ class TrendPredictor:
             
             # 置信区间
             std_dev = np.std(values) * 0.4
-            confidence_intervals.append((prediction - 1.96 * std_dev, prediction + 1.96 * std_dev))
+            confidence_intervals.append((prediction - stats.norm.ppf(0.975) * std_dev, prediction + stats.norm.ppf(0.975) * std_dev))
         
         # 趋势方向
         recent_trend = (trend[-1] - trend[-min(5, len(trend)):][0]) / min(5, len(trend))
@@ -364,7 +363,7 @@ class TrendPredictor:
         # 置信区间
         std_dev = np.std(values[-window_size:])
         confidence_intervals = [
-            (recent_avg - 1.96 * std_dev, recent_avg + 1.96 * std_dev)
+            (recent_avg - stats.norm.ppf(0.975) * std_dev, recent_avg + stats.norm.ppf(0.975) * std_dev)
             for _ in range(10)
         ]
         
@@ -394,7 +393,7 @@ class TrendPredictor:
                 return 1.0 / dominant_freq
             else:
                 return 0
-        except:
+        except Exception:
             return 0
     
     def _extract_trend(self, values: List[float]) -> List[float]:
@@ -404,23 +403,21 @@ class TrendPredictor:
         return [slope * i + intercept for i in range(len(values))]
     
     def _extract_seasonality(self, values: List[float], period: float) -> List[float]:
-        """提取季节性"""
+        """提取季节性 (numpy向量化)"""
         if period <= 0:
             return [0] * len(values)
         
+        n = len(values)
         trend = self._extract_trend(values)
-        detrended = [values[i] - trend[i] for i in range(len(values))]
+        detrended = np.array(values) - np.array(trend)
         
-        seasonal = []
-        for i in range(len(values)):
-            phase = (i % int(period)) / period
-            seasonal_component = np.mean([
-                detrended[j] for j in range(len(detrended))
-                if (j % int(period)) / period == phase
-            ])
-            seasonal.append(seasonal_component)
+        int_period = int(period)
+        phases = np.arange(n) % int_period
         
-        return seasonal
+        phase_means = np.array([detrended[phases == p].mean() for p in range(int_period)])
+        seasonal = phase_means[phases]
+        
+        return seasonal.tolist()
 
 class BottleneckAnalyzer:
     """瓶颈分析器"""
@@ -1176,7 +1173,7 @@ class PerformancePatternAnalyzer:
             else:
                 return 0.0, 0.0
                 
-        except:
+        except Exception:
             return 0.0, 0.0
     
     def _detect_noise_level(self, values: np.ndarray) -> float:
