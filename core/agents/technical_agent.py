@@ -568,31 +568,20 @@ class TechnicalAnalysisAgent(BaseService):
             return []
 
     def _calculate_kdj(self, high: pd.Series, low: pd.Series, close: pd.Series) -> List[TechnicalIndicator]:
-        """计算KDJ"""
+        """计算KDJ（委托给统一实现core.indicators.indicators_algorithm.calc_kdj）"""
+        from core.indicators.indicators_algorithm import calc_kdj
         indicators = []
         
         try:
             period = 9
-            k_period = 3
-            d_period = 3
+            m1 = 3
+            m2 = 3
             
-            # 计算RSV
-            lowest_low = low.rolling(window=period).min()
-            highest_high = high.rolling(window=period).max()
-            rsv = (close - lowest_low) / (highest_high - lowest_low) * 100
+            k_series, d_series, j_series = calc_kdj(high, low, close, n=period, m1=m1, m2=m2)
             
-            # 计算K值
-            k = rsv.ewm(alpha=1/k_period).mean()
-            
-            # 计算D值
-            d = k.ewm(alpha=1/d_period).mean()
-            
-            # 计算J值
-            j = 3 * k - 2 * d
-            
-            current_k = k.iloc[-1]
-            current_d = d.iloc[-1]
-            current_j = j.iloc[-1]
+            current_k = k_series.iloc[-1]
+            current_d = d_series.iloc[-1]
+            current_j = j_series.iloc[-1]
             
             # 判断信号
             if current_k < 20 and current_d < 20:

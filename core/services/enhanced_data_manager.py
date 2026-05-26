@@ -490,7 +490,6 @@ class DataQualityMonitor:
             if 'records' in data:
                 records = data['records']
                 if isinstance(records, list) and len(records) > 0:
-                    # 模拟数据质量检查
                     null_count = sum(1 for record in records if not record)
                     if null_count > len(records) * 0.1:  # 超过10%的空记录
                         result['accuracy'] = max(0.0, 1.0 - (null_count / len(records)))

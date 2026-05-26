@@ -105,7 +105,7 @@ def calculate_rsi(df: pd.DataFrame, timeperiod: int = 14) -> pd.DataFrame:
 
 def calculate_kdj(df: pd.DataFrame, fastk_period: int = 9, slowk_period: int = 3, slowd_period: int = 3) -> pd.DataFrame:
     """
-    计算KDJ指标
+    计算KDJ指标（委托给统一实现core.indicators.indicators_algorithm.calc_kdj_dataframe）
 
     参数:
         df: 包含high、low、close列的DataFrame
@@ -116,55 +116,8 @@ def calculate_kdj(df: pd.DataFrame, fastk_period: int = 9, slowk_period: int = 3
     返回:
         DataFrame: 添加了K、D、J列的DataFrame
     """
-    result = df.copy()
-    try:
-        high = df['high']
-        low = df['low']
-        close = df['close']
-
-        if TALIB_AVAILABLE:
-            # 使用TA-Lib的STOCH函数计算K和D
-            k, d = talib.STOCH(
-                high.values,
-                low.values,
-                close.values,
-                fastk_period=fastk_period,
-                slowk_period=slowk_period,
-                slowk_matype=0,
-                slowd_period=slowd_period,
-                slowd_matype=0
-            )
-            result['K'] = pd.Series(k, index=close.index)
-            result['D'] = pd.Series(d, index=close.index)
-            # 计算J值
-            result['J'] = 3 * result['K'] - 2 * result['D']
-        else:
-            # 使用pandas实现
-            # 计算RSV
-            low_min = low.rolling(window=fastk_period).min()
-            high_max = high.rolling(window=fastk_period).max()
-            denom = high_max - low_min
-            rsv = pd.Series(50.0, index=close.index)
-            nonzero_mask = denom != 0
-            rsv[nonzero_mask] = 100 * ((close[nonzero_mask] - low_min[nonzero_mask]) / denom[nonzero_mask])
-
-            # 计算K值
-            k = rsv.ewm(alpha=1/slowk_period, adjust=False).mean()
-            # 计算D值
-            d = k.ewm(alpha=1/slowd_period, adjust=False).mean()
-            # 计算J值
-            j = 3 * k - 2 * d
-
-            result['K'] = k
-            result['D'] = d
-            result['J'] = j
-
-    except Exception as e:
-        # 返回全NaN
-        for col in ['K', 'D', 'J']:
-            result[col] = pd.Series([float('nan')] * len(df), index=df.index)
-
-    return result
+    from core.indicators.indicators_algorithm import calc_kdj_dataframe
+    return calc_kdj_dataframe(df, n=fastk_period, m1=slowk_period, m2=slowd_period)
 
 def calculate_cci(df: pd.DataFrame, timeperiod: int = 14) -> pd.DataFrame:
     """

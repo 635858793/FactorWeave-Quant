@@ -99,10 +99,13 @@ class EventBus:
         if isinstance(event, str):
             event_name = event
             key_parts = [event_name]
-            if 'stock_code' in kwargs:
-                key_parts.append(f"s:{kwargs['stock_code']}")
-            if 'chart_type' in kwargs:
-                key_parts.append(f"c:{kwargs['chart_type']}")
+            for k, v in sorted(kwargs.items()):
+                if isinstance(v, (str, int, float, bool, type(None))):
+                    key_parts.append(f"{k}={v}")
+                elif hasattr(v, 'shape'):
+                    key_parts.append(f"{k}=DataFrame({v.shape})")
+                else:
+                    key_parts.append(f"{k}={type(v).__name__}")
             return ":".join(key_parts)
         else:
             event_name = event.__class__.__name__

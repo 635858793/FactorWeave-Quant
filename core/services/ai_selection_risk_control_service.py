@@ -2658,48 +2658,17 @@ class AISelectionRiskControlService:
             }
 
     def _mitigate_overall_risk(self, actions: List[str], current_portfolio: Optional[Dict[str, float]], execution_constraints: Dict[str, Any]) -> Dict[str, Any]:
-        """缓解总体风险"""
         try:
-            executed_actions = []
-            
-            for action in actions:
-                if '降低单只股票仓位' in action and current_portfolio:
-                    # 模拟降低单只股票仓位
-                    max_position = max(current_portfolio.values()) if current_portfolio else 0
-                    if max_position > 0.1:  # 如果最大仓位超过10%
-                        executed_actions.append({
-                            'type': 'reduce_position_size',
-                            'description': f'将最大仓位从{max_position:.1%}降低至8%',
-                            'estimated_risk_reduction': 0.15
-                        })
-                
-                elif '增加股票数量' in action:
-                    # 模拟增加股票数量
-                    current_count = len(current_portfolio) if current_portfolio else 0
-                    if current_count < 20:
-                        executed_actions.append({
-                            'type': 'increase_diversification',
-                            'description': f'将股票数量从{current_count}增加至25',
-                            'estimated_risk_reduction': 0.1
-                        })
-                
-                elif '重新评估选股标准' in action:
-                    executed_actions.append({
-                        'type': 'rebalance_criteria',
-                        'description': '重新平衡技术指标权重',
-                        'estimated_risk_reduction': 0.05
-                    })
-            
+            logger.warning("总体风险缓解功能依赖真实交易执行引擎，当前无法执行真实缓解操作。")
             return {
-                'success': len(executed_actions) > 0,
+                'success': False,
                 'action': {
                     'category': 'overall_risk',
                     'title': '总体风险缓解',
-                    'executed_actions': executed_actions
+                    'executed_actions': []
                 },
-                'error': '' if len(executed_actions) > 0 else '无需执行任何操作'
+                'error': '风险缓解引擎不可用，无法执行真实操作'
             }
-            
         except Exception as e:
             return {
                 'success': False,

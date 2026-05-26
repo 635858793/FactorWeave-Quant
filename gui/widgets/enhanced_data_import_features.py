@@ -563,34 +563,9 @@ class DataQualityWidget(QWidget):
         layout.addLayout(button_layout)
 
     def run_quality_check(self):
-        """运行数据质量检查"""
-        # 模拟质量检查结果
-        check_results = [
-            ("空值检查", "警告", "15", "建议处理空值或使用默认值填充"),
-            ("重复值检查", "通过", "0", "数据无重复"),
-            ("异常值检查", "失败", "8", "发现异常值，建议进一步检查"),
-            ("格式一致性", "通过", "0", "格式一致")
-        ]
-
-        self.results_table.setRowCount(len(check_results))
-
-        for i, (check_name, status, count, suggestion) in enumerate(check_results):
-            self.results_table.setItem(i, 0, QTableWidgetItem(check_name))
-
-            status_item = QTableWidgetItem(status)
-            if "通过" in status:
-                status_item.setForeground(QColor("#4CAF50"))
-            elif "警告" in status:
-                status_item.setForeground(QColor("#FF9800"))
-            else:
-                status_item.setForeground(QColor("#F44336"))
-            self.results_table.setItem(i, 1, status_item)
-
-            self.results_table.setItem(i, 2, QTableWidgetItem(count))
-            self.results_table.setItem(i, 3, QTableWidgetItem(suggestion))
-
-        self.results_table.resizeColumnsToContents()
-        self.export_report_btn.setEnabled(True)
+        logger.warning("数据质量检查引擎不可用，无法执行真实检查。请配置数据质量检查引擎。")
+        self.results_table.setRowCount(0)
+        QMessageBox.warning(self, "引擎不可用", "数据质量检查引擎当前不可用。\n请配置数据质量检查引擎。")
 
     def export_quality_report(self):
         """导出质量检查报告"""

@@ -13,7 +13,8 @@ from dataclasses import dataclass
 from core.trading.order_models import Order, OrderFill, OrderType, OrderStatus, OrderCategory
 from core.trading.order_repository import OrderRepository
 from core.containers import ServiceContainer
-from core.events import EventBus
+from core.events import get_event_bus
+from core.events.event_bus import EventBus
 from core.plugin_types import AssetType
 from core.trading.trading_types import ExecutionResult, ExecutionStatus, TradingInterface
 from core.trading.interfaces.xtp_trading_interface import XTPTradingInterface
@@ -53,7 +54,7 @@ class MockTradingInterface(TradingInterface):
 
             try:
                 from core.trading_engine import TradingEngine
-                self._trading_engine = TradingEngine(self._service_container, self._event_bus or EventBus())
+                self._trading_engine = TradingEngine(self._service_container, self._event_bus or get_event_bus())
                 logger.info("MockTradingInterface: 使用真实TradingEngine计算链路")
             except Exception as e:
                 self._trading_engine = None
@@ -810,7 +811,29 @@ class OrderExecutor:
                 result['passed'] = False
                 result['reason'] = f"订单价格无效: {order.order_price}"
                 return result
-            
+
+            # 集成核心风控模块 - 止损检查 (P0-4修复)
+            try:
+                from core.risk_control import RiskControlStrategy
+                risk_ctrl = RiskControlStrategy()
+                entry_price = self._get_avg_entry_price(order.account_id, order.stock_code)
+                if entry_price is not None and entry_price > 0:
+                    triggered, reason = risk_ctrl.check_stop_loss_trigger(
+                        asset=order.stock_code,
+                        position=self._get_position(order.account_id, order.stock_code),
+                        entry_price=entry_price,
+                        current_price=order.order_price,
+                        current_time=order.create_time
+                    )
+                    if triggered:
+                        result['passed'] = False
+                        result['reason'] = f"风控止损触发: {reason}"
+                        return result
+            except ImportError:
+                logger.debug("RiskControlStrategy不可用，跳过止损风控检查")
+            except Exception as e:
+                logger.warning(f"风控止损检查异常(不影响交易): {e}")
+
             max_order_value = 10000000
             order_value = order.order_price * order.order_quantity
             if order_value > max_order_value:
@@ -1420,6 +1443,34 @@ class OrderExecutor:
         """设置交易接口"""
         self.trading_interface = trading_interface
         logger.info("交易接口已更新")
+
+    def _get_position(self, account_id: str, stock_code: str) -> int:
+        try:
+            from core.trading.account_manager import AccountManager
+            account_manager = self.service_container.resolve(AccountManager)
+            positions = account_manager.get_account_positions(account_id)
+            for pos in positions:
+                if pos.stock_code == stock_code:
+                    if pos.side.value == 'short':
+                        return -pos.quantity
+                    return pos.quantity
+            return 0
+        except Exception as e:
+            logger.debug(f"获取持仓数量失败: {e}")
+            return 0
+
+    def _get_avg_entry_price(self, account_id: str, stock_code: str) -> Optional[float]:
+        try:
+            from core.trading.account_manager import AccountManager
+            account_manager = self.service_container.resolve(AccountManager)
+            positions = account_manager.get_account_positions(account_id)
+            for pos in positions:
+                if pos.stock_code == stock_code:
+                    return pos.cost_price if pos.cost_price else pos.open_price
+            return None
+        except Exception as e:
+            logger.debug(f"获取平均入场价失败: {e}")
+            return None
 
     def _get_commission_rate(self) -> float:
         """获取手续费率（从配置读取，默认万三）"""

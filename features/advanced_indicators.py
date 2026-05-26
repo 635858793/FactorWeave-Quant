@@ -16,6 +16,7 @@ from datetime import datetime
 from typing import Dict, List, Optional, Any
 from utils.data_preprocessing import kdata_preprocess as _kdata_preprocess, validate_kdata
 from loguru import logger
+from core.indicators.indicators_algorithm import calc_kdj
 
 def calculate_advanced_indicators(df):
     """
@@ -57,9 +58,7 @@ def calculate_advanced_indicators(df):
     df['obv'] = talib.OBV(df['close'], df['volume'])
 
     # KDJ
-    df['kdj_k'] = df['stoch_k']
-    df['kdj_d'] = df['stoch_d']
-    df['kdj_j'] = 3 * df['kdj_k'] - 2 * df['kdj_d']
+    df['kdj_k'], df['kdj_d'], df['kdj_j'] = calc_kdj(df['high'], df['low'], df['close'], n=9, m1=3, m2=3)
 
     # Williams %R
     df['williams_r'] = talib.WILLR(df['high'], df['low'], df['close'], timeperiod=14)
@@ -283,20 +282,21 @@ def add_advanced_indicators(df):
     # 额外的高级指标
     result = df.copy()
 
-    # 计算相对强弱指数 (RSI) - 多周期
-    for window in [6, 14, 21]:
-        delta = result['close'].diff()
-        gain = delta.where(delta > 0, 0)
-        loss = -delta.where(delta < 0, 0)
+    # 计算相对强弱指数 (RSI) - 多周期（若已由talib等计算则跳过）
+    rsi_cols_exist = all(f'rsi_{w}' in result.columns and not result[f'rsi_{w}'].isna().all() for w in [6, 14, 21])
+    if not rsi_cols_exist:
+        for window in [6, 14, 21]:
+            delta = result['close'].diff()
+            gain = delta.where(delta > 0, 0)
+            loss = -delta.where(delta < 0, 0)
 
-        avg_gain = gain.rolling(window=window).mean()
-        avg_loss = loss.rolling(window=window).mean()
+            avg_gain = gain.rolling(window=window).mean()
+            avg_loss = loss.rolling(window=window).mean()
 
-        # 避免除以零
-        avg_loss = avg_loss.replace(0, 0.00001)
-        rs = avg_gain / avg_loss
+            avg_loss = avg_loss.replace(0, 0.00001)
+            rs = avg_gain / avg_loss
 
-        result[f'rsi_{window}'] = 100 - (100 / (1 + rs))
+            result[f'rsi_{window}'] = 100 - (100 / (1 + rs))
 
     # 计算枢轴点
     result['pivot_point'] = (result['high'] + result['low'] + result['close']) / 3
@@ -311,30 +311,37 @@ def add_advanced_indicators(df):
         result['macd_signal'] = result['macd'].ewm(span=9, adjust=False).mean()
         result['macd_hist'] = result['macd'] - result['macd_signal']
 
-    # 计算随机指标 (Stochastic)
-    window = 14
-    low_min = result['low'].rolling(window=window).min()
-    high_max = result['high'].rolling(window=window).max()
+    # 计算随机指标 (Stochastic) - 若talib已计算则跳过
+    if 'stoch_k' not in result.columns or result['stoch_k'].isna().all():
+        window = 14
+        low_min = result['low'].rolling(window=window).min()
+        high_max = result['high'].rolling(window=window).max()
 
-    # 确保分母不为零
-    denom = high_max - low_min
-    denom = denom.replace(0, 0.00001)
+        denom = high_max - low_min
+        denom = denom.replace(0, 0.00001)
 
-    result['stoch_k'] = 100 * ((result['close'] - low_min) / denom)
-    result['stoch_d'] = result['stoch_k'].rolling(window=3).mean()
+        result['stoch_k'] = 100 * ((result['close'] - low_min) / denom)
+        result['stoch_d'] = result['stoch_k'].rolling(window=3).mean()
 
-    # 计算威廉指标 (Williams %R)
-    result['williams_r'] = -100 * (high_max - result['close']) / denom
+    # 计算威廉指标 (Williams %R) - 若talib已计算则跳过
+    if 'williams_r' not in result.columns or result['williams_r'].isna().all():
+        window = 14
+        low_min = result['low'].rolling(window=window).min()
+        high_max = result['high'].rolling(window=window).max()
+        denom = high_max - low_min
+        denom = denom.replace(0, 0.00001)
+        result['williams_r'] = -100 * (high_max - result['close']) / denom
 
-    # 计算布林带
-    window = 20
-    mid_band = result['close'].rolling(window=window).mean()
-    std_dev = result['close'].rolling(window=window).std()
+    # 计算布林带 - 若talib已计算则跳过
+    if 'bollinger_mid' not in result.columns or result['bollinger_mid'].isna().all():
+        window = 20
+        mid_band = result['close'].rolling(window=window).mean()
+        std_dev = result['close'].rolling(window=window).std()
 
-    result['bollinger_mid'] = mid_band
-    result['bollinger_high'] = mid_band + 2 * std_dev
-    result['bollinger_low'] = mid_band - 2 * std_dev
-    result['bollinger_width'] = (result['bollinger_high'] - result['bollinger_low']) / result['bollinger_mid']
+        result['bollinger_mid'] = mid_band
+        result['bollinger_high'] = mid_band + 2 * std_dev
+        result['bollinger_low'] = mid_band - 2 * std_dev
+        result['bollinger_width'] = (result['bollinger_high'] - result['bollinger_low']) / result['bollinger_mid']
 
     # 钱德动量摆动指标 (CMO)
     delta = result['close'].diff()
@@ -345,14 +352,14 @@ def add_advanced_indicators(df):
 
     result['cmo'] = 100 * (up_sum - down_sum) / (up_sum + down_sum)
 
-    # 计算顺势指标 (CCI)
-    typical_price = (result['high'] + result['low'] + result['close']) / 3
-    mean_deviation = abs(typical_price - typical_price.rolling(window=20).mean()).rolling(window=20).mean()
+    # 计算顺势指标 (CCI) - 若talib已计算则跳过
+    if 'cci' not in result.columns or result['cci'].isna().all():
+        typical_price = (result['high'] + result['low'] + result['close']) / 3
+        mean_deviation = abs(typical_price - typical_price.rolling(window=20).mean()).rolling(window=20).mean()
 
-    # 避免除以零
-    mean_deviation = mean_deviation.replace(0, 0.00001)
+        mean_deviation = mean_deviation.replace(0, 0.00001)
 
-    result['cci'] = (typical_price - typical_price.rolling(window=20).mean()) / (0.015 * mean_deviation)
+        result['cci'] = (typical_price - typical_price.rolling(window=20).mean()) / (0.015 * mean_deviation)
 
     # 计算威廉姆累积/派发线 (Williams A/D) - 向量化实现
     tr_denom = result['high'] - result['low']
@@ -365,8 +372,8 @@ def add_advanced_indicators(df):
     daily_contrib[0] = 0
     result['willad'] = daily_contrib.cumsum()
 
-    # 计算资金流量指标 (MFI)
-    if 'volume' in result.columns:
+    # 计算资金流量指标 (MFI) - 若talib已计算则跳过
+    if 'volume' in result.columns and ('mfi' not in result.columns or result['mfi'].isna().all()):
         typical_price = (result['high'] + result['low'] + result['close']) / 3
         money_flow = typical_price * result['volume']
 
@@ -376,7 +383,6 @@ def add_advanced_indicators(df):
         pos_flow_sum = pos_flow.rolling(window=14).sum()
         neg_flow_sum = neg_flow.rolling(window=14).sum()
 
-        # 避免除以零
         neg_flow_sum = neg_flow_sum.replace(0, 0.00001)
 
         money_ratio = pos_flow_sum / neg_flow_sum

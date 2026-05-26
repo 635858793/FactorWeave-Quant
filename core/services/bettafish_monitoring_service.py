@@ -211,7 +211,7 @@ class BettaFishMonitoringService:
                 
                 # 计算循环时间
                 loop_time = time.time() - start_time
-                sleep_time = max(0, self.monitoring_interval - loop_time)
+                sleep_time = max(0, self.monitoring_config["check_interval"] - loop_time)
                 
                 time.sleep(sleep_time)
                 
@@ -250,22 +250,26 @@ class BettaFishMonitoringService:
     def _check_component_health_sync(self, component_name: str) -> ComponentHealth:
         """同步版本：检查单个组件健康状态"""
         try:
-            # 模拟健康检查结果
+            logger.warning(f"组件健康检查({component_name})使用真实检测逻辑，无法获取真实状态，返回未知")
             return ComponentHealth(
-                status=ComponentStatus.HEALTHY,
-                response_time=0.1,
-                error_rate=0.0,
-                last_check=datetime.now(),
-                details={}
+                component_name=component_name,
+                status=ComponentStatus.UNKNOWN,
+                last_check_time=datetime.now(),
+                response_time=0.0,
+                error_count=0,
+                success_count=0,
+                metadata={"warning": "健康检查结果不可用，组件状态未知"}
             )
         except Exception as e:
             self.logger.error(f"同步检查组件 {component_name} 失败: {e}")
             return ComponentHealth(
+                component_name=component_name,
                 status=ComponentStatus.FAILED,
+                last_check_time=datetime.now(),
                 response_time=0.0,
-                error_rate=1.0,
-                last_check=datetime.now(),
-                details={"error": str(e)}
+                error_count=1,
+                success_count=0,
+                metadata={"error": str(e)}
             )
 
     def _collect_performance_metrics_sync(self):
@@ -290,9 +294,10 @@ class BettaFishMonitoringService:
             # 模拟过期告警清理
             current_time = datetime.now()
             expired_alerts = []
-            
+            expiry_threshold = current_time - timedelta(hours=self.monitoring_config.get("metrics_retention_hours", 24))
+
             for alert_id, alert in self.active_alerts.items():
-                if current_time > alert.expires_at:
+                if alert.resolved or alert.timestamp < expiry_threshold:
                     expired_alerts.append(alert_id)
             
             for alert_id in expired_alerts:

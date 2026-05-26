@@ -1138,11 +1138,16 @@ class EnhancedDuckDBDataDownloader:
 
             logger.info(f"开始下载股票: {symbol} ({data_type}, {frequency})")
 
-            # 获取下载范围
             end_date = datetime.now()
-            start_date = end_date - timedelta(days=30)  # 默认下载最近30天
 
-            # 从断点状态获取日期范围
+            frequency_to_period = {"日线": "D", "周线": "W", "月线": "M"}
+            period = frequency_to_period.get(frequency, "D")
+            latest_db_date = await self._get_latest_data_date(symbol, period, "kline")
+            if latest_db_date:
+                start_date = latest_db_date + timedelta(days=1)
+            else:
+                start_date = end_date - timedelta(days=30)
+
             if resume_state and hasattr(resume_state, 'metadata'):
                 metadata = resume_state.metadata
                 if 'last_download_date' in metadata:

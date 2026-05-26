@@ -416,6 +416,19 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
             logger.error(f"重新加载图表数据失败: {str(e)}")
             self.error_occurred.emit(f"重新加载图表数据失败: {str(e)}")
 
+    def load_data(self, stock_code: str = None, time_range: int = 365, force_reload: bool = False) -> None:
+        if not stock_code:
+            stock_code = getattr(self, '_current_stock_code', None)
+        if not stock_code:
+            logger.warning("ChartWidget.load_data: 无股票代码")
+            return
+        from core.coordinators.main_window_coordinator import MainWindowCoordinator
+        coordinator = MainWindowCoordinator.get_instance()
+        if coordinator and hasattr(coordinator, 'request_chart_data'):
+            coordinator.request_chart_data(stock_code, time_range, force_reload)
+        else:
+            logger.warning("ChartWidget.load_data: 无法获取coordinator")
+
     def _on_render_progress(self, progress: int, message: str):
         """处理渲染进度"""
         self.update_loading_progress(progress, message)

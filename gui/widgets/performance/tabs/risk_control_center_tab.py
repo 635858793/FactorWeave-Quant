@@ -102,9 +102,10 @@ class ModernRiskControlCenterTab(QWidget):
         # 加载风险规则
         self.load_risk_rules()
 
-        # 不在初始化时启动增强风险监控，延迟到UI完全准备好后再启动
-        # if self.enhanced_risk_monitor:
-        #     self.start_enhanced_monitoring()
+        # 在UI完全准备好后启动增强风险监控
+        if self.enhanced_risk_monitor:
+            from PyQt5.QtCore import QTimer
+            QTimer.singleShot(500, self.start_enhanced_monitoring)
 
     def init_ui(self):
         layout = QVBoxLayout(self)
@@ -1290,6 +1291,12 @@ class ModernRiskControlCenterTab(QWidget):
             # 更新风险等级显示
             self._update_risk_level_from_enhanced_data(risk_status)
 
+            # 获取最新风险指标数值并更新12个指标卡片
+            risk_metrics = self.enhanced_risk_monitor.get_latest_risk_metrics()
+            if risk_metrics:
+                card_metrics = self._map_enhanced_risk_metrics_to_cards(risk_metrics)
+                self.update_risk_data(card_metrics)
+
             # 获取最新预警
             alerts = self.enhanced_risk_monitor.get_risk_alerts(1, False)  # 最近1小时
 
@@ -1302,6 +1309,44 @@ class ModernRiskControlCenterTab(QWidget):
 
         except Exception as e:
             logger.error(f"在主线程中更新增强风险UI失败: {e}")
+
+    def _map_enhanced_risk_metrics_to_cards(self, raw_metrics: Dict[str, float]) -> Dict[str, float]:
+        """将EnhancedRiskMonitor内部指标名映射为卡片名"""
+        card_metrics = {}
+
+        metric_mappings = {
+            'var_95': 'VaR(95%)',
+            'volatility': '波动率',
+            'beta': 'Beta系数',
+            'max_position_weight': '仓位风险',
+            'bid_ask_spread': '流动性风险',
+            'herfindahl_index': '集中度风险',
+        }
+
+        for raw_key, card_key in metric_mappings.items():
+            if raw_key in raw_metrics:
+                value = raw_metrics[raw_key]
+                if raw_key in ('volatility', 'max_position_weight', 'bid_ask_spread', 'herfindahl_index'):
+                    value = value * 100
+                card_metrics[card_key] = value
+
+        # 计算市场风险 = max(波动率, VaR, Beta) 的综合指数
+        market_metrics = []
+        if 'volatility' in raw_metrics:
+            market_metrics.append(raw_metrics['volatility'] * 100)
+        if 'var_95' in raw_metrics:
+            market_metrics.append(raw_metrics['var_95'] * 100)
+        if 'beta' in raw_metrics:
+            market_metrics.append(abs(raw_metrics['beta'] - 1.0) * 50)
+        if market_metrics:
+            card_metrics['市场风险'] = max(market_metrics)
+
+        # 未从EnhancedRiskMonitor直接获取的指标保持0（无数据）
+        for leftover_key in ['最大回撤', '夏普比率', '行业风险', '信用风险', '操作风险']:
+            if leftover_key not in card_metrics:
+                card_metrics[leftover_key] = 0.0
+
+        return card_metrics
 
     def _update_risk_level_from_enhanced_data(self, risk_status):
         """从增强数据更新风险等级"""

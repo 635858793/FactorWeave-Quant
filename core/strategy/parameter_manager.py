@@ -21,9 +21,6 @@ from concurrent.futures import ThreadPoolExecutor
 import warnings
 
 from scipy.optimize import differential_evolution
-from scipy.stats import norm
-from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import Matern, WhiteKernel, ConstantKernel
 
 from .base_strategy import BaseStrategy, StrategyParameter
 
@@ -476,7 +473,9 @@ class StrategyParameterManager:
                                parameter_ranges: Dict[str, ParameterRange],
                                objective_function: Callable,
                                max_evaluations: int, parallel: bool) -> ParameterOptimizationResult:
-        """基于sklearn GaussianProcessRegressor的贝叶斯优化"""
+        """基于统一 BayesianOptimizer 模块的贝叶斯优化（GP+UCB, kappa=2.576）"""
+        from core.optimization import BayesianOptimizer, ParameterSpec, OptParameterType, AcquisitionFunction
+
         param_names = list(parameter_ranges.keys())
         n_params = len(param_names)
         if n_params == 0:
@@ -485,83 +484,50 @@ class StrategyParameterManager:
                 optimization_history=[], total_evaluations=0
             )
 
-        bounds_list = []
-        int_mask = []
+        specs = []
         for name in param_names:
             pr = parameter_ranges[name]
-            bounds_list.append((float(pr.min_value), float(pr.max_value)))
-            int_mask.append(isinstance(pr.min_value, int) and isinstance(pr.max_value, int))
-        bounds_arr = np.array(bounds_list)
+            is_int = isinstance(pr.min_value, int) and isinstance(pr.max_value, int)
+            if pr.values:
+                specs.append(ParameterSpec(name, OptParameterType.ORDINAL, values=pr.values))
+            elif is_int:
+                specs.append(ParameterSpec(name, OptParameterType.DISCRETE,
+                             bounds=(int(pr.min_value), int(pr.max_value))))
+            else:
+                specs.append(ParameterSpec(name, OptParameterType.CONTINUOUS,
+                             bounds=(float(pr.min_value), float(pr.max_value))))
 
-        n_initial = max(5, n_params * 2)
-        n_iter = max(1, max_evaluations - n_initial)
-
-        X_observed = np.empty((0, n_params))
-        y_observed = np.empty((0,))
-
-        best_score_val = float('-inf')
-        best_params_val = {}
         evaluation_history = []
 
-        def evaluate_candidate(x_arr):
-            params = {}
-            for j, name in enumerate(param_names):
-                val = float(x_arr[j])
-                params[name] = int(round(val)) if int_mask[j] else val
-            score = float(self._evaluate_parameters(strategy, data, params, objective_function))
-            return params, score
+        def wrapped_objective(**kwargs):
+            score = float(self._evaluate_parameters(strategy, data, kwargs, objective_function))
+            evaluation_history.append({'parameters': kwargs.copy(), 'score': score})
+            return score
 
-        initial_points = np.random.uniform(
-            bounds_arr[:, 0], bounds_arr[:, 1], size=(n_initial, n_params)
+        n_initial = max(5, n_params * 2)
+
+        optimizer = BayesianOptimizer(
+            specs,
+            acquisition=AcquisitionFunction.UCB,
+            kappa_ucb=2.576,
+            random_state=42,
         )
-        for i in range(n_initial):
-            params, score = evaluate_candidate(initial_points[i])
-            X_observed = np.vstack([X_observed, initial_points[i]])
-            y_observed = np.append(y_observed, score)
-            evaluation_history.append({'parameters': params, 'score': score})
-            if score > best_score_val:
-                best_score_val = score
-                best_params_val = params
 
-        kernel = ConstantKernel(1.0) * Matern(length_scale=np.ones(n_params), nu=2.5) + \
-                 WhiteKernel(noise_level=0.01)
-        kappa = 2.576
-
-        for _ in range(n_iter):
-            gp = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=3, normalize_y=True)
-            gp.fit(X_observed, y_observed)
-
-            n_candidates = min(5000, 1000 * n_params)
-            candidates = np.random.uniform(
-                bounds_arr[:, 0], bounds_arr[:, 1], size=(n_candidates, n_params)
-            )
-
-            mu, sigma = gp.predict(candidates, return_std=True)
-            mu_best = float(np.max(y_observed)) if len(y_observed) > 0 else 0.0
-
-            z = np.where(sigma > 1e-8, (mu - mu_best - kappa) / (sigma + 1e-8), 0.0)
-            ei = (mu - mu_best - kappa) * norm.cdf(z) + sigma * norm.pdf(z)
-            ei = np.array([float(v) for v in ei])
-
-            best_candidate_idx = int(np.argmax(ei))
-            next_point = candidates[best_candidate_idx]
-
-            params, score = evaluate_candidate(next_point)
-            X_observed = np.vstack([X_observed, next_point])
-            y_observed = np.append(y_observed, score)
-            evaluation_history.append({'parameters': params, 'score': score})
-
-            if score > best_score_val:
-                best_score_val = score
-                best_params_val = params
+        result = optimizer.optimize(
+            wrapped_objective,
+            n_calls=max_evaluations,
+            n_initial_points=n_initial,
+            n_candidates_per_iter=min(5000, 1000 * n_params),
+            maximize=True,
+        )
 
         return ParameterOptimizationResult(
-            best_parameters=best_params_val,
-            best_score=best_score_val,
+            best_parameters=result.best_params,
+            best_score=result.best_score,
             optimization_history=evaluation_history,
             total_evaluations=len(evaluation_history),
             convergence_info={'method': 'gaussian_process_bayesian', 'n_initial': n_initial,
-                            'n_iter': n_iter}
+                            'n_iter': max(1, max_evaluations - n_initial)}
         )
 
     def _genetic_algorithm(self, strategy: BaseStrategy, data: pd.DataFrame,

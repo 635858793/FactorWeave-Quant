@@ -1,0 +1,12 @@
+[PASS] core.optimization imports
+[PASS] strategy_optimizer imports
+[PASS] parameter_manager imports
+[PASS] strategy_service imports
+[PASS] BayesianOptimizer basic: best_score=10.00
+[PASS] strategy_optimizer BAYESIAN: 12 results, best=5.00
+[PASS] parameter_manager BAYESIAN: 15 evals, best=100.00
+[PASS] strategy_optimizer.py syntax check
+[PASS] OptParameterType enum values correct
+[PASS] ParameterSpec roundtrip correct
+
+TOTAL: 10 PASS, 0 FAIL

@@ -744,7 +744,7 @@ class VirtualScrollRenderer(QObject):
     
     def _render_loop(self):
         """渲染循环"""
-        if not self.data_source is not None:
+        if self.data_source is None:
             return
         
         frame_start_time = time.time()

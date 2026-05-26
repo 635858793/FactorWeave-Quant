@@ -25,6 +25,9 @@ from loguru import logger
 # 配置管理
 from .import_config_manager import ImportConfigManager, ImportTaskConfig, ImportProgress, ImportStatus
 
+# 任务状态管理
+from .task_status_manager import get_task_status_manager, TaskStatus
+
 # 核心服务
 from core.database.table_manager import TableType
 from ..services.unified_data_manager import UnifiedDataManager
@@ -53,7 +56,14 @@ from ..data_validator import ValidationLevel, ValidationResult
 
 
 class UnifiedTaskStatus(Enum):
-    """统一任务状态枚举"""
+    """
+    统一任务状态枚举
+
+    .. deprecated::
+        请使用 core.importdata.task_status_manager.TaskStatus 作为权威状态来源。
+        TaskStatus 包含更完整的状态集（含 CREATED 和 ERROR）。
+        本枚举保留仅为向后兼容。
+    """
     PENDING = "pending"
     INITIALIZING = "initializing"
     RUNNING = "running"
@@ -286,6 +296,9 @@ class UnifiedDataImportEngine(QObject):
             enable_data_quality_monitoring: 启用数据质量监控
         """
         super().__init__()
+
+        # 任务状态管理器
+        self._task_status_manager = get_task_status_manager()
 
         # 引擎配置
         self.max_workers = max_workers
@@ -582,6 +595,12 @@ class UnifiedDataImportEngine(QObject):
             # 发射任务创建信号
             self.task_created.emit(unified_task.task_id, unified_task)
 
+                # 同步到全局 TaskStatusManager
+                self._task_status_manager.create_task(
+                    task_id=unified_task.task_id,
+                    metadata={'task_name': unified_task.task_name, 'data_type': unified_task.data_type}
+                )
+
             logger.info(f"创建导入任务: {unified_task.task_id} - {unified_task.task_name}")
             return unified_task.task_id
 
@@ -658,6 +677,10 @@ class UnifiedDataImportEngine(QObject):
 
                 # 发射兼容性信号
                 self.import_started.emit(task_id)
+
+                # 同步到全局 TaskStatusManager: 任务开始运行
+                self._task_status_manager.update_status(task_id, TaskStatus.RUNNING,
+                    message=f"任务已启动 ({'异步' if use_async else '同步'}模式)")
 
                 logger.info(f"启动导入任务: {task_id} ({'异步' if use_async else '同步'}模式)")
 
@@ -1160,6 +1183,10 @@ class UnifiedDataImportEngine(QObject):
             # 发射完成信号
             self.task_completed.emit(task_config.task_id, result)
 
+            # 同步到全局 TaskStatusManager: 任务完成
+            self._task_status_manager.update_status(task_config.task_id, TaskStatus.COMPLETED,
+                message=f"任务完成，耗时: {result.execution_time:.2f}s")
+
             logger.info(f"任务执行完成: {task_config.task_id}, 耗时: {result.execution_time:.2f}s")
 
         except Exception as e:
@@ -1178,6 +1205,11 @@ class UnifiedDataImportEngine(QObject):
 
             # 发射失败信号
             self.task_failed.emit(task_config.task_id, str(e), {'exception': str(e)})
+
+            # 同步到全局 TaskStatusManager: 任务失败
+            self._task_status_manager.update_status(task_config.task_id, TaskStatus.FAILED,
+                error_message=str(e),
+                message=f"任务执行失败")
 
             logger.error(f"任务执行失败: {task_config.task_id} - {e}")
 
@@ -1351,6 +1383,10 @@ class UnifiedDataImportEngine(QObject):
             if task_id in self._task_results:
                 self.task_completed.emit(task_id, self._task_results[task_id])
 
+            # 同步到全局 TaskStatusManager: 异步任务完成
+            self._task_status_manager.update_status(task_id, TaskStatus.COMPLETED,
+                message="异步任务完成")
+
             logger.info(f"异步任务完成处理: {task_id}")
 
         except Exception as e:
@@ -1383,6 +1419,11 @@ class UnifiedDataImportEngine(QObject):
 
             # 发射统一失败信号
             self.task_failed.emit(task_id, error_message, {'async_error': True})
+
+            # 同步到全局 TaskStatusManager: 异步任务失败
+            self._task_status_manager.update_status(task_id, TaskStatus.FAILED,
+                error_message=error_message,
+                message="异步任务执行失败")
 
             logger.error(f"异步任务失败处理: {task_id} - {error_message}")
 

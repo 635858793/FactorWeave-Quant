@@ -77,6 +77,9 @@ class StrategyEngine:
         self._stats_lock = threading.Lock()
         self._strategy_update_lock = threading.RLock()
 
+        self._auto_submit_orders = engine_config.get('auto_submit_orders', False)
+        self._strategy_name = engine_config.get('strategy_name', 'default')
+
         self.logger.info(f"策略执行引擎初始化完成: max_workers={self.max_workers}")
 
     def _get_unified_cache_adapter(self):
@@ -211,6 +214,26 @@ class StrategyEngine:
                             self.database_service.save_execution_result(execution_data)
                 except Exception as e:
                     self.logger.warning(f"保存执行结果到数据库失败: {e}")
+
+            # 信号→订单转换 (P0-3修复)
+            if signals and self._auto_submit_orders:
+                try:
+                    from core.trading.order_service import OrderService
+                    from core.trading.signal_adapters import SignalToOrderConverter
+                    from analysis.pattern_base import SignalType
+                    _valid_trade_types = {SignalType.BUY, SignalType.SELL, SignalType.STRONG_BUY, SignalType.STRONG_SELL, SignalType.CLOSE_LONG, SignalType.CLOSE_SHORT}
+                    order_service = OrderService.get_instance() if hasattr(OrderService, 'get_instance') else None
+                    if order_service is None:
+                        self.logger.warning("OrderService 实例不可用，跳过信号→订单转换")
+                    else:
+                        for signal in signals:
+                            if signal.signal_type in _valid_trade_types:
+                                order_request = SignalToOrderConverter.convert(signal, strategy_name)
+                                if order_request:
+                                    order_service.create_order(order_request)
+                                    self.logger.debug(f"策略 {strategy_name} 信号已转订单: {signal.signal_type.value} {order_request.stock_code}")
+                except Exception as e:
+                    self.logger.error(f"信号→订单转换失败: {e}", exc_info=True)
 
             # 更新统计
             self._update_stats('success', execution_info['execution_time'])

@@ -45,6 +45,9 @@ class OrderService:
         # 订阅订单终态事件，用于清理资源
         self.event_bus.subscribe('order_terminal_state', self._on_order_terminal_state)
 
+        # 订阅订单验证失败事件，用于统一错误记录
+        self.event_bus.subscribe('order_validation_failed', self._on_order_validation_failed)
+
         logger.info("订单服务初始化完成")
 
     def _initialize(self):
@@ -81,7 +84,7 @@ class OrderService:
             # 2. 执行订单验证
             validation_result = self.validator.validate_order_request(request)
             if not validation_result.passed:
-                logger.error(f"订单验证失败: {validation_result.message}")
+                logger.error(f"订单验证失败: stock={request.stock_code}, error={validation_result.message}, code={validation_result.error_code}")
                 self.event_bus.publish('order_validation_failed',
                     strategy_id=request.strategy_id,
                     stock_code=request.stock_code,
@@ -315,6 +318,12 @@ class OrderService:
                     # 订单达到终态（REJECTED），清理锁防止内存泄漏
                     self._cleanup_order_lock(order_id)
 
+                    self.event_bus.publish('order_terminal_state',
+                        order_id=order.order_id,
+                        terminal_state=order.order_status.value,
+                        timestamp=datetime.now().isoformat()
+                    )
+
                     # 发布订单被拒绝事件
                     self.event_bus.publish('order_rejected',
                         order_id=order_id,
@@ -347,6 +356,12 @@ class OrderService:
                         
                         # 订单状态变为终态，清理锁防止内存泄漏
                         self._cleanup_order_lock(order_id)
+
+                        self.event_bus.publish('order_terminal_state',
+                            order_id=order.order_id,
+                            terminal_state=order.order_status.value,
+                            timestamp=datetime.now().isoformat()
+                        )
 
                     self.event_bus.publish('order_submit_failed',
                         order_id=order_id,
@@ -854,3 +869,11 @@ class OrderService:
             logger.debug(f"订单达到终态，已清理锁: {order_id} ({status})")
         except Exception as e:
             logger.error(f"清理订单终态资源失败: {order_id} - {e}")
+
+    def _on_order_validation_failed(self, strategy_id: str, stock_code: str, error: str, error_code: str):
+        """处理订单验证失败事件，统一记录错误日志"""
+        try:
+            logger.warning(f"订单验证失败 - 策略: {strategy_id}, 股票: {stock_code}, "
+                          f"错误码: {error_code}, 错误: {error}")
+        except Exception as e:
+            logger.error(f"处理订单验证失败事件异常: {e}")

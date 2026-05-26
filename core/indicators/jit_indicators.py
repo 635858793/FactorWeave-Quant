@@ -114,7 +114,7 @@ def calculate_ema_jit(prices: 'np.ndarray', period: int) -> 'np.ndarray':
 @njit(cache=True, fastmath=True)
 def calculate_rsi_jit(prices: 'np.ndarray', period: int = 14) -> 'np.ndarray':
     """
-    计算RSI指标（JIT优化版）
+    计算RSI指标（JIT优化版 - 合并循环+消除冗余SMA）
     Args:
         prices: 价格数组
         period: 计算周期
@@ -124,46 +124,43 @@ def calculate_rsi_jit(prices: 'np.ndarray', period: int = 14) -> 'np.ndarray':
     """
     n = len(prices)
     rsi = np.zeros(n, dtype=np.float64)
-    
+
     if n < period + 1:
         return rsi
-    
-    # 计算价格变化
-    deltas = np.zeros(n, dtype=np.float64)
-    for i in range(1, n):
-        deltas[i] = prices[i] - prices[i - 1]
-    
-    # 计算涨跌
+
     gains = np.zeros(n, dtype=np.float64)
     losses = np.zeros(n, dtype=np.float64)
+
+    # 合并循环1: 价格变化 + 涨跌分离 (单次遍历, 消除deltas中间数组)
     for i in range(1, n):
-        if deltas[i] > 0:
-            gains[i] = deltas[i]
+        delta = prices[i] - prices[i - 1]
+        if delta > 0:
+            gains[i] = delta
             losses[i] = 0.0
         else:
             gains[i] = 0.0
-            losses[i] = -deltas[i]
-    
-    # 计算平均涨跌
-    avg_gains = np.zeros(n, dtype=np.float64)
-    avg_losses = np.zeros(n, dtype=np.float64)
-    
-    for i in range(period, n):
-        avg_gains[i] = np.mean(gains[i - period + 1:i + 1])
-        avg_losses[i] = np.mean(losses[i - period + 1:i + 1])
+            losses[i] = -delta
 
+    # 仅计算初始SMA作为Wilder平滑种子 (O(period)替代原O(n*period))
+    avg_gain = 0.0
+    avg_loss = 0.0
+    for i in range(1, period + 1):
+        avg_gain += gains[i]
+        avg_loss += losses[i]
+    avg_gain /= period
+    avg_loss /= period
+
+    # 合并循环2: Wilder指数平滑 + RSI计算 (单次遍历)
+    rsi[period] = 100.0 - (100.0 / (1.0 + avg_gain / avg_loss)) if avg_loss != 0.0 else 100.0
     for i in range(period + 1, n):
-        avg_gains[i] = (avg_gains[i - 1] * (period - 1) + gains[i]) / period
-        avg_losses[i] = (avg_losses[i - 1] * (period - 1) + losses[i]) / period
-    
-    # 计算RSI
-    for i in range(period, n):
-        if avg_losses[i] == 0:
+        avg_gain = (avg_gain * (period - 1) + gains[i]) / period
+        avg_loss = (avg_loss * (period - 1) + losses[i]) / period
+        if avg_loss == 0.0:
             rsi[i] = 100.0
         else:
-            rs = avg_gains[i] / avg_losses[i]
+            rs = avg_gain / avg_loss
             rsi[i] = 100.0 - (100.0 / (1.0 + rs))
-    
+
     return rsi
 
 @njit(cache=True, fastmath=True)

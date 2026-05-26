@@ -1359,6 +1359,16 @@ class UnifiedDataManager:
             frequency = Period.to_duckdb_frequency(period)
             logger.debug(f"周期映射: {period} -> {frequency}")
 
+            # 使用动态表名替代硬编码表名
+            from core.database.unified_table_name_generator import generate_table_name
+            from core.plugin_types import DataType
+            table_name = generate_table_name(
+                data_type=DataType.HISTORICAL_KLINE,
+                plugin_name='default',
+                period=period,
+                asset_type=final_asset_type,
+            )
+
             # 优化：在CTE中添加WHERE条件，提前过滤数据，减少JOIN的数据量
             view_query = f"""
                 WITH ranked_data AS (
@@ -1387,7 +1397,7 @@ class UnifiedDataManager:
                                 -- 其次按更新时间排序（降序，最新的优先）
                                 hkd.updated_at DESC
                         ) as quality_rank
-                    FROM historical_kline_data hkd
+                    FROM {table_name} hkd
                     LEFT JOIN data_quality_monitor dqm ON (
                         hkd.symbol = dqm.symbol 
                         AND hkd.data_source = dqm.data_source 
@@ -1856,7 +1866,7 @@ class UnifiedDataManager:
             if (fund_flow_data['sector_flow_rank'].empty and
                 fund_flow_data['individual_flow'].empty and
                     not fund_flow_data['market_flow']):
-                logger.info("生成模拟资金流数据用于测试")
+                logger.warning("资金流向数据不可用，返回空数据。请配置资金流向数据源以获取真实数据。")
                 fund_flow_data = self._generate_mock_fund_flow_data()
 
             return fund_flow_data
@@ -1919,16 +1929,6 @@ class UnifiedDataManager:
 
         except Exception as e:
             logger.error(f"传统数据源获取资金流数据失败: {e}")
-            return {
-                'sector_flow_rank': pd.DataFrame(),
-                'individual_flow': pd.DataFrame(),
-                'market_flow': {}
-            }
-
-
-
-        except Exception as e:
-            logger.error(f"生成模拟资金流数据失败: {e}")
             return {
                 'sector_flow_rank': pd.DataFrame(),
                 'individual_flow': pd.DataFrame(),

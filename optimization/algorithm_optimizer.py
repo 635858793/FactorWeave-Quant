@@ -623,11 +623,11 @@ class AlgorithmOptimizer:
     def _bayesian_optimization(self, pattern_name: str, pattern_config,
                                config: OptimizationConfig, test_datasets: List[pd.DataFrame],
                                baseline_metrics: TradingPerformanceMetrics) -> Dict[str, Any]:
-        """贝叶斯优化（改进版）"""
-        logger.info("使用贝叶斯优化（改进版）...")
+        """启发式参数搜索（基于探索-利用）"""
+        logger.info("使用启发式参数搜索（基于探索-利用）...")
 
-        # 改进的贝叶斯优化实现
-        # 使用探索-利用平衡策略
+        # 启发式参数搜索实现
+        # 使用探索-利用平衡策略（非标准GP+EI贝叶斯优化）
 
         best_individual = None
         best_score = baseline_metrics.overall_score
@@ -636,7 +636,7 @@ class AlgorithmOptimizer:
         # 参数空间定义
         param_space = self._define_parameter_space(pattern_config)
 
-        # 改进的贝叶斯优化参数
+        # 启发式搜索参数
         exploration_rate = 0.5  # 探索率
         exploitation_rate = 0.5  # 利用率
         local_search_radius = 0.15  # 局部搜索半径
@@ -702,7 +702,7 @@ class AlgorithmOptimizer:
         if best_individual:
             best_version_id = self._save_optimized_version(
                 pattern_name, pattern_config, best_individual,
-                f"贝叶斯优化(改进版) - {len(optimization_log)}次迭代", best_score
+                f"启发式参数搜索（探索-利用） - {len(optimization_log)}次迭代", best_score
             )
 
         improvement_percentage = 0.0

@@ -83,20 +83,19 @@ class EnhancedMoneyManager(MoneyManagerStrategy):
         try:
             # 1. 计算基础风险金额
             risk_amount = available_cash * self.get_param("risk_per_trade")
-            risk_per_share = current_price - stop_loss_price
+            risk_per_share = abs(current_price - stop_loss_price)
 
-            if risk_per_share <= 0:
-                return 0
-
-            # 2. 计算基础头寸大小
-            base_position_size = int(risk_amount / risk_per_share)
-
-            # 3. 应用动态调整因子
+            # 2. 计算基础头寸大小（保留精度到最后一步再取整）
             position_scale = self._calculate_position_scale()
-            adjusted_size = int(base_position_size * position_scale)
+            float_size = (risk_amount / risk_per_share) * position_scale
 
-            # 4. 确保是100的整数倍
-            return (adjusted_size // 100) * 100
+            # 3. 获取最小交易单位（支持不同市场：A股100、科创板200、美股1等）
+            min_trade_unit = self.get_param("min_trade_unit", 100)
+
+            # 4. 按最小交易单位取整，不足1手则不交易
+            if float_size < min_trade_unit:
+                return 0
+            return int(float_size // min_trade_unit) * min_trade_unit
 
         except Exception as e:
             logger.error(f"头寸大小计算错误: {str(e)}")

@@ -351,6 +351,7 @@ class DuckDBConnectionPool:
         """获取连接（上下文管理器）"""
         conn = None
         temp_connection = False
+        has_error = True
         try:
             try:
                 conn = self._pool.get(timeout=30)
@@ -371,7 +372,11 @@ class DuckDBConnectionPool:
 
             yield conn
 
+            has_error = False
+
         except Exception as e:
+            has_error = True
+
             # 记录错误
             if conn and hasattr(self, '_conn_id_mapping') and id(conn) in self._conn_id_mapping:
                 conn_id = self._conn_id_mapping[id(conn)]
@@ -388,17 +393,18 @@ class DuckDBConnectionPool:
 
         finally:
             if conn:
-                try:
-                    try:
-                        conn.execute("COMMIT")
-                    except Exception:
-                        pass
-
+                if has_error:
                     try:
                         conn.execute("ROLLBACK")
                     except Exception:
                         pass
 
+                try:
+                    conn.unregister('temp_batch')
+                except Exception:
+                    pass
+
+                try:
                     if temp_connection:
                         try:
                             conn.close()
@@ -408,13 +414,11 @@ class DuckDBConnectionPool:
                         try:
                             self._pool.put(conn)
                         except Exception:
-                            logger.warning("归还连接到池中失败，尝试关闭连接")
                             try:
                                 conn.close()
                             except Exception:
                                 pass
                     else:
-                        logger.warning("连接无效，丢弃并创建新连接")
                         try:
                             new_conn = self._create_connection()
                             if new_conn:

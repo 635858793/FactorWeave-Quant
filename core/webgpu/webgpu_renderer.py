@@ -1445,13 +1445,12 @@ class WebGPURenderer(BaseChartRenderer):
                             success = self._render_with_gpu(vertex_buffer, np.array(colors), ax)
                             # 如果GPU渲染失败，尝试读取缓冲区数据并直接用matplotlib渲染
                             if not success:
-                                logger.info("DEBUG: GPU rendering failed, reading buffer data for fallback")
+                                logger.debug("GPU渲染失败，尝试回退缓冲区数据")
                                 try:
                                     if hasattr(vertex_buffer, 'read'):
                                         raw_data = vertex_buffer.read()
                                         if raw_data and len(raw_data) > 0:
                                             read_arr = np.frombuffer(raw_data, dtype=np.float32)
-                                            logger.info(f"DEBUG: buffer read size={len(read_arr)}, sum={np.sum(read_arr)}")
                                             if read_arr.size > 0 and np.sum(read_arr) != 0:
                                                 # 数据格式：(n_quads * 8,) -> reshape to 2D
                                                 if read_arr.size % 8 == 0:
@@ -1902,7 +1901,7 @@ class WebGPURenderer(BaseChartRenderer):
             vb_size_elems = vertex_buffer.size if vb_has_size else 0
             colors_arr = np.asarray(colors) if colors is not None else np.array([])
             colors_len = len(colors_arr)
-            logger.debug(f"DEBUG _render_with_gpu: vb_has_len={vb_has_len}, vb_len={vb_len}, vb_size={vb_size_elems}, colors_len={colors_len}, backend={self.backend_type}")
+            logger.debug(f"_render_with_gpu: backend={self.backend_type}")
 
             # 根据后端类型执行不同的渲染逻辑
             if self.backend_type == GPUBackend.MODERNGL and hasattr(self.context, 'context'):
@@ -1918,7 +1917,7 @@ class WebGPURenderer(BaseChartRenderer):
     
     def _render_moderngl(self, vertex_buffer, colors: np.ndarray, ax, is_up_list: np.ndarray = None, segments: List = None) -> bool:
         """使用ModernGL渲染"""
-        logger.debug(f"DEBUG _render_moderngl START: vb type={type(vertex_buffer)}, colors type={type(colors)}, colors.len={len(colors) if hasattr(colors, '__len__') else 'N/A'}")
+        logger.debug(f"_render_moderngl START: colors.len={len(colors) if hasattr(colors, '__len__') else 'N/A'}")
 
         if vertex_buffer is None or not hasattr(vertex_buffer, 'bind'):
             logger.debug("顶点缓冲区无效，回退到CPU渲染")
@@ -1952,7 +1951,6 @@ class WebGPURenderer(BaseChartRenderer):
                     colors_array_for_check = np.asarray(colors)
                     vb_size = len(vertex_buffer) if hasattr(vertex_buffer, '__len__') else (vertex_buffer.size if hasattr(vertex_buffer, 'size') else 0)
                     vb_float_count = vb_size // 4 if vb_size > 0 else 0
-                    logger.debug(f"DEBUG _render_moderngl: vb_size={vb_size}, vb_float_count={vb_float_count}, colors_len={len(colors_array_for_check)}")
                     if colors_array_for_check.size > 0 and vb_float_count > 0:
                         quad_count = vb_float_count // 8
                         color_count = len(colors_array_for_check) // 3
@@ -1977,7 +1975,6 @@ class WebGPURenderer(BaseChartRenderer):
                         )
 
                     if 'basic' in self.shader_modules and self.shader_modules['basic']:
-                        logger.debug("DEBUG: shader_modules['basic'] exists, proceeding with render")
                         self.shader_modules['basic'].use()
                         xlim, ylim = ax.get_xlim(), ax.get_ylim()
                         projection_matrix = self._create_orthographic_projection(xlim[0], xlim[1], ylim[0], ylim[1], -1.0, 1.0)
@@ -1989,13 +1986,10 @@ class WebGPURenderer(BaseChartRenderer):
                         moderngl_context.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
 
                         vb_has_size = hasattr(vertex_buffer, 'size')
-                        logger.debug(f"DEBUG: before vao.render, vb_has_size={vb_has_size}")
                         if vb_has_size:
                             vertex_count = vertex_buffer.size // (2 * 4)
-                            logger.debug(f"DEBUG: rendering with vertex_count={vertex_count}")
                             vao.render(moderngl.TRIANGLES, vertices=vertex_count)
                         else:
-                            logger.debug("DEBUG: rendering with default vertex_count=1000")
                             vao.render(moderngl.TRIANGLES, vertices=1000)
 
                         logger.debug("ModernGL GPU渲染成功")
@@ -2043,11 +2037,9 @@ class WebGPURenderer(BaseChartRenderer):
 
                         logger.debug("ModernGL直接缓冲区渲染成功")
                         rendering_success = True
-                        logger.info(f"DEBUG: rendering_success set to True, fbo exists: {hasattr(self, 'fbo') and self.fbo is not None}")
                     except Exception as shader_error:
                         logger.warning(f"直接缓冲区渲染失败: {shader_error}")
 
-            logger.info(f"DEBUG: before FBO read, rendering_success={rendering_success}")
             if rendering_success:
                 try:
                     image_data = self.fbo.read(components=4, dtype='f1')
@@ -2055,15 +2047,13 @@ class WebGPURenderer(BaseChartRenderer):
                     image_array = image_array.reshape((self.height, self.width, 4))
                     image_array = np.flipud(image_array)
                     extent = ax.get_xlim() + ax.get_ylim()
-                    logger.info(f"DEBUG FBO read: image_array.shape={image_array.shape}, extent={extent}, fbo_size=({self.width}, {self.height})")
-                    logger.info(f"DEBUG FBO image: min={np.min(image_array)}, max={np.max(image_array)}, nonzero_count={np.count_nonzero(image_array)}")
                     ax.imshow(image_array, extent=extent, aspect='auto', origin='upper')
                     logger.debug("ModernGL渲染成功并显示在matplotlib中")
                     return True
                 except Exception as read_error:
                     logger.warning(f"从framebuffer读取数据失败: {read_error}")
 
-            logger.info("DEBUG: falling back to _convert_gpu_data_to_matplotlib")
+            logger.debug("GPU渲染回退到matplotlib降级路径")
             return self._convert_gpu_data_to_matplotlib(vertex_buffer, colors, ax, is_up_list=is_up_list, segments=segments)
 
         except Exception as e:
@@ -2099,17 +2089,23 @@ class WebGPURenderer(BaseChartRenderer):
             max_volume = max(volumes) if len(volumes) > 0 else 1
             target_max = 100.0
 
-            verts = []
-            for i, volume in enumerate(volumes):
-                if volume > 0:
-                    x = i
-                    left = x - 0.4
-                    right = x + 0.4
-                    normalized_volume = (volume / max_volume) * target_max
+            valid_mask = volumes > 0
+            n_valid = np.sum(valid_mask)
+            if n_valid == 0:
+                return True
 
-                    verts.append([
-                        (left, 0), (left, normalized_volume), (right, normalized_volume), (right, 0)
-                    ])
+            normalized = (volumes / max_volume) * target_max if max_volume > 0 else np.zeros(len(volumes), dtype=np.float64)
+            x_positions = np.arange(len(volumes), dtype=np.float64)
+            half = 0.4
+
+            valid_verts = np.empty((n_valid, 4, 2), dtype=np.float64)
+            ix = x_positions[valid_mask]
+            nv = normalized[valid_mask]
+            valid_verts[:, 0, 0] = ix - half; valid_verts[:, 0, 1] = 0.0
+            valid_verts[:, 1, 0] = ix - half; valid_verts[:, 1, 1] = nv
+            valid_verts[:, 2, 0] = ix + half; valid_verts[:, 2, 1] = nv
+            valid_verts[:, 3, 0] = ix + half; valid_verts[:, 3, 1] = 0.0
+            verts = valid_verts.tolist()
 
             if verts:
                 collection = PolyCollection(
@@ -2169,9 +2165,9 @@ class WebGPURenderer(BaseChartRenderer):
             patch_colors = []
             colors_arr = np.asarray(colors) if colors is not None else None
 
-            logger.info(f"DEBUG _convert: vertices_array.ndim={vertices_array.ndim}, shape={vertices_array.shape if vertices_array.ndim == 2 else len(vertices_array)}, sum={np.sum(vertices_array) if vertices_array.size > 0 else 'N/A'}")
+            logger.debug(f"_convert: vertices_array.ndim={vertices_array.ndim}, size={vertices_array.size}")
             if vertices_array.size == 0 or np.sum(vertices_array) == 0:
-                logger.warning(f"DEBUG _convert: vertices all zeros or empty, skipping")
+                logger.debug("_convert: vertices all zeros or empty, skipping")
                 return False
 
             for i in range(num_quads):
@@ -2213,9 +2209,6 @@ class WebGPURenderer(BaseChartRenderer):
                 return False
 
             collection = PatchCollection(patches, facecolor='none', edgecolor='none')
-            for i, pc in enumerate(patch_colors):
-                if i < len(collection.get_paths()):
-                    pass
             collection.set_facecolors([pc['facecolor'] for pc in patch_colors])
             collection.set_edgecolors([pc['edgecolor'] for pc in patch_colors])
             collection.set_linewidths([pc['linewidth'] for pc in patch_colors])
@@ -2226,34 +2219,21 @@ class WebGPURenderer(BaseChartRenderer):
             if segments and len(segments) > 0:
                 from matplotlib.collections import LineCollection
                 colors_arr = np.asarray(colors) if colors is not None else None
-                shadow_colors = []
-                for i in range(len(segments)):
-                    if colors_arr is not None and len(colors_arr) > 0:
-                        if colors_arr.ndim == 2 and len(colors_arr) > i:
-                            shadow_colors.append(colors_arr[i].tolist())
-                        elif colors_arr.ndim == 1:
-                            base_color_idx = i * 3
-                            if base_color_idx + 3 <= len(colors_arr):
-                                shadow_colors.append([colors_arr[base_color_idx], colors_arr[base_color_idx+1], colors_arr[base_color_idx+2]])
-                            else:
-                                shadow_colors.append([1.0, 0.0, 0.0])
-                        else:
-                            shadow_colors.append([1.0, 0.0, 0.0])
+                n_segments = len(segments)
+
+                if colors_arr is not None and len(colors_arr) > 0:
+                    if colors_arr.ndim == 2 and len(colors_arr) >= n_segments:
+                        shadow_colors = colors_arr[:n_segments].tolist()
+                    elif colors_arr.ndim == 1 and len(colors_arr) >= n_segments * 3:
+                        shadow_colors = colors_arr[:n_segments * 3].reshape(-1, 3).tolist()
                     else:
-                        shadow_colors.append([1.0, 0.0, 0.0])
+                        shadow_colors = [[1.0, 0.0, 0.0]] * n_segments
+                else:
+                    shadow_colors = [[1.0, 0.0, 0.0]] * n_segments
 
-                valid_segments = []
-                valid_colors = []
-                for i, seg in enumerate(segments):
-                    if i < len(shadow_colors):
-                        valid_segments.append(seg)
-                        valid_colors.append(shadow_colors[i])
-
-                if valid_segments:
-                    lc = LineCollection(valid_segments, colors=valid_colors, linewidths=0.5)
-                    ax.add_collection(lc)
-
-            logger.info(f"DEBUG Polygon: added {len(patches)} patches")
+                line_collection = LineCollection(segments, colors=shadow_colors, linewidths=0.5)
+                ax.add_collection(line_collection)
+                logger.debug(f"matplotlib降级渲染完成: {len(patches)} patches")
 
             ax.autoscale_view()
 
@@ -2428,19 +2408,29 @@ class WebGPURenderer(BaseChartRenderer):
 
     def _create_orthographic_projection(self, left, right, bottom, top, near, far):
         """创建正交投影矩阵"""
-        # 创建4x4单位矩阵
         projection = np.zeros((4, 4), dtype=np.float32)
-        
-        # 填充正交投影矩阵的值
-        projection[0, 0] = 2.0 / (right - left)
-        projection[1, 1] = 2.0 / (top - bottom)
-        projection[2, 2] = -2.0 / (far - near)
+
+        width = right - left
+        height = bottom - top
+        depth = far - near
+
+        EPSILON = 1e-6
+        if abs(width) < EPSILON:
+            width = EPSILON if width >= 0 else -EPSILON
+        if abs(height) < EPSILON:
+            height = EPSILON if height >= 0 else -EPSILON
+        if abs(depth) < EPSILON:
+            depth = EPSILON if depth >= 0 else -EPSILON
+
+        projection[0, 0] = 2.0 / width
+        projection[1, 1] = 2.0 / height
+        projection[2, 2] = -2.0 / depth
         projection[3, 3] = 1.0
-        
-        projection[0, 3] = -(right + left) / (right - left)
-        projection[1, 3] = -(top + bottom) / (top - bottom)
-        projection[2, 3] = -(far + near) / (far - near)
-        
+
+        projection[0, 3] = -(right + left) / width
+        projection[1, 3] = -(top + bottom) / height
+        projection[2, 3] = -(far + near) / depth
+
         return projection
 
     def cleanup(self):

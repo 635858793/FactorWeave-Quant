@@ -12,6 +12,7 @@
 
 import time
 import threading
+import copy
 import gc
 import psutil
 from typing import Dict, List, Any, Optional, Callable
@@ -300,7 +301,7 @@ class MemoryMonitor:
             self.update_memory_status()
             
             # 保存历史记录
-            self.metrics_history.append(self.memory_metrics)
+            self.metrics_history.append(copy.deepcopy(self.memory_metrics))
             
             # 触发指标回调
             for callback in self.metrics_callbacks:
@@ -389,8 +390,11 @@ class MemoryMonitor:
         return {
             'system_usage': [m.system_memory_usage_percent for m in recent_metrics],
             'process_usage': [m.process_memory_percent for m in recent_metrics],
-            'webgpu_usage': [m.webgpu_memory_used_mb / max(1, m.webgpu_memory_pool_size_mb) 
-                           for m in recent_metrics],
+            'webgpu_usage': [
+                getattr(m, 'webgpu_memory_used_mb', 0)
+                / max(1, getattr(m, 'webgpu_memory_pool_size_mb', 1))
+                for m in recent_metrics
+            ],
             'pressure_level': [m.memory_pressure_level for m in recent_metrics]
         }
     

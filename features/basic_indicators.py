@@ -9,6 +9,7 @@ except ImportError:
 import warnings
 from typing import Dict, Any, Optional
 from loguru import logger
+from core.indicators.indicators_algorithm import calc_kdj
 
 def add_basic_indicators(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -54,17 +55,7 @@ def add_basic_indicators(df: pd.DataFrame) -> pd.DataFrame:
     result['bias_20'] = (result['close'] / result['MA20'] - 1) * 100
 
     # 计算强弱指标KDJ
-    low_min = result['low'].rolling(window=9).min()
-    high_max = result['high'].rolling(window=9).max()
-
-    # 确保分母不为0
-    denom = high_max - low_min
-    denom = denom.replace(0, 0.00001)
-
-    result['k_percent'] = 100 * ((result['close'] - low_min) / denom)
-    result['k'] = result['k_percent'].ewm(alpha=1/3, adjust=False).mean()
-    result['d'] = result['k'].ewm(alpha=1/3, adjust=False).mean()
-    result['j'] = 3 * result['k'] - 2 * result['d']
+    result['k'], result['d'], result['j'] = calc_kdj(result['high'], result['low'], result['close'], n=9, m1=3, m2=3)
 
     # 计算成交量指标
     if 'volume' in result.columns:

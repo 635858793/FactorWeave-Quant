@@ -16,7 +16,7 @@
 from typing import Dict, List, Optional, Tuple, Any
 from loguru import logger
 
-from core.events.event_bus import EventBus
+from core.events.event_bus import get_event_bus
 from core.risk.compliance_audit_logger import ComplianceAuditLogger, get_audit_logger, EventType
 
 
@@ -31,7 +31,7 @@ class RiskEventSubscriber:
     """
 
     def __init__(self, audit_logger: Optional[ComplianceAuditLogger] = None):
-        self._event_bus = EventBus()
+        self._event_bus = get_event_bus()
         self._audit_logger = audit_logger or get_audit_logger()
         self._subscriptions: List[Tuple[str, Any]] = []
         self._initialized = False

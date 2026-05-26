@@ -500,51 +500,9 @@ class PerformanceEvaluationDialog(BaseDialog):
             self.logger.error(f"加载默认设置失败: {e}")
 
     def load_evaluation_history(self):
-        """加载评估历史"""
         try:
-            # 模拟历史数据
-            history_data = [
-                {
-                    'time': '2023-12-01 10:00:00',
-                    'type': '全面评估',
-                    'sample_count': 1000,
-                    'accuracy': 85.2,
-                    'response_time': 125,
-                    'status': '完成'
-                },
-                {
-                    'time': '2023-11-28 14:30:00',
-                    'type': '准确率评估',
-                    'sample_count': 500,
-                    'accuracy': 83.8,
-                    'response_time': 118,
-                    'status': '完成'
-                },
-                {
-                    'time': '2023-11-25 09:15:00',
-                    'type': '性能评估',
-                    'sample_count': 2000,
-                    'accuracy': 84.5,
-                    'response_time': 142,
-                    'status': '完成'
-                }
-            ]
-
-            self.history_table.setRowCount(len(history_data))
-
-            for i, data in enumerate(history_data):
-                self.history_table.setItem(
-                    i, 0, QTableWidgetItem(data['time']))
-                self.history_table.setItem(
-                    i, 1, QTableWidgetItem(data['type']))
-                self.history_table.setItem(
-                    i, 2, QTableWidgetItem(str(data['sample_count'])))
-                self.history_table.setItem(
-                    i, 3, QTableWidgetItem(f"{data['accuracy']:.1f}%"))
-                self.history_table.setItem(
-                    i, 4, QTableWidgetItem(f"{data['response_time']}ms"))
-                self.history_table.setItem(
-                    i, 5, QTableWidgetItem(data['status']))
+            logger.warning("评估历史引擎不可用，无法加载真实评估历史。请配置评估历史存储以获取真实数据。")
+            self.history_table.setRowCount(0)
 
         except Exception as e:
             self.logger.error(f"加载评估历史失败: {e}")
@@ -591,8 +549,10 @@ class PerformanceEvaluationDialog(BaseDialog):
             self.start_evaluation_btn.setEnabled(False)
             self.stop_evaluation_btn.setEnabled(True)
 
-            # 模拟评估过程
-            self.simulate_evaluation(settings)
+            logger.warning("性能评估引擎为桩实现，无法执行真实评估。请配置评估引擎以获取真实数据。")
+            QMessageBox.warning(self, "引擎不可用", "性能评估引擎当前不可用，无法执行真实评估。\n请配置性能评估引擎。")
+            self.status_label.setText("引擎不可用")
+            self.progress_bar.setVisible(False)
 
         except Exception as e:
             self.logger.error(f"开始评估失败: {e}")
@@ -647,47 +607,14 @@ class PerformanceEvaluationDialog(BaseDialog):
             self.logger.error(f"更新评估进度失败: {e}")
 
     def complete_evaluation(self):
-        """完成评估"""
         try:
-            # 模拟评估结果
-            results = {
-                'accuracy': 85.2,
-                'response_time': 125,
-                'memory_usage': 256,
-                'cpu_usage': 45,
-                'success_rate': 98.5,
-                'error_rate': 1.5
-            }
-
-            # 更新指标卡片
-            self.metric_labels['accuracy'].setText(
-                f"{results['accuracy']:.1f}%")
-            self.metric_labels['response_time'].setText(
-                f"{results['response_time']}ms")
-            self.metric_labels['memory_usage'].setText(
-                f"{results['memory_usage']}MB")
-            self.metric_labels['cpu_usage'].setText(f"{results['cpu_usage']}%")
-            self.metric_labels['success_rate'].setText(
-                f"{results['success_rate']:.1f}%")
-            self.metric_labels['error_rate'].setText(
-                f"{results['error_rate']:.1f}%")
-
-            # 更新详细结果
-            self.update_detailed_results()
-
-            # 更新建议
-            self.update_recommendations(results)
-
-            # 更新UI状态
-            self.status_label.setText("评估完成")
+            logger.warning("性能评估引擎不可用，complete_evaluation 不生成假数据。请配置评估引擎。")
+            self.status_label.setText("评估引擎不可用")
             self.progress_bar.setVisible(False)
             self.start_evaluation_btn.setEnabled(True)
             self.stop_evaluation_btn.setEnabled(False)
-            self.save_report_btn.setEnabled(True)
-            self.export_btn.setEnabled(True)
 
-            # 发送完成信号
-            self.evaluation_completed.emit(results)
+            self.evaluation_completed.emit({})
 
             QMessageBox.information(self, "成功", "性能评估完成！")
 

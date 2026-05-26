@@ -111,27 +111,27 @@ class RiskControlStrategy:
                             position: float, risk_metrics: Dict) -> float:
         """计算动态止损水平"""
         try:
-            # 获取风险指标
             market_risk = risk_metrics.get('market_risk', {})
             volatility = market_risk.get('volatility', 0.2)
             beta = market_risk.get('beta', 1.0)
 
-            # 计算基础止损
-            base_stop = max(price * (1 - volatility * beta), price * 0.80)
+            if position > 0:
+                base_stop = max(price * (1 - volatility * beta), price * 0.80)
+            elif position < 0:
+                base_stop = min(price * (1 + volatility * beta), price * 1.20)
+            else:
+                base_stop = price
 
-            # 根据持仓规模调整
-            position_ratio = position / self.position_limits.get(asset, 1.0)
+            position_ratio = abs(position) / self.position_limits.get(asset, 1.0)
             if position_ratio > 0.8:
-                base_stop *= 0.95  # 收紧止损
+                base_stop *= 0.95
 
-            # 根据市场状态调整
             market_regime = self._detect_market_regime(risk_metrics)
             if market_regime == 'bear':
-                base_stop *= 0.95  # 熊市收紧止损
+                base_stop *= 0.95
             elif market_regime == 'bull':
-                base_stop *= 1.05  # 牛市放宽止损
+                base_stop *= 1.05
 
-            # 记录止损水平
             self.stop_loss_levels[asset] = base_stop
 
             return base_stop

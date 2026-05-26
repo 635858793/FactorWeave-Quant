@@ -755,36 +755,39 @@ class DataAdapter:
                 chart_data = self._convert_heatmap_data(data)
             else:
                 logger.warning(f"不支持的图表类型转换: {chart_type}")
-                chart_data = {'x': [], 'y': []}
+                chart_data = {'chart_type': chart_type, 'x': [], 'y': []}
                 
             return chart_data
             
         except Exception as e:
             logger.error(f"转换图表数据失败: {e}")
-            return {'x': [], 'y': []}
+            return {'chart_type': chart_type, 'x': [], 'y': []}
             
     def _convert_line_data(self, data: pd.DataFrame) -> Dict[str, Any]:
         """转换为线图数据"""
         try:
             if 'timestamp' in data.columns and 'value' in data.columns:
                 return {
+                    'chart_type': ChartType.LINE_CHART,
                     'x': data['timestamp'].values,
                     'y': data['value'].values
                 }
             elif len(data.columns) >= 2:
                 return {
+                    'chart_type': ChartType.LINE_CHART,
                     'x': data.iloc[:, 0].values,
                     'y': data.iloc[:, 1].values
                 }
             else:
                 return {
+                    'chart_type': ChartType.LINE_CHART,
                     'x': list(range(len(data))),
                     'y': data.iloc[:, 0].values if len(data.columns) > 0 else []
                 }
                 
         except Exception as e:
             logger.error(f"转换线图数据失败: {e}")
-            return {'x': [], 'y': []}
+            return {'chart_type': ChartType.LINE_CHART, 'x': [], 'y': []}
             
     def _convert_candlestick_data(self, data: pd.DataFrame) -> Dict[str, Any]:
         """转换为K线图数据"""
@@ -792,6 +795,7 @@ class DataAdapter:
             required_cols = ['open', 'high', 'low', 'close']
             if all(col in data.columns for col in required_cols):
                 return {
+                    'chart_type': ChartType.CANDLESTICK,
                     'timestamp': data.index.values if data.index.name else list(range(len(data))),
                     'open': data['open'].values,
                     'high': data['high'].values,
@@ -801,44 +805,47 @@ class DataAdapter:
                 }
             else:
                 logger.warning("K线图数据缺少必要字段")
-                return {'timestamp': [], 'open': [], 'high': [], 'low': [], 'close': [], 'volume': []}
+                return {'chart_type': ChartType.CANDLESTICK, 'timestamp': [], 'open': [], 'high': [], 'low': [], 'close': [], 'volume': []}
                 
         except Exception as e:
             logger.error(f"转换K线图数据失败: {e}")
-            return {'timestamp': [], 'open': [], 'high': [], 'low': [], 'close': [], 'volume': []}
+            return {'chart_type': ChartType.CANDLESTICK, 'timestamp': [], 'open': [], 'high': [], 'low': [], 'close': [], 'volume': []}
             
     def _convert_bar_data(self, data: pd.DataFrame) -> Dict[str, Any]:
         """转换为柱状图数据"""
         try:
             if len(data.columns) >= 2:
                 return {
+                    'chart_type': ChartType.BAR,
                     'x': data.iloc[:, 0].values,
                     'y': data.iloc[:, 1].values
                 }
             else:
                 return {
+                    'chart_type': ChartType.BAR,
                     'x': list(range(len(data))),
                     'y': data.iloc[:, 0].values if len(data.columns) > 0 else []
                 }
                 
         except Exception as e:
             logger.error(f"转换柱状图数据失败: {e}")
-            return {'x': [], 'y': []}
+            return {'chart_type': ChartType.BAR, 'x': [], 'y': []}
             
     def _convert_scatter_data(self, data: pd.DataFrame) -> Dict[str, Any]:
         """转换为散点图数据"""
         try:
             if len(data.columns) >= 2:
                 return {
+                    'chart_type': ChartType.SCATTER,
                     'x': data.iloc[:, 0].values,
                     'y': data.iloc[:, 1].values
                 }
             else:
-                return {'x': [], 'y': []}
+                return {'chart_type': ChartType.SCATTER, 'x': [], 'y': []}
                 
         except Exception as e:
             logger.error(f"转换散点图数据失败: {e}")
-            return {'x': [], 'y': []}
+            return {'chart_type': ChartType.SCATTER, 'x': [], 'y': []}
             
     def _convert_heatmap_data(self, data: pd.DataFrame) -> Dict[str, Any]:
         """转换为热力图数据"""
@@ -846,16 +853,17 @@ class DataAdapter:
             numeric_data = data.select_dtypes(include=[np.number])
             if not numeric_data.empty:
                 return {
+                    'chart_type': ChartType.HEATMAP,
                     'matrix': numeric_data.values,
                     'x_labels': list(numeric_data.columns),
                     'y_labels': list(numeric_data.index)
                 }
             else:
-                return {'matrix': [], 'x_labels': [], 'y_labels': []}
+                return {'chart_type': ChartType.HEATMAP, 'matrix': [], 'x_labels': [], 'y_labels': []}
                 
         except Exception as e:
             logger.error(f"转换热力图数据失败: {e}")
-            return {'matrix': [], 'x_labels': [], 'y_labels': []}
+            return {'chart_type': ChartType.HEATMAP, 'matrix': [], 'x_labels': [], 'y_labels': []}
             
     def get_schema_list(self) -> List[str]:
         """获取已注册的模式列表"""

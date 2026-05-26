@@ -13,7 +13,7 @@ from PyQt5.QtWidgets import (
     QLabel, QTabWidget, QFrame, QGridLayout, QProgressBar,
     QTextEdit, QSplitter, QHeaderView, QSizePolicy
 )
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt5.QtGui import QColor, QFont
 from gui.widgets.performance.components.metric_card import ModernMetricCard
 from gui.widgets.performance.components.performance_chart import ModernPerformanceChart
@@ -35,6 +35,34 @@ def _import_theme_manager():
         except Exception as e:
             logger.warning(f"导入主题管理器失败: {e}")
 
+class _OrderHistoryLoaderThread(QThread):
+    """异步加载订单历史的工作线程"""
+    result_ready = pyqtSignal(list, float)
+
+    def __init__(self, start_time, end_time, limit=1000):
+        super().__init__()
+        self.start_time = start_time
+        self.end_time = end_time
+        self.limit = limit
+
+    def run(self):
+        import time
+        start_ts = time.time()
+        try:
+            from db.models.performance_history_models import get_performance_history_manager
+            history_manager = get_performance_history_manager()
+            records = history_manager.get_execution_history(
+                start_time=self.start_time,
+                end_time=self.end_time,
+                limit=self.limit
+            )
+            elapsed = time.time() - start_ts
+            self.result_ready.emit(records, elapsed)
+        except Exception as e:
+            logger.error(f"异步加载订单历史失败: {e}")
+            self.result_ready.emit([], 0.0)
+
+
 class ModernTradingExecutionMonitorTab(QWidget):
     """现代化交易执行监控标签页 - 量化交易专用"""
 
@@ -42,6 +70,7 @@ class ModernTradingExecutionMonitorTab(QWidget):
         super().__init__()
         self.execution_data = []
         self.order_history = []
+        self._history_loader_thread = None
         
         # 延迟导入并初始化主题管理器
         _import_theme_manager()
@@ -54,6 +83,7 @@ class ModernTradingExecutionMonitorTab(QWidget):
                 logger.warning(f"获取ThemeManager失败: {e}")
         
         self.init_ui()
+        self._load_initial_execution_data()
 
     def init_ui(self):
         layout = QVBoxLayout(self)
@@ -88,16 +118,15 @@ class ModernTradingExecutionMonitorTab(QWidget):
         quality_group = QGroupBox("执行质量总览")
         quality_layout = QHBoxLayout()
 
-        self.execution_score_label = QLabel("执行质量评分: 85.6")
-        self.execution_score_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #27ae60;")
+        self.execution_score_label = QLabel("执行质量评分: N/A")
+        self.execution_score_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #888;")
         quality_layout.addWidget(self.execution_score_label)
 
         quality_layout.addStretch()
 
-        # 执行质量进度条
         self.execution_score_bar = QProgressBar()
         self.execution_score_bar.setMaximum(100)
-        self.execution_score_bar.setValue(86)
+        self.execution_score_bar.setValue(0)
         self.execution_score_bar.setStyleSheet("""
             QProgressBar {
                 border: 2px solid grey;
@@ -460,6 +489,51 @@ class ModernTradingExecutionMonitorTab(QWidget):
         except Exception as e:
             logger.error(f"更新执行质量评分显示失败: {e}")
 
+    def _load_initial_execution_data(self):
+        """从数据库加载初始执行数据并更新UI"""
+        try:
+            from db.models.performance_history_models import get_performance_history_manager
+
+            history_manager = get_performance_history_manager()
+            stats = history_manager.get_execution_statistics(days=30)
+
+            if stats:
+                partial_rate = ((stats.get('partial_orders', 0) / stats.get('total_orders', 1)) * 100
+                                if stats.get('total_orders', 0) > 0 else 0)
+                cancel_rate = ((stats.get('cancelled_orders', 0) / stats.get('total_orders', 1)) * 100
+                               if stats.get('total_orders', 0) > 0 else 0)
+
+                execution_metrics = {
+                    '平均延迟': stats.get('avg_latency', 0),
+                    '成交率': stats.get('fill_rate', 0),
+                    '平均滑点': stats.get('avg_slippage', 0),
+                    '交易成本': stats.get('avg_cost', 0),
+                    '市场冲击': 0.0,
+                    '执行效率': 0.0,
+                    '订单完成率': stats.get('fill_rate', 0),
+                    '部分成交率': partial_rate,
+                    '撤单率': cancel_rate,
+                    'TWAP偏差': 0.0,
+                    'VWAP偏差': 0.0,
+                    '实施缺口': 0.0
+                }
+
+                self.update_execution_data(execution_metrics)
+            else:
+                self.execution_score_label.setText("执行质量评分: N/A (无执行数据)")
+                self.execution_score_label.setStyleSheet(
+                    "font-size: 16px; font-weight: bold; color: #888;"
+                )
+                self.execution_score_bar.setValue(0)
+
+        except Exception as e:
+            logger.warning(f"加载初始执行数据失败（可能数据库尚未初始化）: {e}")
+            self.execution_score_label.setText("执行质量评分: N/A (数据加载失败)")
+            self.execution_score_label.setStyleSheet(
+                "font-size: 16px; font-weight: bold; color: #e74c3c;"
+            )
+            self.execution_score_bar.setValue(0)
+
     def add_realtime_order(self, order_data: Dict[str, Any]):
         """添加实时订单到监控表格"""
         try:
@@ -593,15 +667,13 @@ class ModernTradingExecutionMonitorTab(QWidget):
             logger.error(f"刷新执行分析失败: {e}")
 
     def load_order_history(self):
-        """加载订单历史"""
+        """加载订单历史（异步方式，不阻塞UI线程）"""
         try:
-            from db.models.performance_history_models import get_performance_history_manager
             from datetime import datetime, timedelta
 
             time_range = self.history_time_combo.currentText()
             logger.info(f"加载订单历史: {time_range}")
 
-            # 计算时间范围
             end_time = datetime.now()
             if time_range == "今日":
                 start_time = end_time.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -614,22 +686,29 @@ class ModernTradingExecutionMonitorTab(QWidget):
             else:
                 start_time = end_time - timedelta(days=1)
 
-            # 从数据库获取执行历史数据
-            history_manager = get_performance_history_manager()
-            execution_records = history_manager.get_execution_history(
+            if self._history_loader_thread is not None and self._history_loader_thread.isRunning():
+                self._history_loader_thread.quit()
+                self._history_loader_thread.wait(500)
+
+            self._history_loader_thread = _OrderHistoryLoaderThread(
                 start_time=start_time,
                 end_time=end_time,
                 limit=1000
             )
-
-            # 更新历史表格
-            self._update_order_history_table(execution_records)
-
-            # 更新统计信息
-            self._update_execution_statistics(execution_records)
+            self._history_loader_thread.result_ready.connect(self._on_order_history_loaded)
+            self._history_loader_thread.start()
 
         except Exception as e:
             logger.error(f"加载订单历史失败: {e}")
+
+    def _on_order_history_loaded(self, records, elapsed_sec):
+        """订单历史异步加载完成的回调（主线程）"""
+        try:
+            self._update_order_history_table(records)
+            self._update_execution_statistics(records)
+            logger.info(f"订单历史加载完成: {len(records)}条, 耗时 {elapsed_sec:.2f}s")
+        except Exception as e:
+            logger.error(f"处理订单历史加载结果失败: {e}")
 
     def _update_order_history_table(self, records):
         """更新订单历史表格"""
@@ -813,6 +892,9 @@ class ModernTradingExecutionMonitorTab(QWidget):
     def cleanup(self):
         """清理资源 - 优化性能，避免卡顿"""
         try:
+            if self._history_loader_thread is not None and self._history_loader_thread.isRunning():
+                self._history_loader_thread.quit()
+                self._history_loader_thread.wait(1000)
             # 清理图表 - 添加异常处理
             if hasattr(self, 'execution_chart') and self.execution_chart:
                 try:

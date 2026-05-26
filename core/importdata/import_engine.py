@@ -95,18 +95,14 @@ class DataImportEngine:
         logger.info("数据导入引擎初始化完成")
 
     async def start_import_task(self, task_id: str) -> ImportResult:
-        """启动导入任务"""
         try:
             self.active_tasks[task_id] = True
-
-            # 模拟导入过程
-            await asyncio.sleep(1)
-
+            logger.warning(f"数据导入引擎为桩实现，导入任务 {task_id} 未能执行真实导入。请配置真实数据导入引擎。")
             return ImportResult(
                 task_id=task_id,
-                success=True,
-                records_imported=1000,
-                message="导入成功"
+                success=False,
+                errors=["数据导入引擎为桩实现，未执行真实导入"],
+                message="导入引擎为桩实现，请配置真实数据导入引擎"
             )
 
         except Exception as e:

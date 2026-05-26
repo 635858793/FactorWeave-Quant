@@ -568,7 +568,7 @@ class PanelCoordinator(BaseCoordinator):
                 except Exception as e:
                     logger.warning(f"Failed to release backtest dock: {e}")
 
-            for dock_name in ('right_dock', 'backtest_dock'):
+            for dock_name in ('right_dock',):
                 if dock_name in self._panels:
                     dock = self._panels[dock_name]
                     try:

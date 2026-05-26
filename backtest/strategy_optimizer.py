@@ -300,32 +300,43 @@ class StrategyParameterOptimizer:
         indices = random.sample(range(len(expanded_grid)), n_samples)
         return [expanded_grid[i] for i in indices]
     
-    def _params_to_vector(self, params: Dict[str, Any], param_grid: Dict[str, Any]) -> 'np.ndarray':
-        """将参数字典转换为数值向量"""
-        import numpy as np
-        vec = []
-        for name, values in param_grid.items():
-            val = params[name]
-            if isinstance(val, (int, float)):
-                vec.append(float(val))
-            else:
-                vec.append(float(values.index(val)))
-        return np.array(vec)
+    @staticmethod
+    def _expand_param_values(value):
+        """展开参数值，复用 ParameterGrid._expand 逻辑"""
+        if isinstance(value, list):
+            return value
+        elif isinstance(value, range):
+            return list(value)
+        elif isinstance(value, dict):
+            if 'start' in value and 'end' in value and 'step' in value:
+                return list(range(
+                    value['start'], value['end'], value.get('step', 1)
+                ))
+            elif 'values' in value:
+                return value['values']
+        return [value]
 
-    def _idx_to_vector(self, idx: int, param_names: list, param_values: list) -> 'np.ndarray':
-        """将扁平索引直接转换为数值向量（跳过中间参数字典）"""
-        import numpy as np
-        remaining = idx
-        vec_reversed = []
-        for name, values in zip(reversed(param_names), reversed(param_values)):
-            ordinal = remaining % len(values)
-            val = values[ordinal]
-            if isinstance(val, (int, float)):
-                vec_reversed.append(float(val))
+    def _param_grid_to_specs(self, param_grid: Dict[str, Any]):
+        """将 param_grid 转换为 BayesianOptimizer 的 ParameterSpec 列表"""
+        from core.optimization import ParameterSpec, OptParameterType
+
+        specs = []
+        for name, values in param_grid.items():
+            expanded = self._expand_param_values(values)
+            if not expanded:
+                continue
+            all_numeric = all(isinstance(v, (int, float)) for v in expanded)
+            if all_numeric:
+                specs.append(ParameterSpec(
+                    name, OptParameterType.DISCRETE,
+                    bounds=(int(min(expanded)), int(max(expanded)))
+                ))
             else:
-                vec_reversed.append(float(ordinal))
-            remaining //= len(values)
-        return np.array(list(reversed(vec_reversed)))
+                specs.append(ParameterSpec(
+                    name, OptParameterType.ORDINAL,
+                    values=expanded
+                ))
+        return specs
 
     def _bayesian_optimization(
         self,
@@ -334,201 +345,52 @@ class StrategyParameterOptimizer:
         config: OptimizationConfig,
         run: OptimizationRun
     ) -> List[OptimizationResult]:
-        """贝叶斯优化：GP代理模型在真实多维参数空间上拟合，不可用时回退到最近邻启发式"""
-        import numpy as np
+        """贝叶斯优化：使用统一 BayesianOptimizer 模块（GP+EI+GP重置+最近邻降级）"""
+        from core.optimization import BayesianOptimizer, AcquisitionFunction
 
-        param_names = list(param_grid.keys())
-        param_values = list(param_grid.values())
-        n_combinations = int(np.prod([len(v) for v in param_values]))
-        n_iterations = min(config.max_iterations, n_combinations)
-        n_initial = min(10, n_combinations)
-        n_dims = len(param_names)
+        specs = self._param_grid_to_specs(param_grid)
+        if not specs:
+            self.logger.warning("贝叶斯优化: 参数网格为空")
+            return []
 
-        np.random.seed(config.random_seed if config.random_seed is not None else 42)
+        minimize = config.objective == OptimizationObjective.MINIMIZE_DRAWDOWN
 
-        _gp_available = False
-        _GaussianProcessRegressor = None
-        _Matern = None
-        _WhiteKernel = None
-        _ConstantKernel = None
-        try:
-            from sklearn.gaussian_process import GaussianProcessRegressor
-            from sklearn.gaussian_process.kernels import Matern, WhiteKernel, ConstantKernel
-            _GaussianProcessRegressor = GaussianProcessRegressor
-            _Matern = Matern
-            _WhiteKernel = WhiteKernel
-            _ConstantKernel = ConstantKernel
-            _gp_available = True
-            _gp_fail_count = 0
-            _GP_RESET_INTERVAL = 5
-            self.logger.info("贝叶斯优化: 使用真实高斯过程 (GaussianProcessRegressor) 作为代理模型（多维参数空间）")
-        except ImportError:
-            self.logger.warning("贝叶斯优化: sklearn.gaussian_process 不可用，回退到最近邻启发式代理模型")
+        metrics_map = {}
 
-        _norm_available = False
-        try:
-            from scipy.stats import norm
-            _norm_available = True
-        except ImportError:
-            pass
+        def wrapped_objective(**kwargs):
+            params_dict = kwargs
+            metrics, score = objective_function(params_dict)
+            key = tuple(sorted(params_dict.items()))
+            metrics_map[key] = metrics
+            return score
 
-        all_indices = list(range(n_combinations))
-        initial_indices = list(np.random.choice(n_combinations, size=n_initial, replace=False))
+        optimizer = BayesianOptimizer(
+            specs,
+            acquisition=AcquisitionFunction.EI,
+            random_state=config.random_seed if config.random_seed is not None else 42,
+        )
 
-        X_evaluated = []
-        y_evaluated = []
+        result = optimizer.optimize(
+            wrapped_objective,
+            n_calls=config.max_iterations,
+            maximize=not minimize,
+            early_stopping_rounds=config.early_stopping_rounds,
+        )
+
         results = []
-
-        for idx in initial_indices:
-            params = self._idx_to_params(idx, param_names, param_values)
-            params_vec = self._idx_to_vector(idx, param_names, param_values)
-            metrics, score = objective_function(params)
-            result = OptimizationResult(
-                parameters=params.copy(),
+        for i, trial in enumerate(result.trials):
+            key = tuple(sorted(trial.params.items()))
+            metrics = metrics_map.get(key)
+            results.append(OptimizationResult(
+                parameters=trial.params.copy(),
                 metrics=metrics,
-                score=score,
-                rank=len(results) + 1
-            )
-            results.append(result)
-            X_evaluated.append(params_vec)
-            y_evaluated.append(score)
-
-        X_evaluated = np.array(X_evaluated)
-        y_evaluated = np.array(y_evaluated)
-
-        if config.objective == OptimizationObjective.MINIMIZE_DRAWDOWN:
-            best_score = y_evaluated.min()
-        else:
-            best_score = y_evaluated.max()
-
-        no_improvement_count = 0
-        xi = 0.01
-
-        remaining = [i for i in all_indices if i not in initial_indices]
-
-        for _ in range(n_iterations - n_initial):
-            if not remaining:
-                break
-
-            n_candidates = min(1000, len(remaining))
-            candidate_indices = list(np.random.choice(remaining, size=n_candidates, replace=False))
-            X_candidates = np.array([self._idx_to_vector(ci, param_names, param_values)
-                                     for ci in candidate_indices])
-
-            best_ei = -np.inf
-            best_candidate = None
-
-            if _gp_available and len(X_evaluated) >= 5:
-                try:
-                    kernel = (_ConstantKernel(1.0, constant_value_bounds=(1e-3, 1e3))
-                              * _Matern(length_scale=1.0, length_scale_bounds=(1e-3, 1e3), nu=2.5)
-                              + _WhiteKernel(noise_level=0.01, noise_level_bounds=(1e-5, 1.0)))
-                    gp = _GaussianProcessRegressor(
-                        kernel=kernel,
-                        n_restarts_optimizer=5,
-                        random_state=config.random_seed,
-                        normalize_y=True
-                    )
-                    gp.fit(X_evaluated, y_evaluated)
-                    mu, sigma = gp.predict(X_candidates, return_std=True)
-
-                    for j, candidate_idx in enumerate(candidate_indices):
-                        if config.objective == OptimizationObjective.MINIMIZE_DRAWDOWN:
-                            improvement = -(mu[j] - best_score + xi)
-                        else:
-                            improvement = mu[j] - best_score - xi
-
-                        if sigma[j] > 1e-9 and _norm_available:
-                            Z = improvement / sigma[j]
-                            from scipy.stats import norm
-                            ei = improvement * norm.cdf(Z) + sigma[j] * norm.pdf(Z)
-                        else:
-                            ei = max(0.0, improvement)
-
-                        if ei > best_ei:
-                            best_ei = ei
-                            best_candidate = candidate_idx
-
-                    _gp_fail_count = 0
-                except Exception as e:
-                    _gp_fail_count += 1
-                    self.logger.warning(f"高斯过程拟合失败: {e}，回退到最近邻启发式（连续失败 {_gp_fail_count}/{_GP_RESET_INTERVAL}）")
-                    _gp_available = False
-                    if _gp_fail_count >= _GP_RESET_INTERVAL:
-                        self.logger.info(f"GP代理模型已连续失败 {_gp_fail_count} 次，尝试重新启用GP")
-                        _gp_available = True
-                        _gp_fail_count = 0
-
-            if not _gp_available or best_candidate is None:
-                best_ei = -1.0
-                best_candidate = None
-                for candidate_idx in candidate_indices:
-                    candidate_vec = self._idx_to_vector(candidate_idx, param_names, param_values)
-                    distances = np.sqrt(np.sum((X_evaluated - candidate_vec) ** 2, axis=1))
-                    nearest_idx = int(np.argmin(distances))
-                    mu = y_evaluated[nearest_idx]
-
-                    if config.objective == OptimizationObjective.MINIMIZE_DRAWDOWN:
-                        ei_value = max(0.0, -(mu - best_score + xi))
-                    else:
-                        ei_value = max(0.0, mu - best_score + xi)
-
-                    if ei_value > best_ei:
-                        best_ei = ei_value
-                        best_candidate = candidate_idx
-
-            if best_candidate is None:
-                break
-
-            remaining.remove(best_candidate)
-
-            best_vec = self._idx_to_vector(best_candidate, param_names, param_values)
-            params = self._idx_to_params(best_candidate, param_names, param_values)
-            metrics, score = objective_function(params)
-
-            result = OptimizationResult(
-                parameters=params.copy(),
-                metrics=metrics,
-                score=score,
-                rank=len(results) + 1
-            )
-            results.append(result)
-            X_evaluated = np.vstack([X_evaluated, best_vec])
-            y_evaluated = np.append(y_evaluated, score)
-
-            run.current_iteration = len(results)
-            run.progress = len(results) / n_iterations
-
-            if config.objective == OptimizationObjective.MINIMIZE_DRAWDOWN:
-                improved = score < best_score
-            else:
-                improved = score > best_score
-
-            if improved:
-                best_score = score
-                no_improvement_count = 0
-            else:
-                no_improvement_count += 1
-
-            if no_improvement_count >= run.config.early_stopping_rounds:
-                self.logger.info(f"早停: 连续 {no_improvement_count} 次无改进")
-                break
-
-            if run.config.verbose:
-                model_label = "GP" if _gp_available else "最近邻"
-                self.logger.info(f"贝叶斯优化[{model_label}] [{len(results)}/{n_iterations}]: score={score:.4f}")
+                score=trial.score,
+                rank=i + 1,
+            ))
+            run.current_iteration = i + 1
+            run.progress = (i + 1) / config.max_iterations
 
         return results
-
-    def _idx_to_params(self, idx: int, param_names: list, param_values: list) -> Dict[str, Any]:
-        """将扁平索引映射回参数组合"""
-        params = {}
-        remaining = idx
-        for name, values in zip(reversed(param_names), reversed(param_values)):
-            n = len(values)
-            params[name] = values[remaining % n]
-            remaining //= n
-        return params
     
     def get_best_parameters(self, n_top: int = 5) -> List[Dict[str, Any]]:
         """获取最佳参数组合"""

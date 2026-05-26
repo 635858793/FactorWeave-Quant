@@ -287,7 +287,7 @@ class AdaptiveStopLoss(StopLossStrategy):
                     profit_ratio = (entry_price - price) / entry_price
                     if profit_ratio > self.get_param("profit_lock"):
                         lock_price = entry_price * (1 - self.get_param("profit_lock"))
-                        stop_price = min(stop_price, lock_price)
+                        stop_price = max(stop_price, lock_price)
             else:
                 if price > entry_price:
                     profit_ratio = (price - entry_price) / entry_price

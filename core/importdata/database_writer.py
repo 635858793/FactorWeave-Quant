@@ -42,6 +42,10 @@ class DatabaseWriterThread(threading.Thread):
         self._flush_timeout_medium = 1.0
         self._flush_timeout_urgent = 0.5
         self._buffer_timestamps: Dict[str, float] = {}
+        self._buffer_data_types: Dict[str, Any] = {}
+
+        self._failed_tasks: List = []
+        self._max_retry_queue = 200
 
         from ..asset_database_manager import AssetSeparatedDatabaseManager
         self._asset_manager = AssetSeparatedDatabaseManager()
@@ -106,9 +110,16 @@ class DatabaseWriterThread(threading.Thread):
                 self.write_queue.task_done()
 
             except Exception as e:
-                logger.error(f"DatabaseWriterThread 执行错误: {e}")
-                import traceback
-                logger.error(traceback.format_exc())
+                logger.error(f"写入任务失败: {e}", exc_info=True)
+                try:
+                    task
+                except NameError:
+                    continue
+                self._failed_tasks.append(task)
+                if len(self._failed_tasks) > self._max_retry_queue:
+                    oldest = self._failed_tasks.pop(0)
+                    stock_code = oldest.buffer_key if hasattr(oldest, 'buffer_key') else 'unknown'
+                    logger.warning(f"重试队列已满，丢弃最旧任务: {stock_code}")
 
         self._flush_merge_buffer()
 
@@ -140,11 +151,13 @@ class DatabaseWriterThread(threading.Thread):
                             from ..plugin_types import AssetType, DataType
                             asset_type_str = parts[0]
                             asset_type = AssetType(asset_type_str)
-                            data_type = DataType.HISTORICAL_KLINE
+                            data_type = self._buffer_data_types.get(buffer_key, DataType.HISTORICAL_KLINE)
 
                             self._flush_buffer_key(buffer_key, asset_type, data_type)
                             if buffer_key in self._buffer_timestamps:
                                 del self._buffer_timestamps[buffer_key]
+                            if buffer_key in self._buffer_data_types:
+                                del self._buffer_data_types[buffer_key]
                     except Exception as e:
                         logger.debug(f"刷新超时缓冲区失败: {buffer_key}, {e}")
         except Exception as e:
@@ -167,6 +180,7 @@ class DatabaseWriterThread(threading.Thread):
 
                 self._merge_buffer[task.buffer_key].append(task.data)
                 self._buffer_timestamps[task.buffer_key] = time.time()
+                self._buffer_data_types[task.buffer_key] = task.data_type
 
                 if len(self._merge_buffer[task.buffer_key]) >= current_batch_threshold:
                     result = self._flush_buffer_key(task.buffer_key, task.asset_type, task.data_type)

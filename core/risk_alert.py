@@ -216,37 +216,27 @@ class RiskAlertSystem:
 
     def _monitor_risk(self, alert: Dict):
         logger.warning(f"风险监控: {alert['message']}")
-        from core.events.event_bus import EventBus
-        EventBus().publish('risk.monitor', {
-            'alert': alert,
-            'timestamp': datetime.now()
-        })
+        from core.events.event_bus import get_event_bus
+        get_event_bus().publish('risk.monitor', alert=alert, timestamp=datetime.now())
 
     def _reduce_position(self, alert: Dict):
         logger.warning(f"触发减仓: {alert}")
-        from core.events.event_bus import EventBus
-        EventBus().publish('risk.reduce_position', {
-            'alert': alert,
-            'reduce_ratio': alert.get('reduce_ratio', 0.5),
-            'timestamp': datetime.now()
-        })
+        from core.events.event_bus import get_event_bus
+        get_event_bus().publish('risk.reduce_position', alert=alert,
+                                reduce_ratio=alert.get('reduce_ratio', 0.5),
+                                timestamp=datetime.now())
 
     def _stop_trading(self, alert: Dict):
         logger.critical(f"触发停止交易: {alert}")
-        from core.events.event_bus import EventBus
-        EventBus().publish('risk.stop_trading', {
-            'alert': alert,
-            'duration_minutes': alert.get('duration', 30),
-            'timestamp': datetime.now()
-        })
+        from core.events.event_bus import get_event_bus
+        get_event_bus().publish('risk.stop_trading', alert=alert,
+                                duration_minutes=alert.get('duration', 30),
+                                timestamp=datetime.now())
 
     def _emergency_liquidation(self, alert: Dict):
         logger.critical(f"触发紧急平仓: {alert}")
-        from core.events.event_bus import EventBus
-        EventBus().publish('risk.emergency_liquidation', {
-            'alert': alert,
-            'timestamp': datetime.now()
-        })
+        from core.events.event_bus import get_event_bus
+        get_event_bus().publish('risk.emergency_liquidation', alert=alert, timestamp=datetime.now())
 
     def _record_alerts(self, alerts: List[Dict]):
         """记录预警历史"""

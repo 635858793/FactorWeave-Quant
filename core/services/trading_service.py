@@ -28,7 +28,29 @@ from ..containers import ServiceContainer, get_service_container
 try:
     from ..trading.trading_mode import TradingMode, ModeContext, ModeAwareMixin
 except (ImportError, ValueError):
-    from core.trading.trading_mode import TradingMode, ModeContext, ModeAwareMixin
+    try:
+        from core.trading.trading_mode import TradingMode, ModeContext, ModeAwareMixin
+    except (ImportError, ValueError) as e:
+        logger.warning(f"无法导入TradingMode/ModeAwareMixin: {e}，使用哑元回退")
+        from enum import Enum as _Enum
+        from dataclasses import dataclass as _dc, field as _f
+
+        class TradingMode(_Enum):
+            LIVE = "live"
+            PAPER = "paper"
+            BACKTEST = "backtest"
+
+        @_dc
+        class ModeContext:
+            mode: TradingMode = TradingMode.BACKTEST
+            config: dict = _f(default_factory=dict)
+            metadata: dict = _f(default_factory=dict)
+
+        class ModeAwareMixin:
+            def set_mode(self, mode, **config):
+                pass
+            def get_mode(self):
+                return TradingMode.BACKTEST
 
 class OrderType(Enum):
     """订单类型"""

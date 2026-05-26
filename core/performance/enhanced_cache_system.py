@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
+DEPRECATED: 此模块已被 cache_service.CacheService 取代。
+所有缓存操作请使用 from core.services.cache_service import CacheService。
+本模块保留仅用于向后兼容，将在未来版本中移除。
+
+原文档：
 Enhanced Cache System
 增强缓存系统
 

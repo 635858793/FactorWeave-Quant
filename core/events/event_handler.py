@@ -26,7 +26,7 @@ class EventHandler(ABC):
         """
         self.name = name or self.__class__.__name__
         self.enabled = True
-        self.priority = 0  # 数值越大优先级越高
+        self.priority = 0  # 数值越小优先级越高（与EventBus排序一致）
 
     @abstractmethod
     def handle(self, event: BaseEvent) -> Any:

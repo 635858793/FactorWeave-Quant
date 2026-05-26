@@ -1,10 +1,11 @@
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from datetime import datetime
 from loguru import logger
 
 from core.strategy.base_strategy import StrategySignal
 from core.trading_engine import TradingSignal
 from core.plugin_types import AssetType
+from analysis.pattern_base import SignalType
 
 
 def convert_strategy_to_trading_signal(
@@ -71,3 +72,55 @@ def convert_strategy_to_trading_signal(
         asset_type=asset_type,
         metadata=enriched_metadata,
     )
+
+
+class SignalToOrderConverter:
+    """StrategySignal → OrderRequest 桥接转换器"""
+
+    _SIGNAL_TYPE_MAP = {
+        SignalType.BUY: "buy",
+        SignalType.SELL: "sell",
+        SignalType.STRONG_BUY: "buy",
+        SignalType.STRONG_SELL: "sell",
+        SignalType.CLOSE_LONG: "sell",
+        SignalType.CLOSE_SHORT: "buy",
+    }
+
+    @staticmethod
+    def convert(signal: StrategySignal, strategy_name: str = ""):
+        from core.trading.order_models import OrderRequest, OrderType, OrderCategory
+
+        order_type_str = SignalToOrderConverter._SIGNAL_TYPE_MAP.get(signal.signal_type)
+        if order_type_str is None:
+            logger.debug(f"SignalToOrderConverter: 跳过非交易信号类型 {signal.signal_type}")
+            return None
+
+        try:
+            order_type = OrderType(order_type_str)
+        except ValueError:
+            logger.warning(f"SignalToOrderConverter: 无效的订单类型 {order_type_str}")
+            return None
+
+        quantity = int(signal.position_size) if signal.position_size is not None else 100
+        if quantity <= 0:
+            quantity = 100
+
+        stock_code = signal.metadata.get('stock_code', signal.metadata.get('symbol', ''))
+        if not stock_code:
+            stock_code = getattr(signal, 'stock_code', None)
+        if not stock_code:
+            stock_code = signal.strategy_name or "unknown"
+
+        strategy_id = strategy_name or signal.strategy_name or "default"
+
+        return OrderRequest(
+            strategy_id=strategy_id,
+            asset_type=AssetType.STOCK_A,
+            stock_code=stock_code,
+            order_type=order_type,
+            order_category=OrderCategory.MARKET,
+            order_price=float(signal.price),
+            order_quantity=quantity,
+            stop_price=signal.stop_loss,
+            metadata=dict(signal.metadata) if signal.metadata else {},
+        )

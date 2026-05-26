@@ -695,6 +695,7 @@ class UnifiedBacktestEngine:
 
             # 向量化计算持仓每日盈亏（做多+做空）
             if 'position' in results.columns and price_col in results.columns:
+                EPSILON = 1e-10
                 close_prices = results[price_col].values.astype(float)
                 self.positions = results['position'].values.astype(float)
                 if 'entry_price' in results.columns:
@@ -707,14 +708,16 @@ class UnifiedBacktestEngine:
                 if long_mask.any():
                     long_entry_prices = self.entry_prices[long_mask]
                     long_exit_prices = close_prices[long_mask]
-                    long_pnl = (long_exit_prices - long_entry_prices) / long_entry_prices * np.abs(self.positions[long_mask])
+                    safe_long_entry = np.where(np.abs(long_entry_prices) < EPSILON, EPSILON, long_entry_prices)
+                    long_pnl = (long_exit_prices - safe_long_entry) / safe_long_entry * np.abs(self.positions[long_mask])
                     self.cumulative_pnl[long_mask] += long_pnl
 
                 short_mask = self.positions < 0
                 if short_mask.any():
                     short_entry_prices = self.entry_prices[short_mask]
                     short_exit_prices = close_prices[short_mask]
-                    short_pnl = (short_entry_prices - short_exit_prices) / short_entry_prices * np.abs(self.positions[short_mask])
+                    safe_short_entry = np.where(np.abs(short_entry_prices) < EPSILON, EPSILON, short_entry_prices)
+                    short_pnl = (safe_short_entry - short_exit_prices) / safe_short_entry * np.abs(self.positions[short_mask])
                     self.cumulative_pnl[short_mask] += short_pnl
 
                 results['cumulative_pnl'] = self.cumulative_pnl
@@ -941,7 +944,8 @@ class UnifiedBacktestEngine:
                            initial_capital: float, position_size: float, commission_pct: float,
                            slippage_pct: float, min_commission: float,
                            stop_loss_pct: Optional[float], take_profit_pct: Optional[float],
-                           max_holding_periods: Optional[int], enable_compound: bool) -> pd.DataFrame:
+                           max_holding_periods: Optional[int], enable_compound: bool,
+                           stamp_tax_pct: float = 0.001) -> pd.DataFrame:
         """运行核心回测逻辑（基于修复版引擎）"""
 
         # 复制数据用于回测
@@ -1004,6 +1008,9 @@ class UnifiedBacktestEngine:
                 risk_check_count += 1
                 if not risk_ok:
                     risk_block_count += 1
+                    if trade_state['position'] != 0:
+                        trade_state['holding_periods'] += 1
+                    self._update_account_status_numpy(capital_array, equity_array, i, trade_state, current_price)
                     continue
 
             # 更新持有期（交易日）
@@ -1018,7 +1025,7 @@ class UnifiedBacktestEngine:
             # 处理交易信号
             self._process_trading_signals(
                 results, i, trade_state, current_signal, current_price,
-                exit_triggered, exit_reason, enable_compound, commission_pct, slippage_pct, min_commission, position_size
+                exit_triggered, exit_reason, enable_compound, commission_pct, slippage_pct, min_commission, position_size, stamp_tax_pct
             )
 
             # 更新账户状态
@@ -1251,25 +1258,26 @@ class UnifiedBacktestEngine:
                                  price: float, exit_triggered: bool, exit_reason: str,
                                  enable_compound: bool, commission_pct: float = 0.001,
                                  slippage_pct: float = 0.001, min_commission: float = 5.0,
-                                 position_size: float = 1.0):
+                                 position_size: float = 1.0, stamp_tax_pct: float = 0.001):
         """处理交易信号"""
         current_date = results.index[i]
 
         # 如果需要平仓（信号变化或触发退出条件）
         if trade_state['position'] != 0 and (signal == -trade_state['position'] or exit_triggered):
             self._execute_close_position(
-                results, i, trade_state, price, exit_reason or 'Signal', commission_pct, slippage_pct, min_commission)
+                results, i, trade_state, price, exit_reason or 'Signal', commission_pct, slippage_pct, min_commission, stamp_tax_pct)
 
         # 如果需要开仓（当前无持仓且有信号）
         if trade_state['position'] == 0 and signal != 0:
             self._execute_open_position(
-                results, i, trade_state, signal, price, enable_compound, commission_pct, slippage_pct, min_commission, position_size)
+                results, i, trade_state, signal, price, enable_compound, commission_pct, slippage_pct, min_commission, position_size, stamp_tax_pct)
 
     def _execute_open_position(self, results: pd.DataFrame, i: int,
                                trade_state: Dict[str, Any], signal: float,
                                price: float, enable_compound: bool,
                                commission_pct: float = 0.001, slippage_pct: float = 0.001,
-                               min_commission: float = 5.0, position_size: float = 0.9):
+                               min_commission: float = 5.0, position_size: float = 0.9,
+                               stamp_tax_pct: float = 0.001):
         """执行开仓"""
         current_date = results.index[i]
         t_exec = time.perf_counter()
@@ -1302,10 +1310,10 @@ class UnifiedBacktestEngine:
                 shares = int(raw_shares)
 
         if shares > 0:
-            # 计算实际交易金额
             trade_value = shares * actual_price
-            # 基于交易金额计算佣金（而非可用资金）
             commission = max(trade_value * commission_pct, min_commission)
+            is_sell = signal < 0
+            stamp_tax = trade_value * stamp_tax_pct if is_sell else 0.0
             total_cost = trade_value + commission
 
             # 更新交易状态
@@ -1319,7 +1327,7 @@ class UnifiedBacktestEngine:
             if signal > 0:
                 trade_state['current_capital'] -= total_cost
             else:
-                trade_state['current_capital'] += (trade_value - commission)
+                trade_state['current_capital'] += (trade_value - commission - stamp_tax)
 
             # 记录到结果中 - 确保数据类型正确
             results.loc[results.index[i], 'position'] = int(trade_state['position'])
@@ -1336,6 +1344,7 @@ class UnifiedBacktestEngine:
                 'position': trade_state['position'],
                 'shares': shares,
                 'commission': commission,
+                'stamp_tax': stamp_tax,
                 'entry_value': trade_value
             }
             self.trades.append(trade)
@@ -1347,7 +1356,7 @@ class UnifiedBacktestEngine:
     def _execute_close_position(self, results: pd.DataFrame, i: int,
                                 trade_state: Dict[str, Any], price: float, exit_reason: str,
                                 commission_pct: float = 0.001, slippage_pct: float = 0.001,
-                                min_commission: float = 5.0):
+                                min_commission: float = 5.0, stamp_tax_pct: float = 0.001):
         """执行平仓"""
         if trade_state['position'] == 0:
             return
@@ -1362,6 +1371,7 @@ class UnifiedBacktestEngine:
         
         trade_value = trade_state['shares'] * actual_price
         commission = max(trade_value * commission_pct, min_commission)
+        stamp_tax = trade_value * stamp_tax_pct if is_sell else 0.0
 
         # 计算交易收益
         if trade_state['position'] > 0:
@@ -1372,11 +1382,11 @@ class UnifiedBacktestEngine:
                 (trade_state['entry_price'] - actual_price)
 
         # 扣除手续费
-        net_profit = trade_profit - commission
+        net_profit = trade_profit - commission - stamp_tax
 
         # 更新资金
         if trade_state['position'] > 0:
-            trade_state['current_capital'] += (trade_state['shares'] * actual_price - commission)
+            trade_state['current_capital'] += (trade_state['shares'] * actual_price - commission - stamp_tax)
         else:
             trade_state['current_capital'] -= (trade_value + commission)
 
@@ -1396,7 +1406,8 @@ class UnifiedBacktestEngine:
                 'exit_reason': exit_reason,
                 'holding_periods': trade_state['holding_periods'],
                 'trade_profit': net_profit,
-                'exit_commission': commission
+                'exit_commission': commission,
+                'exit_stamp_tax': stamp_tax
             })
 
         # 重置持仓状态

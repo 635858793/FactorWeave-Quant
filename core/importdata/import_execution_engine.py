@@ -862,18 +862,10 @@ class DataImportExecutionEngine(QObject):
             return []
 
     def _send_subtask_to_node(self, subtask: ImportTaskConfig, node: Dict[str, Any]) -> bool:
-        """发送子任务到分布式节点"""
         try:
             node_info = node['node_info']
-
-            # 这里应该通过网络发送任务到远程节点
-            # 由于这是集成现有功能，我们模拟发送过程
-            logger.info(f"发送子任务 {subtask.task_id} 到节点 {node_info.node_id}")
-
-            # 更新节点任务计数
-            node['task_count'] += 1
-
-            return True
+            logger.warning(f"分布式任务分发引擎不可用，子任务 {subtask.task_id} 无法发送到节点 {node_info.node_id}。请配置分布式服务。")
+            return False
 
         except Exception as e:
             logger.error(f"发送子任务到节点失败: {e}")

@@ -2705,44 +2705,8 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
             return []
 
     def _generate_simulated_patterns_as_fallback(self):
-        """生成模拟形态作为后备方案（明确标记）"""
-        logger.warning("使用模拟数据生成形态（仅用于演示）")
-
-        patterns = []
-        sensitivity = self.sensitivity_slider.value() / 100.0 if hasattr(self, 'sensitivity_slider') else 0.5
-
-        # 生成少量模拟形态，并明确标记
-        simulated_patterns = [
-            {
-                'name': '模拟形态：双顶',
-                'category': 'REVERSAL',
-                'confidence': 0.65,
-                'success_rate': 0.75,
-                'risk_level': 'medium',
-                'real_data': False  # 明确标记为模拟数据
-            },
-            {
-                'name': '模拟形态：上升三角',
-                'category': 'CONTINUATION',
-                'confidence': 0.58,
-                'success_rate': 0.68,
-                'risk_level': 'low',
-                'real_data': False
-            }
-        ]
-
-        for sim_pattern in simulated_patterns:
-            pattern = {
-                **sim_pattern,
-                'start_date': self._get_pattern_start_date(),
-                'end_date': self._get_pattern_end_date(),
-                'price_change': self._calculate_price_change(),
-                'target_price': self._calculate_target_price(sim_pattern['name']),
-                'recommendation': self._get_recommendation(sim_pattern['name'], sim_pattern['confidence'])
-            }
-            patterns.append(pattern)
-
-        return patterns
+        logger.warning("形态识别依赖真实数据源，当前无法生成真实形态。返回空结果。")
+        return []
 
     def _calculate_pattern_confidence(self, pattern_name, info, sensitivity):
         """计算形态置信度"""

@@ -152,10 +152,25 @@ def calc_rsi(close: pd.Series, n: int = 14) -> pd.Series:
 
 
 def calc_kdj(high: pd.Series, low: pd.Series, close: pd.Series, n: int = 9, m1: int = 3, m2: int = 3):
-    """计算KDJ指标"""
+    """
+    统一的KDJ指标计算函数（优先使用ta-lib，自动回退纯pandas实现）
+
+    参数:
+        high: 最高价序列
+        low: 最低价序列
+        close: 收盘价序列
+        n: RSV计算周期（默认9）
+        m1: K值平滑周期（默认3）
+        m2: D值平滑周期（默认3）
+
+    返回:
+        Tuple[pd.Series, pd.Series, pd.Series]: (K, D, J) 序列
+    """
     try:
         if TALIB_AVAILABLE and talib:
-            k, d = talib.STOCH(high.values, low.values, close.values,
+            k, d = talib.STOCH(high.values.astype('float64'),
+                               low.values.astype('float64'),
+                               close.values.astype('float64'),
                                fastk_period=n, slowk_period=m1, slowd_period=m2)
             k_series = pd.Series(k, index=close.index, name='K')
             d_series = pd.Series(d, index=close.index, name='D')
@@ -163,12 +178,14 @@ def calc_kdj(high: pd.Series, low: pd.Series, close: pd.Series, n: int = 9, m1: 
             j_series.name = 'J'
             return k_series, d_series, j_series
         else:
-            # 自定义KDJ实现
             lowest_low = low.rolling(window=n).min()
             highest_high = high.rolling(window=n).max()
-            rsv = 100 * (close - lowest_low) / (highest_high - lowest_low)
-            k = rsv.ewm(alpha=1/m1).mean()
-            d = k.ewm(alpha=1/m2).mean()
+            denom = highest_high - lowest_low
+            rsv = pd.Series(50.0, index=close.index)
+            nonzero_mask = denom != 0
+            rsv[nonzero_mask] = 100 * ((close[nonzero_mask] - lowest_low[nonzero_mask]) / denom[nonzero_mask])
+            k = rsv.ewm(alpha=1 / m1, adjust=False).mean()
+            d = k.ewm(alpha=1 / m2, adjust=False).mean()
             j = 3 * k - 2 * d
             return k.rename('K'), d.rename('D'), j.rename('J')
     except Exception as e:
@@ -179,6 +196,49 @@ def calc_kdj(high: pd.Series, low: pd.Series, close: pd.Series, n: int = 9, m1: 
                 empty_series.rename('J'))
 
 
+def calc_kdj_dataframe(df: pd.DataFrame, n: int = 9, m1: int = 3, m2: int = 3) -> pd.DataFrame:
+    """
+    统一的KDJ指标计算函数 - DataFrame输入/输出版本
+    内部调用calc_kdj实现
+
+    参数:
+        df: 包含high、low、close列的DataFrame
+        n: RSV计算周期（默认9）
+        m1: K值平滑周期（默认3）
+        m2: D值平滑周期（默认3）
+
+    返回:
+        DataFrame: 原始df加K、D、J列
+    """
+    k, d, j = calc_kdj(df['high'], df['low'], df['close'], n=n, m1=m1, m2=m2)
+    result = df.copy()
+    result['K'] = k
+    result['D'] = d
+    result['J'] = j
+    return result
+
+
+def calc_kdj_dict(high: pd.Series, low: pd.Series, close: pd.Series,
+                  window: int = 9, k_smooth: int = 3, d_smooth: int = 3) -> dict:
+    """
+    统一的KDJ指标计算函数 - 字典输出版本
+    内部调用calc_kdj实现
+
+    参数:
+        high: 最高价序列
+        low: 最低价序列
+        close: 收盘价序列
+        window: RSV计算周期（默认9）
+        k_smooth: K值平滑周期（默认3）
+        d_smooth: D值平滑周期（默认3）
+
+    返回:
+        Dict[str, pd.Series]: {'K': ..., 'D': ..., 'J': ...}
+    """
+    k, d, j = calc_kdj(high, low, close, n=window, m1=k_smooth, m2=d_smooth)
+    return {'K': k, 'D': d, 'J': j}
+
+
 # 导出函数列表
 __all__ = [
     'get_talib_real_indicator_list',
@@ -187,5 +247,7 @@ __all__ = [
     'calc_macd',
     'calc_rsi',
     'calc_kdj',
+    'calc_kdj_dataframe',
+    'calc_kdj_dict',
     'TALIB_AVAILABLE'
 ]

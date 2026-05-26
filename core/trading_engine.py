@@ -86,6 +86,9 @@ class TradingEngine:
     'position_updated' 事件，由其他两模块订阅并更新。
     """
 
+    _BUY_SIGNAL_TYPES = {SignalType.BUY, SignalType.STRONG_BUY, SignalType.CLOSE_SHORT}
+    _SELL_SIGNAL_TYPES = {SignalType.SELL, SignalType.STRONG_SELL, SignalType.CLOSE_LONG}
+
     def __init__(self, service_container: ServiceContainer, event_bus: EventBus):
         """
         初始化交易引擎
@@ -350,6 +353,32 @@ class TradingEngine:
                 return self._execute_buy(signal)
             elif signal.signal_type == SignalType.SELL:
                 return self._execute_sell(signal)
+            elif signal.signal_type == SignalType.STRONG_BUY:
+                return self._execute_buy(signal)
+            elif signal.signal_type == SignalType.STRONG_SELL:
+                return self._execute_sell(signal)
+            elif signal.signal_type == SignalType.CLOSE_LONG:
+                if signal.symbol not in self.positions:
+                    logger.warning(f"无持仓，无法平多: {signal.symbol}")
+                    return False
+                if self.positions[signal.symbol].position_type != PositionType.LONG:
+                    logger.warning(
+                        f"持仓方向不匹配，无法平多: {signal.symbol} "
+                        f"当前{self.positions[signal.symbol].position_type.value}"
+                    )
+                    return False
+                return self._execute_sell(signal)
+            elif signal.signal_type == SignalType.CLOSE_SHORT:
+                if signal.symbol not in self.positions:
+                    logger.warning(f"无持仓，无法平空: {signal.symbol}")
+                    return False
+                if self.positions[signal.symbol].position_type != PositionType.SHORT:
+                    logger.warning(
+                        f"持仓方向不匹配，无法平空: {signal.symbol} "
+                        f"当前{self.positions[signal.symbol].position_type.value}"
+                    )
+                    return False
+                return self._execute_buy(signal)
             else:
                 logger.info(f"持有信号，无需执行: {signal}")
                 return True
@@ -497,7 +526,7 @@ class TradingEngine:
         # 检查单个股票仓位限制
         if signal.symbol in self.positions:
             position = self.positions[signal.symbol]
-            if signal.signal_type == SignalType.BUY:
+            if signal.signal_type in self._BUY_SIGNAL_TYPES:
                 new_value = (position.quantity + signal.volume) * signal.price
                 if new_value > max_single_position:
                     logger.warning(f"超过单个{asset_type.value}最大仓位限制: {new_value}")
@@ -505,7 +534,7 @@ class TradingEngine:
 
         # 检查总仓位限制
         total_value = sum(pos.market_value for pos in self.positions.values())
-        if signal.signal_type == SignalType.BUY:
+        if signal.signal_type in self._BUY_SIGNAL_TYPES:
             new_total = total_value + signal.volume * signal.price
             if new_total > self.max_position_size:
                 logger.warning(f"超过总仓位限制: {new_total}")

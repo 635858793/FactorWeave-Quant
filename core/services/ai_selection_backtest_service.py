@@ -789,22 +789,9 @@ class AISelectionBacktestService:
             return {}
     
     def _simulate_market_crash(self, backtest_result: pd.DataFrame) -> Dict[str, Any]:
-        """模拟市场崩盘场景"""
         try:
-            # 模拟30%市场下跌对组合的影响
-            original_return = backtest_result['returns'].sum()
-            crash_impact = -0.30
-            
-            # 假设AI选股在市场崩盘时的表现
-            crash_performance = original_return + crash_impact * 0.8  # 假设损失减少20%
-            
-            return {
-                'scenario_name': 'Market Crash (-30%)',
-                'impact_on_return': crash_impact,
-                'adjusted_return': crash_performance,
-                'survival_probability': 0.85,
-                'recovery_time_days': 180
-            }
+            logger.warning("市场崩盘模拟依赖真实压力测试引擎，当前无法执行真实模拟。返回空结果。")
+            return {}
         except Exception as e:
             logger.error(f"市场崩盘模拟失败: {e}")
             return {}
@@ -812,61 +799,23 @@ class AISelectionBacktestService:
     def _simulate_high_volatility(self, backtest_result: pd.DataFrame) -> Dict[str, Any]:
         """模拟高波动率场景"""
         try:
-            original_volatility = backtest_result['returns'].std()
-            volatility_multiplier = 2.0
-            
-            adjusted_volatility = original_volatility * volatility_multiplier
-            impact_on_sharpe = -0.3  # 夏普比率下降30%
-            
-            return {
-                'scenario_name': 'High Volatility (2x)',
-                'original_volatility': original_volatility,
-                'adjusted_volatility': adjusted_volatility,
-                'sharpe_impact': impact_on_sharpe,
-                'probability_occurrence': 0.15
-            }
+            logger.warning("高波动率模拟依赖真实压力测试引擎，当前无法执行真实模拟。返回空结果。")
+            return {}
         except Exception as e:
             logger.error(f"高波动率模拟失败: {e}")
             return {}
     
     def _simulate_liquidity_crisis(self, backtest_result: pd.DataFrame) -> Dict[str, Any]:
-        """模拟流动性枯竭场景"""
         try:
-            # 假设流动性危机导致交易成本增加50%
-            original_return = backtest_result['returns'].sum()
-            liquidity_impact = -0.05  # 收益减少5%
-            
-            adjusted_return = original_return + liquidity_impact
-            
-            return {
-                'scenario_name': 'Liquidity Crisis',
-                'impact_on_return': liquidity_impact,
-                'adjusted_return': adjusted_return,
-                'transaction_cost_increase': 0.5,
-                'impact_duration_days': 90
-            }
+            logger.warning("流动性危机模拟依赖真实压力测试引擎，当前无法执行真实模拟。返回空结果。")
+            return {}
         except Exception as e:
             logger.error(f"流动性危机模拟失败: {e}")
             return {}
     
     def _simulate_systemic_risk(self, backtest_result: pd.DataFrame) -> Dict[str, Any]:
-        """模拟系统性风险场景"""
         try:
-            # 系统性风险对所有资产的影响
-            original_return = backtest_result['returns'].sum()
-            systemic_impact = -0.20  # 20%的系统性损失
-            
-            adjusted_return = original_return + systemic_impact
-            
-            return {
-                'scenario_name': 'Systemic Risk Event',
-                'impact_on_return': systemic_impact,
-                'adjusted_return': adjusted_return,
-                'correlation_increase': 0.8,
-                'diversification_loss': 0.6
-            }
-        except Exception as e:
-            logger.error(f"系统性风险模拟失败: {e}")
+            logger.warning("系统性风险模拟依赖真实压力测试引擎，当前无法执行真实模拟。返回空结果。")
             return {}
     
     def _calculate_factor_attribution(self,

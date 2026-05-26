@@ -113,8 +113,6 @@ class HealthMonitor:
         """监控循环"""
         while self.monitoring_active and not self.stop_event.is_set():
             try:
-                # 这里应该从实际的节点获取健康指标
-                # 为了演示，我们使用模拟数据
                 self._collect_health_metrics()
                 
             except Exception as e:

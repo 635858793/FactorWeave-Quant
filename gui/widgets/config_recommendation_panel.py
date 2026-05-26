@@ -928,8 +928,7 @@ class ConfigRecommendationPanel(QWidget):
                 else:
                     QMessageBox.information(self, "无新推荐", "当前没有新的配置推荐")
             else:
-                # 模拟获取推荐
-                QMessageBox.information(self, "模拟模式", "当前为演示模式，已加载示例推荐")
+                QMessageBox.warning(self, "引擎不可用", "配置推荐引擎当前不可用，请联系管理员配置推荐引擎。")
 
         except Exception as e:
             logger.error(f"获取推荐失败: {e}")
@@ -1057,14 +1056,10 @@ class ConfigRecommendationPanel(QWidget):
                             "配置应用失败，请检查系统状态。"
                         )
                 else:
-                    # 模拟应用
-                    recommendation.applied = True
-                    self.update_recommendations_display()
-                    self.update_statistics()
-
-                    QMessageBox.information(
-                        self, "模拟应用",
-                        f"推荐 '{recommendation.title}' 已模拟应用！"
+                    logger.warning(f"配置应用引擎不可用，推荐 '{recommendation.title}' 无法真实应用")
+                    QMessageBox.warning(
+                        self, "引擎不可用",
+                        f"配置应用引擎当前不可用，推荐 '{recommendation.title}' 无法应用。\n请联系管理员配置应用引擎。"
                     )
 
             except Exception as e:

@@ -261,24 +261,9 @@ class StockDataWorker(QThread):
             return {}
 
     def get_statistics(self) -> Dict[str, Any]:
-        """获取历史统计数据"""
         try:
-            # 模拟统计数据
-            statistics = {
-                'max_price_52w': 12.5,
-                'min_price_52w': 8.2,
-                'avg_volume_20d': 50000000,
-                'price_change_1d': 0.02,
-                'price_change_5d': 0.05,
-                'price_change_20d': 0.08,
-                'price_change_60d': 0.12,
-                'price_change_ytd': 0.15,
-                'volatility_20d': 0.025,
-                'beta': 1.2,
-                'amplitude_20d': 0.08
-            }
-
-            return statistics
+            logger.warning("统计数据引擎不可用，无法获取真实统计。请配置统计数据源以获取真实数据。")
+            return {}
 
         except Exception as e:
             self.logger.error(f"获取统计数据失败: {e}")

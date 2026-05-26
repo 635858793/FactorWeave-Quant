@@ -992,55 +992,13 @@ class AnomalyDetectionDisplay(QWidget):
         self.detection_timer.start(15000)  # 每15秒更新一次
 
     def load_sample_data(self):
-        """加载示例数据"""
-        # 生成示例异常数据
-        self.generate_sample_anomalies()
+        logger.warning("异常检测引擎不可用，无法生成真实异常数据。请配置异常检测引擎以获取真实数据。")
+        self.anomalies = []
+        self.update_displays()
 
     def generate_sample_anomalies(self):
-        sample_anomalies = [
-            AnomalyResult(
-                "anomaly_001", AnomalyType.OUTLIER, AnomalySeverity.HIGH,
-                "price", 1500.00, 100.00, 0.92,
-                "价格值超出正常范围", "建议检查数据源，可能存在录入错误",
-                {"row_id": 12345, "expected_range": "0-1000"}
-            ),
-            AnomalyResult(
-                "anomaly_002", AnomalyType.MISSING_DATA, AnomalySeverity.CRITICAL,
-                "symbol", None, "股票代码", 0.98,
-                "股票代码字段为空", "必须填入有效的股票代码",
-                {"row_id": 12350, "required": True}
-            ),
-            AnomalyResult(
-                "anomaly_003", AnomalyType.DUPLICATE, AnomalySeverity.MEDIUM,
-                "record_id", "REC_001", None, 0.85,
-                "发现重复记录", "建议删除重复记录或合并相关数据",
-                {"duplicate_count": 3, "original_row": 10001}
-            ),
-            AnomalyResult(
-                "anomaly_004", AnomalyType.FORMAT_ERROR, AnomalySeverity.MEDIUM,
-                "date", "2024/01/15", "2024-01-15", 0.88,
-                "日期格式不符合标准", "建议将日期格式统一为YYYY-MM-DD",
-                {"expected_format": "YYYY-MM-DD"}
-            ),
-            AnomalyResult(
-                "anomaly_005", AnomalyType.RANGE_ERROR, AnomalySeverity.LOW,
-                "volume", -100, ">= 0", 0.75,
-                "交易量不能为负数", "建议将负数值设为0或检查数据来源",
-                {"min_allowed": 0}
-            ),
-            AnomalyResult(
-                "anomaly_006", AnomalyType.PATTERN_ERROR, AnomalySeverity.HIGH,
-                "phone", "1234567890", "^\\d{3}-\\d{4}-\\d{4}$", 0.90,
-                "电话号码格式不正确", "建议使用标准格式：XXX-XXXX-XXXX",
-                {"pattern": "^\\d{3}-\\d{4}-\\d{4}$"}
-            )
-        ]
-
-        for i, anomaly in enumerate(sample_anomalies):
-            anomaly.detected_at = datetime.now()
-            anomaly.status = AnomalyStatus.PENDING
-
-        self.anomalies = sample_anomalies
+        logger.warning("generate_sample_anomalies 不再生成假异常数据。请配置异常检测引擎。")
+        self.anomalies = []
         self.update_displays()
 
     def update_anomaly_detection(self):
@@ -1305,16 +1263,9 @@ class AnomalyDetectionDisplay(QWidget):
             self.show_anomaly_details(anomaly_id)
 
     def start_anomaly_detection(self):
-        """开始异常检测"""
         try:
-            if self.anomaly_detector:
-                # 调用实际的异常检测逻辑
-                pass
-
-            # 模拟检测过程
-            self.last_detection_label.setText(f"最后检测: {datetime.now().strftime('%H:%M:%S')}")
-            QMessageBox.information(self, "检测完成", "异常检测已完成，发现了新的异常")
-            logger.info("用户启动了异常检测")
+            logger.warning("异常检测引擎不可用，无法执行真实检测。请配置异常检测引擎以获取真实数据。")
+            QMessageBox.warning(self, "引擎不可用", "异常检测引擎当前不可用。\n请配置异常检测引擎。")
 
         except Exception as e:
             QMessageBox.critical(self, "检测失败", f"异常检测失败: {e}")
@@ -1412,13 +1363,10 @@ class AnomalyDetectionDisplay(QWidget):
             QMessageBox.information(self, "操作完成", f"已成功忽略 {len(selected_rows)} 个异常")
 
     def update_trends(self):
-        """更新趋势分析"""
-        # 这里可以根据选择的时间范围和维度更新趋势分析
         period = self.trend_period_combo.currentText()
         dimension = self.trend_dimension_combo.currentText()
-
-        # 模拟更新趋势分析内容
-        QMessageBox.information(self, "趋势更新", f"已更新 {period} 的 {dimension} 趋势分析")
+        logger.warning(f"趋势分析引擎不可用，无法更新 {period} 的 {dimension} 趋势分析。请配置异常检测引擎以获取真实趋势。")
+        QMessageBox.warning(self, "引擎不可用", f"趋势分析引擎不可用，无法更新 {period} 的 {dimension} 趋势分析。")
 
     def apply_detection_config(self):
         """应用检测配置"""
@@ -1459,22 +1407,19 @@ class AnomalyDetectionDisplay(QWidget):
         QMessageBox.information(self, "重置完成", "检测配置已重置为默认值")
 
     def test_detection_config(self):
-        """测试检测配置"""
         try:
-            # 使用当前配置进行测试检测
             config = {
                 'sensitivity': self.sensitivity_slider.value(),
                 'confidence_threshold': self.confidence_threshold_spin.value()
             }
-
-            # 模拟测试过程
-            test_anomalies = 3
-            QMessageBox.information(
-                self, "测试完成",
-                f"配置测试完成\n"
+            logger.warning(f"异常检测测试引擎不可用，无法执行真实测试。配置: {config}")
+            QMessageBox.warning(
+                self, "引擎不可用",
+                f"异常检测测试引擎当前不可用，无法执行真实测试。\n\n"
+                f"当前配置:\n"
                 f"敏感度: {config['sensitivity']}\n"
-                f"置信度阈值: {config['confidence_threshold']:.2f}\n"
-                f"测试检测到 {test_anomalies} 个异常"
+                f"置信度阈值: {config['confidence_threshold']:.2f}\n\n"
+                f"请配置异常检测引擎以启用测试功能。"
             )
 
         except Exception as e:

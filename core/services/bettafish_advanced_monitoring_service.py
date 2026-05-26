@@ -288,19 +288,9 @@ class SMSAlertChannel(ExternalAlertChannel):
             return await self._send_mock_sms(message)
     
     async def _send_mock_sms(self, message: str) -> bool:
-        """模拟SMS发送（用于测试和开发环境）"""
         try:
-            # 记录模拟发送的信息
-            logger.info(f"[MOCK SMS] Would send to {self.to_numbers}:")
-            logger.info(f"[MOCK SMS] Message: {message}")
-            logger.info(f"[MOCK SMS] API Key: {self.api_key[:8]}...")
-            logger.info(f"[MOCK SMS] Provider: {self.provider}")
-            
-            # 模拟网络延迟
-            await asyncio.sleep(0.1)
-            
-            logger.info(f"Mock SMS sent successfully for {len(self.to_numbers)} recipients")
-            return True
+            logger.warning(f"SMS发送服务不可用，无法发送消息。接收者: {self.to_numbers}，请配置真实SMS服务API。")
+            return False
             
         except Exception as e:
             logger.error(f"Failed to send mock SMS: {e}")

@@ -151,22 +151,21 @@ class MainWindowCoordinator(BaseCoordinator):
         self._current_asset_data: Dict[str, Any] = {}
         self._is_loading = False
 
-        # 向后兼容属性
-        @property
-        def _current_stock_code(self) -> Optional[str]:
-            return self._current_symbol
+    @property
+    def _current_stock_code(self) -> Optional[str]:
+        return self._current_symbol
 
-        @_current_stock_code.setter
-        def _current_stock_code(self, value: Optional[str]):
-            self._current_symbol = value
+    @_current_stock_code.setter
+    def _current_stock_code(self, value: Optional[str]):
+        self._current_symbol = value
 
-        @property
-        def _current_stock_data(self) -> Dict[str, Any]:
-            return self._current_asset_data
+    @property
+    def _current_stock_data(self) -> Dict[str, Any]:
+        return self._current_asset_data
 
-        @_current_stock_data.setter
-        def _current_stock_data(self, value: Dict[str, Any]):
-            self._current_asset_data = value
+    @_current_stock_data.setter
+    def _current_stock_data(self, value: Dict[str, Any]):
+        self._current_asset_data = value
 
     def _do_initialize(self) -> None:
         """初始化协调器"""

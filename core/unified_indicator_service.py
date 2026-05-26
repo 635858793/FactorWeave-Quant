@@ -1386,38 +1386,9 @@ class UnifiedIndicatorService:
             return pd.Series(0, index=df.index)
 
     def _execute_builtin_pattern_algorithm(self, name: str, df: pd.DataFrame, params: Dict[str, Any], pattern: Dict[str, Any]) -> Union[pd.Series, Dict[str, pd.Series]]:
-        """执行内置形态算法"""
         try:
-            # 这里可以添加内置的形态识别算法
-            # 目前返回简单的模拟结果
-
-            confidence_threshold = params.get('置信度阈值', 0.7)
-            min_periods = params.get('最小周期', 5)
-            max_periods = params.get('最大周期', 20)
-
-            # 创建简单的形态信号
-            # 这里是一个示例实现，实际应该根据具体形态实现相应算法
-            signal = pd.Series(0, index=df.index)
-
-            # 模拟一些形态信号（基于价格变化）
-            if len(df) >= min_periods:
-                price_change = df['close'].pct_change(periods=min_periods)
-
-                # 根据形态类型生成不同的信号
-                if '锤头' in name or '十字星' in name:
-                    # 反转形态
-                    signal.loc[price_change > 0.02] = 1  # 买入信号
-                    signal.loc[price_change < -0.02] = -1  # 卖出信号
-                elif '吞没' in name or '包容' in name:
-                    # 包容形态
-                    signal.loc[price_change > 0.03] = 1
-                    signal.loc[price_change < -0.03] = -1
-                else:
-                    # 默认处理
-                    signal.loc[price_change > 0.025] = 1
-                    signal.loc[price_change < -0.025] = -1
-
-            return signal
+            logger.warning(f"内置形态算法 '{name}' 为桩实现，未执行真实形态识别。请配置真实形态识别引擎。")
+            return pd.Series(0, index=df.index)
 
         except Exception as e:
             logger.error(f"执行内置形态算法 {name} 失败: {str(e)}")

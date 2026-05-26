@@ -1516,14 +1516,8 @@ class IntelligentModelSelector:
             if prediction_type in ['price_prediction', 'trend_prediction']:
                 if 'kline_data' not in processed and 'kline_data' not in data:
                     if 'market_data' in processed:
-                        # 模拟K线数据
-                        processed['kline_data'] = {
-                            'open': processed['market_data'].get('price', 100),
-                            'close': processed['market_data'].get('price', 100),
-                            'high': processed['market_data'].get('price', 100) * 1.01,
-                            'low': processed['market_data'].get('price', 100) * 0.99,
-                            'volume': processed['market_data'].get('volume', 1000000)
-                        }
+                        logger.warning("K线数据不可用，无法生成真实K线数据。跳过数据预处理。")
+                        return None
             
             elapsed = time.perf_counter() - t_pre
             logger.debug(f"[AI预处理] 耗时={elapsed:.4f}s | 预测类型={prediction_type}")
@@ -1598,20 +1592,20 @@ class IntelligentModelSelector:
         }
     
     def _fallback_prediction(self, prediction_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
-        """后备预测策略"""
+        logger.warning("AI预测引擎不可用，无法生成真实预测。返回空结果。")
         return {
-            'prediction': 100.0,
-            'confidence': 0.5,
-            'model_type': 'fallback',
-            'strategy': 'simple_average',
+            'prediction': None,
+            'confidence': 0.0,
+            'model_type': 'none',
+            'strategy': 'unavailable',
             'timestamp': datetime.now(),
-            'note': '使用后备预测策略',
+            'note': 'AI预测引擎不可用，无法生成预测。请配置预测模型以获取真实预测。',
             'explainability': {
-                'methodology': '后备简单平均策略',
-                'confidence_level': 'low',
+                'methodology': '预测引擎不可用',
+                'confidence_level': 'none',
                 'feature_importance': {},
                 'market_factors': {},
-                'recommendation': '建议使用更多数据或调整参数以获得更好的预测'
+                'recommendation': '建议配置AI预测模型以启用预测功能'
             }
         }
     

@@ -230,21 +230,10 @@ class TETDataProvider:
             return 0.0
 
     def _calculate_kdj(self, kdata: pd.DataFrame, period: int = 9) -> Dict[str, float]:
-        """计算KDJ"""
+        """计算KDJ（委托给统一实现calc_kdj，仅返回最新值）"""
+        from core.indicators.indicators_algorithm import calc_kdj
         try:
-            high = kdata['high']
-            low = kdata['low']
-            close = kdata['close']
-
-            lowest_low = low.rolling(window=period).min()
-            highest_high = high.rolling(window=period).max()
-
-            rsv = (close - lowest_low) / (highest_high - lowest_low) * 100
-
-            k = rsv.ewm(com=2).mean()
-            d = k.ewm(com=2).mean()
-            j = 3 * k - 2 * d
-
+            k, d, j = calc_kdj(kdata['high'], kdata['low'], kdata['close'], n=period)
             return {
                 'k': float(k.iloc[-1]) if not k.empty else 50.0,
                 'd': float(d.iloc[-1]) if not d.empty else 50.0,

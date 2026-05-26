@@ -593,28 +593,19 @@ class PreviewPage(QWizardPage):
     def update_preview(self, source_path: str, config: Dict[str, Any]):
         """更新预览"""
         try:
-            # 更新基本信息
             self.source_label.setText(source_path)
             self.type_label.setText(config.get('data_type', '未知'))
 
-            # 模拟数据预览
-            self.records_label.setText("1,234 条")
-            self.size_label.setText("2.5 MB")
+            logger.warning("数据预览功能依赖真实数据源，当前使用占位符。请配置数据源以获取真实数据。")
+            self.records_label.setText("数据源未配置")
+            self.size_label.setText("未知")
 
-            # 模拟预览内容
-            preview_content = """日期,开盘价,最高价,最低价,收盘价,成交量
-2024-01-01,100.50,102.30,99.80,101.20,1500000
-2024-01-02,101.20,103.50,100.90,102.80,1800000
-2024-01-03,102.80,104.20,102.10,103.50,2100000
-..."""
+            preview_content = "数据源未配置，无法预览数据内容。\n请先在设置中配置数据源连接。"
 
             self.preview_text.setPlainText(preview_content)
 
-            # 模拟质量检查结果
-            quality_result = """数据完整性: 100%
-格式正确性: 99.8%
-  发现 3 个异常值
-时间序列连续性: 正常"""
+            quality_result = """数据质量检测需要真实数据源。
+请在导入后运行数据质量检查。"""
 
             self.quality_text.setPlainText(quality_result)
 
@@ -675,18 +666,18 @@ class ExecutionPage(QWizardPage):
         layout.addLayout(control_layout)
 
     def start_import(self, config: Dict[str, Any]):
-        """开始导入"""
-        # 模拟导入过程
-        self.simulate_import()
+        logger.warning("导入引擎不可用，简化导入工作流为桩实现。请配置数据导入引擎以启用真实导入功能。")
+        QMessageBox.warning(
+            self, "引擎不可用",
+            "数据导入引擎当前不可用，无法执行真实导入操作。\n请先在设置中配置数据导入引擎。"
+        )
+        self._update_progress_abort()
 
-    def simulate_import(self):
-        """模拟导入过程"""
-        # 这里应该调用实际的导入逻辑
-        # 为了演示，使用定时器模拟进度
-        self.timer = QTimer()
-        self.timer.timeout.connect(self._update_progress)
-        self.progress = 0
-        self.timer.start(100)
+    def _update_progress_abort(self):
+        self.overall_progress.setValue(0)
+        self.current_task.setText("导入引擎不可用")
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self.log_text.append(f"[{timestamp}] 导入引擎不可用，导入操作已中止\n")
 
     def _update_progress(self):
         """更新进度"""

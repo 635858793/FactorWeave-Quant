@@ -154,10 +154,12 @@ class DuckDBOperations:
                         except Exception as e:
                             logger.error(f"批次 {batch_index} 插入失败: {e}")
                             failed_batches.append(batch_index)
-                            # 继续处理下一批次
 
-                    # 提交事务
-                    conn.execute("COMMIT")
+                    if failed_batches:
+                        conn.execute("ROLLBACK")
+                        rows_inserted = 0
+                    else:
+                        conn.execute("COMMIT")
 
                     execution_time = time.time() - start_time
 
@@ -196,22 +198,8 @@ class DuckDBOperations:
 
     def _insert_batch(self, conn, table_name: str, batch_data: pd.DataFrame):
         """插入单个批次数据"""
-        # 使用DuckDB的高效批量插入，明确指定列名
         columns = list(batch_data.columns)
-
-        # 修复：过滤SQL关键字和函数名，并用双引号引用列名
-        sql_keywords = {
-            'CURRENT_TIMESTAMP', 'NOW', 'CURRENT_DATE', 'CURRENT_TIME',
-            'DEFAULT', 'NULL', 'TRUE', 'FALSE', 'SELECT', 'INSERT', 'UPDATE',
-            'DELETE', 'FROM', 'WHERE', 'ORDER', 'GROUP', 'BY', 'HAVING',
-            'LIMIT', 'OFFSET', 'AS', 'ON', 'IN', 'EXISTS', 'LIKE', 'AND', 'OR', 'NOT'
-        }
-        safe_columns = [col for col in columns if col.upper() not in sql_keywords]
-        if len(safe_columns) != len(columns):
-            removed_cols = [col for col in columns if col.upper() in sql_keywords]
-            logger.warning(f"[批量插入] 过滤掉SQL关键字列名: {removed_cols}")
-
-        columns_str = ', '.join(f'"{col}"' for col in safe_columns)
+        columns_str = ', '.join(f'"{col}"' for col in columns)
 
         conn.register('temp_batch', batch_data)
         conn.execute(f"INSERT INTO {table_name} ({columns_str}) SELECT {columns_str} FROM temp_batch")
@@ -220,36 +208,20 @@ class DuckDBOperations:
     def _upsert_batch(self, conn, table_name: str, batch_data: pd.DataFrame,
                       conflict_columns: List[str]):
         """Upsert单个批次数据"""
-        # 构建upsert SQL
         columns = list(batch_data.columns)
 
-        # 修复：过滤SQL关键字和函数名，并用双引号引用列名
-        sql_keywords = {
-            'CURRENT_TIMESTAMP', 'NOW', 'CURRENT_DATE', 'CURRENT_TIME',
-            'DEFAULT', 'NULL', 'TRUE', 'FALSE', 'SELECT', 'INSERT', 'UPDATE',
-            'DELETE', 'FROM', 'WHERE', 'ORDER', 'GROUP', 'BY', 'HAVING',
-            'LIMIT', 'OFFSET', 'AS', 'ON', 'IN', 'EXISTS', 'LIKE', 'AND', 'OR', 'NOT'
-        }
-        safe_columns = [col for col in columns if col.upper() not in sql_keywords]
-        if len(safe_columns) != len(columns):
-            removed_cols = [col for col in columns if col.upper() in sql_keywords]
-            logger.warning(f"[批量Upsert] 过滤掉SQL关键字列名: {removed_cols}")
+        conflict_cols = ', '.join(f'"{col}"' for col in conflict_columns)
 
-        conflict_cols = ', '.join(f'"{col}"' for col in conflict_columns if col.upper() not in sql_keywords)
-
-        # 构建UPDATE SET子句
         update_clauses = []
-        for col in safe_columns:
+        for col in columns:
             if col not in conflict_columns:
                 update_clauses.append(f'"{col}" = EXCLUDED."{col}"')
 
         update_set = ', '.join(update_clauses)
 
-        # 注册临时表
         conn.register('temp_batch', batch_data)
 
-        # 执行upsert
-        columns_str = ', '.join(f'"{col}"' for col in safe_columns)
+        columns_str = ', '.join(f'"{col}"' for col in columns)
         upsert_sql = f"""
         INSERT INTO {table_name} ({columns_str})
         SELECT {columns_str} FROM temp_batch

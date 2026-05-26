@@ -53,7 +53,7 @@ class DataUpdateThread(QThread):
                 progress = int((i + 1) / total * 100)
                 self.progress_updated.emit(progress)
 
-            self.finished_signal.emit(True, "数据更新完成")
+            self.finished_signal.emit(False, "数据更新引擎不可用，无法执行真实数据更新。请配置数据源连接。")
 
         except Exception as e:
             self.finished_signal.emit(False, f"数据更新失败: {e}")
@@ -603,10 +603,8 @@ class HistoryDataDialog(BaseDialog):
 
             progress.close()
 
-            # 发送导入完成信号
-            self.data_imported.emit(file_path)
-
-            QMessageBox.information(self, "成功", f"数据导入完成\n文件: {file_path}")
+            logger.warning("数据导入引擎不可用，无法执行真实导入。请配置数据导入引擎。")
+            QMessageBox.warning(self, "引擎不可用", f"数据导入引擎当前不可用，无法导入:\n{file_path}")
 
         except Exception as e:
             logger.error(f"导入数据失败: {e}")

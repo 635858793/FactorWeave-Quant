@@ -13,6 +13,7 @@ import time
 from datetime import datetime
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import pandas as pd
 import plotly.graph_objs as go
 import plotly.io as pio
@@ -137,6 +138,7 @@ class TradingWidget(QWidget):
                 logger.warning(f"获取ThemeManager失败: {e}")
         
         self.process_manager = AnalysisProcessManager()
+        self._position_price_timer = None
 
         try:
             # 初始化服务
@@ -144,6 +146,9 @@ class TradingWidget(QWidget):
 
             # 初始化UI
             self.init_ui()
+
+            # 初始化持仓价格定时刷新器
+            self._init_position_price_timer()
 
             # 连接信号
             self.connect_signals()
@@ -457,7 +462,7 @@ class TradingWidget(QWidget):
                 from decimal import Decimal
 
                 order = TradingOrder(
-                    order_id=f"order_{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                    order_id=f"order_{datetime.now().strftime('%Y%m%d%H%M%S%f')}",
                     symbol=self.current_stock,
                     symbol_name=self.current_stock,
                     order_type=OrderType.MARKET,
@@ -581,8 +586,9 @@ class TradingWidget(QWidget):
             quantity_layout = QHBoxLayout()
             quantity_layout.addWidget(QLabel("卖出数量:"))
             quantity_spin = QSpinBox()
-            quantity_spin.setRange(100, position['quantity'])
-            quantity_spin.setValue(min(100, position['quantity']))
+            sell_min_qty = min(100, position['quantity'])
+            quantity_spin.setRange(sell_min_qty, position['quantity'])
+            quantity_spin.setValue(sell_min_qty)
             quantity_spin.setSingleStep(100)
             quantity_layout.addWidget(quantity_spin)
             layout.addLayout(quantity_layout)
@@ -635,7 +641,7 @@ class TradingWidget(QWidget):
                 from decimal import Decimal
 
                 order = TradingOrder(
-                    order_id=f"order_{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                    order_id=f"order_{datetime.now().strftime('%Y%m%d%H%M%S%f')}",
                     symbol=self.current_stock,
                     symbol_name=self.current_stock,
                     order_type=OrderType.MARKET,
@@ -768,10 +774,19 @@ class TradingWidget(QWidget):
                 current_row = order_table.currentRow()
                 if current_row >= 0:
                     order = pending_orders[current_row]
-                    self._cancel_order(order['id'])
-                    QMessageBox.information(
-                        self, "撤单成功", f"订单 {order['id']} 已撤销")
-                    cancel_dialog.accept()
+                    try:
+                        self._cancel_order(order['id'])
+                        QMessageBox.information(
+                            self, "撤单成功", f"订单 {order['id']} 已撤销")
+                        cancel_dialog.accept()
+                    except Exception as e:
+                        reply = QMessageBox.question(
+                            self, "撤单失败",
+                            f"撤销订单 {order['id']} 失败:\n{str(e)}\n\n是否重试？",
+                            QMessageBox.Yes | QMessageBox.No
+                        )
+                        if reply == QMessageBox.Yes:
+                            cancel_selected()
                 else:
                     QMessageBox.warning(self, "撤单失败", "请选择要撤销的订单")
 
@@ -779,10 +794,21 @@ class TradingWidget(QWidget):
                 reply = QMessageBox.question(self, "确认撤单", "确定要撤销所有订单吗？",
                                              QMessageBox.Yes | QMessageBox.No)
                 if reply == QMessageBox.Yes:
+                    failed_orders = []
                     for order in pending_orders:
-                        self._cancel_order(order['id'])
-                    QMessageBox.information(
-                        self, "撤单成功", f"已撤销 {len(pending_orders)} 个订单")
+                        try:
+                            self._cancel_order(order['id'])
+                        except Exception as e:
+                            failed_orders.append(order['id'])
+                            logger.error(f"撤单失败 {order['id']}: {e}")
+                    if failed_orders:
+                        QMessageBox.warning(
+                            self, "部分撤单失败",
+                            f"以下订单撤单失败: {', '.join(failed_orders)}"
+                        )
+                    else:
+                        QMessageBox.information(
+                            self, "撤单成功", f"已撤销 {len(pending_orders)} 个订单")
                     cancel_dialog.accept()
 
             cancel_btn.clicked.connect(cancel_selected)
@@ -1185,7 +1211,7 @@ class TradingWidget(QWidget):
         try:
             strategy_name = self.strategy_combo.currentText()
             if not strategy_name or strategy_name == "自定义策略":
-                QMessageBox.warning(self, "提示", "请选择一个有效的策略。")
+                QTimer.singleShot(0, lambda: QMessageBox.warning(self, "提示", "请选择一个有效的策略。"))
                 return None
 
             logger.info(f"开始计算信号，策略: {strategy_name}")
@@ -1206,8 +1232,8 @@ class TradingWidget(QWidget):
 
             logger.info(f"成功计算 {len(signals)} 个信号")
 
-            # 更新UI
-            self.update_signals(signals)
+            # 更新UI —— 通过QTimer.singleShot调度回主线程执行
+            QTimer.singleShot(0, lambda s=signals: self.update_signals(s))
 
             return {"signals": signals}
         except Exception as e:
@@ -1302,7 +1328,7 @@ class TradingWidget(QWidget):
         try:
             if not self.current_stock or not isinstance(self.current_stock, str) or not self.current_stock.strip():
                 logger.warning("请先选择股票")
-                QMessageBox.warning(self, "回测错误", "未选择有效的股票代码，请先选择股票！")
+                QTimer.singleShot(0, lambda: QMessageBox.warning(self, "回测错误", "未选择有效的股票代码，请先选择股票！"))
                 return
             strategy = self.strategy_combo.currentText()
             params = {}
@@ -1400,7 +1426,7 @@ class TradingWidget(QWidget):
                 'total_trades': result.get('total_trades', 0)
             }
 
-            self.update_backtest_results(metrics)
+            QTimer.singleShot(0, lambda m=metrics: self.update_backtest_results(m))
             logger.info("回测完成")
         except Exception as e:
             error_msg = f"回测失败: {str(e)}"
@@ -1957,58 +1983,60 @@ class TradingWidget(QWidget):
                     progress_callback(0, total)
                 return [{'error': f'celery分布式执行失败: {str(e)}'}]
         else:
-            # 本地多线程
-            def worker():
-                done = 0
+            # 本地多线程 - 使用ThreadPoolExecutor确保结果可靠返回
+            futures = []
+            with ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as executor:
                 for code in stock_list:
                     for strategy in strategy_list:
                         for params in param_grid:
-                            try:
-                                # 使用服务容器获取交易服务
-                                from core.containers import get_service_container
-                                from core.services.trading_service import TradingService
-                                service_container = get_service_container()
-                                ts = service_container.resolve(TradingService)
-                                if not ts:
-                                    results.append({'code': code, 'strategy': strategy, 'params': params, 'error': '交易服务不可用'})
-                                    done += 1
-                                    if progress_callback:
-                                        progress_callback(done, total)
-                                    continue
-
-                                if ts and hasattr(ts, 'set_current_stock'):
-                                    ts.set_current_stock(code)
-                                if ts and hasattr(ts, 'get_kdata'):
-                                    kdata = ts.get_kdata(code)
-                                p = dict(params)
-                                p['strategy'] = strategy
-                                # 使用直接调用 UnifiedBacktestEngine 的方式
+                            def task(c=code, s=strategy, p=params):
                                 try:
-                                    from backtest.unified_backtest_engine import UnifiedBacktestEngine, BacktestLevel
-                                    if kdata is not None and not kdata.empty:
-                                        signal_data = kdata.copy()
-                                        signal_data['signal'] = 0
-                                        engine = UnifiedBacktestEngine(backtest_level=BacktestLevel.PROFESSIONAL)
-                                        result = engine.run_backtest(
-                                            data=signal_data,
-                                            initial_capital=p.get('initial_cash', 100000),
-                                            commission_pct=p.get('commission_rate', 0.001),
-                                            slippage_pct=p.get('slippage', 0.001)
-                                        )
-                                        res = result.to_dict() if hasattr(result, 'to_dict') else result
-                                    else:
-                                        res = {'error': '无法获取股票数据'}
+                                    from core.containers import get_service_container as _gsc
+                                    from core.services.trading_service import TradingService
+                                    service_container = _gsc()
+                                    ts = service_container.resolve(TradingService)
+                                    if not ts:
+                                        return {'code': c, 'strategy': s, 'params': p, 'error': '交易服务不可用'}
+
+                                    kdata = None
+                                    if ts and hasattr(ts, 'set_current_stock'):
+                                        ts.set_current_stock(c)
+                                    if ts and hasattr(ts, 'get_kdata'):
+                                        kdata = ts.get_kdata(c)
+                                    pdict = dict(p)
+                                    pdict['strategy'] = s
+                                    try:
+                                        from backtest.unified_backtest_engine import UnifiedBacktestEngine, BacktestLevel
+                                        if kdata is not None and not kdata.empty:
+                                            signal_data = kdata.copy()
+                                            signal_data['signal'] = 0
+                                            engine = UnifiedBacktestEngine(backtest_level=BacktestLevel.PROFESSIONAL)
+                                            result = engine.run_backtest(
+                                                data=signal_data,
+                                                initial_capital=pdict.get('initial_cash', 100000),
+                                                commission_pct=pdict.get('commission_rate', 0.001),
+                                                slippage_pct=pdict.get('slippage', 0.001)
+                                            )
+                                            res = result.to_dict() if hasattr(result, 'to_dict') else result
+                                        else:
+                                            res = {'error': '无法获取股票数据'}
+                                    except Exception as e:
+                                        res = {'error': f'回测执行失败: {str(e)}'}
+                                    return {'code': c, 'strategy': s, 'params': pdict, 'result': res}
                                 except Exception as e:
-                                    res = {'error': f'回测执行失败: {str(e)}'}
-                                results.append(
-                                    {'code': code, 'strategy': strategy, 'params': p, 'result': res})
-                            except Exception as e:
-                                results.append(
-                                    {'code': code, 'strategy': strategy, 'params': params, 'error': str(e)})
-                            done += 1
-                            if progress_callback:
-                                progress_callback(done, total)
-            threading.Thread(target=worker, daemon=True).start()
+                                    return {'code': c, 'strategy': s, 'params': p, 'error': str(e)}
+
+                            futures.append(executor.submit(task))
+
+                import os
+                done = 0
+                for future in as_completed(futures):
+                    result = future.result()
+                    results.append(result)
+                    done += 1
+                    if progress_callback:
+                        progress_callback(done, total)
+
             return results
 
     def register_custom_indicator(self, name: str, func):
@@ -2088,10 +2116,30 @@ class TradingWidget(QWidget):
                 chart_widget.plot_group_comparison(group_results)
 
     # 交易功能辅助方法
-    def _get_current_price(self) -> Optional[float]:
+    def _init_position_price_timer(self):
+        """初始化持仓价格定时批量刷新器"""
+        self._position_price_timer = QTimer(self)
+        self._position_price_timer.timeout.connect(self._refresh_all_positions_prices)
+        self._position_price_timer.start(5000)
+
+    def _refresh_all_positions_prices(self):
+        """定时批量刷新所有持仓的实时价格"""
+        if not self.current_positions:
+            return
+        try:
+            for position in self.current_positions:
+                price = self._get_current_price(stock_code=position.get('stock_code'))
+                if price is not None:
+                    position['current_price'] = price
+            self._update_position_table()
+        except Exception as e:
+            logger.error(f"批量刷新持仓价格失败: {e}")
+
+    def _get_current_price(self, stock_code: Optional[str] = None) -> Optional[float]:
         """获取当前股票价格"""
         try:
-            if not self.current_stock:
+            target_stock = stock_code if stock_code else self.current_stock
+            if not target_stock:
                 return None
 
             #  尝试从AssetService获取实时/历史价格（TET模式优先）
@@ -2107,11 +2155,11 @@ class TradingWidget(QWidget):
                     # 首先尝试获取实时数据
                     try:
                         realtime_data = asset_service.get_real_time_data(
-                            symbols=[self.current_stock],
+                            symbols=[target_stock],
                             asset_type=AssetType.STOCK_A
                         )
-                        if realtime_data and self.current_stock in realtime_data:
-                            quote = realtime_data[self.current_stock]
+                        if realtime_data and target_stock in realtime_data:
+                            quote = realtime_data[target_stock]
                             if quote and 'price' in quote:
                                 return float(quote['price'])
                     except Exception:
@@ -2119,7 +2167,7 @@ class TradingWidget(QWidget):
 
                     # 如果没有实时数据，使用最新的K线数据
                     kdata = asset_service.get_historical_data(
-                        symbol=self.current_stock,
+                        symbol=target_stock,
                         asset_type=AssetType.STOCK_A,
                         period='D'
                     )
@@ -2138,7 +2186,7 @@ class TradingWidget(QWidget):
                 uni_plugin = data_manager.get_uni_plugin_manager()
                 if uni_plugin:
                     realtime_result = uni_plugin.get_real_time_data(
-                        symbols=[self.current_stock],
+                        symbols=[target_stock],
                         asset_type=AssetType.STOCK_A
                     )
                     if realtime_result is not None and not realtime_result.empty:
@@ -2146,7 +2194,7 @@ class TradingWidget(QWidget):
                         return float(row.get('price', row.get('current_price', 0)))
 
                 # 如果没有实时数据，使用最新的K线数据
-                kdata = data_manager.get_kdata(self.current_stock, period='D')
+                kdata = data_manager.get_kdata(target_stock, period='D')
                 if kdata is not None and len(kdata) > 0:
                     if hasattr(kdata, 'iloc'):  # DataFrame
                         return float(kdata.iloc[-1]['close'])
@@ -2248,13 +2296,16 @@ class TradingWidget(QWidget):
             self.position_table.setRowCount(len(self.current_positions))
 
             for i, position in enumerate(self.current_positions):
-                current_price = self._get_current_price(
-                ) if position['stock_code'] == self.current_stock else position['current_price']
-                if current_price:
+                current_price = self._get_current_price(stock_code=position['stock_code'])
+                if current_price is not None:
                     position['current_price'] = current_price
+                else:
+                    current_price = position.get('current_price', 0)
 
-                profit_loss = (
-                    current_price - position['cost']) / position['cost'] * 100 if position['cost'] > 0 else 0
+                if position['cost'] > 0 and current_price is not None:
+                    profit_loss = (current_price - position['cost']) / position['cost'] * 100
+                else:
+                    profit_loss = 0.0
 
                 self.position_table.setItem(
                     i, 0, QTableWidgetItem(position['stock_code']))
@@ -2265,7 +2316,7 @@ class TradingWidget(QWidget):
                 self.position_table.setItem(
                     i, 3, QTableWidgetItem(f"{position['cost']:.2f}"))
                 self.position_table.setItem(
-                    i, 4, QTableWidgetItem(f"{current_price:.2f}"))
+                    i, 4, QTableWidgetItem(f"{current_price:.2f}" if current_price else "N/A"))
 
                 profit_item = QTableWidgetItem(f"{profit_loss:.2f}%")
                 if profit_loss > 0:
@@ -2301,18 +2352,33 @@ class TradingWidget(QWidget):
             return []
 
     def _cancel_order(self, order_id: str):
-        try:
-            if self._trading_service:
-                success, message = self._trading_service.cancel_order(order_id)
-                if success:
-                    logger.info(f"订单已撤销: {order_id}")
-                else:
-                    logger.warning(f"撤销订单失败: {order_id}, 原因: {message}")
-                    raise RuntimeError(f"撤销订单失败: {message}")
-            else:
-                logger.warning(f"TradingService 不可用，无法撤销订单: {order_id}")
-                raise RuntimeError("TradingService 不可用")
+        max_retries = 2
+        last_error = None
 
-        except Exception as e:
-            logger.error(f"撤销订单失败: {str(e)}")
-            raise
+        for attempt in range(max_retries + 1):
+            try:
+                if self._trading_service:
+                    success, message = self._trading_service.cancel_order(order_id)
+                    if success:
+                        logger.info(f"订单已撤销: {order_id}")
+                        return
+                    else:
+                        logger.warning(f"撤销订单失败: {order_id}, 原因: {message} (尝试 {attempt + 1}/{max_retries + 1})")
+                        last_error = RuntimeError(f"撤销订单失败: {message}")
+                        if attempt < max_retries:
+                            time.sleep(0.5)
+                            continue
+                        raise last_error
+                else:
+                    logger.warning(f"TradingService 不可用，无法撤销订单: {order_id}")
+                    raise RuntimeError("TradingService 不可用")
+
+            except RuntimeError:
+                raise
+            except Exception as e:
+                logger.error(f"撤销订单失败: {str(e)} (尝试 {attempt + 1}/{max_retries + 1})")
+                last_error = e
+                if attempt < max_retries:
+                    time.sleep(0.5)
+                    continue
+                raise

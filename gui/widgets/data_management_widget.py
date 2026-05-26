@@ -166,54 +166,8 @@ class DataSourceManagementWidget(QWidget):
             # 获取数据源统计信息
             stats = self.data_router.get_route_statistics()
 
-            # 模拟数据源信息（实际应该从插件管理器获取）
-            mock_sources = [
-                DataSourceInfo(
-                    name="tongdaxin",
-                    provider="通达信",
-                    status=DataSourceStatus.ACTIVE,
-                    asset_types=[AssetType.STOCK_A],
-                    data_types=[DataType.HISTORICAL_KLINE, DataType.REAL_TIME_QUOTE]
-                ),
-                DataSourceInfo(
-                    name="eastmoney",
-                    provider="东方财富",
-                    status=DataSourceStatus.ACTIVE,
-                    asset_types=[AssetType.STOCK_A],
-                    data_types=[DataType.HISTORICAL_KLINE, DataType.REAL_TIME_QUOTE]
-                ),
-                DataSourceInfo(
-                    name="sina",
-                    provider="新浪财经",
-                    status=DataSourceStatus.INACTIVE,
-                    asset_types=[AssetType.STOCK_A],
-                    data_types=[DataType.REAL_TIME_QUOTE]
-                ),
-                DataSourceInfo(
-                    name="tencent",
-                    provider="腾讯财经",
-                    status=DataSourceStatus.ACTIVE,
-                    asset_types=[AssetType.STOCK_A],
-                    data_types=[DataType.REAL_TIME_QUOTE]
-                ),
-                DataSourceInfo(
-                    name="binance",
-                    provider="币安",
-                    status=DataSourceStatus.ACTIVE,
-                    asset_types=[AssetType.CRYPTO],
-                    data_types=[DataType.HISTORICAL_KLINE, DataType.REAL_TIME_QUOTE]
-                ),
-                DataSourceInfo(
-                    name="yahoo",
-                    provider="雅虎财经",
-                    status=DataSourceStatus.ERROR,
-                    asset_types=[AssetType.STOCK_US],
-                    data_types=[DataType.HISTORICAL_KLINE],
-                    error_message="网络连接超时"
-                )
-            ]
-
-            self.update_sources_table(mock_sources)
+            logger.warning("数据源信息引擎不可用，无法加载真实数据源列表。请配置数据源插件管理器。")
+            self.update_sources_table([])
 
         except Exception as e:
             if logger:

@@ -861,6 +861,7 @@ class CreateAccountDialog(QDialog):
             
             okx_layout.addWidget(QLabel("Passphrase:"), 2, 0)
             self.okx_passphrase_input = QLineEdit()
+            self.okx_passphrase_input.setEchoMode(QLineEdit.Password)
             self.okx_passphrase_input.setPlaceholderText("OKX Passphrase")
             okx_layout.addWidget(self.okx_passphrase_input, 2, 1)
             
@@ -895,6 +896,7 @@ class CreateAccountDialog(QDialog):
             
             okx_futures_layout.addWidget(QLabel("Passphrase:"), 2, 0)
             self.okx_futures_passphrase_input = QLineEdit()
+            self.okx_futures_passphrase_input.setEchoMode(QLineEdit.Password)
             self.okx_futures_passphrase_input.setPlaceholderText("OKX合约Passphrase")
             okx_futures_layout.addWidget(self.okx_futures_passphrase_input, 2, 1)
             
@@ -987,6 +989,7 @@ class CreateAccountDialog(QDialog):
             
             bitget_layout.addWidget(QLabel("Passphrase:"), 2, 0)
             self.bitget_passphrase_input = QLineEdit()
+            self.bitget_passphrase_input.setEchoMode(QLineEdit.Password)
             self.bitget_passphrase_input.setPlaceholderText("Bitget Passphrase")
             bitget_layout.addWidget(self.bitget_passphrase_input, 2, 1)
             

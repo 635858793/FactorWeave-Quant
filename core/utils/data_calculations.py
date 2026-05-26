@@ -222,7 +222,7 @@ def calculate_macd(close: pd.Series, fast: int = 12, slow: int = 26,
 def calculate_kdj(high: pd.Series, low: pd.Series, close: pd.Series,
                   window: int = 9, k_smooth: int = 3, d_smooth: int = 3) -> Dict[str, pd.Series]:
     """
-    计算KDJ指标
+    计算KDJ指标（委托给统一实现core.indicators.indicators_algorithm.calc_kdj_dict）
 
     Args:
         high: 最高价序列
@@ -235,29 +235,8 @@ def calculate_kdj(high: pd.Series, low: pd.Series, close: pd.Series,
     Returns:
         包含K、D、J的字典
     """
-    try:
-        lowest_low = low.rolling(window=window).min()
-        highest_high = high.rolling(window=window).max()
-
-        rsv = (close - lowest_low) / (highest_high - lowest_low) * 100
-        rsv = rsv.fillna(50.0)
-
-        k = rsv.ewm(alpha=1/k_smooth).mean()
-        d = k.ewm(alpha=1/d_smooth).mean()
-        j = 3 * k - 2 * d
-
-        return {
-            'K': k,
-            'D': d,
-            'J': j
-        }
-    except Exception as e:
-        logger.error(f"计算KDJ失败: {e}")
-        return {
-            'K': pd.Series([50.0] * len(close), index=close.index),
-            'D': pd.Series([50.0] * len(close), index=close.index),
-            'J': pd.Series([50.0] * len(close), index=close.index)
-        }
+    from core.indicators.indicators_algorithm import calc_kdj_dict as _calc_kdj_dict
+    return _calc_kdj_dict(high, low, close, window=window, k_smooth=k_smooth, d_smooth=d_smooth)
 
 def calculate_bollinger_bands(close: pd.Series, window: int = 20,
                               std_dev: float = 2.0) -> Dict[str, pd.Series]:

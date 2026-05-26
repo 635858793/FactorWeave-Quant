@@ -274,7 +274,7 @@ def calc_rsi(close: pd.Series, n=14) -> pd.Series:
 
 def calc_kdj(df: pd.DataFrame, n=9, m1=3, m2=3) -> Tuple[pd.Series, pd.Series, pd.Series]:
     """
-    计算KDJ指标的适配函数，兼容旧的 calc_kdj 接口
+    计算KDJ指标的适配函数（委托给统一实现core.indicators.indicators_algorithm.calc_kdj）
 
     参数:
         df: 输入DataFrame，包含high, low, close列
@@ -285,28 +285,8 @@ def calc_kdj(df: pd.DataFrame, n=9, m1=3, m2=3) -> Tuple[pd.Series, pd.Series, p
     返回:
         Tuple[Series, Series, Series]: K, D, J
     """
-    # 调用新的指标计算服务
-    result = calculate_indicator('KDJ', df, {
-        'fastk_period': n,
-        'slowk_period': m1,
-        'slowd_period': m2
-    })
-
-    # 返回KDJ序列
-    if 'K' in result.columns and 'D' in result.columns and 'J' in result.columns:
-        return (
-            result['K'],
-            result['D'],
-            result['J']
-        )
-    else:
-        # 返回全NaN序列
-        idx = df.index
-        return (
-            pd.Series([float('nan')] * len(df), index=idx, name="K"),
-            pd.Series([float('nan')] * len(df), index=idx, name="D"),
-            pd.Series([float('nan')] * len(df), index=idx, name="J")
-        )
+    from core.indicators.indicators_algorithm import calc_kdj as _calc_kdj
+    return _calc_kdj(df['high'], df['low'], df['close'], n=n, m1=m1, m2=m2)
 
 def calc_boll(close: pd.Series, n=20, p=2) -> Tuple[pd.Series, pd.Series, pd.Series]:
     """

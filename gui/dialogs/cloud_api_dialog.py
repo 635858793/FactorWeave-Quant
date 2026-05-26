@@ -484,12 +484,7 @@ class CloudApiDialog(BaseDialog):
         self.add_monitor_log("停止自动同步")
 
     def sync_data(self):
-        """同步数据"""
         try:
-            # 模拟同步过程
-            self.sync_progress.setValue(0)
-
-            # 获取选中的数据类型
             selected_types = []
             for i in range(self.sync_data_types.count()):
                 item = self.sync_data_types.item(i)
@@ -499,30 +494,9 @@ class CloudApiDialog(BaseDialog):
             if not selected_types:
                 return
 
-            # 模拟同步每种数据类型
-            total_steps = len(selected_types)
-            if total_steps == 0:
-                self.sync_progress.setValue(100)
-                return
-            for i, data_type in enumerate(selected_types):
-                progress = int((i + 1) / total_steps * 100)
-                self.sync_progress.setValue(progress)
-
-                # 添加到任务表格
-                self.add_sync_task(
-                    f"sync_{int(time.time())}", data_type, "进行中", progress)
-
-                # 模拟网络延迟
-                time.sleep(0.1)
-
-            self.sync_progress.setValue(100)
-
-            # 更新统计信息
-            current_count = int(self.sync_count_label.text())
-            self.sync_count_label.setText(str(current_count + 1))
-            self.last_sync_label.setText(time.strftime("%Y-%m-%d %H:%M:%S"))
-
-            self.add_monitor_log(f"完成数据同步: {', '.join(selected_types)}")
+            logger.warning(f"云端同步引擎不可用，无法同步数据类型: {selected_types}。请配置云端API以启用同步功能。")
+            QMessageBox.warning(self, "引擎不可用",
+                f"云端同步引擎当前不可用，无法同步以下数据类型：\n{', '.join(selected_types)}\n\n请配置云端API连接。")
 
         except Exception as e:
             self.add_monitor_log(f"同步失败: {str(e)}")

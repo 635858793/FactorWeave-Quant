@@ -68,7 +68,8 @@ class ProfessionalRiskMetrics:
                                     returns: pd.Series,
                                     confidence_levels: List[float] = None,
                                     time_horizons: List[int] = None,
-                                    method: str = 'parametric') -> Dict[str, Dict]:
+                                    method: str = 'parametric',
+                                    random_state: int = None) -> Dict[str, Dict]:
         """
         计算符合CFA/FRM标准的综合VaR
 
@@ -111,7 +112,8 @@ class ProfessionalRiskMetrics:
             elif method == 'historical':
                 results = self._calculate_historical_var(returns, confidence_levels, time_horizons)
             elif method == 'monte_carlo':
-                results = self._calculate_monte_carlo_var(returns, confidence_levels, time_horizons)
+                results = self._calculate_monte_carlo_var(returns, confidence_levels, time_horizons,
+                                                          random_state=random_state)
             else:
                 raise ValueError(f"不支持的VaR计算方法: {method}")
 
@@ -229,12 +231,14 @@ class ProfessionalRiskMetrics:
                                    returns: pd.Series,
                                    confidence_levels: List[float],
                                    time_horizons: List[int],
-                                   num_simulations: int = 10000) -> Dict[str, Dict]:
+                                   num_simulations: int = 10000,
+                                   random_state: int = None) -> Dict[str, Dict]:
         """
         蒙特卡洛VaR计算
 
         基于专业风险管理标准的MC模拟
         """
+        rng = np.random.RandomState(random_state)
         results = {}
 
         # 过滤NaN并估计返回分布参数
@@ -257,7 +261,7 @@ class ProfessionalRiskMetrics:
                 # 蒙特卡洛模拟
                 if distribution_type == 'normal':
                     # 使用正态分布模拟
-                    simulated_returns = np.random.normal(
+                    simulated_returns = rng.normal(
                         daily_mean * horizon,
                         daily_vol * np.sqrt(horizon),
                         num_simulations
@@ -265,7 +269,7 @@ class ProfessionalRiskMetrics:
                 else:
                     # 使用经验分布重采样
                     clean_values = clean_returns.values
-                    simulated_returns = np.random.choice(
+                    simulated_returns = rng.choice(
                         clean_values,
                         size=(num_simulations, horizon),
                         replace=True

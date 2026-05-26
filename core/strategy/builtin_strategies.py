@@ -13,6 +13,7 @@ from datetime import datetime
 
 from .base_strategy import BaseStrategy, StrategySignal, StrategyType, SignalType
 from .strategy_registry import register_strategy
+from core.indicators.indicators_algorithm import calc_kdj
 
 @register_strategy("MA策略", {
     "category": "技术分析",
@@ -342,13 +343,7 @@ class KDJStrategy(BaseStrategy):
 
         # 计算KDJ
         data = data.copy()
-        low_min = data['low'].rolling(window=period).min()
-        high_max = data['high'].rolling(window=period).max()
-
-        data['rsv'] = (data['close'] - low_min) / (high_max - low_min) * 100
-        data['k'] = data['rsv'].ewm(alpha=1/k_period).mean()
-        data['d'] = data['k'].ewm(alpha=1/d_period).mean()
-        data['j'] = 3 * data['k'] - 2 * data['d']
+        data['k'], data['d'], data['j'] = calc_kdj(data['high'], data['low'], data['close'], n=period, m1=k_period, m2=d_period)
 
         data['prev_k'] = data['k'].shift(1)
         data['prev_d'] = data['d'].shift(1)

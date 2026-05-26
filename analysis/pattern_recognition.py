@@ -334,9 +334,11 @@ class PatternRecognizer(BasePatternRecognizer):
             
             if kdata is not None and 'index' in data:
                 try:
-                    from analysis.intelligent_signal_calculator_optimized import create_intelligent_signal_calculator
-                    
-                    calculator = create_intelligent_signal_calculator()
+                    if self._signal_calculator is None:
+                        from analysis.intelligent_signal_calculator_optimized import create_intelligent_signal_calculator
+                        self._signal_calculator = create_intelligent_signal_calculator()
+
+                    calculator = self._signal_calculator
                     index = data.get('index', 0)
                     confidence = data.get('confidence', 0.5)
                     pattern_name = data.get('pattern_name', self.config.name)
@@ -580,6 +582,9 @@ class EnhancedPatternRecognizer(PatternRecognizer):
         # 增强功能
         self.confidence_scores = {}
         self.pattern_history = []
+
+        # 懒加载信号计算器
+        self._signal_calculator = None
 
     def recognize(self, kdata: pd.DataFrame) -> List[PatternResult]:
         """

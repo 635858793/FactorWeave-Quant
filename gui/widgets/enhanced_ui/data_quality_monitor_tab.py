@@ -3317,50 +3317,9 @@ class DataQualityMonitorTab(QWidget):
         self.quality_overview_cards[title] = card
 
     def _init_history_management_data(self):
-        """初始化历史管理数据"""
         try:
-            # 模拟质量报告数据
-            reports = [
-                {
-                    'time': datetime.now() - timedelta(hours=1),
-                    'source': 'tongdaxin',
-                    'asset_type': 'stock_a',
-                    'issue': '数据缺失',
-                    'severity': '中等',
-                    'status': '已修复'
-                },
-                {
-                    'time': datetime.now() - timedelta(hours=2),
-                    'source': 'eastmoney',
-                    'asset_type': 'stock_a',
-                    'issue': '数据延迟',
-                    'severity': '轻微',
-                    'status': '监控中'
-                },
-                {
-                    'time': datetime.now() - timedelta(hours=3),
-                    'source': 'yahoo',
-                    'asset_type': 'stock_us',
-                    'issue': '连接超时',
-                    'severity': '严重',
-                    'status': '待处理'
-                }
-            ]
-
-            self.history_reports_table.setRowCount(len(reports))
-
-            for row, report in enumerate(reports):
-                # 检查时间
-                time_item = QTableWidgetItem(report['time'].strftime("%H:%M:%S"))
-                self.history_reports_table.setItem(row, 0, time_item)
-
-                # 数据源
-                source_item = QTableWidgetItem(report['source'])
-                self.history_reports_table.setItem(row, 1, source_item)
-
-                # 资产类型
-                asset_item = QTableWidgetItem(report['asset_type'])
-                self.history_reports_table.setItem(row, 2, asset_item)
+            logger.warning("数据质量历史报告引擎不可用，无法加载真实报告。请配置数据质量存储以获取真实数据。")
+            self.history_reports_table.setRowCount(0)
 
                 # 问题类型
                 issue_item = QTableWidgetItem(report['issue'])
@@ -3471,37 +3430,12 @@ class DataQualityMonitorTab(QWidget):
         return widget
 
     def _run_quality_check(self):
-        """运行数据质量检查"""
         try:
-            # 模拟质量检查结果
-            check_results = [
-                ("空值检查", "警告", "15", "建议处理空值或使用默认值填充"),
-                ("重复值检查", "通过", "0", "数据无重复"),
-                ("异常值检查", "失败", "8", "发现异常值，建议进一步检查"),
-                ("格式一致性", "通过", "0", "格式一致")
-            ]
+            logger.warning("数据质量检查引擎不可用，无法执行真实检查。请配置数据质量检查引擎以获取真实数据。")
+            self.quality_check_results_table.setRowCount(0)
+            QMessageBox.warning(self, "引擎不可用", "数据质量检查引擎当前不可用。\n请配置数据质量检查引擎。")
 
-            self.quality_check_results_table.setRowCount(len(check_results))
-
-            for i, (check_name, status, count, suggestion) in enumerate(check_results):
-                self.quality_check_results_table.setItem(i, 0, QTableWidgetItem(check_name))
-
-                status_item = QTableWidgetItem(status)
-                if "通过" in status:
-                    status_item.setForeground(QColor("#4CAF50"))
-                elif "警告" in status:
-                    status_item.setForeground(QColor("#FF9800"))
-                else:
-                    status_item.setForeground(QColor("#F44336"))
-                self.quality_check_results_table.setItem(i, 1, status_item)
-
-                self.quality_check_results_table.setItem(i, 2, QTableWidgetItem(count))
-                self.quality_check_results_table.setItem(i, 3, QTableWidgetItem(suggestion))
-
-            self.quality_check_results_table.resizeColumnsToContents()
-            self.export_report_btn.setEnabled(True)
-
-            logger.info("数据质量检查完成")
+            logger.info("数据质量检查请求已发出（引擎不可用）")
         except Exception as e:
             logger.error(f"运行数据质量检查失败: {e}")
             QMessageBox.warning(self, "错误", f"运行数据质量检查失败: {e}")
@@ -3527,27 +3461,14 @@ class DataQualityMonitorTab(QWidget):
             logger.error(f"导出质量报告失败: {e}")
 
     def _generate_quality_check_report(self) -> str:
-        """生成质量检查报告"""
         report = f"""
 数据质量检查报告
 ================
 
 检查时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
-检查结果:
---------
-空值检查:  警告 - 发现15个空值
-重复值检查:  通过 - 无重复数据
-异常值检查:  失败 - 发现8个异常值
-格式一致性:  通过 - 格式一致
-
-建议:
-----
-1. 处理空值或使用默认值填充
-2. 进一步检查异常值的合理性
-3. 考虑数据清洗和预处理
-
-总体评分: 75/100 (良好)
+状态: 数据质量检查引擎不可用，无法生成真实报告。
+请配置数据质量检查引擎以启用此功能。
 """
         return report
 

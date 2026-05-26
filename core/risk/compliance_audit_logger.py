@@ -23,7 +23,7 @@ from contextlib import contextmanager
 from loguru import logger
 
 from core.database.unified_sqlite_access import UnifiedSQLiteAccess
-from core.events.event_bus import EventBus
+from core.events.event_bus import get_event_bus
 
 class EventType(Enum):
     """事件类型"""
@@ -363,7 +363,7 @@ class ComplianceAuditLogger:
         self.archive_threshold_days = 365  # 1年后归档
 
         # EventBus订阅管理
-        self._event_bus = EventBus()
+        self._event_bus = get_event_bus()
         self._event_subscriptions = []
 
         # 初始化数据库

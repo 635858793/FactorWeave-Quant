@@ -1740,51 +1740,41 @@ class StrategyService(BaseService):
                                      optimization_task: OptimizationTask,
                                      param_ranges: Dict[str, Any],
                                      target_metric: str) -> None:
-        """贝叶斯优化（基于高斯过程回归 + 期望改进采集函数）"""
-        import numpy as np
-        from scipy.stats import norm as scipy_norm
-        from scipy.linalg import cho_solve, cho_factor
-        
-        max_iterations = optimization_task.optimization_params.get('max_iterations', 50)
-        
-        def _rbf_kernel(X1, X2, length_scale=1.0):
-            sq_dist = (np.sum(X1**2, 1).reshape(-1, 1) + np.sum(X2**2, 1) - 2 * np.dot(X1, X2.T))
-            return np.exp(-0.5 * sq_dist / (length_scale ** 2))
-        
-        def _gp_predict(X_train, y_train, X_test, noise=1e-5):
-            K = _rbf_kernel(X_train, X_train) + noise * np.eye(len(X_train))
-            try:
-                L = cho_factor(K)
-                K_s = _rbf_kernel(X_train, X_test)
-                alpha = cho_solve(L, y_train)
-                mu = K_s.T @ alpha
-                v = cho_solve(L, K_s)
-                K_ss = _rbf_kernel(X_test, X_test)
-                cov = K_ss - K_s.T @ v
-                sigma = np.sqrt(np.maximum(np.diag(cov), 1e-10))
-            except np.linalg.LinAlgError:
-                mu = np.zeros(len(X_test))
-                sigma = np.ones(len(X_test))
-            return mu, sigma
-        
-        def _expected_improvement(mu, sigma, y_best, xi=0.01):
-            with np.errstate(divide='ignore'):
-                imp = mu - y_best - xi
-                Z = imp / sigma
-                ei = imp * scipy_norm.cdf(Z) + sigma * scipy_norm.pdf(Z)
-                ei[sigma < 1e-10] = 0.0
-            return ei
+        """贝叶斯优化（基于统一 BayesianOptimizer 模块：GP+EI+手动GP降级+最近邻降级）"""
+        from core.optimization import BayesianOptimizer, ParameterSpec, OptParameterType, AcquisitionFunction
 
-        # 步骤1: 生成初始随机样本
-        n_init = max(5, max_iterations // 5)
-        X_samples = []
-        y_samples = []
-        
-        for k in range(n_init):
-            params = self._generate_random_parameters(param_ranges)
+        max_iterations = optimization_task.optimization_params.get('max_iterations', 50)
+
+        specs = []
+        for key in sorted(param_ranges.keys()):
+            pr = param_ranges[key]
+            if isinstance(pr, dict):
+                lo = pr.get('min', 0)
+                hi = pr.get('max', 1)
+                if isinstance(lo, int) and isinstance(hi, int):
+                    specs.append(ParameterSpec(key, OptParameterType.DISCRETE,
+                                 bounds=(int(lo), int(hi))))
+                else:
+                    specs.append(ParameterSpec(key, OptParameterType.CONTINUOUS,
+                                 bounds=(float(lo), float(hi))))
+            elif isinstance(pr, list) and len(pr) > 0:
+                specs.append(ParameterSpec(key, OptParameterType.ORDINAL, values=pr))
+            else:
+                specs.append(ParameterSpec(key, OptParameterType.CONTINUOUS, bounds=(0.0, 1.0)))
+
+        if not specs:
+            optimization_task.best_parameters = {}
+            optimization_task.best_performance = None
+            optimization_task.progress = 1.0
+            return
+
+        iteration = [0]
+
+        def wrapped_objective(**kwargs):
+            iteration[0] += 1
             test_params = optimization_task.strategy_config.parameters.copy()
-            test_params.update(params)
-            
+            test_params.update(kwargs)
+
             plugin = self.create_strategy_plugin(optimization_task.strategy_config.plugin_type)
             if plugin and plugin.initialize_strategy(optimization_task.context, test_params):
                 if hasattr(plugin, '_current_symbol'):
@@ -1793,87 +1783,40 @@ class StrategyService(BaseService):
                 self._call_generate_signals(plugin, market_data_df, optimization_task.context)
                 performance = plugin.calculate_performance(optimization_task.context)
                 score = self._evaluate_performance(performance, target_metric)
-                
+
                 optimization_task.optimization_history.append({
-                    'iteration': k + 1,
-                    'parameters': params.copy(),
+                    'iteration': iteration[0],
+                    'parameters': kwargs.copy(),
                     'performance': performance,
                     'score': score
                 })
-                X_samples.append(self._normalize_params(params, param_ranges))
-                y_samples.append(score)
-                
-                optimization_task.progress = (k + 1) / max_iterations
-                self.logger.info(f"[Bayesian] 初始采样 {k + 1}/{n_init}, 分数={score:.4f}")
+                optimization_task.progress = iteration[0] / max_iterations
+                return score
 
-        # 步骤2: 使用GP+EI进行贝叶斯优化
-        if len(X_samples) >= 2:
-            X_train = np.array(X_samples)
-            y_train = np.array(y_samples)
-            y_train_std = y_train.std()
-            if y_train_std < 1e-8:
-                y_train_std = 1.0
-            y_train_norm = (y_train - y_train.mean()) / y_train_std
-            y_best = y_train_norm.max()
-            
-            for k in range(n_init, max_iterations):
-                # 在参数空间中随机采样候选点
-                n_candidates = 500
-                X_candidates = np.array([self._normalize_params(
-                    self._generate_random_parameters(param_ranges), param_ranges
-                ) for _ in range(n_candidates)])
-                
-                # GP预测
-                mu, sigma = _gp_predict(X_train, y_train_norm, X_candidates)
-                
-                # 计算EI
-                ei = _expected_improvement(mu, sigma, y_best)
-                best_idx = np.argmax(ei)
-                
-                # 反归一化得到参数
-                candidate_norm = X_candidates[best_idx]
-                params = self._denormalize_params(candidate_norm, param_ranges)
+            return float('-inf')
 
-                # 将离散化后的实际评估参数重新归一化，消除离散化偏差
-                evaluated_norm = self._renormalize_discrete_params(params, param_ranges)
-                
-                # 评估
-                test_params = optimization_task.strategy_config.parameters.copy()
-                test_params.update(params)
-                
-                plugin = self.create_strategy_plugin(optimization_task.strategy_config.plugin_type)
-                if plugin and plugin.initialize_strategy(optimization_task.context, test_params):
-                    if hasattr(plugin, '_current_symbol'):
-                        plugin._current_symbol = optimization_task.market_data.symbol
-                    market_data_df = optimization_task.market_data.to_dataframe()
-                    self._call_generate_signals(plugin, market_data_df, optimization_task.context)
-                    performance = plugin.calculate_performance(optimization_task.context)
-                    score = self._evaluate_performance(performance, target_metric)
-                    
-                    optimization_task.optimization_history.append({
-                        'iteration': k + 1,
-                        'parameters': params.copy(),
-                        'performance': performance,
-                        'score': score
-                    })
-                    
-                    X_train = np.vstack([X_train, evaluated_norm])
-                    y_train = np.append(y_train, score)
-                    y_train_norm = (y_train - y_train.mean()) / y_train_std
-                    y_best = y_train_norm.max()
-                    
-                    optimization_task.progress = (k + 1) / max_iterations
-                    self.logger.info(f"[Bayesian] 迭代 {k + 1}/{max_iterations}, 分数={score:.4f}, y_best={y_best:.4f}")
-                
-                if k % 10 == 0:
-                    await asyncio.sleep(0.01)
-        
-        # 从历史中找出最佳结果
-        best_entry = max(optimization_task.optimization_history, key=lambda x: x['score'], default=None)
+        n_init = max(5, max_iterations // 5)
+
+        optimizer = BayesianOptimizer(
+            specs,
+            acquisition=AcquisitionFunction.EI,
+            random_state=42,
+        )
+
+        result = optimizer.optimize(
+            wrapped_objective,
+            n_calls=max_iterations,
+            n_initial_points=n_init,
+            n_candidates_per_iter=500,
+            maximize=True,
+        )
+
+        best_entry = max(optimization_task.optimization_history,
+                         key=lambda x: x['score'], default=None)
         if best_entry:
             optimization_task.best_parameters = best_entry['parameters']
             optimization_task.best_performance = best_entry['performance']
-        
+
         optimization_task.progress = 1.0
 
     def _normalize_params(self, params: Dict[str, Any], param_ranges: Dict[str, Any]) -> np.ndarray:
@@ -2378,32 +2321,30 @@ class StrategyService(BaseService):
                     'avg_duration_seconds': 0,
                     'success_rate': 0
                 }
-            
-            # 按状态统计
+
+            # 单次遍历: 状态计数 + 完成列表 + 失败计数
             by_status = {}
-            for status in status_enum:
-                count = sum(1 for task in tasks.values() if task.status == status)
-                if count > 0:
-                    by_status[status.value] = count
-            
+            completed_tasks = []
+            failed_count = 0
+            for task in tasks.values():
+                status_value = task.status.value if hasattr(task.status, 'value') else task.status
+                by_status[status_value] = by_status.get(status_value, 0) + 1
+                if task.status == status_enum.COMPLETED and task.started_at and task.completed_at:
+                    completed_tasks.append(task)
+                elif task.status == status_enum.FAILED:
+                    failed_count += 1
+
             # 计算平均执行时间
-            completed_tasks = [task for task in tasks.values() 
-                              if task.status == status_enum.COMPLETED 
-                              and task.started_at 
-                              and task.completed_at]
-            
             avg_duration = 0
             if completed_tasks:
-                durations = [(task.completed_at - task.started_at).total_seconds() 
+                durations = [(task.completed_at - task.started_at).total_seconds()
                            for task in completed_tasks]
                 avg_duration = np.mean(durations)
-            
+
             # 计算成功率
             success_count = len(completed_tasks)
-            failed_count = sum(1 for task in tasks.values() 
-                             if task.status == status_enum.FAILED)
             success_rate = success_count / (success_count + failed_count) if (success_count + failed_count) > 0 else 0
-            
+
             return {
                 'total': total,
                 'by_status': by_status,
@@ -2425,30 +2366,23 @@ class StrategyService(BaseService):
                 'total_error_count': 0,
                 'instance_pool_stats': {}
             }
-            
-            # 按状态统计
-            for status in PluginStatus:
-                count = sum(1 for plugin in self._strategy_plugins.values() 
-                          if plugin.status == status)
-                if count > 0:
-                    plugin_stats['by_status'][status.value] = count
-            
-            # 按类型统计
+
+            # 单次遍历: 状态 + 类型 + 使用统计
             for plugin_info in self._strategy_plugins.values():
+                status_value = plugin_info.status.value if hasattr(plugin_info.status, 'value') else plugin_info.status
+                plugin_stats['by_status'][status_value] = plugin_stats['by_status'].get(status_value, 0) + 1
                 plugin_type = plugin_info.plugin_type
-                if plugin_type not in plugin_stats['by_type']:
-                    plugin_stats['by_type'][plugin_type] = 0
-                plugin_stats['by_type'][plugin_type] += 1
+                plugin_stats['by_type'][plugin_type] = plugin_stats['by_type'].get(plugin_type, 0) + 1
                 plugin_stats['total_usage_count'] += plugin_info.usage_count
                 plugin_stats['total_error_count'] += plugin_info.error_count
-            
+
             # 实例池统计
             for plugin_type, pool in self._plugin_instance_pool.items():
                 plugin_stats['instance_pool_stats'][plugin_type] = {
                     'pool_size': len(pool),
                     'max_size': self._instance_pool_max_size
                 }
-            
+
             return plugin_stats
         except Exception as e:
             logger.error(f"计算插件统计失败: {e}")

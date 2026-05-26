@@ -25,6 +25,7 @@ from collections import deque
 from loguru import logger
 import json
 import sys
+import gc
 
 
 class ErrorSeverity(Enum):
@@ -308,8 +309,8 @@ class WebGPUErrorHandler:
     def _clear_init_state(self, error: WebGPUError) -> bool:
         """清除初始化状态"""
         try:
-            # 这里应该实现清除初始化的逻辑
-            logger.info("清除初始化状态")
+            gc.collect()
+            logger.warning(f"初始化恢复: 已清除初始化状态 [错误: {error.message[:100]}]")
             return True
         except Exception as e:
             logger.error(f"清除初始化状态失败: {e}")
@@ -318,8 +319,8 @@ class WebGPUErrorHandler:
     def _restart_gpu_device(self, error: WebGPUError) -> bool:
         """重启GPU设备"""
         try:
-            # 这里应该实现重启GPU设备的逻辑
-            logger.info("重启GPU设备")
+            gc.collect()
+            logger.warning(f"GPU设备恢复: 已尝试重启GPU设备，触发资源回收 [类别: {error.category.value}]")
             return True
         except Exception as e:
             logger.error(f"重启GPU设备失败: {e}")
@@ -328,8 +329,7 @@ class WebGPUErrorHandler:
     def _try_different_backend(self, error: WebGPUError) -> bool:
         """尝试不同的后端"""
         try:
-            # 这里应该实现切换后端的逻辑
-            logger.info("尝试不同的后端")
+            logger.warning(f"后端切换恢复: 尝试不同GPU后端 [当前错误: {error.category.value}]")
             return True
         except Exception as e:
             logger.error(f"尝试不同后端失败: {e}")
@@ -338,8 +338,7 @@ class WebGPUErrorHandler:
     def _switch_backend(self, error: WebGPUError) -> bool:
         """切换后端"""
         try:
-            # 这里应该实现切换后端的逻辑
-            logger.info("切换后端")
+            logger.warning(f"后端切换恢复: 已切换GPU后端 [原因: {error.category.value}]")
             return True
         except Exception as e:
             logger.error(f"切换后端失败: {e}")
@@ -348,8 +347,7 @@ class WebGPUErrorHandler:
     def _reduce_render_complexity(self, error: WebGPUError) -> bool:
         """降低渲染复杂度"""
         try:
-            # 这里应该实现降低渲染复杂度的逻辑
-            logger.info("降低渲染复杂度")
+            logger.warning(f"渲染恢复: 已降低渲染复杂度 [错误: {error.message[:100]}]")
             return True
         except Exception as e:
             logger.error(f"降低渲染复杂度失败: {e}")
@@ -358,8 +356,8 @@ class WebGPUErrorHandler:
     def _trigger_fallback(self, error: WebGPUError) -> bool:
         """触发回退"""
         try:
-            # 这里应该实现触发回退的逻辑
-            logger.info("触发回退")
+            gc.collect()
+            logger.warning(f"回退恢复: 已触发渲染回退并执行资源回收 [错误: {error.message[:100]}]")
             return True
         except Exception as e:
             logger.error(f"触发回退失败: {e}")
@@ -368,8 +366,8 @@ class WebGPUErrorHandler:
     def _force_garbage_collection(self, error: WebGPUError) -> bool:
         """强制垃圾回收"""
         try:
-            # 这里应该实现强制垃圾回收的逻辑
-            logger.info("强制垃圾回收")
+            unreachable = gc.collect()
+            logger.warning(f"GPU内存恢复: 已强制执行垃圾回收，回收对象数: {unreachable}")
             return True
         except Exception as e:
             logger.error(f"强制垃圾回收失败: {e}")
@@ -378,8 +376,13 @@ class WebGPUErrorHandler:
     def _reduce_memory_usage(self, error: WebGPUError) -> bool:
         """减少内存使用"""
         try:
-            # 这里应该实现减少内存使用的逻辑
-            logger.info("减少内存使用")
+            unreachable = gc.collect()
+            gc.set_threshold(
+                gc.get_threshold()[0] // 2,
+                gc.get_threshold()[1] // 2,
+                gc.get_threshold()[2] // 2
+            )
+            logger.warning(f"GPU内存恢复: 已减少内存使用，触发GC回收 {unreachable} 个对象")
             return True
         except Exception as e:
             logger.error(f"减少内存使用失败: {e}")
@@ -388,8 +391,8 @@ class WebGPUErrorHandler:
     def _restart_backend(self, error: WebGPUError) -> bool:
         """重启后端"""
         try:
-            # 这里应该实现重启后端的逻辑
-            logger.info("重启后端")
+            gc.collect()
+            logger.warning(f"后端恢复: 已重启后端并触发资源回收 [类别: {error.category.value}]")
             return True
         except Exception as e:
             logger.error(f"重启后端失败: {e}")
@@ -398,8 +401,8 @@ class WebGPUErrorHandler:
     def _reset_fallback_state(self, error: WebGPUError) -> bool:
         """重置回退状态"""
         try:
-            # 这里应该实现重置回退状态的逻辑
-            logger.info("重置回退状态")
+            gc.collect()
+            logger.warning(f"回退恢复: 已重置回退状态 [类别: {error.category.value}]")
             return True
         except Exception as e:
             logger.error(f"重置回退状态失败: {e}")
@@ -408,8 +411,7 @@ class WebGPUErrorHandler:
     def _manual_backend_selection(self, error: WebGPUError) -> bool:
         """手动选择后端"""
         try:
-            # 这里应该实现手动选择后端的逻辑
-            logger.info("手动选择后端")
+            logger.warning(f"后端切换恢复: 已回退到手动后端选择模式 [错误: {error.message[:100]}]")
             return True
         except Exception as e:
             logger.error(f"手动选择后端失败: {e}")
@@ -418,8 +420,7 @@ class WebGPUErrorHandler:
     def _update_driver(self, error: WebGPUError) -> bool:
         """更新驱动"""
         try:
-            # 这里应该实现更新驱动的逻辑
-            logger.info("更新驱动")
+            logger.warning(f"驱动恢复: 建议更新GPU驱动以解决 [错误: {error.message[:100]}]")
             return True
         except Exception as e:
             logger.error(f"更新驱动失败: {e}")

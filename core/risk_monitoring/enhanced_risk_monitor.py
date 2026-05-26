@@ -146,8 +146,14 @@ class EnhancedRiskMonitor:
         # 智能化组件
         self.anomaly_detector = IsolationForest(contamination=0.1, random_state=42)
         self._anomaly_detector_fitted = False
+        self._anomaly_detector_call_count = 0
+        self._anomaly_detector_retrain_interval = 50
         self.risk_classifier = RandomForestClassifier(n_estimators=100, random_state=42)
         self.scaler = StandardScaler()
+        self._scaler_window: List[np.ndarray] = []
+        self._scaler_window_size = 100
+        self._scaler_retrain_interval = 20
+        self._scaler_call_count = 0
 
         # 数据存储
         self.db_path = Path(self.config.get('db_path', 'data/enhanced_risk_monitor.sqlite'))
@@ -166,6 +172,7 @@ class EnhancedRiskMonitor:
         self._current_positions = []
 
         self._alert_history = {}
+        self._alert_history_lock = threading.Lock()
         self.metrics_history = []
         self.alerts_history = []
 
@@ -495,14 +502,30 @@ class EnhancedRiskMonitor:
             # 准备数据
             metric_values = np.array([[m.value, m.confidence] for m in metrics])
 
-            # 标准化
-            if hasattr(self.scaler, 'mean_'):
+            # 标准化 - 滚动窗口重新拟合，避免跨调用数据分布不一致
+            self._scaler_call_count += 1
+            for mv in metric_values:
+                self._scaler_window.append(mv.copy())
+            if len(self._scaler_window) > self._scaler_window_size:
+                self._scaler_window = self._scaler_window[-self._scaler_window_size:]
+
+            if (self._scaler_call_count % self._scaler_retrain_interval == 0
+                    and len(self._scaler_window) >= self._scaler_retrain_interval):
+                self.scaler.fit(np.array(self._scaler_window))
+                normalized_values = self.scaler.transform(metric_values)
+            elif hasattr(self.scaler, 'mean_'):
                 normalized_values = self.scaler.transform(metric_values)
             else:
-                normalized_values = self.scaler.fit_transform(metric_values)
+                self.scaler.fit(np.array(self._scaler_window))
+                normalized_values = self.scaler.transform(metric_values)
 
-            # 异常检测 - 首次fit_predict训练，后续predict避免重复训练
-            if self._anomaly_detector_fitted:
+            # 异常检测 - 定期重新训练避免检测退化
+            self._anomaly_detector_call_count += 1
+            if (self._anomaly_detector_call_count % self._anomaly_detector_retrain_interval == 0
+                    and len(self._scaler_window) >= 10):
+                anomaly_scores = self.anomaly_detector.fit_predict(normalized_values)
+                logger.info(f"IsolationForest定期重新训练，调用次数: {self._anomaly_detector_call_count}")
+            elif self._anomaly_detector_fitted:
                 anomaly_scores = self.anomaly_detector.predict(normalized_values)
             else:
                 anomaly_scores = self.anomaly_detector.fit_predict(normalized_values)
@@ -831,7 +854,8 @@ class EnhancedRiskMonitor:
     def _check_alert_escalation(self, metric_name: str, current_level: RiskLevel) -> RiskLevel:
         risk_order = [RiskLevel.VERY_LOW, RiskLevel.LOW, RiskLevel.MEDIUM,
                       RiskLevel.HIGH, RiskLevel.CRITICAL, RiskLevel.EXTREME]
-        history = self._alert_history.get(metric_name, [])
+        with self._alert_history_lock:
+            history = list(self._alert_history.get(metric_name, []))
         if len(history) >= 3:
             last_three = history[-3:]
             if all(h['level'] == current_level for h in last_three):
@@ -977,17 +1001,18 @@ class EnhancedRiskMonitor:
     def _save_alerts(self, alerts: List[RiskAlert]):
         """保存风险预警"""
         try:
-            for alert in alerts:
-                for metric in alert.metrics:
-                    history = self._alert_history.get(metric.name, [])
-                    history.append({
-                        'level': alert.level,
-                        'timestamp': alert.timestamp,
-                        'metric_value': metric.value
-                    })
-                    if len(history) > 10:
-                        history = history[-10:]
-                    self._alert_history[metric.name] = history
+            with self._alert_history_lock:
+                for alert in alerts:
+                    for metric in alert.metrics:
+                        history = self._alert_history.get(metric.name, [])
+                        history.append({
+                            'level': alert.level,
+                            'timestamp': alert.timestamp,
+                            'metric_value': metric.value
+                        })
+                        if len(history) > 10:
+                            history = history[-10:]
+                        self._alert_history[metric.name] = history
 
             db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
             with db.get_connection() as conn:
@@ -1047,6 +1072,28 @@ class EnhancedRiskMonitor:
         except Exception as e:
             logger.error(f"获取风险状态失败: {e}")
             return {'error': str(e)}
+
+    def get_latest_risk_metrics(self) -> Dict[str, float]:
+        """获取最新风险指标数值"""
+        try:
+            db = UnifiedSQLiteAccess.get_instance(str(self.db_path))
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT name, value FROM risk_metrics
+                    WHERE timestamp > datetime('now', '-1 hour')
+                    ORDER BY timestamp DESC
+                ''')
+                metrics = {}
+                for row in cursor.fetchall():
+                    name = row[0]
+                    value = row[1]
+                    if name not in metrics:
+                        metrics[name] = value
+                return metrics
+        except Exception as e:
+            logger.error(f"获取最新风险指标失败: {e}")
+            return {}
 
     def get_risk_alerts(self, hours: int = 24, resolved: bool = False) -> List[Dict[str, Any]]:
         """获取风险预警"""

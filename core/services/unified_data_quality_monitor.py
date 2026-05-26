@@ -110,6 +110,17 @@ class UnifiedDataQualityMonitor:
     7. 与专业软件对标的质量标准
     """
 
+    _DIMENSION_WEIGHTS = {
+        QualityCheckType.COMPLETENESS: 0.25,
+        QualityCheckType.ACCURACY: 0.25,
+        QualityCheckType.CONSISTENCY: 0.15,
+        QualityCheckType.TIMELINESS: 0.15,
+        QualityCheckType.VALIDITY: 0.10,
+        QualityCheckType.UNIQUENESS: 0.05,
+        QualityCheckType.INTEGRITY: 0.03,
+        QualityCheckType.CONFORMITY: 0.02
+    }
+
     def __init__(self, db_path: Optional[str] = None, enable_persistence: bool = True,
                  enable_real_time_monitoring: bool = True):
         """
@@ -313,9 +324,11 @@ class UnifiedDataQualityMonitor:
 
             # 添加维度评分到报告
             for check_type, result in report.check_results.items():
+                weight = self._DIMENSION_WEIGHTS.get(check_type, 0.1)
                 report.add_dimension_score(
                     dimension=check_type,
                     score=result.score,
+                    weight=weight,
                     message=f"{check_type.value}检查完成",
                     details=result.details
                 )
@@ -984,23 +997,11 @@ class UnifiedDataQualityMonitor:
         if not check_results:
             return 0.0
 
-        # 权重配置（可根据业务需求调整）
-        weights = {
-            QualityCheckType.COMPLETENESS: 0.25,
-            QualityCheckType.ACCURACY: 0.25,
-            QualityCheckType.CONSISTENCY: 0.15,
-            QualityCheckType.TIMELINESS: 0.15,
-            QualityCheckType.VALIDITY: 0.10,
-            QualityCheckType.UNIQUENESS: 0.05,
-            QualityCheckType.INTEGRITY: 0.03,
-            QualityCheckType.CONFORMITY: 0.02
-        }
-
         weighted_score = 0.0
         total_weight = 0.0
 
         for check_type, result in check_results.items():
-            weight = weights.get(check_type, 0.1)
+            weight = self._DIMENSION_WEIGHTS.get(check_type, 0.1)
             weighted_score += result.score * weight
             total_weight += weight
 
