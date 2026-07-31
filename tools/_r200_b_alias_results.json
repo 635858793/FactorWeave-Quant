@@ -1,0 +1,65 @@
+{
+  "r200_b_phase": "HVD-R199-D3-01 alias 4 源验证",
+  "date": "2026-07-25",
+  "target": {
+    "alias": "Base",
+    "target_name": "DatabaseBase",
+    "file": "web/backend/models/__init__.py",
+    "line": 9
+  },
+  "source_1_read": {
+    "file_exists": true,
+    "alias_exists": false,
+    "file_content": [
+      "\"\"\"",
+      "数据库模型",
+      "\"\"\"",
+      "",
+      "from web.backend.config.database import Base as DatabaseBase",
+      "",
+      "# 所有模型都继承自 DatabaseBase",
+      "# 这里我们重新导出 Base 以便使用",
+      "Base = DatabaseBase",
+      "",
+      "from web.backend.models import user, order, account, security, notification",
+      "",
+      "__all__ = [\"Base\", \"user\", \"order\", \"account\", \"security\", \"notification\"]"
+    ]
+  },
+  "source_2_grep_alias_def": {
+    "total_hits": 1,
+    "all_hits": [
+      {
+        "file": "web\\backend\\models\\__init__.py",
+        "line": 9,
+        "text": "Base = DatabaseBase"
+      }
+    ]
+  },
+  "source_2b_grep_business_callers": {
+    "total_hits": 0,
+    "all_hits": []
+  },
+  "source_2c_grep_models_base": {
+    "total_hits": 0,
+    "all_hits": []
+  },
+  "source_3_read_submodules": "子模块 (user/order/account/security/notification) 均直接 from web.backend.config.database import Base",
+  "source_4_business_chain": {
+    "real_caller_count": 0,
+    "real_callers": [],
+    "exclusion_rules": [
+      "alias 自身定义 (L9)",
+      "同文件 __all__ 导出 (L13, 这是模块导出列表, 非业务调用)",
+      "注释字符串/docstring"
+    ]
+  },
+  "is_truly_dead": true,
+  "verdict": "DEAD_ALIAS_CONFIRMED",
+  "强制度": {
+    "R198-A_兼容层_4_源_同文件引用纳入": "100% 应用",
+    "R104_§12_#2_HVD_兼容层_4_源": "100% 应用",
+    "R104_§12_#4_物理删除前_4_源": "100% 应用",
+    "R85_假修复鉴别_4_步法": "100% 应用"
+  }
+}

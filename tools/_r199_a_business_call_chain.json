@@ -1,0 +1,1773 @@
+{
+  "targets": [
+    "AdvancedRiskControlService",
+    "DynamicRiskAdjustmentService",
+    "EnhancedRiskMonitor",
+    "RiskManager"
+  ],
+  "chains": {
+    "AdvancedRiskControlService": [
+      {
+        "file": "core\\containers\\service_container.py",
+        "line": 296,
+        "text": "R51 教训 (AdvancedRiskControlService 软解析失败静默): 软解析必须"
+      },
+      {
+        "file": "core\\coordinators\\main_window_coordinator.py",
+        "line": 3297,
+        "text": "AdvancedRiskControlService (core/services/advanced_risk_control_service.py:85)"
+      },
+      {
+        "file": "core\\coordinators\\main_window_coordinator.py",
+        "line": 3304,
+        "text": "AdvancedRiskControlService,"
+      },
+      {
+        "file": "core\\coordinators\\main_window_coordinator.py",
+        "line": 3309,
+        "text": "if container is not None and container.is_registered(AdvancedRiskControlService):"
+      },
+      {
+        "file": "core\\coordinators\\main_window_coordinator.py",
+        "line": 3311,
+        "text": "svc = container.resolve(AdvancedRiskControlService)"
+      },
+      {
+        "file": "core\\coordinators\\main_window_coordinator.py",
+        "line": 3313,
+        "text": "f\"[R10] AdvancedRiskControlService 从 ServiceContainer 解析成功 \""
+      },
+      {
+        "file": "core\\coordinators\\main_window_coordinator.py",
+        "line": 3317,
+        "text": "logger.warning(f\"resolve AdvancedRiskControlService 失败: {re}\", exc_info=True)"
+      },
+      {
+        "file": "core\\coordinators\\main_window_coordinator.py",
+        "line": 3322,
+        "text": "\"[R10] AdvancedRiskControlService 未在容器中 (兜底内存实例), \""
+      },
+      {
+        "file": "core\\coordinators\\main_window_coordinator.py",
+        "line": 3325,
+        "text": "svc = AdvancedRiskControlService(service_container=container)"
+      },
+      {
+        "file": "core\\multi_account\\consistency_checker.py",
+        "line": 25,
+        "text": "- AdvancedRiskControlService (P0 风控核心, R95-P0-3 per-account 已实施)"
+      },
+      {
+        "file": "core\\multi_account\\consistency_checker.py",
+        "line": 83,
+        "text": "('advanced_risk_control_service', 'core.services.advanced_risk_control_service.AdvancedRiskControlService'),"
+      },
+      {
+        "file": "core\\risk\\risk_event_subscribers.py",
+        "line": 464,
+        "text": "from core.services.advanced_risk_control_service import AdvancedRiskControlService"
+      },
+      {
+        "file": "core\\risk\\risk_event_subscribers.py",
+        "line": 466,
+        "text": "if _container is not None and _container.is_registered(AdvancedRiskControlService):"
+      },
+      {
+        "file": "core\\risk\\risk_event_subscribers.py",
+        "line": 467,
+        "text": "_arc = _container.resolve(AdvancedRiskControlService)"
+      },
+      {
+        "file": "core\\services\\advanced_risk_control_service.py",
+        "line": 9,
+        "text": "DynamicRiskAdjustmentService 现可通过 service_container.resolve(AdvancedRiskControlService)"
+      },
+      {
+        "file": "core\\services\\advanced_risk_control_service.py",
+        "line": 147,
+        "text": "class AdvancedRiskControlService(BaseService):"
+      },
+      {
+        "file": "core\\services\\advanced_risk_control_service.py",
+        "line": 392,
+        "text": "source=\"AdvancedRiskControlService\","
+      },
+      {
+        "file": "core\\services\\advanced_risk_control_service.py",
+        "line": 462,
+        "text": "f\"[R158 HVD-158-NEW-3] AdvancedRiskControlService._do_health_check 失败, \""
+      },
+      {
+        "file": "core\\services\\advanced_risk_control_service.py",
+        "line": 479,
+        "text": "logger.error(f\"AdvancedRiskControlService.health_check 失败: {e}\", exc_info=True)"
+      },
+      {
+        "file": "core\\services\\advanced_risk_control_service.py",
+        "line": 501,
+        "text": "logger.error(f\"AdvancedRiskControlService.get_status 失败: {e}\", exc_info=True)"
+      },
+      {
+        "file": "core\\services\\advanced_risk_control_service.py",
+        "line": 505,
+        "text": "\"\"\"R137 子智能体 B HVD-DP-AdvancedRiskControlService: 释放资源 (10+ 业务方)."
+      },
+      {
+        "file": "core\\services\\advanced_risk_control_service.py",
+        "line": 512,
+        "text": "logger.debug(f\"AdvancedRiskControlService._do_dispose: 已 dispose, 跳过重复调用\")"
+      },
+      {
+        "file": "core\\services\\advanced_risk_control_service.py",
+        "line": 522,
+        "text": "logger.warning(f\"AdvancedRiskControlService._do_dispose: 取消 monitoring_task 失败: {cancel_e}\", exc_info=True)"
+      },
+      {
+        "file": "core\\services\\advanced_risk_control_service.py",
+        "line": 524,
+        "text": "logger.debug(\"AdvancedRiskControlService._do_dispose: monitoring_task cancelled\")"
+      },
+      {
+        "file": "core\\services\\advanced_risk_control_service.py",
+        "line": 538,
+        "text": "logger.info(\"AdvancedRiskControlService disposed successfully (R137 标准化)\", )"
+      },
+      {
+        "file": "core\\services\\advanced_risk_control_service.py",
+        "line": 541,
+        "text": "logger.error(f\"AdvancedRiskControlService._do_dispose failed: {e}\", exc_info=True)"
+      },
+      {
+        "file": "core\\services\\advanced_risk_control_service.py",
+        "line": 801,
+        "text": "f\"AdvancedRiskControlService._calculate_herding_risk np.corrcoef 失败, 兜底 return 0.0: {e}\","
+      },
+      {
+        "file": "core\\services\\advanced_risk_control_service.py",
+        "line": 1359,
+        "text": "f\"AdvancedRiskControlService ML 异常检测跳过: \""
+      },
+      {
+        "file": "core\\services\\advanced_risk_control_service.py",
+        "line": 1377,
+        "text": "f\"AdvancedRiskControlService 订单 ML 风控评估失败, 降级为静态阈值: {assess_err}\","
+      },
+      {
+        "file": "core\\services\\advanced_risk_control_service.py",
+        "line": 1400,
+        "text": "suggestions=[\"联系管理员排查 AdvancedRiskControlService 运行状态\"],"
+      },
+      {
+        "file": "core\\services\\advanced_risk_control_service.py",
+        "line": 1700,
+        "text": "('advanced_risk_control_service', 'core.services.advanced_risk_control_service.AdvancedRiskControlService'),"
+      },
+      {
+        "file": "core\\services\\advanced_risk_control_service.py",
+        "line": 1733,
+        "text": "\"\"\"R195-D 补全: AdvancedRiskControlService Prometheus 指标 (监控必需)."
+      },
+      {
+        "file": "core\\services\\advanced_risk_control_service.py",
+        "line": 1746,
+        "text": "logger.warning(f\"AdvancedRiskControlService.get_metrics 失败: {e}\", exc_info=True)"
+      },
+      {
+        "file": "core\\services\\database_monitoring_service.py",
+        "line": 660,
+        "text": "('advanced_risk_control_service', 'core.services.advanced_risk_control_service.AdvancedRiskControlService'),"
+      },
+      {
+        "file": "core\\services\\dynamic_risk_adjustment_service.py",
+        "line": 44,
+        "text": "from .advanced_risk_control_service import AdvancedRiskControlService, AdvancedRiskMetrics, MarketRegime, RiskLevel"
+      },
+      {
+        "file": "core\\services\\dynamic_risk_adjustment_service.py",
+        "line": 519,
+        "text": "from .advanced_risk_control_service import AdvancedRiskControlService"
+      },
+      {
+        "file": "core\\services\\dynamic_risk_adjustment_service.py",
+        "line": 520,
+        "text": "if not self.service_container.is_registered(AdvancedRiskControlService):"
+      },
+      {
+        "file": "core\\services\\dynamic_risk_adjustment_service.py",
+        "line": 522,
+        "text": "logger.warning(f'[R115-HVD-64 P0-1] DynamicRiskAdjustmentService 降级: AdvancedRiskControlService 未在 ServiceContainer 注册 ("
+      },
+      {
+        "file": "core\\services\\dynamic_risk_adjustment_service.py",
+        "line": 524,
+        "text": "self.advanced_risk_service = self.service_container.resolve(AdvancedRiskControlService)"
+      },
+      {
+        "file": "core\\services\\dynamic_risk_adjustment_service.py",
+        "line": 527,
+        "text": "logger.warning(f'[R115-HVD-64 P0-1] DynamicRiskAdjustmentService 降级: AdvancedRiskControlService resolve 返回 None (R51 铁律:"
+      },
+      {
+        "file": "core\\services\\dynamic_risk_adjustment_service.py",
+        "line": 530,
+        "text": "logger.warning(f'[R115-HVD-64 P0-1] DynamicRiskAdjustmentService 降级: 获取 AdvancedRiskControlService 失败: {e} (R51 铁律: 显式降级"
+      },
+      {
+        "file": "core\\services\\notification_service.py",
+        "line": 2124,
+        "text": "('advanced_risk_control_service', 'core.services.advanced_risk_control_service.AdvancedRiskControlService'),"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 3702,
+        "text": "AdvancedRiskControlService as _AdvancedRiskControlService,"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 3704,
+        "text": "if not self._is_service_registered(_AdvancedRiskControlService):"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 3706,
+        "text": "_AdvancedRiskControlService,"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 3708,
+        "text": "factory=lambda: _AdvancedRiskControlService("
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 3712,
+        "text": "logger.info(\"AdvancedRiskControlService 注册完成 (R10 P1)\")"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 3715,
+        "text": "instance = self.service_container.resolve(_AdvancedRiskControlService)"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 3718,
+        "text": "f\"AdvancedRiskControlService 解析成功, ML 模型数: {model_count}\""
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 3727,
+        "text": "logger.info(\"AdvancedRiskControlService 监控已自动启动 (R43 P1 修复)\")"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 3730,
+        "text": "logger.warning(\"AdvancedRiskControlService: 无 event loop, 延后启动\", exc_info=True)"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 3735,
+        "text": "logger.warning(f\"AdvancedRiskControlService 自动启动失败 (非阻塞): {_start_exc}\", exc_info=True)"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 3738,
+        "text": "f\"AdvancedRiskControlService 解析失败: {_resolve_exc}\","
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 3742,
+        "text": "logger.error(f\"AdvancedRiskControlService 注册失败: {e}\", exc_info=True)"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 4453,
+        "text": "\"\"\"R1-2: 注册长期规划 P1 Service (R51: 移除 AdvancedRiskControlService 重复注册)."
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 4464,
+        "text": "依赖顺序保证: AdvancedRiskControlService 已在 _register_trading_services (L2515-2556) 注册,"
+      },
+      {
+        "file": "core\\services\\service_health_monitor.py",
+        "line": 1041,
+        "text": "('advanced_risk_control_service', 'core.services.advanced_risk_control_service.AdvancedRiskControlService'),"
+      },
+      {
+        "file": "core\\services\\trading_service.py",
+        "line": 94,
+        "text": "from .advanced_risk_control_service import AdvancedRiskControlService, OrderRiskAssessment"
+      },
+      {
+        "file": "core\\services\\trading_service.py",
+        "line": 97,
+        "text": "AdvancedRiskControlService = None"
+      },
+      {
+        "file": "core\\services\\trading_service.py",
+        "line": 384,
+        "text": "if AdvancedRiskControlService is not None:"
+      },
+      {
+        "file": "core\\services\\trading_service.py",
+        "line": 386,
+        "text": "if not self._service_container.is_registered(AdvancedRiskControlService):"
+      },
+      {
+        "file": "core\\services\\trading_service.py",
+        "line": 392,
+        "text": "f\"AdvancedRiskControlService 未在 ServiceContainer 注册 \""
+      },
+      {
+        "file": "core\\services\\trading_service.py",
+        "line": 400,
+        "text": "f\"AdvancedRiskControlService 未注册, strict_risk_resolution=True. \""
+      },
+      {
+        "file": "core\\services\\trading_service.py",
+        "line": 401,
+        "text": "f\"业务方必须 service_container.register(AdvancedRiskControlService).\""
+      },
+      {
+        "file": "core\\services\\trading_service.py",
+        "line": 405,
+        "text": "self._risk_service = self._service_container.resolve(AdvancedRiskControlService)"
+      },
+      {
+        "file": "core\\services\\trading_service.py",
+        "line": 414,
+        "text": "f\"AdvancedRiskControlService resolve 返回 None \""
+      },
+      {
+        "file": "core\\services\\trading_service.py",
+        "line": 421,
+        "text": "f\"AdvancedRiskControlService resolve 返回 None, strict_risk_resolution=True.\""
+      },
+      {
+        "file": "core\\services\\trading_service.py",
+        "line": 435,
+        "text": "f\"AdvancedRiskControlService 容器解析失败 \""
+      },
+      {
+        "file": "core\\services\\trading_service.py",
+        "line": 443,
+        "text": "f\"AdvancedRiskControlService 容器解析异常, strict_risk_resolution=True.\""
+      },
+      {
+        "file": "core\\services\\trading_service.py",
+        "line": 451,
+        "text": "f\"建议检查 service_container.register(AdvancedRiskControlService) 状态 \""
+      },
+      {
+        "file": "core\\services\\trading_service.py",
+        "line": 617,
+        "text": "新 OrderService 集成了 R43 P0 修复的 AdvancedRiskControlService 风控链路."
+      },
+      {
+        "file": "core\\trading\\order_monitor.py",
+        "line": 639,
+        "text": "from core.services.advanced_risk_control_service import AdvancedRiskControlService"
+      },
+      {
+        "file": "core\\trading\\order_monitor.py",
+        "line": 641,
+        "text": "if _container is not None and _container.is_registered(AdvancedRiskControlService):"
+      },
+      {
+        "file": "core\\trading\\order_monitor.py",
+        "line": 642,
+        "text": "_arc = _container.resolve(AdvancedRiskControlService)"
+      },
+      {
+        "file": "core\\trading\\order_service.py",
+        "line": 4,
+        "text": "串联 OrderValidator → AdvancedRiskControlService → OrderExecutor → OrderRepository →"
+      },
+      {
+        "file": "core\\trading\\order_service.py",
+        "line": 7,
+        "text": "风控钩子 (AdvancedRiskControlService) 软解析, 不可用时降级为静态阈值风控,"
+      },
+      {
+        "file": "core\\trading\\order_service.py",
+        "line": 32,
+        "text": "AdvancedRiskControlService,"
+      },
+      {
+        "file": "core\\trading\\order_service.py",
+        "line": 36,
+        "text": "AdvancedRiskControlService = None"
+      },
+      {
+        "file": "core\\trading\\order_service.py",
+        "line": 216,
+        "text": "if AdvancedRiskControlService is not None:"
+      },
+      {
+        "file": "core\\trading\\order_service.py",
+        "line": 218,
+        "text": "if self.service_container.is_registered(AdvancedRiskControlService):"
+      },
+      {
+        "file": "core\\trading\\order_service.py",
+        "line": 219,
+        "text": "self._risk_service = self.service_container.resolve(AdvancedRiskControlService)"
+      },
+      {
+        "file": "core\\trading\\order_service.py",
+        "line": 234,
+        "text": "R-Phase11 P1-1 修复: 启动期已确保 AdvancedRiskControlService 注册, 软解析失败必须硬失败,"
+      },
+      {
+        "file": "core\\trading\\order_service.py",
+        "line": 252,
+        "text": "f\"[R-Phase11 P1-1] AdvancedRiskControlService 未注入且 OrderRiskAssessment 不可用, \""
+      },
+      {
+        "file": "core\\trading\\order_service.py",
+        "line": 260,
+        "text": "reasons=[\"AdvancedRiskControlService 未注入, 拒绝无风控订单\"],"
+      },
+      {
+        "file": "core\\trading\\order_service.py",
+        "line": 308,
+        "text": "suggestions=[\"检查 AdvancedRiskControlService 运行状态\"],"
+      },
+      {
+        "file": "gui\\menu_bar.py",
+        "line": 1066,
+        "text": "\"由 AdvancedRiskControlService 驱动)\""
+      },
+      {
+        "file": "gui\\widgets\\advanced_risk_control_widget.py",
+        "line": 6,
+        "text": "包装 AdvancedRiskControlService, 提供 5 个标签页: 概览/ML 模型/风险指标/预测与告警/历史趋势;"
+      },
+      {
+        "file": "gui\\widgets\\advanced_risk_control_widget.py",
+        "line": 33,
+        "text": "AdvancedRiskControlService,"
+      },
+      {
+        "file": "gui\\widgets\\advanced_risk_control_widget.py",
+        "line": 76,
+        "text": "包装 AdvancedRiskControlService, 提供 ML 异常检测 + 风险预测 +"
+      },
+      {
+        "file": "gui\\widgets\\advanced_risk_control_widget.py",
+        "line": 80,
+        "text": "service: AdvancedRiskControlService 实例 (已注入或待降级)"
+      }
+    ],
+    "DynamicRiskAdjustmentService": [
+      {
+        "file": "core\\services\\advanced_risk_control_service.py",
+        "line": 9,
+        "text": "DynamicRiskAdjustmentService 现可通过 service_container.resolve(AdvancedRiskControlService)"
+      },
+      {
+        "file": "core\\services\\base_service.py",
+        "line": 263,
+        "text": "已有 Service 子类 (DynamicRiskAdjustmentService / NetworkService / SecurityService /"
+      },
+      {
+        "file": "core\\services\\dynamic_risk_adjustment_service.py",
+        "line": 13,
+        "text": "- DynamicRiskAdjustmentService (L752) - 公开 API, 已 R120-HVD-83 继承 BaseService"
+      },
+      {
+        "file": "core\\services\\dynamic_risk_adjustment_service.py",
+        "line": 522,
+        "text": "logger.warning(f'[R115-HVD-64 P0-1] DynamicRiskAdjustmentService 降级: AdvancedRiskControlService 未在 ServiceContainer 注册 ("
+      },
+      {
+        "file": "core\\services\\dynamic_risk_adjustment_service.py",
+        "line": 527,
+        "text": "logger.warning(f'[R115-HVD-64 P0-1] DynamicRiskAdjustmentService 降级: AdvancedRiskControlService resolve 返回 None (R51 铁律:"
+      },
+      {
+        "file": "core\\services\\dynamic_risk_adjustment_service.py",
+        "line": 530,
+        "text": "logger.warning(f'[R115-HVD-64 P0-1] DynamicRiskAdjustmentService 降级: 获取 AdvancedRiskControlService 失败: {e} (R51 铁律: 显式降级"
+      },
+      {
+        "file": "core\\services\\dynamic_risk_adjustment_service.py",
+        "line": 535,
+        "text": "logger.warning(f'[R70-3] DynamicRiskAdjustmentService auto_start 失败 (降级): {_auto_exc}', exc_info=True)"
+      },
+      {
+        "file": "core\\services\\dynamic_risk_adjustment_service.py",
+        "line": 888,
+        "text": "evt = ErrorEvent(source='DynamicRiskAdjustmentService', error_type='DRA_HEALTH_ALERT', error_message=message, severity=l"
+      },
+      {
+        "file": "core\\services\\dynamic_risk_adjustment_service.py",
+        "line": 1211,
+        "text": "event = event_cls(old_level=old_level, new_level=new_level, risk_score=risk_score, source='DynamicRiskAdjustmentService'"
+      },
+      {
+        "file": "core\\services\\dynamic_risk_adjustment_service.py",
+        "line": 1247,
+        "text": "\"\"\"R120-HVD-83: DynamicRiskAdjustmentService 业务级健康字段."
+      },
+      {
+        "file": "core\\services\\dynamic_risk_adjustment_service.py",
+        "line": 1271,
+        "text": "logger.warning(f'DynamicRiskAdjustmentService 健康检查异常: {e}', exc_info=True)"
+      },
+      {
+        "file": "core\\services\\dynamic_risk_adjustment_service.py",
+        "line": 1272,
+        "text": "return {'service_name': getattr(self, '_name', 'DynamicRiskAdjustmentService'), 'status': 'error', 'error': str(e)}"
+      },
+      {
+        "file": "core\\services\\dynamic_risk_adjustment_service.py",
+        "line": 1275,
+        "text": "\"\"\"R138 子智能体 C HVD-DP-DynamicRiskAdjustmentService: 释放资源 (3+ 业务方).\"\"\""
+      },
+      {
+        "file": "core\\services\\dynamic_risk_adjustment_service.py",
+        "line": 1296,
+        "text": "logger.error(f'DynamicRiskAdjustmentService._do_dispose failed: {e}', exc_info=True)"
+      },
+      {
+        "file": "core\\services\\dynamic_risk_adjustment_service.py",
+        "line": 1298,
+        "text": "_global_dynamic_risk_instance: Optional['DynamicRiskAdjustmentService'] = None"
+      },
+      {
+        "file": "core\\services\\dynamic_risk_adjustment_service.py",
+        "line": 1301,
+        "text": "def get_dynamic_risk_service() -> 'DynamicRiskAdjustmentService':"
+      },
+      {
+        "file": "core\\services\\dynamic_risk_adjustment_service.py",
+        "line": 1302,
+        "text": "\"\"\"获取 DynamicRiskAdjustmentService 单例 (R11-5 永久化)."
+      },
+      {
+        "file": "core\\services\\dynamic_risk_adjustment_service.py",
+        "line": 1310,
+        "text": "DynamicRiskAdjustmentService 全局唯一实例"
+      },
+      {
+        "file": "core\\services\\dynamic_risk_adjustment_service.py",
+        "line": 1322,
+        "text": "_global_dynamic_risk_instance = DynamicRiskAdjustmentService(service_container=None, auto_start=False)"
+      },
+      {
+        "file": "core\\services\\dynamic_risk_adjustment_service.py",
+        "line": 1323,
+        "text": "logger.info('[R11-5] DynamicRiskAdjustmentService 单例已创建 (auto_start=False)', )"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 4465,
+        "text": "DynamicRiskAdjustmentService 解析时必定成功."
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 4679,
+        "text": "DynamicRiskAdjustmentService as _DynamicRiskAdjustmentService"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 4681,
+        "text": "if not self._is_service_registered(_DynamicRiskAdjustmentService):"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 4688,
+        "text": "_DynamicRiskAdjustmentService,"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 4690,
+        "text": "factory=lambda: _DynamicRiskAdjustmentService("
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 4695,
+        "text": "logger.info(\"DynamicRiskAdjustmentService 注册完成 (P1 longterm)\")"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 4699,
+        "text": "instance = self.service_container.resolve(_DynamicRiskAdjustmentService)"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 4703,
+        "text": "f\"DynamicRiskAdjustmentService 监控已自动启动, \""
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 4708,
+        "text": "f\"DynamicRiskAdjustmentService 显式启动失败 (降级): {_start_exc}\","
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 4712,
+        "text": "logger.error(f\"DynamicRiskAdjustmentService 注册失败: {e}\", exc_info=True)"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 7080,
+        "text": "\"\"\"获取 DynamicRiskAdjustmentService 单例 (R11-5 永久化)."
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 7085,
+        "text": "的真实 DynamicRiskAdjustmentService 实现"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 7089,
+        "text": "DynamicRiskAdjustmentService 全局唯一实例"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 7104,
+        "text": "\"\"\"ServiceBootstrap 实例方法: 获取 DynamicRiskAdjustmentService (R11-5)."
+      },
+      {
+        "file": "gui\\widgets\\dynamic_risk_adjustment_widget.py",
+        "line": 6,
+        "text": "为 DynamicRiskAdjustmentService 提供 UI 接入, 解决 R1 审计 P1-27:"
+      },
+      {
+        "file": "gui\\widgets\\dynamic_risk_adjustment_widget.py",
+        "line": 7,
+        "text": "\"DynamicRiskAdjustmentService 未在 service_bootstrap 中注册, 0 外部调用\""
+      },
+      {
+        "file": "gui\\widgets\\dynamic_risk_adjustment_widget.py",
+        "line": 239,
+        "text": "\"\"\"加载 DynamicRiskAdjustmentService (通过 service_bootstrap 单例工厂)."
+      },
+      {
+        "file": "gui\\widgets\\performance\\tabs\\risk_control_center_tab.py",
+        "line": 135,
+        "text": "DynamicRiskAdjustmentService as _DynamicRiskAdjustmentService,"
+      },
+      {
+        "file": "gui\\widgets\\performance\\tabs\\risk_control_center_tab.py",
+        "line": 138,
+        "text": "if _container is not None and _container.is_registered(_DynamicRiskAdjustmentService):"
+      },
+      {
+        "file": "gui\\widgets\\performance\\tabs\\risk_control_center_tab.py",
+        "line": 139,
+        "text": "self.dynamic_risk_service = _container.resolve(_DynamicRiskAdjustmentService)"
+      },
+      {
+        "file": "gui\\widgets\\performance\\tabs\\risk_control_center_tab.py",
+        "line": 147,
+        "text": "logger.info(\"DynamicRiskAdjustmentService 从 ServiceContainer 解析成功 (R5-8 IoC, R71 P0 修复)\")"
+      },
+      {
+        "file": "gui\\widgets\\performance\\tabs\\risk_control_center_tab.py",
+        "line": 149,
+        "text": "logger.warning(f\"DynamicRiskAdjustmentService IoC 解析失败, 降级到直接实例化: {_dra_ioc_exc}\", exc_info=True)"
+      }
+    ],
+    "EnhancedRiskMonitor": [
+      {
+        "file": "core\\trading_engine.py",
+        "line": 2268,
+        "text": "P0-1 修复: 在仓位修改前的 EnhancedRiskMonitor 预检"
+      },
+      {
+        "file": "core\\trading_engine.py",
+        "line": 2272,
+        "text": "EnhancedRiskMonitor.check_order_risk, 避免订单流绕过集中度/HHI/单笔金额等"
+      },
+      {
+        "file": "core\\trading_engine.py",
+        "line": 2291,
+        "text": "EnhancedRiskMonitor,"
+      },
+      {
+        "file": "core\\trading_engine.py",
+        "line": 2297,
+        "text": "if hasattr(self.service_container, 'is_registered') and not self.service_container.is_registered(EnhancedRiskMonitor):"
+      },
+      {
+        "file": "core\\trading_engine.py",
+        "line": 2299,
+        "text": "f\"[R113-HVD-55 P0] EnhancedRiskMonitor 未在 service_container 注册, \""
+      },
+      {
+        "file": "core\\trading_engine.py",
+        "line": 2302,
+        "text": "monitor = self.service_container.try_resolve(EnhancedRiskMonitor)"
+      },
+      {
+        "file": "core\\trading_engine.py",
+        "line": 2309,
+        "text": "f\"[R113-HVD-55 P0] EnhancedRiskMonitor 容器解析失败, 降级走全局单例: {resolve_err} \""
+      },
+      {
+        "file": "core\\trading_engine.py",
+        "line": 2326,
+        "text": "f\"EnhancedRiskMonitor 不可用, 拒绝订单以保护资金安全: {glob_err}\""
+      },
+      {
+        "file": "core\\trading_engine.py",
+        "line": 2335,
+        "text": "f\"[P0-1 风控] EnhancedRiskMonitor 不可用, \""
+      },
+      {
+        "file": "core\\trading_engine.py",
+        "line": 2519,
+        "text": "f\"[P0-1 风控异常] EnhancedRiskMonitor 调用异常, 拒绝订单: {e}\","
+      },
+      {
+        "file": "core\\trading_engine.py",
+        "line": 2696,
+        "text": "R11 P0: 解析 EnhancedRiskMonitor 实例"
+      },
+      {
+        "file": "core\\trading_engine.py",
+        "line": 2699,
+        "text": "1. service_container.try_resolve(EnhancedRiskMonitor)"
+      },
+      {
+        "file": "core\\trading_engine.py",
+        "line": 2704,
+        "text": "EnhancedRiskMonitor 实例或 None"
+      },
+      {
+        "file": "core\\trading_engine.py",
+        "line": 2709,
+        "text": "EnhancedRiskMonitor,"
+      },
+      {
+        "file": "core\\trading_engine.py",
+        "line": 2713,
+        "text": "if hasattr(self.service_container, 'is_registered') and not self.service_container.is_registered(EnhancedRiskMonitor):"
+      },
+      {
+        "file": "core\\trading_engine.py",
+        "line": 2715,
+        "text": "f\"[R113-HVD-56 P0] EnhancedRiskMonitor 未在 service_container 注册, \""
+      },
+      {
+        "file": "core\\trading_engine.py",
+        "line": 2718,
+        "text": "monitor = self.service_container.try_resolve(EnhancedRiskMonitor)"
+      },
+      {
+        "file": "core\\trading_engine.py",
+        "line": 2727,
+        "text": "f\"[R113-HVD-56 P0] EnhancedRiskMonitor 容器解析失败, 降级走全局单例: {resolve_err} \""
+      },
+      {
+        "file": "core\\trading_engine.py",
+        "line": 2743,
+        "text": "f\"[R113-HVD-57 P0] EnhancedRiskMonitor 全局单例不可用, \""
+      },
+      {
+        "file": "core\\trading_engine.py",
+        "line": 2783,
+        "text": "f\"[R113-HVD-61 P0] EnhancedRiskMonitor 不可用, 跳过 _on_bar_close \""
+      },
+      {
+        "file": "core\\trading_engine.py",
+        "line": 2790,
+        "text": "f\"[R113-HVD-61 P0] EnhancedRiskMonitor 缺少 on_bar_close 方法, \""
+      },
+      {
+        "file": "core\\trading_engine.py",
+        "line": 2890,
+        "text": "f\"[R113-HVD-62 P0] EnhancedRiskMonitor 不可用, 跳过 correlation monitor \""
+      },
+      {
+        "file": "core\\events\\types.py",
+        "line": 1840,
+        "text": "EnhancedRiskMonitor.check_order_risk 拒绝时, 由 trading_engine (而非 ERM) 触发"
+      },
+      {
+        "file": "core\\events\\types.py",
+        "line": 1898,
+        "text": "当 EnhancedRiskMonitor.check_correlation_risk() 返回违规时触发."
+      },
+      {
+        "file": "core\\events\\types.py",
+        "line": 1946,
+        "text": "- TradingEngine._on_bar_close → EnhancedRiskMonitor.on_bar_close 推送日收益率"
+      },
+      {
+        "file": "core\\events\\types.py",
+        "line": 1948,
+        "text": "- TradingEngine._on_bar_close → EnhancedRiskMonitor.check_correlation_risk"
+      },
+      {
+        "file": "core\\feature_flags\\flag_manager.py",
+        "line": 111,
+        "text": "description=\"EnhancedRiskMonitor 不可用时是否 fail-open (放行订单)\","
+      },
+      {
+        "file": "core\\importdata\\import_execution_engine.py",
+        "line": 20,
+        "text": "- 增强风险监控 (EnhancedRiskMonitor)"
+      },
+      {
+        "file": "core\\importdata\\import_execution_engine.py",
+        "line": 89,
+        "text": "from ..risk_monitoring.enhanced_risk_monitor import EnhancedRiskMonitor, get_enhanced_risk_monitor"
+      },
+      {
+        "file": "core\\importdata\\unified_data_import_engine.py",
+        "line": 46,
+        "text": "from ..risk_monitoring.enhanced_risk_monitor import EnhancedRiskMonitor, get_enhanced_risk_monitor"
+      },
+      {
+        "file": "core\\risk_monitoring\\enhanced_risk_monitor.py",
+        "line": 131,
+        "text": "class EnhancedRiskMonitor:"
+      },
+      {
+        "file": "core\\risk_monitoring\\enhanced_risk_monitor.py",
+        "line": 482,
+        "text": "f\"[R175-HVD-15] EnhancedRiskMonitor.stop_monitoring: \""
+      },
+      {
+        "file": "core\\risk_monitoring\\enhanced_risk_monitor.py",
+        "line": 489,
+        "text": "f\"[R175-HVD-15] EnhancedRiskMonitor.stop_monitoring thread.join 失败: {join_exc}\","
+      },
+      {
+        "file": "core\\risk_monitoring\\enhanced_risk_monitor.py",
+        "line": 541,
+        "text": "logger.info(\"[R81.ERM.DISPOSE] EnhancedRiskMonitor dispose 完成\")"
+      },
+      {
+        "file": "core\\risk_monitoring\\enhanced_risk_monitor.py",
+        "line": 2555,
+        "text": "def get_enhanced_risk_monitor(config: Optional[Dict] = None) -> EnhancedRiskMonitor:"
+      },
+      {
+        "file": "core\\risk_monitoring\\enhanced_risk_monitor.py",
+        "line": 2569,
+        "text": "_enhanced_risk_monitor = EnhancedRiskMonitor(config)"
+      },
+      {
+        "file": "core\\risk_monitoring\\protocols.py",
+        "line": 7,
+        "text": "EnhancedRiskMonitor (core/risk_monitoring/enhanced_risk_monitor.py) 是具体类,"
+      },
+      {
+        "file": "core\\risk_monitoring\\protocols.py",
+        "line": 33,
+        "text": "EnhancedRiskMonitor 显式声明实现本接口, 业务方可通过 isinstance 检查,"
+      },
+      {
+        "file": "core\\risk_monitoring\\protocols.py",
+        "line": 36,
+        "text": "方法命名对齐 EnhancedRiskMonitor 实际签名:"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 2156,
+        "text": "EnhancedRiskMonitor, get_enhanced_risk_monitor"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 2158,
+        "text": "if not self._is_service_registered(EnhancedRiskMonitor):"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 2160,
+        "text": "EnhancedRiskMonitor,"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 2167,
+        "text": "EnhancedRiskMonitor,"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 2172,
+        "text": "logger.info(\"EnhancedRiskMonitor 注册完成（类型 + 名称 'enhanced_risk_monitor'）\")"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 2174,
+        "text": "logger.warning(f\"EnhancedRiskMonitor 模块不可用, 跳过注册: {e}\", exc_info=True)"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 2176,
+        "text": "logger.error(f\"EnhancedRiskMonitor 注册失败: {e}\", exc_info=True)"
+      },
+      {
+        "file": "core\\trading\\order_executor.py",
+        "line": 983,
+        "text": "EnhancedRiskMonitor,"
+      },
+      {
+        "file": "core\\trading\\order_executor.py",
+        "line": 985,
+        "text": "risk_monitor = self.service_container.try_resolve(EnhancedRiskMonitor)"
+      },
+      {
+        "file": "core\\trading\\order_executor.py",
+        "line": 990,
+        "text": "f\"[R115-D P0] 容器解析 EnhancedRiskMonitor 失败, 降级走全局单例: {resolve_err}\","
+      },
+      {
+        "file": "core\\trading\\order_executor.py",
+        "line": 1000,
+        "text": "f\"[R-Phase11 P1-2] EnhancedRiskMonitor 容器+全局双解析失败, 订单被拒绝. order_id={getattr(order, 'order_id', 'unknown')}\","
+      },
+      {
+        "file": "core\\trading\\order_executor.py",
+        "line": 1030,
+        "text": "logger.warning(\"[R115-D P0-2] EnhancedRiskMonitor不可用, 跳过高级风控检查 (R51 铁律: 显式降级日志)\", exc_info=True)"
+      },
+      {
+        "file": "gui\\widgets\\performance\\tabs\\risk_control_center_tab.py",
+        "line": 33,
+        "text": "from core.risk_monitoring.enhanced_risk_monitor import EnhancedRiskMonitor, get_enhanced_risk_monitor"
+      },
+      {
+        "file": "gui\\widgets\\performance\\tabs\\risk_control_center_tab.py",
+        "line": 1495,
+        "text": "\"\"\"将EnhancedRiskMonitor内部指标名映射为卡片名\"\"\""
+      }
+    ],
+    "RiskManager": [
+      {
+        "file": "core\\data_quality_risk_manager.py",
+        "line": 2,
+        "text": "数据质量风险管理器 (DataQualityRiskManager)"
+      },
+      {
+        "file": "core\\data_quality_risk_manager.py",
+        "line": 10,
+        "text": "- DataQualityRiskManager: 评估器主体, 协调 DataQualityMonitor"
+      },
+      {
+        "file": "core\\data_quality_risk_manager.py",
+        "line": 88,
+        "text": "class DataQualityRiskManager:"
+      },
+      {
+        "file": "core\\data_quality_risk_manager.py",
+        "line": 105,
+        "text": "self.logger = logger.bind(module=\"DataQualityRiskManager\")"
+      },
+      {
+        "file": "core\\data_quality_risk_manager.py",
+        "line": 884,
+        "text": "source=\"DataQualityRiskManager\","
+      },
+      {
+        "file": "core\\data_quality_risk_manager.py",
+        "line": 913,
+        "text": "\"service_name\": \"DataQualityRiskManager\","
+      },
+      {
+        "file": "core\\data_quality_risk_manager.py",
+        "line": 922,
+        "text": "return {\"status\": \"error\", \"service_name\": \"DataQualityRiskManager\", \"error\": str(e)}"
+      },
+      {
+        "file": "core\\money_manager.py",
+        "line": 134,
+        "text": "OrderExecutor/RiskManager/TradingEngine/OrderService), 与 R129-P0-1/R131-P0-3"
+      },
+      {
+        "file": "core\\money_manager.py",
+        "line": 244,
+        "text": "与 RiskManager / TradingService.set_current_account_id 模式对齐."
+      },
+      {
+        "file": "core\\money_manager.py",
+        "line": 262,
+        "text": "与 RiskManager / TradingService 模式对齐 (R120-P0-1)."
+      },
+      {
+        "file": "core\\money_manager.py",
+        "line": 284,
+        "text": "Fix: 软解析 6 其他服务 (RiskManager/TradingService/AccountManager/TradingController/"
+      },
+      {
+        "file": "core\\money_manager.py",
+        "line": 286,
+        "text": "6+1 服务架构 7 服务: RiskManager/TradingService/AccountManager/MoneyManager/"
+      },
+      {
+        "file": "core\\money_manager.py",
+        "line": 295,
+        "text": "for service_name, class_path in (('risk_manager', 'core.risk_manager.RiskManager'), ('trading_service', 'core.services.t"
+      },
+      {
+        "file": "core\\risk_alert.py",
+        "line": 65,
+        "text": "- 反射 RiskManager._current_account_id (R131-P0-3) 作为 fallback,"
+      },
+      {
+        "file": "core\\risk_alert.py",
+        "line": 72,
+        "text": "+ R131-P0-3 RiskManager._current_account_id 共享"
+      },
+      {
+        "file": "core\\risk_alert.py",
+        "line": 128,
+        "text": "\"\"\"R157 HVD-157-B-1 修复: 反射 RiskManager._current_account_id (R131-P0-3 共享)"
+      },
+      {
+        "file": "core\\risk_alert.py",
+        "line": 130,
+        "text": "Why: R131-P0-3 已为 RiskManager 加 _current_account_id 字段, 通过"
+      },
+      {
+        "file": "core\\risk_alert.py",
+        "line": 133,
+        "text": "Fix: 反射 get_service_container() → RiskManager → get_current_account_id()."
+      },
+      {
+        "file": "core\\risk_alert.py",
+        "line": 134,
+        "text": "反射失败 (容器未就绪 / RiskManager 未注册) 降级 'default' (R99-)."
+      },
+      {
+        "file": "core\\risk_alert.py",
+        "line": 141,
+        "text": "from core.risk_manager import RiskManager"
+      },
+      {
+        "file": "core\\risk_alert.py",
+        "line": 144,
+        "text": "if _container.is_registered(RiskManager):"
+      },
+      {
+        "file": "core\\risk_alert.py",
+        "line": 145,
+        "text": "_risk_manager = _container.resolve(RiskManager)"
+      },
+      {
+        "file": "core\\risk_alert.py",
+        "line": 154,
+        "text": "f\"[R157 HVD-157-B-1] 反射 RiskManager._current_account_id 失败, \""
+      },
+      {
+        "file": "core\\risk_manager.py",
+        "line": 222,
+        "text": "Fix: 模仿 RiskManager._check_5_service_consistency (L449-485) 模式,"
+      },
+      {
+        "file": "core\\risk_manager.py",
+        "line": 225,
+        "text": "因 TradeOrchestrator 是 RiskManager 内部类, 共享 _current_account_id),"
+      },
+      {
+        "file": "core\\risk_manager.py",
+        "line": 234,
+        "text": "from core.risk_manager import RiskManager"
+      },
+      {
+        "file": "core\\risk_manager.py",
+        "line": 235,
+        "text": "singleton = getattr(RiskManager, '_instance', None)"
+      },
+      {
+        "file": "core\\risk_manager.py",
+        "line": 243,
+        "text": "f\"[R147 HVD-147-A L237] RiskManager 单例反射失败, 降级 default: {e}\","
+      },
+      {
+        "file": "core\\risk_manager.py",
+        "line": 317,
+        "text": "class RiskManager:"
+      },
+      {
+        "file": "core\\risk_manager.py",
+        "line": 344,
+        "text": "logger.info(\"RiskManager.__init__ 完成 (R146-A stub)\")"
+      },
+      {
+        "file": "core\\risk_manager.py",
+        "line": 354,
+        "text": "R132-P0-1 修复: RiskManager.initialize 必须调 _subscribe_account_switched_event"
+      },
+      {
+        "file": "core\\risk_manager.py",
+        "line": 356,
+        "text": "100% 闭环\" 假修复 - 实际只有 75% (RiskManager._subscribe_account_switched_event"
+      },
+      {
+        "file": "core\\risk_manager.py",
+        "line": 367,
+        "text": "(R51 教训 + R157-B-1 反射 fallback 局限). R131-P0-3 (RiskManager) + R151-P0-1"
+      },
+      {
+        "file": "core\\risk_manager.py",
+        "line": 406,
+        "text": "logger.info(\"RiskManager 初始化完成 (R146-A + R132-P0-1 5+1 闭环 + R188-B HVD-187-H)\")"
+      },
+      {
+        "file": "core\\risk_manager.py",
+        "line": 430,
+        "text": "Why: R154-C-001 关键 P0 - 整个 RiskManager 类 0 订阅方, _on_position_updated (L752)"
+      },
+      {
+        "file": "core\\risk_manager.py",
+        "line": 574,
+        "text": "R130-P0-1 修复: RiskManager 必须有真实一致性检查, 与 R126-P0-1 模板一致."
+      },
+      {
+        "file": "core\\risk_manager.py",
+        "line": 577,
+        "text": "6+1 服务架构 7 服务: RiskManager/TradingService/AccountManager/MoneyManager/"
+      },
+      {
+        "file": "core\\risk_manager.py",
+        "line": 647,
+        "text": "RiskManager 是 5+1 服务中唯一缺此方法的服务, 多账户场景下 _current_account_id"
+      },
+      {
+        "file": "core\\risk_manager.py",
+        "line": 665,
+        "text": "f\"[R131-P0-3] RiskManager._current_account_id 切换: \""
+      },
+      {
+        "file": "core\\risk_manager.py",
+        "line": 673,
+        "text": "RiskManager 当前 _current_account_id, 监控平台可对比 7 服务一致性."
+      },
+      {
+        "file": "core\\risk_manager.py",
+        "line": 684,
+        "text": "RiskManager 永远 'default', 与其他 6 服务不一致, 风控检查按错误账户"
+      },
+      {
+        "file": "core\\risk_manager.py",
+        "line": 695,
+        "text": "f\"[R131-P0-3] RiskManager 处理 AccountSwitchedEvent 失败: {e}\","
+      },
+      {
+        "file": "core\\risk_manager.py",
+        "line": 702,
+        "text": "Why: 5+1 服务架构账户切换一致性, RiskManager 必须订阅 AccountSwitchedEvent"
+      },
+      {
+        "file": "core\\risk_manager.py",
+        "line": 718,
+        "text": "\"[R131-P0-3] RiskManager 已订阅 AccountSwitchedEvent \""
+      },
+      {
+        "file": "core\\risk_manager.py",
+        "line": 723,
+        "text": "\"[R131-P0-3] get_event_bus() 返回 None, RiskManager 降级为手动调用\""
+      },
+      {
+        "file": "core\\risk_manager.py",
+        "line": 730,
+        "text": "f\"[R147 HVD-147-A L663] RiskManager 订阅 AccountSwitchedEvent 失败, \""
+      },
+      {
+        "file": "core\\risk_manager.py",
+        "line": 740,
+        "text": "但 RiskManager 0 订阅, 多账户隔离字段 (_current_account_id 切换 + 持仓 update) 失效."
+      },
+      {
+        "file": "core\\risk_manager.py",
+        "line": 754,
+        "text": "\"[R154 HVD-153-C] RiskManager 已订阅 PositionUpdatedEvent \""
+      },
+      {
+        "file": "core\\risk_manager.py",
+        "line": 764,
+        "text": "f\"[R154 HVD-153-C] RiskManager 订阅 PositionUpdatedEvent 失败, \""
+      },
+      {
+        "file": "core\\risk_manager.py",
+        "line": 808,
+        "text": "Fix: 严格 R10-A 教训 (方法属于 RiskManager 类, 不被 _DummyLock 误归),"
+      },
+      {
+        "file": "core\\risk_manager.py",
+        "line": 1075,
+        "text": "\"\"\"R157-C HVD-157-C-1: RiskManager 健康检查 (R147 模板 + 业务字段)"
+      },
+      {
+        "file": "core\\risk_manager.py",
+        "line": 1088,
+        "text": "- service_name: str = \"RiskManager\""
+      },
+      {
+        "file": "core\\risk_manager.py",
+        "line": 1140,
+        "text": "\"service_name\": \"RiskManager\","
+      },
+      {
+        "file": "core\\risk_manager.py",
+        "line": 1145,
+        "text": "\"service_container_available\": False,  # RiskManager 不使用 service_container"
+      },
+      {
+        "file": "core\\risk_manager.py",
+        "line": 1158,
+        "text": "f\"[HVD-157-C-1] RiskManager.health_check 异常降级: {_hc_exc}\","
+      },
+      {
+        "file": "core\\risk_manager.py",
+        "line": 1163,
+        "text": "\"service_name\": \"RiskManager\","
+      },
+      {
+        "file": "core\\risk_manager.py",
+        "line": 1192,
+        "text": "RiskManager 必须有 _get_positions_lock() / _get_v2_positions_lock() 方法,"
+      },
+      {
+        "file": "core\\trading_controller.py",
+        "line": 272,
+        "text": "严格模仿 R130-P0-1 RiskManager._check_5_service_consistency 模板."
+      },
+      {
+        "file": "core\\trading_controller.py",
+        "line": 273,
+        "text": "Fix: 软解析 6 其他服务 (RiskManager/TradingService/AccountManager/MoneyManager/"
+      },
+      {
+        "file": "core\\trading_controller.py",
+        "line": 275,
+        "text": "6+1 服务架构 7 服务: RiskManager/TradingService/AccountManager/MoneyManager/"
+      },
+      {
+        "file": "core\\trading_controller.py",
+        "line": 284,
+        "text": "for service_name, class_path in (('risk_manager', 'core.risk_manager.RiskManager'), ('trading_service', 'core.services.t"
+      },
+      {
+        "file": "core\\trading_engine.py",
+        "line": 227,
+        "text": "- RiskManager 订阅 PositionUpdatedEvent 同步持仓数据 ✓"
+      },
+      {
+        "file": "core\\trading_engine.py",
+        "line": 971,
+        "text": "严格模仿 R131-P0-1 (TradingController) / R130-P0-1 (RiskManager) 模板."
+      },
+      {
+        "file": "core\\trading_engine.py",
+        "line": 972,
+        "text": "Fix: 软解析 7 其他服务 (RiskManager/TradingService/AccountManager/MoneyManager/"
+      },
+      {
+        "file": "core\\trading_engine.py",
+        "line": 974,
+        "text": "6+1 服务架构 8 服务: RiskManager/TradingService/AccountManager/MoneyManager/"
+      },
+      {
+        "file": "core\\trading_engine.py",
+        "line": 995,
+        "text": "('risk_manager', 'core.risk_manager.RiskManager'),"
+      },
+      {
+        "file": "core\\coordinators\\event_coordinator.py",
+        "line": 2293,
+        "text": "3. 风控价格更新 (RiskManager.update_price, core/trading_engine.py:184 已有方法)"
+      },
+      {
+        "file": "core\\coordinators\\event_coordinator.py",
+        "line": 2377,
+        "text": "_risk_manager = self._service_container.try_resolve('RiskManager') if self._service_container else None"
+      },
+      {
+        "file": "core\\coordinators\\event_coordinator.py",
+        "line": 2424,
+        "text": "- 风控重算 (RiskManager 重新评估下单能力)"
+      },
+      {
+        "file": "core\\events\\r84_event_helper.py",
+        "line": 1191,
+        "text": "R131-P0-3 (RiskManager._current_account_id) + R151-P0-1 (RiskControlStrategy 多账户隔离)"
+      },
+      {
+        "file": "core\\events\\r84_event_helper.py",
+        "line": 1210,
+        "text": "canonical_account_id: 基准 account_id (RiskManager 当前, R131-P0-3 共享)"
+      },
+      {
+        "file": "core\\events\\types.py",
+        "line": 1028,
+        "text": "RiskManager/TradingService/TradingPanel/AccountManagementDialog/AccountManager"
+      },
+      {
+        "file": "core\\multi_account\\consistency_checker.py",
+        "line": 7,
+        "text": "> 实施模式: 严格模仿 R158 HVD-150-A 模板 (RiskManager/TradingEngine 8 服务)"
+      },
+      {
+        "file": "core\\multi_account\\consistency_checker.py",
+        "line": 67,
+        "text": "('risk_manager', 'core.risk_manager.RiskManager'),"
+      },
+      {
+        "file": "core\\multi_account\\consistency_checker.py",
+        "line": 160,
+        "text": "R130-P0-1 (RiskManager) 模板, 12+ 服务 100% 闭环."
+      },
+      {
+        "file": "core\\optimization\\fractional_kelly.py",
+        "line": 25,
+        "text": "5. 与现有 trading_engine.RiskManager 集成（max_position_size / max_single_position）"
+      },
+      {
+        "file": "core\\optimization\\fractional_kelly.py",
+        "line": 112,
+        "text": "3. 集成现有 RiskManager 的 max_position_size / max_single_position 约束"
+      },
+      {
+        "file": "core\\risk\\account_consistency.py",
+        "line": 9,
+        "text": "- 已有修复: R131-P0-3 (RiskManager._current_account_id) + R151-P0-1 (RiskControlStrategy 多账户隔离)"
+      },
+      {
+        "file": "core\\risk\\account_consistency.py",
+        "line": 18,
+        "text": "4. 启动期串联: RiskManager.initialize() 末尾自动调用"
+      },
+      {
+        "file": "core\\risk\\account_consistency.py",
+        "line": 65,
+        "text": "- risk_manager.RiskManager._current_account_id (R131-P0-3)"
+      },
+      {
+        "file": "core\\risk\\account_consistency.py",
+        "line": 75,
+        "text": "4. 启动期串联 (RiskManager.initialize 末尾自动调用)"
+      },
+      {
+        "file": "core\\risk\\account_consistency.py",
+        "line": 142,
+        "text": "from core.risk_manager import RiskManager"
+      },
+      {
+        "file": "core\\risk\\account_consistency.py",
+        "line": 150,
+        "text": "if _container.is_registered(RiskManager):"
+      },
+      {
+        "file": "core\\risk\\account_consistency.py",
+        "line": 151,
+        "text": "services[\"risk_manager\"] = _container.resolve(RiskManager)"
+      },
+      {
+        "file": "core\\services\\advanced_risk_control_service.py",
+        "line": 1678,
+        "text": "Why: 严格模仿 R186-A HVD-185-1 + R130-P0-1 (RiskManager) /"
+      },
+      {
+        "file": "core\\services\\advanced_risk_control_service.py",
+        "line": 1690,
+        "text": "('risk_manager', 'core.risk_manager.RiskManager'),"
+      },
+      {
+        "file": "core\\services\\database_monitoring_service.py",
+        "line": 638,
+        "text": "Why: 严格模仿 R186-A HVD-185-1 + R130-P0-1 (RiskManager) /"
+      },
+      {
+        "file": "core\\services\\database_monitoring_service.py",
+        "line": 650,
+        "text": "('risk_manager', 'core.risk_manager.RiskManager'),"
+      },
+      {
+        "file": "core\\services\\data_service.py",
+        "line": 34,
+        "text": "from ..data_quality_risk_manager import DataQualityRiskManager"
+      },
+      {
+        "file": "core\\services\\data_service.py",
+        "line": 172,
+        "text": "self._quality_manager: Optional[DataQualityRiskManager] = None"
+      },
+      {
+        "file": "core\\services\\data_service.py",
+        "line": 383,
+        "text": "self._quality_manager = get_service_container().resolve(DataQualityRiskManager)"
+      },
+      {
+        "file": "core\\services\\data_service.py",
+        "line": 387,
+        "text": "self._quality_manager = DataQualityRiskManager()"
+      },
+      {
+        "file": "core\\services\\data_service.py",
+        "line": 856,
+        "text": "Why: R158 HVD-150-A 已实施 8/8 服务 _check_5_service_consistency (RiskManager/TradingService/"
+      },
+      {
+        "file": "core\\services\\data_service.py",
+        "line": 861,
+        "text": "Fix: 软解析 11 其他服务 (RiskManager/TradingService/AccountManager/MoneyManager/"
+      },
+      {
+        "file": "core\\services\\data_service.py",
+        "line": 866,
+        "text": "12+ 服务架构 12 服务: RiskManager/TradingService/AccountManager/MoneyManager/"
+      },
+      {
+        "file": "core\\services\\data_service.py",
+        "line": 893,
+        "text": "('risk_manager', 'core.risk_manager.RiskManager'),"
+      },
+      {
+        "file": "core\\services\\data_service.py",
+        "line": 933,
+        "text": "R131-P0-3 (RiskManager) / R156 HVD-155-2 (OrderService) /"
+      },
+      {
+        "file": "core\\services\\enhanced_data_quality_monitor.py",
+        "line": 2,
+        "text": "增强数据质量监控器 (DataQualityRiskManager 上游)"
+      },
+      {
+        "file": "core\\services\\enhanced_data_quality_monitor.py",
+        "line": 6,
+        "text": "QualityAnomalyEvent 发布, 由 DataQualityRiskManager 决策隔离/降级,"
+      },
+      {
+        "file": "core\\services\\enhanced_data_quality_monitor.py",
+        "line": 33,
+        "text": "from ..data_quality_risk_manager import DataQualityRiskManager"
+      },
+      {
+        "file": "core\\services\\enhanced_data_quality_monitor.py",
+        "line": 136,
+        "text": "def __init__(self, risk_manager: DataQualityRiskManager, alert_engine: AlertRuleEngine, event_bus=None):"
+      },
+      {
+        "file": "core\\services\\notification_service.py",
+        "line": 2103,
+        "text": "Why: 严格模仿 R186-A HVD-185-1 + R130-P0-1 (RiskManager) /"
+      },
+      {
+        "file": "core\\services\\notification_service.py",
+        "line": 2114,
+        "text": "('risk_manager', 'core.risk_manager.RiskManager'),"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 1684,
+        "text": "但 4 服务 (RiskManager/RiskAlertSystem/RiskExporter/RiskControlStrategy) 中"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 1696,
+        "text": "- R131-P0-3 RiskManager._current_account_id 共享 + R151-P0-1 RiskControlStrategy 多账户隔离"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 3884,
+        "text": "from core.data_quality_risk_manager import DataQualityRiskManager"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 3886,
+        "text": "if not self._is_service_registered(DataQualityRiskManager):"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 3888,
+        "text": "DataQualityRiskManager,"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 3890,
+        "text": "factory=lambda: DataQualityRiskManager()"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 3892,
+        "text": "data_quality_risk_manager = self.service_container.resolve(DataQualityRiskManager)"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 3912,
+        "text": "risk_manager=self.service_container.resolve(DataQualityRiskManager),"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 6044,
+        "text": "│  5  │ RiskManager             │   9  │ R/G/C/B 全部命中            │"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 6137,
+        "text": "from core.risk_manager import RiskManager as _RiskManager"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 6138,
+        "text": "if not self._is_service_registered(_RiskManager):"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 6140,
+        "text": "_RiskManager,"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 6142,
+        "text": "factory=lambda: _RiskManager(),"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 6144,
+        "text": "logger.info(\"RiskManager 注册完成 (R119-HVD-79 P0, 9 引用)\")"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 6146,
+        "text": "logger.warning(f\"RiskManager 模块不可用, 跳过: {e}\", exc_info=True)"
+      },
+      {
+        "file": "core\\services\\service_bootstrap.py",
+        "line": 6148,
+        "text": "logger.error(f\"RiskManager 注册失败: {e}\", exc_info=True)"
+      },
+      {
+        "file": "core\\services\\service_health_monitor.py",
+        "line": 1020,
+        "text": "Why: 严格模仿 R186-A HVD-185-1 + R130-P0-1 (RiskManager) /"
+      },
+      {
+        "file": "core\\services\\service_health_monitor.py",
+        "line": 1031,
+        "text": "('risk_manager', 'core.risk_manager.RiskManager'),"
+      },
+      {
+        "file": "core\\services\\strategy_service.py",
+        "line": 344,
+        "text": "Fix: 软解析 11 其他服务 (RiskManager/TradingService/AccountManager/MoneyManager/"
+      },
+      {
+        "file": "core\\services\\strategy_service.py",
+        "line": 350,
+        "text": "12+ 服务架构 12 服务: RiskManager/TradingService/AccountManager/MoneyManager/"
+      },
+      {
+        "file": "core\\services\\strategy_service.py",
+        "line": 377,
+        "text": "('risk_manager', 'core.risk_manager.RiskManager'),"
+      },
+      {
+        "file": "core\\services\\strategy_service.py",
+        "line": 416,
+        "text": "R131-P0-3 (RiskManager) / R156 HVD-155-2 (OrderService) /"
+      },
+      {
+        "file": "core\\services\\trading_service.py",
+        "line": 5,
+        "text": "对内整合 TradingManager / RiskManager / PositionManager / PortfolioManager 等能力，"
+      },
+      {
+        "file": "core\\services\\trading_service.py",
+        "line": 273,
+        "text": "- RiskManager: 风险控制管理"
+      },
+      {
+        "file": "core\\services\\trading_service.py",
+        "line": 334,
+        "text": "OrderExecutor/RiskManager/TradingEngine/OrderService), 与 R129-P0-1/R131-P0-3"
+      },
+      {
+        "file": "core\\services\\trading_service.py",
+        "line": 1309,
+        "text": "for service_name, class_path in (('risk_manager', 'core.risk_manager.RiskManager'), ('account_manager', 'core.trading.ac"
+      },
+      {
+        "file": "core\\services\\uni_plugin_data_manager.py",
+        "line": 5,
+        "text": "协调 PluginCenter、TETRouterEngine、DataQualityRiskManager 和数据源路由器。"
+      },
+      {
+        "file": "core\\services\\uni_plugin_data_manager.py",
+        "line": 26,
+        "text": "from core.data_quality_risk_manager import DataQualityRiskManager"
+      },
+      {
+        "file": "core\\services\\uni_plugin_data_manager.py",
+        "line": 111,
+        "text": "self.risk_manager = get_service_container().resolve(DataQualityRiskManager)"
+      },
+      {
+        "file": "core\\services\\uni_plugin_data_manager.py",
+        "line": 113,
+        "text": "logger.warning(f\"从容器获取 DataQualityRiskManager 失败, 降级为直接创建: {e}\")"
+      },
+      {
+        "file": "core\\services\\uni_plugin_data_manager.py",
+        "line": 114,
+        "text": "self.risk_manager = DataQualityRiskManager()"
+      },
+      {
+        "file": "core\\trading\\account_manager.py",
+        "line": 1329,
+        "text": "OrderExecutor/RiskManager/TradingEngine/OrderService), 与 R129-P0-1/R131-P0-3"
+      },
+      {
+        "file": "core\\trading\\account_manager.py",
+        "line": 1366,
+        "text": "Fix: 与 RiskManager/TradingService/TradingPanel/AccountManagementDialog 4 服务完全一致,"
+      },
+      {
+        "file": "core\\trading\\account_manager.py",
+        "line": 1415,
+        "text": "软解析 2 其他服务 (RiskManager + TradingService), 失败时 logger.warning 显式降级."
+      },
+      {
+        "file": "core\\trading\\account_manager.py",
+        "line": 1422,
+        "text": "('risk_manager', 'core.risk_manager.RiskManager'),"
+      },
+      {
+        "file": "core\\trading\\order_executor.py",
+        "line": 3273,
+        "text": "_check_5_service_consistency (RiskManager/TradingService/AccountManager/"
+      },
+      {
+        "file": "core\\trading\\order_executor.py",
+        "line": 3278,
+        "text": "Fix: 软解析 7 其他服务 (RiskManager/TradingService/AccountManager/MoneyManager/"
+      },
+      {
+        "file": "core\\trading\\order_executor.py",
+        "line": 3281,
+        "text": "5+1 服务架构 8 服务: RiskManager/TradingService/AccountManager/MoneyManager/"
+      },
+      {
+        "file": "core\\trading\\order_executor.py",
+        "line": 3303,
+        "text": "('risk_manager', 'core.risk_manager.RiskManager'),"
+      },
+      {
+        "file": "core\\trading\\order_service.py",
+        "line": 2743,
+        "text": "严格模仿 R158 HVD-150-A-P1-2 (TradingEngine) / R131-P0-1 (TradingController) / R130-P0-1 (RiskManager) 模板."
+      },
+      {
+        "file": "core\\trading\\order_service.py",
+        "line": 2744,
+        "text": "Fix: 软解析 7 其他服务 (RiskManager/TradingService/AccountManager/MoneyManager/"
+      },
+      {
+        "file": "core\\trading\\order_service.py",
+        "line": 2756,
+        "text": "5+1 服务架构 8 服务: RiskManager/TradingService/AccountManager/MoneyManager/"
+      },
+      {
+        "file": "core\\trading\\order_service.py",
+        "line": 2782,
+        "text": "('risk_manager', 'core.risk_manager.RiskManager'),"
+      },
+      {
+        "file": "core\\utils\\welford_stats.py",
+        "line": 5,
+        "text": "本模块将 RiskManager 中实现的 Welford 增量算法封装为独立、可复用的工具类，"
+      },
+      {
+        "file": "core\\utils\\welford_stats.py",
+        "line": 29,
+        "text": "- RiskManager._record_equity / _compute_dynamic_threshold 实现来源"
+      },
+      {
+        "file": "core\\utils\\welford_stats.py",
+        "line": 754,
+        "text": "max_drawdown <= 1e-9 时返回 0（与 RiskManager 行为一致）"
+      },
+      {
+        "file": "gui\\dialogs\\account_management_dialog.py",
+        "line": 644,
+        "text": "RiskManager/TradingService/TradingPanel/AccountManagementDialog/AccountManager"
+      },
+      {
+        "file": "gui\\dialogs\\account_management_dialog.py",
+        "line": 764,
+        "text": "Why: 字段名统一为 _current_account_id (R104 §12 铁律 #2), 与 RiskManager/TradingService 对齐."
+      },
+      {
+        "file": "gui\\dialogs\\account_management_dialog.py",
+        "line": 808,
+        "text": "('risk_manager', 'core.risk_manager.RiskManager'),"
+      },
+      {
+        "file": "gui\\dialogs\\data_management_dialog_unified.py",
+        "line": 1632,
+        "text": "from core.data_quality_risk_manager import DataQualityRiskManager"
+      },
+      {
+        "file": "gui\\dialogs\\data_management_dialog_unified.py",
+        "line": 1633,
+        "text": "quality_manager = DataQualityRiskManager()"
+      },
+      {
+        "file": "gui\\dialogs\\data_management_dialog_unified.py",
+        "line": 1667,
+        "text": "\"\"\"修复数据问题（已实现：调用 DataQualityRiskManager.repair）\"\"\""
+      },
+      {
+        "file": "gui\\dialogs\\data_management_dialog_unified.py",
+        "line": 1669,
+        "text": "from core.data_quality_risk_manager import DataQualityRiskManager"
+      },
+      {
+        "file": "gui\\dialogs\\data_management_dialog_unified.py",
+        "line": 1671,
+        "text": "manager = DataQualityRiskManager()"
+      },
+      {
+        "file": "gui\\widgets\\backtest_widget.py",
+        "line": 1941,
+        "text": "from core.risk_manager import RiskManager"
+      },
+      {
+        "file": "gui\\widgets\\backtest_widget.py",
+        "line": 1943,
+        "text": "self.risk_manager = RiskManager()"
+      },
+      {
+        "file": "gui\\widgets\\trading_panel.py",
+        "line": 1673,
+        "text": "Why: 字段名统一为 _current_account_id (R104 §12 铁律 #2), 与 RiskManager/TradingService 对齐."
+      },
+      {
+        "file": "gui\\widgets\\trading_panel.py",
+        "line": 1716,
+        "text": "('risk_manager', 'core.risk_manager.RiskManager'),"
+      },
+      {
+        "file": "gui\\widgets\\performance\\unified_performance_widget.py",
+        "line": 866,
+        "text": "from core.risk_manager import RiskManager"
+      },
+      {
+        "file": "gui\\widgets\\performance\\unified_performance_widget.py",
+        "line": 868,
+        "text": "if container.is_registered(RiskManager):"
+      },
+      {
+        "file": "gui\\widgets\\performance\\unified_performance_widget.py",
+        "line": 869,
+        "text": "risk_manager = container.resolve(RiskManager)"
+      },
+      {
+        "file": "gui\\widgets\\performance\\unified_performance_widget.py",
+        "line": 876,
+        "text": "f\"[R121-P0-1] RiskManager 解析失败, 风控控制标签页降级显示默认指标: {resolve_exc} \""
+      }
+    ]
+  },
+  "meta": {
+    "round": "R199-A",
+    "task": "HVD-198-D-NEW-04 风险控制软解析 P0 治理",
+    "method": "4 源验证 (Read + Grep + 上下文 + 文件位置)"
+  }
+}

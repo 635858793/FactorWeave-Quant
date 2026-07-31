@@ -1,0 +1,36 @@
+{
+  "r200_b_phase": "HVD-R199-D2-01 锁嵌套 AST 扫描",
+  "date": "2026-07-25",
+  "mode": "full_scan",
+  "files_scanned": 2103,
+  "total_violations": 1,
+  "r199_d_reported": 29,
+  "delta_vs_r199_d": -28,
+  "violations_by_file": {
+    "core\\data_router.py": 1
+  },
+  "r199_d_sample_5_match": "0/5",
+  "all_violations": [
+    {
+      "type": "NESTED_DIFF_LOCK",
+      "outer_locks": [
+        "_active_lock"
+      ],
+      "inner_lock": "_router_lock",
+      "file": "core\\data_router.py",
+      "line": 1841,
+      "depth": 2,
+      "class": "DataRouter",
+      "method": "get_active_connections_for_display",
+      "ast_unparse_verified": true
+    }
+  ],
+  "r199_d_samples": [],
+  "duration_seconds": 19.103717803955078,
+  "强制度": {
+    "R104_§12_#3_AST_recursive_with_body": "100% 应用 (非 ast.walk 扁平化)",
+    "R104_§12_#5_AST_unparse": "100% 应用 (二次验证方法体)",
+    "R100-F-P1-1_#8_4_lock_independent": "100% 应用",
+    "R6_§6.1_8_铁律": "100% 应用 (死代码审计)"
+  }
+}

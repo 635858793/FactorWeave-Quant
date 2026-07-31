@@ -1,0 +1,173 @@
+================================================================================
+R22-005 AST 二次验证：非 pytest 脚本扫描
+================================================================================
+
+[1] conftest.py 当前 collect_ignore 条目数: 83
+    - test_comprehensive_validation.py
+    - test_comprehensive_check.py
+    - test_comprehensive_check_final.py
+    - test_comprehensive_check_v2.py
+    - test_full_validation.py
+    - test_final_verification.py
+    - test_complete_check.py
+    - test_strong_buy_stress.py
+    - _verify_vectorization.py
+    - _stress_test_concurrent.py
+    - _verify_new_optimizations.py
+    - _comprehensive_migration_verify.py
+    - test_early_stopping_boundary.py
+    - test_level2_sync.py
+    - test_partial_fill_transitions.py
+    - test_trading_panel_regression.py
+    - test_ui_refactor.py
+    - test_xtp_pro_interface_enhanced.py
+    - test_fundamental_data.py
+    - test_level2_data_panel_enhanced.py
+    - test_level2_integration.py
+    - test_level2_stress.py
+    - test_notification_audit.py
+    - test_pattern_color_coverage.py
+    - test_pattern_color_performance.py
+    - test_realtime_callback_chain.py
+    - test_realtime_callback_mode.py
+    - test_strategy_account_association.py
+    - test_strategy_account_resolution.py
+    - test_strong_buy_close_short_chain.py
+    - test_trading_confirmation_service.py
+    - test_websocket_error_boundary.py
+    - test_complete_order_management.py
+    - test_bettafish_monitoring_integration.py
+    - test_bettafish_services.py
+    - test_bettafish_advanced_monitoring.py
+    - test_tech_debt_001_fix.py
+    - test_async_to_thread_pattern.py
+    - test_backtest_result_manager_fix.py
+    - test_backtest_result_manager_fix_simple.py
+    - test_backtest_ui_functionality.py
+    - test_backtest_ui_static.py
+    - test_c20_benchmark_20k.py
+    - test_c20_extreme_whiplash.py
+    - test_c20_hf_cancel_stress.py
+    - test_c20_stress_log_analyzer.py
+    - test_c20_ultra_complex_stress.py
+    - test_call_chain_validation.py
+    - test_call_chain_verification.py
+    - test_close_long_short_with_real_positions.py
+    - test_concurrent_backtest_nonblocking.py
+    - test_create_order_tables.py
+    - test_dbservice_init.py
+    - test_e2e_backtest_runner.py
+    - test_e2e_integration_trading.py
+    - test_indicator_business_validation.py
+    - test_indicator_deep_validation.py
+    - test_macd_ema_vectorization.py
+    - test_multiprocess_performance.py
+    - test_order_auto_create.py
+    - test_order_auto_create_simple.py
+    - test_order_db_connection.py
+    - test_order_db_file.py
+    - test_p0_fix_scenario.py
+    - test_performance_analysis.py
+    - test_performance_optimization.py
+    - test_preprocessing_analysis.py
+    - test_riskmanager_extreme_stability.py
+    - test_risk_control_audit.py
+    - test_simnow_integration.py
+    - test_stress_50k.py
+    - test_ui_components_code_check.py
+    - _analyze_full_regression_failures.py
+    - _benchmark_csv_import.py
+    - _benchmark_executemany.py
+    - _benchmark_memory.py
+    - _benchmark_r28_fixes.py
+    - _r22_p2_remediation_plan.py
+    - _run_full_regression.py
+    - _verify_sherman_morrison_rank1_equivalence.py
+    - _perf_historical_var_p2.py
+    - final/complete_system_integration_test.py
+    - run_test.py
+
+[2] 扫描候选文件数: 375
+
+[3] AST 分类结果:
+    - 真正 pytest 测试 (有 def test_*): 269
+    - 非 pytest 脚本 (有 __main__ 无 test_*): 49
+    - 两者都没有 (待人工确认): 56
+    - 解析失败文件: 1
+
+[4] 非 pytest 脚本清单 (49 个):
+    [✓ 已忽略] test_async_to_thread_pattern.py
+    [✓ 已忽略] test_backtest_result_manager_fix.py
+    [✓ 已忽略] test_backtest_result_manager_fix_simple.py
+    [✓ 已忽略] test_backtest_ui_functionality.py
+    [✓ 已忽略] test_backtest_ui_static.py
+    [✓ 已忽略] test_c20_benchmark_20k.py
+    [✓ 已忽略] test_c20_extreme_whiplash.py
+    [✓ 已忽略] test_c20_hf_cancel_stress.py
+    [✓ 已忽略] test_c20_stress_log_analyzer.py
+    [✓ 已忽略] test_c20_ultra_complex_stress.py
+    [✓ 已忽略] test_call_chain_validation.py
+    [✓ 已忽略] test_call_chain_verification.py
+    [✓ 已忽略] test_close_long_short_with_real_positions.py
+    [✓ 已忽略] test_concurrent_backtest_nonblocking.py
+    [✓ 已忽略] test_create_order_tables.py
+    [✓ 已忽略] test_dbservice_init.py
+    [✓ 已忽略] test_e2e_backtest_runner.py
+    [✓ 已忽略] test_e2e_integration_trading.py
+    [✓ 已忽略] test_indicator_business_validation.py
+    [✓ 已忽略] test_indicator_deep_validation.py
+    [✓ 已忽略] test_level2_sync.py
+    [✓ 已忽略] test_macd_ema_vectorization.py
+    [✓ 已忽略] test_multiprocess_performance.py
+    [✓ 已忽略] test_order_auto_create.py
+    [✓ 已忽略] test_order_auto_create_simple.py
+    [✓ 已忽略] test_order_db_connection.py
+    [✓ 已忽略] test_order_db_file.py
+    [✓ 已忽略] test_p0_fix_scenario.py
+    [✓ 已忽略] test_performance_analysis.py
+    [✓ 已忽略] test_performance_optimization.py
+    [✓ 已忽略] test_preprocessing_analysis.py
+    [✓ 已忽略] test_riskmanager_extreme_stability.py
+    [✓ 已忽略] test_risk_control_audit.py
+    [✓ 已忽略] test_simnow_integration.py
+    [✓ 已忽略] test_stress_50k.py
+    [✓ 已忽略] test_ui_components_code_check.py
+    [✓ 已忽略] _analyze_full_regression_failures.py
+    [✓ 已忽略] _benchmark_csv_import.py
+    [✓ 已忽略] _benchmark_executemany.py
+    [✓ 已忽略] _benchmark_memory.py
+    [✓ 已忽略] _benchmark_r28_fixes.py
+    [✓ 已忽略] _perf_historical_var_p2.py
+    [✗ 缺失] _perf_var_compare.py
+    [✗ 缺失] _perf_var_micro.py
+    [✓ 已忽略] _r22_p2_remediation_plan.py
+    [✓ 已忽略] _run_full_regression.py
+    [✗ 缺失] _verify_fallback.py
+    [✗ 缺失] _verify_fallback2.py
+    [✓ 已忽略] _verify_sherman_morrison_rank1_equivalence.py
+
+[5] 缺失 collect_ignore 的非 pytest 脚本数: 4
+    - _perf_var_compare.py  (test_funcs=[], has_main=True)
+    - _perf_var_micro.py  (test_funcs=[], has_main=True)
+    - _verify_fallback.py  (test_funcs=[], has_main=True)
+    - _verify_fallback2.py  (test_funcs=[], has_main=True)
+
+================================================================================
+二次验证结论:
+  扫描文件总数     : 375
+  AST 解析成功     : 374
+  AST 解析失败     : 1
+  真正 pytest 文件 : 269
+  非 pytest 脚本   : 49
+  已 collect_ignore: 45
+  需新增 collect_ignore: 4
+================================================================================
+
+需新增 collect_ignore 清单 (供修复 conftest.py 使用):
+    "_perf_var_compare.py",
+    "_perf_var_micro.py",
+    "_verify_fallback.py",
+    "_verify_fallback2.py",
+
+语法/解析失败文件 (无法 AST 分类，建议人工检查):
+    test_strong_buy_close_short_chain.py: invalid non-printable character U+FEFF (test_strong_buy_close_short_chain.py, line 1)

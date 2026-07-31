@@ -1,0 +1,522 @@
+{
+  "core/services/trading_service.py": {
+    "file": "core/services/trading_service.py",
+    "violations": [
+      {
+        "line": 1280,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 1299,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 1291,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 1278,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      }
+    ],
+    "total_lines": 1539
+  },
+  "core/services/advanced_risk_control_service.py": {
+    "file": "core/services/advanced_risk_control_service.py",
+    "violations": [],
+    "total_lines": 1644
+  },
+  "core/events/event_bus.py": {
+    "file": "core/events/event_bus.py",
+    "violations": [
+      {
+        "line": 623,
+        "exc_type": "RuntimeError",
+        "reason": "pass",
+        "snippet": "except RuntimeError:"
+      },
+      {
+        "line": 1214,
+        "exc_type": "RuntimeError",
+        "reason": "pass",
+        "snippet": "except RuntimeError:"
+      },
+      {
+        "line": 1598,
+        "exc_type": "RuntimeError",
+        "reason": "pass",
+        "snippet": "except RuntimeError:"
+      }
+    ],
+    "total_lines": 1746
+  },
+  "core/services/cache_service.py": {
+    "file": "core/services/cache_service.py",
+    "violations": [
+      {
+        "line": 779,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 1642,
+        "exc_type": "Exception",
+        "reason": "return_no_logger",
+        "snippet": "except Exception as e:"
+      },
+      {
+        "line": 466,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 1761,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      }
+    ],
+    "total_lines": 2314
+  },
+  "core/services/unified_data_manager.py": {
+    "file": "core/services/unified_data_manager.py",
+    "violations": [
+      {
+        "line": 1255,
+        "exc_type": "Exception",
+        "reason": "return_no_logger",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 6483,
+        "exc_type": "Exception",
+        "reason": "return_no_logger",
+        "snippet": "except Exception as e:"
+      },
+      {
+        "line": 4751,
+        "exc_type": "ValueError",
+        "reason": "return_no_logger",
+        "snippet": "except ValueError:"
+      },
+      {
+        "line": 7437,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 8219,
+        "exc_type": "RuntimeError",
+        "reason": "return_no_logger",
+        "snippet": "except RuntimeError:"
+      },
+      {
+        "line": 2145,
+        "exc_type": "(TypeError, ValueError)",
+        "reason": "continue",
+        "snippet": "except (TypeError, ValueError):"
+      },
+      {
+        "line": 6421,
+        "exc_type": "AttributeError",
+        "reason": "pass",
+        "snippet": "except AttributeError:"
+      },
+      {
+        "line": 1634,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 2159,
+        "exc_type": "(TypeError, ValueError)",
+        "reason": "continue",
+        "snippet": "except (TypeError, ValueError):"
+      },
+      {
+        "line": 1473,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 2332,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      }
+    ],
+    "total_lines": 8252
+  },
+  "core/trading/order_service.py": {
+    "file": "core/trading/order_service.py",
+    "violations": [
+      {
+        "line": 95,
+        "exc_type": "Exception",
+        "reason": "return_no_logger",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 109,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 123,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 137,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 983,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 1108,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 1686,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 721,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 735,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 1000,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 1013,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 1203,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 1724,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 1868,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 1913,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 1939,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 1997,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 2617,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 2627,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 2649,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 688,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 794,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 808,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 850,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 867,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 1274,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 1796,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 1861,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 1904,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 1930,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 1985,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 672,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 933,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 1296,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 1355,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 1582,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 1596,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 891,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 911,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 922,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 1437,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 1609,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      }
+    ],
+    "total_lines": 2829
+  },
+  "core/trading_engine.py": {
+    "file": "core/trading_engine.py",
+    "violations": [
+      {
+        "line": 2670,
+        "exc_type": "AttributeError",
+        "reason": "pass",
+        "snippet": "except AttributeError:"
+      },
+      {
+        "line": 2707,
+        "exc_type": "ZeroDivisionError",
+        "reason": "continue",
+        "snippet": "except ZeroDivisionError:"
+      },
+      {
+        "line": 2758,
+        "exc_type": "(TypeError, ValueError)",
+        "reason": "return_no_logger",
+        "snippet": "except (TypeError, ValueError):"
+      },
+      {
+        "line": 2621,
+        "exc_type": "(TypeError, ValueError)",
+        "reason": "continue",
+        "snippet": "except (TypeError, ValueError):"
+      },
+      {
+        "line": 2634,
+        "exc_type": "(TypeError, ValueError)",
+        "reason": "continue",
+        "snippet": "except (TypeError, ValueError):"
+      },
+      {
+        "line": 2749,
+        "exc_type": "(TypeError, ValueError)",
+        "reason": "continue",
+        "snippet": "except (TypeError, ValueError):"
+      },
+      {
+        "line": 2693,
+        "exc_type": "(TypeError, ValueError)",
+        "reason": "continue",
+        "snippet": "except (TypeError, ValueError):"
+      }
+    ],
+    "total_lines": 3319
+  },
+  "core/risk_manager.py": {
+    "file": "core/risk_manager.py",
+    "violations": [],
+    "total_lines": 1169
+  },
+  "core/services/service_bootstrap.py": {
+    "file": "core/services/service_bootstrap.py",
+    "violations": [
+      {
+        "line": 203,
+        "exc_type": "ImportError",
+        "reason": "pass",
+        "snippet": "except ImportError:"
+      },
+      {
+        "line": 6837,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:  # noqa: BLE001 - 容器不允许属性注入时静默忽略"
+      },
+      {
+        "line": 6890,
+        "exc_type": "NameError",
+        "reason": "pass",
+        "snippet": "except NameError:"
+      },
+      {
+        "line": 6106,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 6646,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 6003,
+        "exc_type": "Exception",
+        "reason": "pass",
+        "snippet": "except Exception:"
+      },
+      {
+        "line": 5355,
+        "exc_type": "ImportError",
+        "reason": "pass",
+        "snippet": "except ImportError:"
+      }
+    ],
+    "total_lines": 7177
+  }
+}

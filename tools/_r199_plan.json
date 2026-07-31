@@ -1,0 +1,78 @@
+{
+  "phase": "R199",
+  "date": "2026-07-25",
+  "method": "superpowers-6.0.3 (brainstorming → codegraph sync → writing-plans → subagent-driven-development → TDD → R+1 round)",
+  "codegraph": {
+    "synced_at": "R198 阶段已同步 (90 changed / 3 added / 87 modified / 4708 nodes in 20.7s)",
+    "r199_resync_needed": true,
+    "note": "R199 计划基于 R198 同步结果, 子智能体执行前可选择性 re-sync"
+  },
+  "sub_agents": [
+    {
+      "id": "A",
+      "name": "HVD-198-D-NEW-04 风险控制软解析 P0 治理",
+      "scope": "AdvancedRiskControlService 软解析全项目审计 + R51 §7.1 #5 严禁静默失败 + 显式降级日志",
+      "hvd": [
+        "HVD-198-D-NEW-04"
+      ],
+      "priority": "P0",
+      "duration_days": 1.0,
+      "key_files": [
+        "core/services/advanced_risk_control_service.py",
+        "core/services/dynamic_risk_adjustment_service.py",
+        "core/services/service_bootstrap.py",
+        "core/risk/"
+      ]
+    },
+    {
+      "id": "B",
+      "name": "HVD-198-D-NEW-01/02/03 P1 治理",
+      "scope": "R198-D 立项的 3 项 P1 HVD 实施",
+      "hvd": [
+        "HVD-198-D-NEW-01",
+        "HVD-198-D-NEW-02",
+        "HVD-198-D-NEW-03"
+      ],
+      "priority": "P1",
+      "duration_days": 1.5
+    },
+    {
+      "id": "C",
+      "name": "HVD-198-D-NEW-05/06/07 P1 治理",
+      "scope": "R198-D 立项的 3 项 P1 HVD 实施",
+      "hvd": [
+        "HVD-198-D-NEW-05",
+        "HVD-198-D-NEW-06",
+        "HVD-198-D-NEW-07"
+      ],
+      "priority": "P1",
+      "duration_days": 1.5
+    },
+    {
+      "id": "D",
+      "name": "R199 增量全项目深度新发现扫描",
+      "scope": "5 维度全项目扫描 (排除 R197/R198 已发现), 立项新 HVD 候选",
+      "hvd": [
+        "HVD-199-NEW"
+      ],
+      "priority": "P0/P1/P2",
+      "duration_days": 1.0
+    }
+  ],
+  "r_plus_1_round": {
+    "role": "主智能体",
+    "tasks": [
+      "Read 验证 4 子智能体修复物理存在",
+      "Grep 验证业务调用方",
+      "CodeGraph 验证业务链",
+      "类检查验证方法签名"
+    ]
+  },
+  "expected_outcomes": {
+    "p0_risk_fixes": "目标 5-10 项 P0 软解析修复",
+    "p1_hvd_completed": "目标 6-9 项 HVD 100% 闭环",
+    "new_hvd_candidates": "目标 5-10 项 (5 维度全项目扫描)",
+    "tdd_passes": "目标 100% (TDD 强制)",
+    "regression_passes": "目标 100% (R199 + R198 + R197 + R196 + R195 + R194)"
+  }
+}

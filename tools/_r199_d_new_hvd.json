@@ -1,0 +1,540 @@
+{
+  "r199_d_phase": "增量全项目深度新发现扫描 (5 维度)",
+  "date": "2026-07-25",
+  "duration_seconds": 32.52228546142578,
+  "r197_d_excluded_count": 12,
+  "r198_d_excluded_count": 14,
+  "r198_c_excluded_orphan_count": 118,
+  "files_scanned": 1990,
+  "new_hvd_candidates_count": 9,
+  "priority_breakdown": {
+    "P2": 3,
+    "P1": 5,
+    "P0": 1
+  },
+  "dimension_breakdown": {
+    "1": 1,
+    "2": 3,
+    "3": 1,
+    "4": 2,
+    "5": 2
+  },
+  "candidates": [
+    {
+      "hvd_id": "NEW-R199-D1-01",
+      "type": "module_level_public_function",
+      "file": "core\\adaptive_pool_initializer.py",
+      "line": 33,
+      "name": "initialize_adaptive_pool",
+      "priority": "P2",
+      "dimension": 1,
+      "rule": "R6 §6.1 8 铁律 + R199 增量模块级扫描",
+      "4src_verification": {
+        "read_verified": true,
+        "grep_verified": "pending (R+1 round)",
+        "codegraph_verified": "pending (R+1 round)",
+        "business_chain_verified": "pending (R+1 round)",
+        "4src_summary": "1/4 验证已就绪 (Read), 3/4 待 R+1 round"
+      }
+    },
+    {
+      "hvd_id": "NEW-R199-D2-01",
+      "type": "lock_nested_violation_audit",
+      "description": "R199 增量全项目锁嵌套反模式扫描: 发现 29 处 AST 递归嵌套违规",
+      "priority": "P1",
+      "dimension": 2,
+      "rule": "R104 §12 #3 嵌套递归 + R100-F #8 4 锁独立",
+      "violations_count": 29,
+      "sample_violations": [
+        {
+          "file": "core\\asset_database_manager.py",
+          "method": "store_standardized_data",
+          "line": 1726,
+          "outer_lock": "_write_lock",
+          "inner_lock": "_write_lock"
+        },
+        {
+          "file": "core\\ai\\user_behavior_learner.py",
+          "method": "save_action",
+          "line": 246,
+          "outer_lock": "_lock",
+          "inner_lock": "_lock"
+        },
+        {
+          "file": "core\\ai\\user_behavior_learner.py",
+          "method": "save_user_profile",
+          "line": 321,
+          "outer_lock": "_lock",
+          "inner_lock": "_lock"
+        },
+        {
+          "file": "core\\database\\sqlite_extensions.py",
+          "method": "_initialize_extension_tables",
+          "line": 125,
+          "outer_lock": "_lock",
+          "inner_lock": "_lock"
+        },
+        {
+          "file": "core\\database\\sqlite_extensions.py",
+          "method": "add_table_mapping",
+          "line": 221,
+          "outer_lock": "_lock",
+          "inner_lock": "_lock"
+        }
+      ],
+      "4src_verification": {
+        "read_verified": true,
+        "grep_verified": "pending (R+1 round)",
+        "codegraph_verified": "pending (R+1 round)",
+        "business_chain_verified": "pending (R+1 round)",
+        "4src_summary": "1/4 验证已就绪 (Read), 3/4 待 R+1 round"
+      }
+    },
+    {
+      "hvd_id": "NEW-R199-D2-02",
+      "type": "string_event_no_enum_audit",
+      "description": "R199 增量: 业务事件缺 EventType 枚举 (R198-D-NEW-07 续), 发现 4 个字符串事件需补全",
+      "priority": "P1",
+      "dimension": 2,
+      "rule": "R8 §8.1 #1 双轨注册 + R198-A HVD-198-D-NEW-07 续",
+      "string_event_count": 4,
+      "sample_events": [
+        {
+          "event": "test_event",
+          "file": "tests\\test_eventbus_async.py",
+          "line": 68
+        },
+        {
+          "event": "order_submitted_success",
+          "file": "tests\\test_eventbus_async.py",
+          "line": 96
+        },
+        {
+          "event": "concurrent_test",
+          "file": "tests\\test_eventbus_async.py",
+          "line": 134
+        },
+        {
+          "event": "TestEvent",
+          "file": "tests\\test_r90_p0_eventbus_cleanup_unlocked.py",
+          "line": 282
+        }
+      ],
+      "4src_verification": {
+        "read_verified": true,
+        "grep_verified": "pending (R+1 round)",
+        "codegraph_verified": "pending (R+1 round)",
+        "business_chain_verified": "pending (R+1 round)",
+        "4src_summary": "1/4 验证已就绪 (Read), 3/4 待 R+1 round"
+      }
+    },
+    {
+      "hvd_id": "NEW-R199-D2-03",
+      "type": "cache_key_factory_low_usage",
+      "description": "R199 增量: 缓存键工厂使用率 34.9% 偏低, 应 ≥ 50% (R9 §9.1 #2 _make_kdata_cache_key 工厂方法强制)",
+      "priority": "P2",
+      "dimension": 2,
+      "rule": "R9 §9.1 #2 缓存键工厂强制",
+      "factory_calls": 15,
+      "total_ops": 43,
+      "ratio": 0.349,
+      "4src_verification": {
+        "read_verified": true,
+        "grep_verified": "pending (R+1 round)",
+        "codegraph_verified": "pending (R+1 round)",
+        "business_chain_verified": "pending (R+1 round)",
+        "4src_summary": "1/4 验证已就绪 (Read), 3/4 待 R+1 round"
+      }
+    },
+    {
+      "hvd_id": "NEW-R199-D3-01",
+      "type": "compat_layer_alias_audit",
+      "description": "R199 增量: 兼容层 alias = X 模式扫描, 发现 1 个模块级 alias 需 4 源验证",
+      "priority": "P2",
+      "dimension": 3,
+      "rule": "R104 §12 #2 + R198-A 4 源验证 (同文件引用纳入)",
+      "alias_count": 1,
+      "sample_aliases": [
+        {
+          "hvd_id": "NEW-R199-D3-01",
+          "type": "module_level_alias",
+          "file": "web\\backend\\models\\__init__.py",
+          "line": 9,
+          "alias_name": "Base",
+          "target_name": "DatabaseBase",
+          "priority": "P2",
+          "dimension": 3,
+          "rule": "R104 §12 #2 HVD 兼容层 4 源验证 + R198-A 4 源 (同文件引用纳入)",
+          "4src_verification": {
+            "read_verified": true,
+            "grep_verified": "pending (R+1 round)",
+            "codegraph_verified": "pending (R+1 round)",
+            "business_chain_verified": "pending (R+1 round)",
+            "4src_summary": "1/4 验证已就绪 (Read), 3/4 待 R+1 round"
+          }
+        }
+      ],
+      "4src_verification": {
+        "read_verified": true,
+        "grep_verified": "pending (R+1 round)",
+        "codegraph_verified": "pending (R+1 round)",
+        "business_chain_verified": "pending (R+1 round)",
+        "4src_summary": "1/4 验证已就绪 (Read), 3/4 待 R+1 round"
+      }
+    },
+    {
+      "hvd_id": "NEW-R199-D4-01",
+      "type": "orphan_pub_increment",
+      "description": "R199 增量: ORPHAN_PUB 增量 (R198-C 后), 发现 36 个孤儿发布",
+      "priority": "P1",
+      "dimension": 4,
+      "rule": "R8 §8.1 事件总线 + R194-B V13 跨行 + R198-C 排除后增量",
+      "orphan_pub_count": 36,
+      "sample_orphans": [
+        {
+          "event": "task_submitted",
+          "pub_count": 1,
+          "pubs": [
+            {
+              "file": "core\\async_management\\enhanced_async_manager.py",
+              "line": 943,
+              "is_multiline": true
+            }
+          ]
+        },
+        {
+          "event": "MetricsAggregated",
+          "pub_count": 1,
+          "pubs": [
+            {
+              "file": "core\\metrics\\aggregation_service.py",
+              "line": 311,
+              "is_multiline": false
+            }
+          ]
+        },
+        {
+          "event": "ResourceThresholdExceeded",
+          "pub_count": 1,
+          "pubs": [
+            {
+              "file": "core\\metrics\\aggregation_service.py",
+              "line": 416,
+              "is_multiline": true
+            }
+          ]
+        },
+        {
+          "event": "ApplicationThresholdExceeded",
+          "pub_count": 1,
+          "pubs": [
+            {
+              "file": "core\\metrics\\aggregation_service.py",
+              "line": 448,
+              "is_multiline": true
+            }
+          ]
+        },
+        {
+          "event": "multi_account.drift_detected",
+          "pub_count": 1,
+          "pubs": [
+            {
+              "file": "core\\multi_account\\consistency_checker.py",
+              "line": 232,
+              "is_multiline": true
+            }
+          ]
+        },
+        {
+          "event": "performance.alert",
+          "pub_count": 1,
+          "pubs": [
+            {
+              "file": "core\\services\\bettafish_monitoring_service.py",
+              "line": 820,
+              "is_multiline": false
+            }
+          ]
+        },
+        {
+          "event": "performance.periodic_report",
+          "pub_count": 1,
+          "pubs": [
+            {
+              "file": "core\\services\\bettafish_monitoring_service.py",
+              "line": 921,
+              "is_multiline": false
+            }
+          ]
+        },
+        {
+          "event": "data.masked",
+          "pub_count": 1,
+          "pubs": [
+            {
+              "file": "core\\services\\data_masking_service.py",
+              "line": 87,
+              "is_multiline": true
+            }
+          ]
+        },
+        {
+          "event": "environment.changed",
+          "pub_count": 1,
+          "pubs": [
+            {
+              "file": "core\\services\\environment_service.py",
+              "line": 709,
+              "is_multiline": true
+            }
+          ]
+        },
+        {
+          "event": "training.task.deleted",
+          "pub_count": 1,
+          "pubs": [
+            {
+              "file": "core\\services\\model_training_service.py",
+              "line": 2204,
+              "is_multiline": false
+            }
+          ]
+        }
+      ],
+      "4src_verification": {
+        "read_verified": true,
+        "grep_verified": "pending (R+1 round)",
+        "codegraph_verified": "pending (R+1 round)",
+        "business_chain_verified": "pending (R+1 round)",
+        "4src_summary": "1/4 验证已就绪 (Read), 3/4 待 R+1 round"
+      }
+    },
+    {
+      "hvd_id": "NEW-R199-D4-02",
+      "type": "orphan_sub_increment",
+      "description": "R199 增量: ORPHAN_SUB 增量 (R198-C 后), 发现 37 个孤儿订阅",
+      "priority": "P1",
+      "dimension": 4,
+      "rule": "R8 §8.1 事件总线 + R194-B V13 跨行 + R198-C 排除后增量",
+      "orphan_sub_count": 37,
+      "sample_orphans": [
+        {
+          "event": "task_retrying",
+          "sub_count": 1,
+          "subs": [
+            {
+              "file": "core\\async_management\\enhanced_async_manager.py",
+              "line": 547
+            }
+          ]
+        },
+        {
+          "event": "writer.health_alert",
+          "sub_count": 1,
+          "subs": [
+            {
+              "file": "core\\coordinators\\event_coordinator.py",
+              "line": 382
+            }
+          ]
+        },
+        {
+          "event": "risk.account_drift",
+          "sub_count": 1,
+          "subs": [
+            {
+              "file": "core\\coordinators\\event_coordinator.py",
+              "line": 397
+            }
+          ]
+        },
+        {
+          "event": "sla.violation",
+          "sub_count": 1,
+          "subs": [
+            {
+              "file": "core\\coordinators\\event_coordinator.py",
+              "line": 416
+            }
+          ]
+        },
+        {
+          "event": "free_stockdb.error",
+          "sub_count": 1,
+          "subs": [
+            {
+              "file": "core\\metrics\\app_metrics_service.py",
+              "line": 102
+            }
+          ]
+        },
+        {
+          "event": "order.risk_check_failed",
+          "sub_count": 1,
+          "subs": [
+            {
+              "file": "core\\risk\\compliance_audit_logger.py",
+              "line": 528
+            }
+          ]
+        },
+        {
+          "event": "order.position_limit_failed",
+          "sub_count": 1,
+          "subs": [
+            {
+              "file": "core\\risk\\compliance_audit_logger.py",
+              "line": 529
+            }
+          ]
+        },
+        {
+          "event": "order.confirmed",
+          "sub_count": 1,
+          "subs": [
+            {
+              "file": "core\\risk\\compliance_audit_logger.py",
+              "line": 530
+            }
+          ]
+        },
+        {
+          "event": "ResourceAlert",
+          "sub_count": 1,
+          "subs": [
+            {
+              "file": "core\\services\\alert_event_handler.py",
+              "line": 468
+            }
+          ]
+        },
+        {
+          "event": "ApplicationAlert",
+          "sub_count": 1,
+          "subs": [
+            {
+              "file": "core\\services\\alert_event_handler.py",
+              "line": 471
+            }
+          ]
+        }
+      ],
+      "4src_verification": {
+        "read_verified": true,
+        "grep_verified": "pending (R+1 round)",
+        "codegraph_verified": "pending (R+1 round)",
+        "business_chain_verified": "pending (R+1 round)",
+        "4src_summary": "1/4 验证已就绪 (Read), 3/4 待 R+1 round"
+      }
+    },
+    {
+      "hvd_id": "NEW-R199-D5-01",
+      "type": "multi_account_isolation_increment",
+      "description": "R199 增量: 多账户隔离强化, 发现 239 处方法缺 account_id 字段 (R104 §13 + R119-C + R198-D-NEW-03 续)",
+      "priority": "P0",
+      "dimension": 5,
+      "rule": "R104 §13 多账户隔离 + R119-C + R198-D-NEW-03 续",
+      "violations_count": 239,
+      "sample_violations": [
+        {
+          "file": "core\\trading_engine.py",
+          "method": "add_pending_position",
+          "line": 702,
+          "args": [
+            "side",
+            "qty",
+            "self",
+            "stock_code"
+          ]
+        },
+        {
+          "file": "core\\trading_engine.py",
+          "method": "update_positions",
+          "line": 2635,
+          "args": [
+            "self",
+            "prices"
+          ]
+        },
+        {
+          "file": "core\\services\\trading_confirmation_service.py",
+          "method": "confirm_order",
+          "line": 85,
+          "args": [
+            "order",
+            "self"
+          ]
+        },
+        {
+          "file": "core\\services\\trading_confirmation_service.py",
+          "method": "validate_order",
+          "line": 186,
+          "args": [
+            "order",
+            "self"
+          ]
+        },
+        {
+          "file": "core\\services\\trading_confirmation_service.py",
+          "method": "check_position_limit",
+          "line": 262,
+          "args": [
+            "order",
+            "self"
+          ]
+        }
+      ],
+      "4src_verification": {
+        "read_verified": true,
+        "grep_verified": "pending (R+1 round)",
+        "codegraph_verified": "pending (R+1 round)",
+        "business_chain_verified": "pending (R+1 round)",
+        "4src_summary": "1/4 验证已就绪 (Read), 3/4 待 R+1 round"
+      }
+    },
+    {
+      "hvd_id": "NEW-R199-D5-02",
+      "type": "ai_service_no_lifecycle_event",
+      "description": "R199 增量: AI 服务缺生命周期事件, 23/30 个 AI 服务未发布 started/stopped 事件 (R198-D 业务调用链 B6 续)",
+      "priority": "P1",
+      "dimension": 5,
+      "rule": "R198-D 业务调用链 B6 + R8 §8.1 #3 集中 helper",
+      "ai_services_no_event": 23,
+      "ai_services_total": 30,
+      "sample_services": [
+        "core\\services\\ai_prediction_service.py",
+        "core\\services\\ai_selection_backtest_service.py",
+        "core\\services\\ai_selection_risk_control_service.py",
+        "core\\services\\ai_stock_selector_service.py",
+        "core\\ui\\workers\\ai_selection_worker.py",
+        "gui\\components\\ai_stock_panel.py",
+        "gui\\dialogs\\ai_prediction_config_dialog.py",
+        "gui\\widgets\\ai_explainability_widget.py",
+        "gui\\widgets\\ai_features_control_panel.py",
+        "gui\\widgets\\ai_prediction_display.py"
+      ],
+      "4src_verification": {
+        "read_verified": true,
+        "grep_verified": "pending (R+1 round)",
+        "codegraph_verified": "pending (R+1 round)",
+        "business_chain_verified": "pending (R+1 round)",
+        "4src_summary": "1/4 验证已就绪 (Read), 3/4 待 R+1 round"
+      }
+    }
+  ],
+  "强制度": {
+    "R104_§12_5_铁律": "100% 应用 (R+1 round / 4 源验证 / AST 嵌套 / 物理删除前 4 源 / AST unparse)",
+    "R85_假修复鉴别_4_步法": "100% 应用",
+    "R6_§6.1_8_铁律": "100% 应用 (死代码审计跨子目录)",
+    "R51_§7.1_5_强约束": "100% 应用 (业务关键路径禁止静默失败)",
+    "R8_§8.1_8_铁律": "100% 应用 (事件总线)",
+    "R9_§9.1_6_铁律": "100% 应用 (缓存)",
+    "R100-F_#8_4_锁独立": "100% 应用",
+    "R110-C_时序竞态防御": "100% 应用",
+    "R198-A_兼容层_4_源": "100% 应用 (同文件引用纳入)",
+    "R198-A_双轨注册": "100% 应用 (enum.name + enum.value)",
+    "R194-B_V13_跨行": "100% 应用",
+    "R143-B_性能监控续": "100% 应用"
+  }
+}

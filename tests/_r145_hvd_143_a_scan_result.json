@@ -1,0 +1,977 @@
+{
+  "scan_date": "2026-07-15",
+  "scan_round": "R145 HVD-143-A Phase 1",
+  "total_files": 7,
+  "total_violations": 151,
+  "files": [
+    {
+      "file": "core/risk_manager.py",
+      "total_lines": 2026,
+      "total_except_blocks": 41,
+      "total_logger_calls_in_except": 34,
+      "violations": [
+        {
+          "except_line": 85,
+          "logger_line": 86,
+          "logger_method": "warning",
+          "snippet": "            logger.warning(f\"持仓 {stock_code} 数据格式异常: {data}，返回空PositionData\")"
+        },
+        {
+          "except_line": 351,
+          "logger_line": 352,
+          "logger_method": "info",
+          "snippet": "            logger.info(f\"风险管理器初始化失败: {str(e)}\")"
+        },
+        {
+          "except_line": 385,
+          "logger_line": 386,
+          "logger_method": "error",
+          "snippet": "            logger.error(f\"加载风险控制参数失败: {str(e)}\")"
+        },
+        {
+          "except_line": 385,
+          "logger_line": 387,
+          "logger_method": "warning",
+          "snippet": "            logger.warning(\"使用默认风险控制参数\")"
+        },
+        {
+          "except_line": 403,
+          "logger_line": 404,
+          "logger_method": "debug",
+          "snippet": "            logger.debug(\"事件模块不可用，跳过事件订阅\")"
+        },
+        {
+          "except_line": 405,
+          "logger_line": 406,
+          "logger_method": "warning",
+          "snippet": "            logger.warning(f\"订阅事件失败: {e}\")"
+        },
+        {
+          "except_line": 446,
+          "logger_line": 447,
+          "logger_method": "error",
+          "snippet": "            logger.error(f\"RiskManager 处理 AccountSwitchedEvent 失败: {e}\")"
+        },
+        {
+          "except_line": 473,
+          "logger_line": 475,
+          "logger_method": "warning",
+          "snippet": "            logger.warning(f\"[R123-A.7] _clear_v2_positions_for_account 失败: {e}\")"
+        },
+        {
+          "except_line": 666,
+          "logger_line": 667,
+          "logger_method": "error",
+          "snippet": "            logger.error(f\"处理持仓更新事件失败: {e}\")"
+        },
+        {
+          "except_line": 730,
+          "logger_line": 731,
+          "logger_method": "warning",
+          "snippet": "            logger.warning(f\"[R123-A.3] v1→v2 初始迁移失败: {e}\")"
+        },
+        {
+          "except_line": 780,
+          "logger_line": 781,
+          "logger_method": "warning",
+          "snippet": "            logger.warning(f\"[R123-A.4] v2→v1 回滚失败: {e}\")"
+        },
+        {
+          "except_line": 792,
+          "logger_line": 793,
+          "logger_method": "debug",
+          "snippet": "            logger.debug(f\"[R123-A.5] diff 监控异常: {e}\")"
+        },
+        {
+          "except_line": 893,
+          "logger_line": 894,
+          "logger_method": "error",
+          "snippet": "            logger.error(f\"处理持仓更新事件失败: {e}\")"
+        },
+        {
+          "except_line": 936,
+          "logger_line": 937,
+          "logger_method": "error",
+          "snippet": "            logger.error(f\"更新风险控制参数失败: {str(e)}\")"
+        },
+        {
+          "except_line": 988,
+          "logger_line": 989,
+          "logger_method": "error",
+          "snippet": "            logger.error(f\"风险检查失败: {str(e)}\")"
+        },
+        {
+          "except_line": 1033,
+          "logger_line": 1034,
+          "logger_method": "error",
+          "snippet": "            logger.error(f\"回测交易风险检查失败: {str(e)}\")"
+        },
+        {
+          "except_line": 1112,
+          "logger_line": 1113,
+          "logger_method": "error",
+          "snippet": "            logger.error(f\"检查持仓限制失败: {str(e)}\")"
+        },
+        {
+          "except_line": 1216,
+          "logger_line": 1217,
+          "logger_method": "error",
+          "snippet": "            logger.error(f\"检查止损失败: {str(e)}\")"
+        },
+        {
+          "except_line": 1383,
+          "logger_line": 1384,
+          "logger_method": "warning",
+          "snippet": "            logger.warning(f\"动态阈值计算失败, fallback 到静态阈值: {e}\")"
+        },
+        {
+          "except_line": 1405,
+          "logger_line": 1406,
+          "logger_method": "error",
+          "snippet": "            logger.error(f\"检查回撤失败: {str(e)}\")"
+        },
+        {
+          "except_line": 1432,
+          "logger_line": 1433,
+          "logger_method": "error",
+          "snippet": "            logger.error(f\"更新权益信息失败: {str(e)}\")"
+        },
+        {
+          "except_line": 1787,
+          "logger_line": 1788,
+          "logger_method": "error",
+          "snippet": "            logger.error(f\"TradeOrchestrator 初始化失败: {e}\")"
+        },
+        {
+          "except_line": 1895,
+          "logger_line": 1896,
+          "logger_method": "error",
+          "snippet": "            logger.error(f\"TradeOrchestrator 编排失败: {e}\")"
+        },
+        {
+          "except_line": 1922,
+          "logger_line": 1923,
+          "logger_method": "warning",
+          "snippet": "            logger.warning(f\"止损计算异常，使用默认止损: {e}\")"
+        },
+        {
+          "except_line": 1950,
+          "logger_line": 1951,
+          "logger_method": "warning",
+          "snippet": "            logger.warning(f\"资金管理计算异常: {e}\")"
+        },
+        {
+          "except_line": 526,
+          "logger_line": 527,
+          "logger_method": "debug",
+          "snippet": "                logger.debug(f\"[R126-P0-1] {service_name} 软解析失败 (降级 None): {e}\")"
+        },
+        {
+          "except_line": 544,
+          "logger_line": 545,
+          "logger_method": "debug",
+          "snippet": "                logger.debug(f\"[R126-P0-1] {service_name} 软解析失败 (降级 None): {e}\")"
+        },
+        {
+          "except_line": 663,
+          "logger_line": 664,
+          "logger_method": "debug",
+          "snippet": "                logger.debug(f\"[R123-A.5] diff 监控跳过: {diff_exc}\")"
+        },
+        {
+          "except_line": 696,
+          "logger_line": 697,
+          "logger_method": "warning",
+          "snippet": "                logger.warning(f\"[R123-A.3] v1→v2 初始迁移失败 (非致命): {mig_exc}\")"
+        },
+        {
+          "except_line": 1278,
+          "logger_line": 1281,
+          "logger_method": "debug",
+          "snippet": "                logger.debug(f\"VaR 分位数更新失败 (q95/q99): {var_exc}\")"
+        },
+        {
+          "except_line": 1516,
+          "logger_line": 1517,
+          "logger_method": "debug",
+          "snippet": "                    logger.debug("
+        },
+        {
+          "except_line": 1533,
+          "logger_line": 1534,
+          "logger_method": "debug",
+          "snippet": "                    logger.debug("
+        },
+        {
+          "except_line": 1846,
+          "logger_line": 1847,
+          "logger_method": "warning",
+          "snippet": "                    logger.warning(f\"止盈计算异常: {e}\")"
+        }
+      ],
+      "violation_count": 33
+    },
+    {
+      "file": "core/events/event_bus.py",
+      "total_lines": 1721,
+      "total_except_blocks": 33,
+      "total_logger_calls_in_except": 29,
+      "violations": [
+        {
+          "except_line": 201,
+          "logger_line": 202,
+          "logger_method": "warning",
+          "snippet": "            logger.warning("
+        },
+        {
+          "except_line": 407,
+          "logger_line": 413,
+          "logger_method": "warning",
+          "snippet": "            logger.warning("
+        },
+        {
+          "except_line": 462,
+          "logger_line": 468,
+          "logger_method": "warning",
+          "snippet": "            logger.warning("
+        },
+        {
+          "except_line": 670,
+          "logger_line": 672,
+          "logger_method": "error",
+          "snippet": "            logger.error("
+        },
+        {
+          "except_line": 1214,
+          "logger_line": 1215,
+          "logger_method": "warning",
+          "snippet": "            logger.warning("
+        },
+        {
+          "except_line": 1713,
+          "logger_line": 1715,
+          "logger_method": "debug",
+          "snippet": "            logger.debug("
+        },
+        {
+          "except_line": 792,
+          "logger_line": 797,
+          "logger_method": "warning",
+          "snippet": "                logger.warning("
+        },
+        {
+          "except_line": 1339,
+          "logger_line": 1340,
+          "logger_method": "error",
+          "snippet": "                logger.error("
+        },
+        {
+          "except_line": 1636,
+          "logger_line": 1641,
+          "logger_method": "warning",
+          "snippet": "                logger.warning("
+        },
+        {
+          "except_line": 578,
+          "logger_line": 584,
+          "logger_method": "warning",
+          "snippet": "                    logger.warning("
+        },
+        {
+          "except_line": 633,
+          "logger_line": 639,
+          "logger_method": "warning",
+          "snippet": "                    logger.warning("
+        },
+        {
+          "except_line": 681,
+          "logger_line": 687,
+          "logger_method": "warning",
+          "snippet": "                logger.warning("
+        },
+        {
+          "except_line": 714,
+          "logger_line": 716,
+          "logger_method": "warning",
+          "snippet": "                logger.warning("
+        },
+        {
+          "except_line": 769,
+          "logger_line": 774,
+          "logger_method": "warning",
+          "snippet": "                    logger.warning("
+        },
+        {
+          "except_line": 828,
+          "logger_line": 830,
+          "logger_method": "exception",
+          "snippet": "                logger.exception("
+        },
+        {
+          "except_line": 1554,
+          "logger_line": 1559,
+          "logger_method": "warning",
+          "snippet": "                    logger.warning("
+        },
+        {
+          "except_line": 436,
+          "logger_line": 437,
+          "logger_method": "error",
+          "snippet": "                        logger.error(f\"Failed to publish error event: {inner_e}\")"
+        },
+        {
+          "except_line": 706,
+          "logger_line": 708,
+          "logger_method": "warning",
+          "snippet": "                        logger.warning("
+        },
+        {
+          "except_line": 1356,
+          "logger_line": 1357,
+          "logger_method": "error",
+          "snippet": "                        logger.error(f\"Failed to publish error event: {inner_e}\")"
+        },
+        {
+          "except_line": 1440,
+          "logger_line": 1446,
+          "logger_method": "warning",
+          "snippet": "                        logger.warning("
+        },
+        {
+          "except_line": 551,
+          "logger_line": 557,
+          "logger_method": "warning",
+          "snippet": "                                logger.warning("
+        },
+        {
+          "except_line": 567,
+          "logger_line": 572,
+          "logger_method": "warning",
+          "snippet": "                                logger.warning("
+        }
+      ],
+      "violation_count": 22
+    },
+    {
+      "file": "core/services/strategy_service.py",
+      "total_lines": 3319,
+      "total_except_blocks": 100,
+      "total_logger_calls_in_except": 95,
+      "violations": [
+        {
+          "except_line": 549,
+          "logger_line": 550,
+          "logger_method": "warning",
+          "snippet": "            logger.warning(f\"获取服务容器失败，生成默认策略: {e_container}\")"
+        },
+        {
+          "except_line": 1055,
+          "logger_line": 1057,
+          "logger_method": "error",
+          "snippet": "            logger.error(f\"回测请求上下文: market_data={market_data.stock_code}, context={context.stock_code} - {context.start_date} 至 {context.end_date}\")"
+        },
+        {
+          "except_line": 1208,
+          "logger_line": 1215,
+          "logger_method": "error",
+          "snippet": "            logger.error(f\"回测上下文: {backtest_task.context}\")"
+        },
+        {
+          "except_line": 2195,
+          "logger_line": 2196,
+          "logger_method": "error",
+          "snippet": "            logger.error(f\"获取性能指标失败: {e}\")"
+        },
+        {
+          "except_line": 2429,
+          "logger_line": 2430,
+          "logger_method": "error",
+          "snippet": "            logger.error(f\"检查性能阈值失败: {e}\")"
+        },
+        {
+          "except_line": 2590,
+          "logger_line": 2591,
+          "logger_method": "error",
+          "snippet": "            logger.error(f\"生成性能建议失败: {e}\")"
+        },
+        {
+          "except_line": 2708,
+          "logger_line": 2709,
+          "logger_method": "error",
+          "snippet": "            logger.error(f\"加载内置策略模板失败: {e}\")"
+        },
+        {
+          "except_line": 3251,
+          "logger_line": 3252,
+          "logger_method": "warning",
+          "snippet": "            logger.warning(f\"[STRATEGY.CLEANUP.HEALTH_ALERT.PUBLISH.ERROR] err={pub_e}\")"
+        },
+        {
+          "except_line": 382,
+          "logger_line": 383,
+          "logger_method": "warning",
+          "snippet": "                logger.warning(\"FactorWeave策略插件不可用\")"
+        },
+        {
+          "except_line": 389,
+          "logger_line": 390,
+          "logger_method": "warning",
+          "snippet": "                logger.warning(\"Backtrader策略插件不可用\")"
+        },
+        {
+          "except_line": 398,
+          "logger_line": 399,
+          "logger_method": "warning",
+          "snippet": "                logger.warning(\"复权价格动量策略插件不可用\")"
+        },
+        {
+          "except_line": 407,
+          "logger_line": 408,
+          "logger_method": "warning",
+          "snippet": "                logger.warning(\"VWAP均值回归策略插件不可用\")"
+        },
+        {
+          "except_line": 415,
+          "logger_line": 416,
+          "logger_method": "warning",
+          "snippet": "                logger.warning(\"自定义策略插件不可用\")"
+        },
+        {
+          "except_line": 423,
+          "logger_line": 424,
+          "logger_method": "warning",
+          "snippet": "                logger.warning(\"均值回归策略插件不可用\")"
+        },
+        {
+          "except_line": 546,
+          "logger_line": 547,
+          "logger_method": "warning",
+          "snippet": "                logger.warning(f\"从数据库加载策略配置失败，生成默认策略: {e_db}\")"
+        },
+        {
+          "except_line": 807,
+          "logger_line": 808,
+          "logger_method": "error",
+          "snippet": "                logger.error(f\"保存策略配置到数据库失败: {e_db}\")"
+        },
+        {
+          "except_line": 879,
+          "logger_line": 880,
+          "logger_method": "warning",
+          "snippet": "                logger.warning(f\"更新策略配置到数据库失败，但内存配置已更新: {e_db}\")"
+        },
+        {
+          "except_line": 921,
+          "logger_line": 922,
+          "logger_method": "error",
+          "snippet": "                logger.error(f\"从数据库中删除策略配置失败: {e_db}\")"
+        },
+        {
+          "except_line": 1201,
+          "logger_line": 1203,
+          "logger_method": "warning",
+          "snippet": "                logger.warning("
+        },
+        {
+          "except_line": 2235,
+          "logger_line": 2236,
+          "logger_method": "debug",
+          "snippet": "                logger.debug(f\"StrategyService get_metrics 整合 get_performance_metrics 失败: {e}\")"
+        },
+        {
+          "except_line": 319,
+          "logger_line": 320,
+          "logger_method": "warning",
+          "snippet": "                logger.warning(f\"2参数调用失败，尝试1参数: {e2}\")"
+        },
+        {
+          "except_line": 1040,
+          "logger_line": 1046,
+          "logger_method": "error",
+          "snippet": "                    logger.error(f\"回测任务超时: {task_id}, 超时时间: {self._backtest_timeout_seconds}秒\")"
+        },
+        {
+          "except_line": 1226,
+          "logger_line": 1227,
+          "logger_method": "warning",
+          "snippet": "                logger.warning(f\"发布策略错误事件失败: {event_error}\")"
+        },
+        {
+          "except_line": 1446,
+          "logger_line": 1452,
+          "logger_method": "error",
+          "snippet": "                    logger.error(f\"优化任务超时: {task_id}, 超时时间: {self._optimization_timeout_seconds}秒\")"
+        },
+        {
+          "except_line": 1533,
+          "logger_line": 1534,
+          "logger_method": "warning",
+          "snippet": "                logger.warning(f\"发布优化错误事件失败: {event_error}\")"
+        },
+        {
+          "except_line": 3208,
+          "logger_line": 3221,
+          "logger_method": "critical",
+          "snippet": "                        logger.critical("
+        },
+        {
+          "except_line": 503,
+          "logger_line": 504,
+          "logger_method": "warning",
+          "snippet": "                        logger.warning(f\"解析策略 {strategy_name} 的元数据失败，使用空字典\")"
+        }
+      ],
+      "violation_count": 27
+    },
+    {
+      "file": "core/services/notification_service.py",
+      "total_lines": 2155,
+      "total_except_blocks": 60,
+      "total_logger_calls_in_except": 57,
+      "violations": [
+        {
+          "except_line": 116,
+          "logger_line": 117,
+          "logger_method": "warning",
+          "snippet": "        logger.warning("
+        },
+        {
+          "except_line": 481,
+          "logger_line": 482,
+          "logger_method": "error",
+          "snippet": "            logger.error(f\"Failed to initialize default channels: {e}\")"
+        },
+        {
+          "except_line": 574,
+          "logger_line": 575,
+          "logger_method": "error",
+          "snippet": "            logger.error(f\"Failed to load notification config: {e}\")"
+        },
+        {
+          "except_line": 574,
+          "logger_line": 576,
+          "logger_method": "info",
+          "snippet": "            logger.info(\"✓ Using default notification configuration\")"
+        },
+        {
+          "except_line": 981,
+          "logger_line": 982,
+          "logger_method": "error",
+          "snippet": "            logger.error(f\"Failed to send alert for rule {rule_id}: {e}\")"
+        },
+        {
+          "except_line": 1061,
+          "logger_line": 1062,
+          "logger_method": "error",
+          "snippet": "            logger.error(f\"Failed to check duplicate message: {e}\")"
+        },
+        {
+          "except_line": 1276,
+          "logger_line": 1277,
+          "logger_method": "error",
+          "snippet": "            logger.error(f\"Failed to send email notification: {e}\")"
+        },
+        {
+          "except_line": 1336,
+          "logger_line": 1337,
+          "logger_method": "error",
+          "snippet": "            logger.error(f\"Webhook HTTP error: {e.code} - {e.reason}\")"
+        },
+        {
+          "except_line": 1339,
+          "logger_line": 1340,
+          "logger_method": "error",
+          "snippet": "            logger.error(f\"Webhook URL error: {e.reason}\")"
+        },
+        {
+          "except_line": 1420,
+          "logger_line": 1421,
+          "logger_method": "error",
+          "snippet": "            logger.error(f\"DingTalk HTTP error: {e.code} - {e.reason}\")"
+        },
+        {
+          "except_line": 1423,
+          "logger_line": 1424,
+          "logger_method": "error",
+          "snippet": "            logger.error(f\"DingTalk URL error: {e.reason}\")"
+        },
+        {
+          "except_line": 1426,
+          "logger_line": 1427,
+          "logger_method": "error",
+          "snippet": "            logger.error(f\"Failed to send dingtalk notification: {e}\")"
+        },
+        {
+          "except_line": 1511,
+          "logger_line": 1512,
+          "logger_method": "warning",
+          "snippet": "            logger.warning(\"PyQt5 not available for desktop notification\")"
+        },
+        {
+          "except_line": 1514,
+          "logger_line": 1515,
+          "logger_method": "error",
+          "snippet": "            logger.error(f\"Failed to send desktop notification: {e}\")"
+        },
+        {
+          "except_line": 1737,
+          "logger_line": 1738,
+          "logger_method": "error",
+          "snippet": "            logger.error(f\"Failed to send sound notification: {e}\")"
+        },
+        {
+          "except_line": 1500,
+          "logger_line": 1501,
+          "logger_method": "error",
+          "snippet": "                    logger.error(f\"Failed to show desktop notification: {e}\")"
+        },
+        {
+          "except_line": 1728,
+          "logger_line": 1729,
+          "logger_method": "error",
+          "snippet": "                    logger.error(f\"Failed to play sound in thread: {e}\")"
+        },
+        {
+          "except_line": 1553,
+          "logger_line": 1554,
+          "logger_method": "warning",
+          "snippet": "                    logger.warning("
+        },
+        {
+          "except_line": 1680,
+          "logger_line": 1681,
+          "logger_method": "warning",
+          "snippet": "                                logger.warning(\"[R99-D P1-4] default afplay timeout\")"
+        },
+        {
+          "except_line": 1656,
+          "logger_line": 1657,
+          "logger_method": "warning",
+          "snippet": "                                    logger.warning("
+        },
+        {
+          "except_line": 1670,
+          "logger_line": 1671,
+          "logger_method": "warning",
+          "snippet": "                                    logger.warning("
+        },
+        {
+          "except_line": 1720,
+          "logger_line": 1721,
+          "logger_method": "warning",
+          "snippet": "                                logger.warning(\"[R99-D P1-4] default aplay timeout\")"
+        },
+        {
+          "except_line": 1696,
+          "logger_line": 1697,
+          "logger_method": "warning",
+          "snippet": "                                    logger.warning("
+        },
+        {
+          "except_line": 1710,
+          "logger_line": 1711,
+          "logger_method": "warning",
+          "snippet": "                                    logger.warning("
+        }
+      ],
+      "violation_count": 24
+    },
+    {
+      "file": "core/trading/order_event_handlers.py",
+      "total_lines": 459,
+      "total_except_blocks": 8,
+      "total_logger_calls_in_except": 8,
+      "violations": [
+        {
+          "except_line": 386,
+          "logger_line": 388,
+          "logger_method": "debug",
+          "snippet": "            logger.debug("
+        },
+        {
+          "except_line": 431,
+          "logger_line": 433,
+          "logger_method": "warning",
+          "snippet": "            logger.warning("
+        },
+        {
+          "except_line": 165,
+          "logger_line": 168,
+          "logger_method": "warning",
+          "snippet": "                logger.warning("
+        }
+      ],
+      "violation_count": 3
+    },
+    {
+      "file": "core/metrics/aggregation_service.py",
+      "total_lines": 487,
+      "total_except_blocks": 6,
+      "total_logger_calls_in_except": 7,
+      "violations": [
+        {
+          "except_line": 238,
+          "logger_line": 264,
+          "logger_method": "critical",
+          "snippet": "                    logger.critical("
+        },
+        {
+          "except_line": 486,
+          "logger_line": 487,
+          "logger_method": "error",
+          "snippet": "                logger.error(f\"取消事件订阅失败: {e}\")"
+        },
+        {
+          "except_line": 299,
+          "logger_line": 300,
+          "logger_method": "error",
+          "snippet": "                    logger.error(f\"发布聚合指标事件失败: {e}\")"
+        },
+        {
+          "except_line": 408,
+          "logger_line": 409,
+          "logger_method": "error",
+          "snippet": "                    logger.error(f\"发布资源告警事件失败: {pub_error}\")"
+        },
+        {
+          "except_line": 440,
+          "logger_line": 441,
+          "logger_method": "error",
+          "snippet": "                    logger.error(f\"发布应用告警事件失败: {pub_error}\")"
+        }
+      ],
+      "violation_count": 5
+    },
+    {
+      "file": "core/asset_database_manager.py",
+      "total_lines": 3100,
+      "total_except_blocks": 76,
+      "total_logger_calls_in_except": 82,
+      "violations": [
+        {
+          "except_line": 180,
+          "logger_line": 181,
+          "logger_method": "debug",
+          "snippet": "            logger.debug(f\"从数据库加载数据库连接池配置失败（使用默认值）: {load_err}\")"
+        },
+        {
+          "except_line": 1259,
+          "logger_line": 1260,
+          "logger_method": "error",
+          "snippet": "            logger.error(f\"创建资产数据库失败 {asset_type.value}: {e}\")"
+        },
+        {
+          "except_line": 2107,
+          "logger_line": 2108,
+          "logger_method": "warning",
+          "snippet": "            logger.warning(f\"创建索引失败: {e}\")"
+        },
+        {
+          "except_line": 2400,
+          "logger_line": 2402,
+          "logger_method": "debug",
+          "snippet": "            logger.debug(f\"[数据插入] 失败详情 - 表: {table_name}, 数据类型: {data_type}, 列: {filtered_data.columns.tolist() if 'filtered_data' in locals() else 'N/A'}\")"
+        },
+        {
+          "except_line": 2815,
+          "logger_line": 2816,
+          "logger_method": "error",
+          "snippet": "            logger.error(f\"保存资产元数据失败: {symbol}, {e}\")"
+        },
+        {
+          "except_line": 2815,
+          "logger_line": 2818,
+          "logger_method": "error",
+          "snippet": "            logger.error(traceback.format_exc())"
+        },
+        {
+          "except_line": 1309,
+          "logger_line": 1310,
+          "logger_method": "warning",
+          "snippet": "                logger.warning(f\"数据库连接池配置持久化失败（忽略继续）: {persist_err}\")"
+        },
+        {
+          "except_line": 1576,
+          "logger_line": 1577,
+          "logger_method": "warning",
+          "snippet": "                logger.warning(f\"备份 SHA256 校验过程异常 (跳过): {sha_exc}\")"
+        },
+        {
+          "except_line": 1015,
+          "logger_line": 1016,
+          "logger_method": "warning",
+          "snippet": "                    logger.warning(f\"数据库迁移检查失败: {migration_error}\")"
+        },
+        {
+          "except_line": 1184,
+          "logger_line": 1185,
+          "logger_method": "warning",
+          "snippet": "                    logger.warning(f\"数据库迁移检查失败: {migration_error}\")"
+        },
+        {
+          "except_line": 1653,
+          "logger_line": 1654,
+          "logger_method": "error",
+          "snippet": "                    logger.error(f\"无效的资产类型字符串: {asset_type}，使用默认值 STOCK_A\")"
+        },
+        {
+          "except_line": 1660,
+          "logger_line": 1661,
+          "logger_method": "error",
+          "snippet": "                    logger.error(f\"无效的数据类型字符串: {data_type}，使用默认值 HISTORICAL_KLINE\")"
+        },
+        {
+          "except_line": 2378,
+          "logger_line": 2383,
+          "logger_method": "error",
+          "snippet": "                            logger.error(f\"[批量插入] 事务回滚: {e}\")"
+        },
+        {
+          "except_line": 2396,
+          "logger_line": 2398,
+          "logger_method": "debug",
+          "snippet": "                    logger.debug(f\"[批量插入] 清理临时表时出错（可忽略）: {unregister_error}\")"
+        },
+        {
+          "except_line": 2529,
+          "logger_line": 2533,
+          "logger_method": "debug",
+          "snippet": "                    logger.debug(f\"获取数据库大小失败 {db_path}: {size_exc}\")"
+        },
+        {
+          "except_line": 871,
+          "logger_line": 873,
+          "logger_method": "debug",
+          "snippet": "                        logger.debug(f\"duckdb_tables() 估算大小失败 (忽略): {stats_err}\")"
+        },
+        {
+          "except_line": 899,
+          "logger_line": 901,
+          "logger_method": "debug",
+          "snippet": "                        logger.debug(f\"查询数据源列表失败 (忽略): {sample_err}\")"
+        },
+        {
+          "except_line": 1082,
+          "logger_line": 1087,
+          "logger_method": "error",
+          "snippet": "                            logger.error(\"这不应该发生，因为表应该已经在上一步创建了\")"
+        },
+        {
+          "except_line": 1082,
+          "logger_line": 1089,
+          "logger_method": "error",
+          "snippet": "                            logger.error(\"应该存在的表: historical_kline_data, data_quality_monitor, asset_metadata\")"
+        },
+        {
+          "except_line": 1804,
+          "logger_line": 1807,
+          "logger_method": "warning",
+          "snippet": "                        logger.warning("
+        },
+        {
+          "except_line": 2889,
+          "logger_line": 2891,
+          "logger_method": "warning",
+          "snippet": "                        logger.warning("
+        },
+        {
+          "except_line": 1072,
+          "logger_line": 1074,
+          "logger_method": "debug",
+          "snippet": "                            logger.debug(f\"删除视图时（视图可能不存在）: {drop_error}\")"
+        },
+        {
+          "except_line": 1236,
+          "logger_line": 1240,
+          "logger_method": "error",
+          "snippet": "                                logger.error(\"应该存在的表: historical_kline_data, data_quality_monitor, asset_metadata\")"
+        },
+        {
+          "except_line": 1524,
+          "logger_line": 1526,
+          "logger_method": "debug",
+          "snippet": "                        logger.debug(f\"资产数据库备份清理临时文件失败 {tmp_path}: {e}\")"
+        },
+        {
+          "except_line": 1226,
+          "logger_line": 1228,
+          "logger_method": "debug",
+          "snippet": "                                logger.debug(f\"删除视图时（视图可能不存在）: {drop_error}\")"
+        },
+        {
+          "except_line": 2384,
+          "logger_line": 2385,
+          "logger_method": "error",
+          "snippet": "                            logger.error(f\"[批量插入] 回滚失败: {rollback_error}\")"
+        },
+        {
+          "except_line": 2701,
+          "logger_line": 2703,
+          "logger_method": "debug",
+          "snippet": "                            logger.debug(f\"资产 metadata 表回退创建失败: {e}\")"
+        },
+        {
+          "except_line": 2855,
+          "logger_line": 2858,
+          "logger_method": "debug",
+          "snippet": "                                logger.debug("
+        },
+        {
+          "except_line": 2912,
+          "logger_line": 2914,
+          "logger_method": "debug",
+          "snippet": "                                logger.debug("
+        },
+        {
+          "except_line": 2968,
+          "logger_line": 2970,
+          "logger_method": "debug",
+          "snippet": "                                logger.debug("
+        },
+        {
+          "except_line": 3029,
+          "logger_line": 3031,
+          "logger_method": "debug",
+          "snippet": "                                logger.debug("
+        },
+        {
+          "except_line": 1724,
+          "logger_line": 1726,
+          "logger_method": "warning",
+          "snippet": "                                    logger.warning("
+        },
+        {
+          "except_line": 1735,
+          "logger_line": 1737,
+          "logger_method": "warning",
+          "snippet": "                                        logger.warning("
+        },
+        {
+          "except_line": 1798,
+          "logger_line": 1800,
+          "logger_method": "debug",
+          "snippet": "                                        _lg.debug("
+        },
+        {
+          "except_line": 1749,
+          "logger_line": 1751,
+          "logger_method": "warning",
+          "snippet": "                                            logger.warning("
+        },
+        {
+          "except_line": 1769,
+          "logger_line": 1771,
+          "logger_method": "warning",
+          "snippet": "                                            logger.warning("
+        },
+        {
+          "except_line": 1759,
+          "logger_line": 1761,
+          "logger_method": "warning",
+          "snippet": "                                            logger.warning("
+        }
+      ],
+      "violation_count": 37
+    }
+  ]
+}

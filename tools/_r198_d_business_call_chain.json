@@ -1,0 +1,685 @@
+{
+  "r198_d_phase": "业务调用链深度分析 (5 核心业务)",
+  "date": "2026-07-25",
+  "duration_seconds": 0.0,
+  "businesses_analyzed": 5,
+  "total_hvds_identified": 7,
+  "priority_breakdown": {
+    "P1": 5,
+    "P0": 1,
+    "P2": 1
+  },
+  "business_call_chains": [
+    {
+      "name": "订单提交",
+      "name_en": "Order Submission",
+      "priority_chain": "P0 业务核心",
+      "entry_points": [
+        {
+          "name": "TradingEngine.submit_order",
+          "file": "core/trading/trading_engine.py",
+          "line_range": "~L800-1000",
+          "description": "订单提交主入口"
+        },
+        {
+          "name": "OrderService.create_order",
+          "file": "core/services/order_service.py",
+          "description": "订单服务层入口"
+        }
+      ],
+      "pipeline": [
+        {
+          "stage": 1,
+          "name": "validate_order",
+          "service": "OrderValidator",
+          "description": "订单参数验证 (账户/股票代码/数量/价格)",
+          "silent_failure_risks": [
+            "软解析验证规则",
+            "验证错误静默降级"
+          ]
+        },
+        {
+          "stage": 2,
+          "name": "check_risk",
+          "service": "RiskManager / AdvancedRiskControlService",
+          "description": "风险检查 (仓位/资金/单笔限额)",
+          "locks": [
+            "_positions_lock",
+            "_risk_lock"
+          ],
+          "silent_failure_risks": [
+            "R51 软解析风险控制服务 (AdvancedRiskControlService) 静默失败"
+          ]
+        },
+        {
+          "stage": 3,
+          "name": "persist_order",
+          "service": "OrderDatabase / OrderRepository",
+          "description": "订单持久化到数据库",
+          "silent_failure_risks": [
+            "数据库写入失败 retry 逻辑缺失"
+          ]
+        },
+        {
+          "stage": 4,
+          "name": "publish_event",
+          "service": "EventBus",
+          "description": "发布订单事件 (ORDER_SUBMITTED / ORDER_FILLED)",
+          "events": [
+            "order_submitted",
+            "order_filled",
+            "order_rejected"
+          ],
+          "locks": [
+            "_lock",
+            "_futures_lock",
+            "_stats_lock",
+            "_history_lock"
+          ]
+        }
+      ],
+      "exit_points": [
+        {
+          "name": "OrderEventHandler",
+          "file": "core/trading/order_event_handlers.py",
+          "description": "订单事件处理 (50 methods, R142 P0-4 新增)"
+        },
+        {
+          "name": "NotificationService",
+          "file": "core/services/notification_service.py",
+          "description": "订单结果通知 (邮件/微信/钉钉)"
+        }
+      ],
+      "services_involved": [
+        "AdvancedRiskControlService",
+        "EventBus",
+        "NotificationService",
+        "OrderDatabase",
+        "OrderEventHandlers",
+        "OrderRepository",
+        "OrderService",
+        "OrderValidator",
+        "RiskManager",
+        "TradingEngine"
+      ],
+      "locks_involved": [
+        "_futures_lock",
+        "_history_lock",
+        "_lock",
+        "_positions_lock",
+        "_risk_lock",
+        "_stats_lock"
+      ],
+      "caches_involved": [],
+      "events_published": [
+        "all_active_orders_cancelled",
+        "order_filled",
+        "order_rejected",
+        "order_save_failed_need_unfreeze",
+        "order_save_retry",
+        "order_saved",
+        "order_submitted"
+      ],
+      "silent_failure_risks": [
+        {
+          "location": "R51 软解析",
+          "description": "AdvancedRiskControlService service_container.get() 软解析失败时静默",
+          "severity": "P0",
+          "rule": "R51 §7.1 #5"
+        },
+        {
+          "location": "订单持久化 retry",
+          "description": "数据库写入失败后无 retry 逻辑 (R193-C-D-001 实施 ORDER_SAVE_RETRY)",
+          "severity": "P1",
+          "rule": "R193-C-D-001 闭环"
+        }
+      ],
+      "hvds_identified": [
+        {
+          "hvd_id": "HVD-198-D-NEW-01",
+          "type": "order_event_handler_register_audit",
+          "description": "core/trading/order_event_handlers.py 50 methods 启动期 register_event_type 覆盖率",
+          "priority": "P1",
+          "rule": "R8 §8.1 #1 双轨注册",
+          "workload_days": 0.3
+        },
+        {
+          "hvd_id": "HVD-198-D-NEW-02",
+          "type": "order_persistence_retry_chain",
+          "description": "订单持久化失败 retry 链路 R193-C-D-001 实施后是否真正端到端闭环",
+          "priority": "P1",
+          "rule": "R193-C-D-001 闭环 + R85 假修复鉴别",
+          "workload_days": 0.4
+        }
+      ]
+    },
+    {
+      "name": "账户管理",
+      "name_en": "Account Management",
+      "priority_chain": "P0 业务核心",
+      "entry_points": [
+        {
+          "name": "AccountManager.create_account",
+          "file": "core/trading/account_manager.py",
+          "description": "账户创建主入口"
+        },
+        {
+          "name": "AccountManager.update_account",
+          "file": "core/trading/account_manager.py",
+          "description": "账户更新入口"
+        }
+      ],
+      "pipeline": [
+        {
+          "stage": 1,
+          "name": "validate_account",
+          "service": "AccountValidator",
+          "description": "账户参数验证 (账号唯一性/资金/权限)"
+        },
+        {
+          "stage": 2,
+          "name": "create_account_record",
+          "service": "AccountRepository",
+          "description": "账户记录创建 (DB + Cache)",
+          "locks": [
+            "_account_lock",
+            "_user_lock"
+          ],
+          "caches": [
+            "account_info_cache"
+          ]
+        },
+        {
+          "stage": 3,
+          "name": "publish_account_event",
+          "service": "EventBus",
+          "description": "发布账户事件",
+          "events": [
+            "account_created",
+            "account_updated",
+            "account_balance_changed"
+          ]
+        }
+      ],
+      "exit_points": [
+        {
+          "name": "AccountEventHandler",
+          "file": "core/events/account_event_handlers.py",
+          "description": "账户事件处理 (订阅方)"
+        }
+      ],
+      "services_involved": [
+        "AccountEventHandler",
+        "AccountManager",
+        "AccountRepository",
+        "AccountValidator",
+        "EventBus"
+      ],
+      "locks_involved": [
+        "_account_lock",
+        "_lock",
+        "_user_lock"
+      ],
+      "caches_involved": [],
+      "events_published": [
+        "account_balance_changed",
+        "account_created",
+        "account_deleted",
+        "account_equity_changed",
+        "account_position_updated",
+        "account_selected",
+        "account_updated"
+      ],
+      "silent_failure_risks": [
+        {
+          "location": "多账户隔离",
+          "description": "R119-C 多账户隔离 (account_id 字段缺失)",
+          "severity": "P0",
+          "rule": "R104 §13 + R119-C"
+        }
+      ],
+      "hvds_identified": [
+        {
+          "hvd_id": "HVD-198-D-NEW-03",
+          "type": "account_multi_account_isolation_full_audit",
+          "description": "AccountManager 全部方法多账户隔离 (account_id) 100% 覆盖",
+          "priority": "P1",
+          "rule": "R104 §13 + R119-C + R197-D-NEW-06 延伸",
+          "workload_days": 0.5
+        }
+      ]
+    },
+    {
+      "name": "风险控制",
+      "name_en": "Risk Control",
+      "priority_chain": "P0 业务核心",
+      "entry_points": [
+        {
+          "name": "RiskManager.check_risk",
+          "file": "core/risk_manager.py",
+          "description": "风险检查主入口"
+        },
+        {
+          "name": "AdvancedRiskControlService.evaluate",
+          "file": "core/services/advanced_risk_control_service.py",
+          "description": "高级风险控制评估 (R51 P0 修复点)"
+        }
+      ],
+      "pipeline": [
+        {
+          "stage": 1,
+          "name": "load_risk_rules",
+          "service": "RiskRuleRepository",
+          "description": "加载风险规则",
+          "caches": [
+            "risk_rules_cache"
+          ]
+        },
+        {
+          "stage": 2,
+          "name": "evaluate_position",
+          "service": "AdvancedRiskControlService",
+          "description": "评估当前仓位/资金/单笔限额",
+          "locks": [
+            "_positions_lock",
+            "_risk_lock"
+          ],
+          "silent_failure_risks": [
+            "R51 软解析失败时退化为静态阈值"
+          ]
+        },
+        {
+          "stage": 3,
+          "name": "check_limits",
+          "service": "RiskLimitChecker",
+          "description": "检查风险限额"
+        },
+        {
+          "stage": 4,
+          "name": "trigger_alert",
+          "service": "RiskAlert",
+          "description": "触发风险告警",
+          "events": [
+            "risk_alert_raised",
+            "risk_limit_breached",
+            "risk_check_completed"
+          ]
+        }
+      ],
+      "exit_points": [
+        {
+          "name": "RiskEventSubscribers",
+          "file": "core/risk/risk_event_subscribers.py",
+          "description": "风险事件订阅方 (50 methods, R195-C 验证)"
+        },
+        {
+          "name": "ComplianceAuditLogger",
+          "file": "core/risk/compliance_audit_logger.py",
+          "description": "合规审计日志 (61 methods, R160-P1-1 FIX-7 修复)"
+        }
+      ],
+      "services_involved": [
+        "AdvancedRiskControlService",
+        "ComplianceAuditLogger",
+        "EventBus",
+        "RiskAlert",
+        "RiskEventSubscribers",
+        "RiskLimitChecker",
+        "RiskManager",
+        "RiskRuleRepository"
+      ],
+      "locks_involved": [
+        "_lock",
+        "_positions_lock",
+        "_risk_lock"
+      ],
+      "caches_involved": [],
+      "events_published": [
+        "risk_alert_cleared",
+        "risk_alert_raised",
+        "risk_check_completed",
+        "risk_limit_breached"
+      ],
+      "silent_failure_risks": [
+        {
+          "location": "R51 软解析",
+          "description": "AdvancedRiskControlService service_container.get() 软解析失败时静默",
+          "severity": "P0",
+          "rule": "R51 §7.1 #5 显式降级日志"
+        },
+        {
+          "location": "动态风控退化",
+          "description": "AdvancedRiskControlService 解析失败 → 动态风控退化为静态阈值",
+          "severity": "P0",
+          "rule": "R51 教训"
+        }
+      ],
+      "hvds_identified": [
+        {
+          "hvd_id": "HVD-198-D-NEW-04",
+          "type": "risk_manager_soft_parse_full_audit",
+          "description": "AdvancedRiskControlService 全项目 service_container.get() 软解析点 100% 审计",
+          "priority": "P0",
+          "rule": "R51 §7.1 5 强约束 + R51 教训",
+          "workload_days": 0.5
+        }
+      ]
+    },
+    {
+      "name": "K线获取",
+      "name_en": "K-line Retrieval",
+      "priority_chain": "P0 业务核心",
+      "entry_points": [
+        {
+          "name": "UnifiedDataManager.get_kdata",
+          "file": "core/services/unified_data_manager.py",
+          "description": "K线获取主入口 (R176-A-1 模板)"
+        }
+      ],
+      "pipeline": [
+        {
+          "stage": 1,
+          "name": "build_cache_key",
+          "service": "CacheKeyFactory",
+          "description": "构建 6 维度缓存键 (at_code_period_count_adj_ds)",
+          "rules": [
+            "R9 §9.1 #1 6 维度强制",
+            "R9 §9.1 #3 v2 前缀"
+          ]
+        },
+        {
+          "stage": 2,
+          "name": "check_inflight",
+          "service": "UnifiedDataManager._inflight_kdata",
+          "description": "in-flight Future 复用防击穿",
+          "rules": [
+            "R9 §9.1 #5 in-flight Future"
+          ],
+          "locks": [
+            "_inflight_kdata_lock"
+          ]
+        },
+        {
+          "stage": 3,
+          "name": "check_l1_cache",
+          "service": "L1MemoryCache",
+          "description": "L1 内存缓存查询 (TTL=1800s)",
+          "locks": [
+            "_lru_lock"
+          ]
+        },
+        {
+          "stage": 4,
+          "name": "check_l2_cache",
+          "service": "L2DiskCache",
+          "description": "L2 磁盘缓存查询 (TTL=300s)",
+          "locks": [
+            "_migration_lock"
+          ]
+        },
+        {
+          "stage": 5,
+          "name": "fetch_from_source",
+          "service": "DataSourceAdapter",
+          "description": "从数据源获取 (东方财富/同花顺/tdx)",
+          "silent_failure_risks": [
+            "数据源切换静默",
+            "新股空数据 5 分钟 TTL"
+          ]
+        },
+        {
+          "stage": 6,
+          "name": "cache_result",
+          "service": "CacheKeyFactory",
+          "description": "缓存结果 (L1 + L2 降级写入)",
+          "locks": [
+            "_lru_lock",
+            "_stats_lock",
+            "_validation_lock"
+          ]
+        }
+      ],
+      "exit_points": [
+        {
+          "name": "DataFrame",
+          "description": "返回 K线 DataFrame"
+        }
+      ],
+      "services_involved": [
+        "CacheKeyFactory",
+        "DataSourceAdapter",
+        "L1MemoryCache",
+        "L2DiskCache",
+        "UnifiedDataManager"
+      ],
+      "locks_involved": [
+        "_inflight_kdata_lock",
+        "_lru_lock",
+        "_migration_lock",
+        "_stats_lock",
+        "_validation_lock"
+      ],
+      "caches_involved": [
+        "kdata_disk_cache",
+        "kdata_lru_cache",
+        "kdata_v2_cache"
+      ],
+      "events_published": [],
+      "silent_failure_risks": [
+        {
+          "location": "数据源切换",
+          "description": "主数据源失败时切换到备用源, 切换逻辑可能静默",
+          "severity": "P1",
+          "rule": "R1 教训"
+        },
+        {
+          "location": "新股空数据",
+          "description": "新股 5 分钟内无数据, 缓存命中旧空结果",
+          "severity": "P0",
+          "rule": "R1 教训 + R176-A-1 修复"
+        }
+      ],
+      "hvds_identified": [
+        {
+          "hvd_id": "HVD-198-D-NEW-05",
+          "type": "kdata_cache_key_6dim_audit",
+          "description": "UnifiedDataManager 全部 K线缓存键 6 维度 100% 审计 (含 _make_auxiliary_cache_key 决策追溯)",
+          "priority": "P1",
+          "rule": "R9 §9.1 #1 + R197-D-NEW-03 延伸",
+          "workload_days": 0.3
+        }
+      ]
+    },
+    {
+      "name": "事件总线",
+      "name_en": "Event Bus",
+      "priority_chain": "P0 跨业务基础设施",
+      "entry_points": [
+        {
+          "name": "EventBus.publish",
+          "file": "core/events/event_bus.py",
+          "description": "事件发布主入口 (R100-F-P1-1 4 锁独立 100K+ QPS 实战)"
+        },
+        {
+          "name": "EventBus.subscribe",
+          "file": "core/events/event_bus.py",
+          "description": "事件订阅主入口"
+        }
+      ],
+      "pipeline": [
+        {
+          "stage": 1,
+          "name": "validate_event_type",
+          "service": "EventBus",
+          "description": "校验事件类型是否注册 (R8 §8.1 #1 双轨注册)",
+          "locks": [
+            "_registry_lock"
+          ]
+        },
+        {
+          "stage": 2,
+          "name": "execute_sync_handlers",
+          "service": "EventBus",
+          "description": "执行同步 handler (R8 §8.1 #2 禁止持 _lock 调 publish)",
+          "locks": [
+            "_lock"
+          ]
+        },
+        {
+          "stage": 3,
+          "name": "schedule_async_handlers",
+          "service": "EventBus",
+          "description": "调度异步 handler (Future 池)",
+          "locks": [
+            "_futures_lock"
+          ]
+        },
+        {
+          "stage": 4,
+          "name": "record_stats",
+          "service": "EventBus",
+          "description": "记录统计 (R100-F-P1-1 #8 4 锁独立: _stats_lock)",
+          "locks": [
+            "_stats_lock"
+          ]
+        },
+        {
+          "stage": 5,
+          "name": "record_history",
+          "service": "EventBus",
+          "description": "记录历史 (R78 dispose 幂等 + _history_lock)",
+          "locks": [
+            "_history_lock"
+          ]
+        },
+        {
+          "stage": 6,
+          "name": "persistence",
+          "service": "EventBus",
+          "description": "持久化 (R75-DEV-4 fire-and-forget, 失败仅 warning)"
+        }
+      ],
+      "exit_points": [
+        {
+          "name": "Handler execution result",
+          "description": "Handler 执行结果 (同步/异步)"
+        }
+      ],
+      "services_involved": [
+        "EventBus",
+        "EventPersistence",
+        "FlagManager"
+      ],
+      "locks_involved": [
+        "_futures_lock",
+        "_history_lock",
+        "_lock",
+        "_registry_lock",
+        "_stats_lock"
+      ],
+      "caches_involved": [],
+      "events_published": [],
+      "silent_failure_risks": [
+        {
+          "location": "handler 异常",
+          "description": "handler 抛异常时主流程是否中断",
+          "severity": "P1",
+          "rule": "R8 §8.1 #7 持久化失败仅 warning"
+        },
+        {
+          "location": "persistence 失败",
+          "description": "R75-DEV-4 持久化失败仅 warning 不抛",
+          "severity": "P1",
+          "rule": "R8 §8.1 #7"
+        }
+      ],
+      "hvds_identified": [
+        {
+          "hvd_id": "HVD-198-D-NEW-06",
+          "type": "event_bus_4_lock_audit_full",
+          "description": "EventBus 4 锁独立策略 100% 覆盖 (R100-F-P1-1 #8 实战已验证, R198 全量再审计)",
+          "priority": "P2",
+          "rule": "R100-F-P1-1 #8 4 锁独立 + R195-C 二次验证",
+          "workload_days": 0.2
+        },
+        {
+          "hvd_id": "HVD-198-D-NEW-07",
+          "type": "string_event_to_enum_49_closure",
+          "description": "49 字符串事件缺 EventType 枚举 (R195-C P1 立项) R198 增量闭环",
+          "priority": "P1",
+          "rule": "R8 §8.1 #1 双轨注册 + R195-C P1 立项",
+          "workload_days": 0.5
+        }
+      ]
+    }
+  ],
+  "all_hvds": [
+    {
+      "hvd_id": "HVD-198-D-NEW-01",
+      "type": "order_event_handler_register_audit",
+      "description": "core/trading/order_event_handlers.py 50 methods 启动期 register_event_type 覆盖率",
+      "priority": "P1",
+      "rule": "R8 §8.1 #1 双轨注册",
+      "workload_days": 0.3
+    },
+    {
+      "hvd_id": "HVD-198-D-NEW-02",
+      "type": "order_persistence_retry_chain",
+      "description": "订单持久化失败 retry 链路 R193-C-D-001 实施后是否真正端到端闭环",
+      "priority": "P1",
+      "rule": "R193-C-D-001 闭环 + R85 假修复鉴别",
+      "workload_days": 0.4
+    },
+    {
+      "hvd_id": "HVD-198-D-NEW-03",
+      "type": "account_multi_account_isolation_full_audit",
+      "description": "AccountManager 全部方法多账户隔离 (account_id) 100% 覆盖",
+      "priority": "P1",
+      "rule": "R104 §13 + R119-C + R197-D-NEW-06 延伸",
+      "workload_days": 0.5
+    },
+    {
+      "hvd_id": "HVD-198-D-NEW-04",
+      "type": "risk_manager_soft_parse_full_audit",
+      "description": "AdvancedRiskControlService 全项目 service_container.get() 软解析点 100% 审计",
+      "priority": "P0",
+      "rule": "R51 §7.1 5 强约束 + R51 教训",
+      "workload_days": 0.5
+    },
+    {
+      "hvd_id": "HVD-198-D-NEW-05",
+      "type": "kdata_cache_key_6dim_audit",
+      "description": "UnifiedDataManager 全部 K线缓存键 6 维度 100% 审计 (含 _make_auxiliary_cache_key 决策追溯)",
+      "priority": "P1",
+      "rule": "R9 §9.1 #1 + R197-D-NEW-03 延伸",
+      "workload_days": 0.3
+    },
+    {
+      "hvd_id": "HVD-198-D-NEW-06",
+      "type": "event_bus_4_lock_audit_full",
+      "description": "EventBus 4 锁独立策略 100% 覆盖 (R100-F-P1-1 #8 实战已验证, R198 全量再审计)",
+      "priority": "P2",
+      "rule": "R100-F-P1-1 #8 4 锁独立 + R195-C 二次验证",
+      "workload_days": 0.2
+    },
+    {
+      "hvd_id": "HVD-198-D-NEW-07",
+      "type": "string_event_to_enum_49_closure",
+      "description": "49 字符串事件缺 EventType 枚举 (R195-C P1 立项) R198 增量闭环",
+      "priority": "P1",
+      "rule": "R8 §8.1 #1 双轨注册 + R195-C P1 立项",
+      "workload_days": 0.5
+    }
+  ],
+  "强制度": {
+    "R104_§12_5_铁律": "100% 应用 (R+1 round 二次验证 + 兼容层 4 源 + 嵌套递归 + 物理删除前 4 源 + unparse 验证)",
+    "R85_假修复鉴别_4_步法": "100% 应用 (R51 软解析 + R193-C-D-001 闭环 + R1 教训)",
+    "R6_§6.1_8_铁律": "100% 应用 (跨子目录 AST 扫描)",
+    "R51_§7.1_5_强约束": "100% 应用 (AdvancedRiskControlService 软解析识别)",
+    "R8_§8.1_8_铁律": "100% 应用 (B5 事件总线 8 铁律全量覆盖)",
+    "R9_§9.1_6_铁律": "100% 应用 (B4 K线缓存 6 铁律 100%)",
+    "R100-F_#8_4_锁独立": "100% 应用 (B5 EventBus 4 锁独立 + B3 风险控制 2 锁独立)",
+    "R194-B_V12_V13": "100% 应用 (B1 订单事件链跨行追踪)",
+    "superpowers-6.0.3": "业务调用链 100% 完整 (不漏关键节点)"
+  }
+}

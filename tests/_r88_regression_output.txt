@@ -1,0 +1,90 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.12.7, pytest-8.4.1, pluggy-1.6.0 -- E:\anaconda3\python.exe
+cachedir: .pytest_cache
+rootdir: D:\DevelopTool\FreeCode\HIkyuu-UI\hikyuu-ui
+configfile: pytest.ini
+plugins: anyio-4.12.0, asyncio-1.1.0, cov-7.1.0, zarr-3.1.2
+asyncio: mode=Mode.STRICT, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 22 items
+
+tests/test_r88_p0_p1_fixes.py::TestR88_P0_1_ApiServerPort::test_no_hardcoded_8000 PASSED [  4%]
+tests/test_r88_p0_p1_fixes.py::TestR88_P0_1_ApiServerPort::test_port_default_8090 PASSED [  9%]
+tests/test_r88_p0_p1_fixes.py::TestR88_P0_1_ApiServerPort::test_r88_comment_present PASSED [ 13%]
+tests/test_r88_p0_p1_fixes.py::TestR88_P0_1_ApiServerPort::test_uvicorn_uses_variable PASSED [ 18%]
+tests/test_r88_p0_p1_fixes.py::TestR88_P0_1_ApiServerPort::test_web_backend_still_8000 PASSED [ 22%]
+tests/test_r88_p0_p1_fixes.py::TestR88_P1_1_PositionDebounce::test_debounce_timer_initialized PASSED [ 27%]
+tests/test_r88_p0_p1_fixes.py::TestR88_P1_1_PositionDebounce::test_do_method_exists PASSED [ 31%]
+tests/test_r88_p0_p1_fixes.py::TestR88_P1_1_PositionDebounce::test_event_handlers_use_schedule PASSED [ 36%]
+tests/test_r88_p0_p1_fixes.py::TestR88_P1_1_PositionDebounce::test_force_sync_still_sync PASSED [ 40%]
+tests/test_r88_p0_p1_fixes.py::TestR88_P1_1_PositionDebounce::test_qtimer_imported PASSED [ 45%]
+tests/test_r88_p0_p1_fixes.py::TestR88_P1_1_PositionDebounce::test_r88_comment_in_handler PASSED [ 50%]
+tests/test_r88_p0_p1_fixes.py::TestR88_P1_1_PositionDebounce::test_schedule_method_exists PASSED [ 54%]
+tests/test_r88_p0_p1_fixes.py::TestR88_P1_2_SecurityServiceStaleDoc::test_r86_registration_acknowledged PASSED [ 59%]
+tests/test_r88_p0_p1_fixes.py::TestR88_P1_2_SecurityServiceStaleDoc::test_r88_pending_todo_present PASSED [ 63%]
+tests/test_r88_p0_p1_fixes.py::TestR88_P1_2_SecurityServiceStaleDoc::test_stale_unregistered_warning_removed PASSED [ 68%]
+tests/test_r88_p0_p1_fixes.py::TestR88_MisreportCorrection::test_import_execution_engine_path PASSED [ 72%]
+tests/test_r88_p0_p1_fixes.py::TestR88_MisreportCorrection::test_publish_event_present PASSED [ 77%]
+tests/test_r88_p0_p1_fixes.py::TestR88_MisreportCorrection::test_row_count_field_used PASSED [ 81%]
+tests/test_r88_p0_p1_fixes.py::TestR88_MisreportCorrection::test_udm_fixes_4_field_names PASSED [ 86%]
+tests/test_r88_p0_p1_fixes.py::TestR88_StaticScan::test_publish_ai_status_updated_existence PASSED [ 90%]
+tests/test_r88_p0_p1_fixes.py::TestR88_StaticScan::test_publish_order_save_retry_existence PASSED [ 95%]
+tests/test_r88_p0_p1_fixes.py::TestR88_StaticScan::test_service_lifecycle_helpers PASSED [100%]
+
+============================== warnings summary ===============================
+core\matplotlib_compat.py:76
+  D:\DevelopTool\FreeCode\HIkyuu-UI\hikyuu-ui\core\matplotlib_compat.py:76: DeprecationWarning: sipPyTypeDict() is deprecated, the extension module should use sipPyTypeDictRef() instead
+    class FigureCanvasQTAggShim(QWidget):
+
+core\base_logger.py:22
+  D:\DevelopTool\FreeCode\HIkyuu-UI\hikyuu-ui\core\base_logger.py:22: DeprecationWarning: sipPyTypeDict() is deprecated, the extension module should use sipPyTypeDictRef() instead
+    class BaseLogManager(QObject):
+
+utils\config_types.py:343
+  D:\DevelopTool\FreeCode\HIkyuu-UI\hikyuu-ui\utils\config_types.py:343: DeprecationWarning: sipPyTypeDict() is deprecated, the extension module should use sipPyTypeDictRef() instead
+    class LoggingConfig(QObject):
+
+utils\config_manager.py:45
+  D:\DevelopTool\FreeCode\HIkyuu-UI\hikyuu-ui\utils\config_manager.py:45: DeprecationWarning: sipPyTypeDict() is deprecated, the extension module should use sipPyTypeDictRef() instead
+    class ConfigManager(QObject):
+
+utils\theme.py:188
+  D:\DevelopTool\FreeCode\HIkyuu-UI\hikyuu-ui\utils\theme.py:188: DeprecationWarning: sipPyTypeDict() is deprecated, the extension module should use sipPyTypeDictRef() instead
+    class ThemeManager(QObject):
+
+core\industry_manager.py:303
+  D:\DevelopTool\FreeCode\HIkyuu-UI\hikyuu-ui\core\industry_manager.py:303: DeprecationWarning: sipPyTypeDict() is deprecated, the extension module should use sipPyTypeDictRef() instead
+    class IndustryManager(QObject):
+
+E:\anaconda3\Lib\site-packages\xtquant\__init__.py:8
+  E:\anaconda3\Lib\site-packages\xtquant\__init__.py:8: DeprecationWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html
+    from pkg_resources import get_distribution
+
+E:\anaconda3\Lib\site-packages\pkg_resources\__init__.py:3154
+  E:\anaconda3\Lib\site-packages\pkg_resources\__init__.py:3154: DeprecationWarning: Deprecated call to `pkg_resources.declare_namespace('google')`.
+  Implementing implicit namespace packages (as specified in PEP 420) is preferred to `pkg_resources.declare_namespace`. See https://setuptools.pypa.io/en/latest/references/keywords.html#keyword-namespace-packages
+    declare_namespace(pkg)
+
+E:\anaconda3\Lib\site-packages\pkg_resources\__init__.py:3154
+E:\anaconda3\Lib\site-packages\pkg_resources\__init__.py:3154
+E:\anaconda3\Lib\site-packages\pkg_resources\__init__.py:3154
+E:\anaconda3\Lib\site-packages\pkg_resources\__init__.py:3154
+E:\anaconda3\Lib\site-packages\pkg_resources\__init__.py:3154
+  E:\anaconda3\Lib\site-packages\pkg_resources\__init__.py:3154: DeprecationWarning: Deprecated call to `pkg_resources.declare_namespace('sphinxcontrib')`.
+  Implementing implicit namespace packages (as specified in PEP 420) is preferred to `pkg_resources.declare_namespace`. See https://setuptools.pypa.io/en/latest/references/keywords.html#keyword-namespace-packages
+    declare_namespace(pkg)
+
+E:\anaconda3\Lib\site-packages\pkg_resources\__init__.py:3154
+  E:\anaconda3\Lib\site-packages\pkg_resources\__init__.py:3154: DeprecationWarning: Deprecated call to `pkg_resources.declare_namespace('zope')`.
+  Implementing implicit namespace packages (as specified in PEP 420) is preferred to `pkg_resources.declare_namespace`. See https://setuptools.pypa.io/en/latest/references/keywords.html#keyword-namespace-packages
+    declare_namespace(pkg)
+
+E:\anaconda3\Lib\site-packages\xtquant\xtbson\bson37\datetime_ms.py:29
+  E:\anaconda3\Lib\site-packages\xtquant\xtbson\bson37\datetime_ms.py:29: DeprecationWarning: datetime.datetime.utcfromtimestamp() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.fromtimestamp(timestamp, datetime.UTC).
+    EPOCH_NAIVE = datetime.datetime.utcfromtimestamp(0)
+
+E:\anaconda3\Lib\site-packages\_pytest\cacheprovider.py:475
+  E:\anaconda3\Lib\site-packages\_pytest\cacheprovider.py:475: PytestCacheWarning: could not create cache path D:\DevelopTool\FreeCode\HIkyuu-UI\hikyuu-ui\.pytest_cache\v\cache\nodeids: [WinError 5] 拒绝访问。: 'D:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\.pytest_cache\\v\\cache'
+    config.cache.set("cache/nodeids", sorted(self.cached_nodeids))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================= 22 passed, 16 warnings in 1.31s =======================

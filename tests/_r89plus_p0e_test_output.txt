@@ -1,0 +1,150 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.12.7, pytest-8.4.1, pluggy-1.6.0 -- E:\anaconda3\python.exe
+cachedir: .pytest_cache
+rootdir: D:\DevelopTool\FreeCode\HIkyuu-UI\hikyuu-ui
+configfile: pytest.ini
+plugins: anyio-4.12.0, asyncio-1.1.0, cov-7.1.0, zarr-3.1.2
+asyncio: mode=Mode.STRICT, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 14 items
+
+tests/test_p0_e_concurrency_proof.py::TestP0E_LockTypeAndAcquisition::test_01_lock_is_rlock_not_plain_lock PASSED [  7%]
+tests/test_p0_e_concurrency_proof.py::TestP0E_LockTypeAndAcquisition::test_02_initialize_uses_with_statement PASSED [ 14%]
+tests/test_p0_e_concurrency_proof.py::TestP0E_LockTypeAndAcquisition::test_03_get_trading_engine_works_after_init PASSED [ 21%]
+tests/test_p0_e_concurrency_proof.py::TestP0E_8ThreadConcurrency::test_16threads_high_pressure PASSED [ 28%]
+tests/test_p0_e_concurrency_proof.py::TestP0E_8ThreadConcurrency::test_8threads_only_one_instance PASSED [ 35%]
+tests/test_p0_e_concurrency_proof.py::TestP0E_LockReleasedOnException::test_exception_releases_lock PASSED [ 42%]
+tests/test_p0_e_concurrency_proof.py::TestP0E_LockReleasedOnException::test_recovery_after_multiple_exceptions PASSED [ 50%]
+tests/test_p0_e_concurrency_proof.py::TestP0E_RLockReentrancy::test_direct_reentrant_acquire PASSED [ 57%]
+tests/test_p0_e_concurrency_proof.py::TestP0E_RLockReentrancy::test_get_inside_initialize_does_not_deadlock FAILED [ 64%]
+tests/test_p0_e_concurrency_proof.py::TestP0E_RLockReentrancy::test_initialize_inside_lock_does_not_deadlock PASSED [ 71%]
+tests/test_p0_e_concurrency_proof.py::TestP0E_DualSingletonDivergence::test_bootstrap_level_singleton_isolated PASSED [ 78%]
+tests/test_p0_e_concurrency_proof.py::TestP0E_DualSingletonDivergence::test_dual_singleton_warning_documented PASSED [ 85%]
+tests/test_p0_e_concurrency_proof.py::TestP0E_DualSingletonDivergence::test_module_level_singleton PASSED [ 92%]
+tests/test_p0_e_concurrency_proof.py::TestP0E_LockContentionLatency::test_8threads_contention_under_500ms PASSED [100%]
+
+================================== FAILURES ===================================
+____ TestP0E_RLockReentrancy.test_get_inside_initialize_does_not_deadlock _____
+
+self = <test_p0_e_concurrency_proof.TestP0E_RLockReentrancy testMethod=test_get_inside_initialize_does_not_deadlock>
+
+    def test_get_inside_initialize_does_not_deadlock(self):
+        """模拟 TradingEngine.__init__ 内调 get_trading_engine (注册回调场景)"""
+        mock_container = MagicMock()
+        mock_event_bus = MagicMock()
+    
+        # 让 mock TradingEngine 在 __init__ 期间调 get_trading_engine
+        def fake_init(self, sc, eb):
+            # 业务方场景: __init__ 中注册回调, 回调查 engine 实例
+            inner_engine = self._engine_module.get_trading_engine()
+            self.assertIsNone(
+                inner_engine,
+                "首次 init 时, get_trading_engine 应返回 None (尚未赋值)"
+            )
+            self._trading_engine_inner = inner_engine
+    
+        with patch.object(self._engine_module, 'TradingEngine') as mock_engine:
+            mock_engine.side_effect = fake_init
+            # RLock 允许同线程重入, 不死锁
+>           engine = self._engine_module.initialize_trading_engine(
+                mock_container, mock_event_bus)
+
+tests\test_p0_e_concurrency_proof.py:289: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+core\trading_engine.py:2367: in initialize_trading_engine
+    _global_engine = TradingEngine(service_container, event_bus)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\anaconda3\Lib\unittest\mock.py:1139: in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\anaconda3\Lib\unittest\mock.py:1143: in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <MagicMock name='TradingEngine' id='2174055176080'>
+args = (<MagicMock id='2174055323152'>, <MagicMock id='2174055318496'>)
+kwargs = {}
+effect = <function TestP0E_RLockReentrancy.test_get_inside_initialize_does_not_deadlock.<locals>.fake_init at 0x000001FA2FD22200>
+
+    def _execute_mock_call(self, /, *args, **kwargs):
+        # separate from _increment_mock_call so that awaited functions are
+        # executed separately from their call, also AsyncMock overrides this method
+    
+        effect = self.side_effect
+        if effect is not None:
+            if _is_exception(effect):
+                raise effect
+            elif not _callable(effect):
+                result = next(effect)
+                if _is_exception(result):
+                    raise result
+            else:
+>               result = effect(*args, **kwargs)
+                         ^^^^^^^^^^^^^^^^^^^^^^^
+E               TypeError: TestP0E_RLockReentrancy.test_get_inside_initialize_does_not_deadlock.<locals>.fake_init() missing 1 required positional argument: 'eb'
+
+E:\anaconda3\Lib\unittest\mock.py:1204: TypeError
+============================== warnings summary ===============================
+core\matplotlib_compat.py:76
+  D:\DevelopTool\FreeCode\HIkyuu-UI\hikyuu-ui\core\matplotlib_compat.py:76: DeprecationWarning: sipPyTypeDict() is deprecated, the extension module should use sipPyTypeDictRef() instead
+    class FigureCanvasQTAggShim(QWidget):
+
+core\base_logger.py:22
+  D:\DevelopTool\FreeCode\HIkyuu-UI\hikyuu-ui\core\base_logger.py:22: DeprecationWarning: sipPyTypeDict() is deprecated, the extension module should use sipPyTypeDictRef() instead
+    class BaseLogManager(QObject):
+
+utils\config_types.py:343
+  D:\DevelopTool\FreeCode\HIkyuu-UI\hikyuu-ui\utils\config_types.py:343: DeprecationWarning: sipPyTypeDict() is deprecated, the extension module should use sipPyTypeDictRef() instead
+    class LoggingConfig(QObject):
+
+utils\config_manager.py:45
+  D:\DevelopTool\FreeCode\HIkyuu-UI\hikyuu-ui\utils\config_manager.py:45: DeprecationWarning: sipPyTypeDict() is deprecated, the extension module should use sipPyTypeDictRef() instead
+    class ConfigManager(QObject):
+
+utils\theme.py:188
+  D:\DevelopTool\FreeCode\HIkyuu-UI\hikyuu-ui\utils\theme.py:188: DeprecationWarning: sipPyTypeDict() is deprecated, the extension module should use sipPyTypeDictRef() instead
+    class ThemeManager(QObject):
+
+core\industry_manager.py:303
+  D:\DevelopTool\FreeCode\HIkyuu-UI\hikyuu-ui\core\industry_manager.py:303: DeprecationWarning: sipPyTypeDict() is deprecated, the extension module should use sipPyTypeDictRef() instead
+    class IndustryManager(QObject):
+
+E:\anaconda3\Lib\site-packages\xtquant\__init__.py:8
+  E:\anaconda3\Lib\site-packages\xtquant\__init__.py:8: DeprecationWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html
+    from pkg_resources import get_distribution
+
+E:\anaconda3\Lib\site-packages\pkg_resources\__init__.py:3154
+  E:\anaconda3\Lib\site-packages\pkg_resources\__init__.py:3154: DeprecationWarning: Deprecated call to `pkg_resources.declare_namespace('google')`.
+  Implementing implicit namespace packages (as specified in PEP 420) is preferred to `pkg_resources.declare_namespace`. See https://setuptools.pypa.io/en/latest/references/keywords.html#keyword-namespace-packages
+    declare_namespace(pkg)
+
+E:\anaconda3\Lib\site-packages\pkg_resources\__init__.py:3154
+E:\anaconda3\Lib\site-packages\pkg_resources\__init__.py:3154
+E:\anaconda3\Lib\site-packages\pkg_resources\__init__.py:3154
+E:\anaconda3\Lib\site-packages\pkg_resources\__init__.py:3154
+E:\anaconda3\Lib\site-packages\pkg_resources\__init__.py:3154
+  E:\anaconda3\Lib\site-packages\pkg_resources\__init__.py:3154: DeprecationWarning: Deprecated call to `pkg_resources.declare_namespace('sphinxcontrib')`.
+  Implementing implicit namespace packages (as specified in PEP 420) is preferred to `pkg_resources.declare_namespace`. See https://setuptools.pypa.io/en/latest/references/keywords.html#keyword-namespace-packages
+    declare_namespace(pkg)
+
+E:\anaconda3\Lib\site-packages\pkg_resources\__init__.py:3154
+  E:\anaconda3\Lib\site-packages\pkg_resources\__init__.py:3154: DeprecationWarning: Deprecated call to `pkg_resources.declare_namespace('zope')`.
+  Implementing implicit namespace packages (as specified in PEP 420) is preferred to `pkg_resources.declare_namespace`. See https://setuptools.pypa.io/en/latest/references/keywords.html#keyword-namespace-packages
+    declare_namespace(pkg)
+
+E:\anaconda3\Lib\site-packages\xtquant\xtbson\bson37\datetime_ms.py:29
+  E:\anaconda3\Lib\site-packages\xtquant\xtbson\bson37\datetime_ms.py:29: DeprecationWarning: datetime.datetime.utcfromtimestamp() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.fromtimestamp(timestamp, datetime.UTC).
+    EPOCH_NAIVE = datetime.datetime.utcfromtimestamp(0)
+
+E:\anaconda3\Lib\site-packages\_pytest\cacheprovider.py:475
+  E:\anaconda3\Lib\site-packages\_pytest\cacheprovider.py:475: PytestCacheWarning: could not create cache path D:\DevelopTool\FreeCode\HIkyuu-UI\hikyuu-ui\.pytest_cache\v\cache\nodeids: [WinError 5] 拒绝访问。: 'D:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\.pytest_cache\\v\\cache'
+    config.cache.set("cache/nodeids", sorted(self.cached_nodeids))
+
+E:\anaconda3\Lib\site-packages\_pytest\cacheprovider.py:429
+  E:\anaconda3\Lib\site-packages\_pytest\cacheprovider.py:429: PytestCacheWarning: could not create cache path D:\DevelopTool\FreeCode\HIkyuu-UI\hikyuu-ui\.pytest_cache\v\cache\lastfailed: [WinError 5] 拒绝访问。: 'D:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\.pytest_cache\\v\\cache'
+    config.cache.set("cache/lastfailed", self.lastfailed)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_p0_e_concurrency_proof.py::TestP0E_RLockReentrancy::test_get_inside_initialize_does_not_deadlock - TypeError: TestP0E_RLockReentrancy.test_get_inside_initialize_does_not_deadlock.<locals>.fake_init() missing 1 required positional argument: 'eb'
+================== 1 failed, 13 passed, 17 warnings in 1.90s ==================

@@ -1,0 +1,26 @@
+{
+  "total_candidates": 79,
+  "by_priority": {
+    "P0": 7,
+    "P1": 16,
+    "P2": 56,
+    "P3": 0
+  },
+  "by_type": {
+    "unregistered_service": 12,
+    "unused_module_func": 5,
+    "cache_key_fstring_outside_factory": 3,
+    "string_event_unregistered": 10,
+    "compat_alias": 9,
+    "ORPHAN_PUB": 20,
+    "multi_account_isolation_weak": 15,
+    "perf_metric_missing": 5
+  },
+  "scan_duration_sec": 38.91,
+  "target_met": {
+    "P0": ">= 1 ✅",
+    "P1": ">= 3 ✅",
+    "P2": ">= 2 ✅",
+    "total": ">= 6 ✅"
+  }
+}

@@ -1,0 +1,410 @@
+{
+  "core/risk_manager.py": {
+    "RiskManager": {
+      "total_files": 60,
+      "total_occurrences": 650,
+      "top_files": [
+        {
+          "file": "_r119_a_verify_static.py",
+          "count": 1
+        },
+        {
+          "file": "_r145_hvd_143_a_grep.py",
+          "count": 1
+        },
+        {
+          "file": "analysis\\pattern_base.py",
+          "count": 2
+        },
+        {
+          "file": "backtest\\paper_trading_engine.py",
+          "count": 1
+        },
+        {
+          "file": "backtest\\unified_backtest_engine.py",
+          "count": 3
+        },
+        {
+          "file": "core\\data_quality_risk_manager.py",
+          "count": 5
+        },
+        {
+          "file": "core\\risk_manager.py",
+          "count": 21
+        },
+        {
+          "file": "core\\trading_engine.py",
+          "count": 2
+        }
+      ]
+    },
+    "get_risk_manager": {
+      "total_files": 1,
+      "total_occurrences": 1,
+      "top_files": [
+        {
+          "file": "_r145_hvd_143_a_grep.py",
+          "count": 1
+        }
+      ]
+    }
+  },
+  "core/events/event_bus.py": {
+    "EventBus": {
+      "total_files": 320,
+      "total_occurrences": 1643,
+      "top_files": [
+        {
+          "file": "main.py",
+          "count": 2
+        },
+        {
+          "file": "quick_start.py",
+          "count": 1
+        },
+        {
+          "file": "_r145_hvd_143_a_grep.py",
+          "count": 1
+        },
+        {
+          "file": "backtest\\paper_trading_engine.py",
+          "count": 2
+        },
+        {
+          "file": "backtest\\unified_backtest_engine.py",
+          "count": 2
+        },
+        {
+          "file": "core\\asset_database_manager.py",
+          "count": 5
+        },
+        {
+          "file": "core\\intelligent_failover_engine.py",
+          "count": 1
+        },
+        {
+          "file": "core\\plugin_manager.py",
+          "count": 1
+        }
+      ]
+    }
+  },
+  "core/services/strategy_service.py": {
+    "StrategyService": {
+      "total_files": 40,
+      "total_occurrences": 201,
+      "top_files": [
+        {
+          "file": "api_server.py",
+          "count": 3
+        },
+        {
+          "file": "_r145_hvd_143_a_grep.py",
+          "count": 1
+        },
+        {
+          "file": "core\\strategy_extensions.py",
+          "count": 1
+        },
+        {
+          "file": "core\\coordinators\\main_window_coordinator.py",
+          "count": 9
+        },
+        {
+          "file": "core\\feedback\\feedback_service.py",
+          "count": 1
+        },
+        {
+          "file": "core\\services\\service_bootstrap.py",
+          "count": 7
+        },
+        {
+          "file": "core\\services\\strategy_service.py",
+          "count": 13
+        },
+        {
+          "file": "core\\services\\trading_service.py",
+          "count": 2
+        }
+      ]
+    },
+    "get_strategy_service": {
+      "total_files": 8,
+      "total_occurrences": 45,
+      "top_files": [
+        {
+          "file": "api_server.py",
+          "count": 25
+        },
+        {
+          "file": "_r145_hvd_143_a_grep.py",
+          "count": 1
+        },
+        {
+          "file": "core\\trading\\strategy_manager.py",
+          "count": 3
+        },
+        {
+          "file": "gui\\widgets\\strategy_code_editor.py",
+          "count": 1
+        },
+        {
+          "file": "tests\\test_r119_r51_resolve_via_container_7sites.py",
+          "count": 3
+        },
+        {
+          "file": "tests\\test_r68_p0_regressions.py",
+          "count": 9
+        },
+        {
+          "file": "tests\\test_strategy_comprehensive.py",
+          "count": 2
+        },
+        {
+          "file": "tests\\test_strategy_service_integration.py",
+          "count": 1
+        }
+      ]
+    }
+  },
+  "core/services/notification_service.py": {
+    "NotificationService": {
+      "total_files": 38,
+      "total_occurrences": 260,
+      "top_files": [
+        {
+          "file": "_r145_hvd_143_a_grep.py",
+          "count": 1
+        },
+        {
+          "file": "core\\coordinators\\event_coordinator.py",
+          "count": 8
+        },
+        {
+          "file": "core\\events\\r84_event_helper.py",
+          "count": 2
+        },
+        {
+          "file": "core\\monitoring\\queue_monitor.py",
+          "count": 3
+        },
+        {
+          "file": "core\\risk\\risk_event_subscribers.py",
+          "count": 18
+        },
+        {
+          "file": "core\\services\\alert_rule_engine.py",
+          "count": 2
+        },
+        {
+          "file": "core\\services\\external_alert_channels_service.py",
+          "count": 2
+        },
+        {
+          "file": "core\\services\\fault_tolerance_manager.py",
+          "count": 20
+        }
+      ]
+    },
+    "get_notification_service": {
+      "total_files": 10,
+      "total_occurrences": 79,
+      "top_files": [
+        {
+          "file": "_r145_hvd_143_a_grep.py",
+          "count": 1
+        },
+        {
+          "file": "core\\coordinators\\event_coordinator.py",
+          "count": 4
+        },
+        {
+          "file": "core\\services\\fault_tolerance_manager.py",
+          "count": 4
+        },
+        {
+          "file": "core\\services\\notification_service.py",
+          "count": 7
+        },
+        {
+          "file": "gui\\dialogs\\external_alert_channel_config_dialog.py",
+          "count": 2
+        },
+        {
+          "file": "gui\\widgets\\performance\\tabs\\risk_control_center_tab.py",
+          "count": 16
+        },
+        {
+          "file": "tests\\test_r121_hvd_87_r51_other_files.py",
+          "count": 10
+        },
+        {
+          "file": "tests\\test_r125_p0_2_3_4_keyservice_softparse.py",
+          "count": 21
+        }
+      ]
+    }
+  },
+  "core/trading/order_event_handlers.py": {
+    "OrderEventHandler": {
+      "total_files": 5,
+      "total_occurrences": 35,
+      "top_files": [
+        {
+          "file": "_r145_hvd_143_a_grep.py",
+          "count": 1
+        },
+        {
+          "file": "core\\coordinators\\event_coordinator.py",
+          "count": 2
+        },
+        {
+          "file": "core\\events\\r84_event_helper.py",
+          "count": 3
+        },
+        {
+          "file": "core\\trading\\order_event_handlers.py",
+          "count": 7
+        },
+        {
+          "file": "tests\\test_r142_p0_4_order_event_subscriptions.py",
+          "count": 22
+        }
+      ]
+    },
+    "order_event_handlers": {
+      "total_files": 7,
+      "total_occurrences": 18,
+      "top_files": [
+        {
+          "file": "_audit_r143_scan.py",
+          "count": 1
+        },
+        {
+          "file": "_r144_c_excinfo_scan.py",
+          "count": 2
+        },
+        {
+          "file": "_r145_hvd_143_a_grep.py",
+          "count": 2
+        },
+        {
+          "file": "_r145_hvd_143_a_scan.py",
+          "count": 1
+        },
+        {
+          "file": "core\\coordinators\\event_coordinator.py",
+          "count": 3
+        },
+        {
+          "file": "core\\trading\\order_event_handlers.py",
+          "count": 1
+        },
+        {
+          "file": "tests\\test_r142_p0_4_order_event_subscriptions.py",
+          "count": 8
+        }
+      ]
+    }
+  },
+  "core/metrics/aggregation_service.py": {
+    "AggregationService": {
+      "total_files": 6,
+      "total_occurrences": 12,
+      "top_files": [
+        {
+          "file": "_r145_hvd_143_a_grep.py",
+          "count": 1
+        },
+        {
+          "file": "core\\constants\\__init__.py",
+          "count": 1
+        },
+        {
+          "file": "core\\metrics\\aggregation_service.py",
+          "count": 2
+        },
+        {
+          "file": "core\\metrics\\__init__.py",
+          "count": 2
+        },
+        {
+          "file": "core\\services\\service_bootstrap.py",
+          "count": 5
+        },
+        {
+          "file": "tests\\test_r82_metrics_loop_self_healing.py",
+          "count": 1
+        }
+      ]
+    },
+    "get_aggregation_service": {
+      "total_files": 1,
+      "total_occurrences": 1,
+      "top_files": [
+        {
+          "file": "_r145_hvd_143_a_grep.py",
+          "count": 1
+        }
+      ]
+    }
+  },
+  "core/asset_database_manager.py": {
+    "AssetDatabaseManager": {
+      "total_files": 5,
+      "total_occurrences": 8,
+      "top_files": [
+        {
+          "file": "_r145_hvd_143_a_grep.py",
+          "count": 1
+        },
+        {
+          "file": "core\\asset_database_manager.py",
+          "count": 1
+        },
+        {
+          "file": "core\\asset_type_identifier.py",
+          "count": 2
+        },
+        {
+          "file": "core\\cross_asset_query_engine.py",
+          "count": 1
+        },
+        {
+          "file": "core\\services\\database_service.py",
+          "count": 3
+        }
+      ]
+    },
+    "get_asset_database_manager": {
+      "total_files": 6,
+      "total_occurrences": 10,
+      "top_files": [
+        {
+          "file": "_r145_hvd_143_a_grep.py",
+          "count": 1
+        },
+        {
+          "file": "core\\asset_database_manager.py",
+          "count": 1
+        },
+        {
+          "file": "core\\cross_asset_query_engine.py",
+          "count": 2
+        },
+        {
+          "file": "core\\database_maintenance_engine.py",
+          "count": 2
+        },
+        {
+          "file": "core\\data_router.py",
+          "count": 2
+        },
+        {
+          "file": "core\\data_standardization_engine.py",
+          "count": 2
+        }
+      ]
+    }
+  }
+}

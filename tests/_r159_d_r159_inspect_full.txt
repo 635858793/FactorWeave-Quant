@@ -1,0 +1,38 @@
+======================================================================
+R159-D R+1 round 假修复鉴别: R159-A/B/C 综合验证
+======================================================================
+
+## R159-B 详细验证
+## core/trading/order_executor.py
+   R159 HVD-158-B markers: 21
+   r159_b_upgrades_checked: 21
+   r159_b_without_exc_info: []
+
+## core/trading/order_service.py
+   R159 HVD-158-B markers: 0
+   r159_b_upgrades_checked: 0
+   r159_b_without_exc_info: []
+
+## core/trading/order_monitor.py
+   R159 HVD-158-B markers: 0
+   r159_b_upgrades_checked: 0
+   r159_b_without_exc_info: []
+
+======================================================================
+## R159-C 详细执行 (5 TDD)
+======================================================================
+
+--- TDD-1 marker count ---
+  [PASSED]
+
+--- TDD-2 exc_info compliance ---
+  [PASSED]
+
+--- TDD-3 no syntax error ---
+  [PASSED]
+
+--- TDD-4 residual business debug ---
+  [PASSED]
+
+--- TDD-5 business event coverage ---
+  [PASSED]

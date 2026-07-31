@@ -1,0 +1,710 @@
+{
+  "total_services": 231,
+  "no_health_check": 203,
+  "no_metrics": 205,
+  "no_both": 186,
+  "no_health_list": [
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\asset_database_manager.py",
+      "class": "AssetSeparatedDatabaseManager",
+      "line": 91,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\base_logger.py",
+      "class": "BaseLogManager",
+      "line": 22,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\config.py",
+      "class": "LazyConfigManager",
+      "line": 264,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\cross_asset_query_engine.py",
+      "class": "CrossAssetQueryEngine",
+      "line": 321,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\database_maintenance_engine.py",
+      "class": "DatabaseMaintenanceEngine",
+      "line": 157,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\data_quality_risk_manager.py",
+      "class": "DataQualityRiskManager",
+      "line": 88,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\data_standardization_engine.py",
+      "class": "DataStandardizationEngine",
+      "line": 190,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\graceful_shutdown.py",
+      "class": "GracefulShutdownManager",
+      "line": 30,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\indicator_combination_manager.py",
+      "class": "IndicatorCombinationManager",
+      "line": 40,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\indicator_service.py",
+      "class": "IndicatorService",
+      "line": 58,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\industry_manager.py",
+      "class": "IndustryManager",
+      "line": 303,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\industry_manager.py",
+      "class": "LogManager",
+      "line": 293,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\intelligent_failover_engine.py",
+      "class": "IntelligentFailoverEngine",
+      "line": 105,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\jit_warmup.py",
+      "class": "JITWarmupManager",
+      "line": 13,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\loguru_manager.py",
+      "class": "LoguruManager",
+      "line": 17,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\money_manager.py",
+      "class": "MoneyManagerStrategy",
+      "line": 24,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\plugin_manager.py",
+      "class": "PluginManager",
+      "line": 170,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\plugin_types.py",
+      "class": "DataSourceProvider",
+      "line": 147,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\plugin_version_manager.py",
+      "class": "PluginVersionManager",
+      "line": 131,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\real_data_provider.py",
+      "class": "RealDataProvider",
+      "line": 23,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\risk_rule_manager.py",
+      "class": "RiskRuleManager",
+      "line": 111,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\tet_router_engine.py",
+      "class": "TETRouterEngine",
+      "line": 34,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\unified_indicator_service.py",
+      "class": "UnifiedIndicatorService",
+      "line": 386,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\unified_indicator_service.py",
+      "class": "_DeprecatedIndicatorServiceAlias",
+      "line": 2141,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\adapters\\legacy_cache_adapter.py",
+      "class": "AsyncIOManagerAdapter",
+      "line": 325,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\unified_optimization_service.py",
+      "class": "UnifiedOptimizationService",
+      "line": 73,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\enhanced_realtime_monitor.py",
+      "class": "SmartThresholdManager",
+      "line": 282,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\unified_performance_coordinator.py",
+      "class": "UnifiedPerformanceCoordinator",
+      "line": 105,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\virtualization.py",
+      "class": "VirtualRenderManager",
+      "line": 151,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ai\\config_recommendation_engine.py",
+      "class": "ConfigRecommendationEngine",
+      "line": 120,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ai\\continuous_learning_manager.py",
+      "class": "ModelVersionManager",
+      "line": 347,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ai\\continuous_learning_manager.py",
+      "class": "ContinuousLearningManager",
+      "line": 600,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ai\\personalized_stock_selection_engine.py",
+      "class": "PersonalizedStockSelectionEngine",
+      "line": 120,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ai\\user_behavior_learner.py",
+      "class": "RecommendationEngine",
+      "line": 845,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ai\\intelligent_selection\\fusion_engine.py",
+      "class": "PredictionFusionEngine",
+      "line": 314,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\async_management\\enhanced_async_manager.py",
+      "class": "ResourceManager",
+      "line": 232,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\async_management\\enhanced_async_manager.py",
+      "class": "EnhancedAsyncManager",
+      "line": 467,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\business\\analysis_manager.py",
+      "class": "AnalysisManager",
+      "line": 51,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\business\\stock_manager.py",
+      "class": "StockManager",
+      "line": 18,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\cache\\cache_key_factory.py",
+      "class": "CacheKeyMigrationManager",
+      "line": 339,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\containers\\enhanced_service_container.py",
+      "class": "ServiceStatus",
+      "line": 25,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\containers\\enhanced_service_container.py",
+      "class": "ServiceHealth",
+      "line": 38,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\containers\\enhanced_service_container.py",
+      "class": "ServiceLifecycleEvent",
+      "line": 52,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\containers\\enhanced_service_container.py",
+      "class": "EnhancedServiceContainer",
+      "line": 61,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\containers\\service_container.py",
+      "class": "ServiceScopeContext",
+      "line": 968,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\containers\\service_registry.py",
+      "class": "ServiceScope",
+      "line": 14,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\containers\\service_registry.py",
+      "class": "ServiceInfo",
+      "line": 25,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\containers\\service_registry.py",
+      "class": "ServiceRegistry",
+      "line": 48,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\containers\\unified_service_container.py",
+      "class": "ServiceStatus",
+      "line": 33,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\containers\\unified_service_container.py",
+      "class": "ServiceHealth",
+      "line": 48,
+      "has_health_check": false,
+      "has_metrics": false
+    }
+  ],
+  "no_metrics_list": [
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\asset_database_manager.py",
+      "class": "AssetSeparatedDatabaseManager",
+      "line": 91,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\base_logger.py",
+      "class": "BaseLogManager",
+      "line": 22,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\config.py",
+      "class": "LazyConfigManager",
+      "line": 264,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\cross_asset_query_engine.py",
+      "class": "CrossAssetQueryEngine",
+      "line": 321,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\database_maintenance_engine.py",
+      "class": "DatabaseMaintenanceEngine",
+      "line": 157,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\data_quality_risk_manager.py",
+      "class": "DataQualityRiskManager",
+      "line": 88,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\data_standardization_engine.py",
+      "class": "DataStandardizationEngine",
+      "line": 190,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\graceful_shutdown.py",
+      "class": "GracefulShutdownManager",
+      "line": 30,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\indicator_combination_manager.py",
+      "class": "IndicatorCombinationManager",
+      "line": 40,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\indicator_service.py",
+      "class": "IndicatorService",
+      "line": 58,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\industry_manager.py",
+      "class": "IndustryManager",
+      "line": 303,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\industry_manager.py",
+      "class": "LogManager",
+      "line": 293,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\intelligent_failover_engine.py",
+      "class": "IntelligentFailoverEngine",
+      "line": 105,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\jit_warmup.py",
+      "class": "JITWarmupManager",
+      "line": 13,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\loguru_manager.py",
+      "class": "LoguruManager",
+      "line": 17,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\money_manager.py",
+      "class": "MoneyManagerStrategy",
+      "line": 24,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\money_manager.py",
+      "class": "EnhancedMoneyManager",
+      "line": 49,
+      "has_health_check": true,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\plugin_manager.py",
+      "class": "PluginManager",
+      "line": 170,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\plugin_types.py",
+      "class": "DataSourceProvider",
+      "line": 147,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\plugin_version_manager.py",
+      "class": "PluginVersionManager",
+      "line": 131,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\real_data_provider.py",
+      "class": "RealDataProvider",
+      "line": 23,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\risk_manager.py",
+      "class": "RiskManager",
+      "line": 317,
+      "has_health_check": true,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\risk_rule_manager.py",
+      "class": "RiskRuleManager",
+      "line": 111,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\tet_router_engine.py",
+      "class": "TETRouterEngine",
+      "line": 34,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading_engine.py",
+      "class": "TradingEngine",
+      "line": 212,
+      "has_health_check": true,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\unified_indicator_service.py",
+      "class": "UnifiedIndicatorService",
+      "line": 386,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\unified_indicator_service.py",
+      "class": "_DeprecatedIndicatorServiceAlias",
+      "line": 2141,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\adapters\\legacy_cache_adapter.py",
+      "class": "AsyncIOManagerAdapter",
+      "line": 325,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\unified_optimization_service.py",
+      "class": "UnifiedOptimizationService",
+      "line": 73,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\enhanced_realtime_monitor.py",
+      "class": "SmartThresholdManager",
+      "line": 282,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\unified_performance_coordinator.py",
+      "class": "UnifiedPerformanceCoordinator",
+      "line": 105,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\virtualization.py",
+      "class": "VirtualRenderManager",
+      "line": 151,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ai\\config_recommendation_engine.py",
+      "class": "ConfigRecommendationEngine",
+      "line": 120,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ai\\continuous_learning_manager.py",
+      "class": "ModelVersionManager",
+      "line": 347,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ai\\continuous_learning_manager.py",
+      "class": "ContinuousLearningManager",
+      "line": 600,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ai\\personalized_stock_selection_engine.py",
+      "class": "PersonalizedStockSelectionEngine",
+      "line": 120,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ai\\user_behavior_learner.py",
+      "class": "RecommendationEngine",
+      "line": 845,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ai\\intelligent_selection\\fusion_engine.py",
+      "class": "PredictionFusionEngine",
+      "line": 314,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\async_management\\enhanced_async_manager.py",
+      "class": "ResourceManager",
+      "line": 232,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\async_management\\enhanced_async_manager.py",
+      "class": "EnhancedAsyncManager",
+      "line": 467,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\business\\analysis_manager.py",
+      "class": "AnalysisManager",
+      "line": 51,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\business\\stock_manager.py",
+      "class": "StockManager",
+      "line": 18,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\cache\\cache_key_factory.py",
+      "class": "CacheKeyMigrationManager",
+      "line": 339,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\containers\\enhanced_service_container.py",
+      "class": "ServiceStatus",
+      "line": 25,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\containers\\enhanced_service_container.py",
+      "class": "ServiceHealth",
+      "line": 38,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\containers\\enhanced_service_container.py",
+      "class": "ServiceLifecycleEvent",
+      "line": 52,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\containers\\enhanced_service_container.py",
+      "class": "EnhancedServiceContainer",
+      "line": 61,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\containers\\service_container.py",
+      "class": "ServiceScopeContext",
+      "line": 968,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\containers\\service_registry.py",
+      "class": "ServiceScope",
+      "line": 14,
+      "has_health_check": false,
+      "has_metrics": false
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\containers\\service_registry.py",
+      "class": "ServiceInfo",
+      "line": 25,
+      "has_health_check": false,
+      "has_metrics": false
+    }
+  ]
+}

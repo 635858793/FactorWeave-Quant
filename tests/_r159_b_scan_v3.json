@@ -1,0 +1,581 @@
+{
+  "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\order_executor.py",
+  "all_findings_count": 190,
+  "r158_d_口径": 57,
+  "r158_d_in_except": 0,
+  "r158_d_not_in_except": 57,
+  "r51_铁律5_口径": 0,
+  "error_critical_no_exc": [
+    {
+      "line": 740,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_try_reconnect_interface",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "            logger.error(f\"无法重新连接：{asset_type.value} 接口对象不存在\")"
+    },
+    {
+      "line": 758,
+      "col": 16,
+      "method_call": "logger.error",
+      "parent_method": "_try_reconnect_interface",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                logger.error(f\"{asset_type.value} 接口重新连接失败\")"
+    },
+    {
+      "line": 764,
+      "col": 20,
+      "method_call": "logger.error",
+      "parent_method": "_try_reconnect_interface",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                    logger.error(f\"{asset_type.value} 接口连续失败 {self._max_retry_count} 次，触发熔断\")"
+    },
+    {
+      "line": 809,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_get_trading_interface",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "            logger.error(f\"所有接口都不可用: {asset_type.value}\")"
+    },
+    {
+      "line": 922,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "            logger.error(\"无法解析订单使用的账号\")"
+    },
+    {
+      "line": 923,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "            logger.error(f\"订单详细信息:\")"
+    },
+    {
+      "line": 924,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "            logger.error(f\"  order_id: {order.order_id}\")"
+    },
+    {
+      "line": 925,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "            logger.error(f\"  stock_code: {order.stock_code}\")"
+    },
+    {
+      "line": 926,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "            logger.error(f\"  order_type: {order.order_type.value}\")"
+    },
+    {
+      "line": 927,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "            logger.error(f\"  order_quantity: {order.order_quantity}\")"
+    },
+    {
+      "line": 928,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "            logger.error(f\"  order_price: {order.order_price}\")"
+    },
+    {
+      "line": 929,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "            logger.error(f\"  account_id: {order.account_id}\")"
+    },
+    {
+      "line": 930,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "            logger.error(f\"  strategy_id: {order.strategy_id}\")"
+    },
+    {
+      "line": 931,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "            logger.error(f\"  asset_type: {order.asset_type.value}\")"
+    },
+    {
+      "line": 932,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "            logger.error(f\"系统状态:\")"
+    },
+    {
+      "line": 933,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "            logger.error(f\"  可用账号数: {len(accounts) if accounts else 0}\")"
+    },
+    {
+      "line": 934,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "            logger.error(f\"  可能原因:\")"
+    },
+    {
+      "line": 935,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "            logger.error(f\"    1. 系统中没有配置任何账号\")"
+    },
+    {
+      "line": 936,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "            logger.error(f\"    2. 订单的 account_id 和 strategy_id 都是 'default'\")"
+    },
+    {
+      "line": 937,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "            logger.error(f\"    3. 订单指定的账号不存在\")"
+    },
+    {
+      "line": 938,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "            logger.error(f\"    4. 策略指定的默认账号不存在\")"
+    },
+    {
+      "line": 990,
+      "col": 20,
+      "method_call": "logger.critical",
+      "parent_method": "_pre_trade_risk_check",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                    logger.critical("
+    },
+    {
+      "line": 1252,
+      "col": 16,
+      "method_call": "logger.error",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                logger.error(f\"订单完整性验证失败: {order.order_id} - {validation_error}\")"
+    },
+    {
+      "line": 1274,
+      "col": 16,
+      "method_call": "logger.error",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                logger.error(f\"无法解析订单使用的账号: {order.order_id}\")"
+    },
+    {
+      "line": 1313,
+      "col": 20,
+      "method_call": "logger.error",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                    logger.error(f\"资金冻结失败: {order.order_id}, account={account.account_id}, amount={frozen_amount:.2f}\")"
+    },
+    {
+      "line": 1342,
+      "col": 20,
+      "method_call": "logger.error",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                    logger.error(f\"订单状态转换失败: {order.order_id} PENDING->SUBMITTED\")"
+    },
+    {
+      "line": 1369,
+      "col": 20,
+      "method_call": "logger.error",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                    logger.error(f\"订单提交持久化失败，已回滚内存状态: {order.order_id}\")"
+    },
+    {
+      "line": 1397,
+      "col": 16,
+      "method_call": "logger.error",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                logger.error(f\"无法获取账号 {account.account_id} 的交易接口\")"
+    },
+    {
+      "line": 1647,
+      "col": 24,
+      "method_call": "logger.error",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                        logger.error(f\"{order.asset_type.value} 接口连续失败 {health['consecutive_failures']} 次，触发熔断\")"
+    },
+    {
+      "line": 1671,
+      "col": 28,
+      "method_call": "logger.error",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                            logger.error(f\"订单状态转换未预期失败: {order.order_id} -> REJECTED\")"
+    },
+    {
+      "line": 1681,
+      "col": 16,
+      "method_call": "logger.error",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                logger.error(f\"订单提交失败: {order.order_id} ({order.asset_type.value}) - {result.message}, 账号: {account.account_id}\")"
+    },
+    {
+      "line": 1804,
+      "col": 24,
+      "method_call": "logger.error",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                        logger.error(f\"[BATCH-FREEZE] 无法解析账号: {order.order_id}\")"
+    },
+    {
+      "line": 1822,
+      "col": 24,
+      "method_call": "logger.error",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                        logger.error(f\"[BATCH-FREEZE] 资金冻结失败: {order.order_id}, amount={frozen_amount:.2f}\")"
+    },
+    {
+      "line": 1844,
+      "col": 24,
+      "method_call": "logger.error",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                        logger.error(f\"批量订单状态转换失败: {order.order_id} -> SUBMITTED\")"
+    },
+    {
+      "line": 1875,
+      "col": 40,
+      "method_call": "logger.error",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                                        logger.error(f\"订单状态转换未预期失败: {order.order_id} -> REJECTED\")"
+    },
+    {
+      "line": 1898,
+      "col": 40,
+      "method_call": "logger.error",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                                        logger.error(f\"订单状态转换未预期失败: {order.order_id} -> REJECTED\")"
+    },
+    {
+      "line": 1917,
+      "col": 28,
+      "method_call": "logger.error",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                            logger.error(f\"批量订单无法解析账号: {order.order_id}\")"
+    },
+    {
+      "line": 1921,
+      "col": 40,
+      "method_call": "logger.error",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                                        logger.error(f\"订单状态转换未预期失败: {order.order_id} -> REJECTED\")"
+    },
+    {
+      "line": 1940,
+      "col": 28,
+      "method_call": "logger.error",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                            logger.error(f\"批量订单交易接口不可用: {order.order_id}\")"
+    },
+    {
+      "line": 1944,
+      "col": 40,
+      "method_call": "logger.error",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                                        logger.error(f\"订单状态转换未预期失败: {order.order_id} -> REJECTED\")"
+    },
+    {
+      "line": 2027,
+      "col": 40,
+      "method_call": "logger.error",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                                        logger.error(f\"订单状态转换未预期失败: {order.order_id} -> REJECTED\")"
+    },
+    {
+      "line": 2174,
+      "col": 16,
+      "method_call": "logger.error",
+      "parent_method": "cancel_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                logger.error(f\"订单取消失败: {order_id} - 订单不存在，可能原因：\")"
+    },
+    {
+      "line": 2175,
+      "col": 16,
+      "method_call": "logger.error",
+      "parent_method": "cancel_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                logger.error(f\"  1. 订单创建时保存失败但ID已生成\")"
+    },
+    {
+      "line": 2176,
+      "col": 16,
+      "method_call": "logger.error",
+      "parent_method": "cancel_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                logger.error(f\"  2. 订单被保存到了错误的数据池\")"
+    },
+    {
+      "line": 2177,
+      "col": 16,
+      "method_call": "logger.error",
+      "parent_method": "cancel_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                logger.error(f\"  3. 订单已被删除\")"
+    },
+    {
+      "line": 2178,
+      "col": 16,
+      "method_call": "logger.error",
+      "parent_method": "cancel_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                logger.error(f\"  4. 数据库事务问题导致订单未持久化\")"
+    },
+    {
+      "line": 2199,
+      "col": 16,
+      "method_call": "logger.error",
+      "parent_method": "cancel_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                logger.error(f\"无法获取 {order.asset_type.value} 的交易接口用于取消订单: {order_id}\")"
+    },
+    {
+      "line": 2240,
+      "col": 24,
+      "method_call": "logger.error",
+      "parent_method": "cancel_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                        logger.error(f\"取消订单状态转换失败: {order_id}, 当前状态={order.order_status.value}\")"
+    },
+    {
+      "line": 2252,
+      "col": 24,
+      "method_call": "logger.error",
+      "parent_method": "cancel_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                        logger.error(f\"取消订单持久化失败，已回滚内存状态: {order_id}\")"
+    },
+    {
+      "line": 2320,
+      "col": 16,
+      "method_call": "logger.error",
+      "parent_method": "cancel_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                logger.error(f\"订单取消失败: {order_id} ({order.asset_type.value}) - {result.message}\")"
+    },
+    {
+      "line": 2526,
+      "col": 16,
+      "method_call": "logger.error",
+      "parent_method": "handle_order_fill",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                logger.error(f\"订单不存在: {order_id}\")"
+    },
+    {
+      "line": 2583,
+      "col": 24,
+      "method_call": "logger.error",
+      "parent_method": "handle_order_fill",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                        logger.error(f\"成交状态转换失败: {order_id} -> FILLED，回滚成交\")"
+    },
+    {
+      "line": 2608,
+      "col": 24,
+      "method_call": "logger.error",
+      "parent_method": "handle_order_fill",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                        logger.error(f\"成交状态转换失败: {order_id} -> PARTIALLY_FILLED，回滚成交\")"
+    },
+    {
+      "line": 2625,
+      "col": 20,
+      "method_call": "logger.error",
+      "parent_method": "handle_order_fill",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                    logger.error(f\"[NEW-7] fill_id 缺失! order_id={order_id}, 可能导致分笔成交被误去重\")"
+    },
+    {
+      "line": 2681,
+      "col": 16,
+      "method_call": "logger.error",
+      "parent_method": "handle_order_fill",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                logger.error(f\"成交持久化失败，已回滚成交状态: {order_id}\")"
+    },
+    {
+      "line": 2726,
+      "col": 16,
+      "method_call": "logger.error",
+      "parent_method": "handle_order_fill",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                logger.error(f\"成交记录保存失败，已完整回滚: {order_id}\")"
+    },
+    {
+      "line": 3062,
+      "col": 16,
+      "method_call": "logger.error",
+      "parent_method": "_unfreeze_order_funds",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "has_exc_info": false,
+      "source_line": "                logger.error("
+    }
+  ],
+  "except_no_exc": []
+}

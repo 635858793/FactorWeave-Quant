@@ -1,0 +1,12 @@
+{
+  "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\events\\event_bus.py",
+  "lock_names": [
+    "_futures_lock",
+    "_lock",
+    "_history_lock",
+    "_stats_lock"
+  ],
+  "violation_methods": [],
+  "total_violations": 0,
+  "audit_compliant": true
+}

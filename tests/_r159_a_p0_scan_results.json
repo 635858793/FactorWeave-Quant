@@ -1,0 +1,1580 @@
+[
+  {
+    "file": "core/coordinators/main_window_coordinator.py",
+    "p0_missing_total": 279,
+    "p0_missing_in_except": 273,
+    "p0_missing_out_except": 6,
+    "p0_already_with_exc": 4,
+    "details": [
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 448,
+        "method": "error",
+        "keyword": "Failed to initialize main window coordinator:",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 547,
+        "method": "error",
+        "keyword": "Failed to setup main window:",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 561,
+        "method": "error",
+        "keyword": "Failed to setup menu bar:",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 585,
+        "method": "error",
+        "keyword": "Failed to setup toolbar:",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 650,
+        "method": "error",
+        "keyword": "Failed to apply theme:",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 674,
+        "method": "error",
+        "keyword": "Failed to load window configuration:",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 692,
+        "method": "error",
+        "keyword": "Failed to save window configuration:",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 763,
+        "method": "error",
+        "keyword": "居中对话框失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 778,
+        "method": "error",
+        "keyword": "Failed to run main window:",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1002,
+        "method": "error",
+        "keyword": "Failed to dispose main window coordinator:",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1018,
+        "method": "error",
+        "keyword": "新建文件失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1033,
+        "method": "error",
+        "keyword": "打开文件失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1048,
+        "method": "error",
+        "keyword": "保存文件失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1067,
+        "method": "error",
+        "keyword": "撤销失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1081,
+        "method": "error",
+        "keyword": "重做失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1095,
+        "method": "error",
+        "keyword": "复制失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1109,
+        "method": "error",
+        "keyword": "粘贴失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1121,
+        "method": "error",
+        "keyword": "Failed to refresh data:",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1133,
+        "method": "error",
+        "keyword": "增大字体失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1145,
+        "method": "error",
+        "keyword": "减小字体失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1157,
+        "method": "error",
+        "keyword": "重置字体失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1171,
+        "method": "error",
+        "keyword": "处理字体大小变更失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1197,
+        "method": "error",
+        "keyword": "系统设置失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1198,
+        "method": "critical",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1232,
+        "method": "error",
+        "keyword": "打开增强配置管理失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1233,
+        "method": "critical",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1256,
+        "method": "error",
+        "keyword": "打开功能控制失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1257,
+        "method": "critical",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1295,
+        "method": "error",
+        "keyword": "应用设置失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1296,
+        "method": "critical",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1327,
+        "method": "error",
+        "keyword": "打开帮助文档失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1431,
+        "method": "error",
+        "keyword": "节点管理失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1433,
+        "method": "error",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1434,
+        "method": "critical",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1447,
+        "method": "error",
+        "keyword": "云端API管理失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1448,
+        "method": "critical",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1524,
+        "method": "error",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1525,
+        "method": "critical",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1532,
+        "method": "error",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1533,
+        "method": "error",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1534,
+        "method": "critical",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1685,
+        "method": "error",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1686,
+        "method": "critical",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1693,
+        "method": "error",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1694,
+        "method": "error",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1695,
+        "method": "critical",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1725,
+        "method": "error",
+        "keyword": "插件市场失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1726,
+        "method": "critical",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1739,
+        "method": "error",
+        "keyword": "指标市场失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/coordinators/main_window_coordinator.py",
+        "line": 1740,
+        "method": "critical",
+        "keyword": "",
+        "in_except": true
+      }
+    ],
+    "details_total": 279
+  },
+  {
+    "file": "gui/widgets/enhanced_data_import_widget.py",
+    "p0_missing_total": 154,
+    "p0_missing_in_except": 146,
+    "p0_missing_out_except": 8,
+    "p0_already_with_exc": 7,
+    "details": [
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 426,
+        "method": "critical",
+        "keyword": "",
+        "in_except": false
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 2975,
+        "method": "error",
+        "keyword": "无法获取 符号，请检查数据库配置和数据源",
+        "in_except": false
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 3884,
+        "method": "error",
+        "keyword": "IP监控:",
+        "in_except": false
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 601,
+        "method": "error",
+        "keyword": "所有方案都无法获取股票数据",
+        "in_except": false
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 621,
+        "method": "critical",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 2462,
+        "method": "error",
+        "keyword": "设置响应式布局失败:",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 2602,
+        "method": "error",
+        "keyword": "资产类型切换失败:",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 2731,
+        "method": "error",
+        "keyword": "刷新数据状态失败:",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 2732,
+        "method": "error",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 2979,
+        "method": "error",
+        "keyword": "get_all_symbols执行异常:",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 2980,
+        "method": "error",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 3000,
+        "method": "error",
+        "keyword": "❌ db_manager初始化失败: get_connection_manager返回None",
+        "in_except": false
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 3003,
+        "method": "error",
+        "keyword": "❌ db_manager初始化异常:",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 3045,
+        "method": "error",
+        "keyword": "分析数据缺口失败:",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 3093,
+        "method": "error",
+        "keyword": "修复数据缺口失败:",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 3123,
+        "method": "error",
+        "keyword": "显示 详情失败:",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 3153,
+        "method": "error",
+        "keyword": "更新股票失败:",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 3294,
+        "method": "error",
+        "keyword": "切换任务状态失败:",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 3306,
+        "method": "error",
+        "keyword": "取消任务失败:",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 3373,
+        "method": "error",
+        "keyword": "更新任务进度失败:",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 3418,
+        "method": "error",
+        "keyword": "添加符号进度行失败:",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 3444,
+        "method": "error",
+        "keyword": "开始进度监控失败:",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 3464,
+        "method": "error",
+        "keyword": "监控任务进度失败:",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 3535,
+        "method": "error",
+        "keyword": "设置组件响应式规则失化",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 3551,
+        "method": "error",
+        "keyword": "处理屏幕尺寸变化失败:",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 3565,
+        "method": "error",
+        "keyword": "处理屏幕方向变化失败:",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 3576,
+        "method": "error",
+        "keyword": "处理布局变化失败:",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 3595,
+        "method": "error",
+        "keyword": "应用紧凑布局失败:",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 3614,
+        "method": "error",
+        "keyword": "应用正常布局失败:",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 3628,
+        "method": "error",
+        "keyword": "应用扩展布局失败:",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 3638,
+        "method": "error",
+        "keyword": "应用竖屏布局失败:",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 3648,
+        "method": "error",
+        "keyword": "应用横屏布局失败:",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 3665,
+        "method": "error",
+        "keyword": "更新组件可见性失败:",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 3673,
+        "method": "error",
+        "keyword": "垂直排列按钮失败:",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 3681,
+        "method": "error",
+        "keyword": "水平排列按钮失败:",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 4119,
+        "method": "critical",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 4623,
+        "method": "critical",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 4712,
+        "method": "critical",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 4772,
+        "method": "error",
+        "keyword": "传统方式创建任务失败：",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 5286,
+        "method": "critical",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 5337,
+        "method": "critical",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 5358,
+        "method": "critical",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 5381,
+        "method": "critical",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 5411,
+        "method": "critical",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 5438,
+        "method": "critical",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 5472,
+        "method": "critical",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 6045,
+        "method": "critical",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 6076,
+        "method": "critical",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 6119,
+        "method": "critical",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "gui/widgets/enhanced_data_import_widget.py",
+        "line": 6408,
+        "method": "critical",
+        "keyword": "",
+        "in_except": true
+      }
+    ],
+    "details_total": 154
+  },
+  {
+    "file": "core/ui/panels/right_panel.py",
+    "p0_missing_total": 105,
+    "p0_missing_in_except": 102,
+    "p0_missing_out_except": 3,
+    "p0_already_with_exc": 2,
+    "details": [
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 3037,
+        "method": "error",
+        "keyword": "[R82-1] AI 选股失败: :",
+        "in_except": false
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 2990,
+        "method": "critical",
+        "keyword": "",
+        "in_except": false
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 3039,
+        "method": "critical",
+        "keyword": "",
+        "in_except": false
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 285,
+        "method": "error",
+        "keyword": "初始化UI事件连接失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 286,
+        "method": "error",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 301,
+        "method": "error",
+        "keyword": "处理过滤按钮点击事件失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 302,
+        "method": "error",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 336,
+        "method": "error",
+        "keyword": "处理删除按钮点击事件失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 337,
+        "method": "error",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 363,
+        "method": "error",
+        "keyword": "处理清空当前股票按钮点击事件失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 364,
+        "method": "error",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 390,
+        "method": "error",
+        "keyword": "处理清空全部按钮点击事件失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 391,
+        "method": "error",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 453,
+        "method": "error",
+        "keyword": "处理导出按钮点击事件失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 454,
+        "method": "error",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 500,
+        "method": "error",
+        "keyword": "处理回测结果列表点击事件失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 501,
+        "method": "error",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 576,
+        "method": "error",
+        "keyword": "更新回测结果列表失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 577,
+        "method": "error",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 621,
+        "method": "error",
+        "keyword": "刷新回测结果列表失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 622,
+        "method": "error",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 631,
+        "method": "error",
+        "keyword": "处理页码变化事件失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 632,
+        "method": "error",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 643,
+        "method": "error",
+        "keyword": "处理每页大小变化事件失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 644,
+        "method": "error",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 655,
+        "method": "error",
+        "keyword": "处理上一页按钮点击事件失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 656,
+        "method": "error",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 667,
+        "method": "error",
+        "keyword": "处理下一页按钮点击事件失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 668,
+        "method": "error",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 926,
+        "method": "error",
+        "keyword": "创建性能监控标签页失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 927,
+        "method": "error",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 1337,
+        "method": "error",
+        "keyword": "性能监控按钮信号连接失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 1357,
+        "method": "error",
+        "keyword": "启动性能监控自动刷新失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 1488,
+        "method": "error",
+        "keyword": "性能监控刷新失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 1489,
+        "method": "error",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 1516,
+        "method": "error",
+        "keyword": "导出性能报告失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 1517,
+        "method": "critical",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 1537,
+        "method": "error",
+        "keyword": "清空性能数据失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 1538,
+        "method": "critical",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 1570,
+        "method": "error",
+        "keyword": "性能管理器初始化失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 1667,
+        "method": "error",
+        "keyword": "处理UIDataReadyEvent失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 1668,
+        "method": "error",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 1723,
+        "method": "error",
+        "keyword": "✗ 性能管理器更新标签页失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 1724,
+        "method": "error",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 1777,
+        "method": "error",
+        "keyword": "标签页切换处理失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 1778,
+        "method": "error",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 1805,
+        "method": "error",
+        "keyword": "异步更新专业标签页失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 1886,
+        "method": "error",
+        "keyword": "处理标签页更新失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 1939,
+        "method": "error",
+        "keyword": "_dispatch_tab_update 失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/ui/panels/right_panel.py",
+        "line": 1959,
+        "method": "error",
+        "keyword": "传递K线数据到 失败:",
+        "in_except": true
+      }
+    ],
+    "details_total": 105
+  },
+  {
+    "file": "core/services/advanced_risk_control_service.py",
+    "p0_missing_total": 0,
+    "p0_missing_in_except": 0,
+    "p0_missing_out_except": 0,
+    "p0_already_with_exc": 29,
+    "details": [],
+    "details_total": 0
+  },
+  {
+    "file": "core/trading/order_service.py",
+    "p0_missing_total": 17,
+    "p0_missing_in_except": 4,
+    "p0_missing_out_except": 13,
+    "p0_already_with_exc": 18,
+    "details": [
+      {
+        "file": "core/trading/order_service.py",
+        "line": 237,
+        "method": "critical",
+        "keyword": "[R-Phase11 P1-1] 风控服务未注入, 订单已拒绝. order_id=",
+        "in_except": false
+      },
+      {
+        "file": "core/trading/order_service.py",
+        "line": 284,
+        "method": "critical",
+        "keyword": "[R-P0-7] 风控评估异常, 订单已拒绝. order_id= , error=",
+        "in_except": true
+      },
+      {
+        "file": "core/trading/order_service.py",
+        "line": 796,
+        "method": "critical",
+        "keyword": "[R84 P0] create_order 风控硬失败, 阻断订单创建: stock= , err=",
+        "in_except": true
+      },
+      {
+        "file": "core/trading/order_service.py",
+        "line": 837,
+        "method": "error",
+        "keyword": "将跳过账号验证，使用请求中的账号信息",
+        "in_except": true
+      },
+      {
+        "file": "core/trading/order_service.py",
+        "line": 854,
+        "method": "error",
+        "keyword": "将跳过策略验证，使用请求中的策略信息",
+        "in_except": true
+      },
+      {
+        "file": "core/trading/order_service.py",
+        "line": 1792,
+        "method": "error",
+        "keyword": "[MODIFY-UNLOCK] 取消原订单失败: msg=",
+        "in_except": false
+      },
+      {
+        "file": "core/trading/order_service.py",
+        "line": 1834,
+        "method": "error",
+        "keyword": "[MODIFY-UNLOCK] 创建新订单失败",
+        "in_except": false
+      },
+      {
+        "file": "core/trading/order_service.py",
+        "line": 2096,
+        "method": "error",
+        "keyword": "订单不存在:",
+        "in_except": false
+      },
+      {
+        "file": "core/trading/order_service.py",
+        "line": 2101,
+        "method": "error",
+        "keyword": "订单活跃中，不能删除:",
+        "in_except": false
+      },
+      {
+        "file": "core/trading/order_service.py",
+        "line": 1107,
+        "method": "error",
+        "keyword": "订单请求参数无效:",
+        "in_except": false
+      },
+      {
+        "file": "core/trading/order_service.py",
+        "line": 1113,
+        "method": "error",
+        "keyword": "订单验证失败: -",
+        "in_except": false
+      },
+      {
+        "file": "core/trading/order_service.py",
+        "line": 1153,
+        "method": "error",
+        "keyword": "订单保存失败:",
+        "in_except": false
+      },
+      {
+        "file": "core/trading/order_service.py",
+        "line": 1759,
+        "method": "error",
+        "keyword": "[MODIFY-LOCK] 订单已完成，不能修改: status=",
+        "in_except": false
+      },
+      {
+        "file": "core/trading/order_service.py",
+        "line": 1765,
+        "method": "error",
+        "keyword": "[MODIFY-LOCK] 订单部分成交，不能修改:",
+        "in_except": false
+      },
+      {
+        "file": "core/trading/order_service.py",
+        "line": 1150,
+        "method": "error",
+        "keyword": "订单保存验证失败: - 数据库中未找到订单",
+        "in_except": false
+      },
+      {
+        "file": "core/trading/order_service.py",
+        "line": 1326,
+        "method": "error",
+        "keyword": "订单状态转换失败: -> REJECTED，强制设置",
+        "in_except": false
+      },
+      {
+        "file": "core/trading/order_service.py",
+        "line": 1415,
+        "method": "error",
+        "keyword": "订单状态转换失败: -> REJECTED，强制设置",
+        "in_except": false
+      }
+    ],
+    "details_total": 17
+  },
+  {
+    "file": "core/importdata/import_execution_engine.py",
+    "p0_missing_total": 97,
+    "p0_missing_in_except": 90,
+    "p0_missing_out_except": 7,
+    "p0_already_with_exc": 8,
+    "details": [
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 532,
+        "method": "error",
+        "keyword": "详细错误:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 717,
+        "method": "error",
+        "keyword": "提交分布式导入任务失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 740,
+        "method": "error",
+        "keyword": "获取分布式服务状态失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 776,
+        "method": "error",
+        "keyword": "增强版分布式服务初始化失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 794,
+        "method": "error",
+        "keyword": "节点发现服务初始化失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 810,
+        "method": "error",
+        "keyword": "处理节点发现失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 828,
+        "method": "error",
+        "keyword": "注册分布式节点失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 866,
+        "method": "error",
+        "keyword": "检查分布式执行条件失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 910,
+        "method": "error",
+        "keyword": "分布式执行任务失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 932,
+        "method": "error",
+        "keyword": "选择最佳节点失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 964,
+        "method": "error",
+        "keyword": "分割任务失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 974,
+        "method": "error",
+        "keyword": "发送子任务到节点失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 1014,
+        "method": "error",
+        "keyword": "获取分布式状态失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 1073,
+        "method": "error",
+        "keyword": "提交增强版异步任务失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 1339,
+        "method": "error",
+        "keyword": "获取通达信IP统计信息失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 1368,
+        "method": "error",
+        "keyword": "自动调优器初始化失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 1369,
+        "method": "error",
+        "keyword": "详细错误:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 1429,
+        "method": "error",
+        "keyword": "AutoTuner调优失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 1518,
+        "method": "error",
+        "keyword": "执行自动调优失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 1543,
+        "method": "error",
+        "keyword": "估算执行时间失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 1568,
+        "method": "error",
+        "keyword": "获取自动调优状态失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 1581,
+        "method": "error",
+        "keyword": "数据质量监控器初始化失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 1806,
+        "method": "error",
+        "keyword": "数据质量验证失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 1808,
+        "method": "error",
+        "keyword": "[数据质量验证] 异常详情:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 2044,
+        "method": "error",
+        "keyword": "[数据验证] , 数据源: , 类型:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 2095,
+        "method": "error",
+        "keyword": "获取数据质量统计失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 2185,
+        "method": "error",
+        "keyword": "异常检测失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 2219,
+        "method": "error",
+        "keyword": "监控任务进度失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 2271,
+        "method": "error",
+        "keyword": "生成性能报告失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 2375,
+        "method": "error",
+        "keyword": "获取数据源插件失败 :",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 2394,
+        "method": "error",
+        "keyword": "任务配置不存在:",
+        "in_except": false
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 2510,
+        "method": "error",
+        "keyword": "启动任务失败 :",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 2632,
+        "method": "error",
+        "keyword": "停止所有任务失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 2905,
+        "method": "error",
+        "keyword": "任务执行失败 :",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 3181,
+        "method": "error",
+        "keyword": "K线数据保存失败( 模式):",
+        "in_except": false
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 3184,
+        "method": "error",
+        "keyword": "保存K线数据到数据库失败: ,",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 3185,
+        "method": "error",
+        "keyword": "详细错误:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 3519,
+        "method": "error",
+        "keyword": "立即写入数据失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 3726,
+        "method": "error",
+        "keyword": "标准化完成但缺少datetime字段！可用列:",
+        "in_except": false
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 3730,
+        "method": "error",
+        "keyword": "标准化完成但datetime字段全为空！",
+        "in_except": false
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 3739,
+        "method": "error",
+        "keyword": "标准化K线数据字段失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 3740,
+        "method": "error",
+        "keyword": "详细错误:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 3868,
+        "method": "error",
+        "keyword": "补全K线数据元数据失败:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 3869,
+        "method": "error",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 4080,
+        "method": "error",
+        "keyword": "🔴 [失败] | 总耗时: 秒 | 错误: | 线程:",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 4081,
+        "method": "error",
+        "keyword": "📋 [调试信息] 任务配置: task_id= , asset_type= , data_source=",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 4082,
+        "method": "error",
+        "keyword": "",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 4127,
+        "method": "error",
+        "keyword": "[本地复权计算失败] 复权类型= :",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 4148,
+        "method": "error",
+        "keyword": "[本地快速复权计算失败] 复权类型= :",
+        "in_except": true
+      },
+      {
+        "file": "core/importdata/import_execution_engine.py",
+        "line": 4338,
+        "method": "error",
+        "keyword": "",
+        "in_except": true
+      }
+    ],
+    "details_total": 97
+  }
+]

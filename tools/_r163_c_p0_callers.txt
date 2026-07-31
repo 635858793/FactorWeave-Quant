@@ -1,0 +1,215 @@
+======================================================================
+R163-C: P0 业务核心文件业务调用方验证 (Grep 跨 4 子目录)
+======================================================================
+
+## core/trading_engine.py (179 业务调用方)
+  .trae/reports/rounds/_r158_c_audit_tool.py
+  .trae/reports/rounds/_r158_c_audit_tool_v2.py
+  .trae/reports/rounds/_r158_c_cross_method_tool.py
+  .trae/reports/rounds/tools/detect_cross_method_locks_r109.py
+  .trae/reports/rounds/tools/detect_nested_locks_r109.py
+  _audit_r110_a_broad_scan.py
+  _audit_r110_a_strict_nested.py
+  _r110_a_nested_lock_audit.py
+  _r110_a_nested_lock_audit_v2.py
+  _r111_g_nested_lock_detector.py
+  ... + 169 more
+
+## core/risk_manager.py (135 业务调用方)
+  .trae/reports/rounds/_r158_c_audit_tool.py
+  .trae/reports/rounds/_r158_c_audit_tool_v2.py
+  _audit_r143_scan.py
+  _r144_c_excinfo_scan.py
+  _r145_fix_rm_remaining.py
+  _r145_hvd_143_a_gen_test.py
+  _r145_hvd_143_a_grep.py
+  _r145_hvd_143_a_scan.py
+  _r146_a_exc_info_scan.py
+  _r146_a_p0_callers.py
+  ... + 125 more
+
+## core/risk_control.py (68 业务调用方)
+  .trae/reports/rounds/raw/r151_e_ast_verify.py
+  .trae/reports/rounds/raw/r151_e_ast_verify2.py
+  _audit_r110_a_broad_scan.py
+  _audit_r110_a_strict_nested.py
+  _audit_r143_scan.py
+  _r110_a_nested_lock_audit.py
+  _r110_a_nested_lock_audit_v2.py
+  _r111_g_nested_lock_detector.py
+  _r111_g_nested_lock_detector_v2.py
+  _r146_c_logger_scan.py
+  ... + 58 more
+
+## core/money_manager.py (66 业务调用方)
+  .trae/reports/rounds/_r158_c_audit_tool.py
+  .trae/reports/rounds/_r158_c_audit_tool_v2.py
+  .trae/reports/rounds/_r162_comprehensive_fstring_fix.py
+  .trae/reports/rounds/_r162_emergency_recovery.py
+  .trae/reports/rounds/_r162_fix_broken_fstring_v2.py
+  .trae/reports/rounds/_r162_fix_broken_fstring_v3.py
+  .trae/reports/rounds/_r162_fix_broken_fstring_v4.py
+  .trae/reports/rounds/_r162_fix_comprehensive_v5.py
+  .trae/reports/rounds/_r162_fix_comprehensive_v6.py
+  .trae/reports/rounds/_r162_fix_v7_cleanup.py
+  ... + 56 more
+
+## core/risk_monitoring/enhanced_risk_monitor.py (56 业务调用方)
+  .trae/reports/rounds/tools/detect_cross_method_locks_r109.py
+  .trae/reports/rounds/tools/detect_nested_locks_r109.py
+  _r147_c_scan.py
+  _r153_a_extract.py
+  _r153_a_verify.py
+  _r162_b_logger_scan.py
+  _r162_b_scan.py
+  core/events/types.py
+  core/importdata/import_execution_engine.py
+  core/importdata/unified_data_import_engine.py
+  ... + 46 more
+
+## core/stop_loss.py (51 业务调用方)
+  .trae/reports/rounds/_r162_comprehensive_fstring_fix.py
+  .trae/reports/rounds/_r162_emergency_recovery.py
+  .trae/reports/rounds/_r162_fix_broken_fstring_v2.py
+  .trae/reports/rounds/_r162_fix_broken_fstring_v3.py
+  .trae/reports/rounds/_r162_fix_broken_fstring_v4.py
+  .trae/reports/rounds/_r162_fix_comprehensive_v5.py
+  .trae/reports/rounds/_r162_fix_comprehensive_v6.py
+  .trae/reports/rounds/_r162_fix_v7_cleanup.py
+  .trae/reports/rounds/_r162_fix_v8_multiline.py
+  .trae/reports/rounds/_r162_hvd_161_b_auto_fix.py
+  ... + 41 more
+
+## core/take_profit.py (31 业务调用方)
+  .trae/reports/rounds/_r162_comprehensive_fstring_fix.py
+  .trae/reports/rounds/_r162_emergency_recovery.py
+  .trae/reports/rounds/_r162_fix_broken_fstring_v2.py
+  .trae/reports/rounds/_r162_fix_broken_fstring_v3.py
+  .trae/reports/rounds/_r162_fix_broken_fstring_v4.py
+  .trae/reports/rounds/_r162_fix_comprehensive_v5.py
+  .trae/reports/rounds/_r162_fix_comprehensive_v6.py
+  .trae/reports/rounds/_r162_fix_v7_cleanup.py
+  .trae/reports/rounds/_r162_fix_v8_multiline.py
+  .trae/reports/rounds/_r162_hvd_161_b_auto_fix.py
+  ... + 21 more
+
+## gui/widgets/trading_panel.py (23 业务调用方)
+  _r159_b_comprehensive_verify.py
+  core/coordinators/panel_coordinator.py
+  core/events/r84_event_helper.py
+  core/ui/panels/right_panel.py
+  tests/quick_test.py
+  tests/run_test.py
+  tests/test_r118_a_positions_dict_per_account.py
+  tests/test_r118_a_subscriber_account_filter.py
+  tests/test_r118_c_hvd_44c_subscriber_account_id_filter.py
+  tests/test_r119_r51_resolve_via_container_7sites.py
+  ... + 13 more
+
+## core/risk/risk_event_subscribers.py (22 业务调用方)
+  _r146_c_logger_scan.py
+  _r162_b_logger_scan.py
+  _r162_b_scan.py
+  core/services/service_bootstrap.py
+  tests/test_order_rejected_event_subscription.py
+  tests/test_p0_fix_scenario.py
+  tests/test_r100_p0_3_auto_response.py
+  tests/test_r100_p0_6_cancel_risk_arc.py
+  tests/test_r142_p0_1_market_quote_subscription.py
+  tests/test_r142_p0_1_order_validation_failed_unification.py
+  ... + 12 more
+
+## core/performance/professional_risk_metrics.py (20 业务调用方)
+  backtest/backtest_optimizer.py
+  backtest/jit_optimizer.py
+  backtest/paper_trading_engine.py
+  backtest/unified_backtest_engine.py
+  core/agents/risk_agent.py
+  core/performance/algorithm_validation.py
+  core/performance/unified_monitor.py
+  core/risk_control.py
+  core/risk_metrics.py
+  core/services/ai_selection_backtest_service.py
+  ... + 10 more
+
+## gui/dialogs/account_management_dialog.py (20 业务调用方)
+  _r159_b_comprehensive_verify.py
+  core/coordinators/main_window_coordinator.py
+  tests/test_full_validation.py
+  tests/test_r118_a_positions_dict_per_account.py
+  tests/test_r118_a_subscriber_account_filter.py
+  tests/test_r118_c_hvd_44c_subscriber_account_id_filter.py
+  tests/test_r120_p0_1_set_current_account_id.py
+  tests/test_r126_p0_mandatory_4items.py
+  tests/test_r129_p1_high_value_5items.py
+  tests/test_r129_subagent_d_5plus1_service.py
+  ... + 10 more
+
+## core/risk_alert.py (19 业务调用方)
+  _r146_c_logger_scan.py
+  core/agents/risk_agent.py
+  core/risk_monitoring/enhanced_risk_monitor.py
+  core/risk_rule_manager.py
+  core/services/advanced_risk_control_service.py
+  core/services/dynamic_risk_adjustment_service.py
+  tests/test_dead_code_r91_removed.py
+  tests/test_dead_code_r92_removed.py
+  tests/test_p0_fix_scenario.py
+  tests/test_r115_hvd_65_p0_silent_exception_fixes.py
+  ... + 9 more
+
+## gui/widgets/performance/tabs/risk_control_center_tab.py (12 业务调用方)
+  core/performance/unified_performance_coordinator.py
+  core/services/dynamic_risk_adjustment_service.py
+  gui/widgets/performance/__init__.py
+  tests/test_backtest_ui_static.py
+  tests/test_dead_code_r91_removed.py
+  tests/test_dynamic_adjustment_integration.py
+  tests/test_r112_risk_rule_manager_handler_migration.py
+  tests/test_r159_hvd_158c_logger_debug_upgrade.py
+  tests/test_r70_dra_monitoring_autostart.py
+  tests/test_r71_risk_control_center_alias_fix.py
+  ... + 2 more
+
+## core/agents/risk_agent.py (11 业务调用方)
+  core/agents/__init__.py
+  core/agents/bettafish_agent.py
+  core/agents/fusion_engine.py
+  core/services/bettafish_monitoring_service.py
+  docs/_check_paths.py
+  tests/test_dead_code_r90_removed.py
+  tests/test_dead_code_r91_removed.py
+  tests/test_dead_code_r92_removed.py
+  tests/test_r153_p1_4_agents_health.py
+  tests/test_r22_stamp_tax.py
+  ... + 1 more
+
+## gui/dialogs/order_management_dialog.py (8 业务调用方)
+  core/coordinators/main_window_coordinator.py
+  core/events/r84_event_helper.py
+  tests/test_full_validation.py
+  tests/test_r119_hvd_80_create_order_refactor.py
+  tests/test_r142_p1_3_fix_p0_pseudo_fix.py
+  tests/test_r142_p1_3_order_updated_unification.py
+  tools/_r154_deep_new_candidates.py
+  tools/_r163_c_p0_callers.py
+
+## gui/widgets/trading_widget.py (6 业务调用方)
+  gui/ui_components.py
+  tests/test_p0_fix_scenario.py
+  tests/test_r118_c_r51_resolve_via_container.py
+  tests/test_r119_hvd_80_create_order_refactor.py
+  tests/test_r130_p0_mandatory_3items.py
+  tools/_r163_c_p0_callers.py
+
+## core/risk_exporter.py (5 业务调用方)
+  _r153_a_extract.py
+  tests/test_dead_code_r91_removed.py
+  tests/test_dead_code_r92_removed.py
+  tools/_r163_c_p0_callers.py
+  tools/r149_c_p0_p1_scan_v2.py
+
+======================================================================
+汇总: P0 业务核心 17 文件, 总业务调用方 732
+     平均每个 P0 文件 43.1 业务调用方
+     P0 业务核心度评级: 🔴 P0 业务核心

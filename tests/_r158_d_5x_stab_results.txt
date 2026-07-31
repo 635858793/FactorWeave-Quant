@@ -1,0 +1,30 @@
+
+=== Run 1 ===
+PASSED: 32, FAILED: 0, ERROR: 0, SKIPPED: 0
+Exit code: 0, Hash: f16aa632
+
+=== Run 2 ===
+PASSED: 32, FAILED: 0, ERROR: 0, SKIPPED: 0
+Exit code: 0, Hash: f16aa632
+
+=== Run 3 ===
+PASSED: 32, FAILED: 0, ERROR: 0, SKIPPED: 0
+Exit code: 0, Hash: f16aa632
+
+=== Run 4 ===
+PASSED: 32, FAILED: 0, ERROR: 0, SKIPPED: 0
+Exit code: 0, Hash: f16aa632
+
+=== Run 5 ===
+PASSED: 32, FAILED: 0, ERROR: 0, SKIPPED: 0
+Exit code: 0, Hash: f16aa632
+
+--- 详细结果表 ---
+Run  Passed   Failed  Error  Skipped  Exit  MD5       
+1    32       0       0      0        0     f16aa632  
+2    32       0       0      0        0     f16aa632  
+3    32       0       0      0        0     f16aa632  
+4    32       0       0      0        0     f16aa632  
+5    32       0       0      0        0     f16aa632  
+
+[100% STABLE] MD5 一致=True 全 PASSED=True Exit 一致=True Passed 一致=True

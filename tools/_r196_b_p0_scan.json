@@ -1,0 +1,4275 @@
+{
+  "scan_target": [
+    "core/trading",
+    "core/ui",
+    "core/webgpu",
+    "core/importdata",
+    "core/advanced_optimization",
+    "core/services",
+    "core/coordinators",
+    "core/monitoring",
+    "core/risk",
+    "core/optimization"
+  ],
+  "total_violations": 608,
+  "p0_count": 6,
+  "p1_count": 602,
+  "violations": [
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\execution_benchmarks.py",
+      "line": 157,
+      "function": "error",
+      "snippet": "self.logger.error(f\"VWAP计算失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\order_repository.py",
+      "line": 134,
+      "function": "warning",
+      "snippet": "logger.warning(f'[R93-C-P0-1] AccountManager 不可用, 走事件兜底: order_id={order.order_id}')",
+      "except_type": "ImportError"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\order_state_guard.py",
+      "line": 319,
+      "function": "error",
+      "snippet": "logger.error(f\"@guarded: 无法从 {func.__name__} 提取 order 对象 (order_arg={order_arg})\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\signal_adapters.py",
+      "line": 111,
+      "function": "warning",
+      "snippet": "logger.warning(f\"SignalToOrderConverter: 无效的订单类型 {order_type_str}\")",
+      "except_type": "ValueError"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\base_panel.py",
+      "line": 150,
+      "function": "warning",
+      "snippet": "logger.warning(",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\base_panel.py",
+      "line": 186,
+      "function": "error",
+      "snippet": "logger.error(",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\base_panel.py",
+      "line": 323,
+      "function": "warning",
+      "snippet": "logger.warning(f\"[R89-P0-B] {type(self).__name__} _save_state 失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\base_panel.py",
+      "line": 358,
+      "function": "warning",
+      "snippet": "logger.warning(f\"[R89-P0-B] {type(self).__name__} _restore_state 失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\base_panel.py",
+      "line": 384,
+      "function": "error",
+      "snippet": "logger.error(",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\base_panel.py",
+      "line": 472,
+      "function": "error",
+      "snippet": "logger.error(f\"Error disposing {self.__class__.__name__}: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\bottom_panel.py",
+      "line": 377,
+      "function": "error",
+      "snippet": "logger.error(f\"导出日志失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\bottom_panel.py",
+      "line": 478,
+      "function": "error",
+      "snippet": "logger.error(f\"更新响应式布局失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 213,
+      "function": "error",
+      "snippet": "logger.error(f\"创建资产类型选择器失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 249,
+      "function": "error",
+      "snippet": "logger.error(f\"资产类型变更处理失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 265,
+      "function": "error",
+      "snippet": "logger.error(f\"同步指标失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 310,
+      "function": "error",
+      "snippet": "logger.error(f\"处理资产类型变更事件失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 343,
+      "function": "error",
+      "snippet": "logger.error(f\"更新市场过滤器失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 398,
+      "function": "error",
+      "snippet": "logger.error(f\"重新加载资产列表失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 408,
+      "function": "error",
+      "snippet": "logger.error(f\"清空资产列表失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 458,
+      "function": "error",
+      "snippet": "logger.error(f\"填充资产表格失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 501,
+      "function": "error",
+      "snippet": "logger.error(f\"传统方式加载股票列表失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 719,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to bind LeftPanel events: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 729,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to initialize LeftPanel data: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 773,
+      "function": "error",
+      "snippet": "logger.error(f\"检查多屏模式失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 824,
+      "function": "error",
+      "snippet": "logger.error(f\"选择资产失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 939,
+      "function": "error",
+      "snippet": "logger.error(f\"显示高级搜索对话框失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 953,
+      "function": "error",
+      "snippet": "logger.error(f\"处理高级搜索结果失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 1004,
+      "function": "error",
+      "snippet": "logger.error(f\"导出股票数据失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 1060,
+      "function": "error",
+      "snippet": "logger.error(f\"添加到自选股失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 1103,
+      "function": "error",
+      "snippet": "logger.error(f\"打开投资组合管理对话框失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 1130,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to open technical analysis: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 1157,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to open strategy backtest: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 1189,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to open history data management: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 1214,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to open strategy management: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 1334,
+      "function": "error",
+      "snippet": "logger.error(f\"从数据库获取股票列表失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 1478,
+      "function": "error",
+      "snippet": "logger.error(f\"获取资产数据库路径失败: {e}，使用默认路径\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 1722,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to show message: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 1738,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to add to favorites: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 1755,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to remove from favorites: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 1815,
+      "function": "error",
+      "snippet": "logger.error(f\"显示股票详情失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 1913,
+      "function": "error",
+      "snippet": "logger.error(f\"更新响应式布局失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 1949,
+      "function": "error",
+      "snippet": "logger.error(f\"Error disposing LeftPanel resources: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 1988,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to open data quality check: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 2017,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to open calculator: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 2046,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to open unit converter: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 2079,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to create indicator section: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 2232,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to initialize indicators: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 2271,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to populate indicator list: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 2289,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to bind indicator events: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 2297,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to handle indicator type change: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 2305,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to handle indicator search change: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 2338,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to filter indicator list: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 2501,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to save indicator combination: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 2628,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to clear selected indicators: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 2636,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to get selected indicators: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 2672,
+      "function": "error",
+      "snippet": "logger.error(f\"更新股票列表鼠标指针失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 2695,
+      "function": "error",
+      "snippet": "logger.error(f\"处理多屏模式切换事件失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 2704,
+      "function": "error",
+      "snippet": "logger.error(f\"更新状态失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\left_panel.py",
+      "line": 2532,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to apply combination selection: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\middle_panel.py",
+      "line": 71,
+      "function": "warning",
+      "snippet": "logger.warning(f\"统一图表服务不可用: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\middle_panel.py",
+      "line": 97,
+      "function": "error",
+      "snippet": "logger.error(f\"创建图表控件失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\middle_panel.py",
+      "line": 122,
+      "function": "warning",
+      "snippet": "logger.warning(f\"渐进式加载管理器不可用: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\middle_panel.py",
+      "line": 129,
+      "function": "warning",
+      "snippet": "logger.warning(f\"更新节流器不可用: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\middle_panel.py",
+      "line": 701,
+      "function": "warning",
+      "snippet": "logger.warning(\"统一图表服务不可用，使用原有图表实现\")",
+      "except_type": "ImportError"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\middle_panel.py",
+      "line": 903,
+      "function": "error",
+      "snippet": "logger.error(f\"绑定事件失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\middle_panel.py",
+      "line": 1112,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to refresh chart: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\middle_panel.py",
+      "line": 1281,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to toggle multi screen: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\middle_panel.py",
+      "line": 1352,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to switch to multi screen: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\middle_panel.py",
+      "line": 1381,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to switch to single screen: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\middle_panel.py",
+      "line": 1591,
+      "function": "error",
+      "snippet": "logger.error(f\"验证周期和时间范围兼容性失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\middle_panel.py",
+      "line": 1653,
+      "function": "error",
+      "snippet": "logger.error(f\"验证数据量失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\middle_panel.py",
+      "line": 1781,
+      "function": "error",
+      "snippet": "logger.error(f\"处理指标变更事件失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\middle_panel.py",
+      "line": 1798,
+      "function": "error",
+      "snippet": "logger.error(f\"MiddlePanel主题更新失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\middle_panel.py",
+      "line": 1855,
+      "function": "error",
+      "snippet": "logger.error(f\"应用主题到组件失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\middle_panel.py",
+      "line": 1876,
+      "function": "warning",
+      "snippet": "logger.warning(f\"应用主题到图表控件失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\middle_panel.py",
+      "line": 1916,
+      "function": "error",
+      "snippet": "logger.error(f\"MiddlePanel主题更新失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\middle_panel.py",
+      "line": 2039,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to show stat dialog: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\middle_panel.py",
+      "line": 2096,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to dispose middle panel: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\panels\\right_panel.py",
+      "line": 1604,
+      "function": "warning",
+      "snippet": "logger.warning(f\"无法从服务容器获取BacktestResultManager, 回退到本地实例: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\ui\\utils\\qt_dispatcher.py",
+      "line": 100,
+      "function": "error",
+      "snippet": "logger.error(f\"[R82-5] invokeMethod 失败, 清理: {invoke_exc}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\compatibility.py",
+      "line": 383,
+      "function": "warning",
+      "snippet": "logger.warning(f\"驱动版本检查失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\compatibility.py",
+      "line": 399,
+      "function": "warning",
+      "snippet": "logger.warning(f\"驱动版本检测失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\compatibility.py",
+      "line": 516,
+      "function": "warning",
+      "snippet": "logger.warning(f\"NVIDIA版本解析异常: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\crosshair_engine.py",
+      "line": 158,
+      "function": "error",
+      "snippet": "logger.error(f\"更新鼠标位置失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\crosshair_engine.py",
+      "line": 193,
+      "function": "error",
+      "snippet": "logger.error(f\"渲染十字光标失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\crosshair_engine.py",
+      "line": 235,
+      "function": "warning",
+      "snippet": "logger.warning(f\"GPU十字光标渲染失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\crosshair_engine.py",
+      "line": 408,
+      "function": "warning",
+      "snippet": "logger.warning(f\"坐标转换失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\crosshair_engine.py",
+      "line": 419,
+      "function": "warning",
+      "snippet": "logger.warning(f\"数据点捕捉失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\enhanced_gpu_detection.py",
+      "line": 110,
+      "function": "error",
+      "snippet": "logger.error(f\"GPU硬件检测失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\enhanced_gpu_detection.py",
+      "line": 207,
+      "function": "error",
+      "snippet": "logger.error(f\"系统GPU检测失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\enhanced_gpu_detection.py",
+      "line": 277,
+      "function": "warning",
+      "snippet": "logger.warning(f\"系统GPU信息获取失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\enhanced_gpu_detection.py",
+      "line": 487,
+      "function": "warning",
+      "snippet": "logger.warning(f\"WebGPU支持检测失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\enhanced_gpu_detection.py",
+      "line": 505,
+      "function": "error",
+      "snippet": "logger.error(f\"WebGL能力检测失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\enhanced_gpu_detection.py",
+      "line": 577,
+      "function": "error",
+      "snippet": "logger.error(f\"选择最佳适配器失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\environment.py",
+      "line": 150,
+      "function": "warning",
+      "snippet": "logger.warning(f\"环境检测失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\environment.py",
+      "line": 178,
+      "function": "error",
+      "snippet": "logger.error(f\"GPU支持检测失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\environment.py",
+      "line": 256,
+      "function": "error",
+      "snippet": "logger.error(f\"WebGPU支持检测失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\environment.py",
+      "line": 270,
+      "function": "warning",
+      "snippet": "logger.warning(f\"GPU能力检测失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\environment.py",
+      "line": 311,
+      "function": "error",
+      "snippet": "logger.error(f\" 增强GPU检测失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\environment.py",
+      "line": 352,
+      "function": "error",
+      "snippet": "logger.error(f\" WebGL GPU检测失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\environment.py",
+      "line": 382,
+      "function": "warning",
+      "snippet": "logger.warning(\"OpenGL不可用，跳过原生GPU检测\")",
+      "except_type": "ImportError"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\environment.py",
+      "line": 384,
+      "function": "warning",
+      "snippet": "logger.warning(f\"原生GPU能力检测失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\environment.py",
+      "line": 401,
+      "function": "error",
+      "snippet": "logger.error(f\"环境验证失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\error_handler.py",
+      "line": 221,
+      "function": "error",
+      "snippet": "logger.error(f\"错误处理器自身异常: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\error_handler.py",
+      "line": 253,
+      "function": "error",
+      "snippet": "logger.error(f\"错误记录失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\error_handler.py",
+      "line": 270,
+      "function": "error",
+      "snippet": "logger.error(f\"严重错误处理失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\error_handler.py",
+      "line": 295,
+      "function": "error",
+      "snippet": "logger.error(f\"自动恢复尝试失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\error_handler.py",
+      "line": 306,
+      "function": "error",
+      "snippet": "logger.error(f\"调用错误回调失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\error_handler.py",
+      "line": 316,
+      "function": "error",
+      "snippet": "logger.error(f\"清除初始化状态失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\error_handler.py",
+      "line": 326,
+      "function": "error",
+      "snippet": "logger.error(f\"重启GPU设备失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\error_handler.py",
+      "line": 335,
+      "function": "error",
+      "snippet": "logger.error(f\"尝试不同后端失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\error_handler.py",
+      "line": 344,
+      "function": "error",
+      "snippet": "logger.error(f\"切换后端失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\error_handler.py",
+      "line": 353,
+      "function": "error",
+      "snippet": "logger.error(f\"降低渲染复杂度失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\error_handler.py",
+      "line": 363,
+      "function": "error",
+      "snippet": "logger.error(f\"触发回退失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\error_handler.py",
+      "line": 373,
+      "function": "error",
+      "snippet": "logger.error(f\"强制垃圾回收失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\error_handler.py",
+      "line": 388,
+      "function": "error",
+      "snippet": "logger.error(f\"减少内存使用失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\error_handler.py",
+      "line": 398,
+      "function": "error",
+      "snippet": "logger.error(f\"重启后端失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\error_handler.py",
+      "line": 408,
+      "function": "error",
+      "snippet": "logger.error(f\"重置回退状态失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\error_handler.py",
+      "line": 417,
+      "function": "error",
+      "snippet": "logger.error(f\"手动选择后端失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\error_handler.py",
+      "line": 426,
+      "function": "error",
+      "snippet": "logger.error(f\"更新驱动失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\error_handler.py",
+      "line": 445,
+      "function": "error",
+      "snippet": "logger.error(f\"获取错误历史失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\error_handler.py",
+      "line": 467,
+      "function": "error",
+      "snippet": "logger.error(f\"获取错误统计失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\error_handler.py",
+      "line": 511,
+      "function": "error",
+      "snippet": "logger.error(f\"生成用户友好消息失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\error_recovery.py",
+      "line": 737,
+      "function": "error",
+      "snippet": "logger.error(f\"导出错误报告失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\fallback.py",
+      "line": 197,
+      "function": "error",
+      "snippet": "logger.error(f\"Matplotlib渲染器初始化失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\fallback.py",
+      "line": 331,
+      "function": "error",
+      "snippet": "logger.error(f\"Matplotlib K线渲染失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\fallback.py",
+      "line": 451,
+      "function": "error",
+      "snippet": "logger.error(f\"Matplotlib成交量渲染失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\fallback.py",
+      "line": 475,
+      "function": "error",
+      "snippet": "logger.error(f\"Matplotlib线图渲染失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\fallback.py",
+      "line": 611,
+      "function": "error",
+      "snippet": "logger.error(f\"渲染器 {self._current_renderer.backend.value} 渲染异常: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\manager.py",
+      "line": 299,
+      "function": "error",
+      "snippet": "logger.error(f\"渲染异常: {method_name}, 错误: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\memory_manager.py",
+      "line": 206,
+      "function": "error",
+      "snippet": "logger.error(f\"内存池初始化失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\memory_manager.py",
+      "line": 232,
+      "function": "error",
+      "snippet": "logger.error(f\"内存块预分配失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\memory_manager.py",
+      "line": 305,
+      "function": "error",
+      "snippet": "logger.error(f\"内存分配异常: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\memory_manager.py",
+      "line": 350,
+      "function": "error",
+      "snippet": "logger.error(f\"内存释放异常: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\memory_manager.py",
+      "line": 408,
+      "function": "error",
+      "snippet": "logger.error(f\"从池分配内存失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\memory_manager.py",
+      "line": 426,
+      "function": "error",
+      "snippet": "logger.error(f\"内存池扩展失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\memory_manager.py",
+      "line": 449,
+      "function": "error",
+      "snippet": "logger.error(f\"缓存获取失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\memory_manager.py",
+      "line": 474,
+      "function": "error",
+      "snippet": "logger.error(f\"缓存添加失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\memory_manager.py",
+      "line": 491,
+      "function": "error",
+      "snippet": "logger.error(f\"缓存访问更新失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\memory_manager.py",
+      "line": 503,
+      "function": "error",
+      "snippet": "logger.error(f\"GC触发检查失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\memory_manager.py",
+      "line": 548,
+      "function": "error",
+      "snippet": "logger.error(f\"垃圾回收失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\memory_manager.py",
+      "line": 580,
+      "function": "error",
+      "snippet": "logger.error(f\"统计更新失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\memory_manager.py",
+      "line": 599,
+      "function": "error",
+      "snippet": "logger.error(f\"内存监控启动失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\memory_manager.py",
+      "line": 618,
+      "function": "error",
+      "snippet": "logger.error(f\"内存监控线程异常: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\memory_manager.py",
+      "line": 644,
+      "function": "error",
+      "snippet": "logger.error(f\"内存健康检查失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\memory_manager.py",
+      "line": 668,
+      "function": "error",
+      "snippet": "logger.error(f\"获取内存统计失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\memory_manager.py",
+      "line": 683,
+      "function": "error",
+      "snippet": "logger.error(f\"获取系统内存信息失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\memory_manager.py",
+      "line": 722,
+      "function": "error",
+      "snippet": "logger.error(f\"获取优化建议失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\memory_manager.py",
+      "line": 740,
+      "function": "error",
+      "snippet": "logger.error(f\"强制垃圾回收失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\memory_manager.py",
+      "line": 761,
+      "function": "error",
+      "snippet": "logger.error(f\"清空缓存失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\memory_manager.py",
+      "line": 788,
+      "function": "error",
+      "snippet": "logger.error(f\"内存管理器关闭失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\performance_benchmarks.py",
+      "line": 425,
+      "function": "error",
+      "snippet": "logger.error(f\"渲染性能测试失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\performance_benchmarks.py",
+      "line": 705,
+      "function": "error",
+      "snippet": "logger.error(f\"保存性能报告失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\pipeline_optimizer.py",
+      "line": 191,
+      "function": "error",
+      "snippet": "logger.error(f\"提交渲染命令失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\pipeline_optimizer.py",
+      "line": 219,
+      "function": "error",
+      "snippet": "logger.error(f\"批处理失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\pipeline_optimizer.py",
+      "line": 249,
+      "function": "error",
+      "snippet": "logger.error(f\"查找兼容批次失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\pipeline_optimizer.py",
+      "line": 265,
+      "function": "error",
+      "snippet": "logger.error(f\"状态兼容性检查失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\pipeline_optimizer.py",
+      "line": 281,
+      "function": "error",
+      "snippet": "logger.error(f\"纹理兼容性检查失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\pipeline_optimizer.py",
+      "line": 301,
+      "function": "error",
+      "snippet": "logger.error(f\"创建新批次失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\pipeline_optimizer.py",
+      "line": 344,
+      "function": "error",
+      "snippet": "logger.error(f\"获取着色器失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\pipeline_optimizer.py",
+      "line": 370,
+      "function": "error",
+      "snippet": "logger.error(f\"着色器编译异常: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\pipeline_optimizer.py",
+      "line": 410,
+      "function": "error",
+      "snippet": "logger.error(f\"渲染帧处理失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\pipeline_optimizer.py",
+      "line": 439,
+      "function": "error",
+      "snippet": "logger.error(f\"执行渲染命令失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\pipeline_optimizer.py",
+      "line": 485,
+      "function": "error",
+      "snippet": "logger.error(f\"处理渲染批次失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\pipeline_optimizer.py",
+      "line": 505,
+      "function": "error",
+      "snippet": "logger.error(f\"批次排序失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\pipeline_optimizer.py",
+      "line": 521,
+      "function": "error",
+      "snippet": "logger.error(f\"应用渲染状态失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\pipeline_optimizer.py",
+      "line": 532,
+      "function": "error",
+      "snippet": "logger.error(f\"纹理绑定失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\pipeline_optimizer.py",
+      "line": 545,
+      "function": "error",
+      "snippet": "logger.error(f\"批次渲染失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\pipeline_optimizer.py",
+      "line": 581,
+      "function": "error",
+      "snippet": "logger.error(f\"重建批次缓冲区失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\pipeline_optimizer.py",
+      "line": 608,
+      "function": "error",
+      "snippet": "logger.error(f\"更新帧统计失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\pipeline_optimizer.py",
+      "line": 634,
+      "function": "error",
+      "snippet": "logger.error(f\"获取管道统计失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\pipeline_optimizer.py",
+      "line": 671,
+      "function": "error",
+      "snippet": "logger.error(f\"获取优化建议失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\pipeline_optimizer.py",
+      "line": 682,
+      "function": "error",
+      "snippet": "logger.error(f\"更新优化设置失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\pipeline_optimizer.py",
+      "line": 693,
+      "function": "error",
+      "snippet": "logger.error(f\"清空着色器缓存失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\pipeline_optimizer.py",
+      "line": 710,
+      "function": "error",
+      "snippet": "logger.error(f\"刷新渲染批次失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\pipeline_optimizer.py",
+      "line": 742,
+      "function": "error",
+      "snippet": "logger.error(f\"清理过期资源失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\pipeline_optimizer.py",
+      "line": 767,
+      "function": "error",
+      "snippet": "logger.error(f\"关闭管道优化器失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 153,
+      "function": "error",
+      "snippet": "logger.error(f\"WebGPU上下文初始化失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 230,
+      "function": "error",
+      "snippet": "logger.error(f\"❌ 兼容性报告属性访问错误: {e}\")",
+      "except_type": "AttributeError"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 231,
+      "function": "error",
+      "snippet": "logger.error(f\"❌ 兼容性报告对象类型: {type(report)}\")",
+      "except_type": "AttributeError"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 232,
+      "function": "error",
+      "snippet": "logger.error(f\"❌ 兼容性报告可用属性: {list(report.__dict__.keys()) if hasattr(report, '__dict__') else 'N/A'}\")",
+      "except_type": "AttributeError"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 235,
+      "function": "error",
+      "snippet": "logger.error(f\"❌ 兼容性报告验证失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 296,
+      "function": "error",
+      "snippet": "logger.error(f\"智能后端初始化失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 324,
+      "function": "error",
+      "snippet": "logger.error(f\"配置后端初始化失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 390,
+      "function": "error",
+      "snippet": "logger.error(f\"ModernGL初始化失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 423,
+      "function": "error",
+      "snippet": "logger.error(f\"ModernGL回退模式也失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 463,
+      "function": "warning",
+      "snippet": "logger.warning(f\"高性能着色器创建失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 480,
+      "function": "warning",
+      "snippet": "logger.warning(f\"高性能特性启用失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 506,
+      "function": "warning",
+      "snippet": "logger.warning(f\"分辨率更新失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 602,
+      "function": "error",
+      "snippet": "logger.error(f\"OpenGL初始化失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 624,
+      "function": "error",
+      "snippet": "logger.error(f\"CUDA初始化失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 682,
+      "function": "error",
+      "snippet": "logger.error(f\"CPU回退初始化失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 732,
+      "function": "warning",
+      "snippet": "logger.warning(f\"创建基础着色器失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 754,
+      "function": "error",
+      "snippet": "logger.error(f\"创建GPU顶点缓冲失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 774,
+      "function": "warning",
+      "snippet": "logger.warning(f\"WebGPU上下文清理失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 812,
+      "function": "error",
+      "snippet": "logger.error(f\"成交量GPU数据预处理失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 1002,
+      "function": "error",
+      "snippet": "logger.error(f\"创建新顶点缓冲区异常: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 1158,
+      "function": "warning",
+      "snippet": "logger.warning(f\"同步WebGPUContext状态失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 1206,
+      "function": "warning",
+      "snippet": "logger.warning(f\"同步 ModernGL 上下文状态失败：{e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 1495,
+      "function": "error",
+      "snippet": "logger.error(f\"批量GPU成交量渲染失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 1496,
+      "function": "error",
+      "snippet": "logger.error(f\"异常类型: {type(e).__name__}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 1560,
+      "function": "error",
+      "snippet": "logger.error(f\"K线图GPU渲染失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 1585,
+      "function": "error",
+      "snippet": "logger.error(f\"线图GPU渲染失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 1598,
+      "function": "error",
+      "snippet": "logger.error(f\"技术指标渲染失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 1610,
+      "function": "error",
+      "snippet": "logger.error(f\"清空图表失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 1835,
+      "function": "error",
+      "snippet": "logger.error(f\"GPU缓冲区渲染失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 1925,
+      "function": "error",
+      "snippet": "logger.error(f\"CPU K线图渲染失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 1968,
+      "function": "error",
+      "snippet": "logger.error(f\"CPU线图渲染失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 2034,
+      "function": "error",
+      "snippet": "logger.error(f\"GPU渲染失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 2179,
+      "function": "error",
+      "snippet": "logger.error(f\"ModernGL渲染失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 2188,
+      "function": "error",
+      "snippet": "logger.error(f\"OpenGL渲染失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 2196,
+      "function": "error",
+      "snippet": "logger.error(f\"CPU回退渲染失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 2241,
+      "function": "error",
+      "snippet": "logger.error(f\"简化CPU回退渲染失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 2362,
+      "function": "error",
+      "snippet": "logger.error(f\"GPU数据转换失败（Polygon方式）: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 2425,
+      "function": "error",
+      "snippet": "logger.error(f\"GPU数据转换回退方法失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 2486,
+      "function": "warning",
+      "snippet": "logger.warning(f\"获取WebGPU性能信息失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\webgpu\\webgpu_renderer.py",
+      "line": 2521,
+      "function": "warning",
+      "snippet": "logger.warning(f\"获取WebGPU渲染器状态失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\database_writer.py",
+      "line": 107,
+      "function": "error",
+      "snippet": "logger.error(f\"放入写入任务失败: {e} | 队列大小:{self.write_queue.qsize()}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\database_writer.py",
+      "line": 329,
+      "function": "error",
+      "snippet": "logger.error(f\"写入任务失败: {task.buffer_key}, {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\database_writer.py",
+      "line": 367,
+      "function": "error",
+      "snippet": "logger.error(f\"刷新缓冲区失败: {buffer_key}, {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\import_config_manager.py",
+      "line": 80,
+      "function": "error",
+      "snippet": "logger.error(f\"从字典创建DataSourceConfig失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\import_config_manager.py",
+      "line": 159,
+      "function": "error",
+      "snippet": "logger.error(f\"从字典创建ImportTaskConfig失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\import_config_manager.py",
+      "line": 215,
+      "function": "error",
+      "snippet": "logger.error(f\"从字典创建ImportProgress失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\import_config_manager.py",
+      "line": 363,
+      "function": "error",
+      "snippet": "logger.error(f\"添加数据源配置失败 {config.name}: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\import_config_manager.py",
+      "line": 406,
+      "function": "error",
+      "snippet": "logger.error(f\"更新数据源配置失败 {name}: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\import_config_manager.py",
+      "line": 425,
+      "function": "error",
+      "snippet": "logger.error(f\"删除数据源配置失败 {name}: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\import_config_manager.py",
+      "line": 459,
+      "function": "error",
+      "snippet": "logger.error(f\"添加导入任务失败 {config.task_id}: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\import_config_manager.py",
+      "line": 517,
+      "function": "error",
+      "snippet": "logger.error(f\"更新导入任务失败 {task_id}: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\import_config_manager.py",
+      "line": 539,
+      "function": "error",
+      "snippet": "logger.error(f\"删除导入任务失败 {task_id}: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\import_config_manager.py",
+      "line": 570,
+      "function": "error",
+      "snippet": "logger.error(f\"更新导入进度失败 {progress.task_id}: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\import_config_manager.py",
+      "line": 624,
+      "function": "error",
+      "snippet": "logger.error(f\"保存导入历史失败 {progress.task_id}: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\import_config_manager.py",
+      "line": 653,
+      "function": "error",
+      "snippet": "logger.error(f\"获取导入历史失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\import_config_manager.py",
+      "line": 705,
+      "function": "error",
+      "snippet": "logger.error(f\"获取统计信息失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\import_config_manager.py",
+      "line": 726,
+      "function": "error",
+      "snippet": "logger.error(f\"配置导出失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\import_config_manager.py",
+      "line": 749,
+      "function": "error",
+      "snippet": "logger.error(f\"配置导入失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\import_execution_engine.py",
+      "line": 439,
+      "function": "warning",
+      "snippet": "logger.warning(f\"AI预测服务初始化失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\import_execution_engine.py",
+      "line": 478,
+      "function": "warning",
+      "snippet": "logger.warning(f\"AI执行时间预测失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\import_execution_engine.py",
+      "line": 518,
+      "function": "warning",
+      "snippet": "logger.warning(f\"AI参数优化失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\import_execution_engine.py",
+      "line": 538,
+      "function": "warning",
+      "snippet": "logger.warning(f\"获取历史执行数据失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\import_execution_engine.py",
+      "line": 587,
+      "function": "warning",
+      "snippet": "logger.warning(f\"缓存数据失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\import_execution_engine.py",
+      "line": 610,
+      "function": "warning",
+      "snippet": "logger.warning(f\"获取缓存数据失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\import_execution_engine.py",
+      "line": 643,
+      "function": "warning",
+      "snippet": "logger.warning(f\"缓存配置数据失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\import_execution_engine.py",
+      "line": 666,
+      "function": "warning",
+      "snippet": "logger.warning(f\"获取缓存配置失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\import_execution_engine.py",
+      "line": 684,
+      "function": "warning",
+      "snippet": "logger.warning(f\"获取缓存统计失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\import_execution_engine.py",
+      "line": 799,
+      "function": "warning",
+      "snippet": "logger.warning(\"增强版分布式服务不可用，使用原始版本\")",
+      "except_type": "ImportError"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\import_execution_engine.py",
+      "line": 2186,
+      "function": "warning",
+      "snippet": "logger.warning(f\"启动性能监控失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\import_execution_engine.py",
+      "line": 2221,
+      "function": "warning",
+      "snippet": "logger.warning(f\"停止性能监控失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\import_execution_engine.py",
+      "line": 3476,
+      "function": "warning",
+      "snippet": "logger.warning(f\"保存资产元数据异常: {symbol}, {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\import_execution_engine.py",
+      "line": 4473,
+      "function": "warning",
+      "snippet": "logger.warning(f\"⚠️  [基本面] {symbol} | 异步下载任务提交失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 135,
+      "function": "warning",
+      "snippet": "logger.warning(",
+      "except_type": "ImportError"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 141,
+      "function": "warning",
+      "snippet": "logger.warning(",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 326,
+      "function": "error",
+      "snippet": "logger.error(f\"初始化自动配置能力失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 354,
+      "function": "error",
+      "snippet": "logger.error(f\"加载自动配置规则失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 378,
+      "function": "error",
+      "snippet": "logger.error(f\"加载环境配置文件失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 461,
+      "function": "error",
+      "snippet": "logger.error(f\"初始化默认配置适应规则失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 489,
+      "function": "error",
+      "snippet": "logger.error(f\"建立性能基线失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 558,
+      "function": "error",
+      "snippet": "logger.error(f\"生成智能配置失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 594,
+      "function": "error",
+      "snippet": "logger.error(f\"分析历史性能失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 632,
+      "function": "error",
+      "snippet": "logger.error(f\"获取AI参数推荐失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 678,
+      "function": "error",
+      "snippet": "logger.error(f\"应用配置模板失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 730,
+      "function": "error",
+      "snippet": "logger.error(f\"获取环境调整失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 906,
+      "function": "error",
+      "snippet": "logger.error(f\"记录优化过程失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 942,
+      "function": "error",
+      "snippet": "logger.error(f\"生成配置推荐失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 978,
+      "function": "error",
+      "snippet": "logger.error(f\"生成性能推荐失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 1005,
+      "function": "error",
+      "snippet": "logger.error(f\"生成可靠性推荐失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 1029,
+      "function": "error",
+      "snippet": "logger.error(f\"生成成本推荐失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 1057,
+      "function": "error",
+      "snippet": "logger.error(f\"检测配置冲突失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 1089,
+      "function": "error",
+      "snippet": "logger.error(f\"检测资源冲突失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 1127,
+      "function": "error",
+      "snippet": "logger.error(f\"检测调度冲突失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 1175,
+      "function": "error",
+      "snippet": "logger.error(f\"检测数据源冲突失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 1258,
+      "function": "error",
+      "snippet": "logger.error(f\"解决资源冲突失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 1280,
+      "function": "error",
+      "snippet": "logger.error(f\"解决调度冲突失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 1315,
+      "function": "error",
+      "snippet": "logger.error(f\"解决数据源冲突失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 1461,
+      "function": "error",
+      "snippet": "logger.error(f\"保存推荐失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 1490,
+      "function": "error",
+      "snippet": "logger.error(f\"保存冲突失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 1556,
+      "function": "error",
+      "snippet": "logger.error(f\"记录性能反馈失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 1628,
+      "function": "error",
+      "snippet": "logger.error(f\"检查自动优化条件失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 1679,
+      "function": "error",
+      "snippet": "logger.error(f\"应用自动配置规则失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 1722,
+      "function": "error",
+      "snippet": "logger.error(f\"检查规则条件失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 1765,
+      "function": "error",
+      "snippet": "logger.error(f\"应用规则动作失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 1784,
+      "function": "error",
+      "snippet": "logger.error(f\"获取环境信息失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 1816,
+      "function": "error",
+      "snippet": "logger.error(f\"记录自动优化日志失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 1829,
+      "function": "error",
+      "snippet": "logger.error(f\"估算性能改进失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 1863,
+      "function": "error",
+      "snippet": "logger.error(f\"创建环境配置文件失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 1903,
+      "function": "error",
+      "snippet": "logger.error(f\"创建自动配置规则失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 1957,
+      "function": "error",
+      "snippet": "logger.error(f\"获取自动优化日志失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\intelligent_config_manager.py",
+      "line": 1988,
+      "function": "error",
+      "snippet": "logger.error(f\"获取智能统计失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\task_status_manager.py",
+      "line": 227,
+      "function": "error",
+      "snippet": "logger.error(f\"初始化数据库失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\task_status_manager.py",
+      "line": 262,
+      "function": "error",
+      "snippet": "logger.error(f\"从数据库加载任务状态失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\task_status_manager.py",
+      "line": 291,
+      "function": "error",
+      "snippet": "logger.error(f\"保存任务状态到数据库失败 {status_info.task_id}: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\task_status_manager.py",
+      "line": 338,
+      "function": "error",
+      "snippet": "logger.error(f\"创建任务失败 {task_id}: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\task_status_manager.py",
+      "line": 403,
+      "function": "error",
+      "snippet": "logger.error(f\"更新任务状态失败 {task_id}: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\task_status_manager.py",
+      "line": 458,
+      "function": "error",
+      "snippet": "logger.error(f\"移除任务失败 {task_id}: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\task_status_manager.py",
+      "line": 492,
+      "function": "error",
+      "snippet": "logger.error(f\"清理旧任务失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\task_status_manager.py",
+      "line": 595,
+      "function": "error",
+      "snippet": "logger.error(f\"关闭任务状态管理器失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\unified_data_import_engine.py",
+      "line": 2585,
+      "function": "warning",
+      "snippet": "logger.warning(",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\unified_data_import_engine.py",
+      "line": 211,
+      "function": "error",
+      "snippet": "logger.error(f\"异步任务执行失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\unified_data_import_engine.py",
+      "line": 385,
+      "function": "error",
+      "snippet": "logger.error(f\"核心组件初始化失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\unified_data_import_engine.py",
+      "line": 416,
+      "function": "error",
+      "snippet": "logger.error(f\"AI组件初始化失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\unified_data_import_engine.py",
+      "line": 469,
+      "function": "error",
+      "snippet": "logger.error(f\"性能组件初始化失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\unified_data_import_engine.py",
+      "line": 533,
+      "function": "error",
+      "snippet": "logger.error(f\"分布式组件初始化失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\unified_data_import_engine.py",
+      "line": 549,
+      "function": "error",
+      "snippet": "logger.error(f\"数据质量组件初始化失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\unified_data_import_engine.py",
+      "line": 584,
+      "function": "error",
+      "snippet": "logger.error(f\"任务管理初始化失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\unified_data_import_engine.py",
+      "line": 609,
+      "function": "error",
+      "snippet": "logger.error(f\"监控系统启动失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\unified_data_import_engine.py",
+      "line": 656,
+      "function": "error",
+      "snippet": "logger.error(f\"创建导入任务失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\unified_data_import_engine.py",
+      "line": 738,
+      "function": "error",
+      "snippet": "logger.error(f\"启动导入任务失败 {task_id}: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\unified_data_import_engine.py",
+      "line": 774,
+      "function": "error",
+      "snippet": "logger.error(f\"启动异步任务失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\unified_data_import_engine.py",
+      "line": 790,
+      "function": "error",
+      "snippet": "logger.error(f\"启动同步任务失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\unified_data_import_engine.py",
+      "line": 818,
+      "function": "error",
+      "snippet": "logger.error(f\"暂停导入任务失败 {task_id}: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\unified_data_import_engine.py",
+      "line": 846,
+      "function": "error",
+      "snippet": "logger.error(f\"恢复导入任务失败 {task_id}: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\unified_data_import_engine.py",
+      "line": 898,
+      "function": "error",
+      "snippet": "logger.error(f\"取消导入任务失败 {task_id}: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\unified_data_import_engine.py",
+      "line": 977,
+      "function": "error",
+      "snippet": "logger.error(f\"关闭引擎失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\unified_data_import_engine.py",
+      "line": 1060,
+      "function": "error",
+      "snippet": "logger.error(f\"启动异步导入失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\unified_data_import_engine.py",
+      "line": 1264,
+      "function": "warning",
+      "snippet": "logger.warning(f\"AI优化任务配置失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\unified_data_import_engine.py",
+      "line": 1419,
+      "function": "error",
+      "snippet": "logger.error(f\"任务执行失败: {task_config.task_id} - {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\unified_data_import_engine.py",
+      "line": 1554,
+      "function": "error",
+      "snippet": "logger.error(f\"同步任务执行失败: {task_config.task_id} - {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\unified_data_import_engine.py",
+      "line": 1604,
+      "function": "error",
+      "snippet": "logger.error(f\"处理异步任务完成失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\unified_data_import_engine.py",
+      "line": 1642,
+      "function": "error",
+      "snippet": "logger.error(f\"处理异步任务失败失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\unified_data_import_engine.py",
+      "line": 2035,
+      "function": "error",
+      "snippet": "logger.error(f\"导入基本面数据失败：{e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\unified_data_import_engine.py",
+      "line": 2130,
+      "function": "error",
+      "snippet": "logger.error(f\"数据管理器初始化失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\unified_data_import_engine.py",
+      "line": 2140,
+      "function": "error",
+      "snippet": "logger.error(f\"真实数据提供器初始化失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\unified_data_import_engine.py",
+      "line": 2341,
+      "function": "error",
+      "snippet": "logger.error(f\"间隙填充导入失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\unified_data_import_engine.py",
+      "line": 2436,
+      "function": "error",
+      "snippet": "logger.error(f\"智能补全导入失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\unified_data_import_engine.py",
+      "line": 2530,
+      "function": "error",
+      "snippet": "logger.error(f\"增量下载失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\real_time_monitoring.py",
+      "line": 274,
+      "function": "error",
+      "snippet": "logger.error(f\"收集优化指标失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\real_time_monitoring.py",
+      "line": 322,
+      "function": "warning",
+      "snippet": "logger.warning(f\"收集缓存指标失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\real_time_monitoring.py",
+      "line": 372,
+      "function": "warning",
+      "snippet": "logger.warning(f\"收集虚拟化指标失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\real_time_monitoring.py",
+      "line": 416,
+      "function": "warning",
+      "snippet": "logger.warning(f\"收集AI指标失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\real_time_monitoring.py",
+      "line": 438,
+      "function": "warning",
+      "snippet": "logger.warning(\"psutil不可用，网络指标返回默认零值\")",
+      "except_type": "ImportError"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\real_time_monitoring.py",
+      "line": 446,
+      "function": "warning",
+      "snippet": "logger.warning(f\"收集网络指标失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\real_time_monitoring.py",
+      "line": 495,
+      "function": "warning",
+      "snippet": "logger.warning(f\"计算综合指标失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\real_time_monitoring.py",
+      "line": 562,
+      "function": "warning",
+      "snippet": "logger.warning(f\"记录指标到统一监控系统失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\real_time_monitoring.py",
+      "line": 625,
+      "function": "warning",
+      "snippet": "logger.warning(f\"检查告警条件失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\real_time_monitoring.py",
+      "line": 647,
+      "function": "error",
+      "snippet": "logger.error(f\"触发告警失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\real_time_monitoring.py",
+      "line": 671,
+      "function": "error",
+      "snippet": "logger.error(f\"通知指标回调失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\real_time_monitoring.py",
+      "line": 730,
+      "function": "error",
+      "snippet": "logger.error(f\"导出指标数据失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\unified_optimization_service.py",
+      "line": 131,
+      "function": "error",
+      "snippet": "self.logger.error(f\"❌ 统一优化服务初始化失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\unified_optimization_service.py",
+      "line": 142,
+      "function": "error",
+      "snippet": "self.logger.error(f\"❌ 智能缓存管理器初始化失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\unified_optimization_service.py",
+      "line": 153,
+      "function": "error",
+      "snippet": "self.logger.error(f\"❌ 组件虚拟化初始化失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\unified_optimization_service.py",
+      "line": 164,
+      "function": "error",
+      "snippet": "self.logger.error(f\"❌ 实时数据处理器初始化失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\unified_optimization_service.py",
+      "line": 175,
+      "function": "error",
+      "snippet": "self.logger.error(f\"❌ AI推荐器初始化失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\unified_optimization_service.py",
+      "line": 191,
+      "function": "error",
+      "snippet": "self.logger.error(f\"❌ 响应式UI初始化失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\unified_optimization_service.py",
+      "line": 224,
+      "function": "error",
+      "snippet": "self.logger.error(f\"❌ 统一优化服务启动失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\unified_optimization_service.py",
+      "line": 257,
+      "function": "error",
+      "snippet": "self.logger.error(f\"❌ 统一优化服务停止失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\unified_optimization_service.py",
+      "line": 318,
+      "function": "error",
+      "snippet": "self.logger.error(f\"获取优化建议失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\cache\\intelligent_cache.py",
+      "line": 308,
+      "function": "error",
+      "snippet": "logger.error(f\"保存索引失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\cache\\intelligent_cache.py",
+      "line": 373,
+      "function": "warning",
+      "snippet": "logger.warning(f\"读取缓存失败 {key}: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\cache\\intelligent_cache.py",
+      "line": 419,
+      "function": "error",
+      "snippet": "logger.error(f\"写入缓存失败 {key}: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\cache\\intelligent_cache.py",
+      "line": 459,
+      "function": "warning",
+      "snippet": "logger.warning(f\"删除缓存文件失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\cache\\intelligent_cache.py",
+      "line": 719,
+      "function": "warning",
+      "snippet": "logger.warning(f\"[IC.HEALTH_ALERT.PUBLISH.ERROR] err={pub_e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\cache\\intelligent_cache.py",
+      "line": 741,
+      "function": "warning",
+      "snippet": "logger.warning(f\"[R59] IntelligentCache.close 异常: {_e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\cache\\intelligent_cache.py",
+      "line": 852,
+      "function": "error",
+      "snippet": "logger.error(f\"预加载预测失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\cache\\intelligent_cache.py",
+      "line": 936,
+      "function": "error",
+      "snippet": "logger.error(f\"预加载失败 {key}: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\advanced_performance_analytics.py",
+      "line": 152,
+      "function": "error",
+      "snippet": "logger.error(f\"趋势预测失败 {metric_name}: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\advanced_performance_analytics.py",
+      "line": 473,
+      "function": "error",
+      "snippet": "logger.error(f\"瓶颈分析失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\advanced_performance_analytics.py",
+      "line": 851,
+      "function": "error",
+      "snippet": "logger.error(f\"生成优化建议失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\advanced_performance_analytics.py",
+      "line": 1036,
+      "function": "error",
+      "snippet": "logger.error(f\"性能模式分析失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\advanced_performance_analytics.py",
+      "line": 1143,
+      "function": "error",
+      "snippet": "logger.error(f\"分析指标{metric_name}模式失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\enhanced_realtime_monitor.py",
+      "line": 150,
+      "function": "warning",
+      "snippet": "logger.warning(f\"更新{metric_name}统计缓存失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\enhanced_realtime_monitor.py",
+      "line": 475,
+      "function": "error",
+      "snippet": "logger.error(f\"启动增强监控失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\enhanced_realtime_monitor.py",
+      "line": 697,
+      "function": "error",
+      "snippet": "logger.error(f\"停止增强监控失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\memory_monitor.py",
+      "line": 176,
+      "function": "error",
+      "snippet": "logger.error(f\"收集系统内存指标失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\memory_monitor.py",
+      "line": 214,
+      "function": "error",
+      "snippet": "logger.error(f\"收集内存效率指标失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\memory_monitor.py",
+      "line": 317,
+      "function": "error",
+      "snippet": "logger.error(f\"收集内存指标失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\memory_monitor.py",
+      "line": 351,
+      "function": "error",
+      "snippet": "logger.error(f\"启动内存监控失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\memory_monitor.py",
+      "line": 373,
+      "function": "error",
+      "snippet": "logger.error(f\"停止内存监控失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\memory_monitor.py",
+      "line": 423,
+      "function": "error",
+      "snippet": "logger.error(f\"强制垃圾回收失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\performance_optimization_integration.py",
+      "line": 166,
+      "function": "error",
+      "snippet": "logger.error(f\"启动性能优化失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\performance_optimization_integration.py",
+      "line": 176,
+      "function": "error",
+      "snippet": "logger.error(f\"停止性能优化失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\performance_optimization_integration.py",
+      "line": 245,
+      "function": "error",
+      "snippet": "logger.error(f\"基于当前指标优化失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\performance_optimization_integration.py",
+      "line": 310,
+      "function": "error",
+      "snippet": "logger.error(f\"应用优化调整失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\performance_optimization_integration.py",
+      "line": 321,
+      "function": "error",
+      "snippet": "logger.error(f\"通知优化回调失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\performance_optimization_integration.py",
+      "line": 332,
+      "function": "error",
+      "snippet": "logger.error(f\"通知调整回调失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\performance_optimization_integration.py",
+      "line": 423,
+      "function": "error",
+      "snippet": "logger.error(f\"性能监控与优化集成器初始化失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\performance_optimization_integration.py",
+      "line": 444,
+      "function": "error",
+      "snippet": "logger.error(f\"启动性能监控与优化集成器失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\performance_optimization_integration.py",
+      "line": 458,
+      "function": "error",
+      "snippet": "logger.error(f\"停止性能监控与优化集成器失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\performance_optimization_integration.py",
+      "line": 466,
+      "function": "error",
+      "snippet": "logger.error(f\"优化应用回调失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\performance_optimization_integration.py",
+      "line": 480,
+      "function": "error",
+      "snippet": "logger.error(f\"调整完成回调失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\thread_monitor.py",
+      "line": 248,
+      "function": "error",
+      "snippet": "logger.error(f\"线程泄漏检测失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\thread_monitor.py",
+      "line": 292,
+      "function": "error",
+      "snippet": "logger.error(f\"动态阈值调整失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\thread_monitor.py",
+      "line": 319,
+      "function": "error",
+      "snippet": "logger.error(f\"监控间隔调整失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\thread_monitor.py",
+      "line": 454,
+      "function": "error",
+      "snippet": "logger.error(f\"收集系统线程指标失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\thread_monitor.py",
+      "line": 548,
+      "function": "error",
+      "snippet": "logger.error(f\"收集线程池指标失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\thread_monitor.py",
+      "line": 589,
+      "function": "error",
+      "snippet": "logger.error(f\"收集WebGPU线程指标失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\thread_monitor.py",
+      "line": 635,
+      "function": "error",
+      "snippet": "logger.error(f\"计算线程质量指标失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\thread_monitor.py",
+      "line": 786,
+      "function": "error",
+      "snippet": "logger.error(f\"收集线程指标失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\thread_monitor.py",
+      "line": 820,
+      "function": "error",
+      "snippet": "logger.error(f\"启动线程监控失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\thread_monitor.py",
+      "line": 842,
+      "function": "error",
+      "snippet": "logger.error(f\"停止线程监控失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\unified_performance_coordinator.py",
+      "line": 193,
+      "function": "error",
+      "snippet": "logger.error(f\"初始化监控组件失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\unified_performance_coordinator.py",
+      "line": 317,
+      "function": "error",
+      "snippet": "logger.error(f\"更新统一指标失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\unified_performance_coordinator.py",
+      "line": 388,
+      "function": "error",
+      "snippet": "logger.error(f\"启动统一性能监控失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\unified_performance_coordinator.py",
+      "line": 403,
+      "function": "error",
+      "snippet": "logger.error(f\"收集监控数据失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\unified_performance_coordinator.py",
+      "line": 458,
+      "function": "error",
+      "snippet": "logger.error(f\"停止统一性能监控失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\unified_performance_coordinator.py",
+      "line": 533,
+      "function": "error",
+      "snippet": "logger.error(f\"获取性能摘要失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\unified_performance_coordinator.py",
+      "line": 562,
+      "function": "error",
+      "snippet": "logger.error(f\"生成优化建议失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\unified_performance_coordinator.py",
+      "line": 583,
+      "function": "error",
+      "snippet": "logger.error(f\"获取告警摘要失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\unified_performance_coordinator.py",
+      "line": 626,
+      "function": "error",
+      "snippet": "logger.error(f\"导出指标数据失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\virtualization.py",
+      "line": 361,
+      "function": "error",
+      "snippet": "logger.error(f\"数据聚合失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\virtualization.py",
+      "line": 542,
+      "function": "error",
+      "snippet": "logger.error(f\"创建渲染块失败 (chunk_id={chunk_id}): {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\virtualization.py",
+      "line": 566,
+      "function": "warning",
+      "snippet": "logger.warning(f\"获取内存使用率失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\performance\\virtualization.py",
+      "line": 612,
+      "function": "warning",
+      "snippet": "logger.warning(f\"WebGPU渲染器集成失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\timing\\websocket_client.py",
+      "line": 128,
+      "function": "warning",
+      "snippet": "logger.warning(f\"数据压缩失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\timing\\websocket_client.py",
+      "line": 138,
+      "function": "warning",
+      "snippet": "logger.warning(f\"数据解压失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\timing\\websocket_client.py",
+      "line": 238,
+      "function": "error",
+      "snippet": "logger.error(f\"WebSocket连接失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\timing\\websocket_client.py",
+      "line": 286,
+      "function": "warning",
+      "snippet": "logger.warning(\"WebSocket连接已关闭\")",
+      "except_type": "websockets.exceptions.ConnectionClosed"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\timing\\websocket_client.py",
+      "line": 289,
+      "function": "error",
+      "snippet": "logger.error(f\"消息监听错误: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\timing\\websocket_client.py",
+      "line": 306,
+      "function": "error",
+      "snippet": "logger.error(f\"消息解析失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\timing\\websocket_client.py",
+      "line": 367,
+      "function": "error",
+      "snippet": "logger.error(f\"消息处理循环错误: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\timing\\websocket_client.py",
+      "line": 387,
+      "function": "error",
+      "snippet": "logger.error(f\"处理消息失败 {message.type}: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\timing\\websocket_client.py",
+      "line": 401,
+      "function": "error",
+      "snippet": "logger.error(f\"发送初始消息失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\advanced_optimization\\timing\\websocket_client.py",
+      "line": 518,
+      "function": "error",
+      "snippet": "logger.error(f\"发送消息失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\ai_explainability_service.py",
+      "line": 194,
+      "function": "warning",
+      "snippet": "logger.warning(",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\ai_explainability_service.py",
+      "line": 300,
+      "function": "warning",
+      "snippet": "logger.warning(",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\ai_prediction_service.py",
+      "line": 185,
+      "function": "warning",
+      "snippet": "logger.warning(\"深度学习模块不可用，将使用统计模型\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\ai_prediction_service.py",
+      "line": 726,
+      "function": "error",
+      "snippet": "logger.error(f\"ML参数优化失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\ai_prediction_service.py",
+      "line": 896,
+      "function": "warning",
+      "snippet": "logger.warning(f\"从数据库加载配置失败，使用默认配置: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\ai_prediction_service.py",
+      "line": 1111,
+      "function": "warning",
+      "snippet": "logger.warning(\"AI模型文件缺失或损坏，这是正常的初次运行状态\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\ai_prediction_service.py",
+      "line": 1373,
+      "function": "error",
+      "snippet": "logger.error(f\"形态预测失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\ai_prediction_service.py",
+      "line": 1720,
+      "function": "error",
+      "snippet": "logger.error(f\" 模型预测失败 ({model_type}): {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\ai_prediction_service.py",
+      "line": 1870,
+      "function": "error",
+      "snippet": "logger.error(f\" 深度学习预测失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\ai_prediction_service.py",
+      "line": 2726,
+      "function": "error",
+      "snippet": "logger.error(f\"获取性能指标失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\ai_prediction_service.py",
+      "line": 2958,
+      "function": "warning",
+      "snippet": "logger.warning(f\"R88-H-001: super().dispose() 失败 (非致命): {super_dispose_exc}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\ai_prediction_service.py",
+      "line": 3580,
+      "function": "error",
+      "snippet": "logger.error(f\"异常检测失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\ai_prediction_service.py",
+      "line": 3682,
+      "function": "error",
+      "snippet": "logger.error(f\"市场状态预测失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\ai_prediction_service.py",
+      "line": 3760,
+      "function": "error",
+      "snippet": "logger.error(f\"流动性预测失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\ai_prediction_service.py",
+      "line": 3861,
+      "function": "error",
+      "snippet": "logger.error(f\"动量预测失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\ai_prediction_service.py",
+      "line": 3980,
+      "function": "error",
+      "snippet": "logger.error(f\"反转预测失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\ai_prediction_service.py",
+      "line": 4083,
+      "function": "error",
+      "snippet": "logger.error(f\"支撑阻力位预测失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\ai_prediction_service.py",
+      "line": 4200,
+      "function": "error",
+      "snippet": "logger.error(f\"成交量分布预测失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\ai_prediction_service.py",
+      "line": 4314,
+      "function": "error",
+      "snippet": "logger.error(f\"季节性预测失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\ai_prediction_service.py",
+      "line": 4423,
+      "function": "error",
+      "snippet": "logger.error(f\"风险趋势预测失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\ai_stock_selector_service.py",
+      "line": 422,
+      "function": "error",
+      "snippet": "logger.error(f\"生成选股解释失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\alert_rule_engine.py",
+      "line": 758,
+      "function": "error",
+      "snippet": "self.logger.error(f\"转换规则详细失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\analysis_service.py",
+      "line": 485,
+      "function": "warning",
+      "snippet": "logger.warning(f\"统一服务计算MACD失败，使用本地计算: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\analysis_service.py",
+      "line": 623,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to generate signals for {symbol}: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\announcement_parser.py",
+      "line": 411,
+      "function": "error",
+      "snippet": "logger.error(f\"提取关键指标失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\async_plugin_discovery.py",
+      "line": 172,
+      "function": "error",
+      "snippet": "logger.error(f\"扫描插件文件失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\auto_training_pipeline.py",
+      "line": 133,
+      "function": "warning",
+      "snippet": "logger.warning(f\"TrainingDataCollector 未注册, 将使用全局工厂兜底: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\auto_training_pipeline.py",
+      "line": 140,
+      "function": "warning",
+      "snippet": "logger.warning(f\"ModelTrainingService 未注册, 将直接创建实例: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\auto_training_pipeline.py",
+      "line": 260,
+      "function": "error",
+      "snippet": "logger.error(f\"自动化训练失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\base_service.py",
+      "line": 395,
+      "function": "error",
+      "snippet": "logger.error(",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\base_service.py",
+      "line": 411,
+      "function": "error",
+      "snippet": "logger.error(",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\bettafish_advanced_monitoring_service.py",
+      "line": 265,
+      "function": "warning",
+      "snippet": "logger.warning(\"aiohttp not available, falling back to mock SMS\")",
+      "except_type": "ImportError"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\bettafish_advanced_monitoring_service.py",
+      "line": 268,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to send Tencent SMS: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\bettafish_advanced_monitoring_service.py",
+      "line": 569,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to analyze metric trend: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\bettafish_advanced_monitoring_service.py",
+      "line": 690,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to detect anomalies: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\bettafish_advanced_monitoring_service.py",
+      "line": 946,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to update performance metrics chart: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\bettafish_advanced_monitoring_service.py",
+      "line": 1191,
+      "function": "error",
+      "snippet": "self.logger.error(f\"Failed to generate enhanced performance report: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\bettafish_monitoring_integration.py",
+      "line": 841,
+      "function": "warning",
+      "snippet": "logger.warning(",
+      "except_type": "OSError"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\bettafish_monitoring_integration.py",
+      "line": 830,
+      "function": "warning",
+      "snippet": "logger.warning(f\"[R136] metrics_http_server 异常退出: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\bettafish_monitoring_service.py",
+      "line": 1082,
+      "function": "error",
+      "snippet": "self.logger.error(f\"Failed to generate performance report: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\database_monitoring_service.py",
+      "line": 323,
+      "function": "error",
+      "snippet": "logger.error(f\"检查告警条件失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\database_monitoring_service.py",
+      "line": 500,
+      "function": "error",
+      "snippet": "logger.error(f\"生成性能报告失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\data_service.py",
+      "line": 555,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to get data for request {request.request_id}: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\dynamic_risk_adjustment_service.py",
+      "line": 831,
+      "function": "warning",
+      "snippet": "logger.warning('BacktestResultManager 不可用')",
+      "except_type": "ImportError"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\dynamic_risk_adjustment_service.py",
+      "line": 846,
+      "function": "warning",
+      "snippet": "logger.warning('PerformanceService 不可用')",
+      "except_type": "ImportError"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\enhanced_data_quality_monitor.py",
+      "line": 307,
+      "function": "error",
+      "snippet": "logger.error(f\"监控数据质量失败: {data_source} - {data_type}, {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\enhanced_data_quality_monitor.py",
+      "line": 498,
+      "function": "error",
+      "snippet": "logger.error(f\"计算有效性分数失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\enhanced_data_quality_monitor.py",
+      "line": 793,
+      "function": "error",
+      "snippet": "logger.error(f\"生成质量报告失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\enhanced_duckdb_data_downloader.py",
+      "line": 597,
+      "function": "error",
+      "snippet": "logger.error(f\"智能增量下载失败: {str(e)}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\enhanced_duckdb_data_downloader.py",
+      "line": 855,
+      "function": "error",
+      "snippet": "logger.error(f\"数据间隙填充失败: {str(e)}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\enhanced_duckdb_data_downloader.py",
+      "line": 1323,
+      "function": "error",
+      "snippet": "logger.error(f\"下载股票失败: {symbol}, {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\enhanced_performance_bridge.py",
+      "line": 1169,
+      "function": "warning",
+      "snippet": "logger.warning(\"无法从容器获取 EnhancedPerformanceBridge，返回 None\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\enhanced_performance_bridge.py",
+      "line": 340,
+      "function": "error",
+      "snippet": "logger.error(f\"收集性能数据失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\enhanced_performance_bridge.py",
+      "line": 477,
+      "function": "error",
+      "snippet": "logger.error(f\"异常检测失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\enhanced_performance_bridge.py",
+      "line": 578,
+      "function": "error",
+      "snippet": "logger.error(f\"趋势分析失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\enhanced_performance_bridge.py",
+      "line": 886,
+      "function": "error",
+      "snippet": "logger.error(f\"生成优化建议失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\enhanced_performance_bridge.py",
+      "line": 1003,
+      "function": "error",
+      "snippet": "logger.error(f\"获取性能摘要失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\enhanced_realtime_data_manager.py",
+      "line": 473,
+      "function": "warning",
+      "snippet": "logger.warning(f\"Callback 队列已满，跳过数据: {symbol}\")",
+      "except_type": "queue.Full"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\enhanced_realtime_data_manager.py",
+      "line": 1518,
+      "function": "warning",
+      "snippet": "logger.warning(f\"[L2P.POLLING.HEALTH_ALERT.PUBLISH.ERROR] err={pub_e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\external_alert_channels_service.py",
+      "line": 425,
+      "function": "error",
+      "snippet": "logger.error(f\"钉钉告警发送失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\external_alert_channels_service.py",
+      "line": 694,
+      "function": "error",
+      "snippet": "logger.error(f\"根据配置创建渠道失败 [{channel_type}]: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\fault_tolerance_manager.py",
+      "line": 1158,
+      "function": "warning",
+      "snippet": "logger.warning(\"无法从容器获取 FaultToleranceManager，返回 None\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\fault_tolerance_manager.py",
+      "line": 861,
+      "function": "warning",
+      "snippet": "logger.warning(",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\fundamental_data_manager.py",
+      "line": 128,
+      "function": "warning",
+      "snippet": "logger.warning(f\"FundamentalDataManager._do_dispose 失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\hybrid_recommendation_engine.py",
+      "line": 772,
+      "function": "error",
+      "snippet": "logger.error(f\"处理混合推荐请求失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\hybrid_recommendation_engine.py",
+      "line": 960,
+      "function": "warning",
+      "snippet": "logger.warning(f\"等待推荐完成超时: {request_id}\")",
+      "except_type": "asyncio.TimeoutError"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\hybrid_recommendation_engine.py",
+      "line": 1638,
+      "function": "error",
+      "snippet": "logger.error(f\"缓存性能优化分析失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\hybrid_recommendation_engine.py",
+      "line": 1833,
+      "function": "error",
+      "snippet": "logger.error(f\"缓存设置优化失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\incremental_data_analyzer.py",
+      "line": 289,
+      "function": "error",
+      "snippet": "logger.error(f\"Error analyzing {symbol}: {str(e)}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\incremental_update_scheduler.py",
+      "line": 365,
+      "function": "error",
+      "snippet": "logger.error(f\"计算下次运行时间失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\incremental_update_scheduler.py",
+      "line": 586,
+      "function": "error",
+      "snippet": "logger.error(f\"加载任务失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\macro_economic_data_manager.py",
+      "line": 111,
+      "function": "warning",
+      "snippet": "logger.warning(f\"SimpleDuckDBManager.close 失败 (db_path={self.db_path}): {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\macro_economic_data_manager.py",
+      "line": 314,
+      "function": "error",
+      "snippet": "logger.error(f\"初始化宏观经济数据库表失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\macro_economic_data_manager.py",
+      "line": 333,
+      "function": "warning",
+      "snippet": "logger.warning(f\"MacroEconomicDataManager.dispose 失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\macro_economic_data_manager.py",
+      "line": 683,
+      "function": "error",
+      "snippet": "logger.error(f\"计算指标相关性失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\market_service.py",
+      "line": 311,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to initialize basic industries: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\market_service.py",
+      "line": 385,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to load basic stocks: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\market_service.py",
+      "line": 893,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to refresh market data: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\model_explainer.py",
+      "line": 180,
+      "function": "error",
+      "snippet": "logger.error(f\"特征重要性解释失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\model_explainer.py",
+      "line": 270,
+      "function": "error",
+      "snippet": "logger.error(f\"SHAP 解释失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\model_explainer.py",
+      "line": 351,
+      "function": "error",
+      "snippet": "logger.error(f\"LIME 解释失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\model_training_service.py",
+      "line": 435,
+      "function": "error",
+      "snippet": "logger.error(f\"加载现有模型版本失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\model_training_service.py",
+      "line": 1209,
+      "function": "error",
+      "snippet": "logger.error(f\"准备训练数据失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\model_training_service.py",
+      "line": 1473,
+      "function": "error",
+      "snippet": "logger.error(f\"提取特征失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\model_training_service.py",
+      "line": 1854,
+      "function": "error",
+      "snippet": "logger.error(f\"初始化模型失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\model_training_service.py",
+      "line": 1990,
+      "function": "error",
+      "snippet": "logger.error(f\"评估模型失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\model_training_service.py",
+      "line": 2151,
+      "function": "warning",
+      "snippet": "logger.warning(f\"R88-H-001: ModelTrainingService.shutdown 失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\network_service.py",
+      "line": 630,
+      "function": "error",
+      "snippet": "logger.error(f\"Request failed: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\new_stock_fetcher.py",
+      "line": 115,
+      "function": "warning",
+      "snippet": "logger.warning(f\"[R73.EASTMONEY.ADAPTER] 初始化失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\new_stock_fetcher.py",
+      "line": 193,
+      "function": "warning",
+      "snippet": "logger.warning(f\"[R73.AKSHARE.ADAPTER] 初始化失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\notification_service.py",
+      "line": 118,
+      "function": "warning",
+      "snippet": "logger.warning(",
+      "except_type": "(OSError, RuntimeError)"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\notification_service.py",
+      "line": 489,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to initialize default channels: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\notification_service.py",
+      "line": 582,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to load notification config: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\notification_service.py",
+      "line": 989,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to send alert for rule {rule_id}: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\notification_service.py",
+      "line": 1069,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to check duplicate message: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\notification_service.py",
+      "line": 1284,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to send email notification: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\notification_service.py",
+      "line": 1344,
+      "function": "error",
+      "snippet": "logger.error(f\"Webhook HTTP error: {e.code} - {e.reason}\")",
+      "except_type": "urllib.error.HTTPError"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\notification_service.py",
+      "line": 1347,
+      "function": "error",
+      "snippet": "logger.error(f\"Webhook URL error: {e.reason}\")",
+      "except_type": "urllib.error.URLError"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\notification_service.py",
+      "line": 1428,
+      "function": "error",
+      "snippet": "logger.error(f\"DingTalk HTTP error: {e.code} - {e.reason}\")",
+      "except_type": "urllib.error.HTTPError"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\notification_service.py",
+      "line": 1431,
+      "function": "error",
+      "snippet": "logger.error(f\"DingTalk URL error: {e.reason}\")",
+      "except_type": "urllib.error.URLError"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\notification_service.py",
+      "line": 1434,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to send dingtalk notification: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\notification_service.py",
+      "line": 1519,
+      "function": "warning",
+      "snippet": "logger.warning(\"PyQt5 not available for desktop notification\")",
+      "except_type": "ImportError"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\notification_service.py",
+      "line": 1522,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to send desktop notification: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\notification_service.py",
+      "line": 1745,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to send sound notification: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\notification_service.py",
+      "line": 1508,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to show desktop notification: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\notification_service.py",
+      "line": 1736,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to play sound in thread: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\performance_data_bridge.py",
+      "line": 171,
+      "function": "error",
+      "snippet": "logger.error(f\"收集系统指标失败: {str(e)}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\performance_service.py",
+      "line": 535,
+      "function": "error",
+      "snippet": "logger.error(f\"Error checking thresholds: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\plugin_database_service.py",
+      "line": 336,
+      "function": "error",
+      "snippet": "logger.error(f\"获取所有插件信息失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\plugin_service.py",
+      "line": 1238,
+      "function": "warning",
+      "snippet": "logger.warning(\"无法从容器获取 PluginService，返回 None\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\plugin_service.py",
+      "line": 682,
+      "function": "error",
+      "snippet": "logger.error(error_msg)",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\plugin_service.py",
+      "line": 813,
+      "function": "error",
+      "snippet": "logger.error(error_msg)",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\plugin_service.py",
+      "line": 854,
+      "function": "error",
+      "snippet": "logger.error(error_msg)",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\prediction_tracking_service.py",
+      "line": 505,
+      "function": "error",
+      "snippet": "logger.error(f\"更新统计失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\progress_persistence_manager.py",
+      "line": 179,
+      "function": "error",
+      "snippet": "logger.error(f\"初始化进度数据库失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\progress_persistence_manager.py",
+      "line": 225,
+      "function": "error",
+      "snippet": "logger.error(f\"保存任务进度失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\progress_persistence_manager.py",
+      "line": 287,
+      "function": "error",
+      "snippet": "logger.error(f\"加载任务进度失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\progress_persistence_manager.py",
+      "line": 699,
+      "function": "warning",
+      "snippet": "logger.warning(f\"[R58] ProgressPersistenceManager 停止 timer 失败: {_t_exc}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\progress_persistence_manager.py",
+      "line": 704,
+      "function": "warning",
+      "snippet": "logger.warning(f\"[R58] ProgressPersistenceManager dispose 刷盘失败: {_save_exc}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\quality_report_generator.py",
+      "line": 251,
+      "function": "error",
+      "snippet": "logger.error(f\"生成数据质量报告失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\quality_report_generator.py",
+      "line": 386,
+      "function": "error",
+      "snippet": "logger.error(f\"分析质量趋势失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\quality_report_generator.py",
+      "line": 758,
+      "function": "error",
+      "snippet": "logger.error(f\"创建异常检测图失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\quality_report_generator.py",
+      "line": 903,
+      "function": "error",
+      "snippet": "logger.error(f\"生成改进建议失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\quality_report_generator.py",
+      "line": 958,
+      "function": "error",
+      "snippet": "logger.error(f\"生成报告摘要失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\recommendation_model_trainer.py",
+      "line": 411,
+      "function": "error",
+      "snippet": "logger.error(f\"初始化默认模型配置失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\recommendation_model_trainer.py",
+      "line": 564,
+      "function": "error",
+      "snippet": "logger.error(f\"准备训练数据失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\recommendation_model_trainer.py",
+      "line": 701,
+      "function": "error",
+      "snippet": "logger.error(f\"模型训练失败: {job.job_id}, {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\sector_data_service.py",
+      "line": 977,
+      "function": "warning",
+      "snippet": "logger.warning(\"无法从容器获取 SectorDataService，返回 None\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\sector_data_service.py",
+      "line": 169,
+      "function": "warning",
+      "snippet": "logger.warning(",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\sector_data_service.py",
+      "line": 199,
+      "function": "warning",
+      "snippet": "logger.warning(",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\security_service.py",
+      "line": 309,
+      "function": "critical",
+      "snippet": "logger.critical(f\"❌ FAIL-OPEN: 加密系统初始化失败，敏感数据将以明文传输！错误: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\security_service.py",
+      "line": 310,
+      "function": "critical",
+      "snippet": "logger.critical(\"请立即配置 HIKYUU_ENCRYPTION_KEY 和 HIKYUU_ENCRYPTION_SALT 环境变量\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\security_service.py",
+      "line": 670,
+      "function": "warning",
+      "snippet": "logger.warning(\"Token has expired\")",
+      "except_type": "jwt.ExpiredSignatureError"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\security_service.py",
+      "line": 673,
+      "function": "warning",
+      "snippet": "logger.warning(\"Invalid token\")",
+      "except_type": "jwt.InvalidTokenError"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\security_service.py",
+      "line": 1038,
+      "function": "error",
+      "snippet": "logger.error(f\"Security cleanup operation failed: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\service_health_monitor.py",
+      "line": 893,
+      "function": "error",
+      "snippet": "logger.error(f\"Web dashboard server error: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\smart_recommendation_engine.py",
+      "line": 818,
+      "function": "error",
+      "snippet": "logger.error(f\"协同过滤推荐失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\system_optimizer.py",
+      "line": 1409,
+      "function": "warning",
+      "snippet": "logger.warning(\"无法从容器获取 SystemOptimizerService，返回 None\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\system_optimizer.py",
+      "line": 506,
+      "function": "warning",
+      "snippet": "logger.warning(f\"依赖分析失败: {e}\", exc_info=False)",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\tensorflow_gpu_manager.py",
+      "line": 299,
+      "function": "error",
+      "snippet": "logger.error(f\"❌ GPU检测失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\tensorflow_gpu_manager.py",
+      "line": 768,
+      "function": "error",
+      "snippet": "logger.error(f\"❌ GPU计算测试失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\tensorflow_gpu_manager.py",
+      "line": 862,
+      "function": "error",
+      "snippet": "logger.error(f\"❌ [异常] 自动GPU配置失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\training_data_collector.py",
+      "line": 679,
+      "function": "warning",
+      "snippet": "logger.warning(f\"从容器解析 TrainingDataCollector 失败, 将直接创建实例: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\training_data_collector.py",
+      "line": 338,
+      "function": "warning",
+      "snippet": "logger.warning(f\"收集股票 {stock_code} 数据失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\training_data_collector.py",
+      "line": 409,
+      "function": "warning",
+      "snippet": "logger.warning(f\"计算特征失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\training_data_collector.py",
+      "line": 538,
+      "function": "error",
+      "snippet": "logger.error(f\"保存数据集失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\training_data_collector.py",
+      "line": 610,
+      "function": "error",
+      "snippet": "logger.error(f\"加载数据集失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\unified_cache_provider.py",
+      "line": 279,
+      "function": "warning",
+      "snippet": "logger.warning(",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\unified_chart_service.py",
+      "line": 806,
+      "function": "warning",
+      "snippet": "logger.warning(",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\unified_data_quality_monitor.py",
+      "line": 296,
+      "function": "error",
+      "snippet": "logger.error(f\"初始化质量监控数据库失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\unified_data_quality_monitor.py",
+      "line": 405,
+      "function": "error",
+      "snippet": "logger.error(f\"数据质量检查失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\unified_data_quality_monitor.py",
+      "line": 1150,
+      "function": "error",
+      "snippet": "logger.error(f\"保存质量报告失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\base_coordinator.py",
+      "line": 82,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to initialize coordinator {self._name}: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\base_coordinator.py",
+      "line": 102,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to dispose coordinator {self._name}: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\base_coordinator.py",
+      "line": 353,
+      "function": "error",
+      "snippet": "logger.error(",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\base_coordinator.py",
+      "line": 373,
+      "function": "error",
+      "snippet": "logger.error(",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\event_coordinator.py",
+      "line": 672,
+      "function": "error",
+      "snippet": "logger.error(f\"EventCoordinator: 事件订阅失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\event_coordinator.py",
+      "line": 732,
+      "function": "error",
+      "snippet": "logger.error(f\"EventCoordinator: 取消事件订阅失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\event_coordinator.py",
+      "line": 1052,
+      "function": "error",
+      "snippet": "logger.error(f\"调度异步处理器失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\event_coordinator.py",
+      "line": 1556,
+      "function": "error",
+      "snippet": "logger.error(f\"EventCoordinator: Failed to handle analysis completion: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\event_coordinator.py",
+      "line": 1568,
+      "function": "error",
+      "snippet": "logger.error(f\"EventCoordinator: Failed to handle computed indicator: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\main_window_coordinator.py",
+      "line": 1841,
+      "function": "warning",
+      "snippet": "logger.warning(f\"智能模型选择对话框导入失败: {e}，尝试使用控制面板\")",
+      "except_type": "ImportError"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\main_window_coordinator.py",
+      "line": 2649,
+      "function": "warning",
+      "snippet": "logger.warning(f\"启动向导对话框导入失败: {e}\")",
+      "except_type": "ImportError"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\main_window_coordinator.py",
+      "line": 5592,
+      "function": "warning",
+      "snippet": "logger.warning(f\"风险计算器: RiskMetricsCalculator 导入失败 ({import_exc})\")",
+      "except_type": "ImportError"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\main_window_coordinator.py",
+      "line": 5746,
+      "function": "warning",
+      "snippet": "logger.warning(",
+      "except_type": "ImportError"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\panel_coordinator.py",
+      "line": 161,
+      "function": "error",
+      "snippet": "logger.error(f\"apply_zoom_to_charts 失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\panel_coordinator.py",
+      "line": 219,
+      "function": "error",
+      "snippet": "logger.error(f\"PanelCoordinator.handle_trade_signal_notify 异常: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\panel_coordinator.py",
+      "line": 309,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to create UI panels: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\panel_coordinator.py",
+      "line": 334,
+      "function": "error",
+      "snippet": "logger.error(f\"创建专业回测组件失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\panel_coordinator.py",
+      "line": 347,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to connect panel signals: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\panel_coordinator.py",
+      "line": 375,
+      "function": "error",
+      "snippet": "logger.error(f\"处理底部面板隐藏事件失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\panel_coordinator.py",
+      "line": 401,
+      "function": "error",
+      "snippet": "logger.error(f\"更新底部面板菜单项失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\panel_coordinator.py",
+      "line": 434,
+      "function": "error",
+      "snippet": "logger.error(f\"显示底部面板失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\panel_coordinator.py",
+      "line": 457,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to notify panels: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\panel_coordinator.py",
+      "line": 477,
+      "function": "error",
+      "snippet": "logger.error(f\"切换日志面板失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\panel_coordinator.py",
+      "line": 500,
+      "function": "error",
+      "snippet": "logger.error(f\"切换专业回测面板失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\panel_coordinator.py",
+      "line": 509,
+      "function": "error",
+      "snippet": "logger.error(f\"处理回测错误信号失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\panel_coordinator.py",
+      "line": 518,
+      "function": "error",
+      "snippet": "logger.error(f\"处理回测完成信号失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\panel_coordinator.py",
+      "line": 544,
+      "function": "error",
+      "snippet": "logger.error(f\"切换Level-2数据面板失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\panel_coordinator.py",
+      "line": 563,
+      "function": "error",
+      "snippet": "logger.error(f\"切换订单簿面板失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\panel_coordinator.py",
+      "line": 624,
+      "function": "error",
+      "snippet": "logger.error(f\"切换基本面分析面板失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\panel_coordinator.py",
+      "line": 644,
+      "function": "error",
+      "snippet": "logger.error(f\"切换智能推荐面板失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\panel_coordinator.py",
+      "line": 686,
+      "function": "error",
+      "snippet": "logger.error(f\"更新响应式布局失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\panel_coordinator.py",
+      "line": 703,
+      "function": "error",
+      "snippet": "logger.error(f\"刷新面板 {panel_name} 数据失败: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\panel_coordinator.py",
+      "line": 795,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to dispose panel coordinator: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\theme_coordinator.py",
+      "line": 120,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to apply theme {theme_name}: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\theme_coordinator.py",
+      "line": 144,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to get available themes: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\theme_coordinator.py",
+      "line": 164,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to get current theme: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\theme_coordinator.py",
+      "line": 179,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to notify theme changed: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\theme_coordinator.py",
+      "line": 194,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to register widget {widget_name}: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\theme_coordinator.py",
+      "line": 209,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to unregister widget {widget_name}: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\theme_coordinator.py",
+      "line": 246,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to check QSS theme: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\theme_coordinator.py",
+      "line": 296,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to notify theme change: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\theme_coordinator.py",
+      "line": 321,
+      "function": "warning",
+      "snippet": "logger.warning(\"ThemeChangedEvent not available\")",
+      "except_type": "ImportError"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\theme_coordinator.py",
+      "line": 323,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to publish theme changed event: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\theme_coordinator.py",
+      "line": 333,
+      "function": "warning",
+      "snippet": "logger.warning(f\"[R108 HVD-35] publish_theme_changed helper failed: {e}\")",
+      "except_type": "Exception"
+    },
+    {
+      "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\coordinators\\theme_coordinator.py",
+      "line": 347,
+      "function": "error",
+      "snippet": "logger.error(f\"Failed to dispose theme coordinator: {e}\")",
+      "except_type": "Exception"
+    }
+  ]
+}

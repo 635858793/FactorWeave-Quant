@@ -1,0 +1,229 @@
+name: R11-7 Dead Code AST Scan (永久化审计)
+
+# R11 教训固化 (R10 误判永久防御)
+# 每次 PR 自动跑死代码扫描, 阻止 R10 类型的误判 (Grep files_with_matches 漏检)
+# 增量扫描: 仅检查本次 PR 修改的 .py 文件, 避免 100% 全扫导致 CI 超时
+# 误报处理: 60% 置信度报告, 阻断级别 (硬阻止), 报告级别 (warning + artifact)
+
+on:
+  pull_request:
+    branches: [main, develop]
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: '3.11'
+  VULTURE_MIN_CONFIDENCE: 60
+  BLOCK_ON_DEAD_CODE: false  # true=硬阻止, false=报告 (建议先 false 跑几周观察误报率)
+
+jobs:
+  dead-code-scan:
+    name: AST 死代码扫描 (audit_dead_code.py + vulture)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write  # 评论需要
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 需要完整历史才能 diff
+
+      - name: 设置 Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: 安装死代码扫描工具
+        run: |
+          python -m pip install --upgrade pip
+          pip install vulture>=2.16 pydeps>=3.0.6
+
+      - name: 准备扫描路径 (核心子目录)
+        id: paths
+        run: |
+          mkdir -p .audit_reports
+          echo "audit_dead_code_path=tools/audit_dead_code.py" >> $GITHUB_OUTPUT
+          echo "search_dirs=core,tests,plugins,gui,scripts" >> $GITHUB_OUTPUT
+
+      - name: 运行 audit_dead_code.py 全项目扫 (基线建立)
+        id: baseline
+        run: |
+          echo "===== audit_dead_code.py 扫描 R10 误判模块 ====="
+          # R10 误判模块: 必须是 NOT_DEAD (R11 永久基线)
+          for module in \
+            "core/data_quality_risk_manager.py" \
+            "core/network/akshare_network_config.py" \
+            "core/network/universal_network_config.py" \
+            "core/network/plugin_network_registry.py" \
+            "core/network/plugin_auto_register.py"
+          do
+            if [ ! -f "$module" ]; then
+              echo "⚠️  $module 不存在, 跳过"
+              continue
+            fi
+            echo "--- 扫描 $module ---"
+            python tools/audit_dead_code.py --module "$module" 2>&1 | tail -3
+          done
+          echo ""
+          echo "===== 基线扫描完成 ====="
+
+      - name: 运行 vulture 60% 置信度扫描 (报告级别)
+        id: vulture
+        continue-on-error: true
+        run: |
+          echo "===== vulture 60% 置信度扫描 ====="
+          vulture core/ plugins/ --min-confidence ${{ env.VULTURE_MIN_CONFIDENCE }} \
+            --sort-by-size > .audit_reports/vulture_report.txt 2>&1 || true
+          if [ -s .audit_reports/vulture_report.txt ]; then
+            echo "vulture 发现 $(wc -l < .audit_reports/vulture_report.txt) 项潜在死代码"
+            echo "前 20 行预览:"
+            head -20 .audit_reports/vulture_report.txt
+            echo ""
+            echo "::warning::vulture 60% 置信度发现 $(wc -l < .audit_reports/vulture_report.txt) 项潜在死代码, 详见 artifact"
+          else
+            echo "vulture 60% 置信度无问题"
+          fi
+
+      - name: 增量扫描 (本次 PR 修改的 .py 文件)
+        id: incremental
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        run: |
+          echo "===== 增量扫描: 本次 PR 修改的 .py 文件 ====="
+          # 找出本次 PR 修改/新增的 .py 文件
+          git fetch origin ${{ github.base_ref }} --depth=1
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- '*.py' | grep -v -E "(test_|tests/)" || true)
+          echo "本次 PR 修改的 .py 文件 (排除测试):"
+          echo "$CHANGED_FILES"
+          echo ""
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "无生产代码修改, 跳过增量扫描"
+            exit 0
+          fi
+          echo "$CHANGED_FILES" > .audit_reports/changed_files.txt
+          
+          # 对每个修改的文件运行 audit_dead_code.py
+          echo "$CHANGED_FILES" | while read -r f; do
+            if [ -z "$f" ] || [ ! -f "$f" ]; then
+              continue
+            fi
+            echo "--- 扫描 $f ---"
+            python tools/audit_dead_code.py --module "$f" --json \
+              > ".audit_reports/$(basename $f .py).json" 2>&1 || true
+            # 简单判断: grep is_truly_dead 字段 (避免 YAML 多行字符串解析问题)
+            if grep -q '"is_truly_dead": true' ".audit_reports/$(basename $f .py).json" 2>/dev/null; then
+              echo "::error file=$f::检测到真正死代码 (is_truly_dead=True)"
+            elif grep -q '"is_truly_dead": false' ".audit_reports/$(basename $f .py).json" 2>/dev/null; then
+              CALLERS=$(grep -oE '"total_external_callers": [0-9]+' ".audit_reports/$(basename $f .py).json" | head -1 | grep -oE '[0-9]+')
+              echo "✅ $f (${CALLERS:-?} callsites)"
+            else
+              echo "⚠️  $f (扫描失败, 详见 artifact)"
+            fi
+          done
+          echo ""
+          echo "===== 增量扫描完成 ====="
+
+      - name: 上传报告 artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dead-code-scan-report
+          path: .audit_reports/
+          retention-days: 14
+
+      - name: PR 评论 (增量扫描结果)
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            
+            const reportDir = '.audit_reports';
+            let body = '## 🔍 R11-7 死代码扫描结果\n\n';
+            body += '**R10 教训**: Grep `files_with_matches` 误判 5 模块为死代码, 实际 404+ 真实 callsites\n';
+            body += '**本次扫描**: 使用 `tools/audit_dead_code.py` AST 真实工具 + vulture 60%\n\n';
+            
+            // vulture 报告
+            const vultureReport = path.join(reportDir, 'vulture_report.txt');
+            if (fs.existsSync(vultureReport)) {
+              const lines = fs.readFileSync(vultureReport, 'utf-8').split('\n').filter(l => l.trim());
+              body += `### 📊 vulture 60% 置信度报告\n`;
+              body += `发现 **${lines.length}** 项潜在死代码 (单文件局部扫描, 高误报率)\n\n`;
+              if (lines.length > 0 && lines.length <= 20) {
+                body += '```\n' + lines.slice(0, 20).join('\n') + '\n```\n\n';
+              } else if (lines.length > 20) {
+                body += '```\n' + lines.slice(0, 20).join('\n') + '\n...\n```\n\n';
+              }
+              body += '> ⚠️ **vulture 误报率高, 仅作起点**。所有项必须用 `audit_dead_code.py` 二次验证 (R10 教训)\n\n';
+            } else {
+              body += '### ✅ vulture 60% 置信度: 无问题\n\n';
+            }
+            
+            // 增量扫描结果
+            const changedFilesReport = path.join(reportDir, 'changed_files.txt');
+            if (fs.existsSync(changedFilesReport)) {
+              const files = fs.readFileSync(changedFilesReport, 'utf-8').split('\n').filter(f => f.trim());
+              body += `### 🔬 增量扫描 (本次 PR 修改的 .py)\n`;
+              body += `扫描了 **${files.length}** 个生产文件\n\n`;
+              let deadCount = 0;
+              for (const f of files) {
+                if (!f.trim()) continue;
+                const jsonFile = path.join(reportDir, path.basename(f, '.py') + '.json');
+                if (!fs.existsSync(jsonFile)) continue;
+                try {
+                  const data = JSON.parse(fs.readFileSync(jsonFile, 'utf-8'));
+                  if (data.is_truly_dead) {
+                    deadCount++;
+                    body += `- ❌ **${f}** is_truly_dead=True\n`;
+                  } else {
+                    body += `- ✅ ${f} (${data.total_external_callers} callsites)\n`;
+                  }
+                } catch (e) {
+                  body += `- ⚠️  ${f} (扫描失败: ${e.message})\n`;
+                }
+              }
+              body += '\n';
+              if (deadCount === 0) {
+                body += '**结论**: 本次 PR 未引入死代码 ✅\n';
+              } else {
+                body += `**结论**: 本次 PR 检测到 ${deadCount} 个潜在死代码 ❌\n`;
+              }
+            }
+            
+            body += '\n---\n';
+            body += '**R11 铁律**: 任何被 vulture 标记为 unused 的项, 必须用 `python tools/audit_dead_code.py --module <file>` 二次验证\n';
+            body += '**项目规则**: 参见 `.trae/rules/project_rules.md` §6\n';
+            
+            // 查找已有评论
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const botComment = comments.find(c => 
+              c.user.login === 'github-actions[bot]' && 
+              c.body.includes('R11-7 死代码扫描结果')
+            );
+            
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body,
+              });
+            }

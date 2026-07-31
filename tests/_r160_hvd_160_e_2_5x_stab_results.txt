@@ -1,0 +1,25 @@
+
+============================================================
+测试套件: R160 HVD-160-E-2 TDD (预期 9 测试)
+============================================================
+  Run 1: PASSED=9, FAILED=0, ERROR=0, SKIPPED=0, exit=0, hash=8df63534
+  Run 2: PASSED=9, FAILED=0, ERROR=0, SKIPPED=0, exit=0, hash=8df63534
+  Run 3: PASSED=9, FAILED=0, ERROR=0, SKIPPED=0, exit=0, hash=8df63534
+  Run 4: PASSED=9, FAILED=0, ERROR=0, SKIPPED=0, exit=0, hash=8df63534
+  Run 5: PASSED=9, FAILED=0, ERROR=0, SKIPPED=0, exit=0, hash=8df63534
+  MD5 一致: True (['8df63534', '8df63534', '8df63534', '8df63534', '8df63534'])
+  全 PASSED: True
+  Exit code 一致: True ([0, 0, 0, 0, 0])
+  Passed 数一致: True ([9, 9, 9, 9, 9])
+  Passed == 预期: True
+  稳定性评级: [100% STABLE]
+
+============================================================
+R160 HVD-160-F 5x 稳定性评级
+============================================================
+综合评级: [100% STABLE]
+  套件: R160 HVD-160-E-2 TDD
+  预期测试: 9
+  实际通过: 9
+  MD5: 8df63534
+  退出码: [0, 0, 0, 0, 0]

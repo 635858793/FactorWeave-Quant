@@ -1,0 +1,37 @@
+[
+  {
+    "file": "core/coordinators/main_window_coordinator.py",
+    "missing_count": 273,
+    "fix_count": 273,
+    "post_missing_count": 0,
+    "backup": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\.trae\\reports\\rounds\\_r159_a_backups\\core_coordinators_main_window_coordinator.py.bak"
+  },
+  {
+    "file": "gui/widgets/enhanced_data_import_widget.py",
+    "missing_count": 146,
+    "fix_count": 146,
+    "post_missing_count": 0,
+    "backup": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\.trae\\reports\\rounds\\_r159_a_backups\\gui_widgets_enhanced_data_import_widget.py.bak"
+  },
+  {
+    "file": "core/ui/panels/right_panel.py",
+    "missing_count": 102,
+    "fix_count": 102,
+    "post_missing_count": 0,
+    "backup": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\.trae\\reports\\rounds\\_r159_a_backups\\core_ui_panels_right_panel.py.bak"
+  },
+  {
+    "file": "core/trading/order_service.py",
+    "missing_count": 4,
+    "fix_count": 4,
+    "post_missing_count": 0,
+    "backup": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\.trae\\reports\\rounds\\_r159_a_backups\\core_trading_order_service.py.bak"
+  },
+  {
+    "file": "core/importdata/import_execution_engine.py",
+    "missing_count": 90,
+    "fix_count": 90,
+    "post_missing_count": 0,
+    "backup": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\.trae\\reports\\rounds\\_r159_a_backups\\core_importdata_import_execution_engine.py.bak"
+  }
+]

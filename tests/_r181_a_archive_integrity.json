@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-07-24T23:03:30.610212",
+  "archive_dir": "_archive",
+  "archive_exists": true,
+  "files_checked": 0,
+  "files_found": 0,
+  "files_missing": [],
+  "files_size_mismatch": [],
+  "files_sha256_mismatch": [],
+  "passed": true
+}

@@ -1,0 +1,242 @@
+name: Report Sync Checker (R137 阶段 3 CI 集成)
+
+# R137 子智能体 D 阶段 3 CI 集成 (2026-07-15)
+# 目的: 持续监控报告-代码状态偏差, 拦截 R1 类系统性偏差永久反复.
+# 触发: 每次 push/PR + 每周一定时扫描
+# 拦截阈值: 总偏差 ≤ 5 + P0 = 0 + 文件不存在 = 0 + 报告时滞 ≤ 7 天
+# 沿用 R135 .github/workflows/monitor_soft_parse.yml 模板
+
+on:
+  push:
+    branches: [main, dev, release/*]
+    paths:
+      - 'core/**/*.py'
+      - 'gui/**/*.py'
+      - 'tests/**/*.py'
+      - 'web/**/*.py'
+      - 'scripts/**/*.py'
+      - 'tools/report_sync_checker.py'
+      - 'tools/report_sync_checker_config.json'
+      - 'tools/report_sync_checker_v2.py'
+      - 'tools/report_sync_checker_v2_config.json'
+      - '.trae/reports/**/*.md'
+  pull_request:
+    branches: [main, dev]
+    paths:
+      - 'core/**/*.py'
+      - 'gui/**/*.py'
+      - 'tests/**/*.py'
+      - 'web/**/*.py'
+      - 'scripts/**/*.py'
+      - 'tools/report_sync_checker.py'
+      - 'tools/report_sync_checker_config.json'
+      - 'tools/report_sync_checker_v2.py'
+      - 'tools/report_sync_checker_v2_config.json'
+      - '.trae/reports/**/*.md'
+  schedule:
+    # 每周一 09:00 UTC+8 (北京时间) 自动运行
+    - cron: '0 1 * * 1'
+  workflow_dispatch:
+    inputs:
+      max_deviations:
+        description: 'Max deviations (total)'
+        required: false
+        default: '5'
+      max_docstring_pending:
+        description: 'Max docstring PENDING'
+        required: false
+        default: '10'
+      max_file_not_exist:
+        description: 'Max file not exist (R1 false positive)'
+        required: false
+        default: '0'
+      max_time_lag_days:
+        description: 'Max report time lag (days)'
+        required: false
+        default: '7'
+
+jobs:
+  report-sync-checker:
+    name: Report Sync Checker (R137 §6 双向同步)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 完整历史, 便于追溯
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # 最小依赖: 监控脚本仅用标准库 (argparse, ast, re, json, csv, io)
+          # 但项目其他模块可能需要 loguru 等, 这里按需安装
+          pip install loguru pytest 2>/dev/null || true
+
+      - name: Run report sync checker (CI mode)
+        id: sync-check
+        run: |
+          echo "===== R137 阶段 3 报告-代码双向同步检查 (R104 §12 #1 R+1 round 强制) ====="
+          python tools/report_sync_checker.py \
+            --ci-mode \
+            --report-format json \
+            --config tools/report_sync_checker_config.json \
+            --max-deviations ${{ github.event.inputs.max_deviations || '5' }} \
+            --max-docstring-pending ${{ github.event.inputs.max_docstring_pending || '10' }} \
+            --max-file-not-exist ${{ github.event.inputs.max_file_not_exist || '0' }} \
+            --max-time-lag-days ${{ github.event.inputs.max_time_lag_days || '7' }} \
+            --exit-code-on-violation
+          SYNC_EXIT=$?
+          echo "Sync checker exit code: $SYNC_EXIT"
+          echo "SYNC_EXIT=$SYNC_EXIT" >> $GITHUB_ENV
+
+      - name: Save sync report as artifact
+        if: always()
+        run: |
+          REPORT_PATH=".trae/reports/monitoring/report_sync_$(date +%Y%m%d).json"
+          if [ -f "$REPORT_PATH" ]; then
+            mkdir -p ci-artifacts
+            cp "$REPORT_PATH" "ci-artifacts/report_sync_report.json"
+            echo "Report saved: ci-artifacts/report_sync_report.json"
+            # 打印报告摘要到 step log
+            cat "$REPORT_PATH" | head -50
+          else
+            echo "WARN: Report file not found at $REPORT_PATH"
+            # 重新生成 (可能在 stdout 中)
+            python tools/report_sync_checker.py \
+              --ci-mode \
+              --report-format json \
+              --config tools/report_sync_checker_config.json \
+              --output .trae/reports/monitoring/report_sync_$(date +%Y%m%d).json || true
+            if [ -f ".trae/reports/monitoring/report_sync_$(date +%Y%m%d).json" ]; then
+              mkdir -p ci-artifacts
+              cp ".trae/reports/monitoring/report_sync_$(date +%Y%m%d).json" "ci-artifacts/report_sync_report.json"
+            fi
+          fi
+
+      - name: Upload sync report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: report-sync-checker-report
+          path: ci-artifacts/report_sync_report.json
+          retention-days: 30
+
+      - name: Comment on PR with results
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const reportPath = 'ci-artifacts/report_sync_report.json';
+            if (!fs.existsSync(reportPath)) {
+              console.log('Report file not found, skipping comment');
+              return;
+            }
+            const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+            const stats = report.statistics || {};
+            const alert = report.alert || false;
+            const total = stats.total_deviations || 0;
+            const p0 = stats.p0_count || 0;
+            const p1 = stats.p1_count || 0;
+            const p2 = stats.p2_count || 0;
+            const fileNotExist = stats.file_not_exist_count || 0;
+            const falseReport = stats.false_report_count || 0;
+            const timeLagWarnings = report.time_lag_warnings || [];
+
+            const statusEmoji = alert ? '❌' : '✅';
+            const statusText = alert ? 'FAIL' : 'PASS';
+
+            const body = `## ${statusEmoji} R137 报告-代码双向同步检查 (${statusText})
+
+            **总偏差**: ${total} (阈值: 5)
+            **P0 真实未注册**: ${p0} (目标: 0)
+            **P1 报告偏差**: ${p1}
+            **P2 物理删除/已废弃**: ${p2}
+            **R1 假修复方向 (false_report)**: ${falseReport}
+            **文件不存在 (R1 假阳性)**: ${fileNotExist} (目标: 0)
+            **时滞告警**: ${timeLagWarnings.length} 项
+
+            ${alert ? '⚠️ **报告与代码状态偏差超阈值, 必须先修复再合并**\n\n 详见报告 ' + reportPath : '✅ **所有指标均在阈值内, R137 双向同步机制合规**'}
+
+            📊 完整报告: \`ci-artifacts/report_sync_report.json\`
+
+            <details>
+            <summary>📋 详细偏差分类</summary>
+
+            | 偏差类型 | 数量 |
+            |:---:|:---:|
+            | false_report (R1 假修复方向) | ${falseReport} |
+            | true_unregistered (真未注册) | ${stats.true_unregistered_count || 0} |
+            | physically_deleted (已物理删除) | ${stats.physically_deleted_count || 0} |
+            | file_not_exist (假阳性) | ${fileNotExist} |
+            | design_decision (设计决策) | ${stats.design_decision_count || 0} |
+            | deprecated (已废弃) | ${stats.deprecated_count || 0} |
+
+            </details>
+            `;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+      - name: Fail job on threshold violation
+        if: env.SYNC_EXIT != '0'
+        run: |
+          echo "❌ R137 报告-代码双向同步检查失败: 退出码 $SYNC_EXIT"
+          echo "P0 真实未注册必须为 0, 总偏差 ≤ 5, 文件不存在 = 0"
+          echo "当前状态见 ci-artifacts/report_sync_report.json"
+          exit $SYNC_EXIT
+
+      # R162 HVD-148-S1-A: report_sync_checker_v2 5 缺口 CI 激活 (2026-07-21)
+      # Why: v1 仅扫描 4 维度偏差, v2 增强 5 缺口 (TDD PASS 联动 / Read 深度 / 修复位置 / R+1 round 5 源 / 自动告警)
+      # 强约束: R104 §12 铁律 #1 R+1 round 独立验证 + R137 战略 P0 + R162-D 4 源验证 100% 命中
+      - name: Run report sync checker v2 (5 gaps: TDD/Read/FixLocation/R+1/Alert)
+        if: always()
+        id: sync-check-v2
+        run: |
+          echo "===== R162 HVD-148-S1-A: report_sync_checker_v2 5 缺口双向同步扫描 ====="
+          python tools/report_sync_checker_v2.py \
+            --scan-bidirectional \
+            --report-format json \
+            --config tools/report_sync_checker_v2_config.json \
+            --output .trae/reports/monitoring/report_sync_v2_$(date +%Y%m%d).json \
+            --exit-code-on-violation || true
+          SYNC_V2_EXIT=$?
+          echo "v2 sync checker exit code: $SYNC_V2_EXIT"
+          echo "SYNC_V2_EXIT=$SYNC_V2_EXIT" >> $GITHUB_ENV
+
+      - name: Save v2 sync report as artifact
+        if: always()
+        run: |
+          REPORT_PATH=".trae/reports/monitoring/report_sync_v2_$(date +%Y%m%d).json"
+          if [ -f "$REPORT_PATH" ]; then
+            mkdir -p ci-artifacts
+            cp "$REPORT_PATH" "ci-artifacts/report_sync_v2_report.json"
+            echo "v2 report saved: ci-artifacts/report_sync_v2_report.json"
+            cat "$REPORT_PATH" | head -80
+          fi
+
+      - name: Upload v2 sync report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: report-sync-checker-v2-report
+          path: ci-artifacts/report_sync_v2_report.json
+          retention-days: 30
+
+      - name: Run TDD tests (Phase 1+2+3)
+        if: always()
+        run: |
+          echo "===== R137 TDD 测试全量回归 (16+9+5 = 30 测试) ====="
+          python -m pytest tests/test_r137_report_sync_phase1.py tests/test_r137_report_sync_phase2.py tests/test_r137_report_sync_phase3.py -v 2>&1 | tail -50

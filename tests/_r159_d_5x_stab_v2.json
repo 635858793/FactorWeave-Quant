@@ -1,0 +1,238 @@
+{
+  "timestamp": "2026-07-21T22:30:48.747336",
+  "overall_stable": true,
+  "suites": {
+    "R159-A TOP 5 P0 exc_info": {
+      "expected": 21,
+      "runs": [
+        {
+          "run": 1,
+          "passed": 21,
+          "failed": 0,
+          "error": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "hash": "5a6f7ba4"
+        },
+        {
+          "run": 2,
+          "passed": 21,
+          "failed": 0,
+          "error": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "hash": "5a6f7ba4"
+        },
+        {
+          "run": 3,
+          "passed": 21,
+          "failed": 0,
+          "error": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "hash": "5a6f7ba4"
+        },
+        {
+          "run": 4,
+          "passed": 21,
+          "failed": 0,
+          "error": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "hash": "5a6f7ba4"
+        },
+        {
+          "run": 5,
+          "passed": 21,
+          "failed": 0,
+          "error": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "hash": "5a6f7ba4"
+        }
+      ],
+      "hash_consistent": true,
+      "all_passed": true,
+      "exit_consistent": true,
+      "passed_consistent": true,
+      "count_match": true,
+      "is_stable": true,
+      "hash": "5a6f7ba4",
+      "test_names_count": 105
+    },
+    "R158 真修复 TDD": {
+      "expected": 9,
+      "runs": [
+        {
+          "run": 1,
+          "passed": 9,
+          "failed": 0,
+          "error": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "hash": "8011a95c"
+        },
+        {
+          "run": 2,
+          "passed": 9,
+          "failed": 0,
+          "error": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "hash": "8011a95c"
+        },
+        {
+          "run": 3,
+          "passed": 9,
+          "failed": 0,
+          "error": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "hash": "8011a95c"
+        },
+        {
+          "run": 4,
+          "passed": 9,
+          "failed": 0,
+          "error": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "hash": "8011a95c"
+        },
+        {
+          "run": 5,
+          "passed": 9,
+          "failed": 0,
+          "error": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "hash": "8011a95c"
+        }
+      ],
+      "hash_consistent": true,
+      "all_passed": true,
+      "exit_consistent": true,
+      "passed_consistent": true,
+      "count_match": true,
+      "is_stable": true,
+      "hash": "8011a95c",
+      "test_names_count": 45
+    },
+    "R158 HVD TDD 基线": {
+      "expected": 12,
+      "runs": [
+        {
+          "run": 1,
+          "passed": 12,
+          "failed": 0,
+          "error": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "hash": "2643ca16"
+        },
+        {
+          "run": 2,
+          "passed": 12,
+          "failed": 0,
+          "error": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "hash": "2643ca16"
+        },
+        {
+          "run": 3,
+          "passed": 12,
+          "failed": 0,
+          "error": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "hash": "2643ca16"
+        },
+        {
+          "run": 4,
+          "passed": 12,
+          "failed": 0,
+          "error": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "hash": "2643ca16"
+        },
+        {
+          "run": 5,
+          "passed": 12,
+          "failed": 0,
+          "error": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "hash": "2643ca16"
+        }
+      ],
+      "hash_consistent": true,
+      "all_passed": true,
+      "exit_consistent": true,
+      "passed_consistent": true,
+      "count_match": true,
+      "is_stable": true,
+      "hash": "2643ca16",
+      "test_names_count": 60
+    },
+    "R158 P0 紧急修复": {
+      "expected": 11,
+      "runs": [
+        {
+          "run": 1,
+          "passed": 11,
+          "failed": 0,
+          "error": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "hash": "b0ab4711"
+        },
+        {
+          "run": 2,
+          "passed": 11,
+          "failed": 0,
+          "error": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "hash": "b0ab4711"
+        },
+        {
+          "run": 3,
+          "passed": 11,
+          "failed": 0,
+          "error": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "hash": "b0ab4711"
+        },
+        {
+          "run": 4,
+          "passed": 11,
+          "failed": 0,
+          "error": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "hash": "b0ab4711"
+        },
+        {
+          "run": 5,
+          "passed": 11,
+          "failed": 0,
+          "error": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "hash": "b0ab4711"
+        }
+      ],
+      "hash_consistent": true,
+      "all_passed": true,
+      "exit_consistent": true,
+      "passed_consistent": true,
+      "count_match": true,
+      "is_stable": true,
+      "hash": "b0ab4711",
+      "test_names_count": 55
+    }
+  }
+}

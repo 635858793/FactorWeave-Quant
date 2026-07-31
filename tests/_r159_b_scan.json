@@ -1,0 +1,2679 @@
+{
+  "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\order_executor.py",
+  "total_logger_calls": 190,
+  "in_except_total": 97,
+  "in_except_with_exc_info": 97,
+  "in_except_without_exc_info": 0,
+  "not_in_except": 93,
+  "no_exc_info_findings": [],
+  "with_exc_info_findings": [
+    {
+      "line": 101,
+      "col": 16,
+      "method_call": "logger.warning",
+      "parent_method": "_init_real_components",
+      "parent_class": "MockTradingInterface",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                logger.warning(f\"MockTradingInterface: AccountManager不可用，使用默认值: {e}\", exc_info=True)"
+    },
+    {
+      "line": 116,
+      "col": 16,
+      "method_call": "logger.warning",
+      "parent_method": "_init_real_components",
+      "parent_class": "MockTradingInterface",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                logger.warning(f\"MockTradingInterface: TradingEngine初始化失败，使用默认计算: {e}\", exc_info=True)"
+    },
+    {
+      "line": 197,
+      "col": 20,
+      "method_call": "logger.warning",
+      "parent_method": "submit_order",
+      "parent_class": "MockTradingInterface",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                    logger.warning(f\"MockTradingInterface: TradingEngine同步失败: {e}\", exc_info=True)"
+    },
+    {
+      "line": 220,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "submit_order",
+      "parent_class": "MockTradingInterface",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "            logger.error(f\"模拟提交订单失败: {e}\", exc_info=True)"
+    },
+    {
+      "line": 241,
+      "col": 12,
+      "method_call": "logger.warning",
+      "parent_method": "_get_trading_config",
+      "parent_class": "MockTradingInterface",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "            logger.warning("
+    },
+    {
+      "line": 256,
+      "col": 12,
+      "method_call": "logger.warning",
+      "parent_method": "_get_trading_config",
+      "parent_class": "MockTradingInterface",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "            logger.warning("
+    },
+    {
+      "line": 287,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "cancel_order",
+      "parent_class": "MockTradingInterface",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "            logger.error(f\"模拟取消订单失败: {e}\", exc_info=True)"
+    },
+    {
+      "line": 316,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "query_order_status",
+      "parent_class": "MockTradingInterface",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "            logger.error(f\"模拟查询订单状态失败: {e}\", exc_info=True)"
+    },
+    {
+      "line": 369,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "query_fund_info",
+      "parent_class": "MockTradingInterface",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "            logger.error(f\"模拟查询资金信息失败: {e}\", exc_info=True)"
+    },
+    {
+      "line": 421,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "query_positions",
+      "parent_class": "MockTradingInterface",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "            logger.error(f\"模拟查询持仓信息失败: {e}\", exc_info=True)"
+    },
+    {
+      "line": 482,
+      "col": 12,
+      "method_call": "logger.warning",
+      "parent_method": "_resolve_or_initialize_repository",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "            logger.warning("
+    },
+    {
+      "line": 533,
+      "col": 12,
+      "method_call": "logger.warning",
+      "parent_method": "_persist_order_externalized",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "            logger.warning("
+    },
+    {
+      "line": 642,
+      "col": 16,
+      "method_call": "logger.error",
+      "parent_method": "_initialize_trading_interfaces",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                logger.error(f\"{asset_type.value} 交易接口初始化失败: {e}\", exc_info=True)"
+    },
+    {
+      "line": 683,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_load_account_info_to_interfaces",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "            logger.error(f\"加载账户信息到交易接口失败: {e}\", exc_info=True)"
+    },
+    {
+      "line": 780,
+      "col": 28,
+      "method_call": "logger.warning",
+      "parent_method": "_try_reconnect_interface",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                            logger.warning("
+    },
+    {
+      "line": 787,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_try_reconnect_interface",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "            logger.error(f\"重新连接 {asset_type.value} 接口异常: {e}\", exc_info=True)"
+    },
+    {
+      "line": 867,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_validate_order_integrity",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "            logger.error(f\"验证订单完整性时发生异常: {e}\", exc_info=True)"
+    },
+    {
+      "line": 869,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_validate_order_integrity",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "            logger.error(f\"错误堆栈:\\n{traceback.format_exc()}\", exc_info=True)"
+    },
+    {
+      "line": 943,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "            logger.error(f\"解析订单账号失败: {e}\", exc_info=True)"
+    },
+    {
+      "line": 944,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "            logger.error(f\"订单ID: {order.order_id}\", exc_info=True)"
+    },
+    {
+      "line": 946,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "            logger.error(f\"错误堆栈:\\n{traceback.format_exc()}\", exc_info=True)"
+    },
+    {
+      "line": 980,
+      "col": 20,
+      "method_call": "logger.warning",
+      "parent_method": "_pre_trade_risk_check",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                    logger.warning("
+    },
+    {
+      "line": 1020,
+      "col": 16,
+      "method_call": "logger.warning",
+      "parent_method": "_pre_trade_risk_check",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                logger.warning(\"[R115-D P0-2] EnhancedRiskMonitor不可用, 跳过高级风控检查 (R51 铁律: 显式降级日志)\", exc_info=True)"
+    },
+    {
+      "line": 1023,
+      "col": 16,
+      "method_call": "logger.critical",
+      "parent_method": "_pre_trade_risk_check",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                logger.critical(f\"高级风控检查异常,订单被拒绝: {order.order_id}, 错误: {e}\", exc_info=True)"
+    },
+    {
+      "line": 1048,
+      "col": 16,
+      "method_call": "logger.critical",
+      "parent_method": "_pre_trade_risk_check",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                logger.critical(f\"账户风控检查异常，订单被拒绝: {order.order_id}, 错误: {e}\", exc_info=True)"
+    },
+    {
+      "line": 1099,
+      "col": 16,
+      "method_call": "logger.warning",
+      "parent_method": "_pre_trade_risk_check",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                logger.warning("
+    },
+    {
+      "line": 1106,
+      "col": 16,
+      "method_call": "logger.warning",
+      "parent_method": "_pre_trade_risk_check",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                logger.warning("
+    },
+    {
+      "line": 1125,
+      "col": 12,
+      "method_call": "logger.critical",
+      "parent_method": "_pre_trade_risk_check",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "            logger.critical(f\"交易前风控检查异常，订单被拒绝: {order.order_id}, 错误: {e}\", exc_info=True)"
+    },
+    {
+      "line": 1154,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_get_trading_interface_for_account",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "            logger.error(f\"获取账号 {account.account_id} 的交易接口失败: {e}\", exc_info=True)"
+    },
+    {
+      "line": 1220,
+      "col": 16,
+      "method_call": "logger.error",
+      "parent_method": "_create_trading_interface_for_account",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                logger.error(f\"账号 {account.account_id} 的交易接口初始化失败: {e}\", exc_info=True)"
+    },
+    {
+      "line": 1224,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_create_trading_interface_for_account",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "            logger.error(f\"为账号 {account.account_id} 创建交易接口失败: {e}\", exc_info=True)"
+    },
+    {
+      "line": 1304,
+      "col": 24,
+      "method_call": "logger.warning",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                        logger.warning("
+    },
+    {
+      "line": 1338,
+      "col": 28,
+      "method_call": "logger.warning",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                            logger.warning("
+    },
+    {
+      "line": 1362,
+      "col": 28,
+      "method_call": "logger.warning",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                            logger.warning("
+    },
+    {
+      "line": 1385,
+      "col": 20,
+      "method_call": "logger.warning",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                    logger.warning("
+    },
+    {
+      "line": 1441,
+      "col": 24,
+      "method_call": "logger.warning",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                        logger.warning("
+    },
+    {
+      "line": 1464,
+      "col": 16,
+      "method_call": "logger.error",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                logger.error("
+    },
+    {
+      "line": 1524,
+      "col": 20,
+      "method_call": "logger.warning",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                    logger.warning("
+    },
+    {
+      "line": 1545,
+      "col": 28,
+      "method_call": "logger.warning",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                            logger.warning("
+    },
+    {
+      "line": 1569,
+      "col": 28,
+      "method_call": "logger.warning",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                            logger.warning("
+    },
+    {
+      "line": 1608,
+      "col": 24,
+      "method_call": "logger.warning",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                        logger.warning("
+    },
+    {
+      "line": 1626,
+      "col": 24,
+      "method_call": "logger.warning",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                        logger.warning("
+    },
+    {
+      "line": 1661,
+      "col": 32,
+      "method_call": "logger.warning",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                                logger.warning("
+    },
+    {
+      "line": 1700,
+      "col": 24,
+      "method_call": "logger.warning",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                        logger.warning("
+    },
+    {
+      "line": 1720,
+      "col": 20,
+      "method_call": "logger.warning",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 2,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                    logger.warning("
+    },
+    {
+      "line": 1730,
+      "col": 20,
+      "method_call": "logger.warning",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 2,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                    logger.warning("
+    },
+    {
+      "line": 1745,
+      "col": 20,
+      "method_call": "logger.warning",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 2,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                    logger.warning("
+    },
+    {
+      "line": 1749,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "            logger.error(f\"提交订单异常: {e}\", exc_info=True)"
+    },
+    {
+      "line": 2014,
+      "col": 40,
+      "method_call": "logger.warning",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                                        logger.warning("
+    },
+    {
+      "line": 2041,
+      "col": 24,
+      "method_call": "logger.error",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                        logger.error(f\"批量提交订单异常: {order.order_id} - {e}\", exc_info=True)"
+    },
+    {
+      "line": 2045,
+      "col": 36,
+      "method_call": "logger.error",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                                    logger.error(f\"订单状态转换未预期失败: {order.order_id} -> REJECTED\", exc_info=True)"
+    },
+    {
+      "line": 2048,
+      "col": 32,
+      "method_call": "logger.warning",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                                logger.warning(f\"订单已是终态，无法转换为 REJECTED: {order.order_id} 当前状态={order.order_status.value}\", exc_info=True)"
+    },
+    {
+      "line": 2084,
+      "col": 24,
+      "method_call": "logger.warning",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                        logger.warning("
+    },
+    {
+      "line": 2105,
+      "col": 24,
+      "method_call": "logger.warning",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                        logger.warning("
+    },
+    {
+      "line": 2115,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "            logger.error(f\"批量提交订单异常: {e}\", exc_info=True)"
+    },
+    {
+      "line": 2126,
+      "col": 20,
+      "method_call": "logger.warning",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                    logger.warning(f\"[BATCH-EXCEPTION] 跳过已成功订单解冻: {order.order_id}, \""
+    },
+    {
+      "line": 2132,
+      "col": 24,
+      "method_call": "logger.error",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                        logger.error(f\"[BATCH-EXCEPTION] 解冻资金失败: {order.order_id}\", exc_info=True)"
+    },
+    {
+      "line": 2134,
+      "col": 20,
+      "method_call": "logger.error",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 2,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                    logger.error(f\"批量异常回滚资金失败: {order.order_id}, {unfreeze_err}\", exc_info=True)"
+    },
+    {
+      "line": 2285,
+      "col": 28,
+      "method_call": "logger.warning",
+      "parent_method": "cancel_order",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                            logger.warning("
+    },
+    {
+      "line": 2313,
+      "col": 28,
+      "method_call": "logger.warning",
+      "parent_method": "cancel_order",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                            logger.warning("
+    },
+    {
+      "line": 2347,
+      "col": 24,
+      "method_call": "logger.warning",
+      "parent_method": "cancel_order",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                        logger.warning("
+    },
+    {
+      "line": 2362,
+      "col": 20,
+      "method_call": "logger.warning",
+      "parent_method": "cancel_order",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 2,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                    logger.warning("
+    },
+    {
+      "line": 2366,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "cancel_order",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "            logger.error(f\"取消订单异常: {e}\", exc_info=True)"
+    },
+    {
+      "line": 2375,
+      "col": 16,
+      "method_call": "logger.warning",
+      "parent_method": "cancel_order",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 2,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                logger.warning("
+    },
+    {
+      "line": 2386,
+      "col": 20,
+      "method_call": "logger.error",
+      "parent_method": "cancel_order",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 2,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                    logger.error(f\"取消订单异常回滚资金失败: {order_id}, {unfreeze_err}\", exc_info=True)"
+    },
+    {
+      "line": 2404,
+      "col": 20,
+      "method_call": "logger.error",
+      "parent_method": "cancel_order",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 2,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                    logger.error("
+    },
+    {
+      "line": 2426,
+      "col": 20,
+      "method_call": "logger.warning",
+      "parent_method": "cancel_order",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                    logger.warning("
+    },
+    {
+      "line": 2478,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "query_order_status",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "            logger.error(f\"查询订单状态异常: {e}\", exc_info=True)"
+    },
+    {
+      "line": 2550,
+      "col": 16,
+      "method_call": "logger.warning",
+      "parent_method": "handle_order_fill",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                logger.warning("
+    },
+    {
+      "line": 2579,
+      "col": 32,
+      "method_call": "logger.warning",
+      "parent_method": "handle_order_fill",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                                logger.warning("
+    },
+    {
+      "line": 2604,
+      "col": 32,
+      "method_call": "logger.warning",
+      "parent_method": "handle_order_fill",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                                logger.warning("
+    },
+    {
+      "line": 2648,
+      "col": 20,
+      "method_call": "logger.warning",
+      "parent_method": "handle_order_fill",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                    logger.warning("
+    },
+    {
+      "line": 2674,
+      "col": 24,
+      "method_call": "logger.warning",
+      "parent_method": "handle_order_fill",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                        logger.warning("
+    },
+    {
+      "line": 2708,
+      "col": 24,
+      "method_call": "logger.warning",
+      "parent_method": "handle_order_fill",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                        logger.warning("
+    },
+    {
+      "line": 2722,
+      "col": 20,
+      "method_call": "logger.error",
+      "parent_method": "handle_order_fill",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                    logger.error("
+    },
+    {
+      "line": 2752,
+      "col": 24,
+      "method_call": "logger.warning",
+      "parent_method": "handle_order_fill",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                        logger.warning("
+    },
+    {
+      "line": 2766,
+      "col": 20,
+      "method_call": "logger.warning",
+      "parent_method": "handle_order_fill",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                    logger.warning("
+    },
+    {
+      "line": 2779,
+      "col": 28,
+      "method_call": "logger.warning",
+      "parent_method": "handle_order_fill",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                            logger.warning("
+    },
+    {
+      "line": 2808,
+      "col": 28,
+      "method_call": "logger.warning",
+      "parent_method": "handle_order_fill",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                            logger.warning("
+    },
+    {
+      "line": 2828,
+      "col": 20,
+      "method_call": "logger.warning",
+      "parent_method": "handle_order_fill",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                    logger.warning("
+    },
+    {
+      "line": 2842,
+      "col": 20,
+      "method_call": "logger.warning",
+      "parent_method": "handle_order_fill",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                    logger.warning("
+    },
+    {
+      "line": 2858,
+      "col": 28,
+      "method_call": "logger.warning",
+      "parent_method": "handle_order_fill",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                            logger.warning("
+    },
+    {
+      "line": 2879,
+      "col": 20,
+      "method_call": "logger.warning",
+      "parent_method": "handle_order_fill",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                    logger.warning("
+    },
+    {
+      "line": 2890,
+      "col": 20,
+      "method_call": "logger.warning",
+      "parent_method": "handle_order_fill",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                    logger.warning("
+    },
+    {
+      "line": 2906,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "handle_order_fill",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "            logger.error(f\"处理订单成交异常: {e}\", exc_info=True)"
+    },
+    {
+      "line": 2928,
+      "col": 12,
+      "method_call": "logger.warning",
+      "parent_method": "_get_position",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "            logger.warning("
+    },
+    {
+      "line": 2946,
+      "col": 12,
+      "method_call": "logger.warning",
+      "parent_method": "_get_avg_entry_price",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "            logger.warning("
+    },
+    {
+      "line": 2966,
+      "col": 12,
+      "method_call": "logger.warning",
+      "parent_method": "_get_commission_rate",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "            logger.warning("
+    },
+    {
+      "line": 3069,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_unfreeze_order_funds",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "            logger.error(f\"[R15 P0-3] 解冻订单 {order.order_id} 资金异常: {e}\", exc_info=True)"
+    },
+    {
+      "line": 3098,
+      "col": 20,
+      "method_call": "logger.warning",
+      "parent_method": "dispose",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                    logger.warning(f\"[R19 dispose] {asset_type.value} 断开失败: {disconnect_exc}\", exc_info=True)"
+    },
+    {
+      "line": 3108,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "dispose",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "            logger.error(f\"[R19 dispose] OrderExecutor 清理失败: {e}\", exc_info=True)"
+    },
+    {
+      "line": 3135,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "set_current_account_id",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "            logger.error("
+    },
+    {
+      "line": 3163,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_on_account_switched",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "            logger.error("
+    },
+    {
+      "line": 3196,
+      "col": 12,
+      "method_call": "logger.warning",
+      "parent_method": "_subscribe_account_switched_event",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "            logger.warning("
+    },
+    {
+      "line": 3232,
+      "col": 20,
+      "method_call": "logger.warning",
+      "parent_method": "get_signal_chain",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                    logger.warning("
+    },
+    {
+      "line": 3267,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "get_signal_chain",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "            logger.error(f\"[get_signal_chain] 查询失败 signal_id={signal_id}: {e}\", exc_info=True)"
+    },
+    {
+      "line": 3350,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "health_check",
+      "parent_class": "OrderExecutor",
+      "in_except": true,
+      "except_depth": 1,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "            logger.error("
+    }
+  ],
+  "not_in_except_findings": [
+    {
+      "line": 113,
+      "col": 20,
+      "method_call": "logger.warning",
+      "parent_method": "_init_real_components",
+      "parent_class": "MockTradingInterface",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                    logger.warning(\"MockTradingInterface: 全局TradingEngine不存在，已创建新实例并注册为全局实例\")"
+    },
+    {
+      "line": 352,
+      "col": 12,
+      "method_call": "logger.warning",
+      "parent_method": "query_fund_info",
+      "parent_class": "MockTradingInterface",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "            logger.warning(\"MockTradingInterface: AccountManager不可用，使用默认资金值\")"
+    },
+    {
+      "line": 395,
+      "col": 12,
+      "method_call": "logger.warning",
+      "parent_method": "query_positions",
+      "parent_class": "MockTradingInterface",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "            logger.warning(\"MockTradingInterface: AccountManager不可用或无持仓，使用默认空持仓\")"
+    },
+    {
+      "line": 524,
+      "col": 16,
+      "method_call": "logger.warning",
+      "parent_method": "_persist_order_externalized",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": true,
+      "args_count": 1,
+      "kwargs": [
+        "exc_info"
+      ],
+      "source_line": "                logger.warning("
+    },
+    {
+      "line": 636,
+      "col": 24,
+      "method_call": "logger.warning",
+      "parent_method": "_initialize_trading_interfaces",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                        logger.warning(f\"{asset_type.value} 交易接口登录失败\")"
+    },
+    {
+      "line": 639,
+      "col": 20,
+      "method_call": "logger.warning",
+      "parent_method": "_initialize_trading_interfaces",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                    logger.warning(f\"{asset_type.value} 交易接口连接失败\")"
+    },
+    {
+      "line": 722,
+      "col": 12,
+      "method_call": "logger.warning",
+      "parent_method": "check_interface_health",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "            logger.warning(f\"{asset_type.value} 接口处于熔断状态，尝试恢复连接\")"
+    },
+    {
+      "line": 740,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_try_reconnect_interface",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "            logger.error(f\"无法重新连接：{asset_type.value} 接口对象不存在\")"
+    },
+    {
+      "line": 756,
+      "col": 20,
+      "method_call": "logger.warning",
+      "parent_method": "_try_reconnect_interface",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                    logger.warning(f\"{asset_type.value} 接口重新登录失败\")"
+    },
+    {
+      "line": 758,
+      "col": 16,
+      "method_call": "logger.error",
+      "parent_method": "_try_reconnect_interface",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                logger.error(f\"{asset_type.value} 接口重新连接失败\")"
+    },
+    {
+      "line": 764,
+      "col": 20,
+      "method_call": "logger.error",
+      "parent_method": "_try_reconnect_interface",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                    logger.error(f\"{asset_type.value} 接口连续失败 {self._max_retry_count} 次，触发熔断\")"
+    },
+    {
+      "line": 799,
+      "col": 16,
+      "method_call": "logger.warning",
+      "parent_method": "_get_trading_interface",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                logger.warning(f\"{asset_type.value} 接口处于熔断状态，尝试故障转移\")"
+    },
+    {
+      "line": 809,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_get_trading_interface",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "            logger.error(f\"所有接口都不可用: {asset_type.value}\")"
+    },
+    {
+      "line": 857,
+      "col": 16,
+      "method_call": "logger.warning",
+      "parent_method": "_validate_order_integrity",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                logger.warning(f\"订单 {order.order_id} 的 account_id 为 'default'，可能导致账号解析失败\")"
+    },
+    {
+      "line": 861,
+      "col": 16,
+      "method_call": "logger.warning",
+      "parent_method": "_validate_order_integrity",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                logger.warning(f\"订单 {order.order_id} 的 strategy_id 为 'default'，可能导致账号解析失败\")"
+    },
+    {
+      "line": 898,
+      "col": 20,
+      "method_call": "logger.warning",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                    logger.warning(f\"订单指定的账号不存在: {order.account_id}\")"
+    },
+    {
+      "line": 899,
+      "col": 20,
+      "method_call": "logger.warning",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                    logger.warning(f\"订单详细信息: order_id={order.order_id}, stock_code={order.stock_code}\")"
+    },
+    {
+      "line": 910,
+      "col": 24,
+      "method_call": "logger.warning",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                        logger.warning(f\"策略的默认账号不存在: {strategy.default_account_id} (策略: {strategy.strategy_id})\")"
+    },
+    {
+      "line": 912,
+      "col": 20,
+      "method_call": "logger.warning",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                    logger.warning(f\"策略不存在或没有默认账号: {order.strategy_id}\")"
+    },
+    {
+      "line": 922,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "            logger.error(\"无法解析订单使用的账号\")"
+    },
+    {
+      "line": 923,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "            logger.error(f\"订单详细信息:\")"
+    },
+    {
+      "line": 924,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "            logger.error(f\"  order_id: {order.order_id}\")"
+    },
+    {
+      "line": 925,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "            logger.error(f\"  stock_code: {order.stock_code}\")"
+    },
+    {
+      "line": 926,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "            logger.error(f\"  order_type: {order.order_type.value}\")"
+    },
+    {
+      "line": 927,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "            logger.error(f\"  order_quantity: {order.order_quantity}\")"
+    },
+    {
+      "line": 928,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "            logger.error(f\"  order_price: {order.order_price}\")"
+    },
+    {
+      "line": 929,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "            logger.error(f\"  account_id: {order.account_id}\")"
+    },
+    {
+      "line": 930,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "            logger.error(f\"  strategy_id: {order.strategy_id}\")"
+    },
+    {
+      "line": 931,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "            logger.error(f\"  asset_type: {order.asset_type.value}\")"
+    },
+    {
+      "line": 932,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "            logger.error(f\"系统状态:\")"
+    },
+    {
+      "line": 933,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "            logger.error(f\"  可用账号数: {len(accounts) if accounts else 0}\")"
+    },
+    {
+      "line": 934,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "            logger.error(f\"  可能原因:\")"
+    },
+    {
+      "line": 935,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "            logger.error(f\"    1. 系统中没有配置任何账号\")"
+    },
+    {
+      "line": 936,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "            logger.error(f\"    2. 订单的 account_id 和 strategy_id 都是 'default'\")"
+    },
+    {
+      "line": 937,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "            logger.error(f\"    3. 订单指定的账号不存在\")"
+    },
+    {
+      "line": 938,
+      "col": 12,
+      "method_call": "logger.error",
+      "parent_method": "_resolve_account_for_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "            logger.error(f\"    4. 策略指定的默认账号不存在\")"
+    },
+    {
+      "line": 990,
+      "col": 20,
+      "method_call": "logger.critical",
+      "parent_method": "_pre_trade_risk_check",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                    logger.critical("
+    },
+    {
+      "line": 1011,
+      "col": 24,
+      "method_call": "logger.warning",
+      "parent_method": "_pre_trade_risk_check",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                        logger.warning("
+    },
+    {
+      "line": 1206,
+      "col": 16,
+      "method_call": "logger.warning",
+      "parent_method": "_create_trading_interface_for_account",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                logger.warning(f\"未知的交易接口类型: {trading_interface_type.value}，使用模拟接口\")"
+    },
+    {
+      "line": 1216,
+      "col": 24,
+      "method_call": "logger.warning",
+      "parent_method": "_create_trading_interface_for_account",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                        logger.warning(f\"账号 {account.account_id} 的交易接口登录失败\")"
+    },
+    {
+      "line": 1218,
+      "col": 20,
+      "method_call": "logger.warning",
+      "parent_method": "_create_trading_interface_for_account",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                    logger.warning(f\"账号 {account.account_id} 的交易接口连接失败\")"
+    },
+    {
+      "line": 1252,
+      "col": 16,
+      "method_call": "logger.error",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                logger.error(f\"订单完整性验证失败: {order.order_id} - {validation_error}\")"
+    },
+    {
+      "line": 1263,
+      "col": 16,
+      "method_call": "logger.warning",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                logger.warning(f\"交易前风控检查未通过: {order.order_id} - {risk_check_result['reason']}\")"
+    },
+    {
+      "line": 1274,
+      "col": 16,
+      "method_call": "logger.error",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                logger.error(f\"无法解析订单使用的账号: {order.order_id}\")"
+    },
+    {
+      "line": 1309,
+      "col": 20,
+      "method_call": "logger.warning",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                    logger.warning("
+    },
+    {
+      "line": 1313,
+      "col": 20,
+      "method_call": "logger.error",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                    logger.error(f\"资金冻结失败: {order.order_id}, account={account.account_id}, amount={frozen_amount:.2f}\")"
+    },
+    {
+      "line": 1342,
+      "col": 20,
+      "method_call": "logger.error",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                    logger.error(f\"订单状态转换失败: {order.order_id} PENDING->SUBMITTED\")"
+    },
+    {
+      "line": 1369,
+      "col": 20,
+      "method_call": "logger.error",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                    logger.error(f\"订单提交持久化失败，已回滚内存状态: {order.order_id}\")"
+    },
+    {
+      "line": 1390,
+      "col": 16,
+      "method_call": "logger.warning",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                logger.warning("
+    },
+    {
+      "line": 1397,
+      "col": 16,
+      "method_call": "logger.error",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                logger.error(f\"无法获取账号 {account.account_id} 的交易接口\")"
+    },
+    {
+      "line": 1452,
+      "col": 20,
+      "method_call": "logger.warning",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                    logger.warning("
+    },
+    {
+      "line": 1647,
+      "col": 24,
+      "method_call": "logger.error",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                        logger.error(f\"{order.asset_type.value} 接口连续失败 {health['consecutive_failures']} 次，触发熔断\")"
+    },
+    {
+      "line": 1671,
+      "col": 28,
+      "method_call": "logger.error",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                            logger.error(f\"订单状态转换未预期失败: {order.order_id} -> REJECTED\")"
+    },
+    {
+      "line": 1674,
+      "col": 24,
+      "method_call": "logger.warning",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                        logger.warning(f\"订单已是终态，无法转换为 REJECTED: {order.order_id} 当前状态={order.order_status.value}\")"
+    },
+    {
+      "line": 1681,
+      "col": 16,
+      "method_call": "logger.error",
+      "parent_method": "submit_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                logger.error(f\"订单提交失败: {order.order_id} ({order.asset_type.value}) - {result.message}, 账号: {account.account_id}\")"
+    },
+    {
+      "line": 1804,
+      "col": 24,
+      "method_call": "logger.error",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                        logger.error(f\"[BATCH-FREEZE] 无法解析账号: {order.order_id}\")"
+    },
+    {
+      "line": 1822,
+      "col": 24,
+      "method_call": "logger.error",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                        logger.error(f\"[BATCH-FREEZE] 资金冻结失败: {order.order_id}, amount={frozen_amount:.2f}\")"
+    },
+    {
+      "line": 1844,
+      "col": 24,
+      "method_call": "logger.error",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                        logger.error(f\"批量订单状态转换失败: {order.order_id} -> SUBMITTED\")"
+    },
+    {
+      "line": 1875,
+      "col": 40,
+      "method_call": "logger.error",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                                        logger.error(f\"订单状态转换未预期失败: {order.order_id} -> REJECTED\")"
+    },
+    {
+      "line": 1878,
+      "col": 36,
+      "method_call": "logger.warning",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                                    logger.warning(f\"订单已是终态，无法转换为 REJECTED: {order.order_id} 当前状态={order.order_status.value}\")"
+    },
+    {
+      "line": 1894,
+      "col": 28,
+      "method_call": "logger.warning",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                            logger.warning(f\"批量订单风控检查未通过: {order.order_id} - {risk_check_result['reason']}\")"
+    },
+    {
+      "line": 1898,
+      "col": 40,
+      "method_call": "logger.error",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                                        logger.error(f\"订单状态转换未预期失败: {order.order_id} -> REJECTED\")"
+    },
+    {
+      "line": 1901,
+      "col": 36,
+      "method_call": "logger.warning",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                                    logger.warning(f\"订单已是终态，无法转换为 REJECTED: {order.order_id} 当前状态={order.order_status.value}\")"
+    },
+    {
+      "line": 1917,
+      "col": 28,
+      "method_call": "logger.error",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                            logger.error(f\"批量订单无法解析账号: {order.order_id}\")"
+    },
+    {
+      "line": 1921,
+      "col": 40,
+      "method_call": "logger.error",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                                        logger.error(f\"订单状态转换未预期失败: {order.order_id} -> REJECTED\")"
+    },
+    {
+      "line": 1924,
+      "col": 36,
+      "method_call": "logger.warning",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                                    logger.warning(f\"订单已是终态，无法转换为 REJECTED: {order.order_id} 当前状态={order.order_status.value}\")"
+    },
+    {
+      "line": 1940,
+      "col": 28,
+      "method_call": "logger.error",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                            logger.error(f\"批量订单交易接口不可用: {order.order_id}\")"
+    },
+    {
+      "line": 1944,
+      "col": 40,
+      "method_call": "logger.error",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                                        logger.error(f\"订单状态转换未预期失败: {order.order_id} -> REJECTED\")"
+    },
+    {
+      "line": 1947,
+      "col": 36,
+      "method_call": "logger.warning",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                                    logger.warning(f\"订单已是终态，无法转换为 REJECTED: {order.order_id} 当前状态={order.order_status.value}\")"
+    },
+    {
+      "line": 2027,
+      "col": 40,
+      "method_call": "logger.error",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                                        logger.error(f\"订单状态转换未预期失败: {order.order_id} -> REJECTED\")"
+    },
+    {
+      "line": 2030,
+      "col": 36,
+      "method_call": "logger.warning",
+      "parent_method": "submit_orders_batch",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                                    logger.warning(f\"订单已是终态，无法转换为 REJECTED: {order.order_id} 当前状态={order.order_status.value}\")"
+    },
+    {
+      "line": 2174,
+      "col": 16,
+      "method_call": "logger.error",
+      "parent_method": "cancel_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                logger.error(f\"订单取消失败: {order_id} - 订单不存在，可能原因：\")"
+    },
+    {
+      "line": 2175,
+      "col": 16,
+      "method_call": "logger.error",
+      "parent_method": "cancel_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                logger.error(f\"  1. 订单创建时保存失败但ID已生成\")"
+    },
+    {
+      "line": 2176,
+      "col": 16,
+      "method_call": "logger.error",
+      "parent_method": "cancel_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                logger.error(f\"  2. 订单被保存到了错误的数据池\")"
+    },
+    {
+      "line": 2177,
+      "col": 16,
+      "method_call": "logger.error",
+      "parent_method": "cancel_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                logger.error(f\"  3. 订单已被删除\")"
+    },
+    {
+      "line": 2178,
+      "col": 16,
+      "method_call": "logger.error",
+      "parent_method": "cancel_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                logger.error(f\"  4. 数据库事务问题导致订单未持久化\")"
+    },
+    {
+      "line": 2199,
+      "col": 16,
+      "method_call": "logger.error",
+      "parent_method": "cancel_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                logger.error(f\"无法获取 {order.asset_type.value} 的交易接口用于取消订单: {order_id}\")"
+    },
+    {
+      "line": 2220,
+      "col": 20,
+      "method_call": "logger.warning",
+      "parent_method": "cancel_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                    logger.warning("
+    },
+    {
+      "line": 2240,
+      "col": 24,
+      "method_call": "logger.error",
+      "parent_method": "cancel_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                        logger.error(f\"取消订单状态转换失败: {order_id}, 当前状态={order.order_status.value}\")"
+    },
+    {
+      "line": 2252,
+      "col": 24,
+      "method_call": "logger.error",
+      "parent_method": "cancel_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                        logger.error(f\"取消订单持久化失败，已回滚内存状态: {order_id}\")"
+    },
+    {
+      "line": 2320,
+      "col": 16,
+      "method_call": "logger.error",
+      "parent_method": "cancel_order",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                logger.error(f\"订单取消失败: {order_id} ({order.asset_type.value}) - {result.message}\")"
+    },
+    {
+      "line": 2470,
+      "col": 32,
+      "method_call": "logger.warning",
+      "parent_method": "query_order_status",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                                logger.warning(f\"订单状态同步转换失败: {order_id} {order.order_status.value} -> {new_status.value}\")"
+    },
+    {
+      "line": 2526,
+      "col": 16,
+      "method_call": "logger.error",
+      "parent_method": "handle_order_fill",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                logger.error(f\"订单不存在: {order_id}\")"
+    },
+    {
+      "line": 2583,
+      "col": 24,
+      "method_call": "logger.error",
+      "parent_method": "handle_order_fill",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                        logger.error(f\"成交状态转换失败: {order_id} -> FILLED，回滚成交\")"
+    },
+    {
+      "line": 2608,
+      "col": 24,
+      "method_call": "logger.error",
+      "parent_method": "handle_order_fill",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                        logger.error(f\"成交状态转换失败: {order_id} -> PARTIALLY_FILLED，回滚成交\")"
+    },
+    {
+      "line": 2625,
+      "col": 20,
+      "method_call": "logger.error",
+      "parent_method": "handle_order_fill",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                    logger.error(f\"[NEW-7] fill_id 缺失! order_id={order_id}, 可能导致分笔成交被误去重\")"
+    },
+    {
+      "line": 2653,
+      "col": 16,
+      "method_call": "logger.warning",
+      "parent_method": "handle_order_fill",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                logger.warning("
+    },
+    {
+      "line": 2681,
+      "col": 16,
+      "method_call": "logger.error",
+      "parent_method": "handle_order_fill",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                logger.error(f\"成交持久化失败，已回滚成交状态: {order_id}\")"
+    },
+    {
+      "line": 2726,
+      "col": 16,
+      "method_call": "logger.error",
+      "parent_method": "handle_order_fill",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                logger.error(f\"成交记录保存失败，已完整回滚: {order_id}\")"
+    },
+    {
+      "line": 3003,
+      "col": 16,
+      "method_call": "logger.warning",
+      "parent_method": "_unfreeze_order_funds",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                logger.warning("
+    },
+    {
+      "line": 3051,
+      "col": 16,
+      "method_call": "logger.warning",
+      "parent_method": "_unfreeze_order_funds",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                logger.warning("
+    },
+    {
+      "line": 3062,
+      "col": 16,
+      "method_call": "logger.error",
+      "parent_method": "_unfreeze_order_funds",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                logger.error("
+    },
+    {
+      "line": 3191,
+      "col": 16,
+      "method_call": "logger.warning",
+      "parent_method": "_subscribe_account_switched_event",
+      "parent_class": "OrderExecutor",
+      "in_except": false,
+      "except_depth": 0,
+      "has_exc_info": false,
+      "args_count": 1,
+      "kwargs": [],
+      "source_line": "                logger.warning("
+    }
+  ]
+}

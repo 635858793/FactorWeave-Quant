@@ -1,0 +1,680 @@
+{
+  "total_publishes": 170,
+  "unique_events": 143,
+  "missing_total": 124,
+  "business_missing_count": 64,
+  "business_missing": [
+    {
+      "event_name": "order_status_changed",
+      "publish_count": 3,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\interfaces\\ctp_trading_interface.py",
+          "line": 1366
+        },
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\interfaces\\miniqmt_trading_interface.py",
+          "line": 1194
+        },
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\interfaces\\xtp_pro_trading_interface.py",
+          "line": 521
+        }
+      ]
+    },
+    {
+      "event_name": "data_sources.stock.free_stockdb_plugin",
+      "publish_count": 3,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\gui\\widgets\\data_source_status_widget.py",
+          "line": 396
+        },
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\gui\\widgets\\data_source_status_widget.py",
+          "line": 437
+        },
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\gui\\widgets\\data_source_status_widget.py",
+          "line": 478
+        }
+      ]
+    },
+    {
+      "event_name": "order.executed",
+      "publish_count": 2,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\order_executor.py",
+          "line": 1534
+        },
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\order_executor.py",
+          "line": 2011
+        }
+      ]
+    },
+    {
+      "event_name": "order_submitted_success",
+      "publish_count": 2,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\order_executor.py",
+          "line": 1628
+        },
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\order_executor.py",
+          "line": 2037
+        }
+      ]
+    },
+    {
+      "event_name": "trading_interface_circuit_breaker",
+      "publish_count": 2,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\order_executor.py",
+          "line": 768
+        },
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\order_executor.py",
+          "line": 1686
+        }
+      ]
+    },
+    {
+      "event_name": "order_updated",
+      "publish_count": 2,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\order_repository.py",
+          "line": 313
+        },
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\order_service.py",
+          "line": 1944
+        }
+      ]
+    },
+    {
+      "event_name": "plugin_unloaded",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\plugin_manager.py",
+          "line": 2409
+        }
+      ]
+    },
+    {
+      "event_name": "risk.monitor",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\risk_alert.py",
+          "line": 321
+        }
+      ]
+    },
+    {
+      "event_name": "risk.reduce_position",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\risk_alert.py",
+          "line": 353
+        }
+      ]
+    },
+    {
+      "event_name": "risk.emergency_liquidation",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\risk_alert.py",
+          "line": 400
+        }
+      ]
+    },
+    {
+      "event_name": "task_completed",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\async_management\\enhanced_async_manager.py",
+          "line": 753
+        }
+      ]
+    },
+    {
+      "event_name": "task_submitted",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\async_management\\enhanced_async_manager.py",
+          "line": 943
+        }
+      ]
+    },
+    {
+      "event_name": "task_started",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\async_management\\enhanced_async_manager.py",
+          "line": 681
+        }
+      ]
+    },
+    {
+      "event_name": "task_cancelled",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\async_management\\enhanced_async_manager.py",
+          "line": 981
+        }
+      ]
+    },
+    {
+      "event_name": "health_check",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\importdata\\unified_data_import_engine.py",
+          "line": 2192
+        }
+      ]
+    },
+    {
+      "event_name": "MetricsAggregated",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\metrics\\aggregation_service.py",
+          "line": 311
+        }
+      ]
+    },
+    {
+      "event_name": "ResourceThresholdExceeded",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\metrics\\aggregation_service.py",
+          "line": 416
+        }
+      ]
+    },
+    {
+      "event_name": "ApplicationThresholdExceeded",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\metrics\\aggregation_service.py",
+          "line": 448
+        }
+      ]
+    },
+    {
+      "event_name": "multi_account.drift_detected",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\multi_account\\consistency_checker.py",
+          "line": 232
+        }
+      ]
+    },
+    {
+      "event_name": "ai_explanation.generated",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\ai_explainability_service.py",
+          "line": 245
+        }
+      ]
+    },
+    {
+      "event_name": "performance.alert",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\bettafish_monitoring_service.py",
+          "line": 820
+        }
+      ]
+    },
+    {
+      "event_name": "performance.periodic_report",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\bettafish_monitoring_service.py",
+          "line": 921
+        }
+      ]
+    },
+    {
+      "event_name": "data.masked",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\data_masking_service.py",
+          "line": 87
+        }
+      ]
+    },
+    {
+      "event_name": "environment.changed",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\environment_service.py",
+          "line": 709
+        }
+      ]
+    },
+    {
+      "event_name": "training.task.deleted",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\model_training_service.py",
+          "line": 2204
+        }
+      ]
+    },
+    {
+      "event_name": "performance.metrics_updated",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\performance_service.py",
+          "line": 263
+        }
+      ]
+    },
+    {
+      "event_name": "performance.optimization_completed",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\performance_service.py",
+          "line": 282
+        }
+      ]
+    },
+    {
+      "event_name": "performance.alert_triggered",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\performance_service.py",
+          "line": 531
+        }
+      ]
+    },
+    {
+      "event_name": "system.optimization.start",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\system_optimizer.py",
+          "line": 635
+        }
+      ]
+    },
+    {
+      "event_name": "system.optimization.complete",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\system_optimizer.py",
+          "line": 665
+        }
+      ]
+    },
+    {
+      "event_name": "orders.batch_confirmed",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\trading_confirmation_service.py",
+          "line": 337
+        }
+      ]
+    },
+    {
+      "event_name": "data.import.ui_feedback",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\services\\unified_data_manager.py",
+          "line": 2733
+        }
+      ]
+    },
+    {
+      "event_name": "accounts_refreshed",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\account_manager.py",
+          "line": 289
+        }
+      ]
+    },
+    {
+      "event_name": "all_data_synced",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\account_manager.py",
+          "line": 351
+        }
+      ]
+    },
+    {
+      "event_name": "account_created",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\account_manager.py",
+          "line": 402
+        }
+      ]
+    },
+    {
+      "event_name": "account_updated",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\account_manager.py",
+          "line": 451
+        }
+      ]
+    },
+    {
+      "event_name": "position_created",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\account_manager.py",
+          "line": 587
+        }
+      ]
+    },
+    {
+      "event_name": "fund_updated",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\account_manager.py",
+          "line": 791
+        }
+      ]
+    },
+    {
+      "event_name": "account_load_failed",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\account_manager.py",
+          "line": 244
+        }
+      ]
+    },
+    {
+      "event_name": "account_status_changed",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\account_manager.py",
+          "line": 1014
+        }
+      ]
+    },
+    {
+      "event_name": "account_saved",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\account_repository.py",
+          "line": 419
+        }
+      ]
+    },
+    {
+      "event_name": "account_deleted",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\account_repository.py",
+          "line": 523
+        }
+      ]
+    },
+    {
+      "event_name": "position_deleted",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\account_repository.py",
+          "line": 654
+        }
+      ]
+    },
+    {
+      "event_name": "order_alert",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\order_monitor.py",
+          "line": 416
+        }
+      ]
+    },
+    {
+      "event_name": "order_fill_saved",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\order_repository.py",
+          "line": 603
+        }
+      ]
+    },
+    {
+      "event_name": "order_saved",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\order_repository.py",
+          "line": 167
+        }
+      ]
+    },
+    {
+      "event_name": "order_deleted",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\order_repository.py",
+          "line": 655
+        }
+      ]
+    },
+    {
+      "event_name": "order_save_failed",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\order_repository.py",
+          "line": 216
+        }
+      ]
+    },
+    {
+      "event_name": "order_created",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\order_service.py",
+          "line": 1022
+        }
+      ]
+    },
+    {
+      "event_name": "order_rejected",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\interfaces\\miniqmt_trading_interface.py",
+          "line": 1292
+        }
+      ]
+    },
+    {
+      "event_name": "cancel_order_rejected",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\core\\trading\\interfaces\\xtp_pro_trading_interface.py",
+          "line": 572
+        }
+      ]
+    },
+    {
+      "event_name": "risk_control",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\gui\\dialogs\\enhanced_config_management_dialog.py",
+          "line": 891
+        }
+      ]
+    },
+    {
+      "event_name": "trading_interface",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\gui\\dialogs\\enhanced_config_management_dialog.py",
+          "line": 892
+        }
+      ]
+    },
+    {
+      "event_name": "monitoring",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\gui\\dialogs\\enhanced_config_management_dialog.py",
+          "line": 893
+        }
+      ]
+    },
+    {
+      "event_name": "system",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\gui\\dialogs\\enhanced_config_management_dialog.py",
+          "line": 894
+        }
+      ]
+    },
+    {
+      "event_name": "startup_guide",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\gui\\dialogs\\startup_guides_dialog.py",
+          "line": 412
+        }
+      ]
+    },
+    {
+      "event_name": "medium",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\gui\\widgets\\dynamic_risk_adjustment_widget.py",
+          "line": 194
+        }
+      ]
+    },
+    {
+      "event_name": "batch",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\gui\\widgets\\analysis_tabs\\technical_tab.py",
+          "line": 1735
+        }
+      ]
+    },
+    {
+      "event_name": "high_confidence_trend",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\gui\\widgets\\analysis_tabs\\trend_tab.py",
+          "line": 1336
+        }
+      ]
+    },
+    {
+      "event_name": "alert_setup",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\gui\\widgets\\analysis_tabs\\trend_tab.py",
+          "line": 1418
+        }
+      ]
+    },
+    {
+      "event_name": "view_detail",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\gui\\widgets\\enhanced_ui\\smart_recommendation_panel.py",
+          "line": 207
+        }
+      ]
+    },
+    {
+      "event_name": "import",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\gui\\workflows\\simplified_import_workflow.py",
+          "line": 954
+        }
+      ]
+    },
+    {
+      "event_name": "compatibility.test",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\tests\\compatibility\\compatibility_test.py",
+          "line": 428
+        }
+      ]
+    },
+    {
+      "event_name": "test.integration",
+      "publish_count": 1,
+      "locations": [
+        {
+          "file": "d:\\DevelopTool\\FreeCode\\HIkyuu-UI\\hikyuu-ui\\tests\\final\\complete_system_integration_test.py",
+          "line": 344
+        }
+      ]
+    }
+  ]
+}

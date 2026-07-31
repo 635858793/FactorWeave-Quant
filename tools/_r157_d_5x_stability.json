@@ -1,0 +1,44 @@
+{
+  "results": {
+    "tests/test_r157_d_keyword_template.py": {
+      "exit_codes": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "md5s": [
+        "da0c2288f5b3e3d5d3a968b4620b5ee3",
+        "917e0464ae9b6fbf8762edc48eda6b51",
+        "43d0a08c33b0ade39105334f464f1977",
+        "da0c2288f5b3e3d5d3a968b4620b5ee3",
+        "66cd2e14f160af0ac1183a8294e0ab56"
+      ],
+      "stability": "STABLE_WITH_WARNING_DIFF",
+      "all_passed": true
+    },
+    "tests/test_r157_d_r150_p1_1_keyword_mode.py": {
+      "exit_codes": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "md5s": [
+        "2a9e4727447109eea5525188acc0472d",
+        "3c99ffd31bb6e92d95c4bcf74245f209",
+        "cc97c277645e7011297da34acea05704",
+        "bad3cdc9bc2c094e2639ae5b1c2b4277",
+        "ab2446dd365bb388f98a4f25fd5ed98c"
+      ],
+      "stability": "STABLE_WITH_WARNING_DIFF",
+      "all_passed": true
+    }
+  },
+  "overall": {
+    "all_stable": true,
+    "all_passed": true
+  }
+}
