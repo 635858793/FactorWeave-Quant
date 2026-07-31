@@ -28,6 +28,8 @@ logs/*
 .trae
 .claude/*
 .trae/*
+.codegraph
+.codegraph/*
 .spec-workflow
 .spec-workflow/*
 *.duckdb
