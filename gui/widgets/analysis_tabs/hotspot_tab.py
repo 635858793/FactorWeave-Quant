@@ -17,6 +17,37 @@ from .base_tab import BaseAnalysisTab
 from utils.config_manager import ConfigManager
 
 
+def _safe_num(value, default: float = 0.0) -> float:
+    """安全转换为浮点数 (容错 None/字符串/缺失值)"""
+    try:
+        if value is None:
+            return default
+        if isinstance(value, str):
+            value = value.strip().replace('%', '').replace(',', '')
+            if value in ('', '-', '--', 'nan', 'None'):
+                return default
+            return float(value)
+        if isinstance(value, (int, float)):
+            num = float(value)
+            if pd.isna(num):
+                return default
+            return num
+        return default
+    except (TypeError, ValueError):
+        return default
+
+
+def _classify_heat(heat: float) -> str:
+    """按热度指数分级 (与 update_hotspot_display 颜色逻辑对齐)"""
+    if heat >= 30:
+        return "超级热点"
+    if heat >= 15:
+        return "强势热点"
+    if heat >= 5:
+        return "一般热点"
+    return "关注"
+
+
 class FundFlowWorker(QThread):
     """资金流数据异步查询Worker"""
     # 定义信号
@@ -420,6 +451,9 @@ class HotspotAnalysisTab(BaseAnalysisTab):
             self.update_hotspot_display()
             self.update_hotspot_statistics()
 
+            # R254-P2: 热点结果落库 (板块热度/主题机会), 失败仅告警不阻断 UI
+            self._persist_hotspot_results()
+
             # 发送完成信号
             self.hotspot_analysis_completed.emit({
                 'results': self.hotspot_results,
@@ -435,32 +469,234 @@ class HotspotAnalysisTab(BaseAnalysisTab):
         finally:
             self.hide_loading()
 
-    def analyze_sector_hotspots(self, period: int, heat_threshold: float, gain_threshold: float, volume_multiplier: float):
-        """分析板块热点"""
-        try:
-            logger.warning("板块热点数据不可用，返回空数据。请配置热点数据源以获取真实数据。")
-            self.sector_rankings = []
+    def _persist_hotspot_results(self):
+        """将热点分析结果落库 (板块热度 → SECTOR_DATA, 主题机会 → CONCEPT_DATA)
 
+        R254-P2: 落库前把中文列映射为英文列, 防止通用建表分支产生中文列名;
+        资产类型统一使用 SECTOR (会被 _map_asset_type_to_database 归一到 SECTOR 库);
+        整体 try/except 包裹, 失败仅告警不阻断 UI。
+        """
+        try:
+            from core.asset_database_manager import get_asset_separated_database_manager
+            from core.plugin_types import AssetType, DataType
+            asset_manager = get_asset_separated_database_manager()
+
+            # 板块热度 → SECTOR_DATA
+            sector_df = self._build_hotspot_persist_frame(
+                self.sector_rankings,
+                {'板块名称': 'sector_name', '板块代码': 'sector_code',
+                 '热度指数': 'heat_score', '涨跌幅': 'change_pct',
+                 '成交量比': 'turnover_rate'})
+            if sector_df is not None:
+                asset_manager.store_standardized_data(
+                    sector_df, AssetType.SECTOR, DataType.SECTOR_DATA)
+
+            # 主题机会 → CONCEPT_DATA
+            theme_df = self._build_hotspot_persist_frame(
+                self.theme_opportunities,
+                {'主题名称': 'concept_name', '热度评分': 'heat_score',
+                 '平均涨幅': 'change_pct', '相关股票数': 'stock_count'})
+            if theme_df is not None:
+                asset_manager.store_standardized_data(
+                    theme_df, AssetType.SECTOR, DataType.CONCEPT_DATA)
+
+        except Exception as e:
+            logger.warning(f"热点结果落库失败(不阻断UI): {e}")
+
+    @staticmethod
+    def _build_hotspot_persist_frame(records, col_map):
+        """将中文键记录列表标准化为英文列 DataFrame (供 store_standardized_data 落库)
+
+        数值字符串列 (热度指数/热度评分/涨跌幅/成交量比/平均涨幅/相关股票数) 统一转 float,
+        避免中文列名与字符串数值落入通用建表分支; 空记录返回 None。
+        """
+        if not records:
+            return None
+        numeric_cols = {'heat_score', 'change_pct', 'turnover_rate', 'stock_count'}
+        rows = []
+        for rec in records:
+            row = {}
+            for cn_key, en_key in col_map.items():
+                value = rec.get(cn_key, '')
+                if en_key in numeric_cols:
+                    row[en_key] = _safe_num(value)
+                else:
+                    row[en_key] = value
+            rows.append(row)
+        return pd.DataFrame(rows)
+
+    def analyze_sector_hotspots(self, period: int, heat_threshold: float, gain_threshold: float, volume_multiplier: float):
+        """分析板块热点 - 使用 AkShare 行业板块行情真实数据"""
+        try:
+            self.sector_rankings = []
+            try:
+                import akshare as ak
+            except ImportError:
+                logger.warning("akshare 未安装，板块热点分析返回空结果。")
+                return
+
+            df = ak.stock_board_industry_name_em()
+            if df is None or df.empty:
+                logger.warning("akshare 未返回行业板块行情数据")
+                return
+
+            # 成交额列兼容：部分版本无'成交额'列时使用'总市值'兜底
+            if '成交额' in df.columns:
+                amount_col = '成交额'
+            elif '总市值' in df.columns:
+                amount_col = '总市值'
+            else:
+                amount_col = None
+            max_amount = max(df[amount_col].apply(_safe_num).max(), 1.0) if amount_col else 1.0
+
+            rankings = []
+            for _, row in df.iterrows():
+                name = str(row.get('板块名称', row.get('名称', '')))
+                if not name or name == 'nan':
+                    continue
+                change_pct = _safe_num(row.get('涨跌幅'))
+                turnover = _safe_num(row.get('换手率'))
+                amount = _safe_num(row.get(amount_col)) if amount_col else 0.0
+
+                # 热度 = 涨跌幅*0.5 + 换手率*0.3 + 成交额(归一化)*0.2
+                heat = change_pct * 0.5 + turnover * 0.3 + (amount / max_amount) * 100.0 * 0.2
+                rankings.append({
+                    '板块名称': name,
+                    '板块代码': str(row.get('板块代码', '')),
+                    '热度指数': f"{heat:.1f}",
+                    '涨跌幅': f"{change_pct:+.2f}%",
+                    '成交量比': f"{turnover:.2f}%",
+                    '领涨股': str(row.get('领涨股票', '')),
+                    '上涨家数': str(int(_safe_num(row.get('上涨家数')))),
+                    '热点等级': _classify_heat(heat),
+                })
+
+            rankings.sort(key=lambda x: float(x['热度指数']), reverse=True)
+            self.sector_rankings = rankings[:max(1, int(period))]
+            logger.info(f"板块热点分析完成，共 {len(self.sector_rankings)} 个板块")
         except Exception as e:
             logger.error(f"板块热点分析失败: {str(e)}")
+            self.sector_rankings = []
 
     def analyze_leading_stocks(self, period: int, heat_threshold: float, gain_threshold: float):
-        """分析龙头股"""
+        """分析龙头股 - 取热点板块成分股中涨幅/成交额最大股 (AkShare 真实数据)"""
         try:
-            logger.warning("龙头股数据不可用，返回空数据。请配置数据源以获取真实数据。")
             self.leading_stocks = []
+            try:
+                import akshare as ak
+            except ImportError:
+                logger.warning("akshare 未安装，龙头股分析返回空结果。")
+                return
 
+            # 优先使用板块热点分析结果, 其次直接查询行业板块行情
+            top_sectors = getattr(self, 'sector_rankings', None) or []
+            if not top_sectors:
+                try:
+                    board_df = ak.stock_board_industry_name_em()
+                    if board_df is None or board_df.empty:
+                        logger.warning("akshare 未返回行业板块行情数据，龙头股分析返回空结果。")
+                        return
+                    top_sectors = [
+                        {'板块名称': str(r.get('板块名称', '')),
+                         '板块代码': str(r.get('板块代码', ''))}
+                        for _, r in board_df.head(3).iterrows()]
+                except Exception as e:
+                    logger.error(f"获取行业板块行情失败: {e}")
+                    return
+
+            results = []
+            for sector in top_sectors[:3]:
+                sector_name = str(sector.get('板块名称', ''))
+                sector_code = str(sector.get('板块代码', ''))
+                if not sector_code or sector_code == 'nan':
+                    continue
+                try:
+                    cons_df = ak.stock_board_industry_cons_em(symbol=sector_code)
+                    if cons_df is None or cons_df.empty:
+                        continue
+                except Exception as e:
+                    logger.warning(f"获取板块 {sector_name} 成分股失败: {e}")
+                    continue
+
+                # 取涨幅最大股 (成交额作次排序)
+                valid = []
+                for _, row in cons_df.iterrows():
+                    code = str(row.get('代码', ''))
+                    if not code or code == 'nan':
+                        continue
+                    valid.append((_safe_num(row.get('涨跌幅')), _safe_num(row.get('成交额')), row))
+                if not valid:
+                    continue
+                valid.sort(key=lambda x: (x[0], x[1]), reverse=True)
+                change, amount, row = valid[0]
+
+                leader_index = change * 0.7 + (amount / 1e8) * 0.3
+                results.append({
+                    '股票代码': str(row.get('代码', '')),
+                    '股票名称': str(row.get('名称', '')),
+                    '所属板块': sector_name,
+                    '涨跌幅': f"{change:+.2f}%",
+                    '成交量比': f"{_safe_num(row.get('量比')):.2f}",
+                    '龙头指数': f"{leader_index:.1f}",
+                    '市值': f"{_safe_num(row.get('总市值')) / 1e8:.0f}亿",
+                    '地位': '领涨龙头' if change > 0 else '防御龙头',
+                })
+
+            self.leading_stocks = results[:max(1, int(period))]
+            logger.info(f"龙头股分析完成，共 {len(self.leading_stocks)} 只龙头股")
         except Exception as e:
             logger.error(f"龙头股分析失败: {str(e)}")
+            self.leading_stocks = []
 
     def analyze_theme_opportunities(self, period: int, heat_threshold: float):
-        """分析主题机会"""
+        """分析主题机会 - 使用 AkShare 概念板块行情真实数据"""
         try:
-            logger.warning("主题机会数据不可用，返回空数据。请配置数据源以获取真实数据。")
             self.theme_opportunities = []
+            try:
+                import akshare as ak
+            except ImportError:
+                logger.warning("akshare 未安装，主题机会分析返回空结果。")
+                return
 
+            df = ak.stock_board_concept_name_em()
+            if df is None or df.empty:
+                logger.warning("akshare 未返回概念板块行情数据")
+                return
+
+            def _rank_opportunity(change: float) -> str:
+                if change >= 4:
+                    return "强烈推荐"
+                if change >= 2:
+                    return "值得关注"
+                if change < 0:
+                    return "谨慎观望"
+                return "一般"
+
+            sorted_df = df.sort_values(by='涨跌幅', ascending=False) if '涨跌幅' in df.columns else df
+            opportunities = []
+            for _, row in sorted_df.head(max(1, int(period))).iterrows():
+                name = str(row.get('概念名称', row.get('板块名称', '')))
+                if not name or name == 'nan':
+                    continue
+                change = _safe_num(row.get('涨跌幅'))
+                up_count = _safe_num(row.get('上涨家数'))
+                down_count = _safe_num(row.get('下跌家数'))
+                total_count = int(up_count + down_count) if (up_count or down_count) else 0
+                turnover = _safe_num(row.get('换手率'))
+                opportunities.append({
+                    '主题名称': name,
+                    '热度评分': f"{max(change * 10, 0):.0f}",
+                    '相关股票数': str(total_count),
+                    '平均涨幅': f"{change:+.2f}%",
+                    '资金关注度': '高' if turnover >= 5 else ('中' if turnover >= 2 else '低'),
+                    '投资机会': _rank_opportunity(change),
+                })
+
+            self.theme_opportunities = opportunities
+            logger.info(f"主题机会分析完成，共 {len(self.theme_opportunities)} 个主题")
         except Exception as e:
             logger.error(f"主题机会分析失败: {str(e)}")
+            self.theme_opportunities = []
 
     def analyze_capital_flow(self, period: int):
         """分析资金流向（异步） - 使用真实数据"""
@@ -553,9 +789,12 @@ class HotspotAnalysisTab(BaseAnalysisTab):
             else:
                 logger.warning("未获取到板块资金流数据")
 
-            # 如果没有获取到真实数据，使用板块排行数据作为替代
+            # 降级估算路径 (R254-P2): 真实资金流数据为空时, 基于板块涨跌幅估算资金流
             if not self.capital_flow and hasattr(self, 'sector_rankings') and self.sector_rankings:
                 self._analyze_capital_flow_from_rankings()
+
+            # 刷新资金流向表格 (修复 H4: 异步数据填充后必须重新渲染, 否则 flow_table 恒为空)
+            self.update_hotspot_display()
 
         except Exception as e:
             logger.error(f"处理资金流数据失败: {str(e)}")
@@ -567,9 +806,9 @@ class HotspotAnalysisTab(BaseAnalysisTab):
             logger.error(f"资金流数据查询失败: {error_msg}")
             self.hide_loading()
             
-            # 尝试使用板块排行数据作为降级方案
+            # 降级估算路径 (R254-P2): 查询失败时使用板块排行数据估算资金流
             if hasattr(self, 'sector_rankings') and self.sector_rankings:
-                logger.info("使用板块排行数据作为降级方案...")
+                logger.info("使用板块排行数据作为降级估算方案...")
                 self._analyze_capital_flow_from_rankings()
             else:
                 QMessageBox.warning(self, "提示", f"资金流数据获取失败：{error_msg}\n建议稍后重试")
@@ -596,17 +835,18 @@ class HotspotAnalysisTab(BaseAnalysisTab):
             return 0.0
 
     def _analyze_capital_flow_from_rankings(self):
-        """从板块排行数据分析资金流向（备用方案）"""
+        """从板块排行数据分析资金流向（降级估算路径, R254-P2 显式标注'估算'）"""
         try:
             for sector_data in self.sector_rankings[:10]:
                 sector_name = sector_data.get('板块名称', '未知板块')
 
-                # 基于涨跌幅估算资金流
+                # 基于涨跌幅估算资金流 (降级估算路径: 无真实资金流数据,
+                # 估算结果仅供展示参考, 通过 '数据来源': '估算' 显式标注)
                 change_pct = sector_data.get('涨跌幅', 0)
                 if isinstance(change_pct, str):
                     change_pct = float(change_pct.replace('%', ''))
 
-                # 简单的估算逻辑
+                # 估算逻辑 (非真实数据): 按涨跌幅估算资金流
                 estimated_flow = change_pct * 10000000  # 按涨跌幅估算资金流
                 main_inflow = estimated_flow * 0.7  # 主力占70%
                 retail_inflow = estimated_flow * 0.3  # 散户占30%
@@ -628,7 +868,8 @@ class HotspotAnalysisTab(BaseAnalysisTab):
                     '散户净流入': f"{retail_inflow/10000:.0f}万",
                     '总净流入': f"{estimated_flow/10000:.0f}万",
                     '流入强度': intensity,
-                    '资金偏好': preference
+                    '资金偏好': preference,
+                    '数据来源': '估算'  # R254-P2: 显式标注估算数据, 与反假数据原则一致
                 })
 
             logger.info(f"使用排行数据估算资金流向完成，共 {len(self.capital_flow)} 个板块")
@@ -657,8 +898,11 @@ class HotspotAnalysisTab(BaseAnalysisTab):
     def start_monitor(self):
         """开始实时监控"""
         try:
-            QMessageBox.information(self, "监控启动", "实时热点监控已启动，将每5分钟更新一次数据")
-            # 这里可以实现定时器来定期更新数据
+            QMessageBox.information(
+                self, "监控启动",
+                "实时热点监控为手动刷新模式：请使用「开始热点分析」按钮手动刷新数据。\n"
+                "自动定时刷新（QTimer）将在接入真实数据源后启用。")
+            # 注(H6): 移除"每5分钟更新一次"的虚假宣称; 自动定时刷新待真实数据源接入后实现
 
         except Exception as e:
             logger.error(f"启动监控失败: {str(e)}")
@@ -769,8 +1013,13 @@ class HotspotAnalysisTab(BaseAnalysisTab):
             if hasattr(self, 'capital_flow'):
                 self.flow_table.setRowCount(len(self.capital_flow))
                 for i, flow in enumerate(self.capital_flow):
-                    self.flow_table.setItem(
-                        i, 0, QTableWidgetItem(flow['板块名称']))
+                    # R254-P2: 估算数据显式标注 "（估算）" (板块名称后缀 + 置灰)
+                    is_estimated = flow.get('数据来源') == '估算'
+                    name_item = QTableWidgetItem(
+                        f"{flow['板块名称']}（估算）" if is_estimated else flow['板块名称'])
+                    if is_estimated:
+                        name_item.setForeground(QColor("gray"))
+                    self.flow_table.setItem(i, 0, name_item)
 
                     # 资金流入带颜色显示
                     main_item = QTableWidgetItem(flow['主力净流入'])

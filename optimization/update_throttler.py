@@ -340,22 +340,27 @@ class UpdateThrottler:
         )
 
         # 添加到批量更新缓存
+        # R238-P1-1 防死锁: _flush_batch 内部会自行获取 batch_lock,
+        # 若在此锁内调用将同线程重入普通 Lock → 死锁. 故锁内仅收集状态, flush 移到锁外.
+        need_flush = False
+        is_first = False
         with self.batch_lock:
             self.batch_updates[batch_id].append(request)
 
             # 检查是否需要刷新批量更新
-            if self._should_flush_batch(batch_id, max_wait_ms):
-                self._flush_batch(batch_id)
-            elif len(self.batch_updates[batch_id]) == 1:
-                # 第一个请求，启动定时器
-                def delayed_flush():
-                    with self.batch_lock:
-                        if batch_id in self.batch_updates:
-                            self._flush_batch(batch_id)
+            need_flush = self._should_flush_batch(batch_id, max_wait_ms)
+            is_first = len(self.batch_updates[batch_id]) == 1
 
-                timer = threading.Timer(max_wait_ms / 1000.0, delayed_flush)
-                timer.daemon = True
-                timer.start()
+        if need_flush:
+            self._flush_batch(batch_id)
+        elif is_first:
+            # 第一个请求，启动定时器
+            def delayed_flush():
+                self._flush_batch(batch_id)
+
+            timer = threading.Timer(max_wait_ms / 1000.0, delayed_flush)
+            timer.daemon = True
+            timer.start()
 
         return True
 

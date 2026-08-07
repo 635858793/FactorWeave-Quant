@@ -35,7 +35,6 @@ try:
         from core.containers.service_container import get_service_container
 
     from core.services.service_bootstrap import ServiceBootstrap
-    from core.importdata.unified_data_import_engine import UnifiedDataImportEngine
     from core.importdata.task_status_manager import TaskStatusManager
     from core.services.ai_prediction_service import AIPredictionService
     from core.performance.unified_performance_coordinator import UnifiedPerformanceCoordinator
@@ -196,7 +195,6 @@ class UIBusinessLogicAdapter(QObject):
 
             # 定义需要适配的服务
             service_definitions = {
-                'unified_import_engine': UnifiedDataImportEngine,
                 'task_status_manager': TaskStatusManager,
                 'ai_prediction_service': AIPredictionService,
                 'performance_coordinator': UnifiedPerformanceCoordinator,
@@ -212,7 +210,7 @@ class UIBusinessLogicAdapter(QObject):
 
             # 标记可选服务（未注册时不警告，不影响核心功能）
             self._optional_services = {
-                'unified_import_engine', 'task_status_manager',
+                'task_status_manager',
                 'performance_coordinator', 'quality_monitor',
                 'behavior_learner', 'config_recommendation',
                 'config_impact_analyzer', 'cache_service',

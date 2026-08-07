@@ -1704,13 +1704,41 @@ class AIPredictionService(BaseService):
                     ])
                     
                     feature_tensor = tf.constant(feature_values.reshape(1, -1), dtype=tf.float32)
-                    
-                    # 模拟深度学习预测（在GPU上）
-                    prediction_strength = tf.reduce_mean(feature_tensor).numpy()
-                    
-                    # 添加一些随机性模拟神经网络的复杂性
-                    random_factor = tf.random.normal([1], 0, 0.1).numpy()[0]
-                    adjusted_strength = np.clip(prediction_strength + random_factor, 0, 1)
+
+                    # 优先尝试使用真实训练模型预测；不可用则回退确定性规则特征均值（无随机噪声）
+                    prediction_strength = None
+                    model_obj = self._models.get(PredictionType.PATTERN)
+                    if model_obj is not None and not isinstance(model_obj, str) and hasattr(model_obj, 'predict'):
+                        try:
+                            model_pred = np.asarray(model_obj.predict(feature_tensor)).flatten()
+                            if model_pred.size > 0:
+                                prediction_strength = float(np.clip(np.mean(model_pred), 0, 1))
+                                logger.info("  使用已加载的真实深度学习模型进行预测")
+                        except Exception as e:
+                            logger.warning(f"  已加载模型预测失败，尝试其他模型: {e}")
+
+                    if prediction_strength is None:
+                        # 尝试从 models/trained/ 加载真实 .h5 模型（price/trend）
+                        from pathlib import Path as _Path
+                        for _model_name in ("price_model.h5", "trend_model.h5"):
+                            _model_path = _Path("models/trained") / _model_name
+                            if _model_path.exists() and _model_path.stat().st_size > 0:
+                                try:
+                                    _loaded_model = tf.keras.models.load_model(str(_model_path))
+                                    _model_pred = np.asarray(_loaded_model.predict(feature_tensor)).flatten()
+                                    if _model_pred.size > 0:
+                                        prediction_strength = float(np.clip(np.mean(_model_pred), 0, 1))
+                                        logger.info(f"  加载真实模型 {_model_name} 预测成功")
+                                        break
+                                except Exception as e:
+                                    logger.warning(f"  加载真实模型 {_model_name} 失败: {e}")
+
+                    if prediction_strength is None:
+                        # 规则特征均值（非深度学习模型输出，确定性，无随机噪声）
+                        prediction_strength = float(tf.reduce_mean(feature_tensor).numpy())
+                        logger.info("  深度学习模型不可用，使用规则特征均值（非深度学习模型输出）")
+
+                    adjusted_strength = np.clip(prediction_strength, 0, 1)
             else:
                 # 回退到CPU计算
                 prediction_strength = np.mean([
@@ -1739,7 +1767,7 @@ class AIPredictionService(BaseService):
                 'prediction_type': PredictionType.PATTERN,
                 'features_used': len(features),
                 'dl_strength': prediction_strength,
-                'random_factor': random_factor
+                'random_factor': 0.0  # 已移除随机噪声（tf.random.normal），固定为 0 保持结果结构兼容
             }
 
             logger.info(f" 深度学习预测结果: {direction}, 置信度: {confidence:.3f}")

@@ -343,13 +343,42 @@ class TradingService(BaseService, ModeAwareMixin):
             self._trading_config["enable_risk_control"] = True
             self._trading_config["commission_rate"] = config.get("commission_rate", 0.001)
             logger.info("实盘模式：启用严格风控")
+            self._sync_order_executor_trading_mode('live')
         elif mode == TradingMode.PAPER:
             self._trading_config["enable_risk_control"] = True
             self._trading_config["commission_rate"] = config.get("commission_rate", 0.001)
             logger.info("模拟模式：启用风控但不实际下单")
+            self._sync_order_executor_trading_mode('paper')
         elif mode == TradingMode.BACKTEST:
             self._trading_config["enable_risk_control"] = config.get("enable_risk_control", False)
             logger.info("回测模式：风控可选")
+            self._sync_order_executor_trading_mode('backtest')
+
+    def _sync_order_executor_trading_mode(self, mode: str) -> None:
+        """R255-P0 联动: TradingService.set_mode 同步 OrderExecutor 模式闸门。
+
+        OrderExecutor 默认 _trading_mode='paper' (order_executor.py:1518-1526),
+        真实 CTP/XTP 接口在非 live 模式被 MODE_BLOCKED 拦截 (order_executor.py:1011-1027)。
+        若 set_mode(LIVE) 不联动放行, 实盘下单路径永远被闸门拦截 →
+        消除双实例割裂 (与 connect_ctp_account 注入 :1135-1148 同一容器通路)。
+        OrderExecutor 未注册/解析失败时降级 warning, 不阻断主链路。
+
+        R258-P0: 联动下发 enable_risk_control (本类 :342/:347/:352 写入的配置,
+        此前 0 读取死代码) → order_executor._risk_control_enabled 开关生效,
+        关闭时 _pre_trade_risk_check (order_executor.py:756-859) 快速放行。
+        """
+        try:
+            from core.trading.order_executor import OrderExecutor
+            resolve_executor = getattr(
+                self._service_container, 'try_resolve', self._service_container.resolve)
+            executor = resolve_executor(OrderExecutor)
+            if executor is not None and hasattr(executor, 'set_trading_mode'):
+                executor.set_trading_mode(
+                    mode,
+                    enable_risk_control=self._trading_config.get("enable_risk_control", True),
+                )
+        except Exception as e:
+            logger.warning(f"OrderExecutor 交易模式联动失败 (降级, 不影响主链路): {e}")
 
     def get_mode(self) -> TradingMode:
         """获取当前交易模式"""
@@ -1131,7 +1160,21 @@ class TradingService(BaseService, ModeAwareMixin):
             with self._ctp_lock:
                 self._ctp_interfaces[account_id] = ctp_interface
                 self._ctp_market_interfaces[account_id] = ctp_market_interface
-            
+
+            # R255-P0 双实例打通: 将已登录的 CTP 实例注入 OrderExecutor 账户缓存,
+            # 下单路径复用本实例, 不再由 OrderExecutor 新建独立 CTP 接口 (避免
+            # "CTP已连接"却用另一实例下单的割裂). OrderExecutor 不可解析时静默跳过.
+            try:
+                from core.trading.order_executor import OrderExecutor
+                resolve_oe = getattr(
+                    self._service_container, 'try_resolve', self._service_container.resolve)
+                order_executor = resolve_oe(OrderExecutor)
+                if order_executor is not None:
+                    order_executor.set_trading_interface(ctp_interface, account_id=account_id)
+                    logger.info(f"CTP交易接口已注入 OrderExecutor: {account_id}")
+            except Exception as e:
+                logger.warning(f"注入 CTP 接口到 OrderExecutor 失败(不影响连接): {e}")
+
             env_type = "SimNow模拟环境" if is_simulation else "实盘环境"
             logger.info(f"CTP账户连接成功: {account_id} ({env_type})")
             return True, f"CTP账户连接成功: {account_id} ({env_type})"

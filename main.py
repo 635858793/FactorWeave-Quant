@@ -312,8 +312,18 @@ class FactorWeaveQuantApplication:
 
             if self.service_container:
                 # 清理所有服务
-                self.service_container.dispose()
-                logger.info("服务容器已清理")
+                # R238-NEW-P0 修复 (2026-08-01): 优先使用 LIFO shutdown_all_services
+                # Why: 原 dispose() 按 dict 迭代无顺序, 不更新服务状态, 依赖关系破坏风险
+                #      (R229-HVD-002 启动/关闭对称铁律)
+                # Fix: UnifiedServiceContainer.shutdown_all_services() 按启动逆序 LIFO 关闭
+                #      + 更新 ServiceStatus.DISPOSED + 清理 _initialized_services 跟踪
+                # TDD: tests/test_r238_a_main_cleanup_lifo.py
+                if hasattr(self.service_container, 'shutdown_all_services'):
+                    self.service_container.shutdown_all_services()
+                    logger.info("服务容器已清理 (shutdown_all_services, LIFO)")
+                else:
+                    self.service_container.dispose()
+                    logger.info("服务容器已清理")
 
             # 关闭Qt日志处理器
             if self.qt_handler:
@@ -435,6 +445,51 @@ def main():
             factorweave_app = FactorWeaveQuantApplication()
             factorweave_app.app = app  # Pass app instance
             logger.info("FactorWeaveQuantApplication实例创建完成")
+
+            # R238-A-002 修复 (2026-08-02): 容器级 handler 注册到优雅关闭管理器
+            # Why: 信号退出路径 (SIGTERM/SIGINT/SIGBREAK) 只执行 _cleanup_handlers 列表
+            #      (graceful_shutdown.py:61), main.py:461 _cleanup() 不执行
+            #      → OrderService/OrderMonitor 等全部容器服务 dispose 链不触发 (HVD-238-A-002)
+            # Fix: 注册容器级 handler; LIFO 逆序执行 (graceful_shutdown.py:106) 先于 DuckDB
+            #      handler 执行 → "先关业务服务 (用 DB), 再关 DuckDB" 依赖顺序天然满足
+            def _shutdown_service_container():
+                try:
+                    container = factorweave_app.service_container
+                    if container is not None:
+                        if hasattr(container, 'shutdown_all_services'):
+                            container.shutdown_all_services()
+                        else:
+                            container.dispose()
+                except Exception as e:
+                    logger.error(f"服务容器优雅关闭失败: {e}")
+
+            shutdown_manager.register_cleanup_handler(
+                _shutdown_service_container,
+                name="ServiceContainer(全部业务服务 LIFO dispose 链)"
+            )
+            logger.info("已注册服务容器优雅关闭处理器")
+
+            # HVD-241-P0-C-1 修复 (2026-08-02): PerformanceMonitor (QObject) dispose 链闭合
+            # Why: core/webgpu/fallback.py:43 模块导入即创建全局单例, 2 个 QTimer
+            #      (monitoring_timer 每 5 秒 + report_timer 每 5 分钟) 启动后永不停
+            #      → dispose() (performance_monitor.py:243-284) 全项目 0 业务调用方
+            #      → 退出链断在调用端 (R241-C 子智能体 100% 确认 P0)
+            # Fix: 注册 graceful_shutdown handler, 信号退出路径同样覆盖
+            #      (graceful_shutdown.py:61 LIFO 执行, 先于 DuckDB handler)
+            def _dispose_performance_monitor():
+                try:
+                    from core.monitoring.performance_monitor import get_performance_monitor
+                    mon = get_performance_monitor()
+                    if mon is not None and hasattr(mon, 'dispose'):
+                        mon.dispose()
+                except Exception as e:
+                    logger.warning(f"PerformanceMonitor dispose 失败: {e}")
+
+            shutdown_manager.register_cleanup_handler(
+                _dispose_performance_monitor,
+                name="PerformanceMonitor(QTimer 链)"
+            )
+            logger.info("已注册 PerformanceMonitor 优雅关闭处理器")
 
             # 优雅地退出
             app.aboutToQuit.connect(event_loop.stop)

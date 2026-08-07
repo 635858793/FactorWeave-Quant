@@ -223,7 +223,15 @@ def fetch_fundamental_data(stock, use_cache: bool = True) -> pd.DataFrame:
             if cached_data is not None:
                 return cached_data
 
-        df = create_simulated_fundamental_data()
+        # DEPRECATED: 不再注入模拟基本面数据（模拟数据会干扰真实场景）。
+        # 改调真实 akshare 数据源；真实数据不可用时由下方校验显式报错。
+        df = fetch_fundamental_data_akshare(stock.code, use_cache=False)
+        if df.empty:
+            raise DataLoadError(f"真实基本面数据源不可用（akshare 无返回），请检查数据源配置: {stock.code}")
+
+        # 列名兼容：akshare 返回 net_profit，验证器需要 net_income
+        if 'net_profit' in df.columns and 'net_income' not in df.columns:
+            df['net_income'] = df['net_profit']
         
         # 使用数据源验证器预防重复字符串
         df = DataSourceValidator.validate_and_clean_data(df, "基本面数据")
@@ -318,7 +326,11 @@ def fetch_macroeconomic_data(use_cache: bool = True) -> pd.DataFrame:
             if cached_data is not None:
                 return cached_data
 
-        df = create_simulated_macroeconomic_data()
+        # DEPRECATED: 已移除模拟宏观经济数据注入（模拟数据会干扰真实场景）。
+        # 请接入真实宏观经济数据源（如 akshare 宏观接口）后恢复本函数。
+        raise NotImplementedError(
+            "已移除模拟宏观经济数据，请接入真实宏观经济数据源（如 akshare 宏观接口）"
+        )
         
         df = DataSourceValidator.validate_and_clean_data(df, "宏观经济数据")
 

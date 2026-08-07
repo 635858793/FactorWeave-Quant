@@ -128,28 +128,35 @@ class RealTimeChart(QWidget):
     # 新增信号：图表展示完成
     chart_display_completed = pyqtSignal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, service_container=None):
         super().__init__(parent)  # parent 可以为 None，由 layout 系统管理
-        # parent_widget 会在外部设置，用于访问其他面板
-        self.parent_widget = None
+        self.service_container = service_container
         self.pending_data = []  # 待显示的完整数据集（用于渐进式加载）
         self.displayed_count = 0  # 已显示的数据点数量
         self.animation_timer = QTimer()  # 动画定时器
         self.animation_timer.timeout.connect(self._incremental_update)
-        
-        # 模式选择器
+
+        # 模式选择器（R257 完善实现：可见 + 接入 trading_service.set_mode + 实盘强确认）
+        # 原 R256 时代为孤儿控件（从未 addWidget），现接入完整功能链
         self.mode_label = QLabel("交易模式:")
         self.mode_selector = QComboBox()
-        self.mode_selector.addItems(['回测模式', '实盘模式', '混合模式'])
-        self.mode_selector.setToolTip("选择回测/实盘/混合模式")
-        self.mode_selector.currentTextChanged.connect(self.on_mode_changed)
-        self.current_mode = TradingMode.BACKTEST  # 默认回测模式
-        
+        self.mode_selector.addItems(['模拟交易', '实盘交易'])
+        self.mode_selector.setToolTip("切换模拟/实盘交易模式（实盘需二次确认，涉及真实资金）")
+        self.mode_selector.currentTextChanged.connect(self._on_trading_mode_changed)
+
         self.init_ui()
+        self._sync_mode_from_service()
 
     def init_ui(self):
         """初始化UI"""
         layout = QVBoxLayout(self)
+
+        # 模式选择行（R257：控件可见，与 TradingPanel 模式控件共享同一 TradingService）
+        mode_row = QHBoxLayout()
+        mode_row.addWidget(self.mode_label)
+        mode_row.addWidget(self.mode_selector)
+        mode_row.addStretch(1)
+        layout.addLayout(mode_row)
 
         if UNIFIED_CHART_AVAILABLE:
             # 使用统一图表服务
@@ -199,15 +206,81 @@ class RealTimeChart(QWidget):
         if UNIFIED_CHART_AVAILABLE and hasattr(self, 'chart_widget'):
             self.chart_widget.apply_theme(theme)
 
-    def on_mode_changed(self, mode_text: str):
-        """处理模式切换"""
-        mode_map = {
-            '回测模式': TradingMode.BACKTEST,
-            '实盘模式': TradingMode.LIVE,
-            '混合模式': getattr(TradingMode, 'HYBRID', TradingMode.BACKTEST)
-        }
-        self.current_mode = mode_map.get(mode_text, TradingMode.BACKTEST)
-        logger.info(f"切换交易模式：{mode_text} -> {self.current_mode.value}")
+    # ==================== R257 完善实现：交易模式功能链 ====================
+    # 与 TradingPanel 模式控件 (trading_panel.py:206-222) 共享同一 TradingService，
+    # 经 set_mode → _sync_order_executor_trading_mode → OrderExecutor 模式闸门 统一放行/拦截。
+    # 实盘切换必须强确认（真实资金风险），服务缺失/异常一律回退模拟且不崩溃。
+
+    def _get_trading_service(self):
+        """获取 TradingService（容器 try_resolve 优先，全局容器兜底）"""
+        try:
+            from core.services.trading_service import TradingService
+            container = self.service_container
+            if container is None:
+                from core.containers import get_service_container
+                container = get_service_container()
+            if container is None:
+                return None
+            resolve = getattr(container, 'try_resolve', None) or getattr(container, 'resolve', None)
+            if resolve is None:
+                return None
+            return resolve(TradingService)
+        except Exception as e:
+            logger.warning(f"获取TradingService失败: {e}")
+            return None
+
+    def _sync_mode_from_service(self):
+        """初始化/外部切换后同步当前交易模式到控件（只读回写，blockSignals 防递归）"""
+        service = self._get_trading_service()
+        if service is None:
+            self.mode_selector.setEnabled(False)
+            return
+        try:
+            mode = service.get_mode()
+            target = '实盘交易' if getattr(mode, 'value', '') == 'live' else '模拟交易'
+            self._revert_mode_combo(target)
+            self.mode_selector.setEnabled(True)
+        except Exception as e:
+            logger.warning(f"同步交易模式失败: {e}")
+            self.mode_selector.setEnabled(False)
+
+    def _on_trading_mode_changed(self, mode_text: str):
+        """处理图表区交易模式切换（实盘强确认 + set_mode 联动）"""
+        service = self._get_trading_service()
+        if service is None:
+            logger.warning("TradingService 不可用，图表区交易模式切换回退模拟")
+            self._revert_mode_combo('模拟交易')
+            return
+        try:
+            if mode_text == '实盘交易':
+                if not self._confirm_enter_live_mode():
+                    self._revert_mode_combo('模拟交易')
+                    return
+                service.set_mode(TradingMode.LIVE)
+            else:
+                service.set_mode(TradingMode.PAPER)
+        except Exception as e:
+            logger.error(f"切换交易模式失败: {e}")
+            self._revert_mode_combo('模拟交易')
+
+    def _confirm_enter_live_mode(self) -> bool:
+        """实盘模式强确认（真实资金风险提示，默认 No）"""
+        reply = QMessageBox.warning(
+            self,
+            "确认切换到实盘交易",
+            "切换到实盘交易后，订单将发送至真实经纪商账户，涉及真实资金风险！\n\n是否确认继续？",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        return reply == QMessageBox.Yes
+
+    def _revert_mode_combo(self, target_text: str):
+        """回退模式控件到指定项（blockSignals 防递归触发）"""
+        self.mode_selector.blockSignals(True)
+        idx = self.mode_selector.findText(target_text)
+        if idx >= 0:
+            self.mode_selector.setCurrentIndex(idx)
+        self.mode_selector.blockSignals(False)
 
     def start_progressive_display(self, data_points: List[Dict], batch_size: int = 10, interval_ms: int = 50):
         """启动渐进式动态展示"""
@@ -1902,25 +1975,6 @@ class ProfessionalBacktestWidget(QWidget):
         self.request_ui_update.connect(self._on_backtest_completed, Qt.QueuedConnection)
         self.request_progress_update.connect(self._on_progress_update, Qt.QueuedConnection)
         self.request_alert.connect(self._on_alert_request, Qt.QueuedConnection)
-        
-        # 模式管理
-        self.current_mode = TradingMode.BACKTEST  # 默认回测模式
-
-    def on_mode_changed(self, mode_text: str):
-        """处理模式切换"""
-        mode_map = {
-            '回测模式': TradingMode.BACKTEST,
-            '实盘模式': TradingMode.LIVE,
-            '混合模式': getattr(TradingMode, 'HYBRID', TradingMode.BACKTEST)
-        }
-        self.current_mode = mode_map.get(mode_text, TradingMode.BACKTEST)
-        logger.info(f"ProfessionalBacktestWidget 切换交易模式：{mode_text} -> {self.current_mode.value}")
-        
-        # 根据模式调整配置
-        if self.current_mode == TradingMode.LIVE:
-            logger.info("实盘模式：启用严格风控和性能优化")
-        elif self.current_mode == TradingMode.BACKTEST:
-            logger.info("回测模式：使用完整计算")
 
     def closeEvent(self, event):
         """窗口关闭事件处理 - 确保正确清理资源"""
@@ -1937,6 +1991,13 @@ class ProfessionalBacktestWidget(QWidget):
 
             if hasattr(self, 'chart_widget') and self.chart_widget and hasattr(self.chart_widget, 'animation_timer'):
                 self.chart_widget.animation_timer.stop()
+
+            # HVD-241-P0-C-3 (R241-C 子智能体): 宿主2 risk_manager (L1877 创建) 关闭时释放
+            if hasattr(self, 'risk_manager') and self.risk_manager and hasattr(self.risk_manager, 'dispose'):
+                try:
+                    self.risk_manager.dispose()
+                except Exception as e:
+                    logger.warning(f"risk_manager dispose 失败: {e}")
 
             super().closeEvent(event)
             logger.info("ProfessionalBacktestWidget 清理完成")
@@ -1959,6 +2020,13 @@ class ProfessionalBacktestWidget(QWidget):
 
             if hasattr(self, 'chart_widget') and self.chart_widget and hasattr(self.chart_widget, 'animation_timer'):
                 self.chart_widget.animation_timer.stop()
+
+            # HVD-241-P0-C-3 (R241-C 子智能体): 宿主2 risk_manager 关闭时释放
+            if hasattr(self, 'risk_manager') and self.risk_manager and hasattr(self.risk_manager, 'dispose'):
+                try:
+                    self.risk_manager.dispose()
+                except Exception as e:
+                    logger.warning(f"risk_manager dispose 失败: {e}")
 
             logger.info("ProfessionalBacktestWidget _cleanup_before_close 完成")
         except Exception as e:
@@ -2069,8 +2137,9 @@ class ProfessionalBacktestWidget(QWidget):
         right_layout.addWidget(self.metrics_panel)
 
         # 图表区域（占用剩余空间的主要部分）
-        self.chart_widget = RealTimeChart()  # 不设置 parent，让 layout 系统自动管理
-        self.chart_widget.parent_widget = self  # 保存父组件引用
+        # R257 完善实现：注入 service_container 使图表区模式控件接入全局交易模式服务
+        self.chart_widget = RealTimeChart(
+            service_container=getattr(self, 'service_container', None))  # 不设置 parent，让 layout 系统自动管理
         self.chart_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.chart_widget.setMinimumHeight(400)
         # ✅ 连接图表展示完成信号，在图表展示完成后才切换按钮状态
@@ -3419,10 +3488,27 @@ class ProfessionalBacktestWidget(QWidget):
         # 创建工作线程并保存引用
         try:
             from PyQt5.QtCore import QObject
+
+            def after_wait():
+                """R247 修复: wait_thread 执行完成后退出线程事件循环。
+
+                原实现 started.connect(lambda: wait_thread()) 执行完后线程进入
+                事件循环永不退出, finished 永不发射, QThread 引用永不清理;
+                backtest_widget 被销毁 (主窗口关闭) 时 QThread 仍运行
+                -> "QThread: Destroyed while thread is still running" 崩溃。
+                """
+                try:
+                    wait_thread()
+                finally:
+                    try:
+                        self._cleanup_thread.quit()
+                    except Exception as e:
+                        logger.debug(f"退出清理线程异常: {e}")
+
             self._cleanup_worker = QObject()
             self._cleanup_thread = QThread()
             self._cleanup_worker.moveToThread(self._cleanup_thread)
-            self._cleanup_thread.started.connect(lambda: wait_thread())
+            self._cleanup_thread.started.connect(after_wait)
             self._cleanup_thread.finished.connect(self._on_cleanup_worker_finished)
             
             # 启动工作线程

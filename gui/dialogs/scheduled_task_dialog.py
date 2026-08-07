@@ -864,7 +864,11 @@ class ScheduledTaskDialog(BaseDialog):
                 return
 
             if self.import_engine:
-                success = self.import_engine.start_import_task(target_task.task_id)
+                start_task = getattr(self.import_engine, 'start_task', None)
+                if start_task is None:
+                    QMessageBox.warning(self, "错误", "导入引擎不支持启动任务")
+                    return
+                success = start_task(target_task.task_id)
                 if success:
                     logger.info(f"立即执行任务: {task_name}")
                     QMessageBox.information(self, "成功", f"任务 \"{task_name}\" 已启动")

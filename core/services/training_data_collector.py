@@ -72,7 +72,8 @@ class TrainingDataCollector:
         if not self._container:
             raise ValueError("无法获取服务容器，请确保服务容器已初始化")
         
-        self._event_bus = event_bus or get_event_bus()
+        # HVD-241-P1-B: event_bus or → is not None (EventBus __len__ falsy 陷阱, R240-P0-007)
+        self._event_bus = event_bus if event_bus is not None else get_event_bus()
         
         # 解析核心依赖服务
         self._data_manager = self._container.resolve(UnifiedDataManager)

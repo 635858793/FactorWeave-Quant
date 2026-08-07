@@ -25,6 +25,24 @@ project_root = current_dir.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+# R240-P0: CWE-918 SSRF 防御接入 (L323 download_url 远端可控)
+try:
+    from core.security.url_validator import SSRFBlockedError, assert_safe_url as _uv_assert
+except Exception:
+    SSRFBlockedError = Exception
+    def _uv_assert(url, **kw):
+        return url
+
+
+def _assert_download_url_safe(url: str) -> bool:
+    """插件下载 URL 安全校验 (R240-P0, plugin_market.py:323 sink 接入)
+
+    download_url 来自远端插件市场 API 响应 (攻击者可注册恶意插件指向内网),
+    使用 strict 模式全黑名单 + DNS 二次校验 (fail-closed).
+    """
+    _uv_assert(url, dns_resolve=True, mode="strict")
+    return True
+
 # 定义基础类型，以防导入失败
 logger = logger
 
@@ -320,6 +338,9 @@ class PluginDownloader(QThread):
             filename = f"{self.plugin_info.metadata.name}-{self.plugin_info.metadata.version}.zip"
             file_path = os.path.join(self.download_dir, filename)
 
+            # R240-P0: SSRF 校验 download_url (远端可控, strict 全黑名单)
+            _assert_download_url_safe(self.plugin_info.download_url)
+
             response = requests.get(self.plugin_info.download_url, stream=True)
             response.raise_for_status()
 
@@ -360,6 +381,28 @@ class PluginInstaller:
         """
         self.plugins_dir = plugins_dir
 
+    def _sanitize_plugin_name(self, raw_name: str) -> str:
+        """净化插件名 (R238-NEW-P0-CWE-22, 2026-08-01)
+
+        Why: metadata.name 来自 zip 内 plugin.json (攻击者可控), 含 `../../`
+             可逃逸 plugins_dir. basename 自动剥离路径段, 再拒绝剩余分隔符.
+        Fix: basename 净化 + 拒绝空名/'.'/'..'/残留分隔符 + realpath 校验由调用方执行
+        TDD: tests/test_r238_c_plugin_market_cwe22_path_traversal.py
+
+        Args:
+            raw_name: 原始插件名 (可能含路径)
+
+        Returns:
+            str: 净化后的安全插件名
+
+        Raises:
+            Exception: 名称为空 / '.' / '..' / 含残留路径分隔符时
+        """
+        name = os.path.basename(raw_name or '').strip()
+        if not name or name in ('.', '..') or '/' in name or '\\' in name:
+            raise Exception(f"非法插件名称: {raw_name!r} (CWE-22 路径逃逸拦截)")
+        return name
+
     def install_plugin(self, plugin_file: str) -> bool:
         """
         安装插件
@@ -381,11 +424,25 @@ class PluginInstaller:
                 metadata = self._read_plugin_metadata(zip_ref)
 
                 # 创建插件目录
-                plugin_dir = os.path.join(self.plugins_dir, metadata.name)
+                # R238-NEW-P0-CWE-22 修复 (2026-08-01): 净化 metadata.name 防路径逃逸
+                # Why: metadata.name 来自 zip 内 plugin.json (攻击者可控), 含 `../../`
+                #      可逃逸 plugins_dir, safe_extract_zip 白名单以逃逸目录为根而失效
+                #      (CWE-22 zip-slip, CVSS 6.5)
+                # Fix: _sanitize_plugin_name basename 净化 + realpath 校验仍位于 plugins_dir 内
+                # TDD: tests/test_r238_c_plugin_market_cwe22_path_traversal.py
+                plugin_name = self._sanitize_plugin_name(metadata.name)
+
+                plugin_dir = os.path.join(self.plugins_dir, plugin_name)
+                resolved_plugins_dir = os.path.realpath(self.plugins_dir)
+                resolved_plugin_dir = os.path.realpath(plugin_dir)
+                if not resolved_plugin_dir.startswith(resolved_plugins_dir + os.sep):
+                    raise Exception(f"插件目录逃逸拦截: {plugin_dir!r} (CWE-22)")
+
                 os.makedirs(plugin_dir, exist_ok=True)
 
-                # 解压文件
-                zip_ref.extractall(plugin_dir)
+                # [R237-C CWE-22 修复] 替代 zip_ref.extractall, 防 zip-slip
+                from core.security import safe_extract_zip
+                safe_extract_zip(plugin_file, plugin_dir)
 
             # 清理下载文件
             os.remove(plugin_file)
@@ -406,6 +463,10 @@ class PluginInstaller:
             是否卸载成功
         """
         try:
+            # R240-P1-1 (2026-08-02): CWE-22 净化 — install 已有 _sanitize_plugin_name
+            # (L383-403), uninstall 缺失 → 攻击者传 ../../ 可 rmtree 目录外文件
+            # (子智能体 A 交叉验证确认: L445 未净化, L448 rmtree)
+            plugin_name = self._sanitize_plugin_name(plugin_name)
             plugin_dir = os.path.join(self.plugins_dir, plugin_name)
 
             if os.path.exists(plugin_dir):

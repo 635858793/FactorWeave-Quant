@@ -85,6 +85,50 @@ except ImportError as e:
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'data', 'factorweave_system.sqlite')
 
 
+# ---- R257 跨组件财报表名治理：分裂期旧表惰性迁移 ----
+# 统一插件名 DEFAULT_FINANCIAL_PLUGIN 定义于 core/database/table_manager.py
+_financial_migration_done = False
+_financial_migration_lock = threading.Lock()
+
+# R257 治理前两组件各自生成的旧财报表名（SIMPLE 模式 {data_type}_{plugin_name}_default）
+_LEGACY_FINANCIAL_TABLES = (
+    "financial_statement_unified_data_manager_default",
+    "financial_statement_enhanced_duckdb_downloader_default",
+)
+
+
+def _financial_table_row_count(operations, db_path: str, table_name: str) -> int:
+    """查询 duckdb_tables() 中指定表是否存在（COUNT(*)）；异常/空结果安全返回 0。
+
+    兼容 execute_query 返回 list[dict] 或 DataFrame 两种 data 格式。
+    """
+    try:
+        result = operations.execute_query(
+            db_path,
+            "SELECT COUNT(*) AS cnt FROM duckdb_tables() WHERE table_name = ?",
+            [table_name],
+        )
+        if result is None or not getattr(result, "success", False):
+            return 0
+        data = getattr(result, "data", None)
+        if data is None:
+            return 0
+        if isinstance(data, list):
+            if not data:
+                return 0
+            first = data[0]
+            if isinstance(first, dict):
+                return int(first.get("cnt", 0))
+            return int(first[0]) if first else 0
+        if getattr(data, "empty", True):
+            return 0
+        if "cnt" in getattr(data, "columns", []):
+            return int(data["cnt"].iloc[0])
+        return int(data.iloc[0, 0])
+    except Exception:
+        return 0
+
+
 def get_unified_data_manager() -> Optional['UnifiedDataManager']:
     """
     获取统一数据管理器的实例
@@ -166,6 +210,11 @@ class DataRequest:
                      param_tuple))
 
 
+# 线程本地防重入守卫 (R204-P0-3): 阻断 UDM get_stock_list → get_asset_list → StockService →
+# StockManager → DataAccess → StockRepository → data_manager.get_stock_list 无限递归环
+_recursion_guard = threading.local()
+
+
 class UnifiedDataManager:
     """
     统一数据管理器
@@ -209,6 +258,12 @@ class UnifiedDataManager:
         self._request_lock = threading.Lock()
 
         self._cache_ttl = 300  # 5分钟缓存TTL
+
+        # R238-P1-3 修复: clear_cache/_get_from_cache 依赖的缓存属性必须在 __init__ 定义,
+        # 否则 dispose 调用 clear_cache 时抛 AttributeError (生产关闭路径必崩)
+        self._cache_lock = threading.Lock()
+        self._data_cache: Dict[str, Any] = {}
+        self._cache_timestamps: Dict[str, float] = {}
 
         self._stock_info_cache = None
 
@@ -802,7 +857,7 @@ class UnifiedDataManager:
     def get_kdata(self, stock_code: str, period: str = 'D', count: int = 365,
                   asset_type: AssetType = AssetType.STOCK_A) -> pd.DataFrame:
         """
-        获取K线数据 - 统一接口（优化：支持多资产类型 + 集成DuckDB智能路由）
+        获取K线数据 - 统一接口（DB优先架构：DuckDB优先 → 插件补齐 → 落库 → 返回）
 
         Args:
             stock_code: 股票代码（或其他资产代码）
@@ -823,10 +878,8 @@ class UnifiedDataManager:
                 logger.debug(f"缓存命中: {stock_code} ({asset_type.value})")
                 return cached_data
 
-            # 2. 初始化df变量
+            # 2. 优先从DuckDB获取（DB优先）
             df = pd.DataFrame()
-
-            # 3. 修复：始终尝试从DuckDB获取数据（支持多资产类型）
             if self.duckdb_available:
                 logger.debug(f"尝试从DuckDB获取K线数据: {stock_code}, period={period}, count={count}, asset_type={asset_type.value}")
                 df = self._get_kdata_from_duckdb(stock_code, period, count, asset_type=asset_type)
@@ -835,30 +888,105 @@ class UnifiedDataManager:
                     logger.info(f"从DuckDB获取数据成功: {stock_code} ({asset_type.value}), 记录数={len(df)}")
                     self._cache_data(cache_key, df)
                     return df
-                else:
-                    logger.warning(f"DuckDB中没有数据: {stock_code} ({asset_type.value})")
+                logger.warning(f"DuckDB中没有数据，尝试通过数据源插件补齐: {stock_code} ({asset_type.value})")
             else:
-                logger.warning("DuckDB不可用，无法获取数据")
+                logger.warning("DuckDB不可用，尝试通过数据源插件补齐")
 
-            # 4. 如果DuckDB没有数据，返回空DataFrame
-            df = pd.DataFrame()
+            # 3. 插件补齐 + 落库（DB缺失数据的回退链路，补齐后写入historical_kline_data）
+            if df.empty:
+                try:
+                    fallback_df = self._fetch_kdata_from_tet(stock_code, period, count, asset_type)
+                    if fallback_df is not None and not fallback_df.empty:
+                        df = fallback_df
+                        # 落库（统一表名 historical_kline_data）
+                        try:
+                            if self.asset_manager is not None:
+                                persist_df = df.copy()
+                                # 时间列统一为timestamp（DuckDB K线表结构）
+                                if 'timestamp' not in persist_df.columns:
+                                    if 'datetime' in persist_df.columns:
+                                        persist_df['timestamp'] = pd.to_datetime(persist_df['datetime'])
+                                    elif 'date' in persist_df.columns:
+                                        persist_df['timestamp'] = pd.to_datetime(persist_df['date'])
+                                # 补齐关键列，保证落库后可按symbol/frequency查询
+                                if 'symbol' not in persist_df.columns:
+                                    persist_df['symbol'] = stock_code
+                                if 'frequency' not in persist_df.columns:
+                                    try:
+                                        from core.plugin_types import Period
+                                        persist_df['frequency'] = Period.to_duckdb_frequency(period)
+                                    except Exception:
+                                        pass
+                                if 'data_source' not in persist_df.columns:
+                                    persist_df['data_source'] = 'tet_plugin'
+                                self.asset_manager.store_standardized_data(
+                                    persist_df, asset_type, DataType.HISTORICAL_KLINE)
+                        except Exception as e:
+                            logger.warning(f"补齐数据落库失败: {stock_code} - {e}")
+                        self._cache_data(cache_key, df)
+                        logger.info(f"插件补齐并落库成功: {stock_code} ({asset_type.value}), 记录数={len(df)}")
+                        return df
+                except Exception as e:
+                    logger.error(f"插件补齐K线数据失败: {stock_code} - {e}")
 
-            # 4. 数据标准化和清洗
-            if not df.empty:
-                df = self._standardize_kdata_format(df, stock_code)
-
-                # 5. 智能存储：大数据存储到DuckDB
-                if self.duckdb_available and len(df) > 1000:
-                    self._store_to_duckdb(df, stock_code, period)
-
-                # 6. 缓存数据
-                self._cache_data(cache_key, df)
-
-            return df
+            logger.warning(f"数据库与插件均无数据: {stock_code} ({asset_type.value})")
+            return pd.DataFrame()
 
         except Exception as e:
             logger.error(f"获取K线数据失败: {stock_code} ({asset_type.value}) - {e}")
             return pd.DataFrame()
+
+    def _fetch_kdata_from_tet(self, stock_code: str, period: str, count: int,
+                              asset_type: AssetType) -> Optional[pd.DataFrame]:
+        """
+        通过TET数据管道从插件数据源补齐K线数据（DuckDB无数据时的网络回退）
+
+        Args:
+            stock_code: 股票代码（或其他资产代码）
+            period: 周期
+            count: 数据条数
+            asset_type: 资产类型
+
+        Returns:
+            Optional[pd.DataFrame]: 获取成功返回DataFrame，失败返回None（不抛出异常）
+        """
+        try:
+            if not getattr(self, 'tet_enabled', False) or not getattr(self, 'tet_pipeline', None):
+                logger.warning(f"TET数据管道不可用，无法补齐K线数据: {stock_code}")
+                return None
+
+            # 构造标准化查询（period传给query，count放extra_params）
+            from core.tet_data_pipeline import StandardQuery
+            query = StandardQuery(
+                symbol=stock_code,
+                asset_type=asset_type,
+                data_type=DataType.HISTORICAL_KLINE,
+                period=period,
+                extra_params={'count': count}
+            )
+
+            result = self.tet_pipeline.process(query)
+            if result is None:
+                return None
+
+            # 兼容StandardData（.data字段为DataFrame）与直接DataFrame两种返回
+            if hasattr(result, 'data'):
+                df = result.data
+            elif isinstance(result, pd.DataFrame):
+                df = result
+            else:
+                logger.warning(f"TET返回了不支持的数据类型: {type(result)}，无法补齐: {stock_code}")
+                return None
+
+            if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+                logger.warning(f"TET插件补齐数据为空: {stock_code}")
+                return None
+
+            return df.copy()
+
+        except Exception as e:
+            logger.error(f"TET插件补齐K线数据失败: {stock_code} - {e}")
+            return None
 
     def get_kline_data(self, stock_code: str, period: str = 'D', count: int = 365,
                        asset_type=None, **kwargs) -> pd.DataFrame:
@@ -1359,15 +1487,12 @@ class UnifiedDataManager:
             frequency = Period.to_duckdb_frequency(period)
             logger.debug(f"周期映射: {period} -> {frequency}")
 
-            # 使用动态表名替代硬编码表名
-            from core.database.unified_table_name_generator import generate_table_name
-            from core.plugin_types import DataType
-            table_name = generate_table_name(
-                data_type=DataType.HISTORICAL_KLINE,
-                plugin_name='default',
-                period=period,
-                asset_type=final_asset_type,
-            )
+            # R246 修复: 直接使用存储侧统一表名, 与 AssetSeparatedDatabaseManager.
+            # _generate_table_name (asset_database_manager.py L1479) 保持一致。
+            # 此前调用 generate_table_name 生成 "kline_data_default_t_1min_all" 等动态表名,
+            # 与存储侧 "historical_kline_data" 不一致, 视图查询必然抛
+            # "Table with name kline_data_default_* does not exist" Catalog Error。
+            table_name = "historical_kline_data"
 
             # 优化：在CTE中添加WHERE条件，提前过滤数据，减少JOIN的数据量
             view_query = f"""
@@ -1526,23 +1651,40 @@ class UnifiedDataManager:
             asset_type = self.asset_identifier.identify_asset_type(stock_code)
             db_path = self.asset_manager.get_database_path(asset_type)
 
-            table_name = f"kline_data_{period.lower()}"
+            # R251 修复: 统一写入 historical_kline_data 表(与读取端 _get_kdata_from_duckdb 一致)。
+            # 此前使用 kline_data_{period} 动态表名, 读取端永远查不到写入的数据。
+            table_name = "historical_kline_data"
 
-            # 确保表存在
-            if self.table_manager:
-                from ..database.table_manager import TableType
-                actual_table_name = self.table_manager.ensure_table_exists(
-                    db_path, TableType.KLINE_DATA, "unified_data_manager", period
-                )
-                if actual_table_name:
-                    table_name = actual_table_name
+            # 列名统一映射(code→symbol, date/datetime→timestamp), 与表结构对齐
+            store_data = data.copy()
+            for src, dst in [('code', 'symbol'), ('date', 'timestamp'), ('datetime', 'timestamp')]:
+                if src in store_data.columns and dst not in store_data.columns:
+                    store_data = store_data.rename(columns={src: dst})
+
+            if 'symbol' not in store_data.columns:
+                store_data['symbol'] = stock_code
+
+            if 'timestamp' not in store_data.columns:
+                if 'datetime' in store_data.columns:
+                    store_data['timestamp'] = pd.to_datetime(store_data['datetime'])
+                else:
+                    logger.warning(f"DuckDB数据存储失败: {stock_code} K线数据缺少时间列")
+                    return
+
+            if 'frequency' not in store_data.columns:
+                from core.plugin_types import Period
+                store_data['frequency'] = Period.to_duckdb_frequency(period)
+
+            if 'data_source' not in store_data.columns:
+                store_data['data_source'] = 'unified_data_manager'
 
             # 插入数据（使用upsert避免重复）
             result = self.duckdb_operations.insert_dataframe(
                 database_path=db_path,
                 table_name=table_name,
-                data=data,
-                upsert=True
+                data=store_data,
+                upsert=True,
+                conflict_columns=['symbol', 'data_source', 'timestamp', 'frequency']
             )
 
             if result.success:
@@ -1859,76 +2001,29 @@ class UnifiedDataManager:
 
             else:
                 logger.info("降级到传统数据源模式获取资金流数据")
-                # 使用传统数据源获取资金流数据
-                fund_flow_data = self._get_fund_flow_legacy()
 
-            # 如果所有数据都为空，生成模拟数据用于测试
+            # 所有数据源均无资金流数据：返回空结构（不再注入模拟数据，避免干扰真实场景）
             if (fund_flow_data['sector_flow_rank'].empty and
                 fund_flow_data['individual_flow'].empty and
                     not fund_flow_data['market_flow']):
-                logger.warning("资金流向数据不可用，返回空数据。请配置资金流向数据源以获取真实数据。")
-                fund_flow_data = self._generate_mock_fund_flow_data()
+                logger.warning("所有数据源均无资金流数据，返回空结构。请配置资金流向数据源以获取真实数据。")
+                fund_flow_data = {
+                    'sector_flow_rank': pd.DataFrame(),
+                    'individual_flow': pd.DataFrame(),
+                    'market_flow': {
+                        'total_net_inflow': None,
+                        'main_net_inflow': None,
+                        'retail_net_inflow': None,
+                        'north_fund_inflow': None,
+                        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        'market_status': 'open' if 9 <= datetime.now().hour <= 15 else 'closed'
+                    }
+                }
 
             return fund_flow_data
 
         except Exception as e:
             logger.error(f"获取资金流数据失败: {e}")
-            return {
-                'sector_flow_rank': pd.DataFrame(),
-                'individual_flow': pd.DataFrame(),
-                'market_flow': {}
-            }
-
-    def _generate_mock_fund_flow_data(self) -> Dict[str, Any]:
-        """生成模拟资金流数据用于测试"""
-        import random
-        from datetime import datetime, timedelta
-
-        try:
-            logger.warning("资金流向数据不可用，返回空数据。请配置资金流向数据源以获取真实数据。")
-
-            sector_df = pd.DataFrame(columns=['sector_name', 'net_inflow', 'main_inflow', 'main_outflow',
-                                               'retail_inflow', 'retail_outflow', 'change_rate', 'rank'])
-            individual_df = pd.DataFrame(columns=['symbol', 'name', 'net_inflow', 'main_inflow', 'main_outflow',
-                                                   'price', 'change_rate', 'volume'])
-            market_flow = {
-                'total_net_inflow': None,
-                'main_net_inflow': None,
-                'retail_net_inflow': None,
-                'north_fund_inflow': None,
-                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'market_status': 'open' if 9 <= datetime.now().hour <= 15 else 'closed'
-            }
-
-            logger.info(f"资金流数据: 板块{len(sector_df)}个, 个股{len(individual_df)}个（数据源未配置）")
-
-            return {
-                'sector_flow_rank': sector_df,
-                'individual_flow': individual_df,
-                'market_flow': market_flow
-            }
-
-        except Exception as e:
-            logger.error(f"生成模拟资金流数据失败: {e}")
-            return {
-                'sector_flow_rank': pd.DataFrame(),
-                'individual_flow': pd.DataFrame(),
-                'market_flow': {}
-            }
-
-    def _get_fund_flow_legacy(self) -> Dict[str, Any]:
-        """传统数据源获取资金流数据"""
-        try:
-            # 资金流数据通过TET框架获取
-            fund_flow_data = {
-                'sector_flow_rank': pd.DataFrame(),
-                'individual_flow': pd.DataFrame(),
-                'market_flow': {}
-            }
-            return fund_flow_data
-
-        except Exception as e:
-            logger.error(f"传统数据源获取资金流数据失败: {e}")
             return {
                 'sector_flow_rank': pd.DataFrame(),
                 'individual_flow': pd.DataFrame(),
@@ -1998,6 +2093,14 @@ class UnifiedDataManager:
         import pandas as pd
         from ..plugin_types import AssetType
 
+        # 防重入保护 (R204-P0-3): 统一入口阻断所有资产类型的递归环
+        # (stock/index/fund/bond 的 _get_xxx_asset_list → xxx_service → StockRepository
+        #  → data_manager.get_stock_list → get_asset_list → _legacy_get_asset_list 回环)
+        if getattr(_recursion_guard, 'in_legacy_get_asset_list', False):
+            logger.warning("检测到 _legacy_get_asset_list 递归重入，已阻断循环（返回空列表）")
+            return pd.DataFrame(columns=['code', 'name', 'market', 'industry', 'sector', 'list_date', 'status', 'asset_type'])
+        _recursion_guard.in_legacy_get_asset_list = True
+
         try:
             asset_type_value = asset_type.value if hasattr(asset_type, 'value') else str(asset_type)
             logger.debug(f"从传统数据源获取{asset_type_value}资产列表")
@@ -2034,6 +2137,8 @@ class UnifiedDataManager:
             import traceback
             logger.error(traceback.format_exc())
             return pd.DataFrame(columns=['code', 'name', 'market', 'industry', 'sector', 'list_date', 'status', 'asset_type'])
+        finally:
+            _recursion_guard.in_legacy_get_asset_list = False
 
     def _get_sector_asset_list(self, asset_type: AssetType, market: str = None) -> pd.DataFrame:
         """获取板块资产列表"""
@@ -2071,9 +2176,26 @@ class UnifiedDataManager:
     def _get_stock_asset_list(self, asset_type: AssetType, market: str = None) -> pd.DataFrame:
         """获取股票资产列表"""
         import pandas as pd
+        # 防重入保护 (R204-P0-3): 阻断 get_asset_list → StockService → StockManager →
+        # DataAccess → StockRepository → data_manager.get_stock_list → get_asset_list 无限递归环
+        if getattr(_recursion_guard, 'in_get_stock_asset_list', False):
+            logger.warning("检测到 _get_stock_asset_list 递归重入，已阻断循环（返回空列表）")
+            return pd.DataFrame(columns=['code', 'name', 'market', 'industry', 'sector', 'list_date', 'status', 'asset_type'])
+        _recursion_guard.in_get_stock_asset_list = True
         try:
-            if hasattr(self, '_stock_service') and self._stock_service is not None:
-                if hasattr(self._stock_service, 'get_stock_list'):
+            stock_service_ready = (
+                hasattr(self, '_stock_service') and self._stock_service is not None
+                and hasattr(self._stock_service, 'get_stock_list')
+            )
+            if stock_service_ready:
+                # R244-P0-2 修复: StockService 初始化期间(_do_initialize → _load_stock_list
+                # → DataAccess → StockRepository → data_manager.get_stock_list)会自我调用
+                # 回同一尚未初始化完成的实例，_ensure_initialized() 抛 "Service StockService
+                # is not initialized"，导致传统后备数据源在启动期失效并产生 ERROR 日志。
+                # 未初始化完成时跳过服务路径（走 DuckDB/空后备），初始化完成后自动恢复。
+                if not getattr(self._stock_service, '_initialized', False):
+                    logger.debug(f"StockService 尚未初始化完成，跳过服务路径获取{asset_type}资产列表")
+                else:
                     stock_list = self._stock_service.get_stock_list()
 
                     if stock_list is None:
@@ -2121,6 +2243,8 @@ class UnifiedDataManager:
         except Exception as e:
             logger.error(f"获取股票资产列表失败: {e}")
             return pd.DataFrame(columns=['code', 'name', 'market', 'industry', 'sector', 'list_date', 'status', 'asset_type'])
+        finally:
+            _recursion_guard.in_get_stock_asset_list = False
 
     def _filter_stocks_by_asset_type(self, df: pd.DataFrame, asset_type: AssetType) -> pd.DataFrame:
         """
@@ -2244,57 +2368,6 @@ class UnifiedDataManager:
             return self.fallback_loader.get_asset_list(asset_type, market)
 
         return pd.DataFrame(columns=['code', 'name', 'market', 'industry', 'sector', 'list_date', 'status', 'asset_type'])
-
-    def get_asset_list_legacy_tet(self, asset_type: AssetType, market: str = None) -> List[Dict[str, Any]]:
-        """
-        获取资产列表（兼容接口）- 重定向到DuckDB优先方法
-
-        Args:
-            asset_type: 资产类型
-            market: 市场过滤
-
-        Returns:
-            List[Dict]: 标准化的资产列表
-        """
-        if self.tet_enabled and self.tet_pipeline:
-            try:
-                # 懒加载检查：如果插件还没发现，重新尝试发现
-                if not self._plugins_discovered:
-                    logger.info("TET管道首次使用，重新尝试插件发现...")
-                    self._auto_discover_data_source_plugins()
-
-                logger.info("使用TET数据管道获取股票列表（插件化架构）")
-                query = StandardQuery(
-                    symbol="",  # 资产列表查询不需要具体symbol
-                    asset_type=asset_type,
-                    data_type=DataType.ASSET_LIST,
-                    market=market
-                )
-
-                result = self.tet_pipeline.process(query)
-
-                # 检查结果是否为空
-                if not result.data or len(result.data) == 0:
-                    logger.warning("TET管道返回空数据")
-                    raise Exception("TET管道返回空数据")
-
-                return self._format_asset_list(result.data)
-
-            except Exception as e:
-                logger.warning(f"TET模式获取资产列表失败: {e}")
-                logger.info("降级到传统数据源模式")
-
-        # 重定向到新的统一资产列表方法（DuckDB优先）
-        logger.info("重定向到DuckDB优先的资产列表方法")
-        asset_type_str = asset_type.value.lower()
-        df = self.get_asset_list(asset_type=asset_type_str, market=market)
-
-        # 转换DataFrame为List[Dict]格式以保持接口兼容性
-        if not df.empty:
-            return df.to_dict('records')
-        else:
-            logger.warning(f"DuckDB中没有{asset_type_str}资产数据")
-            return []
 
     def get_current_source(self) -> str:
         """获取当前数据源"""
@@ -2905,11 +2978,80 @@ class UnifiedDataManager:
             logger.error(f"获取财务数据失败: {e}", exc_info=True)
             return {}
 
+    def _migrate_legacy_financial_tables(self, db_path: str) -> None:
+        """R257：将分裂期旧财报表数据惰性合并到统一表（不 DROP 旧表，失败仅 warning 不阻断）。
+
+        旧表：financial_statement_unified_data_manager_default /
+              financial_statement_enhanced_duckdb_downloader_default
+        新表：DEFAULT_FINANCIAL_PLUGIN 统一生成（financial_statement_system_default）。
+        仅当检测到旧表存在时执行 INSERT INTO 新表 SELECT * FROM 旧表
+        ON CONFLICT (symbol, report_date, report_type) DO NOTHING；
+        列不匹配等失败仅 warning（列名对齐列入 R258）。
+        """
+        global _financial_migration_done
+        if _financial_migration_done or not self.duckdb_operations or not self.table_manager:
+            return
+        with _financial_migration_lock:
+            if _financial_migration_done:
+                return
+            try:
+                from ..database.table_manager import TableType, DEFAULT_FINANCIAL_PLUGIN
+                new_table = self.table_manager.generate_table_name(
+                    TableType.FINANCIAL_STATEMENT, DEFAULT_FINANCIAL_PLUGIN
+                )
+                legacy_tables = [
+                    legacy for legacy in _LEGACY_FINANCIAL_TABLES
+                    if legacy != new_table
+                    and _financial_table_row_count(self.duckdb_operations, db_path, legacy) > 0
+                ]
+                if not legacy_tables:
+                    _financial_migration_done = True
+                    return
+                ensured = self.table_manager.ensure_table_exists(
+                    db_path, TableType.FINANCIAL_STATEMENT, DEFAULT_FINANCIAL_PLUGIN
+                )
+                if not ensured:
+                    logger.warning("旧财报表迁移失败：统一新表创建失败，跳过合并（不阻断）")
+                    return
+                for legacy in legacy_tables:
+                    try:
+                        result = self.duckdb_operations.execute_sql(
+                            db_path,
+                            f"INSERT INTO {ensured} SELECT * FROM {legacy} "
+                            f"ON CONFLICT (symbol, report_date, report_type) DO NOTHING",
+                        )
+                        if result is not None and not getattr(result, "success", True):
+                            logger.warning(
+                                f"旧财报表合并失败（列名不匹配等，R258 对齐列名）: {legacy} -> {ensured}")
+                        else:
+                            logger.info(f"旧财报表数据合并完成: {legacy} -> {ensured}")
+                    except Exception as e:
+                        logger.warning(f"旧财报表合并异常（不阻断，R258 对齐列名）: {legacy}: {e}")
+                _financial_migration_done = True
+            except Exception as e:
+                logger.warning(f"旧财报表迁移执行失败（不阻断）: {e}")
+
     async def _get_financial_from_duckdb(self, stock_code: str, asset_type: AssetType = None) -> Optional[Dict[str, Any]]:
         """从DuckDB获取财务数据"""
         try:
-            query = """
-                SELECT * FROM financial_statements 
+            # R257：入口惰性迁移旧财报表（幂等、失败不阻断）
+            try:
+                migration_asset_type = asset_type or AssetType.STOCK_A
+                self._migrate_legacy_financial_tables(
+                    self.asset_manager.get_database_path(migration_asset_type))
+            except Exception as e:
+                logger.warning(f"旧财报表迁移失败（不阻断）: {e}")
+            # 使用与写入一致的表名（与 ensure_table_exists 同一生成路径，保证读写同表）
+            if self.table_manager:
+                from ..database.table_manager import TableType, DEFAULT_FINANCIAL_PLUGIN
+                table_name = self.table_manager.generate_table_name(
+                    TableType.FINANCIAL_STATEMENT, DEFAULT_FINANCIAL_PLUGIN
+                )
+            else:
+                table_name = "financial_statements"
+
+            query = f"""
+                SELECT * FROM {table_name} 
                 WHERE symbol = ? 
                 ORDER BY report_date DESC 
                 LIMIT 1
@@ -2934,29 +3076,56 @@ class UnifiedDataManager:
     async def _store_financial_to_duckdb(self, stock_code: str, data: Dict[str, Any]):
         """存储财务数据到DuckDB"""
         try:
-            if not data:
+            # R258-P0: 空判断兼容 DataFrame 输入 (TET 管道 result.data 为 DataFrame,
+            # `if not data` 对 DataFrame 抛 "truth value ambiguous" → 直接吞掉返回)
+            if data is None:
+                return
+            if isinstance(data, pd.DataFrame):
+                if data.empty:
+                    return
+            elif not data:
                 return
 
             # 识别资产类型
             asset_type = self.asset_identifier.identify_asset_type(stock_code)
             db_path = self.asset_manager.get_database_path(asset_type)
 
-            # 确保财务数据表存在
+            # R257：入口惰性迁移旧财报表（幂等、失败不阻断）
+            try:
+                self._migrate_legacy_financial_tables(db_path)
+            except Exception as e:
+                logger.warning(f"旧财报表迁移失败（不阻断）: {e}")
+
+            # 确保财务数据表存在（返回实际表名，保证建表与插入使用同一表名）
             if self.table_manager:
-                from ..database.table_manager import TableType
-                if not self.table_manager.ensure_table_exists(
-                    db_path, TableType.FINANCIAL_STATEMENT, "unified_data_manager"
-                ):
+                from ..database.table_manager import TableType, DEFAULT_FINANCIAL_PLUGIN
+                table_name = self.table_manager.ensure_table_exists(
+                    db_path, TableType.FINANCIAL_STATEMENT, DEFAULT_FINANCIAL_PLUGIN
+                )
+                if not table_name:
                     logger.error("创建财务数据表失败")
                     return
+            else:
+                table_name = "financial_statements"
 
             # 转换为DataFrame并存储
-            df = pd.DataFrame([data])
+            # R258-P0 (交叉审查修正): 财务统一表主键 (symbol, report_date, report_type)
+            # (table_manager.py:287), 表无 update_time 列 —— conflict_columns 引用不存在的
+            # 列 → ON CONFLICT Binder Error → 全事务 ROLLBACK → 财务数据 0 行落库。
+            # 真实调用传 TET 管道 result.data (unified_data_manager.py:2963-2967, DataFrame),
+            # 需兼容 dict / DataFrame / list 三种输入。
+            if isinstance(data, pd.DataFrame):
+                df = data
+            elif isinstance(data, dict):
+                df = pd.DataFrame([data])
+            else:
+                df = pd.DataFrame(data)
             result = self.duckdb_operations.insert_dataframe(
                 database_path=db_path,
-                table_name="financial_statements",
+                table_name=table_name,
                 data=df,
-                upsert=True
+                upsert=True,
+                conflict_columns=['symbol', 'report_date', 'report_type']
             )
 
             if result.success:
@@ -3837,6 +4006,9 @@ class UnifiedDataManager:
         Returns:
             是否成功取消
         """
+        # 路径A防死锁(R238-P0-2): _cleanup_resources 内部会再次获取 request_tracker_lock,
+        # 若在锁内调用将同线程重入普通 Lock → 死锁. 故仅锁内取消任务, 清理移到锁块外.
+        found_in_tracker = False
         with self.request_tracker_lock:
             if request_id in self.request_tracker:
                 task = self.request_tracker[request_id].get('task')
@@ -3844,13 +4016,14 @@ class UnifiedDataManager:
                     task.cancel()
                     logger.info(f"Request {request_id} cancelled")
 
-                # 清理资源
-                self._cleanup_resources(request_id)
-
                 # 更新统计信息
                 self._stats['requests_cancelled'] += 1
+                found_in_tracker = True
 
-                return True
+        if found_in_tracker:
+            # 锁外清理资源 (避免重入 request_tracker_lock 死锁)
+            self._cleanup_resources(request_id)
+            return True
 
         with self._request_lock:
             # 检查待处理请求
@@ -4154,13 +4327,17 @@ class UnifiedDataManager:
         """清理资源"""
         logger.info("Disposing unified data manager")
 
-        # 取消所有待处理请求
+        # 路径B防死锁(R238-P0-2): cancel_request 内部会获取 _request_lock,
+        # 若在此锁内调用将同线程重入普通 Lock → 死锁. 故仅锁内收集 request_id, 锁外逐个取消.
+        request_ids_to_cancel = []
         with self._request_lock:
-            for request in list(self._pending_requests.values()):
-                self.cancel_request(request.request_id)
+            request_ids_to_cancel.extend(
+                request.request_id for request in self._pending_requests.values())
+            request_ids_to_cancel.extend(
+                request.request_id for request in self._active_requests.values())
 
-            for request in list(self._active_requests.values()):
-                self.cancel_request(request.request_id)
+        for request_id in request_ids_to_cancel:
+            self.cancel_request(request_id)
 
         # 关闭线程池
         self._executor.shutdown(wait=True)
@@ -4387,44 +4564,6 @@ class UnifiedDataManager:
             logger.error(traceback.format_exc())
             return registered_count
 
-    def _create_fallback_data_source_DEPRECATED(self) -> None:
-        """创建基本回退数据源，确保TET管道有可用的数据源"""
-        try:
-            # 创建一个简单的回退数据源类
-            class FallbackDataSource:
-                def __init__(self):
-                    # 传统数据源fallback
-                    self.name = "fallback_source"
-                    self.priority = 999  # 最低优先级
-                    self.weight = 0.1
-
-                def get_stock_list(self, market='all'):
-                    return pd.DataFrame()
-
-                def get_kdata(self, symbol, period, start_date, end_date):
-                    return pd.DataFrame()
-
-            fallback_source = FallbackDataSource()
-
-            # 尝试注册到TET管道
-            if hasattr(self, 'tet_pipeline') and self.tet_pipeline and hasattr(self.tet_pipeline, 'router'):
-                success = self.tet_pipeline.router.register_data_source(
-                    "fallback_source",
-                    fallback_source,
-                    priority=999,  # 最低优先级
-                    weight=0.1
-                )
-
-                if success:
-                    logger.info("创建回退数据源成功")
-                else:
-                    logger.warning("创建回退数据源失败")
-            else:
-                logger.warning("TET管道不可用，无法注册回退数据源")
-
-        except Exception as e:
-            logger.error(f" 创建回退数据源异常: {e}")
-
     def _extend_akshare_plugin_for_sector_flow(self, akshare_plugin) -> None:
         """扩展AkShare插件以支持SECTOR_FUND_FLOW数据类型"""
         try:
@@ -4525,16 +4664,21 @@ class UnifiedDataManager:
         """
         try:
             # 延迟导入避免循环依赖
-            from .sector_data_service import get_sector_data_service
+            from .sector_data_service import SectorDataService, get_sector_data_service
 
-            # 获取缓存管理器
-            cache_manager = getattr(self, 'cache_manager', None)
-
-            # 初始化板块数据服务
-            self._sector_data_service = get_sector_data_service(
-                cache_manager=cache_manager,
-                tet_pipeline=self.tet_pipeline
-            )
+            # 优先从服务容器解析（服务注册铁律，R253 P1 修复）
+            container = getattr(self, 'service_container', None)
+            if container is not None and container.is_registered(SectorDataService):
+                self._sector_data_service = container.resolve(SectorDataService)
+                logger.info("板块数据服务从服务容器解析成功")
+            else:
+                # 容器不可用时回退到模块级单例工厂
+                cache_manager = getattr(self, 'cache_manager', None)
+                self._sector_data_service = get_sector_data_service(
+                    cache_manager=cache_manager,
+                    tet_pipeline=self.tet_pipeline
+                )
+                logger.info("板块数据服务通过模块级工厂初始化成功")
 
             logger.info("板块数据服务初始化成功")
 
@@ -4789,7 +4933,13 @@ class UnifiedDataManager:
             total_input = len(data)
 
             if self.duckdb_available and self.duckdb_operations:
-                success = self.duckdb_operations.insert_kline_data(stock_code, period, data)
+                # R251 修复: insert_kline_data 已补齐, 传入资产库路径使写入/读取库一致
+                asset_type = self.asset_identifier.identify_asset_type(stock_code)
+                db_path = self.asset_manager.get_database_path(asset_type)
+                result = self.duckdb_operations.insert_kline_data(
+                    stock_code, period, data, database_path=db_path
+                )
+                success = result.success if hasattr(result, 'success') else bool(result)
                 if success:
                     logger.info(f"K线数据已添加到DuckDB: {stock_code} ({period}), {total_input} 条")
                     self._cache_data(cache_key, data)
@@ -4878,7 +5028,13 @@ class UnifiedDataManager:
             deleted = False
 
             if self.duckdb_available and self.duckdb_operations:
-                success = self.duckdb_operations.delete_kline_data(stock_code, period, start_date, end_date)
+                # R251 修复: delete_kline_data 已补齐(签名 stock_code/period/database_path),
+                # start_date/end_date 仅作用于 SQLite 分支
+                asset_type = self.asset_identifier.identify_asset_type(stock_code)
+                db_path = self.asset_manager.get_database_path(asset_type)
+                success = self.duckdb_operations.delete_kline_data(
+                    stock_code, period, database_path=db_path
+                )
                 if success:
                     logger.info(f"K线数据已从DuckDB删除: {stock_code}")
                     deleted = True

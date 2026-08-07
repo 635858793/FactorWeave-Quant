@@ -286,6 +286,8 @@ class OrderQuery:
     stock_code: Optional[str] = None
     order_type: Optional[OrderType] = None
     order_status: Optional[OrderStatus] = None
+    # R255-P2: 多状态查询 (与 Order.is_active 三值定义对齐, order_status 单值仍兼容)
+    order_statuses: Optional[List[OrderStatus]] = None
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     user_id: Optional[str] = None

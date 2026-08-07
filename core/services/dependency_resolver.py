@@ -59,7 +59,8 @@ class DependencyResolver:
                  event_bus: Optional[EventBus] = None):
         """初始化依赖解析器"""
         self._service_container = service_container or get_service_container()
-        self._event_bus = event_bus or get_event_bus()
+        # HVD-241-P1-B: event_bus or → is not None (EventBus __len__ falsy 陷阱, R240-P0-007)
+        self._event_bus = event_bus if event_bus is not None else get_event_bus()
 
         self._dependency_graph: Dict[Type, ServiceNode] = {}
         self._lock = threading.RLock()

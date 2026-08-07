@@ -44,6 +44,26 @@ class GracefulShutdownManager:
         self._cleanup_handlers.append((name, handler))
         logger.debug(f"注册清理处理器: {name}")
 
+    def register_event_bus_cleanup(self):
+        """注册 EventBus.dispose 兜底清理 (HVD-239-P1-005, 2026-08-02)
+
+        Why: EventBus.dispose() (event_bus.py:670-689) 生产代码 0 调用方
+             (Grep 实测仅 tests + tools/_r198_a_smoke.py:31) → 信号退出路径
+             事件总线持 handler 引用/线程永不释放
+        Fix: 注册兜底 handler, 在清理链末尾 (LIFO 最先注册最后执行) 释放
+        TDD: tests/test_r239_p0_dispose_chains.py
+        """
+        def _dispose_event_bus():
+            try:
+                from core.events import get_event_bus
+                bus = get_event_bus()
+                if bus is not None:
+                    bus.dispose()
+            except Exception as e:
+                logger.warning(f"EventBus dispose 兜底失败: {e}")
+
+        self.register_cleanup_handler(_dispose_event_bus, name="event_bus_dispose_fallback")
+
     def _register_signal_handlers(self):
         """注册系统信号处理器"""
         def signal_handler(signum, frame):

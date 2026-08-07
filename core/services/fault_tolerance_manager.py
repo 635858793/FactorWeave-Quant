@@ -108,6 +108,26 @@ class HealthMonitor:
             self.monitor_thread.join(timeout=5.0)
         
         logger.info("健康监控已停止")
+
+    def dispose(self) -> None:
+        """释放资源 (HVD-241-P0-C-4, R78 4 链标准)
+
+        Why: 无 dispose 方法 (R241-C 子智能体 100% 确认); stop_monitoring 已具备
+             全部能力 → dispose 一行委托; 幂等短路防重复
+        Fix: _disposed 幂等 + 委托 stop_monitoring + 清空回调/历史; 失败仅 warning (R8 #7)
+        TDD: tests/test_r241_p0c_dispose_chains_tools_cache.py T11
+        """
+        if getattr(self, '_disposed', False):
+            return
+        try:
+            self.stop_monitoring()
+            self.health_callbacks = []
+            self.health_history = defaultdict(lambda: deque(maxlen=100))
+            self._disposed = True
+            logger.info("HealthMonitor disposed")
+        except Exception as e:
+            logger.warning(f"HealthMonitor dispose 失败: {e}")
+            self._disposed = True
     
     def _monitor_loop(self):
         """监控循环"""
@@ -506,6 +526,24 @@ class FaultToleranceManager:
             
         except Exception as e:
             logger.error(f"停止故障容错管理失败: {e}")
+
+    def dispose(self) -> None:
+        """释放资源 (HVD-241-P0-C-4, R78 4 链标准)
+
+        Why: 无 dispose 方法 (R241-C 子智能体 100% 确认); stop() 已具备全部能力
+             → dispose 委托 stop + 幂等短路; 失败仅 warning 不抛 (R8 铁律 #7)
+        TDD: tests/test_r241_p0c_dispose_chains_tools_cache.py T10
+        """
+        if getattr(self, '_disposed', False):
+            return
+        try:
+            self.stop()
+            self.enabled = False
+            self._disposed = True
+            logger.info("FaultToleranceManager disposed")
+        except Exception as e:
+            logger.warning(f"FaultToleranceManager dispose 失败: {e}")
+            self._disposed = True
     
     def update_node_health(self, node_id: str, metrics: HealthMetrics):
         """更新节点健康状态"""

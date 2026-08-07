@@ -822,7 +822,9 @@ class NotificationService(BaseService):
             if self._is_duplicate_message(message):
                 logger.info(f"Duplicate message suppressed: {message_id}")
                 message.status = AlertStatus.SUPPRESSED
-                self._notification_stats.total_suppressed += 1
+                # R240-P1-2: 写锁补全 (读路径 L1603-1607 在 _service_lock 内, 写路径原无锁)
+                with self._service_lock:
+                    self._notification_stats.total_suppressed += 1
                 return message_id
 
             # 添加到发送队列
@@ -1031,35 +1033,38 @@ class NotificationService(BaseService):
                     channel.last_sent = datetime.now()
 
             # 更新消息状态
-            if success_channels > 0:
-                message.status = AlertStatus.SENT
-                message.delivered_time = datetime.now()
-                self._notification_stats.total_sent += 1
-                self._notification_stats.total_delivered += 1
+            # R240-P1-2: 写锁补全 — _notification_stats 读路径 (L1603-1607) 在
+            # _service_lock 内, 写路径原无锁 → 竞态 (子智能体 D 新增发现 P2)
+            with self._service_lock:
+                if success_channels > 0:
+                    message.status = AlertStatus.SENT
+                    message.delivered_time = datetime.now()
+                    self._notification_stats.total_sent += 1
+                    self._notification_stats.total_delivered += 1
 
-                # 更新分类统计
-                if any(ch.notification_type == NotificationType.EMAIL for ch_id in message.channels for ch in [self.get_channel(ch_id)] if ch):
-                    self._notification_stats.email_sent += 1
-                if any(ch.notification_type == NotificationType.SMS for ch_id in message.channels for ch in [self.get_channel(ch_id)] if ch):
-                    self._notification_stats.sms_sent += 1
-                if any(ch.notification_type == NotificationType.WEBHOOK for ch_id in message.channels for ch in [self.get_channel(ch_id)] if ch):
-                    self._notification_stats.webhook_sent += 1
-                if any(ch.notification_type == NotificationType.DINGTALK for ch_id in message.channels for ch in [self.get_channel(ch_id)] if ch):
-                    self._notification_stats.dingtalk_sent += 1
-                if any(ch.notification_type == NotificationType.DESKTOP for ch_id in message.channels for ch in [self.get_channel(ch_id)] if ch):
-                    self._notification_stats.desktop_sent += 1
-                if any(ch.notification_type == NotificationType.SOUND for ch_id in message.channels for ch in [self.get_channel(ch_id)] if ch):
-                    self._notification_stats.sound_sent += 1
-                
-                # 记录历史
-                self._add_to_history(message, success=True)
+                    # 更新分类统计
+                    if any(ch.notification_type == NotificationType.EMAIL for ch_id in message.channels for ch in [self.get_channel(ch_id)] if ch):
+                        self._notification_stats.email_sent += 1
+                    if any(ch.notification_type == NotificationType.SMS for ch_id in message.channels for ch in [self.get_channel(ch_id)] if ch):
+                        self._notification_stats.sms_sent += 1
+                    if any(ch.notification_type == NotificationType.WEBHOOK for ch_id in message.channels for ch in [self.get_channel(ch_id)] if ch):
+                        self._notification_stats.webhook_sent += 1
+                    if any(ch.notification_type == NotificationType.DINGTALK for ch_id in message.channels for ch in [self.get_channel(ch_id)] if ch):
+                        self._notification_stats.dingtalk_sent += 1
+                    if any(ch.notification_type == NotificationType.DESKTOP for ch_id in message.channels for ch in [self.get_channel(ch_id)] if ch):
+                        self._notification_stats.desktop_sent += 1
+                    if any(ch.notification_type == NotificationType.SOUND for ch_id in message.channels for ch in [self.get_channel(ch_id)] if ch):
+                        self._notification_stats.sound_sent += 1
 
-                logger.info(f"Message sent successfully: {message.message_id}")
-                return True
-            else:
-                message.status = AlertStatus.FAILED
-                message.retry_count += 1
-                self._notification_stats.total_failed += 1
+                    # 记录历史
+                    self._add_to_history(message, success=True)
+
+                    logger.info(f"Message sent successfully: {message.message_id}")
+                    return True
+                else:
+                    message.status = AlertStatus.FAILED
+                    message.retry_count += 1
+                    self._notification_stats.total_failed += 1
                 
                 # 记录历史
                 self._add_to_history(message, success=False, error_message="所有渠道发送失败")
@@ -1248,7 +1253,13 @@ class NotificationService(BaseService):
             with urllib.request.urlopen(req, timeout=10) as response:
                 response_code = response.getcode()
                 if 200 <= response_code < 300:
-                    logger.info(f"Webhook notification sent: {message.title} to {webhook_url}")
+                    # R238-NEW-P1-CWE-201 修复 (2026-08-01): 脱敏 webhook_url
+                    # Why: webhook_url 含 secret token (如 https://oapi.dingtalk.com/robot/send?access_token=xxx),
+                    #      原日志直接输出完整 URL → CWE-201 敏感信息泄露 (CVSS 4.3)
+                    # Fix: 仅记录 host + path (剥离 query 中的 token 等敏感参数)
+                    # TDD: tests/test_r238_c_notification_log_masking.py
+                    masked_url = webhook_url.split('?', 1)[0] if webhook_url else webhook_url
+                    logger.info(f"Webhook notification sent: {message.title} to {masked_url}")
                     return True
                 else:
                     logger.warning(f"Webhook returned status code: {response_code}")

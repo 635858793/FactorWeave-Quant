@@ -1,4 +1,4 @@
-﻿from loguru import logger
+from loguru import logger
 from typing import Dict, List, Any, Optional, Callable, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime

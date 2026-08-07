@@ -20,6 +20,19 @@ from loguru import logger
 import aiohttp
 import hashlib
 
+# R240-P0: CWE-918 SSRF 防御接入 (webhook_url sink L299/L390)
+from core.security.url_validator import SSRFBlockedError, assert_safe_url as _uv_assert
+
+
+def _assert_webhook_url_safe(url: str) -> bool:
+    """Webhook URL 安全校验 (R240-P0, L299/L390 sink 接入)
+
+    webhook_url 来自用户配置 (半可信), 用 dns_resolve=False 仅 IP 层黑名单
+    (防误配/防配置注入), 不引入 DNS 依赖以免告警功能因解析失败中断.
+    """
+    _uv_assert(url, dns_resolve=False, mode="strict")
+    return True
+
 
 @dataclass
 class AlertMessage:
@@ -293,6 +306,8 @@ class WebhookAlertChannel(ExternalAlertChannel):
             }
 
             # 发送请求
+            # R240-P0: SSRF 校验 webhook_url
+            _assert_webhook_url_safe(self.webhook_url)
             for attempt in range(self.retry_count):
                 try:
                     async with aiohttp.ClientSession() as session:
@@ -386,6 +401,8 @@ class DingTalkAlertChannel(ExternalAlertChannel):
                 message["sign"] = sign
 
             # 发送请求
+            # R240-P0: SSRF 校验 webhook_url
+            _assert_webhook_url_safe(self.webhook_url)
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     self.webhook_url,

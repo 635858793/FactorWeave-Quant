@@ -225,6 +225,27 @@ class LLMConfigService(ConfigurableService):
             logger.error(f"LLM配置服务初始化失败: {e}")
             raise
 
+    def _do_dispose(self) -> None:
+        """释放LLM配置服务资源 (HVD-241-P1-C, 2026-08-02)
+
+        Why: 容器注册服务经 BaseService.dispose 调用 _do_dispose 释放资源，
+             此前未清空 _configs，其中 LLMConfig.api_key 属凭据 (CWE-316) 常驻内存
+        Fix: 清空配置字典 + 解除配置管理器引用
+        TDD: tests/test_r241_p0_bg_tasks_and_api_fixes.py T15
+        """
+        try:
+            # 清空配置 (含 api_key 凭据, 防止常驻内存)
+            self._configs.clear()
+            self._current_provider = None
+
+            # 解除引用
+            self._config_manager = None
+
+            logger.info("LLMConfigService _do_dispose 完成")
+
+        except Exception as e:
+            logger.warning(f"LLMConfigService _do_dispose 失败: {e}")
+
     def _load_configs(self) -> None:
         """从数据库加载配置"""
         try:

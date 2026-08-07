@@ -32,8 +32,18 @@ class SectorFlowAnalysisThread(QThread):
         try:
             self.progress_updated.emit(0, "开始分析...")
 
+            # 检查是否请求中断（宿主关闭/切换时）
+            if self.isInterruptionRequested():
+                logger.info("板块资金流分析被中断")
+                return
+
             # 执行分析函数
             results = self.analysis_func(*self.args, **self.kwargs)
+
+            # 分析完成后再次检查中断（丢弃迟到结果，避免访问已销毁的UI）
+            if self.isInterruptionRequested():
+                logger.info("板块资金流分析已中断，丢弃结果")
+                return
 
             self.progress_updated.emit(100, "分析完成")
             self.analysis_completed.emit(results)
@@ -127,9 +137,9 @@ class SectorFlowTabPro(BaseAnalysisTab):
                 'rotation_strength': 0.5       # 轮动强度
             },
             'flow_prediction': {
-                'model_type': 'lstm',          # 预测模型
-                'lookback_period': 60,         # 回看周期
-                'prediction_horizon': 5        # 预测周期
+                'model_type': 'ewma_trend',    # 预测模型: EWMA 趋势外推
+                'lookback_period': 30,         # 回看周期(天)
+                'prediction_horizon': 3        # 预测周期(日)
             }
         }
 
@@ -145,6 +155,48 @@ class SectorFlowTabPro(BaseAnalysisTab):
         self._init_sector_flow_service()
 
         super().__init__(config_manager)
+
+    def stop_workers(self):
+        """停止所有分析线程，防止线程在宿主关闭/切换时继续运行导致崩溃
+
+        对每个已启动的 SectorFlowAnalysisThread 依次执行：
+        requestInterruption() -> wait(3000) -> 仍未退出则 wait(5000)
+        """
+        thread_names = [
+            'realtime_thread',      # 实时监控分析线程
+            'prediction_thread',    # 资金流向预测线程
+            'rotation_thread',      # 板块轮动分析线程
+            'smart_money_thread',   # 聪明资金检测线程
+            'comprehensive_thread'  # 综合资金流分析线程
+        ]
+        for name in thread_names:
+            thread = getattr(self, name, None)
+            if thread is None or not thread.isRunning():
+                continue
+            try:
+                thread.requestInterruption()
+                if not thread.wait(3000):
+                    logger.warning(f"{name} 3秒内未停止，继续等待至多5秒")
+                    thread.wait(5000)
+                logger.debug(f"{name} 已停止")
+            except Exception as e:
+                logger.warning(f"停止 {name} 失败: {e}")
+
+    def closeEvent(self, event):
+        """关闭事件：先停止分析线程，再关闭窗口"""
+        try:
+            self.stop_workers()
+        except Exception as e:
+            logger.error(f"关闭时停止分析线程失败: {e}")
+        super().closeEvent(event)
+
+    def hideEvent(self, event):
+        """隐藏事件：切换/关闭分析页时停止分析线程，防止线程访问已销毁的UI"""
+        try:
+            self.stop_workers()
+        except Exception as e:
+            logger.error(f"隐藏时停止分析线程失败: {e}")
+        super().hideEvent(event)
 
     def _init_sector_flow_service(self):
         """初始化板块资金流服务"""
@@ -619,32 +671,44 @@ class SectorFlowTabPro(BaseAnalysisTab):
             monitor_data = []
 
             for _, row in ranking_data.iterrows():
+                # R254-P3: 字段映射兼容双插件 (插件仅提供净流入口径, 无流入/流出拆分)
+                #   - akshare_plugin (plugins/data_sources/stock/akshare_plugin.py:341-357):
+                #     change_percent / super_large_net_inflow / ... / timestamp
+                #   - eastmoney_plugin (plugins/data_sources/stock/eastmoney_plugin.py:1239-1253):
+                #     change_pct / super_large_net_inflow / ... (无 timestamp)
                 sector_data = {
-                    'sector_id': row.get('sector_id', ''),
+                    'sector_id': row.get('sector_id', row.get('sector_code', '')),
                     'sector_name': row.get('sector_name', ''),
                     'main_net_inflow': row.get('main_net_inflow', 0),
-                    'super_large_inflow': row.get('super_large_inflow', 0),
-                    'super_large_outflow': row.get('super_large_outflow', 0),
-                    'large_inflow': row.get('large_inflow', 0),
-                    'large_outflow': row.get('large_outflow', 0),
-                    'medium_inflow': row.get('medium_inflow', 0),
-                    'medium_outflow': row.get('medium_outflow', 0),
-                    'small_inflow': row.get('small_inflow', 0),
-                    'small_outflow': row.get('small_outflow', 0),
-                    'stock_count': row.get('stock_count', 0),
-                    'avg_change_percent': row.get('avg_change_percent', 0),
-                    'turnover_rate': row.get('turnover_rate', 0),
-                    'ranking': row.get('ranking', 0),
-                    'trade_date': row.get('trade_date', ''),
+                    'super_large_inflow': row.get('super_large_net_inflow', 0),
+                    'super_large_outflow': 0,  # 数据源无流入/流出拆分, 恒置 0
+                    'large_inflow': row.get('large_net_inflow', 0),
+                    'large_outflow': 0,  # 数据源无流入/流出拆分, 恒置 0
+                    'medium_inflow': row.get('medium_net_inflow', 0),
+                    'medium_outflow': 0,  # 数据源无流入/流出拆分, 恒置 0
+                    'small_inflow': row.get('small_net_inflow', 0),
+                    'small_outflow': 0,  # 数据源无流入/流出拆分, 恒置 0
+                    'stock_count': 0,  # 插件无该字段来源, 恒置 0
+                    'avg_change_percent': row.get('change_pct', row.get('change_percent', 0)),  # 兼容双插件
+                    'turnover_rate': 0,  # 插件无该字段来源, 恒置 0
+                    'ranking': 0,  # 插件无该字段来源, 恒置 0
+                    'trade_date': row.get('timestamp', row.get('trade_date', '')),
                     'update_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 }
 
-                # 计算资金流强度
-                total_inflow = sector_data['super_large_inflow'] + sector_data['large_inflow'] + sector_data['medium_inflow'] + sector_data['small_inflow']
-                total_outflow = sector_data['super_large_outflow'] + sector_data['large_outflow'] + sector_data['medium_outflow'] + sector_data['small_outflow']
-
-                if total_inflow + total_outflow > 0:
-                    sector_data['flow_strength'] = (total_inflow - total_outflow) / (total_inflow + total_outflow) * 100
+                # 计算资金流强度 (R254-P3): 数据源无流入/流出拆分,
+                # 改为基于主力净流入绝对值分级, 不再依赖流入-流出差值
+                abs_main_inflow = abs(sector_data['main_net_inflow'])
+                if abs_main_inflow >= 100000000:  # >=1亿
+                    sector_data['flow_strength'] = 100
+                elif abs_main_inflow >= 50000000:  # >=5000万
+                    sector_data['flow_strength'] = 80
+                elif abs_main_inflow >= 10000000:  # >=1000万
+                    sector_data['flow_strength'] = 60
+                elif abs_main_inflow >= 1000000:  # >=100万
+                    sector_data['flow_strength'] = 40
+                elif abs_main_inflow > 0:  # 0~100万
+                    sector_data['flow_strength'] = 20
                 else:
                     sector_data['flow_strength'] = 0
 
@@ -712,7 +776,7 @@ class SectorFlowTabPro(BaseAnalysisTab):
 
             # 方案2：回退到原有的TET框架逻辑
             try:
-                from core.services.unified_data_manager import UnifiedDataManager
+                from core.services.unified_data_manager import UnifiedDataManager, get_unified_data_manager
                 from core.plugin_types import AssetType, DataType
                 from core.containers.service_container import get_service_container
                 from core.events.event_bus import EventBus
@@ -722,7 +786,7 @@ class SectorFlowTabPro(BaseAnalysisTab):
                 event_bus = EventBus() if not hasattr(self, 'event_bus') else self.event_bus
 
                 if service_container:
-                    unified_data_manager = get_unified_data_manager(service_container, event_bus)
+                    unified_data_manager = get_unified_data_manager()
                     logger.info("[DEBUG] TET统一数据管理器初始化成功")
 
                     # 尝试获取板块资金流数据
@@ -979,92 +1043,151 @@ class SectorFlowTabPro(BaseAnalysisTab):
     def _flow_prediction_async(self):
         """异步资金流向预测"""
         try:
-            results = self._predict_fund_flow()
-            return {'prediction_data': results}
+            prediction = self._predict_fund_flow()
+            return {'flow_prediction': prediction}
         except Exception as e:
             return {'error': str(e)}
 
     def _predict_fund_flow(self):
-        """预测资金流向 - 基于真实数据的趋势分析"""
+        """预测资金流向 - 基于真实历史数据的 EWMA 趋势外推
+
+        Returns:
+            结构化预测 dict: {'dates': [...], 'values': [...],
+            'direction': 'up/down', 'confidence': 0.x, 'model': 'ewma_trend'}
+            数据不足 (<10 点) 时返回明确提示 '数据不足，无法预测'
+        """
         try:
-            # 获取数据管理器
-            factory = get_manager_factory()
-            data_manager = get_data_manager()
+            # 收集近期板块主力净流入序列
+            series = self._collect_flow_inflow_series()
 
-            prediction_data = []
+            # EWMA 趋势外推未来 3 日
+            forecast = self._predict_flow_trend(series, horizon=3)
 
-            # 获取真实资金流数据
-            fund_flow_data = data_manager.get_fund_flow()
+            if forecast.get('insufficient') or not forecast.get('values'):
+                logger.warning("资金流向预测：历史数据不足，无法预测")
+                return '数据不足，无法预测'
 
-            if fund_flow_data and 'sector_flow_rank' in fund_flow_data:
-                df = fund_flow_data['sector_flow_rank']
-
-                if not df.empty:
-                    # 基于当前数据预测未来趋势
-                    for _, row in df.head(5).iterrows():
-                        sector_name = row.get('板块', row.get('sector_name', '未知板块'))
-
-                        # 获取当前净流入数据
-                        current_inflow = row.get('今日主力净流入-净额', row.get('main_net_inflow', 0))
-                        current_ratio = row.get('今日主力净流入-净占比', row.get('main_net_inflow_ratio', 0))
-
-                        # 处理数值
-                        if isinstance(current_inflow, str):
-                            try:
-                                if '万' in current_inflow:
-                                    current_inflow = float(current_inflow.replace('万', '')) * 10000
-                                elif '亿' in current_inflow:
-                                    current_inflow = float(current_inflow.replace('亿', '')) * 100000000
-                                else:
-                                    current_inflow = float(current_inflow)
-                            except (ValueError, TypeError) as e:
-                                logger.debug(f"资金流入解析失败: {e}")
-                                current_inflow = 0
-
-                        if isinstance(current_ratio, str):
-                            try:
-                                current_ratio = float(current_ratio.replace('%', ''))
-                            except (ValueError, TypeError) as e:
-                                logger.debug(f"资金占比解析失败: {e}")
-                                current_ratio = 0
-
-                        # 简单的趋势预测逻辑
-                        # 基于当前流入情况预测未来1-3日的趋势
-                        for day in range(1, 4):
-                            # 趋势衰减因子
-                            decay_factor = 0.8 ** day
-                            predicted_inflow = current_inflow * decay_factor
-
-                            # 预测方向
-                            if current_inflow > 50000000:  # 大额流入
-                                direction = '持续流入' if day == 1 else '减缓流入'
-                                confidence = 0.75 - day * 0.1
-                            elif current_inflow < -20000000:  # 大额流出
-                                direction = '持续流出' if day == 1 else '减缓流出'
-                                confidence = 0.70 - day * 0.1
-                            else:
-                                direction = '震荡' if abs(predicted_inflow) < 10000000 else '微幅流动'
-                                confidence = 0.6 - day * 0.1
-
-                            prediction_data.append({
-                                'sector': sector_name,
-                                'prediction_day': f"T+{day}",
-                                'predicted_flow': predicted_inflow / 10000,  # 转换为万元
-                                'direction': direction,
-                                'confidence': max(confidence, 0.3),  # 最低30%置信度
-                                'risk_level': '高' if abs(predicted_inflow) > 50000000 else '中' if abs(predicted_inflow) > 20000000 else '低'
-                            })
-
-                    logger.info(f"资金流向预测完成，生成 {len(prediction_data)} 个预测")
-                    return prediction_data
-
-            # 如果没有数据，返回空列表
-            logger.warning("未获取到资金流向预测数据")
-            return []
+            logger.info(
+                f"资金流向预测完成: direction={forecast['direction']}, "
+                f"confidence={forecast['confidence']}")
+            return forecast
 
         except Exception as e:
             logger.error(f"资金流向预测失败: {e}")
-            return []
+            return '数据不足，无法预测'
+
+    def _collect_flow_inflow_series(self):
+        """收集近期板块主力净流入序列
+
+        优先从板块历史趋势数据 (DuckDB 时序) 获取真实时间序列;
+        不可用时回退到 self.ranking_data 排行快照的横截面净流入列表。
+        """
+        # 方案1: 板块历史趋势数据 (真实时序)
+        try:
+            sector_id = getattr(self, 'current_sector_id', None)
+            if not sector_id:
+                ranking = getattr(self, 'ranking_data', None)
+                if isinstance(ranking, list) and ranking and isinstance(ranking[0], dict):
+                    sector_id = ranking[0].get('sector_id') or ranking[0].get('code')
+            if not sector_id:
+                sector_id = 'BK0001'
+
+            trend_df = self.get_sector_historical_trend(sector_id, period=30)
+            if trend_df is not None and not trend_df.empty:
+                inflow_col = next(
+                    (c for c in ('main_net_inflow', '主力净流入', 'net_inflow', '净流入')
+                     if c in trend_df.columns), None)
+                if inflow_col:
+                    series = pd.to_numeric(trend_df[inflow_col],
+                                           errors='coerce').dropna().tolist()
+                    if len(series) >= 10:
+                        return series
+        except Exception as e:
+            logger.debug(f"历史趋势数据获取失败，回退排行快照: {e}")
+
+        # 方案2: 排行快照回退 (横截面净流入)
+        ranking = getattr(self, 'ranking_data', None)
+        if isinstance(ranking, list):
+            series = []
+            for item in ranking:
+                if isinstance(item, dict):
+                    try:
+                        series.append(float(item.get(
+                            'net_inflow', item.get('main_net_inflow', 0.0))))
+                    except (ValueError, TypeError):
+                        series.append(0.0)
+            if series:
+                return series
+        return []
+
+    def _predict_flow_trend(self, values, horizon=3):
+        """基于 EWMA(span=5) 的趋势外推
+
+        Args:
+            values: 近期主力净流入序列
+            horizon: 预测天数, 默认 3
+
+        Returns:
+            dict: {'dates': [...], 'values': [...], 'direction': 'up/down',
+                   'confidence': 0.x, 'model': 'ewma_trend'}
+            数据不足 (<10 点) 时返回 {'insufficient': True, 'message': ...}
+        """
+        values = list(values)
+        if len(values) < 10:
+            return {'insufficient': True, 'message': '数据不足，无法预测'}
+
+        series = pd.Series([float(v) for v in values], dtype='float64')
+        ewm = series.ewm(span=5).mean()
+
+        last = float(ewm.iloc[-1])
+        prev = float(ewm.iloc[-2])
+        slope = last - prev
+
+        forecast_values = [round(last + slope * i, 4)
+                           for i in range(1, horizon + 1)]
+
+        # 预测方向: 预测末值相对当前 EWMA 均线的升降
+        direction = 'up' if forecast_values[-1] >= last else 'down'
+
+        # 置信度: 基于拟合残差相对量级, 夹在 [0.5, 0.95]
+        resid = float((series - ewm).abs().mean())
+        scale = max(abs(last), 1e-9)
+        confidence = round(min(0.95, max(0.5, 0.85 - resid / scale)), 2)
+
+        base_date = datetime.now()
+        dates = [(base_date + timedelta(days=i)).strftime('%Y-%m-%d')
+                 for i in range(1, horizon + 1)]
+
+        return {
+            'dates': dates,
+            'values': forecast_values,
+            'direction': direction,
+            'confidence': confidence,
+            'model': 'ewma_trend',
+        }
+
+    def _format_flow_prediction(self, prediction):
+        """将结构化预测结果渲染为可读文本"""
+        try:
+            direction_text = {'up': '上行', 'down': '下行'}.get(
+                prediction.get('direction', ''), '震荡')
+            lines = [
+                "# 板块资金流预测报告",
+                f"预测模型: {prediction.get('model', 'ewma_trend')} (EWMA 趋势外推)",
+                f"预测方向: {direction_text}",
+            ]
+            confidence = prediction.get('confidence')
+            if confidence is not None:
+                lines.append(f"预测置信度: {confidence:.2f}")
+            lines.append("未来 3 日预测值:")
+            for date, value in zip(prediction.get('dates', []),
+                                   prediction.get('values', [])):
+                lines.append(f"  {date}: {value:,.2f}")
+            lines.append("风险提示: 资金流预测基于历史数据模型分析，实际情况可能存在差异。")
+            return '\n'.join(lines)
+        except Exception as e:
+            logger.error(f"格式化流向预测结果失败: {e}")
+            return str(prediction)
 
     def _on_realtime_analysis_completed(self, results):
         """实时监控分析完成回调"""
@@ -1091,11 +1214,11 @@ class SectorFlowTabPro(BaseAnalysisTab):
                     self._update_monitor_table(realtime_data)
                 else:
                     logger.info("[DEBUG] monitor_table 不存在，使用消息框显示结果")
-                    # 创建简单的消息框显示结果
+                    # 创建简单的消息框显示结果 (R254-P3: 键对齐产出 dict)
                     if realtime_data:
                         message = f"实时监控完成，检测到 {len(realtime_data)} 个事件:\n\n"
                         for i, data in enumerate(realtime_data[:5]):  # 只显示前5个
-                            message += f"{i+1}. {data.get('sector', '未知')}: {data.get('event', '未知事件')} ({data.get('amount', 0):.0f}万)\n"
+                            message += f"{i+1}. {data.get('sector_name', '未知')}: 主力净流入 {data.get('main_net_inflow', 0)/10000:.0f}万 ({data.get('flow_status', '')})\n"
                         if len(realtime_data) > 5:
                             message += f"... 还有 {len(realtime_data) - 5} 个事件"
                         QMessageBox.information(self, "实时监控结果", message)
@@ -1134,13 +1257,16 @@ class SectorFlowTabPro(BaseAnalysisTab):
 
             self.monitor_table.setRowCount(len(monitor_data))
 
+            # R254-P3: 读取键对齐 _process_new_sector_flow_data 产出的 dict 键
+            # (sector_name/main_net_inflow/flow_strength/flow_status/trade_date),
+            # 修复监控表格 6 列中 5 列恒为空的问题
             for i, data in enumerate(monitor_data):
-                self.monitor_table.setItem(i, 0, QTableWidgetItem(data.get('time', '')))
-                self.monitor_table.setItem(i, 1, QTableWidgetItem(data.get('sector', '')))
-                self.monitor_table.setItem(i, 2, QTableWidgetItem(data.get('event', '')))
-                self.monitor_table.setItem(i, 3, QTableWidgetItem(f"{data.get('amount', 0):.0f}万"))
-                self.monitor_table.setItem(i, 4, QTableWidgetItem(data.get('impact', '')))
-                self.monitor_table.setItem(i, 5, QTableWidgetItem(data.get('status', '')))
+                self.monitor_table.setItem(i, 0, QTableWidgetItem(data.get('trade_date', '')))
+                self.monitor_table.setItem(i, 1, QTableWidgetItem(data.get('sector_name', '')))
+                self.monitor_table.setItem(i, 2, QTableWidgetItem(data.get('sector_id', '')))
+                self.monitor_table.setItem(i, 3, QTableWidgetItem(f"{data.get('main_net_inflow', 0) / 10000:.0f}"))
+                self.monitor_table.setItem(i, 4, QTableWidgetItem(f"{data.get('flow_strength', 0):.0f}"))
+                self.monitor_table.setItem(i, 5, QTableWidgetItem(data.get('flow_status', '')))
 
         except Exception as e:
             logger.error(f"更新监控表格失败: {e}")
@@ -1562,45 +1688,6 @@ class SectorFlowTabPro(BaseAnalysisTab):
             logger.error(f"计算资金流排行失败: {e}")
             return []
 
-    def flow_prediction(self):
-        """资金流预测"""
-        if not self.validate_kdata_with_warning():
-            return
-
-        self.show_loading("正在生成资金流预测...")
-        if hasattr(self, '_flow_prediction_async'):
-            self.run_analysis_async(self._flow_prediction_async)
-        else:
-            logger.warning("_flow_prediction_async 方法未定义")
-
-    def _flow_prediction_async(self):
-        """异步资金流预测"""
-        try:
-            prediction = self._generate_flow_prediction()
-            return {'flow_prediction': prediction}
-        except Exception as e:
-            return {'error': str(e)}
-
-    def _generate_flow_prediction(self):
-        """生成资金流预测"""
-        prediction = f"""
-# 板块资金流预测报告
-预测时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-## 短期预测（1-3个交易日）
-基于当前资金流向分析，预计科技板块将继续受到资金青睐。
-
-## 中期预测（1-2周）
-消费板块可能迎来资金回流，建议关注相关机会。
-
-## 长期预测（1个月）
-周期性板块在政策支持下可能出现资金轮动机会。
-
-## 风险提示
-资金流预测基于历史数据和模型分析，实际情况可能存在差异。
-"""
-        return prediction
-
     def _do_refresh_data(self):
         """数据刷新处理"""
         if self.auto_refresh_cb.isChecked():
@@ -1784,10 +1871,18 @@ class SectorFlowTabPro(BaseAnalysisTab):
                 QMessageBox.warning(self, "错误", results['error'])
                 return
 
-            # 更新预测结果
-            if 'prediction_data' in results:
-                self.flow_predictions = results['prediction_data']
-                # 可以在这里更新UI显示预测结果
+            # 兼容新结构 {'flow_prediction': ...} 与旧结构 {'prediction_data': ...}
+            prediction = results.get('flow_prediction',
+                                     results.get('prediction_data'))
+            if prediction is not None:
+                self.flow_predictions = prediction
+                # 结构化 dict 渲染为可读文本, 文本结果直接展示
+                if hasattr(self, 'prediction_text'):
+                    if isinstance(prediction, dict):
+                        self.prediction_text.setPlainText(
+                            self._format_flow_prediction(prediction))
+                    else:
+                        self.prediction_text.setPlainText(str(prediction))
 
             logger.info("资金流向预测完成")
 
@@ -2163,33 +2258,53 @@ class SectorFlowTabPro(BaseAnalysisTab):
                     try:
                         import time
 
+                        def _is_cancelled():
+                            """是否已请求取消下载"""
+                            return self.isInterruptionRequested()
+
                         self.progress.emit(5, "初始化下载参数...")
                         time.sleep(0.5)
+                        if _is_cancelled():
+                            return
 
                         self.progress.emit(15, "连接数据源...")
                         time.sleep(1)
+                        if _is_cancelled():
+                            return
 
                         self.progress.emit(30, "验证数据源可用性...")
                         time.sleep(0.8)
+                        if _is_cancelled():
+                            return
 
                         self.progress.emit(45, "获取板块列表...")
                         time.sleep(1.2)
+                        if _is_cancelled():
+                            return
 
                         self.progress.emit(60, "开始下载历史数据...")
                         time.sleep(0.5)
+                        if _is_cancelled():
+                            return
 
-                        # 执行实际下载
+                        # 执行实际下载（长阻塞操作，无法中途中断，只能等待返回）
                         result = self.parent_service.import_sector_historical_data(
                             source=self.source,
                             start_date=self.start_date,
                             end_date=self.end_date
                         )
+                        if _is_cancelled():
+                            return
 
                         self.progress.emit(85, "处理数据...")
                         time.sleep(0.8)
+                        if _is_cancelled():
+                            return
 
                         self.progress.emit(95, "保存到数据库...")
                         time.sleep(0.5)
+                        if _is_cancelled():
+                            return
 
                         self.progress.emit(100, "下载完成")
                         self.finished.emit(result)
@@ -2461,7 +2576,16 @@ class SectorFlowTabPro(BaseAnalysisTab):
                     dialog.close()
 
             def close_dialog():
-                """关闭对话框"""
+                """关闭对话框（先停止正在运行的下载线程，防止线程泄漏）"""
+                nonlocal download_worker
+                if download_worker is not None and download_worker.isRunning():
+                    try:
+                        download_worker.requestInterruption()
+                        download_worker.quit()
+                        download_worker.wait(3000)
+                        log_text.append("下载已中断，正在关闭...")
+                    except Exception as e:
+                        logger.error(f"停止下载线程失败: {e}")
                 dialog.close()
 
             # 连接按钮事件

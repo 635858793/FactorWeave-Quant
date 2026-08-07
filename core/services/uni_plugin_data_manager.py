@@ -163,7 +163,10 @@ class UniPluginDataManager:
 
     def initialize(self) -> None:
         """统一的初始化入口，控制插件注册时机"""
-        if self._is_initialized:
+        # R246 修复: 增加 data_source_plugins 非空条件。
+        # 若时序异常导致提前初始化时 0 插件注册, _is_initialized 仍为 True,
+        # 原短路会永久跳过后续真实初始化; 增加条件后允许在插件已就绪时重试注册。
+        if self._is_initialized and self.plugin_center.data_source_plugins:
             logger.info("UniPluginDataManager已初始化，跳过重复初始化")
             return
 
@@ -593,7 +596,18 @@ class UniPluginDataManager:
                 logger.info(f"[CACHE] 缓存命中 - 方法: {method_name}, 数据类型: {context.data_type.value}")
                 return cached_result
 
-            # 2. 新增：对于基本面数据，先尝试从数据库读取（三级缓存策略）
+            # 2. 新增：K线数据 DB 优先（三级缓存策略，避免直调插件走网络）
+            # R254 修复：此前仅 FUNDAMENTAL 有 DB 优先分支，K 线请求直调插件方重启后走网络
+            if (context.data_type == DataType.HISTORICAL_KLINE
+                    and method_name in ('get_kline_data', 'get_kdata')):
+                db_kline = self._load_kline_from_database(context, params)
+                if db_kline is not None and not db_kline.empty:
+                    self._cache_result(cache_key, db_kline)
+                    self.stats["cache_hits"] += 1
+                    logger.info(f"[DATABASE-SUCCESS] K线DB优先命中: {context.symbol}, 已缓存")
+                    return db_kline
+
+            # 3. 新增：对于基本面数据，先尝试从数据库读取（三级缓存策略）
             if context.data_type == DataType.FUNDAMENTAL and method_name == 'get_fundamental_data':
                 symbol = params.get('symbol')
                 if symbol:
@@ -805,6 +819,78 @@ class UniPluginDataManager:
 
         return alternates.get(method_name, [])
 
+    # ========================================================================
+    # R249 修复: 公共请求上下文/执行入口
+    # enhanced_duckdb_data_downloader.py:182/249/291/571 等调用
+    # uni_plugin_manager.create_request_context/execute_data_request 但此前不存在,
+    # 导致 UI 数据导入面板 / 增量更新调度 / 断点续传链路 AttributeError。
+    # ========================================================================
+
+    def create_request_context(self, query: StandardQuery) -> RequestContext:
+        """从标准化查询创建请求上下文（供下载器等外部调用）"""
+        if not isinstance(query, StandardQuery):
+            raise TypeError(f"create_request_context 需要 StandardQuery, 实际: {type(query)}")
+
+        extra = query.extra_params or {}
+        context = RequestContext(
+            asset_type=query.asset_type,
+            data_type=query.data_type,
+            symbol=query.symbol,
+            market=query.market,
+            priority=getattr(query, 'priority', 50),
+        )
+        # 挂载查询附加信息（RequestContext 本身不含这些字段）
+        context.query = query
+        context.start_date = query.start_date
+        context.end_date = query.end_date
+        context.period = getattr(query, 'period', None) or extra.get('period') or extra.get('freq')
+        context.count = extra.get('count')
+        context.data_source = getattr(query, 'provider', None) or extra.get('data_source')
+        context.adjustment = extra.get('adjustment', 'none')
+        return context
+
+    async def execute_data_request(self, context: RequestContext,
+                                   method_name: str = None, **params) -> Any:
+        """执行数据请求（公共异步入口，供下载器等外部调用）
+
+        兼容两种用法:
+        1. execute_data_request(context) - 从 create_request_context 创建的上下文自动构建参数
+        2. execute_data_request(context, 'get_kline_data', symbol=..., start_date=...) - 显式参数
+        """
+        if not params:
+            params = {
+                'symbol': getattr(context, 'symbol', None),
+                'start_date': getattr(context, 'start_date', None),
+                'end_date': getattr(context, 'end_date', None),
+                'count': getattr(context, 'count', None),
+                'data_source': getattr(context, 'data_source', None),
+            }
+            freq = getattr(context, 'period', None)
+            if freq:
+                params['frequency'] = freq
+            if getattr(context, 'adjustment', None):
+                params['adjustment'] = getattr(context, 'adjustment')
+
+        if not method_name:
+            method_name = self._resolve_method_name(context.data_type)
+
+        # 内部为同步实现，包装到线程池避免阻塞事件循环
+        return await asyncio.to_thread(
+            self._execute_data_request, context, method_name, **params
+        )
+
+    def _resolve_method_name(self, data_type: DataType) -> str:
+        """根据数据类型解析插件方法名"""
+        if data_type == DataType.HISTORICAL_KLINE:
+            return 'get_kline_data'
+        elif data_type == DataType.REAL_TIME_QUOTE:
+            return 'get_real_time_quotes'
+        elif data_type == DataType.ASSET_LIST:
+            return 'get_asset_list'
+        elif data_type == DataType.FUNDAMENTAL:
+            return 'get_fundamental_data'
+        return 'fetch_data'
+
     def _generate_cache_key(self, context: RequestContext, method_name: str, **params) -> str:
         """生成缓存键"""
         import hashlib
@@ -923,6 +1009,92 @@ class UniPluginDataManager:
             logger.debug(traceback.format_exc())
             return None
 
+    def _load_kline_from_database(self, context: RequestContext, params: Dict[str, Any]) -> Optional[pd.DataFrame]:
+        """从数据库加载K线数据（DB优先架构，避免直调插件走网络）
+
+        R254 修复：新增K线 DB 优先分支（此前仅 FUNDAMENTAL 有 DB 优先）。
+
+        Args:
+            context: 请求上下文
+            params: 请求参数（symbol/start_date/end_date/period/frequency/freq）
+
+        Returns:
+            Optional[pd.DataFrame]: 数据库K线数据（timestamp 列已映射为 datetime，
+            与 TET 标准化输出/下游 df['datetime'] 依赖兼容）；无数据、覆盖不足或
+            异常时返回 None（视为 DB miss，继续插件流程）。
+        """
+        try:
+            symbol = getattr(context, 'symbol', None) or params.get('symbol')
+            if not symbol:
+                return None
+
+            # 延迟初始化数据库管理器
+            if self._asset_db_manager is None:
+                from core.asset_database_manager import get_asset_separated_database_manager
+                self._asset_db_manager = get_asset_separated_database_manager()
+
+            start_date = getattr(context, 'start_date', None) or params.get('start_date')
+            end_date = getattr(context, 'end_date', None) or params.get('end_date')
+            period = (getattr(context, 'period', None)
+                      or params.get('period') or params.get('frequency') or params.get('freq'))
+            frequency = None
+            if period:
+                try:
+                    from core.plugin_types import Period
+                    frequency = Period.to_duckdb_frequency(period)
+                except Exception:
+                    frequency = str(period)
+
+            logger.info(f"[DATABASE-QUERY] 开始查询K线数据: {symbol}, asset_type={context.asset_type.value}, "
+                        f"frequency={frequency}, range=({start_date}, {end_date})")
+            df = self._asset_db_manager.load_kline_data(
+                symbol, context.asset_type,
+                start_date=start_date, end_date=end_date, frequency=frequency
+            )
+
+            if df is None or df.empty:
+                logger.info(f"[DATABASE-EMPTY] ⚠️ 数据库中未找到K线数据: {symbol}，将调用插件获取")
+                return None
+
+            # 覆盖度校验（防坑）：请求带日期范围时，首末 timestamp 必须覆盖请求范围，不足视为 miss
+            if not self._kline_db_coverage_ok(df, start_date, end_date):
+                logger.info(f"[DATABASE-COVERAGE] 数据库K线数据未覆盖请求范围: {symbol}，将调用插件获取")
+                return None
+
+            # 返回格式兼容：timestamp 列映射为 datetime 列（下游依赖 df['datetime']，
+            # 参照 unified_data_manager._get_kdata_from_duckdb 的处理）
+            if 'timestamp' in df.columns:
+                df = df.rename(columns={'timestamp': 'datetime'})
+            df['datetime'] = pd.to_datetime(df['datetime'])
+
+            logger.info(f"[DATABASE-SUCCESS] 从数据库加载K线数据成功: {symbol}, 记录数={len(df)}")
+            return df
+        except Exception as e:
+            logger.error(f"[DATABASE] ❌ 从数据库加载K线数据失败: {getattr(context, 'symbol', '')}, {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
+            return None
+
+    def _kline_db_coverage_ok(self, df: pd.DataFrame,
+                              start_date=None, end_date=None) -> bool:
+        """校验数据库K线数据是否覆盖请求范围（覆盖不足视为 DB miss，防返回残缺数据）"""
+        if df is None or df.empty:
+            return False
+        # 未指定日期范围（如 count 模式）时视为覆盖
+        if start_date is None and end_date is None:
+            return True
+        try:
+            ts_col = df['timestamp'] if 'timestamp' in df.columns else pd.to_datetime(df['datetime'])
+            first_ts = pd.Timestamp(ts_col.min())
+            last_ts = pd.Timestamp(ts_col.max())
+            if start_date is not None and first_ts > pd.Timestamp(start_date):
+                return False
+            if end_date is not None and last_ts < pd.Timestamp(end_date):
+                return False
+            return True
+        except Exception:
+            return False
+
     def get_plugin_status(self) -> Dict[str, Any]:
         """获取所有插件状态"""
         return {
@@ -1004,9 +1176,10 @@ class UniPluginDataManager:
                     result = plugin.health_check()
                     return getattr(result, 'is_healthy', True)
                 else:
-                    # 默认认为插件可用
-                    logger.debug(f"插件 {plugin_id} 没有连接状态检查方法，默认认为可用")
-                    return True
+                    # R248: 原实现默认认为插件可用（恒 True），是无连接状态检查能力插件的
+                    # 隐性"恒已连接"通道。改为判定未连接（宁缺毋滥，宁可触发重连也不误判可用）。
+                    logger.debug(f"插件 {plugin_id} 没有连接状态检查方法，判定为未连接")
+                    return False
         except Exception as e:
             logger.warning(f"插件连接检查异常 {plugin_id}: {e}")
             return False
@@ -1062,6 +1235,10 @@ class UniPluginDataManager:
         """带故障转移的执行方法"""
         failed_plugins = []
         last_error = None
+
+        # R254 修复：成功结果统一在循环外处理（落库职责与循环体解耦，全失败时不再重复落库）
+        success_result = None
+        success_validation = None
 
         # 将主选插件放在第一位，其他插件作为备选
         plugin_order = [primary_plugin_id] + [p for p in connected_plugins if p != primary_plugin_id]
@@ -1144,11 +1321,20 @@ class UniPluginDataManager:
                         plugin_id, True, 0.1, context  # 成功执行，响应时间很短
                     )
 
-                    return result, validation_result
+                    # R254 修复：记录成功结果后跳出循环，落库统一在循环外执行一次
+                    success_result = result
+                    success_validation = validation_result
+                    break
                 else:
                     logger.warning(f" 插件 {plugin_id} 返回数据质量不合格: {validation_result.quality_score}")
                     failed_plugins.append(plugin_id)
                     last_error = f"数据质量不合格: {validation_result.quality_score}"
+
+                    # R249 修复：is_valid=False（数据质量不合格）也应记录插件性能失败，
+                    # 与 except 分支保持一致，避免 TET 路由引擎对失败插件的健康度评估失真
+                    self.tet_engine.record_plugin_performance(
+                        plugin_id, False, 1.0, context  # 失败执行，响应时间较长
+                    )
 
             except Exception as e:
                 logger.error(f"[ERROR] 插件 {plugin_id} 执行失败: {e}")
@@ -1160,6 +1346,11 @@ class UniPluginDataManager:
                     plugin_id, False, 1.0, context  # 失败执行，响应时间较长
                 )
 
+        # R254 修复：落库块移出 for 循环（职责解耦），failover 成功后统一落库一次
+        if success_result is not None and success_validation is not None:
+            self._persist_fetched_data(context, params, success_result, success_validation)
+            return success_result, success_validation
+
         # 所有插件都失败了
         error_msg = f"TET故障转移失败 - 所有插件都无法提供有效数据。失败插件: {failed_plugins}"
         if last_error:
@@ -1167,6 +1358,80 @@ class UniPluginDataManager:
 
         logger.error(f"[ERROR] {error_msg}")
         raise RuntimeError(error_msg)
+
+    def _persist_fetched_data(self, context: RequestContext, params: Dict[str, Any],
+                              result: Any, validation_result: Any) -> None:
+        """插件获取数据后统一落库（K线 DataFrame / 基本面 dict → DuckDB）
+
+        R254 修复：
+        - 落库块整体移出 _execute_with_failover 的 for 循环，全失败时 0 次落库，
+          主插件/备选插件成功时均仅落库一次；
+        - data_source 使用真实插件 id（validation_result.plugin_id），
+          替代硬编码 'tet_plugin'，保证 DuckDB 数据源可追溯；
+        - 落库条件扩展 FUNDAMENTAL：单条 dict → 单行 DataFrame → 补 symbol 列落库。
+        落库失败仅告警，不阻断数据返回。
+        """
+        persist_target = None
+        data_type = getattr(context, 'data_type', None)
+
+        if (data_type == DataType.HISTORICAL_KLINE
+                and isinstance(result, pd.DataFrame)
+                and not result.empty):
+            persist_target = result.copy()
+        elif (data_type == DataType.FUNDAMENTAL
+                and isinstance(result, dict)
+                and result):
+            # 基本面单条字典 → 单行 DataFrame（fundamentals 表已在表名映射中）
+            persist_target = pd.DataFrame([result])
+
+        if persist_target is None:
+            return
+
+        try:
+            if self._asset_db_manager is None:
+                from core.asset_database_manager import get_asset_separated_database_manager
+                self._asset_db_manager = get_asset_separated_database_manager()
+
+            persist_df = persist_target
+            # R255 修复：data_source 溯源优先级 context.actual_plugin_id > validation_result.plugin_id > 'tet_plugin'。
+            # 此前仅 getattr(validation_result, 'plugin_id', None)，而 execute_with_monitoring
+            # 返回的匿名 ValidationResult 无 plugin_id 属性 → 恒回退硬编码 'tet_plugin'，
+            # DuckDB 数据源不可追溯。修复后 validation_result.plugin_id 为真实插件 id；
+            # context.actual_plugin_id 兜底外部直接调用本方法且 validation 无 plugin_id 的场景
+            # （'tet_plugin' 保留为最低优先级最后兜底）。
+            data_source = (getattr(context, 'actual_plugin_id', None)
+                           or getattr(validation_result, 'plugin_id', None)
+                           or 'tet_plugin')
+
+            if data_type == DataType.HISTORICAL_KLINE:
+                # 时间列统一为timestamp（DuckDB K线表结构）
+                if 'timestamp' not in persist_df.columns:
+                    if 'datetime' in persist_df.columns:
+                        persist_df['timestamp'] = pd.to_datetime(persist_df['datetime'])
+                    elif 'date' in persist_df.columns:
+                        persist_df['timestamp'] = pd.to_datetime(persist_df['date'])
+                # 补齐关键列，保证落库后可按symbol/frequency查询
+                if 'symbol' not in persist_df.columns:
+                    persist_df['symbol'] = getattr(context, 'symbol', None) or ''
+                if 'frequency' not in persist_df.columns:
+                    try:
+                        from core.plugin_types import Period
+                        period = params.get('period') or params.get('frequency') or params.get('freq') or 'D'
+                        persist_df['frequency'] = Period.to_duckdb_frequency(period)
+                    except Exception:
+                        pass
+            elif data_type == DataType.FUNDAMENTAL:
+                # 基本面落库：补 symbol 列（fundamentals 表主键）
+                if 'symbol' not in persist_df.columns:
+                    persist_df['symbol'] = getattr(context, 'symbol', None) or ''
+
+            if 'data_source' not in persist_df.columns:
+                persist_df['data_source'] = data_source
+
+            self._asset_db_manager.store_standardized_data(
+                persist_df, context.asset_type, data_type)
+        except Exception as e:
+            logger.warning(f"插件数据落库失败: {getattr(context, 'symbol', '')} - {e}")
 
     def shutdown(self) -> None:
         """关闭管理器"""

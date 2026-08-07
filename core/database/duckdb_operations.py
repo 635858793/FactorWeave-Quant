@@ -32,6 +32,24 @@ from .table_manager import DynamicTableManager, TableType, get_table_manager
 
 _SAFE_TABLE_NAME_PATTERN = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
 
+# R251 修复: K线统一表名与表结构列
+# 与 asset_database_manager._generate_table_name (L1479) 保持一致, 所有资产类型统一。
+KLINE_TABLE_NAME = 'historical_kline_data'
+# historical_kline_data 表结构列 (对齐 asset_database_manager._generate_create_table_sql 的
+# DataType.HISTORICAL_KLINE 分支, L1548-1571)
+KLINE_TABLE_COLUMNS = {
+    'symbol', 'data_source', 'timestamp', 'frequency',
+    'open', 'high', 'low', 'close', 'volume', 'amount',
+    'turnover', 'adj_close', 'adj_factor', 'adj_type', 'adj_source',
+    'turnover_rate', 'vwap',
+}
+# 上游字段 -> 表字段 列名映射
+KLINE_COLUMN_MAPPING = {
+    'code': 'symbol',
+    'date': 'timestamp',
+    'datetime': 'timestamp',
+}
+
 
 def _validate_table_name(table_name: str) -> str:
     """校验表名，防止SQL注入"""
@@ -131,8 +149,13 @@ class DuckDBOperations:
             batch_count = (total_rows + batch_size - 1) // batch_size
             rows_inserted = 0
             failed_batches = []
+            skipped_batches = []  # R258-P0: 全列漂移跳过批次 (不记 failed, 避免连带回滚有效批次)
 
             with self.connection_manager.get_connection(database_path) as conn:
+                # R258-P0: 查询表结构存在的列 (过滤上游漂移列, 如财务 total_revenue 等
+                # 不在统一表 schema 的列)。查询失败返回 None → 不过滤 (保持原行为)。
+                table_columns = self._get_table_columns(conn, table_name)
+
                 # 开始事务
                 conn.execute("BEGIN TRANSACTION")
 
@@ -140,6 +163,23 @@ class DuckDBOperations:
                     for i in range(0, total_rows, batch_size):
                         batch_data = data.iloc[i:i + batch_size]
                         batch_index = i // batch_size
+
+                        # R258-P0: 过滤表结构不存在的列 (防止 Binder Error → 全事务
+                        # ROLLBACK → 整批数据 0 行落库, 参照 K线 keep_columns 先例 :355-357)
+                        if table_columns is not None:
+                            drop_cols = [c for c in batch_data.columns if c not in table_columns]
+                            if drop_cols:
+                                keep_cols = [c for c in batch_data.columns if c in table_columns]
+                                batch_data = batch_data[keep_cols] if keep_cols else batch_data.iloc[0:0]
+                                if batch_data.empty:
+                                    # R258-P0 (交叉审查 P2): 全列漂移 = 数据本身无法落库
+                                    # (上游漂移), 跳过不记 failed → 避免 ROLLBACK 连带丢弃
+                                    # 同事务中本可成功的有效批次
+                                    skipped_batches.append(batch_index)
+                                    logger.warning(
+                                        f"批次 {batch_index} 全列漂移跳过 (列不在表结构): {drop_cols}")
+                                    continue
+                                logger.debug(f"过滤漂移列 {table_name}: {drop_cols}")
 
                         try:
                             if upsert and conflict_columns:
@@ -195,6 +235,178 @@ class DuckDBOperations:
                 batch_count=0,
                 error_message=str(e)
             )
+
+    # ------------------------------------------------------------------
+    # R251 修复: K线数据专用接口, 统一读写 historical_kline_data 表
+    # (与 asset_database_manager._generate_table_name 一致, 与读取端
+    #  unified_data_manager._get_kdata_from_duckdb 的表名保持一致)
+    # ------------------------------------------------------------------
+
+    def insert_kline_data(self, stock_code: str, period: str, data: pd.DataFrame,
+                          database_path: Optional[str] = None) -> InsertResult:
+        """
+        将K线DataFrame写入统一 historical_kline_data 表
+
+        Args:
+            stock_code: 股票/资产代码
+            period: 周期 (D/W/M/1/5/15/30/60 等, 内部转 DuckDB frequency)
+            data: K线DataFrame (支持 code/date/datetime 列名, 内部自动映射)
+            database_path: 数据库路径(不传则使用默认资产库路径)
+
+        Returns:
+            插入结果
+        """
+        try:
+            if data is None or data.empty:
+                return InsertResult(success=True, rows_inserted=0, execution_time=0.0, batch_count=0)
+
+            if not database_path:
+                database_path = self._get_default_asset_database_path()
+                if not database_path:
+                    return InsertResult(
+                        success=False, rows_inserted=0, execution_time=0.0, batch_count=0,
+                        error_message="无法解析默认资产数据库路径"
+                    )
+
+            prepared = self._prepare_kline_dataframe(data, stock_code, period)
+            if prepared.empty:
+                return InsertResult(
+                    success=False, rows_inserted=0, execution_time=0.0, batch_count=0,
+                    error_message=f"K线数据列无法映射到 {KLINE_TABLE_NAME} 表结构: {list(data.columns)}"
+                )
+
+            return self.insert_dataframe(
+                database_path=database_path,
+                table_name=KLINE_TABLE_NAME,
+                data=prepared,
+                upsert=True,
+                conflict_columns=['symbol', 'data_source', 'timestamp', 'frequency']
+            )
+
+        except Exception as e:
+            logger.error(f"插入K线数据失败 {stock_code} ({period}): {e}")
+            return InsertResult(
+                success=False, rows_inserted=0, execution_time=0.0, batch_count=0,
+                error_message=str(e)
+            )
+
+    def delete_kline_data(self, stock_code: str, period: str,
+                          database_path: Optional[str] = None) -> bool:
+        """
+        删除指定股票指定周期的历史K线数据
+
+        Args:
+            stock_code: 股票/资产代码
+            period: 周期 (D/W/M/1/5/15/30/60 等, 内部转 DuckDB frequency)
+            database_path: 数据库路径(不传则使用默认资产库路径)
+
+        Returns:
+            bool: 删除是否成功
+        """
+        try:
+            if not stock_code:
+                return False
+
+            from ..plugin_types import Period
+            frequency = Period.to_duckdb_frequency(period) if period else None
+
+            if not database_path:
+                database_path = self._get_default_asset_database_path()
+            if not database_path:
+                logger.error("无法解析默认资产数据库路径，删除K线数据失败")
+                return False
+
+            with self.connection_manager.get_connection(database_path) as conn:
+                if frequency:
+                    conn.execute(
+                        f"DELETE FROM {KLINE_TABLE_NAME} WHERE symbol = ? AND frequency = ?",
+                        [stock_code, frequency]
+                    )
+                else:
+                    conn.execute(
+                        f"DELETE FROM {KLINE_TABLE_NAME} WHERE symbol = ?",
+                        [stock_code]
+                    )
+
+            logger.info(f"K线数据已从DuckDB删除: {stock_code}, frequency={frequency}")
+            return True
+
+        except Exception as e:
+            logger.error(f"删除K线数据失败 {stock_code} ({period}): {e}")
+            return False
+
+    def _prepare_kline_dataframe(self, data: pd.DataFrame, stock_code: str, period: str) -> pd.DataFrame:
+        """
+        将K线DataFrame列名映射到 historical_kline_data 表结构
+
+        - code → symbol, date/datetime → timestamp
+        - 补充 symbol / timestamp / frequency / data_source 列
+        - 仅保留表结构存在的列
+        """
+        try:
+            if data is None or data.empty:
+                return data if data is not None else pd.DataFrame()
+
+            prepared = data.copy()
+
+            # 1. 列名统一映射: code→symbol, date/datetime→timestamp
+            for src, dst in KLINE_COLUMN_MAPPING.items():
+                if src in prepared.columns and dst not in prepared.columns:
+                    prepared = prepared.rename(columns={src: dst})
+
+            # 2. 保证关键列存在
+            if 'symbol' not in prepared.columns:
+                prepared['symbol'] = stock_code
+
+            if 'timestamp' not in prepared.columns:
+                if 'datetime' in prepared.columns:
+                    prepared['timestamp'] = pd.to_datetime(prepared['datetime'])
+                else:
+                    logger.warning(f"K线数据缺少时间列: {list(prepared.columns)}")
+                    return pd.DataFrame()
+            else:
+                prepared['timestamp'] = pd.to_datetime(prepared['timestamp'])
+
+            if 'frequency' not in prepared.columns:
+                from ..plugin_types import Period
+                prepared['frequency'] = Period.to_duckdb_frequency(period)
+
+            if 'data_source' not in prepared.columns:
+                prepared['data_source'] = 'unified_data_manager'
+
+            # 3. 仅保留表结构存在的列
+            keep_columns = [col for col in prepared.columns if col in KLINE_TABLE_COLUMNS]
+            return prepared[keep_columns].copy()
+
+        except Exception as e:
+            logger.error(f"K线数据列名映射失败 {stock_code}: {e}")
+            return pd.DataFrame()
+
+    def _get_default_asset_database_path(self) -> Optional[str]:
+        """获取默认资产数据库路径(STOCK_A), 供未显式传入 database_path 时使用"""
+        try:
+            from ..asset_database_manager import get_asset_database_manager
+            from ..plugin_types import AssetType
+            return get_asset_database_manager().get_database_path(AssetType.STOCK_A)
+        except Exception as e:
+            logger.warning(f"获取默认资产数据库路径失败: {e}")
+            return None
+
+    def _get_table_columns(self, conn, table_name: str) -> Optional[List[str]]:
+        """查询表结构存在的列名列表 (R258-P0: 用于过滤上游漂移列)
+
+        查询失败返回 None → 调用方不过滤 (保持原行为, 不阻断主链路)。
+        """
+        try:
+            rows = conn.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = ?",
+                [table_name],
+            ).fetchall()
+            return [r[0] for r in rows]
+        except Exception as e:
+            logger.warning(f"查询表结构列失败 {table_name}: {e}")
+            return None
 
     def _insert_batch(self, conn, table_name: str, batch_data: pd.DataFrame):
         """插入单个批次数据"""

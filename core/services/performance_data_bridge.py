@@ -21,7 +21,8 @@ class PerformanceDataBridge:
     """性能数据桥接器"""
 
     def __init__(self, event_bus: Optional[EventBus] = None):
-        self.event_bus = event_bus or get_event_bus()
+        # HVD-241-P1-B: event_bus or → is not None (EventBus __len__ falsy 陷阱, R240-P0-007)
+        self.event_bus = event_bus if event_bus is not None else get_event_bus()
         self.deep_analysis_service = get_deep_analysis_service()
         self._running = False
         self._collection_thread = None

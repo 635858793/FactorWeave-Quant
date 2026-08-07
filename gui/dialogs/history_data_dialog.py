@@ -802,3 +802,11 @@ class HistoryDataDialog(BaseDialog):
         """毫秒级睡眠"""
         import time
         time.sleep(msecs / 1000.0)
+
+    def closeEvent(self, event):
+        """关闭事件处理（R248 修复：更新中关闭对话框前先停止更新线程，避免 QThread GC 崩溃）"""
+        try:
+            self._stop_update()
+        except Exception as e:
+            logger.error(f"关闭对话框停止更新线程异常: {e}")
+        super().closeEvent(event)

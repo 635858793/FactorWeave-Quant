@@ -24,6 +24,9 @@ class WaveAnalysisTab(WaveAnalysisTabPro):
         # 连接信号以保持兼容性
         self.analysis_completed.connect(self._on_analysis_completed)
 
+        # R252-G6: 连接错误信号到警告展示，避免分析异常静默
+        self.error_occurred.connect(self.show_warning)
+
     def _on_analysis_completed(self, results):
         """分析完成处理 - 兼容原有接口"""
         try:

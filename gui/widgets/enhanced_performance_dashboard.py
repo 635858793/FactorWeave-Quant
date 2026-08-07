@@ -49,11 +49,19 @@ from PyQt5.QtGui import (
 )
 
 # 导入核心性能监控组件
-from core.services import get_performance_coordinator
-from core.performance.unified_performance_coordinator import UnifiedPerformanceCoordinator
-from core.services.ai_prediction_service import AIPredictionService
-from core.ui_integration.ui_business_logic_adapter import get_ui_adapter
-from loguru import logger
+try:
+    from core.services import get_performance_coordinator
+    from core.performance.unified_performance_coordinator import UnifiedPerformanceCoordinator
+    from core.services.ai_prediction_service import AIPredictionService
+    from core.ui_integration.ui_business_logic_adapter import get_ui_adapter
+    from loguru import logger
+    CORE_AVAILABLE = True
+except ImportError as e:
+    logger = None
+    print(f"导入核心组件失败: {e}")
+    CORE_AVAILABLE = False
+
+logger = logger.bind(module=__name__) if logger else None
 
 
 class MetricType(Enum):

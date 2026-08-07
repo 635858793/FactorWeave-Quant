@@ -1358,6 +1358,49 @@ class CacheService(BaseService):
             logger.error(f"Error creating namespace '{name}': {e}")
             return False
 
+    async def create_cache(self, name: str,
+                           config: Optional[CacheConfig] = None) -> "_AsyncNamespaceCache":
+        """创建命名空间缓存适配对象 (R241-P2-A, Hybrid 缓存恢复)
+
+        Why: Hybrid 引擎 _initialize_caches (hybrid_recommendation_engine.py L590-626)
+             期望 async 缓存对象 (get/set/delete/clear/get_keys); 此前 CacheService 仅有
+             同步 create_namespace API → HVD-240-P1-001 降级为无缓存模式
+        Fix: 复用 create_namespace 注册命名空间 + 返回 _AsyncNamespaceCache 适配对象;
+             同名重复调用幂等 (namespace 已存在仅 warning, 仍返回适配对象)
+        TDD: tests/test_r241_p0c_dispose_chains_tools_cache.py T15
+        """
+        if config is None:
+            config = self._l1_config
+        self.create_namespace(
+            name,
+            max_size=getattr(config, "max_size", None),
+            default_ttl=getattr(config, "default_ttl", None),
+            priority=5,
+            description="R241-P2-A async namespace cache",
+        )
+        return _AsyncNamespaceCache(name, self)
+
+    def get_namespace_keys(self, name: str) -> List[str]:
+        """获取命名空间内所有原始缓存键 (去 namespace 前缀, R241-P2-A)
+
+        Why: Hybrid 引擎 get_keys 消费点 (L1504-1533) 用原始 key 做 pattern 匹配
+             与 delete; 内部 _namespaces[name].keys 存的是 "ns:key" 复合键 → 需去前缀
+        TDD: tests/test_r241_p0c_dispose_chains_tools_cache.py T16
+        """
+        try:
+            with self._namespace_lock:
+                if name not in self._namespaces:
+                    return []
+                ns_meta = self._namespaces[name]
+                result = []
+                for ns_key in ns_meta.keys:
+                    original = ns_key.split(":", 1)[1] if ":" in ns_key else ns_key
+                    result.append(original)
+                return result
+        except Exception as e:
+            logger.error(f"Error getting namespace keys for '{name}': {e}")
+            return []
+
     def delete_namespace(self, name: str) -> bool:
         """
         删除命名空间及其所有缓存条目
@@ -1816,3 +1859,58 @@ def cached_operation(cache_service: CacheService, key: str,
             yield computed_value
         else:
             yield None
+
+
+class _AsyncNamespaceCache:
+    """异步命名空间缓存适配对象 (R241-P2-A, Hybrid 缓存恢复)
+
+    Why: Hybrid 引擎 (hybrid_recommendation_engine.py L602-626) 期望 create_cache
+         返回 async get/set/delete/clear/get_keys 对象; CacheService 仅有同步命名空间
+         接口 → 此适配对象把同步 CacheService 封装为 async 语义, 恢复被降级的缓存能力
+    Fix: 5 个 async 方法全部委托 CacheService 命名空间接口 (get/set/delete 自动带
+         namespace 前缀); clear 委托 clear_namespace; get_keys 委托 get_namespace_keys;
+         失败仅 warning (R8 铁律 #7)
+    TDD: tests/test_r241_p0c_dispose_chains_tools_cache.py T17
+    """
+
+    def __init__(self, namespace: str, cache_service: CacheService):
+        self._namespace = namespace
+        self._cache_service = cache_service
+
+    async def get(self, key: str, default: Any = None):
+        """异步获取缓存值"""
+        try:
+            return self._cache_service.get(key, default=default, namespace=self._namespace)
+        except Exception as e:
+            logger.warning(f"_AsyncNamespaceCache[{self._namespace}] get {key} 失败: {e}")
+            return default
+
+    async def set(self, key: str, value: Any, ttl: Optional[timedelta] = None):
+        """异步设置缓存值"""
+        try:
+            self._cache_service.set(key, value, ttl=ttl, namespace=self._namespace)
+        except Exception as e:
+            logger.warning(f"_AsyncNamespaceCache[{self._namespace}] set {key} 失败: {e}")
+
+    async def delete(self, key: str) -> bool:
+        """异步删除缓存值"""
+        try:
+            return self._cache_service.delete(key, namespace=self._namespace)
+        except Exception as e:
+            logger.warning(f"_AsyncNamespaceCache[{self._namespace}] delete {key} 失败: {e}")
+            return False
+
+    async def clear(self):
+        """异步清空命名空间缓存"""
+        try:
+            self._cache_service.clear_namespace(self._namespace)
+        except Exception as e:
+            logger.warning(f"_AsyncNamespaceCache[{self._namespace}] clear 失败: {e}")
+
+    async def get_keys(self) -> List[str]:
+        """异步获取命名空间内所有原始缓存键"""
+        try:
+            return self._cache_service.get_namespace_keys(self._namespace)
+        except Exception as e:
+            logger.warning(f"_AsyncNamespaceCache[{self._namespace}] get_keys 失败: {e}")
+            return []

@@ -12,7 +12,7 @@ from enum import Enum
 import statistics
 
 from core.trading.order_models import Order, OrderFill, OrderQuery, OrderType, OrderStatus
-from core.trading.order_repository import OrderRepository
+from core.trading.order_repository import OrderRepository, get_order_repository
 from core.containers import ServiceContainer
 from core.events import EventBus
 from core.plugin_types import AssetType
@@ -158,7 +158,8 @@ class OrderAnalyzer:
 
     def _initialize(self):
         """初始化"""
-        self.repository = OrderRepository(self.service_container, self.event_bus)
+        # R255-P2: 共用模块级单例, 保证 OrderCache 一致性
+        self.repository = get_order_repository(self.service_container, self.event_bus)
 
     def analyze_order_execution(self, period: AnalysisPeriod = AnalysisPeriod.DAY,
                              start_time: Optional[datetime] = None,

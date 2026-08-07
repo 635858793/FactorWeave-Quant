@@ -213,17 +213,28 @@ class ScheduledTaskExecutor(QObject):
             self.task_triggered.emit(task_id, task.name)
             logger.info(f"触发定时任务: {task.name} ({task_id})")
 
-            if self.import_engine:
-                success = self.import_engine.start_import_task(task_id)
-                if success:
-                    logger.info(f"定时任务启动成功: {task_id}")
-                    self.task_executed.emit(task_id, True, "任务已启动")
-                else:
-                    logger.error(f"定时任务启动失败: {task_id}")
-                    self.task_executed.emit(task_id, False, "任务启动失败")
+            if not self.import_engine:
+                # 懒加载导入引擎：构造可能较慢且会连接增强服务，失败不影响定时器继续运行
+                try:
+                    from core.importdata.import_execution_engine import DataImportExecutionEngine
+                    logger.info("导入引擎未设置，自动创建导入引擎实例...")
+                    self.import_engine = DataImportExecutionEngine(
+                        config_manager=self.config_manager,
+                        max_workers=8
+                    )
+                    logger.info("导入引擎自动创建成功")
+                except Exception as e:
+                    logger.error(f"创建导入引擎失败: {e}")
+                    self.task_executed.emit(task_id, False, f"导入引擎创建失败: {e}")
+                    return
+
+            success = self.import_engine.start_task(task_id)
+            if success:
+                logger.info(f"定时任务启动成功: {task_id}")
+                self.task_executed.emit(task_id, True, "任务已启动")
             else:
-                logger.warning("导入引擎未设置，无法执行任务")
-                self.task_executed.emit(task_id, False, "导入引擎未设置")
+                logger.error(f"定时任务启动失败: {task_id}")
+                self.task_executed.emit(task_id, False, "任务启动失败")
 
         except Exception as e:
             logger.error(f"执行定时任务失败: {e}")

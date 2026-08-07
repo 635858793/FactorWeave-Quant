@@ -133,8 +133,9 @@ class AKSharePlugin(IDataSourcePlugin):
             "markets": ["CN"],  # 中国市场
             "asset_types": ["stock", "sector"],
             "data_types": ["sector_fund_flow", "real_time_quote", "asset_list", "fundamental"],
+            "frequencies": ["1m", "5m", "15m", "30m", "60m", "D", "W", "M"],  # 支持8种周期
             "real_time_support": True,
-            "historical_data": False,  # 主要提供当日数据
+            "historical_data": True,  # 支持历史K线数据
             "sector_fund_flow": True,
             "rate_limit": "无限制",
             "cache_enabled": True,
@@ -162,7 +163,7 @@ class AKSharePlugin(IDataSourcePlugin):
             supported_data_types=self.get_supported_data_types(),
             capabilities={
                 'real_time': True,
-                'historical': False,
+                'historical': True,
                 'sector_fund_flow': True,
                 'asset_list': True,
                 'fundamental': True,
@@ -481,6 +482,8 @@ class AKSharePlugin(IDataSourcePlugin):
             symbol_clean = symbol.split('.')[0] if '.' in symbol else symbol
 
             # 转换频率参数
+            # 分钟线映射到AKShare分钟接口的period参数（'1'/'5'/'15'/'30'/'60'）
+            # 支持 Period 枚举值（1m/5m/15m/30m/1H）、常用简写（1min/60min等）及数字字符串
             period_map = {
                 'D': 'daily',
                 'd': 'daily',
@@ -490,7 +493,25 @@ class AKSharePlugin(IDataSourcePlugin):
                 'm': 'monthly',
                 'daily': 'daily',
                 'weekly': 'weekly',
-                'monthly': 'monthly'
+                'monthly': 'monthly',
+                '1m': '1',
+                '1min': '1',
+                '1': '1',
+                '5m': '5',
+                '5min': '5',
+                '5': '5',
+                '15m': '15',
+                '15min': '15',
+                '15': '15',
+                '30m': '30',
+                '30min': '30',
+                '30': '30',
+                '60m': '60',
+                '60min': '60',
+                '60': '60',
+                '1H': '60',      # Period.MIN60 枚举值
+                '1h': '60',
+                'hourly': '60'
             }
             period = period_map.get(freq, 'daily')
 
@@ -532,6 +553,14 @@ class AKSharePlugin(IDataSourcePlugin):
             ak_start_date = format_date(start_date)
             ak_end_date = format_date(end_date)
 
+            # 转换日期格式（AKShare分钟线需要'YYYY-MM-DD HH:MM:SS'格式）
+            def format_minute_date(date_input):
+                """将各种日期格式转换为AKShare分钟线要求的'YYYY-MM-DD 09:30:00'格式"""
+                ymd = format_date(date_input)
+                if not ymd:
+                    return None
+                return f'{ymd[:4]}-{ymd[4:6]}-{ymd[6:8]} 09:30:00'
+
             # 调用AKShare获取K线数据（带自动重试机制）
             self.logger.debug(f"从AKShare获取K线数据: {symbol_clean}, 周期: {period}, 范围: {ak_start_date}-{ak_end_date}")
 
@@ -552,7 +581,19 @@ class AKSharePlugin(IDataSourcePlugin):
                     'both': 'qfq'   # 默认前复权
                 }
                 adjust = adjustment_map.get(adjustment, '')
-                
+
+                # 分钟线走东方财富分钟行情接口（period参数为'1'/'5'/'15'/'30'/'60'）
+                if period in ('1', '5', '15', '30', '60'):
+                    minute_start = format_minute_date(start_date)
+                    minute_end = format_minute_date(end_date)
+                    return ak.stock_zh_a_hist_min_em(
+                        symbol=symbol_clean,
+                        period=period,
+                        start_date=minute_start,
+                        end_date=minute_end,
+                        adjust=adjust  # 分钟线支持''/qfq/hfq
+                    )
+
                 return ak.stock_zh_a_hist(
                     symbol=symbol_clean,
                     period=period,
@@ -569,15 +610,18 @@ class AKSharePlugin(IDataSourcePlugin):
                 return pd.DataFrame()
 
             # 标准化列名（AKShare返回的是中文列名）
-            # 预期列名：日期, 开盘, 收盘, 最高, 最低, 成交量, 成交额, 振幅, 涨跌幅, 涨跌额, 换手率
+            # 日线/周线/月线预期列名：日期, 开盘, 收盘, 最高, 最低, 成交量, 成交额, 振幅, 涨跌幅, 涨跌额, 换手率
+            # 分钟线预期列名：时间, 开盘, 收盘, 最高, 最低, 成交量, 成交额, 均价
             column_mapping = {
                 '日期': 'datetime',
+                '时间': 'datetime',  # 分钟线时间列
                 '开盘': 'open',
                 '收盘': 'close',
                 '最高': 'high',
                 '最低': 'low',
                 '成交量': 'volume',
                 '成交额': 'amount',
+                '均价': 'avg_price',
                 '振幅': 'amplitude',
                 '涨跌幅': 'pct_change',
                 '涨跌额': 'change',

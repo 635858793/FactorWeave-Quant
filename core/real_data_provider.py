@@ -58,6 +58,9 @@ class RealDataProvider:
         self._cleanup_thread_stop = False
         self._start_cleanup_timer()
 
+        # R237 HVD-237-B-003: dispose 幂等标志 (R78 铁律 #6)
+        self._disposed = False
+
         # 默认股票池
         self._default_stocks = [
             '000001',  # 平安银行
@@ -1176,6 +1179,76 @@ class RealDataProvider:
                 'invalid_ratio': 0.0,
                 'error': str(e)
             }
+
+    # ========================================================================
+    # R237 HVD-237-B-003: 4 链 dispose 治理 (R78 铁律)
+    # 业务影响: 1-2 业务方 (有 5min 清理定时器 + 数据源连接池)
+    # 业务资源: _data_source_pool / _active_instances / _cache / _cleanup_thread
+    # ========================================================================
+    def dispose(self) -> None:
+        """R237 HVD-237-B-003: 4 链 dispose 入口 (R78 铁律 #6 幂等短路)"""
+        if getattr(self, '_disposed', False):
+            return
+        try:
+            self.shutdown()
+            self.close()
+            self.cleanup()
+        except Exception as e:
+            self.logger.warning(
+                f"RealDataProvider.dispose 异常: {e}",
+                exc_info=True,
+            )
+        finally:
+            self._disposed = True
+
+    def shutdown(self) -> None:
+        """R237 HVD-237-B-003: shutdown - 业务数据清空 (连接池 + 缓存)"""
+        try:
+            # 业务锁内清空 _data_source_pool / _active_instances / _cache (R234 业务锁内清空)
+            with self._pool_lock:
+                if hasattr(self, '_data_source_pool') and isinstance(self._data_source_pool, dict):
+                    self._data_source_pool.clear()
+                if hasattr(self, '_active_instances') and isinstance(self._active_instances, dict):
+                    self._active_instances.clear()
+            with self._cache_lock:
+                if hasattr(self, '_cache') and isinstance(self._cache, dict):
+                    self._cache.clear()
+        except Exception as e:
+            self.logger.warning(
+                f"RealDataProvider.shutdown 异常: {e}",
+                exc_info=True,
+            )
+
+    def close(self) -> None:
+        """R237 HVD-237-B-003: close - 5min 定时器停止 (R235 子智能体 B 候选特征)"""
+        try:
+            # 关键修复: 停止 5min 清理定时器, 防止 dispose 后线程悬挂 (R78 防御)
+            if hasattr(self, '_cleanup_thread_stop'):
+                self._cleanup_thread_stop = True
+        except Exception as e:
+            self.logger.warning(
+                f"RealDataProvider.close 异常: {e}",
+                exc_info=True,
+            )
+
+    def cleanup(self) -> None:
+        """R237 HVD-237-B-003: cleanup - 子组件引用置 None"""
+        try:
+            # 释放 data_manager 引用
+            if hasattr(self, 'data_manager'):
+                self.data_manager = None
+            # 释放 config 引用
+            if hasattr(self, 'config'):
+                self.config = None
+            # 释放 validator 引用
+            if hasattr(self, 'validator'):
+                self.validator = None
+        except Exception as e:
+            self.logger.warning(
+                f"RealDataProvider.cleanup 异常: {e}",
+                exc_info=True,
+            )
+
 
 # 全局真实数据提供器实例
 _real_data_provider: Optional[RealDataProvider] = None

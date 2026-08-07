@@ -8,6 +8,7 @@ from loguru import logger
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 from uuid import uuid4
+import threading
 
 from core.trading.order_models import Order, OrderFill, OrderQuery, OrderType, OrderStatus
 from core.containers import ServiceContainer
@@ -15,6 +16,29 @@ from core.events import EventBus
 from core.plugin_types import AssetType
 from core.asset_database_manager import AssetSeparatedDatabaseManager
 from core.trading.order_cache import OrderCache
+
+
+# R255-P2: 模块级懒单例 (缓存一致性修复)
+# 背景: order_service/order_monitor/order_analyzer 各自直接构造 OrderRepository,
+# 每实例独立 OrderCache(ttl_seconds=300) 且写穿仅本实例 → 跨实例存在 300s TTL 陈旧读。
+# 不注册进服务容器, 保持懒加载语义, 避免启动期重型初始化。
+_order_repository_instance = None
+_order_repository_lock = threading.Lock()
+
+
+def get_order_repository(service_container: Optional[ServiceContainer] = None,
+                         event_bus: Optional[EventBus] = None) -> 'OrderRepository':
+    """获取订单仓储单例 (模块级懒加载, 线程安全)
+
+    首次调用时构造并缓存实例, 后续调用 (含无参) 返回同一实例,
+    保证缓存 (OrderCache) 一致性。
+    """
+    global _order_repository_instance
+    if _order_repository_instance is None:
+        with _order_repository_lock:
+            if _order_repository_instance is None:
+                _order_repository_instance = OrderRepository(service_container, event_bus)
+    return _order_repository_instance
 
 
 class OrderRepository:
@@ -519,7 +543,11 @@ class OrderRepository:
                 conditions.append("order_type = ?")
                 parameters.append(query.order_type.value)
 
-            if query.order_status:
+            if query.order_statuses:
+                placeholders = ", ".join(["?"] * len(query.order_statuses))
+                conditions.append(f"order_status IN ({placeholders})")
+                parameters.extend([s.value for s in query.order_statuses])
+            elif query.order_status:
                 conditions.append("order_status = ?")
                 parameters.append(query.order_status.value)
 
@@ -576,9 +604,14 @@ class OrderRepository:
             return []
 
     def get_active_orders(self, account_id: Optional[str] = None) -> List[Order]:
-        """获取活跃订单"""
+        """获取活跃订单
+
+        R255-P2: 与 Order.is_active (order_models.py:104-108) 三值定义对齐,
+        返回 PENDING + SUBMITTED + PARTIALLY_FILLED (此前仅查 PENDING,
+        导致 GUI 订单表其余活跃状态永不出现)。
+        """
         query = OrderQuery(
-            order_status=OrderStatus.PENDING,
+            order_statuses=[OrderStatus.PENDING, OrderStatus.SUBMITTED, OrderStatus.PARTIALLY_FILLED],
             account_id=account_id,
             limit=1000
         )

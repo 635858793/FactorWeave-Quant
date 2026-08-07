@@ -9,7 +9,6 @@ import json
 import os
 from datetime import datetime
 from typing import Dict, Any, List
-from dataclasses import asdict
 
 from core.services.alert_deduplication_service import (
     get_alert_deduplication_service, AlertMessage, AlertLevel
@@ -46,18 +45,19 @@ class AlertEventHandler:
             alert: 告警消息
         """
         try:
-            # 转换为外部告警消息格式
+            # 指标字段统一存放于 metadata (R242-A-002): AlertMessage 本体无 metric_name 等字段
+            meta = alert.metadata or {}
             external_alert = ExternalAlertMessage(
                 alert_id=alert.id,
                 component=alert.category,
-                metric_name=alert.metric_name or "unknown",
-                current_value=alert.current_value or 0.0,
-                threshold_value=alert.threshold_value or 0.0,
+                metric_name=meta.get('metric_name') or "unknown",
+                current_value=meta.get('current_value') or 0.0,
+                threshold_value=meta.get('threshold_value') or 0.0,
                 severity=alert.level.value,
                 message=alert.message,
                 timestamp=alert.timestamp,
                 metadata={
-                    "recommendation": alert.recommendation,
+                    "recommendation": meta.get('recommendation', ''),
                     "category": alert.category
                 }
             )
@@ -76,152 +76,202 @@ class AlertEventHandler:
             logger.error(f"发送外部告警失败: {e}")
             return {}
 
-    def handle_resource_alert(self, event_data):
-        """处理资源告警事件"""
+    def _coerce_timestamp(self, value: Any) -> datetime:
+        """将时间戳 (float/str/datetime) 统一为 datetime"""
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, (int, float)) and value:
+            try:
+                return datetime.fromtimestamp(value)
+            except (ValueError, OSError):
+                pass
+        return datetime.now()
+
+    def _send_external_alert_async(self, alert: AlertMessage) -> None:
+        """异步发送外部告警 (R242-A-002 新增, 供新 handler 复用)"""
         try:
-            #  修复：支持新的ResourceAlert事件对象
-            from core.events.types import ResourceAlert
+            import asyncio
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(self._send_external_alert(alert))
+            else:
+                loop.run_until_complete(self._send_external_alert(alert))
+        except Exception as e:
+            logger.warning(f"发送外部告警失败: {e}")
 
-            if isinstance(event_data, ResourceAlert):
-                # 新的事件对象格式
-                alert_event = event_data
-                timestamp = alert_event.timestamp
+    def _dispatch_alert(self, level, category: str, message: str, source: str,
+                        metadata: Dict[str, Any] = None) -> None:
+        """统一告警分发: 去重 → 落历史文件 → 外部渠道 (R242-A-002 新增)
 
-                # 直接保存到数据库
-                from db.models.alert_config_models import get_alert_config_database, AlertHistory
-                db = get_alert_config_database()
+        process_alert 签名 (alert_deduplication_service.py:130) 接收分离参数,
+        返回 AlertMessage 对象或 None (去重时返回 None)
+        """
+        try:
+            alert = self.alert_service.process_alert(
+                level=level, category=category, message=message,
+                source=source, metadata=metadata or {})
+            if alert is not None:
+                self._save_alert_to_file(alert)
+                logger.info(f"处理告警: {message}")
+                self._send_external_alert_async(alert)
+        except Exception as e:
+            logger.error(f"分发告警失败: {e}")
 
-                alert_history = AlertHistory(
-                    timestamp=timestamp.strftime('%Y-%m-%d %H:%M:%S'),
-                    level=alert_event.level.value,
-                    category=alert_event.category,
-                    message=alert_event.message,
-                    status='活跃'
+    def _resource_type_metric_name(self, resource_type) -> str:
+        """ResourceType 枚举 → 标准指标名 (对齐 _get_resource_recommendation key)"""
+        mapping = {
+            'CPU': 'cpu_usage',
+            'MEMORY': 'memory_usage',
+            'DISK': 'disk_usage',
+            'NETWORK': 'network_usage',
+        }
+        name = getattr(resource_type, 'name', str(resource_type or 'unknown')).upper()
+        return mapping.get(name, name.lower())
+
+    def _map_alert_severity(self, severity) -> AlertLevel:
+        """AlertSeverity (resource_monitor) → AlertLevel (去重服务) 映射"""
+        if severity is None:
+            return AlertLevel.WARNING
+        mapping = {
+            'INFO': AlertLevel.INFO,
+            'WARNING': AlertLevel.WARNING,
+            'ERROR': AlertLevel.ERROR,
+            'CRITICAL': AlertLevel.CRITICAL,
+        }
+        name = getattr(severity, 'name', str(severity)).upper()
+        return mapping.get(name, AlertLevel.WARNING)
+
+    def handle_resource_threshold_exceeded(self, event_data) -> None:
+        """处理资源阈值超标事件
+
+        R242-A-002 补全孤儿事件订阅: core/metrics/aggregation_service.py:307 发布
+        'ResourceThresholdExceeded' (CPU/内存/磁盘任一超限), 原无订阅者 (ORPHAN_PUB)
+        """
+        try:
+            cpu = getattr(event_data, 'cpu_percent', None)
+            memory = getattr(event_data, 'memory_percent', None)
+            disk = getattr(event_data, 'disk_percent', None)
+            timestamp = self._coerce_timestamp(getattr(event_data, 'timestamp', None))
+
+            overruns = []
+            if cpu is not None and float(cpu) > 80:
+                overruns.append(("CPU使用率", float(cpu), 80.0))
+            if memory is not None and float(memory) > 80:
+                overruns.append(("内存使用率", float(memory), 80.0))
+            if disk is not None and float(disk) > 90:
+                overruns.append(("磁盘使用率", float(disk), 90.0))
+
+            for name, value, threshold in overruns:
+                alert_msg = f"{name} ({value:.1f}%) 超过阈值 ({threshold:.0f}%)"
+                alert_info = self._parse_resource_alert(alert_msg)
+                if alert_info:
+                    self._dispatch_alert(
+                        # R242-A-003: 资源超限即 WARNING, 原倍率重算 (ratio<1.2)
+                        # 致百分比指标超限告警恒为 INFO
+                        level=AlertLevel.WARNING,
+                        category="系统资源",
+                        message=alert_msg,
+                        source="MetricsAggregationService",
+                        metadata={
+                            'metric_name': alert_info['metric_name'],
+                            'current_value': alert_info['current_value'],
+                            'threshold_value': alert_info['threshold_value'],
+                            'recommendation': self._get_resource_recommendation(
+                                alert_info['metric_name']),
+                            'timestamp': timestamp.isoformat(),
+                        }
+                    )
+        except Exception as e:
+            logger.error(f"处理资源阈值告警事件失败: {e}")
+
+    def handle_application_threshold_exceeded(self, event_data) -> None:
+        """处理应用阈值超标事件
+
+        R242-A-002 补全孤儿事件订阅: core/metrics/aggregation_service.py:339 发布
+        'ApplicationThresholdExceeded' (操作耗时>5s 或执行失败), 原无订阅者 (ORPHAN_PUB)
+        """
+        try:
+            operation_name = getattr(event_data, 'operation_name', 'unknown')
+            duration = getattr(event_data, 'duration', None)
+            was_successful = getattr(event_data, 'was_successful', True)
+            timestamp = self._coerce_timestamp(getattr(event_data, 'timestamp', None))
+
+            # 执行失败告警不依赖消息解析, 直接分发
+            if not was_successful:
+                self._dispatch_alert(
+                    level=AlertLevel.ERROR,
+                    category="应用性能",
+                    message=f"操作 '{operation_name}' 执行失败",
+                    source="MetricsAggregationService",
+                    metadata={
+                        'metric_name': operation_name,
+                        'current_value': 0.0,
+                        'threshold_value': 0.0,
+                        'recommendation': self._get_application_recommendation(operation_name),
+                        'timestamp': timestamp.isoformat(),
+                    }
                 )
 
-                history_id = db.save_alert_history(alert_history)
-                if history_id:
-                    logger.info(f" 资源告警已保存到数据库，ID: {history_id}")
-                else:
-                    logger.error("保存资源告警到数据库失败")
-
-            else:
-                # 兼容旧的字典格式
-                alerts = event_data.get('alerts', [])
-                timestamp = datetime.fromtimestamp(event_data.get('timestamp', datetime.now().timestamp()))
-
-                for alert_msg in alerts:
-                    # 解析告警消息
-                    alert_info = self._parse_resource_alert(alert_msg)
-                    if alert_info:
-                        # 创建告警消息
-                        alert = AlertMessage(
-                            id=f"resource_{timestamp.strftime('%Y%m%d_%H%M%S')}_{hash(alert_msg) % 10000}",
-                            timestamp=timestamp,
-                            level=self._determine_alert_level(alert_info['current_value'], alert_info['threshold_value']),
-                            category="系统资源",
-                            message=alert_msg,
-                            metric_name=alert_info['metric_name'],
-                            current_value=alert_info['current_value'],
-                            threshold_value=alert_info['threshold_value'],
-                            recommendation=self._get_resource_recommendation(alert_info['metric_name'])
-                        )
-
-                        # 处理告警（去重等）
-                        if self.alert_service.process_alert(alert):
-                            # 保存到文件
-                            self._save_alert_to_file(alert)
-                            logger.info(f"处理资源告警: {alert_msg}")
-
-                            # 发送外部告警
-                            try:
-                                import asyncio
-                                loop = asyncio.get_event_loop()
-                                if loop.is_running():
-                                    asyncio.create_task(self._send_external_alert(alert))
-                                else:
-                                    loop.run_until_complete(self._send_external_alert(alert))
-                            except Exception as e:
-                                logger.warning(f"发送外部告警失败: {e}")
-
+            # 响应时间超标告警
+            if duration is not None and float(duration) > 5.0:
+                alert_msg = f"操作 '{operation_name}' 响应时间 ({float(duration):.2f}秒) 超过阈值 (5秒)"
+                alert_info = self._parse_application_alert(alert_msg, operation_name)
+                if alert_info:
+                    self._dispatch_alert(
+                        level=self._determine_alert_level(
+                            alert_info['current_value'], alert_info['threshold_value']),
+                        category="应用性能",
+                        message=alert_msg,
+                        source="MetricsAggregationService",
+                        metadata={
+                            'metric_name': alert_info['metric_name'],
+                            'current_value': alert_info['current_value'],
+                            'threshold_value': alert_info['threshold_value'],
+                            'recommendation': self._get_application_recommendation(
+                                alert_info['metric_name']),
+                            'timestamp': timestamp.isoformat(),
+                        }
+                    )
         except Exception as e:
-            logger.error(f"处理资源告警事件失败: {e}")
-            import traceback
-            logger.error(f"详细错误信息: {traceback.format_exc()}")
+            logger.error(f"处理应用阈值告警事件失败: {e}")
 
-    def handle_application_alert(self, event_data):
-        """处理应用告警事件"""
+    def handle_resource_alert_event(self, event_data) -> None:
+        """处理 ResourceAlertEvent (core/performance/resource_monitor.py:448 发布)
+
+        R242-A-002 修复命名错配: 发布端类名 'ResourceAlertEvent', 原订阅端 'ResourceAlert'
+        → 告警链路断裂 (订阅方永远收不到)
+        """
         try:
-            #  修复：支持新的ApplicationAlert事件对象
-            from core.events.types import ApplicationAlert
+            alert = getattr(event_data, 'alert', None)
+            if alert is None:
+                logger.warning("ResourceAlertEvent 缺少 alert 字段, 跳过")
+                return
 
-            if isinstance(event_data, ApplicationAlert):
-                # 新的事件对象格式
-                alert_event = event_data
-                timestamp = alert_event.timestamp
+            timestamp = self._coerce_timestamp(getattr(alert, 'timestamp', None))
+            resource_type = getattr(alert, 'resource_type', None)
+            metric_name = self._resource_type_metric_name(resource_type)
+            current_value = getattr(alert, 'current_value', 0.0)
+            threshold_value = getattr(alert, 'threshold_value', 0.0)
+            message = getattr(alert, 'message', '资源告警')
 
-                # 直接保存到数据库
-                from db.models.alert_config_models import get_alert_config_database, AlertHistory
-                db = get_alert_config_database()
-
-                alert_history = AlertHistory(
-                    timestamp=timestamp.strftime('%Y-%m-%d %H:%M:%S'),
-                    level=alert_event.level.value,
-                    category=alert_event.category,
-                    message=alert_event.message,
-                    status='活跃'
-                )
-
-                history_id = db.save_alert_history(alert_history)
-                if history_id:
-                    logger.info(f" 应用告警已保存到数据库，ID: {history_id}")
-                else:
-                    logger.error("保存应用告警到数据库失败")
-
-            else:
-                # 兼容旧的字典格式
-                alerts = event_data.get('alerts', [])
-                operation = event_data.get('operation', 'unknown')
-                timestamp = datetime.fromtimestamp(event_data.get('timestamp', datetime.now().timestamp()))
-
-                for alert_msg in alerts:
-                    # 解析告警消息
-                    alert_info = self._parse_application_alert(alert_msg, operation)
-                    if alert_info:
-                        # 创建告警消息
-                        alert = AlertMessage(
-                            id=f"app_{timestamp.strftime('%Y%m%d_%H%M%S')}_{hash(alert_msg) % 10000}",
-                            timestamp=timestamp,
-                            level=self._determine_alert_level(alert_info['current_value'], alert_info['threshold_value']),
-                            category="应用性能",
-                            message=alert_msg,
-                            metric_name=alert_info['metric_name'],
-                            current_value=alert_info['current_value'],
-                            threshold_value=alert_info['threshold_value'],
-                            recommendation=self._get_application_recommendation(alert_info['metric_name'])
-                        )
-
-                        # 处理告警（去重等）
-                        if self.alert_service.process_alert(alert):
-                            # 保存到文件
-                            self._save_alert_to_file(alert)
-                            logger.info(f"处理应用告警: {alert_msg}")
-
-                            # 发送外部告警
-                            try:
-                                import asyncio
-                                loop = asyncio.get_event_loop()
-                                if loop.is_running():
-                                    asyncio.create_task(self._send_external_alert(alert))
-                                else:
-                                    loop.run_until_complete(self._send_external_alert(alert))
-                            except Exception as e:
-                                logger.warning(f"发送外部告警失败: {e}")
-
+            self._dispatch_alert(
+                # R242-A-003: 采用 ResourceAlert 权威 severity 字段,
+                # 不再按 _determine_alert_level 倍率重算 (百分比指标下会降级为 INFO)
+                level=self._map_alert_severity(getattr(alert, 'severity', None)),
+                category="系统资源",
+                message=message,
+                source="ResourceMonitor",
+                metadata={
+                    'metric_name': metric_name,
+                    'current_value': float(current_value),
+                    'threshold_value': float(threshold_value),
+                    'recommendation': self._get_resource_recommendation(metric_name),
+                    'alert_id': getattr(alert, 'alert_id', ''),
+                    'timestamp': timestamp.isoformat(),
+                }
+            )
         except Exception as e:
-            logger.error(f"处理应用告警事件失败: {e}")
-            import traceback
-            logger.error(f"详细错误信息: {traceback.format_exc()}")
+            logger.error(f"处理 ResourceAlertEvent 失败: {e}")
 
     def _parse_resource_alert(self, alert_msg: str) -> Dict[str, Any]:
         """解析资源告警消息"""
@@ -391,11 +441,20 @@ def register_alert_handlers(event_bus):
     try:
         handler = get_alert_event_handler()
 
-        # 注册资源告警处理器
-        event_bus.subscribe("ResourceAlert", handler.handle_resource_alert)
+        # R242-B-002 修复 (2026-08-04): 移除死代码孤儿订阅 "ResourceAlert"/"ApplicationAlert"
+        # Why: 全项目 0 发布方 (types.py 中同名类在 R243-C 已删除, 原资源监控发布的是
+        #      ResourceAlertEvent 类名), 对应 handler 为死代码, 且旧 dict 分支
+        #      process_alert(alert) 传对象必 TypeError。删除死订阅 + 死 handler (原 L79-223)。
 
-        # 注册应用告警处理器
-        event_bus.subscribe("ApplicationAlert", handler.handle_application_alert)
+        # R242-A-002 修复 (2026-08-04): 补全孤儿告警事件订阅, 闭合告警调用链
+        # Why: aggregation_service 发布 ResourceThresholdExceeded/ApplicationThresholdExceeded
+        #      (aggregation_service.py:313/345), resource_monitor 发布 ResourceAlertEvent
+        #      (resource_monitor.py:453) — 均无订阅者 (ORPHAN_PUB), 告警链路断裂
+        event_bus.subscribe(
+            "ResourceThresholdExceeded", handler.handle_resource_threshold_exceeded)
+        event_bus.subscribe(
+            "ApplicationThresholdExceeded", handler.handle_application_threshold_exceeded)
+        event_bus.subscribe("ResourceAlertEvent", handler.handle_resource_alert_event)
 
         logger.info("告警事件处理器已注册到事件总线")
 

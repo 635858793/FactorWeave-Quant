@@ -27,12 +27,30 @@ from loguru import logger
 from core.trading.trading_types import ExecutionResult, ExecutionStatus, TradingInterface
 from core.trading.order_models import Order, OrderType, OrderCategory
 
-try:
-    import xtquant.xttrader as xttrader
-    XTTRADER_AVAILABLE = True
-except ImportError:
-    XTTRADER_AVAILABLE = False
-    logger.warning("xttrader (miniQMT) 未安装，miniQMT交易功能不可用")
+# xtquant (miniQMT) 延迟导入：
+# import xtquant.xttrader 会加载原生 .pyd，可能触发 0xC0000005 (ACCESS_VIOLATION) 崩溃，
+# 且原生崩溃无法被 try/except ImportError 捕获。因此延迟到首次 connect 时才导入，
+# 避免在模块导入链（如 core.services）中加载 C 扩展导致进程崩溃。
+xttrader = None
+XTTRADER_AVAILABLE = False
+_xttrader_import_attempted = False
+
+
+def _ensure_xttrader_loaded():
+    """延迟加载 xttrader（首次连接时调用），返回 XTTRADER_AVAILABLE 是否可用"""
+    global xttrader, XTTRADER_AVAILABLE, _xttrader_import_attempted
+    if _xttrader_import_attempted:
+        return XTTRADER_AVAILABLE
+    _xttrader_import_attempted = True
+    try:
+        import xtquant.xttrader as xttrader
+        XTTRADER_AVAILABLE = True
+        logger.info("xttrader (miniQMT) 加载成功")
+    except ImportError:
+        xttrader = None
+        XTTRADER_AVAILABLE = False
+        logger.warning("xttrader (miniQMT) 未安装，miniQMT交易功能不可用")
+    return XTTRADER_AVAILABLE
 
 
 @dataclass
@@ -56,8 +74,10 @@ class MiniQMTTradingInterface(TradingInterface):
         Args:
             config: miniQMT配置
         """
+        # 注意：xttrader 为延迟加载（首次 connect 时导入），构造阶段无法判断其可用性，
+        # 因此不再在此处 raise ImportError，改为 connect 时检测并降级。
         if not XTTRADER_AVAILABLE:
-            raise ImportError("xttrader (miniQMT) 未安装，请先安装: pip install xtquant")
+            logger.warning("xttrader (miniQMT) 尚未加载，将在首次连接时加载")
 
         self.config = config or MiniQMTConfig()
 
@@ -85,7 +105,11 @@ class MiniQMTTradingInterface(TradingInterface):
         """连接miniQMT交易服务器"""
         try:
             self.logger.info(f"正在连接miniQMT交易服务器: {self.config.ip}:{self.config.port}")
-
+            # 延迟加载 xttrader（首次连接时导入 C 扩展）
+            _ensure_xttrader_loaded()
+            if not XTTRADER_AVAILABLE:
+                self.logger.warning("xttrader (miniQMT) 未安装，无法连接")
+                return False
             # 创建交易连接
             self._trader = xttrader.XtTrader(
                 session_id=self.config.session_id

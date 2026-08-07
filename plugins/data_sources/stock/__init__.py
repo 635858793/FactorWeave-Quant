@@ -12,7 +12,8 @@ STOCK_PLUGINS = [
     'eastmoney_plugin',      # 东方财富（综合数据）
     'akshare_plugin',        # AkShare（开源）
     'sina_plugin',           # 新浪（快速行情）
-    'level2_realtime_plugin'  # Level-2（高频数据）
+    'level2_realtime_plugin',  # Level-2（高频数据）
+    'baostock_plugin'        # Baostock（免费历史K线，含复权）
 ]
 
 __all__ = STOCK_PLUGINS

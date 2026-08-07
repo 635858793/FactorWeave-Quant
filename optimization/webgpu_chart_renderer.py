@@ -53,6 +53,10 @@ class WebGPUChartRenderer(BaseChartRenderer):
         self._webgpu_initialized = False
         self._current_backend = "matplotlib"  # 默认后端
         self._webgpu_lock = threading.Lock()
+        # GPU 渲染性能看门狗: 单次 WebGPU 渲染耗时超过阈值(秒)判定为性能异常,
+        # 自动降级到 matplotlib, 避免每次渲染都卡顿(日志中曾出现 75s 渲染空档)
+        self._render_timeout_threshold = 5.0
+        self._webgpu_degraded = False
 
         # 移除复杂的性能统计
 
@@ -218,7 +222,8 @@ class WebGPUChartRenderer(BaseChartRenderer):
         return (self.enable_webgpu and
                 self._webgpu_initialized and
                 self._webgpu_manager and
-                self._current_backend != "matplotlib")
+                self._current_backend != "matplotlib" and
+                not self._webgpu_degraded)
 
     def _try_webgpu_render(self, render_type: str, ax, data, style: Dict[str, Any], x: np.ndarray = None, use_datetime_axis: bool = True) -> bool:
         """
@@ -240,6 +245,7 @@ class WebGPUChartRenderer(BaseChartRenderer):
 
         try:
             # 调用WebGPU管理器进行渲染
+            render_start = time.time()
             if render_type == 'candlesticks':
                 success = self._webgpu_manager.render_candlesticks(ax, data, style, x, use_datetime_axis)
             elif render_type == 'volume':
@@ -249,6 +255,18 @@ class WebGPUChartRenderer(BaseChartRenderer):
             else:
                 logger.warning(f"不支持的WebGPU渲染类型: {render_type}")
                 return False
+            elapsed = time.time() - render_start
+
+            # 性能看门狗: 渲染"成功"但耗时异常 → 自动降级到 matplotlib,
+            # 避免后续每次渲染都长时间卡顿
+            if success and elapsed > self._render_timeout_threshold:
+                logger.warning(
+                    f"WebGPU {render_type} 渲染耗时 {elapsed:.1f}s 超过阈值 "
+                    f"{self._render_timeout_threshold:.1f}s, 自动降级到 matplotlib"
+                )
+                self._webgpu_degraded = True
+                self._current_backend = "matplotlib"
+                success = False
 
             return success
 

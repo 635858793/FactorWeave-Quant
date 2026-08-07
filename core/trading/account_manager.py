@@ -902,11 +902,26 @@ class AccountManager:
         Returns:
             TradingInterface: 交易接口实例
         """
-        from core.trading.order_executor import OrderExecutor
-        
-        # 获取OrderExecutor
-        order_executor = self.service_container.resolve(OrderExecutor)
-        
+        from core.trading.order_service import OrderService
+
+        # R254-P1 修复: 经 OrderService 公开接口获取交易接口, 消除对
+        # OrderExecutor._trading_interfaces 私有属性的跨类访问 (第二份重复实现)。
+        # 接口字段初始化 (account_id/password/server 等) 已由
+        # order_executor._load_account_info_to_interfaces (order_executor.py:440-489)
+        # 在 OrderExecutor 初始化阶段统一负责, 不再在本方法内改写。
+        # 兼容旧容器 mock (仅有 resolve 属性, 无 try_resolve): 优先 getattr 回退 resolve。
+        try:
+            resolve_order_service = getattr(
+                self.service_container, 'try_resolve', self.service_container.resolve)
+            order_service = resolve_order_service(OrderService)
+        except Exception as e:
+            logger.warning(f"OrderService 解析失败，跳过账户交易接口获取: {account.account_id}, 错误: {e}")
+            return None
+
+        if not order_service:
+            logger.warning(f"OrderService 不可用，跳过账户交易接口获取: {account.account_id}")
+            return None
+
         # 根据账户类型获取资产类型
         if account.account_type == "股票账户":
             from core.plugin_types import AssetType
@@ -917,31 +932,13 @@ class AccountManager:
         else:
             from core.plugin_types import AssetType
             asset_type = AssetType.CRYPTO
-        
-        # 从OrderExecutor获取对应的交易接口
-        trading_interface = order_executor._trading_interfaces.get(asset_type)
-        if trading_interface:
-            # 根据交易接口类型初始化账户信息
-            if account.trading_interface_type == TradingInterfaceType.XTP_PRO:
-                from core.trading.interfaces.xtp_pro_trading_interface import XTPProTradingInterface
-                if isinstance(trading_interface, XTPProTradingInterface):
-                    trading_interface.account_id = account.xtp_account_id
-                    trading_interface.password = account.xtp_password
-                    trading_interface.server_address = account.xtp_server_address
-                    trading_interface.trade_server = account.xtp_server_address
-                    trading_interface.quote_server = account.xtp_server_address
-                    logger.info(f"使用账户信息初始化XTP Pro接口: {account.account_id}")
-            elif account.trading_interface_type == TradingInterfaceType.CTP:
-                from core.trading.interfaces.ctp_trading_interface import CTPTradingInterface
-                if isinstance(trading_interface, CTPTradingInterface):
-                    trading_interface.broker_id = account.ctp_broker_id
-                    trading_interface.investor_id = account.ctp_investor_id
-                    trading_interface.password = account.ctp_password
-                    trading_interface.trade_front = account.ctp_trade_front
-                    trading_interface.quote_front = account.ctp_quote_front
-                    logger.info(f"使用账户信息初始化CTP接口: {account.account_id}")
-        
-        return trading_interface
+
+        # 经 OrderService 公开接口获取交易接口 (OrderService → OrderExecutor.get_trading_interface)
+        try:
+            return order_service.get_trading_interface(asset_type)
+        except Exception as e:
+            logger.warning(f"获取账户交易接口失败: {account.account_id}, 错误: {e}")
+            return None
 
     def freeze_cash(self, account_id: str, amount: float) -> bool:
         """

@@ -716,64 +716,6 @@ class AlertLevel(Enum):
 
 
 @dataclass
-class ResourceAlert(BaseEvent):
-    """
-    资源告警事件
-
-    当系统资源（CPU、内存、磁盘等）超过阈值时触发
-    """
-    level: AlertLevel = AlertLevel.WARNING
-    category: str = "系统资源"
-    message: str = ""
-    metric_name: str = ""
-    current_value: float = 0.0
-    threshold: float = 0.0
-    unit: str = "%"
-
-    def __post_init__(self):
-        super().__post_init__()
-        self.data.update({
-            'level': self.level.value,
-            'category': self.category,
-            'message': self.message,
-            'metric_name': self.metric_name,
-            'current_value': self.current_value,
-            'threshold': self.threshold,
-            'unit': self.unit
-        })
-
-
-@dataclass
-class ApplicationAlert(BaseEvent):
-    """
-    应用告警事件
-
-    当应用指标（响应时间、错误率等）超过阈值时触发
-    """
-    level: AlertLevel = AlertLevel.WARNING
-    category: str = "应用性能"
-    message: str = ""
-    operation_name: str = ""
-    metric_name: str = ""
-    current_value: float = 0.0
-    threshold: float = 0.0
-    unit: str = ""
-
-    def __post_init__(self):
-        super().__post_init__()
-        self.data.update({
-            'level': self.level.value,
-            'category': self.category,
-            'message': self.message,
-            'operation_name': self.operation_name,
-            'metric_name': self.metric_name,
-            'current_value': self.current_value,
-            'threshold': self.threshold,
-            'unit': self.unit
-        })
-
-
-@dataclass
 class RealtimeDataEvent(BaseEvent):
     """
     实时数据事件
@@ -1068,50 +1010,6 @@ class ModelVersionRolledBackEvent(BaseEvent):
             'version_id': self.version_id,
             'version_number': self.version_number,
             'previous_version_id': self.previous_version_id
-        })
-
-
-@dataclass
-class PredictionRecordedEvent(BaseEvent):
-    """
-    预测记录事件
-    
-    当记录新的预测结果时触发
-    """
-    record_id: str = ""
-    model_version_id: str = ""
-    prediction_type: str = ""
-    confidence: float = 0.0
-
-    def __post_init__(self):
-        super().__post_init__()
-        self.data.update({
-            'record_id': self.record_id,
-            'model_version_id': self.model_version_id,
-            'prediction_type': self.prediction_type,
-            'confidence': self.confidence
-        })
-
-
-@dataclass
-class PredictionAccuracyUpdatedEvent(BaseEvent):
-    """
-    预测准确性更新事件
-    
-    当更新预测准确性时触发
-    """
-    record_id: str = ""
-    accuracy: float = 0.0
-    model_version_id: str = ""
-    prediction_type: str = ""
-
-    def __post_init__(self):
-        super().__post_init__()
-        self.data.update({
-            'record_id': self.record_id,
-            'accuracy': self.accuracy,
-            'model_version_id': self.model_version_id,
-            'prediction_type': self.prediction_type
         })
 
 

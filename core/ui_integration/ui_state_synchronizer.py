@@ -296,10 +296,17 @@ class UIStateSynchronizer(QObject):
     def _setup_event_handlers(self):
         """设置事件处理器"""
         if self.event_bus:
-            # 监听业务逻辑事件
-            self.event_bus.subscribe('task.status_changed', self._on_business_task_changed)
-            self.event_bus.subscribe('ai.status_updated', self._on_business_ai_changed)
-            self.event_bus.subscribe('performance.metrics_updated', self._on_business_performance_changed)
+            # 监听业务逻辑事件 (R243-A-001 修复 2026-08-04)
+            # Why: 原订阅名 (task.status_changed/ai.status_updated/performance.metrics_updated)
+            #      在项目中无任何发布方, 真实发布方分别为:
+            #      training.task.status_changed (model_training_service.py:575)
+            #      ai_selection.completed       (ai_selection_integration_service.py:688)
+            #      performance.metrics_collected (performance_service.py:267)
+            #      -> 3 个订阅永远收不到事件, UI 状态同步静默失效
+            # Fix: 订阅名与真实发布方对齐
+            self.event_bus.subscribe('training.task.status_changed', self._on_business_task_changed)
+            self.event_bus.subscribe('ai_selection.completed', self._on_business_ai_changed)
+            self.event_bus.subscribe('performance.metrics_collected', self._on_business_performance_changed)
 
     def register_sync_config(self, config: SyncConfiguration):
         """注册同步配置"""
@@ -415,10 +422,26 @@ class UIStateSynchronizer(QObject):
             if sync_key in self._pending_syncs:
                 del self._pending_syncs[sync_key]
 
+    def _extract_event_data(self, event: Event) -> Dict[str, Any]:
+        """从事件对象提取数据字典 (R243-A-001 修复 2026-08-04)
+
+        Why: EventBus.publish(str, **kwargs) 生成动态属性对象 (event_bus.py:477-485),
+             旧 handler 直接读 event.data -> AttributeError, 被 except 吞掉后同步静默失效
+        Fix: 优先取 event.data (dict 形式), 否则取对象动态属性
+        """
+        data = getattr(event, 'data', None)
+        if isinstance(data, dict):
+            return data
+        result = dict(getattr(event, '__dict__', None) or {})
+        # P2-1 (2026-08-04): 过滤 EventBus 内部附加键, 避免混入业务状态
+        result.pop('event_type', None)
+        result.pop('priority', None)
+        return result
+
     def _on_business_task_changed(self, event: Event):
-        """处理业务任务变更事件"""
+        """处理业务任务变更事件 (R243-A-001: 适配 training.task.status_changed)"""
         try:
-            task_data = event.data
+            task_data = self._extract_event_data(event)
             entity_id = task_data.get('task_id') or task_data.get('id')
             if entity_id:
                 self._sync_from_business('task', entity_id, task_data)
@@ -426,17 +449,17 @@ class UIStateSynchronizer(QObject):
             logger.error(f"处理业务任务变更事件失败: {e}")
 
     def _on_business_ai_changed(self, event: Event):
-        """处理业务AI状态变更事件"""
+        """处理业务AI选股变更事件 (R243-A-001: 适配 ai_selection.completed)"""
         try:
-            ai_data = event.data
+            ai_data = self._extract_event_data(event)
             self._sync_from_business('ai_status', 'global', ai_data)
         except Exception as e:
             logger.error(f"处理业务AI变更事件失败: {e}")
 
     def _on_business_performance_changed(self, event: Event):
-        """处理业务性能指标变更事件"""
+        """处理业务性能指标变更事件 (R243-A-001: 适配 performance.metrics_collected)"""
         try:
-            perf_data = event.data
+            perf_data = self._extract_event_data(event)
             self._sync_from_business('performance', 'global', perf_data)
         except Exception as e:
             logger.error(f"处理业务性能变更事件失败: {e}")

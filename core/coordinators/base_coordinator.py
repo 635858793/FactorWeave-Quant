@@ -28,8 +28,11 @@ class BaseCoordinator(ABC):
             service_container: 服务容器，如果为None则使用全局容器
             event_bus: 事件总线，如果为None则使用全局事件总线
         """
-        self._service_container = service_container or get_service_container()
-        self._event_bus = event_bus or get_event_bus()
+        # HVD-240-P0-007 (R240 交叉验证发现): 不能用 `event_bus or get_event_bus()`,
+        # EventBus 定义了 __len__ (event_bus.py:691-694), 空实例 len=0 为 falsy,
+        # 会静默忽略传入实例改用全局单例 (bettafish_monitoring_integration.py:22-24 官方规避模板)
+        self._service_container = service_container if service_container is not None else get_service_container()
+        self._event_bus = event_bus if event_bus is not None else get_event_bus()
         self._initialized = False
         self._disposed = False
         self._name = self.__class__.__name__

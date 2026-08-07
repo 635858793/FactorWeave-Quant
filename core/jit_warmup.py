@@ -43,6 +43,8 @@ class JITWarmupManager:
 
     def __init__(self):
         self._warmed: Dict[str, float] = {}
+        # R237 HVD-237-B-006: dispose 幂等标志 (R78 铁律 #6)
+        self._disposed = False
 
     def warmup_modules(self, module_names: List[str]) -> None:
         """
@@ -140,6 +142,61 @@ class JITWarmupManager:
             else:
                 return None  # 无法推断类型
         return kwargs
+
+    # ========================================================================
+    # R237 HVD-237-B-006: 4 链 dispose 治理 (R78 铁律)
+    # 业务影响: 1-2 业务方 (main.py 通过 get_jit_warmup_manager 调用, 启动期单例)
+    # 业务资源: _warmed (Dict[str, float]) - 预热函数记录
+    # ========================================================================
+    def dispose(self) -> None:
+        """R237 HVD-237-B-006: 4 链 dispose 入口 (R78 铁律 #6 幂等短路)"""
+        if getattr(self, '_disposed', False):
+            return
+        try:
+            self.shutdown()
+            self.close()
+            self.cleanup()
+        except Exception as e:
+            logger.warning(
+                f"JITWarmupManager.dispose 异常: {e}",
+                exc_info=True,
+            )
+        finally:
+            self._disposed = True
+
+    def shutdown(self) -> None:
+        """R237 HVD-237-B-006: shutdown - 业务数据清空 (_warmed dict)"""
+        try:
+            if hasattr(self, '_warmed') and isinstance(self._warmed, dict):
+                self._warmed.clear()
+        except Exception as e:
+            logger.warning(
+                f"JITWarmupManager.shutdown 异常: {e}",
+                exc_info=True,
+            )
+
+    def close(self) -> None:
+        """R237 HVD-237-B-006: close - 资源引用释放 (无外部子组件, 主要清理 _DUMMY_MAP 不需要)"""
+        try:
+            # JITWarmupManager 无外部子组件, close 主要做完整性确认
+            pass
+        except Exception as e:
+            logger.warning(
+                f"JITWarmupManager.close 异常: {e}",
+                exc_info=True,
+            )
+
+    def cleanup(self) -> None:
+        """R237 HVD-237-B-006: cleanup - 单例重置 (R235 子智能体 B: 启动期单例清理)"""
+        try:
+            # 启动期单例引用置 None, 允许 GC 回收
+            if hasattr(self, '_warmed'):
+                self._warmed = None
+        except Exception as e:
+            logger.warning(
+                f"JITWarmupManager.cleanup 异常: {e}",
+                exc_info=True,
+            )
 
 
 def _make_array(fill: float, length: int = 5, shape=None):

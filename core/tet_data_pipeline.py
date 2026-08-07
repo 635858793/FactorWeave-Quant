@@ -9,6 +9,7 @@ Transform-Extract-Transform数据处理管道
 
 import time
 import asyncio
+import concurrent.futures
 from typing import Dict, Any, Optional, List, Tuple, Union
 import pandas as pd
 from dataclasses import dataclass, field
@@ -100,6 +101,10 @@ class TETDataPipeline:
         # 异步处理
         self._executor = ThreadPoolExecutor(max_workers=4)
 
+        # 单数据源尝试超时（秒）: 防止单个数据源挂起
+        # (如本地数据缺失重试循环/网络半开连接) 长时间阻塞故障转移流程
+        self._per_source_timeout = 10.0
+
         # 性能统计
         self._stats = {
             "total_requests": 0,
@@ -127,7 +132,11 @@ class TETDataPipeline:
                 # 日期/时间
                 't': 'datetime', 'time': 'datetime', 'Time': 'datetime', 'timestamp': 'datetime', 'date': 'datetime', '日期': 'datetime',
                 # 其他常见字段
-                'vwap': 'vwap', 'VWAP': 'vwap', 'adj_close': 'adj_close'
+                'vwap': 'vwap', 'VWAP': 'vwap', 'adj_close': 'adj_close',
+                # 复权元数据字段直通: 无显式规则时 adj_type/adj_source 会被
+                # 模糊匹配误映射到 adj_close, 导致最终字段出现重复的 adj_close 列
+                'adj_type': 'adj_type', 'adj_source': 'adj_source',
+                'adj_factor': 'adj_factor'
             },
 
             # 实时数据映射
@@ -162,7 +171,7 @@ class TETDataPipeline:
                 'cash_and_equivalents': 'cash_and_equivalents', '货币资金': 'cash_and_equivalents', '现金及现金等价物': 'cash_and_equivalents',
                 'accounts_receivable': 'accounts_receivable', '应收账款': 'accounts_receivable', '应收账款净额': 'accounts_receivable',
                 'inventory': 'inventory', '存货': 'inventory', '存货净额': 'inventory',
-                'fixed_assets': 'fixed_assets', '固定资产': 'fixed_assets', '固定资产净额': 'fixed_assets',
+                'fixed_assets': 'fixed_assets', '固定资产': 'fixed_assets', '固定资产净额': 'fixed_assets', 'intangible_assets': 'intangible_assets',
 
                 'total_liabilities': 'total_liabilities', '负债总计': 'total_liabilities', '总负债': 'total_liabilities',
                 'current_liabilities': 'current_liabilities', '流动负债': 'current_liabilities', '流动负债合计': 'current_liabilities',
@@ -171,13 +180,16 @@ class TETDataPipeline:
                 'short_term_debt': 'short_term_debt', '短期借款': 'short_term_debt', '短期债务': 'short_term_debt',
                 'long_term_debt': 'long_term_debt', '长期借款': 'long_term_debt', '长期债务': 'long_term_debt',
 
-                'shareholders_equity': 'shareholders_equity', '股东权益': 'shareholders_equity', '净资产': 'shareholders_equity',
+                'shareholders_equity': 'shareholders_equity', '股东权益': 'shareholders_equity', '净资产': 'shareholders_equity', 'total_equity': 'shareholders_equity',
                 'paid_in_capital': 'paid_in_capital', '实收资本': 'paid_in_capital', '股本': 'paid_in_capital',
                 'retained_earnings': 'retained_earnings', '留存收益': 'retained_earnings', '未分配利润': 'retained_earnings',
 
                 # 利润表字段映射
-                'operating_revenue': 'operating_revenue', '营业收入': 'operating_revenue', 'revenue': 'operating_revenue', '总收入': 'operating_revenue',
-                'operating_costs': 'operating_costs', '营业成本': 'operating_costs', 'cost_of_sales': 'operating_costs',
+                # R258-P0: 补 'total_revenue' 键 —— 插件产出 eastmoney_fundamental_plugin.py:206
+                # 与 eastmoney_unified_plugin.py:440 的 TOTAL_OPERATE_INCOME 即营业收入总额,
+                # 缺映射时标准化失败 → 落库 Binder Error → 全事务 ROLLBACK (财务数据 0 行落库)
+                'operating_revenue': 'operating_revenue', '营业收入': 'operating_revenue', 'revenue': 'operating_revenue', '总收入': 'operating_revenue', 'total_revenue': 'operating_revenue',
+                'operating_costs': 'operating_costs', '营业成本': 'operating_costs', 'cost_of_sales': 'operating_costs', 'operating_cost': 'operating_costs',
                 'gross_profit': 'gross_profit', '毛利润': 'gross_profit', '毛利': 'gross_profit',
                 'operating_expenses': 'operating_expenses', '营业费用': 'operating_expenses', '期间费用': 'operating_expenses',
                 'selling_expenses': 'selling_expenses', '销售费用': 'selling_expenses', '销售成本': 'selling_expenses',
@@ -185,7 +197,7 @@ class TETDataPipeline:
                 'rd_expenses': 'rd_expenses', '研发费用': 'rd_expenses', 'r_and_d': 'rd_expenses',
                 'financial_expenses': 'financial_expenses', '财务费用': 'financial_expenses', '利息费用': 'financial_expenses',
                 'operating_profit': 'operating_profit', '营业利润': 'operating_profit', '经营利润': 'operating_profit',
-                'profit_before_tax': 'profit_before_tax', '利润总额': 'profit_before_tax', '税前利润': 'profit_before_tax',
+                'profit_before_tax': 'profit_before_tax', '利润总额': 'profit_before_tax', '税前利润': 'profit_before_tax', 'total_profit': 'profit_before_tax',
                 'income_tax': 'income_tax', '所得税费用': 'income_tax', '税费': 'income_tax',
                 'net_profit': 'net_profit', '净利润': 'net_profit', 'profit': 'net_profit', '净收益': 'net_profit',
                 'net_profit_attributable_to_parent': 'net_profit_attributable_to_parent', '归母净利润': 'net_profit_attributable_to_parent',
@@ -565,6 +577,7 @@ class TETDataPipeline:
                 return pd.DataFrame(), {}, failover_result
 
         # 尝试每个数据源
+        per_source_timeout = self._per_source_timeout
         for source_id in available_sources:
             attempts += 1
 
@@ -579,16 +592,23 @@ class TETDataPipeline:
                     failed_sources.append(source_id)
                     continue
 
-                # 检查连接状态
-                if not adapter.is_connected():
-                    if not adapter.connect():
-                        error_msg = f"数据源连接失败: {source_id}"
-                        error_messages.append(error_msg)
-                        failed_sources.append(source_id)
-                        continue
-
-                # 提取数据
-                raw_data = self._extract_from_source(adapter, routing_request, original_query)
+                # 将"连接检查 + 连接 + 提取"放入子线程并限定单源超时,
+                # 防止单个数据源挂起(如本地数据缺失重试循环/网络半开连接)
+                # 长时间阻塞整个故障转移流程
+                executor = ThreadPoolExecutor(max_workers=1)
+                try:
+                    future = executor.submit(
+                        self._try_source_once, adapter, routing_request, original_query)
+                    raw_data = future.result(timeout=per_source_timeout)
+                except concurrent.futures.TimeoutError:
+                    error_msg = f"数据源 {source_id} 尝试超过 {per_source_timeout:.1f}s, 已跳过"
+                    error_messages.append(error_msg)
+                    failed_sources.append(source_id)
+                    self.logger.warning(error_msg)
+                    continue
+                finally:
+                    # 不等待超时后可能遗留的子线程, 避免阻塞主流程
+                    executor.shutdown(wait=False)
 
                 if raw_data is not None and not raw_data.empty:
                     provider_info = {
@@ -632,6 +652,15 @@ class TETDataPipeline:
         )
 
         return pd.DataFrame(), {}, failover_result
+
+    def _try_source_once(self, adapter: DataSourcePluginAdapter,
+                         routing_request: RoutingRequest,
+                         original_query: StandardQuery) -> pd.DataFrame:
+        """在子线程中执行单次数据源尝试（连接检查 + 连接 + 提取）"""
+        if not adapter.is_connected():
+            if not adapter.connect():
+                raise RuntimeError(f"数据源连接失败: {adapter.plugin_id}")
+        return self._extract_from_source(adapter, routing_request, original_query)
 
     def _extract_from_source(self, adapter: DataSourcePluginAdapter,
                              routing_request: RoutingRequest,

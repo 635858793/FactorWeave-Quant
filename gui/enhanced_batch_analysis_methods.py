@@ -71,18 +71,20 @@ class EnhancedBatchAnalysisMixin:
             self._show_advanced_stock_filter()
 
     def _batch_select_all_stocks(self):
-        """全选股票"""
+        """全选股票 (多列网格, 需遍历所有列, H3)"""
         for i in range(self.batch_stock_list.rowCount()):
-            check_item = self.batch_stock_list.item(i, 0)
-            if check_item:
-                check_item.setCheckState(Qt.Checked)
+            for col in range(self.batch_stock_list.columnCount()):
+                check_item = self.batch_stock_list.item(i, col)
+                if check_item:
+                    check_item.setCheckState(Qt.Checked)
 
     def _batch_select_no_stocks(self):
-        """全不选股票"""
+        """全不选股票 (多列网格, 需遍历所有列, H3)"""
         for i in range(self.batch_stock_list.rowCount()):
-            check_item = self.batch_stock_list.item(i, 0)
-            if check_item:
-                check_item.setCheckState(Qt.Unchecked)
+            for col in range(self.batch_stock_list.columnCount()):
+                check_item = self.batch_stock_list.item(i, col)
+                if check_item:
+                    check_item.setCheckState(Qt.Unchecked)
 
     def _batch_import_stock_list(self):
         """导入股票列表"""
@@ -383,10 +385,10 @@ class EnhancedBatchAnalysisMixin:
                                 )
 
                                 if kline_data is not None and len(kline_data) > 0:
-                                    # 创建模式上下文
+                                    # 创建模式上下文 (使用面板配置的真实起止日期, H2)
                                     mode_context = ModeContext.create_backtest(
-                                        start_date=params.get('start_date') if 'params' in locals() else None,
-                                        end_date=params.get('end_date') if 'params' in locals() else None
+                                        start_date=start_date,
+                                        end_date=end_date
                                     )
                                     
                                     backtest_engine = self._get_backtest_engine()
@@ -452,15 +454,15 @@ class EnhancedBatchAnalysisMixin:
                                             self._publish_batch_analysis_event(analysis_result)
                                             return analysis_result
                                 else:
-                                    self._add_batch_log(f"无法获取数据: {stock['code']}，使用模拟数据")
+                                    self._add_batch_log(f"无法获取数据: {stock['code']}，返回空结果")
                             except Exception as data_error:
-                                self._add_batch_log(f"获取数据失败: {stock['code']} - {str(data_error)}，使用模拟数据")
+                                self._add_batch_log(f"获取数据失败: {stock['code']} - {str(data_error)}，返回空结果")
                         else:
-                            self._add_batch_log(f"股票服务不可用，使用模拟数据: {stock['code']}")
+                            self._add_batch_log(f"股票服务不可用，返回空结果: {stock['code']}")
                     else:
-                        self._add_batch_log(f"服务容器不可用，使用模拟数据: {stock['code']}")
+                        self._add_batch_log(f"服务容器不可用，返回空结果: {stock['code']}")
                 except Exception as e:
-                    self._add_batch_log(f"调用真实回测失败: {str(e)}，使用模拟数据")
+                    self._add_batch_log(f"调用真实回测失败: {str(e)}，返回空结果")
 
             mock_result = self._generate_improved_mock_result(stock, strategy)
             self._publish_batch_analysis_event(mock_result)
@@ -565,6 +567,9 @@ class EnhancedBatchAnalysisMixin:
         self._batch_analysis_running = False
         self._reset_batch_ui_state()
         self._add_batch_log("批量分析已停止")
+        # 注(H5): 已提交且正在执行的回测任务无法强制中断 (future.cancel() 仅对未开始
+        # 的任务有效), worker 循环会检查 _batch_analysis_running 标志, 已取消的任务
+        # 结果不再写入结果列表, 线程将在当前任务完成后自然退出。
 
     def _reset_batch_ui_state(self):
         """重置批量分析UI状态"""
@@ -596,6 +601,13 @@ class EnhancedBatchAnalysisMixin:
 
         self._add_batch_result_to_table(result)
 
+    @staticmethod
+    def _format_pct(value, digits=2):
+        """格式化百分比值, 数据不可用时 (None) 显示为 N/A"""
+        if value is None:
+            return 'N/A'
+        return f"{value:.{digits}%}"
+
     def _add_batch_result_to_table(self, result):
         """添加批量分析结果到表格"""
         row = self.batch_results_table.rowCount()
@@ -604,10 +616,11 @@ class EnhancedBatchAnalysisMixin:
         self.batch_results_table.setItem(row, 0, QTableWidgetItem(result['stock_code']))
         self.batch_results_table.setItem(row, 1, QTableWidgetItem(result['stock_name']))
         self.batch_results_table.setItem(row, 2, QTableWidgetItem(result['strategy']))
-        self.batch_results_table.setItem(row, 3, QTableWidgetItem(f"{result['return_rate']:.2%}"))
-        self.batch_results_table.setItem(row, 4, QTableWidgetItem(str(result['sharpe_ratio'])))
-        self.batch_results_table.setItem(row, 5, QTableWidgetItem(f"{result['max_drawdown']:.2%}"))
-        self.batch_results_table.setItem(row, 6, QTableWidgetItem(f"{result['win_rate']:.1%}"))
+        self.batch_results_table.setItem(row, 3, QTableWidgetItem(self._format_pct(result['return_rate'])))
+        self.batch_results_table.setItem(row, 4, QTableWidgetItem(
+            'N/A' if result['sharpe_ratio'] is None else str(result['sharpe_ratio'])))
+        self.batch_results_table.setItem(row, 5, QTableWidgetItem(self._format_pct(result['max_drawdown'])))
+        self.batch_results_table.setItem(row, 6, QTableWidgetItem(self._format_pct(result['win_rate'], 1)))
         self.batch_results_table.setItem(row, 7, QTableWidgetItem(str(result['total_trades'])))
 
     def _on_enhanced_batch_analysis_finished(self):
@@ -628,18 +641,31 @@ class EnhancedBatchAnalysisMixin:
             return
 
         total_combinations = len(self.enhanced_batch_results)
-        profitable_combinations = len(
-            [r for r in self.enhanced_batch_results if r['return_rate'] > 0])
+        self.batch_total_combinations_label.setText(str(total_combinations))
 
-        returns = [r['return_rate'] for r in self.enhanced_batch_results]
-        sharpe_ratios = [r['sharpe_ratio'] for r in self.enhanced_batch_results]
+        # 过滤数据不可用结果, 数值统计仅基于真实可用数据 (H1)
+        valid = [r for r in self.enhanced_batch_results if not r.get('data_unavailable')]
+
+        if not valid:
+            # 全部结果数据不可用, 显示"暂无数据"并跳过数值计算
+            self.batch_profitable_combinations_label.setText("0")
+            self.batch_best_return_label.setText("暂无数据")
+            self.batch_worst_return_label.setText("暂无数据")
+            self.batch_avg_return_label.setText("暂无数据")
+            self.batch_best_sharpe_label.setText("N/A")
+            return
+
+        profitable_combinations = len(
+            [r for r in valid if r['return_rate'] > 0])
+
+        returns = [r['return_rate'] for r in valid]
+        sharpe_ratios = [r['sharpe_ratio'] for r in valid]
 
         best_return = max(returns)
         worst_return = min(returns)
         avg_return = sum(returns) / len(returns)
         best_sharpe = max(sharpe_ratios)
 
-        self.batch_total_combinations_label.setText(str(total_combinations))
         self.batch_profitable_combinations_label.setText(str(profitable_combinations))
         self.batch_best_return_label.setText(f"{best_return:.2%}")
         self.batch_worst_return_label.setText(f"{worst_return:.2%}")
@@ -652,7 +678,10 @@ class EnhancedBatchAnalysisMixin:
             return
 
         reverse = True
-        self.enhanced_batch_results.sort(key=lambda x: x[sort_key], reverse=reverse)
+        # 数据不可用结果 (None 指标) 排序时按最小值处理, 避免 TypeError (H1)
+        self.enhanced_batch_results.sort(
+            key=lambda x: x.get(sort_key) if x.get(sort_key) is not None else float('-inf'),
+            reverse=reverse)
 
         self.batch_results_table.setRowCount(0)
         for result in self.enhanced_batch_results:
@@ -663,8 +692,10 @@ class EnhancedBatchAnalysisMixin:
         if not self.enhanced_batch_results:
             return
 
+        # 跳过数据不可用结果, 避免 None 比较报错 (H1)
         profitable_results = [
-            r for r in self.enhanced_batch_results if r['return_rate'] > 0]
+            r for r in self.enhanced_batch_results
+            if not r.get('data_unavailable') and r['return_rate'] > 0]
 
         self.batch_results_table.setRowCount(0)
         for result in profitable_results:

@@ -312,27 +312,36 @@ class CTPTradingInterface(TradingInterface):
 
             direction, offset = self._parse_order_direction(order.order_direction)
 
+            # R257-P0: 捕获 CTP 侧订单号 (ctpbee action 返回值), 供回报回调反查本地订单
+            # 注意: 返回值可能是字符串/对象/None (ctpbee 版本差异), 用 try/except 保守处理,
+            # 拿不到字符串订单号时仅记 debug 日志, 不阻断主流程
+            ctpbee_order_id = None
             try:
                 if direction == Direction.LONG:
                     if offset == Offset.OPEN:
-                        self._api.action.buy_open(order.price, order.order_quantity, order.stock_code)
+                        ctpbee_order_id = self._api.action.buy_open(order.price, order.order_quantity, order.stock_code)
                     else:
-                        self._api.action.buy_close(order.price, order.order_quantity, order.stock_code)
+                        ctpbee_order_id = self._api.action.buy_close(order.price, order.order_quantity, order.stock_code)
                 else:
                     if offset == Offset.OPEN:
-                        self._api.action.sell_open(order.price, order.order_quantity, order.stock_code)
+                        ctpbee_order_id = self._api.action.sell_open(order.price, order.order_quantity, order.stock_code)
                     else:
-                        self._api.action.sell_close(order.price, order.order_quantity, order.stock_code)
+                        ctpbee_order_id = self._api.action.sell_close(order.price, order.order_quantity, order.stock_code)
 
                 with self._order_lock:
                     self._orders[order.order_id] = order
+                    if ctpbee_order_id and isinstance(ctpbee_order_id, str):
+                        self._exchange_order_map[ctpbee_order_id] = order.order_id
+                    else:
+                        logger.debug(f"CTP下单未返回字符串订单号({ctpbee_order_id!r}), 跳过交易所映射: {order.order_id}")
 
                 logger.info(f"CTP订单提交成功: {order.order_id}")
 
                 return ExecutionResult(
                     order_id=order.order_id,
                     status=ExecutionStatus.SUCCESS,
-                    message="订单提交成功"
+                    message="订单提交成功",
+                    exchange_order_id=ctpbee_order_id if isinstance(ctpbee_order_id, str) else None
                 )
 
             except Exception as e:
@@ -388,8 +397,17 @@ class CTPTradingInterface(TradingInterface):
                 if order_id in self._orders:
                     order = self._orders[order_id]
                     try:
-                        self._api.action.cancel_order(order.stock_code, order_id)
-                        logger.info(f"CTP订单取消成功: {order_id}")
+                        # R257-P1: 撤单必须传 CTP 侧订单号 (本地 UUID 与 CTP 订单号不相交)
+                        # _exchange_order_map 语义为 exchange_id -> local_id, 此处按 local_id 反查;
+                        # get(order_id) 兜底兼容直接命中场景
+                        ctpbee_id = order_id
+                        for _ex_id, _local_id in self._exchange_order_map.items():
+                            if _local_id == order_id:
+                                ctpbee_id = _ex_id
+                                break
+                        ctpbee_id = self._exchange_order_map.get(order_id, ctpbee_id)
+                        self._api.action.cancel_order(order.stock_code, ctpbee_id)
+                        logger.info(f"CTP订单取消成功: {order_id} -> {ctpbee_id}")
                         return ExecutionResult(
                             order_id=order_id,
                             status=ExecutionStatus.SUCCESS,
@@ -719,38 +737,57 @@ class CTPTradingInterface(TradingInterface):
         try:
             logger.debug(f"CTP订单状态回调: {order.order_id}, status={order.status}")
 
+            # R257-P0: 回报回调的 order_id 是 CTP 侧订单号, 与本地 UUID 不相交,
+            # 必须经 _exchange_order_map 反查本地订单; `or ctpbee_id` 兜底兼容直接命中场景
+            ctpbee_id = order.order_id
+            local_id = self._exchange_order_map.get(ctpbee_id) or ctpbee_id
+
             with self._order_lock:
-                if order.order_id in self._orders:
-                    local_order = self._orders[order.order_id]
+                if local_id not in self._orders:
+                    logger.warning(f"CTP回报未匹配到本地订单: {ctpbee_id}")
+                    return
 
-                    status_map = {
-                        'SUBMITTING': OrderStatus.PENDING,
-                        'SUBMITTED': OrderStatus.SUBMITTED,
-                        'PARTTRADED': OrderStatus.PARTIALLY_FILLED,
-                        'ALLTRADED': OrderStatus.FILLED,
-                        'CANCELLED': OrderStatus.CANCELLED,
-                        'NOTTRADED': OrderStatus.PENDING,
-                    }
+                local_order = self._orders[local_id]
 
-                    new_status = status_map.get(order.status, OrderStatus.UNKNOWN)
-                    old_status = local_order.order_status
+                status_map = {
+                    'SUBMITTING': OrderStatus.PENDING,
+                    'SUBMITTED': OrderStatus.SUBMITTED,
+                    'PARTTRADED': OrderStatus.PARTIALLY_FILLED,
+                    'ALLTRADED': OrderStatus.FILLED,
+                    'CANCELLED': OrderStatus.CANCELLED,
+                    'NOTTRADED': OrderStatus.PENDING,
+                    'REJECTED': OrderStatus.REJECTED,
+                }
 
-                    if old_status != new_status:
-                        local_order.order_status = new_status
-                        logger.info(f"订单状态更新: {order.order_id} {old_status.value} -> {new_status.value}")
+                # R257-P0: 默认值 OrderStatus.UNKNOWN 不存在于枚举, 改用 FAILED
+                new_status = status_map.get(order.status, OrderStatus.FAILED)
+                old_status = local_order.order_status
 
-                        if self.event_bus and EVENT_BUS_AVAILABLE:
-                            try:
-                                self.event_bus.publish(
-                                    'order_status_changed',
-                                    order_id=order.order_id,
-                                    old_status=old_status.value,
-                                    new_status=new_status.value,
-                                    filled_quantity=order.traded_volume,
-                                    remaining_quantity=order.volume - order.traded_volume
-                                )
-                            except Exception as e:
-                                logger.error(f"发布订单状态变更事件失败: {e}")
+                if old_status != new_status:
+                    local_order.order_status = new_status
+                    logger.info(f"订单状态更新: {local_id} {old_status.value} -> {new_status.value}")
+
+                    if self.event_bus and EVENT_BUS_AVAILABLE:
+                        try:
+                            # R257-P1: ctpbee 字段名兼容 (traded_volume 可能不存在, 回退 traded)
+                            traded_volume = getattr(order, 'traded_volume', getattr(order, 'traded', 0))
+                            volume = getattr(order, 'volume', 0)
+                            self.event_bus.publish(
+                                'order_status_changed',
+                                order_id=local_id,
+                                old_status=old_status.value,
+                                new_status=new_status.value,
+                                filled_quantity=traded_volume,
+                                remaining_quantity=volume - traded_volume
+                            )
+                        except Exception as e:
+                            logger.error(f"发布订单状态变更事件失败: {e}")
+
+                # R257-P2: 终态清理, 防止 _orders/_exchange_order_map 内存累积
+                if new_status in (OrderStatus.FILLED, OrderStatus.CANCELLED,
+                                  OrderStatus.REJECTED, OrderStatus.EXPIRED):
+                    self._exchange_order_map.pop(ctpbee_id, None)
+                    self._orders.pop(local_id, None)
 
         except Exception as e:
             logger.error(f"处理CTP订单状态回调失败: {e}")
@@ -760,33 +797,40 @@ class CTPTradingInterface(TradingInterface):
         try:
             logger.debug(f"CTP成交回报回调: {trade.order_id}, price={trade.price}, volume={trade.volume}")
 
+            # R257-P0: 同 _on_order_data, 经 _exchange_order_map 反查本地订单
+            ctpbee_id = trade.order_id
+            local_id = self._exchange_order_map.get(ctpbee_id) or ctpbee_id
+
             with self._order_lock:
-                if trade.order_id in self._orders:
-                    order = self._orders[trade.order_id]
+                if local_id not in self._orders:
+                    logger.warning(f"CTP成交回报未匹配到本地订单: {ctpbee_id}")
+                    return
 
-                    order.filled_quantity += trade.volume
-                    if order.filled_quantity > 0:
-                        total_amount = order.filled_price * (order.filled_quantity - trade.volume) + trade.price * trade.volume
-                        order.filled_price = total_amount / order.filled_quantity
+                order = self._orders[local_id]
 
-                    if order.filled_quantity >= order.order_quantity:
-                        order.order_status = OrderStatus.FILLED
-                        logger.info(f"订单完全成交: {trade.order_id}")
+                order.filled_quantity += trade.volume
+                if order.filled_quantity > 0:
+                    total_amount = order.filled_price * (order.filled_quantity - trade.volume) + trade.price * trade.volume
+                    order.filled_price = total_amount / order.filled_quantity
 
-                    logger.info(f"成交回报: {trade.order_id} 价格={trade.price:.2f} 数量={trade.volume}")
+                if order.filled_quantity >= order.order_quantity:
+                    order.order_status = OrderStatus.FILLED
+                    logger.info(f"订单完全成交: {local_id}")
 
-                    if self.event_bus and EVENT_BUS_AVAILABLE:
-                        try:
-                            self.event_bus.publish(
-                                'order_filled',
-                                order_id=trade.order_id,
-                                trade_price=trade.price,
-                                trade_volume=trade.volume,
-                                filled_quantity=order.filled_quantity,
-                                avg_price=order.filled_price
-                            )
-                        except Exception as e:
-                            logger.error(f"发布成交事件失败: {e}")
+                logger.info(f"成交回报: {local_id} 价格={trade.price:.2f} 数量={trade.volume}")
+
+                if self.event_bus and EVENT_BUS_AVAILABLE:
+                    try:
+                        self.event_bus.publish(
+                            'order_filled',
+                            order_id=local_id,
+                            trade_price=trade.price,
+                            trade_volume=trade.volume,
+                            filled_quantity=order.filled_quantity,
+                            avg_price=order.filled_price
+                        )
+                    except Exception as e:
+                        logger.error(f"发布成交事件失败: {e}")
 
         except Exception as e:
             logger.error(f"处理CTP成交回报回调失败: {e}")

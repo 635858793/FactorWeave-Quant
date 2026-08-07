@@ -733,10 +733,10 @@ class SmartRecommendationPanel(QWidget):
                     except Exception as e:
                         self.finished.emit(False, f"连接错误: {str(e)}")
             
-            # 创建并启动测试线程
-            test_worker = ConnectionTestWorker(test_url)
-            test_worker.finished.connect(self._on_connection_test_finished)
-            test_worker.start()
+            # 创建并启动测试线程（保存引用，以便关闭时能停止线程）
+            self._connection_test_worker = ConnectionTestWorker(test_url)
+            self._connection_test_worker.finished.connect(self._on_connection_test_finished)
+            self._connection_test_worker.start()
             
         except Exception as e:
             logger.error(f"启动连接测试失败: {e}")
@@ -3773,12 +3773,14 @@ class SmartRecommendationPanel(QWidget):
 
             # 步骤 2: 清理 Worker 对象
             # Worker 对象通常包含信号连接，需要先断开连接再删除对象
+            # 注意：必须先停止运行中的线程再删除，否则对运行中 QThread 直接
+            # deleteLater() 会导致崩溃（R247 已确认的崩溃根因）
             workers = [
-                'hybrid_worker',          # 混合推荐工作线程
-                'cache_warmup_worker',    # 缓存预热工作线程
-                'cache_clear_worker',      # 缓存清理工作线程
-                'cache_stats_worker',      # 缓存统计工作线程
-                '_recommendation_worker'    # 推荐加载工作线程
+                'hybrid_worker',          # 混合推荐工作线程（QRunnable，线程池运行）
+                'cache_warmup_worker',    # 缓存预热工作线程（QRunnable，线程池运行）
+                'cache_clear_worker',      # 缓存清理工作线程（QRunnable，线程池运行）
+                'cache_stats_worker',      # 缓存统计工作线程（QRunnable，线程池运行）
+                '_recommendation_worker'    # 推荐加载工作线程（QThread）
             ]
 
             for worker_name in workers:
@@ -3791,12 +3793,48 @@ class SmartRecommendationPanel(QWidget):
                             worker.signals.disconnect()  # 断开所有信号连接
                         except Exception as e:
                             logger.warning(f"断开 {worker_name} 信号连接失败: {e}")
-                    
-                    # 步骤 2.2: 删除 Worker 对象
+
+                    # 步骤 2.2: 停止 Worker（先停止再删除，防止崩溃）
+                    try:
+                        if isinstance(worker, QThread):
+                            # QThread 子类：优先调用 stop()，否则请求中断
+                            if hasattr(worker, 'stop') and callable(getattr(worker, 'stop')):
+                                try:
+                                    worker.stop()
+                                except Exception:
+                                    worker.requestInterruption()
+                            else:
+                                worker.requestInterruption()
+                            if not worker.wait(3000):
+                                logger.warning(f"{worker_name} 3秒内未停止，继续等待至多5秒")
+                                worker.wait(5000)
+                        elif hasattr(worker, 'cancel') and callable(getattr(worker, 'cancel')):
+                            # QRunnable（线程池模式）：标记取消，由 QThreadPool 自动回收
+                            worker.cancel()
+                    except Exception as e:
+                        logger.warning(f"停止 {worker_name} 失败: {e}")
+
+                    # 步骤 2.3: 删除 Worker 对象
                     # deleteLater() 会安排对象在下一个事件循环中删除
-                    worker.deleteLater()
+                    # 注意：QRunnable 无 deleteLater 方法，由 QThreadPool 执行完成后自动删除
+                    if hasattr(worker, 'deleteLater'):
+                        worker.deleteLater()
                     setattr(self, worker_name, None)  # 清除引用
                     logger.debug(f"{worker_name} 已清理")
+
+            # 步骤 3: 停止并清理连接测试线程（ConnectionTestWorker）
+            if getattr(self, '_connection_test_worker', None) is not None:
+                try:
+                    if self._connection_test_worker.isRunning():
+                        self._connection_test_worker.requestInterruption()
+                        if not self._connection_test_worker.wait(3000):
+                            logger.warning("连接测试线程3秒内未停止，继续等待至多5秒")
+                            self._connection_test_worker.wait(5000)
+                    self._connection_test_worker.deleteLater()
+                except Exception as e:
+                    logger.warning(f"停止连接测试线程失败: {e}")
+                self._connection_test_worker = None
+                logger.debug("连接测试线程已清理")
 
             logger.info("资源清理完成")
         except Exception as e:

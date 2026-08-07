@@ -10,6 +10,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 from decimal import Decimal
 import asyncio
+import types
 
 from PyQt5.QtWidgets import (
     QAbstractItemView, QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QFormLayout,
@@ -33,6 +34,46 @@ from core.events import EventBus, StockSelectedEvent, TradeExecutedEvent, Positi
 # 纯Loguru架构，移除旧的日志导入
 logger = logger
 
+
+def _select_asset_type_for_account(account_id) -> 'AssetType':
+    """R254-P1: 根据账户上下文选择下单资产类型
+
+    有 ctp_account_id (期货/期权账户) → AssetType.FUTURES;
+    无 CTP 账户 (股票上下文) → AssetType.STOCK_A。
+
+    修复前 trading_panel.py:680 硬编码 AssetType.FUTURES → 股票账户订单写入
+    futures_orders DuckDB 池 (database_service.py:532-534 池名按 asset_type 派生)
+    → 跨池错位, 股票订单无法按 stock_a 池查询/撤单。
+    """
+    from core.plugin_types import AssetType
+    return AssetType.FUTURES if account_id else AssetType.STOCK_A
+
+
+def _position_to_render_row(position):
+    """R255-P1: 统一持仓渲染字段 (双源适配)
+
+    内存路径 Position (trading_service.Position) 字段为 symbol/avg_cost/profit_loss_pct;
+    AccountManager Position (account_models.Position) 字段为 stock_code/cost_price/
+    profit_loss_ratio。二者统一为渲染所需字段, 未知字段以 getattr 降级, 不抛异常。
+    """
+    if hasattr(position, 'symbol') and hasattr(position, 'avg_cost'):
+        return position  # 内存路径 Position 直接可用
+    return types.SimpleNamespace(
+        symbol=getattr(position, 'symbol', None) or getattr(position, 'stock_code', ''),
+        symbol_name=getattr(position, 'symbol_name', None) or getattr(position, 'stock_name', ''),
+        quantity=getattr(position, 'quantity', 0),
+        avg_cost=float(getattr(position, 'avg_cost', 0.0) or getattr(position, 'cost_price', 0.0) or 0.0),
+        current_price=float(getattr(position, 'current_price', 0.0) or 0.0),
+        market_value=float(getattr(position, 'market_value', 0.0) or 0.0),
+        profit_loss=float(getattr(position, 'profit_loss', 0.0) or 0.0),
+        profit_loss_pct=float(
+            getattr(position, 'profit_loss_pct', None)
+            if hasattr(position, 'profit_loss_pct')
+            else (getattr(position, 'profit_loss_ratio', 0.0) or 0.0)
+        ),
+    )
+
+
 class TradingPanel(QWidget):
     """
     交易面板
@@ -51,7 +92,8 @@ class TradingPanel(QWidget):
     def __init__(self,
                  trading_service: TradingService,
                  event_bus: EventBus,
-                 parent: Optional[QWidget] = None):
+                 parent: Optional[QWidget] = None,
+                 service_container=None):
         """
         初始化交易面板
 
@@ -59,11 +101,15 @@ class TradingPanel(QWidget):
             trading_service: 交易服务
             event_bus: 事件总线
             parent: 父窗口
+            service_container: 服务容器 (R253-P0-B: 供 OrderService/AccountManager 解析, 默认 None 兼容旧调用)
         """
         super().__init__(parent)
 
         self.trading_service = trading_service
         self.event_bus = event_bus
+        # R253-P0-B 修复: _service_container 赋值 (此前全文件无赋值 → _load_ctp_accounts
+        # :742-745 hasattr 判断恒短路 → CTP 账户加载逻辑不可达)
+        self._service_container = service_container
         # 纯Loguru架构，移除log_manager依赖
 
         # 当前状态
@@ -156,6 +202,24 @@ class TradingPanel(QWidget):
         
         ctp_control_layout.addStretch()
         stock_layout.addRow("CTP账户:", ctp_control_layout)
+
+        # 交易模式选择 (R256-P0 断点A 修复: GUI 实盘入口)
+        # 断点A 实证: order_executor.py:340 默认 paper + :1013 真实接口非 live 一律
+        # MODE_BLOCKED (真实资金安全闸门); 放行链 trading_service.set_mode (:325) →
+        # _sync_order_executor_trading_mode (:357-374) → OrderExecutor.set_trading_mode
+        # (:1522) 此前 GUI 无调用入口 → 实盘能力断链。本控件为显式入口:
+        # 切实盘强确认后联动 set_mode(LIVE), 切模拟直接 set_mode(PAPER)。
+        mode_control_layout = QHBoxLayout()
+        self.trading_mode_combo = QComboBox()
+        self.trading_mode_combo.addItems(["模拟交易", "实盘交易"])
+        self.trading_mode_combo.setCurrentIndex(0)  # 默认模拟交易 (安全默认)
+        self.trading_mode_combo.setToolTip(
+            "交易模式切换: 实盘模式需强确认; 真实 CTP/XTP 接口仅在实盘模式放行 "
+            "(order_executor.py:1013 模式闸门)")
+        self.trading_mode_combo.currentTextChanged.connect(self._on_trading_mode_changed)
+        mode_control_layout.addWidget(self.trading_mode_combo)
+        mode_control_layout.addStretch()
+        stock_layout.addRow("交易模式:", mode_control_layout)
 
         layout.addWidget(stock_group)
 
@@ -448,6 +512,13 @@ class TradingPanel(QWidget):
             self.refresh_position_btn.clicked.connect(self._refresh_positions)
             self.refresh_history_btn.clicked.connect(self._refresh_history)
 
+            # R255-P1: CTP 账户切换时刷新持仓 (双源切换后按新账户拉取真实持仓)
+            if hasattr(self, 'ctp_account_combo') and self.ctp_account_combo is not None:
+                try:
+                    self.ctp_account_combo.currentIndexChanged.connect(self._refresh_positions)
+                except Exception as e:
+                    logger.warning(f"连接CTP账户切换刷新信号失败: {e}")
+
             # 连接清空按钮
             self.clear_position_btn.clicked.connect(self._on_clear_positions)
 
@@ -633,7 +704,9 @@ class TradingPanel(QWidget):
             finished = pyqtSignal(object)
             error = pyqtSignal(str)
 
-            def __init__(self, trading_service, action, stock_code, stock_name, quantity, current_price=None, is_limit_order=False):
+            def __init__(self, trading_service, action, stock_code, stock_name, quantity,
+                         current_price=None, is_limit_order=False,
+                         service_container=None, account_id=None):
                 super().__init__()
                 self.trading_service = trading_service
                 self.action = action
@@ -642,8 +715,70 @@ class TradingPanel(QWidget):
                 self.quantity = quantity
                 self.current_price = current_price
                 self.is_limit_order = is_limit_order
+                self.service_container = service_container
+                self.account_id = account_id
 
             def run(self):
+                # R253-P1-C: OrderService 可用且账户有效时, 走真实落库链路
+                # (create_order + submit_order), 替代 TradingService 内存模拟盘
+                if self.service_container is not None and self.account_id:
+                    order_service = None
+                    try:
+                        from core.trading.order_service import OrderService
+                        resolve_order_service = getattr(
+                            self.service_container, 'try_resolve', self.service_container.resolve)
+                        order_service = resolve_order_service(OrderService)
+                    except Exception as e:
+                        logger.warning(f"解析 OrderService 失败, 回退内存模拟路径: {e}")
+                        order_service = None
+
+                    if order_service is not None:
+                        try:
+                            from core.trading.order_models import (
+                                OrderRequest,
+                                OrderType as CoreOrderType,
+                                OrderCategory as CoreOrderCategory,
+                            )
+
+                            order_request = OrderRequest(
+                                strategy_id='default',
+                                # R254-P1: asset_type 按账户上下文选择 (此前硬编码 FUTURES
+                                # → 股票账户订单写入 futures_orders 池, 跨池错位)
+                                asset_type=_select_asset_type_for_account(self.account_id),
+                                stock_code=self.stock_code,
+                                order_type=(CoreOrderType.BUY if self.action == 'BUY'
+                                            else CoreOrderType.SELL),
+                                order_category=(CoreOrderCategory.LIMIT if self.is_limit_order
+                                                else CoreOrderCategory.MARKET),
+                                order_price=float(self.current_price) if self.current_price else 0.0,
+                                order_quantity=self.quantity,
+                                user_id='default_user',
+                                account_id=self.account_id,
+                            )
+                            order = order_service.create_order(order_request)
+                            if order is None:
+                                self.error.emit("订单创建失败（OrderService 返回 None）")
+                                return
+                            result = order_service.submit_order(order.order_id)
+                            # 保持现有 UI 展示逻辑: 复用 TradeRecord 形状通知界面刷新
+                            trade_record = TradeRecord(
+                                symbol=self.stock_code,
+                                stock_name=self.stock_name,
+                                action='buy' if self.action == 'BUY' else 'sell',
+                                quantity=self.quantity,
+                                price=float(self.current_price) if self.current_price else 0.0,
+                                status='executed',
+                                order_id=order.order_id,
+                            )
+                            logger.info(
+                                f"OrderService 下单成功: {order.order_id} ({result.status.value if hasattr(result, 'status') else 'ok'})")
+                            self.finished.emit(trade_record)
+                            return
+                        except Exception as e:
+                            self.error.emit(f"订单提交失败: {e}")
+                            return
+
+                # 回退路径: TradingService 内存模拟盘
                 try:
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
@@ -668,10 +803,20 @@ class TradingPanel(QWidget):
                 finally:
                     loop.close()
 
+        # 从 CTP 账户下拉框取当前选中账户 (R253-P1-C: 无有效账户时走内存模拟回退)
+        account_id = None
+        if hasattr(self, 'ctp_account_combo') and self.ctp_account_combo is not None:
+            try:
+                account_id = self.ctp_account_combo.currentData()
+            except Exception:
+                account_id = None
+
         # 创建并启动工作线程
         self.trade_worker = TradeWorker(
             self.trading_service, action,
-            self._current_stock_code, self._current_stock_name, quantity, current_price, is_limit_order
+            self._current_stock_code, self._current_stock_name, quantity, current_price, is_limit_order,
+            service_container=getattr(self, '_service_container', None),
+            account_id=account_id,
         )
         self.trade_worker.finished.connect(self._on_trade_finished)
         self.trade_worker.error.connect(self._on_trade_error)
@@ -1015,21 +1160,53 @@ class TradingPanel(QWidget):
             logger.error(f"Failed to update portfolio chart: {e}")
 
     def _refresh_positions(self) -> None:
-        """刷新持仓表格"""
+        """刷新持仓表格 (R255-P1 双源切换)
+
+        优先: 有 account_id (ctp_account_combo 当前选中) 且
+        AccountManager.get_account_positions 返回非空 → 渲染真实账户持仓;
+        回退: AccountManager 空/异常/无 account_id → TradingService 内存持仓
+        (参考 _refresh_orders :1208-1228 的降级模式)。
+        """
         if not self._portfolio:
             return
 
         try:
-            positions = self._portfolio.positions
-            position_list = list(positions.values())
+            positions = None
+            # 数据源1: AccountManager 真实持仓 (账户级, DuckDB positions 表 + 接口同步)
+            if hasattr(self, '_service_container') and self._service_container is not None:
+                account_id = None
+                if hasattr(self, 'ctp_account_combo') and self.ctp_account_combo is not None:
+                    try:
+                        account_id = self.ctp_account_combo.currentData()
+                    except Exception:
+                        account_id = None
+                if account_id:
+                    try:
+                        from core.trading.account_manager import AccountManager
+                        resolve_am = getattr(
+                            self._service_container, 'try_resolve', self._service_container.resolve)
+                        account_manager = resolve_am(AccountManager)
+                        if account_manager is not None:
+                            am_positions = account_manager.get_account_positions(account_id)
+                            if am_positions:
+                                positions = [_position_to_render_row(p) for p in am_positions]
+                    except Exception as e:
+                        logger.warning(f"AccountManager 持仓查询失败, 回退内存持仓: {e}")
+                        positions = None
+
+            # 数据源2 (回退): TradingService 内存持仓
+            if positions is None:
+                positions = list(self._portfolio.positions.values())
+
+            position_list = positions
             self.position_table.setRowCount(len(position_list))
 
             for row, position in enumerate(position_list):
-                # 股票代码
-                self.position_table.setItem(row, 0, QTableWidgetItem(position.stock_code))
+                # 股票代码 (R252-F2: Position 字段为 symbol, 原 stock_code 不存在 → AttributeError)
+                self.position_table.setItem(row, 0, QTableWidgetItem(position.symbol))
 
-                # 股票名称
-                self.position_table.setItem(row, 1, QTableWidgetItem(position.stock_name))
+                # 股票名称 (R252-F2: 字段为 symbol_name)
+                self.position_table.setItem(row, 1, QTableWidgetItem(position.symbol_name))
 
                 # 持仓数量
                 self.position_table.setItem(row, 2, QTableWidgetItem(str(position.quantity)))
@@ -1057,51 +1234,272 @@ class TradingPanel(QWidget):
         except Exception as e:
             logger.error(f"Failed to refresh positions: {e}")
 
-    def _refresh_history(self) -> None:
-        """刷新交易历史表格"""
+    def _on_trading_mode_changed(self, mode_text: str) -> None:
+        """R256-P0 断点A 修复: GUI 交易模式切换 → TradingService.set_mode 联动。
+
+        断点A 实证 (R255 结论 + R256/R257 复核修正, 全部源码行号):
+        - order_executor.py:340 默认 _trading_mode='paper'; :1013 真实 CTP/XTP
+          接口在非 live 模式一律 MODE_BLOCKED —— 真实资金安全拦截闸门 (拦截报单)。
+        - 勘误 (R257): 真实闸门是 OrderExecutor._trading_mode, MODE_BLOCKED 是拦截
+          而非关闭风险控制; trading_service._trading_config["enable_risk_control"]
+          字段全项目 0 消费者, 并非风控闸门。
+        - 放行链已存在: trading_service.set_mode (:325) → _sync_order_executor_trading_mode
+          (:357-374) → OrderExecutor.set_trading_mode('live') (:1522)。
+        - 断链 (R257 已清理): backtest_widget.py 死代码模式控件/on_mode_changed
+          已删除; 本面板此前无任何交易模式控件。
+        - 修复: 切实盘强确认后联动 set_mode(LIVE), 切模拟直接 set_mode(PAPER);
+          交易服务缺失 / set_mode 异常 → 不崩溃, 选择器回退模拟。
+        """
         try:
+            from core.trading.trading_mode import TradingMode
+            if mode_text == "实盘交易":
+                if not self._confirm_enter_live_mode():
+                    self._revert_mode_combo("模拟交易")
+                    return
+                target_mode = TradingMode.LIVE
+            else:
+                target_mode = TradingMode.PAPER
+
+            if self.trading_service is None or not hasattr(self.trading_service, 'set_mode'):
+                logger.warning("交易服务不可用, 交易模式切换失败, 回退模拟交易")
+                self._revert_mode_combo("模拟交易")
+                return
+
+            self.trading_service.set_mode(target_mode)
+            logger.info(f"交易模式已切换: {mode_text} -> {target_mode.value}")
+        except Exception as e:
+            logger.error(f"交易模式切换失败: {e}, 回退模拟交易")
+            self._revert_mode_combo("模拟交易")
+
+    def _confirm_enter_live_mode(self) -> bool:
+        """实盘模式强确认 (R256-P0): 真实资金风险提示, 返回是否确认。
+
+        独立方法便于测试与后续扩展 (如输入确认文本二次校验)。
+        """
+        from PyQt5.QtWidgets import QMessageBox
+        ret = QMessageBox.warning(
+            self,
+            "切换实盘模式",
+            "即将切换到实盘交易模式!\n\n"
+            "风险提示:\n"
+            "1. 实盘模式下, 已连接的真实 CTP/XTP 接口将允许真实报单\n"
+            "2. 请确保账户环境、合约与风控配置正确\n"
+            "3. 实盘下单不可逆, 请谨慎操作\n\n"
+            "是否确认切换到实盘模式?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        return ret == QMessageBox.Yes
+
+    def _revert_mode_combo(self, target_text: str) -> None:
+        """回退交易模式选择器 (确认取消/切换失败时), blockSignals 防递归触发"""
+        if hasattr(self, 'trading_mode_combo') and self.trading_mode_combo is not None:
+            try:
+                self.trading_mode_combo.blockSignals(True)
+                idx = self.trading_mode_combo.findText(target_text)
+                if idx >= 0:
+                    self.trading_mode_combo.setCurrentIndex(idx)
+            finally:
+                self.trading_mode_combo.blockSignals(False)
+
+    def _refresh_history(self) -> None:
+        """刷新交易历史表格 (R256-P1: 双源切换)
+
+        优先: 真实已成交订单 (OrderService.query_orders FILLED) → 渲染落库成交
+        (core.trading.order_models.Order); OrderService 不可解析/异常/空结果时
+        回退内存路径 (trading_service.get_trade_history, 模拟成交记录)。
+        (参考 _refresh_orders :1266-1338 的降级模式)
+        """
+        try:
+            core_orders = None
+            if hasattr(self, '_service_container') and self._service_container is not None:
+                try:
+                    from core.trading.order_service import OrderService
+                    from core.trading.order_models import OrderQuery, OrderStatus
+                    resolve_order_service = getattr(
+                        self._service_container, 'try_resolve', self._service_container.resolve)
+                    order_service = resolve_order_service(OrderService)
+                    if order_service is not None:
+                        account_id = None
+                        if hasattr(self, 'ctp_account_combo') and self.ctp_account_combo is not None:
+                            try:
+                                account_id = self.ctp_account_combo.currentData()
+                            except Exception:
+                                account_id = None
+                        core_orders = order_service.query_orders(OrderQuery(
+                            order_statuses=[OrderStatus.FILLED],
+                            limit=100,
+                            sort_by='create_time',
+                            sort_order='desc',
+                            account_id=account_id,
+                        ))
+                except Exception as e:
+                    logger.warning(f"解析 OrderService 失败, 回退内存成交历史路径: {e}")
+                    core_orders = None
+
+            if core_orders is not None and len(core_orders) > 0:
+                self._render_core_history(core_orders)
+                return
+
+            # 降级提示 (仅当曾尝试 OrderService)
+            if hasattr(self, '_service_container') and self._service_container is not None:
+                logger.warning("OrderService 已成交订单为空或不可用, 回退内存成交历史路径")
+
+            # 回退路径: TradingService 内存模拟盘
             history = self.trading_service.get_trade_history(limit=100)
             self.history_table.setRowCount(len(history))
 
             for row, record in enumerate(history):
-                # 交易ID
-                self.history_table.setItem(row, 0, QTableWidgetItem(record.trade_id[:8]))
+                # 表头: 时间/交易编号/股票代码/股票名称/操作/价格/数量/金额/状态
+                # R252-F4: 修复前填充顺序与表头错位 (col0=交易ID...col7=时间), 现对齐表头
+
+                # 时间
+                time_str = record.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+                self.history_table.setItem(row, 0, QTableWidgetItem(time_str))
+
+                # 交易编号
+                self.history_table.setItem(row, 1, QTableWidgetItem(record.trade_id[:8]))
 
                 # 股票代码
-                self.history_table.setItem(row, 1, QTableWidgetItem(record.symbol))
+                self.history_table.setItem(row, 2, QTableWidgetItem(record.symbol))
 
                 # 股票名称
-                self.history_table.setItem(row, 2, QTableWidgetItem(record.stock_name))
+                self.history_table.setItem(row, 3, QTableWidgetItem(record.stock_name))
 
                 # 操作类型
                 action_text = "买入" if record.action == "buy" else "卖出"
-                self.history_table.setItem(row, 3, QTableWidgetItem(action_text))
-
-                # 数量
-                self.history_table.setItem(row, 4, QTableWidgetItem(str(record.quantity)))
+                self.history_table.setItem(row, 4, QTableWidgetItem(action_text))
 
                 # 价格
                 self.history_table.setItem(row, 5, QTableWidgetItem(f"{record.price:.2f}"))
 
-                # 金额
-                self.history_table.setItem(row, 6, QTableWidgetItem(f"{record.total_amount:.2f}"))
+                # 数量
+                self.history_table.setItem(row, 6, QTableWidgetItem(str(record.quantity)))
 
-                # 时间
-                time_str = record.timestamp.strftime("%Y-%m-%d %H:%M:%S")
-                self.history_table.setItem(row, 7, QTableWidgetItem(time_str))
+                # 金额
+                self.history_table.setItem(row, 7, QTableWidgetItem(f"{record.total_amount:.2f}"))
+
+                # 状态
+                status_text = {
+                    "executed": "已成交",
+                    "pending": "待确认",
+                    "failed": "失败",
+                }.get(record.status, str(record.status))
+                self.history_table.setItem(row, 8, QTableWidgetItem(status_text))
 
         except Exception as e:
             logger.error(f"Failed to refresh history: {e}")
 
+    def _render_core_history(self, orders) -> None:
+        """渲染 core.trading.order_models.Order 已成交订单列表 (R256-P1 真实落库数据源)
+
+        列映射 (与表头 时间/交易编号/股票代码/股票名称/操作/价格/数量/金额/状态 对齐):
+        col0 execute_time (可能为 None, order_models.py:69 → 显示 --) /
+        col1 order_id[:8] / col2 stock_code / col3 stock_code (Order 模型无
+        stock_name, 降级显示 code) / col4 order_type.value (买/卖映射) /
+        col5 filled_price / col6 filled_quantity / col7 filled_price*filled_quantity /
+        col8 order_status.value (8 值映射中文, 参照 _render_core_orders :1351-1361)
+        """
+        self.history_table.setRowCount(len(orders))
+
+        # OrderStatus 8 值中文文案 (core.trading.order_models.OrderStatus)
+        core_status_text = {
+            'pending': '待成交',
+            'submitted': '已提交',
+            'partially_filled': '部分成交',
+            'filled': '已成交',
+            'cancelled': '已取消',
+            'rejected': '已拒绝',
+            'expired': '已过期',
+            'failed': '失败',
+        }
+        # OrderType 方向中文文案 (buy/sell/short/cover)
+        core_direction_text = {
+            'buy': '买入',
+            'sell': '卖出',
+            'short': '卖空',
+            'cover': '买平',
+        }
+
+        for row, order in enumerate(orders):
+            # 时间 (execute_time 可能为 None)
+            if order.execute_time is not None:
+                time_str = order.execute_time.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                time_str = "--"
+            self.history_table.setItem(row, 0, QTableWidgetItem(time_str))
+
+            # 交易编号
+            self.history_table.setItem(row, 1, QTableWidgetItem(order.order_id[:8]))
+
+            # 股票代码
+            self.history_table.setItem(row, 2, QTableWidgetItem(order.stock_code))
+
+            # 股票名称 (Order 模型无 stock_name → 降级显示 code)
+            self.history_table.setItem(row, 3, QTableWidgetItem(order.stock_code))
+
+            # 操作类型 (order_type.value 映射 买/卖)
+            type_value = getattr(order.order_type, 'value', order.order_type)
+            direction_text = core_direction_text.get(type_value, str(type_value))
+            self.history_table.setItem(row, 4, QTableWidgetItem(direction_text))
+
+            # 价格 (成交价, 判 None)
+            filled_price = order.filled_price
+            price_text = f"{filled_price:.2f}" if filled_price is not None else "--"
+            self.history_table.setItem(row, 5, QTableWidgetItem(price_text))
+
+            # 数量 (成交数量)
+            self.history_table.setItem(row, 6, QTableWidgetItem(str(order.filled_quantity)))
+
+            # 金额 = filled_price * filled_quantity (判 None)
+            filled_quantity = order.filled_quantity if order.filled_quantity is not None else 0
+            amount = (filled_price if filled_price is not None else 0.0) * filled_quantity
+            self.history_table.setItem(row, 7, QTableWidgetItem(f"{amount:.2f}"))
+
+            # 状态 (order_status.value 8 值映射中文)
+            status_value = getattr(order.order_status, 'value', order.order_status)
+            status_text = core_status_text.get(status_value, str(status_value))
+            self.history_table.setItem(row, 8, QTableWidgetItem(status_text))
+
     def _refresh_orders(self) -> None:
         """刷新订单表格"""
         try:
+            # R254-P1: OrderService 可解析且查询返回非空时, 切换为真实落库订单数据源
+            # (core.trading.order_models.Order); OrderService 不可用或空结果时回退内存路径
+            # (trading_service.get_active_orders 惰性读取, 避免切换后仍查询内存模拟盘)
+            core_orders = None
+            if hasattr(self, '_service_container') and self._service_container is not None:
+                try:
+                    from core.trading.order_service import OrderService
+                    resolve_order_service = getattr(
+                        self._service_container, 'try_resolve', self._service_container.resolve)
+                    order_service = resolve_order_service(OrderService)
+                    if order_service is not None:
+                        account_id = None
+                        if hasattr(self, 'ctp_account_combo') and self.ctp_account_combo is not None:
+                            try:
+                                account_id = self.ctp_account_combo.currentData()
+                            except Exception:
+                                account_id = None
+                        core_orders = order_service.get_active_orders(account_id)
+                except Exception as e:
+                    logger.warning(f"解析 OrderService 失败, 回退内存订单路径: {e}")
+                    core_orders = None
+
+            if core_orders is not None and len(core_orders) > 0:
+                self._render_core_orders(core_orders)
+                return
+
+            # 回退路径: TradingService 内存模拟盘
             orders = self.trading_service.get_active_orders()
+
             self.orders_table.setRowCount(len(orders))
 
             for row, order in enumerate(orders):
-                # 订单ID
-                self.orders_table.setItem(row, 0, QTableWidgetItem(order.order_id[:8]))
+                # 订单ID (R252-F3: 展示截断 8 位, 完整 order_id 存入 UserRole 供撤销使用)
+                order_id_item = QTableWidgetItem(order.order_id[:8])
+                order_id_item.setData(Qt.UserRole, order.order_id)
+                self.orders_table.setItem(row, 0, order_id_item)
 
                 # 股票
                 self.orders_table.setItem(row, 1, QTableWidgetItem(f"{order.symbol_name}({order.symbol})"))
@@ -1137,6 +1535,78 @@ class TradingPanel(QWidget):
         except Exception as e:
             logger.error(f"Failed to refresh orders: {e}")
 
+    def _render_core_orders(self, orders) -> None:
+        """渲染 core.trading.order_models.Order 订单列表 (R254-P1 真实落库数据源)
+
+        列映射 (与表头 订单ID/股票/类型/方向/数量/价格/状态/创建时间 对齐):
+        col0 order_id / col1 stock_code (Order 模型无 symbol_name, 降级显示 code) /
+        col2 order_category.value / col3 order_type.value(映射 买/卖) /
+        col4 order_quantity / col5 order_price / col6 order_status.value(8 值映射中文) /
+        col7 create_time
+        """
+        self.orders_table.setRowCount(len(orders))
+
+        # OrderStatus 8 值中文文案 (core.trading.order_models.OrderStatus)
+        core_status_text = {
+            'pending': '待成交',
+            'submitted': '已提交',
+            'partially_filled': '部分成交',
+            'filled': '已成交',
+            'cancelled': '已取消',
+            'rejected': '已拒绝',
+            'expired': '已过期',
+            'failed': '失败',
+        }
+        # OrderType 方向中文文案 (buy/sell/short/cover)
+        core_direction_text = {
+            'buy': '买入',
+            'sell': '卖出',
+            'short': '卖空',
+            'cover': '买平',
+        }
+        # OrderCategory 类别中文文案 (market/limit/stop/stop_limit) - R255-P1
+        core_category_text = {
+            'market': '市价单',
+            'limit': '限价单',
+            'stop': '止损单',
+            'stop_limit': '止损限价单',
+        }
+
+        for row, order in enumerate(orders):
+            # 订单ID (保持 R252-F3 模式: 展示截断 8 位, 完整 order_id 存入 UserRole 供撤销使用)
+            order_id_item = QTableWidgetItem(order.order_id[:8])
+            order_id_item.setData(Qt.UserRole, order.order_id)
+            self.orders_table.setItem(row, 0, order_id_item)
+
+            # 股票 (Order 模型无 symbol_name, 降级显示 code)
+            self.orders_table.setItem(row, 1, QTableWidgetItem(order.stock_code))
+
+            # 类型 (order_category.value → 中文映射, 未知值保留原值)
+            category_value = getattr(order.order_category, 'value', order.order_category)
+            category_text = core_category_text.get(category_value, str(category_value))
+            self.orders_table.setItem(row, 2, QTableWidgetItem(category_text))
+
+            # 方向 (order_type.value 映射 买/卖)
+            type_value = getattr(order.order_type, 'value', order.order_type)
+            direction_text = core_direction_text.get(type_value, str(type_value))
+            self.orders_table.setItem(row, 3, QTableWidgetItem(direction_text))
+
+            # 数量
+            self.orders_table.setItem(row, 4, QTableWidgetItem(str(order.order_quantity)))
+
+            # 价格
+            price_text = f"{order.order_price:.2f}" if order.order_price else "--"
+            self.orders_table.setItem(row, 5, QTableWidgetItem(price_text))
+
+            # 状态 (order_status.value 8 值映射中文)
+            status_value = getattr(order.order_status, 'value', order.order_status)
+            status_text = core_status_text.get(status_value, str(status_value))
+            self.orders_table.setItem(row, 6, QTableWidgetItem(status_text))
+
+            # 创建时间
+            time_str = order.create_time.strftime("%Y-%m-%d %H:%M:%S")
+            self.orders_table.setItem(row, 7, QTableWidgetItem(time_str))
+
     def _on_order_selection_changed(self) -> None:
         """处理订单选择变化"""
         try:
@@ -1155,10 +1625,10 @@ class TradingPanel(QWidget):
                 QMessageBox.warning(self, "提示", "请先选择要撤销的订单")
                 return
 
-            # 获取订单ID
+            # 获取订单ID (R252-F3: 优先从 UserRole 读完整 ID, 表格文本是截断的 8 位无法匹配)
             row = selected_rows[0].row()
             order_id_item = self.orders_table.item(row, 0)
-            order_id = order_id_item.text()
+            order_id = order_id_item.data(Qt.UserRole) or order_id_item.text()
 
             # 确认撤销
             reply = QMessageBox.question(
@@ -1169,13 +1639,39 @@ class TradingPanel(QWidget):
             )
 
             if reply == QMessageBox.Yes:
-                success, message = self.trading_service.cancel_order(order_id)
-                
-                if success:
-                    QMessageBox.information(self, "成功", message)
-                    self._refresh_orders()
+                # R253-P1-C: OrderService 可用时优先走真实撤单链路, 否则回退 TradingService
+                order_service = None
+                if getattr(self, '_service_container', None) is not None:
+                    try:
+                        from core.trading.order_service import OrderService
+                        resolve_order_service = getattr(
+                            self._service_container, 'try_resolve', self._service_container.resolve)
+                        order_service = resolve_order_service(OrderService)
+                    except Exception as e:
+                        logger.warning(f"解析 OrderService 失败, 回退 TradingService 撤销: {e}")
+                        order_service = None
+
+                if order_service is not None:
+                    try:
+                        from core.trading.trading_types import ExecutionStatus
+                        result = order_service.cancel_order(order_id)
+                        if getattr(result, 'status', None) == ExecutionStatus.SUCCESS:
+                            QMessageBox.information(self, "成功", "订单已撤销")
+                        else:
+                            msg = getattr(result, 'message', None) or '撤销失败'
+                            QMessageBox.warning(self, "失败", str(msg))
+                        self._refresh_orders()
+                    except Exception as e:
+                        logger.error(f"OrderService 撤销订单失败: {e}")
+                        QMessageBox.critical(self, "错误", f"撤销订单失败: {e}")
                 else:
-                    QMessageBox.warning(self, "失败", message)
+                    success, message = self.trading_service.cancel_order(order_id)
+
+                    if success:
+                        QMessageBox.information(self, "成功", message)
+                        self._refresh_orders()
+                    else:
+                        QMessageBox.warning(self, "失败", message)
 
         except Exception as e:
             logger.error(f"Failed to cancel order: {e}")

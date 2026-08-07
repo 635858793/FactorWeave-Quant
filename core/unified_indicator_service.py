@@ -1501,6 +1501,18 @@ class UnifiedIndicatorService:
             inputs['low'] = df['low'].astype(np.float64).values
             inputs['close'] = df['close'].astype(np.float64).values
             inputs['volume'] = df['volume'].astype(np.float64).values
+        elif function_name == 'AROON':
+            # AROON: high + low (TA-Lib 标准)
+            inputs['high'] = df['high'].astype(np.float64).values
+            inputs['low'] = df['low'].astype(np.float64).values
+        elif function_name in ['DEMA', 'TEMA']:
+            # DEMA/TEMA: close (TA-Lib 标准)
+            inputs['close'] = df['close'].astype(np.float64).values
+        elif function_name == 'NATR':
+            # NATR: high + low + close (TA-Lib 标准)
+            inputs['high'] = df['high'].astype(np.float64).values
+            inputs['low'] = df['low'].astype(np.float64).values
+            inputs['close'] = df['close'].astype(np.float64).values
         else:
             # 默认使用close
             inputs['close'] = df['close'].astype(np.float64).values
@@ -1525,7 +1537,12 @@ class UnifiedIndicatorService:
             'OBV': [],  # OBV不需要参数
             'SAR': ['acceleration', 'maximum'],
             'MFI': ['timeperiod'],
-            'ADOSC': ['fastperiod', 'slowperiod']
+            'ADOSC': ['fastperiod', 'slowperiod'],
+            # R237-A-001 HVD-32 新增 4 指标元数据
+            'AROON': ['timeperiod'],  # 默认 timeperiod=14
+            'DEMA': ['timeperiod'],   # 默认 timeperiod=30
+            'TEMA': ['timeperiod'],   # 默认 timeperiod=30
+            'NATR': ['timeperiod'],   # 默认 timeperiod=14
         }
 
         # 只添加支持的参数

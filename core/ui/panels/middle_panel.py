@@ -1119,15 +1119,19 @@ class MiddlePanel(BasePanel):
 
             logger.info(f"股票选择: {self._current_stock_name} ({self._current_stock_code})")
 
-            # 直接使用事件中的K线数据更新图表，避免循环调用
+            # 事件回调中只更新状态，不直接渲染、不重复发布事件。
+            # 原实现误引用 MiddlePanel 上不存在的 chart_widget 属性
+            # (该属性属于 ChartCanvas)，导致 hasattr 恒为 False，即使事件
+            # 携带 K 线数据也落入"触发数据加载"分支，再次 publish 同 key 的
+            # StockSelectedEvent，形成"发布-订阅-再发布"回环并被事件总线去重。
+            # 正确设计: 数据加载统一由 EventCoordinator 负责(带 kline_data
+            # 直接使用，否则自行请求)，最终经 UIDataReadyEvent 驱动渲染一次，
+            # 避免双重渲染与重复加载。
             kline_data = getattr(event, 'kline_data', None)
-            if kline_data is not None and hasattr(self, 'chart_widget') and self.chart_widget:
-                logger.info(f"[MiddlePanel] 使用事件中的K线数据更新图表，记录数: {len(kline_data) if hasattr(kline_data, '__len__') else 'N/A'}")
-                self.chart_widget.update_chart({'kline_data': kline_data, 'stock_code': self._current_stock_code, 'stock_name': self._current_stock_name})
+            if kline_data is not None:
+                logger.info(f"[MiddlePanel] 事件携带K线数据（{len(kline_data) if hasattr(kline_data, '__len__') else 'N/A'}条），等待协调器统一渲染")
             else:
-                # 如果事件中没有K线数据，则触发数据加载
-                logger.info(f"[MiddlePanel] 事件中无K线数据，触发数据加载")
-                self._load_chart_data()
+                logger.debug(f"[MiddlePanel] 事件无K线数据，由协调器统一加载，不再重复发布事件")
 
         except Exception as e:
             logger.error(f"处理股票选择事件失败: {e}", exc_info=True)

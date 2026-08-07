@@ -59,6 +59,7 @@ class EventBus:
         self._handlers: Dict[str, List[SimpleEventHandler]] = {}
         self._global_handlers: List[SimpleEventHandler] = []
         self._lock = Lock()
+        self._stats_lock = Lock()  # R238-P1-2: 统计专用锁 (R100-F "锁独立" 铁律), 禁止与其他锁嵌套
 
         self._async_execution = async_execution
         self._executor = ThreadPoolExecutor(
@@ -90,6 +91,14 @@ class EventBus:
         self._cleanup_counter = 0
         self._CLEANUP_INTERVAL = 200
         self._orphan_removed_total = 0
+
+        # R238-NEW-P0-C 修复 (2026-08-01): 重建事件类型注册基座
+        # Why: R222/R234-G/R236-D 声称的 register_event_type() 在 EventBus 中从未存在
+        #      (R157 曾实现后物理删除), R8 §8.1 铁律 #1 双轨注册失去落地基础
+        # Fix: 重建 _event_types 注册表 + register_event_type() + publish 未注册 warning
+        # TDD: tests/test_r238_a_eventbus_register_event_type.py
+        self._event_types: Set[str] = set()
+        self._event_types_lock = threading.Lock()
 
         logger.info(
             f"Event bus initialized (async={async_execution}, dedup_window={deduplication_window}s, history={enable_history})")
@@ -123,31 +132,51 @@ class EventBus:
             if period:
                 key_parts.append(f"p:{period}")
 
+            # 去重键增加 time_range 维度:
+            # 原 key 不含 time_range, 同一股票同周期但不同时间范围的请求
+            # 在 0.5s 窗口内会互相误伤被去重丢弃
+            time_range = getattr(event, 'time_range', None)
+            if time_range:
+                key_parts.append(f"t:{time_range}")
+
             analysis_type = getattr(event, 'analysis_type', None)
             if analysis_type:
                 key_parts.append(f"a:{analysis_type}")
+
+            # R243-B-003 (2026-08-04): 资源告警去重键增加 alert_id 维度
+            # Why: ResourceAlertEvent 事件仅含 alert 属性, 无 stock_code/chart_type/period/
+            #      analysis_type, key 恒为 "ResourceAlertEvent" -> 同轮多资源超阈值
+            #      (CPU/MEMORY/DISK, resource_monitor.py:262-272) 在 0.5s 去重窗口内互相误伤
+            # Fix: 从 event.alert.alert_id 提取唯一键维度
+            alert = getattr(event, 'alert', None)
+            alert_id = getattr(alert, 'alert_id', None)
+            if alert_id:
+                key_parts.append(f"alert_id:{alert_id}")
 
             return ":".join(key_parts)
 
     def _should_deduplicate(self, event_key: str) -> bool:
         """检查事件是否应该被去重"""
+        deduplicate = False
         with self._dedup_lock:
             current_time = time.time()
             expired_threshold = current_time - self._deduplication_window
 
             if self._recent_events.get(event_key, 0) > expired_threshold:
-                self._stats['events_deduplicated'] += 1
-                return True
+                deduplicate = True
+            else:
+                self._recent_events[event_key] = current_time
 
-            self._recent_events[event_key] = current_time
+                if len(self._recent_events) > 2000:
+                    self._recent_events = {
+                        k: v for k, v in self._recent_events.items()
+                        if v > expired_threshold
+                    }
 
-            if len(self._recent_events) > 2000:
-                self._recent_events = {
-                    k: v for k, v in self._recent_events.items()
-                    if v > expired_threshold
-                }
-
-            return False
+        # R238-P1-2: 统计写点移出 _dedup_lock, 归 _stats_lock 域 (避免锁嵌套)
+        if deduplicate:
+            self._increment_stat('events_deduplicated')
+        return deduplicate
 
     def _add_to_history(self, event: BaseEvent) -> None:
         """添加事件到历史记录"""
@@ -198,7 +227,7 @@ class EventBus:
             exc = future.exception()
             if exc:
                 logger.error(f"Threadpool event handler failed: {exc}")
-                self._stats['errors'] += 1
+                self._increment_stat('errors')
 
                 if self._error_recursion_depth < self._max_error_recursion:
                     try:
@@ -289,9 +318,49 @@ class EventBus:
         except Exception as e:
             logger.error(f"Error executing event handler: {e}")
 
+    def _increment_stat(self, key: str) -> None:
+        """线程安全递增统计计数 (R238-P1-2: 全部统计写点统一归 _stats_lock 域).
+
+        修复前 _stats['...'] += 1 分散于 _lock/_dedup_lock/无锁 3 种域,
+        读-改-写非原子 → 并发计数丢失, 且锁域不一致.
+        """
+        with self._stats_lock:
+            self._stats[key] = self._stats.get(key, 0) + 1
+
     def _sort_handlers_by_priority(self, handlers: List[SimpleEventHandler]) -> List[SimpleEventHandler]:
         """按优先级排序处理器（优先级数值越小越先执行）"""
         return sorted(handlers, key=lambda h: getattr(h, 'priority', 0))
+
+    def register_event_type(self, event_type: Union[Type[BaseEvent], str], source: str = 'manual') -> bool:
+        """注册事件类型 (R8 §8.1 铁律 #1 双轨注册)
+
+        R238-NEW-P0-C 重建 (2026-08-01):
+        Why: R222 治理声称的双轨注册 (EventType 枚举名 + BaseEvent 子类名) 基座缺失,
+             本方法恢复 EventBus 事件注册能力, publish 时对未注册事件告警.
+        Fix: 支持 3 种输入 (BaseEvent 类 / 类名 str / 事件名字符串), 幂等注册.
+
+        Args:
+            event_type: BaseEvent 子类 / 类名字符串 / 事件名字符串
+            source: 注册来源标识 (默认 'manual')
+
+        Returns:
+            bool: True 为新注册, False 为已存在 (幂等)
+        """
+        # 解析注册名: 类 → 类名, str → 原样
+        if isinstance(event_type, type):
+            if not (issubclass(event_type, BaseEvent) or hasattr(event_type, 'event_type')):
+                logger.warning(f"register_event_type: {event_type} 不是 BaseEvent 子类, 跳过")
+                return False
+            type_name: str = event_type.__name__
+        else:
+            type_name = str(event_type)
+
+        with self._event_types_lock:
+            if type_name in self._event_types:
+                return False
+            self._event_types.add(type_name)
+            logger.debug(f"EventBus.register_event_type: type='{type_name}' source='{source}' (total types={len(self._event_types)})")
+            return True
 
     def subscribe(self, event_type: Union[Type[BaseEvent], str], handler: Callable[[BaseEvent], None],
                   priority: int = 0, event_filter: Optional[EventFilter] = None) -> None:
@@ -317,8 +386,18 @@ class EventBus:
                 handler, getattr(handler, '__name__', str(handler)), priority)
             self._handlers[event_name].append(handler_wrapper)
 
-            self._stats['handlers_registered'] += 1
             logger.debug(f"Subscribed {handler_wrapper.name} to {event_name} (priority={priority})")
+
+        # R242-A-001 修复 (2026-08-04): subscribe 自动注册事件类型
+        # Why: R238-NEW-P0-C publish 未注册 warning (L487-493) 落地后, 全项目业务代码
+        #      register_event_type() 零调用 → 所有有订阅者的事件 (SystemResourceUpdated 等)
+        #      每次 publish 均误报 warning, 日志噪音
+        # Fix: 订阅即代表业务方认可该事件类型, subscribe 时自动注册, 消除系统性误报;
+        #      显式 register_event_type() 仍保留, 用于无订阅者的纯发布事件
+        self.register_event_type(event_name, source='subscribe_auto')
+
+        # R238-P1-2: 统计写点在 _lock 块外, 归 _stats_lock 域 (避免锁嵌套)
+        self._increment_stat('handlers_registered')
 
     def subscribe_global(self, handler: Callable[[BaseEvent], None], priority: int = 0) -> None:
         """
@@ -400,9 +479,11 @@ class EventBus:
         """
         event_key = self._get_event_key(event, **kwargs)
         if self._should_deduplicate(event_key):
+            # _should_deduplicate 命中时内部已自增 events_deduplicated，
+            # 此处直接输出当前累计值，避免 +1 显示偏差
             logger.warning(
                 f"Event deduplicated and skipped: {event_key} "
-                f"(window={self._deduplication_window}s, total_deduplicated={self._stats['events_deduplicated'] + 1})"
+                f"(window={self._deduplication_window}s, total_deduplicated={self._stats['events_deduplicated']})"
             )
             return
 
@@ -414,17 +495,35 @@ class EventBus:
         with self._lock:
             if isinstance(event, str):
                 event_name = event
-                event_obj = type('Event', (), kwargs)()
+                # kwargs 必须为实例属性 (而非类属性), 否则 event_obj.__dict__ 为空,
+                # **kwargs 签名 handler (R238-P0-1) 将无法读取事件参数
+                event_obj = type('Event', (), {})()
+                for k, v in kwargs.items():
+                    setattr(event_obj, k, v)
                 event_obj.event_type = event_name
                 event_obj.priority = getattr(event_obj, 'priority', EventPriority.NORMAL)
             else:
                 event_name = event.__class__.__name__
                 event_obj = event
 
+            # R238-NEW-P0-C 修复 (2026-08-01): 未注册事件 warning (R8 §8.1 铁律 #1)
+            # Why: R74/R79 教训 — 未注册事件 publish 触发 warning 噪音, 帮助发现 ORPHAN_PUB
+            # Fix: 仅 warning 不阻断 (与 R8 §8.1 兼容), 自动注册误报则由业务方显式注册消除
+            # R240-P1-3: 锁域统一 — 写 _event_types 用 _event_types_lock (L341),
+            # 读 (L485) 原在 _lock 域内 → 同一数据两把锁 (子智能体 C/D 确认 P2)
+            with self._event_types_lock:
+                event_registered = event_name in self._event_types
+            if not event_registered:
+                logger.warning(
+                    f"[EventBus] 未注册事件 publish: {event_name!r} — "
+                    f"请用 register_event_type() 显式注册 (R8 §8.1 铁律 #1, R238-NEW-P0-C)"
+                )
+
             handlers_to_execute = self._handlers.get(event_name, []).copy()
             handlers_to_execute.extend(self._global_handlers)
 
-            self._stats['events_published'] += 1
+        # R238-P1-2: 统计写点在 _lock 块外, 归 _stats_lock 域 (避免锁嵌套)
+        self._increment_stat('events_published')
 
         handlers_to_execute = self._sort_handlers_by_priority(handlers_to_execute)
 
@@ -453,14 +552,25 @@ class EventBus:
                     with self._futures_lock:
                         self._active_futures.add(future)
                 else:
-                    _ = handler_wrapper.handler(event_obj)
+                    # 同步路径: 签名适配 (R238-P0-1)
+                    # 兼容 **kwargs 签名 handler (如 AccountManager 持仓同步 handler),
+                    # 修复前直接 handler(event_obj) 位置调用 → TypeError → 业务静默失效
+                    sig = inspect.signature(handler_wrapper.handler)
+                    params = list(sig.parameters.values())
+                    if not params:
+                        handler_wrapper.handler()
+                    elif any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params):
+                        handler_wrapper.handler(**getattr(event_obj, '__dict__', {}))
+                    else:
+                        handler_wrapper.handler(event_obj)
 
-                self._stats['events_handled'] += 1
+                # R238-P1-2: 统计写点归 _stats_lock 域
+                self._increment_stat('events_handled')
 
             except Exception as e:
                 logger.error(
                     f"Error in event handler {handler_wrapper.name}: {e}")
-                self._stats['errors'] += 1
+                self._increment_stat('errors')
 
                 if event_name != 'error' and self._error_recursion_depth < self._max_error_recursion:
                     try:
@@ -556,24 +666,30 @@ class EventBus:
 
     def get_stats(self) -> Dict[str, Any]:
         """获取性能统计信息"""
+        # R238-P1-2: 统计读点归 _stats_lock 域, 不再 _lock 内嵌套 _futures_lock (锁独立铁律)
+        with self._stats_lock:
+            stats_snapshot = dict(self._stats)
+        with self._futures_lock:
+            active_count = len(self._active_futures) if self._async_execution else 0
         with self._lock:
-            with self._futures_lock:
-                active_count = len(self._active_futures) if self._async_execution else 0
-            return {
-                **self._stats,
-                'active_handlers': sum(len(handlers) for handlers in self._handlers.values()),
-                'global_handlers': len(self._global_handlers),
-                'event_types': len(self._handlers),
-                'active_futures': active_count,
-                'history_size': len(self._event_history),
-                'orphan_removed_total': self._orphan_removed_total,
-                'cleanup_interval': self._CLEANUP_INTERVAL,
-                'cleanup_counter': self._cleanup_counter,
-            }
+            active_handlers = sum(len(handlers) for handlers in self._handlers.values())
+            global_handlers = len(self._global_handlers)
+            event_types = len(self._handlers)
+        return {
+            **stats_snapshot,
+            'active_handlers': active_handlers,
+            'global_handlers': global_handlers,
+            'event_types': event_types,
+            'active_futures': active_count,
+            'history_size': len(self._event_history),
+            'orphan_removed_total': self._orphan_removed_total,
+            'cleanup_interval': self._CLEANUP_INTERVAL,
+            'cleanup_counter': self._cleanup_counter,
+        }
 
     def clear_stats(self) -> None:
         """清空统计信息"""
-        with self._lock:
+        with self._stats_lock:
             self._stats = {
                 'events_published': 0,
                 'events_handled': 0,
@@ -607,6 +723,17 @@ class EventBus:
         """返回已注册的处理器总数"""
         with self._lock:
             return sum(len(handlers) for handlers in self._handlers.values()) + len(self._global_handlers)
+
+    def __bool__(self) -> bool:
+        """事件总线对象恒为有效引用 (R242-B-004 修复, 2026-08-04)
+
+        Why: 存在 __len__ 而无 __bool__ 时, Python 真值语义取 len()!=0.
+             总线刚创建 (0 订阅者) 时 bool(bus)==False → 全项目 30+ 处
+             `if self.event_bus:` (初始化期订阅/发布判断) 全部失效,
+             服务订阅从未注册 (如 aggregation_service.py:59). P0 级系统性 bug.
+        Fix: 显式 __bool__ 返回 True, 使真值判断恢复为"对象是否非 None".
+        """
+        return True
 
     def __repr__(self) -> str:
         """返回事件总线的字符串表示"""

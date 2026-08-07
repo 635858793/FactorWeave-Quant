@@ -5,6 +5,7 @@ from loguru import logger
 import os
 import json
 import time
+import threading  # HVD-241-P0-B: stop_event + 幂等守卫 + 线程句柄 (R241 线程生命周期治理)
 import pandas as pd
 import requests
 from datetime import datetime, timedelta
@@ -111,6 +112,17 @@ class IndustryManager(QObject):
             self.industry_data = {}
             self.last_update_time = None
             self.update_interval = timedelta(days=1)  # 默认1天更新一次
+
+            # HVD-241-P0-B: 后台线程生命周期治理 (R241-A 子智能体发现)
+            # Why: _schedule_background_update 创建 daemon 线程但句柄未保存、无停止机制,
+            #      且 load_cache 多路径调用 → 冷启动至少 2 线程并发 (unified_data_manager.py:288-289),
+            #      重复实例化还会翻倍; industry_service.py:478 hasattr(self._industry_manager, 'dispose')
+            #      恒 False → dispose 契约断裂
+            self._bg_stop_event = threading.Event()
+            self._bg_scheduled = False  # 幂等守卫: 防止重复调度创建多线程
+            self._bg_thread = None
+            self._disposed = False
+            self._bg_lock = Lock()
 
             logger.info("基础属性初始化完成")
 
@@ -252,15 +264,27 @@ class IndustryManager(QObject):
             self.industry_data = {}
 
     def _schedule_background_update(self) -> None:
-        """安排后台更新任务"""
+        """安排后台更新任务
+
+        HVD-241-P0-B (R241): 幂等守卫 + stop_event 可中断等待 + 线程句柄保存
+        Why: 原实现无守卫 (load_cache 多路径 → 冷启动多线程并发), 线程体固定延时 5 秒
+             硬阻塞且无句柄 → 无法停止 (R241-A 子智能体 + 主智能体验证)
+        """
         try:
-            import threading
+            # 幂等守卫: 同一实例仅调度一次, 防重复触发多线程
+            with self._bg_lock:
+                if self._bg_scheduled or self._disposed:
+                    logger.debug("后台更新已调度或已销毁，跳过重复调度")
+                    return
+                self._bg_scheduled = True
 
             def background_update():
                 try:
                     logger.info("开始后台更新任务")
-                    # 等待一段时间后开始更新，避免影响启动速度
-                    time.sleep(5)
+                    # 可中断等待 (stop_event.wait), 避免硬阻塞 5 秒且支持 dispose 快速停止
+                    if self._bg_stop_event.wait(5):
+                        logger.debug("后台更新被停止事件中断")
+                        return
                     success = self.update_industry_data(force=True)
                     if success:
                         logger.info("后台更新任务成功")
@@ -269,14 +293,36 @@ class IndustryManager(QObject):
                 except Exception as e:
                     logger.error(f"后台更新任务失败: {e}")
 
-            # 创建后台线程
-            update_thread = threading.Thread(
-                target=background_update, daemon=True)
-            update_thread.start()
+            # 创建后台线程 (保存句柄, dispose 时可 join)
+            with self._bg_lock:
+                self._bg_thread = threading.Thread(
+                    target=background_update, daemon=True)
+                self._bg_thread.start()
 
             logger.info("后台更新任务安排成功")
         except Exception as e:
             logger.error(f"安排后台更新任务失败: {e}")
+
+    def dispose(self) -> None:
+        """释放资源 (HVD-241-P0-B, R241)
+
+        Why: industry_service.py:478 hasattr(self._industry_manager, 'dispose') 恒 False
+             → 后台线程无停止契约; R241-A 子智能体确认真实缺陷 (中风险)
+        Fix: stop_event 通知 + join 等待线程退出 + 幂等短路 (R78 铁律 #6) + 失败不抛 (R8 #7)
+        """
+        if self._disposed:
+            return
+        try:
+            self._disposed = True
+            self._bg_stop_event.set()  # 通知后台线程退出
+            with self._bg_lock:
+                thread = self._bg_thread
+                self._bg_thread = None
+            if thread and thread.is_alive():
+                thread.join(timeout=5)  # 等待线程退出 (最长 5 秒)
+            logger.info("IndustryManager disposed")
+        except Exception as e:
+            logger.warning(f"IndustryManager dispose 失败: {e}")
 
     def _get_eastmoney_industry_data(self) -> Dict:
         """获取东方财富行业分类和板块数据

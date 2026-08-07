@@ -432,7 +432,8 @@ class TrendAnalysisTab(BaseAnalysisTab):
         advanced_layout.addWidget(self.enable_alerts_cb)
 
         self.auto_update_cb = QCheckBox("自动更新分析")
-        self.auto_update_cb.setChecked(self.advanced_options.get('auto_update', False))
+        self.advanced_options.setdefault('auto_update', True)
+        self.auto_update_cb.setChecked(self.advanced_options.get('auto_update', True))
         self.auto_update_cb.stateChanged.connect(self._on_advanced_option_changed)
         advanced_layout.addWidget(self.auto_update_cb)
 
@@ -1877,6 +1878,10 @@ class TrendAnalysisTab(BaseAnalysisTab):
             self.kdata = kdata
             self.current_kdata = kdata  # 保持数据一致性
             logger.info(f"设置K线数据成功，数据长度: {len(kdata) if kdata is not None else 0}")
+
+            # 数据就绪后触发自动分析（是否执行由 auto_update_cb 决定）
+            if kdata is not None and self.isVisible():
+                self.refresh_data()
         except Exception as e:
             logger.error(f"设置K线数据失败: {e}")
             self.kdata = None

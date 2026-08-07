@@ -817,7 +817,10 @@ class AISelectionBacktestService:
         try:
             logger.warning("系统性风险模拟依赖真实压力测试引擎，当前无法执行真实模拟。返回空结果。")
             return {}
-    
+        except Exception as e:
+            logger.error(f"系统性风险模拟失败: {e}")
+            return {}
+
     def _calculate_factor_attribution(self,
                                     backtest_result: pd.DataFrame,
                                     ai_signals: pd.DataFrame) -> Dict[str, Any]:

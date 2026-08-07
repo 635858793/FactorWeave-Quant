@@ -201,6 +201,9 @@ class PerformanceMonitor(QObject):
         self.analyzer = PerformanceAnalyzer()
         self.monitoring_enabled = True
         self.auto_report_enabled = self.config.get('auto_report', True)
+
+        # R78 幂等规范 (HVD-241-P0-C-1): 显式初始化, 与 dispose() 的 _disposed 短路对齐
+        self._disposed = False
         
         # 告警规则引擎
         self.alert_rule_engine = None
@@ -239,6 +242,49 @@ class PerformanceMonitor(QObject):
         """停止性能监控"""
         self.monitoring_enabled = False
         logger.info("性能监控已禁用")
+
+    def dispose(self) -> None:
+        """释放资源 (R239-P0-004, 2026-08-02)
+
+        Why: QObject, 2 个 QTimer (monitoring_timer L210-212 每 5 秒 +
+             report_timer L216-218 每 5 分钟) 启动后永不停 → 线程/定时器泄漏
+             (子智能体 A 交叉验证确认 P0)
+        Fix: R78 4 链标准 — _disposed 幂等短路 + 停 QTimer + 置监控标志
+             + 清空回调/统计 + 解除告警引擎引用
+        TDD: tests/test_r239_p0_dispose_chains.py
+        """
+        if getattr(self, '_disposed', False):
+            return
+        try:
+            self.monitoring_enabled = False
+
+            # 1. 停止 QTimer (getattr 防御 __new__ 构造场景)
+            for timer_name in ('monitoring_timer', 'report_timer'):
+                timer = getattr(self, timer_name, None)
+                if timer is not None and getattr(timer, 'isActive', lambda: False)():
+                    try:
+                        timer.stop()
+                    except Exception:
+                        pass
+
+            # 2. 清空回调与统计
+            callbacks = getattr(self, 'performance_callbacks', None)
+            if callbacks is not None:
+                self.performance_callbacks = []
+
+            stats = getattr(self, 'session_stats', None)
+            if stats is not None:
+                self.session_stats = {}
+
+            # 3. 解除引用
+            self.alert_rule_engine = None
+
+            self._disposed = True
+            logger.info("PerformanceMonitor disposed")
+
+        except Exception as e:
+            logger.warning(f"PerformanceMonitor dispose 失败: {e}")
+            self._disposed = True
     
     def _connect_alert_system(self) -> None:
         """连接告警系统"""

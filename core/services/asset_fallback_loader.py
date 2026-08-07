@@ -155,24 +155,31 @@ class AssetFallbackLoader:
             # 1. 优先使用 StockService
             if self.stock_service is not None:
                 if hasattr(self.stock_service, 'get_stock_list'):
-                    stock_list = self.stock_service.get_stock_list()
-                    if stock_list is not None and not stock_list.empty:
-                        df = stock_list.copy()
+                    # R244-P0-2 修复: StockService 初始化期间(_do_initialize → _load_stock_list
+                    # → DataAccess → StockRepository → data_manager.get_stock_list)会自我调用
+                    # 回同一尚未初始化完成的实例并抛 "Service StockService is not initialized"。
+                    # 未初始化完成时跳过服务路径，走 DuckDB/空后备，初始化完成后自动恢复。
+                    if not getattr(self.stock_service, '_initialized', False):
+                        logger.debug("StockService 尚未初始化完成，跳过服务路径，尝试从 DuckDB 获取")
+                    else:
+                        stock_list = self.stock_service.get_stock_list()
+                        if stock_list is not None and not stock_list.empty:
+                            df = stock_list.copy()
 
-                        # 重命名列
-                        if 'symbol' in df.columns and 'code' not in df.columns:
-                            df['code'] = df['symbol']
+                            # 重命名列
+                            if 'symbol' in df.columns and 'code' not in df.columns:
+                                df['code'] = df['symbol']
 
-                        # 添加 asset_type 列
-                        df['asset_type'] = asset_type.value
+                            # 添加 asset_type 列
+                            df['asset_type'] = asset_type.value
 
-                        # 过滤市场
-                        if valid_markets and 'market' in df.columns:
-                            df['market'] = df['market'].astype(str).str.upper().str.strip()
-                            df = df[df['market'].isin(valid_markets)]
+                            # 过滤市场
+                            if valid_markets and 'market' in df.columns:
+                                df['market'] = df['market'].astype(str).str.upper().str.strip()
+                                df = df[df['market'].isin(valid_markets)]
 
-                        logger.debug(f"从 StockService 获取 {asset_type.value} 资产列表: {len(df)} 条")
-                        return df
+                            logger.debug(f"从 StockService 获取 {asset_type.value} 资产列表: {len(df)} 条")
+                            return df
 
             # 2. 尝试从 DuckDB 获取
             if self.duckdb_manager is not None:

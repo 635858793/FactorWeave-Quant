@@ -62,13 +62,16 @@ from core.services.strategy_service import StrategyService
 
 data_manager = get_unified_data_manager()
 
-# 获取混合推荐引擎实例
+# 获取混合推荐引擎实例 (HVD-241-P2-C: 查询名必须匹配注册名)
+# Why: register 默认名 = class.__name__ = 'HybridRecommendationEngine' (service_registry.py:98),
+#      原查询 'hybrid_recommendation_engine' (snake_case) → get_service_info_by_name 字典直查
+#      永不命中 → HTTP API 永久 503 (R241-D 子智能体 + 主智能体验证)
 async def get_hybrid_engine():
     """获取混合推荐引擎实例"""
     try:
         container = get_service_container()
         if container:
-            engine = container.get_service('hybrid_recommendation_engine')
+            engine = container.get_service('HybridRecommendationEngine')
             if engine and hasattr(engine, 'is_initialized') and engine.is_initialized:
                 return engine
         return None
@@ -76,13 +79,13 @@ async def get_hybrid_engine():
         logger.error(f"获取混合推荐引擎失败: {e}")
         return None
 
-# 获取策略服务实例
+# 获取策略服务实例 (HVD-241-P2-C: 同上, 查询名 'strategy_service' → 注册名 'StrategyService')
 def get_strategy_service() -> Optional[StrategyService]:
     """获取策略服务实例"""
     try:
         container = get_service_container()
         if container:
-            service = container.get_service('strategy_service')
+            service = container.get_service('StrategyService')
             if service:
                 return service
         return None

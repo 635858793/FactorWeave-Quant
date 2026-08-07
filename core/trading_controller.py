@@ -80,7 +80,10 @@ class TradingController(QObject):
             return self.service_container.resolve(BacktestResultManager)
         except Exception as e:
             logger.warning(f"无法从服务容器获取BacktestResultManager，回退到直接创建: {e}")
-            return BacktestResultManager()
+            # HVD-241-P0-C-2c (R241-C 子智能体): 容器 resolve 失败时禁止裸建
+            # Why: 裸建实例不注册容器 → 退出链无人 dispose → DuckDB 连接引用泄漏
+            # Fix: return None, 调用方已有 None 容错 (R241-C 审计确认)
+            return None
 
     def initialize(self):
         """Initialize the trading controller"""

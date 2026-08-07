@@ -362,7 +362,7 @@ class AnalysisToolsPanel(BaseAnalysisPanel, EnhancedBatchAnalysisMixin):
             self.error_occurred.emit(f"信号连接失败: {str(e)}")
 
     def on_tools_panel_analyze(self):
-        """分析按钮点击处理"""
+        """分析按钮点击处理 - 执行真实回测分析"""
         try:
             logger.info("开始执行策略分析")
 
@@ -378,32 +378,59 @@ class AnalysisToolsPanel(BaseAnalysisPanel, EnhancedBatchAnalysisMixin):
             self.show_progress(True)
             self.set_progress(10)
 
-            # 模拟分析过程
-            QTimer.singleShot(1000, lambda: self.set_progress(50))
-            QTimer.singleShot(2000, lambda: self.set_progress(80))
-            QTimer.singleShot(3000, self.complete_analysis)
+            # 调用增强批量分析的启动入口执行真实回测（异步线程运行，
+            # 进度条由真实回测进度驱动，而非假定时器模拟）
+            self.start_enhanced_batch_analysis()
+
+            # 真实回测在后台线程执行，轮询线程结束后完成收尾（汇总真实结果）
+            def _wait_analysis_finished():
+                worker = getattr(self, 'enhanced_batch_worker', None)
+                if worker is not None and worker.is_alive():
+                    QTimer.singleShot(500, _wait_analysis_finished)
+                else:
+                    self.complete_analysis()
+
+            QTimer.singleShot(500, _wait_analysis_finished)
 
         except Exception as e:
             logger.error(f"分析执行失败: {str(e)}")
             self.error_occurred.emit(f"分析失败: {str(e)}")
 
     def complete_analysis(self):
-        """完成分析"""
+        """完成分析 - 汇总真实回测结果"""
         try:
             self.set_progress(100)
 
-            logger.warning("回测引擎未配置，无法生成真实回测结果。请配置回测引擎后重试。")
-            results = {
-                'strategy': self.strategy_combo.currentText(),
-                'total_return': None,
-                'sharpe_ratio': None,
-                'max_drawdown': None,
-                'win_rate': None,
-                'total_trades': 0
-            }
+            # 从真实回测结果中提取本次分析结果（不再写入假数据）
+            if getattr(self, 'enhanced_batch_results', None):
+                latest = self.enhanced_batch_results[-1]
+                results = {
+                    'strategy': latest.get('strategy', ''),
+                    'total_return': latest.get('return_rate'),
+                    'sharpe_ratio': latest.get('sharpe_ratio'),
+                    'max_drawdown': latest.get('max_drawdown'),
+                    'win_rate': latest.get('win_rate'),
+                    'total_trades': latest.get('total_trades', 0)
+                }
+                return_rate = results['total_return']
+                if return_rate is not None:
+                    self.update_status(
+                        f"分析完成: {latest.get('stock_name', '')} - "
+                        f"收益率 {return_rate:.2f}%")
+                else:
+                    self.update_status("分析完成（本次回测未获取到收益数据）")
+            else:
+                results = {
+                    'strategy': self.strategy_combo.currentText() if hasattr(self, 'strategy_combo') and self.strategy_combo else '',
+                    'total_return': None,
+                    'sharpe_ratio': None,
+                    'max_drawdown': None,
+                    'win_rate': None,
+                    'total_trades': 0
+                }
+                self.update_status("分析完成（未获得真实回测结果）")
 
             self.performance_metrics = results
-            self.update_status("分析完成（回测引擎未配置，结果为空）")
             self.show_progress(False)
 
             # 发射完成信号
@@ -472,8 +499,13 @@ class AnalysisToolsPanel(BaseAnalysisPanel, EnhancedBatchAnalysisMixin):
         """清理增强批量分析资源"""
         try:
             if hasattr(self, 'enhanced_batch_worker') and self.enhanced_batch_worker:
-                self.enhanced_batch_worker.quit()
-                self.enhanced_batch_worker.wait()
+                # 兼容 threading.Thread (无 quit/wait) 与 QThread (H5)
+                quit_method = getattr(self.enhanced_batch_worker, 'quit', None)
+                if callable(quit_method):
+                    quit_method()
+                wait_method = getattr(self.enhanced_batch_worker, 'wait', None)
+                if callable(wait_method):
+                    wait_method()
                 self.enhanced_batch_worker = None
 
             if hasattr(self, 'enhanced_batch_results'):

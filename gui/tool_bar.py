@@ -11,8 +11,8 @@ from PyQt5.QtWidgets import (
     QLabel, QPushButton, QLineEdit, QSpinBox, QComboBox,
     QHBoxLayout, QGroupBox, QFormLayout, QDialogButtonBox, QSizePolicy, QWidget
 )
-from PyQt5.QtCore import Qt, QSize, QKeySequence
-from PyQt5.QtGui import QIcon
+from PyQt5.QtCore import Qt, QSize
+from PyQt5.QtGui import QIcon, QKeySequence
 import os
 import traceback
 from gui.widgets.log_widget import LogWidget

@@ -1390,6 +1390,20 @@ class DatabaseService(BaseService):
         except Exception as e:
             logger.error(f"Backup operation failed: {e}")
 
+    def backup_now(self) -> None:
+        """立即执行数据库备份（公开接口）
+
+        包装私有方法 _perform_backup，供外部（如数据管理对话框）调用。
+        """
+        self._perform_backup()
+
+    def optimize_now(self) -> None:
+        """立即执行数据库优化（检查点）（公开接口）
+
+        包装私有方法 _perform_checkpoint，供外部（如数据管理对话框）调用。
+        """
+        self._perform_checkpoint()
+
     def _maintain_connection_pools(self) -> None:
         """维护连接池"""
         try:

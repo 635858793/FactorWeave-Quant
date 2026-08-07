@@ -111,7 +111,7 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
             ],
             capabilities={
                 "markets": ["SH", "SZ"],
-                "frequencies": ["1m", "5m", "15m", "30m", "60m", "D"],
+                "frequencies": ["1m", "5m", "15m", "30m", "60m", "D", "W", "M"],
                 "real_time_support": True,
                 "historical_data": True,
                 "fundamental_data": True,
@@ -232,7 +232,7 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
             ],
             capabilities={
                 "markets": ["SH", "SZ"],
-                "frequencies": ["1m", "5m", "15m", "30m", "60m", "D"],
+                "frequencies": ["1m", "5m", "15m", "30m", "60m", "D", "W", "M"],
                 "real_time_support": True,
                 "historical_data": True,
                 "fundamental_data": True,
@@ -440,16 +440,23 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
             # 频率映射
             freq_map = {
                 'D': 'daily',
+                'd': 'daily',
                 '1d': 'daily',
                 'daily': 'daily',
                 '1': 'daily',
                 'W': 'weekly',
+                'w': 'weekly',
                 '1w': 'weekly',
                 'weekly': 'weekly',
                 'M': 'monthly',
+                'm': 'monthly',
                 '1M': 'monthly',
-                '1m': '1min',
                 'monthly': 'monthly',
+                '1m': '1min',
+                '5m': '5min',
+                '15m': '15min',
+                '30m': '30min',
+                '60m': '60min',
                 '1min': '1min',
                 '5min': '5min',
                 '15min': '15min',
@@ -520,7 +527,7 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
             supported_data_types=[DataType.HISTORICAL_KLINE, DataType.REAL_TIME_QUOTE, DataType.FUNDAMENTAL],
             capabilities={
                 'supported_assets': [AssetType.STOCK_A],
-                'supported_frequencies': ['daily', 'weekly', 'monthly'],
+                'supported_frequencies': ['1min', '5min', '15min', '30min', '60min', 'daily', 'weekly', 'monthly'],
                 'requires_auth': False,
                 'rate_limit': '100/minute'
             }
@@ -867,7 +874,7 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
             supported_data_types=[DataType.HISTORICAL_KLINE, DataType.REAL_TIME_QUOTE, DataType.SECTOR_FUND_FLOW, DataType.FUNDAMENTAL],
             capabilities={
                 "markets": ["SH", "SZ"],
-                "frequencies": ["1m", "5m", "15m", "30m", "60m", "D"],
+                "frequencies": ["1m", "5m", "15m", "30m", "60m", "D", "W", "M"],
                 "real_time_support": True,
                 "historical_data": True,
                 "max_history_years": 10,

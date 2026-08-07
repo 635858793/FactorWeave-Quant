@@ -54,8 +54,11 @@ _LAZY_IMPORTS = {
 
 def __getattr__(name):
     if name in _LAZY_IMPORTS:
+        import importlib
         module_path, names = _LAZY_IMPORTS[name]
-        mod = __import__(module_path, fromlist=names, level=1)
+        # 使用 importlib.import_module 显式传入 package，避免 __import__ 相对导入
+        # 对 globals['__name__'] 的隐式依赖（R204-P1: "'__name__' not in globals" 根因）
+        mod = importlib.import_module(module_path, package=__name__)
         obj = getattr(mod, names[0])
         globals()[name] = obj
         return obj

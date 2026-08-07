@@ -3675,6 +3675,14 @@ class EnhancedDataImportWidget(QWidget):
         self._queue_monitor_start_time = None
         self.queue_monitor_timer.start(1000)  # 1秒更新一次队列统计
 
+        # 修复：启动K线下载监控面板自身的刷新定时器（此前 start_monitoring 从未被调用，
+        # 导致监控面板的"成功/失败/内存"标签永远停留在0，只有速度/队列能被动更新）
+        if hasattr(self, 'download_monitoring') and self.download_monitoring:
+            try:
+                self.download_monitoring.start_monitoring()
+            except Exception as e:
+                logger.debug(f"启动下载监控定时器失败: {e}")
+
         # IP监控更新计数器，用于降低更新频率
         self._ip_monitor_update_counter = 0
         self._ip_monitor_update_interval = 3  # 每3秒更新一次IP监控（降低频率）
@@ -3921,6 +3929,7 @@ class EnhancedDataImportWidget(QWidget):
                 Period.DAY.value: DataFrequency.DAILY,
                 Period.WEEK.value: DataFrequency.WEEKLY,
                 Period.MONTH.value: DataFrequency.MONTHLY,
+                Period.MIN1.value: DataFrequency.MINUTE_1,
                 Period.MIN5.value: DataFrequency.MINUTE_5,
                 Period.MIN15.value: DataFrequency.MINUTE_15,
                 Period.MIN30.value: DataFrequency.MINUTE_30,
@@ -4198,6 +4207,21 @@ class EnhancedDataImportWidget(QWidget):
                     'task_name': self.task_name_edit.text() if hasattr(self, 'task_name_edit') else ''
                 }
                 self.download_monitoring.update_progress(progress_data)
+
+                # 修复：同步任务真实成功/失败数到监控面板（此前 update_write_stats 从未被调用，
+                # 监控面板的"成功/失败/内存"标签永远为0）
+                try:
+                    task_status = self.import_engine.get_task_status(task_id) if self.import_engine else None
+                    if task_status:
+                        write_stats = {
+                            'success': getattr(task_status, 'processed_records', 0),
+                            'failure': getattr(task_status, 'failed_records', 0),
+                        }
+                        if self.memory_manager and hasattr(self.memory_manager, 'get_memory_usage'):
+                            write_stats['memory_usage'] = self.memory_manager.get_memory_usage()
+                        self.download_monitoring.update_write_stats(write_stats)
+                except Exception as e:
+                    logger.debug(f"同步任务统计到监控面板失败: {e}")
             except Exception as e:
                 logger.error(f"更新下载监控失败: {e}") if logger else None
 
@@ -4841,13 +4865,16 @@ class EnhancedDataImportWidget(QWidget):
                         status_text = "未开始"
 
                     # 计算成功数和失败数
+                    # 修复：TaskExecutionResult.processed_records 只累计"成功"的记录，
+                    # 原先 success_count = processed_records - failed_records 会把失败重复扣减，
+                    # 当失败数 > 成功数时出现负数。正确语义：processed_records 本身就是成功数。
                     success_count = 0
                     failure_count = 0
                     if task_status:
                         if hasattr(task_status, 'processed_records'):
                             total_processed = task_status.processed_records
                             failed = getattr(task_status, 'failed_records', 0)
-                            success_count = total_processed - failed
+                            success_count = total_processed
                             failure_count = failed
                         elif hasattr(task_status, 'success_count'):
                             success_count = task_status.success_count
@@ -5058,13 +5085,14 @@ class EnhancedDataImportWidget(QWidget):
                 status_text = "未开始"
 
             # 计算成功数和失败数
+            # 修复：processed_records 本身就是成功数，减去 failed_records 会导致成功数出现负数
             success_count = 0
             failure_count = 0
             if task_status:
                 if hasattr(task_status, 'processed_records'):
                     total_processed = task_status.processed_records
                     failed = getattr(task_status, 'failed_records', 0)
-                    success_count = total_processed - failed
+                    success_count = total_processed
                     failure_count = failed
                 elif hasattr(task_status, 'success_count'):
                     success_count = task_status.success_count
@@ -6203,6 +6231,7 @@ class EnhancedDataImportWidget(QWidget):
                         Period.DAY.value: DataFrequency.DAILY,
                         Period.WEEK.value: DataFrequency.WEEKLY,
                         Period.MONTH.value: DataFrequency.MONTHLY,
+                        Period.MIN1.value: DataFrequency.MINUTE_1,
                         Period.MIN5.value: DataFrequency.MINUTE_5,
                         Period.MIN15.value: DataFrequency.MINUTE_15,
                         Period.MIN30.value: DataFrequency.MINUTE_30,

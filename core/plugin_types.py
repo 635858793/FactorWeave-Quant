@@ -122,6 +122,7 @@ class DataType(Enum):
     # Stage 3 新增：财务和宏观经济数据类型
     FINANCIAL_STATEMENT = "financial_statement"    # 财务报表
     MACRO_ECONOMIC = "macro_economic"              # 宏观经济数据
+    ANALYST_RATING = "analyst_rating"              # 分析师评级
 
     # Stage 4 新增：量化系统完整支持
     STOCK_BASIC_INFO = "stock_basic_info"          # 股票基本信息

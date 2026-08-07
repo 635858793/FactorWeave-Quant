@@ -44,11 +44,19 @@ from PyQt5.QtGui import (
     QPolygonF, QCursor
 )
 
-from core.services.feature_control_service import (
-    FeatureControlService, FeatureConfig, FeatureStatus, FeatureLevel,
-    get_feature_control_service
-)
-from loguru import logger
+try:
+    from core.services.feature_control_service import (
+        FeatureControlService, FeatureConfig, FeatureStatus, FeatureLevel,
+        get_feature_control_service
+    )
+    from loguru import logger
+    CORE_AVAILABLE = True
+except ImportError as e:
+    logger = None
+    print(f"导入核心组件失败: {e}")
+    CORE_AVAILABLE = False
+
+logger = logger.bind(module=__name__) if logger else None
 
 
 class FeatureToggleDelegate(QStyledItemDelegate):

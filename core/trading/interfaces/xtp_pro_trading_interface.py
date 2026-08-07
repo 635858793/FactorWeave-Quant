@@ -13,12 +13,30 @@ from loguru import logger
 from core.trading.order_models import Order, OrderStatus
 from core.trading.trading_types import ExecutionResult, ExecutionStatus, TradingInterface
 
-try:
-    import xtp_api
-    XTP_AVAILABLE = True
-except ImportError:
-    XTP_AVAILABLE = False
-    logger.warning("XTP SDK未安装，使用模拟模式")
+# XTP SDK (C 扩展) 延迟导入：
+# import xtp_api 会加载原生 .pyd，可能触发 0xC0000005 (ACCESS_VIOLATION) 崩溃，
+# 且原生崩溃无法被 try/except ImportError 捕获。因此延迟到首次 connect/login 时才导入，
+# 避免在模块导入链（如 core.services）中加载 C 扩展导致进程崩溃。
+xtp_api = None
+XTP_AVAILABLE = False
+_xtp_import_attempted = False
+
+
+def _ensure_xtp_api_loaded():
+    """延迟加载 XTP SDK（首次连接时调用），返回 XTP_AVAILABLE 是否可用"""
+    global xtp_api, XTP_AVAILABLE, _xtp_import_attempted
+    if _xtp_import_attempted:
+        return XTP_AVAILABLE
+    _xtp_import_attempted = True
+    try:
+        import xtp_api
+        XTP_AVAILABLE = True
+        logger.info("XTP SDK加载成功")
+    except ImportError:
+        xtp_api = None
+        XTP_AVAILABLE = False
+        logger.warning("XTP SDK未安装，使用模拟模式")
+    return XTP_AVAILABLE
 
 try:
     from core.events.event_bus import EventBus
@@ -73,6 +91,9 @@ class XTPProTradingInterface(TradingInterface):
         try:
             logger.info("正在连接XTP Pro服务器...")
 
+            # 延迟加载 XTP SDK（首次连接时导入 C 扩展）
+            _ensure_xtp_api_loaded()
+
             if not XTP_AVAILABLE:
                 logger.warning("XTP SDK未安装，使用模拟模式")
                 self._connected = True
@@ -122,7 +143,8 @@ class XTPProTradingInterface(TradingInterface):
         """
         try:
             logger.info("正在登录XTP Pro账户...")
-
+            # 延迟加载 XTP SDK（首次登录时导入 C 扩展）
+            _ensure_xtp_api_loaded()
             if not self._connected:
                 logger.error("未连接到XTP Pro服务器")
                 return False

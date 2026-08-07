@@ -1308,10 +1308,16 @@ class PluginManagerDialogUnified(BaseDialog):
     def refresh_data_source_status(self):
         """刷新数据源状态"""
         try:
-            if not self.uni_data_manager and hasattr(self.plugin_manager, 'get_data_source_plugins'):
-                ds_plugins = self.plugin_manager.get_data_source_plugins()
-            else:
-                ds_plugins = {}
+            # R249 修复: 原逻辑在 uni_data_manager 可用时 ds_plugins 恒为空字典,
+            # 导致"数据源管理"Tab 在正常运行时表格永远空白。
+            # 统一从插件中心的数据源插件注册表取数（plugin_center.data_source_plugins）。
+            ds_plugins = {}
+            if self.uni_data_manager:
+                plugin_center = getattr(self.uni_data_manager, 'plugin_center', None)
+                if plugin_center is not None:
+                    ds_plugins = getattr(plugin_center, 'data_source_plugins', {}) or {}
+            if not ds_plugins and hasattr(self.plugin_manager, 'get_data_source_plugins'):
+                ds_plugins = self.plugin_manager.get_data_source_plugins() or {}
 
             self.data_source_table.setRowCount(len(ds_plugins))
 

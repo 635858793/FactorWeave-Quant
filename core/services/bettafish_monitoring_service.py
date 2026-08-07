@@ -30,6 +30,7 @@ class MetricType(Enum):
     GAUGE = "gauge"
     HISTOGRAM = "histogram"
     RATE = "rate"
+    RESPONSE_TIME = "response_time"
 
 
 class ComponentStatus(Enum):
@@ -83,7 +84,13 @@ class ComponentHealth:
 
 class BettaFishMonitoringService:
     """BettaFish性能监控和告警服务"""
-    
+
+    # R238 修复: 暴露类型引用为类属性 (测试/业务方通过 monitoring_service.PerformanceMetric 访问)
+    PerformanceMetric = PerformanceMetric
+    MetricType = MetricType
+    Alert = Alert
+    ComponentHealth = ComponentHealth
+
     def __init__(self, event_bus=None):
         self.event_bus = event_bus
         self.logger = logger
@@ -158,6 +165,11 @@ class BettaFishMonitoringService:
         
         self.logger.info("BettaFishMonitoringService initialized")
     
+    @property
+    def monitoring_active(self) -> bool:
+        """监控是否激活 (公开只读属性, 兼容项目其他监控类 API 约定)"""
+        return self._monitoring_active
+
     def start_monitoring(self):
         """启动性能监控"""
         if self._monitoring_active:
@@ -222,7 +234,7 @@ class BettaFishMonitoringService:
     def _check_all_components_sync(self):
         """同步版本：检查所有组件健康状态"""
         try:
-            # 模拟组件检查（在实际实现中应该调用真实的组件健康检查）
+            # 真实组件健康检查（无法获取真实状态时明确返回 UNKNOWN，而非模拟数据）
             components = ["bettafish_agent", "sentiment_agent", "news_agent", 
                          "technical_agent", "risk_agent", "fusion_engine"]
             
@@ -238,10 +250,17 @@ class BettaFishMonitoringService:
     async def _check_all_components(self):
         """检查所有组件健康状态"""
         try:
-            for component in self.monitoring_config.get("components", []):
+            # R238 修复: 与 _check_all_components_sync 共用组件列表,
+            # 原 monitoring_config.get("components", []) 配置无此键 → 循环永不执行
+            components = self.monitoring_config.get(
+                "components",
+                ["bettafish_agent", "sentiment_agent", "news_agent",
+                 "technical_agent", "risk_agent", "fusion_engine"]
+            )
+            for component in components:
                 try:
                     health = await self._check_component_health(component)
-                    await self._record_health_metric(component, health)
+                    self._record_health_metric(component, health)
                 except Exception as e:
                     self.logger.error(f"检查组件 {component} 健康状态失败: {e}")
         except Exception as e:
@@ -273,20 +292,104 @@ class BettaFishMonitoringService:
             )
 
     def _collect_performance_metrics_sync(self):
-        """同步版本：收集性能指标"""
+        """同步版本：收集性能指标（真实系统指标，psutil 不可用时返回空并告警）"""
         try:
-            # 模拟性能指标收集
-            pass
+            # 收集系统资源指标（psutil 真实数据）
+            system_metrics = self._collect_system_metrics()
+            for metric_name, value in system_metrics.items():
+                metric = PerformanceMetric(
+                    name=metric_name,
+                    value=value,
+                    metric_type=MetricType.GAUGE,
+                    timestamp=datetime.now(),
+                    component="system",
+                    tags={"metric_type": "system"}
+                )
+                self._store_metric(metric)
+
+            # 收集应用特定指标（基于真实 component_health 统计）
+            app_metrics = self._collect_application_metrics()
+            for metric_name, value in app_metrics.items():
+                metric = PerformanceMetric(
+                    name=metric_name,
+                    value=value,
+                    metric_type=MetricType.GAUGE,
+                    timestamp=datetime.now(),
+                    component="bettafish_app",
+                    tags={"metric_type": "application"}
+                )
+                self._store_metric(metric)
+
+            if not system_metrics and not app_metrics:
+                self.logger.warning("无法获取真实性能指标（psutil 不可用或组件无健康数据）")
         except Exception as e:
             self.logger.error(f"同步收集性能指标失败: {e}")
 
     def _check_performance_thresholds_sync(self):
-        """同步版本：检查性能阈值"""
+        """同步版本：检查性能阈值（真实阈值检查，创建告警不触发异步回调）"""
         try:
-            # 模拟阈值检查
-            pass
+            for component_name, thresholds in self.performance_thresholds.items():
+                if component_name not in self.component_health:
+                    continue
+                health = self.component_health[component_name]
+
+                # 检查响应时间阈值
+                if "response_time" in thresholds:
+                    warning_threshold = thresholds["response_time"]["warning"]
+                    critical_threshold = thresholds["response_time"]["critical"]
+                    if health.response_time >= critical_threshold:
+                        self._create_alert_sync(
+                            component_name, "response_time", health.response_time, critical_threshold,
+                            AlertSeverity.CRITICAL, f"响应时间严重超标: {health.response_time:.2f}s"
+                        )
+                    elif health.response_time >= warning_threshold:
+                        self._create_alert_sync(
+                            component_name, "response_time", health.response_time, warning_threshold,
+                            AlertSeverity.WARNING, f"响应时间超过警告阈值: {health.response_time:.2f}s"
+                        )
+
+                # 检查错误率阈值
+                if "error_rate" in thresholds and health.success_count + health.error_count > 0:
+                    error_rate = health.error_count / (health.success_count + health.error_count)
+                    warning_threshold = thresholds["error_rate"]["warning"]
+                    critical_threshold = thresholds["error_rate"]["critical"]
+                    if error_rate >= critical_threshold:
+                        self._create_alert_sync(
+                            component_name, "error_rate", error_rate * 100, critical_threshold * 100,
+                            AlertSeverity.CRITICAL, f"错误率严重超标: {error_rate:.2%}"
+                        )
+                    elif error_rate >= warning_threshold:
+                        self._create_alert_sync(
+                            component_name, "error_rate", error_rate * 100, warning_threshold * 100,
+                            AlertSeverity.WARNING, f"错误率超过警告阈值: {error_rate:.2%}"
+                        )
         except Exception as e:
             self.logger.error(f"同步检查性能阈值失败: {e}")
+
+    def _create_alert_sync(self, component: str, metric_name: str, current_value: float,
+                           threshold_value: float, severity: AlertSeverity, message: str):
+        """同步创建性能告警（不触发异步回调/通知）"""
+        try:
+            alert_key = f"{component}_{metric_name}_{severity.value}"
+            alert_id = f"alert_{int(time.time())}_{hash(alert_key) % 10000}"
+            alert = Alert(
+                alert_id=alert_id,
+                severity=severity,
+                component=component,
+                metric_name=metric_name,
+                current_value=current_value,
+                threshold_value=threshold_value,
+                message=message
+            )
+            # 检查是否已存在相同的未解决告警
+            if self._find_similar_active_alert(alert):
+                return
+            self.active_alerts[alert_id] = alert
+            self.alert_history.append(alert)
+            self.performance_stats["alerts_generated"] += 1
+            self.logger.warning(f"Performance alert created: {alert.message}")
+        except Exception as e:
+            self.logger.error(f"同步创建告警失败: {e}")
 
     def _cleanup_expired_alerts_sync(self):
         """同步版本：清理过期告警"""
@@ -307,10 +410,14 @@ class BettaFishMonitoringService:
             self.logger.error(f"同步清理过期告警失败: {e}")
 
     def _generate_periodic_report_sync(self):
-        """同步版本：生成定期报告"""
+        """同步版本：生成定期报告（每小时生成一次并通过事件总线发布）"""
         try:
-            # 模拟定期报告生成
-            pass
+            current_minute = datetime.now().minute
+            if current_minute == 0:  # 每小时开始时
+                report = self.generate_performance_report()
+                if self.event_bus:
+                    self.event_bus.publish("performance.periodic_report", report)
+                self.logger.info("Periodic performance report generated")
         except Exception as e:
             self.logger.error(f"同步生成定期报告失败: {e}")
     
@@ -502,8 +609,13 @@ class BettaFishMonitoringService:
                 "metadata": {"error": str(e)}
             }
     
-    async def _record_health_metric(self, component_name: str, health: ComponentHealth):
-        """记录健康指标"""
+    def _record_health_metric(self, component_name: str, health: ComponentHealth):
+        """记录健康指标
+
+        R238 修复: 原为 async, 但 _check_all_components_sync 同步路径直接调用不 await,
+        协程从不执行 → 健康指标永不记录 → 趋势分析/异常检测无数据 (RuntimeWarning 已证实).
+        方法体内无 await, 改为同步函数安全且修复双路径.
+        """
         metric = PerformanceMetric(
             name=f"{component_name}_health_status",
             value=1.0 if health.status == ComponentStatus.HEALTHY else 0.0,
@@ -733,9 +845,10 @@ class BettaFishMonitoringService:
                 "timestamp": alert.timestamp.isoformat()
             }
             
-            # 发送到事件总线
+            # 发送到事件总线 (R238 修复: publish 签名只接受 **kwargs, 原位置参数调用
+            # 触发 TypeError 被 except 静默吞掉 → 告警事件从未真正发布)
             if self.event_bus:
-                self.event_bus.publish("performance.alert", notification)
+                self.event_bus.publish("performance.alert", **notification)
             
             # 记录到日志
             if alert.severity in [AlertSeverity.ERROR, AlertSeverity.CRITICAL]:

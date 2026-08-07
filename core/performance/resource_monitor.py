@@ -15,6 +15,8 @@ from loguru import logger
 
 from PyQt5.QtCore import QObject, pyqtSignal
 
+from core.events.types import BaseEvent
+
 try:
     import psutil
     PSUTIL_AVAILABLE = True
@@ -103,6 +105,16 @@ class ResourceUsage:
             'unit': self.unit,
             'timestamp': self.timestamp.isoformat()
         }
+
+# R243-B-001 (2026-08-04): ResourceAlertEvent 从局部类提升为模块级类
+# Why: 原类在 _create_alert 内每次告警重新定义, 类名一致但违反事件类型全局定义惯例;
+#      订阅端 (alert_event_handler.py:456) 只能按字符串 'ResourceAlertEvent' 匹配
+# Fix: 模块级定义, 供 EventBus 去重键 (_get_event_key) 与订阅端稳定引用
+class ResourceAlertEvent(BaseEvent):
+    """资源告警事件"""
+    def __init__(self, alert: "ResourceAlert"):
+        super().__init__()
+        self.alert = alert
 
 class UnifiedResourceMonitor(QObject):
     """
@@ -193,6 +205,9 @@ class UnifiedResourceMonitor(QObject):
 
         # 事件总线引用（延迟加载）
         self._event_bus = None
+
+        # R237 HVD-237-B-004: dispose 幂等标志 (R78 铁律 #6)
+        self._disposed = False
 
         logger.info(f"统一资源监控器已初始化，监控间隔: {monitor_interval}s")
 
@@ -432,16 +447,9 @@ class UnifiedResourceMonitor(QObject):
             self.resource_alert.emit(alert_id, alert)
             self.threshold_exceeded.emit(resource_type, current_value, threshold_value)
 
-            # 发布事件
+            # 发布事件 (R243-B-001: 使用模块级 ResourceAlertEvent, 替代原局部类)
             if self._event_bus:
                 try:
-                    from core.events.types import BaseEvent
-
-                    class ResourceAlertEvent(BaseEvent):
-                        def __init__(self, alert: ResourceAlert):
-                            super().__init__()
-                            self.alert = alert
-
                     event = ResourceAlertEvent(alert)
                     self._event_bus.publish(event)
                 except Exception as e:
@@ -560,6 +568,85 @@ class UnifiedResourceMonitor(QObject):
         except Exception as e:
             logger.error(f"确认告警失败: {alert_id}, 错误: {e}")
             return False
+
+    # ========================================================================
+    # R237 HVD-237-B-004: 4 链 dispose 治理 (R78 铁律)
+    # 业务影响: 2-3 业务方 (GracefulShutdown.py:192, SystemMonitorTab, R10 启动期线程)
+    # 业务资源: _usage_history / _alert_history / _stats / _monitor_thread
+    # ========================================================================
+    def dispose(self) -> None:
+        """R237 HVD-237-B-004: 4 链 dispose 入口 (R78 铁律 #6 幂等短路)"""
+        if getattr(self, '_disposed', False):
+            return
+        try:
+            self.shutdown()
+            self.close()
+            self.cleanup()
+        except Exception as e:
+            logger.warning(
+                f"UnifiedResourceMonitor.dispose 异常: {e}",
+                exc_info=True,
+            )
+        finally:
+            self._disposed = True
+
+    def shutdown(self) -> None:
+        """R237 HVD-237-B-004: shutdown - 监控线程停止 + 业务数据清空"""
+        try:
+            # 1) 优先调用现有 stop 方法 (R235 子智能体 B 候选特征: 有 stop 但未接入统一链)
+            if hasattr(self, 'stop') and callable(getattr(self, 'stop')):
+                try:
+                    self.stop()
+                except Exception:
+                    pass
+            # 2) 业务数据清空
+            if hasattr(self, '_usage_history') and isinstance(self._usage_history, dict):
+                for q in self._usage_history.values():
+                    if hasattr(q, 'clear'):
+                        q.clear()
+            if hasattr(self, '_alert_history') and hasattr(self._alert_history, 'clear'):
+                self._alert_history.clear()
+        except Exception as e:
+            logger.warning(
+                f"UnifiedResourceMonitor.shutdown 异常: {e}",
+                exc_info=True,
+            )
+
+    def close(self) -> None:
+        """R237 HVD-237-B-004: close - 统计重置 + QObject 信号 disconnect"""
+        try:
+            # 重置 _stats
+            if hasattr(self, '_stats') and isinstance(self._stats, dict):
+                for k in self._stats:
+                    if isinstance(self._stats[k], (int, float)):
+                        self._stats[k] = 0
+            # 释放 _event_bus 引用
+            if hasattr(self, '_event_bus'):
+                self._event_bus = None
+        except Exception as e:
+            logger.warning(
+                f"UnifiedResourceMonitor.close 异常: {e}",
+                exc_info=True,
+            )
+
+    def cleanup(self) -> None:
+        """R237 HVD-237-B-004: cleanup - 监控配置 + 阈值引用置 None"""
+        try:
+            # 释放 _thresholds 引用 (重建时重新初始化)
+            if hasattr(self, '_thresholds'):
+                self._thresholds = None
+            # 释放 _monitor_thread 引用
+            if hasattr(self, '_monitor_thread'):
+                self._monitor_thread = None
+            # 释放 _stop_event 引用
+            if hasattr(self, '_stop_event'):
+                self._stop_event = None
+        except Exception as e:
+            logger.warning(
+                f"UnifiedResourceMonitor.cleanup 异常: {e}",
+                exc_info=True,
+            )
+
 
 # 全局实例
 _resource_monitor_instance: Optional[UnifiedResourceMonitor] = None

@@ -11,7 +11,7 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QGraphicsDropShadowEffect,
-    QScrollArea, QFrame, QSizePolicy, QSpacerItem
+    QScrollArea, QFrame, QSizePolicy, QSpacerItem, QListWidget, QListWidgetItem
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QPropertyAnimation, QEasingCurve, QRect, QSize, QSettings
 from PyQt5.QtGui import QColor, QPainter, QPen, QBrush, QLinearGradient, QFont, QIcon

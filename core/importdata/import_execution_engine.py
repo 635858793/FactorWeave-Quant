@@ -1058,8 +1058,10 @@ class DataImportExecutionEngine(QObject):
             统计字典，包含：
             - queue_size: 队列当前大小
             - queue_peak: 队列峰值大小
-            - total_writes: 总写入次数
-            - failed_writes: 失败写入次数
+            - total_writes: 总写入任务次数
+            - failed_writes: 失败写入任务次数
+            - total_records: 成功落库记录总数
+            - failed_records: 落库失败记录总数
             - merge_buffer_size: 合并缓冲区大小
             - is_stopped: 是否已停止
         """
@@ -1071,6 +1073,8 @@ class DataImportExecutionEngine(QObject):
                 'queue_peak': 0,
                 'total_writes': 0,
                 'failed_writes': 0,
+                'total_records': 0,
+                'failed_records': 0,
                 'merge_buffer_size': 0,
                 'is_stopped': True
             }

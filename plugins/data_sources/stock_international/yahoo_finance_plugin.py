@@ -527,7 +527,9 @@ class YahooFinanceDataSourcePlugin(IDataSourcePlugin):
             import requests
             test_url = f"{self.base_url}/v1/finance/trending/US"
             response = self.session.get(test_url, timeout=self.config.get('api_timeout', 30))
-            if response.status_code in [200, 403, 429, 451]:
+            # R248: 原实现将 403(地域封锁)/429(限流)/451 误判为成功，
+            # 选中此类数据源后所有数据请求必失败（R247"验证过浅"教训的 HTTP 变体）
+            if response.status_code == 200:
                 self.connection_time = datetime.now()
                 self.last_activity = datetime.now()
                 logger.info(f"{self.__class__.__name__} 连接成功")

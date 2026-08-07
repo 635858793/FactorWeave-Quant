@@ -30,6 +30,9 @@ class DatabaseWriterThread(threading.Thread):
 
         self._total_writes = 0
         self._failed_writes = 0
+        # 修复：补充真实记录数统计（落库成功/失败的记录条数），供监控面板计算真实速度
+        self._total_records = 0
+        self._failed_records = 0
         self._queue_peak = 0
         self._stats_lock = threading.RLock()
 
@@ -84,6 +87,7 @@ class DatabaseWriterThread(threading.Thread):
         last_timeout_check = time.time()
 
         while not self._stop_event.is_set() or not self.write_queue.empty():
+            task = None
             try:
                 current_time = time.time()
                 queue_size = self.write_queue.qsize()
@@ -99,27 +103,37 @@ class DatabaseWriterThread(threading.Thread):
                     last_timeout_check = time.time()
                     continue
 
-                success = self._write_task_to_database(task)
-
-                with self._stats_lock:
-                    if success:
-                        self._total_writes += 1
-                    else:
+                try:
+                    success = self._write_task_to_database(task)
+                    with self._stats_lock:
+                        if success:
+                            self._total_writes += 1
+                        else:
+                            self._failed_writes += 1
+                except Exception as e:
+                    # 修复：写入任务抛出异常时，也必须计入失败并保证 task_done() 被调用，
+                    # 否则 queue.join() 会永久阻塞，且统计失真
+                    logger.error(f"写入任务异常: {e}", exc_info=True)
+                    if task is not None:
+                        self._failed_tasks.append(task)
+                        if len(self._failed_tasks) > self._max_retry_queue:
+                            oldest = self._failed_tasks.pop(0)
+                            stock_code = oldest.buffer_key if hasattr(oldest, 'buffer_key') else 'unknown'
+                            logger.warning(f"重试队列已满，丢弃最旧任务: {stock_code}")
+                    with self._stats_lock:
                         self._failed_writes += 1
-
-                self.write_queue.task_done()
+                finally:
+                    # 修复：无论成功/失败/异常都必须调用 task_done()
+                    self.write_queue.task_done()
 
             except Exception as e:
                 logger.error(f"写入任务失败: {e}", exc_info=True)
-                try:
-                    task
-                except NameError:
-                    continue
-                self._failed_tasks.append(task)
-                if len(self._failed_tasks) > self._max_retry_queue:
-                    oldest = self._failed_tasks.pop(0)
-                    stock_code = oldest.buffer_key if hasattr(oldest, 'buffer_key') else 'unknown'
-                    logger.warning(f"重试队列已满，丢弃最旧任务: {stock_code}")
+                if task is not None:
+                    self._failed_tasks.append(task)
+                    if len(self._failed_tasks) > self._max_retry_queue:
+                        oldest = self._failed_tasks.pop(0)
+                        stock_code = oldest.buffer_key if hasattr(oldest, 'buffer_key') else 'unknown'
+                        logger.warning(f"重试队列已满，丢弃最旧任务: {stock_code}")
 
         self._flush_merge_buffer()
 
@@ -223,8 +237,16 @@ class DatabaseWriterThread(threading.Thread):
                 write_speed = record_count / write_duration if write_duration > 0 else 0
                 logger.info(f"[写入线程] 写入成功: {buffer_key}, {record_count}条记录, 耗时: {write_duration:.2f}秒, 速度: {write_speed:.1f}条/秒")
                 del self._merge_buffer[buffer_key]
+                with self._stats_lock:
+                    self._total_records += record_count
             else:
-                logger.error(f"❌ [写入线程] 写入失败: {buffer_key}")
+                # 修复：写入失败时也必须清空缓冲区，
+                # 否则旧数据残留与新数据合并会造成重复写入（数据重复），
+                # 或反复失败导致缓冲区无限增长（内存泄漏）
+                logger.error(f"❌ [写入线程] 写入失败: {buffer_key}, 丢弃 {record_count}条记录 (待任务级重试)")
+                del self._merge_buffer[buffer_key]
+                with self._stats_lock:
+                    self._failed_records += record_count
 
             return success
 
@@ -289,13 +311,16 @@ class DatabaseWriterThread(threading.Thread):
 
     def get_stats(self) -> Dict[str, Any]:
         with self._stats_lock:
-            merge_buffer_size = sum(len(buffer_list) for buffer_list in self._merge_buffer.values())
+            with self._merge_lock:
+                merge_buffer_size = sum(len(buffer_list) for buffer_list in self._merge_buffer.values())
 
             return {
                 'queue_size': self.write_queue.qsize(),
                 'queue_peak': self._queue_peak,
                 'total_writes': self._total_writes,
                 'failed_writes': self._failed_writes,
+                'total_records': self._total_records,
+                'failed_records': self._failed_records,
                 'merge_buffer_size': merge_buffer_size,
                 'is_stopped': self._stopped
             }

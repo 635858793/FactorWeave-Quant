@@ -377,13 +377,40 @@ class UnifiedServiceContainer(ServiceContainer):
         # 按相反顺序关闭服务
         shutdown_order = list(reversed(self.get_startup_order()))
 
+        # HVD-239-P0-001 兜底 (2026-08-02): 生产注册路径 (service_bootstrap.py)
+        # 全程走 register_instance/register/register_factory, 从不调用
+        # register_core_service/resolve_with_lifecycle → _dependencies/_initialized_services
+        # 恒空 → get_startup_order() 返回 [] → 原实现 dispose 循环空转 (实测 P0:
+        # FakeService.disposed=False, 服务 dispose 根本不被调用)
+        # Fix: 依赖图为空时兜底遍历 _instances (ServiceContainer 层已实例化服务),
+        # 按实例化逆序 (LIFO) 释放, 兼容 register_instance + resolve 两条注册路径
+        if not shutdown_order:
+            instances = list(self._instances.keys())
+            shutdown_order = list(reversed(instances))
+            logger.warning(
+                f"服务依赖图为空, 兜底按实例化逆序释放 {len(shutdown_order)} 个已实例化服务")
+
         for service_type in shutdown_order:
             try:
-                if service_type in self._initialized_services:
+                # 兼容两种注册路径: register_core_service (走 _initialized_services)
+                # 与 bootstrap register_instance/resolve (走 _instances)
+                if service_type in self._initialized_services or service_type in self._instances:
                     service = self.resolve(service_type)
-                    if hasattr(service, 'dispose') and callable(service.dispose):
-                        logger.info(f"Disposing service {service_type.__name__}")
-                        service.dispose()
+
+                    # R240-P1-A (2026-08-02): 4 链释放 (R238-P1-4 底层已支持,
+                    # 统一容器 L399 原只认 dispose → ConfigService.cleanup 等孤儿
+                    # 方法永不执行, 11 个注册服务受影响)
+                    # Fix: 复用底层 4 链顺序 (dispose/close/shutdown/cleanup),
+                    # 每个方法失败仅 warning 不中断 (R78 幂等防御)
+                    for method_name in ('dispose', 'close', 'shutdown', 'cleanup'):
+                        if hasattr(service, method_name):
+                            try:
+                                method = getattr(service, method_name)
+                                if callable(method):
+                                    logger.info(f"Disposing service {service_type.__name__} via {method_name}()")
+                                    method()
+                            except Exception as e:
+                                logger.error(f"✗ {service_type.__name__}.{method_name}() failed: {e}")
 
                     self._initialized_services.discard(service_type)
                     self._update_service_status(service_type, ServiceStatus.DISPOSED)

@@ -51,6 +51,11 @@ class ParameterScanThread(QThread):
             step_size = (max_val - min_val) / (self.steps - 1)
             
             for i in range(self.steps):
+                # 检查是否请求中断（宿主关闭时）
+                if self.isInterruptionRequested():
+                    logger.info("参数扫描被中断")
+                    return
+
                 # 计算当前值
                 if isinstance(self.strategy.parameters[self.param_name].value, int):
                     current_val = int(min_val + i * step_size)
@@ -69,7 +74,10 @@ class ParameterScanThread(QThread):
                     if name in self.strategy.parameters:
                         self.strategy.set_parameter(name, value)
                 
-                # 执行回测（模拟）
+                # 执行回测前再次检查中断（回测为耗时操作）
+                if self.isInterruptionRequested():
+                    logger.info("参数扫描在回测前被中断")
+                    return
                 result = self._simulate_backtest(current_val)
                 self.results.append({
                     'param_value': current_val,
@@ -154,6 +162,11 @@ class ParameterComparisonThread(QThread):
             results = []
             
             for i, preset in enumerate(self.presets):
+                # 检查是否请求中断（宿主关闭时）
+                if self.isInterruptionRequested():
+                    logger.info("参数对比被中断")
+                    return
+
                 progress = int((i + 1) / len(self.presets) * 100)
                 self.comparison_progress.emit(progress, f"测试预设：{preset['name']}")
                 
@@ -162,7 +175,10 @@ class ParameterComparisonThread(QThread):
                     if name in self.strategy.parameters:
                         self.strategy.set_parameter(name, value)
                 
-                # 执行回测（模拟）
+                # 执行回测前再次检查中断（回测为耗时操作）
+                if self.isInterruptionRequested():
+                    logger.info("参数对比在回测前被中断")
+                    return
                 result = self._simulate_backtest()
                 results.append({
                     'preset_name': preset['name'],
@@ -254,7 +270,33 @@ class ParameterEditorWidget(QWidget):
         self.recommendation_cache = {}
         
         self._init_ui()
-        
+
+    def closeEvent(self, event):
+        """关闭事件：停止后台扫描/对比线程，防止线程在对象销毁后继续运行导致崩溃"""
+        # 停止参数扫描线程
+        if self.scan_thread is not None and self.scan_thread.isRunning():
+            try:
+                self.scan_thread.requestInterruption()
+                if not self.scan_thread.wait(3000):
+                    logger.warning("参数扫描线程3秒内未停止，继续等待至多5秒")
+                    self.scan_thread.wait(5000)
+            except Exception as e:
+                logger.error(f"停止参数扫描线程失败: {e}")
+        self.scan_thread = None
+
+        # 停止参数对比线程
+        if self.comparison_thread is not None and self.comparison_thread.isRunning():
+            try:
+                self.comparison_thread.requestInterruption()
+                if not self.comparison_thread.wait(3000):
+                    logger.warning("参数对比线程3秒内未停止，继续等待至多5秒")
+                    self.comparison_thread.wait(5000)
+            except Exception as e:
+                logger.error(f"停止参数对比线程失败: {e}")
+        self.comparison_thread = None
+
+        super().closeEvent(event)
+
     def _init_ui(self):
         """初始化 UI"""
         main_layout = QVBoxLayout(self)

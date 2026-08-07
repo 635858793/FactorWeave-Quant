@@ -80,7 +80,21 @@ class CloudAPIClient:
 
         # 配置SSL验证
         if not config.enable_ssl:
+            # R238-NEW-P1-CWE-295 修复 (2026-08-01): 显式告警 + 禁止生产环境禁用 SSL
+            # Why: verify=False 时 HMAC 凭据明文传输 (CWE-295, CVSS 5.9), R51 #5 显式记录降级日志
+            # Fix: 保留配置兼容测试环境, 但强制显式 warning (不静默) + 环境变量守卫生产环境
+            import os as _os
+            _env = _os.environ.get('HIKYUU_APP_ENV', 'dev').lower()
+            if _env in ('prod', 'production'):
+                raise RuntimeError(
+                    "cloud_api_service: enable_ssl=False 在生产环境禁用 (CWE-295 拒绝, "
+                    "HMAC 凭据明文传输风险). 请配置 enable_ssl=True 或设置 HIKYUU_APP_ENV=dev"
+                )
             self.session.verify = False
+            logger.warning(
+                "[CWE-295 显式降级] cloud_api_service: enable_ssl=False, SSL 验证已禁用, "
+                "HMAC 凭据将明文传输. 仅限测试环境, 生产环境必须 enable_ssl=True"
+            )
 
     def _make_request(self, method: str, endpoint: str, data: Optional[Dict] = None) -> Dict[str, Any]:
         """

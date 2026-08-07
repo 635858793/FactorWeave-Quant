@@ -561,13 +561,16 @@ class HybridRecommendationEngine(BaseService):
                 await self._initialize_caches()
             
             # 注册事件监听器
+            # R242-B-001 修复 (2026-08-04): 发布端 publish 类实例 (事件名=类名 '...Event'),
+            # 订阅端字符串 'HybridRecommendationRequested' 永不匹配 → 混合推荐链路 100% 失效
+            # (API /api/hybrid/recommendation 恒 504)。改为订阅类, 与 publish 键精确对齐
             self.event_bus.subscribe(
-                "HybridRecommendationRequested", 
+                HybridRecommendationRequestedEvent,
                 self._handle_recommendation_request
             )
             
-            # 启动性能监控
-            await self.performance_monitor.start_monitoring()
+            # 启动性能监控 (HVD-240-P0-003: start_monitoring 是同步方法 performance_monitor.py:233, await 会 TypeError)
+            self.performance_monitor.start_monitoring()
             
             self._initialized = True
             
@@ -583,7 +586,16 @@ class HybridRecommendationEngine(BaseService):
             if not self.cache_service:
                 logger.warning("缓存服务未初始化")
                 return
-                
+
+            # HVD-240-P1-001: CacheService 无 create_cache API (cache_service.py:1324 仅 create_namespace),
+            # 缓存对象 API (get/set/get_keys) 与 CacheService 不匹配 → 优雅降级为无缓存模式
+            # 下游消费点 (L1192/1232/1269/1300/1495/1678) 均有 `if not self.xxx_cache` 空值保护
+            if not hasattr(self.cache_service, 'create_cache'):
+                logger.warning(
+                    "CacheService 无 create_cache API (仅 create_namespace), "
+                    "混合推荐引擎降级为无缓存模式 (HVD-240-P1-001)")
+                return
+
             # 创建主推荐结果缓存
             main_config = CacheConfig(
                 max_size=self.cache_config.main_cache_size,
@@ -713,8 +725,8 @@ class HybridRecommendationEngine(BaseService):
             )
             self.event_bus.publish(completion_event)
             
-            # 更新性能监控
-            await self.performance_monitor.record_metric(
+            # 更新性能监控 (HVD-240-P0-005: record_metric 是同步方法 performance_monitor.py:283, await 会 TypeError)
+            self.performance_monitor.record_metric(
                 'hybrid_recommendation_processing_time', 
                 processing_time
             )
@@ -904,8 +916,8 @@ class HybridRecommendationEngine(BaseService):
                 result = completion_event
                 event.set()
                 
-        # 订阅完成事件
-        self.event_bus.subscribe("HybridRecommendationCompleted", on_completion)
+        # 订阅完成事件 (R242-B-001: 改订阅类, 匹配发布端类名)
+        self.event_bus.subscribe(HybridRecommendationCompletedEvent, on_completion)
         
         try:
             # 等待事件触发或超时
@@ -915,8 +927,8 @@ class HybridRecommendationEngine(BaseService):
             logger.warning(f"等待推荐完成超时: {request_id}")
             
         finally:
-            # 取消订阅
-            self.event_bus.unsubscribe("HybridRecommendationCompleted", on_completion)
+            # 取消订阅 (R242-B-001: 与订阅端类名一致)
+            self.event_bus.unsubscribe(HybridRecommendationCompletedEvent, on_completion)
             
         return result
         
@@ -927,15 +939,15 @@ class HybridRecommendationEngine(BaseService):
 
             try:
                 self.event_bus.unsubscribe(
-                    "HybridRecommendationRequested",
+                    HybridRecommendationRequestedEvent,
                     self._handle_recommendation_request
                 )
             except Exception as e:
                 logger.error(f"取消事件订阅失败: {e}")
 
-            # 关闭性能监控
+            # 关闭性能监控 (HVD-240-P0-004: stop_monitoring 是同步方法 performance_monitor.py:238, await 会 TypeError)
             if self.performance_monitor:
-                await self.performance_monitor.stop_monitoring()
+                self.performance_monitor.stop_monitoring()
                 
             # 清空多层缓存
             if self.main_cache:

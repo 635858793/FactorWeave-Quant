@@ -470,17 +470,23 @@ class ServiceContainer:
         return constructor(**kwargs)
 
     def _dispose_instance(self, instance: Any) -> None:
-        """释放实例资源"""
-        if hasattr(instance, 'dispose'):
-            try:
-                instance.dispose()
-            except Exception as e:
-                logger.error(f"Error disposing instance: {e}")
-        elif hasattr(instance, 'close'):
-            try:
-                instance.close()
-            except Exception as e:
-                logger.error(f"Error closing instance: {e}")
+        """释放实例资源
+
+        R238-P1-4: 扩展支持 cleanup/shutdown 4 链 (R233 §13.4 P0 必修 + R234 子组件释放 4 步法).
+        修复前仅认 dispose/close, TradingEngine/TradingController 只有 cleanup → 容器关闭时永不清理.
+        按序调用所有存在的清理方法, 每个失败仅 warning 不抛 (R78 幂等防御).
+        """
+        for method_name in ('dispose', 'close', 'shutdown', 'cleanup'):
+            if hasattr(instance, method_name):
+                try:
+                    method = getattr(instance, method_name)
+                    # R222-B-2: classmethod descriptor 处理 (raw classmethod 在 __dict__ 中)
+                    if isinstance(instance, type) and isinstance(method, classmethod):
+                        method.__func__(instance)
+                    else:
+                        method()
+                except Exception as e:
+                    logger.error(f"Error calling {method_name} on instance: {e}")
 
     def _enter_scope(self, scope_name: str) -> None:
         """进入作用域"""

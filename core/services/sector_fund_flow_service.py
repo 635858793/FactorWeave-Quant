@@ -80,6 +80,11 @@ class SectorFundFlowService(QObject):
         self._available_sources = {}  # 可用数据源注册表
         self._optimal_sources = []    # 最优数据源列表
 
+        # 数据缓存（cleanup/get_service_status 依赖，R253 P1 修复）
+        self._cache = {}
+        self._cache_lock = threading.RLock()
+        self._cache_timestamps = {}
+
     def _init_unified_cache(self) -> None:
         """初始化统一缓存服务（强制）"""
         from core.services.cache_service import CacheService

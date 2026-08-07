@@ -15,6 +15,7 @@ from threading import Lock
 from core.containers import ServiceContainer, get_service_container
 from core.containers.service_registry import ServiceScope
 from core.events import EventBus, get_event_bus
+from utils.async_utils import run_async_safe
 
 # 然后导入服务类型
 from core.services.config_service import ConfigService
@@ -70,6 +71,58 @@ from core.services.task_scheduler import TaskScheduler
 from core.services.notification_service import NotificationService, init_notification_service
 
 
+# R244 集中注册 (2026-08-04): 孤儿发布事件显式注册
+# Why: 以下 21 个事件仅发布无订阅 (B 类 ORPHAN_PUB), subscribe 自动注册
+#      (event_bus.py:380) 不覆盖无订阅方的事件 -> 每次 publish 触发未注册 warning
+#      (R8 §8.1 铁律 #1, event_bus.py:507-511)
+# Fix: 启动早期集中 register_event_type, 消除系统性误报
+# 审计: 4 路子智能体交叉验证 21 个发布点, 事件名零差异
+#       (tests/test_r244_orphan_event_registration.py)
+ORPHAN_EVENT_TYPES: tuple = (
+    # 字符串形式事件 (13, 注册字符串本身)
+    'performance.periodic_report',  # bettafish_monitoring_service.py:842
+    'service_reset',  # fallback_service.py:441
+    'environment.changed',  # environment_service.py:713
+    'auto_training.completed',  # auto_training_pipeline.py:222
+    'auto_training.failed',  # auto_training_pipeline.py:242
+    'plugin_unloaded',  # plugin_manager.py:1138
+    'data_source_switched',  # plugin_manager.py:1237
+    'order_fill_saved',  # order_repository.py:634
+    'bettafish.sentiment.analysis.completed',  # sentiment_agent.py:216
+    'market.quote_updated',  # ctp_market_interface.py:482 / market_service.py:592
+    'data.masked',  # data_masking_service.py:80
+    'funding_rate.analyzed',  # funding_rate_analysis_service.py:161
+    'gpu_acceleration_initialized',  # gpu_acceleration_manager.py:218
+    # 类对象形式事件 (8, 注册类名, publish 按 __class__.__name__ 匹配)
+    'UpdateHistoryEvent',  # incremental_update_recorder.py 6 处 (types.py:843)
+    'DataAnalysisEvent',  # incremental_data_analyzer.py:158 (types.py:815)
+    'DataIntegrityEvent',  # data_completeness_checker.py:114 (types.py:793)
+    'TimerTriggerEvent',  # timer_manager.py:389 (动态类)
+    'TaskCompletedEvent',  # thread_pool_manager.py:221 (动态类)
+    'TaskFailedEvent',  # thread_pool_manager.py:259 (动态类)
+    'DataRefreshRequestedEvent',  # data_update_manager.py:274 (performance_events.py:231)
+    'DataRefreshCompletedEvent',  # data_update_manager.py:350/374 (performance_events.py:247)
+)
+
+
+def register_orphan_event_types(event_bus) -> int:
+    """集中注册孤儿发布事件类型 (R244)
+
+    Args:
+        event_bus: EventBus 实例
+
+    Returns:
+        int: 新注册的事件类型数 (重复注册幂等, 返回 0)
+    """
+    registered = 0
+    for name in ORPHAN_EVENT_TYPES:
+        if event_bus.register_event_type(name, source='orphan_registry'):
+            registered += 1
+    logger.debug(
+        f"孤儿事件集中注册完成: 新注册 {registered} 个 (清单共 {len(ORPHAN_EVENT_TYPES)})")
+    return registered
+
+
 class ServiceBootstrap:
     """
     服务引导类
@@ -92,6 +145,12 @@ class ServiceBootstrap:
         """
         self.service_container = service_container or get_service_container()
         self.event_bus = get_event_bus()
+
+        # R244 (2026-08-04): 启动早期集中注册孤儿发布事件, 消除 publish 未注册 warning
+        try:
+            register_orphan_event_types(self.event_bus)
+        except Exception as e:
+            logger.error(f"孤儿事件集中注册失败: {e}")
 
         # 实例级别的跟踪
         self._instance_registered_services: Set[Type] = set()
@@ -211,6 +270,9 @@ class ServiceBootstrap:
             # 7. 执行插件发现和注册（在所有服务注册完成后）
             self._post_initialization_plugin_discovery()
 
+            # 7.5. R237-A: 启动期 ORPHAN_PUB 扫描 (R222 3 层 ORPHAN 治理)
+            self._run_orphan_pub_scan()
+
             # 8. 输出重复检测报告
             self._report_duplicate_attempts()
 
@@ -220,6 +282,66 @@ class ServiceBootstrap:
             logger.error(f"[ERROR] 服务引导失败: {e}")
             logger.error(traceback.format_exc())
             raise  # 重新抛出异常，让调用方知道服务引导失败
+
+    def _run_orphan_pub_scan_impl(self):
+        """R237-A 实施: 启动期 ORPHAN_PUB 扫描 (R222 3 层治理 + R235 §14.2 5 类模式).
+
+        集成 tools/orphan_pub_scanner_v2.py (R236-A 假修复修复版).
+        启动期 ORPHAN_PUB 计数目标: < 5 (R235 25.8% 误报率治理后).
+        """
+        try:
+            # 延迟导入避免循环依赖
+            from tools.orphan_pub_scanner_v2 import ORPHANPubScannerV2
+
+            scanner = ORPHANPubScannerV2(
+                root=".",  # 项目根目录
+                subdirs=["core", "gui", "web", "tests"],
+            )
+            result = scanner.scan()
+
+            orphan_count = len(result.orphan_pub)
+            logger.info(
+                f"[R237-A ORPHAN_SCAN] Scanned {result.scanned_files} files, "
+                f"publish={result.publish_count}, subscribe={result.subscribe_count}, "
+                f"ORPHAN_PUB={orphan_count}"
+            )
+            # R237-A 目标: 启动期 ORPHAN_PUB < 5
+            if orphan_count >= 5:
+                logger.warning(
+                    f"[R237-A ORPHAN_SCAN] ORPHAN_PUB count {orphan_count} >= 5. "
+                    f"目标: < 5. R222 3 层治理需补全订阅方. "
+                    f"候选: {[item.get('event_name') for item in result.orphan_pub[:5]]}"
+                )
+            # 审计日志 (R222 _emit_audit_log 模式)
+            if hasattr(self, "event_bus") and self.event_bus is not None:
+                try:
+                    orphan_names = [item.get("event_name") for item in result.orphan_pub]
+                    self.event_bus.publish(
+                        "service.orphan_scan_completed",
+                        data={
+                            "scanned_files": result.scanned_files,
+                            "orphan_pub_count": orphan_count,
+                            "orphan_pub_names": orphan_names[:10],
+                        }
+                    )
+                except Exception as e:
+                    logger.debug(f"Audit log publish skipped: {e}")
+        except ImportError as e:
+            logger.warning(f"[R237-A ORPHAN_SCAN] 扫描器未安装, 跳过 (R222 fallback 模式): {e}")
+        except Exception as e:
+            # R51 软解析教训: 显式降级日志, 不抛错破坏 bootstrap
+            logger.error(f"[R237-A ORPHAN_SCAN] 扫描失败, bootstrap 继续运行: {e}")
+            logger.error(traceback.format_exc())
+
+    def _run_orphan_pub_scan(self) -> None:
+        """R237-A 启动期 ORPHAN_PUB 扫描 (异常安全包装).
+
+        包装 _run_orphan_pub_scan_impl, 捕获所有异常确保 bootstrap 不中断 (R51 教训).
+        """
+        try:
+            self._run_orphan_pub_scan_impl()
+        except Exception as e:
+            logger.error(f"[R237-A ORPHAN_SCAN] 启动期扫描包装层捕获异常: {e}")
 
     def _report_duplicate_attempts(self) -> None:
         """报告重复初始化尝试统计"""
@@ -623,6 +745,24 @@ class ServiceBootstrap:
             logger.error(f"❌ AI选股风险控制服务注册失败: {e}")
             logger.error(traceback.format_exc())
 
+        # 注册 BettaFish 舆情分析智能体 (HVD-240-P0-002: HybridRecommendationEngine.initialize L549 resolve 依赖)
+        # Why: service_container.resolve 无注册抛 ValueError (service_container.py:128-131),
+        #      全项目零 register(BettaFishAgent) → Hybrid initialize 执行到 L549 必炸
+        try:
+            from core.agents.bettafish_agent import BettaFishAgent
+            if not self._is_service_registered(BettaFishAgent):
+                self.service_container.register(
+                    BettaFishAgent,
+                    scope=ServiceScope.SINGLETON,
+                    factory=lambda: BettaFishAgent(event_bus=self.event_bus)
+                )
+                logger.info("BettaFishAgent 注册完成")
+            else:
+                logger.debug("BettaFishAgent 已注册，跳过")
+        except Exception as e:
+            logger.error(f"❌ BettaFishAgent 注册失败: {e}")
+            logger.error(traceback.format_exc())
+
         # 注册混合推荐引擎
         try:
             from .hybrid_recommendation_engine import HybridRecommendationEngine
@@ -633,9 +773,10 @@ class ServiceBootstrap:
                     factory=lambda: HybridRecommendationEngine(event_bus=self.event_bus)
                 )
             hybrid_recommendation_engine = self.service_container.resolve(HybridRecommendationEngine)
-            # 初始化混合推荐引擎
+            # 初始化混合推荐引擎 (HVD-240-P0-001: initialize 是 async 方法, 同步调用产生悬空 coroutine
+            # 从不执行 → 注册后引擎处于伪初始化状态; 改用 run_async_safe 桥接)
             if hasattr(hybrid_recommendation_engine, 'initialize'):
-                hybrid_recommendation_engine.initialize()
+                run_async_safe(hybrid_recommendation_engine.initialize())
             logger.info("混合推荐引擎注册完成")
         except Exception as e:
             logger.error(f"❌ 混合推荐引擎注册失败: {e}")
@@ -742,6 +883,20 @@ class ServiceBootstrap:
             logger.info("板块资金流服务注册完成")
         except Exception as e:
             logger.error(f" 板块资金流服务注册失败: {e}")
+            logger.error(traceback.format_exc())
+
+        # 板块数据服务（SectorDataService 容器注册，R253 P1 修复）
+        try:
+            from .sector_data_service import SectorDataService, get_sector_data_service
+            if not self._is_service_registered(SectorDataService):
+                self.service_container.register_factory(
+                    SectorDataService,
+                    lambda: get_sector_data_service(),
+                    scope=ServiceScope.SINGLETON
+                )
+            logger.info("板块数据服务注册完成")
+        except Exception as e:
+            logger.error(f" 板块数据服务注册失败: {e}")
             logger.error(traceback.format_exc())
 
         # 外部告警渠道服务
@@ -929,6 +1084,22 @@ class ServiceBootstrap:
             except Exception as e:
                 logger.error(f"性能数据桥接器初始化失败: {e}")
 
+            # R243-B-002 (2026-08-04): 初始化统一资源监控器 (发布端接线)
+            # Why: UnifiedResourceMonitor 发布端从未进入启动链路, get_resource_monitor()
+            #      创建的实例 _event_bus 恒 None (resource_monitor.py:195) -> 告警事件
+            #      从未 publish, ResourceAlertEvent 链路 (resource_monitor -> EventBus ->
+            #      alert_event_handler.py:456 订阅端) 整体断裂
+            # Fix: 先接线 event_bus (不启动), 待订阅端注册完成后 start(), 避免启动
+            #      首轮告警在订阅注册前发布触发未注册 warning (P2-2)
+            try:
+                from core.performance import initialize_resource_monitor
+                initialize_resource_monitor(
+                    monitor_interval=5.0, event_bus=self.event_bus)
+                logger.info("统一资源监控器(UnifiedResourceMonitor)接线完成")
+            except Exception as e:
+                logger.error(f"统一资源监控器初始化失败: {e}")
+                logger.error(traceback.format_exc())
+
             #  新增：注册告警事件处理器
             try:
                 from core.services.alert_event_handler import register_alert_handlers
@@ -936,6 +1107,15 @@ class ServiceBootstrap:
                 logger.info("告警事件处理器注册完成")
             except Exception as e:
                 logger.error(f" 告警事件处理器注册失败: {e}")
+                logger.error(traceback.format_exc())
+
+            # R243-B-002: 订阅端就绪后启动资源监控线程
+            try:
+                from core.performance import get_resource_monitor
+                get_resource_monitor().start()
+                logger.info("统一资源监控器(UnifiedResourceMonitor)启动完成")
+            except Exception as e:
+                logger.error(f"统一资源监控器启动失败: {e}")
                 logger.error(traceback.format_exc())
 
             #  新增：确保告警数据库已初始化
@@ -1285,10 +1465,35 @@ class ServiceBootstrap:
                         event_bus=self.event_bus
                     )
                 )
-                order_service = self.service_container.resolve(OrderService)
-                logger.info("订单服务注册完成")
+                # R256-P0 断点B 根治: 延迟 resolve — OrderService 构造时
+                # _initialize 经 try_resolve(OrderExecutor) 复用容器单例。
+                # 原立即 resolve 在 OrderExecutor 注册 (下方 :1480) 之前执行 →
+                # try_resolve 返回 None → 自建 executor → 与 connect_ctp_account
+                # 注入目标割裂 (双实例, 实盘下单拿不到接口缓存)。OrderService
+                # 首次 resolve 移至 OrderExecutor 注册后 (文件后部 :1734 使用点)。
+                logger.info("订单服务注册完成 (executor 延迟绑定容器单例, R256-P0)")
             else:
                 logger.warning("OrderService已注册，跳过")
+
+            # 注册订单执行器 (R254-P0 修复: 此前仅 import (本文件 :61) 全文无 register
+            # → account_manager try_resolve(OrderExecutor) 恒 None → 资金/持仓同步链不可用)
+            # Why: AccountManager 同步资金/持仓 (account_manager.py:817-892) 依赖交易接口,
+            #      OrderExecutor 必须注册进容器供解析 (R253 只防崩溃未打通注册链路)。
+            # Fix: 参照本文件 OrderService (:1459-1472) / StockService (:478-482) 注册模式,
+            #      SINGLETON 延迟初始化 (构造需 service_container + event_bus, 不立即 resolve
+            #      避免触发 OrderRepository 重型初始化, 由使用方首次解析时创建)
+            if not self._is_service_registered(OrderExecutor):
+                self.service_container.register_factory(
+                    OrderExecutor,
+                    lambda: OrderExecutor(
+                        service_container=self.service_container,
+                        event_bus=self.event_bus
+                    ),
+                    scope=ServiceScope.SINGLETON
+                )
+                logger.info("订单执行器注册完成")
+            else:
+                logger.warning("OrderExecutor已注册，跳过")
 
             # 注册任务调度器
             if not self._is_service_registered(TaskScheduler):
@@ -1359,13 +1564,13 @@ class ServiceBootstrap:
                 logger.info("交易服务（TradingService）注册完成")
 
             except ImportError as e:
-                logger.error(f"❌ TradingService 导入失败: {e}")
-                logger.error(traceback.format_exc())
-                raise  # 重新抛出异常，阻止服务启动
+                logger.warning(f"❌ TradingService 导入失败: {e}，实盘交易功能不可用")
+                logger.warning(traceback.format_exc())
+                # 降级处理：TradingService 不可用不阻断启动，继续注册后续服务
             except Exception as e:
-                logger.error(f"❌ 交易服务（TradingService）注册失败: {e}")
-                logger.error(traceback.format_exc())
-                raise  # 重新抛出异常，阻止服务启动
+                logger.warning(f"❌ 交易服务（TradingService）注册失败: {e}，实盘交易功能不可用")
+                logger.warning(traceback.format_exc())
+                # 降级处理：TradingService 不可用不阻断启动，继续注册后续服务
 
             # 注册StrategyService
             try:
@@ -2312,14 +2517,17 @@ class ServiceBootstrap:
             tet_pipeline = TETDataPipeline(data_source_router)
 
             # 注册统一插件数据管理器工厂
+            # R246 修复: 不在 factory 内立即 initialize()。
+            # 此前此处提前调用 initialize() 时 PluginManager.load_all_plugins() 尚未执行,
+            # plugin_instances 为空导致 0 插件注册, 且 _is_initialized 被置 True 永久短路,
+            # 阶段2 (L864-869) 的再次 initialize() 被跳过, 插件永不注册。
+            # 初始化交由 _initialize_services_in_order 阶段2 在 PluginManager 初始化之后执行。
             def create_uni_plugin_data_manager():
                 manager = UniPluginDataManager(
                     plugin_manager=plugin_manager,
                     data_source_router=data_source_router,
                     tet_pipeline=tet_pipeline
                 )
-                # 初始化管理器
-                manager.initialize()
                 return manager
 
             self.service_container.register_factory(

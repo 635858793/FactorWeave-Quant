@@ -149,10 +149,13 @@ class AssetSeparatedDatabaseManager:
 
         # 线程锁
         self._db_lock = threading.RLock()
-        
+
         # 关键修复：数据库级别写入锁，防止并发写入导致DuckDB ART索引冲突
         # DuckDB不支持真正的并发写入，必须串行化写入操作
         self._write_lock = threading.Lock()
+
+        # R237 HVD-237-B-001: dispose 幂等标志 (R78 铁律 #6)
+        self._disposed = False
 
         # 标准表结构定义
         self._table_schemas = self._initialize_table_schemas()
@@ -2618,6 +2621,73 @@ class AssetSeparatedDatabaseManager:
             logger.error(f"从数据库加载基本面数据失败: {symbol}, {e}")
             return None
 
+    def load_kline_data(self, symbol: str, asset_type: AssetType,
+                        start_date=None, end_date=None,
+                        frequency: Optional[str] = None) -> pd.DataFrame:
+        """从数据库加载K线数据（DB优先架构：DuckDB有数据时直查，避免直调插件走网络）
+
+        R254 修复：新增K线 DB 优先读方法，供 UniPluginDataManager 的 K 线 DB 优先分支使用。
+
+        Args:
+            symbol: 标的代码
+            asset_type: 资产类型
+            start_date: 开始日期（可选，datetime/date/str）
+            end_date: 结束日期（可选）
+            frequency: 频率（可选，DuckDB frequency 格式，如 '1d'/'5min'）
+
+        Returns:
+            pd.DataFrame: 查询结果（含 symbol/frequency/timestamp/open/high/low/close/volume 列，
+            按 timestamp 升序），无数据或异常时返回空 DataFrame
+        """
+        try:
+            db_path = self._get_database_path(asset_type)
+            with self.duckdb_manager.get_pool(db_path).get_connection() as conn:
+                # 表不存在则直接返回空（避免查询报错）
+                try:
+                    table_exists = conn.execute("""
+                        SELECT COUNT(*)
+                        FROM information_schema.tables
+                        WHERE table_name = 'historical_kline_data'
+                    """).fetchone()[0] > 0
+                    if not table_exists:
+                        logger.debug("historical_kline_data 表不存在，跳过查询")
+                        return pd.DataFrame()
+                except Exception:
+                    return pd.DataFrame()
+
+                conditions = ["symbol = ?"]
+                params = [symbol]
+                if frequency:
+                    conditions.append("frequency = ?")
+                    params.append(frequency)
+                if start_date is not None:
+                    conditions.append("timestamp >= ?")
+                    params.append(pd.Timestamp(start_date))
+                if end_date is not None:
+                    conditions.append("timestamp <= ?")
+                    params.append(pd.Timestamp(end_date))
+
+                query = f"""
+                    SELECT symbol, data_source, timestamp, frequency,
+                           open, high, low, close, volume, amount,
+                           adj_close, adj_factor
+                    FROM historical_kline_data
+                    WHERE {' AND '.join(conditions)}
+                    ORDER BY timestamp ASC
+                """
+                result = conn.execute(query, params).fetchdf()
+
+                if result is None or result.empty:
+                    logger.debug(f"数据库中未找到K线数据: {symbol}, frequency={frequency}")
+                    return pd.DataFrame()
+
+                logger.debug(f"从数据库加载K线数据成功: {symbol}, 记录数={len(result)}")
+                return result
+
+        except Exception as e:
+            logger.error(f"从数据库加载K线数据失败: {symbol}, {e}")
+            return pd.DataFrame()
+
     def load_fundamental_data_batch(self, symbols: List[str], asset_type: AssetType) -> Dict[str, Dict[str, Any]]:
         """批量从数据库加载基本面数据
 
@@ -2684,6 +2754,85 @@ class AssetSeparatedDatabaseManager:
 
         except Exception as e:
             logger.error(f"关闭数据库连接失败: {e}")
+
+    # ========================================================================
+    # R237 HVD-237-B-001: 4 链 dispose 治理 (R78 铁律)
+    # 业务影响: 10+ 业务方 (DatabaseService, ImportExecutionEngine, EnhancedDuckDBDataDownloader,
+    #          EastMoneyPlugin, AKSharePlugin, FreeStockDBPlugin, DataMissingManager 等)
+    # 业务资源: DuckDB 连接池 + _asset_databases + _database_info + _table_schemas
+    # ========================================================================
+    def dispose(self) -> None:
+        """R237 HVD-237-B-001: 4 链 dispose 入口 (R78 铁律 #6 幂等短路)"""
+        # 幂等短路: 已 dispose 则直接返回 (R78 铁律 #6)
+        if getattr(self, '_disposed', False):
+            return
+        try:
+            # 4 链依次执行 (R236-B 模板)
+            self.shutdown()
+            self.close()
+            self.cleanup()
+        except Exception as e:
+            # R117-HVD-69 P1 模板: 失败仅 warning + exc_info, 不抛错
+            logger.warning(
+                f"AssetSeparatedDatabaseManager.dispose 异常: {e}",
+                exc_info=True,
+            )
+        finally:
+            # 无论成败, 标记 _disposed = True (R78 铁律 #6)
+            self._disposed = True
+
+    def shutdown(self) -> None:
+        """R237 HVD-237-B-001: shutdown - 业务数据清空 (R234 业务锁内清空)"""
+        try:
+            # 业务锁内清空 _asset_databases / _database_info (R234 强化经验)
+            with self._db_lock:
+                if hasattr(self, '_asset_databases') and self._asset_databases is not None:
+                    self._asset_databases.clear()
+                if hasattr(self, '_database_info') and self._database_info is not None:
+                    self._database_info.clear()
+        except Exception as e:
+            logger.warning(
+                f"AssetSeparatedDatabaseManager.shutdown 异常: {e}",
+                exc_info=True,
+            )
+
+    def close(self) -> None:
+        """R237 HVD-237-B-001: close - 子组件引用释放 + DuckDB 连接池关闭"""
+        try:
+            # 关闭所有 DuckDB 连接池
+            self.close_all_connections()
+            # 释放 duckdb_manager 引用
+            if hasattr(self, 'duckdb_manager'):
+                self.duckdb_manager = None
+            # 释放 asset_identifier 引用
+            if hasattr(self, 'asset_identifier'):
+                self.asset_identifier = None
+        except Exception as e:
+            logger.warning(
+                f"AssetSeparatedDatabaseManager.close 异常: {e}",
+                exc_info=True,
+            )
+
+    def cleanup(self) -> None:
+        """R237 HVD-237-B-001: cleanup - 资源引用置 None + 单例重置"""
+        try:
+            # 释放 _table_schemas 引用
+            if hasattr(self, '_table_schemas'):
+                self._table_schemas = None
+            # 重置配置引用
+            if hasattr(self, 'config'):
+                self.config = None
+            # 清理旧的 backup 资源 (R235 子智能体 B 已有 cleanup_old_backups)
+            try:
+                if hasattr(self, 'cleanup_old_backups'):
+                    self.cleanup_old_backups(days_to_keep=0)
+            except Exception:
+                pass
+        except Exception as e:
+            logger.warning(
+                f"AssetSeparatedDatabaseManager.cleanup 异常: {e}",
+                exc_info=True,
+            )
 
 
 # 全局实例

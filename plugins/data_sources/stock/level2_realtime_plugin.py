@@ -190,7 +190,7 @@ class Level2RealtimePlugin(StandardDataSourcePlugin):
                 quotes.append(quote)
         return quotes
 
-    def initialize(self) -> bool:
+    def initialize(self, config: Optional[Dict[str, Any]] = None) -> bool:
         """初始化插件"""
         try:
             logger.info("初始化Level-2实时数据源插件")
@@ -257,6 +257,9 @@ class Level2RealtimePlugin(StandardDataSourcePlugin):
 
             # 至少有一个数据源连接成功即可
             connected = success_count > 0
+            # R248: 同步基类 _is_connected 状态位，否则继承自
+            # StandardDataSourcePlugin.is_connected() 恒返回 False（数据请求被拒）
+            self._is_connected = connected
             if connected:
                 logger.info(f"Level-2数据源连接成功: {success_count} 个数据源")
             else:
@@ -266,6 +269,7 @@ class Level2RealtimePlugin(StandardDataSourcePlugin):
 
         except Exception as e:
             logger.error(f"连接Level-2数据源失败: {e}")
+            self._is_connected = False
             return False
 
     def disconnect(self) -> bool:
@@ -283,6 +287,7 @@ class Level2RealtimePlugin(StandardDataSourcePlugin):
 
             self._connections.clear()
             self._running = False
+            self._is_connected = False
 
             # 关闭线程池
             self._executor.shutdown(wait=True)

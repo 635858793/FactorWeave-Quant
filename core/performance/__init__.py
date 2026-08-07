@@ -69,6 +69,26 @@ from .unified_monitor import (
     measure_data_load
 )
 
+# R243-B-002 (2026-08-04): 补全统一资源监控/数据更新管理器导出
+# Why: system_monitor_tab_refactored.py:28-33 import 4 个名字, 其中 3 个缺失
+#      -> ImportError, try/except 降级, 统一管理器功能 (tab 内 97 行分支) 永不可达
+# Fix: 补齐导出, 恢复 UnifiedResourceMonitor/DataUpdateManager 外部可达性
+from .resource_monitor import (
+    UnifiedResourceMonitor,
+    ResourceAlert,
+    ResourceUsage,
+    ResourceThreshold,
+    ResourceType,
+    AlertSeverity,
+    get_resource_monitor,
+    initialize_resource_monitor,
+)
+from .data_update_manager import (
+    PerformanceDataUpdateManager,
+    UpdateStrategy,
+    get_data_update_manager,
+)
+
 # 向后兼容别名
 PerformanceMonitor = UnifiedPerformanceMonitor
 
@@ -99,7 +119,20 @@ __all__ = [
     'get_performance_monitor',
     'measure_performance',
     'measure_event',
-    'measure_data_load'
+    'measure_data_load',
+
+    # R243-B-002: 统一资源监控/数据更新管理器导出
+    'UnifiedResourceMonitor',
+    'ResourceAlert',
+    'ResourceUsage',
+    'ResourceThreshold',
+    'ResourceType',
+    'AlertSeverity',
+    'get_resource_monitor',
+    'initialize_resource_monitor',
+    'PerformanceDataUpdateManager',
+    'UpdateStrategy',
+    'get_data_update_manager'
 ]
 
 # 版本信息

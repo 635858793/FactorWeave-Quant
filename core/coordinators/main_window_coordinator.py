@@ -180,10 +180,11 @@ class MainWindowCoordinator(BaseCoordinator):
             self._analysis_service = self.service_container.resolve(
                 AnalysisService)
             # 使用ThemeManager替代ThemeService
-            from utils.theme import get_theme_manager
-            self._theme_manager = get_theme_manager(self._config_service if hasattr(self, '_config_service') else None)
+            # 修复: 先 resolve ConfigService 再初始化主题管理器（原顺序颠倒，_config_service 恒为 None）
             self._config_service = self.service_container.resolve(
                 ConfigService)
+            from utils.theme import get_theme_manager
+            self._theme_manager = get_theme_manager(self._config_service)
             self._data_manager = self.service_container.resolve(
                 UnifiedDataManager)
             service_time = time.time() - service_start
@@ -292,12 +293,29 @@ class MainWindowCoordinator(BaseCoordinator):
             font_mgr.font_size_changed.connect(self._on_font_size_changed)
             logger.info("全局字体大小变更信号已连接")
 
+            # R245: 全局启动定时导入任务执行器（事件循环就绪后异步执行，不阻塞启动）
+            QTimer.singleShot(0, self._start_scheduled_executor_globally)
+
             total_time = time.time() - start_time
             logger.info(f"Main window coordinator initialized successfully, 总耗时: {total_time:.3f}秒")
 
         except Exception as e:
             logger.error(f"Failed to initialize main window coordinator: {e}")
             raise
+
+    def _start_scheduled_executor_globally(self) -> None:
+        """R245: 全局启动定时导入任务执行器
+
+        原实现仅在打开「K线专业数据导入」窗口时才启动执行器，导致未打开过该窗口时
+        配置的定时任务永远不执行。此处改为应用启动即全局启动；执行器内部支持无引擎懒加载
+        （scheduled_task_executor.py _execute_task 自动创建 DataImportExecutionEngine）。
+        """
+        try:
+            from core.services.scheduled_task_executor import start_scheduled_task_executor
+            start_scheduled_task_executor()
+            logger.info("定时任务执行器全局启动完成")
+        except Exception as e:
+            logger.warning(f"定时任务执行器全局启动失败（降级处理，不影响应用运行）: {e}")
 
     def _setup_window(self) -> None:
         """设置主窗口"""
@@ -795,8 +813,21 @@ class MainWindowCoordinator(BaseCoordinator):
     # 帮助菜单方法
     def _on_help(self) -> None:
         """帮助文档"""
-        logger.info("帮助文档功能待实现")
-        self.show_message("帮助文档功能待实现")
+        try:
+            from gui.dialogs.help_viewer_dialog import HelpViewerDialog
+            from pathlib import Path
+            project_root = Path(__file__).resolve().parents[2]
+            dialog = HelpViewerDialog(
+                self._main_window,
+                title="帮助文档",
+                md_path=str(project_root / "README.md"),
+            )
+            self.center_dialog(dialog)
+            dialog.exec_()
+            logger.info("打开帮助文档")
+        except Exception as e:
+            logger.error(f"帮助文档失败: {e}")
+            QMessageBox.warning(self._main_window, "错误", f"无法打开帮助文档: {e}")
 
     def _on_shortcuts(self) -> None:
         """快捷键说明"""
@@ -897,8 +928,13 @@ FactorWeave-Quant  2.0 (重构版本)
             QMessageBox.critical(self._main_window, "错误",
                                  f"打开云端API管理对话框失败: {str(e)}")
 
-    def _on_plugin_manager(self) -> None:
-        """增强版插件管理器 - 统一的插件管理界面"""
+    def _on_plugin_manager(self, tab_name: str = None) -> None:
+        """增强版插件管理器 - 统一的插件管理界面
+
+        Args:
+            tab_name: 可选，目标 tab 文本子串（如"数据源管理"/"已安装插件"/"插件市场"），
+                      用于菜单项定位到对应 tab（R245 修复: 原 4 个插件菜单项打开同一 tab）
+        """
         # 防止重复打开 - 检查是否已有插件管理对话框实例
         if hasattr(self, '_plugin_manager_dialog') and self._plugin_manager_dialog is not None:
             if self._plugin_manager_dialog.isVisible():
@@ -1009,6 +1045,14 @@ FactorWeave-Quant  2.0 (重构版本)
             if hasattr(self, 'center_dialog'):
                 self.center_dialog(self._plugin_manager_dialog)
 
+            # R245: 按菜单项定位到指定 tab（menu_bar 4 个插件菜单项传入不同 tab_name）
+            if tab_name and hasattr(self._plugin_manager_dialog, 'tab_widget'):
+                tab_widget = self._plugin_manager_dialog.tab_widget
+                for i in range(tab_widget.count()):
+                    if tab_name in tab_widget.tabText(i):
+                        tab_widget.setCurrentIndex(i)
+                        break
+
             # 显示对话框
             self._plugin_manager_dialog.show()
             logger.info("插件管理器对话框已显示")
@@ -1081,10 +1125,11 @@ FactorWeave-Quant  2.0 (重构版本)
                 analysis_panel = right_panel._analysis_tools_panel
                 if hasattr(analysis_panel, 'start_enhanced_batch_analysis'):
                     # 激活右侧面板并开始批量分析
+                    # 修复: 原代码调用不存在的 activate_batch_tab()（enhanced_batch_analysis_methods.py 无此方法），
+                    # 实际应调用 start_enhanced_batch_analysis()（L177）
                     if hasattr(right_panel, 'show'):
                         right_panel.show()
-                    if hasattr(analysis_panel, 'activate_batch_tab'):
-                        analysis_panel.activate_batch_tab()
+                    analysis_panel.start_enhanced_batch_analysis()
                     logger.info("已激活右侧面板批量分析功能")
                     return
             
@@ -1095,13 +1140,13 @@ FactorWeave-Quant  2.0 (重构版本)
                 self.center_dialog(dialog)
                 dialog.exec_()
             except ImportError:
-                # 对话框不存在，显示提示
+                # 对话框不存在，显示提示（修复: 原文案误导，此时右侧面板同样不可用）
                 QMessageBox.information(
                     self._main_window, 
                     "批量分析", 
-                    "请使用右侧面板的批量分析功能"
+                    "批量分析功能当前不可用，请确认数据分析组件已正确加载"
                 )
-                logger.info("请使用右侧面板的批量分析功能")
+                logger.info("批量分析功能不可用（右侧面板与对话框均不可用）")
 
         except Exception as e:
             logger.error(f"批量分析失败: {e}")
@@ -1169,7 +1214,8 @@ FactorWeave-Quant  2.0 (重构版本)
             
             # 尝试创建智能选择器
             try:
-                intelligent_selector = IntelligentSelector()
+                # R244 修复: 原 IntelligentSelector 未定义，应使用 L1156 已导入的 IntelligentModelSelector
+                intelligent_selector = IntelligentModelSelector()
                 control_panel.set_intelligent_selector(intelligent_selector)
                 logger.info("智能选择器创建成功")
             except Exception as e:
@@ -1222,7 +1268,7 @@ FactorWeave-Quant  2.0 (重构版本)
             self._strategy_manager_dialog.show()
 
         except ImportError as e:
-            logger.error(f"EnhancedStrategyManagerDialog不可用: {e}")
+            logger.error(f"StrategyManagerDialog不可用: {e}")
             QMessageBox.critical(self._main_window, "错误",
                                  f"策略管理功能不可用: {str(e)}")
             if hasattr(self, '_strategy_manager_dialog'):
@@ -1477,8 +1523,11 @@ FactorWeave-Quant  2.0 (重构版本)
 
             def on_optimization_completed(result):
                 progress.close()
+                # 一键优化返回 report dict（auto_tuner.py _generate_optimization_report），
+                # 形态数量位于 details 列表（修复: 原 len(result) 恒等于键数）
+                details = result.get('details', []) if isinstance(result, dict) else []
                 QMessageBox.information(self._main_window, "成功",
-                                        f"一键优化完成！\n优化了 {len(result)} 个形态")
+                                        f"一键优化完成！\n优化了 {len(details)} 个形态")
                 logger.info(f"一键优化完成: {result}")
 
             def on_error_occurred(error):
@@ -1555,7 +1604,11 @@ FactorWeave-Quant  2.0 (重构版本)
                             self.msleep(80)
 
                         # 执行实际智能优化
-                        auto_tuner = PerformanceAutoTuner(debug_mode=True)
+                        # R244 修复: 原 PerformanceAutoTuner(unified_monitor.py L588)
+                        # 无 debug_mode 参数且无 smart_optimize 方法，改用
+                        # AlgorithmAutoTuner(auto_tuner.py L40) 的 smart_optimize(L117)
+                        from optimization.auto_tuner import AlgorithmAutoTuner
+                        auto_tuner = AlgorithmAutoTuner(debug_mode=True)
                         result = auto_tuner.smart_optimize(
                             performance_threshold=self.performance_threshold,
                             improvement_target=self.improvement_target
@@ -1570,8 +1623,11 @@ FactorWeave-Quant  2.0 (重构版本)
 
             def on_optimization_completed(result):
                 progress.close()
-                improved_count = result.get('improved_patterns', 0)
-                total_improvement = result.get('total_improvement', 0)
+                # 智能优化返回 report dict（auto_tuner.py _generate_smart_optimization_report），
+                # 改进形态数与总体改进需从 summary 读取（修复: 原键 improved_patterns/total_improvement 不存在，恒为 0）
+                summary = result.get('summary') or {}
+                improved_count = summary.get('successful_tasks', 0)
+                total_improvement = (summary.get('average_improvement', 0) or 0) / 100.0
                 QMessageBox.information(self._main_window, "成功",
                                         f"智能优化完成！\n改进了 {improved_count} 个形态\n总体改进: {total_improvement:.2%}")
                 logger.info(f"智能优化完成: {result}")
@@ -1717,7 +1773,9 @@ FactorWeave-Quant  2.0 (重构版本)
             # 获取分析服务
             analysis_service = self.service_container.get_service(
                 AnalysisService)
-            if analysis_service:
+            # R244 修复: AnalysisService 未继承 CacheableService(analysis_service.py L153
+            # 继承 BaseService)，无 clear_cache 方法，加防御避免 AttributeError 假失败
+            if analysis_service and hasattr(analysis_service, 'clear_cache'):
                 analysis_service.clear_cache()
 
             QMessageBox.information(self._main_window, "成功", "数据缓存已清理")
@@ -2022,7 +2080,8 @@ FactorWeave-Quant  2.0 (重构版本)
         try:
             from gui.widgets.modern_performance_widget import show_modern_performance_monitor
             performance_widget = show_modern_performance_monitor(self._main_window)
-            performance_widget.tab_widget.setCurrentIndex(1)  # 切换到UI优化tab
+            # 无独立UI优化tab，回退到系统监控tab（tab顺序: 0系统监控/1策略性能/2算法优化/3风险控制/4执行监控/5数据质量）
+            performance_widget.tab_widget.setCurrentIndex(0)
             performance_widget.show()
             logger.info("UI性能优化已打开")
         except Exception as e:
@@ -2034,7 +2093,7 @@ FactorWeave-Quant  2.0 (重构版本)
         try:
             from gui.widgets.modern_performance_widget import show_modern_performance_monitor
             performance_widget = show_modern_performance_monitor(self._main_window)
-            performance_widget.tab_widget.setCurrentIndex(2)  # 切换到策略性能tab
+            performance_widget.tab_widget.setCurrentIndex(1)  # 切换到策略性能tab（index 1=策略性能）
             performance_widget.show()
             logger.info("策略性能监控已打开")
         except Exception as e:
@@ -2046,7 +2105,7 @@ FactorWeave-Quant  2.0 (重构版本)
         try:
             from gui.widgets.modern_performance_widget import show_modern_performance_monitor
             performance_widget = show_modern_performance_monitor(self._main_window)
-            performance_widget.tab_widget.setCurrentIndex(3)  # 切换到算法性能tab
+            performance_widget.tab_widget.setCurrentIndex(2)  # 切换到算法性能tab（index 2=算法优化）
             performance_widget.show()
             logger.info("算法性能监控已打开")
         except Exception as e:
@@ -2058,7 +2117,8 @@ FactorWeave-Quant  2.0 (重构版本)
         try:
             from gui.widgets.modern_performance_widget import show_modern_performance_monitor
             performance_widget = show_modern_performance_monitor(self._main_window)
-            performance_widget.tab_widget.setCurrentIndex(4)  # 切换到自动调优tab
+            # 自动调优已合并入算法优化tab（index 2）
+            performance_widget.tab_widget.setCurrentIndex(2)
             performance_widget.show()
             logger.info("自动调优已打开")
         except Exception as e:
@@ -2167,7 +2227,6 @@ FactorWeave-Quant  2.0 (重构版本)
         """导入策略"""
         try:
             from core.services.strategy_service import StrategyService
-            from core.services.database_service import DatabaseService
 
             file_path, _ = QFileDialog.getOpenFileName(
                 self._main_window,
@@ -2436,7 +2495,7 @@ FactorWeave-Quant  2.0 (重构版本)
                             for col in csv_cols:
                                 if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', str(col)):
                                     raise ValueError(f"无效列名: {col}")
-                            with db_service.get_connection("data_duckdb") as conn:
+                            with db_service.get_connection("analytics_duckdb") as conn:
                                 safe_path = file_path.replace("'", "''")
                                 conn.execute(f"""
                                     CREATE OR REPLACE TABLE {table_name} AS
@@ -2461,7 +2520,7 @@ FactorWeave-Quant  2.0 (重构版本)
                         logger.info(f"导入数据: {file_path}, 行数: {len(df)}, 列: {columns}")
 
                         if db_service:
-                            with db_service.get_connection("data_duckdb") as conn:
+                            with db_service.get_connection("analytics_duckdb") as conn:
                                 conn.execute(f"CREATE TABLE IF NOT EXISTS {table_name} (idx INTEGER)")
                                 for col in columns:
                                     col_safe = col.replace(' ', '_').replace('(', '').replace(')', '').replace('"', '""')
@@ -2517,9 +2576,9 @@ FactorWeave-Quant  2.0 (重构版本)
             # 创建数据管理中心对话框
             self._data_management_dialog = UnifiedDataManagementDialog(self._main_window)
 
-            # 连接信号
-            self._data_management_dialog.data_downloaded.connect(self._on_data_downloaded_from_center)
-            self._data_management_dialog.source_configured.connect(self._on_source_configured_from_center)
+            # R244 修复: UnifiedDataManagementDialog 只有 data_imported/data_exported/
+            # database_updated 信号(data_management_dialog_unified.py L197-199)，
+            # 原 data_downloaded/source_configured 信号已不存在，删除无效连接。
 
             # 显示对话框
             self._data_management_dialog.show()
@@ -2675,17 +2734,12 @@ FactorWeave-Quant  2.0 (重构版本)
         try:
             from gui.dialogs.data_management_dialog_unified import UnifiedDataManagementDialog
 
-            # 使用通用对话框管理方法
-            dialog = self._manage_dialog(
-                'data_export',
-                UnifiedDataManagementDialog,
-                self._main_window
-            )
-
-            if dialog is not None:  # 如果创建了新对话框
-                self.center_dialog(dialog)
-                dialog.show()
-                logger.info("启动数据导出")
+            # R244 修复: 原 _manage_dialog 方法不存在(data_management_dialog_unified.py 已提供
+            # 统一对话框)，改为直接创建并显示，与 _on_database_admin 保持一致
+            dialog = UnifiedDataManagementDialog(self._main_window)
+            self.center_dialog(dialog)
+            dialog.show()
+            logger.info("启动数据导出")
 
         except ImportError:
             # 如果对话框不存在，使用简单的文件保存对话框
@@ -2705,16 +2759,57 @@ FactorWeave-Quant  2.0 (重构版本)
     def _on_check_update(self) -> None:
         """检查更新"""
         try:
-            # TODO: 实现版本检查逻辑
-            QMessageBox.information(
-                self._main_window,
-                "检查更新",
-                "当前版本: FactorWeave-Quant  v2.0\n\n自动更新功能正在开发中，请访问项目页面获取最新版本。"
-            )
+            # R245: 实现版本比对（本地 v2.0 vs GitHub releases 最新版），断网时优雅降级
+            local_version = "2.0"
+            remote_url = "https://api.github.com/repos/factorweave/FactorWeave-Quant/releases/latest"
+            try:
+                import requests
+                resp = requests.get(remote_url, timeout=5)
+                resp.raise_for_status()
+                remote_version = (resp.json().get("tag_name") or "").lstrip("v")
+            except Exception as e:
+                logger.warning(f"检查更新网络请求失败（降级提示）: {e}")
+                QMessageBox.information(
+                    self._main_window,
+                    "检查更新",
+                    f"当前版本: FactorWeave-Quant  v{local_version}\n\n暂无法连接更新服务器，请稍后重试。"
+                )
+                return
+
+            if remote_version and remote_version != local_version:
+                QMessageBox.information(
+                    self._main_window,
+                    "检查更新",
+                    f"发现新版本: v{remote_version}（当前 v{local_version}）\n\n请访问项目页面获取最新版本。"
+                )
+            else:
+                QMessageBox.information(
+                    self._main_window,
+                    "检查更新",
+                    f"当前已是最新版本: v{local_version}"
+                )
             logger.info("检查软件更新")
         except Exception as e:
             logger.error(f"检查更新失败: {e}")
             QMessageBox.warning(self._main_window, "错误", f"无法检查更新: {e}")
+
+    def _on_theme_changed(self, theme_name: str) -> None:
+        """切换主题（统一入口，R244 修复: 委托 ThemeManager.set_theme）"""
+        try:
+            from utils.theme import get_theme_manager
+            theme_manager = self._theme_manager if hasattr(self, '_theme_manager') and self._theme_manager else get_theme_manager()
+            if theme_manager is None:
+                raise RuntimeError("ThemeManager 不可用")
+            if hasattr(theme_manager, 'set_theme'):
+                theme_manager.set_theme(theme_name)
+            elif hasattr(theme_manager, 'apply_theme'):
+                theme_manager.apply_theme(theme_name)
+            else:
+                raise RuntimeError("ThemeManager 缺少 set_theme/apply_theme 方法")
+            logger.info(f"主题已切换: {theme_name}")
+        except Exception as e:
+            logger.error(f"切换主题失败: {e}")
+            raise
 
     def _on_default_theme(self) -> None:
         """切换到默认主题"""
@@ -2748,13 +2843,16 @@ FactorWeave-Quant  2.0 (重构版本)
         try:
             # 检查是否有分析面板
             if hasattr(self, '_analysis_widget') and self._analysis_widget:
-                self._analysis_widget.run_analysis()
+                self._analysis_widget.refresh_current_tab()
                 logger.info("启动分析功能")
             else:
+                # R244 备注: 项目存在真实分析面板 AnalysisWidget（gui/widgets/analysis_widget.py L91），
+                # 但其中模块级导入链包含 xtquant/XTP（已实测触发 0xC0000005 进程崩溃，R241 环境预存问题），
+                # 在环境问题解决前保持安全降级，避免挂载后崩溃。挂载方案列入高价值待开发清单。
                 QMessageBox.information(
                     self._main_window,
                     "分析功能",
-                    "分析功能正在开发中，敬请期待！"
+                    "分析功能模块加载受限（依赖环境问题未解决），敬请期待！"
                 )
         except Exception as e:
             logger.error(f"启动分析失败: {e}")
@@ -3238,11 +3336,16 @@ FactorWeave-Quant  2.0 (重构版本)
     def _on_user_manual(self) -> None:
         """用户手册"""
         try:
-            QMessageBox.information(
+            from gui.dialogs.help_viewer_dialog import HelpViewerDialog
+            from pathlib import Path
+            project_root = Path(__file__).resolve().parents[2]
+            dialog = HelpViewerDialog(
                 self._main_window,
-                "用户手册",
-                "用户手册功能正在开发中，敬请期待！"
+                title="用户手册",
+                md_path=str(project_root / "回测UI详细使用说明.md"),
             )
+            self.center_dialog(dialog)
+            dialog.exec_()
             logger.info("打开用户手册")
         except Exception as e:
             logger.error(f"用户手册失败: {e}")

@@ -304,26 +304,27 @@ class TestP01_FullPathRegression:
         return order
 
     def test_import_error_path_skips_enhanced_monitor(self, executor):
-        """L764: ImportError -> debug日志 -> 继续执行, L770 正常导入AccountManager"""
+        """R252-F1: try_resolve ImportError -> debug日志 -> 继续执行, 账户检查正常"""
         call_count = [0]
 
-        def _resolve_import_then_none(cls):
+        def _try_resolve_import_then_none(cls):
             call_count[0] += 1
             if call_count[0] == 1:
                 raise ImportError("No module named enhanced")
             return None
-        executor.service_container.resolve = MagicMock(
-            side_effect=_resolve_import_then_none)
+        # R252-F1: 风控增强使用 try_resolve 而非 resolve
+        executor.service_container.try_resolve = MagicMock(
+            side_effect=_try_resolve_import_then_none)
         order = self._make_order()
         result = executor._pre_trade_risk_check(order)
         assert result['passed'] is True
 
     def test_enhanced_monitor_rejects_order(self, executor):
-        """L758-L762: risk_result['passed']=False -> 拒绝订单"""
+        """R252-F1: risk_result['passed']=False -> 拒绝订单"""
         mock_monitor = MagicMock()
         mock_monitor.check_order_risk = MagicMock(
             return_value={'passed': False, 'reason': '超出单日亏损限额'})
-        executor.service_container.resolve = MagicMock(return_value=mock_monitor)
+        executor.service_container.try_resolve = MagicMock(return_value=mock_monitor)
         order = self._make_order()
         result = executor._pre_trade_risk_check(order)
         assert result['passed'] is False

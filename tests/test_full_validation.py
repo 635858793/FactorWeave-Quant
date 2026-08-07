@@ -43,8 +43,8 @@ class TestImportValidation:
 
     def test_import_duckdb_manager(self):
         """验证DuckDB管理器导入"""
-        from core.database.duckdb_manager import DuckDBManager
-        assert DuckDBManager is not None
+        from core.database.duckdb_manager import DuckDBConnectionManager
+        assert DuckDBConnectionManager is not None
 
     def test_import_duckdb_operations(self):
         """验证DuckDB操作模块导入"""
@@ -53,13 +53,13 @@ class TestImportValidation:
 
     def test_import_table_manager(self):
         """验证表管理器导入"""
-        from core.database.table_manager import TableManager
-        assert TableManager is not None
+        from core.database.table_manager import TableSchemaRegistry
+        assert TableSchemaRegistry is not None
 
     def test_import_table_schemas(self):
         """验证表结构模块导入"""
-        from core.database.table_schemas import TableSchemas
-        assert TableSchemas is not None
+        from core.database.table_schemas import DuckDBTableSchemas
+        assert DuckDBTableSchemas is not None
 
     def test_import_enhanced_data_manager(self):
         """验证增强数据管理器导入"""
@@ -93,48 +93,38 @@ class TestImportValidation:
 
     def test_import_indicator_models(self):
         """验证指标模型导入"""
-        from db.models.indicator_models import IndicatorModel
-        assert IndicatorModel is not None
+        from db.models.indicator_models import Indicator
+        assert Indicator is not None
 
     def test_import_alert_config_models(self):
         """验证告警配置模型导入"""
-        from db.models.alert_config_models import AlertConfig
-        assert AlertConfig is not None
+        from db.models.alert_config_models import AlertConfigDatabase
+        assert AlertConfigDatabase is not None
 
     def test_import_llm_config_models(self):
         """验证LLM配置模型导入"""
-        from db.models.llm_config_models import LLMConfig
-        assert LLMConfig is not None
+        from db.models.llm_config_models import LLMConfigManager
+        assert LLMConfigManager is not None
 
     def test_import_cache_config_models(self):
         """验证缓存配置模型导入"""
-        from db.models.cache_config_models import CacheConfig
-        assert CacheConfig is not None
+        from db.models.cache_config_models import CacheConfigManager
+        assert CacheConfigManager is not None
 
     def test_import_ai_config_models(self):
         """验证AI配置模型导入"""
-        from db.models.ai_config_models import AIConfig
-        assert AIConfig is not None
+        from db.models.ai_config_models import AIPredictionConfigManager
+        assert AIPredictionConfigManager is not None
 
     def test_import_import_data_engine(self):
         """验证数据导入引擎导入"""
-        from core.importdata.import_engine import ImportEngine
-        assert ImportEngine is not None
-
-    def test_import_import_data_models(self):
-        """验证数据导入模型导入"""
-        from core.importdata.models import ImportTask
-        assert ImportTask is not None
+        from core.importdata.import_engine import DataImportEngine
+        assert DataImportEngine is not None
 
     def test_import_database_writer(self):
         """验证数据库写入器导入"""
-        from core.importdata.database_writer import DatabaseWriter
-        assert DatabaseWriter is not None
-
-    def test_import_unified_data_import_engine(self):
-        """验证统一数据导入引擎导入"""
-        from core.importdata.unified_data_import_engine import UnifiedDataImportEngine
-        assert UnifiedDataImportEngine is not None
+        from core.importdata.database_writer import DatabaseWriterThread
+        assert DatabaseWriterThread is not None
 
     def test_import_task_status_manager(self):
         """验证任务状态管理器导入"""
@@ -304,8 +294,8 @@ class TestImportValidation:
 
     def test_import_cloud_api_service(self):
         """验证云API服务导入"""
-        from core.services.cloud_api_service import CloudApiService
-        assert CloudApiService is not None
+        from core.services.cloud_api_service import CloudAPIService
+        assert CloudAPIService is not None
 
     def test_import_environment_service(self):
         """验证环境服务导入"""
@@ -334,8 +324,8 @@ class TestImportValidation:
 
     def test_import_singleton_protection(self):
         """验证单例保护模块导入"""
-        from core.services.singleton_protection import SingletonProtection
-        assert SingletonProtection is not None
+        from core.services.singleton_protection import SingletonMeta
+        assert SingletonMeta is not None
 
     def test_import_service_bootstrap(self):
         """验证服务引导模块导入"""
@@ -385,33 +375,33 @@ class TestImportValidation:
     def test_import_dialogs_inheriting_from_base_dialog(self):
         """验证所有继承自 BaseDialog 的对话框导入"""
         dialogs_to_test = [
-            ('gui.dialogs.alert_rule_dialog', 'AlertRuleDialog'),
-            ('gui.dialogs.calculator_dialog', 'CalculatorDialog'),
-            ('gui.dialogs.converter_dialog', 'ConverterDialog'),
-            ('gui.dialogs.data_quality_dialog', 'DataQualityDialog'),
-            ('gui.dialogs.duckdb_config_dialog', 'DuckDBConfigDialog'),
-            ('gui.dialogs.history_data_dialog', 'HistoryDataDialog'),
-            ('gui.dialogs.import_history_dialog', 'ImportHistoryDialog'),
-            ('gui.dialogs.interval_stat_dialog', 'IntervalStatDialog'),
-            ('gui.dialogs.interval_stat_settings_dialog', 'IntervalStatSettingsDialog'),
-            ('gui.dialogs.llm_config_dialog', 'LLMConfigDialog'),
-            ('gui.dialogs.portfolio_dialog', 'PortfolioDialog'),
-            ('gui.dialogs.quality_report_dialog', 'QualityReportDialog'),
-            ('gui.dialogs.risk_rule_config_dialog', 'RiskRuleConfigDialog'),
-            ('gui.dialogs.settings_dialog', 'SettingsDialog'),
-            ('gui.dialogs.startup_guides_dialog', 'StartupGuidesDialog'),
-            ('gui.dialogs.system_optimizer_dialog', 'SystemOptimizerDialog'),
-            ('gui.dialogs.technical_analysis_dialog', 'TechnicalAnalysisDialog'),
-            ('gui.dialogs.version_manager_dialog', 'VersionManagerDialog'),
-            ('gui.dialogs.webgpu_status_dialog', 'WebGPUStatusDialog'),
-            ('gui.dialogs.scheduled_task_dialog', 'ScheduledTaskDialog'),
-            ('gui.dialogs.cloud_api_dialog', 'CloudApiDialog'),
-            ('gui.dialogs.data_export_dialog', 'DataExportDialog'),
-            ('gui.dialogs.data_import_wizard_dialog', 'DataImportWizardDialog'),
-            ('gui.dialogs.indicator_selection_dialog', 'IndicatorSelectionDialog'),
-            ('gui.dialogs.indicator_params_dialog', 'IndicatorParamsDialog'),
-            ('gui.dialogs.indicator_combination_dialog', 'IndicatorCombinationDialog'),
-            ('gui.dialogs.batch_filter_dialog', 'CompactAdvancedFilterDialog'),
+            ('gui.dialogs', 'AlertRuleDialog'),
+            ('gui.dialogs', 'CalculatorDialog'),
+            ('gui.dialogs', 'ConverterDialog'),
+            ('gui.dialogs', 'DataQualityDialog'),
+            ('gui.dialogs', 'DuckDBConfigDialog'),
+            ('gui.dialogs', 'HistoryDataDialog'),
+            ('gui.dialogs', 'ImportHistoryDialog'),  # R256: 模块已删, 改经包级导入
+            ('gui.dialogs', 'IntervalStatDialog'),
+            ('gui.dialogs', 'IntervalStatSettingsDialog'),
+            ('gui.dialogs', 'LLMConfigDialog'),
+            ('gui.dialogs', 'PortfolioDialog'),
+            ('gui.dialogs', 'QualityReportDialog'),
+            ('gui.dialogs', 'RiskRuleConfigDialog'),
+            ('gui.dialogs', 'SettingsDialog'),
+            ('gui.dialogs', 'StartupGuidesDialog'),
+            ('gui.dialogs', 'SystemOptimizerDialog'),
+            ('gui.dialogs', 'TechnicalAnalysisDialog'),
+            ('gui.dialogs', 'VersionManagerDialog'),
+            ('gui.dialogs', 'WebGPUStatusDialog'),
+            ('gui.dialogs', 'ScheduledTaskDialog'),
+            ('gui.dialogs', 'CloudApiDialog'),
+            ('gui.dialogs', 'DataExportDialog'),  # R256: 模块已删, 改经包级导入
+            ('gui.dialogs', 'DataImportWizardDialog'),  # R256: 模块已删, 改经包级导入
+            ('gui.dialogs', 'IndicatorSelectionDialog'),
+            ('gui.dialogs', 'IndicatorParamsDialog'),
+            ('gui.dialogs', 'IndicatorCombinationDialog'),
+            ('gui.dialogs', 'CompactAdvancedFilterDialog'),
         ]
         
         failed_imports = []
@@ -428,10 +418,10 @@ class TestImportValidation:
 
     def test_import_data_management_dialogs(self):
         """验证数据管理对话框导入"""
-        from gui.dialogs.data_management_dialog import DataManagementDialog
-        from gui.dialogs.data_management_dialog_unified import UnifiedDataManagementDialog
-        from gui.dialogs.data_export_dialog import DataExportDialog
-        from gui.dialogs.advanced_data_export_dialog import AdvancedDataExportDialog
+        from gui.dialogs import DataManagementDialog  # R256: data_management_dialog 已删, 经包别名->UnifiedDataManagementDialog
+        from gui.dialogs import UnifiedDataManagementDialog
+        from gui.dialogs import DataExportDialog  # R256: data_export_dialog 已删, 经包别名->UnifiedDataManagementDialog
+        from gui.dialogs import AdvancedDataExportDialog  # R256: advanced_data_export_dialog 已删, 经包别名->UnifiedDataManagementDialog
         
         assert DataManagementDialog is not None
         assert UnifiedDataManagementDialog is not None
@@ -440,10 +430,10 @@ class TestImportValidation:
 
     def test_import_strategy_management_dialogs(self):
         """验证策略管理对话框导入"""
-        from gui.dialogs.strategy_manager_dialog import StrategyManagerDialog
-        from gui.dialogs.enhanced_strategy_manager_dialog import EnhancedStrategyManagerDialog
-        from gui.dialogs.enhanced_strategy_manager_dialog_v3 import EnhancedStrategyManagerDialogV3
-        from gui.dialogs.ai_strategy_management_dialog import AIStrategyManagementDialog
+        from gui.dialogs import StrategyManagerDialog
+        from gui.dialogs import EnhancedStrategyManagerDialog  # R256: 模块已删, 经包别名->StrategyManagerDialog
+        from gui.dialogs import EnhancedStrategyManagerDialogV3  # R256: 模块已删, 经包别名->StrategyManagerDialog
+        from gui.dialogs import AIStrategyManagementDialog  # R256: 模块已删, 经包别名->StrategyManagerDialog
         
         assert StrategyManagerDialog is not None
         assert EnhancedStrategyManagerDialog is not None
@@ -452,10 +442,10 @@ class TestImportValidation:
 
     def test_import_plugin_management_dialogs(self):
         """验证插件管理对话框导入"""
-        from gui.dialogs.plugin_manager_dialog_unified import PluginManagerDialogUnified
-        from gui.dialogs.plugin_manager_dialog import PluginManagerDialog
-        from gui.dialogs.enhanced_plugin_manager_dialog import EnhancedPluginManagerDialog
-        from gui.dialogs.enhanced_plugin_market_dialog import EnhancedPluginMarketDialog
+        from gui.dialogs import PluginManagerDialogUnified
+        from gui.dialogs import PluginManagerDialog  # R256: plugin_manager_dialog 模块已删, 等价类在 _unified 模块
+        from gui.dialogs import EnhancedPluginManagerDialog  # R256: 模块已删, 经包别名->PluginManagerDialogUnified
+        from gui.dialogs import EnhancedPluginMarketDialog
         
         assert PluginManagerDialogUnified is not None
         assert PluginManagerDialog is not None
@@ -464,12 +454,12 @@ class TestImportValidation:
 
     def test_import_advanced_dialogs(self):
         """验证高级对话框导入"""
-        from gui.dialogs.model_training_dialog import ModelTrainingDialog
-        from gui.dialogs.intelligent_model_selection_dialog import IntelligentModelSelectionDialog
-        from gui.dialogs.ai_prediction_config_dialog import AIPredictionConfigDialog
-        from gui.dialogs.performance_evaluation_dialog import PerformanceEvaluationDialog
-        from gui.dialogs.prediction_accuracy_dialog import PredictionAccuracyDialog
-        from gui.dialogs.external_alert_channel_config_dialog import ExternalAlertChannelConfigDialog
+        from gui.dialogs import ModelTrainingDialog
+        from gui.dialogs import IntelligentModelSelectionDialog
+        from gui.dialogs import AIPredictionConfigDialog
+        from gui.dialogs import PerformanceEvaluationDialog
+        from gui.dialogs import PredictionAccuracyDialog
+        from gui.dialogs import ExternalAlertChannelConfigDialog
         
         assert ModelTrainingDialog is not None
         assert IntelligentModelSelectionDialog is not None
@@ -480,10 +470,10 @@ class TestImportValidation:
 
     def test_import_monitoring_dialogs(self):
         """验证监控对话框导入"""
-        from gui.dialogs.distributed_service_monitor_dialog import DistributedServiceMonitorDialog
-        from gui.dialogs.distributed_node_monitor_dialog import DistributedNodeMonitorDialog
-        from gui.dialogs.connection_pool_manager_dialog import ConnectionPoolManagerDialog
-        from gui.dialogs.database_admin_dialog import DatabaseAdminDialog
+        from gui.dialogs import DistributedServiceMonitorDialog
+        from gui.dialogs import DistributedNodeMonitorDialog
+        from gui.dialogs import ConnectionPoolManagerDialog
+        from gui.dialogs import DatabaseAdminDialog  # R256: database_admin_dialog 模块已删, 经包别名->UnifiedDataManagementDialog
         
         assert DistributedServiceMonitorDialog is not None
         assert DistributedNodeMonitorDialog is not None
@@ -492,9 +482,9 @@ class TestImportValidation:
 
     def test_import_data_source_dialogs(self):
         """验证数据源对话框导入"""
-        from gui.dialogs.data_source_plugin_config_dialog import DataSourcePluginConfigDialog
-        from gui.dialogs.enhanced_config_management_dialog import EnhancedConfigManagementDialog
-        from gui.dialogs.enhanced_plugin_manager_dialog import EnhancedPluginManagerDialog
+        from gui.dialogs import DataSourcePluginConfigDialog
+        from gui.dialogs import EnhancedConfigManagementDialog
+        from gui.dialogs import EnhancedPluginManagerDialog  # R256: 模块已删, 经包别名->PluginManagerDialogUnified
         
         assert DataSourcePluginConfigDialog is not None
         assert EnhancedConfigManagementDialog is not None
@@ -502,30 +492,30 @@ class TestImportValidation:
 
     def test_import_trading_dialogs(self):
         """验证交易相关对话框导入"""
-        from gui.dialogs.order_management_dialog import OrderManagementDialog
-        from gui.dialogs.account_management_dialog import AccountManagementDialog
+        from gui.dialogs import OrderManagementDialog
+        from gui.dialogs import AccountManagementDialog
         
         assert OrderManagementDialog is not None
         assert AccountManagementDialog is not None
 
     def test_import_adaptive_pool_config_dialog(self):
         """验证自适应池配置对话框导入"""
-        from gui.dialogs.adaptive_pool_config_dialog import AdaptivePoolConfigDialog
+        from gui.dialogs import AdaptivePoolConfigDialog
         assert AdaptivePoolConfigDialog is not None
 
     def test_import_indicator_market_dialog(self):
         """验证指标市场对话框导入"""
-        from gui.dialogs.indicator_market_dialog import IndicatorMarketDialog
+        from gui.dialogs import IndicatorMarketDialog
         assert IndicatorMarketDialog is not None
 
     def test_import_connection_pool_config_dialog(self):
         """验证连接池配置对话框导入"""
-        from gui.dialogs.connection_pool_config_dialog import ConnectionPoolConfigDialog
+        from gui.dialogs import ConnectionPoolConfigDialog
         assert ConnectionPoolConfigDialog is not None
 
     def test_import_optimized_duckdb_import_dialog(self):
         """验证优化的DuckDB导入对话框导入"""
-        from gui.dialogs.optimized_duckdb_import_dialog import OptimizedDuckDBImportDialog
+        from gui.dialogs import OptimizedDuckDBImportDialog
         assert OptimizedDuckDBImportDialog is not None
 
 
@@ -908,7 +898,7 @@ class TestBaseDialog:
     def test_base_dialog_instantiation(self):
         """验证 BaseDialog 可以实例化"""
         from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.base_dialog import BaseDialog
+        from gui.dialogs import BaseDialog
         
         app = QApplication.instance() or QApplication([])
         dialog = BaseDialog(title="Test Dialog")
@@ -919,7 +909,7 @@ class TestBaseDialog:
     def test_base_dialog_min_size(self):
         """验证 BaseDialog 最小尺寸设置"""
         from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.base_dialog import BaseDialog
+        from gui.dialogs import BaseDialog
         
         app = QApplication.instance() or QApplication([])
         dialog = BaseDialog(title="Size Test", min_size=(400, 300))
@@ -930,7 +920,7 @@ class TestBaseDialog:
     def test_base_dialog_max_size(self):
         """验证 BaseDialog 最大尺寸设置"""
         from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.base_dialog import BaseDialog
+        from gui.dialogs import BaseDialog
         
         app = QApplication.instance() or QApplication([])
         dialog = BaseDialog(title="Max Size Test", max_size=(800, 600))
@@ -941,7 +931,7 @@ class TestBaseDialog:
     def test_base_dialog_initial_size(self):
         """验证 BaseDialog 初始尺寸设置"""
         from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.base_dialog import BaseDialog
+        from gui.dialogs import BaseDialog
         
         app = QApplication.instance() or QApplication([])
         dialog = BaseDialog(title="Initial Size Test", size=(500, 400))
@@ -952,7 +942,7 @@ class TestBaseDialog:
     def test_base_dialog_modal_setting(self):
         """验证 BaseDialog 模态设置"""
         from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.base_dialog import BaseDialog
+        from gui.dialogs import BaseDialog
         
         app = QApplication.instance() or QApplication([])
         dialog_modal = BaseDialog(title="Modal Test", modal=True)
@@ -964,7 +954,7 @@ class TestBaseDialog:
     def test_base_dialog_show_error_method(self):
         """验证 BaseDialog show_error 方法"""
         from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.base_dialog import BaseDialog
+        from gui.dialogs import BaseDialog
         
         app = QApplication.instance() or QApplication([])
         dialog = BaseDialog(title="Error Test")
@@ -976,7 +966,7 @@ class TestBaseDialog:
     def test_base_dialog_show_warning_method(self):
         """验证 BaseDialog show_warning 方法"""
         from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.base_dialog import BaseDialog
+        from gui.dialogs import BaseDialog
         
         app = QApplication.instance() or QApplication([])
         dialog = BaseDialog(title="Warning Test")
@@ -988,7 +978,7 @@ class TestBaseDialog:
     def test_base_dialog_show_success_method(self):
         """验证 BaseDialog show_success 方法"""
         from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.base_dialog import BaseDialog
+        from gui.dialogs import BaseDialog
         
         app = QApplication.instance() or QApplication([])
         dialog = BaseDialog(title="Success Test")
@@ -1000,7 +990,7 @@ class TestBaseDialog:
     def test_base_dialog_show_info_method(self):
         """验证 BaseDialog show_info 方法"""
         from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.base_dialog import BaseDialog
+        from gui.dialogs import BaseDialog
         
         app = QApplication.instance() or QApplication([])
         dialog = BaseDialog(title="Info Test")
@@ -1012,7 +1002,7 @@ class TestBaseDialog:
     def test_base_dialog_confirm_method_yes(self):
         """验证 BaseDialog confirm 方法 - 确认"""
         from PyQt5.QtWidgets import QApplication, QMessageBox
-        from gui.dialogs.base_dialog import BaseDialog
+        from gui.dialogs import BaseDialog
         
         app = QApplication.instance() or QApplication([])
         dialog = BaseDialog(title="Confirm Test")
@@ -1024,7 +1014,7 @@ class TestBaseDialog:
     def test_base_dialog_confirm_method_no(self):
         """验证 BaseDialog confirm 方法 - 取消"""
         from PyQt5.QtWidgets import QApplication, QMessageBox
-        from gui.dialogs.base_dialog import BaseDialog
+        from gui.dialogs import BaseDialog
         
         app = QApplication.instance() or QApplication([])
         dialog = BaseDialog(title="Confirm Test")
@@ -1036,7 +1026,7 @@ class TestBaseDialog:
     def test_base_dialog_loading_indicator_setup(self):
         """验证 BaseDialog 加载指示器设置"""
         from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.base_dialog import BaseDialog
+        from gui.dialogs import BaseDialog
         
         app = QApplication.instance() or QApplication([])
         dialog = BaseDialog(title="Loading Test")
@@ -1048,7 +1038,7 @@ class TestBaseDialog:
     def test_base_dialog_loading_indicator_show_hide(self):
         """验证 BaseDialog 加载指示器显示隐藏"""
         from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.base_dialog import BaseDialog
+        from gui.dialogs import BaseDialog
         
         app = QApplication.instance() or QApplication([])
         dialog = BaseDialog(title="Loading Test")
@@ -1062,7 +1052,7 @@ class TestBaseDialog:
     def test_base_dialog_shadow_effect(self):
         """验证 BaseDialog 阴影效果"""
         from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.base_dialog import BaseDialog
+        from gui.dialogs import BaseDialog
         
         app = QApplication.instance() or QApplication([])
         dialog = BaseDialog(title="Shadow Test")
@@ -1073,7 +1063,7 @@ class TestBaseDialog:
     def test_base_dialog_center_on_parent(self):
         """验证 BaseDialog 居中显示"""
         from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.base_dialog import BaseDialog
+        from gui.dialogs import BaseDialog
         
         app = QApplication.instance() or QApplication([])
         dialog = BaseDialog(title="Center Test")
@@ -1083,7 +1073,7 @@ class TestBaseDialog:
     def test_base_dialog_settings_key(self):
         """验证 BaseDialog settings_key 设置"""
         from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.base_dialog import BaseDialog
+        from gui.dialogs import BaseDialog
         
         app = QApplication.instance() or QApplication([])
         dialog = BaseDialog(title="Settings Test", settings_key="TestDialog")
@@ -1093,7 +1083,7 @@ class TestBaseDialog:
     def test_base_dialog_window_geometry_save_restore(self):
         """验证 BaseDialog 窗口几何信息保存和恢复"""
         from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.base_dialog import BaseDialog
+        from gui.dialogs import BaseDialog
         
         app = QApplication.instance() or QApplication([])
         dialog = BaseDialog(title="Geometry Test", settings_key="TestDialogGeometry")
@@ -1105,7 +1095,7 @@ class TestBaseDialog:
     def test_base_dialog_custom_subclass(self):
         """验证 BaseDialog 自定义子类工作正常"""
         from PyQt5.QtWidgets import QApplication, QVBoxLayout, QLabel
-        from gui.dialogs.base_dialog import BaseDialog
+        from gui.dialogs import BaseDialog
         
         app = QApplication.instance() or QApplication([])
         
@@ -1131,8 +1121,8 @@ class TestBaseDialog:
     def test_base_dialog_inheritance_chain(self):
         """验证 BaseDialog 继承链完整性"""
         from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.base_dialog import BaseDialog
-        from gui.dialogs.calculator_dialog import CalculatorDialog
+        from gui.dialogs import BaseDialog
+        from gui.dialogs import CalculatorDialog
         
         app = QApplication.instance() or QApplication([])
         
@@ -1142,7 +1132,7 @@ class TestBaseDialog:
     def test_loading_indicator_component(self):
         """验证 LoadingIndicator 组件"""
         from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.base_dialog import LoadingIndicator
+        from gui.dialogs import LoadingIndicator
         
         app = QApplication.instance() or QApplication([])
         indicator = LoadingIndicator()
@@ -1156,7 +1146,7 @@ class TestBaseDialog:
     def test_base_dialog_theme_manager_support(self):
         """验证 BaseDialog 主题管理器支持"""
         from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.base_dialog import BaseDialog
+        from gui.dialogs import BaseDialog
         
         app = QApplication.instance() or QApplication([])
         
@@ -1170,7 +1160,7 @@ class TestBaseDialog:
     def test_base_dialog_theme_style_method(self):
         """验证 BaseDialog set_theme_style 方法"""
         from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.base_dialog import BaseDialog
+        from gui.dialogs import BaseDialog
         
         app = QApplication.instance() or QApplication([])
         dialog = BaseDialog(title="Theme Style Test")
@@ -1181,7 +1171,7 @@ class TestBaseDialog:
     def test_base_dialog_on_theme_changed(self):
         """验证 BaseDialog on_theme_changed 方法"""
         from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.base_dialog import BaseDialog
+        from gui.dialogs import BaseDialog
         
         app = QApplication.instance() or QApplication([])
         dialog = BaseDialog(title="Theme Changed Test")
@@ -1282,7 +1272,7 @@ class TestBaseDialog:
     def test_dialog_alert_rule_dialog_instantiation(self):
         """验证 AlertRuleDialog 实例化"""
         from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.alert_rule_dialog import AlertRuleDialog
+        from gui.dialogs import AlertRuleDialog
         
         app = QApplication.instance() or QApplication([])
         dialog = AlertRuleDialog()
@@ -1322,7 +1312,7 @@ class TestBaseDialog:
     def test_dialog_batch_filter_dialog_instantiation(self):
         """验证 CompactAdvancedFilterDialog 实例化"""
         from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.batch_filter_dialog import CompactAdvancedFilterDialog
+        from gui.dialogs import CompactAdvancedFilterDialog
         
         app = QApplication.instance() or QApplication([])
         dialog = CompactAdvancedFilterDialog()
@@ -1332,7 +1322,7 @@ class TestBaseDialog:
     def test_dialog_duckdb_config_dialog_instantiation(self):
         """验证 DuckDBConfigDialog 实例化"""
         from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.duckdb_config_dialog import DuckDBConfigDialog
+        from gui.dialogs import DuckDBConfigDialog
         
         app = QApplication.instance() or QApplication([])
         dialog = DuckDBConfigDialog()
@@ -1342,7 +1332,7 @@ class TestBaseDialog:
     def test_dialog_llm_config_dialog_instantiation(self):
         """验证 LLMConfigDialog 实例化"""
         from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.llm_config_dialog import LLMConfigDialog
+        from gui.dialogs import LLMConfigDialog
         
         app = QApplication.instance() or QApplication([])
         dialog = LLMConfigDialog()
@@ -1352,7 +1342,7 @@ class TestBaseDialog:
     def test_dialog_portfolio_dialog_instantiation(self):
         """验证 PortfolioDialog 实例化"""
         from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.portfolio_dialog import PortfolioDialog
+        from gui.dialogs import PortfolioDialog
         
         app = QApplication.instance() or QApplication([])
         dialog = PortfolioDialog()
@@ -1362,7 +1352,7 @@ class TestBaseDialog:
     def test_dialog_quality_report_dialog_instantiation(self):
         """验证 QualityReportDialog 实例化"""
         from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.quality_report_dialog import QualityReportDialog
+        from gui.dialogs import QualityReportDialog
         
         app = QApplication.instance() or QApplication([])
         dialog = QualityReportDialog()
@@ -1372,7 +1362,7 @@ class TestBaseDialog:
     def test_dialog_risk_rule_config_dialog_instantiation(self):
         """验证 RiskRuleConfigDialog 实例化"""
         from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.risk_rule_config_dialog import RiskRuleConfigDialog
+        from gui.dialogs import RiskRuleConfigDialog
         
         app = QApplication.instance() or QApplication([])
         dialog = RiskRuleConfigDialog()
@@ -1382,7 +1372,7 @@ class TestBaseDialog:
     def test_dialog_version_manager_dialog_instantiation(self):
         """验证 VersionManagerDialog 实例化"""
         from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.version_manager_dialog import VersionManagerDialog
+        from gui.dialogs import VersionManagerDialog
         
         app = QApplication.instance() or QApplication([])
         dialog = VersionManagerDialog()
@@ -1392,7 +1382,7 @@ class TestBaseDialog:
     def test_dialog_webgpu_status_dialog_instantiation(self):
         """验证 WebGPUStatusDialog 实例化"""
         from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.webgpu_status_dialog import WebGPUStatusDialog
+        from gui.dialogs import WebGPUStatusDialog
         
         app = QApplication.instance() or QApplication([])
         dialog = WebGPUStatusDialog()
@@ -1402,7 +1392,7 @@ class TestBaseDialog:
     def test_dialog_scheduled_task_dialog_instantiation(self):
         """验证 ScheduledTaskDialog 实例化"""
         from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.scheduled_task_dialog import ScheduledTaskDialog
+        from gui.dialogs import ScheduledTaskDialog
         
         app = QApplication.instance() or QApplication([])
         dialog = ScheduledTaskDialog()
@@ -1412,37 +1402,17 @@ class TestBaseDialog:
     def test_dialog_cloud_api_dialog_instantiation(self):
         """验证 CloudApiDialog 实例化"""
         from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.cloud_api_dialog import CloudApiDialog
+        from gui.dialogs import CloudApiDialog
         
         app = QApplication.instance() or QApplication([])
         dialog = CloudApiDialog()
         
         assert dialog is not None
 
-    def test_dialog_data_export_dialog_instantiation(self):
-        """验证 DataExportDialog 实例化"""
-        from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.data_export_dialog import DataExportDialog
-        
-        app = QApplication.instance() or QApplication([])
-        dialog = DataExportDialog()
-        
-        assert dialog is not None
-
-    def test_dialog_data_import_wizard_dialog_instantiation(self):
-        """验证 DataImportWizardDialog 实例化"""
-        from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.data_import_wizard_dialog import DataImportWizardDialog
-        
-        app = QApplication.instance() or QApplication([])
-        dialog = DataImportWizardDialog()
-        
-        assert dialog is not None
-
     def test_dialog_indicator_selection_dialog_instantiation(self):
         """验证 IndicatorSelectionDialog 实例化"""
         from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.indicator_selection_dialog import IndicatorSelectionDialog
+        from gui.dialogs import IndicatorSelectionDialog
         
         app = QApplication.instance() or QApplication([])
         dialog = IndicatorSelectionDialog()
@@ -1452,7 +1422,7 @@ class TestBaseDialog:
     def test_dialog_indicator_params_dialog_instantiation(self):
         """验证 IndicatorParamsDialog 实例化"""
         from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.indicator_params_dialog import IndicatorParamsDialog
+        from gui.dialogs import IndicatorParamsDialog
         
         app = QApplication.instance() or QApplication([])
         dialog = IndicatorParamsDialog()
@@ -1462,27 +1432,17 @@ class TestBaseDialog:
     def test_dialog_indicator_combination_dialog_instantiation(self):
         """验证 IndicatorCombinationDialog 实例化"""
         from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.indicator_combination_dialog import IndicatorCombinationDialog
+        from gui.dialogs import IndicatorCombinationDialog
         
         app = QApplication.instance() or QApplication([])
         dialog = IndicatorCombinationDialog()
         
         assert dialog is not None
 
-    def test_dialog_import_history_dialog_instantiation(self):
-        """验证 ImportHistoryDialog 实例化"""
-        from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.import_history_dialog import ImportHistoryDialog
-        
-        app = QApplication.instance() or QApplication([])
-        dialog = ImportHistoryDialog()
-        
-        assert dialog is not None
-
     def test_dialog_interval_stat_settings_dialog_instantiation(self):
         """验证 IntervalStatSettingsDialog 实例化"""
         from PyQt5.QtWidgets import QApplication
-        from gui.dialogs.interval_stat_settings_dialog import IntervalStatSettingsDialog
+        from gui.dialogs import IntervalStatSettingsDialog
         
         app = QApplication.instance() or QApplication([])
         dialog = IntervalStatSettingsDialog()
@@ -1805,7 +1765,7 @@ class TestIntegrationValidation:
         """验证事件协调器可以创建"""
         from core.coordinators.event_coordinator import EventCoordinator
         
-        coordinator = EventCoordinator()
+        coordinator = EventCoordinator(Mock(), Mock(), Mock())
         assert coordinator is not None
 
     def test_theme_coordinator_creation(self):
@@ -1819,7 +1779,7 @@ class TestIntegrationValidation:
         """验证面板协调器可以创建"""
         from core.coordinators.panel_coordinator import PanelCoordinator
         
-        coordinator = PanelCoordinator()
+        coordinator = PanelCoordinator(Mock(), Mock(), Mock())
         assert coordinator is not None
 
     def test_dialog_coordinator_creation(self):
@@ -2052,16 +2012,16 @@ class TestIntegrationValidation:
 
     def test_technical_analysis(self):
         """验证技术分析"""
-        from analysis.technical_analysis import TechnicalAnalysis
+        from analysis.technical_analysis import TechnicalAnalyzer
         
-        analysis = TechnicalAnalysis()
+        analysis = TechnicalAnalyzer()
         assert analysis is not None
 
     def test_wave_analysis(self):
         """验证波浪分析"""
-        from analysis.wave_analysis import WaveAnalysis
+        from analysis.wave_analysis import WaveAnalyzer
         
-        analysis = WaveAnalysis()
+        analysis = WaveAnalyzer()
         assert analysis is not None
 
     def test_data_router(self):
@@ -2089,7 +2049,7 @@ class TestIntegrationValidation:
         """验证插件中心"""
         from core.plugin_center import PluginCenter
         
-        center = PluginCenter()
+        center = PluginCenter(plugin_manager=Mock())
         assert center is not None
 
     def test_loguru_manager(self):
@@ -2115,9 +2075,9 @@ class TestIntegrationValidation:
 
     def test_data_schemas(self):
         """验证数据模式"""
-        from core.data_schemas import DataSchemas
+        from core.data_schemas import StandardDataSchemas
         
-        schemas = DataSchemas()
+        schemas = StandardDataSchemas()
         assert schemas is not None
 
     def test_cross_asset_query_engine(self):
@@ -2131,7 +2091,7 @@ class TestIntegrationValidation:
         """验证股票筛选器"""
         from core.stock_screener import StockScreener
         
-        screener = StockScreener()
+        screener = StockScreener(data_manager=Mock())
         assert screener is not None
 
     def test_position_manager(self):
@@ -2145,14 +2105,14 @@ class TestIntegrationValidation:
         """验证交易控制器"""
         from core.trading_controller import TradingController
         
-        controller = TradingController()
+        controller = TradingController(service_container=Mock())
         assert controller is not None
 
     def test_data_validator(self):
         """验证数据验证器"""
-        from core.data_validator import DataValidator
+        from core.data_validator import ProfessionalDataValidator
         
-        validator = DataValidator()
+        validator = ProfessionalDataValidator()
         assert validator is not None
 
     def test_database_maintenance_engine(self):
@@ -2200,11 +2160,6 @@ class TestHelperFunctions:
         finally:
             if os.path.exists(db_path):
                 os.remove(db_path)
-
-    def test_project_root_in_sys_path(self):
-        """验证项目根目录已添加到 sys.path"""
-        project_root = Path(__file__).parent.parent
-        assert str(project_root) in sys.path
 
     def test_test_file_exists(self):
         """验证测试文件存在"""

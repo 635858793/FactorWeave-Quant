@@ -20,7 +20,6 @@ Eastmoney Unified Data Plugin
 
 import requests
 import json
-import websocket
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional, Union
 import pandas as pd
@@ -94,9 +93,9 @@ class EastmoneyUnifiedPlugin(IDataSourcePlugin):
             supported_asset_types=[AssetType.STOCK_A, AssetType.FUND, AssetType.BOND, AssetType.INDEX],
             supported_data_types=[
                 DataType.REAL_TIME_QUOTE, DataType.LEVEL2_DATA, DataType.TICK_DATA, DataType.ORDER_BOOK,
-                DataType.HISTORICAL_KLINE, DataType.STOCK_LIST,
+                DataType.HISTORICAL_KLINE, DataType.ASSET_LIST,
                 DataType.FINANCIAL_STATEMENT, DataType.ANNOUNCEMENT, DataType.ANALYST_RATING,
-                DataType.MACRO_ECONOMIC_INDICATOR, DataType.MONEY_FLOW
+                DataType.MACRO_ECONOMIC, DataType.FUND_FLOW
             ],
             capabilities={
                 'features': [
@@ -110,13 +109,23 @@ class EastmoneyUnifiedPlugin(IDataSourcePlugin):
         self.logger.info(f"尝试连接到 {self.plugin_id} 统一数据服务...")
 
         try:
-            test_url = "https://www.eastmoney.com"
-            response = self.session.get(test_url, timeout=10)
+            # R248: 原实现仅验证官网首页（首页可达 ≠ 数据接口可用，与 R247 验证标准不一致）。
+            # 改为验证真实行情数据接口（ulist.np/get 返回 600000 实时行情）。
+            test_url = self.api_endpoints['realtime_quotes']
+            params = {'secids': '1.600000', 'fields': 'f2,f3,f4', 'fltt': '2'}
+            response = self.session.get(test_url, params=params, timeout=10)
 
             if response.status_code == 200:
-                self._is_connected = True
-                self.logger.info(f"成功连接到 {self.plugin_id} 统一数据服务。")
-                return True
+                try:
+                    payload = response.json()
+                    if payload.get('data'):
+                        self._is_connected = True
+                        self.logger.info(f"成功连接到 {self.plugin_id} 统一数据服务。")
+                        return True
+                except ValueError:
+                    pass
+                self.logger.error("数据接口响应格式异常")
+                return False
             else:
                 self.logger.error(f"连接测试失败: HTTP {response.status_code}")
                 return False
@@ -193,7 +202,7 @@ class EastmoneyUnifiedPlugin(IDataSourcePlugin):
             elif query.data_type == DataType.HISTORICAL_KLINE:
                 return self._get_kline_data(query.symbol, query.extra_params.get('period', 'daily'), query.start_date, query.end_date, query.asset_type)
 
-            elif query.data_type == DataType.STOCK_LIST:
+            elif query.data_type == DataType.ASSET_LIST:
                 return self._get_stock_list(query.asset_type)
 
             elif query.data_type == DataType.FINANCIAL_STATEMENT:
@@ -205,10 +214,10 @@ class EastmoneyUnifiedPlugin(IDataSourcePlugin):
             elif query.data_type == DataType.ANALYST_RATING:
                 return self._get_analyst_ratings(query.symbol, query.start_date, query.end_date)
 
-            elif query.data_type == DataType.MACRO_ECONOMIC_INDICATOR:
+            elif query.data_type == DataType.MACRO_ECONOMIC:
                 return self._get_macro_data(query.extra_params.get('indicator_id'), query.extra_params.get('country', 'CN'), query.start_date, query.end_date)
 
-            elif query.data_type == DataType.MONEY_FLOW:
+            elif query.data_type == DataType.FUND_FLOW:
                 return self._get_money_flow_data(query.symbol, query.start_date, query.end_date, query.asset_type)
 
             else:
@@ -500,11 +509,22 @@ class EastmoneyUnifiedPlugin(IDataSourcePlugin):
     def _get_kline_data(self, symbol: str, period: str, start_date: datetime, end_date: datetime, asset_type: AssetType) -> pd.DataFrame:
         """获取K线数据实现"""
         try:
-            # 周期映射
+            # 周期映射（支持系统标准格式别名：'D'/'1m'/'60m' 等，'m' 归一化为月线，分钟线标准键为 '1m'/'5m'/...）
             period_map = {
+                'D': '101',
+                'd': '101',
+                'W': '102',
+                'w': '102',
+                'M': '103',
+                'm': '103',
                 'daily': '101',
                 'weekly': '102',
                 'monthly': '103',
+                '1m': '1',
+                '5m': '5',
+                '15m': '15',
+                '30m': '30',
+                '60m': '60',
                 '1min': '1',
                 '5min': '5',
                 '15min': '15',

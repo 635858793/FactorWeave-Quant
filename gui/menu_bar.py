@@ -208,6 +208,18 @@ class MainMenuBar(QMenuBar):
 
             self.view_menu.addSeparator()
 
+            # 主题子菜单（R244 修复: 补齐 default/light/dark 主题入口）
+            self.theme_menu = self.view_menu.addMenu("主题切换")
+            self.default_theme_action = QAction("默认主题", self)
+            self.default_theme_action.setStatusTip("切换到默认主题")
+            self.theme_menu.addAction(self.default_theme_action)
+            self.light_theme_action = QAction("浅色主题", self)
+            self.light_theme_action.setStatusTip("切换到浅色主题")
+            self.theme_menu.addAction(self.light_theme_action)
+            self.dark_theme_action = QAction("深色主题", self)
+            self.dark_theme_action.setStatusTip("切换到深色主题")
+            self.theme_menu.addAction(self.dark_theme_action)
+
         except Exception as e:
             logger.error(f"初始化视图菜单失败: {str(e)}")
 
@@ -1032,6 +1044,7 @@ class MainMenuBar(QMenuBar):
                 ('webgpu_status_action', 'show_webgpu_status'),
                 ('feature_control_action', '_on_feature_control'),
                 ('settings_action', '_on_settings'),
+                ('data_export_action', '_on_export_data'),  # 工具菜单-数据导出
                 ('adaptive_pool_config_action', 'show_adaptive_pool_config'),
                 ('connection_pool_manager_action', 'show_connection_pool_manager'),
 
@@ -1113,11 +1126,11 @@ class MainMenuBar(QMenuBar):
         try:
             # 优先使用coordinator的方法
             if self.coordinator and hasattr(self.coordinator, '_on_plugin_manager'):
-                self.coordinator._on_plugin_manager()
+                self.coordinator._on_plugin_manager("数据源管理")
                 return
 
             # 如果没有coordinator，直接创建对话框
-            self._create_plugin_dialog("数据源插件")
+            self._create_plugin_dialog("数据源管理")
 
         except Exception as e:
             QMessageBox.critical(
@@ -1132,11 +1145,11 @@ class MainMenuBar(QMenuBar):
         try:
             # 优先使用coordinator的方法
             if self.coordinator and hasattr(self.coordinator, '_on_plugin_manager'):
-                self.coordinator._on_plugin_manager()
+                self.coordinator._on_plugin_manager("已安装插件")
                 return
 
             # 如果没有coordinator，直接创建对话框
-            self._create_plugin_dialog("通用插件")
+            self._create_plugin_dialog("已安装插件")
 
         except Exception as e:
             QMessageBox.critical(
@@ -1248,11 +1261,11 @@ class MainMenuBar(QMenuBar):
         try:
             # 优先使用coordinator的方法
             if self.coordinator and hasattr(self.coordinator, '_on_plugin_manager'):
-                self.coordinator._on_plugin_manager()
+                self.coordinator._on_plugin_manager("数据源管理")
                 return
 
             # 如果没有coordinator，直接创建对话框
-            self._create_plugin_dialog("情绪数据源")
+            self._create_plugin_dialog("数据源管理")
 
         except Exception as e:
             QMessageBox.critical(
@@ -1267,7 +1280,7 @@ class MainMenuBar(QMenuBar):
         try:
             # 优先使用coordinator的方法
             if self.coordinator and hasattr(self.coordinator, '_on_plugin_manager'):
-                self.coordinator._on_plugin_manager()
+                self.coordinator._on_plugin_manager("插件市场")
                 return
 
             # 如果没有coordinator，直接创建对话框

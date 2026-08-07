@@ -61,6 +61,12 @@ class MetricsAggregationService:
                 SystemResourceUpdated, self._handle_resource_update)
             self.event_bus.subscribe(
                 ApplicationMetricRecorded, self._handle_app_metric)
+            # R242-B-003 (2026-08-04): 'MetricsAggregated' 为合法数据快照事件 (60s 周期聚合发布,
+            # aggregation_service.py:211), 当前无订阅者 (ORPHAN_PUB)。按 R8 §8.1 铁律 #1 显式注册,
+            # 消除 publish 未注册 warning, 保留事件作为未来趋势/历史展示的现成数据通道
+            # (dashboard 可经 get_recent_metrics() 主动读取, 无需事件订阅)
+            self.event_bus.register_event_type(
+                'MetricsAggregated', source='metrics_aggregation_service')
 
     def start(self) -> None:
         """启动聚合服务"""
@@ -310,7 +316,7 @@ class MetricsAggregationService:
                         disk_percent=event.disk_percent,
                         timestamp=time.time()
                     )
-                    logger.info(f"发布资源阈值超标告警: CPU={event.cpu_percent:.1f}%, "
+                    logger.debug(f"发布资源阈值超标告警: CPU={event.cpu_percent:.1f}%, "
                                 f"内存={event.memory_percent:.1f}%, 磁盘={event.disk_percent:.1f}%")
                 except Exception as pub_error:
                     logger.error(f"发布资源告警事件失败: {pub_error}")

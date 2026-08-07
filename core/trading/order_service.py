@@ -14,7 +14,7 @@ from core.trading.order_models import (
     Order, OrderRequest, OrderQuery, OrderType, OrderStatus, OrderCategory
 )
 from core.trading.order_validator import OrderValidator, ValidationResult
-from core.trading.order_repository import OrderRepository
+from core.trading.order_repository import OrderRepository, get_order_repository
 from core.trading.order_executor import OrderExecutor, ExecutionResult
 from core.trading.trading_types import ExecutionStatus
 from core.trading.order_monitor import OrderMonitor
@@ -26,7 +26,12 @@ from core.events import EventBus
 class OrderService:
     """订单服务"""
 
+    # R237-P1 修复: 类级默认 _disposed (R235-D 标杆模式, 防御 __new__ 绕过 __init__ 的场景)
+    _disposed = False
+
     def __init__(self, service_container: ServiceContainer, event_bus: EventBus):
+        # R237-P1 修复: _disposed 标志 (R78 铁律 #6 幂等短路 + R233 §13.4 dispose 链)
+        self._disposed = False
         self.service_container = service_container
         self.event_bus = event_bus
 
@@ -53,8 +58,13 @@ class OrderService:
     def _initialize(self):
         """初始化"""
         self.validator = OrderValidator(self.service_container, self.event_bus)
-        self.repository = OrderRepository(self.service_container, self.event_bus)
-        self.executor = OrderExecutor(self.service_container, self.event_bus)
+        # R255-P2: 共用模块级单例, 保证 OrderCache 一致性
+        self.repository = get_order_repository(self.service_container, self.event_bus)
+        # R256-P0: 复用容器单例 (connect_ctp_account 注入的目标), 消除双实例割裂
+        try:
+            self.executor = self.service_container.try_resolve(OrderExecutor) or OrderExecutor(self.service_container, self.event_bus)
+        except Exception:
+            self.executor = OrderExecutor(self.service_container, self.event_bus)
         self.monitor = OrderMonitor(self.service_container, self.event_bus)
         self.analyzer = OrderAnalyzer(self.service_container, self.event_bus)
 
@@ -550,6 +560,28 @@ class OrderService:
             logger.error(f"获取活跃订单异常: {e}")
             return []
 
+    def get_trading_interface(self, asset_type) -> Optional[Any]:
+        """获取指定资产类型的交易接口 (R254-P1: 委托 OrderExecutor 公开接口)
+
+        Why: account_manager 此前跨类访问 OrderExecutor._trading_interfaces 私有属性
+        并改写接口字段 (account_manager.py:934-955, 与 order_executor.py:440-489 的
+        _load_account_info_to_interfaces 重复)。统一经本公开方法委托获取, 接口字段
+        初始化由 OrderExecutor 内部负责。
+
+        Args:
+            asset_type: 资产类型 (core.plugin_types.AssetType)
+
+        Returns:
+            TradingInterface: 交易接口实例, executor 不可用或未注册时返回 None
+        """
+        try:
+            if self.executor is None:
+                return None
+            return self.executor.get_trading_interface(asset_type)
+        except Exception as e:
+            logger.error(f"获取交易接口异常: {e}")
+            return None
+
     def get_orders_by_strategy(self, strategy_id: str, limit: int = 100) -> List[Order]:
         """获取策略订单"""
         try:
@@ -696,6 +728,38 @@ class OrderService:
                 logger.warning("订单监控器未初始化")
         except Exception as e:
             logger.error(f"停止订单监控失败: {e}")
+
+    def dispose(self):
+        """R237-P1 修复: dispose 链 (R78 铁律 #6 幂等短路 + R233 §13.4 业务核心)
+
+        释放订单服务资源:
+        1. _disposed 标志幂等短路 (重复 dispose 不抛错)
+        2. 取消全部 2 个事件订阅 (order_terminal_state / order_validation_failed, R8 §8.1 #1)
+        3. 清空 _order_locks 订单级锁 (内存泄漏防御)
+        4. 子组件统一释放: monitor.dispose() + executor.dispose() + analyzer.dispose() (R234 子组件释放 4 步法, R238-D-001 补全漏项)
+        5. 失败仅 warning 不抛 (R117-HVD-69 P1 模板)
+        """
+        if self._disposed:
+            return
+        try:
+            self.event_bus.unsubscribe(
+                'order_terminal_state', self._on_order_terminal_state)
+            self.event_bus.unsubscribe(
+                'order_validation_failed', self._on_order_validation_failed)
+            with self._lock_manager_lock:
+                self._order_locks.clear()
+            if self.monitor:
+                self.monitor.dispose()
+            # R238-D-001 补全: OrderExecutor (5+ 交易接口连接) 与 OrderAnalyzer 子组件释放
+            if self.executor:
+                self.executor.dispose()
+            if self.analyzer and hasattr(self.analyzer, 'dispose'):
+                self.analyzer.dispose()
+        except Exception as e:
+            logger.warning(f"OrderService.dispose 失败: {e}", exc_info=True)
+        finally:
+            self._disposed = True
+        logger.info("订单服务已释放")
 
     def check_orders(self):
         """检查订单状态"""

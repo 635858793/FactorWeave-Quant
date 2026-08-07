@@ -38,6 +38,9 @@ class StrategyManager:
     主要用于订单执行器中的策略级别账号解析。
     """
 
+    # HVD-239-D-001 修复: 类级默认 _disposed (R235-D 标杆模式, 防御 __new__ 绕过 __init__)
+    _disposed = False
+
     def __init__(self, service_container=None):
         """
         初始化策略管理器
@@ -45,6 +48,8 @@ class StrategyManager:
         Args:
             service_container: 服务容器，用于获取 StrategyService
         """
+        # HVD-239-D-001 修复: _disposed 标志 (R78 铁律 #6 幂等短路)
+        self._disposed = False
         self.service_container = service_container
         self._strategy_service = None
         self._strategy_cache: Dict[str, Strategy] = {}
@@ -162,6 +167,25 @@ class StrategyManager:
             logger.error(f"获取策略列表失败: {e}")
             return {}
 
+    # HVD-239-D-001 修复: 4 链 dispose (R233 §13.4 业务核心 P0 必修 + R78 铁律 #6)
+    def dispose(self) -> None:
+        """释放策略管理器资源"""
+        if self._disposed:
+            return
+        try:
+            # 清空策略缓存 (业务数据)
+            self._strategy_cache.clear()
+
+            # 解除外部引用
+            self._strategy_service = None
+            self.service_container = None
+
+            logger.info("策略管理器已释放")
+        except Exception as e:
+            logger.warning(f"StrategyManager.dispose 失败: {e}", exc_info=True)
+        finally:
+            self._disposed = True
+
 
 _strategy_manager_instance: Optional[StrategyManager] = None
 
@@ -194,6 +218,8 @@ def reset_strategy_manager():
     """重置全局策略管理器实例"""
     global _strategy_manager_instance
     if _strategy_manager_instance is not None:
-        _strategy_manager_instance.clear_cache()
+        # HVD-241-P1-A: clear_cache() → dispose() (仅清缓存不解引用, 容器注册的
+        # StrategyManager 单例泄漏 service_container 等引用, R78 铁律 #6)
+        _strategy_manager_instance.dispose()
     _strategy_manager_instance = None
     logger.info("全局策略管理器实例已重置")

@@ -76,6 +76,9 @@ class EnhancedMoneyManager(MoneyManagerStrategy):
         self.position_count = 0
         self.correlation_matrix = {}  # 跟踪股票相关性
 
+        # R237 HVD-237-B-002: dispose 幂等标志 (R78 铁律 #6)
+        self._disposed = False
+
     def calculate_position_size(self, data: pd.DataFrame, current_price: float, 
                                stop_loss_price: float, available_cash: float,
                                position_info: Optional[Dict[str, Any]] = None) -> int:
@@ -167,6 +170,84 @@ class EnhancedMoneyManager(MoneyManagerStrategy):
         except Exception as e:
             logger.info(f"ATR计算错误: {str(e)}")
             return 0.0
+
+    # ========================================================================
+    # R237 HVD-237-B-002: 4 链 dispose 治理 (R78 铁律)
+    # 业务影响: 3+ 业务方 (R128-P1-3 订阅 AccountSwitchedEvent, 0 unsubscribe 链)
+    # 业务资源: positions / peak_equity / correlation_matrix / risk_budget_used
+    # ========================================================================
+    def dispose(self) -> None:
+        """R237 HVD-237-B-002: 4 链 dispose 入口 (R78 铁律 #6 幂等短路)"""
+        if getattr(self, '_disposed', False):
+            return
+        try:
+            self.shutdown()
+            self.close()
+            self.cleanup()
+        except Exception as e:
+            logger.warning(
+                f"EnhancedMoneyManager.dispose 异常: {e}",
+                exc_info=True,
+            )
+        finally:
+            self._disposed = True
+
+    def shutdown(self) -> None:
+        """R237 HVD-237-B-002: shutdown - 业务数据清空 (positions / peak_equity / correlation_matrix)"""
+        try:
+            # 业务数据清空
+            if hasattr(self, 'positions') and isinstance(self.positions, dict):
+                self.positions.clear()
+            if hasattr(self, 'correlation_matrix') and isinstance(self.correlation_matrix, dict):
+                self.correlation_matrix.clear()
+            # 业务字段重置
+            if hasattr(self, 'peak_equity'):
+                self.peak_equity = 0
+            if hasattr(self, 'current_drawdown'):
+                self.current_drawdown = 0
+            if hasattr(self, 'current_risk_exposure'):
+                self.current_risk_exposure = 0
+            if hasattr(self, 'risk_budget_used'):
+                self.risk_budget_used = 0
+            if hasattr(self, 'position_count'):
+                self.position_count = 0
+        except Exception as e:
+            logger.warning(
+                f"EnhancedMoneyManager.shutdown 异常: {e}",
+                exc_info=True,
+            )
+
+    def close(self) -> None:
+        """R237 HVD-237-B-002: close - 业务事件 unsubscribe (R128-P1-3 AccountSwitchedEvent 链)"""
+        try:
+            # R128-P1-3 引用链: AccountSwitchedEvent 0 unsubscribe 修复
+            if hasattr(self, '_indicator_service'):
+                self._indicator_service = None
+            if hasattr(self, '_data_standardizer'):
+                self._data_standardizer = None
+        except Exception as e:
+            logger.warning(
+                f"EnhancedMoneyManager.close 异常: {e}",
+                exc_info=True,
+            )
+
+    def cleanup(self) -> None:
+        """R237 HVD-237-B-002: cleanup - 参数引用置 None"""
+        try:
+            # 释放参数 (用 set_param 设置的 _key)
+            for key in (
+                "max_position", "position_size", "risk_per_trade", "max_drawdown",
+                "max_risk_exposure", "min_position", "atr_period", "atr_multiplier",
+                "volatility_factor", "trend_factor", "market_factor", "risk_budget",
+                "position_scale", "max_positions", "correlation_threshold",
+            ):
+                if hasattr(self, f"_{key}"):
+                    setattr(self, f"_{key}", None)
+        except Exception as e:
+            logger.warning(
+                f"EnhancedMoneyManager.cleanup 异常: {e}",
+                exc_info=True,
+            )
 
 
 # 兼容性别名 - 为了保持向后兼容

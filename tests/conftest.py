@@ -2,6 +2,11 @@ import sys
 import os
 from unittest.mock import MagicMock
 
+# R256-P2: 测试专用占位符密钥 (仅测试进程, 不污染 .env; 参照 web/backend/config/settings.py:146-171 双闸)
+# ENCRYPTION_KEY 由 Fernet.generate_key() 生成 (32-byte url-safe base64, 已实测 Fernet() 可解析)
+os.environ.setdefault('JWT_SECRET_KEY', 'test-secret-key-r256-0123456789abcdef')
+os.environ.setdefault('ENCRYPTION_KEY', 'gPvOPsE3pSmGEU9mC7r2AHrVToBWYgCbqFsxSUJiz_M=')
+
 os.environ.setdefault('MPLBACKEND', 'Agg')
 
 _QT_MOCK_MODULES = [
@@ -11,7 +16,11 @@ _QT_MOCK_MODULES = [
 ]
 
 _GUI_MOCK_MODULES = [
-    'gui',
+    # R258-P0: 移除 'gui' / 'gui.utils' / 'gui.utils.responsive_helper' 三行 ——
+    # 实证 responsive_helper.py:27-31 无 QApplication 时安全返回 1.0 (offscreen 安全),
+    # gui/__init__.py 为惰性 __getattr__ 导入 (gui/__init__.py:13-23), gui/utils/__init__.py 为空。
+    # mock 顶层包会阻断真实子模块导入 (mock 无 __path__), 导致响应式工具不可测且
+    # r25x 系列文件 collection 阶段 pop mock 后行为不一致 (R258 交叉验证实证)。
     'gui.dialogs',
     'gui.dialogs.strategy_manager_dialog',
     'gui.widgets',
@@ -22,8 +31,6 @@ _GUI_MOCK_MODULES = [
     'gui.widgets.enhanced_ui.level2_data_panel',
     'gui.widgets.performance',
     'gui.widgets.performance.tabs',
-    'gui.utils',
-    'gui.utils.responsive_helper',
     'core.ui',
     'core.ui.panels',
     'core.ui.panels.base_panel',

@@ -68,6 +68,43 @@ jobs:
             exit 1
           fi
 
+  # R237-A-001 HVD-32 9 指标元数据一致性 CI 检查 (P1 实施)
+  hvd-32-metadata-check:
+    name: "HVD-32 9 指标元数据一致性检查"
+    runs-on: ubuntu-latest
+    needs: lint-and-quality
+    timeout-minutes: 5
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: 运行 9 指标元数据一致性检查
+        run: |
+          echo "=========================================="
+          echo " HVD-32 9 指标元数据一致性 CI 检查"
+          echo " 指标: MA, MACD, RSI, KDJ, AD, AROON, DEMA, TEMA, NATR"
+          echo "=========================================="
+          python tools/indicator_metadata_audit.py \
+            --indicators "MA,MACD,RSI,KDJ,AD,AROON,DEMA,TEMA,NATR" \
+            --fail-on-missing
+          if [ $? -ne 0 ]; then
+            echo ""
+            echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+            echo " HVD-32 9 指标元数据检查失败!"
+            echo " 缺元数据指标会导致业务方拿到错误参数"
+            echo " 合并已被阻止, 请补全 supported_params"
+            echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+            exit 1
+          fi
+          echo ""
+          echo "HVD-32 9 指标元数据 100% 完整, 检查通过"
+
   critical-risk-gate:
     name: "P0致命风险门禁 (风控/止损/安全)"
     runs-on: ubuntu-latest

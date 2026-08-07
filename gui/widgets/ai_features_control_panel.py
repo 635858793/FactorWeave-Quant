@@ -44,13 +44,21 @@ from PyQt5.QtGui import (
 )
 
 # 导入核心AI服务
-from core.services.ai_prediction_service import AIPredictionService
-from core.ai.user_behavior_learner import UserBehaviorLearner
-from core.ai.config_recommendation_engine import ConfigRecommendationEngine
-from core.ai.config_impact_analyzer import ConfigImpactAnalyzer
-from core.ai.data_anomaly_detector import DataAnomalyDetector
-from core.ui_integration.ui_business_logic_adapter import get_ui_adapter
-from loguru import logger
+try:
+    from core.services.ai_prediction_service import AIPredictionService
+    from core.ai.user_behavior_learner import UserBehaviorLearner
+    from core.ai.config_recommendation_engine import ConfigRecommendationEngine
+    from core.ai.config_impact_analyzer import ConfigImpactAnalyzer
+    from core.ai.data_anomaly_detector import DataAnomalyDetector
+    from core.ui_integration.ui_business_logic_adapter import get_ui_adapter
+    from loguru import logger
+    CORE_AVAILABLE = True
+except ImportError as e:
+    logger = None
+    print(f"导入核心组件失败: {e}")
+    CORE_AVAILABLE = False
+
+logger = logger.bind(module=__name__) if logger else None
 
 
 class AIServiceStatus(Enum):

@@ -1825,6 +1825,31 @@ class UnifiedBacktestEngine:
             'cvar_95': self.metrics.cvar_95,
         }
 
+    def dispose(self) -> None:
+        """释放资源 (HVD-241-P0-C-3, R78 4 链标准)
+
+        Why: 宿主1 (L248 创建 risk_manager) 无任何清理方法 → 回测任务级资源
+             随引擎 GC 不保证即时释放 (R241-C 子智能体 100% 确认)
+        Fix: 幂等短路 + 释放 risk_manager + 清空优化引擎引用; 失败仅 warning (R8 #7)
+        TDD: tests/test_r241_p0c_dispose_chains_tools_cache.py T08
+        """
+        if getattr(self, '_disposed', False):
+            return
+        try:
+            if getattr(self, 'risk_manager', None) is not None:
+                if hasattr(self.risk_manager, 'dispose'):
+                    self.risk_manager.dispose()
+                self.risk_manager = None
+            for attr in ('vectorized_engine', 'parallel_engine',
+                         'memory_optimized_engine', 'professional_optimizer'):
+                if hasattr(self, attr):
+                    setattr(self, attr, None)
+            self._disposed = True
+            self.logger.info("UnifiedBacktestEngine disposed")
+        except Exception as e:
+            self.logger.warning(f"UnifiedBacktestEngine dispose 失败: {e}")
+            self._disposed = True
+
 # 便利函数
 
 

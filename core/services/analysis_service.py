@@ -439,7 +439,7 @@ class AnalysisService(BaseService):
         return values
 
     def _calculate_rsi(self, market_data: List[MarketData], period: int) -> List[IndicatorValue]:
-        """计算RSI - 使用统一指标服务"""
+        """计算RSI - 统一服务优先, 结果无效(含 None/空/无列)时回退本地计算"""
         values = []
         if len(market_data) < period + 1:
             return values
@@ -451,9 +451,9 @@ class AnalysisService(BaseService):
                 'low': float(data.low_price) if hasattr(data, 'low_price') else float(data.close_price),
                 'volume': float(data.volume) if hasattr(data, 'volume') else 0
             } for data in market_data])
-            
+
             result = calculate_indicator('RSI', df, timeperiod=period)
-            
+
             if isinstance(result, pd.DataFrame) and 'RSI' in result.columns:
                 rsi_values = result['RSI'].values
                 for i, rsi_val in enumerate(rsi_values):
@@ -465,43 +465,49 @@ class AnalysisService(BaseService):
                             value=rsi_val,
                             timeframe=TimeFrame.DAILY
                         ))
-            return values
+                if values:
+                    return values
+                logger.warning("统一服务计算RSI返回空结果，使用本地计算")
+            else:
+                logger.warning("统一服务计算RSI返回无效结果，使用本地计算")
         except Exception as e:
             logger.warning(f"统一服务计算RSI失败，使用本地计算: {e}")
-            prices = np.array([float(data.close_price) for data in market_data])
 
-            if len(prices) < period + 1:
-                return values
+        # 本地计算回退
+        prices = np.array([float(data.close_price) for data in market_data])
 
-            deltas = np.diff(prices)
-            gains = np.where(deltas > 0, deltas, 0.0)
-            losses = np.where(deltas < 0, -deltas, 0.0)
-
-            avg_gains = np.convolve(gains, np.ones(period) / period, mode='valid')
-            avg_losses = np.convolve(losses, np.ones(period) / period, mode='valid')
-
-            rsi_values = np.full(len(avg_gains), 100.0)
-            valid_mask = avg_losses != 0
-            rs = np.divide(avg_gains, avg_losses, where=valid_mask, out=np.zeros_like(avg_gains))
-            rsi_values[valid_mask] = 100.0 - (100.0 / (1.0 + rs[valid_mask]))
-
-            for idx, rsi_val in enumerate(rsi_values):
-                data_idx = period + idx
-                if data_idx < len(market_data):
-                    values.append(IndicatorValue(
-                        indicator_id="rsi",
-                        symbol=market_data[data_idx].symbol,
-                        timestamp=market_data[data_idx].timestamp,
-                        value=float(rsi_val),
-                        timeframe=TimeFrame.DAILY
-                    ))
-
+        if len(prices) < period + 1:
             return values
 
+        deltas = np.diff(prices)
+        gains = np.where(deltas > 0, deltas, 0.0)
+        losses = np.where(deltas < 0, -deltas, 0.0)
+
+        avg_gains = np.convolve(gains, np.ones(period) / period, mode='valid')
+        avg_losses = np.convolve(losses, np.ones(period) / period, mode='valid')
+
+        rsi_values = np.full(len(avg_gains), 100.0)
+        valid_mask = avg_losses != 0
+        rs = np.divide(avg_gains, avg_losses, where=valid_mask, out=np.zeros_like(avg_gains))
+        rsi_values[valid_mask] = 100.0 - (100.0 / (1.0 + rs[valid_mask]))
+
+        for idx, rsi_val in enumerate(rsi_values):
+            data_idx = period + idx
+            if data_idx < len(market_data):
+                values.append(IndicatorValue(
+                    indicator_id="rsi",
+                    symbol=market_data[data_idx].symbol,
+                    timestamp=market_data[data_idx].timestamp,
+                    value=float(rsi_val),
+                    timeframe=TimeFrame.DAILY
+                ))
+
+        return values
+
     def _calculate_macd(self, market_data: List[MarketData], fast: int, slow: int, signal: int) -> List[IndicatorValue]:
-        """计算MACD - 使用统一指标服务"""
+        """计算MACD - 统一服务优先, 结果无效(含 None/空)时回退本地计算"""
         values = []
-        
+
         try:
             df = pd.DataFrame([{
                 'close': float(data.close_price),
@@ -509,20 +515,20 @@ class AnalysisService(BaseService):
                 'low': float(data.low_price) if hasattr(data, 'low_price') else float(data.close_price),
                 'volume': float(data.volume) if hasattr(data, 'volume') else 0
             } for data in market_data])
-            
+
             result = calculate_indicator('MACD', df, fastperiod=fast, slowperiod=slow, signalperiod=signal)
-            
+
             if isinstance(result, pd.DataFrame):
                 macd_values = result.get('MACD', pd.Series())
                 signal_values = result.get('MACDSignal', pd.Series())
                 hist_values = result.get('MACDHist', pd.Series())
-                
+
                 for i in range(len(market_data)):
                     if i < len(macd_values) and i < len(signal_values) and i < len(hist_values):
                         macd_val = macd_values.iloc[i] if i < len(macd_values) else np.nan
                         signal_val = signal_values.iloc[i] if i < len(signal_values) else np.nan
                         hist_val = hist_values.iloc[i] if i < len(hist_values) else np.nan
-                        
+
                         if not (np.isnan(macd_val) or np.isnan(signal_val) or np.isnan(hist_val)):
                             values.append(IndicatorValue(
                                 indicator_id="macd",
@@ -535,36 +541,42 @@ class AnalysisService(BaseService):
                                 },
                                 timeframe=TimeFrame.DAILY
                             ))
-            return values
+                if values:
+                    return values
+                logger.warning("统一服务计算MACD返回空结果，使用本地计算")
+            else:
+                logger.warning("统一服务计算MACD返回无效结果，使用本地计算")
         except Exception as e:
             logger.warning(f"统一服务计算MACD失败，使用本地计算: {e}")
-            prices = [float(data.close_price) for data in market_data]
 
-            if len(prices) < slow:
-                return values
+        # 本地计算回退
+        prices = [float(data.close_price) for data in market_data]
 
-            ema_fast = self._calculate_ema(prices, fast)
-            ema_slow = self._calculate_ema(prices, slow)
-
-            macd_line = [fast_val - slow_val for fast_val, slow_val in zip(ema_fast, ema_slow)]
-            signal_line = self._calculate_ema(macd_line, signal)
-            histogram = [macd - sig for macd, sig in zip(macd_line, signal_line)]
-
-            for i, data in enumerate(market_data):
-                if i < len(macd_line) and i < len(signal_line) and i < len(histogram):
-                    values.append(IndicatorValue(
-                        indicator_id="macd",
-                        symbol=data.symbol,
-                        timestamp=data.timestamp,
-                        value={
-                            "macd": macd_line[i],
-                            "signal": signal_line[i],
-                            "histogram": histogram[i]
-                        },
-                        timeframe=TimeFrame.DAILY
-                    ))
-
+        if len(prices) < slow:
             return values
+
+        ema_fast = self._calculate_ema(prices, fast)
+        ema_slow = self._calculate_ema(prices, slow)
+
+        macd_line = [fast_val - slow_val for fast_val, slow_val in zip(ema_fast, ema_slow)]
+        signal_line = self._calculate_ema(macd_line, signal)
+        histogram = [macd - sig for macd, sig in zip(macd_line, signal_line)]
+
+        for i, data in enumerate(market_data):
+            if i < len(macd_line) and i < len(signal_line) and i < len(histogram):
+                values.append(IndicatorValue(
+                    indicator_id="macd",
+                    symbol=data.symbol,
+                    timestamp=data.timestamp,
+                    value={
+                        "macd": macd_line[i],
+                        "signal": signal_line[i],
+                        "histogram": histogram[i]
+                    },
+                    timeframe=TimeFrame.DAILY
+                ))
+
+        return values
 
     def _calculate_ema(self, prices: List[float], period: int) -> List[float]:
         """计算指数移动平均（向量化）"""
@@ -775,19 +787,47 @@ class AnalysisService(BaseService):
             
             # 如果提供了K线数据，进行技术指标计算
             if kline_data is not None and hasattr(kline_data, '__len__') and len(kline_data) > 0:
-                # 转换为MarketData并添加到服务
                 try:
-                    # 这里可以扩展更多的技术分析
-                    # 目前返回基本结构，确保不阻塞UI
-                    result['indicators'] = {}
-                    result['technical_analysis'] = {
-                        'trend': 'unknown',
-                        'signals': []
-                    }
-                    result['data_available'] = True
-                    
-                    logger.info(f"股票 {stock_code} 分析完成，数据条数: {len(kline_data)}")
-                    
+                    # 将K线数据转换为MarketData列表，复用现有指标计算能力
+                    market_data_list = self._convert_kline_to_market_data(
+                        stock_code, kline_data)
+
+                    if not market_data_list:
+                        logger.warning(f"K线数据无法转换为MarketData: {stock_code}")
+                        result['data_available'] = False
+                    else:
+                        indicators = {}
+
+                        # 简单移动平均线 (MA5/MA10/MA20/MA60)
+                        for period in (5, 10, 20, 60):
+                            ma_values = self._calculate_sma(market_data_list, period)
+                            if ma_values:
+                                indicators[f'ma{period}'] = ma_values
+
+                        # RSI(14)
+                        rsi_values = self._calculate_rsi(market_data_list, 14)
+                        if rsi_values:
+                            indicators['rsi'] = rsi_values
+
+                        # MACD(12,26,9)
+                        macd_values = self._calculate_macd(market_data_list, 12, 26, 9)
+                        if macd_values:
+                            indicators['macd'] = macd_values
+
+                        # 布林带(20,2)
+                        boll_values = self._calculate_bollinger_bands(market_data_list, 20, 2)
+                        if boll_values:
+                            indicators['boll'] = boll_values
+
+                        result['indicators'] = indicators
+                        result['technical_analysis'] = self._build_technical_summary(
+                            market_data_list, indicators)
+                        result['data_available'] = True
+
+                        logger.info(
+                            f"股票 {stock_code} 分析完成，数据条数: {len(kline_data)}，"
+                            f"计算指标: {list(indicators.keys())}")
+
                 except Exception as e:
                     logger.warning(f"处理K线数据时出错: {e}")
                     result['data_available'] = False
@@ -809,6 +849,140 @@ class AnalysisService(BaseService):
                 'error': str(e),
                 'data_available': False
             }
+
+    def _convert_kline_to_market_data(self, symbol: str,
+                                      kline_data: Any) -> List[MarketData]:
+        """将K线DataFrame/列表转换为MarketData列表，供指标计算使用"""
+        market_data_list = []
+        try:
+            if isinstance(kline_data, pd.DataFrame):
+                df = kline_data.copy()
+            elif isinstance(kline_data, list) and kline_data:
+                df = pd.DataFrame(kline_data)
+            else:
+                return market_data_list
+
+            # 识别日期列（标准化后通常为 date/datetime/time）
+            date_col = None
+            for col in ('date', 'datetime', 'time', 'trade_date', '日期'):
+                if col in df.columns:
+                    date_col = col
+                    break
+            if date_col is None and isinstance(df.index, pd.DatetimeIndex):
+                df = df.reset_index()
+                date_col = df.columns[0]
+
+            # 统一为小写列名
+            df.columns = [str(c).lower() for c in df.columns]
+            date_col = date_col.lower() if date_col else None
+
+            for _, row in df.iterrows():
+                try:
+                    timestamp = None
+                    if date_col and date_col in df.columns:
+                        raw_date = row.get(date_col)
+                        if raw_date is not None and not (
+                                isinstance(raw_date, float) and pd.isna(raw_date)):
+                            timestamp = pd.to_datetime(raw_date)
+                    if timestamp is None or pd.isna(timestamp):
+                        timestamp = datetime.now()
+
+                    def _num(key: str) -> Optional[float]:
+                        val = row.get(key)
+                        if val is None:
+                            return None
+                        if isinstance(val, (float, np.floating)) and np.isnan(val):
+                            return None
+                        try:
+                            return float(val)
+                        except (TypeError, ValueError):
+                            return None
+
+                    close = _num('close')
+                    if close is None:
+                        continue
+
+                    market_data_list.append(MarketData(
+                        symbol=symbol,
+                        timestamp=timestamp.to_pydatetime() if hasattr(timestamp, 'to_pydatetime') else timestamp,
+                        open_price=Decimal(str(_num('open') or close)),
+                        high_price=Decimal(str(_num('high') or close)),
+                        low_price=Decimal(str(_num('low') or close)),
+                        close_price=Decimal(str(close)),
+                        volume=int(_num('volume') or 0),
+                        amount=Decimal(str(_num('amount'))) if _num('amount') is not None else None,
+                    ))
+                except Exception:
+                    continue
+        except Exception as e:
+            logger.debug(f"K线数据转换为MarketData失败: {e}")
+        return market_data_list
+
+    def _calculate_sma(self, market_data: List[MarketData],
+                       period: int) -> List[IndicatorValue]:
+        """计算简单移动平均线(SMA)"""
+        values = []
+        prices = np.array([float(d.close_price) for d in market_data])
+        if len(prices) < period:
+            return values
+        ma_values = np.convolve(prices, np.ones(period) / period, mode='valid')
+        for idx, ma_value in enumerate(ma_values):
+            data_idx = period - 1 + idx
+            values.append(IndicatorValue(
+                indicator_id=f"ma{period}",
+                symbol=market_data[data_idx].symbol,
+                timestamp=market_data[data_idx].timestamp,
+                value=float(ma_value),
+                timeframe=TimeFrame.DAILY,
+            ))
+        return values
+
+    def _build_technical_summary(self, market_data: List[MarketData],
+                                 indicators: Dict[str, Any]) -> Dict[str, Any]:
+        """基于指标生成技术分析摘要（趋势与信号）"""
+        signals = []
+        trend = 'unknown'
+
+        if not market_data:
+            return {'trend': trend, 'signals': signals}
+
+        latest_close = float(market_data[-1].close_price)
+
+        # 趋势判断：收盘价与 MA20 的相对位置
+        ma20 = indicators.get('ma20', [])
+        if ma20:
+            last_ma20 = float(ma20[-1].value)
+            trend = 'up' if latest_close > last_ma20 else 'down'
+            signals.append({
+                'name': 'MA20',
+                'signal': 'bullish' if latest_close > last_ma20 else 'bearish',
+                'desc': f"收盘价 {'高于' if latest_close > last_ma20 else '低于'} MA20({last_ma20:.2f})",
+            })
+
+        # RSI 超买超卖
+        rsi = indicators.get('rsi', [])
+        if rsi:
+            last_rsi = float(rsi[-1].value)
+            if last_rsi >= 70:
+                signals.append({'name': 'RSI', 'signal': 'overbought',
+                                'desc': f'RSI(14)={last_rsi:.1f} 超买'})
+            elif last_rsi <= 30:
+                signals.append({'name': 'RSI', 'signal': 'oversold',
+                                'desc': f'RSI(14)={last_rsi:.1f} 超卖'})
+
+        # MACD 柱状图方向
+        macd = indicators.get('macd', [])
+        if macd:
+            last_macd = macd[-1].value
+            if isinstance(last_macd, dict):
+                hist = last_macd.get('histogram', 0)
+                signals.append({
+                    'name': 'MACD',
+                    'signal': 'bullish' if hist > 0 else 'bearish',
+                    'desc': f'MACD柱={hist:.4f}',
+                })
+
+        return {'trend': trend, 'signals': signals}
 
     def _do_health_check(self) -> Dict[str, Any]:
         """执行健康检查"""

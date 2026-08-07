@@ -5,8 +5,8 @@
 实现实时流、批量导入、智能路由等功能
 对标Bloomberg Terminal和Wind万得的数据导入能力
 
-DEPRECATED: 此模块为开发早期的stub实现，已被 unified_data_import_engine.py 替代。
-请使用 core.importdata.unified_data_import_engine.UnifiedDataImportEngine
+DEPRECATED: 此模块为开发早期的stub实现，已被 import_execution_engine.py 替代。
+请使用 core.importdata.import_execution_engine.DataImportExecutionEngine
 """
 
 import asyncio

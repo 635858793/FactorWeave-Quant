@@ -91,11 +91,69 @@ class EventCoordinator(BaseCoordinator):
             # 注册计算指标事件处理器（监控实时计算引擎的指标输出）
             self._subscribe_event(ComputedIndicatorEvent, self._on_computed_indicator)
 
+            # R237-D HVD-237-P2-ORPHAN-GOVERNANCE 治理 (2026-07-30, 子智能体 D 实施)
+            # Why: R235-A 扫描器确认 14 个 P2 业务监控 ORPHAN_PUB 事件 100% 缺失订阅方
+            # Fix: 沿用 R236-D 模板, 实施 R237P2EventHandlers 集中订阅块
+            try:
+                from core.trading.r237_p2_event_handlers import (
+                    R237P2EventHandlers, register_r237_p2_handlers,
+                )
+                self._r237_p2_event_handlers = register_r237_p2_handlers(
+                    self._event_bus,
+                    self._main_window_coordinator,
+                )
+            except ImportError as _r237_import_exc:
+                logger.warning(f"EventCoordinator: R237P2EventHandlers 模块导入失败 (非致命): {_r237_import_exc}")
+                self._r237_p2_event_handlers = None
+
+            # R240-B HVD-240-P0-006: account_load_failed 孤儿事件治理 (账户加载失败链路)
+            # Why: 启动期 bootstrap (main.py:229) 早于本订阅 (main_window_coordinator.py:232),
+            #      EventBus 无历史回放 (event_bus.py:501-502 无 handler 仅 debug) → 启动期事件必丢
+            # Fix: 订阅 (覆盖运行期 publish) + 启动补查 (覆盖启动期时序缺口), 双保险
+            self._subscribe_event("account_load_failed", self._on_account_load_failed)
+
+            # HVD-240-P0-006 启动补查: bootstrap 阶段事件已丢失, 主动检查账户初始化状态
+            try:
+                from core.trading.account_manager import AccountManager
+                _account_manager = self._service_container.resolve(AccountManager)
+                if _account_manager is not None and not _account_manager.is_initialized():
+                    logger.error(
+                        "[R240-B] 启动补查: 账户加载失败 (AccountManager.is_initialized()=False), "
+                        "bootstrap 阶段 account_load_failed 事件已丢失 (EventBus 无历史回放时序缺口)")
+                    _alert_event = type('Event', (), {})()
+                    _alert_event.error = "启动补查: 账户数据未加载 (数据库连接可能故障)"
+                    self._on_account_load_failed(_alert_event)
+            except Exception as _check_exc:
+                logger.warning(f"[R240-B] 账户初始化状态补查失败 (非致命): {_check_exc}")
+
             logger.info("EventCoordinator: 所有事件订阅完成")
-            
+
         except Exception as e:
             logger.error(f"EventCoordinator: 事件订阅失败: {e}")
             raise
+
+    def _on_account_load_failed(self, event) -> None:
+        """
+        账户加载失败事件处理器 (R240-B HVD-240-P0-006)
+
+        业务链: account_manager.py:88 publish 'account_load_failed' → 空账户状态
+        (is_initialized()=False, account_manager.py:91-97) → GUI 账户表格空
+        (account_management_dialog.py:289) → 下单账户下拉空 (order_management_dialog.py:1766)
+        → order_service.py 下单静默失败
+
+        Why: EventBus 无历史回放 (event_bus.py:501-502), 无订阅方时事件静默丢弃;
+             失败不静默 (R51 §7.1 #5) → 显式告警 + UI 状态栏推送
+        """
+        try:
+            error_detail = getattr(event, 'error', '未知错误') if event is not None else '未知错误'
+            logger.error(
+                f"✗ 账户加载失败 (HVD-240-P0-006): {error_detail} — "
+                f"将使用空账户状态启动, 下单/持仓功能可能不可用")
+            if hasattr(self._main_window_coordinator, 'show_message'):
+                self._main_window_coordinator.show_message(
+                    f"账户加载失败: {error_detail}", level='error')
+        except Exception as e:
+            logger.error(f"[R240-B] _on_account_load_failed 处理失败: {e}", exc_info=True)
             
     def unsubscribe_all_events(self) -> None:
         """
@@ -402,11 +460,19 @@ class EventCoordinator(BaseCoordinator):
 
             # 同时发送向后兼容的UIDataReadyEvent（如果是股票）
             if event.asset_type == AssetType.STOCK_A:
+                # R251-R4 修复: 补 ui_data 字段, 与 _on_stock_selected 路径(:316-321)保持事件契约一致
+                # Why: 之前仅传 kline_data/market, right_panel._on_ui_data_ready 读
+                #      event.ui_data.get('analysis') 抛 AttributeError (被 try/except 吞掉后右侧面板不更新)
                 ui_data_ready_event = UIDataReadyEvent(
                     stock_code=event.symbol,
                     stock_name=event.name,
                     kline_data=asset_data,
-                    market=event.market
+                    market=event.market,
+                    ui_data={
+                        'kline_data': asset_data,
+                        'kdata': asset_data,  # 向后兼容
+                        'analysis': analysis_data or {}
+                    }
                 )
                 self.event_bus.publish(ui_data_ready_event)
 

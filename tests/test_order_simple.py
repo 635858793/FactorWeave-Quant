@@ -36,11 +36,13 @@ def test_order_models():
         from core.trading.order_models import (
             Order, OrderRequest, OrderType, OrderStatus, OrderCategory
         )
+        from core.plugin_types import AssetType
 
         # 创建订单请求
         request = OrderRequest(
             strategy_id="test_strategy",
             stock_code="000001",
+            asset_type=AssetType.STOCK_A,
             order_type=OrderType.BUY,
             order_category=OrderCategory.LIMIT,
             order_price=10.0,
@@ -58,6 +60,7 @@ def test_order_models():
             order_id="TEST001",
             strategy_id="test_strategy",
             stock_code="000001",
+            asset_type=AssetType.STOCK_A,
             order_type=OrderType.BUY,
             order_category=OrderCategory.LIMIT,
             order_price=10.0,

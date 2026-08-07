@@ -3321,24 +3321,6 @@ class DataQualityMonitorTab(QWidget):
             logger.warning("数据质量历史报告引擎不可用，无法加载真实报告。请配置数据质量存储以获取真实数据。")
             self.history_reports_table.setRowCount(0)
 
-                # 问题类型
-                issue_item = QTableWidgetItem(report['issue'])
-                self.history_reports_table.setItem(row, 3, issue_item)
-
-                # 严重程度
-                severity_item = QTableWidgetItem(report['severity'])
-                if report['severity'] == '严重':
-                    severity_item.setBackground(QColor(255, 182, 193))
-                elif report['severity'] == '中等':
-                    severity_item.setBackground(QColor(255, 255, 0))
-                else:
-                    severity_item.setBackground(QColor(144, 238, 144))
-                self.history_reports_table.setItem(row, 4, severity_item)
-
-                # 状态
-                status_item = QTableWidgetItem(report['status'])
-                self.history_reports_table.setItem(row, 5, status_item)
-
         except Exception as e:
             logger.error(f"初始化历史管理数据失败: {e}")
 

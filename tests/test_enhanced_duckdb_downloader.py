@@ -258,7 +258,7 @@ class TestStoreKlineDataToDuckDB:
         mock_downloader.duckdb_operations.insert_dataframe.assert_called_once()
 
     def test_store_call_uses_correct_conflict_resolution(self, mock_downloader, sample_kline_df):
-        """验证使用 'replace' 冲突解决策略"""
+        """验证使用 upsert 与统一四键冲突列 (R251: insert_dataframe 接口适配)"""
         mock_downloader.table_manager.ensure_table_exists = AsyncMock()
         mock_downloader.duckdb_operations.insert_dataframe = MagicMock(
             return_value={"success": True}
@@ -271,7 +271,9 @@ class TestStoreKlineDataToDuckDB:
 
         asyncio.run(run())
         call_kwargs = mock_downloader.duckdb_operations.insert_dataframe.call_args[1]
-        assert call_kwargs["conflict_resolution"] == "replace"
+        assert call_kwargs["upsert"] is True
+        assert call_kwargs["conflict_columns"] == [
+            'symbol', 'data_source', 'timestamp', 'frequency']
 
     def test_store_failure_does_not_raise(self, mock_downloader, sample_kline_df):
         """存储失败不抛异常"""
@@ -471,7 +473,8 @@ class TestBatchVsN1QueryCount:
 
         def count_calls(db_path, query, params=None):
             count_calls.call_count += 1
-            n = len(params) if params else 0
+            # R251: 查询附带 frequency 过滤参数(位于末尾), 行数与 symbols 数量一致
+            n = (len(params) - 1) if params else 0
             dates = [pd.Timestamp(f"2025-06-{(i % 28) + 1:02d}") for i in range(n)]
             return pd.DataFrame({
                 "symbol": [f"{600000 + i:06d}" for i in range(n)],

@@ -12,14 +12,16 @@ from .bettafish_advanced_monitoring_service import (
     BettaFishAdvancedMonitoringService, EmailAlertChannel, SMSAlertChannel, WebhookAlertChannel
 )
 from .service_bootstrap import ServiceBootstrap
-from core.events.event_bus import get_event_bus
+from core.events.event_bus import EventBus, get_event_bus
 
 
 class BettaFishMonitoringIntegration:
     """BettaFish监控服务集成"""
     
     def __init__(self, event_bus = None):
-        self.event_bus = event_bus or get_event_bus()
+        # 注意: 不能用 `event_bus or get_event_bus()`, EventBus 定义了 __len__,
+        # 空实例 len=0 为 falsy, 会静默忽略传入实例改用全局单例
+        self.event_bus = event_bus if event_bus is not None else get_event_bus()
         self.advanced_monitoring_service: Optional[BettaFishAdvancedMonitoringService] = None
         self.is_initialized = False
         self.integration_config = {}

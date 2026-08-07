@@ -135,7 +135,7 @@ class TETDataProvider:
             fundamental_df = await loop.run_in_executor(
                 None,
                 self.unified_data_manager.get_asset_data,
-                symbol, asset_type, DataType.FUNDAMENTAL_DATA
+                symbol, asset_type, DataType.FUNDAMENTAL
             )
 
             if fundamental_df is not None and not fundamental_df.empty:

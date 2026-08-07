@@ -2321,6 +2321,13 @@ class StrategyManagerDialog(BaseDialog):
             if hasattr(self, 'backtest_timer') and self.backtest_timer: self.backtest_timer.stop()
             if hasattr(self, 'batch_backtest_timer') and self.batch_backtest_timer: self.batch_backtest_timer.stop()
             if hasattr(self, 'optimization_timer') and self.optimization_timer: self.optimization_timer.stop()
+            # R247 修复: 停止代码编辑器的工作线程 (AsyncCompletionWorker QThread),
+            # 防止对话框 GC 时 QThread 仍运行导致 "QThread: Destroyed while thread is still running" 崩溃
+            if hasattr(self, 'code_editor') and self.code_editor:
+                try:
+                    self.code_editor.stop_threads()
+                except Exception as e:
+                    logger.warning(f"停止代码编辑器线程失败: {e}")
             try: event_bus = get_event_bus()
             except Exception: event_bus = None
             if event_bus and self._strategy_event_handler:

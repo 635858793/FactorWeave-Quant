@@ -15,7 +15,6 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Tuple, Callable
 from dataclasses import dataclass, field
 from enum import Enum
-import asyncio
 from collections import defaultdict, deque
 
 from loguru import logger
@@ -237,11 +236,35 @@ class DataQualityRiskManager:
             )
             
             # 创建验证结果
+            # R249 修复：打破"失败→历史累加→永久拒绝"恶性循环。
+            # risk_score 包含历史连续失败累加（_calculate_risk_score 中
+            # consecutive_failures*0.1 + 近期失败率*0.3），当数据源此前连续失败多次后,
+            # 即使本次返回的数据质量优秀（quality_score>=0.9 且 EXCELLENT/GOOD 且无关键质量缺陷），
+            # 也会因 risk_score 被抬高到 high/critical 而被误拒。此时应以数据质量为准放行。
+            risk_level_value = assessment.risk_level.value
+            quality_report = assessment.quality_report
+            is_valid = risk_level_value not in ['critical', 'high']
+            if not is_valid:
+                quality_level_value = getattr(quality_report.quality_level, 'value', None)
+                has_critical_issue = any(
+                    getattr(issue, 'severity', '') in ('critical', 'high')
+                    for issue in quality_report.issues
+                )
+                if (quality_report.overall_score >= 0.9
+                        and quality_level_value in ('excellent', 'good')
+                        and not has_critical_issue):
+                    is_valid = True
+
+            # R255 修复：匿名类补充 plugin_id 属性。
+            # 此前结构无 plugin_id，导致下游 uni_plugin_data_manager 通过
+            # getattr(validation_result, 'plugin_id', None) 溯源 data_source 恒为 None，
+            # 落库列恒回退硬编码 'tet_plugin'，failover 后路由健康度也记错插件。
             validation_result = type('ValidationResult', (), {
-                'is_valid': assessment.risk_level.value not in ['critical', 'high'],
-                'quality_score': assessment.quality_report.overall_score,
-                'risk_level': assessment.risk_level.value,
-                'assessment': assessment
+                'is_valid': is_valid,
+                'quality_score': quality_report.overall_score,
+                'risk_level': risk_level_value,
+                'assessment': assessment,
+                'plugin_id': plugin_id
             })()
             
             return result, validation_result
@@ -250,11 +273,13 @@ class DataQualityRiskManager:
             self.logger.error(f"执行插件方法时出错 {plugin_id}: {e}")
             
             # 创建失败的验证结果
+            # R255 修复：与成功分支一致补充 plugin_id 属性，保证数据源溯源链路完整
             validation_result = type('ValidationResult', (), {
                 'is_valid': False,
                 'quality_score': 0.0,
                 'risk_level': 'critical',
-                'error': str(e)
+                'error': str(e),
+                'plugin_id': plugin_id
             })()
             
             return None, validation_result
@@ -433,10 +458,21 @@ class DataQualityRiskManager:
         return failure_count / len(recent_records)
 
     def _has_fallback_available(self) -> bool:
-        """检查是否有可用的备用数据源"""
-        # 这里应该检查系统中配置的备用数据源
-        # 暂时返回True，实际实现需要根据系统配置
-        return True
+        """检查是否有可用的备用数据源（真实探测，不再恒为 True）"""
+        # 1. 优先检查自身是否持有可用的回退数据源引用
+        for attr in ("data_source_fallback", "_data_source_fallback"):
+            if getattr(self, attr, None) is not None:
+                return True
+        # 2. 检查 core.data_source_fallback.DATA_SOURCE_FALLBACK 链中是否存在非 mock_data 的真实回退源
+        try:
+            from core.data_source_fallback import DATA_SOURCE_FALLBACK
+            for chain in DATA_SOURCE_FALLBACK.values():
+                for source in chain:
+                    if source and source != "mock_data":
+                        return True
+        except Exception as e:
+            self.logger.debug(f"检查数据源回退配置失败: {e}")
+        return False
 
     def _update_risk_history(self, data_source: str, assessment: RiskAssessment) -> None:
         """更新风险历史记录"""
@@ -638,20 +674,41 @@ class DataQualityRiskManager:
         self.thresholds = thresholds
         self.logger.info("风险阈值已更新")
 
-    async def continuous_monitoring(self, data_sources: List[str],
-                                    interval_seconds: int = 60) -> None:
-        """持续监控数据源风险"""
-        self.logger.info(f"开始持续监控 {len(data_sources)} 个数据源")
+    def assess_quality(self, data: Any = None, data_type: str = "unknown",
+                       context: Dict[str, Any] = None) -> Dict[str, Any]:
+        """评估数据质量 (HVD-241-P0-A 补全)
 
-        while True:
-            try:
-                for source in data_sources:
-                    # 这里应该获取最新数据进行评估
-                    # 暂时跳过，实际实现需要根据具体的数据获取逻辑
-                    pass
+        Why: gui/dialogs/data_management_dialog_unified.py:1424 调用 assess_quality(),
+             但本类历史上只有 assess_risk() → GUI 数据质量检查必抛 AttributeError (R241-A 子智能体发现)
+        Fix: 委托 self.quality_monitor (DataQualityMonitor) 评估, 返回平铺质量报告,
+             兼容 dialog L1425-1438 的字段消费 (quality_score/completeness/accuracy 等)
+        """
+        try:
+            report = self.quality_monitor.evaluate_data_quality(
+                data, data_type, context or {}
+            )
+            metrics = report.metrics or {}
+            return {
+                "quality_score": int(round(report.overall_score * 100)),
+                "quality_level": report.quality_level.value,
+                "completeness": int(round(metrics.get("completeness", 0) * 100)),
+                "accuracy": int(round(metrics.get("accuracy", 0) * 100)),
+                "timeliness": int(round(metrics.get("timeliness", 0) * 100)),
+                "consistency": int(round(metrics.get("consistency", 0) * 100)),
+                "uniqueness": int(round(metrics.get("uniqueness", 0) * 100)),
+                "issues": len(report.issues),
+                "recommendations": report.recommendations,
+            }
+        except Exception as e:
+            self.logger.error(f"数据质量评估失败: {e}")
+            return {
+                "quality_score": 0, "quality_level": "unknown",
+                "completeness": 0, "accuracy": 0, "timeliness": 0,
+                "consistency": 0, "uniqueness": 0, "issues": 0,
+                "recommendations": [],
+            }
 
-                await asyncio.sleep(interval_seconds)
+    # HVD-241-P0-A: 空循环死代码方法 (业务代码零调用) 已删除
+    # 删除依据: 641-657 循环体为空操作 (650-651 注释"暂时跳过"), 无退出条件,
+    #           全项目 *.py 零调用 (R241-A 子智能体 + 主智能体双重验证)
 
-            except Exception as e:
-                self.logger.error(f"持续监控出错: {e}")
-                await asyncio.sleep(interval_seconds)

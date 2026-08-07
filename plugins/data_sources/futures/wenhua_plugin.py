@@ -186,17 +186,18 @@ class WenhuaPlugin(HTTPAPIPluginTemplate):
             ping_response = self._request('GET', ping_endpoint, use_cache=False)
 
             if ping_response is None:
-                self.logger.warning("文华财经API Ping失败，可能需要账号认证")
-                # 即使ping失败也继续，因为可能需要认证
-                return True
+                self.logger.warning("文华财经API Ping失败，服务器不可达")
+                # R248: 原实现"ping失败也返回True"导致连接验证形同虚设，
+                # 与 R247 验证标准不一致（服务器不可达应判连接失败）
+                return False
 
             self.logger.info(f"文华财经API连接成功")
             return True
 
         except Exception as e:
             self.logger.error(f"测试连接失败: {e}")
-            # 对于文华财经，即使测试失败也返回True，因为可能需要特殊认证
-            return True
+            # R248: 原实现异常时也返回True，改为失败（服务器不可达不应误判已连接）
+            return False
 
     def _sign_request(
         self,

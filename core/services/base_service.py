@@ -30,7 +30,8 @@ class BaseService(ABC):
         Args:
             event_bus: 事件总线，如果为None则使用全局事件总线
         """
-        self._event_bus = event_bus or get_event_bus()
+        # HVD-241-P1-B: event_bus or → is not None (EventBus __len__ falsy 陷阱, R240-P0-007)
+        self._event_bus = event_bus if event_bus is not None else get_event_bus()
         self._initialized = False
         self._disposed = False
         self._name = self.__class__.__name__

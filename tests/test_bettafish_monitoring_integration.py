@@ -162,8 +162,9 @@ class TestBettaFishMonitoringIntegration(unittest.TestCase):
         monitoring_service = self.integration.get_monitoring_service()
         self.assertIsNotNone(monitoring_service)
         
-        # 添加测试组件健康状态
-        test_component = "test_bettafish_agent"
+        # 添加测试组件健康状态 (R238 修复: 必须用 _check_all_components 实际检查的组件名
+        # "bettafish_agent", 否则 metrics_history 无数据, 趋势分析查询 0 点)
+        test_component = "bettafish_agent"
         monitoring_service.component_health[test_component] = {
             "status": ComponentStatus.HEALTHY,
             "last_check": datetime.now(),
@@ -175,9 +176,11 @@ class TestBettaFishMonitoringIntegration(unittest.TestCase):
             }
         }
         
-        # 手动触发监控检查
-        await monitoring_service._check_all_components()
-        
+        # 手动触发监控检查 (R238 修复: 趋势分析要求 >= min_data_points=5 个数据点,
+        # 单次检查仅 1 点, 循环 6 次积累足够历史数据)
+        for _ in range(6):
+            await monitoring_service._check_all_components()
+
         # 等待趋势分析和异常检测完成
         await asyncio.sleep(1)
         
@@ -253,7 +256,7 @@ class TestBettaFishMonitoringIntegration(unittest.TestCase):
                 timestamp=timestamp,
                 value=value,
                 component=test_component,
-                metric_name=test_metric,
+                name=test_metric,
                 metric_type=monitoring_service.MetricType.RESPONSE_TIME
             ))
         
@@ -296,7 +299,7 @@ class TestBettaFishMonitoringIntegration(unittest.TestCase):
                 timestamp=timestamp,
                 value=value,
                 component=test_component,
-                metric_name=test_metric,
+                name=test_metric,
                 metric_type=monitoring_service.MetricType.RESPONSE_TIME
             ))
         

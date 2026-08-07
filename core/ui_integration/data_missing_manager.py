@@ -84,6 +84,9 @@ class DataMissingManager:
         self.data_missing_callbacks: List[Callable] = []
         self.download_progress_callbacks: List[Callable] = []
 
+        # R237 HVD-237-B-005: dispose 幂等标志 (R78 铁律 #6)
+        self._disposed = False
+
         # 初始化
         self._initialize_components()
 
@@ -489,6 +492,66 @@ class DataMissingManager:
         except Exception as e:
             if logger:
                 logger.error(f"关闭数据缺失管理器失败: {e}")
+
+    # ========================================================================
+    # R237 HVD-237-B-005: 4 链 dispose 治理 (R78 铁律)
+    # 业务影响: 2-3 业务方 (smart_data_missing_widget, data_management_widget, smart_data_integration)
+    # 业务资源: availability_cache / download_tasks / executor / callbacks
+    # ========================================================================
+    def dispose(self) -> None:
+        """R237 HVD-237-B-005: 4 链 dispose 入口 (R78 铁律 #6 幂等短路)"""
+        if getattr(self, '_disposed', False):
+            return
+        try:
+            self.shutdown()
+            self.close()
+            self.cleanup()
+        except Exception as e:
+            if logger:
+                logger.warning(
+                    f"DataMissingManager.dispose 异常: {e}",
+                    exc_info=True,
+                )
+        finally:
+            self._disposed = True
+
+    def shutdown(self) -> None:
+        """R237 HVD-237-B-005: shutdown - 业务数据清空 (availability_cache / download_tasks)"""
+        try:
+            if hasattr(self, 'availability_cache') and isinstance(self.availability_cache, dict):
+                self.availability_cache.clear()
+            if hasattr(self, 'download_tasks') and isinstance(self.download_tasks, dict):
+                self.download_tasks.clear()
+            if hasattr(self, 'plugin_status_cache') and isinstance(self.plugin_status_cache, dict):
+                self.plugin_status_cache.clear()
+        except Exception as e:
+            if logger:
+                logger.warning(
+                    f"DataMissingManager.shutdown 异常: {e}",
+                    exc_info=True,
+                )
+
+    def cleanup(self) -> None:
+        """R237 HVD-237-B-005: cleanup - 回调列表清空 + 子组件引用置 None"""
+        try:
+            if hasattr(self, 'data_missing_callbacks') and isinstance(self.data_missing_callbacks, list):
+                self.data_missing_callbacks.clear()
+            if hasattr(self, 'download_progress_callbacks') and isinstance(self.download_progress_callbacks, list):
+                self.download_progress_callbacks.clear()
+            if hasattr(self, 'asset_identifier'):
+                self.asset_identifier = None
+            if hasattr(self, 'data_router'):
+                self.data_router = None
+            if hasattr(self, 'data_manager'):
+                self.data_manager = None
+            if hasattr(self, 'db_manager'):
+                self.db_manager = None
+        except Exception as e:
+            if logger:
+                logger.warning(
+                    f"DataMissingManager.cleanup 异常: {e}",
+                    exc_info=True,
+                )
 
 # 全局实例
 _data_missing_manager = None

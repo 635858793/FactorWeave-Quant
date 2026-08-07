@@ -27,6 +27,10 @@ from .unified_table_name_generator import UnifiedTableNameGenerator, generate_ta
 from ..plugin_types import AssetType
 
 
+# 跨组件财报表统一插件名（R257 治理：消除 unified_data_manager 与 enhanced_duckdb_downloader 表名分裂，
+# 两组件统一读写 financial_statement_system_default）
+DEFAULT_FINANCIAL_PLUGIN = "system"
+
 
 class TableType(Enum):
     """表类型枚举"""

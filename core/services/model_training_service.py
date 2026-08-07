@@ -240,6 +240,46 @@ class ModelTrainingService(BaseService):
 
         logger.info("ModelTrainingService initialized")
 
+    def _do_dispose(self) -> None:
+        """释放训练资源 (R240-P0-B, 2026-08-02)
+
+        Why: 容器注册服务 (bootstrap L731 register SINGLETON), 4 RLock (L211/215/219/223)
+              + training_thread (L871-878) 永不释放 → 进程退出线程/引用泄漏
+             (子智能体 B 交叉验证确认 P0)
+        Fix: join 训练线程 + 清空任务/版本/日志 + 解除容器/数据库/ML 依赖引用
+        TDD: tests/test_r240_p0_dispose_container.py
+        """
+        try:
+            # 1. join 并清空训练线程 (daemon 线程, 短超时避免阻塞关闭)
+            threads = getattr(self, '_training_threads', None)
+            if threads:
+                for task_id, thread in list(threads.items()):
+                    try:
+                        if thread is not None and thread.is_alive():
+                            thread.join(timeout=2.0)
+                    except Exception:
+                        pass
+                threads.clear()
+
+            # 2. 清空训练任务/模型版本/训练日志
+            for attr in ('_training_tasks', '_model_versions', '_training_logs'):
+                target = getattr(self, attr, None)
+                if target is not None:
+                    try:
+                        target.clear()
+                    except Exception:
+                        pass
+
+            # 3. 解除引用
+            self._service_container = None
+            self._database_service = None
+            self._ml_dependencies = None
+
+            logger.info("ModelTrainingService resources disposed")
+
+        except Exception as e:
+            logger.warning(f"ModelTrainingService _do_dispose 失败: {e}")
+
     def _do_initialize(self) -> None:
         """执行具体的初始化逻辑"""
         try:

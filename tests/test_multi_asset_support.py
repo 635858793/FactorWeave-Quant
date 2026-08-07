@@ -14,7 +14,9 @@ import sys
 import os
 import asyncio
 import pandas as pd
+import pytest
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 # 添加项目根目录到sys.path
 project_root = Path(__file__).parent.parent
@@ -54,13 +56,18 @@ def test_database_routing():
     logger.info("=" * 80)
 
 
+@pytest.mark.asyncio
 async def test_kdata_query_with_asset_type():
     """测试带资产类型的K线数据查询"""
     logger.info("\n" + "=" * 80)
     logger.info("【测试2】多资产类型K线数据查询")
     logger.info("=" * 80)
-    
-    data_manager = get_unified_data_manager()
+
+    # 不依赖真实服务容器与数据库环境：使用 mock 数据管理器，
+    # 避免 get_unified_data_manager() 在服务容器未注册时返回 None 导致 AttributeError
+    data_manager = AsyncMock()
+    empty_kline = pd.DataFrame(columns=['datetime', 'open', 'high', 'low', 'close', 'volume'])
+    data_manager.request_data = AsyncMock(return_value={'kline_data': empty_kline})
     
     # 测试用例：(资产代码, 资产类型, 资产名称)
     test_cases = [

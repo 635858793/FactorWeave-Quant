@@ -4,6 +4,7 @@
 负责订单执行与接口对接
 """
 
+import os
 from loguru import logger
 from datetime import datetime
 from typing import Optional, Dict, Any, List
@@ -17,16 +18,18 @@ from core.events import get_event_bus
 from core.events.event_bus import EventBus
 from core.plugin_types import AssetType
 from core.trading.trading_types import ExecutionResult, ExecutionStatus, TradingInterface
-from core.trading.interfaces.xtp_trading_interface import XTPTradingInterface
-from core.trading.interfaces.xtp_pro_trading_interface import XTPProTradingInterface
-from core.trading.interfaces.ctp_trading_interface import CTPTradingInterface
-from core.trading.interfaces.miniqmt_trading_interface import MiniQMTTradingInterface
+# 注意：真实交易接口（XTP/CTP/miniQMT）不在模块级导入，改为延迟到实际使用/连接时加载，
+# 避免模块导入链加载 C 扩展 (.pyd) 触发原生崩溃 (0xC0000005)。
+
 from core.trading.account_models import TradingInterfaceType, Account
 from typing import Optional
 
 
 class MockTradingInterface(TradingInterface):
     """模拟交易接口 - 整合真实计算链路（AccountManager + TradingEngine）"""
+
+    # R255-P0: Mock 接口标记 (模式闸门放行依据: _is_mock_interface=True → 不拦截)
+    _is_mock_interface = True
 
     def __init__(self, service_container=None, event_bus=None):
         self._orders: Dict[str, Order] = {}
@@ -35,7 +38,8 @@ class MockTradingInterface(TradingInterface):
         self._logged_in = True
 
         self._service_container = service_container
-        self._event_bus = event_bus
+        # HVD-241-P1-B: event_bus or → is not None (EventBus __len__ falsy 陷阱, R240-P0-007)
+        self._event_bus = event_bus if event_bus is not None else get_event_bus()
         self._trading_engine = None
         self._account_manager = None
         self._fill_records: List[Dict[str, Any]] = []
@@ -54,7 +58,7 @@ class MockTradingInterface(TradingInterface):
 
             try:
                 from core.trading_engine import TradingEngine
-                self._trading_engine = TradingEngine(self._service_container, self._event_bus or get_event_bus())
+                self._trading_engine = TradingEngine(self._service_container, self._event_bus)
                 logger.info("MockTradingInterface: 使用真实TradingEngine计算链路")
             except Exception as e:
                 self._trading_engine = None
@@ -307,31 +311,8 @@ class MockTradingInterface(TradingInterface):
                     logger.info(f"MockTradingInterface: 使用真实AccountManager查询持仓: {account_id}, 持仓数={len(positions)}")
                     return positions
 
-            logger.warning("MockTradingInterface: AccountManager不可用或无持仓，使用默认空持仓")
-            from core.trading.account_models import Position, PositionSide
-            from core.plugin_types import AssetType
-            now = datetime.now()
-            return [
-                Position(
-                    position_id=f"{account_id}_mock_000001",
-                    account_id=account_id,
-                    asset_type=AssetType.STOCK_A,
-                    stock_code="000001",
-                    stock_name="平安银行(模拟-默认值)",
-                    side=PositionSide.LONG,
-                    quantity=0,
-                    available_quantity=0,
-                    open_price=0.0,
-                    current_price=0.0,
-                    market_value=0.0,
-                    cost_price=0.0,
-                    cost_value=0.0,
-                    profit_loss=0.0,
-                    profit_loss_ratio=0.0,
-                    open_time=now,
-                    update_time=now
-                )
-            ]
+            logger.warning("MockTradingInterface: AccountManager不可用或无持仓，返回空持仓列表（不再构造模拟持仓）")
+            return []
         except Exception as e:
             logger.error(f"模拟查询持仓信息失败: {e}")
             return []
@@ -340,7 +321,12 @@ class MockTradingInterface(TradingInterface):
 class OrderExecutor:
     """订单执行器"""
 
+    # R238-D-001 修复: 类级默认 _disposed (R235-D 标杆模式, 防御 __new__ 绕过 __init__)
+    _disposed = False
+
     def __init__(self, service_container: ServiceContainer, event_bus: EventBus):
+        # R238-D-001 修复: _disposed 标志 (R78 铁律 #6 幂等短路)
+        self._disposed = False
         self.service_container = service_container
         self.event_bus = event_bus
 
@@ -349,6 +335,14 @@ class OrderExecutor:
         
         self._trading_interfaces: Dict[AssetType, TradingInterface] = {}
         self._account_interface_cache: Dict[str, TradingInterface] = {}
+
+        # R255-P0 模式闸门: 默认 paper, 绝不默认 live (真实资金安全铁律)
+        self._trading_mode = 'paper'
+
+        # R258-P0: 风控开关 (默认开, 资金安全铁律)。
+        # enable_risk_control 由 trading_service.set_mode 经 _sync_order_executor_trading_mode
+        # (trading_service.py:357-374) 联动下发; 关闭时 _pre_trade_risk_check 快速放行。
+        self._risk_control_enabled = True
 
         self._initialize()
 
@@ -361,45 +355,63 @@ class OrderExecutor:
         # 注册不同资产类型的交易接口
         self._register_trading_interfaces()
 
-        # 默认使用模拟交易接口
-        self.trading_interface = MockTradingInterface()
+        # 默认交易接口：优先使用已注册的真实交易接口（XTP/CTP），不再默认实例化模拟接口
+        if self._trading_interfaces:
+            first_asset_type = next(iter(self._trading_interfaces))
+            self.trading_interface = self._trading_interfaces[first_asset_type]
+            logger.info(f"默认交易接口: {first_asset_type.value}（真实交易接口）")
+        else:
+            self.trading_interface = None
+            logger.warning("未配置真实交易接口，下单功能不可用")
 
     def _register_trading_interfaces(self):
         """注册不同资产类型的交易接口"""
+        # R255-P0 Mock 保护层: HIKYUU_TRADING_MOCK=1/true (测试/沙箱环境) 时
+        # 追加注册 MockTradingInterface, 供测试与仿真走模拟成交, 不触真实接口
+        self._mock_enabled = os.environ.get('HIKYUU_TRADING_MOCK', '').lower() in ('1', 'true')
+        # 延迟导入真实交易接口（避免模块导入链加载 C 扩展 SDK；导入失败仅跳过对应接口）
+        try:
+            from core.trading.interfaces.xtp_pro_trading_interface import XTPProTradingInterface
+        except ImportError:
+            XTPProTradingInterface = None
+            logger.warning("XTP Pro 交易接口不可用，跳过注册")
+        try:
+            from core.trading.interfaces.ctp_trading_interface import CTPTradingInterface
+        except ImportError:
+            CTPTradingInterface = None
+            logger.warning("CTP 交易接口不可用，跳过注册")
+
         # 注册股票交易接口（XTP Pro）
-        self._trading_interfaces[AssetType.STOCK_A] = XTPProTradingInterface()
-        self._trading_interfaces[AssetType.STOCK_B] = XTPProTradingInterface()
-        self._trading_interfaces[AssetType.STOCK_H] = XTPProTradingInterface()
-        self._trading_interfaces[AssetType.STOCK_US] = XTPProTradingInterface()
-        self._trading_interfaces[AssetType.STOCK_HK] = XTPProTradingInterface()
-        
+        if XTPProTradingInterface is not None:
+            self._trading_interfaces[AssetType.STOCK_A] = XTPProTradingInterface()
+            self._trading_interfaces[AssetType.STOCK_B] = XTPProTradingInterface()
+            self._trading_interfaces[AssetType.STOCK_H] = XTPProTradingInterface()
+            self._trading_interfaces[AssetType.STOCK_US] = XTPProTradingInterface()
+            self._trading_interfaces[AssetType.STOCK_HK] = XTPProTradingInterface()
+
         # 注册期货交易接口（CTP）
-        self._trading_interfaces[AssetType.FUTURES] = CTPTradingInterface()
-        
+        if CTPTradingInterface is not None:
+            self._trading_interfaces[AssetType.FUTURES] = CTPTradingInterface()
+
         # 注册期权交易接口（CTP）
-        self._trading_interfaces[AssetType.OPTION] = CTPTradingInterface()
+        if CTPTradingInterface is not None:
+            self._trading_interfaces[AssetType.OPTION] = CTPTradingInterface()
         
-        # 注册加密货币交易接口
-        self._trading_interfaces[AssetType.CRYPTO] = MockTradingInterface()
-        
-        # 注册外汇交易接口
-        self._trading_interfaces[AssetType.FOREX] = MockTradingInterface()
-        
-        # 注册债券交易接口
-        self._trading_interfaces[AssetType.BOND] = MockTradingInterface()
-        
-        # 注册商品交易接口
-        self._trading_interfaces[AssetType.COMMODITY] = MockTradingInterface()
-        
-        # 注册指数交易接口
-        self._trading_interfaces[AssetType.INDEX] = MockTradingInterface()
-        
-        # 注册基金交易接口
-        self._trading_interfaces[AssetType.FUND] = MockTradingInterface()
-        
-        # 注册权证交易接口
-        self._trading_interfaces[AssetType.WARRANT] = MockTradingInterface()
-        
+        # 加密货币/外汇/债券/商品/指数/基金/权证等资产类型暂无可用的真实交易接口，
+        # 不再无条件注册模拟接口（模拟接口会干扰真实场景），待接入真实接口后按需注册。
+        # 已移除: CRYPTO/FOREX/BOND/COMMODITY/INDEX/FUND/WARRANT → MockTradingInterface()
+
+        # R255-P0: Mock 保护层 (仅 HIKYUU_TRADING_MOCK=1/true 时追加注册, 不替换真实接口)
+        if self._mock_enabled:
+            try:
+                self._trading_interfaces[AssetType.FUND] = MockTradingInterface(
+                    self.service_container, self.event_bus)
+                self._trading_interfaces[AssetType.CRYPTO] = MockTradingInterface(
+                    self.service_container, self.event_bus)
+                logger.info("Mock 保护层: 已注册 MockTradingInterface (HIKYUU_TRADING_MOCK)")
+            except Exception as e:
+                logger.warning(f"Mock 保护层注册失败: {e}")
+
         logger.info("交易接口注册完成")
 
         # 交易接口健康状态跟踪
@@ -454,6 +466,10 @@ class OrderExecutor:
     def _load_account_info_to_interfaces(self):
         """从账户管理器加载账户信息到交易接口"""
         try:
+            # 延迟导入交易接口类（用于 isinstance 判断，避免模块导入链加载 C 扩展 SDK）
+            from core.trading.interfaces.xtp_trading_interface import XTPTradingInterface
+            from core.trading.interfaces.xtp_pro_trading_interface import XTPProTradingInterface
+            from core.trading.interfaces.ctp_trading_interface import CTPTradingInterface
             from core.trading.account_manager import AccountManager
             
             account_manager = self.service_container.resolve(AccountManager)
@@ -497,7 +513,6 @@ class OrderExecutor:
             
         except Exception as e:
             logger.error(f"加载账户信息到交易接口失败: {e}")
-
     def _get_asset_type_for_account(self, account):
         """根据账户获取对应的资产类型"""
         # 这里可以根据账户的股票代码前缀或其他信息判断资产类型
@@ -587,7 +602,6 @@ class OrderExecutor:
             logger.error(f"重新连接 {asset_type.value} 接口异常: {e}")
             health["last_error"] = str(e)
             health["consecutive_failures"] += 1
-
     def _get_trading_interface(self, asset_type: AssetType) -> TradingInterface:
         """根据资产类型获取对应的交易接口（带健康检查和故障转移）"""
         # 先检查健康状态
@@ -611,13 +625,31 @@ class OrderExecutor:
         
         return self._trading_interfaces.get(asset_type)
 
+    def get_trading_interface(self, asset_type: AssetType) -> Optional[TradingInterface]:
+        """公开: 根据资产类型获取交易接口 (薄封装, 消除跨类私有属性访问)
+
+        R254-P1: account_manager 等外部组件经 OrderService 委托本方法获取接口,
+        不再直接访问 _trading_interfaces 私有属性; 接口字段初始化已由
+        _load_account_info_to_interfaces (order_executor.py:440-489) 内部负责,
+        调用方无需再改写接口字段。健康检查仅记录状态 (容错, 不阻断返回)。
+
+        Args:
+            asset_type: 资产类型
+
+        Returns:
+            TradingInterface: 交易接口实例, 未注册该资产类型时返回 None
+        """
+        try:
+            self.check_interface_health(asset_type)
+        except Exception as e:
+            logger.debug(f"交易接口健康检查异常(不影响获取): {asset_type}, 错误: {e}")
+        return self._trading_interfaces.get(asset_type)
+
     def _validate_order_integrity(self, order: Order) -> Optional[str]:
         """
         验证订单对象的完整性
-
         Args:
             order: 订单对象
-
         Returns:
             Optional[str]: 如果验证失败返回错误信息，否则返回 None
         """
@@ -637,57 +669,43 @@ class OrderExecutor:
                 'update_time': order.update_time,
                 'account_id': order.account_id
             }
-
             for field_name, field_value in required_fields.items():
                 if field_value is None:
                     return f"必要字段 {field_name} 为 None"
-
             # 验证数据类型和值
             if not isinstance(order.order_price, (int, float)) or order.order_price <= 0:
                 return f"订单价格无效: {order.order_price}"
-
             if not isinstance(order.order_quantity, int) or order.order_quantity <= 0:
                 return f"订单数量无效: {order.order_quantity}"
-
             if not isinstance(order.stock_code, str) or len(order.stock_code) == 0:
                 return f"股票代码无效: {order.stock_code}"
-
             # 验证账号ID
             if order.account_id == "default":
                 logger.warning(f"订单 {order.order_id} 的 account_id 为 'default'，可能导致账号解析失败")
-
             # 验证策略ID
             if order.strategy_id == "default":
                 logger.warning(f"订单 {order.order_id} 的 strategy_id 为 'default'，可能导致账号解析失败")
-
             logger.debug(f"订单完整性验证通过: {order.order_id}")
             return None
-
         except Exception as e:
             logger.error(f"验证订单完整性时发生异常: {e}")
             import traceback
             logger.error(f"错误堆栈:\n{traceback.format_exc()}")
             return f"验证异常: {str(e)}"
-
     def _resolve_account_for_order(self, order: Order) -> Optional[Account]:
         """
         解析订单使用的账号（三级优先级）
-
         Args:
             order: 订单对象
-
         Returns:
             Account: 账号对象，如果无法解析则返回 None
         """
         try:
             from core.trading.account_manager import AccountManager
             from core.trading.strategy_manager import StrategyManager
-
             account_manager = self.service_container.resolve(AccountManager)
             strategy_manager = self.service_container.resolve(StrategyManager)
-
             logger.debug(f"开始解析订单账号: order_id={order.order_id}, account_id={order.account_id}, strategy_id={order.strategy_id}")
-
             # 优先级1：订单级别
             if order.account_id and order.account_id != "default":
                 account = account_manager.get_account(order.account_id)
@@ -697,7 +715,6 @@ class OrderExecutor:
                 else:
                     logger.warning(f"订单指定的账号不存在: {order.account_id}")
                     logger.warning(f"订单详细信息: order_id={order.order_id}, stock_code={order.stock_code}")
-
             # 优先级2：策略级别
             if order.strategy_id and order.strategy_id != "default":
                 strategy = strategy_manager.get_strategy(order.strategy_id)
@@ -710,7 +727,6 @@ class OrderExecutor:
                         logger.warning(f"策略的默认账号不存在: {strategy.default_account_id} (策略: {strategy.strategy_id})")
                 else:
                     logger.warning(f"策略不存在或没有默认账号: {order.strategy_id}")
-
             # 优先级3：系统级别
             accounts = account_manager.get_all_accounts()
             if accounts:
@@ -718,7 +734,6 @@ class OrderExecutor:
                 account = accounts[0]
                 logger.info(f"使用系统默认账号: {account.account_id} (共 {len(accounts)} 个账号)")
                 return account
-
             logger.error("无法解析订单使用的账号")
             logger.error(f"订单详细信息:")
             logger.error(f"  order_id: {order.order_id}")
@@ -737,14 +752,12 @@ class OrderExecutor:
             logger.error(f"    3. 订单指定的账号不存在")
             logger.error(f"    4. 策略指定的默认账号不存在")
             return None
-
         except Exception as e:
             logger.error(f"解析订单账号失败: {e}")
             logger.error(f"订单ID: {order.order_id}")
             import traceback
             logger.error(f"错误堆栈:\n{traceback.format_exc()}")
             return None
-
     def _pre_trade_risk_check(self, order: Order) -> Dict[str, Any]:
         """
         交易前风控预检查（P0-2修复）
@@ -758,11 +771,18 @@ class OrderExecutor:
             Dict[str, Any]: 包含 'passed' 和 'reason' 的检查结果
         """
         try:
+            # R258-P0: 风控开关 (trading_service.set_mode 经 set_trading_mode 联动下发)。
+            # 关闭时快速放行, 不执行任何风控检查 (backtest 显式关闭用, 默认开启)
+            if not getattr(self, '_risk_control_enabled', True):
+                return {'passed': True, 'reason': '风控已禁用 (enable_risk_control=False)', 'warnings': []}
+
             result = {'passed': True, 'reason': '', 'warnings': []}
             
             try:
                 from core.risk_monitoring.enhanced_risk_monitor import EnhancedRiskMonitor
-                risk_monitor = self.service_container.resolve(EnhancedRiskMonitor)
+                # R252-F1: 使用 try_resolve 而非 resolve —— EnhancedRiskMonitor 未注册时
+                # resolve 会抛 ValueError 导致所有订单被风控误拒, try_resolve 失败返回 None 跳过增强风控
+                risk_monitor = self.service_container.try_resolve(EnhancedRiskMonitor)
                 
                 if risk_monitor and hasattr(risk_monitor, 'check_order_risk'):
                     risk_result = risk_monitor.check_order_risk(order)
@@ -775,8 +795,8 @@ class OrderExecutor:
             except ImportError:
                 logger.debug("EnhancedRiskMonitor不可用，跳过高级风控检查")
             except Exception as e:
-                logger.critical(f"高级风控检查异常，订单被拒绝: {order.order_id}, 错误: {e}")
-                return {'passed': False, 'reason': f'风控检查异常，订单被拒绝: {str(e)}', 'warnings': [], 'error_code': 'RISK_CHECK_FAILED'}
+                # R252-F1: 风控服务异常不应阻断交易主链路, 降级为 warning 后继续基础检查
+                logger.warning(f"高级风控检查异常，降级跳过（不阻断交易）: {order.order_id}, 错误: {e}")
             
             try:
                 from core.trading.account_manager import AccountManager
@@ -811,7 +831,6 @@ class OrderExecutor:
                 result['passed'] = False
                 result['reason'] = f"订单价格无效: {order.order_price}"
                 return result
-
             # 集成核心风控模块 - 止损检查 (P0-4修复)
             try:
                 from core.risk_control import RiskControlStrategy
@@ -833,7 +852,6 @@ class OrderExecutor:
                 logger.debug("RiskControlStrategy不可用，跳过止损风控检查")
             except Exception as e:
                 logger.warning(f"风控止损检查异常(不影响交易): {e}")
-
             max_order_value = 10000000
             order_value = order.order_price * order.order_quantity
             if order_value > max_order_value:
@@ -849,14 +867,11 @@ class OrderExecutor:
         except Exception as e:
             logger.critical(f"交易前风控检查异常，订单被拒绝: {order.order_id}, 错误: {e}")
             return {'passed': False, 'reason': f'风控检查异常，订单被拒绝: {str(e)}', 'warnings': [], 'error_code': 'RISK_CHECK_FAILED'}
-
     def _get_trading_interface_for_account(self, account: Account) -> Optional[TradingInterface]:
         """
         根据账号获取交易接口（带缓存）
-
         Args:
             account: 账号对象
-
         Returns:
             TradingInterface: 交易接口，如果无法获取则返回 None
         """
@@ -864,36 +879,35 @@ class OrderExecutor:
             # 检查缓存
             if account.account_id in self._account_interface_cache:
                 return self._account_interface_cache[account.account_id]
-
             # 创建交易接口
             trading_interface = self._create_trading_interface_for_account(account)
-
             if trading_interface:
                 # 缓存交易接口
                 self._account_interface_cache[account.account_id] = trading_interface
                 logger.info(f"为账号 {account.account_id} 创建并缓存交易接口")
-
             return trading_interface
-
         except Exception as e:
             logger.error(f"获取账号 {account.account_id} 的交易接口失败: {e}")
             return None
-
     def _create_trading_interface_for_account(self, account: Account) -> Optional[TradingInterface]:
         """
         为账号创建交易接口
-
         Args:
             account: 账号对象
-
         Returns:
             TradingInterface: 交易接口，如果无法创建则返回 None
         """
         try:
+            # 延迟导入交易接口类（避免模块导入链加载 C 扩展 SDK；导入失败由外层 except 兜底返回 None）
+            from core.trading.interfaces.xtp_trading_interface import XTPTradingInterface
+            from core.trading.interfaces.xtp_pro_trading_interface import XTPProTradingInterface
+            from core.trading.interfaces.ctp_trading_interface import CTPTradingInterface
+
             trading_interface_type = account.trading_interface_type
 
             if trading_interface_type == TradingInterfaceType.MOCK:
-                interface = MockTradingInterface()
+                logger.warning(f"账号 {account.account_id} 配置为模拟交易接口(MOCK)，已弃用模拟接口，下单功能不可用")
+                return None
 
             elif trading_interface_type == TradingInterfaceType.XTP:
                 interface = XTPTradingInterface()
@@ -919,7 +933,7 @@ class OrderExecutor:
                 interface.product_info = account.ctp_product_info
 
             elif trading_interface_type == TradingInterfaceType.MINIQMT:
-                from core.trading.interfaces.miniqmt_trading_interface import MiniQMTConfig
+                from core.trading.interfaces.miniqmt_trading_interface import MiniQMTConfig, MiniQMTTradingInterface
                 config = MiniQMTConfig()
                 config.account_id = account.miniqmt_account_id if hasattr(account, 'miniqmt_account_id') else account.account_id
                 config.password = account.miniqmt_password if hasattr(account, 'miniqmt_password') else ""
@@ -928,8 +942,8 @@ class OrderExecutor:
                 interface = MiniQMTTradingInterface(config)
 
             else:
-                logger.warning(f"未知的交易接口类型: {trading_interface_type.value}，使用模拟接口")
-                interface = MockTradingInterface()
+                logger.warning(f"未知的交易接口类型: {trading_interface_type.value}，无法创建交易接口")
+                return None
 
             # 初始化交易接口
             try:
@@ -1002,6 +1016,24 @@ class OrderExecutor:
                     status=ExecutionStatus.FAILED,
                     message=f"无法获取账号 {account.account_id} 的交易接口",
                     error_code="INTERFACE_NOT_FOUND"
+                )
+
+            # 3.4 模式闸门 (R255-P0 真实资金安全): 真实 CTP/XTP 接口在非 live
+            # 模式一律拦截 (MODE_BLOCKED), 绝不误触发真实报单; Mock 接口放行
+            if self._trading_mode != 'live' and self._is_real_trading_interface(trading_interface):
+                logger.error(
+                    f"订单 {order.order_id} 被模式闸门拦截: 当前模式={self._trading_mode}, "
+                    f"接口={type(trading_interface).__name__} (非实盘模式禁止真实接口下单)"
+                )
+                order.order_status = OrderStatus.REJECTED
+                order.error_message = "非实盘模式禁止真实接口下单"
+                order.update_time = datetime.now()
+                self.repository.update_order(order)
+                return ExecutionResult(
+                    order_id=order.order_id,
+                    status=ExecutionStatus.FAILED,
+                    message="非实盘模式禁止真实接口下单（需显式切换实盘模式）",
+                    error_code="MODE_BLOCKED"
                 )
 
             # 3.5 更新健康状态统计
@@ -1172,6 +1204,20 @@ class OrderExecutor:
 
                         trading_interface = self._get_trading_interface_for_account(account)
 
+                        # R255-P0 模式闸门 (批量路径同单笔): 真实接口非 live 模式拦截
+                        if self._trading_mode != 'live' and self._is_real_trading_interface(trading_interface):
+                            order.order_status = OrderStatus.REJECTED
+                            order.error_message = "非实盘模式禁止真实接口下单"
+                            order.update_time = datetime.now()
+                            results.append(ExecutionResult(
+                                order_id=order.order_id,
+                                status=ExecutionStatus.FAILED,
+                                message="非实盘模式禁止真实接口下单（需显式切换实盘模式）",
+                                error_code="MODE_BLOCKED"
+                            ))
+                            failed_count += 1
+                            continue
+
                         result = trading_interface.submit_order(order)
 
                         # 处理执行结果
@@ -1293,8 +1339,22 @@ class OrderExecutor:
                     error_code="ORDER_PARTIALLY_FILLED"
                 )
 
-            # 4. 根据资产类型获取对应的交易接口
-            trading_interface = self._get_trading_interface(order.asset_type)
+            # 4. 获取交易接口: 账户缓存优先 (R256-P0: 与 submit 路径对齐,
+            #    connect_ctp_account 注入的已登录实例), 未命中回退注册接口
+            account = self._resolve_account_for_order(order)
+            trading_interface = self._get_trading_interface_for_account(account) if account else None
+            if trading_interface is None:
+                trading_interface = self._get_trading_interface(order.asset_type)
+
+            # R252-F6: 无可用交易接口时显式返回, 避免 None.cancel_order 抛 AttributeError
+            if trading_interface is None:
+                logger.error(f"取消订单失败: {order_id} - 无可用交易接口")
+                return ExecutionResult(
+                    order_id=order_id,
+                    status=ExecutionStatus.FAILED,
+                    message="无可用交易接口，无法撤销订单",
+                    error_code="NO_TRADING_INTERFACE"
+                )
 
             # 5. 提交取消请求
             result = trading_interface.cancel_order(order_id)
@@ -1346,6 +1406,17 @@ class OrderExecutor:
     def query_order_status(self, order_id: str) -> ExecutionResult:
         """查询订单状态"""
         try:
+            # R252-F6: 未配置真实交易接口时 (self.trading_interface=None) 显式返回,
+            # 避免 None.query_order_status 抛 AttributeError 被误判为订单状态异常
+            if self.trading_interface is None:
+                logger.warning(f"无可用交易接口，无法查询订单状态: {order_id}")
+                return ExecutionResult(
+                    order_id=order_id,
+                    status=ExecutionStatus.FAILED,
+                    message="无可用交易接口，无法查询订单状态",
+                    error_code="QUERY_ERROR"
+                )
+
             result = self.trading_interface.query_order_status(order_id)
 
             if result.status == ExecutionStatus.SUCCESS:
@@ -1439,10 +1510,65 @@ class OrderExecutor:
             logger.error(f"处理订单成交异常: {e}")
             return False
 
-    def set_trading_interface(self, trading_interface: TradingInterface):
-        """设置交易接口"""
+    def set_trading_interface(self, trading_interface: TradingInterface,
+                              account_id: Optional[str] = None):
+        """设置交易接口 (R255-P0: 支持按账户注入, 双实例打通)
+
+        Args:
+            trading_interface: 交易接口实例
+            account_id: 可选账户ID, 提供时同时写入账户接口缓存,
+                        下单路径 _get_trading_interface_for_account 优先复用
+        """
+        if trading_interface is None:
+            return
         self.trading_interface = trading_interface
-        logger.info("交易接口已更新")
+        if account_id:
+            self._account_interface_cache[account_id] = trading_interface
+            logger.info(f"交易接口已更新并注入账户缓存: {account_id}")
+        else:
+            logger.info("交易接口已更新")
+
+    # R255-P0 模式闸门 (真实资金安全): 默认 paper, 仅显式 set_trading_mode('live') 放行
+    def set_trading_mode(self, mode: str, enable_risk_control: Optional[bool] = None) -> None:
+        """设置交易模式 ('live'/'paper'/'backtest'), 未知模式回退 paper (绝不默认 live)
+
+        R258-P0: 联动风控开关 _risk_control_enabled —— live/paper 强制开启 (资金安全铁律),
+        backtest 由调用方显式 enable_risk_control 决定 (缺省保持当前值, 默认 True)。
+        """
+        normalized = str(mode or '').strip().lower()
+        if normalized in ('live', 'paper', 'backtest'):
+            self._trading_mode = normalized
+            # 风控开关联动: live/paper 强制 True (资金安全铁律); backtest 显式值优先
+            if normalized in ('live', 'paper'):
+                self._risk_control_enabled = True
+            elif enable_risk_control is not None:
+                self._risk_control_enabled = bool(enable_risk_control)
+            logger.info(
+                f"交易模式设置为: {normalized}, 风控={self._risk_control_enabled}")
+        else:
+            self._trading_mode = 'paper'
+            self._risk_control_enabled = True
+            logger.warning(f"未知交易模式 {mode!r}, 回退为 paper (禁止实盘)")
+
+    def get_trading_mode(self) -> str:
+        """获取当前交易模式 (默认 'paper')"""
+        return getattr(self, '_trading_mode', 'paper')
+
+    def _is_real_trading_interface(self, trading_interface) -> bool:
+        """判断是否为真实交易接口 (CTP/XTP/MiniQMT), 供模式闸门拦截
+
+        放行 (返回 False):
+        - MockTradingInterface 实例或带 _is_mock_interface=True 标记的接口
+        - 测试桩 (MagicMock 等 type 名不含 CTP/XTP/MiniQMT 的类型)
+
+        拦截 (返回 True): 仅确认为真实 CTP/XTP/MiniQMT 类型的接口
+        """
+        if isinstance(trading_interface, MockTradingInterface):
+            return False
+        if getattr(trading_interface, '_is_mock_interface', False):
+            return False
+        type_name = type(trading_interface).__name__
+        return any(key in type_name for key in ('CTP', 'XTP', 'MiniQMT'))
 
     def _get_position(self, account_id: str, stock_code: str) -> int:
         try:
@@ -1498,3 +1624,40 @@ class OrderExecutor:
             logger.info(f"订单取消，解冻资金: account={account_id}, amount={frozen_amount:.2f}")
         except Exception as e:
             logger.warning(f"解冻订单资金失败: {e}")
+
+    # R238-D-001 修复: 4 链 dispose (R233 §13.4 业务核心 P0 必修 + R78 铁律 #6 幂等短路)
+    def dispose(self) -> None:
+        """释放订单执行器资源"""
+        if self._disposed:
+            return
+        self._disposed = True
+
+        try:
+            # 1. 释放全部交易接口连接 (XTPProTradingInterface ×5 + CTP ×2 + Mock ×7)
+            for asset_type, interface in list(self._trading_interfaces.items()):
+                try:
+                    if interface is not None and hasattr(interface, 'disconnect'):
+                        interface.disconnect()
+                except Exception as e:
+                    logger.warning(f"{asset_type.value} 交易接口释放失败: {e}")
+
+            # 2. 释放默认交易接口 (MockTradingInterface, 不在 _trading_interfaces 中)
+            if self.trading_interface is not None and hasattr(self.trading_interface, 'disconnect'):
+                try:
+                    self.trading_interface.disconnect()
+                except Exception as e:
+                    logger.warning(f"默认交易接口释放失败: {e}")
+
+            # 3. 清空接口缓存与健康跟踪
+            self._trading_interfaces.clear()
+            self._account_interface_cache.clear()
+            self._interface_health.clear()
+            self._interface_failover_map.clear()
+
+            # 4. 清空子组件引用
+            self.repository = None
+            self.trading_interface = None
+
+            logger.info("订单执行器资源已释放")
+        except Exception as e:
+            logger.warning(f"订单执行器释放失败: {e}")

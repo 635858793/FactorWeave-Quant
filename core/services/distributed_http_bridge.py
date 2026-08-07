@@ -22,6 +22,19 @@ except ImportError:
     logger.warning("httpx未安装，仅支持本地执行模式")
     HTTP_AVAILABLE = False
 
+# R240-P0: CWE-918 SSRF 防御接入 (节点健康检查 sink L447)
+from core.security.url_validator import SSRFBlockedError, assert_safe_url as _uv_assert
+
+
+def _assert_node_url_safe(url: str) -> bool:
+    """节点健康检查 URL 安全校验 (R240-P0, L447 sink 接入)
+
+    与 distributed_service 一致: mode="lan_ok" 允许内网 (集群节点),
+    仍拦截回环/链路本地/元数据 — 防伪节点将请求指向本机/云元数据.
+    """
+    _uv_assert(url, dns_resolve=False, mode="lan_ok")
+    return True
+
 from distributed_node.api.models import TaskType, TaskRequest, TaskResult, NodeHealth
 
 
@@ -445,6 +458,8 @@ class DistributedHTTPBridge:
 
         # 请求健康状态
         url = f"http://{node['host']}:{node['port']}/api/v1/health"
+        # R240-P0: SSRF 校验节点 URL (lan_ok: 允许内网, 拦回环/元数据)
+        _assert_node_url_safe(url)
 
         try:
             response = await self.http_client.get(url, timeout=5.0)

@@ -12,7 +12,7 @@ from enum import Enum
 from collections import defaultdict
 
 from core.trading.order_models import Order, OrderStatus
-from core.trading.order_repository import OrderRepository
+from core.trading.order_repository import OrderRepository, get_order_repository
 from core.containers import ServiceContainer
 from core.events import EventBus
 
@@ -58,7 +58,12 @@ class OrderAlert:
 class OrderMonitor:
     """订单监控器（事件驱动 + 轻量级定时检查）"""
 
+    # R237-P1 修复: 类级默认 _disposed (R235-D 标杆模式, 防御 __new__ 绕过 __init__ 的场景)
+    _disposed = False
+
     def __init__(self, service_container: ServiceContainer, event_bus: EventBus):
+        # R237-P1 修复: _disposed 标志 (R78 铁律 #6 幂等短路 + R233 §13.4 dispose 链)
+        self._disposed = False
         self.service_container = service_container
         self.event_bus = event_bus
 
@@ -98,7 +103,8 @@ class OrderMonitor:
 
     def _initialize(self):
         """初始化"""
-        self.repository = OrderRepository(self.service_container, self.event_bus)
+        # R255-P2: 共用模块级单例, 保证 OrderCache 一致性
+        self.repository = get_order_repository(self.service_container, self.event_bus)
 
         # 订阅事件（事件驱动：订单状态变化时立即响应）
         self.event_bus.subscribe('order_created', self._on_order_created)
@@ -130,6 +136,27 @@ class OrderMonitor:
         except Exception as e:
             logger.error(f"取消订阅事件失败: {e}")
         logger.info("订单监控已停止")
+
+    def dispose(self):
+        """R237-P1 修复: dispose 链 (R78 铁律 #6 幂等短路 + R233 §13.4 业务核心)
+
+        释放订单监控器资源:
+        1. _disposed 标志幂等短路 (重复 dispose 不抛错)
+        2. 停止监控 + 取消全部 7 个事件订阅 (R8 §8.1 铁律 #1)
+        3. 清空业务数据 _alerts / _order_create_times (内存泄漏防御)
+        4. 失败仅 warning 不抛 (R117-HVD-69 P1 模板)
+        """
+        if self._disposed:
+            return
+        try:
+            self.stop_monitoring()
+            self._alerts.clear()
+            self._order_create_times.clear()
+        except Exception as e:
+            logger.warning(f"OrderMonitor.dispose 失败: {e}", exc_info=True)
+        finally:
+            self._disposed = True
+        logger.info("订单监控器已释放")
 
     def check_orders(self) -> List[OrderAlert]:
         """

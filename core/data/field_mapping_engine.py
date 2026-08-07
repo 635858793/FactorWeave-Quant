@@ -341,6 +341,16 @@ class FieldMappingEngine:
 
             # 应用映射结果
             if result.target_field != result.source_field:
+                # 目标列已存在时跳过 rename, 避免产生重复列:
+                # 多个源字段(如 adj_type/adj_source)被模糊匹配到同一目标字段
+                # (如 adj_close) 时, pandas rename 允许目标列已存在,
+                # 会直接生成重复标签; 此处保留源列名并告警
+                if result.target_field in mapped_data.columns:
+                    self.logger.warning(
+                        f"字段映射冲突: {result.source_field} -> {result.target_field} "
+                        f"目标列已存在, 保留原列名以规避重复列"
+                    )
+                    continue
                 mapped_data = mapped_data.rename(columns={result.source_field: result.target_field})
 
         # 更新统计信息
@@ -482,6 +492,14 @@ class FieldMappingEngine:
 
             if missing_fields:
                 self.logger.warning(f"缺少必需字段: {missing_fields}")
+                return False
+
+            # 检查重复列: 多个源字段映射到同一目标字段时会生成重复标签,
+            # 必需字段存在性校验(set 差集)无法发现, 此处显式拦截
+            column_list = list(mapped_data.columns)
+            duplicate_fields = [c for c in set(column_list) if column_list.count(c) > 1]
+            if duplicate_fields:
+                self.logger.warning(f"存在重复列: {duplicate_fields}")
                 return False
 
             # 数据类型验证

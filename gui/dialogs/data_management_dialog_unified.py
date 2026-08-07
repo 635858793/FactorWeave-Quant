@@ -43,7 +43,7 @@ from PyQt5.QtWidgets import (
     QDateEdit, QSpinBox, QCheckBox, QListWidget, QListWidgetItem,
     QMessageBox, QMenu, QToolBar, QAction, QStatusBar,
     QDialogButtonBox, QFormLayout, QStackedWidget,
-    QFileDialog, QAbstractItemView
+    QFileDialog, QInputDialog, QAbstractItemView
 )
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, QDate, QSize
 from PyQt5.QtGui import QFont, QPalette, QColor, QIcon
@@ -114,6 +114,9 @@ class DataImportThread(QThread):
             failed_count = 0
 
             for idx, stock in enumerate(stocks):
+                # R248 修复：检查中断请求，支持关闭对话框时安全停止线程
+                if self.isInterruptionRequested():
+                    break
                 try:
                     code = stock.get('code', stock.get('stock_code', ''))
                     name = stock.get('name', code)
@@ -211,7 +214,6 @@ class UnifiedDataManagementDialog(BaseDialog):
         self.current_section = 0
         self.setup_ui()
         self.setup_connections()
-        self._disable_unimplemented_features()
         self.load_statistics()
         
         logger.info("统一数据管理对话框初始化完成")
@@ -1373,16 +1375,51 @@ class UnifiedDataManagementDialog(BaseDialog):
     
     def _backup_database(self):
         """备份数据库"""
-        QMessageBox.information(self, "备份", "数据库备份功能开发中...")
-    
+        try:
+            from core.containers import get_service_container
+            from core.services.database_service import DatabaseService
+
+            container = get_service_container()
+            if not container.is_registered(DatabaseService):
+                QMessageBox.warning(self, "备份数据库", "数据库服务未初始化，无法执行备份")
+                return
+
+            db_service = container.resolve(DatabaseService)
+            db_service.backup_now()
+            QMessageBox.information(self, "备份数据库", "数据库备份完成")
+        except Exception as e:
+            logger.error(f"备份数据库失败: {e}")
+            QMessageBox.warning(self, "备份数据库", f"备份数据库失败: {e}")
+
     def _optimize_database(self):
         """优化数据库"""
-        QMessageBox.information(self, "优化", "数据库优化功能开发中...")
-    
+        try:
+            from core.containers import get_service_container
+            from core.services.database_service import DatabaseService
+
+            container = get_service_container()
+            if not container.is_registered(DatabaseService):
+                QMessageBox.warning(self, "优化数据库", "数据库服务未初始化，无法执行优化")
+                return
+
+            db_service = container.resolve(DatabaseService)
+            db_service.optimize_now()
+            QMessageBox.information(self, "优化数据库", "数据库优化完成")
+        except Exception as e:
+            logger.error(f"优化数据库失败: {e}")
+            QMessageBox.warning(self, "优化数据库", f"优化数据库失败: {e}")
+
     def _cleanup_database(self):
         """清理数据库"""
-        QMessageBox.information(self, "清理", "数据库清理功能开发中...")
-    
+        try:
+            from core.importdata.task_status_manager import get_task_status_manager
+            manager = get_task_status_manager()
+            removed_count = manager.cleanup_finished_tasks(older_than_hours=24)
+            QMessageBox.information(self, "清理数据库", f"清理完成，共清理 {removed_count} 个历史任务")
+        except Exception as e:
+            logger.error(f"清理数据库失败: {e}")
+            QMessageBox.warning(self, "清理数据库", f"清理数据库失败: {e}")
+
     def _load_data_sources(self):
         self.sources_table.setRowCount(0)
         try:
@@ -1403,19 +1440,97 @@ class UnifiedDataManagementDialog(BaseDialog):
     
     def _add_data_source(self):
         """添加数据源"""
-        QMessageBox.information(self, "添加", "添加数据源功能开发中...")
+        try:
+            from core.importdata.import_config_manager import ImportConfigManager, DataSourceConfig
+
+            name, ok = QInputDialog.getText(self, "添加数据源", "请输入数据源名称:")
+            if not ok or not name.strip():
+                return
+
+            config_manager = ImportConfigManager()
+            success = config_manager.add_data_source(
+                DataSourceConfig(name=name.strip(), plugin_name=name.strip())
+            )
+            if success:
+                QMessageBox.information(self, "添加数据源", f"数据源「{name.strip()}」添加成功")
+                self._load_data_sources()
+            else:
+                QMessageBox.warning(self, "添加数据源", "添加数据源失败")
+        except Exception as e:
+            logger.error(f"添加数据源失败: {e}")
+            QMessageBox.warning(self, "添加数据源", f"添加数据源失败: {e}")
     
     def _edit_data_source(self):
-        """编辑数据源"""
-        QMessageBox.information(self, "编辑", "编辑数据源功能开发中...")
+        """编辑数据源（切换启用状态）"""
+        try:
+            selected = self.sources_table.selectedItems()
+            if not selected:
+                QMessageBox.warning(self, "编辑数据源", "请先选择要编辑的数据源")
+                return
+            row = selected[0].row()
+            name = self.sources_table.item(row, 0).text()
+
+            from core.importdata.import_config_manager import ImportConfigManager
+            config_manager = ImportConfigManager()
+            source = config_manager.get_data_source(name)
+            if not source:
+                QMessageBox.warning(self, "编辑数据源", f"数据源「{name}」不存在")
+                return
+
+            new_enabled = not source.enabled
+            success = config_manager.update_data_source(name, enabled=new_enabled)
+            if success:
+                new_state = "启用" if new_enabled else "禁用"
+                QMessageBox.information(self, "编辑数据源", f"数据源「{name}」已{new_state}")
+                self._load_data_sources()
+            else:
+                QMessageBox.warning(self, "编辑数据源", "编辑数据源失败")
+        except Exception as e:
+            logger.error(f"编辑数据源失败: {e}")
+            QMessageBox.warning(self, "编辑数据源", f"编辑数据源失败: {e}")
     
     def _delete_data_source(self):
         """删除数据源"""
-        QMessageBox.information(self, "删除", "删除数据源功能开发中...")
+        try:
+            selected = self.sources_table.selectedItems()
+            if not selected:
+                QMessageBox.warning(self, "删除数据源", "请先选择要删除的数据源")
+                return
+            row = selected[0].row()
+            name = self.sources_table.item(row, 0).text()
+
+            reply = QMessageBox.question(
+                self, "删除数据源", f"确定要删除数据源「{name}」吗？",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+            )
+            if reply != QMessageBox.Yes:
+                return
+
+            from core.importdata.import_config_manager import ImportConfigManager
+            config_manager = ImportConfigManager()
+            success = config_manager.remove_data_source(name)
+            if success:
+                QMessageBox.information(self, "删除数据源", f"数据源「{name}」已删除")
+                self._load_data_sources()
+            else:
+                QMessageBox.warning(self, "删除数据源", "删除数据源失败")
+        except Exception as e:
+            logger.error(f"删除数据源失败: {e}")
+            QMessageBox.warning(self, "删除数据源", f"删除数据源失败: {e}")
     
     def _test_data_source(self):
         """测试数据源连接"""
-        QMessageBox.information(self, "测试", "测试数据源连接功能开发中...")
+        try:
+            from core.services.unified_data_manager import UnifiedDataManager
+            data_manager = UnifiedDataManager()
+            success = data_manager.test_connection()
+            if success:
+                QMessageBox.information(self, "测试数据源连接", "数据源连接正常")
+            else:
+                QMessageBox.warning(self, "测试数据源连接", "数据源连接失败，请检查数据源配置")
+        except Exception as e:
+            logger.error(f"测试数据源连接失败: {e}")
+            QMessageBox.warning(self, "测试数据源连接", f"测试数据源连接失败: {e}")
     
     def _check_data_quality(self):
         try:
@@ -1454,8 +1569,32 @@ class UnifiedDataManagementDialog(BaseDialog):
             QMessageBox.warning(self, "质量检查", f"数据质量检查失败: {e}")
     
     def _fix_data_issues(self):
-        """修复数据问题"""
-        QMessageBox.information(self, "修复", "数据问题修复功能开发中...")
+        """修复数据问题（当前为诊断模式，输出质量报告与建议）"""
+        try:
+            from core.data_quality_risk_manager import DataQualityRiskManager
+            quality_manager = DataQualityRiskManager()
+            report = quality_manager.assess_quality()
+            score = report.get('quality_score', 0)
+            issues = report.get('issues', 0)
+            recommendations = report.get('recommendations', [])
+
+            lines = [
+                f"数据质量综合评分: {score} 分",
+                f"待处理问题数量: {issues} 个",
+            ]
+            if recommendations:
+                lines.append("")
+                lines.append("建议措施:")
+                for idx, rec in enumerate(recommendations, 1):
+                    lines.append(f"{idx}. {rec}")
+            else:
+                lines.append("")
+                lines.append("暂无待处理建议")
+
+            QMessageBox.information(self, "数据问题诊断", "\n".join(lines))
+        except Exception as e:
+            logger.error(f"数据问题诊断失败: {e}")
+            QMessageBox.warning(self, "数据问题诊断", f"数据问题诊断失败: {e}")
     
     def load_statistics(self):
         try:
@@ -1523,23 +1662,28 @@ class UnifiedDataManagementDialog(BaseDialog):
         self.data_imported.connect(self._on_data_imported)
         self.data_exported.connect(self._on_data_exported)
         self.database_updated.connect(self._on_database_updated)
-    
-    def _disable_unimplemented_features(self):
-        unimplemented_buttons = [
-            ('_backup_db_btn', '💾 备份数据库（功能开发中）'),
-            ('_optimize_db_btn', '⚡ 优化数据库（功能开发中）'),
-            ('_cleanup_db_btn', '🧹 清理数据（功能开发中）'),
-            ('_add_source_btn', '➕ 添加数据源（功能开发中）'),
-            ('_edit_source_btn', '✏️ 编辑数据源（功能开发中）'),
-            ('_delete_source_btn', '🗑️ 删除数据源（功能开发中）'),
-            ('_test_source_btn', '🧪 测试连接（功能开发中）'),
-            ('_fix_issues_btn', '🔧 修复数据问题（功能开发中）'),
-        ]
-        for attr_name, tooltip_text in unimplemented_buttons:
-            btn = getattr(self, attr_name, None)
-            if btn:
-                btn.setEnabled(False)
-                btn.setToolTip(tooltip_text)
+
+    def closeEvent(self, event):
+        """关闭事件处理（R248 修复：先停止导入/导出线程，避免 QThread GC 崩溃）"""
+        try:
+            # 停止数据导入/导出线程
+            for name, attr in (("数据导入", 'import_thread'), ("数据导出", 'export_thread')):
+                thread = getattr(self, attr, None)
+                if thread is not None:
+                    try:
+                        if thread.isRunning():
+                            thread.requestInterruption()
+                            if not thread.wait(3000):
+                                logger.warning(f"{name}线程 3 秒内未退出，继续等待...")
+                                if not thread.wait(5000):
+                                    logger.warning(f"{name}线程仍未退出，强制终止")
+                                    thread.terminate()
+                                    thread.wait(1000)
+                    except Exception as e:
+                        logger.warning(f"停止{name}线程异常: {e}")
+        except Exception as e:
+            logger.warning(f"关闭对话框停止线程异常: {e}")
+        super().closeEvent(event)
 
 
 def main():

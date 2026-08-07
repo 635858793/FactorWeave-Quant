@@ -1095,8 +1095,10 @@ class RealtimeWriteMonitoringWidget(QWidget):
             queue_stats: {
                 'queue_size': int,           # 队列当前大小
                 'queue_peak': int,           # 队列峰值
-                'total_writes': int,         # 总写入次数
-                'failed_writes': int,        # 失败写入次数
+                'total_writes': int,         # 总写入任务次数
+                'failed_writes': int,        # 失败写入任务次数
+                'total_records': int,        # 成功落库记录总数（真实记录数）
+                'failed_records': int,       # 落库失败记录总数
                 'merge_buffer_size': int,    # 合并缓冲区大小
                 'is_stopped': bool           # 是否已停止
             }
@@ -1120,34 +1122,39 @@ class RealtimeWriteMonitoringWidget(QWidget):
             if hasattr(self, 'merge_buffer_label'):
                 self.merge_buffer_label.setText(str(merge_buffer_size))
 
-            # 更新总写入数
+            # 更新已写入记录数（修复：使用真实落库记录数，而非写入任务次数）
             total_writes = queue_stats.get('total_writes', 0)
             failed_writes = queue_stats.get('failed_writes', 0)
+            # 优先使用真实记录数（新统计字段），兼容旧统计只有任务次数的情况
+            total_records = queue_stats.get('total_records', total_writes)
+            failed_records = queue_stats.get('failed_records', failed_writes)
             if hasattr(self, 'total_writes_label'):
-                if failed_writes > 0:
-                    self.total_writes_label.setText(f"{total_writes} (失败:{failed_writes})")
+                if failed_records > 0:
+                    self.total_writes_label.setText(f"{total_records} (失败:{failed_records})")
                     self.total_writes_label.setStyleSheet("color: red; font-weight: bold;")
                 else:
-                    self.total_writes_label.setText(str(total_writes))
+                    self.total_writes_label.setText(str(total_records))
                     self.total_writes_label.setStyleSheet("color: darkgreen;")
 
-            # 修复：基于total_writes计算写入速度（已写入的数据速度）
+            # 修复：基于真实落库记录数(total_records)计算写入速度（条/秒），
+            # 原先基于total_writes（写入任务次数），任务大多仅进入合并缓冲未落库，
+            # 导致速度恒为0且单位与"条/秒"不一致
             import time
             current_time = time.time()
 
             # 初始化速度计算数据
             if self._write_speed_calc_data['last_time'] is None:
                 self._write_speed_calc_data['last_time'] = current_time
-                self._write_speed_calc_data['last_total_writes'] = total_writes
+                self._write_speed_calc_data['last_total_writes'] = total_records
                 self._write_speed_calc_data['last_speed'] = 0
             else:
                 # 计算时间差
                 time_delta = current_time - self._write_speed_calc_data['last_time']
                 if time_delta > 0.1:  # 至少0.1秒才更新速度，避免抖动
-                    # 计算写入次数增量
-                    writes_delta = total_writes - self._write_speed_calc_data['last_total_writes']
+                    # 计算记录数增量
+                    writes_delta = total_records - self._write_speed_calc_data['last_total_writes']
                     if writes_delta > 0:
-                        # 计算速度（写入次数/秒）
+                        # 计算速度（条/秒）
                         speed = writes_delta / time_delta
                         # 使用指数移动平均平滑速度
                         alpha = 0.3  # 平滑因子
@@ -1160,12 +1167,12 @@ class RealtimeWriteMonitoringWidget(QWidget):
 
                     # 更新记录
                     self._write_speed_calc_data['last_time'] = current_time
-                    self._write_speed_calc_data['last_total_writes'] = total_writes
+                    self._write_speed_calc_data['last_total_writes'] = total_records
 
-                # 更新速度显示（使用已写入速度）
+                # 更新速度显示（使用真实落库速度，单位统一为条/秒）
                 if hasattr(self, 'speed_label'):
                     write_speed = self._write_speed_calc_data['last_speed']
-                    speed_text = f"{write_speed:.1f} 次/秒" if write_speed > 0 else "0 次/秒"
+                    speed_text = f"{write_speed:.1f} 条/秒"
                     self.speed_label.setText(speed_text)
                     # 根据速度调整颜色
                     if write_speed > 10:
@@ -1202,3 +1209,9 @@ class RealtimeWriteMonitoringWidget(QWidget):
         # 清空错误日志后，禁用重新下载按钮
         self.redownload_all_btn.setEnabled(False)
         self.write_data.clear()
+        # 修复：重置速度计算状态，避免跨任务的速度/计数残留
+        self._write_speed_calc_data = {
+            'last_time': None,
+            'last_total_writes': 0,
+            'last_speed': 0
+        }

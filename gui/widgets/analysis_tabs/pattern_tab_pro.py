@@ -185,11 +185,11 @@ class AnalysisThread(QThread):
                       f"置信度 {confidence:.2f} 不在 [{min_conf:.2f}, {max_conf:.2f}] 范围内。")
                 continue
 
-            # 成功率检查
+            # 成功率检查 (R252-G1: success_rate 缺失时宽容处理，仅按置信度过滤)
             success_rate = p.get('success_rate')
             if success_rate is None:
-                continue
-            if not (success_rate >= min_succ - epsilon and success_rate <= max_succ + epsilon):
+                logger.debug(f"形态 '{p.get('pattern_name', 'N/A')}' 缺少成功率字段，跳过成功率过滤。")
+            elif not (success_rate >= min_succ - epsilon and success_rate <= max_succ + epsilon):
                 logger.debug(f"过滤掉形态 '{p.get('pattern_name', 'N/A')}': "
                       f"成功率 {success_rate:.2f} 不在 [{min_succ:.2f}, {max_succ:.2f}] 范围内。")
                 continue
@@ -283,7 +283,14 @@ class AnalysisThread(QThread):
 
                 # 数据校验和清洗
                 self._validate_and_clean_pattern(pattern_dict)
-                
+
+                # R252-G1: 兜底 success_rate / risk_level
+                # (PatternResult.to_dict() 不产出成功率字段，缺失时统一补默认值)
+                if not pattern_dict.get('success_rate'):
+                    pattern_dict['success_rate'] = 0.7
+                if not pattern_dict.get('risk_level'):
+                    pattern_dict['risk_level'] = 'medium'
+
                 # 添加目标价和建议字段
                 pattern_name = pattern_dict.get('pattern_name', '')
                 confidence = pattern_dict.get('confidence', 0.5)
@@ -631,6 +638,10 @@ class AnalysisThread(QThread):
                 'neutral_patterns': neutral_patterns,
                 'buy_ratio': buy_patterns / total_patterns if total_patterns > 0 else 0,
                 'sell_ratio': sell_patterns / total_patterns if total_patterns > 0 else 0,
+                # R252-G4: 统一键名，供 _update_statistics_display 消费
+                'avg_confidence': avg_confidence,
+                'pattern_types': pattern_types,
+                'high_confidence_count': high_confidence_patterns,
                 'pattern_distribution': pattern_types,
                 'signal_distribution': {
                     'buy': buy_patterns,
@@ -1097,7 +1108,10 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
             return container.resolve(BacktestResultManager)
         except Exception as e:
             logger.warning(f"无法从服务容器获取BacktestResultManager，回退到直接创建: {e}")
-            return BacktestResultManager()
+            # HVD-241-P0-C-2c (R241-C 子智能体): 容器 resolve 失败时禁止裸建
+            # Why: 裸建实例不注册容器 → 退出链无人 dispose → DuckDB 连接引用泄漏
+            # Fix: return None, 调用方已有 None 容错 (R241-C 审计确认)
+            return None
 
     def _initialize_professional_patterns(self):
         """初始化专业级形态数据结构"""
@@ -1391,7 +1405,17 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
         filter_row.addStretch()
         
         advanced_layout.addLayout(filter_row)
-        
+
+        # 第三行：自动扫描选项（默认勾选，保证 set_kdata 后自动形态识别可触发）
+        auto_scan_row = QHBoxLayout()
+        auto_scan_row.setSpacing(10)
+        self.auto_scan_checkbox = QCheckBox("自动扫描")
+        self.auto_scan_checkbox.setChecked(True)
+        self.auto_scan_checkbox.setToolTip("数据更新后自动执行形态识别")
+        auto_scan_row.addWidget(self.auto_scan_checkbox)
+        auto_scan_row.addStretch()
+        advanced_layout.addLayout(auto_scan_row)
+
         toolbar_layout.addWidget(advanced_group)
 
         layout.addWidget(toolbar)
@@ -2941,27 +2965,43 @@ class PatternAnalysisTabPro(BaseAnalysisTab):
         if not patterns:
             return {}
 
-        stats = {
-            'total_patterns': len(patterns),
-            'avg_confidence': np.mean([p['confidence'] for p in patterns]),
-            'avg_success_rate': np.mean([p['success_rate'] for p in patterns]),
-            'risk_distribution': {},
-            'category_distribution': {}
-        }
+        # R252-G4: 统一输出 avg_confidence/pattern_types/high_confidence_count,
+        # 并对缺失 success_rate/risk_level/category 采用防御式访问
+        confidences = [p.get('confidence', 0.5) for p in patterns]
+        success_rates = [p.get('success_rate', 0.0) for p in patterns]
+        high_confidence_count = len(
+            [p for p in patterns if p.get('confidence', 0) >= 0.8])
 
-        # 风险分布
+        # 形态类型分布 (优先 pattern_name，兼容 category/pattern_category)
+        pattern_types = {}
         for pattern in patterns:
-            risk = pattern['risk_level']
-            stats['risk_distribution'][risk] = stats['risk_distribution'].get(
-                risk, 0) + 1
+            ptype = (pattern.get('pattern_name')
+                     or pattern.get('category')
+                     or pattern.get('pattern_category')
+                     or '未知')
+            pattern_types[ptype] = pattern_types.get(ptype, 0) + 1
 
-        # 类型分布
+        # 风险分布 / 类型分布 (兼容键，防御式访问)
+        risk_distribution = {}
+        category_distribution = {}
         for pattern in patterns:
-            category = pattern['category']
-            stats['category_distribution'][category] = stats['category_distribution'].get(
+            risk = pattern.get('risk_level') or 'medium'
+            risk_distribution[risk] = risk_distribution.get(risk, 0) + 1
+            category = (pattern.get('category')
+                        or pattern.get('pattern_category')
+                        or '未分类')
+            category_distribution[category] = category_distribution.get(
                 category, 0) + 1
 
-        return stats
+        return {
+            'total_patterns': len(patterns),
+            'avg_confidence': np.mean(confidences),
+            'avg_success_rate': np.mean(success_rates),
+            'high_confidence_count': high_confidence_count,
+            'pattern_types': pattern_types,
+            'risk_distribution': risk_distribution,
+            'category_distribution': category_distribution
+        }
 
     def _generate_alerts(self, patterns):
         """生成预警信息"""

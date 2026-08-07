@@ -176,7 +176,13 @@ class ConnectionPool:
         return best_servers
 
     def _test_server_performance(self, server: tuple) -> dict:
-        """测试单个服务器的性能"""
+        """测试单个服务器的性能（R249 修复：TCP + 数据访问级双重验证）
+
+        原实现仅 TCP connect_ex 验证, 会把"TCP 可连但 get_security_bars 返回空"
+        的服务器（如 R247 实测 218.6.170.47:7709）选入连接池, 导致并发分批取数
+        命中坏连接持续返回空数据。升级为 get_security_bars 实际取数验证,
+        与插件 _validate_connection_quality/_test_data_access 判定标准一致。
+        """
         try:
             start_time = time.time()
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -184,13 +190,50 @@ class ConnectionPool:
             result = sock.connect_ex(server)
             sock.close()
 
-            if result == 0:
-                response_time = time.time() - start_time
+            if result != 0:
                 return {
                     'server': server,
-                    'response_time': response_time,
-                    'success': True
+                    'response_time': float('inf'),
+                    'success': False
                 }
+
+            # 数据级验证：TCP 可连不代表可取数（R247 教训）
+            if not PYTDX_AVAILABLE:
+                return {
+                    'server': server,
+                    'response_time': float('inf'),
+                    'success': False
+                }
+
+            api_client = TdxHq_API()
+            if not api_client.connect(*server):
+                logger.debug(f"通达信连接失败: {server}")
+                return {
+                    'server': server,
+                    'response_time': float('inf'),
+                    'success': False
+                }
+
+            try:
+                test_data = api_client.get_security_bars(
+                    category=9,  # 日线
+                    market=0,   # 深圳市场
+                    code='000001',
+                    start=0,
+                    count=1
+                )
+                if test_data and len(test_data) > 0:
+                    response_time = time.time() - start_time
+                    return {
+                        'server': server,
+                        'response_time': response_time,
+                        'success': True
+                    }
+            finally:
+                try:
+                    api_client.disconnect()
+                except Exception:
+                    pass
         except Exception as e:
             logger.debug(f"通达信连接测试失败: {e}")
 
@@ -441,11 +484,35 @@ class ConnectionPool:
                     logger.info(f"IP {server_key} 限流已解除")
 
     def _is_connection_valid(self, connection_info: dict) -> bool:
-        """检查连接是否有效"""
+        """检查连接是否有效（R249 修复：socket + 数据访问级双重检查 + 30s 缓存）
+
+        原实现恒 return True, 无法识别"TCP 可连但数据不可用"或已断开的连接,
+        轮询命中后 get_security_bars 持续返回空数据。改为:
+        1. socket 级: is_connected()（pytdx 原生方法, 缺省时退化检查底层 client）
+        2. 数据级: get_security_count(0) > 0（带 30 秒缓存降低每次请求开销）
+        """
         try:
-            # 简单的有效性检查
             client = connection_info['client']
-            # 这里可以添加更复杂的连接检查逻辑
+
+            # 30 秒缓存：上次数据级验证成功后在窗口内直接复用结果
+            now = time.time()
+            last_check = connection_info.get('last_valid_check', 0)
+            if now - last_check < 30:
+                return True
+
+            # socket 级检查
+            if hasattr(client, 'is_connected'):
+                if not client.is_connected():
+                    return False
+            elif getattr(client, 'client', None) is None:
+                return False
+
+            # 数据级轻量检查：能取到证券数量才算有效连接（识别"TCP可连但数据不可用"）
+            count = client.get_security_count(0)
+            if count is None or count <= 0:
+                return False
+
+            connection_info['last_valid_check'] = now
             return True
         except Exception:
             return False
@@ -732,7 +799,7 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
             ],
             capabilities={
                 "markets": ["SH", "SZ"],
-                "frequencies": ["1m", "5m", "15m", "30m", "60m", "D"],
+                "frequencies": ["1m", "5m", "15m", "30m", "60m", "D", "W", "M"],
                 "real_time_support": True,
                 "historical_data": True
             }
@@ -785,6 +852,14 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
             with self.connection_lock:
                 if not self.api_client:
                     return False
+                # R247 修复: 连接防抖缓存。导入任务线程池并发高频调用 is_connected(),
+                # 每次网络测试 (2 次 get_security_bars 尝试) 耗时约 2 秒,
+                # 数千任务并发将形成连接风暴并冲击通达信服务器。
+                # 最近 30 秒内验证过连接成功则直接返回 True, 不再重复网络测试。
+                if self.last_success_time:
+                    elapsed = (datetime.now() - self.last_success_time).total_seconds()
+                    if elapsed < 30:
+                        return True
                 # 简单的连接测试
                 return self._test_connection()
         except Exception:
@@ -848,7 +923,7 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
             # 转换频率参数
             period_map = {
                 "1m": "1min", "5m": "5min", "15m": "15min", "30m": "30min",
-                "60m": "1hour", "D": "daily", "W": "weekly", "M": "monthly"
+                "60m": "60min", "D": "daily", "W": "weekly", "M": "monthly"
             }
             period = period_map.get(freq, "daily")
 
@@ -1225,6 +1300,8 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
 
                             if test_result:
                                 logger.debug("连接测试成功")
+                                # R247 修复: 记录成功时间, 供 is_connected() 防抖缓存使用
+                                self.last_success_time = datetime.now()
                                 return True
                             else:
                                 logger.warning(f"数据访问测试失败 (尝试 {attempt + 1}/{max_retries})")
@@ -1377,11 +1454,26 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
             return False
 
     def _quick_validate_connection(self) -> bool:
-        """快速连接质量验证 - 简化版本"""
+        """快速连接质量验证 - 数据访问级验证（R247 修复）
+
+        原实现仅验证 get_security_count(0) > 0, 无法识别"TCP可连但数据不可用"的服务器
+        （实测 218.6.170.47:7709 count=23890 但 get_security_bars 返回空）。
+        必须使用 get_security_bars 实际取数验证, 与 _test_connection/_test_data_access
+        的判定标准保持一致, 避免 connect() 选中取不到数据的服务器。
+        """
         try:
-            # 使用更简单的测试，减少验证时间
-            result = self.api_client.get_security_count(0)
-            return result is not None and result > 0
+            # 双重验证：计数 + 实际取数
+            count = self.api_client.get_security_count(0)
+            if count is None or count <= 0:
+                return False
+            test_data = self.api_client.get_security_bars(
+                category=9,  # 日线
+                market=0,   # 深圳市场
+                code='000001',
+                start=0,
+                count=1
+            )
+            return bool(test_data)
         except Exception:
             return False
 
@@ -1539,11 +1631,24 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
             }
 
     def _validate_connection_quality(self):
-        """验证连接质量"""
+        """验证连接质量（R247 修复：使用数据访问级验证）
+
+        原实现仅验证 get_security_count(0) > 0, 对"TCP可连但数据不可用"的服务器
+        （如 218.6.170.47:7709 count=23890 但 get_security_bars 返回空）会误判可用。
+        升级为 get_security_bars 实际取数验证, 与 _test_data_access 判定标准一致。
+        """
         try:
-            # 简单的数据请求测试
-            result = self.api_client.get_security_count(0)
-            return result is not None and result > 0
+            count = self.api_client.get_security_count(0)
+            if count is None or count <= 0:
+                return False
+            test_data = self.api_client.get_security_bars(
+                category=9,  # 日线
+                market=0,   # 深圳市场
+                code='000001',
+                start=0,
+                count=1
+            )
+            return bool(test_data)
         except Exception as e:
             logger.debug(f"连接质量验证失败: {e}")
             return False
@@ -1886,6 +1991,7 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
                     '15min': 1,   # 15分钟
                     '30min': 2,   # 30分钟
                     '60min': 3,   # 60分钟
+                    '1hour': 3,   # 60分钟（兼容直接调用入口，防止静默降级为日线）
                     'daily': 9,   # 日线
                     'weekly': 5,  # 周线
                     'monthly': 6  # 月线

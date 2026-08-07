@@ -6,6 +6,7 @@
 """
 
 import threading
+import time  # HVD-241-P3-A: L110/122 使用 time.time() (R241 修复缺 import → 必现 NameError)
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from dataclasses import dataclass

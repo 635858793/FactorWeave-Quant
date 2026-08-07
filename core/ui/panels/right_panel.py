@@ -204,16 +204,6 @@ class RightPanel(BasePanel):
             if next_button:
                 next_button.clicked.connect(self._on_next_page)
             
-            # AI选股按钮点击事件
-            ai_run_btn = self.get_widget('ai_run_btn')
-            if ai_run_btn:
-                ai_run_btn.clicked.connect(self._on_ai_select_stocks)
-            
-            # AI选股导出按钮点击事件
-            export_ai_btn = self.get_widget('export_ai_btn')
-            if export_ai_btn:
-                export_ai_btn.clicked.connect(self._on_export_ai_results)
-            
             # 行业分析刷新按钮点击事件
             refresh_industry_btn = self.get_widget('refresh_industry_btn')
             if refresh_industry_btn:
@@ -754,9 +744,8 @@ class RightPanel(BasePanel):
         # 修复：总是创建基础标签页，但只有在需要时才显示
         self._create_signal_tab(tab_widget)
         self._create_backtest_tab(tab_widget)
-        # 注释掉普通AI选股tab，使用增强AI选股面板
-        # self._create_ai_stock_tab(tab_widget)
-        self._create_industry_tab(tab_widget)
+        if not PROFESSIONAL_TABS_AVAILABLE:
+            self._create_industry_tab(tab_widget)
         self._has_basic_tabs = True
         
         # 初始化UI事件连接 - 移到组件创建之后
@@ -764,7 +753,7 @@ class RightPanel(BasePanel):
 
         # 如果有专业标签页，隐藏被完全替代的基础标签页
         if PROFESSIONAL_TABS_AVAILABLE:
-            tabs_to_remove = ["买卖信号", "历史回测", "AI选股", "行业分析"]
+            tabs_to_remove = ["买卖信号", "历史回测", "行业分析"]
             for i in range(tab_widget.count() - 1, -1, -1):
                 if tab_widget.tabText(i) in tabs_to_remove:
                     tab_widget.removeTab(i)
@@ -795,7 +784,11 @@ class RightPanel(BasePanel):
                     self._trading_panel = TradingPanel(
                         trading_service=trading_service,
                         event_bus=self.coordinator.event_bus,
-                        parent=self._root_frame
+                        parent=self._root_frame,
+                        # R253-P0-B: 补传服务容器, 使 _load_ctp_accounts / OrderService
+                        # 优先分支可解析 AccountManager / OrderService
+                        service_container=getattr(
+                            self.coordinator, 'service_container', None)
                     )
                     tab_widget.addTab(self._trading_panel, "实盘交易")
                     self.add_widget('trading_panel', self._trading_panel)
@@ -1082,86 +1075,6 @@ class RightPanel(BasePanel):
         trade_records_layout.addWidget(trade_table)
         self.add_widget('trade_table', trade_table)
 
-    def _create_ai_stock_tab(self, parent: QTabWidget) -> None:
-        """创建AI选股标签页"""
-        ai_stock_widget = QWidget()
-        parent.addTab(ai_stock_widget, "AI选股")
-        self.add_widget('ai_stock_widget', ai_stock_widget)
-
-        layout = QVBoxLayout(ai_stock_widget)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(10)
-
-        # 选股条件组
-        condition_group = QGroupBox("选股条件")
-        condition_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        layout.addWidget(condition_group)
-        self.add_widget('ai_condition_group', condition_group)
-
-        condition_layout = QVBoxLayout(condition_group)
-
-        # 自然语言输入
-        condition_text = QTextEdit()
-        condition_text.setPlaceholderText("请输入选股需求（如：高ROE、低估值、强势资金流等）")
-        condition_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        condition_layout.addWidget(condition_text)
-        self.add_widget('ai_condition_text', condition_text)
-
-        type_layout_main = QVBoxLayout()
-
-        # 选股类型选择
-        type_layout = QHBoxLayout()
-        condition_layout.addLayout(type_layout)
-
-        type_layout.addWidget(QLabel("选股类型:"))
-        type_combo = QComboBox()
-        type_combo.addItems([
-            "价值投资", "成长投资", "趋势跟踪", "均值回归",
-            "动量策略", "技术分析", "基本面分析", "量化选股"
-        ])
-        type_layout.addWidget(type_combo)
-        self.add_widget('ai_type_combo', type_combo)
-
-        # 风险偏好
-        risk_layout = QHBoxLayout()
-        condition_layout.addLayout(risk_layout)
-
-        risk_layout.addWidget(QLabel("风险偏好:"))
-        risk_combo = QComboBox()
-        risk_combo.addItems(["保守", "稳健", "积极", "激进"])
-        risk_layout.addWidget(risk_combo)
-        self.add_widget('ai_risk_combo', risk_combo)
-
-        type_layout_main.addLayout(type_layout)
-        type_layout_main.addLayout(risk_layout)
-
-        # 执行按钮
-        ai_run_btn = QPushButton("一键AI选股")
-        ai_run_btn.setStyleSheet(
-            "background-color: #28a745; font-size: 14px; padding: 8px;")
-        condition_layout.addWidget(ai_run_btn)
-        self.add_widget('ai_run_btn', ai_run_btn)
-
-        # 选股结果组
-        result_group = QGroupBox("选股结果")
-        layout.addWidget(result_group)
-        self.add_widget('ai_result_group', result_group)
-
-        result_layout = QVBoxLayout(result_group)
-
-        # 结果表格
-        result_table = QTableWidget(0, 6)
-        result_table.setHorizontalHeaderLabels(
-            ['股票代码', '股票名称', '推荐理由', '评分', '风险等级', '建议仓位'])
-        result_table.horizontalHeader().setStretchLastSection(True)
-        result_table.setAlternatingRowColors(True)
-        result_layout.addWidget(result_table)
-        self.add_widget('ai_result_table', result_table)
-
-        # 导出按钮
-        export_ai_btn = QPushButton("导出选股结果")
-        result_layout.addWidget(export_ai_btn)
-        self.add_widget('export_ai_btn', export_ai_btn)
 
     def _create_industry_tab(self, parent: QTabWidget) -> None:
         """创建行业分析标签页"""
@@ -1305,7 +1218,63 @@ class RightPanel(BasePanel):
             return container.resolve(BacktestResultManager)
         except Exception as e:
             logger.warning(f"无法从服务容器获取BacktestResultManager，回退到直接创建: {e}")
-            return BacktestResultManager()
+            # HVD-241-P0-C-2c (R241-C 子智能体): 容器 resolve 失败时禁止裸建
+            # Why: 裸建实例不注册容器 → 退出链无人 dispose → DuckDB 连接引用泄漏
+            # Fix: return None, 调用方已有 None 容错 (R241-C 审计确认)
+            return None
+
+    def _do_dispose(self) -> None:
+        """释放资源: 取消 EventBus 订阅 + 停止 QTimer + 关闭线程池
+
+        R251-R7 修复: 此前面板订阅了 UIDataReadyEvent(:1235)/AnalysisCompleteEvent(:152)
+        却无任何退订路径 → 关闭后事件回调仍被触发, 面板对象泄漏。
+        调用链: BasePanel.dispose() → self._do_dispose()
+        (panel_coordinator._do_dispose 遍历 _panels 调用 dispose(), 'right' 不在跳过名单)
+        """
+        # 1. 取消 EventBus 订阅 (在停止一切工作之前, 避免事件回调产生新任务)
+        try:
+            if self.event_bus:
+                self.event_bus.unsubscribe(UIDataReadyEvent, self._on_ui_data_ready)
+                self.event_bus.unsubscribe(AnalysisCompleteEvent, self._on_analysis_complete)
+                logger.info("RightPanel EventBus订阅已取消")
+        except Exception as e:
+            logger.error(f"RightPanel 取消 EventBus 订阅失败: {e}")
+
+        # 2. 停止 QTimer
+        try:
+            if hasattr(self, '_tab_update_timer') and self._tab_update_timer is not None:
+                self._tab_update_timer.stop()
+                logger.debug("RightPanel _tab_update_timer 已停止")
+        except Exception as timer_exc:
+            logger.debug(f"停止 _tab_update_timer 失败: {timer_exc}")
+
+        # 3. 关闭线程池, 避免后台任务在 dispose 后仍提交
+        for executor_name in ('_tab_update_executor', '_industry_executor'):
+            try:
+                executor = getattr(self, executor_name, None)
+                if executor is not None:
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    logger.debug(f"RightPanel {executor_name} 已关闭")
+            except Exception as exec_exc:
+                logger.debug(f"关闭 {executor_name} 失败: {exec_exc}")
+
+        # 3.5 释放内部 TradingPanel 资源
+        # R252-F5: TradingPanel.dispose() 退订 StockSelectedEvent/TradeExecutedEvent/
+        # PositionUpdatedEvent 三个事件订阅, 但此前全库无调用者 → 事件订阅永不退订。
+        # 带 hasattr 防御: 未创建实盘交易标签页 (TradingService 不可用) 时无 _trading_panel。
+        try:
+            trading_panel = getattr(self, '_trading_panel', None)
+            if trading_panel is not None and hasattr(trading_panel, 'dispose'):
+                trading_panel.dispose()
+                logger.debug("RightPanel _trading_panel 已释放")
+        except Exception as tp_exc:
+            logger.debug(f"RightPanel 释放 _trading_panel 失败: {tp_exc}")
+
+        # 4. 调用父类释放
+        try:
+            super()._do_dispose()
+        except Exception as super_exc:
+            logger.debug(f"RightPanel 父类 _do_dispose 失败: {super_exc}")
 
     def _safe_float_convert(self, value_str: str, default=None) -> Optional[float]:
         """安全地将字符串转换为 float"""
@@ -1339,9 +1308,15 @@ class RightPanel(BasePanel):
                 if self._performance_manager:
                     self._performance_manager.reset_for_new_stock(event.stock_code)
 
-            # 从事件中直接获取分析数据和K线数据
-            analysis_data = event.ui_data.get('analysis')
-            kline_data = event.ui_data.get('kline_data')
+            # 从事件中获取分析数据和K线数据（R251-R4 防御式读取，兼容两条发布路径）
+            # 路径a: event_coordinator._on_stock_selected 传 ui_data={analysis,kline_data,...}
+            # 路径b: event_coordinator._on_asset_selected 历史版本仅传 kline_data/market
+            #        (已修复补 ui_data，这里再兜底一次保证契约健壮)
+            event_data = getattr(event, 'ui_data', None) or {}
+            analysis_data = event_data.get('analysis')
+            kline_data = event_data.get('kline_data')
+            if kline_data is None:
+                kline_data = getattr(event, 'kline_data', None)
 
             # 使用性能管理器更新专业标签页
             if kline_data is not None and not kline_data.empty and self._performance_manager:
@@ -1382,14 +1357,21 @@ class RightPanel(BasePanel):
                 # 获取标签页类型
                 tab_type = type(tab).__name__.lower().replace('tab', '').replace('analysis', '')
 
+                # R251-R5 修复: 用 QTabWidget.indexOf 获取真实索引
+                # Why: _professional_tabs 只含前6个专业tab (enumerate i 为 0-5),
+                #      而 tab_widget.currentIndex() 是 QTabWidget 索引 (0-7, 含批量分析/实盘交易)。
+                #      之前用 i==current_index 比较, 激活"批量分析"(6)/"实盘交易"(7)时
+                #      i==current_index 永不成立 → 全部 tab 被塞进待更新队列。
+                real_index = tab_widget.indexOf(tab)
+
                 # 检查标签页是否跳过K线数据
                 if hasattr(tab, 'skip_kdata') and getattr(tab, 'skip_kdata') is True:
                     logger.debug(f"跳过标签页（skip_kdata=True）: {tab_type}")
                     continue
 
                 # 懒加载：只更新当前激活的标签页
-                if i == current_index:
-                    logger.info(f"立即更新当前激活标签页: {tab_type} (索引{i})")
+                if real_index == current_index:
+                    logger.info(f"立即更新当前激活标签页: {tab_type} (索引{real_index})")
                     # 使用性能管理器更新数据
                     self._performance_manager.update_tab_data(
                         stock_code=self._current_stock_code,
@@ -1399,14 +1381,14 @@ class RightPanel(BasePanel):
                         use_cache=True
                     )
                     # 记录已更新
-                    self._tab_stock_code[i] = self._current_stock_code
+                    self._tab_stock_code[real_index] = self._current_stock_code
                 else:
                     # 标记为待更新
-                    logger.debug(f"标记标签页为待更新: {tab_type} (索引{i})")
-                    self._pending_tab_updates[i] = kline_data
+                    logger.debug(f"标记标签页为待更新: {tab_type} (索引{real_index})")
+                    self._pending_tab_updates[real_index] = kline_data
                     # 清除旧的股票代码标记
-                    if i in self._tab_stock_code:
-                        del self._tab_stock_code[i]
+                    if real_index in self._tab_stock_code:
+                        del self._tab_stock_code[real_index]
 
             logger.info(f"✓ 懒加载完成：立即更新1个标签页，待更新{len(self._pending_tab_updates)}个")
 
@@ -1427,9 +1409,11 @@ class RightPanel(BasePanel):
                 kline_data = self._pending_tab_updates.pop(index)
                 logger.info(f"加载待更新标签页数据（索引{index}）")
 
-                # 获取对应的标签页
-                if index < len(self._professional_tabs):
-                    tab = self._professional_tabs[index]
+                # 获取对应的标签页（R251-R5: 用 QTabWidget 索引直接取 tab，
+                # 不再用 _professional_tabs[index]——索引空间与 QTabWidget 索引空间已统一）
+                tab_widget = self.get_widget('tab_widget')
+                tab = tab_widget.widget(index) if tab_widget else None
+                if tab is not None:
                     tab_type = type(tab).__name__.lower().replace('tab', '').replace('analysis', '')
 
                     # 使用性能管理器更新数据
@@ -1588,8 +1572,20 @@ class RightPanel(BasePanel):
         """更新分析数据显示"""
         try:
             # 更新信号分析（安全检查）
-            if 'signals' in analysis_data:
-                self._update_signal_analysis_safe(analysis_data['signals'])
+            # R251-R6 修复: analysis_service.analyze_stock 返回结构无顶层 'signals' 键
+            #   (实测结构: {'indicators': {...}, 'technical_analysis': {'trend':..., 'signals':[...]}, 'data_available': True})
+            #   信号位于 technical_analysis['signals'], 格式为 [{'name': 'MA20', 'signal': 'bullish', 'desc': ...}]
+            #   故增加从 technical_analysis 提取并转换为展示结构的映射, 同时保留顶层 'signals' 兼容路径
+            signals_data = analysis_data.get('signals')
+            if signals_data is None:
+                technical_analysis = analysis_data.get('technical_analysis') or {}
+                tech_signals = technical_analysis.get('signals')
+                if tech_signals:
+                    signals_data = self._convert_technical_signals(tech_signals)
+            if signals_data is not None:
+                self._update_signal_analysis_safe(signals_data)
+            else:
+                logger.debug("分析数据中未发现信号数据（无顶层signals且无technical_analysis.signals）")
 
             # 更新回测结果（安全检查）
             if 'backtest' in analysis_data:
@@ -1608,6 +1604,69 @@ class RightPanel(BasePanel):
         except Exception as e:
             logger.error(f"更新分析数据显示失败: {e}")
             logger.error(traceback.format_exc())
+
+    def _convert_technical_signals(self, tech_signals: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """将 analysis_service 的指标信号列表转换为信号展示结构
+
+        R251-R6: analysis_service 返回 technical_analysis['signals'] 格式为
+            [{'name': 'MA20', 'signal': 'bullish'/'bearish', 'desc': '...'}, ...]
+        而 _update_signal_analysis_safe 期望 {'current': {'type','strength'}, 'history': [{'time','type','price','strength','return'}]}
+        """
+        current_type = 'neutral'
+        strength = 0
+        history = []
+        for idx, s in enumerate(tech_signals or []):
+            signal_type = str(s.get('signal', '')).lower()
+            name = s.get('name', '')
+            desc = s.get('desc', '')
+
+            # 语义映射: 超卖(oversold)=买入机会, 超买(overbought)=卖出机会
+            if signal_type in ('bullish', 'buy', '买入', '看多', 'oversold'):
+                mapped_type = 'buy'
+            elif signal_type in ('bearish', 'sell', '卖出', '看空', 'overbought'):
+                mapped_type = 'sell'
+            else:
+                mapped_type = 'neutral'
+
+            if mapped_type == 'buy':
+                strength += 1
+                current_type = 'buy'
+            elif mapped_type == 'sell' and current_type == 'neutral':
+                current_type = 'sell'
+
+            history.append({
+                'time': datetime.now().strftime('%Y-%m-%d %H:%M'),
+                'type': mapped_type,
+                # R252-F7: 尽量提取信号源携带的真实价格/收益, 无则留空/0
+                'price': s.get('price', ''),
+                'strength': s.get('strength', 1),
+                'return': s.get('return', 0),
+                'name': name,
+                'desc': desc,
+            })
+
+        # R252-F7: 有真实收益数据时计算胜率/平均收益, 无则置 None (展示层标注"暂无数据")
+        returns = [h['return'] for h in history
+                   if isinstance(h.get('return'), (int, float))]
+        has_real_returns = len(returns) > 0 and any(r != 0 for r in returns)
+        if has_real_returns:
+            win_rate = sum(1 for r in returns if r > 0) / len(returns) * 100
+            avg_return = sum(returns) / len(returns)
+        else:
+            win_rate = None
+            avg_return = None
+
+        return {
+            'current': {'type': current_type, 'strength': strength},
+            'history': history,
+            'statistics': {
+                'total_signals': len(history),
+                'buy_signals': sum(1 for h in history if h['type'] == 'buy'),
+                'sell_signals': sum(1 for h in history if h['type'] == 'sell'),
+                'win_rate': win_rate,
+                'avg_return': avg_return,
+            }
+        }
 
     def _update_signal_analysis_safe(self, signal_data: Dict[str, Any]) -> None:
         """安全更新信号分析"""
@@ -1655,12 +1714,17 @@ class RightPanel(BasePanel):
             signal_stats_text = self.get_widget('signal_stats_text')
             if signal_stats_text:
                 stats = signal_data.get('statistics', {})
+                # R252-F7: 无真实收益数据时标注"暂无数据", 不再恒显示 0.0%
+                win_rate = stats.get('win_rate')
+                avg_return = stats.get('avg_return')
+                win_text = f"{win_rate:.1f}%" if win_rate is not None else "暂无数据"
+                avg_text = f"{avg_return:.2f}%" if avg_return is not None else "暂无数据"
                 stats_text = f"""
 信号总数: {stats.get('total_signals', 0)}
 买入信号: {stats.get('buy_signals', 0)}
 卖出信号: {stats.get('sell_signals', 0)}
-胜率: {stats.get('win_rate', 0):.1f}%
-平均收益: {stats.get('avg_return', 0):.2f}%
+胜率: {win_text}
+平均收益: {avg_text}
                 """.strip()
                 signal_stats_text.setPlainText(stats_text)
 
@@ -1843,12 +1907,83 @@ class RightPanel(BasePanel):
             self._update_status("刷新失败")
 
     def _export_report(self) -> None:
-        """导出分析报告"""
+        """导出分析报告 (R251-R8: 由占位空壳改为真实 Markdown 导出)
+
+        收集: 当前信号状态 + 信号历史表格 + 回测结果(backtest_result_manager 最新结果)
+        """
         if not self._current_stock_code:
             self._update_status("请先选择股票再导出报告")
             return
 
-        self._update_status("报告导出功能开发中，敬请期待。")
+        try:
+            # 1. 收集当前信号状态
+            signal_status_label = self.get_widget('signal_status_label')
+            signal_status_text = signal_status_label.text() if signal_status_label else "暂无信号"
+
+            # 2. 收集信号历史表格数据
+            signal_history_lines = []
+            signal_table = self.get_widget('signal_table')
+            if signal_table and signal_table.rowCount() > 0:
+                for row in range(signal_table.rowCount()):
+                    row_data = []
+                    for col in range(signal_table.columnCount()):
+                        item = signal_table.item(row, col)
+                        row_data.append(item.text() if item else '')
+                    signal_history_lines.append(" | ".join(row_data))
+
+            # 3. 收集回测结果
+            backtest_lines = []
+            latest_result = None
+            if self._backtest_result_manager:
+                try:
+                    latest_result = self._backtest_result_manager.get_latest_result(self._current_stock_code)
+                except Exception as e:
+                    logger.warning(f"获取最新回测结果失败: {e}")
+            if latest_result:
+                results = latest_result.backtest_results or {}
+                for key, value in results.items():
+                    backtest_lines.append(f"- {key}: {value}")
+                for i, trade in enumerate((latest_result.trades or [])[-20:], 1):
+                    backtest_lines.append(
+                        f"- 交易{i}: {trade.get('date', '')} {trade.get('action', '')} "
+                        f"价格={trade.get('price', '')} 数量={trade.get('quantity', '')} "
+                        f"盈亏={trade.get('profit', 0):.2f}")
+
+            # 4. 生成 Markdown 文本报告 (保持简单, 直接字符串拼接)
+            lines = [
+                f"# 分析报告 - {self._current_stock_name} ({self._current_stock_code})",
+                f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                "",
+                "## 当前信号",
+                signal_status_text,
+                "",
+                "## 信号历史",
+            ]
+            lines.extend(signal_history_lines if signal_history_lines else ["（无信号历史记录）"])
+            lines.append("")
+            lines.append("## 回测结果")
+            lines.extend(backtest_lines if backtest_lines else ["（暂无回测结果）"])
+            report_text = "\n".join(lines)
+
+            # 5. 选择保存路径并写入
+            from PyQt5.QtWidgets import QFileDialog
+            default_name = f"分析报告_{self._current_stock_code}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "导出分析报告", default_name, "Markdown 文件 (*.md);;文本文件 (*.txt)")
+            if not file_path:
+                self._update_status("已取消导出")
+                return
+
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(report_text)
+
+            self._update_status(f"报告已导出: {file_path}")
+            logger.info(f"分析报告已导出: {file_path}")
+
+        except Exception as e:
+            logger.error(f"导出分析报告失败: {e}")
+            logger.error(traceback.format_exc())
+            self._update_status(f"导出失败: {e}")
 
     def get_current_stock_info(self) -> Dict[str, str]:
         """获取当前股票信息"""
@@ -1975,347 +2110,6 @@ class RightPanel(BasePanel):
             import traceback
             logger.error(traceback.format_exc())
     
-    def _on_ai_select_stocks(self) -> None:
-        """处理AI选股按钮点击事件"""
-        try:
-            logger.info("AI选股按钮被点击")
-            
-            # 获取用户输入
-            condition_text = self.get_widget('ai_condition_text')
-            if not condition_text:
-                logger.warning("AI选股条件输入框未找到")
-                QMessageBox.warning(self, "警告", "AI选股条件输入框未找到")
-                return
-            
-            user_input = condition_text.toPlainText().strip()
-            if not user_input:
-                QMessageBox.warning(self, "警告", "请输入选股需求")
-                return
-            
-            type_combo = self.get_widget('ai_type_combo')
-            if not type_combo:
-                logger.warning("AI选股类型选择框未找到")
-                QMessageBox.warning(self, "警告", "AI选股类型选择框未找到")
-                return
-            
-            strategy_type = type_combo.currentText()
-            
-            risk_combo = self.get_widget('ai_risk_combo')
-            if not risk_combo:
-                logger.warning("AI选股风险偏好选择框未找到")
-                QMessageBox.warning(self, "警告", "AI选股风险偏好选择框未找到")
-                return
-            
-            risk_level = risk_combo.currentText()
-            
-            # 获取服务容器
-            from core.containers import get_service_container
-            container = get_service_container()
-            if not container:
-                logger.warning("服务容器不可用")
-                QMessageBox.warning(self, "警告", "服务容器不可用")
-                return
-            
-            # 获取AI选股集成服务
-            try:
-                from core.services.ai_selection_integration_service import (
-                    AISelectionIntegrationService,
-                    StockSelectionCriteria,
-                    SelectionStrategy,
-                    RiskLevel
-                )
-            except ImportError as e:
-                logger.error(f"无法导入AI选股集成服务: {e}")
-                QMessageBox.critical(self, "错误", f"AI选股服务不可用: {str(e)}")
-                return
-            
-            if not container.is_registered(AISelectionIntegrationService):
-                logger.warning("AI选股集成服务未注册")
-                QMessageBox.warning(self, "警告", "AI选股服务未注册")
-                return
-            
-            ai_selection_service = container.resolve(AISelectionIntegrationService)
-            
-            # 显示进度提示
-            result_table = self.get_widget('ai_result_table')
-            if result_table:
-                result_table.setRowCount(0)
-            
-            # 执行选股
-            logger.info(f"开始AI选股: strategy={strategy_type}, risk={risk_level}, input={user_input}")
-            
-            # 使用异步方式执行选股
-            import asyncio
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-            try:
-                # 判断是否使用自然语言解析
-                use_nlp = self._should_use_nlp(user_input)
-                
-                if use_nlp:
-                    # 使用自然语言解析
-                    logger.info("使用自然语言解析模式")
-                    
-                    # 映射策略类型
-                    strategy_map = {
-                        "价值投资": SelectionStrategy.VALUE_BASED,
-                        "成长投资": SelectionStrategy.GROWTH_BASED,
-                        "趋势跟踪": SelectionStrategy.MOMENTUM_BASED,
-                        "均值回归": SelectionStrategy.QUALITY_BASED,
-                        "动量策略": SelectionStrategy.MOMENTUM_BASED,
-                        "技术分析": SelectionStrategy.TECH_ANALYSIS,
-                        "基本面分析": SelectionStrategy.QUALITY_BASED,
-                        "量化选股": SelectionStrategy.QUANTITATIVE
-                    }
-                    
-                    selection_strategy = strategy_map.get(strategy_type, SelectionStrategy.QUANTITATIVE)
-                    
-                    result = loop.run_until_complete(
-                        ai_selection_service.select_stocks_with_nlp(
-                            user_input=user_input,
-                            strategy_type=selection_strategy
-                        )
-                    )
-                else:
-                    # 使用传统选股模式
-                    logger.info("使用传统选股模式")
-                    
-                    # 转换UI输入为选股标准
-                    criteria = self._convert_ui_to_criteria(user_input, strategy_type, risk_level)
-                    
-                    result = loop.run_until_complete(
-                        ai_selection_service.select_stocks_with_explanation(
-                            strategy_id=strategy_type,
-                            criteria=criteria
-                        )
-                    )
-                
-                # 显示结果
-                self._display_ai_selection_results(result)
-                
-                logger.info(f"AI选股完成: 选中{len(result.selected_stocks)}只股票")
-                QMessageBox.information(
-                    self,
-                    "AI选股完成",
-                    f"成功选中 {len(result.selected_stocks)} 只股票"
-                )
-                
-            except Exception as e:
-                logger.error(f"AI选股失败: {e}")
-                logger.error(traceback.format_exc())
-                QMessageBox.critical(self, "错误", f"AI选股失败: {str(e)}")
-            finally:
-                loop.close()
-                
-        except Exception as e:
-            logger.error(f"处理AI选股按钮点击事件失败: {e}")
-            logger.error(traceback.format_exc())
-            QMessageBox.critical(self, "错误", f"AI选股失败: {str(e)}")
-    
-    def _should_use_nlp(self, user_input: str) -> bool:
-        """判断是否应该使用自然语言解析
-        
-        Args:
-            user_input: 用户输入
-            
-        Returns:
-            是否使用自然语言解析
-        """
-        # 如果输入包含自然语言特征，使用 NLP 解析
-        nlp_keywords = [
-            "高", "低", "好", "坏", "强", "弱", "大", "小",
-            "超过", "低于", "大于", "小于", "优于", "差于",
-            "想要", "需要", "希望", "寻找", "推荐",
-            "ROE", "PE", "PB", "估值", "成长", "价值",
-            "资金流", "动量", "趋势", "技术", "基本面"
-        ]
-        
-        # 检查是否包含自然语言关键词
-        for keyword in nlp_keywords:
-            if keyword in user_input:
-                return True
-        
-        # 如果输入长度较长，也使用 NLP 解析
-        if len(user_input) > 20:
-            return True
-        
-        return False
-    
-    def _convert_ui_to_criteria(
-        self,
-        user_input: str,
-        strategy_type: str,
-        risk_level: str
-    ):
-        """将UI输入转换为选股标准
-        
-        Args:
-            user_input: 用户输入的选股需求
-            strategy_type: 选股类型
-            risk_level: 风险偏好
-            
-        Returns:
-            StockSelectionCriteria 对象
-        """
-        from core.services.ai_selection_integration_service import (
-            StockSelectionCriteria,
-            SelectionStrategy,
-            RiskLevel
-        )
-        
-        # 映射策略类型
-        strategy_map = {
-            "价值投资": SelectionStrategy.VALUE_BASED,
-            "成长投资": SelectionStrategy.GROWTH_BASED,
-            "趋势跟踪": SelectionStrategy.MOMENTUM_BASED,
-            "均值回归": SelectionStrategy.QUALITY_BASED,
-            "动量策略": SelectionStrategy.MOMENTUM_BASED,
-            "技术分析": SelectionStrategy.TECH_ANALYSIS,
-            "基本面分析": SelectionStrategy.QUALITY_BASED,
-            "量化选股": SelectionStrategy.QUANTITATIVE
-        }
-        
-        # 映射风险等级
-        risk_map = {
-            "保守": RiskLevel.CONSERVATIVE,
-            "稳健": RiskLevel.MODERATE,
-            "积极": RiskLevel.AGGRESSIVE,
-            "激进": RiskLevel.AGGRESSIVE
-        }
-        
-        return StockSelectionCriteria(
-            strategy_type=strategy_map.get(strategy_type, SelectionStrategy.QUANTITATIVE),
-            risk_level=risk_map.get(risk_level, RiskLevel.MODERATE)
-        )
-    
-    def _display_ai_selection_results(self, result) -> None:
-        """显示AI选股结果
-        
-        Args:
-            result: StockSelectionResult 对象
-        """
-        try:
-            result_table = self.get_widget('ai_result_table')
-            if not result_table:
-                logger.warning("AI选股结果表格未找到")
-                return
-            
-            # 清空表格
-            result_table.setRowCount(0)
-            
-            # 填充结果
-            selected_stocks = result.selected_stocks
-            explanations = result.explanations
-            
-            for i, stock_code in enumerate(selected_stocks):
-                # 查找对应的解释
-                explanation = None
-                for exp in explanations:
-                    if exp.stock_code == stock_code:
-                        explanation = exp
-                        break
-                
-                if explanation:
-                    # 股票代码
-                    result_table.setItem(i, 0, QTableWidgetItem(stock_code))
-                    
-                    # 股票名称（暂时使用代码，后续可以从数据服务获取）
-                    result_table.setItem(i, 1, QTableWidgetItem(stock_code))
-                    
-                    # 推荐理由
-                    reason = explanation.selection_reason if explanation else "无"
-                    result_table.setItem(i, 2, QTableWidgetItem(reason))
-                    
-                    # 评分
-                    score = explanation.score if explanation else 0
-                    result_table.setItem(i, 3, QTableWidgetItem(f"{score:.2f}"))
-                    
-                    # 风险等级
-                    risk_assessment = explanation.risk_assessment if explanation else {}
-                    risk_level = risk_assessment.get('level', '未知')
-                    result_table.setItem(i, 4, QTableWidgetItem(risk_level))
-                    
-                    # 建议仓位
-                    recommendation_strength = explanation.recommendation_strength if explanation else 'moderate'
-                    position_map = {
-                        'strong': '重仓',
-                        'moderate': '中仓',
-                        'weak': '轻仓'
-                    }
-                    position = position_map.get(recommendation_strength, '中仓')
-                    result_table.setItem(i, 5, QTableWidgetItem(position))
-            
-            logger.info(f"AI选股结果已显示: {len(selected_stocks)}只股票")
-            
-        except Exception as e:
-            logger.error(f"显示AI选股结果失败: {e}")
-            logger.error(traceback.format_exc())
-    
-    def _on_export_ai_results(self) -> None:
-        """处理导出AI选股结果按钮点击事件"""
-        try:
-            logger.info("导出AI选股结果按钮被点击")
-            
-            result_table = self.get_widget('ai_result_table')
-            if not result_table:
-                logger.warning("AI选股结果表格未找到")
-                QMessageBox.warning(self, "警告", "AI选股结果表格未找到")
-                return
-            
-            if result_table.rowCount() == 0:
-                QMessageBox.warning(self, "警告", "没有可导出的AI选股结果")
-                return
-            
-            # 获取文件保存路径
-            from PyQt5.QtWidgets import QFileDialog
-            file_path, _ = QFileDialog.getSaveFileName(
-                self,
-                "保存AI选股结果",
-                "",
-                "Excel Files (*.xlsx);;CSV Files (*.csv);;All Files (*)"
-            )
-            
-            if not file_path:
-                logger.info("用户取消了文件保存")
-                return
-            
-            # 导出数据
-            import pandas as pd
-            data = []
-            for row in range(result_table.rowCount()):
-                row_data = []
-                for col in range(result_table.columnCount()):
-                    item = result_table.item(row, col)
-                    row_data.append(item.text() if item else "")
-                data.append(row_data)
-            
-            # 创建DataFrame
-            df = pd.DataFrame(
-                data,
-                columns=[
-                    '股票代码', '股票名称', '推荐理由', 
-                    '评分', '风险等级', '建议仓位'
-                ]
-            )
-            
-            # 保存文件
-            if file_path.endswith('.xlsx'):
-                df.to_excel(file_path, index=False)
-            else:
-                df.to_csv(file_path, index=False, encoding='utf-8-sig')
-            
-            logger.info(f"AI选股结果已导出到: {file_path}")
-            QMessageBox.information(
-                self,
-                "导出成功",
-                f"AI选股结果已导出到:\n{file_path}"
-            )
-            
-        except Exception as e:
-            logger.error(f"导出AI选股结果失败: {e}")
-            logger.error(traceback.format_exc())
-            QMessageBox.critical(self, "错误", f"导出失败: {str(e)}")
 
     def _on_refresh_industry_clicked(self) -> None:
         """处理行业数据刷新按钮点击事件"""

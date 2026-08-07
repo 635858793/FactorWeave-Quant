@@ -35,12 +35,30 @@ from plugins.templates.standard_data_source_plugin import (
 from core.plugin_types import AssetType, DataType
 from core.data_source_extensions import PluginInfo, HealthCheckResult, ConnectionInfo
 
-try:
-    import xtquant.xtdata as xtdata
-    XTQUANT_AVAILABLE = True
-except ImportError:
-    XTQUANT_AVAILABLE = False
-    logger.warning("xtquant (miniQMT) 未安装，miniQMT功能不可用")
+# R246 修复: xtquant (miniQMT) 延迟导入。
+# 原顶层 import xtquant.xtdata 会加载原生 .pyd, 触发 0xC0000005 (ACCESS_VIOLATION)
+# 原生进程级崩溃, 且无法被 try/except ImportError 捕获, 会拖垮后续所有插件加载。
+# 参照 core/trading/interfaces/miniqmt_trading_interface.py 模式, 延迟到首次使用时才导入。
+xtdata = None
+XTQUANT_AVAILABLE = False
+_xtdata_import_attempted = False
+
+
+def _ensure_xtdata_loaded():
+    """延迟加载 xtdata（首次使用时调用），返回 XTQUANT_AVAILABLE 是否可用"""
+    global xtdata, XTQUANT_AVAILABLE, _xtdata_import_attempted
+    if _xtdata_import_attempted:
+        return XTQUANT_AVAILABLE
+    _xtdata_import_attempted = True
+    try:
+        import xtquant.xtdata as xtdata
+        XTQUANT_AVAILABLE = True
+        logger.info("xtdata (miniQMT) 加载成功")
+    except ImportError:
+        xtdata = None
+        XTQUANT_AVAILABLE = False
+        logger.warning("xtquant (miniQMT) 未安装，miniQMT功能不可用")
+    return XTQUANT_AVAILABLE
 
 
 @dataclass
@@ -93,6 +111,23 @@ class MiniQMTConfig(PluginConfig):
 
 class MiniQMTPlugin(StandardDataSourcePlugin):
     """miniQMT数据源插件"""
+
+    # R251 修复: 系统频率 -> xtquant period 映射。
+    # xtdata.get_market_data 的 period 合法取值仅为
+    # '1m'/'5m'/'15m'/'30m'/'60m'/'1d'/'1w'/'1M'（分钟小写 m，日/周/月为 1d/1w/1M），
+    # 而上层（core.plugin_types.Period 枚举）传入的是 '1m'/'5m'/'15m'/'30m'/'1H'/'D'/'W'/'M' 等，
+    # 直接透传会导致日/周/月线 ('D'/'W'/'M') 无法被 xtdata 识别。
+    # 该映射对已是 xtquant 格式的取值幂等，分钟线行为保持不变。
+    _FREQ_MAP = {
+        "1m": "1m", "1min": "1m", "1": "1m", "分时": "1m",
+        "5m": "5m", "5min": "5m", "5": "5m",
+        "15m": "15m", "15min": "15m", "15": "15m",
+        "30m": "30m", "30min": "30m", "30": "30m",
+        "60m": "60m", "60min": "60m", "60": "60m", "1H": "60m", "1h": "60m",
+        "D": "1d", "d": "1d", "daily": "1d", "日线": "1d", "1D": "1d", "1d": "1d",
+        "W": "1w", "w": "1w", "weekly": "1w", "周线": "1w", "1W": "1w", "1w": "1w",
+        "M": "1M", "m": "1M", "monthly": "1M", "月线": "1M", "1M": "1M",
+    }
 
     def __init__(self):
         super().__init__(
@@ -283,6 +318,9 @@ class MiniQMTPlugin(StandardDataSourcePlugin):
         try:
             if not self._xtdata:
                 return pd.DataFrame()
+
+            # R251 修复: 系统频率 -> xtquant period 转换（xtdata 不识别 'D'/'W'/'M' 等）
+            period = self._FREQ_MAP.get(period, period)
 
             # 从缓存获取
             cache_key = f"{symbol}_{period}"
@@ -630,8 +668,8 @@ class MiniQMTPlugin(StandardDataSourcePlugin):
         try:
             self.logger.info("初始化miniQMT插件...")
 
-            # 检查 xtquant 库是否可用
-            if not XTQUANT_AVAILABLE:
+            # 检查 xtquant 库是否可用（延迟加载，避免顶层导入原生崩溃）
+            if not _ensure_xtdata_loaded():
                 self.logger.error("xtquant (miniQMT) 未安装，请先安装: pip install xtquant")
                 return False
 
@@ -711,6 +749,7 @@ class MiniQMTPlugin(StandardDataSourcePlugin):
     def _internal_get_asset_list(self, asset_type: AssetType, market: str = None) -> List[Dict[str, Any]]:
         """内部获取资产列表实现"""
         try:
+            _ensure_xtdata_loaded()
             if not self._xtdata:
                 return []
 
@@ -745,13 +784,16 @@ class MiniQMTPlugin(StandardDataSourcePlugin):
             if not self._xtdata:
                 return pd.DataFrame()
 
-            cache_key = f"{symbol}_{freq}"
+            # R251 修复: 系统频率 -> xtquant period 转换（xtdata 不识别 'D'/'W'/'M' 等）
+            period = self._FREQ_MAP.get(freq, freq)
+
+            cache_key = f"{symbol}_{period}"
             if cache_key in self._kline_cache:
                 return self._kline_cache[cache_key]
 
             kline_data = self._xtdata.get_market_data(
                 stock_list=[symbol],
-                period=freq,
+                period=period,
                 start_time=start_date,
                 end_time=end_date,
                 count=count

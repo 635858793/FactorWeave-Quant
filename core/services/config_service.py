@@ -104,7 +104,6 @@ class ConfigService(BaseService):
         # SQLite相关
         self._db_path = DB_PATH
         self._db_lock = threading.Lock()
-        self._db_conn = None
 
         # 初始化配置存储
         self._initialize_storage()
@@ -315,15 +314,32 @@ class ConfigService(BaseService):
             # 保存配置
             self._save_config()
 
-            # 关闭数据库连接
-            if hasattr(self, '_db_conn') and self._db_conn:
-                self._db_conn.close()
-                self._db_conn = None
-
             logger.info("配置服务资源清理完成")
 
         except Exception as e:
             logger.error(f"配置服务清理失败: {e}")
+
+    def _do_dispose(self) -> None:
+        """释放配置服务资源 (HVD-241-P1-C, 2026-08-02)
+
+        Why: 容器注册服务 (bootstrap L731 register SINGLETON) 经 BaseService.dispose
+             调用 _do_dispose 释放资源，此前仅暴露 cleanup() 未桥接 dispose 链，
+             导致容器 dispose 时配置不落盘 (R78 铁律 #6 dispose 幂等)
+        Fix: 桥接 cleanup() 保存配置 + 解除引用
+        TDD: tests/test_r241_p0_bg_tasks_and_api_fixes.py T14
+        """
+        try:
+            # 保存配置 (幂等: 重复 dispose 由 BaseService.dispose _disposed 短路)
+            self.cleanup()
+
+            # 解除外部引用
+            self._qt_object = None
+            self._config_watchers = {}
+
+            logger.info("ConfigService _do_dispose 完成")
+
+        except Exception as e:
+            logger.warning(f"ConfigService _do_dispose 失败: {e}")
 
     # 向后兼容性方法
     def get(self, key: str, default: Any = None) -> Any:

@@ -31,6 +31,20 @@ except ImportError:
     logger.warning("httpx未安装，分布式HTTP调用功能不可用，将使用本地执行模式")
     HTTP_CLIENT_AVAILABLE = False
 
+# R240-P0: CWE-918 SSRF 防御接入 (节点健康检查 sink L397/473)
+from core.security.url_validator import SSRFBlockedError, assert_safe_url as _uv_assert
+
+
+def _assert_node_url_safe(url: str) -> bool:
+    """节点健康检查 URL 安全校验 (R240-P0, L397/473 sink 接入)
+
+    分布式集群节点常部署于内网 → mode="lan_ok" 允许 RFC1918 私有段,
+    仍拦截回环/链路本地/元数据 (127.0.0.1, 169.254.169.254 等) —
+    防攻击者注册伪节点将请求指向本机/云元数据.
+    """
+    _uv_assert(url, dns_resolve=False, mode="lan_ok")
+    return True
+
 @dataclass
 class NodeInfo:
     """节点信息"""
@@ -395,6 +409,8 @@ class DistributedTaskScheduler:
 
             # 使用正确的health端点
             url = f"http://{node.ip_address}:{node.port}/api/v1/health"
+            # R240-P0: SSRF 校验节点 URL (lan_ok: 允许内网, 拦回环/元数据)
+            _assert_node_url_safe(url)
             response = requests.get(url, timeout=1)  # 短超时避免长时间阻塞
 
             if response.status_code == 200:
@@ -471,6 +487,8 @@ class DistributedTaskScheduler:
             try:
                 # 真实HTTP请求测试节点健康
                 url = f"http://{node.ip_address}:{node.port}/api/v1/health"
+                # R240-P0: SSRF 校验节点 URL (lan_ok: 允许内网, 拦回环/元数据)
+                _assert_node_url_safe(url)
                 response = requests.get(url, timeout=5)
                 response_time = (time.time() - start_time) * 1000
 

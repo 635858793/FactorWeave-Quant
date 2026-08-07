@@ -57,7 +57,8 @@ class BacktestResultManager:
             event_bus: 事件总线实例，用于发布回测结果更新事件
             cache_service: 缓存服务实例，用于持久化存储
         """
-        self._event_bus = event_bus or get_event_bus()
+        # HVD-241-P1-B: event_bus or → is not None (EventBus __len__ falsy 陷阱, R240-P0-007)
+        self._event_bus = event_bus if event_bus is not None else get_event_bus()
         self._cache_service = cache_service
         
         self._results: Dict[str, List[BacktestResult]] = {}
@@ -65,6 +66,7 @@ class BacktestResultManager:
         
         self._duckdb_available = False
         self._duckdb_ops = None
+        self._active_duckdb_ctx = None  # HVD-241-P0-C: 借出 ctx 句柄, release 归还同一连接
         
         self._persistence_enabled = True
         self._persistence_dir = os.path.join("data", "backtest_results")
@@ -73,7 +75,50 @@ class BacktestResultManager:
         self._init_persistence_dir()
         self.load_results()
         
+        # R239-P0-003 幂等标志 (R78 铁律 #6)
+        self._disposed = False
+        
         logger.info("BacktestResultManager初始化完成")
+
+    def dispose(self) -> None:
+        """释放资源 (R239-P0-003, 2026-08-02)
+
+        Why: 容器注册服务 (service_bootstrap.py:652-659), DuckDB 连接池引用
+             永不关闭 → 进程退出时连接泄漏 (子智能体 A 交叉验证确认 P0)
+        Fix: R78 4 链标准 — _disposed 幂等短路 + 关闭 DuckDB 连接池
+             + 清空内存结果 + 解除 event_bus/cache 引用
+        TDD: tests/test_r239_p0_dispose_chains.py
+        """
+        if getattr(self, '_disposed', False):
+            return
+        try:
+            # HVD-241-P0-C: DuckDB 假修复块已删除 (R241-C 子智能体 + 主智能体交叉验证)
+            # Why: 池级批量关闭方法是 DuckDBConnectionPool (duckdb_manager.py:550) 的能力,
+            #      get_connection_manager() 返回的 DuckDBConnectionManager (L620) 无此法
+            #      → getattr 返回 None → 静默 no-op (R85 假修复);
+            #      且 DuckDB 硬约束: dispose 严禁调 cleanup_duckdb_manager/close_all_pools,
+            #      全局连接收尾统一交 main.py:364 注册的 shutdown_handler
+
+            # 2. 清空内存结果
+            lock = getattr(self, '_lock', None)
+            if lock is not None:
+                with lock:
+                    self._results.clear()
+            else:
+                self._results.clear()
+
+            # 3. 解除引用
+            self._event_bus = None
+            self._cache_service = None
+            self._connection_manager = None
+            self._active_duckdb_ctx = None
+
+            self._disposed = True
+            logger.info("BacktestResultManager disposed")
+
+        except Exception as e:
+            logger.warning(f"BacktestResultManager dispose 失败: {e}")
+            self._disposed = True
     
     def _init_duckdb(self) -> None:
         """初始化 DuckDB 连接和表结构"""
@@ -89,24 +134,36 @@ class BacktestResultManager:
             self._duckdb_available = False
     
     def _get_duckdb_connection(self):
-        """获取 DuckDB 连接"""
+        """获取 DuckDB 连接 (HVD-241-P0-C: 保存 ctx 句柄, release 归还同一连接)
+
+        Why: 原实现仅返回 conn, 释放时新建 ctx → 借出的池连接永不归还 (双 ctx bug, R241-C 子智能体)
+        """
         if not self._duckdb_available:
             return None
         
         try:
             ctx = self._connection_manager.get_connection(self._db_path)
             conn = ctx.__enter__()
+            self._active_duckdb_ctx = ctx  # 保存 ctx, release 用它归还同一连接
             return conn
         except Exception as e:
             logger.warning(f"获取 DuckDB 连接失败: {e}")
             return None
     
     def _release_duckdb_connection(self, conn):
-        """释放 DuckDB 连接"""
+        """释放 DuckDB 连接 (HVD-241-P0-C: 归还借出的同一连接)"""
         if conn:
             try:
-                ctx = self._connection_manager.get_connection(self._db_path)
-                ctx.__exit__(None, None, None)
+                ctx = self._active_duckdb_ctx
+                self._active_duckdb_ctx = None
+                if ctx is not None:
+                    ctx.__exit__(None, None, None)
+                else:
+                    # 防御: 无 ctx 句柄时直接归还当前连接
+                    from core.database.duckdb_manager import get_connection_manager
+                    cm = get_connection_manager()
+                    with cm.get_connection(self._db_path) as _:
+                        pass
             except Exception:
                 pass
     

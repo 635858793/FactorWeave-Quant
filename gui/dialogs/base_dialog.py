@@ -274,7 +274,10 @@ class BaseDialog(QDialog):
             settings.beginGroup(self._settings_key)
 
             settings.setValue("geometry", self.saveGeometry())
-            settings.setValue("windowState", self.saveState())
+            # R247 修复: saveState 仅 QMainWindow 存在, QDialog 无此方法,
+            # 直接调用会抛 AttributeError (被 except 吞掉仅产生 warning 噪音)。
+            if hasattr(self, 'saveState'):
+                settings.setValue("windowState", self.saveState())
 
             settings.endGroup()
 

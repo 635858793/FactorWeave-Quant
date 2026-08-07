@@ -166,7 +166,6 @@ class DataService(BaseService):
         # 状态管理
         self._status = DataServiceStatus.INITIALIZING
         self._metrics = DataMetrics()
-        self._service_lock = threading.RLock()
 
         # 数据源管理
         self._data_sources: Dict[str, IDataSourcePlugin] = {}

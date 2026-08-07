@@ -127,6 +127,23 @@ class SectorDataService:
             logger.error(f"验证板块表结构失败: {e}")
             raise
 
+    def _get_sector_database_path(self) -> str:
+        """
+        获取板块资金流数据所在数据库文件路径
+
+        优先通过资产数据库管理器解析 SECTOR 资产类型的数据库文件；
+        解析失败时降级为当前目录下的默认板块数据库文件。
+
+        Returns:
+            str: 数据库文件路径
+        """
+        try:
+            from ..asset_database_manager import get_asset_database_manager
+            return get_asset_database_manager().get_database_path(AssetType.SECTOR)
+        except Exception as e:
+            logger.warning(f"解析板块数据库路径失败，使用默认路径: {e}")
+            return "sector_data.duckdb"
+
     def get_sector_fund_flow_ranking(self, date_range: str, sort_by: str = 'main_net_inflow') -> pd.DataFrame:
         """
         获取板块资金流排行榜
@@ -343,13 +360,24 @@ class SectorDataService:
             LIMIT 100
             """
 
-            # 执行查询（这里需要实际的数据库连接实现）
-            # 临时返回空DataFrame，实际实现时需要连接DuckDB执行查询
-            logger.warning("数据库查询功能待实现，返回空结果")
-            return pd.DataFrame()
+            # 执行查询：通过DuckDB连接管理器执行SQL并返回DataFrame
+            if not self.duckdb_manager:
+                logger.warning("DuckDB管理器不可用，返回空结果")
+                return pd.DataFrame()
+
+            with self.duckdb_manager.get_connection(self._get_sector_database_path()) as conn:
+                df = conn.execute(sql).fetchdf()
+
+            if df.empty:
+                logger.debug(f"板块排行榜无数据: date={target_date}, sort_by={sort_by}")
+            return df
 
         except Exception as e:
-            logger.error(f"数据库查询板块排行榜失败: {e}")
+            # 表不存在属正常降级场景，仅记录warning；其余错误记录error
+            if "does not exist" in str(e) or "Table with name" in str(e) or "Catalog Error" in str(e):
+                logger.warning(f"板块资金流表不存在，返回空结果（降级）: {e}")
+            else:
+                logger.error(f"数据库查询板块排行榜失败: {e}")
             return pd.DataFrame()
 
     def _query_trend_from_database(self, sector_id: str, period: int) -> pd.DataFrame:
@@ -386,12 +414,24 @@ class SectorDataService:
             ORDER BY trade_date ASC
             """
 
-            # 执行查询（这里需要实际的数据库连接实现）
-            logger.warning("数据库查询功能待实现，返回空结果")
-            return pd.DataFrame()
+            # 执行查询：通过DuckDB连接管理器执行SQL并返回DataFrame
+            if not self.duckdb_manager:
+                logger.warning("DuckDB管理器不可用，返回空结果")
+                return pd.DataFrame()
+
+            with self.duckdb_manager.get_connection(self._get_sector_database_path()) as conn:
+                df = conn.execute(sql).fetchdf()
+
+            if df.empty:
+                logger.debug(f"板块趋势无数据: sector_id={sector_id}, period={period}")
+            return df
 
         except Exception as e:
-            logger.error(f"数据库查询板块趋势失败: {e}")
+            # 表不存在属正常降级场景，仅记录warning；其余错误记录error
+            if "does not exist" in str(e) or "Table with name" in str(e) or "Catalog Error" in str(e):
+                logger.warning(f"板块资金流表不存在，返回空结果（降级）: {e}")
+            else:
+                logger.error(f"数据库查询板块趋势失败: {e}")
             return pd.DataFrame()
 
     def _query_intraday_from_database(self, sector_id: str, date: str) -> pd.DataFrame:
@@ -425,12 +465,24 @@ class SectorDataService:
             ORDER BY trade_time ASC
             """
 
-            # 执行查询（这里需要实际的数据库连接实现）
-            logger.warning("数据库查询功能待实现，返回空结果")
-            return pd.DataFrame()
+            # 执行查询：通过DuckDB连接管理器执行SQL并返回DataFrame
+            if not self.duckdb_manager:
+                logger.warning("DuckDB管理器不可用，返回空结果")
+                return pd.DataFrame()
+
+            with self.duckdb_manager.get_connection(self._get_sector_database_path()) as conn:
+                df = conn.execute(sql).fetchdf()
+
+            if df.empty:
+                logger.debug(f"板块分时无数据: sector_id={sector_id}, date={date}")
+            return df
 
         except Exception as e:
-            logger.error(f"数据库查询板块分时数据失败: {e}")
+            # 表不存在属正常降级场景，仅记录warning；其余错误记录error
+            if "does not exist" in str(e) or "Table with name" in str(e) or "Catalog Error" in str(e):
+                logger.warning(f"板块资金流表不存在，返回空结果（降级）: {e}")
+            else:
+                logger.error(f"数据库查询板块分时数据失败: {e}")
             return pd.DataFrame()
 
     def _import_via_tet_pipeline(self, source: str, start_date: str, end_date: str) -> Dict[str, Any]:
@@ -669,24 +721,43 @@ class SectorDataService:
                 logger.warning("DuckDB管理器不可用，无法插入数据")
                 return 0
 
-            # 获取数据库连接
-            conn = self.duckdb_manager.get_connection()
-            if not conn:
-                logger.warning("无法获取数据库连接")
-                return 0
-
             # 插入到日度表（主要用于板块资金流）
             table_name = "sector_fund_flow_daily"
 
-            # 构建插入SQL
+            # ===== 列名对齐（P0-2 修复）=====
+            # 权威列定义见 core/database/table_manager.py 的 SECTOR_FUND_FLOW_DAILY 表。
+            # 原实现插入列（date/period/main_net_inflow_ratio/super_large_net_inflow 等）
+            # 在表结构中不存在，导致 executemany 抛异常被吞掉、导入恒失败。
+            # 修复策略（表结构为权威，改插入列名）：
+            #   1) 数据源列 → 表列映射：
+            #      date→trade_date, change_percent→avg_change_pct, amount→total_turnover
+            #   2) 以下数据源列在表中无对应列，直接丢弃：
+            #      period, main_net_inflow_ratio, super_large_net_inflow,
+            #      large_net_inflow, medium_net_inflow, small_net_inflow,
+            #      turnover_rate, volume
+            #   3) 表结构必填列（sector_id/data_source）若数据源未提供则自动补齐
+            if 'date' in data.columns and 'trade_date' not in data.columns:
+                data = data.rename(columns={'date': 'trade_date'})
+            if 'change_percent' in data.columns and 'avg_change_pct' not in data.columns:
+                data = data.rename(columns={'change_percent': 'avg_change_pct'})
+            if 'amount' in data.columns and 'total_turnover' not in data.columns:
+                data = data.rename(columns={'amount': 'total_turnover'})
+
+            if 'sector_id' not in data.columns:
+                if 'sector_code' in data.columns:
+                    data['sector_id'] = data['sector_code'].fillna('')
+                else:
+                    data['sector_id'] = ''
+            if 'data_source' not in data.columns:
+                data['data_source'] = 'akshare'
+
+            # 最终插入列（全部为表结构真实存在的列）
             columns = [
-                'date', 'sector_name', 'sector_code', 'period',
-                'main_net_inflow', 'main_net_inflow_ratio',
-                'super_large_net_inflow', 'large_net_inflow',
-                'medium_net_inflow', 'small_net_inflow',
-                'change_percent', 'turnover_rate',
-                'volume', 'amount', 'created_at'
+                'sector_id', 'sector_name', 'sector_code', 'trade_date',
+                'main_net_inflow', 'avg_change_pct', 'total_turnover',
+                'data_source', 'created_at'
             ]
+            columns = [c for c in columns if c in data.columns]
 
             placeholders = ', '.join(['?' for _ in columns])
             column_names = ', '.join(columns)
@@ -699,8 +770,9 @@ class SectorDataService:
             # 准备批量插入的数据
             records = [tuple(x) for x in data[columns].values.tolist()]
 
-            # 执行批量插入
-            conn.executemany(insert_sql, records)
+            # 执行批量插入（get_connection 为上下文管理器，必须用 with 获取连接）
+            with self.duckdb_manager.get_connection(self._get_sector_database_path()) as conn:
+                conn.executemany(insert_sql, records)
 
             logger.info(f"成功插入 {len(records)} 条板块资金流数据到表 {table_name}")
             return len(records)

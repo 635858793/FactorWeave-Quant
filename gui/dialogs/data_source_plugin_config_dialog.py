@@ -1631,6 +1631,9 @@ class DataSourcePluginConfigDialog(BaseDialog):
 
                 def run(self):
                     try:
+                        # R248 修复：已收到中断请求（关闭对话框）则直接退出
+                        if self.isInterruptionRequested():
+                            return
                         if self.plugin_type == "tdx":
                             # TDX特殊处理：使用真实的服务器发现
                             from core.services.tdx_server_discovery import discover_servers
@@ -2413,6 +2416,9 @@ class DataSourcePluginConfigDialog(BaseDialog):
 
                 def run(self):
                     try:
+                        # R248 修复：已收到中断请求（关闭对话框）则直接退出
+                        if self.isInterruptionRequested():
+                            return
                         # 集成真实的TDX服务器发现逻辑
                         from core.services.tdx_server_discovery import discover_servers
                         servers = discover_servers()
@@ -2627,6 +2633,25 @@ class DataSourcePluginConfigDialog(BaseDialog):
         if self.health_worker and self.health_worker.running:
             self.health_worker.stop()
             self.health_worker.wait(1000)
+
+        # R248 修复：停止局部 QThread（ServerListFetcher/ServerTester/TdxServerFetcher），
+        # 避免关闭对话框时线程仍在运行导致 QThread GC 崩溃
+        for name, attr in (("服务器列表获取", 'server_fetcher'),
+                           ("服务器测试", 'server_tester'),
+                           ("TDX服务器获取", 'tdx_fetcher')):
+            thread = getattr(self, attr, None)
+            if thread is not None:
+                try:
+                    if thread.isRunning():
+                        thread.requestInterruption()
+                        if not thread.wait(3000):
+                            logger.warning(f"{name}线程 3 秒内未退出，继续等待...")
+                            if not thread.wait(5000):
+                                logger.warning(f"{name}线程仍未退出，强制终止")
+                                thread.terminate()
+                                thread.wait(1000)
+                except Exception as e:
+                    logger.warning(f"停止{name}线程异常: {e}")
 
         # 清理TDX服务器管理器
         if hasattr(self, 'tdx_server_manager') and self.tdx_server_manager:

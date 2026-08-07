@@ -222,8 +222,30 @@ class CryptoUniversalPlugin(HTTPAPIPluginTemplate):
 
     def _test_exchange_connection(self, exchange: str) -> bool:
         """测试单个交易所连接"""
-        # 这里简化处理，实际应该根据不同交易所调用不同的测试端点
-        return True
+        # R248: 原实现恒返回 True（"这里简化处理"），导致 connect 验证形同虚设。
+        # 改为对交易所 base_url 发起真实 HTTP 探测：服务器可达（无异常）即成功。
+        try:
+            exchange_config = self.config.get('exchanges', {}).get(exchange)
+            if not exchange_config:
+                self.logger.warning(f"交易所 {exchange} 无配置")
+                return False
+
+            base_url = exchange_config.get('base_url')
+            if not base_url:
+                self.logger.warning(f"交易所 {exchange} 未配置 base_url")
+                return False
+
+            if self.session is None:
+                import requests
+                self.session = requests.Session()
+
+            response = self.session.get(base_url, timeout=10)
+            self.logger.info(f"交易所 {exchange} HTTP {response.status_code}")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"交易所 {exchange} 连接测试失败: {e}")
+            return False
 
     def _sign_request(
         self,

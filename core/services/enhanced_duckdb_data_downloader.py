@@ -26,7 +26,7 @@ from enum import Enum
 
 from ..database.duckdb_manager import get_connection_manager
 from ..database.duckdb_operations import get_duckdb_operations
-from ..database.table_manager import DynamicTableManager
+from ..database.table_manager import DynamicTableManager, DEFAULT_FINANCIAL_PLUGIN
 from ..plugin_types import AssetType, DataType
 from ..tet_data_pipeline import StandardQuery, TETDataPipeline
 from ..data_source_router import DataSourceRouter
@@ -387,8 +387,12 @@ class EnhancedDuckDBDataDownloader:
         start_time = datetime.now()
 
         if not self.incremental_analyzer or not self.completeness_checker or not self.update_recorder:
-            logger.error("缺少必要的组件进行智能增量下载")
-            raise RuntimeError("智能增量下载需要配置 incremental_analyzer, completeness_checker, update_recorder")
+            # R254 修复：三组件缺失不再直接 raise，降级为朴素增量路径
+            logger.warning(
+                "智能增量下载组件缺失（incremental_analyzer/completeness_checker/update_recorder），"
+                "降级为朴素增量路径（download_historical_kline_data + download_fundamental_data）"
+            )
+            return await self._degraded_incremental_download(symbols, end_date)
 
         if strategy is None:
             strategy = DownloadStrategy.LATEST_ONLY
@@ -396,16 +400,17 @@ class EnhancedDuckDBDataDownloader:
         task_name = task_name or f"智能增量下载 - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
 
         # 创建任务跟踪
-        task_id = self.update_recorder.create_update_task(
-            task_name=task_name,
-            symbols=symbols,
-            date_range=(end_date - timedelta(days=30), end_date),
-            update_type=UpdateType.INCREMENTAL,
-            strategy=strategy.value
-        )
-
-        # 开始任务
-        self.update_recorder.start_task(task_id)
+        task_id = None
+        if self.update_recorder:
+            task_id = self.update_recorder.create_update_task(
+                task_name=task_name,
+                symbols=symbols,
+                date_range=(end_date - timedelta(days=30), end_date),
+                update_type=UpdateType.INCREMENTAL,
+                strategy=strategy.value
+            )
+            # 开始任务
+            self.update_recorder.start_task(task_id)
 
         try:
             # 分析增量需求
@@ -455,10 +460,11 @@ class EnhancedDuckDBDataDownloader:
                 total_symbols = len(download_plan.symbols_to_download)
                 progress = (completed_symbols / total_symbols) * 100
 
-                self.update_recorder.update_task_progress(
-                    task_id, completed_symbols, success_count, failed_count,
-                    skipped_count, total_records, progress
-                )
+                if self.update_recorder:
+                    self.update_recorder.update_task_progress(
+                        task_id, completed_symbols, success_count, failed_count,
+                        skipped_count, total_records, progress
+                    )
 
                 # 调用进度回调
                 if progress_callback:
@@ -466,7 +472,8 @@ class EnhancedDuckDBDataDownloader:
 
             # 完成任务
             execution_time = (datetime.now() - start_time).total_seconds()
-            self.update_recorder.complete_task(task_id, total_records, execution_time)
+            if self.update_recorder:
+                self.update_recorder.complete_task(task_id, total_records, execution_time)
 
             return {
                 'task_id': task_id,
@@ -479,8 +486,62 @@ class EnhancedDuckDBDataDownloader:
 
         except Exception as e:
             logger.error(f"智能增量下载失败: {str(e)}")
-            self.update_recorder.fail_task(task_id, str(e))
+            if self.update_recorder:
+                self.update_recorder.fail_task(task_id, str(e))
             raise
+
+    async def _degraded_incremental_download(self, symbols: List[str], end_date: datetime) -> Dict[str, Any]:
+        """降级增量下载：三组件缺失时复用朴素增量路径（download_historical_kline_data + download_fundamental_data）
+
+        R254 修复：三组件缺失时不再 raise RuntimeError，走此降级路径保证下载链路可用。
+
+        Returns:
+            Dict: 与 download_incremental_data 主路径同构的结果统计（task_id=None）
+        """
+        start_time = datetime.now()
+        success_count = 0
+        failed_count = 0
+        total_records = 0
+        errors = []
+
+        try:
+            kline_results = await self.download_historical_kline_data(
+                symbols=symbols,
+                period='D',
+                start_date=end_date - timedelta(days=30),
+                end_date=end_date,
+                force_update=False
+            )
+            success_count += len(kline_results)
+            total_records += sum(len(df) for df in kline_results.values() if df is not None and not df.empty)
+        except Exception as e:
+            errors.append(f"K线数据更新失败: {e}")
+            logger.error(f"降级增量下载 - K线数据更新失败: {e}")
+
+        try:
+            fundamental_results = await self.download_fundamental_data(
+                symbols=symbols[:20],
+                data_types=['financial_statement']
+            )
+            success_count += len(fundamental_results)
+        except Exception as e:
+            errors.append(f"基本面数据更新失败: {e}")
+            logger.error(f"降级增量下载 - 基本面数据更新失败: {e}")
+
+        execution_time = (datetime.now() - start_time).total_seconds()
+        logger.warning(
+            f"降级增量下载完成: 成功={success_count}, 记录数={total_records}, "
+            f"耗时={execution_time:.2f}s, 错误={errors}"
+        )
+        return {
+            'task_id': None,
+            'success_count': success_count,
+            'failed_count': failed_count,
+            'skipped_count': 0,
+            'total_records': total_records,
+            'execution_time': execution_time,
+            'errors': errors
+        }
 
     async def _download_symbol_batch(
         self,
@@ -744,7 +805,8 @@ class EnhancedDuckDBDataDownloader:
         self,
         symbol: str,
         download_range: Tuple[datetime, datetime],
-        strategy: DownloadStrategy
+        strategy: DownloadStrategy,
+        period: str = "D"
     ) -> pd.DataFrame:
         """
         下载单个符号原始数据（辅助方法）
@@ -753,6 +815,7 @@ class EnhancedDuckDBDataDownloader:
             symbol: 股票符号
             download_range: 下载范围
             strategy: 下载策略
+            period: 频率（标准 Period 值，如 'D'/'W'/'M'/'5m'/'15m'/'30m'/'1H'）
 
         Returns:
             DataFrame: 原始数据
@@ -765,7 +828,7 @@ class EnhancedDuckDBDataDownloader:
             asset_type=AssetType.STOCK_A,
             start_date=start_date,
             end_date=end_date,
-            extra_params={'period': 'D'}
+            extra_params={'period': period}
         )
 
         if self.data_source_router:
@@ -798,7 +861,8 @@ class EnhancedDuckDBDataDownloader:
         self,
         data: pd.DataFrame,
         symbol: str,
-        strategy: DownloadStrategy
+        strategy: DownloadStrategy,
+        period: str = "D"
     ) -> int:
         """
         智能增量存储K线数据
@@ -807,6 +871,7 @@ class EnhancedDuckDBDataDownloader:
             data: K线数据
             symbol: 股票符号
             strategy: 下载策略
+            period: 周期 (标准 Period 值, 默认日线)
 
         Returns:
             int: 存储的记录数
@@ -814,17 +879,25 @@ class EnhancedDuckDBDataDownloader:
         if data.empty:
             return 0
 
-        data = data.sort_values('datetime')
+        if 'datetime' in data.columns:
+            data = data.sort_values('datetime')
 
         db_path = self.asset_db_manager.get_database_path(AssetType.STOCK_A)
 
+        # R251 修复: 统一写入 historical_kline_data 表并完成列名映射,
+        # 此前写入 kline_data_daily 表导致读取端(historical_kline_data)查不到数据
+        store_data = self._prepare_kline_data_for_storage(data, symbol, period)
+        if store_data.empty:
+            logger.warning(f"存储 {symbol} 数据失败: 列名无法映射到 historical_kline_data 表结构")
+            return 0
+
         result = self.duckdb_operations.insert_dataframe(
             database_path=db_path,
-            table_name='kline_data_daily',
-            data=data,
+            table_name='historical_kline_data',
+            data=store_data,
             batch_size=1000,
             upsert=True,
-            conflict_columns=['symbol', 'datetime']
+            conflict_columns=['symbol', 'data_source', 'timestamp', 'frequency']
         )
 
         if result.success:
@@ -908,16 +981,19 @@ class EnhancedDuckDBDataDownloader:
             if not db_path or not symbols:
                 return {}
 
-            table_name = f"kline_data_{period.lower()}"
+            # R251 修复: 统一读取 historical_kline_data 表, 并按 frequency 过滤(与写入端一致)
+            from ..plugin_types import Period
+            frequency = Period.to_duckdb_frequency(period)
             placeholders = ','.join(['?' for _ in symbols])
             query = f"""
-                SELECT symbol, MAX(datetime) as latest_date
-                FROM {table_name}
-                WHERE symbol IN ({placeholders})
+                SELECT symbol, MAX(timestamp) as latest_date
+                FROM historical_kline_data
+                WHERE symbol IN ({placeholders}) AND frequency = ?
                 GROUP BY symbol
             """
+            params = symbols + [frequency]
 
-            result = self.duckdb_operations.execute_query(db_path, query, symbols)
+            result = self.duckdb_operations.execute_query(db_path, query, params)
             if not result.empty:
                 filtered = result.dropna(subset=['latest_date'])
                 if not filtered.empty:
@@ -936,13 +1012,16 @@ class EnhancedDuckDBDataDownloader:
             if not db_path:
                 return None
 
+            # R251 修复: 统一读取 historical_kline_data 表, 并按 frequency 过滤(与写入端一致)
+            from ..plugin_types import Period
+            frequency = Period.to_duckdb_frequency(period)
             query = f"""
-                SELECT MAX(datetime) as latest_date 
-                FROM kline_data_{period.lower()} 
-                WHERE symbol = ?
+                SELECT MAX(timestamp) as latest_date 
+                FROM historical_kline_data 
+                WHERE symbol = ? AND frequency = ?
             """
 
-            result = self.duckdb_operations.execute_query(db_path, query, [symbol])
+            result = self.duckdb_operations.execute_query(db_path, query, [symbol, frequency])
             if not result.empty and result.iloc[0]['latest_date']:
                 return pd.to_datetime(result.iloc[0]['latest_date'])
 
@@ -955,20 +1034,24 @@ class EnhancedDuckDBDataDownloader:
         """存储K线数据到DuckDB"""
         try:
             db_path = self.asset_db_manager.get_database_path(asset_type)
-            table_name = f"kline_data_{period.lower()}"
 
-            # 确保表存在
-            await self.table_manager.ensure_table_exists(
-                db_path, 'kline', 'enhanced_duckdb_downloader', period
-            )
+            # R251 修复: 统一写入 historical_kline_data 表并完成列名映射。
+            # 此前使用 kline_data_{period} 动态表名, 读取端(historical_kline_data)查不到。
+            # 统一表由 asset_database_manager 初始化时确保存在, 不再走动态表 ensure。
+            table_name = 'historical_kline_data'
+
+            store_data = self._prepare_kline_data_for_storage(data, symbol, period)
+            if store_data.empty:
+                logger.warning(f"存储K线数据失败 {symbol}: 列名无法映射到 {table_name} 表结构")
+                return
 
             # 插入数据
             result = self.duckdb_operations.insert_dataframe(
                 database_path=db_path,
                 table_name=table_name,
-                data=data,
+                data=store_data,
                 upsert=True,
-                conflict_columns=['symbol', 'datetime']
+                conflict_columns=['symbol', 'data_source', 'timestamp', 'frequency']
             )
 
             if result.success:
@@ -979,24 +1062,85 @@ class EnhancedDuckDBDataDownloader:
         except Exception as e:
             logger.error(f"存储K线数据失败 {symbol}: {e}")
 
+    def _prepare_kline_data_for_storage(self, data: pd.DataFrame, symbol: str, period: str) -> pd.DataFrame:
+        """
+        将K线DataFrame列名映射到 historical_kline_data 表结构 (R251 修复)
+
+        - code → symbol, date/datetime → timestamp
+        - 补充 symbol / timestamp / frequency / data_source 列
+        - 仅保留表结构存在的列, 与读取端视图(expect symbol/timestamp/open/high/low/close/volume/amount)对齐
+        """
+        try:
+            if data is None or data.empty:
+                return data if data is not None else pd.DataFrame()
+
+            prepared = data.copy()
+
+            # 1. 列名统一映射: code→symbol, date/datetime→timestamp
+            for src, dst in [('code', 'symbol'), ('date', 'timestamp'), ('datetime', 'timestamp')]:
+                if src in prepared.columns and dst not in prepared.columns:
+                    prepared = prepared.rename(columns={src: dst})
+
+            # 2. 保证关键列存在
+            if 'symbol' not in prepared.columns:
+                prepared['symbol'] = symbol
+
+            if 'timestamp' not in prepared.columns:
+                if 'datetime' in prepared.columns:
+                    prepared['timestamp'] = pd.to_datetime(prepared['datetime'])
+                else:
+                    logger.warning(f"K线数据缺少时间列: {list(prepared.columns)}")
+                    return pd.DataFrame()
+            else:
+                prepared['timestamp'] = pd.to_datetime(prepared['timestamp'])
+
+            if 'frequency' not in prepared.columns:
+                from ..plugin_types import Period
+                prepared['frequency'] = Period.to_duckdb_frequency(period)
+
+            if 'data_source' not in prepared.columns:
+                prepared['data_source'] = 'enhanced_duckdb_downloader'
+
+            # 3. 仅保留表结构存在的列
+            kline_columns = {
+                'symbol', 'data_source', 'timestamp', 'frequency',
+                'open', 'high', 'low', 'close', 'volume', 'amount',
+                'turnover', 'adj_close', 'adj_factor', 'adj_type', 'adj_source',
+                'turnover_rate', 'vwap',
+            }
+            keep_columns = [col for col in prepared.columns if col in kline_columns]
+            return prepared[keep_columns].copy()
+
+        except Exception as e:
+            logger.error(f"K线数据落库列名映射失败 {symbol}: {e}")
+            return pd.DataFrame()
+
     async def _store_fundamental_data_to_duckdb(self, data: Any, symbol: str, data_type: str, asset_type: AssetType = AssetType.STOCK_A):
         """存储基本面数据到DuckDB"""
         try:
             db_path = self.asset_db_manager.get_database_path(asset_type)
 
-            if data_type == 'financial_statement':
-                table_name = "financial_statements"
-            elif data_type == 'announcement':
-                table_name = "company_announcements"
-            elif data_type == 'analyst_rating':
-                table_name = "analyst_ratings"
-            else:
+            # 数据类型字符串 -> TableType 枚举映射（保证 ensure 建表与 insert 使用同一表名）
+            from ..database.table_manager import TableType
+            table_type_map = {
+                'financial_statement': TableType.FINANCIAL_STATEMENT,
+                'announcement': TableType.ANNOUNCEMENT,
+                'analyst_rating': None,  # 无对应TableType，保持原硬编码表名行为
+            }
+            table_type = table_type_map.get(data_type)
+            if data_type not in table_type_map:
                 return
 
-            # 确保表存在
-            await self.table_manager.ensure_table_exists(
-                db_path, data_type, 'enhanced_duckdb_downloader'
-            )
+            # 确保表存在（同步调用，返回实际表名；R257 起 financial/announcement 统一插件名）
+            if table_type is not None:
+                table_name = self.table_manager.ensure_table_exists(
+                    db_path, table_type, DEFAULT_FINANCIAL_PLUGIN
+                )
+                if not table_name:
+                    logger.error(f"创建基本面数据表失败: {data_type}")
+                    return
+            else:
+                table_name = "analyst_ratings"
 
             # 转换数据格式
             if isinstance(data, dict):
@@ -1007,7 +1151,17 @@ class EnhancedDuckDBDataDownloader:
                 df = data
 
             df['symbol'] = symbol
-            df['update_time'] = datetime.now()
+
+            # R258-P0 (交叉审查修正): 财务统一表主键 (symbol, report_date, report_type)
+            # (table_manager.py:287), 表无 update_time 列 —— 此前补 update_time + 
+            # conflict_columns=['symbol','update_time'] 引用不存在列 → ON CONFLICT Binder Error
+            # → 全事务 ROLLBACK → 财务数据 0 行落库。防御性补齐主键列默认值 (插件标准输出
+            # 已含 report_date/report_type: eastmoney_fundamental_plugin.py:198-199)。
+            for _col in ('report_date', 'report_type'):
+                if _col not in df.columns:
+                    df[_col] = (
+                        pd.Timestamp(datetime.now()).date() if _col == 'report_date' else 'annual'
+                    )
 
             # 插入数据
             result = self.duckdb_operations.insert_dataframe(
@@ -1015,7 +1169,7 @@ class EnhancedDuckDBDataDownloader:
                 table_name=table_name,
                 data=df,
                 upsert=True,
-                conflict_columns=['symbol', 'update_time']
+                conflict_columns=['symbol', 'report_date', 'report_type']
             )
 
             if result.success:
@@ -1140,8 +1294,13 @@ class EnhancedDuckDBDataDownloader:
 
             end_date = datetime.now()
 
-            frequency_to_period = {"日线": "D", "周线": "W", "月线": "M"}
-            period = frequency_to_period.get(frequency, "D")
+            # 频率映射：兼容中文（日线/周线/月线/5分钟等）与标准 Period 值（D/W/M/5m/1H 等）
+            from core.plugin_types import Period
+            period = Period.normalize(frequency) if frequency else "D"
+            valid_periods = {p.value for p in Period}
+            if period not in valid_periods:
+                logger.warning(f"无法识别的下载频率: {frequency}，回退为日线")
+                period = "D"
             latest_db_date = await self._get_latest_data_date(symbol, period, "kline")
             if latest_db_date:
                 start_date = latest_db_date + timedelta(days=1)
@@ -1156,7 +1315,7 @@ class EnhancedDuckDBDataDownloader:
 
             # 下载原始数据
             raw_data = await self._download_single_symbol_data(
-                symbol, (start_date, end_date), DownloadStrategy.LATEST_ONLY
+                symbol, (start_date, end_date), DownloadStrategy.LATEST_ONLY, period
             )
 
             if raw_data is None or raw_data.empty:
@@ -1168,7 +1327,7 @@ class EnhancedDuckDBDataDownloader:
 
             # 增量存储数据
             records_count = await self._store_kline_data_incremental(
-                cleaned_data, symbol, DownloadStrategy.LATEST_ONLY
+                cleaned_data, symbol, DownloadStrategy.LATEST_ONLY, period
             )
 
             # 更新断点状态
@@ -1211,7 +1370,34 @@ def get_enhanced_duckdb_downloader(uni_plugin_manager: UniPluginDataManager = No
     if _enhanced_duckdb_downloader is None:
         if uni_plugin_manager is None:
             raise ValueError("首次创建需要提供 uni_plugin_manager")
-        _enhanced_duckdb_downloader = EnhancedDuckDBDataDownloader(uni_plugin_manager)
+
+        # R254 修复：三组件未显式传入时，尝试从服务容器 resolve，
+        # 避免 unified_data_manager 持有的裸实例与容器完整实例分裂
+        incremental_analyzer = None
+        completeness_checker = None
+        update_recorder = None
+        try:
+            from core.containers import get_service_container
+            from .incremental_data_analyzer import IncrementalDataAnalyzer
+            from .data_completeness_checker import DataCompletenessChecker
+            from .incremental_update_recorder import IncrementalUpdateRecorder
+            container = get_service_container()
+            if container is not None:
+                if container.is_registered(IncrementalDataAnalyzer):
+                    incremental_analyzer = container.resolve(IncrementalDataAnalyzer)
+                if container.is_registered(DataCompletenessChecker):
+                    completeness_checker = container.resolve(DataCompletenessChecker)
+                if container.is_registered(IncrementalUpdateRecorder):
+                    update_recorder = container.resolve(IncrementalUpdateRecorder)
+        except Exception as e:
+            logger.warning(f"从服务容器解析增量组件失败，保持 None（走降级路径）: {e}")
+
+        _enhanced_duckdb_downloader = EnhancedDuckDBDataDownloader(
+            uni_plugin_manager,
+            incremental_analyzer=incremental_analyzer,
+            completeness_checker=completeness_checker,
+            update_recorder=update_recorder
+        )
 
     return _enhanced_duckdb_downloader
 

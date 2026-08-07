@@ -385,12 +385,15 @@ class BaseAnalysisTab(QWidget):
             self.error_occurred.emit("组件未初始化")
             return None
 
-        if hasattr(self, 'parent_widget') and self.parent_widget:
+        if (hasattr(self, 'parent_widget') and self.parent_widget
+                and hasattr(self.parent_widget, 'run_button_analysis_async')):
             return self.parent_widget.run_button_analysis_async(
-                None, analysis_func, *args, **kwargs
+                analysis_func, *args, **kwargs
             )
         else:
-            # 如果没有父组件，直接同步执行
+            # 如果没有可用的异步执行入口，直接同步执行 (R252-G3 防御性调用)
+            logger.warning(
+                f"{self.__class__.__name__}: 父组件未提供 run_button_analysis_async，当前为同步执行")
             try:
                 result = analysis_func(*args, **kwargs)
                 self.analysis_completed.emit(result if isinstance(

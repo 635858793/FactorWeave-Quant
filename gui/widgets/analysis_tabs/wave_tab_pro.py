@@ -2,6 +2,8 @@
 专业级波浪分析标签页 - 对标行业专业软件
 """
 
+from loguru import logger
+
 import numpy as np
 import pandas as pd
 from typing import Dict, Any, List, Optional, Tuple
@@ -244,6 +246,7 @@ class WaveAnalysisTabPro(BaseAnalysisTab):
         advanced_layout.addWidget(self.fractal_analysis_cb)
 
         self.auto_update_cb = QCheckBox("自动更新")
+        self.auto_update_cb.setChecked(True)
         advanced_layout.addWidget(self.auto_update_cb)
 
         layout.addWidget(advanced_group)
@@ -715,6 +718,11 @@ class WaveAnalysisTabPro(BaseAnalysisTab):
             results['comprehensive_report'] = self._generate_comprehensive_report(
                 results)
 
+            # R252-G5: 将计算结果写回实例属性（供波浪预测/导出使用）
+            self.elliott_waves = results.get('elliott_waves', []) or []
+            self.gann_levels = results.get('gann_levels', []) or []
+            self.fibonacci_levels = results.get('fibonacci_levels', []) or []
+
             return results
         except Exception as e:
             return {'error': str(e)}
@@ -759,19 +767,126 @@ class WaveAnalysisTabPro(BaseAnalysisTab):
             return {'error': str(e)}
 
     def _generate_wave_prediction(self):
-        """生成波浪预测"""
+        """基于真实K线数据与已有分析结果生成波浪预测 (R251-R9 修复)
+
+        Why: 原实现返回纯文本模板, 无任何真实数据。
+        现在读取 self.current_kdata 最新收盘价/日期, 并结合本类已有的
+        fibonacci_levels / gann_levels / elliott_waves 分析结果生成含真实价格点位的报告。
+        """
+        kdata = getattr(self, 'current_kdata', None)
+        if kdata is None or len(kdata) == 0:
+            return (
+                "# 波浪预测报告\n"
+                f"预测时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+                "## 数据不足\n"
+                "当前没有有效的K线数据，无法生成波浪预测。请先加载股票数据后重试。"
+            )
+
+        # 提取最新收盘价与日期
+        try:
+            last_close = float(kdata['close'].iloc[-1])
+        except (KeyError, IndexError, TypeError):
+            return (
+                "# 波浪预测报告\n"
+                f"预测时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+                "## 数据异常\n"
+                "K线数据缺少 close 列或为空，无法生成波浪预测。"
+            )
+
+        last_index = kdata.index[-1]
+        last_date = last_index.strftime('%Y-%m-%d') if hasattr(last_index, 'strftime') else str(last_index)
+
+        # 斐波那契水平: 优先使用已有分析结果, 为空则现场计算
+        fib_levels = getattr(self, 'fibonacci_levels', None) or []
+        if not fib_levels:
+            try:
+                fib_levels = self._calculate_fibonacci_levels()
+            except Exception as e:
+                logger.debug(f"现场计算斐波那契水平失败: {e}")
+                fib_levels = []
+
+        # 江恩水平: 同上
+        gann_levels = getattr(self, 'gann_levels', None) or []
+        if not gann_levels:
+            try:
+                gann_levels = self._calculate_gann_levels()
+            except Exception as e:
+                logger.debug(f"现场计算江恩水平失败: {e}")
+                gann_levels = []
+
+        # 提取关键支撑/阻力位（低于现价的最大值为支撑, 高于现价的最小值为阻力）
+        def _find_support_resistance(levels, price_key='price'):
+            support = None
+            resistance = None
+            for level in levels or []:
+                raw = level.get(price_key) if isinstance(level, dict) else None
+                if raw is None:
+                    continue
+                try:
+                    price = float(raw)
+                except (TypeError, ValueError):
+                    continue
+                if price < last_close:
+                    if support is None or price > support:
+                        support = price
+                elif price > last_close:
+                    if resistance is None or price < resistance:
+                        resistance = price
+            return support, resistance
+
+        fib_support, fib_resistance = _find_support_resistance(fib_levels)
+        gann_support, gann_resistance = _find_support_resistance(gann_levels)
+
+        # 最近波浪状态
+        elliott_waves = getattr(self, 'elliott_waves', None) or []
+        wave_line = "（未检测到波浪结构）"
+        if elliott_waves and isinstance(elliott_waves[-1], dict):
+            last_wave = elliott_waves[-1]
+            confidence = last_wave.get('confidence', 0)
+            try:
+                conf_str = f"{float(confidence):.0%}"
+            except (TypeError, ValueError):
+                conf_str = str(confidence)
+            wave_line = (f"{last_wave.get('wave', '未知')}（{last_wave.get('type', '')}），"
+                         f"置信度 {conf_str}，状态: {last_wave.get('status', '')}")
+
+        def _fmt(v):
+            return f"{v:.2f}" if v is not None else "无"
+
+        # 支撑/阻力参考区间文案
+        if fib_support is not None and fib_resistance is not None:
+            range_line = f"预计价格将在 {_fmt(fib_support)}（支撑）至 {_fmt(fib_resistance)}（阻力）区间内运行。"
+        elif fib_support is not None:
+            range_line = f"近期斐波那契支撑位 {_fmt(fib_support)} 附近存在支撑，关注企稳信号。"
+        elif fib_resistance is not None:
+            range_line = f"近期斐波那契阻力位 {_fmt(fib_resistance)} 附近存在压力，关注突破信号。"
+        else:
+            range_line = "暂无有效的斐波那契关键价位，建议等待更多数据确认方向。"
+
         prediction = f"""
 # 波浪预测报告
 预测时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+最新交易日: {last_date}
+最新收盘价: {last_close:.2f}
+
+## 当前波浪结构
+{wave_line}
+
+## 关键价位（基于真实分析数据）
+- 斐波那契支撑位: {_fmt(fib_support)}
+- 斐波那契阻力位: {_fmt(fib_resistance)}
+- 江恩支撑位: {_fmt(gann_support)}
+- 江恩阻力位: {_fmt(gann_resistance)}
 
 ## 短期预测（1-5个交易日）
-基于当前波浪结构，预计价格将在关键斐波那契位附近震荡。
+基于最近收盘价 {last_close:.2f}，{range_line}
+若收盘价跌破 {_fmt(fib_support)}，短期可能进一步下探；若放量突破 {_fmt(fib_resistance)}，则可能启动新一轮上升波浪。
 
 ## 中期预测（1-4周）
-如果突破关键阻力位，可能启动新一轮上升波浪。
+如果突破关键阻力位 {_fmt(fib_resistance)}，可能启动新一轮上升波浪；反之若跌破关键支撑位 {_fmt(fib_support)}，需防范调整浪加深。
 
 ## 长期预测（1-3个月）
-整体波浪结构显示市场处于大级别调整的后期阶段。
+整体波浪结构显示市场处于关键价位博弈阶段，建议结合江恩时间周期与成交量变化确认大级别方向。
 """
         return prediction
 

@@ -748,6 +748,27 @@ class CodeEditor(QPlainTextEdit):
         self._pending_prefix = ''
         self._suppress_completion = False
 
+    def stop_async_worker(self):
+        """停止异步补全工作线程（R247 修复）
+
+        原实现启动 AsyncCompletionWorker(QThread) 后无任何 stop/closeEvent 路径,
+        run() 的 while self._running 循环永不退出。当包含编辑器的对话框被关闭/GC 时,
+        QThread 对象被销毁而线程仍在运行 -> "QThread: Destroyed while thread is still running"
+        -> 进程崩溃。此方法供上层关闭链 (StrategyManagerDialog.cleanup) 调用。
+        """
+        worker = getattr(self, '_async_worker', None)
+        if worker is not None:
+            try:
+                worker.stop()
+                worker.wait(3000)
+                if worker.isRunning():
+                    logger.warning("异步补全线程 3 秒内未退出，继续等待...")
+                    worker.wait(5000)
+            except Exception as e:
+                logger.warning(f"停止异步补全线程异常: {e}")
+            finally:
+                self._async_worker = None
+
     def _init_theme(self):
         if self.theme_manager:
             colors = self.theme_manager.get_theme_colors()
@@ -1519,6 +1540,18 @@ class StrategyCodeEditor(QWidget):
                 self.theme_manager.theme_changed.connect(self._on_theme_changed)
             except Exception:
                 pass
+
+    def stop_threads(self):
+        """停止编辑器内所有工作线程（R247 修复）
+
+        由上层关闭链 (StrategyManagerDialog.cleanup) 调用, 防止 QThread 在线程
+        仍运行时被 GC 销毁导致 "QThread: Destroyed while thread is still running" 崩溃。
+        """
+        if hasattr(self, 'code_editor') and self.code_editor:
+            try:
+                self.code_editor.stop_async_worker()
+            except Exception as e:
+                logger.warning(f"停止代码编辑器线程异常: {e}")
 
     def _on_theme_changed(self, theme):
         self._apply_theme()

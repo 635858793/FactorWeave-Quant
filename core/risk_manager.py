@@ -480,6 +480,28 @@ class RiskManager:
     def sync_to_monitor(self, monitor: 'EnhancedRiskMonitor') -> None:
         self._monitor = monitor
 
+    def dispose(self) -> None:
+        """释放资源 (HVD-241-P0-C-3, R78 4 链标准)
+
+        Why: 纯内存状态类, 双宿主 (backtest 引擎 unified_backtest_engine.py:248 +
+             backtest_widget.py:1877) 均无清理调用 → 一致性/防御性治理
+             (R241-C 子智能体 100% 确认, 非泄漏源)
+        Fix: _disposed 幂等短路 + 清空 current_positions + initialized 置 False
+             + 解除 _monitor 引用; 失败仅 warning 不抛 (R8 铁律 #7)
+        TDD: tests/test_r241_p0c_dispose_chains_tools_cache.py T05/T06
+        """
+        if getattr(self, '_disposed', False):
+            return
+        try:
+            self.current_positions = {}
+            self.initialized = False
+            self._monitor = None
+            self._disposed = True
+            logger.info("RiskManager disposed")
+        except Exception as e:
+            logger.warning(f"RiskManager dispose 失败: {e}")
+            self._disposed = True
+
     def _push_position_update(self, position_data: dict) -> None:
         if hasattr(self, '_monitor') and self._monitor:
             try:
