@@ -37,29 +37,6 @@ class TestR237B001CrossValidation:
             pass  # 这是 RED 状态 - 确认空壳
 
 
-class TestR237B002CrossValidation:
-    """R237-B-002 (死代码 + 重复代码) 交叉验证"""
-
-    def test_cninfo_sina_duplicate_health_check(self):
-        """验证 cninfo/sina 插件 health_check 完全重复"""
-        cninfo_path = ROOT / "plugins" / "data_sources" / "fundamental_data_plugins" / "cninfo_plugin.py"
-        sina_path = ROOT / "plugins" / "data_sources" / "fundamental_data_plugins" / "sina_fundamental_plugin.py"
-        assert cninfo_path.exists(), "cninfo_plugin.py 不存在"
-        assert sina_path.exists(), "sina_fundamental_plugin.py 不存在"
-        cninfo = cninfo_path.read_text(encoding="utf-8")
-        sina = sina_path.read_text(encoding="utf-8")
-        # 验证 health_check 相同
-        assert "def health_check" in cninfo
-        assert "def health_check" in sina
-        # 提取方法体比较
-        cninfo_hc = cninfo.split("def health_check")[1].split("def ")[0] if "def health_check" in cninfo else ""
-        sina_hc = sina.split("def health_check")[1].split("def ")[0] if "def health_check" in sina else ""
-        cninfo_clean = cninfo_hc.strip()
-        sina_clean = sina_hc.strip()
-        # 如果是完全重复, 内容应该相同
-        assert cninfo_clean == sina_clean, "cninfo/sina health_check 内容不一致 (已修复则为不同)"
-
-
 class TestR237B003CrossValidation:
     """R237-B-003 (ORPHAN_PUB) 交叉验证"""
 

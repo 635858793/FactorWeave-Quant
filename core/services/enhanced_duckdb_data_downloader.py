@@ -1156,7 +1156,7 @@ class EnhancedDuckDBDataDownloader:
             # (table_manager.py:287), 表无 update_time 列 —— 此前补 update_time + 
             # conflict_columns=['symbol','update_time'] 引用不存在列 → ON CONFLICT Binder Error
             # → 全事务 ROLLBACK → 财务数据 0 行落库。防御性补齐主键列默认值 (插件标准输出
-            # 已含 report_date/report_type: eastmoney_fundamental_plugin.py:198-199)。
+            # 已含 report_date/report_type: eastmoney_unified_plugin.py 财务输出同款)。
             for _col in ('report_date', 'report_type'):
                 if _col not in df.columns:
                     df[_col] = (

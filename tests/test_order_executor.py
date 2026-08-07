@@ -21,7 +21,7 @@ from core.trading.order_executor import OrderExecutor, MockTradingInterface
 from core.trading.order_models import Order, OrderFill, OrderType, OrderStatus, OrderCategory
 from core.trading.trading_types import ExecutionResult, ExecutionStatus, TradingInterface
 from core.plugin_types import AssetType
-from core.trading.account_models import Account, TradingInterfaceType
+from core.trading.account_models import Account, AccountStatus, TradingInterfaceType
 from core.containers import ServiceContainer
 from core.events import EventBus
 
@@ -91,6 +91,46 @@ def sample_order():
     )
 
 
+def _make_test_account(account_id='ACC001'):
+    """构造满足当前风控链的真实 Account (balance 等字段为真实 float, 避免 MagicMock 参与数值比较)。
+
+    说明: 真实 Account (account_models.py:63-90) 无 available_cash/position_limit 字段,
+    _pre_trade_risk_check (order_executor.py:810/:816) 经 hasattr 跳过资金/持仓上限检查。
+    """
+    return Account(
+        account_id=account_id,
+        account_name='测试账户',
+        account_type='simulated',
+        status=AccountStatus.ACTIVE,
+        balance=100000.0,
+        available_balance=100000.0,
+        frozen_balance=0.0,
+        market_value=0.0,
+        total_assets=100000.0,
+        profit_loss=0.0,
+        profit_loss_ratio=0.0,
+        create_time=datetime.now(),
+        update_time=datetime.now(),
+        trading_interface_type=TradingInterfaceType.MOCK,
+    )
+
+
+def _wire_mock_account_chain(mock_service_container, mock_account_manager, account):
+    """配置账号解析链: service_container.resolve(AccountManager) 返回可用的 mock_account_manager。
+
+    当前实现 (order_executor.py) 语义:
+    - _resolve_account_for_order (order_executor.py:695-760) 经 resolve(AccountManager).get_account(account_id) 解析
+    - _pre_trade_risk_check (order_executor.py:803) 同样 resolve(AccountManager) 取账户
+    - _get_trading_interface_for_account (order_executor.py:870-891) 命中 _account_interface_cache 后
+      绕过 _create_trading_interface_for_account (该函数对 MOCK 类型账户返回 None, order_executor.py:908-910)
+    """
+    mock_account_manager.get_account.return_value = account
+    mock_account_manager.get_all_accounts.return_value = [account]
+    mock_service_container.resolve.side_effect = (
+        lambda cls: mock_account_manager if 'AccountManager' in str(cls) else None
+    )
+
+
 @pytest.fixture
 def sample_account():
     """创建示例账户"""
@@ -106,9 +146,9 @@ def sample_account():
 def executor(mock_service_container, mock_event_bus, mock_repository):
     """创建订单执行器实例"""
     with patch('core.trading.order_executor.OrderRepository', return_value=mock_repository):
-        with patch('core.trading.order_executor.XTPProTradingInterface'):
-            with patch('core.trading.order_executor.CTPTradingInterface'):
-                with patch('core.trading.order_executor.XTPTradingInterface'):
+        with patch('core.trading.interfaces.xtp_pro_trading_interface.XTPProTradingInterface'):
+            with patch('core.trading.interfaces.ctp_trading_interface.CTPTradingInterface'):
+                with patch('core.trading.interfaces.xtp_trading_interface.XTPTradingInterface'):
                     exec = OrderExecutor(mock_service_container, mock_event_bus)
                     exec.repository = mock_repository
                     return exec
@@ -142,14 +182,15 @@ class TestMockTradingInterface:
         assert 'ORD001' in interface._orders
 
     def test_submit_order_exception(self):
-        """测试提交订单异常"""
+        """测试提交订单异常（字段不全的 MagicMock 订单 → 接口内部捕获异常返回 FAILED, 不崩溃）"""
         interface = MockTradingInterface()
         order = MagicMock()
         order.order_id = 'ORD001'
         order.order_status = OrderStatus.PENDING
 
         result = interface.submit_order(order)
-        assert result.status == ExecutionStatus.SUCCESS
+        assert result.status == ExecutionStatus.FAILED
+        assert result.error_code == 'SUBMIT_FAILED'
 
     def test_cancel_order_success(self):
         """测试取消订单成功"""
@@ -220,9 +261,9 @@ class TestOrderExecutorInitialization:
     def test_initialization(self, mock_service_container, mock_event_bus):
         """测试初始化"""
         with patch('core.trading.order_executor.OrderRepository'):
-            with patch('core.trading.order_executor.XTPProTradingInterface'):
-                with patch('core.trading.order_executor.CTPTradingInterface'):
-                    with patch('core.trading.order_executor.XTPTradingInterface'):
+            with patch('core.trading.interfaces.xtp_pro_trading_interface.XTPProTradingInterface'):
+                with patch('core.trading.interfaces.ctp_trading_interface.CTPTradingInterface'):
+                    with patch('core.trading.interfaces.xtp_trading_interface.XTPTradingInterface'):
                         executor = OrderExecutor(mock_service_container, mock_event_bus)
 
                         assert executor.service_container == mock_service_container
@@ -230,12 +271,14 @@ class TestOrderExecutorInitialization:
                         assert executor.repository is not None
                         assert executor.trading_interface is not None
 
-    def test_trading_interface_registration(self, mock_service_container, mock_event_bus):
+    def test_trading_interface_registration(self, mock_service_container, mock_event_bus, monkeypatch):
         """测试交易接口注册"""
+        # R255-P0 Mock 保护层: CRYPTO/FUND 仅 HIKYUU_TRADING_MOCK=1 时注册 (order_executor.py:371/:404-413)
+        monkeypatch.setenv('HIKYUU_TRADING_MOCK', '1')
         with patch('core.trading.order_executor.OrderRepository'):
-            with patch('core.trading.order_executor.XTPProTradingInterface'):
-                with patch('core.trading.order_executor.CTPTradingInterface'):
-                    with patch('core.trading.order_executor.XTPTradingInterface'):
+            with patch('core.trading.interfaces.xtp_pro_trading_interface.XTPProTradingInterface'):
+                with patch('core.trading.interfaces.ctp_trading_interface.CTPTradingInterface'):
+                    with patch('core.trading.interfaces.xtp_trading_interface.XTPTradingInterface'):
                         executor = OrderExecutor(mock_service_container, mock_event_bus)
 
                         assert AssetType.STOCK_A in executor._trading_interfaces
@@ -246,7 +289,7 @@ class TestOrderExecutorInitialization:
 class TestOrderExecutorSubmitOrder:
     """订单提交测试"""
 
-    def test_submit_order_success(self, executor, sample_order, mock_repository, mock_event_bus):
+    def test_submit_order_success(self, executor, sample_order, mock_repository, mock_event_bus, mock_service_container, mock_account_manager):
         """测试订单提交成功"""
         mock_repo = MagicMock()
         mock_repo.get_order = MagicMock(return_value=None)
@@ -255,6 +298,10 @@ class TestOrderExecutorSubmitOrder:
 
         mock_interface = MockTradingInterface()
         executor.trading_interface = mock_interface
+        # 当前 submit_order 走 _get_trading_interface_for_account (account 缓存命中路径, order_executor.py:880),
+        # 不再读取 executor.trading_interface → 预置账户接口缓存 + 账号解析链
+        executor._account_interface_cache['ACC001'] = mock_interface
+        _wire_mock_account_chain(mock_service_container, mock_account_manager, _make_test_account())
 
         result = executor.submit_order(sample_order)
 
@@ -334,7 +381,7 @@ class TestOrderExecutorSubmitOrder:
 class TestOrderExecutorBatchSubmit:
     """批量订单提交测试"""
 
-    def test_submit_orders_batch_success(self, executor, mock_repository, mock_event_bus):
+    def test_submit_orders_batch_success(self, executor, mock_repository, mock_event_bus, mock_service_container, mock_account_manager):
         """测试批量提交成功"""
         mock_repo = MagicMock()
         mock_repo.update_orders_batch = MagicMock()
@@ -360,9 +407,12 @@ class TestOrderExecutorBatchSubmit:
 
         mock_interface = MockTradingInterface()
         executor.trading_interface = mock_interface
+        # 当前 submit_orders_batch 走 _get_trading_interface_for_account (account 缓存命中路径, order_executor.py:880),
+        # 不再读取 executor.trading_interface → 预置账户接口缓存 + 账号解析链
+        executor._account_interface_cache['ACC001'] = mock_interface
+        _wire_mock_account_chain(mock_service_container, mock_account_manager, _make_test_account())
 
-        with patch.object(executor, '_get_trading_interface', return_value=mock_interface):
-            results = executor.submit_orders_batch(orders)
+        results = executor.submit_orders_batch(orders)
 
         assert len(results) == 3
         assert all(r.status == ExecutionStatus.SUCCESS for r in results)
@@ -373,7 +423,7 @@ class TestOrderExecutorBatchSubmit:
         results = executor.submit_orders_batch([])
         assert results == []
 
-    def test_submit_orders_batch_with_failures(self, executor, mock_repository):
+    def test_submit_orders_batch_with_failures(self, executor, mock_repository, mock_service_container, mock_account_manager):
         """测试批量提交部分失败"""
         mock_repo = MagicMock()
         mock_repo.update_orders_batch = MagicMock()
@@ -391,7 +441,8 @@ class TestOrderExecutorBatchSubmit:
                 order_quantity=100,
                 order_status=OrderStatus.PENDING,
                 create_time=datetime.now(),
-                update_time=datetime.now()
+                update_time=datetime.now(),
+                account_id='ACC001'
             )
             for i in range(3)
         ]
@@ -403,8 +454,10 @@ class TestOrderExecutorBatchSubmit:
             ExecutionResult(order_id='ORD2', status=ExecutionStatus.SUCCESS, message='Success'),
         ]
 
-        with patch.object(executor, '_get_trading_interface', return_value=mock_interface):
-            results = executor.submit_orders_batch(orders)
+        executor._account_interface_cache['ACC001'] = mock_interface
+        _wire_mock_account_chain(mock_service_container, mock_account_manager, _make_test_account())
+
+        results = executor.submit_orders_batch(orders)
 
         assert len(results) == 3
         success_count = sum(1 for r in results if r.status == ExecutionStatus.SUCCESS)

@@ -72,6 +72,11 @@ class StandardDataSourcePlugin(IDataSourcePlugin, ABC):
         self._connection_info = None
         self._last_connection_time = None
 
+        # 连接验证防抖 (R259: R247 "数据级验证 + 30s 防抖" 下沉基类)
+        # 默认钩子 _test_connection() 回退标志位, 行为与纯标志位一致; 子类可覆写为数据级验证
+        self._connection_verify_interval = timedelta(seconds=30)
+        self._last_connection_verify_time = None
+
         # 性能统计
         self._stats = {
             "total_requests": 0,
@@ -209,6 +214,7 @@ class StandardDataSourcePlugin(IDataSourcePlugin, ABC):
             if result:
                 self._is_connected = True
                 self._last_connection_time = datetime.now()
+                self._last_connection_verify_time = self._last_connection_time
                 self._connection_info = self._create_connection_info()
                 self.logger.info(f"数据源连接成功: {self.plugin_name}")
             else:
@@ -231,6 +237,7 @@ class StandardDataSourcePlugin(IDataSourcePlugin, ABC):
 
             if result:
                 self._is_connected = False
+                self._last_connection_verify_time = None
                 self._connection_info = None
                 self.logger.info(f"数据源断开成功: {self.plugin_name}")
             else:
@@ -243,7 +250,30 @@ class StandardDataSourcePlugin(IDataSourcePlugin, ABC):
             return False
 
     def is_connected(self) -> bool:
-        """检查连接状态"""
+        """检查连接状态
+
+        R259 下沉: 30s 防抖 + 可插拔数据级验证钩子 _test_connection()。
+        默认钩子回退标志位, 行为与纯标志位一致; 子类覆写钩子后启用真实取数验证。
+        """
+        if not self._is_connected:
+            return False
+        now = datetime.now()
+        if self._last_connection_verify_time is not None:
+            if now - self._last_connection_verify_time < self._connection_verify_interval:
+                return True
+        try:
+            verified = self._test_connection()
+        except Exception:
+            self.logger.error(f"连接验证异常: {self.plugin_name}", exc_info=True)
+            verified = False
+        if verified:
+            self._last_connection_verify_time = now
+        else:
+            self._is_connected = False
+        return verified
+
+    def _test_connection(self) -> bool:
+        """连接可用性验证钩子; 默认回退标志位 (子类覆写为数据级验证)"""
         return self._is_connected
 
     def get_connection_info(self) -> ConnectionInfo:

@@ -185,8 +185,8 @@ class TETDataPipeline:
                 'retained_earnings': 'retained_earnings', '留存收益': 'retained_earnings', '未分配利润': 'retained_earnings',
 
                 # 利润表字段映射
-                # R258-P0: 补 'total_revenue' 键 —— 插件产出 eastmoney_fundamental_plugin.py:206
-                # 与 eastmoney_unified_plugin.py:440 的 TOTAL_OPERATE_INCOME 即营业收入总额,
+                # R258-P0: 补 'total_revenue' 键 —— 插件产出 eastmoney_unified_plugin.py:440
+                # TOTAL_OPERATE_INCOME 即营业收入总额,
                 # 缺映射时标准化失败 → 落库 Binder Error → 全事务 ROLLBACK (财务数据 0 行落库)
                 'operating_revenue': 'operating_revenue', '营业收入': 'operating_revenue', 'revenue': 'operating_revenue', '总收入': 'operating_revenue', 'total_revenue': 'operating_revenue',
                 'operating_costs': 'operating_costs', '营业成本': 'operating_costs', 'cost_of_sales': 'operating_costs', 'operating_cost': 'operating_costs',

@@ -226,6 +226,21 @@ class SinaPlugin(StandardDataSourcePlugin):
             self.logger.error(f"新浪数据源断开连接失败: {e}")
             return False
 
+    def _test_connection(self) -> bool:
+        """连接可用性数据级验证 (R259 覆写基类钩子): HTTP GET sh000001 指数"""
+        try:
+            if not self._session:
+                return False
+            test_url = f"{self.config.quote_endpoint}sh000001"
+            response = self._session.get(test_url, timeout=self.config.timeout)
+            if response.status_code == 200:
+                content = response.text
+                return 'sh000001' in content and len(content) > 50
+            return False
+        except Exception as e:
+            self.logger.error(f"新浪数据源连接验证异常: {e}")
+            return False
+
     # IDataSourcePlugin接口实现
     def fetch_data(self, symbol: str, data_type: str, **params) -> Any:
         """获取数据的统一接口"""

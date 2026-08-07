@@ -1234,7 +1234,9 @@ class FactorWeaveQuantLauncher:
                 app = QApplication([])
 
             window = QMainWindow()
-            widget = AnalysisWidget(window)
+            # R260: 修复参数错位 — AnalysisWidget 构造签名 (config_manager, service_container)，
+            # 原将 QMainWindow 传给 config_manager 位置导致各 tab 收到错误对象
+            widget = AnalysisWidget()
             window.setCentralWidget(widget)
             window.setWindowTitle("数据可视化")
             window.show()

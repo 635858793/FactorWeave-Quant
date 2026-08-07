@@ -74,19 +74,19 @@ from core.plugin_types import AssetType  # noqa: E402
 # 测试桩
 # ===========================================================================
 class _FakeAction:
-    """ctpbee action 桩: 记录调用, buy_open 返回 ctpbee 风格订单号"""
+    """ctpbee action 桩 (R261 对齐真实 1.6.9 语义): buy 返回带 gateway 前缀 local_order_id"""
 
-    def __init__(self, return_id='0.1.3'):
+    def __init__(self, return_id='ctp.0_1_3'):
         self.return_id = return_id
-        self.buy_open_calls = []
+        self.buy_calls = []
         self.cancel_calls = []
 
-    def buy_open(self, price, volume, symbol):
-        self.buy_open_calls.append((price, volume, symbol))
+    def buy(self, price, volume, origin):
+        self.buy_calls.append((price, volume, origin))
         return self.return_id
 
-    def cancel_order(self, symbol, order_id):
-        self.cancel_calls.append((symbol, order_id))
+    def cancel_order(self, cancel_req):
+        self.cancel_calls.append(cancel_req)
 
 
 class _FakeApi:
@@ -117,7 +117,7 @@ class _FakeTradeData:
 # 构造辅助
 # ===========================================================================
 def _make_order(order_id='ORD_LOCAL_001'):
-    """构造本地订单 (submit_order 使用的 order_direction/price 动态附加)"""
+    """构造本地订单 (R261: Order 无 order_direction/price 动态字段, 由 order_type 推导)"""
     now = datetime(2026, 8, 7, 10, 0, 0)
     order = Order(
         order_id=order_id,
@@ -132,8 +132,6 @@ def _make_order(order_id='ORD_LOCAL_001'):
         create_time=now,
         update_time=now,
     )
-    order.order_direction = 'BUY'    # 接口层语义字段 (动态附加)
-    order.price = order.order_price  # 接口层使用字段 (动态附加)
     return order
 
 
@@ -161,8 +159,8 @@ class TestCTPMatchingFix(unittest.TestCase):
         result = interface.submit_order(order)
 
         self.assertEqual(result.status, ExecutionStatus.SUCCESS)
-        self.assertIn('0.1.3', interface._exchange_order_map)
-        self.assertEqual(interface._exchange_order_map['0.1.3'], order.order_id)
+        self.assertIn('0_1_3', interface._exchange_order_map)
+        self.assertEqual(interface._exchange_order_map['0_1_3'], order.order_id)
 
     def test_submit_result_has_exchange_order_id(self):
         """ExecutionResult.exchange_order_id 非 None (下游 order_executor.py:1041 依赖)"""
@@ -171,17 +169,17 @@ class TestCTPMatchingFix(unittest.TestCase):
         result = interface.submit_order(_make_order())
 
         self.assertIsNotNone(result.exchange_order_id)
-        self.assertEqual(result.exchange_order_id, '0.1.3')
+        self.assertEqual(result.exchange_order_id, 'ctp.0_1_3')
 
     def test_on_order_data_matches_via_exchange_map(self):
         """CTP 侧回报 id 经 _exchange_order_map 反查 -> 本地订单状态更新 + 发布事件"""
         interface, _ = _make_interface()
         order = _make_order()
         interface._orders[order.order_id] = order
-        interface._exchange_order_map['0.1.3'] = order.order_id
+        interface._exchange_order_map['0_1_3'] = order.order_id
 
         interface._on_order_data(
-            _FakeOrderData(order_id='0.1.3', status='ALLTRADED', volume=10, traded=10))
+            _FakeOrderData(order_id='0_1_3', status='ALLTRADED', volume=10, traded=10))
 
         self.assertEqual(order.order_status, OrderStatus.FILLED)
         self.assertTrue(interface.event_bus.publish.called)
@@ -206,10 +204,10 @@ class TestCTPMatchingFix(unittest.TestCase):
         interface, _ = _make_interface()
         order = _make_order()
         interface._orders[order.order_id] = order
-        interface._exchange_order_map['0.1.3'] = order.order_id
+        interface._exchange_order_map['0_1_3'] = order.order_id
 
         interface._on_order_data(
-            _FakeOrderData(order_id='0.1.3', status='REJECTED', volume=1, traded=0))
+            _FakeOrderData(order_id='0_1_3', status='REJECTED', volume=1, traded=0))
 
         self.assertEqual(order.order_status, OrderStatus.REJECTED)
 
@@ -218,10 +216,10 @@ class TestCTPMatchingFix(unittest.TestCase):
         interface, _ = _make_interface()
         order = _make_order()
         interface._orders[order.order_id] = order
-        interface._exchange_order_map['0.1.3'] = order.order_id
+        interface._exchange_order_map['0_1_3'] = order.order_id
 
         interface._on_order_data(
-            _FakeOrderData(order_id='0.1.3', status='PARTTRADED', volume=10, traded=3))
+            _FakeOrderData(order_id='0_1_3', status='PARTTRADED', volume=10, traded=3))
 
         self.assertEqual(order.order_status, OrderStatus.PARTIALLY_FILLED)
         self.assertTrue(interface.event_bus.publish.called)
@@ -231,10 +229,10 @@ class TestCTPMatchingFix(unittest.TestCase):
         interface, _ = _make_interface()
         order = _make_order()
         interface._orders[order.order_id] = order
-        interface._exchange_order_map['0.1.3'] = order.order_id
+        interface._exchange_order_map['0_1_3'] = order.order_id
 
         interface._on_trade_data(
-            _FakeTradeData(order_id='0.1.3', price=3800.0, volume=5))
+            _FakeTradeData(order_id='0_1_3', price=3800.0, volume=5))
 
         self.assertEqual(order.filled_quantity, 5)
         self.assertTrue(interface.event_bus.publish.called)
@@ -245,25 +243,27 @@ class TestCTPMatchingFix(unittest.TestCase):
         interface, action = _make_interface()
         order = _make_order()
         interface._orders[order.order_id] = order
-        interface._exchange_order_map['0.1.3'] = order.order_id
+        interface._exchange_order_map['0_1_3'] = order.order_id
 
         result = interface.cancel_order(order.order_id)
 
         self.assertEqual(result.status, ExecutionStatus.SUCCESS)
-        self.assertEqual(action.cancel_calls, [('rb2610', '0.1.3')])
+        cancel_req = action.cancel_calls[0]
+        self.assertEqual(getattr(cancel_req, 'symbol', None), 'rb2610')
+        self.assertEqual(getattr(cancel_req, 'order_id', None), '0_1_3')
 
     def test_terminal_state_cleans_maps(self):
         """终态 (FILLED) 后 _orders/_exchange_order_map 清理, 防内存累积"""
         interface, _ = _make_interface()
         order = _make_order()
         interface._orders[order.order_id] = order
-        interface._exchange_order_map['0.1.3'] = order.order_id
+        interface._exchange_order_map['0_1_3'] = order.order_id
 
         interface._on_order_data(
-            _FakeOrderData(order_id='0.1.3', status='ALLTRADED', volume=10, traded=10))
+            _FakeOrderData(order_id='0_1_3', status='ALLTRADED', volume=10, traded=10))
 
         self.assertNotIn(order.order_id, interface._orders)
-        self.assertNotIn('0.1.3', interface._exchange_order_map)
+        self.assertNotIn('0_1_3', interface._exchange_order_map)
 
 
 if __name__ == '__main__':

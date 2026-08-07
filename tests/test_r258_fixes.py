@@ -7,7 +7,7 @@ R258 修复验证测试（TDD RED→GREEN 基线）
 
 1. 财务列名断裂 P0 —— total_revenue 数据 0 行落库链
    - core/tet_data_pipeline.py:187 FINANCIAL_STATEMENT 利润表映射缺 'total_revenue' 键
-     （插件产出 eastmoney_fundamental_plugin.py:206 / eastmoney_unified_plugin.py:440）
+     （插件产出 eastmoney_unified_plugin.py:440）
    - core/database/duckdb_operations.py:382-407 _upsert_batch 无表结构列过滤
      → DuckDB Binder Error → 全事务 ROLLBACK (:176-177) → 财务数据 0 行落库
    - core/services/unified_data_manager.py:3106-3111 _store_financial_to_duckdb
@@ -77,7 +77,7 @@ class TestFinancialColumnBreak:
 
     def test_tet_mapping_has_total_revenue_key(self):
         """tet_data_pipeline.py:187 利润表映射须含 'total_revenue' → 'operating_revenue'
-        否则插件产出 (eastmoney_fundamental_plugin.py:206) 无法标准化 → 落库 Binder Error"""
+        否则插件产出 (eastmoney_unified_plugin.py:440) 无法标准化 → 落库 Binder Error"""
         pipe = TETDataPipeline(MagicMock())
         fs_map = pipe.field_mappings[DataType.FINANCIAL_STATEMENT]
         assert fs_map.get('total_revenue') == 'operating_revenue', \

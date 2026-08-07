@@ -13,7 +13,7 @@ from loguru import logger
 import threading
 import time
 
-from core.trading.order_models import Order, OrderStatus
+from core.trading.order_models import Order, OrderStatus, OrderType
 from core.trading.trading_types import ExecutionResult, ExecutionStatus, TradingInterface
 from core.trading.interfaces.ctp_config import CTPConfig, get_ctp_config
 
@@ -30,6 +30,19 @@ try:
 except ImportError:
     EVENT_BUS_AVAILABLE = False
     logger.warning("EventBus不可用，将使用基本模式")
+
+
+class _MinimalContract:
+    """最小合约对象 (兼容 ctpbee ContractData 的 symbol/exchange/local_symbol 接口)
+
+    R261-P0-D: 合约回填未完成时, 保证 action.buy/short/sell/cover 的 origin 参数
+    仍携带 .symbol/.exchange 属性而不中断报单.
+    """
+
+    def __init__(self, symbol: str, exchange: Any = 'SHFE'):
+        self.symbol = symbol
+        self.exchange = exchange
+        self.local_symbol = f"{symbol}.{exchange}"
 
 
 class TradingApi(CtpbeeApi if CTP_AVAILABLE else object):
@@ -97,6 +110,7 @@ class CTPTradingInterface(TradingInterface):
         self._orders: Dict[str, Order] = {}
         self._exchange_order_map: Dict[str, str] = {}
         self._order_lock = threading.RLock()
+        self._processed_trades: set = set()
 
         self._app: Optional[CtpBee] = None
         self._api: Optional[TradingApi] = None
@@ -310,28 +324,45 @@ class CTPTradingInterface(TradingInterface):
                     error_code="INVALID_CONTRACT"
                 )
 
-            direction, offset = self._parse_order_direction(order.order_direction)
+            # R261-P0-C: Order 模型无 order_direction 字段 (order_models.py:55-84),
+            # 方向解析必须基于 order_type (BUY/SELL/SHORT/COVER)
+            direction, offset = self._parse_order_direction(order.order_type)
+
+            # R261-P0-B: ctpbee send_order 在返回前会同步预发 SUBMITTING 回报
+            # (td_api.py:550-551), 早于下方 map 写入. 先将本地订单登记并预置
+            # SUBMITTED 状态, 使该竞态窗口内的首个回报不致命 (兜底日志)
+            with self._order_lock:
+                self._orders[order.order_id] = order
+                if order.order_status in (OrderStatus.PENDING, OrderStatus.FAILED):
+                    order.order_status = OrderStatus.SUBMITTED
 
             # R257-P0: 捕获 CTP 侧订单号 (ctpbee action 返回值), 供回报回调反查本地订单
             # 注意: 返回值可能是字符串/对象/None (ctpbee 版本差异), 用 try/except 保守处理,
             # 拿不到字符串订单号时仅记 debug 日志, 不阻断主流程
             ctpbee_order_id = None
             try:
+                # R261-P0-D: ctpbee level.py 无 buy_open/sell_open/buy_close/sell_close,
+                # action 接口为 buy/short/sell/cover(price, volume, origin), origin 需含
+                # .symbol/.exchange (level.py:82-83 等); origin 从本地合约表解析
+                origin = self._resolve_origin(order.stock_code)
                 if direction == Direction.LONG:
                     if offset == Offset.OPEN:
-                        ctpbee_order_id = self._api.action.buy_open(order.price, order.order_quantity, order.stock_code)
+                        ctpbee_order_id = self._api.action.buy(order.order_price, order.order_quantity, origin)
                     else:
-                        ctpbee_order_id = self._api.action.buy_close(order.price, order.order_quantity, order.stock_code)
+                        ctpbee_order_id = self._api.action.cover(order.order_price, order.order_quantity, origin)
                 else:
                     if offset == Offset.OPEN:
-                        ctpbee_order_id = self._api.action.sell_open(order.price, order.order_quantity, order.stock_code)
+                        ctpbee_order_id = self._api.action.short(order.order_price, order.order_quantity, origin)
                     else:
-                        ctpbee_order_id = self._api.action.sell_close(order.price, order.order_quantity, order.stock_code)
+                        ctpbee_order_id = self._api.action.sell(order.order_price, order.order_quantity, origin)
 
                 with self._order_lock:
-                    self._orders[order.order_id] = order
                     if ctpbee_order_id and isinstance(ctpbee_order_id, str):
-                        self._exchange_order_map[ctpbee_order_id] = order.order_id
+                        # R261-P0-A: ctpbee 返回 local_order_id 带 gateway 前缀
+                        # ("ctp.0_1_3", constant.py:415), 而回报回调 order_id 无前缀
+                        # ("0_1_3", td_api.py:377/549). 剥离前缀归一化后再存 map
+                        normalized_id = ctpbee_order_id.split('.', 1)[-1]
+                        self._exchange_order_map[normalized_id] = order.order_id
                     else:
                         logger.debug(f"CTP下单未返回字符串订单号({ctpbee_order_id!r}), 跳过交易所映射: {order.order_id}")
 
@@ -406,7 +437,12 @@ class CTPTradingInterface(TradingInterface):
                                 ctpbee_id = _ex_id
                                 break
                         ctpbee_id = self._exchange_order_map.get(order_id, ctpbee_id)
-                        self._api.action.cancel_order(order.stock_code, ctpbee_id)
+                        # R261-P0-E: ctpbee level.py:310 cancel_order(cancel_req) 为单参,
+                        # 需构造 CancelRequest(symbol/exchange/order_id), 而非传 (stock_code, ctpbee_id)
+                        origin = self._resolve_origin(order.stock_code)
+                        cancel_req = self._make_cancel_request(
+                            order.stock_code, getattr(origin, 'exchange', 'SHFE'), ctpbee_id)
+                        self._api.action.cancel_order(cancel_req)
                         logger.info(f"CTP订单取消成功: {order_id} -> {ctpbee_id}")
                         return ExecutionResult(
                             order_id=order_id,
@@ -660,23 +696,65 @@ class CTPTradingInterface(TradingInterface):
             return False
         return True
 
-    def _parse_order_direction(self, direction: str) -> tuple:
-        """解析订单方向"""
+    def _parse_order_direction(self, direction) -> tuple:
+        """解析订单方向 (R261-P0-C: 基于 OrderType 枚举 BUY/SELL/SHORT/COVER)
+
+        Order 模型无 order_direction 字段, 方向只能由 order_type 推导:
+        - BUY   (买开)  -> (LONG,  OPEN)
+        - SHORT (卖开)  -> (SHORT, OPEN)
+        - SELL  (平多)  -> (SHORT, CLOSE)
+        - COVER (平空)  -> (LONG,  CLOSE)
+        """
         if not CTP_AVAILABLE:
             return (None, None)
 
-        direction_upper = direction.upper() if isinstance(direction, str) else str(direction)
+        if isinstance(direction, str):
+            direction_upper = direction.upper()
+        else:
+            value = getattr(direction, 'value', None)
+            direction_upper = str(value or direction).upper()
 
         if direction_upper in ['BUY', 'BUY_OPEN', 'B']:
             return (Direction.LONG, Offset.OPEN)
-        elif direction_upper in ['SELL', 'SELL_OPEN', 'S']:
+        elif direction_upper in ['SHORT', 'SELL_OPEN', 'S']:
             return (Direction.SHORT, Offset.OPEN)
-        elif direction_upper in ['BUY_CLOSE', 'BC']:
+        elif direction_upper in ['COVER', 'BUY_CLOSE', 'BC']:
             return (Direction.LONG, Offset.CLOSE)
-        elif direction_upper in ['SELL_CLOSE', 'SC']:
+        elif direction_upper in ['SELL', 'SELL_CLOSE', 'SC']:
             return (Direction.SHORT, Offset.CLOSE)
         else:
             return (Direction.LONG, Offset.OPEN)
+
+    def _resolve_origin(self, stock_code: str):
+        """解析 ctpbee 合约对象 (action.buy/short/sell/cover 的 origin 参数)
+
+        R261-P0-D: ctpbee level.py 的 buy/short/sell/cover 需要 origin 携带
+        .symbol/.exchange (level.py:82-83 等). 按交易所后缀遍历本地合约表,
+        未找到时回退最小合约对象, 保证报单不中断.
+        """
+        if self._contracts:
+            for exchange in ('SHFE', 'DCE', 'CZCE', 'CFFEX', 'INE', 'CTP'):
+                contract = self._contracts.get(f"{stock_code}.{exchange}")
+                if contract is not None:
+                    return contract
+        return _MinimalContract(stock_code)
+
+    @staticmethod
+    def _make_cancel_request(symbol: str, exchange: Any, order_id: str) -> Any:
+        """构造撤单请求 (鸭子类型兼容 ctpbee CancelRequest)
+
+        R261-P0-E: ctpbee td_api.py:554-571 仅使用 req.symbol / req.order_id /
+        req.exchange.value, 无 isinstance 检查, 故携带同名属性的简单对象即可.
+        """
+        class _CancelRequest:
+            __slots__ = ('symbol', 'exchange', 'order_id')
+
+            def __init__(self, symbol_, exchange_, order_id_):
+                self.symbol = symbol_
+                self.exchange = exchange_
+                self.order_id = order_id_
+
+        return _CancelRequest(symbol, exchange, order_id)
 
     def _create_app(self):
         """创建CtpBee应用"""
@@ -737,21 +815,23 @@ class CTPTradingInterface(TradingInterface):
         try:
             logger.debug(f"CTP订单状态回调: {order.order_id}, status={order.status}")
 
-            # R257-P0: 回报回调的 order_id 是 CTP 侧订单号, 与本地 UUID 不相交,
-            # 必须经 _exchange_order_map 反查本地订单; `or ctpbee_id` 兜底兼容直接命中场景
-            ctpbee_id = order.order_id
-            local_id = self._exchange_order_map.get(ctpbee_id) or ctpbee_id
-
             with self._order_lock:
+                # R257-P0: 回报回调的 order_id 是 CTP 侧订单号, 与本地 UUID 不相交,
+                # 必须经 _exchange_order_map 反查本地订单; `or ctpbee_id` 兜底兼容直接命中场景
+                # R261-P0-A: 归一化剥离 gateway 前缀 ("ctp.0_1_3" -> "0_1_3", 与 submit 侧对称)
+                ctpbee_id = order.order_id.split('.', 1)[-1]
+                local_id = self._exchange_order_map.get(ctpbee_id) or ctpbee_id
+
                 if local_id not in self._orders:
                     logger.warning(f"CTP回报未匹配到本地订单: {ctpbee_id}")
                     return
 
                 local_order = self._orders[local_id]
 
+                # R261-P1: ctpbee Status 枚举 (constant.py:60-63) 无 'SUBMITTED',
+                # 该键为死键 (永不出现), 移除避免误导
                 status_map = {
                     'SUBMITTING': OrderStatus.PENDING,
-                    'SUBMITTED': OrderStatus.SUBMITTED,
                     'PARTTRADED': OrderStatus.PARTIALLY_FILLED,
                     'ALLTRADED': OrderStatus.FILLED,
                     'CANCELLED': OrderStatus.CANCELLED,
@@ -797,11 +877,21 @@ class CTPTradingInterface(TradingInterface):
         try:
             logger.debug(f"CTP成交回报回调: {trade.order_id}, price={trade.price}, volume={trade.volume}")
 
-            # R257-P0: 同 _on_order_data, 经 _exchange_order_map 反查本地订单
-            ctpbee_id = trade.order_id
-            local_id = self._exchange_order_map.get(ctpbee_id) or ctpbee_id
-
             with self._order_lock:
+                # R261-P1: 同一成交可能重复回调 (重连/查询补偿), 按 trade_id 去重;
+                # trade_id 缺失时 (None) 不去重, 兼容旧式回报
+                trade_id = getattr(trade, 'trade_id', None)
+                if trade_id is not None:
+                    if trade_id in self._processed_trades:
+                        logger.debug(f"重复成交回报已忽略: {trade_id}")
+                        return
+                    self._processed_trades.add(trade_id)
+
+                # R257-P0: 同 _on_order_data, 经 _exchange_order_map 反查本地订单
+                # R261-P0-A: 归一化剥离 gateway 前缀
+                ctpbee_id = trade.order_id.split('.', 1)[-1]
+                local_id = self._exchange_order_map.get(ctpbee_id) or ctpbee_id
+
                 if local_id not in self._orders:
                     logger.warning(f"CTP成交回报未匹配到本地订单: {ctpbee_id}")
                     return

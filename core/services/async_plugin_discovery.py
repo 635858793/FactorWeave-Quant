@@ -151,7 +151,7 @@ class AsyncPluginDiscoveryWorker(QThread):
                         plugin_files.append((plugin_name, plugin_path))
                 
                 # 扫描分类子目录
-                excluded_subdirs = {'templates', 'examples', '__pycache__', 'test', 'tests', '.git', 'utils', 'fundamental_data_plugins', 'macro_data_plugins'}
+                excluded_subdirs = {'templates', 'examples', '__pycache__', 'test', 'tests', '.git', 'utils', 'macro_data_plugins'}
                 for category_dir in data_sources_dir.iterdir():
                     if category_dir.is_dir() and category_dir.name not in excluded_subdirs:
                         for plugin_path in category_dir.glob("*_plugin.py"):

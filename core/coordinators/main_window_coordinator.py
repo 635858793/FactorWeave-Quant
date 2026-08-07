@@ -2839,23 +2839,30 @@ FactorWeave-Quant  2.0 (重构版本)
             QMessageBox.warning(self._main_window, "错误", f"无法切换主题: {e}")
 
     def _on_analyze(self) -> None:
-        """启动分析功能"""
+        """启动分析功能 (R260: 真实挂载 AnalysisWidget 独立窗口, 替换降级弹窗)"""
         try:
-            # 检查是否有分析面板
-            if hasattr(self, '_analysis_widget') and self._analysis_widget:
-                self._analysis_widget.refresh_current_tab()
-                logger.info("启动分析功能")
+            # 惰性创建: 避免模块级 matplotlib 导入链拖慢主窗口启动
+            if not hasattr(self, '_analysis_widget') or not self._analysis_widget:
+                from gui.widgets.analysis_widget import AnalysisWidget
+                self._analysis_widget = AnalysisWidget(service_container=self.service_container)
+                # 独立浮动窗口 (参照 _on_backtest 独立窗口范式 :2972-3000)
+                self._analysis_window = QMainWindow()
+                self._analysis_window.setWindowTitle("FactorWeave-Quant 智能分析系统")
+                screen = QApplication.desktop().screenGeometry()
+                self._analysis_window.setGeometry(
+                    (screen.width() - 1400) // 2, (screen.height() - 900) // 2, 1400, 900)
+                self._analysis_window.setMinimumSize(1000, 800)
+                self._analysis_window.setCentralWidget(self._analysis_widget)
+                self._analysis_window.show()
+                logger.info("分析面板挂载完成 (AnalysisWidget 独立窗口)")
             else:
-                # R244 备注: 项目存在真实分析面板 AnalysisWidget（gui/widgets/analysis_widget.py L91），
-                # 但其中模块级导入链包含 xtquant/XTP（已实测触发 0xC0000005 进程崩溃，R241 环境预存问题），
-                # 在环境问题解决前保持安全降级，避免挂载后崩溃。挂载方案列入高价值待开发清单。
-                QMessageBox.information(
-                    self._main_window,
-                    "分析功能",
-                    "分析功能模块加载受限（依赖环境问题未解决），敬请期待！"
-                )
+                self._analysis_widget.refresh_current_tab()
+                if hasattr(self, '_analysis_window'):
+                    self._analysis_window.show()
+                    self._analysis_window.raise_()
+                logger.info("启动分析功能")
         except Exception as e:
-            logger.error(f"启动分析失败: {e}")
+            logger.error(f"启动分析失败: {e}", exc_info=True)
             QMessageBox.warning(self._main_window, "错误", f"无法启动分析: {e}")
 
     def _on_backtest(self) -> None:

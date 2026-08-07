@@ -21,8 +21,33 @@ _GUI_MOCK_MODULES = [
     # gui/__init__.py 为惰性 __getattr__ 导入 (gui/__init__.py:13-23), gui/utils/__init__.py 为空。
     # mock 顶层包会阻断真实子模块导入 (mock 无 __path__), 导致响应式工具不可测且
     # r25x 系列文件 collection 阶段 pop mock 后行为不一致 (R258 交叉验证实证)。
-    'gui.dialogs',
+    # R261-c5: 移除 'gui.dialogs' 顶层 mock —— BaseDialog 构造路径不触碰
+    # QApplication/desktop (base_dialog.py:133-144 构造, desktop 仅 showEvent:249 触发),
+    # 允许真实子模块导入以支持真实 GUI 实例化测试 (tests/gui/test_base_dialog_real.py)。
+    # 以下子模块经 R261-c5 独立进程实证存在硬问题, 保留/回退 mock:
+    #  - strategy_manager_dialog: 模块级重依赖 (core.services.*/gui.components.*), 未纳入真实测试
+    #  - intelligent_model_selection_dialog: 模块级硬导入 gui.widgets.intelligent_model_selection.* (L27-29)
+    #  - plugin_manager_dialog_unified: PluginManagerDialogUnified 构造创建并 start QTimer (L582-590)
+    #  - ai_prediction_config_dialog / account_management_dialog / distributed_node_monitor_dialog /
+    #    distributed_service_monitor_dialog: 模块级 import 缺陷 (NameError: BaseDialog/QDialog 未定义)
+    #  - data_management_dialog_unified / webgpu_status_dialog / indicator_selection_dialog /
+    #    system_optimizer_dialog / quality_report_dialog / model_training_dialog:
+    #    导入/实例化触发 Qt 硬崩溃 (0xC0000005/0xC0000409)
+    #  - llm_config_dialog: 默认构造抛 AttributeError (llm_config_service 为 None)
     'gui.dialogs.strategy_manager_dialog',
+    'gui.dialogs.intelligent_model_selection_dialog',
+    'gui.dialogs.plugin_manager_dialog_unified',
+    'gui.dialogs.ai_prediction_config_dialog',
+    'gui.dialogs.account_management_dialog',
+    'gui.dialogs.distributed_node_monitor_dialog',
+    'gui.dialogs.distributed_service_monitor_dialog',
+    'gui.dialogs.data_management_dialog_unified',
+    'gui.dialogs.webgpu_status_dialog',
+    'gui.dialogs.indicator_selection_dialog',
+    'gui.dialogs.system_optimizer_dialog',
+    'gui.dialogs.quality_report_dialog',
+    'gui.dialogs.model_training_dialog',
+    'gui.dialogs.llm_config_dialog',
     'gui.widgets',
     'gui.widgets.backtest_widget',
     'gui.widgets.trading_panel',

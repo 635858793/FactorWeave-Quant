@@ -721,6 +721,20 @@ class AnalysisWidget(QWidget):
             logger.error(f"K线数据预处理失败: {e}")
             return None
 
+    def _execute_chart_update(self) -> None:
+        """执行挂起的图表更新 (chart_update_timer 防抖到点回调, R260 补齐缺失方法)
+
+        R244-R259 遗留 P1: 构造时 chart_update_timer.timeout 连接此方法但类中无定义
+        → 定时器触发即 AttributeError。防抖配套: 取 _pending_chart_update 执行后置 None。
+        """
+        pending = getattr(self, '_pending_chart_update', None)
+        self._pending_chart_update = None
+        if callable(pending):
+            try:
+                pending()
+            except Exception as e:
+                logger.error(f"图表更新执行失败: {e}")
+
     def refresh_current_tab(self):
         """刷新当前标签页 - 优化版本"""
         try:
