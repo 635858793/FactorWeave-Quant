@@ -50,3 +50,13 @@ performance_reports/*
 web/*
 
 .memory/memory.jsonl
+
+# ==== R237-A CWE-798 凭据不入库铁律 (R235 §14.1 #1 强制) ====
+# 6 防御性模式: 真实密钥禁止入库
+*.key
+config/jwt_secret.key
+config/.llm_key
+config/*.pem
+config/*.crt
+config/*_secret.*
+config/*_password.*
